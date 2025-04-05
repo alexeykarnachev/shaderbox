@@ -10,10 +10,10 @@ class ShaderNode:
         self._vs_source = """
         #version 460
         in vec2 a_pos;
-        out vec2 vs_pos;
+        out vec2 vs_uv;
         void main() {
             gl_Position = vec4(a_pos, 0.0, 1.0);
-            vs_pos = a_pos;
+            vs_uv = a_pos * 0.5 + 0.5;
         }
         """
         self.program = ctx.program(
@@ -28,8 +28,6 @@ class ShaderNode:
 
 class Program:
     def __init__(self, ctx, vbo, nodes, external_inputs=None):
-        """nodes: dict of {node_id: (fs_source, [input_ids], width, height)}
-        external_inputs: dict of {uniform_name: texture_object}"""
         self.ctx = ctx
         self.external_inputs = external_inputs or {}
         self.nodes = {}
@@ -41,7 +39,7 @@ class Program:
     def execute(self, output_node_id=None, uniforms=None, target_fbo=None):
         if uniforms is None:
             uniforms = {}
-        uniforms.update(self.external_inputs)  # Add external textures to uniforms
+        uniforms.update(self.external_inputs)
         output_node = self.nodes.get(output_node_id, self.nodes.get(self.terminal_node))
         if not output_node:
             return None
@@ -54,17 +52,23 @@ class Program:
             for input_node in node.inputs:
                 render_node(input_node, input_node.fbo)
             for i, input_node in enumerate(node.inputs):
-                node.program[f"u_input{i}"] = i
-                input_node.texture.use(i)
+                if f"u_input{i}" in node.program:
+                    node.program[f"u_input{i}"] = i
+                    input_node.texture.use(i)
             external_slot = len(node.inputs)
+            max_slots = self.ctx.max_texture_units
             for name, value in uniforms.items():
                 if name in node.program:
                     if isinstance(value, moderngl.Texture):
-                        node.program[name].value = external_slot
+                        if external_slot >= max_slots:
+                            raise ValueError(
+                                f"Exceeded max texture units ({max_slots})"
+                            )
+                        node.program[name] = external_slot
                         value.use(external_slot)
                         external_slot += 1
                     else:
-                        node.program[name].value = value
+                        node.program[name] = value
             fbo.use()
             node.vao.render(moderngl.TRIANGLES)
             rendered.add(node)
@@ -74,7 +78,7 @@ class Program:
 
 
 class Renderer:
-    def __init__(self, width=800, height=608):  # Changed to 608 (16x38)
+    def __init__(self, width=800, height=608):
         glfw.init()
         glfw.window_hint(glfw.CONTEXT_VERSION_MAJOR, 4)
         glfw.window_hint(glfw.CONTEXT_VERSION_MINOR, 6)
@@ -90,13 +94,6 @@ class Renderer:
         )
         self._vbo = self._ctx.buffer(self._quad)
 
-    def _default_uniforms(self, time=0.0, flip_y=False):
-        return {
-            "u_time": time,
-            "u_aspect": self.width / self.height,
-            "u_flip_y": float(flip_y),
-        }
-
     def load_texture(self, filename):
         img = Image.open(filename).convert("RGBA")
         texture = self._ctx.texture(img.size, 4, img.tobytes())
@@ -104,54 +101,17 @@ class Renderer:
         return texture
 
     def render_frame(
-        self, program, output_node_id=None, time=0.0, target_fbo=None, flip_y=False
+        self, program, output_node_id=None, uniforms=None, target_fbo=None
     ):
-        uniforms = self._default_uniforms(time, flip_y)
         return program.execute(output_node_id, uniforms, target_fbo)
 
-    def render_image(
-        self, program, output_node_id=None, time=0.0, filename="output.png"
-    ):
-        output_node = self.render_frame(program, output_node_id, time)
-        if output_node:
-            raw_data = output_node.fbo.read(components=4)
-            img = Image.frombytes(
-                "RGBA", (output_node.width, output_node.height), raw_data
-            )
-            # Removed transpose to keep PNG as it was (correct)
-            img.save(filename)
-            return img
-        return None
-
-    def render_animation(
-        self, program, output_node_id=None, duration=1.0, fps=30, filename="output.mp4"
-    ):
-        frames = int(duration * fps)
-        writer = (
-            imageio.get_writer(filename, fps=fps, codec="libx264")
-            if filename.endswith(".mp4")
-            else imageio.get_writer(filename, fps=fps)
-        )
-        for i in range(frames):
-            time = i / fps
-            output_node = self.render_frame(program, output_node_id, time)
-            if output_node:
-                raw_data = output_node.fbo.read(components=4)
-                frame = np.frombuffer(raw_data, dtype=np.uint8).reshape(
-                    output_node.height, output_node.width, 4
-                )
-                frame = frame[:, :, :3]  # Convert RGBA to RGB
-                writer.append_data(frame)
-        writer.close()
-
-    def render_screen(self, program, output_node_id=None):
+    def render_screen(self, program, output_node_id=None, uniforms_callback=None):
         start_time = glfw.get_time()
         while not glfw.window_should_close(self._window):
             time = glfw.get_time() - start_time
+            uniforms = uniforms_callback(time) if uniforms_callback else None
             self._ctx.clear(0.0, 0.0, 0.0, 1.0)
-            self.render_frame(
-                program, output_node_id, time, self._ctx.screen, flip_y=True
-            )
+            self.render_frame(program, output_node_id, uniforms, self._ctx.screen)
             glfw.swap_buffers(self._window)
             glfw.poll_events()
             if glfw.get_key(self._window, glfw.KEY_ESCAPE) == glfw.PRESS:
@@ -164,94 +124,146 @@ class Renderer:
 
 
 if __name__ == "__main__":
-    renderer = Renderer(width=800, height=608)  # Match new resolution
+    renderer = Renderer(width=800, height=608)
 
-    # Load external image and depth map (replace with your own files)
-    image_texture = renderer.load_texture("photo.jpeg")  # Example: a color photo
-    depth_texture = renderer.load_texture("depth.png")  # Example: grayscale depth map
+    image_texture = renderer.load_texture("photo.jpeg")
+    depth_texture = renderer.load_texture("depth.png")
 
-    # Declarative pipeline configuration
+    parallax_fs = """
+    #version 460
+    in vec2 vs_uv;
+    out vec4 fs_color;
+    uniform sampler2D u_texture;
+    uniform sampler2D u_depth;
+    uniform float u_time;
+    uniform vec2 u_texture_size;
+    uniform float u_focal_px = 1480.0;
+    uniform float u_parallax_strength = 0.05;
+    void main() {
+        vec2 uv = vs_uv;
+        uv.y = 1.0 - uv.y;
+        float depth = texture(u_depth, uv).r;
+        vec2 camera_move = vec2(sin(u_time), cos(u_time)) * u_focal_px * u_parallax_strength;
+        vec2 offset = -camera_move * depth / u_texture_size;
+
+        uv += offset;
+        if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) discard;
+
+        vec4 color = texture(u_texture, uv);
+        fs_color = vec4(color.rgb, 1.0);
+    }
+    """
+
+    bright_pass_fs = """
+    #version 460
+    in vec2 vs_uv;
+    out vec4 fs_color;
+    uniform sampler2D u_input0;
+    uniform float u_threshold = 0.5;
+    void main() {
+        vec4 color = texture(u_input0, vs_uv);
+        float brightness = dot(color.rgb, vec3(0.2126, 0.7152, 0.0722));
+        fs_color = brightness > u_threshold ? color : vec4(0.0);
+    }
+    """
+
+    downscale_fs = """
+    #version 460
+    in vec2 vs_uv;
+    out vec4 fs_color;
+    uniform sampler2D u_input0;
+    void main() {
+        fs_color = texture(u_input0, vs_uv);
+    }
+    """
+
+    blur_fs = """
+    #version 460
+    in vec2 vs_uv;
+    out vec4 fs_color;
+    uniform sampler2D u_input0;
+    uniform vec2 u_pixel_size;
+    void main() {
+        vec4 color = vec4(0.0);
+        for (int i = -1; i <= 1; i++)
+            for (int j = -1; j <= 1; j++)
+                color += texture(u_input0, vs_uv + vec2(float(i), float(j)) * u_pixel_size);
+        fs_color = color / 9.0;
+    }
+    """
+
+    outline_fs = """
+    #version 460
+    in vec2 vs_uv;
+    out vec4 fs_color;
+    uniform sampler2D u_input0;
+    uniform vec2 u_pixel_size;
+    uniform float u_outline_thickness = 1.0;
+    void main() {
+        vec4 center = texture(u_input0, vs_uv);
+        float edge = 0.0;
+        for (int i = -1; i <= 1; i++)
+            for (int j = -1; j <= 1; j++) {
+                if (i == 0 && j == 0) continue;
+                vec4 neighbor = texture(u_input0, vs_uv + vec2(float(i), float(j)) * u_pixel_size);
+                edge += length(center.rgb - neighbor.rgb);
+            }
+        edge = smoothstep(0.0, 1.0, edge) * u_outline_thickness;
+        fs_color = vec4(edge, 0.0, 0.0, 1.0);
+    }
+    """
+
+    combine_fs = """
+    #version 460
+    in vec2 vs_uv;
+    out vec4 fs_color;
+    uniform sampler2D u_input0;
+    uniform sampler2D u_input1;
+    uniform sampler2D u_input2;
+    uniform sampler2D u_input3;
+    void main() {
+        vec4 base = texture(u_input0, vs_uv);
+        vec4 bloom1 = texture(u_input1, vs_uv);
+        vec4 bloom2 = texture(u_input2, vs_uv);
+        vec4 outline = texture(u_input3, vs_uv);
+        vec3 color = base.rgb + bloom1.rgb + bloom2.rgb;
+        color = outline.r * color * vec3(1.0, 0.8, 0.7) + 1.0 * color;
+        fs_color = vec4(color, 1.0);
+    }
+    """
+
     nodes = {
-        0: (
-            """
-            #version 460
-            in vec2 vs_pos;
-            out vec4 fs_color;
-            uniform sampler2D u_texture;
-            uniform sampler2D u_depth;
-            uniform float u_time;
-            uniform float u_aspect;
-            void main() {
-                vec2 uv = vs_pos * 0.5 + 0.5;
-                float depth = texture(u_depth, uv).r;
-                vec2 offset = vec2(sin(u_time) * 0.05 * depth, cos(u_time) * 0.05 * depth);
-                vec4 color = texture(u_texture, uv + offset);
-                fs_color = vec4(color.rgb, 1.0);
-            }
-            """,
-            [],  # No internal node inputs, uses external textures
-            800,  # Width
-            608,  # Height (updated)
-        ),
-        1: (
-            """
-            #version 460
-            in vec2 vs_pos;
-            out vec4 fs_color;
-            uniform sampler2D u_input0;
-            uniform float u_time;
-            uniform float u_aspect;
-            void main() {
-                vec2 uv = vs_pos * 0.5 + 0.5;
-                vec4 color = texture(u_input0, uv);
-                float bright = dot(color.rgb, vec3(0.2126, 0.7152, 0.0722));
-                if (bright > 0.5) {  // Lowered threshold for debug
-                    fs_color = color;
-                } else {
-                    fs_color = vec4(0.0, 0.0, 0.0, 1.0);
-                }
-            }
-            """,
-            [0],  # Input from node 0 (parallax)
-            400,  # Downscaled for bloom
-            304,  # Half of 608 (updated)
-        ),
-        2: (
-            """
-            #version 460
-            in vec2 vs_pos;
-            out vec4 fs_color;
-            uniform sampler2D u_input0;
-            uniform sampler2D u_input1;
-            uniform float u_time;
-            uniform float u_aspect;
-            uniform float u_flip_y;
-            void main() {
-                vec2 uv = vs_pos * 0.5 + 0.5;
-                if (u_flip_y > 0.5) uv.y = 1.0 - uv.y;
-                vec4 base = texture(u_input0, uv);
-                vec4 bloom = texture(u_input1, uv);
-                fs_color = vec4(base.rgb + bloom.rgb * 2.0, 1.0);  // Exaggerated bloom for debug
-            }
-            """,
-            [0, 1],  # Inputs: original (0) and bloom (1)
-            800,  # Back to full resolution
-            608,  # Height (updated)
-        ),
+        0: (parallax_fs, [], renderer.width, renderer.height),
+        1: (bright_pass_fs, [0], renderer.width, renderer.height),
+        2: (downscale_fs, [1], renderer.width // 2, renderer.height // 2),
+        3: (blur_fs, [2], renderer.width // 2, renderer.height // 2),
+        4: (downscale_fs, [3], renderer.width // 4, renderer.height // 4),
+        5: (blur_fs, [4], renderer.width // 4, renderer.height // 4),
+        6: (outline_fs, [0], renderer.width, renderer.height),
+        7: (combine_fs, [0, 3, 5, 6], renderer.width, renderer.height),
     }
 
-    # External inputs for the pipeline
     external_inputs = {"u_texture": image_texture, "u_depth": depth_texture}
 
-    # Create and run the program
-    program = Program(renderer._ctx, renderer._vbo, nodes, external_inputs)
+    def uniforms_callback(time):
+        return {
+            "u_time": time,
+            "u_texture_size": (float(renderer.width), float(renderer.height)),
+            "u_focal_px": 1480.0,
+            "u_parallax_strength": 0.02,
+            "u_threshold": 0.5,
+            "u_pixel_size": (8.0 / renderer.width, 8.0 / renderer.height),
+            "u_outline_thickness": 8.0,
+        }
 
-    # Examples
-    renderer.render_image(program, 2, time=0.5, filename="output.png")  # Single frame
-    renderer.render_animation(
-        program, 2, duration=2.0, fps=30, filename="output.mp4"
-    )  # MP4
-    renderer.render_animation(
-        program, 2, duration=2.0, fps=30, filename="output.gif"
-    )  # GIF
-    renderer.render_screen(program, 2)  # Real-time screen rendering
+    program = Program(renderer._ctx, renderer._vbo, nodes, external_inputs)
+    program.nodes[3].program["u_pixel_size"] = (
+        1.0 / (renderer.width // 2),
+        1.0 / (renderer.height // 2),
+    )
+    program.nodes[5].program["u_pixel_size"] = (
+        1.0 / (renderer.width // 4),
+        1.0 / (renderer.height // 4),
+    )
+
+    renderer.render_screen(program, 7, uniforms_callback)
