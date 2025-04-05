@@ -1,4 +1,3 @@
-# Python-generated files
 __pycache__/
 *.py[oc]
 build/
@@ -6,8 +5,12 @@ dist/
 wheels/
 *.egg-info
 
-# Virtual environments
 .venv
 
-*.png
 .env
+
+*.mp4
+*.gif
+*.png
+*.jpg
+*.jpeg
