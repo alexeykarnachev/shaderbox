@@ -118,6 +118,47 @@ class Renderer:
                 break
         self.destroy()
 
+    def _render_frames(self, program, output_node_id, uniforms_callback, times):
+        images = []
+        output_node = (
+            program.nodes[output_node_id]
+            if output_node_id in program.nodes
+            else program.nodes[program.terminal_node]
+        )
+        width, height = output_node.fbo.viewport[2], output_node.fbo.viewport[3]
+        for t in times:
+            uniforms = uniforms_callback(t)
+            self.render_frame(program, output_node_id, uniforms)
+            image_data = output_node.fbo.read(
+                viewport=(0, 0, width, height), components=4
+            )
+            image = np.frombuffer(image_data, dtype=np.uint8).reshape(height, width, 4)
+            image = image[::-1, :, :]
+            images.append(image)
+        return images
+
+    def render_gif(
+        self, program, output_node_id, uniforms_callback, duration, fps, filename
+    ):
+        num_frames = int(duration * fps)
+        times = [i / fps for i in range(num_frames)]
+        images = self._render_frames(program, output_node_id, uniforms_callback, times)
+        rgb_images = [image[:, :, :3] for image in images]
+        imageio.mimwrite(filename, rgb_images, fps=fps)
+
+    def render_image(self, program, output_node_id, uniforms_callback, time, filename):
+        images = self._render_frames(program, output_node_id, uniforms_callback, [time])
+        imageio.imwrite(filename, images[0])
+
+    def render_video(
+        self, program, output_node_id, uniforms_callback, duration, fps, filename
+    ):
+        num_frames = int(duration * fps)
+        times = [i / fps for i in range(num_frames)]
+        images = self._render_frames(program, output_node_id, uniforms_callback, times)
+        rgb_images = [image[:, :, :3] for image in images]
+        imageio.mimwrite(filename, rgb_images, fps=fps)
+
     def destroy(self):
         self._vbo.release()
         glfw.terminate()
@@ -266,4 +307,8 @@ if __name__ == "__main__":
         1.0 / (renderer.height // 4),
     )
 
-    renderer.render_screen(program, 7, uniforms_callback)
+    # renderer.render_screen(program, 7, uniforms_callback)
+
+    renderer.render_gif(program, 7, uniforms_callback, 5.0, 30, "output.gif")
+    renderer.render_video(program, 7, uniforms_callback, 5.0, 30, "output.mp4")
+    renderer.render_image(program, 7, uniforms_callback, 8.0, "output.png")
