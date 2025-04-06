@@ -1,3 +1,7 @@
+import os
+import subprocess
+import time
+
 import glfw
 import imageio
 import moderngl
@@ -78,21 +82,48 @@ class Program:
 
 
 class Renderer:
-    def __init__(self, width=800, height=608):
-        glfw.init()
-        glfw.window_hint(glfw.CONTEXT_VERSION_MAJOR, 4)
-        glfw.window_hint(glfw.CONTEXT_VERSION_MINOR, 6)
-        glfw.window_hint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE)
-        self._window = glfw.create_window(width, height, "ShaderBox", None, None)
-        glfw.make_context_current(self._window)
-        self._ctx = moderngl.create_context()
+    def __init__(self, width=800, height=608, headless=False):
+        self.headless = headless
         self.width, self.height = width, height
+        self._xvfb_process = None
+
+        if self.headless:
+            try:
+                self._ctx = moderngl.create_context(standalone=True, backend="egl")
+                print(
+                    f"Created headless EGL context. Version: {self._ctx.version_code}"
+                )
+            except Exception as e:
+                print(f"EGL failed: {e}. Falling back to Xvfb.")
+                os.environ["DISPLAY"] = ":99.0"
+                self._xvfb_process = subprocess.Popen(
+                    ["Xvfb", ":99", "-screen", "0", f"{width}x{height}x24"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
+                time.sleep(1)
+                self._ctx = moderngl.create_context(standalone=True)
+                print(
+                    f"Created headless Xvfb context. Version: {self._ctx.version_code}"
+                )
+        else:
+            glfw.init()
+            glfw.window_hint(glfw.CONTEXT_VERSION_MAJOR, 4)
+            glfw.window_hint(glfw.CONTEXT_VERSION_MINOR, 6)
+            glfw.window_hint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE)
+            self._window = glfw.create_window(width, height, "ShaderBox", None, None)
+            glfw.make_context_current(self._window)
+            self._ctx = moderngl.create_context()
 
         self._quad = np.array(
             [-1.0, -1.0, 1.0, -1.0, -1.0, 1.0, 1.0, -1.0, 1.0, 1.0, -1.0, 1.0],
             dtype="f4",
         )
         self._vbo = self._ctx.buffer(self._quad)
+        if self.headless:
+            self._offscreen_fbo = self._ctx.framebuffer(
+                color_attachments=[self._ctx.texture((self.width, self.height), 4)]
+            )
 
     def load_texture(self, filename):
         img = Image.open(filename).convert("RGBA")
@@ -103,9 +134,18 @@ class Renderer:
     def render_frame(
         self, program, output_node_id=None, uniforms=None, target_fbo=None
     ):
+        target_fbo = target_fbo or (
+            self._offscreen_fbo if self.headless else self._ctx.screen
+        )
+        if target_fbo:
+            target_fbo.use()
+            self._ctx.clear(0.0, 0.0, 0.0, 1.0)  # Clear to black
         return program.execute(output_node_id, uniforms, target_fbo)
 
     def render_screen(self, program, output_node_id=None, uniforms_callback=None):
+        if self.headless:
+            print("Cannot render to screen in headless mode.")
+            return
         start_time = glfw.get_time()
         while not glfw.window_should_close(self._window):
             time = glfw.get_time() - start_time
@@ -120,20 +160,18 @@ class Renderer:
 
     def _render_frames(self, program, output_node_id, uniforms_callback, times):
         images = []
-        output_node = (
-            program.nodes[output_node_id]
-            if output_node_id in program.nodes
-            else program.nodes[program.terminal_node]
-        )
-        width, height = output_node.fbo.viewport[2], output_node.fbo.viewport[3]
         for t in times:
-            uniforms = uniforms_callback(t)
-            self.render_frame(program, output_node_id, uniforms)
-            image_data = output_node.fbo.read(
+            uniforms = uniforms_callback(t) if uniforms_callback else None
+            self.render_frame(program, output_node_id, uniforms, self._offscreen_fbo)
+            width, height = (
+                self._offscreen_fbo.viewport[2],
+                self._offscreen_fbo.viewport[3],
+            )
+            image_data = self._offscreen_fbo.read(
                 viewport=(0, 0, width, height), components=4
             )
             image = np.frombuffer(image_data, dtype=np.uint8).reshape(height, width, 4)
-            image = image[::-1, :, :]
+            image = image[::-1, :, :]  # Flip vertically if needed
             images.append(image)
         return images
 
@@ -161,11 +199,16 @@ class Renderer:
 
     def destroy(self):
         self._vbo.release()
-        glfw.terminate()
+        if self.headless and hasattr(self, "_offscreen_fbo"):
+            self._offscreen_fbo.release()
+        if self._xvfb_process:
+            self._xvfb_process.terminate()
+        if not self.headless:
+            glfw.terminate()
 
 
 if __name__ == "__main__":
-    renderer = Renderer(width=800, height=608)
+    renderer = Renderer(width=800, height=608, headless=True)  # Enable headless mode
 
     image_texture = renderer.load_texture("photo.jpeg")
     depth_texture = renderer.load_texture("depth.png")
@@ -186,10 +229,8 @@ if __name__ == "__main__":
         float depth = texture(u_depth, uv).r;
         vec2 camera_move = vec2(sin(u_time), cos(u_time)) * u_focal_px * u_parallax_strength;
         vec2 offset = -camera_move * depth / u_texture_size;
-
         uv += offset;
-        if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) discard;
-
+        uv = clamp(uv, 0.0, 1.0);  // Clamp UVs instead of discard
         vec4 color = texture(u_texture, uv);
         fs_color = vec4(color.rgb, 1.0);
     }
@@ -204,7 +245,7 @@ if __name__ == "__main__":
     void main() {
         vec4 color = texture(u_input0, vs_uv);
         float brightness = dot(color.rgb, vec3(0.2126, 0.7152, 0.0722));
-        fs_color = brightness > u_threshold ? color : vec4(0.0);
+        fs_color = brightness > u_threshold ? color : vec4(0.0, 0.0, 0.0, 0.0);  // Explicit alpha
     }
     """
 
@@ -258,10 +299,10 @@ if __name__ == "__main__":
     #version 460
     in vec2 vs_uv;
     out vec4 fs_color;
-    uniform sampler2D u_input0;
-    uniform sampler2D u_input1;
-    uniform sampler2D u_input2;
-    uniform sampler2D u_input3;
+    uniform sampler2D u_input0;  // Parallax (base)
+    uniform sampler2D u_input1;  // Bloom 1
+    uniform sampler2D u_input2;  // Bloom 2
+    uniform sampler2D u_input3;  // Outline
     void main() {
         vec4 base = texture(u_input0, vs_uv);
         vec4 bloom1 = texture(u_input1, vs_uv);
@@ -298,6 +339,7 @@ if __name__ == "__main__":
         }
 
     program = Program(renderer._ctx, renderer._vbo, nodes, external_inputs)
+    # Set per-node pixel sizes for blur nodes
     program.nodes[3].program["u_pixel_size"] = (
         1.0 / (renderer.width // 2),
         1.0 / (renderer.height // 2),
@@ -307,8 +349,11 @@ if __name__ == "__main__":
         1.0 / (renderer.height // 4),
     )
 
+    # Uncomment to test screen rendering (non-headless mode only)
     # renderer.render_screen(program, 7, uniforms_callback)
 
     renderer.render_gif(program, 7, uniforms_callback, 5.0, 30, "output.gif")
     renderer.render_video(program, 7, uniforms_callback, 5.0, 30, "output.mp4")
     renderer.render_image(program, 7, uniforms_callback, 8.0, "output.png")
+
+    renderer.destroy()
