@@ -1,7 +1,3 @@
-import os
-import subprocess
-import time
-
 import glfw
 import imageio
 import moderngl
@@ -87,33 +83,15 @@ class Renderer:
         self.width, self.height = width, height
         self._xvfb_process = None
 
-        if self.headless:
-            try:
-                self._ctx = moderngl.create_context(standalone=True, backend="egl")
-                print(
-                    f"Created headless EGL context. Version: {self._ctx.version_code}"
-                )
-            except Exception as e:
-                print(f"EGL failed: {e}. Falling back to Xvfb.")
-                os.environ["DISPLAY"] = ":99.0"
-                self._xvfb_process = subprocess.Popen(
-                    ["Xvfb", ":99", "-screen", "0", f"{width}x{height}x24"],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                )
-                time.sleep(1)
-                self._ctx = moderngl.create_context(standalone=True)
-                print(
-                    f"Created headless Xvfb context. Version: {self._ctx.version_code}"
-                )
-        else:
+        if not self.headless:
             glfw.init()
             glfw.window_hint(glfw.CONTEXT_VERSION_MAJOR, 4)
             glfw.window_hint(glfw.CONTEXT_VERSION_MINOR, 6)
             glfw.window_hint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE)
             self._window = glfw.create_window(width, height, "ShaderBox", None, None)
             glfw.make_context_current(self._window)
-            self._ctx = moderngl.create_context()
+
+        self._ctx = moderngl.create_context(standalone=headless, require=460)
 
         self._quad = np.array(
             [-1.0, -1.0, 1.0, -1.0, -1.0, 1.0, 1.0, -1.0, 1.0, 1.0, -1.0, 1.0],
