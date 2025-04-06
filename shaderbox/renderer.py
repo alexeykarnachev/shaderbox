@@ -1,3 +1,5 @@
+import re
+
 import glfw
 import imageio
 import moderngl
@@ -5,8 +7,41 @@ import numpy as np
 from PIL import Image
 
 
+def create_context(width, height, headless=False):
+    """Utility function to create a ModernGL context."""
+    if not headless:
+        glfw.init()
+        glfw.window_hint(glfw.CONTEXT_VERSION_MAJOR, 4)
+        glfw.window_hint(glfw.CONTEXT_VERSION_MINOR, 6)
+        glfw.window_hint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE)
+        window = glfw.create_window(width, height, "ShaderBox", None, None)
+        glfw.make_context_current(window)
+    ctx = moderngl.create_context(standalone=headless, require=460)
+    return ctx
+
+
+def load_texture(ctx, filename):
+    """Utility function to load an image as a texture."""
+    img = Image.open(filename).convert("RGBA")
+    texture = ctx.texture(img.size, 4, img.tobytes())
+    print(f"Loaded {filename} with size {img.size}")
+    return texture
+
+
 class ShaderNode:
     def __init__(self, ctx, fs_source, vbo, width, height, inputs=None):
+        self._ctx = ctx
+        self._width, self._height = width, height
+        self._inputs = inputs or []
+        self._uniforms = {}
+
+        # Extract uniform names from fragment shader
+        self._valid_uniforms = set()
+        uniform_pattern = re.compile(r"uniform\s+\w+\s+(\w+)\s*[;=]")
+        for match in uniform_pattern.finditer(fs_source):
+            self._valid_uniforms.add(match.group(1))
+
+        # Vertex shader (same for all nodes)
         self._vs_source = """
         #version 460
         in vec2 a_pos;
@@ -16,131 +51,131 @@ class ShaderNode:
             vs_uv = a_pos * 0.5 + 0.5;
         }
         """
-        self.program = ctx.program(
+        self._program = ctx.program(
             vertex_shader=self._vs_source, fragment_shader=fs_source
         )
-        self.inputs = inputs or []
-        self.texture = ctx.texture((width, height), 4)
-        self.fbo = ctx.framebuffer(color_attachments=[self.texture])
-        self.vao = ctx.vertex_array(self.program, [(vbo, "2f", "a_pos")])
-        self.width, self.height = width, height
 
+        # Set up rendering target
+        self._texture = ctx.texture((width, height), 4)
+        self._fbo = ctx.framebuffer(color_attachments=[self._texture])
+        self._vao = ctx.vertex_array(self._program, [(vbo, "2f", "a_pos")])
 
-class Program:
-    def __init__(self, ctx, vbo, nodes, external_inputs=None):
-        self.ctx = ctx
-        self.external_inputs = external_inputs or {}
-        self.nodes = {}
-        for node_id, (fs_source, input_ids, width, height) in nodes.items():
-            inputs = [self.nodes[i] for i in input_ids if i in self.nodes]
-            self.nodes[node_id] = ShaderNode(ctx, fs_source, vbo, width, height, inputs)
-        self.terminal_node = max(nodes.keys()) if nodes else None
+    def __setitem__(self, name, value):
+        """Set a uniform value using node['u_name'] = value syntax."""
+        if name not in self._valid_uniforms:
+            raise ValueError(f"Uniform '{name}' is not defined in the shader.")
+        self._uniforms[name] = value
 
-    def execute(self, output_node_id=None, uniforms=None, target_fbo=None):
-        if uniforms is None:
-            uniforms = {}
-        uniforms.update(self.external_inputs)
-        output_node = self.nodes.get(output_node_id, self.nodes.get(self.terminal_node))
-        if not output_node:
-            return None
+    def render(self, uniforms=None):
+        """Render this node and its dependencies."""
+        uniforms = uniforms or {}
+        # Render all input nodes first
+        for input_node in self._inputs:
+            input_node.render(uniforms)
 
-        rendered = set()
+        # Merge node's uniforms with provided uniforms (provided take precedence)
+        combined_uniforms = {**self._uniforms, **uniforms}
 
-        def render_node(node, fbo):
-            if node in rendered:
-                return
-            for input_node in node.inputs:
-                render_node(input_node, input_node.fbo)
-            for i, input_node in enumerate(node.inputs):
-                if f"u_input{i}" in node.program:
-                    node.program[f"u_input{i}"] = i
-                    input_node.texture.use(i)
-            external_slot = len(node.inputs)
-            max_slots = self.ctx.max_texture_units
-            for name, value in uniforms.items():
-                if name in node.program:
-                    if isinstance(value, moderngl.Texture):
-                        if external_slot >= max_slots:
-                            raise ValueError(
-                                f"Exceeded max texture units ({max_slots})"
-                            )
-                        node.program[name] = external_slot
-                        value.use(external_slot)
-                        external_slot += 1
-                    else:
-                        node.program[name] = value
-            fbo.use()
-            node.vao.render(moderngl.TRIANGLES)
-            rendered.add(node)
+        # Set uniforms in the shader
+        texture_unit = 0
+        for name, value in combined_uniforms.items():
+            if name in self._program:
+                if isinstance(value, moderngl.Texture):
+                    value.use(texture_unit)
+                    self._program[name] = texture_unit
+                    texture_unit += 1
+                else:
+                    self._program[name] = value
 
-        render_node(output_node, target_fbo or output_node.fbo)
-        return output_node
+        # Bind inputs as textures
+        for i, input_node in enumerate(self._inputs):
+            if f"u_input{i}" in self._program:
+                input_node._texture.use(i)
+                self._program[f"u_input{i}"] = i
+
+        # Render to this node's FBO
+        self._fbo.use()
+        self._ctx.clear(0.0, 0.0, 0.0, 1.0)
+        self._vao.render(moderngl.TRIANGLES)
+        return self._fbo
 
 
 class Renderer:
     def __init__(self, width=800, height=608, headless=False):
-        self.headless = headless
-        self.width, self.height = width, height
-        self._xvfb_process = None
+        self._width, self._height = width, height
+        self._headless = headless
+        self._ctx = create_context(width, height, headless)
+        self._window = None if headless else glfw.get_current_context()
 
-        if not self.headless:
-            glfw.init()
-            glfw.window_hint(glfw.CONTEXT_VERSION_MAJOR, 4)
-            glfw.window_hint(glfw.CONTEXT_VERSION_MINOR, 6)
-            glfw.window_hint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE)
-            self._window = glfw.create_window(width, height, "ShaderBox", None, None)
-            glfw.make_context_current(self._window)
-
-        self._ctx = moderngl.create_context(standalone=headless, require=460)
-
-        self._quad = np.array(
+        # Full-screen quad VBO
+        quad = np.array(
             [-1.0, -1.0, 1.0, -1.0, -1.0, 1.0, 1.0, -1.0, 1.0, 1.0, -1.0, 1.0],
             dtype="f4",
         )
-        self._vbo = self._ctx.buffer(self._quad)
-        if self.headless:
+        self._vbo = self._ctx.buffer(quad)
+
+        # Offscreen FBO for headless rendering
+        if headless:
             self._offscreen_fbo = self._ctx.framebuffer(
-                color_attachments=[self._ctx.texture((self.width, self.height), 4)]
+                color_attachments=[self._ctx.texture((width, height), 4)]
             )
 
-    def load_texture(self, filename):
-        img = Image.open(filename).convert("RGBA")
-        texture = self._ctx.texture(img.size, 4, img.tobytes())
-        print(f"Loaded {filename} with size {img.size}")
-        return texture
+        # Runtime tracking
+        self._start_time = glfw.get_time() if not headless else 0
+        self._frame_count = 0
+        self._fps = 0.0  # Will be set by render methods
 
-    def render_frame(
-        self, program, output_node_id=None, uniforms=None, target_fbo=None
-    ):
-        target_fbo = target_fbo or (
-            self._offscreen_fbo if self.headless else self._ctx.screen
-        )
-        if target_fbo:
-            target_fbo.use()
-            self._ctx.clear(0.0, 0.0, 0.0, 1.0)  # Clear to black
-        return program.execute(output_node_id, uniforms, target_fbo)
+    def get_context(self):
+        """Get the rendering context."""
+        return self._ctx
 
-    def render_screen(self, program, output_node_id=None, uniforms_callback=None):
-        if self.headless:
+    def get_vbo(self):
+        """Get the vertex buffer object."""
+        return self._vbo
+
+    def get_time(self):
+        """Get current time based on frame count and FPS."""
+        if self._headless:
+            return self._frame_count / self._fps if self._fps > 0 else 0.0
+        return glfw.get_time() - self._start_time
+
+    def get_frame_count(self):
+        """Get the current frame count."""
+        return self._frame_count
+
+    def get_fps(self):
+        """Get the fixed FPS value."""
+        return self._fps
+
+    def render_to_screen(self, terminal_node, uniforms_callback=None):
+        """Render to screen in a loop (non-headless only)."""
+        if self._headless:
             print("Cannot render to screen in headless mode.")
             return
-        start_time = glfw.get_time()
+        self._fps = 60.0  # Default FPS for screen rendering
         while not glfw.window_should_close(self._window):
-            time = glfw.get_time() - start_time
-            uniforms = uniforms_callback(time) if uniforms_callback else None
+            self._frame_count += 1
+            uniforms = uniforms_callback(self) if uniforms_callback else {}
             self._ctx.clear(0.0, 0.0, 0.0, 1.0)
-            self.render_frame(program, output_node_id, uniforms, self._ctx.screen)
+            terminal_node.render(uniforms)
+            self._ctx.screen.use()
+            self._ctx.copy_framebuffer(self._ctx.screen, terminal_node.render(uniforms))
             glfw.swap_buffers(self._window)
             glfw.poll_events()
             if glfw.get_key(self._window, glfw.KEY_ESCAPE) == glfw.PRESS:
                 break
         self.destroy()
 
-    def _render_frames(self, program, output_node_id, uniforms_callback, times):
+    def _render_frames(self, terminal_node, uniforms_callback, num_frames, fps):
+        """Render a sequence of frames to memory."""
         images = []
-        for t in times:
-            uniforms = uniforms_callback(t) if uniforms_callback else None
-            self.render_frame(program, output_node_id, uniforms, self._offscreen_fbo)
+        self._fps = fps
+        for frame in range(num_frames):
+            self._frame_count = frame  # Reset to frame index
+            uniforms = uniforms_callback(self) if uniforms_callback else {}
+            fbo = terminal_node.render(uniforms)
+            self._offscreen_fbo.use()
+            self._ctx.copy_framebuffer(self._offscreen_fbo, fbo)
             width, height = (
                 self._offscreen_fbo.viewport[2],
                 self._offscreen_fbo.viewport[3],
@@ -149,48 +184,49 @@ class Renderer:
                 viewport=(0, 0, width, height), components=4
             )
             image = np.frombuffer(image_data, dtype=np.uint8).reshape(height, width, 4)
-            image = image[::-1, :, :]  # Flip vertically if needed
+            image = image[::-1, :, :]  # Flip vertically
             images.append(image)
         return images
 
-    def render_gif(
-        self, program, output_node_id, uniforms_callback, duration, fps, filename
-    ):
+    def render_gif(self, terminal_node, uniforms_callback, duration, fps, filename):
+        """Render to a GIF file."""
         num_frames = int(duration * fps)
-        times = [i / fps for i in range(num_frames)]
-        images = self._render_frames(program, output_node_id, uniforms_callback, times)
+        images = self._render_frames(terminal_node, uniforms_callback, num_frames, fps)
         rgb_images = [image[:, :, :3] for image in images]
         imageio.mimwrite(filename, rgb_images, fps=fps)
 
-    def render_image(self, program, output_node_id, uniforms_callback, time, filename):
-        images = self._render_frames(program, output_node_id, uniforms_callback, [time])
+    def render_image(self, terminal_node, uniforms_callback, filename):
+        """Render to a single image file."""
+        images = self._render_frames(
+            terminal_node, uniforms_callback, 1, 30.0
+        )  # Default FPS for single frame
         imageio.imwrite(filename, images[0])
 
-    def render_video(
-        self, program, output_node_id, uniforms_callback, duration, fps, filename
-    ):
+    def render_video(self, terminal_node, uniforms_callback, duration, fps, filename):
+        """Render to a video file."""
         num_frames = int(duration * fps)
-        times = [i / fps for i in range(num_frames)]
-        images = self._render_frames(program, output_node_id, uniforms_callback, times)
+        images = self._render_frames(terminal_node, uniforms_callback, num_frames, fps)
         rgb_images = [image[:, :, :3] for image in images]
         imageio.mimwrite(filename, rgb_images, fps=fps)
 
     def destroy(self):
+        """Clean up resources."""
         self._vbo.release()
-        if self.headless and hasattr(self, "_offscreen_fbo"):
+        if self._headless and hasattr(self, "_offscreen_fbo"):
             self._offscreen_fbo.release()
-        if self._xvfb_process:
-            self._xvfb_process.terminate()
-        if not self.headless:
+        if not self._headless:
             glfw.terminate()
 
 
 if __name__ == "__main__":
-    renderer = Renderer(width=800, height=608, headless=True)  # Enable headless mode
+    # Initialize renderer
+    renderer = Renderer(width=800, height=608, headless=True)
 
-    image_texture = renderer.load_texture("photo.jpeg")
-    depth_texture = renderer.load_texture("depth.png")
+    # Load textures
+    image_texture = load_texture(renderer.get_context(), "photo.jpeg")
+    depth_texture = load_texture(renderer.get_context(), "depth.png")
 
+    # Shader sources
     parallax_fs = """
     #version 460
     in vec2 vs_uv;
@@ -208,7 +244,7 @@ if __name__ == "__main__":
         vec2 camera_move = vec2(sin(u_time), cos(u_time)) * u_focal_px * u_parallax_strength;
         vec2 offset = -camera_move * depth / u_texture_size;
         uv += offset;
-        uv = clamp(uv, 0.0, 1.0);  // Clamp UVs instead of discard
+        uv = clamp(uv, 0.0, 1.0);
         vec4 color = texture(u_texture, uv);
         fs_color = vec4(color.rgb, 1.0);
     }
@@ -223,7 +259,7 @@ if __name__ == "__main__":
     void main() {
         vec4 color = texture(u_input0, vs_uv);
         float brightness = dot(color.rgb, vec3(0.2126, 0.7152, 0.0722));
-        fs_color = brightness > u_threshold ? color : vec4(0.0, 0.0, 0.0, 0.0);  // Explicit alpha
+        fs_color = brightness > u_threshold ? color : vec4(0.0, 0.0, 0.0, 0.0);
     }
     """
 
@@ -292,46 +328,79 @@ if __name__ == "__main__":
     }
     """
 
-    nodes = {
-        0: (parallax_fs, [], renderer.width, renderer.height),
-        1: (bright_pass_fs, [0], renderer.width, renderer.height),
-        2: (downscale_fs, [1], renderer.width // 2, renderer.height // 2),
-        3: (blur_fs, [2], renderer.width // 2, renderer.height // 2),
-        4: (downscale_fs, [3], renderer.width // 4, renderer.height // 4),
-        5: (blur_fs, [4], renderer.width // 4, renderer.height // 4),
-        6: (outline_fs, [0], renderer.width, renderer.height),
-        7: (combine_fs, [0, 3, 5, 6], renderer.width, renderer.height),
-    }
+    # Create nodes
+    node0 = ShaderNode(
+        renderer.get_context(), parallax_fs, renderer.get_vbo(), 800, 608
+    )
+    node0["u_texture"] = image_texture
+    node0["u_depth"] = depth_texture
+    node0["u_texture_size"] = (800.0, 608.0)
+    node0["u_parallax_strength"] = 0.02
 
-    external_inputs = {"u_texture": image_texture, "u_depth": depth_texture}
+    node1 = ShaderNode(
+        renderer.get_context(),
+        bright_pass_fs,
+        renderer.get_vbo(),
+        800,
+        608,
+        inputs=[node0],
+    )
+    node1["u_threshold"] = 0.5
 
-    def uniforms_callback(time):
+    node2 = ShaderNode(
+        renderer.get_context(),
+        downscale_fs,
+        renderer.get_vbo(),
+        400,
+        304,
+        inputs=[node1],
+    )
+    node3 = ShaderNode(
+        renderer.get_context(), blur_fs, renderer.get_vbo(), 400, 304, inputs=[node2]
+    )
+    node3["u_pixel_size"] = (1.0 / 400, 1.0 / 304)
+
+    node4 = ShaderNode(
+        renderer.get_context(),
+        downscale_fs,
+        renderer.get_vbo(),
+        200,
+        152,
+        inputs=[node3],
+    )
+    node5 = ShaderNode(
+        renderer.get_context(), blur_fs, renderer.get_vbo(), 200, 152, inputs=[node4]
+    )
+    node5["u_pixel_size"] = (1.0 / 200, 1.0 / 152)
+
+    node6 = ShaderNode(
+        renderer.get_context(), outline_fs, renderer.get_vbo(), 800, 608, inputs=[node0]
+    )
+    node6["u_pixel_size"] = (8.0 / 800, 8.0 / 608)
+    node6["u_outline_thickness"] = 8.0
+
+    node7 = ShaderNode(
+        renderer.get_context(),
+        combine_fs,
+        renderer.get_vbo(),
+        800,
+        608,
+        inputs=[node0, node3, node5, node6],
+    )
+
+    # Uniforms callback using renderer
+    def uniforms_callback(renderer):
+        time = renderer.get_time()
         return {
             "u_time": time,
-            "u_texture_size": (float(renderer.width), float(renderer.height)),
             "u_focal_px": 1480.0,
-            "u_parallax_strength": 0.02,
-            "u_threshold": 0.5,
-            "u_pixel_size": (8.0 / renderer.width, 8.0 / renderer.height),
-            "u_outline_thickness": 8.0,
+            # Example: Toggle based on frame count
+            # "u_brightness": 1.0 if renderer.get_frame_count() % 60 < 30 else 0.5
         }
 
-    program = Program(renderer._ctx, renderer._vbo, nodes, external_inputs)
-    # Set per-node pixel sizes for blur nodes
-    program.nodes[3].program["u_pixel_size"] = (
-        1.0 / (renderer.width // 2),
-        1.0 / (renderer.height // 2),
-    )
-    program.nodes[5].program["u_pixel_size"] = (
-        1.0 / (renderer.width // 4),
-        1.0 / (renderer.height // 4),
-    )
-
-    # Uncomment to test screen rendering (non-headless mode only)
-    # renderer.render_screen(program, 7, uniforms_callback)
-
-    renderer.render_gif(program, 7, uniforms_callback, 5.0, 30, "output.gif")
-    renderer.render_video(program, 7, uniforms_callback, 5.0, 30, "output.mp4")
-    renderer.render_image(program, 7, uniforms_callback, 8.0, "output.png")
+    # Render outputs
+    renderer.render_gif(node7, uniforms_callback, 5.0, 30, "output.gif")
+    renderer.render_video(node7, uniforms_callback, 5.0, 30, "output.mp4")
+    renderer.render_image(node7, uniforms_callback, "output.png")
 
     renderer.destroy()
