@@ -84,6 +84,18 @@ wheels = [
 ]
 
 [[package]]
+name = "imgui"
+version = "2.0.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/f1/aa/4abb0d3d6054da9a4390160fc25ca743a824263a9931cc6a95f30e3d75b4/imgui-2.0.0.tar.gz", hash = "sha256:2fbdb8eed3b8dbd7ea98af9e4c1c6582b0bc4da942a258de16333d8c653d67e1", size = 1473795 }
+
+[package.optional-dependencies]
+glfw = [
+    { name = "glfw" },
+    { name = "pyopengl" },
+]
+
+[[package]]
 name = "loguru"
 version = "0.7.3"
 source = { registry = "https://pypi.org/simple" }
@@ -215,12 +227,22 @@ wheels = [
 ]
 
 [[package]]
+name = "pyopengl"
+version = "3.1.9"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/c0/42/71080db298df3ddb7e3090bfea8fd7c300894d8b10954c22f8719bd434eb/pyopengl-3.1.9.tar.gz", hash = "sha256:28ebd82c5f4491a418aeca9672dffb3adbe7d33b39eada4548a5b4e8c03f60c8", size = 1913642 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/92/44/8634af40b0db528b5b37e901c0dc67321354880d251bf8965901d57693a5/PyOpenGL-3.1.9-py3-none-any.whl", hash = "sha256:15995fd3b0deb991376805da36137a4ae5aba6ddbb5e29ac1f35462d130a3f77", size = 3190341 },
+]
+
+[[package]]
 name = "shaderbox"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "glfw" },
     { name = "imageio", extra = ["ffmpeg"] },
+    { name = "imgui", extra = ["glfw"] },
     { name = "loguru" },
     { name = "moderngl" },
     { name = "numpy" },
@@ -231,6 +253,7 @@ dependencies = [
 requires-dist = [
     { name = "glfw", specifier = ">=2.8.0" },
     { name = "imageio", extras = ["ffmpeg"], specifier = ">=2.37.0" },
+    { name = "imgui", extras = ["glfw"], specifier = ">=2.0.0" },
     { name = "loguru", specifier = ">=0.7.3" },
     { name = "moderngl", specifier = ">=5.12.0" },
     { name = "numpy", specifier = ">=2.2.4" },
