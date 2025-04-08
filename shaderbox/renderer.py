@@ -3,6 +3,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Tuple, Union
 
+import crossfiledialog
 import glfw
 import imageio
 import imgui
@@ -23,21 +24,23 @@ logger.add(
 Size = Tuple[int, int]
 
 
-### Uniform Class ###
 class Uniform:
     """A wrapper for float uniforms with UI manipulation parameters."""
 
-    def __init__(self, value: float, min_value: float, max_value: float):
+    def __init__(
+        self, value: float, min_value: float, max_value: float, step: float = 0.01
+    ):
         self.value = value
         self.min_value = min_value
         self.max_value = max_value
+        self.step = step
 
 
 @dataclass
 class ShaderNode:
     fs_source: str
     output_size: Size
-    uniforms: Dict[str, Union[Any, Callable[[], Any], Uniform]]  # Includes Uniform
+    uniforms: Dict[str, Union[Any, Callable[[], Any], Uniform]]
     name: str | None = None
 
     def __hash__(self):
@@ -83,7 +86,6 @@ class Renderer:
     def _get_uniform_value(
         self, uniform: Union[Any, Callable[[], Any], Uniform]
     ) -> Any:
-        """Extract the current value from a uniform, handling Uniform instances."""
         if isinstance(uniform, Uniform):
             return uniform.value
         elif callable(uniform):
@@ -199,10 +201,8 @@ class Renderer:
         def render_tree(current_node):
             node_name = current_node.name or str(id(current_node))
             if imgui.tree_node(node_name):
-                # Render non-ShaderNode uniforms only
                 for uniform_name, uniform in current_node.uniforms.items():
                     if isinstance(uniform, Uniform):
-                        # Render a slider for Uniform-wrapped floats
                         changed, new_value = imgui.slider_float(
                             uniform_name,
                             uniform.value,
@@ -213,24 +213,44 @@ class Renderer:
                         if changed:
                             uniform.value = new_value
                     elif callable(uniform):
-                        # Handle callables (e.g., TimeUniform or TextureUniform)
                         value = uniform()
                         if isinstance(value, moderngl.Texture):
-                            imgui.text(
-                                f"{uniform_name}: Texture ({value.width}x{value.height})"
-                            )
+                            max_size = 100
+                            aspect_ratio = value.width / value.height
+                            if aspect_ratio > 1:
+                                preview_width = max_size
+                                preview_height = int(max_size / aspect_ratio)
+                            else:
+                                preview_width = int(max_size * aspect_ratio)
+                                preview_height = max_size
+
+                            imgui.text(f"{uniform_name}:")
+                            imgui.same_line()
+                            # Flip UVs to match rendering (texture is flipped on load)
+                            if imgui.image_button(
+                                value.glo,
+                                preview_width,
+                                preview_height,
+                                uv0=(0, 1),  # Bottom-left
+                                uv1=(1, 0),  # Top-right
+                                frame_padding=0,
+                            ):
+                                new_path = crossfiledialog.open_file(
+                                    filter="Images (*.png *.jpg *.jpeg)"
+                                )
+                                if new_path:
+                                    uniform.reload_texture(new_path)
+                            imgui.same_line()
+                            imgui.text(f"{uniform.path.split('/')[-1]}")
                         else:
                             imgui.text(f"{uniform_name}: {value:.3f}")
                     elif isinstance(uniform, moderngl.Texture):
-                        # Direct texture uniform (unlikely, but included for completeness)
                         imgui.text(
                             f"{uniform_name}: Texture ({uniform.width}x{uniform.height})"
                         )
                     elif not isinstance(uniform, ShaderNode):
-                        # Display plain values as constants (excluding ShaderNodes)
                         imgui.text(f"{uniform_name}: {uniform}")
 
-                # Recursively render ShaderNode inputs as expandable children
                 inputs = [
                     u
                     for u in current_node.uniforms.values()
@@ -305,21 +325,47 @@ class TimeUniform:
 
 
 class TextureUniform:
-    def __init__(self, path: str, context: moderngl.Context):
+    def __init__(
+        self, path: str, context: moderngl.Context, flip_vertical: bool = True
+    ):
+        """Initialize with a file path, ModernGL context, and optional flip_vertical flag.
+
+        Args:
+            path: Path to the texture file.
+            context: ModernGL context for texture creation.
+            flip_vertical: If True (default), flip the texture vertically to match common expectations.
+                           If False, load with OpenGL's native bottom-left origin.
+        """
         self.path = path
         self.context = context
+        self.flip_vertical = flip_vertical
         self._texture = None
 
     def __call__(self) -> moderngl.Texture:
         if self._texture is None:
+            self._load_texture()
+        return self._texture
+
+    def _load_texture(self):
+        try:
             img = Image.open(self.path).convert("RGBA")
+            if self.flip_vertical:
+                img = img.transpose(Image.FLIP_TOP_BOTTOM)
             self._texture = self.context.texture(img.size, 4, img.tobytes())
             logger.info(f"Loaded texture from {self.path} with size {img.size}")
-        return self._texture
+        except Exception as e:
+            logger.error(f"Failed to load texture from {self.path}: {e}")
+            self._texture = self.context.texture((1, 1), 4, b"\x00\x00\x00\xff")
+
+    def reload_texture(self, new_path: str):
+        if self._texture:
+            self._texture.release()
+        self.path = new_path
+        self._texture = None
+        self._load_texture()
 
 
 if __name__ == "__main__":
-    # Fragment shaders (unchanged)
     parallax_fs = """
     #version 460
     in vec2 vs_uv;
@@ -331,8 +377,7 @@ if __name__ == "__main__":
     uniform float u_focal_length = 1480.0;
     uniform float u_parallax_amount = 0.05;
     void main() {
-        vec2 uv = vs_uv;
-        uv.y = 1.0 - uv.y;
+        vec2 uv = vs_uv;  // Removed uv.y flip
         float depth = texture(u_depth_map, uv).r;
         vec2 camera_move = vec2(sin(u_time), cos(u_time)) * u_focal_length * u_parallax_amount;
         vec2 offset = -camera_move * depth / u_texture_size;
@@ -423,7 +468,6 @@ if __name__ == "__main__":
 
     renderer = Renderer(is_headless=False)
 
-    # ShaderNode definitions with selective Uniform usage
     parallax_node = ShaderNode(
         name="Parallax",
         fs_source=parallax_fs,
@@ -431,10 +475,10 @@ if __name__ == "__main__":
         uniforms={
             "u_base_texture": TextureUniform("photo.jpeg", renderer.context),
             "u_depth_map": TextureUniform("depth.png", renderer.context),
-            "u_texture_size": (800.0, 608.0),  # Constant tuple
-            "u_parallax_amount": Uniform(0.02, 0.0, 0.1),  # Slider-enabled
-            "u_focal_length": 1480.0,  # Constant float
-            "u_time": TimeUniform(renderer),  # Dynamic value
+            "u_texture_size": (800.0, 608.0),
+            "u_parallax_amount": Uniform(0.02, 0.0, 0.1),
+            "u_focal_length": 1480.0,
+            "u_time": TimeUniform(renderer),
         },
     )
 
@@ -444,7 +488,7 @@ if __name__ == "__main__":
         output_size=(800, 608),
         uniforms={
             "u_source_texture": parallax_node,
-            "u_threshold": Uniform(0.5, 0.0, 1.0),  # Slider-enabled
+            "u_threshold": Uniform(0.5, 0.0, 1.0),
         },
     )
 
@@ -461,7 +505,7 @@ if __name__ == "__main__":
         output_size=(400, 304),
         uniforms={
             "u_blur_input": downscale_node1,
-            "u_pixel_size": (1.0 / 400, 1.0 / 304),  # Constant tuple
+            "u_pixel_size": (1.0 / 400, 1.0 / 304),
         },
     )
 
@@ -478,7 +522,7 @@ if __name__ == "__main__":
         output_size=(200, 152),
         uniforms={
             "u_blur_input": downscale_node2,
-            "u_pixel_size": (1.0 / 200, 1.0 / 152),  # Constant tuple
+            "u_pixel_size": (1.0 / 200, 1.0 / 152),
         },
     )
 
@@ -488,8 +532,8 @@ if __name__ == "__main__":
         output_size=(800, 608),
         uniforms={
             "u_outline_source": parallax_node,
-            "u_pixel_size": (8.0 / 800, 8.0 / 608),  # Constant tuple
-            "u_outline_thickness": 8.0,  # Constant float
+            "u_pixel_size": (8.0 / 800, 8.0 / 608),
+            "u_outline_thickness": 8.0,
         },
     )
 
@@ -506,4 +550,3 @@ if __name__ == "__main__":
     )
 
     renderer.render_to_screen(combine_node, 60.0)
-    # renderer.render_video(combine_node, 5.0, 30.0, "output.mp4")

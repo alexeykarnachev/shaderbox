@@ -11,6 +11,14 @@ wheels = [
 ]
 
 [[package]]
+name = "crossfiledialog"
+version = "1.0.0"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/eb/e3/181ebcdd5df87a0ecf041e4eaf481e5c44573be9691528be1f1936004169/crossfiledialog-1.0.0-py3-none-any.whl", hash = "sha256:98e74fe54339fde8712186ab20af382bf2a46b00d6d7dae56e47ba78dbfd7673", size = 21900 },
+]
+
+[[package]]
 name = "glcontext"
 version = "3.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -249,6 +257,7 @@ name = "shaderbox"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "crossfiledialog" },
     { name = "glfw" },
     { name = "imageio", extra = ["ffmpeg"] },
     { name = "imgui", extra = ["glfw"] },
@@ -261,6 +270,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "crossfiledialog", specifier = ">=1.0.0" },
     { name = "glfw", specifier = ">=2.8.0" },
     { name = "imageio", extras = ["ffmpeg"], specifier = ">=2.37.0" },
     { name = "imgui", extras = ["glfw"], specifier = ">=2.0.0" },
