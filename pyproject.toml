@@ -13,6 +13,7 @@ dependencies = [
     "moderngl>=5.12.0",
     "numpy>=2.2.4",
     "pillow>=11.1.0",
+    "pyimgui-stubs>=0.0.2",
 ]
 
 [build-system]
