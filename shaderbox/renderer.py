@@ -1,11 +1,15 @@
+import hashlib
 import time
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import Any, Callable, Dict, Tuple, Union
 
 import glfw
 import imageio
+import imgui
 import moderngl
 import numpy as np
+from imgui.integrations.glfw import GlfwRenderer as ImguiGlfwRenderer
 from loguru import logger
 from PIL import Image
 
@@ -30,7 +34,6 @@ class ValueUniform(UniformLike):
         self.value = value
 
     def get_value(self, renderer: "Renderer") -> Any:
-        assert renderer
         return self.value
 
 
@@ -45,9 +48,7 @@ class DynamicUniform(UniformLike):
 class LazyTexture(UniformLike):
     def __init__(self, source: Union[str, Image.Image, moderngl.Texture]):
         self.source = source
-        self._texture: moderngl.Texture | None = (
-            None if not isinstance(source, moderngl.Texture) else source
-        )
+        self._texture = None if not isinstance(source, moderngl.Texture) else source
 
     def get_value(self, renderer: "Renderer") -> moderngl.Texture:
         if self._texture is None:
@@ -57,10 +58,8 @@ class LazyTexture(UniformLike):
                 img = self.source.convert("RGBA")
             else:
                 raise ValueError("Invalid source type for LazyTexture")
-
             self._texture = renderer.context.texture(img.size, 4, img.tobytes())
             logger.info(f"Loaded texture with size {img.size}")
-
         return self._texture
 
 
@@ -69,186 +68,197 @@ class ShaderNodeUniform(UniformLike):
         self.node = node
 
     def get_value(self, renderer: "Renderer") -> moderngl.Texture:
-        self.node.render(renderer)
-        return self.node.texture
+        renderer.render_node(self.node)
+        return renderer.node_contexts[self.node]["texture"]
 
 
+@dataclass
 class ShaderNode:
-    VS_SOURCE = """
-    #version 460
-    in vec2 a_pos;
-    out vec2 vs_uv;
-    void main() {
-        gl_Position = vec4(a_pos, 0.0, 1.0);
-        vs_uv = a_pos * 0.5 + 0.5;
-    }
-    """
+    fs_source: str
+    output_size: Size
+    uniforms: Dict[str, Union[UniformLike, Any]]
 
-    def __init__(
-        self,
-        fs_source: str,
-        output_size: Size,
-        uniforms: Dict[str, Union[UniformLike, Any]],
-    ):
-        self.uniforms: Dict[str, UniformLike] = {}
-        for name, value in uniforms.items():
-            self[name] = value
-
-        self.fs_source = fs_source
-        self.output_size = output_size
-
-        self.program: moderngl.Program
-        self.texture: moderngl.Texture
-        self.fbo: moderngl.Framebuffer
-        self.vao: moderngl.VertexArray
-
-    @property
-    def is_initialized(self):
-        return hasattr(self, "_node_context")
-
-    def __setitem__(self, name: str, value: Union[UniformLike, Any]):
-        if isinstance(value, UniformLike):
-            self.uniforms[name] = value
-        elif isinstance(value, ShaderNode):
-            self.uniforms[name] = ShaderNodeUniform(value)
-        else:
-            self.uniforms[name] = ValueUniform(value)
-
-    def _initialize(self, renderer: "Renderer"):
-        if self.is_initialized:
-            return
-
-        self.program = renderer.context.program(
-            vertex_shader=self.VS_SOURCE, fragment_shader=self.fs_source
-        )
-        self.texture = renderer.context.texture(self.output_size, 4)
-        self.fbo = renderer.context.framebuffer(color_attachments=[self.texture])
-        self.vao = renderer.context.vertex_array(
-            self.program, [(renderer.vbo, "2f", "a_pos")]
-        )
-
-    def render(self, renderer: "Renderer"):
-        self._initialize(renderer)
-
-        texture_unit = 0
-        for name, uniform in self.uniforms.items():
-            value = uniform.get_value(renderer)
-
-            if isinstance(value, moderngl.Texture):
-                value.use(texture_unit)
-                value = texture_unit
-                texture_unit += 1
-
-            self.program[name] = value
-
-        self.fbo.use()
-        self.vao.render(moderngl.TRIANGLES)
+    def __hash__(self):
+        return int(hashlib.md5(self.fs_source.encode("utf-8")).hexdigest(), 16)
 
 
 class Renderer:
-    def __init__(self, screen_size: Size | None = None):
-        self.is_headless = screen_size is None
+    def __init__(self, is_headless: bool, window_size: Size | None):
+        self.is_headless = is_headless
+        self.window_size = window_size
+        if is_headless and window_size is not None:
+            logger.warning("window_size provided in headless mode, ignoring")
 
-        if screen_size is not None:
+        if not is_headless:
             glfw.init()
-            glfw.window_hint(glfw.CONTEXT_VERSION_MAJOR, 4)
-            glfw.window_hint(glfw.CONTEXT_VERSION_MINOR, 6)
-            glfw.window_hint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE)
-            self._window = glfw.create_window(
-                screen_size[0], screen_size[1], "ShaderBox", None, None
+            self.window = glfw.create_window(
+                window_size[0], window_size[1], "ShaderBox", None, None
             )
-            glfw.make_context_current(self._window)
+            glfw.make_context_current(self.window)
 
-        self.context = moderngl.create_context(standalone=self.is_headless, require=460)
-        logger.info(f"Created ModernGL context (is_headless={self.is_headless})")
+        self.context = moderngl.create_context(standalone=is_headless)
+        self.node_contexts: Dict[ShaderNode, Dict[str, Any]] = {}
+        self.render_time = 0.0
+        self.fps = 0.0
+        self.frame_idx = 0
 
-        self.vbo = self.context.buffer(
-            np.array(
-                [-1.0, -1.0, 1.0, -1.0, -1.0, 1.0, 1.0, -1.0, 1.0, 1.0, -1.0, 1.0],
-                dtype="f4",
+    def render_node(self, node: ShaderNode):
+        if node not in self.node_contexts:
+            program = self.context.program(
+                vertex_shader="""
+                #version 460
+                in vec2 a_pos;
+                out vec2 vs_uv;
+                void main() {
+                    gl_Position = vec4(a_pos, 0.0, 1.0);
+                    vs_uv = a_pos * 0.5 + 0.5;
+                }
+                """,
+                fragment_shader=node.fs_source,
             )
-        )
+            texture = self.context.texture(node.output_size, 4)
+            fbo = self.context.framebuffer(color_attachments=[texture])
+            vbo = self.context.buffer(
+                np.array(
+                    [-1.0, -1.0, 1.0, -1.0, -1.0, 1.0, 1.0, -1.0, 1.0, 1.0, -1.0, 1.0],
+                    dtype="f4",
+                )
+            )
+            vao = self.context.vertex_array(program, [(vbo, "2f", "a_pos")])
+            self.node_contexts[node] = {
+                "program": program,
+                "texture": texture,
+                "fbo": fbo,
+                "vao": vao,
+                "vbo": vbo,
+            }
 
-        # Frame tracking
-        self._frame_idx = 0
-        self._fps = 0.0
+        ctx = self.node_contexts[node]
+        for uniform in node.uniforms.values():
+            if isinstance(uniform, ShaderNodeUniform):
+                self.render_node(uniform.node)
 
-    def get_time(self) -> float:
-        return self._frame_idx / self._fps if self._fps > 0 else 0.0
+        texture_unit = 0
+        for name, uniform in node.uniforms.items():
+            if isinstance(uniform, ShaderNodeUniform):
+                value = self.node_contexts[uniform.node]["texture"]
+            else:
+                value = (
+                    uniform.get_value(self)
+                    if isinstance(uniform, UniformLike)
+                    else uniform
+                )
+            if isinstance(value, moderngl.Texture):
+                value.use(texture_unit)
+                ctx["program"][name] = texture_unit
+                texture_unit += 1
+            else:
+                ctx["program"][name] = value
 
-    def render_to_screen(self, node: ShaderNode, fps: float = 60.0):
+        ctx["fbo"].use()
+        ctx["vao"].render(moderngl.TRIANGLES)
+
+    def cleanup(self):
+        for ctx in self.node_contexts.values():
+            ctx["vao"].release()
+            ctx["fbo"].release()
+            ctx["texture"].release()
+            ctx["program"].release()
+            ctx["vbo"].release()
+        self.node_contexts.clear()
+
+    def shutdown(self):
+        self.cleanup()
+        if not self.is_headless:
+            glfw.terminate()
+
+    def render_to_screen(self, node: ShaderNode, fps: float):
         if self.is_headless:
-            logger.warning("Cannot render to screen in headless mode.")
+            logger.warning("Cannot render to screen in headless mode")
             return
-
-        self._fps = fps
-
+        self.fps = fps
+        imgui.create_context()
+        imgui_impl = ImguiGlfwRenderer(self.window)
         target_frame_time = 1.0 / fps
         logger.info(f"Starting screen rendering loop at {fps} FPS")
 
-        while not glfw.window_should_close(self._window):
+        while not glfw.window_should_close(self.window):
             start_time = glfw.get_time()
-            self._frame_idx += 1
+            self.frame_idx += 1
+            self.render_time = self.frame_idx / fps if fps > 0 else 0.0
             self.context.clear(0.0, 0.0, 0.0, 1.0)
-            node.render(self)
+            self.render_node(node)
             self.context.screen.use()
-            self.context.copy_framebuffer(self.context.screen, node.fbo)
-            glfw.swap_buffers(self._window)
-
-            elapsed_time = glfw.get_time() - start_time
-            sleep_time = max(0.0, target_frame_time - elapsed_time)
-            time.sleep(sleep_time)
-
-            glfw.poll_events()
-            if glfw.get_key(self._window, glfw.KEY_ESCAPE) == glfw.PRESS:
-                break
-
-        glfw.destroy_window(self._window)
-        glfw.terminate()
-
-    def _render_frames(self, node: ShaderNode, n_frames: int, fps: float) -> np.ndarray:
-        if not self.is_headless:
-            logger.warning(
-                "Rendering offscreen in non-headless mode; output may not match screen."
+            self.context.copy_framebuffer(
+                self.context.screen, self.node_contexts[node]["fbo"]
             )
-
-        self._fps = fps
-
-        logger.info(f"Rendering {n_frames} frames at {fps} FPS")
-
-        width, height = node.output_size
-        frames = np.empty((n_frames, height, width, 3), dtype=np.uint8)
-
-        for frame_idx in range(n_frames):
-            self._frame_idx = frame_idx
-            node.render(self)
-
-            data = node.fbo.read(viewport=(0, 0, width, height), components=3)
-            frames[frame_idx] = np.frombuffer(data, np.uint8).reshape(height, width, 3)
-
-        # Flip all frames vertically
-        frames = frames[:, ::-1, :, :]
-
-        return frames
-
-    def render_gif(self, node: ShaderNode, duration: float, fps: float, file_path: str):
-        n_frames = int(duration * fps)
-        frames = self._render_frames(node, n_frames, fps)
-        logger.info(f"Saving GIF to {file_path}")
-        imageio.mimwrite(file_path, frames, fps=fps)  # type: ignore
+            imgui.new_frame()
+            imgui.begin("Test Window 1")
+            imgui.text("Hello, ImGui!")
+            imgui.end()
+            imgui.begin("Test Window 2")
+            imgui.text(f"Frame: {self.frame_idx}")
+            imgui.text(f"Render time: {self.render_time:.2f}s")
+            imgui.end()
+            imgui.render()
+            imgui_impl.render(imgui.get_draw_data())
+            glfw.swap_buffers(self.window)
+            elapsed_time = glfw.get_time() - start_time
+            time.sleep(max(0.0, target_frame_time - elapsed_time))
+            glfw.poll_events()
+            if glfw.get_key(self.window, glfw.KEY_ESCAPE) == glfw.PRESS:
+                break
+        self.shutdown()
 
     def render_image(self, node: ShaderNode, file_path: str):
-        frames = self._render_frames(node, 1, 30.0)
+        self.render_time = 0.0
+        self.render_node(node)
+        width, height = node.output_size
+        data = self.node_contexts[node]["fbo"].read(
+            viewport=(0, 0, width, height), components=3
+        )
+        image = np.frombuffer(data, np.uint8).reshape(height, width, 3)[::-1]
         logger.info(f"Saving image to {file_path}")
-        imageio.imwrite(file_path, frames[0])
+        imageio.imwrite(file_path, image)
+        self.cleanup()
+
+    def render_gif(self, node: ShaderNode, duration: float, fps: float, file_path: str):
+        self.fps = fps
+        n_frames = int(duration * fps)
+        width, height = node.output_size
+        frames = np.empty((n_frames, height, width, 3), dtype=np.uint8)
+        for self.frame_idx in range(n_frames):
+            self.render_time = self.frame_idx / fps if fps > 0 else 0.0
+            self.render_node(node)
+            data = self.node_contexts[node]["fbo"].read(
+                viewport=(0, 0, width, height), components=3
+            )
+            frames[self.frame_idx] = np.frombuffer(data, np.uint8).reshape(
+                height, width, 3
+            )[::-1]
+        logger.info(f"Saving GIF to {file_path}")
+        imageio.mimwrite(file_path, frames, fps=fps)
+        self.cleanup()
 
     def render_video(
         self, node: ShaderNode, duration: float, fps: float, file_path: str
     ):
+        self.fps = fps
         n_frames = int(duration * fps)
-        frames = self._render_frames(node, n_frames, fps)
+        width, height = node.output_size
+        frames = np.empty((n_frames, height, width, 3), dtype=np.uint8)
+        for self.frame_idx in range(n_frames):
+            self.render_time = self.frame_idx / fps if fps > 0 else 0.0
+            self.render_node(node)
+            data = self.node_contexts[node]["fbo"].read(
+                viewport=(0, 0, width, height), components=3
+            )
+            frames[self.frame_idx] = np.frombuffer(data, np.uint8).reshape(
+                height, width, 3
+            )[::-1]
         logger.info(f"Saving video to {file_path}")
-        imageio.mimwrite(file_path, frames, fps=fps)  # type: ignore
+        imageio.mimwrite(file_path, frames, fps=fps)
+        self.cleanup()
 
 
 if __name__ == "__main__":
@@ -353,80 +363,84 @@ if __name__ == "__main__":
     }
     """
 
-    renderer = Renderer(screen_size=(800, 600))
-
     parallax_node = ShaderNode(
-        parallax_fs,
-        (800, 608),
-        {
+        fs_source=parallax_fs,
+        output_size=(800, 608),
+        uniforms={
             "u_base_texture": LazyTexture("photo.jpeg"),
             "u_depth_map": LazyTexture("depth.png"),
-            "u_texture_size": (800.0, 608.0),
-            "u_parallax_amount": 0.02,
-            "u_focal_length": 1480.0,
-            "u_time": DynamicUniform(lambda r: r.get_time()),
+            "u_texture_size": ValueUniform((800.0, 608.0)),
+            "u_parallax_amount": ValueUniform(0.02),
+            "u_focal_length": ValueUniform(1480.0),
+            "u_time": DynamicUniform(lambda r: r.render_time),
         },
     )
 
     bright_pass_node = ShaderNode(
-        bright_pass_fs,
-        (800, 608),
-        {"u_source_texture": parallax_node, "u_threshold": 0.5},
+        fs_source=bright_pass_fs,
+        output_size=(800, 608),
+        uniforms={
+            "u_source_texture": ShaderNodeUniform(parallax_node),
+            "u_threshold": ValueUniform(0.5),
+        },
     )
 
     downscale_node1 = ShaderNode(
-        downscale_fs,
-        (400, 304),
-        {"u_input_texture": bright_pass_node},
+        fs_source=downscale_fs,
+        output_size=(400, 304),
+        uniforms={"u_input_texture": ShaderNodeUniform(bright_pass_node)},
     )
 
     blur_node1 = ShaderNode(
-        blur_fs,
-        (400, 304),
-        {
-            "u_blur_input": downscale_node1,
-            "u_pixel_size": (1.0 / 400, 1.0 / 304),
+        fs_source=blur_fs,
+        output_size=(400, 304),
+        uniforms={
+            "u_blur_input": ShaderNodeUniform(downscale_node1),
+            "u_pixel_size": ValueUniform((1.0 / 400, 1.0 / 304)),
         },
     )
 
     downscale_node2 = ShaderNode(
-        downscale_fs,
-        (200, 152),
-        {"u_input_texture": blur_node1},
+        fs_source=downscale_fs,
+        output_size=(200, 152),
+        uniforms={"u_input_texture": ShaderNodeUniform(blur_node1)},
     )
 
     blur_node2 = ShaderNode(
-        blur_fs,
-        (200, 152),
-        {
-            "u_blur_input": downscale_node2,
-            "u_pixel_size": (1.0 / 200, 1.0 / 152),
+        fs_source=blur_fs,
+        output_size=(200, 152),
+        uniforms={
+            "u_blur_input": ShaderNodeUniform(downscale_node2),
+            "u_pixel_size": ValueUniform((1.0 / 200, 1.0 / 152)),
         },
     )
 
     outline_node = ShaderNode(
-        outline_fs,
-        (800, 608),
-        {
-            "u_outline_source": parallax_node,
-            "u_pixel_size": (8.0 / 800, 8.0 / 608),
-            "u_outline_thickness": 8.0,
+        fs_source=outline_fs,
+        output_size=(800, 608),
+        uniforms={
+            "u_outline_source": ShaderNodeUniform(parallax_node),
+            "u_pixel_size": ValueUniform((8.0 / 800, 8.0 / 608)),
+            "u_outline_thickness": ValueUniform(8.0),
         },
     )
 
     combine_node = ShaderNode(
-        combine_fs,
-        (800, 608),
-        {
-            "u_base_image": parallax_node,
-            "u_bloom_pass1": blur_node1,
-            "u_bloom_pass2": blur_node2,
-            "u_outline_pass": outline_node,
+        fs_source=combine_fs,
+        output_size=(800, 608),
+        uniforms={
+            "u_base_image": ShaderNodeUniform(parallax_node),
+            "u_bloom_pass1": ShaderNodeUniform(blur_node1),
+            "u_bloom_pass2": ShaderNodeUniform(blur_node2),
+            "u_outline_pass": ShaderNodeUniform(outline_node),
         },
     )
 
-    # Render outputs
-    renderer.render_image(combine_node, "output.png")
-    renderer.render_gif(combine_node, 1.0, 15, "output.gif")
-    renderer.render_video(combine_node, 1.0, 15, "output.mp4")
-    renderer.render_to_screen(combine_node, fps=60.0)
+    renderer_headless = Renderer(is_headless=True, window_size=None)
+    renderer_headless.render_image(combine_node, "output.png")
+    renderer_headless.render_gif(combine_node, 1.0, 15, "output.gif")
+    renderer_headless.render_video(combine_node, 1.0, 15, "output.mp4")
+    renderer_headless.shutdown()
+
+    # renderer_windowed = Renderer(is_headless=False, window_size=(800, 600))
+    # renderer_windowed.render_to_screen(combine_node, 60.0)

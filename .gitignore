@@ -9,6 +9,7 @@ wheels/
 
 .env
 
+imgui.ini
 *.mp4
 *.gif
 *.png
