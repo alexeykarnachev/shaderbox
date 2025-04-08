@@ -12,6 +12,7 @@ from imgui.integrations.glfw import GlfwRenderer
 from loguru import logger
 from PIL import Image
 
+# Configure logger
 logger.remove()
 logger.add(
     sink=lambda msg: print(msg, end=""),
@@ -22,11 +23,22 @@ logger.add(
 Size = Tuple[int, int]
 
 
+### Uniform Class ###
+class Uniform:
+    """A wrapper for float uniforms with UI manipulation parameters."""
+
+    def __init__(self, value: float, min_value: float, max_value: float):
+        self.value = value
+        self.min_value = min_value
+        self.max_value = max_value
+
+
 @dataclass
 class ShaderNode:
     fs_source: str
     output_size: Size
-    uniforms: Dict[str, Union[Any, Callable[[], Any]]]
+    uniforms: Dict[str, Union[Any, Callable[[], Any], Uniform]]  # Includes Uniform
+    name: str | None = None
 
     def __hash__(self):
         return int(hashlib.md5(self.fs_source.encode("utf-8")).hexdigest(), 16)
@@ -48,7 +60,6 @@ class Renderer:
 
         if not is_headless:
             glfw.init()
-
             monitor = None
             if window_size is None:
                 monitor = glfw.get_primary_monitor()
@@ -62,17 +73,22 @@ class Renderer:
 
         self.is_headless = is_headless
         self.window_size = window_size
-
         self.context = moderngl.create_context(standalone=is_headless)
         self.node_contexts: Dict[ShaderNode, NodeContext] = {}
         self.render_time = 0.0
         self.fps = 0.0
         self.frame_idx = 0
-
         self._imgui_impl: GlfwRenderer
 
-    def _get_uniform_value(self, uniform: Union[Any, Callable[[], Any]]) -> Any:
-        return uniform() if callable(uniform) else uniform
+    def _get_uniform_value(
+        self, uniform: Union[Any, Callable[[], Any], Uniform]
+    ) -> Any:
+        """Extract the current value from a uniform, handling Uniform instances."""
+        if isinstance(uniform, Uniform):
+            return uniform.value
+        elif callable(uniform):
+            return uniform()
+        return uniform
 
     def render_node(self, node: ShaderNode):
         if node not in self.node_contexts:
@@ -145,14 +161,12 @@ class Renderer:
             return
 
         logger.info(f"Starting screen rendering loop at {fps} FPS")
-
         imgui.create_context()
-        self._imgui_impl = GlfwRenderer(self.window)  # Already correct
+        self._imgui_impl = GlfwRenderer(self.window)
         target_frame_time = 1.0 / fps
 
         while not glfw.window_should_close(self.window):
             start_time = glfw.get_time()
-
             self.frame_idx += 1
             self.render_time = self.frame_idx / fps if fps > 0 else 0.0
 
@@ -178,47 +192,55 @@ class Renderer:
         self.shutdown()
 
     def _render_ui(self, node: ShaderNode):
+        """Render the UI with uniform visualization and optional manipulation."""
         imgui.new_frame()
         imgui.begin("Render DAG")
 
-        # Collect all nodes starting from the given node
-        def collect_nodes(current_node, nodes=None):
-            if nodes is None:
-                nodes = set()
-            if current_node not in nodes:
-                nodes.add(current_node)
-                for uniform in current_node.uniforms.values():
-                    if isinstance(uniform, ShaderNode):
-                        collect_nodes(uniform, nodes)
-            return nodes
+        def render_tree(current_node):
+            node_name = current_node.name or str(id(current_node))
+            if imgui.tree_node(node_name):
+                # Render non-ShaderNode uniforms only
+                for uniform_name, uniform in current_node.uniforms.items():
+                    if isinstance(uniform, Uniform):
+                        # Render a slider for Uniform-wrapped floats
+                        changed, new_value = imgui.slider_float(
+                            uniform_name,
+                            uniform.value,
+                            uniform.min_value,
+                            uniform.max_value,
+                            format="%.3f",
+                        )
+                        if changed:
+                            uniform.value = new_value
+                    elif callable(uniform):
+                        # Handle callables (e.g., TimeUniform or TextureUniform)
+                        value = uniform()
+                        if isinstance(value, moderngl.Texture):
+                            imgui.text(
+                                f"{uniform_name}: Texture ({value.width}x{value.height})"
+                            )
+                        else:
+                            imgui.text(f"{uniform_name}: {value:.3f}")
+                    elif isinstance(uniform, moderngl.Texture):
+                        # Direct texture uniform (unlikely, but included for completeness)
+                        imgui.text(
+                            f"{uniform_name}: Texture ({uniform.width}x{uniform.height})"
+                        )
+                    elif not isinstance(uniform, ShaderNode):
+                        # Display plain values as constants (excluding ShaderNodes)
+                        imgui.text(f"{uniform_name}: {uniform}")
 
-        # Render the tree starting from roots
-        def render_tree(current_node, all_nodes, rendered=None):
-            if rendered is None:
-                rendered = set()
-            if current_node in rendered:
-                return
-            rendered.add(current_node)
-
-            node_id = str(id(current_node))
-            if imgui.tree_node(f"Node {node_id}"):
-                children = [n for n in all_nodes if current_node in n.uniforms.values()]
-                for child in children:
-                    render_tree(child, all_nodes, rendered)
+                # Recursively render ShaderNode inputs as expandable children
+                inputs = [
+                    u
+                    for u in current_node.uniforms.values()
+                    if isinstance(u, ShaderNode)
+                ]
+                for input_node in inputs:
+                    render_tree(input_node)
                 imgui.tree_pop()
 
-        # Get all nodes and roots
-        all_nodes = collect_nodes(node)
-        roots = [
-            n
-            for n in all_nodes
-            if not any(isinstance(u, ShaderNode) for u in n.uniforms.values())
-        ]
-
-        # Render the tree starting from each root
-        for root in roots:
-            render_tree(root, all_nodes)
-
+        render_tree(node)
         imgui.end()
         imgui.render()
         self._imgui_impl.render(imgui.get_draw_data())
@@ -231,7 +253,6 @@ class Renderer:
             viewport=(0, 0, width, height), components=3
         )
         image = np.frombuffer(data, np.uint8).reshape(height, width, 3)[::-1]
-
         logger.info(f"Saving image to {file_path}")
         imageio.imwrite(file_path, image)
         self.cleanup()
@@ -250,9 +271,8 @@ class Renderer:
             frames[self.frame_idx] = np.frombuffer(data, np.uint8).reshape(
                 height, width, 3
             )[::-1]
-
         logger.info(f"Saving GIF to {file_path}")
-        imageio.mimwrite(file_path, frames, fps=fps)  # type: ignore
+        imageio.mimwrite(file_path, frames, fps=fps)
         self.cleanup()
 
     def render_video(
@@ -271,9 +291,8 @@ class Renderer:
             frames[self.frame_idx] = np.frombuffer(data, np.uint8).reshape(
                 height, width, 3
             )[::-1]
-
         logger.info(f"Saving video to {file_path}")
-        imageio.mimwrite(file_path, frames, fps=fps)  # type: ignore
+        imageio.mimwrite(file_path, frames, fps=fps)
         self.cleanup()
 
 
@@ -300,6 +319,7 @@ class TextureUniform:
 
 
 if __name__ == "__main__":
+    # Fragment shaders (unchanged)
     parallax_fs = """
     #version 460
     in vec2 vs_uv;
@@ -403,69 +423,78 @@ if __name__ == "__main__":
 
     renderer = Renderer(is_headless=False)
 
+    # ShaderNode definitions with selective Uniform usage
     parallax_node = ShaderNode(
+        name="Parallax",
         fs_source=parallax_fs,
         output_size=(800, 608),
         uniforms={
             "u_base_texture": TextureUniform("photo.jpeg", renderer.context),
             "u_depth_map": TextureUniform("depth.png", renderer.context),
-            "u_texture_size": (800.0, 608.0),
-            "u_parallax_amount": 0.02,
-            "u_focal_length": 1480.0,
-            "u_time": TimeUniform(renderer),
+            "u_texture_size": (800.0, 608.0),  # Constant tuple
+            "u_parallax_amount": Uniform(0.02, 0.0, 0.1),  # Slider-enabled
+            "u_focal_length": 1480.0,  # Constant float
+            "u_time": TimeUniform(renderer),  # Dynamic value
         },
     )
 
     bright_pass_node = ShaderNode(
+        name="Bright pass",
         fs_source=bright_pass_fs,
         output_size=(800, 608),
         uniforms={
             "u_source_texture": parallax_node,
-            "u_threshold": 0.5,
+            "u_threshold": Uniform(0.5, 0.0, 1.0),  # Slider-enabled
         },
     )
 
     downscale_node1 = ShaderNode(
+        name="Downscale 1",
         fs_source=downscale_fs,
         output_size=(400, 304),
         uniforms={"u_input_texture": bright_pass_node},
     )
 
     blur_node1 = ShaderNode(
+        name="Blur 1",
         fs_source=blur_fs,
         output_size=(400, 304),
         uniforms={
             "u_blur_input": downscale_node1,
-            "u_pixel_size": (1.0 / 400, 1.0 / 304),
+            "u_pixel_size": (1.0 / 400, 1.0 / 304),  # Constant tuple
         },
     )
 
     downscale_node2 = ShaderNode(
+        name="Downscale 2",
         fs_source=downscale_fs,
         output_size=(200, 152),
         uniforms={"u_input_texture": blur_node1},
     )
 
     blur_node2 = ShaderNode(
+        name="Blur 2",
         fs_source=blur_fs,
         output_size=(200, 152),
         uniforms={
             "u_blur_input": downscale_node2,
-            "u_pixel_size": (1.0 / 200, 1.0 / 152),
+            "u_pixel_size": (1.0 / 200, 1.0 / 152),  # Constant tuple
         },
     )
 
     outline_node = ShaderNode(
+        name="Outline",
         fs_source=outline_fs,
         output_size=(800, 608),
         uniforms={
             "u_outline_source": parallax_node,
-            "u_pixel_size": (8.0 / 800, 8.0 / 608),
-            "u_outline_thickness": 8.0,
+            "u_pixel_size": (8.0 / 800, 8.0 / 608),  # Constant tuple
+            "u_outline_thickness": 8.0,  # Constant float
         },
     )
 
     combine_node = ShaderNode(
+        name="Combine",
         fs_source=combine_fs,
         output_size=(800, 608),
         uniforms={
@@ -477,3 +506,4 @@ if __name__ == "__main__":
     )
 
     renderer.render_to_screen(combine_node, 60.0)
+    # renderer.render_video(combine_node, 5.0, 30.0, "output.mp4")
