@@ -8,7 +8,7 @@ import imageio
 import imgui
 import moderngl
 import numpy as np
-from imgui.integrations.glfw import GlfwRenderer as ImguiGlfwRenderer
+from imgui.integrations.glfw import GlfwRenderer
 from loguru import logger
 from PIL import Image
 
@@ -68,6 +68,8 @@ class Renderer:
         self.render_time = 0.0
         self.fps = 0.0
         self.frame_idx = 0
+
+        self._imgui_impl: GlfwRenderer
 
     def _get_uniform_value(self, uniform: Union[Any, Callable[[], Any]]) -> Any:
         return uniform() if callable(uniform) else uniform
@@ -141,39 +143,52 @@ class Renderer:
         if self.is_headless:
             logger.error("Cannot render to screen in headless mode")
             return
-        self.fps = fps
-        imgui.create_context()
-        imgui_impl = ImguiGlfwRenderer(self.window)
-        target_frame_time = 1.0 / fps
+
         logger.info(f"Starting screen rendering loop at {fps} FPS")
+
+        imgui.create_context()
+
+        self.fps = fps
+        self._imgui_impl = GlfwRenderer(self.window)
+        target_frame_time = 1.0 / fps
 
         while not glfw.window_should_close(self.window):
             start_time = glfw.get_time()
+
             self.frame_idx += 1
             self.render_time = self.frame_idx / fps if fps > 0 else 0.0
+
             self.context.clear(0.0, 0.0, 0.0, 1.0)
             self.render_node(node)
             self.context.screen.use()
             self.context.copy_framebuffer(
                 self.context.screen, self.node_contexts[node].fbo
             )
-            imgui.new_frame()
-            imgui.begin("Test Window 1")
-            imgui.text("Hello, ImGui!")
-            imgui.end()
-            imgui.begin("Test Window 2")
-            imgui.text(f"Frame: {self.frame_idx}")
-            imgui.text(f"Render time: {self.render_time:.2f}s")
-            imgui.end()
-            imgui.render()
-            imgui_impl.render(imgui.get_draw_data())
+
+            self._render_ui(node)
             glfw.swap_buffers(self.window)
+
             elapsed_time = glfw.get_time() - start_time
             time.sleep(max(0.0, target_frame_time - elapsed_time))
+
             glfw.poll_events()
             if glfw.get_key(self.window, glfw.KEY_ESCAPE) == glfw.PRESS:
                 break
+
         self.shutdown()
+
+    def _render_ui(self, _: ShaderNode):
+        imgui.new_frame()
+        imgui.begin("Test Window 1")
+        imgui.text("Hello, ImGui!")
+        imgui.end()
+        imgui.begin("Test Window 2")
+        imgui.text(f"Frame: {self.frame_idx}")
+        imgui.text(f"Render time: {self.render_time:.2f}s")
+        imgui.end()
+        imgui.render()
+
+        self._imgui_impl.render(imgui.get_draw_data())
 
     def render_image(self, node: ShaderNode, file_path: str):
         self.render_time = 0.0
@@ -183,6 +198,7 @@ class Renderer:
             viewport=(0, 0, width, height), components=3
         )
         image = np.frombuffer(data, np.uint8).reshape(height, width, 3)[::-1]
+
         logger.info(f"Saving image to {file_path}")
         imageio.imwrite(file_path, image)
         self.cleanup()
@@ -201,6 +217,7 @@ class Renderer:
             frames[self.frame_idx] = np.frombuffer(data, np.uint8).reshape(
                 height, width, 3
             )[::-1]
+
         logger.info(f"Saving GIF to {file_path}")
         imageio.mimwrite(file_path, frames, fps=fps)  # type: ignore
         self.cleanup()
@@ -221,6 +238,7 @@ class Renderer:
             frames[self.frame_idx] = np.frombuffer(data, np.uint8).reshape(
                 height, width, 3
             )[::-1]
+
         logger.info(f"Saving video to {file_path}")
         imageio.mimwrite(file_path, frames, fps=fps)  # type: ignore
         self.cleanup()
