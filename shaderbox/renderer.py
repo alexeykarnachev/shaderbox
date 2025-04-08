@@ -147,9 +147,7 @@ class Renderer:
         logger.info(f"Starting screen rendering loop at {fps} FPS")
 
         imgui.create_context()
-
-        self.fps = fps
-        self._imgui_impl = GlfwRenderer(self.window)
+        self._imgui_impl = GlfwRenderer(self.window)  # Already correct
         target_frame_time = 1.0 / fps
 
         while not glfw.window_should_close(self.window):
@@ -157,6 +155,9 @@ class Renderer:
 
             self.frame_idx += 1
             self.render_time = self.frame_idx / fps if fps > 0 else 0.0
+
+            glfw.poll_events()
+            self._imgui_impl.process_inputs()
 
             self.context.clear(0.0, 0.0, 0.0, 1.0)
             self.render_node(node)
@@ -171,23 +172,55 @@ class Renderer:
             elapsed_time = glfw.get_time() - start_time
             time.sleep(max(0.0, target_frame_time - elapsed_time))
 
-            glfw.poll_events()
             if glfw.get_key(self.window, glfw.KEY_ESCAPE) == glfw.PRESS:
                 break
 
         self.shutdown()
 
-    def _render_ui(self, _: ShaderNode):
+    def _render_ui(self, node: ShaderNode):
         imgui.new_frame()
-        imgui.begin("Test Window 1")
-        imgui.text("Hello, ImGui!")
-        imgui.end()
-        imgui.begin("Test Window 2")
-        imgui.text(f"Frame: {self.frame_idx}")
-        imgui.text(f"Render time: {self.render_time:.2f}s")
+        imgui.begin("Render DAG")
+
+        # Collect all nodes starting from the given node
+        def collect_nodes(current_node, nodes=None):
+            if nodes is None:
+                nodes = set()
+            if current_node not in nodes:
+                nodes.add(current_node)
+                for uniform in current_node.uniforms.values():
+                    if isinstance(uniform, ShaderNode):
+                        collect_nodes(uniform, nodes)
+            return nodes
+
+        # Render the tree starting from roots
+        def render_tree(current_node, all_nodes, rendered=None):
+            if rendered is None:
+                rendered = set()
+            if current_node in rendered:
+                return
+            rendered.add(current_node)
+
+            node_id = str(id(current_node))
+            if imgui.tree_node(f"Node {node_id}"):
+                children = [n for n in all_nodes if current_node in n.uniforms.values()]
+                for child in children:
+                    render_tree(child, all_nodes, rendered)
+                imgui.tree_pop()
+
+        # Get all nodes and roots
+        all_nodes = collect_nodes(node)
+        roots = [
+            n
+            for n in all_nodes
+            if not any(isinstance(u, ShaderNode) for u in n.uniforms.values())
+        ]
+
+        # Render the tree starting from each root
+        for root in roots:
+            render_tree(root, all_nodes)
+
         imgui.end()
         imgui.render()
-
         self._imgui_impl.render(imgui.get_draw_data())
 
     def render_image(self, node: ShaderNode, file_path: str):
