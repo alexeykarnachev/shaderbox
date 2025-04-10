@@ -30,7 +30,7 @@ class Node:
         self._output_size = output_size
         self._uniforms = uniforms
         self._name = name or str(id(self))
-        self._graph: "RenderGraph" | None = None
+        self._graph: RenderGraph | None = None
         self._gl_context = gl_context
 
         self._program: moderngl.Program = self._gl_context.context.program(
