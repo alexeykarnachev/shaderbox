@@ -146,4 +146,3 @@ class RenderGraph:
             node.release()
 
         self._nodes.clear()
-

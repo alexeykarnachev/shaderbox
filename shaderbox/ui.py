@@ -61,7 +61,7 @@ class UI:
         io = imgui.get_io()
         io.fonts.clear()
         font_resource = (
-            files("shaderbox.resources") / "ubuntu-font-family-0.80" / "Ubuntu-R.ttf"
+            files("shaderbox.resources") / "ubuntu-font-family-0.80" / "UbuntuMono-R.ttf"
         )
         with as_file(font_resource) as font_path:
             print(f"Loading font from: {font_path}")
