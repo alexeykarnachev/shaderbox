@@ -1,6 +1,5 @@
 import time
 from collections import defaultdict, deque
-from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 import glfw
@@ -8,13 +7,11 @@ import imageio
 import moderngl
 import numpy as np
 from loguru import logger
-from PIL import Image
-from PIL.Image import Transpose
+
+from shaderbox import gl
 
 Size = Tuple[int, int]
 
-context: moderngl.Context
-window: glfw._GLFWwindow | None = None
 
 fps: int = 60
 frame_idx: int = 0
@@ -39,7 +36,7 @@ class Node:
         if self._name in self._registry:
             raise KeyError(f"Node with name {self._name} already exists")
 
-        self._program: moderngl.Program = context.program(
+        self._program: moderngl.Program = gl.context.program(
             vertex_shader="""
             #version 460
             in vec2 a_pos;
@@ -52,15 +49,15 @@ class Node:
             fragment_shader=fs_source,
         )
 
-        self._texture = context.texture(output_size, 4)
-        self._fbo = context.framebuffer(color_attachments=[self._texture])
-        self._vbo = context.buffer(
+        self._texture = gl.context.texture(output_size, 4)
+        self._fbo = gl.context.framebuffer(color_attachments=[self._texture])
+        self._vbo = gl.context.buffer(
             np.array(
                 [-1.0, -1.0, 1.0, -1.0, -1.0, 1.0, 1.0, -1.0, 1.0, 1.0, -1.0, 1.0],
                 dtype="f4",
             )
         )
-        self._vao = context.vertex_array(self._program, [(self._vbo, "2f", "a_pos")])
+        self._vao = gl.context.vertex_array(self._program, [(self._vbo, "2f", "a_pos")])
 
         self._registry[self._name] = self
 
@@ -121,80 +118,35 @@ class Node:
             node.release()
 
 
-def load(
-    is_headless: bool = False,
-    window_size: Size | None = None,
-):
-    global context, window
-
-    if is_headless and window_size is not None:
-        logger.warning("window_size provided in headless mode, ignoring")
-
-    if not is_headless:
-        glfw.init()
-        monitor = None
-
-        if window_size is None:
-            monitor = glfw.get_primary_monitor()
-            mode = glfw.get_video_mode(monitor)
-            window_size = (mode.size.width, mode.size.height)
-
-        window = glfw.create_window(
-            window_size[0], window_size[1], "ShaderBox", monitor, None
-        )
-        glfw.make_context_current(window)
-
-    context = moderngl.create_context(standalone=is_headless)
-
-
-def load_texture(source: Path | str | Image.Image) -> moderngl.Texture:
-    if isinstance(source, Image.Image):
-        image, source = source, "image"
-    else:
-        image = Image.open(source).convert("RGBA")
-        image = image.transpose(Transpose.FLIP_TOP_BOTTOM)
-
-    texture = context.texture(image.size, 4, image.tobytes())
-    logger.info(f"Loaded texture from {source} with size {image.size}")
-
-    return texture
-
-
-def unload():
-    Node.release_graph()
-    if window is not None:
-        glfw.terminate()
-
-
 def render_to_screen(node: Node, fps: int):
     global frame_idx, render_time
 
-    if window is None:
+    if gl.window is None:
         logger.error("Can't render to screen if is_headless=True")
         exit(0)
 
     target_frame_time = 1.0 / fps
 
-    while not glfw.window_should_close(window):
+    while not glfw.window_should_close(gl.window):
         start_time = glfw.get_time()
         frame_idx += 1
         render_time = frame_idx / fps
 
         glfw.poll_events()
 
-        context.clear(0.0, 0.0, 0.0, 1.0)
+        gl.context.clear(0.0, 0.0, 0.0, 1.0)
         Node.render_graph()
-        context.screen.use()
-        context.copy_framebuffer(context.screen, node._fbo)
+        gl.context.screen.use()
+        gl.context.copy_framebuffer(gl.context.screen, node._fbo)
 
-        # TODO: render ui here
+        ui.render()
 
-        glfw.swap_buffers(window)
+        glfw.swap_buffers(gl.window)
 
         elapsed_time = glfw.get_time() - start_time
         time.sleep(max(0.0, target_frame_time - elapsed_time))
 
-        if glfw.get_key(window, glfw.KEY_ESCAPE) == glfw.PRESS:
+        if glfw.get_key(gl.window, glfw.KEY_ESCAPE) == glfw.PRESS:
             break
 
 
@@ -350,10 +302,10 @@ if __name__ == "__main__":
     }
     """
 
-    load(is_headless=True)
+    gl.initialize(is_headless=False)
 
-    photo_texture = load_texture("photo.jpeg")
-    depth_texture = load_texture("depth.png")
+    photo_texture = gl.load_texture("photo.jpeg")
+    depth_texture = gl.load_texture("depth.png")
 
     parallax_node = Node(
         name="Parallax",
