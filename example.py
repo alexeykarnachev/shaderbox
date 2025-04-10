@@ -1,4 +1,4 @@
-from shaderbox import Renderer
+from shaderbox.renderer import Renderer
 
 if __name__ == "__main__":
     parallax_fs = """
@@ -191,8 +191,8 @@ if __name__ == "__main__":
     )
 
     try:
-        renderer.render_gif(combine_node, 1.0, 12.0, "output.gif")
-        renderer.render_video(combine_node, 1.0, 30.0, "output.mp4")
-        renderer.render_to_screen(combine_node, 60)
+        # renderer.render_gif(combine_node, 1.0, 12.0, "output.gif")
+        # renderer.render_video(combine_node, 1.0, 30.0, "output.mp4")
+        renderer.run_editor(60)
     finally:
         renderer.cleanup()

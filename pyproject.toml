@@ -23,6 +23,7 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["shaderbox"]
+include = ["shaderbox/resources/**/*"]
 
 [tool.uv]
 dev-dependencies = [
