@@ -10,4 +10,3 @@ void main() {
 	float brightness = dot(color.rgb, vec3(0.2126, 0.7152, 0.0722));
 	fs_color = brightness > u_threshold ? color : vec4(0.0, 0.0, 0.0, 0.0);
 }
-

@@ -18,4 +18,3 @@ void main() {
 	edge = smoothstep(0.0, 1.0, edge) * u_outline_thickness;
 	fs_color = vec4(edge, edge, 0.0, 1.0);
 }
-
