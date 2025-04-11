@@ -75,6 +75,8 @@ class UI:
 
         # ----------------------------------------------------------------
         # Main Image
+        imgui.begin_group()
+
         main_image_max_size = 800
         main_output_size = self._output_node.get_output_size()
         main_image_width, main_image_height = scale_size(
@@ -93,6 +95,13 @@ class UI:
             max(main_image_width, main_image_height),  # type: ignore
         )
         imgui.end_child()
+
+        imgui.begin_child("info", width=main_image_width)
+        imgui.text(f"Node - {self._output_node.name}")
+        imgui.separator()
+        imgui.end_child()
+
+        imgui.end_group()
 
         # ----------------------------------------------------------------
         # Node Selector and Preview
