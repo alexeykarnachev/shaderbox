@@ -1,43 +1,64 @@
+import hashlib
 from collections import defaultdict, deque
+from pathlib import Path
 from typing import Any
 
 import moderngl
 import numpy as np
+from loguru import logger
 
 from shaderbox.gl import GLContext
 
 OutputSize = tuple[int, int] | str | tuple[str, float]
+FSSource = str | Path
 
 
 class Node:
+    _VERTEX_SHADER = """
+    #version 460
+    in vec2 a_pos;
+    out vec2 vs_uv;
+    void main() {
+        gl_Position = vec4(a_pos, 0.0, 1.0);
+        vs_uv = a_pos * 0.5 + 0.5;
+    }
+    """
+
     def __init__(
         self,
         gl_context: GLContext,
-        fs_source: str,
+        fs_source: FSSource,
         output_size: OutputSize,
         uniforms: dict[str, Any],
         name: str | None = None,
+        check_interval: int = 30,
     ) -> None:
-        self._fs_source = fs_source
+        self._gl_context = gl_context
         self._output_size = output_size
         self._uniforms = uniforms
         self._name = name or str(id(self))
         self._graph: RenderGraph | None = None
-        self._gl_context = gl_context
+        self._fs_file_path: Path | None = None
+        self._fs_source: str
+        self._fs_file_hash: str | None = None
+        self._check_interval = max(1, check_interval)
+        self._frame_count = 0
 
-        self._program: moderngl.Program = self._gl_context.context.program(
-            vertex_shader="""
-            #version 460
-            in vec2 a_pos;
-            out vec2 vs_uv;
-            void main() {
-                gl_Position = vec4(a_pos, 0.0, 1.0);
-                vs_uv = a_pos * 0.5 + 0.5;
-            }
-            """,
-            fragment_shader=fs_source,
+        if isinstance(fs_source, str) and "\n" not in fs_source.strip():
+            fs_source = Path(fs_source)
+
+        if isinstance(fs_source, Path):
+            self._fs_file_path = fs_source.resolve()
+            self._fs_source = self._fs_file_path.read_text(encoding="utf-8")
+            self._fs_file_hash = self._compute_fs_file_hash()
+            logger.info(f"Loaded shader file: {self._fs_file_path}")
+        else:
+            self._fs_source = fs_source
+
+        self._program = self._gl_context.context.program(
+            vertex_shader=self._VERTEX_SHADER,
+            fragment_shader=self._fs_source,
         )
-
         self._texture = self._gl_context.context.texture(self.get_output_size(), 4)
         self._fbo = self._gl_context.context.framebuffer(
             color_attachments=[self._texture]
@@ -51,6 +72,41 @@ class Node:
         self._vao = self._gl_context.context.vertex_array(
             self._program, [(self._vbo, "2f", "a_pos")]
         )
+
+    def _compute_fs_file_hash(self) -> str:
+        if not self._fs_file_path:
+            return ""
+        try:
+            with Path.open(self._fs_file_path, "rb") as f:
+                return hashlib.sha256(f.read()).hexdigest()
+        except Exception as e:
+            logger.error(f"Failed to compute hash for {self._fs_file_path}: {e}")
+            return ""
+
+    def reload(self) -> None:
+        if not self._fs_file_path:
+            logger.warning("Cannot reload shader: no file path associated")
+            return
+
+        try:
+            fs_source = self._fs_file_path.read_text(encoding="utf-8")
+            program = self._gl_context.context.program(
+                vertex_shader=self._VERTEX_SHADER,
+                fragment_shader=fs_source,
+            )
+
+            self._fs_source = fs_source
+            self._fs_file_hash = self._compute_fs_file_hash()
+            self._vao.release()
+            self._program.release()
+            self._program = program
+            self._vao = self._gl_context.context.vertex_array(
+                self._program, [(self._vbo, "2f", "a_pos")]
+            )
+
+            logger.info(f"Successfully reloaded shader from {self._fs_file_path}")
+        except Exception as e:
+            logger.error(f"Failed to reload shader from {self._fs_file_path}: {e}")
 
     @property
     def name(self) -> str:
@@ -92,6 +148,17 @@ class Node:
         return self._texture.glo
 
     def render(self) -> None:
+        self._frame_count += 1
+        if (
+            self._fs_file_path
+            and self._frame_count % self._check_interval == 0
+            and self._fs_file_hash
+        ):
+            current_hash = self._compute_fs_file_hash()
+            if current_hash and current_hash != self._fs_file_hash:
+                logger.info(f"Detected change in {self._fs_file_path}, reloading...")
+                self.reload()
+
         desired_size = self.get_output_size()
 
         if desired_size != self._texture.size:

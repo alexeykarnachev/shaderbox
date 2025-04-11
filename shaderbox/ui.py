@@ -57,7 +57,7 @@ class UI:
             border=True,
             flags=imgui.WINDOW_NO_SCROLLBAR | imgui.WINDOW_NO_INPUTS,
         )
-        imgui.text(f"Node - {self._output_node.name}")
+        imgui.text(f"Node - {self._output_node.name} | fps: {imgui.get_io().framerate:.2f}")
         imgui.separator()
         _texture_image(
             self._output_node._texture,

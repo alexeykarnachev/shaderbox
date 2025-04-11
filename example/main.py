@@ -1,42 +1,13 @@
+from pathlib import Path
+
 from shaderbox.renderer import Renderer
 from shaderbox.utils import scale_size
 
+_THIS_DIR = Path(__file__).parent
+
 if __name__ == "__main__":
-    parallax_fs = """
-    #version 460
-    in vec2 vs_uv;
-    out vec4 fs_color;
-    uniform sampler2D u_base_texture;
-    uniform sampler2D u_depth_map;
-    uniform float u_time;
-    uniform float u_focal_length = 1480.0;
-    uniform float u_parallax_amount = 0.05;
-    void main() {
-        vec2 uv = vs_uv;
-        float depth = texture(u_depth_map, uv).r;
-        vec2 camera_move = vec2(sin(u_time), cos(u_time)) * u_focal_length * u_parallax_amount;
-
-        vec2 texture_size = vec2(textureSize(u_base_texture, 0));
-        vec2 offset = -camera_move * depth / texture_size;
-        uv += offset;
-        uv = clamp(uv, 0.0, 1.0);
-        vec4 color = texture(u_base_texture, uv);
-        fs_color = vec4(color.rgb, 1.0);
-    }
-    """
-
-    bright_pass_fs = """
-    #version 460
-    in vec2 vs_uv;
-    out vec4 fs_color;
-    uniform sampler2D u_source_texture;
-    uniform float u_threshold = 0.5;
-    void main() {
-        vec4 color = texture(u_source_texture, vs_uv);
-        float brightness = dot(color.rgb, vec3(0.2126, 0.7152, 0.0722));
-        fs_color = brightness > u_threshold ? color : vec4(0.0, 0.0, 0.0, 0.0);
-    }
-    """
+    parallax_fs = _THIS_DIR / "shaders" / "parallax.glsl"
+    bright_pass_fs = _THIS_DIR / "shaders" / "bright_pass.glsl"
 
     downscale_fs = """
     #version 460
@@ -63,26 +34,7 @@ if __name__ == "__main__":
     }
     """
 
-    outline_fs = """
-    #version 460
-    in vec2 vs_uv;
-    out vec4 fs_color;
-    uniform sampler2D u_outline_source;
-    uniform vec2 u_pixel_size;
-    uniform float u_outline_thickness = 1.0;
-    void main() {
-        vec4 center = texture(u_outline_source, vs_uv);
-        float edge = 0.0;
-        for (int i = -1; i <= 1; i++)
-            for (int j = -1; j <= 1; j++) {
-                if (i == 0 && j == 0) continue;
-                vec4 neighbor = texture(u_outline_source, vs_uv + vec2(float(i), float(j)) * u_pixel_size);
-                edge += length(center.rgb - neighbor.rgb);
-            }
-        edge = smoothstep(0.0, 1.0, edge) * u_outline_thickness;
-        fs_color = vec4(edge, 0.0, 0.0, 1.0);
-    }
-    """
+    outline_fs = _THIS_DIR / "shaders" / "outline.glsl"
 
     combine_fs = """
     #version 460

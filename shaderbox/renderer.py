@@ -27,7 +27,7 @@ class Renderer:
 
     def create_node(
         self,
-        fs_source: str,
+        fs_source: str | Path,
         output_size: OutputSize,
         uniforms: dict[str, Any],
         name: str | None = None,
