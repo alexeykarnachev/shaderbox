@@ -72,7 +72,6 @@ class UI:
         preview_img_width = 150
         preview_pane_width = preview_img_width + 40
 
-        imgui.same_line()
         imgui.begin_child("nodes", width=preview_pane_width, border=True)
 
         for node in graph.iter_nodes():
