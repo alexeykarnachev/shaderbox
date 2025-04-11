@@ -10,15 +10,13 @@ from loguru import logger
 from PIL import Image
 
 from shaderbox.gl import GLContext
-from shaderbox.graph import Node, RenderGraph
+from shaderbox.graph import Node, OutputSize, RenderGraph
 from shaderbox.ui import UI
-
-Size = tuple[int, int]
 
 
 class Renderer:
     def __init__(
-        self, is_headless: bool = False, window_size: Size | None = None
+        self, is_headless: bool = False, window_size: tuple[int, int] | None = None
     ) -> None:
         self.fps: int = 60
         self.frame_idx: int = 0
@@ -30,7 +28,7 @@ class Renderer:
     def create_node(
         self,
         fs_source: str,
-        output_size: Size,
+        output_size: OutputSize,
         uniforms: dict[str, Any],
         name: str | None = None,
     ) -> Node:

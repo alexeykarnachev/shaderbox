@@ -65,6 +65,8 @@ class UI:
         if self._output_node is None:
             self._output_node = list(graph.iter_nodes())[-1]
 
+        new_output_node = self._output_node
+
         self._imgui_renderer.process_inputs()
         imgui.new_frame()
 
@@ -85,7 +87,10 @@ class UI:
             border=True,
             flags=imgui.WINDOW_NO_SCROLLBAR,
         )
-        _texture_image(self._output_node._texture, max(main_image_width, main_image_height))  # type: ignore
+        _texture_image(
+            self._output_node._texture,
+            max(main_image_width, main_image_height),  # type: ignore
+        )
         imgui.end_child()
 
         # ----------------------------------------------------------------
@@ -108,7 +113,7 @@ class UI:
                 is_button=True,
                 border_size=border_size,
             ):
-                self._output_node = node
+                new_output_node = node
 
         imgui.end_child()
 
@@ -151,7 +156,7 @@ class UI:
                     imgui.text(name)
 
                 if _texture_image(node._texture, 50, is_button=True):
-                    self._output_node = node
+                    new_output_node = node
 
                 imgui.spacing()
 
@@ -197,6 +202,8 @@ class UI:
         imgui.end()
         imgui.render()
         self._imgui_renderer.render(imgui.get_draw_data())
+
+        self._output_node = new_output_node
 
 
 def _drag_value(name, value):

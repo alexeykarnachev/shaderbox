@@ -1,4 +1,5 @@
 from collections import defaultdict, deque
+from dataclasses import dataclass
 from typing import Any
 
 import moderngl
@@ -7,12 +8,27 @@ import numpy as np
 from shaderbox.gl import GLContext
 
 
+@dataclass
+class SizeFromIntTuple:
+    width: int
+    height: int
+
+
+@dataclass
+class SizeFromUniformTexture:
+    name: str
+    scale: float = 1.0
+
+
+OutputSize = SizeFromIntTuple | SizeFromUniformTexture
+
+
 class Node:
     def __init__(
         self,
         gl_context: GLContext,
         fs_source: str,
-        output_size: tuple[int, int],
+        output_size: OutputSize,
         uniforms: dict[str, Any],
         name: str | None = None,
     ) -> None:
@@ -36,7 +52,10 @@ class Node:
             fragment_shader=fs_source,
         )
 
-        self._texture = self._gl_context.context.texture(output_size, 4)
+        self._init()
+
+    def _init(self):
+        self._texture = self._gl_context.context.texture(self.output_size, 4)
         self._fbo = self._gl_context.context.framebuffer(
             color_attachments=[self._texture]
         )
@@ -56,7 +75,25 @@ class Node:
 
     @property
     def output_size(self) -> tuple[int, int]:
-        return self._output_size
+        if isinstance(self._output_size, SizeFromIntTuple):
+            return (self._output_size.width, self._output_size.height)
+        elif isinstance(self._output_size, SizeFromUniformTexture):
+            texture = self._uniforms.get(self._output_size.name)
+
+            if isinstance(texture, Node):
+                texture = texture._texture
+            elif not isinstance(texture, moderngl.Texture):
+                raise ValueError(f"Uniform '{self._output_size.name}' is not a texture")
+
+            width, height = texture.size
+            scaled_width = max(1, round(width * self._output_size.scale))
+            scaled_height = max(1, round(height * self._output_size.scale))
+            return (scaled_width, scaled_height)
+        else:
+            raise ValueError("Unreachable")
+
+    def set_output_size(self, size: OutputSize):
+        self._output_size = size
 
     @property
     def uniforms(self) -> dict[str, Any]:
@@ -67,6 +104,15 @@ class Node:
         return self._texture.glo
 
     def render(self) -> None:
+        desired_size = self.output_size
+        if desired_size != self._texture.size:
+            self._texture.release()
+            self._fbo.release()
+            self._texture = self._gl_context.context.texture(desired_size, 4)
+            self._fbo = self._gl_context.context.framebuffer(
+                color_attachments=[self._texture]
+            )
+
         texture_unit = 0
         for u_name, u_value in self._uniforms.items():
             u_value = u_value() if callable(u_value) else u_value
