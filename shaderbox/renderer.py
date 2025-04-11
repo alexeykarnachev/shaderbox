@@ -49,7 +49,7 @@ class Renderer:
         target_frame_time = 1.0 / fps
         self.fps = fps
 
-        ui = UI(self.gl_context.window)
+        ui = UI(self.gl_context)
 
         while not glfw.window_should_close(self.gl_context.window):
             start_time = glfw.get_time()

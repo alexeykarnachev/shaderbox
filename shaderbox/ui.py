@@ -5,29 +5,19 @@ import imgui
 import moderngl
 from imgui.integrations.glfw import GlfwRenderer
 
+from shaderbox.gl import GLContext
 from shaderbox.graph import Node, RenderGraph
+from shaderbox.utils import scale_size
 
 
-def _scale_size(width: int, height: int, max_size: int) -> tuple[int, int]:
-    aspect = width / height
-    if aspect > 1:
-        width = max_size
-        height = int(max_size / aspect)
-    else:
-        width = int(max_size * aspect)
-        height = max_size
-    return width, height
-
-
-def _node_image(
-    node: Node,
+def _texture_image(
+    texture: moderngl.Texture,
     max_size: int,
     is_button: bool = False,
     border_size: float = 0.0,
 ):
-    width, height = _scale_size(
-        width=node.output_size[0],
-        height=node.output_size[1],
+    width, height = scale_size(
+        texture.size,
         max_size=max_size,
     )
     fn = imgui.image_button if is_button else imgui.image
@@ -39,7 +29,7 @@ def _node_image(
         imgui.push_style_var(imgui.STYLE_FRAME_PADDING, (border_size, border_size))
 
     result = fn(
-        node.texture_id,
+        texture.glo,
         width=width,
         height=height,
         uv0=(0, 1),
@@ -52,20 +42,23 @@ def _node_image(
 
 
 class UI:
-    def __init__(self, window) -> None:
+    def __init__(self, gl: GLContext) -> None:
+        self._gl = gl
         self._output_node = None
 
         imgui.create_context()
-        self._imgui_renderer = GlfwRenderer(window)
+        self._imgui_renderer = GlfwRenderer(gl.window)
 
         io = imgui.get_io()
         io.fonts.clear()
         font_resource = (
-            files("shaderbox.resources") / "ubuntu-font-family-0.80" / "UbuntuMono-R.ttf"
+            files("shaderbox.resources")
+            / "ubuntu-font-family-0.80"
+            / "UbuntuMono-R.ttf"
         )
         with as_file(font_resource) as font_path:
-            print(f"Loading font from: {font_path}")
-            io.fonts.add_font_from_file_ttf(str(font_path), 20.0)
+            self._font_large = io.fonts.add_font_from_file_ttf(str(font_path), 20.0)
+            self._font_small = io.fonts.add_font_from_file_ttf(str(font_path), 15.0)
         self._imgui_renderer.refresh_font_texture()
 
     def update_and_render(self, graph: RenderGraph):
@@ -77,156 +70,126 @@ class UI:
 
         flags = imgui.WINDOW_NO_RESIZE | imgui.WINDOW_ALWAYS_AUTO_RESIZE
         imgui.begin(f"Output Viewer - {self._output_node.name}", flags=flags)
-        imgui.set_window_position(0, 0)  # Stick to top-left corner
+        imgui.set_window_position(0, 0)
 
-        # --- Main Image Column ---
+        # ----------------------------------------------------------------
+        # Main Image
+        main_image_width = 1000
+        main_image_height = main_image_width * (
+            self._output_node.output_size[1] / self._output_node.output_size[0]
+        )
         imgui.begin_child(
-            "MainImage",
-            width=800,
-            height=620,
+            "main_image",
+            width=main_image_width,
+            height=main_image_height,
             border=True,
             flags=imgui.WINDOW_NO_SCROLLBAR,
         )
-        main_img_width = 800
-        imgui.set_cursor_pos_x((imgui.get_window_width() - main_img_width) / 2)
-        _node_image(self._output_node, 800)
+        _texture_image(self._output_node._texture, max(main_image_width, main_image_height))  # type: ignore
         imgui.end_child()
 
-        # --- Preview Column ---
-        preview_img_width = 100
-        scrollbar_width = imgui.get_style().scrollbar_size
-        preview_pane_width = preview_img_width + scrollbar_width + 10
+        # ----------------------------------------------------------------
+        # Node Selector and Preview
+        preview_img_width = 150
+        preview_pane_width = preview_img_width + 40
+
         imgui.same_line()
-        imgui.begin_child("Previews", width=preview_pane_width, height=620, border=True)
-        usable_width = preview_pane_width - scrollbar_width
+        imgui.begin_child("nodes", width=preview_pane_width, border=True)
 
         for node in graph.iter_nodes():
-            is_selected = node == self._output_node
-            if is_selected:
-                imgui.push_style_color(imgui.COLOR_TEXT, 1.0, 1.0, 0.0, 1.0)
-
-            text_x = (usable_width - imgui.calc_text_size(node.name).x) / 2
-            imgui.set_cursor_pos_x(text_x)
             imgui.text(node.name)
 
-            if is_selected:
-                imgui.pop_style_color()
+            is_output = self._output_node is node
+            border_size = 2.0 if is_output else 0.0
 
-            imgui.set_cursor_pos_x((usable_width - preview_img_width) / 2)
-            if _node_image(
-                node,
+            if _texture_image(
+                node._texture,
                 preview_img_width,
                 is_button=True,
-                border_size=2.0 if self._output_node is node else 0.0,
+                border_size=border_size,
             ):
                 self._output_node = node
 
-            if node != list(graph.iter_nodes())[-1]:
-                imgui.separator()
         imgui.end_child()
 
-        # --- Controls Column ---
+        # ----------------------------------------------------------------
+        # Uniforms and Textures
         imgui.same_line()
-        imgui.begin_child("Controls", width=300, height=620, border=True)
+        imgui.begin_child(
+            f"inputs_{self._output_node.name}", width=300, height=620, border=True
+        )
 
-        input_nodes = []
-        input_textures = []
-        sliders = []
-        values = []
+        ui_nodes = []
+        ui_textures = []
+        ui_static_values = []
+        ui_changeable_values = []
 
-        for name, value in self._output_node.uniforms.items():
-            if callable(value):
-                resolved_value = value()
-                if isinstance(resolved_value, Node):
-                    input_nodes.append((name, resolved_value))
-                elif isinstance(resolved_value, moderngl.Texture):
-                    input_textures.append((name, resolved_value))
-                else:
-                    values.append((name, resolved_value))
+        for u_name, u_value in self._output_node.uniforms.items():
+            if not callable(u_value):
+                is_changeable = not isinstance(u_value, Node)
             else:
-                if isinstance(value, Node):
-                    input_nodes.append((name, value))
-                elif isinstance(value, moderngl.Texture):
-                    input_textures.append((name, value))
-                elif isinstance(value, (int, float)) or (
-                    isinstance(value, (list, tuple)) and len(value) == 3
-                ):
-                    sliders.append((name, value))
-                else:
-                    values.append((name, value))
+                u_value = u_value()
+                is_changeable = False
 
-        if input_nodes:
-            imgui.text("Input Nodes")
-            imgui.separator()
-            for name, value in input_nodes:
-                imgui.text(f"{name}:")
-                imgui.same_line()
-                if _node_image(value, 70, is_button=True):
-                    self._output_node = value
-            imgui.spacing()
+            ui_uniform = (u_name, u_value)
+            if isinstance(u_value, Node):
+                ui_nodes.append(ui_uniform)
+            elif isinstance(u_value, moderngl.Texture):
+                ui_textures.append(ui_uniform)
+            elif is_changeable:
+                ui_changeable_values.append(ui_uniform)
+            else:
+                ui_static_values.append(ui_uniform)
 
-        if input_textures:
-            imgui.text("Textures")
-            imgui.separator()
-            for name, value in input_textures:
-                imgui.text(f"{name}:")
-                imgui.same_line()
-                if isinstance(value, moderngl.Texture) and not callable(
-                    self._output_node.uniforms[name]
-                ):
-                    if imgui.image_button(value.glo, 70, 70, uv0=(0, 1), uv1=(1, 0)):
-                        new_file = crossfiledialog.open_file(
-                            title=f"Select texture for {name}"
-                        )
-                        if new_file:
-                            new_texture = self._output_node._gl_context.context.texture(
-                                self._output_node.output_size,
-                                4,
-                                data=open(new_file, "rb").read(),
-                            )
-                            self._output_node.uniforms[name] = new_texture
-                    imgui.same_line()
-                    imgui.text("Click to replace")
-                else:
-                    imgui.image(value.glo, 70, 70, uv0=(0, 1), uv1=(1, 0))
-            imgui.spacing()
+        if ui_nodes:
+            with imgui.font(self._font_large):  # type: ignore
+                imgui.text("Input Nodes")
+                imgui.separator()
 
-        if sliders:
-            imgui.text("Adjustable Parameters")
-            imgui.separator()
-            for name, value in sliders:
-                if isinstance(value, (int, float)):
-                    changed, new_value = imgui.slider_float(
-                        f"{name}", value, -10.0, 10.0, "%.2f"
+            for name, node in ui_nodes:
+                with imgui.font(self._font_small):  # type: ignore
+                    imgui.text(name)
+
+                if _texture_image(node._texture, 50, is_button=True):
+                    self._output_node = node
+
+                imgui.spacing()
+
+        if ui_textures:
+            with imgui.font(self._font_large):  # type: ignore
+                imgui.text("Input Textures")
+                imgui.separator()
+
+            for name, texture in ui_textures:
+                with imgui.font(self._font_small):  # type: ignore
+                    imgui.text(name)
+
+                if _texture_image(texture, 50, is_button=True):
+                    new_file = crossfiledialog.open_file(
+                        title=f"Select texture for {name}"
                     )
-                    if changed:
-                        self._output_node.uniforms[name] = new_value
-                elif isinstance(value, (list, tuple)) and len(value) == 3:
-                    components = list(value)
-                    changed = False
-                    for i in range(3):
-                        c_changed, c_value = imgui.slider_float(
-                            f"{name}[{i}]", components[i], -1.0, 1.0, "%.2f"
-                        )
-                        if c_changed:
-                            components[i] = c_value
-                            changed = True
-                    if changed:
-                        self._output_node.uniforms[name] = tuple(components)
-            imgui.spacing()
 
-        if values:
-            imgui.text("Static Values")
-            imgui.separator()
-            for name, value in values:
-                if isinstance(value, (int, float)):
-                    imgui.text(f"{name}: {value:.2f}")
-                elif isinstance(value, (list, tuple)) and len(value) == 3:
-                    imgui.text(
-                        f"{name}: ({value[0]:.2f}, {value[1]:.2f}, {value[2]:.2f})"
-                    )
-                else:
-                    imgui.text(f"{name}: {value}")
+                    if new_file:
+                        new_texture = self._gl.load_texture(new_file)
+                        self._output_node.uniforms[name] = new_texture
+
+                imgui.spacing()
+
+        if ui_changeable_values:
+            with imgui.font(self._font_large):  # type: ignore
+                imgui.text("Changeable Uniforms")
+                imgui.separator()
+
+            for name, value in ui_changeable_values:
+                self._output_node.uniforms[name] = _drag_value(name, value)
+
+        if ui_static_values:
+            with imgui.font(self._font_large):  # type: ignore
+                imgui.text("Automatic Uniforms")
+                imgui.separator()
+
+            for name, value in ui_static_values:
+                _drag_value(name, value)
 
         imgui.spacing()
         imgui.end_child()
@@ -234,3 +197,66 @@ class UI:
         imgui.end()
         imgui.render()
         self._imgui_renderer.render(imgui.get_draw_data())
+
+
+def _drag_value(name, value):
+    format_str = (
+        "%.4f"
+        if isinstance(value, float)
+        or (hasattr(value, "__len__") and isinstance(value[0], float))
+        else "%d"
+    )
+
+    if isinstance(value, int | float):
+        change_speed = 0.005 if isinstance(value, float) else 1
+        if isinstance(value, float):
+            change_speed = max(change_speed, abs(value) * 0.005)
+    elif hasattr(value, "__len__"):
+        abs_values = [abs(v) for v in value if isinstance(v, int | float)]
+        change_speed = max(0.005, min(abs_values) * 0.005) if abs_values else 0.005
+    else:
+        return value
+
+    if isinstance(value, float):
+        return imgui.drag_float(
+            label=name,
+            value=value,
+            change_speed=change_speed,
+            format=format_str,
+        )[1]
+    elif isinstance(value, int):
+        return imgui.drag_int(
+            label=name,
+            value=value,
+            change_speed=change_speed,
+            format=format_str,
+        )[1]
+    elif hasattr(value, "__len__") and isinstance(value[0], float):
+        if len(value) == 2:
+            return imgui.drag_float2(
+                label=name,
+                value0=value[0],
+                value1=value[1],
+                change_speed=change_speed,
+                format=format_str,
+            )[1]
+        elif len(value) == 3:
+            return imgui.drag_float3(
+                label=name,
+                value0=value[0],
+                value1=value[1],
+                value2=value[2],
+                change_speed=change_speed,
+                format=format_str,
+            )[1]
+        elif len(value) == 4:
+            return imgui.drag_float4(
+                label=name,
+                value0=value[0],
+                value1=value[1],
+                value2=value[2],
+                value3=value[3],
+                change_speed=change_speed,
+                format=format_str,
+            )[1]
+    return value

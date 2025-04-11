@@ -1,4 +1,5 @@
 from shaderbox.renderer import Renderer
+from shaderbox.utils import scale_size
 
 if __name__ == "__main__":
     parallax_fs = """
@@ -8,14 +9,15 @@ if __name__ == "__main__":
     uniform sampler2D u_base_texture;
     uniform sampler2D u_depth_map;
     uniform float u_time;
-    uniform vec2 u_texture_size;
     uniform float u_focal_length = 1480.0;
     uniform float u_parallax_amount = 0.05;
     void main() {
         vec2 uv = vs_uv;
         float depth = texture(u_depth_map, uv).r;
         vec2 camera_move = vec2(sin(u_time), cos(u_time)) * u_focal_length * u_parallax_amount;
-        vec2 offset = -camera_move * depth / u_texture_size;
+
+        vec2 texture_size = vec2(textureSize(u_base_texture, 0));
+        vec2 offset = -camera_move * depth / texture_size;
         uv += offset;
         uv = clamp(uv, 0.0, 1.0);
         vec4 color = texture(u_base_texture, uv);
@@ -106,15 +108,15 @@ if __name__ == "__main__":
 
     photo_texture = renderer.load_texture("photo.jpeg")
     depth_texture = renderer.load_texture("depth.png")
+    output_size = scale_size(photo_texture.size, 400)
 
     parallax_node = renderer.create_node(
         name="Parallax",
         fs_source=parallax_fs,
-        output_size=(800, 608),
+        output_size=output_size,
         uniforms={
             "u_base_texture": photo_texture,
             "u_depth_map": depth_texture,
-            "u_texture_size": (800.0, 608.0),
             "u_parallax_amount": 0.02,
             "u_focal_length": 1480.0,
             "u_time": lambda: renderer.render_time,
@@ -124,7 +126,7 @@ if __name__ == "__main__":
     bright_pass_node = renderer.create_node(
         name="Bright pass",
         fs_source=bright_pass_fs,
-        output_size=(800, 608),
+        output_size=output_size,
         uniforms={
             "u_source_texture": parallax_node,
             "u_threshold": 0.5,
@@ -134,7 +136,7 @@ if __name__ == "__main__":
     downscale_node1 = renderer.create_node(
         name="Downscale 1",
         fs_source=downscale_fs,
-        output_size=(400, 304),
+        output_size=(output_size[0] // 2, output_size[1] // 2),
         uniforms={
             "u_input_texture": bright_pass_node,
         },
@@ -143,37 +145,37 @@ if __name__ == "__main__":
     blur_node1 = renderer.create_node(
         name="Blur 1",
         fs_source=blur_fs,
-        output_size=(400, 304),
+        output_size=(output_size[0] // 2, output_size[1] // 2),
         uniforms={
             "u_blur_input": downscale_node1,
-            "u_pixel_size": (1.0 / 400, 1.0 / 304),
+            "u_pixel_size": (1.0 / output_size[0] // 2, 1.0 / output_size[1] // 2),
         },
     )
 
     downscale_node2 = renderer.create_node(
         name="Downscale 2",
         fs_source=downscale_fs,
-        output_size=(200, 152),
+        output_size=(output_size[0] // 4, output_size[1] // 4),
         uniforms={"u_input_texture": blur_node1},
     )
 
     blur_node2 = renderer.create_node(
         name="Blur 2",
         fs_source=blur_fs,
-        output_size=(200, 152),
+        output_size=(output_size[0] // 4, output_size[1] // 4),
         uniforms={
             "u_blur_input": downscale_node2,
-            "u_pixel_size": (1.0 / 200, 1.0 / 152),
+            "u_pixel_size": (1.0 / output_size[0] // 4, 1.0 / output_size[1] // 4),
         },
     )
 
     outline_node = renderer.create_node(
         name="Outline",
         fs_source=outline_fs,
-        output_size=(800, 608),
+        output_size=output_size,
         uniforms={
             "u_outline_source": parallax_node,
-            "u_pixel_size": (8.0 / 800, 8.0 / 608),
+            "u_pixel_size": (1.0 / output_size[0], 1.0 / output_size[1]),
             "u_outline_thickness": 8.0,
         },
     )
@@ -181,7 +183,7 @@ if __name__ == "__main__":
     combine_node = renderer.create_node(
         name="Combine",
         fs_source=combine_fs,
-        output_size=(800, 608),
+        output_size=output_size,
         uniforms={
             "u_base_image": parallax_node,
             "u_bloom_pass1": blur_node1,
