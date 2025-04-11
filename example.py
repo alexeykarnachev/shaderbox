@@ -1,4 +1,3 @@
-from shaderbox.graph import SizeFromUniformTexture
 from shaderbox.renderer import Renderer
 from shaderbox.utils import scale_size
 
@@ -113,7 +112,7 @@ if __name__ == "__main__":
     parallax_node = renderer.create_node(
         name="Parallax",
         fs_source=parallax_fs,
-        output_size=SizeFromUniformTexture("u_base_texture"),
+        output_size="u_base_texture",
         uniforms={
             "u_base_texture": photo_texture,
             "u_depth_map": depth_texture,
@@ -126,7 +125,7 @@ if __name__ == "__main__":
     bright_pass_node = renderer.create_node(
         name="Bright pass",
         fs_source=bright_pass_fs,
-        output_size=SizeFromUniformTexture("u_source_texture"),
+        output_size="u_source_texture",
         uniforms={
             "u_source_texture": parallax_node,
             "u_threshold": 0.5,
@@ -136,7 +135,7 @@ if __name__ == "__main__":
     downscale_node1 = renderer.create_node(
         name="Downscale 1",
         fs_source=downscale_fs,
-        output_size=SizeFromUniformTexture("u_input_texture", 0.5),
+        output_size=("u_input_texture", 0.5),
         uniforms={
             "u_input_texture": bright_pass_node,
         },
@@ -145,12 +144,12 @@ if __name__ == "__main__":
     blur_node1 = renderer.create_node(
         name="Blur 1",
         fs_source=blur_fs,
-        output_size=SizeFromUniformTexture("u_blur_input", 1.0),
+        output_size=("u_blur_input", 1.0),
         uniforms={
             "u_blur_input": downscale_node1,
             "u_pixel_size": lambda: (
-                1.0 / blur_node1.output_size[0],
-                1.0 / blur_node1.output_size[1],
+                1.0 / blur_node1.get_output_size()[0],
+                1.0 / blur_node1.get_output_size()[1],
             ),
         },
     )
@@ -158,7 +157,7 @@ if __name__ == "__main__":
     downscale_node2 = renderer.create_node(
         name="Downscale 2",
         fs_source=downscale_fs,
-        output_size=SizeFromUniformTexture("u_input_texture"),
+        output_size="u_input_texture",
         uniforms={
             "u_input_texture": blur_node1,
         },
@@ -167,12 +166,12 @@ if __name__ == "__main__":
     blur_node2 = renderer.create_node(
         name="Blur 2",
         fs_source=blur_fs,
-        output_size=SizeFromUniformTexture("u_blur_input"),
+        output_size="u_blur_input",
         uniforms={
             "u_blur_input": downscale_node2,
             "u_pixel_size": lambda: (
-                1.0 / blur_node2.output_size[0],
-                1.0 / blur_node2.output_size[1],
+                1.0 / blur_node2.get_output_size()[0],
+                1.0 / blur_node2.get_output_size()[1],
             ),
         },
     )
@@ -180,12 +179,12 @@ if __name__ == "__main__":
     outline_node = renderer.create_node(
         name="Outline",
         fs_source=outline_fs,
-        output_size=SizeFromUniformTexture("u_outline_source"),
+        output_size="u_outline_source",
         uniforms={
             "u_outline_source": parallax_node,
             "u_pixel_size": lambda: (
-                1.0 / outline_node.output_size[0],
-                1.0 / outline_node.output_size[1],
+                1.0 / outline_node.get_output_size()[0],
+                1.0 / outline_node.get_output_size()[1],
             ),
             "u_outline_thickness": 8.0,
         },
@@ -194,7 +193,7 @@ if __name__ == "__main__":
     combine_node = renderer.create_node(
         name="Combine",
         fs_source=combine_fs,
-        output_size=SizeFromUniformTexture("u_base_image"),
+        output_size="u_base_image",
         uniforms={
             "u_base_image": parallax_node,
             "u_bloom_pass1": blur_node1,

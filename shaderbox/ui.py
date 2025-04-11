@@ -70,22 +70,23 @@ class UI:
         self._imgui_renderer.process_inputs()
         imgui.new_frame()
 
-        flags = imgui.WINDOW_NO_RESIZE | imgui.WINDOW_ALWAYS_AUTO_RESIZE
-        imgui.begin(f"Output Viewer - {self._output_node.name}", flags=flags)
+        imgui.begin("Output Viewer")
         imgui.set_window_position(0, 0)
 
         # ----------------------------------------------------------------
         # Main Image
-        main_image_width = 1000
-        main_image_height = main_image_width * (
-            self._output_node.output_size[1] / self._output_node.output_size[0]
+        main_image_max_size = 800
+        main_output_size = self._output_node.get_output_size()
+        main_image_width, main_image_height = scale_size(
+            main_output_size, main_image_max_size
         )
+
         imgui.begin_child(
             "main_image",
             width=main_image_width,
             height=main_image_height,
             border=True,
-            flags=imgui.WINDOW_NO_SCROLLBAR,
+            flags=imgui.WINDOW_NO_SCROLLBAR | imgui.WINDOW_NO_INPUTS,
         )
         _texture_image(
             self._output_node._texture,
@@ -120,9 +121,7 @@ class UI:
         # ----------------------------------------------------------------
         # Uniforms and Textures
         imgui.same_line()
-        imgui.begin_child(
-            f"inputs_{self._output_node.name}", width=300, height=620, border=True
-        )
+        imgui.begin_child("uniforms", border=True)
 
         ui_nodes = []
         ui_textures = []
@@ -186,7 +185,8 @@ class UI:
                 imgui.separator()
 
             for name, value in ui_changeable_values:
-                self._output_node.uniforms[name] = _drag_value(name, value)
+                with imgui.font(self._font_small):  # type: ignore
+                    self._output_node.uniforms[name] = _drag_value(name, value)
 
         if ui_static_values:
             with imgui.font(self._font_large):  # type: ignore
@@ -194,7 +194,8 @@ class UI:
                 imgui.separator()
 
             for name, value in ui_static_values:
-                _drag_value(name, value)
+                with imgui.font(self._font_small):  # type: ignore
+                    _drag_value(name, value)
 
         imgui.spacing()
         imgui.end_child()

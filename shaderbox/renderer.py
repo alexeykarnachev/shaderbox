@@ -73,7 +73,7 @@ class Renderer:
     def render_image(self, output_node: Node, file_path: str) -> None:
         self.graph.render()
 
-        width, height = output_node.output_size
+        width, height = output_node.get_output_size()
         data = output_node._fbo.read(viewport=(0, 0, width, height), components=3)
         image = np.frombuffer(data, np.uint8).reshape(height, width, 3)[::-1]
 
@@ -84,7 +84,7 @@ class Renderer:
         self, output_node: Node, duration: float, fps: float
     ) -> np.ndarray:
         n_frames = int(duration * fps)
-        width, height = output_node.output_size
+        width, height = output_node.get_output_size()
         frames = np.empty((n_frames, height, width, 3), dtype=np.uint8)
 
         for frame_idx in range(n_frames):

@@ -1,5 +1,4 @@
 from collections import defaultdict, deque
-from dataclasses import dataclass
 from typing import Any
 
 import moderngl
@@ -7,20 +6,7 @@ import numpy as np
 
 from shaderbox.gl import GLContext
 
-
-@dataclass
-class SizeFromIntTuple:
-    width: int
-    height: int
-
-
-@dataclass
-class SizeFromUniformTexture:
-    name: str
-    scale: float = 1.0
-
-
-OutputSize = SizeFromIntTuple | SizeFromUniformTexture
+OutputSize = tuple[int, int] | str | tuple[str, float]
 
 
 class Node:
@@ -52,10 +38,7 @@ class Node:
             fragment_shader=fs_source,
         )
 
-        self._init()
-
-    def _init(self):
-        self._texture = self._gl_context.context.texture(self.output_size, 4)
+        self._texture = self._gl_context.context.texture(self.get_output_size(), 4)
         self._fbo = self._gl_context.context.framebuffer(
             color_attachments=[self._texture]
         )
@@ -73,24 +56,29 @@ class Node:
     def name(self) -> str:
         return self._name
 
-    @property
-    def output_size(self) -> tuple[int, int]:
-        if isinstance(self._output_size, SizeFromIntTuple):
-            return (self._output_size.width, self._output_size.height)
-        elif isinstance(self._output_size, SizeFromUniformTexture):
-            texture = self._uniforms.get(self._output_size.name)
+    def get_output_size(self) -> tuple[int, int]:
+        s = self._output_size
+
+        if isinstance(s, str):
+            s = (s, 1.0)
+
+        name_or_width, scale_or_height = s
+        if isinstance(name_or_width, str):
+            name, scale = name_or_width, scale_or_height
+            texture = self._uniforms.get(name)
 
             if isinstance(texture, Node):
                 texture = texture._texture
-            elif not isinstance(texture, moderngl.Texture):
-                raise ValueError(f"Uniform '{self._output_size.name}' is not a texture")
 
-            width, height = texture.size
-            scaled_width = max(1, round(width * self._output_size.scale))
-            scaled_height = max(1, round(height * self._output_size.scale))
-            return (scaled_width, scaled_height)
+            if not isinstance(texture, moderngl.Texture):
+                raise ValueError(f"Uniform '{name}' is not a texture")
+
+            width = max(1, round(texture.size[0] * scale))
+            height = max(1, round(texture.size[1] * scale))
         else:
-            raise ValueError("Unreachable")
+            width, height = name_or_width, scale_or_height
+
+        return width, height  # type: ignore
 
     def set_output_size(self, size: OutputSize):
         self._output_size = size
@@ -104,7 +92,8 @@ class Node:
         return self._texture.glo
 
     def render(self) -> None:
-        desired_size = self.output_size
+        desired_size = self.get_output_size()
+
         if desired_size != self._texture.size:
             self._texture.release()
             self._fbo.release()
