@@ -10,37 +10,6 @@ from shaderbox.graph import Node, RenderGraph
 from shaderbox.utils import scale_size
 
 
-def _texture_image(
-    texture: moderngl.Texture,
-    max_size: int,
-    is_button: bool = False,
-    border_size: float = 0.0,
-):
-    width, height = scale_size(
-        texture.size,
-        max_size=max_size,
-    )
-    fn = imgui.image_button if is_button else imgui.image
-
-    imgui.push_style_color(imgui.COLOR_BORDER, 1.0, 1.0, 0.0, 1.0)
-    if is_button:
-        imgui.push_style_var(imgui.STYLE_FRAME_BORDERSIZE, border_size)
-    else:
-        imgui.push_style_var(imgui.STYLE_FRAME_PADDING, (border_size, border_size))
-
-    result = fn(
-        texture.glo,
-        width=width,
-        height=height,
-        uv0=(0, 1),
-        uv1=(1, 0),
-    )
-
-    imgui.pop_style_color()
-    imgui.pop_style_var()
-    return result
-
-
 class UI:
     def __init__(self, gl: GLContext) -> None:
         self._gl = gl
@@ -75,8 +44,6 @@ class UI:
 
         # ----------------------------------------------------------------
         # Main Image
-        imgui.begin_group()
-
         main_image_max_size = 800
         main_output_size = self._output_node.get_output_size()
         main_image_width, main_image_height = scale_size(
@@ -90,18 +57,13 @@ class UI:
             border=True,
             flags=imgui.WINDOW_NO_SCROLLBAR | imgui.WINDOW_NO_INPUTS,
         )
+        imgui.text(f"Node - {self._output_node.name}")
+        imgui.separator()
         _texture_image(
             self._output_node._texture,
             max(main_image_width, main_image_height),  # type: ignore
         )
         imgui.end_child()
-
-        imgui.begin_child("info", width=main_image_width)
-        imgui.text(f"Node - {self._output_node.name}")
-        imgui.separator()
-        imgui.end_child()
-
-        imgui.end_group()
 
         # ----------------------------------------------------------------
         # Node Selector and Preview
@@ -214,6 +176,37 @@ class UI:
         self._imgui_renderer.render(imgui.get_draw_data())
 
         self._output_node = new_output_node
+
+
+def _texture_image(
+    texture: moderngl.Texture,
+    max_size: int,
+    is_button: bool = False,
+    border_size: float = 0.0,
+):
+    width, height = scale_size(
+        texture.size,
+        max_size=max_size,
+    )
+    fn = imgui.image_button if is_button else imgui.image
+
+    imgui.push_style_color(imgui.COLOR_BORDER, 1.0, 1.0, 0.0, 1.0)
+    if is_button:
+        imgui.push_style_var(imgui.STYLE_FRAME_BORDERSIZE, border_size)
+    else:
+        imgui.push_style_var(imgui.STYLE_FRAME_PADDING, (border_size, border_size))
+
+    result = fn(
+        texture.glo,
+        width=width,
+        height=height,
+        uv0=(0, 1),
+        uv1=(1, 0),
+    )
+
+    imgui.pop_style_color()
+    imgui.pop_style_var()
+    return result
 
 
 def _drag_value(name, value):
