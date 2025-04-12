@@ -218,16 +218,41 @@ def _drag_value(name, value):
         else "%d"
     )
 
-    if isinstance(value, int | float):
+    # Determine change_speed
+    if isinstance(value, (int, float)):
         change_speed = 0.005 if isinstance(value, float) else 1
         if isinstance(value, float):
             change_speed = max(change_speed, abs(value) * 0.005)
     elif hasattr(value, "__len__"):
-        abs_values = [abs(v) for v in value if isinstance(v, int | float)]
+        abs_values = [abs(v) for v in value if isinstance(v, (int, float))]
         change_speed = max(0.005, min(abs_values) * 0.005) if abs_values else 0.005
     else:
         return value
 
+    # Handle color uniforms (vec3 or vec4 with "color" in name)
+    if (
+        hasattr(value, "__len__")
+        and isinstance(value[0], float)
+        and len(value) in (3, 4)
+        and "color" in name.lower()
+    ):
+        if len(value) == 3:
+            return imgui.color_edit3(
+                label=name,
+                r=value[0],
+                g=value[1],
+                b=value[2],
+            )[1]
+        elif len(value) == 4:
+            return imgui.color_edit4(
+                label=name,
+                r=value[0],
+                g=value[1],
+                b=value[2],
+                a=value[3],
+            )[1]
+
+    # Existing scalar handling
     if isinstance(value, float):
         return imgui.drag_float(
             label=name,
@@ -242,6 +267,7 @@ def _drag_value(name, value):
             change_speed=change_speed,
             format=format_str,
         )[1]
+    # Existing vector handling
     elif hasattr(value, "__len__") and isinstance(value[0], float):
         if len(value) == 2:
             return imgui.drag_float2(

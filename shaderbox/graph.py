@@ -158,7 +158,7 @@ class Node:
             )
 
             self._fs_source = fs_source
-            self._fs_file_hash = self._compute_file_hash(self._fs_source)
+            self._fs_file_hash = self._compute_file_hash(self._fs_file_path)
 
             # Get new uniforms from the program
             new_program_uniforms = {

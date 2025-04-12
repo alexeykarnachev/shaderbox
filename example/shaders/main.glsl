@@ -5,7 +5,7 @@ out vec4 fs_color;
 
 uniform float u_time;
 uniform float b;
-uniform vec3 c;
+uniform vec3 u_add_color;
 uniform sampler2D u_photo_texture;
 uniform sampler2D u_depth_texture;
 
@@ -108,7 +108,7 @@ void main() {
         color += vec3(0.0, 0.2, 0.0);
     }
 
-    color += c;
+    color += u_add_color;
 
-    fs_color = vec4(color, 1.0) + vec4(0.0000001 * (color + depth + sin(u_time)), 0.0);
+    fs_color = vec4(color, 1.0);
 }
