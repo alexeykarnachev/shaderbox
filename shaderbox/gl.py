@@ -1,9 +1,11 @@
+import logging
 from pathlib import Path
 
 import glfw
 import moderngl
-from loguru import logger
 from PIL import Image
+
+logger = logging.getLogger(__name__)
 
 
 class GLContext:
@@ -27,7 +29,7 @@ class GLContext:
             if window_size is None:
                 monitor = glfw.get_primary_monitor()
                 mode = glfw.get_video_mode(monitor)
-                window_size = (mode.size.width, mode.size.height)
+                window_size = (mode.size.width // 2, mode.size.height)
 
             self.window = glfw.create_window(
                 width=window_size[0],
@@ -37,6 +39,11 @@ class GLContext:
                 share=None,
             )
             glfw.make_context_current(self.window)
+
+            # Position the window to the left side of the primary monitor
+            monitor = glfw.get_primary_monitor()
+            monitor_pos = glfw.get_monitor_pos(monitor)
+            glfw.set_window_pos(self.window, monitor_pos[0], monitor_pos[1])
 
         self.context = moderngl.create_context(standalone=is_headless)
 

@@ -4,6 +4,8 @@ in vec2 vs_uv;
 out vec4 fs_color;
 
 uniform float u_time;
+uniform float b;
+uniform vec3 c;
 uniform sampler2D u_photo_texture;
 uniform sampler2D u_depth_texture;
 
@@ -92,7 +94,7 @@ void main() {
     vec2 uv = vs_uv;
 
 	float depth = texture(u_depth_texture, uv).r;
-    depth += 0.01;
+    depth += b;
     depth = pow(depth, 2.8);
 
     float n = snoise(vec3(pow(4.0 * depth, 16.0), uv.y * 4.0, uv.x * 4.0));
@@ -105,6 +107,8 @@ void main() {
     if (depth > line_dist && depth < (line_dist + line_width)) {
         color += vec3(0.0, 0.2, 0.0);
     }
+
+    color += c;
 
     fs_color = vec4(color, 1.0) + vec4(0.0000001 * (color + depth + sin(u_time)), 0.0);
 }
