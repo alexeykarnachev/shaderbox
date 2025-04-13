@@ -1,9 +1,12 @@
+import subprocess
 from importlib.resources import as_file, files
 
 import crossfiledialog
+import glfw
 import imgui
 import moderngl
 from imgui.integrations.glfw import GlfwRenderer
+from loguru import logger
 
 from shaderbox.gl import GLContext
 from shaderbox.graph import Node, RenderGraph
@@ -66,6 +69,20 @@ class UI:
             max(main_image_width, main_image_height),  # type: ignore
         )
         imgui.end_child()
+
+        # ----------------------------------------------------------------
+        # Button to Open Neovim
+        if imgui.button("Neovim (CTRL+N)") or (
+            imgui.is_key_down(glfw.KEY_LEFT_CONTROL)
+            and imgui.is_key_pressed(glfw.KEY_N)
+        ):
+            cmd = [
+                "gnome-terminal",
+                "--",
+                "nvim",
+                self._output_node._fs_file_path,
+            ]
+            subprocess.Popen(cmd)
 
         # ----------------------------------------------------------------
         # Node Selector and Preview
@@ -177,6 +194,8 @@ class UI:
         self._imgui_renderer.render(imgui.get_draw_data())
 
         self._output_node = new_output_node
+
+    # def _open_neovim(self, shader_file: str):
 
 
 def _texture_image(
