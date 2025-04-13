@@ -6,7 +6,6 @@ import glfw
 import imgui
 import moderngl
 from imgui.integrations.glfw import GlfwRenderer
-from loguru import logger
 
 from shaderbox.gl import GLContext
 from shaderbox.graph import Node, RenderGraph
