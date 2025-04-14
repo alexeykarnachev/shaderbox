@@ -10,7 +10,7 @@ from loguru import logger
 from PIL import Image
 
 from shaderbox.gl import GLContext
-from shaderbox.graph import Node, OutputSize, RenderGraph
+from shaderbox.graph import Node, NodeOutput, RenderGraph
 from shaderbox.ui import UI
 
 
@@ -28,11 +28,11 @@ class Renderer:
     def create_node(
         self,
         fs_source: str | Path,
-        output_size: OutputSize,
+        output: NodeOutput,
         uniforms: dict[str, Any],
         name: str | None = None,
     ) -> Node:
-        node = Node(self.gl_context, fs_source, output_size, uniforms, name)
+        node = Node(self.gl_context, fs_source, output, uniforms, name)
         self.graph.add_node(node)
         return node
 
@@ -74,7 +74,9 @@ class Renderer:
         self.graph.render()
 
         width, height = output_node.get_output_size()
-        data = output_node._fbo.read(viewport=(0, 0, width, height), components=3)
+        data = output_node._resources._fbo.read(
+            viewport=(0, 0, width, height), components=3
+        )
         image = np.frombuffer(data, np.uint8).reshape(height, width, 3)[::-1]
 
         logger.info(f"Saving image to {file_path}")
@@ -92,7 +94,9 @@ class Renderer:
             self.render_time = frame_idx / fps if fps > 0 else 0.0
             self.graph.render()
 
-            data = output_node._fbo.read(viewport=(0, 0, width, height), components=3)
+            data = output_node._resources._fbo.read(
+                viewport=(0, 0, width, height), components=3
+            )
             frames[frame_idx] = np.frombuffer(data, np.uint8).reshape(height, width, 3)[
                 ::-1
             ]

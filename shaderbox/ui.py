@@ -6,6 +6,7 @@ import glfw
 import imgui
 import moderngl
 from imgui.integrations.glfw import GlfwRenderer
+from loguru import logger
 
 from shaderbox.gl import GLContext
 from shaderbox.graph import Node, RenderGraph
@@ -63,10 +64,18 @@ class UI:
             f"Node - {self._output_node.name} | fps: {imgui.get_io().framerate:.2f}"
         )
         imgui.separator()
-        _texture_image(
-            self._output_node._texture,
-            max(main_image_width, main_image_height),  # type: ignore
-        )
+
+        if self._output_node._resources._error:
+            with imgui.font(self._font_large):  # type: ignore
+                imgui.push_style_color(imgui.COLOR_TEXT, 1.0, 0.0, 0.0)
+                imgui.text_wrapped(self._output_node._resources._error)
+                imgui.pop_style_color()
+        else:
+            _texture_image(
+                self._output_node._resources._texture,
+                max(main_image_width, main_image_height),
+            )
+
         imgui.end_child()
 
         # ----------------------------------------------------------------
@@ -79,7 +88,7 @@ class UI:
                 "gnome-terminal",
                 "--",
                 "nvim",
-                self._output_node._fs_file_path,
+                self._output_node._resources._fs_source._path,
             ]
             subprocess.Popen(cmd)
 
@@ -97,7 +106,7 @@ class UI:
             border_size = 2.0 if is_output else 0.0
 
             if _texture_image(
-                node._texture,
+                node._resources._texture,
                 preview_img_width,
                 is_button=True,
                 border_size=border_size,
@@ -116,14 +125,17 @@ class UI:
         ui_static_values = []
         ui_changeable_values = []
 
-        for u_name, u_value in self._output_node.uniforms.items():
+        uniforms, are_used = self._output_node.get_uniforms()
+        for u_name, u_value in uniforms.items():
             if not callable(u_value):
                 is_changeable = not isinstance(u_value, Node)
             else:
                 u_value = u_value()
                 is_changeable = False
 
-            ui_uniform = (u_name, u_value)
+            is_used = are_used[u_name]
+            color = (1.0, 0.0, 0.0) if not is_used else (0.0, 1.0, 0.0)
+            ui_uniform = (u_name, u_value, color)
             if isinstance(u_value, Node):
                 ui_nodes.append(ui_uniform)
             elif isinstance(u_value, moderngl.Texture):
@@ -138,9 +150,9 @@ class UI:
                 imgui.text("Input Nodes")
                 imgui.separator()
 
-            for name, node in ui_nodes:
+            for name, node, color in ui_nodes:
                 with imgui.font(self._font_small):  # type: ignore
-                    imgui.text(name)
+                    imgui.text_colored(name, *color)
 
                 if _texture_image(node._texture, 50, is_button=True):
                     new_output_node = node
@@ -152,9 +164,9 @@ class UI:
                 imgui.text("Input Textures")
                 imgui.separator()
 
-            for name, texture in ui_textures:
+            for name, texture, color in ui_textures:
                 with imgui.font(self._font_small):  # type: ignore
-                    imgui.text(name)
+                    imgui.text_colored(name, *color)
 
                 if _texture_image(texture, 50, is_button=True):
                     new_file = crossfiledialog.open_file(
@@ -163,7 +175,7 @@ class UI:
 
                     if new_file:
                         new_texture = self._gl.load_texture(new_file)
-                        self._output_node.uniforms[name] = new_texture
+                        self._output_node._uniforms[name] = new_texture
 
                 imgui.spacing()
 
@@ -172,37 +184,47 @@ class UI:
                 imgui.text("Changeable Uniforms")
                 imgui.separator()
 
-            for name, value in ui_changeable_values:
+            for name, value, color in ui_changeable_values:
                 with imgui.font(self._font_small):  # type: ignore
-                    self._output_node.uniforms[name] = _drag_value(name, value)
+                    imgui.push_style_color(imgui.COLOR_TEXT, *color)
+                    self._output_node._uniforms[name] = _drag_value(name, value)
+                    imgui.pop_style_color()
 
         if ui_static_values:
             with imgui.font(self._font_large):  # type: ignore
                 imgui.text("Automatic Uniforms")
                 imgui.separator()
 
-            for name, value in ui_static_values:
+            for name, value, color in ui_static_values:
                 with imgui.font(self._font_small):  # type: ignore
+                    imgui.push_style_color(imgui.COLOR_TEXT, *color)
                     _drag_value(name, value)
+                    imgui.pop_style_color()
 
         imgui.spacing()
         imgui.end_child()
 
         imgui.end()
         imgui.render()
-        self._imgui_renderer.render(imgui.get_draw_data())
+
+        try:
+            self._gl.context.clear_errors()
+            self._imgui_renderer.render(imgui.get_draw_data())
+        except Exception:
+            logger.warning("Failed to render imgui draw data")
 
         self._output_node = new_output_node
 
-    # def _open_neovim(self, shader_file: str):
-
 
 def _texture_image(
-    texture: moderngl.Texture,
+    texture: moderngl.Texture | None,
     max_size: int,
     is_button: bool = False,
     border_size: float = 0.0,
 ):
+    if texture is None:
+        return
+
     width, height = scale_size(
         texture.size,
         max_size=max_size,
@@ -237,12 +259,12 @@ def _drag_value(name, value):
     )
 
     # Determine change_speed
-    if isinstance(value, (int, float)):
+    if isinstance(value, int | float):
         change_speed = 0.005 if isinstance(value, float) else 1
         if isinstance(value, float):
             change_speed = max(change_speed, abs(value) * 0.005)
     elif hasattr(value, "__len__"):
-        abs_values = [abs(v) for v in value if isinstance(v, (int, float))]
+        abs_values = [abs(v) for v in value if isinstance(v, int | float)]
         change_speed = max(0.005, min(abs_values) * 0.005) if abs_values else 0.005
     else:
         return value

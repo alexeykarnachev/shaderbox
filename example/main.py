@@ -17,7 +17,7 @@ if __name__ == "__main__":
     main_node = renderer.create_node(
         name="Main",
         fs_source=main_fs,
-        output_size="u_photo_texture",
+        output="u_photo_texture",
         uniforms={
             "u_photo_texture": photo_texture,
             "u_depth_texture": depth_texture,

@@ -10,11 +10,41 @@ from OpenGL.GL import GL_DOUBLE, GL_FLOAT, GL_INT, GL_UNSIGNED_INT
 
 from shaderbox.gl import GLContext
 
-OutputSize = tuple[int, int] | str | tuple[str, float]
-FSSource = str | Path
+NodeOutput = tuple[int, int] | str | tuple[str, float]
 
 
-class Node:
+class FileSource:
+    def __init__(self, source: str | Path) -> None:
+        self._text: str = ""
+        self._hash: str = ""
+        self._path = Path(source) if FileSource._is_file_path(source) else None
+
+    def reload_if_needed(self) -> bool:
+        is_reloaded = False
+
+        if self._path is None:
+            return is_reloaded
+
+        text = self._path.read_text()
+        hash = FileSource._get_content_hash(text)
+        if hash != self._hash:
+            self._hash = hash
+            self._text = text
+            is_reloaded = True
+
+        return is_reloaded
+
+    @staticmethod
+    def _is_file_path(source: str | Path) -> bool:
+        return "\n" not in str(source).strip()
+
+    @staticmethod
+    def _get_content_hash(content: str | bytes) -> str:
+        b = content.encode() if isinstance(content, str) else content
+        return hashlib.sha256(b).hexdigest()
+
+
+class NodeResources:
     _VERTEX_SHADER = """
     #version 460
     in vec2 a_pos;
@@ -27,80 +57,191 @@ class Node:
 
     def __init__(
         self,
+        gl_context: GLContext,
+        fs_source: str | Path,
+        texture_size: tuple[int, int],
+    ) -> None:
+        self._gl_context: GLContext = gl_context
+        self._fs_source: FileSource = FileSource(fs_source)
+        self._texture_size: tuple[int, int] = texture_size
+
+        self._error: str = ""
+
+        self._program: moderngl.Program | None = None
+        self._texture: moderngl.Texture | None = None
+        self._fbo: moderngl.Framebuffer | None = None
+        self._vbo: moderngl.Buffer | None = None
+        self._vao: moderngl.VertexArray | None = None
+
+    def release(self):
+        if self._program is not None:
+            self._program.release()
+
+        if self._texture is not None:
+            self._texture.release()
+
+        if self._fbo is not None:
+            self._fbo.release()
+
+        if self._vbo is not None:
+            self._vbo.release()
+
+        if self._vao is not None:
+            self._vao.release()
+
+        self._program = None
+        self._texture = None
+        self._fbo = None
+        self._vbo = None
+        self._vao = None
+
+    def try_reload_if_needed(self, new_texture_size: tuple[int, int] | None = None):
+        if not self._fs_source.reload_if_needed() and not new_texture_size:
+            return
+
+        try:
+            self.release()
+
+            self._program = self._gl_context.context.program(
+                vertex_shader=self._VERTEX_SHADER,
+                fragment_shader=self._fs_source._text,
+            )
+
+            self._error = ""
+
+            self._texture_size = new_texture_size or self._texture_size
+            self._texture = self._gl_context.context.texture(self._texture_size, 4)
+            self._fbo = self._gl_context.context.framebuffer(
+                color_attachments=[self._texture]
+            )
+            self._vbo = self._gl_context.context.buffer(
+                np.array(
+                    [-1.0, -1.0, 1.0, -1.0, -1.0, 1.0, 1.0, -1.0, 1.0, 1.0, -1.0, 1.0],
+                    dtype="f4",
+                )
+            )
+            self._vao = self._gl_context.context.vertex_array(
+                self._program, [(self._vbo, "2f", "a_pos")]
+            )
+        except Exception as e:
+            self._error = str(e)
+            logger.warning(f"Failed to compile shader: {e}")
+
+
+class Node:
+
+    def __init__(
+        self,
         gl_context: "GLContext",
-        fs_source: "FSSource",
-        output_size: "OutputSize",
+        fs_source: str | Path,
+        output: NodeOutput,
         uniforms: dict[str, Any],
         name: str | None = None,
-        check_interval: int = 30,
+        reload_period: int = 30,
     ) -> None:
-        self._gl_context = gl_context
-        self._output_size = output_size
-        self._uniforms = {}
-        self._name = name or str(id(self))
+        self._output = output
+        self._uniforms = uniforms
+
+        self._resources = NodeResources(
+            gl_context=gl_context,
+            fs_source=fs_source,
+            texture_size=self.get_output_size(),
+        )
+
+        self._name = name
+        self._reload_period = reload_period
+        self._frame_idx = 0
+
         self._graph: RenderGraph | None = None
-        self._fs_file_path: Path | None = None
-        self._fs_source: str
-        self._fs_file_hash: str | None = None
-        self._check_interval = max(1, check_interval)
-        self._frame_count = 0
 
-        # ----------------------------------------------------------------
-        # Resolve fragment shader source
-        if isinstance(fs_source, str) and "\n" not in fs_source.strip():
-            fs_source = Path(fs_source)
+    @property
+    def name(self) -> str:
+        return self._name or str(id(self))
 
-        if isinstance(fs_source, Path):
-            self._fs_file_path = fs_source.resolve()
-            self._fs_source = self._fs_file_path.read_text(encoding="utf-8")
-            self._fs_file_hash = self._compute_file_hash(self._fs_file_path)
-            logger.info(f"Loaded shader file: {self._fs_file_path}")
+    def get_output_size(self) -> tuple[int, int]:
+        size = self._output
+        if isinstance(size, str):
+            size = (size, 1.0)
+
+        name_or_width, scale_or_height = size
+        if isinstance(name_or_width, str):
+            name, scale = name_or_width, scale_or_height
+            texture = self._uniforms.get(name)
+            if isinstance(texture, Node):
+                texture = texture._resources._texture
+            if not isinstance(texture, moderngl.Texture):
+                raise ValueError(f"Uniform '{name}' is not a texture")
+            width = max(1, round(texture.size[0] * scale))
+            height = max(1, round(texture.size[1] * scale))
         else:
-            self._fs_source = fs_source
+            width, height = name_or_width, scale_or_height
 
-        # ----------------------------------------------------------------
-        # Setup the program and uniforms
-        self._program = self._gl_context.context.program(
-            vertex_shader=self._VERTEX_SHADER,
-            fragment_shader=self._fs_source,
-        )
+        return width, height  # type: ignore
 
-        # Extract all uniforms from the program
-        program_uniforms = {
-            k: u
-            for k, u in self._program._members.items()  # type: ignore
-            if isinstance(u, moderngl.Uniform)
-        }
+    def render(self) -> None:
+        if self._frame_idx % self._reload_period == 0:
+            self._resources.try_reload_if_needed(self.get_output_size())
 
-        # Validate user-provided uniforms
-        for u_name in uniforms:
-            if u_name not in program_uniforms:
-                raise ValueError(f"Uniform '{u_name}' not found in the shader program")
+        self._frame_idx += 1
 
-        # Populate self._uniforms with all program uniforms
-        for uniform_name, uniform_obj in program_uniforms.items():
-            if uniform_name in uniforms:
-                self._uniforms[uniform_name] = uniforms[uniform_name]
-            else:
-                self._uniforms[uniform_name] = self._get_default_uniform_value(
-                    uniform_obj
-                )
+        if (
+            self._resources._program is None
+            or self._resources._fbo is None
+            or self._resources._vao is None
+            or self._resources._error
+        ):
+            return
 
-        # ----------------------------------------------------------------
-        # Setup OpenGL objects
-        self._texture = self._gl_context.context.texture(self.get_output_size(), 4)
-        self._fbo = self._gl_context.context.framebuffer(
-            color_attachments=[self._texture]
-        )
-        self._vbo = self._gl_context.context.buffer(
-            np.array(
-                [-1.0, -1.0, 1.0, -1.0, -1.0, 1.0, 1.0, -1.0, 1.0, 1.0, -1.0, 1.0],
-                dtype="f4",
-            )
-        )
-        self._vao = self._gl_context.context.vertex_array(
-            self._program, [(self._vbo, "2f", "a_pos")]
-        )
+        texture_unit = 0
+
+        for u_name, u_value in self._uniforms.items():
+            if u_name not in self._resources._program:
+                continue
+
+            u_value = u_value() if callable(u_value) else u_value
+            if isinstance(u_value, moderngl.Texture):
+                u_value.use(texture_unit)
+                u_value = texture_unit
+                texture_unit += 1
+            elif isinstance(u_value, Node):
+                if texture := u_value._resources._texture:
+                    texture.use(texture_unit)
+                    u_value = texture_unit
+                    texture_unit += 1
+            self._resources._program[u_name] = u_value
+
+        self._resources._fbo.use()
+        self._resources._vao.render(moderngl.TRIANGLES)
+
+    def release(self) -> None:
+        self._resources.release()
+        if self._graph is not None:
+            self._graph.remove_node(self)
+
+    def get_uniforms(self):
+        uniforms = {}
+        are_used = {}
+
+        if self._resources._program is not None:
+            program_uniforms = [
+                (k, u)
+                for k, u in self._resources._program._members.items()
+                if isinstance(u, moderngl.Uniform)
+            ]
+            for name, uniform in program_uniforms:
+                value = self._get_default_uniform_value(uniform)
+                uniforms[name] = self._uniforms.get(name, value)
+                are_used[name] = True
+
+        for name, uniform in self._uniforms.items():
+            if name not in uniforms:
+                uniforms[name] = uniform
+                are_used[name] = False
+
+        return uniforms, are_used
+
+    def get_parents(self) -> list["Node"]:
+        return [n for n in self._uniforms.values() if isinstance(n, Node)]
 
     @staticmethod
     def _get_default_uniform_value(uniform_obj: moderngl.Uniform) -> Any:
@@ -133,149 +274,6 @@ class Node:
             # Create a list of the value repeated array_length times
             return [value for _ in range(array_length)]
         return tuple(value) if isinstance(value, list) else value
-
-    @staticmethod
-    def _compute_file_hash(file_path) -> str:
-        if not file_path:
-            return ""
-        try:
-            with Path.open(file_path, "rb") as f:
-                return hashlib.sha256(f.read()).hexdigest()
-        except Exception as e:
-            logger.error(f"Failed to compute hash for {file_path}: {e}")
-            return ""
-
-    def reload(self) -> None:
-        if not self._fs_file_path:
-            logger.warning("Cannot reload shader: no file path associated")
-            return
-
-        try:
-            fs_source = self._fs_file_path.read_text(encoding="utf-8")
-            program = self._gl_context.context.program(
-                vertex_shader=self._VERTEX_SHADER,
-                fragment_shader=fs_source,
-            )
-
-            self._fs_source = fs_source
-            self._fs_file_hash = self._compute_file_hash(self._fs_file_path)
-
-            # Get new uniforms from the program
-            new_program_uniforms = {
-                k: u
-                for k, u in program._members.items()  # type: ignore
-                if isinstance(u, moderngl.Uniform)
-            }
-
-            # Update self._uniforms
-            new_uniforms = {}
-            for uniform_name, uniform_obj in new_program_uniforms.items():
-                if uniform_name in self._uniforms:
-                    new_uniforms[uniform_name] = self._uniforms[uniform_name]
-                else:
-                    new_uniforms[uniform_name] = self._get_default_uniform_value(
-                        uniform_obj
-                    )
-            self._uniforms = (
-                new_uniforms  # Only keep uniforms that exist in the new program
-            )
-
-            # Release old resources
-            self._vao.release()
-            self._program.release()
-
-            # Set new program and vao
-            self._program = program
-            self._vao = self._gl_context.context.vertex_array(
-                self._program, [(self._vbo, "2f", "a_pos")]
-            )
-
-            logger.info(f"Successfully reloaded shader from {self._fs_file_path}")
-        except Exception as e:
-            logger.error(f"Failed to reload shader from {self._fs_file_path}: {e}")
-
-    @property
-    def name(self) -> str:
-        return self._name
-
-    def get_output_size(self) -> tuple[int, int]:
-        s = self._output_size
-        if isinstance(s, str):
-            s = (s, 1.0)
-        name_or_width, scale_or_height = s
-        if isinstance(name_or_width, str):
-            name, scale = name_or_width, scale_or_height
-            texture = self._uniforms.get(name)
-            if isinstance(texture, Node):
-                texture = texture._texture
-            if not isinstance(texture, moderngl.Texture):
-                raise ValueError(f"Uniform '{name}' is not a texture")
-            width = max(1, round(texture.size[0] * scale))
-            height = max(1, round(texture.size[1] * scale))
-        else:
-            width, height = name_or_width, scale_or_height
-        return width, height  # type: ignore
-
-    def set_output_size(self, size: "OutputSize"):
-        self._output_size = size
-
-    @property
-    def uniforms(self) -> dict[str, Any]:
-        return self._uniforms
-
-    @property
-    def texture_id(self) -> int:
-        return self._texture.glo
-
-    def render(self) -> None:
-        self._frame_count += 1
-        if (
-            self._fs_file_path
-            and self._frame_count % self._check_interval == 0
-            and self._fs_file_hash
-        ):
-            current_hash = self._compute_file_hash(self._fs_file_path)
-            if current_hash and current_hash != self._fs_file_hash:
-                logger.info(f"Detected change in {self._fs_file_path}, reloading...")
-                self.reload()
-
-        desired_size = self.get_output_size()
-        if desired_size != self._texture.size:
-            self._texture.release()
-            self._fbo.release()
-            self._texture = self._gl_context.context.texture(desired_size, 4)
-            self._fbo = self._gl_context.context.framebuffer(
-                color_attachments=[self._texture]
-            )
-
-        texture_unit = 0
-        # Set all uniforms in self._uniforms
-        for u_name, u_value in self._uniforms.items():
-            u_value = u_value() if callable(u_value) else u_value
-            if isinstance(u_value, moderngl.Texture):
-                u_value.use(texture_unit)
-                u_value = texture_unit
-                texture_unit += 1
-            elif isinstance(u_value, Node):
-                u_value._texture.use(texture_unit)
-                u_value = texture_unit
-                texture_unit += 1
-            self._program[u_name] = u_value
-
-        self._fbo.use()
-        self._vao.render(moderngl.TRIANGLES)
-
-    def release(self) -> None:
-        self._vbo.release()
-        self._vao.release()
-        self._fbo.release()
-        self._texture.release()
-        self._program.release()
-        if self._graph:
-            self._graph.remove_node(self)
-
-    def get_parents(self) -> list["Node"]:
-        return [n for n in self._uniforms.values() if isinstance(n, Node)]
 
 
 class RenderGraph:
