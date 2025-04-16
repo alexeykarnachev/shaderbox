@@ -11,4 +11,3 @@ void main() {
     color += 0.1 * u_color;
     fs_color = vec4(color, 1.0);
 }
-

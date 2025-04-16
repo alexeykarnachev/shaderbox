@@ -64,7 +64,6 @@ def main():
     selected_node = nodes[0]
 
     while not glfw.window_should_close(window):
-
         window_width, window_height = glfw.get_window_size(window)
         start_time = glfw.get_time()
         glfw.poll_events()
