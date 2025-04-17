@@ -186,6 +186,9 @@ def main():
                 )
                 n_cols = max(1, n_cols)
                 for i, node in enumerate(nodes):
+                    if node == current_node:
+                        imgui.push_style_color(imgui.COLOR_BORDER, 1.0, 1.0, 0.0, 1.0)
+
                     imgui.begin_child(
                         f"node_preview_{i}",
                         width=preview_size,
@@ -194,12 +197,22 @@ def main():
                         flags=imgui.WINDOW_NO_SCROLLBAR,
                     )
 
+                    if node == current_node:
+                        imgui.pop_style_color()
+
+                    if imgui.invisible_button(
+                        f"node_preview_button_{i}",
+                        width=preview_size,
+                        height=preview_size,
+                    ):
+                        current_node = node
+
                     s = (preview_size - 10) / max(node.texture.size)
                     image_width = node.texture.size[0] * s
                     image_height = node.texture.size[1] * s
 
-                    imgui.set_cursor_pos_x((preview_size - image_width) / 2)
-                    imgui.set_cursor_pos_y((preview_size - image_height) / 2)
+                    imgui.set_cursor_pos_x((preview_size - image_width) / 2 - 1)
+                    imgui.set_cursor_pos_y((preview_size - image_height) / 2 - 1)
 
                     imgui.image(
                         node.texture.glo,
