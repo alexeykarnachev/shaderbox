@@ -109,11 +109,9 @@ def main():
         main_menu_height = 0
 
         if imgui.begin_main_menu_bar().opened:
-
             # ------------------------------------------------------------
             # Node menu
             if imgui.begin_menu("Node", True).opened:
-
                 if imgui.menu_item("New", "Ctrl+N", False, True)[1]:
                     create_new_node()
 
@@ -170,7 +168,6 @@ def main():
             height=control_panel_height,
             border=False,
         ):
-
             # ------------------------------------------------------------
             # Node previews
             node_preview_width, node_preview_height = (
@@ -183,29 +180,38 @@ def main():
                 height=node_preview_height,
                 border=True,
             ):
-                preview_size = 130
-                n_cols = imgui.get_content_region_available_width() // (
-                    preview_size + 5
+                preview_size = 125
+                n_cols = int(
+                    imgui.get_content_region_available_width() // (preview_size + 5)
                 )
                 n_cols = max(1, n_cols)
                 for i, node in enumerate(nodes):
-                    with imgui.begin_child(
+                    imgui.begin_child(
                         f"node_preview_{i}",
                         width=preview_size,
                         height=preview_size,
-                    ):
-                        s = (preview_size - 10) / max(node.texture.size)
-                        image_width = node.texture.size[0] * s
-                        image_height = node.texture.size[1] * s
+                        border=True,
+                        flags=imgui.WINDOW_NO_SCROLLBAR,
+                    )
 
-                        imgui.image_button(
-                            node.texture.glo,
-                            width=image_width,
-                            height=image_height,
-                            uv0=(0, 1),
-                            uv1=(1, 0),
-                        )
+                    s = (preview_size - 10) / max(node.texture.size)
+                    image_width = node.texture.size[0] * s
+                    image_height = node.texture.size[1] * s
 
+                    imgui.set_cursor_pos_x((preview_size - image_width) / 2)
+                    imgui.set_cursor_pos_y((preview_size - image_height) / 2)
+
+                    imgui.image(
+                        node.texture.glo,
+                        width=image_width,
+                        height=image_height,
+                        uv0=(0, 1),
+                        uv1=(1, 0),
+                    )
+
+                    imgui.end_child()  # node_preview_i
+
+                    # Handle grid layout
                     if (i + 1) % n_cols != 0:
                         imgui.same_line()
                     else:
