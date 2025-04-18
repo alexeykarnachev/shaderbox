@@ -1,5 +1,4 @@
 import time
-from collections import defaultdict
 from importlib.resources import files
 from pathlib import Path
 
@@ -41,10 +40,13 @@ class Node:
             self.program, [(self.vbo, "2f", "a_pos")]
         )
 
-        self.texture: moderngl.Texture = self.gl.texture((1280, 960), 4)
+        self.output_texture: moderngl.Texture = self.gl.texture((1280, 960), 4)
         self.fbo: moderngl.Framebuffer = self.gl.framebuffer(
-            color_attachments=[self.texture]
+            color_attachments=[self.output_texture]
         )
+
+        self.uniform_values = {}
+        self.uniform_textures = {}
 
 
 def main():
@@ -76,8 +78,6 @@ def main():
     imgui.create_context()
     imgui_renderer = GlfwRenderer(window)
 
-    uniform_values = defaultdict(lambda: {})
-    textures = defaultdict(lambda: {})
     nodes = [Node() for _ in range(10)]
     current_node = nodes[0]
 
@@ -120,7 +120,7 @@ def main():
                 fmt = uniform.fmt  # type: ignore
 
                 if uniform.gl_type == 35678:  # type: ignore
-                    texture = textures[node].get(uniform_name)
+                    texture = node.uniform_textures.get(uniform_name)
                     if texture is None:
                         texture = gl.texture(
                             _DEFAULT_TEXTURE.size,
@@ -128,17 +128,17 @@ def main():
                             np.array(_DEFAULT_TEXTURE).tobytes(),
                             dtype="f1",
                         )
-                        textures[node][uniform_name] = texture
+                        node.uniform_textures[uniform_name] = texture
 
-                    texture = textures[node][uniform_name]
+                    texture = node.uniform_textures[uniform_name]
                     texture.use(location=texture_unit)
                     value = texture_unit
                     texture_unit += 1
                 else:
-                    value = uniform_values[node].get(uniform_name)
+                    value = node.uniform_values.get(uniform_name)
                     if value is None:
                         value = uniform.value
-                        uniform_values[node][uniform_name] = value
+                        node.uniform_values[uniform_name] = value
 
                 node.program[uniform_name] = value
 
@@ -198,12 +198,12 @@ def main():
             imgui.get_content_region_available()[1] - control_panel_min_height,
         )
         max_image_width = imgui.get_content_region_available()[0]
-        image_aspect = np.divide(*current_node.texture.size)
+        image_aspect = np.divide(*current_node.output_texture.size)
         image_width = min(max_image_width, max_image_height * image_aspect)
         image_height = min(max_image_height, max_image_width / image_aspect)
 
         imgui.image(
-            current_node.texture.glo,
+            current_node.output_texture.glo,
             width=image_width,
             height=image_height,
             uv0=(0, 1),
@@ -260,15 +260,15 @@ def main():
                     ):
                         current_node = node
 
-                    s = (preview_size - 10) / max(node.texture.size)
-                    image_width = node.texture.size[0] * s
-                    image_height = node.texture.size[1] * s
+                    s = (preview_size - 10) / max(node.output_texture.size)
+                    image_width = node.output_texture.size[0] * s
+                    image_height = node.output_texture.size[1] * s
 
                     imgui.set_cursor_pos_x((preview_size - image_width) / 2 - 1)
                     imgui.set_cursor_pos_y((preview_size - image_height) / 2 - 1)
 
                     imgui.image(
-                        node.texture.glo,
+                        node.output_texture.glo,
                         width=image_width,
                         height=image_height,
                         uv0=(0, 1),
@@ -305,7 +305,7 @@ def main():
                     is_texture = uniform.gl_type == 35678  # type: ignore
 
                     if is_texture:
-                        texture = textures[current_node][uniform_name]
+                        texture = current_node.uniform_textures[uniform_name]
                         imgui.text(uniform_name)
                         if imgui.image_button(
                             texture.glo,
@@ -322,23 +322,25 @@ def main():
                                 image = ImageOps.flip(
                                     Image.open(file_path).convert("RGBA")
                                 )
-                                textures[current_node][uniform_name].release()
-                                textures[current_node][uniform_name] = gl.texture(
-                                    image.size,
-                                    4,
-                                    np.array(image).tobytes(),
-                                    dtype="f1",
+                                current_node.uniform_textures[uniform_name].release()
+                                current_node.uniform_textures[uniform_name] = (
+                                    gl.texture(
+                                        image.size,
+                                        4,
+                                        np.array(image).tobytes(),
+                                        dtype="f1",
+                                    )
                                 )
                     else:
                         is_time = uniform_name == "u_time"
                         is_aspect = uniform_name == "u_aspect"
                         is_color = uniform_name.endswith("color")
-                        value = uniform_values[current_node][uniform_name]
+                        value = current_node.uniform_values[uniform_name]
                         if is_time and fmt == "1f":
                             value = glfw.get_time()
                             imgui.text(f"Time: {value:.3f}")
                         elif is_aspect and fmt == "1f":
-                            value = np.divide(*current_node.texture.size)
+                            value = np.divide(*current_node.output_texture.size)
                             imgui.text(f"Aspect: {value:.3f}")
                         elif is_color and fmt == "3f":
                             value = imgui.color_edit3(
@@ -377,7 +379,7 @@ def main():
                                 change_speed=max(0.01, 0.01 * np.mean(np.abs(value))),
                             )[1]
 
-                        uniform_values[current_node][uniform_name] = value
+                        current_node.uniform_values[uniform_name] = value
 
         # ----------------------------------------------------------------
         imgui.end()  # ShaderBox
