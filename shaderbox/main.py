@@ -1,4 +1,5 @@
 import time
+from collections import defaultdict
 from importlib.resources import files
 from pathlib import Path
 
@@ -60,6 +61,7 @@ def main():
     imgui.create_context()
     imgui_renderer = GlfwRenderer(window)
 
+    uniform_values = defaultdict(lambda: {})
     nodes = [Node() for _ in range(10)]
     current_node = nodes[0]
 
@@ -89,6 +91,20 @@ def main():
 
         for node in nodes:
             node.fbo.use()
+
+            for uniform_name in node.program:
+                uniform = node.program[uniform_name]
+
+                if not isinstance(uniform, moderngl.Uniform):
+                    continue
+
+                fmt = uniform.fmt  # type: ignore
+                key = f"{uniform_name}_{fmt}"
+                value = uniform_values[current_node].get(key)
+
+                if value is not None:
+                    node.program[uniform_name] = value
+
             gl.clear()
             node.vao.render()
 
@@ -240,7 +256,38 @@ def main():
                 height=uniforms_height,
                 border=True,
             ):
-                pass
+                for uniform_name in current_node.program:
+                    uniform = current_node.program[uniform_name]
+
+                    if not isinstance(uniform, moderngl.Uniform):
+                        continue
+
+                    fmt: str = uniform.fmt  # type: ignore
+                    key = f"{uniform_name}_{fmt}"
+                    value = uniform_values[current_node].get(key)
+
+                    if value is None:
+                        value = uniform.value
+
+                    if fmt == "1f":
+                        value = imgui.drag_float(
+                            uniform_name,
+                            value=value,
+                            change_speed=max(0.01, 0.01 * abs(value)),
+                        )[1]
+                    elif fmt == "2f":
+                        value = imgui.drag_float2(
+                            uniform_name, value0=value[0], value1=value[1]
+                        )[1]
+                    elif fmt == "3f":
+                        value = imgui.drag_float3(
+                            uniform_name,
+                            value0=value[0],
+                            value1=value[1],
+                            value2=value[2],
+                        )[1]
+
+                    uniform_values[current_node][key] = value
 
         # ----------------------------------------------------------------
         imgui.end()  # ShaderBox
