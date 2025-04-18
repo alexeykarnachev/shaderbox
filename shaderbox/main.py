@@ -47,19 +47,22 @@ class Node:
 
         self.uniform_data = {}
 
+    def iter_uniforms(self):
+        for uniform_name in self.program:
+            uniform = self.program[uniform_name]
+
+            if isinstance(uniform, moderngl.Uniform):
+                yield uniform
+
     def render(self):
         gl = moderngl.get_context()
         self.fbo.use()
 
         texture_unit = 0
-        for uniform_name in self.program:
-            uniform = self.program[uniform_name]
-
-            if not isinstance(uniform, moderngl.Uniform):
-                continue
+        for uniform in self.iter_uniforms():
 
             if uniform.gl_type == 35678:  # type: ignore
-                texture = self.uniform_data.get(uniform_name)
+                texture = self.uniform_data.get(uniform.name)
                 if texture is None:
                     texture = gl.texture(
                         _DEFAULT_TEXTURE.size,
@@ -67,19 +70,19 @@ class Node:
                         np.array(_DEFAULT_TEXTURE).tobytes(),
                         dtype="f1",
                     )
-                    self.uniform_data[uniform_name] = texture
+                    self.uniform_data[uniform.name] = texture
 
-                texture = self.uniform_data[uniform_name]
+                texture = self.uniform_data[uniform.name]
                 texture.use(location=texture_unit)
                 value = texture_unit
                 texture_unit += 1
             else:
-                value = self.uniform_data.get(uniform_name)
+                value = self.uniform_data.get(uniform.name)
                 if value is None:
                     value = uniform.value
-                    self.uniform_data[uniform_name] = value
+                    self.uniform_data[uniform.name] = value
 
-            self.program[uniform_name] = value
+            self.program[uniform.name] = value
 
         gl.clear()
         self.vao.render()
@@ -294,19 +297,10 @@ def main():
                 height=uniforms_height,
                 border=True,
             ):
-                for uniform_name in current_node.program:
-                    uniform = current_node.program[uniform_name]
-
-                    if not isinstance(uniform, moderngl.Uniform):
-                        continue
-
-                    fmt: str = uniform.fmt  # type: ignore
-
-                    is_texture = uniform.gl_type == 35678  # type: ignore
-
-                    if is_texture:
-                        texture = current_node.uniform_data[uniform_name]
-                        imgui.text(uniform_name)
+                for uniform in current_node.iter_uniforms():
+                    if uniform.gl_type == 35678:  # type: ignore
+                        texture = current_node.uniform_data[uniform.name]
+                        imgui.text(uniform.name)
                         if imgui.image_button(
                             texture.glo,
                             width=50,
@@ -322,18 +316,21 @@ def main():
                                 image = ImageOps.flip(
                                     Image.open(file_path).convert("RGBA")
                                 )
-                                current_node.uniform_data[uniform_name].release()
-                                current_node.uniform_data[uniform_name] = gl.texture(
+                                current_node.uniform_data[uniform.name].release()
+                                current_node.uniform_data[uniform.name] = gl.texture(
                                     image.size,
                                     4,
                                     np.array(image).tobytes(),
                                     dtype="f1",
                                 )
                     else:
-                        is_time = uniform_name == "u_time"
-                        is_aspect = uniform_name == "u_aspect"
-                        is_color = uniform_name.endswith("color")
-                        value = current_node.uniform_data[uniform_name]
+                        fmt = uniform.fmt  # type: ignore
+                        is_time = uniform.name == "u_time"
+                        is_aspect = uniform.name == "u_aspect"
+                        is_color = uniform.name.endswith("color")
+                        value = current_node.uniform_data[uniform.name]
+                        change_speed = max(0.01, 0.01 * np.mean(np.abs(value)))
+
                         if is_time and fmt == "1f":
                             value = glfw.get_time()
                             imgui.text(f"Time: {value:.3f}")
@@ -341,43 +338,23 @@ def main():
                             value = np.divide(*current_node.output_texture.size)
                             imgui.text(f"Aspect: {value:.3f}")
                         elif is_color and fmt == "3f":
-                            value = imgui.color_edit3(
-                                uniform_name,
-                                r=value[0],
-                                g=value[1],  # type: ignore
-                                b=value[2],  # type: ignore
-                            )[1]
+                            value = imgui.color_edit3(uniform.name, *value)[1]
                         elif is_color and fmt == "4f":
-                            value = imgui.color_edit4(
-                                uniform_name,
-                                r=value[0],
-                                g=value[1],  # type: ignore
-                                b=value[2],  # type: ignore
-                                a=value[3],  # type: ignore
-                            )[1]
+                            value = imgui.color_edit4(uniform.name, *value)[1]
                         elif fmt == "1f":
                             value = imgui.drag_float(
-                                uniform_name,
-                                value=value,
-                                change_speed=max(0.01, 0.01 * abs(value)),
+                                uniform.name, value, change_speed=change_speed
                             )[1]
                         elif fmt == "2f":
                             value = imgui.drag_float2(
-                                uniform_name,
-                                value0=value[0],
-                                value1=value[1],  # type: ignore
-                                change_speed=max(0.01, 0.01 * np.mean(np.abs(value))),
+                                uniform.name, *value, change_speed=change_speed
                             )[1]
                         elif fmt == "3f":
                             value = imgui.drag_float3(
-                                uniform_name,
-                                value0=value[0],
-                                value1=value[1],  # type: ignore
-                                value2=value[2],  # type: ignore
-                                change_speed=max(0.01, 0.01 * np.mean(np.abs(value))),
+                                uniform.name, *value, change_speed=change_speed
                             )[1]
 
-                        current_node.uniform_data[uniform_name] = value
+                        current_node.uniform_data[uniform.name] = value
 
         # ----------------------------------------------------------------
         imgui.end()  # ShaderBox
