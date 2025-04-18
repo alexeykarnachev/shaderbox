@@ -298,10 +298,11 @@ def main():
                 border=True,
             ):
                 for uniform in current_node.iter_uniforms():
+                    value = current_node.uniform_data[uniform.name]
+
                     if uniform.gl_type == 35678:  # type: ignore
-                        texture = current_node.uniform_data[uniform.name]
                         if imgui.image_button(
-                            texture.glo,
+                            value.glo,
                             width=50,
                             height=50,
                             uv0=(0, 1),
@@ -329,7 +330,6 @@ def main():
                         is_time = uniform.name == "u_time"
                         is_aspect = uniform.name == "u_aspect"
                         is_color = uniform.name.endswith("color")
-                        value = current_node.uniform_data[uniform.name]
                         change_speed = max(0.01, 0.01 * np.mean(np.abs(value)))
 
                         if is_time and fmt == "1f":
