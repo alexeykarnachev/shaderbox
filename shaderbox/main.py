@@ -269,22 +269,47 @@ def main():
                     if value is None:
                         value = uniform.value
 
-                    if fmt == "1f":
+                    is_color = uniform_name.endswith("color")
+
+                    if not hasattr(value, "__len__"):
+                        value = (value,)
+                    change_speed = max(0.01, 0.01 * np.mean(np.abs(value)))  # type: ignore
+
+                    if is_color and fmt == "3f":
+                        value = imgui.color_edit3(
+                            uniform_name,
+                            r=value[0],
+                            g=value[1],  # type: ignore
+                            b=value[2],  # type: ignore
+                        )[1]
+                    elif is_color and fmt == "4f":
+                        value = imgui.color_edit4(
+                            uniform_name,
+                            r=value[0],
+                            g=value[1],  # type: ignore
+                            b=value[2],  # type: ignore
+                            a=value[3],  # type: ignore
+                        )[1]
+                    elif fmt == "1f":
                         value = imgui.drag_float(
                             uniform_name,
-                            value=value,
-                            change_speed=max(0.01, 0.01 * abs(value)),
+                            value=value[0],
+                            change_speed=change_speed,
                         )[1]
                     elif fmt == "2f":
                         value = imgui.drag_float2(
-                            uniform_name, value0=value[0], value1=value[1]
+                            uniform_name,
+                            value0=value[0],
+                            value1=value[1],  # type: ignore
+                            change_speed=change_speed,
                         )[1]
                     elif fmt == "3f":
                         value = imgui.drag_float3(
                             uniform_name,
                             value0=value[0],
-                            value1=value[1],
-                            value2=value[2],
+                            value1=value[1],  # type: ignore
+                            value2=value[2],  # type: ignore
+                            change_speed=change_speed,
                         )[1]
 
                     uniform_values[current_node][key] = value
