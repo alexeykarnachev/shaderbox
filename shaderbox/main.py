@@ -118,10 +118,9 @@ def main():
                     continue
 
                 fmt = uniform.fmt  # type: ignore
-                key = f"{uniform_name}_{fmt}"
 
                 if uniform.gl_type == 35678:  # type: ignore
-                    texture = textures[node].get(key)
+                    texture = textures[node].get(uniform_name)
                     if texture is None:
                         texture = gl.texture(
                             _DEFAULT_TEXTURE.size,
@@ -129,17 +128,17 @@ def main():
                             np.array(_DEFAULT_TEXTURE).tobytes(),
                             dtype="f1",
                         )
-                        textures[node][key] = texture
+                        textures[node][uniform_name] = texture
 
-                    texture = textures[node][key]
+                    texture = textures[node][uniform_name]
                     texture.use(location=texture_unit)
                     value = texture_unit
                     texture_unit += 1
                 else:
-                    value = uniform_values[node].get(key)
+                    value = uniform_values[node].get(uniform_name)
                     if value is None:
                         value = uniform.value
-                        uniform_values[node][key] = value
+                        uniform_values[node][uniform_name] = value
 
                 node.program[uniform_name] = value
 
@@ -302,12 +301,11 @@ def main():
                         continue
 
                     fmt: str = uniform.fmt  # type: ignore
-                    key = f"{uniform_name}_{fmt}"
 
                     is_texture = uniform.gl_type == 35678  # type: ignore
 
                     if is_texture:
-                        texture = textures[current_node][key]
+                        texture = textures[current_node][uniform_name]
                         imgui.text(uniform_name)
                         if imgui.image_button(
                             texture.glo,
@@ -324,8 +322,8 @@ def main():
                                 image = ImageOps.flip(
                                     Image.open(file_path).convert("RGBA")
                                 )
-                                textures[current_node][key].release()
-                                textures[current_node][key] = gl.texture(
+                                textures[current_node][uniform_name].release()
+                                textures[current_node][uniform_name] = gl.texture(
                                     image.size,
                                     4,
                                     np.array(image).tobytes(),
@@ -335,7 +333,7 @@ def main():
                         is_time = uniform_name == "u_time"
                         is_aspect = uniform_name == "u_aspect"
                         is_color = uniform_name.endswith("color")
-                        value = uniform_values[current_node][key]
+                        value = uniform_values[current_node][uniform_name]
                         if is_time and fmt == "1f":
                             value = glfw.get_time()
                             imgui.text(f"Time: {value:.3f}")
@@ -379,7 +377,7 @@ def main():
                                 change_speed=max(0.01, 0.01 * np.mean(np.abs(value))),
                             )[1]
 
-                        uniform_values[current_node][key] = value
+                        uniform_values[current_node][uniform_name] = value
 
         # ----------------------------------------------------------------
         imgui.end()  # ShaderBox
