@@ -3,11 +3,18 @@ from collections import defaultdict
 from importlib.resources import files
 from pathlib import Path
 
+import crossfiledialog
 import glfw
 import imgui
 import moderngl
 import numpy as np
 from imgui.integrations.glfw import GlfwRenderer
+from PIL import Image, ImageOps
+
+_RESOURCES_DIR = Path(str(files("shaderbox.resources")))
+_DEFAULT_TEXTURE = ImageOps.flip(
+    Image.open(_RESOURCES_DIR.resolve() / "textures" / "default.jpeg").convert("RGBA")
+)
 
 
 class Node:
@@ -15,7 +22,7 @@ class Node:
         self.gl = moderngl.get_context()
         self.name = str(id(self))
 
-        dir = Path(str(files("shaderbox.resources") / "shaders"))
+        dir = _RESOURCES_DIR / "shaders"
         self.fs_file_path: Path = dir / "default.frag.glsl"
         self.vs_file_path: Path = dir / "default.vert.glsl"
 
@@ -34,7 +41,7 @@ class Node:
             self.program, [(self.vbo, "2f", "a_pos")]
         )
 
-        self.texture: moderngl.Texture = self.gl.texture((2560, 1440), 4)
+        self.texture: moderngl.Texture = self.gl.texture((1280, 960), 4)
         self.fbo: moderngl.Framebuffer = self.gl.framebuffer(
             color_attachments=[self.texture]
         )
@@ -70,6 +77,7 @@ def main():
     imgui_renderer = GlfwRenderer(window)
 
     uniform_values = defaultdict(lambda: {})
+    textures = defaultdict(lambda: {})
     nodes = [Node() for _ in range(10)]
     current_node = nodes[0]
 
@@ -97,9 +105,12 @@ def main():
         imgui_renderer.process_inputs()
         imgui.new_frame()
 
+        # ----------------------------------------------------------------
+        # Render nodes
         for node in nodes:
             node.fbo.use()
 
+            texture_unit = 0
             for uniform_name in node.program:
                 uniform = node.program[uniform_name]
 
@@ -108,10 +119,29 @@ def main():
 
                 fmt = uniform.fmt  # type: ignore
                 key = f"{uniform_name}_{fmt}"
-                value = uniform_values[current_node].get(key)
 
-                if value is not None:
-                    node.program[uniform_name] = value
+                if uniform.gl_type == 35678:  # type: ignore
+                    texture = textures[node].get(key)
+                    if texture is None:
+                        texture = gl.texture(
+                            _DEFAULT_TEXTURE.size,
+                            4,
+                            np.array(_DEFAULT_TEXTURE).tobytes(),
+                            dtype="f1",
+                        )
+                        textures[node][key] = texture
+
+                    texture = textures[node][key]
+                    texture.use(location=texture_unit)
+                    value = texture_unit
+                    texture_unit += 1
+                else:
+                    value = uniform_values[node].get(key)
+                    if value is None:
+                        value = uniform.value
+                        uniform_values[node][key] = value
+
+                node.program[uniform_name] = value
 
             gl.clear()
             node.vao.render()
@@ -168,7 +198,7 @@ def main():
             min_image_height,
             imgui.get_content_region_available()[1] - control_panel_min_height,
         )
-        max_image_width = imgui.get_content_region_available_width()
+        max_image_width = imgui.get_content_region_available()[0]
         image_aspect = np.divide(*current_node.texture.size)
         image_width = min(max_image_width, max_image_height * image_aspect)
         image_height = min(max_image_height, max_image_width / image_aspect)
@@ -206,7 +236,7 @@ def main():
             ):
                 preview_size = 125
                 n_cols = int(
-                    imgui.get_content_region_available_width() // (preview_size + 5)
+                    imgui.get_content_region_available()[0] // (preview_size + 5)
                 )
                 n_cols = max(1, n_cols)
                 for i, node in enumerate(nodes):
@@ -264,6 +294,7 @@ def main():
                 height=uniforms_height,
                 border=True,
             ):
+                texture_unit = 0
                 for uniform_name in current_node.program:
                     uniform = current_node.program[uniform_name]
 
@@ -272,63 +303,83 @@ def main():
 
                     fmt: str = uniform.fmt  # type: ignore
                     key = f"{uniform_name}_{fmt}"
-                    value = uniform_values[current_node].get(key)
 
-                    if value is None:
-                        value = uniform.value
+                    is_texture = uniform.gl_type == 35678  # type: ignore
 
-                    is_time = uniform_name == "u_time"
-                    is_aspect = uniform_name == "u_aspect"
-                    is_color = uniform_name.endswith("color")
+                    if is_texture:
+                        texture = textures[current_node][key]
+                        imgui.text(uniform_name)
+                        if imgui.image_button(
+                            texture.glo,
+                            width=50,
+                            height=50,
+                            uv0=(0, 1),
+                            uv1=(1, 0),
+                        ):
+                            file_path = crossfiledialog.open_file(
+                                title="Select Texture",
+                                filter=["*.png", "*.jpg", "*.jpeg", "*.bmp"],
+                            )
+                            if file_path:
+                                image = ImageOps.flip(
+                                    Image.open(file_path).convert("RGBA")
+                                )
+                                textures[current_node][key].release()
+                                textures[current_node][key] = gl.texture(
+                                    image.size,
+                                    4,
+                                    np.array(image).tobytes(),
+                                    dtype="f1",
+                                )
+                    else:
+                        is_time = uniform_name == "u_time"
+                        is_aspect = uniform_name == "u_aspect"
+                        is_color = uniform_name.endswith("color")
+                        value = uniform_values[current_node][key]
+                        if is_time and fmt == "1f":
+                            value = glfw.get_time()
+                            imgui.text(f"Time: {value:.3f}")
+                        elif is_aspect and fmt == "1f":
+                            value = np.divide(*current_node.texture.size)
+                            imgui.text(f"Aspect: {value:.3f}")
+                        elif is_color and fmt == "3f":
+                            value = imgui.color_edit3(
+                                uniform_name,
+                                r=value[0],
+                                g=value[1],  # type: ignore
+                                b=value[2],  # type: ignore
+                            )[1]
+                        elif is_color and fmt == "4f":
+                            value = imgui.color_edit4(
+                                uniform_name,
+                                r=value[0],
+                                g=value[1],  # type: ignore
+                                b=value[2],  # type: ignore
+                                a=value[3],  # type: ignore
+                            )[1]
+                        elif fmt == "1f":
+                            value = imgui.drag_float(
+                                uniform_name,
+                                value=value,
+                                change_speed=max(0.01, 0.01 * abs(value)),
+                            )[1]
+                        elif fmt == "2f":
+                            value = imgui.drag_float2(
+                                uniform_name,
+                                value0=value[0],
+                                value1=value[1],  # type: ignore
+                                change_speed=max(0.01, 0.01 * np.mean(np.abs(value))),
+                            )[1]
+                        elif fmt == "3f":
+                            value = imgui.drag_float3(
+                                uniform_name,
+                                value0=value[0],
+                                value1=value[1],  # type: ignore
+                                value2=value[2],  # type: ignore
+                                change_speed=max(0.01, 0.01 * np.mean(np.abs(value))),
+                            )[1]
 
-                    if not hasattr(value, "__len__"):
-                        value = (value,)
-                    change_speed = max(0.01, 0.01 * np.mean(np.abs(value)))  # type: ignore
-
-                    if is_time and fmt == "1f":
-                        value = glfw.get_time()
-                        imgui.text(f"Time: {value:.3f}")
-                    elif is_aspect and fmt == "1f":
-                        value = np.divide(*current_node.texture.size)
-                        imgui.text(f"Aspect: {value:.3f}")
-                    elif is_color and fmt == "3f":
-                        value = imgui.color_edit3(
-                            uniform_name,
-                            r=value[0],
-                            g=value[1],  # type: ignore
-                            b=value[2],  # type: ignore
-                        )[1]
-                    elif is_color and fmt == "4f":
-                        value = imgui.color_edit4(
-                            uniform_name,
-                            r=value[0],
-                            g=value[1],  # type: ignore
-                            b=value[2],  # type: ignore
-                            a=value[3],  # type: ignore
-                        )[1]
-                    elif fmt == "1f":
-                        value = imgui.drag_float(
-                            uniform_name,
-                            value=value[0],
-                            change_speed=change_speed,
-                        )[1]
-                    elif fmt == "2f":
-                        value = imgui.drag_float2(
-                            uniform_name,
-                            value0=value[0],
-                            value1=value[1],  # type: ignore
-                            change_speed=change_speed,
-                        )[1]
-                    elif fmt == "3f":
-                        value = imgui.drag_float3(
-                            uniform_name,
-                            value0=value[0],
-                            value1=value[1],  # type: ignore
-                            value2=value[2],  # type: ignore
-                            change_speed=change_speed,
-                        )[1]
-
-                    uniform_values[current_node][key] = value
+                        uniform_values[current_node][key] = value
 
         # ----------------------------------------------------------------
         imgui.end()  # ShaderBox
