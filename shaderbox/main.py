@@ -48,6 +48,43 @@ class Node:
         self.uniform_values = {}
         self.uniform_textures = {}
 
+    def render(self):
+        gl = moderngl.get_context()
+        self.fbo.use()
+
+        texture_unit = 0
+        for uniform_name in self.program:
+            uniform = self.program[uniform_name]
+
+            if not isinstance(uniform, moderngl.Uniform):
+                continue
+
+            if uniform.gl_type == 35678:  # type: ignore
+                texture = self.uniform_textures.get(uniform_name)
+                if texture is None:
+                    texture = gl.texture(
+                        _DEFAULT_TEXTURE.size,
+                        4,
+                        np.array(_DEFAULT_TEXTURE).tobytes(),
+                        dtype="f1",
+                    )
+                    self.uniform_textures[uniform_name] = texture
+
+                texture = self.uniform_textures[uniform_name]
+                texture.use(location=texture_unit)
+                value = texture_unit
+                texture_unit += 1
+            else:
+                value = self.uniform_values.get(uniform_name)
+                if value is None:
+                    value = uniform.value
+                    self.uniform_values[uniform_name] = value
+
+            self.program[uniform_name] = value
+
+        gl.clear()
+        self.vao.render()
+
 
 def main():
     glfw.init()
@@ -108,42 +145,7 @@ def main():
         # ----------------------------------------------------------------
         # Render nodes
         for node in nodes:
-            node.fbo.use()
-
-            texture_unit = 0
-            for uniform_name in node.program:
-                uniform = node.program[uniform_name]
-
-                if not isinstance(uniform, moderngl.Uniform):
-                    continue
-
-                fmt = uniform.fmt  # type: ignore
-
-                if uniform.gl_type == 35678:  # type: ignore
-                    texture = node.uniform_textures.get(uniform_name)
-                    if texture is None:
-                        texture = gl.texture(
-                            _DEFAULT_TEXTURE.size,
-                            4,
-                            np.array(_DEFAULT_TEXTURE).tobytes(),
-                            dtype="f1",
-                        )
-                        node.uniform_textures[uniform_name] = texture
-
-                    texture = node.uniform_textures[uniform_name]
-                    texture.use(location=texture_unit)
-                    value = texture_unit
-                    texture_unit += 1
-                else:
-                    value = node.uniform_values.get(uniform_name)
-                    if value is None:
-                        value = uniform.value
-                        node.uniform_values[uniform_name] = value
-
-                node.program[uniform_name] = value
-
-            gl.clear()
-            node.vao.render()
+            node.render()
 
         gl.screen.use()
         gl.clear()
