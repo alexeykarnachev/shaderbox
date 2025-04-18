@@ -45,9 +45,13 @@ def main():
 
     monitor = glfw.get_primary_monitor()
     video_mode = glfw.get_video_mode(monitor)
+    screen_width = video_mode.size[0]
+    window_width = screen_width // 2
+    window_height = video_mode.size[1]
+
     window = glfw.create_window(
-        width=video_mode.size[0] // 2,
-        height=video_mode.size[1],
+        width=window_width,
+        height=window_height,
         title="ShaderBox",
         monitor=None,
         share=None,
@@ -55,7 +59,11 @@ def main():
 
     glfw.make_context_current(window)
     monitor_pos = glfw.get_monitor_pos(monitor)
-    glfw.set_window_pos(window, *monitor_pos)
+    monitor_x, monitor_y = monitor_pos
+    # for the left side: window_x = monitor_x
+    window_x = monitor_x + screen_width - window_width
+
+    glfw.set_window_pos(window, window_x, monitor_y)
 
     gl = moderngl.create_context(standalone=False)
     imgui.create_context()
@@ -269,13 +277,21 @@ def main():
                     if value is None:
                         value = uniform.value
 
+                    is_time = uniform_name == "u_time"
+                    is_aspect = uniform_name == "u_aspect"
                     is_color = uniform_name.endswith("color")
 
                     if not hasattr(value, "__len__"):
                         value = (value,)
                     change_speed = max(0.01, 0.01 * np.mean(np.abs(value)))  # type: ignore
 
-                    if is_color and fmt == "3f":
+                    if is_time and fmt == "1f":
+                        value = glfw.get_time()
+                        imgui.text(f"Time: {value:.3f}")
+                    elif is_aspect and fmt == "1f":
+                        value = np.divide(*current_node.texture.size)
+                        imgui.text(f"Aspect: {value:.3f}")
+                    elif is_color and fmt == "3f":
                         value = imgui.color_edit3(
                             uniform_name,
                             r=value[0],
