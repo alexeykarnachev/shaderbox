@@ -300,7 +300,6 @@ def main():
                 for uniform in current_node.iter_uniforms():
                     if uniform.gl_type == 35678:  # type: ignore
                         texture = current_node.uniform_data[uniform.name]
-                        imgui.text(uniform.name)
                         if imgui.image_button(
                             texture.glo,
                             width=50,
@@ -323,6 +322,8 @@ def main():
                                     np.array(image).tobytes(),
                                     dtype="f1",
                                 )
+                        imgui.same_line()
+                        imgui.text(uniform.name)
                     else:
                         fmt = uniform.fmt  # type: ignore
                         is_time = uniform.name == "u_time"
