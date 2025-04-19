@@ -96,19 +96,20 @@ class Node:
         # ----------------------------------------------------------------
         # Assign program uniforms
         texture_unit = 0
-        seen_uniform_names = set()
+        seen_uniform_data_keys = set()
 
         for uniform in self.iter_uniforms():
-            seen_uniform_names.add(uniform.name)
+            uniform_data_key = f"{uniform.name}_{uniform.fmt}"  # type: ignore
+            seen_uniform_data_keys.add(uniform_data_key)
 
             if uniform.name == "u_time":
                 value = glfw.get_time()
-                self.uniform_data[uniform.name] = value
+                self.uniform_data[uniform_data_key] = value
             elif uniform.name == "u_aspect":
                 value = np.divide(*self.output_texture.size)
-                self.uniform_data[uniform.name] = value
+                self.uniform_data[uniform_data_key] = value
             elif uniform.gl_type == 35678:  # type: ignore
-                texture = self.uniform_data.get(uniform.name)
+                texture = self.uniform_data.get(uniform_data_key)
                 if texture is None or isinstance(texture.mglo, moderngl.InvalidObject):
                     texture = self.gl.texture(
                         _DEFAULT_TEXTURE.size,
@@ -116,17 +117,17 @@ class Node:
                         np.array(_DEFAULT_TEXTURE).tobytes(),
                         dtype="f1",
                     )
-                    self.uniform_data[uniform.name] = texture
+                    self.uniform_data[uniform_data_key] = texture
 
-                texture = self.uniform_data[uniform.name]
+                texture = self.uniform_data[uniform_data_key]
                 texture.use(location=texture_unit)
                 value = texture_unit
                 texture_unit += 1
             else:
-                value = self.uniform_data.get(uniform.name)
+                value = self.uniform_data.get(uniform_data_key)
                 if value is None:
                     value = uniform.value
-                    self.uniform_data[uniform.name] = value
+                    self.uniform_data[uniform_data_key] = value
 
             self.program[uniform.name] = value
 
@@ -136,9 +137,9 @@ class Node:
 
         # ----------------------------------------------------------------
         # Clear stale uniform data
-        for uniform_name in self.uniform_data.copy():
-            if uniform_name not in seen_uniform_names:
-                data = self.uniform_data.pop(uniform_name)
+        for uniform_data_key in self.uniform_data.copy():
+            if uniform_data_key not in seen_uniform_data_keys:
+                data = self.uniform_data.pop(uniform_data_key)
                 if isinstance(data, moderngl.Texture):
                     data.release()
 
@@ -271,7 +272,8 @@ class UI:
 
     def draw_uniforms_tab(self):
         for uniform in self.current_node.iter_uniforms():
-            value = self.current_node.uniform_data.get(uniform.name)
+            uniform_data_key = f"{uniform.name}_{uniform.fmt}"  # type: ignore
+            value = self.current_node.uniform_data.get(uniform_data_key)
             if value is None:
                 continue
 
@@ -285,8 +287,8 @@ class UI:
                     )
                     if file_path:
                         image = ImageOps.flip(Image.open(file_path).convert("RGBA"))
-                        self.current_node.uniform_data[uniform.name].release()
-                        self.current_node.uniform_data[uniform.name] = (
+                        self.current_node.uniform_data[uniform_data_key].release()
+                        self.current_node.uniform_data[uniform_data_key] = (
                             self.current_node.gl.texture(
                                 image.size,
                                 4,
@@ -302,7 +304,7 @@ class UI:
                 change_speed = max(0.01, 0.01 * np.mean(np.abs(value)))
 
                 if uniform.name in ["u_time", "u_aspect"]:
-                    value = self.current_node.uniform_data[uniform.name]
+                    value = self.current_node.uniform_data[uniform_data_key]
                     imgui.text(f"{uniform.name}: {value:.3f}")
                 elif is_color and fmt == "3f":
                     value = imgui.color_edit3(uniform.name, *value)[1]
@@ -321,7 +323,7 @@ class UI:
                         uniform.name, *value, change_speed=change_speed
                     )[1]
 
-                self.current_node.uniform_data[uniform.name] = value
+                self.current_node.uniform_data[uniform_data_key] = value
 
     def draw_logs_tab(self):
         imgui.text("Logs will be here soon...")
