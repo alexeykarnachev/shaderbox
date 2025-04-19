@@ -194,14 +194,190 @@ def main():
         idx = nodes.index(current_node)
         current_node = nodes[(idx + step) % len(nodes)]
 
+    def draw_main_menu_bar():
+        if imgui.begin_main_menu_bar().opened:
+            if imgui.begin_menu("Node", True).opened:
+                if imgui.menu_item("New", "Ctrl+N", False, True)[1]:
+                    create_new_current_node()
+
+                if imgui.menu_item("Delete Current", "Ctrl+D", False, True)[1]:
+                    delete_current_node()
+
+                if imgui.menu_item("Select Next", "->", False, True)[1]:
+                    select_next_current_node(+1)
+
+                if imgui.menu_item("Select Previous", "<-", False, True)[1]:
+                    select_next_current_node(-1)
+
+                imgui.end_menu()
+            main_menu_height = imgui.get_item_rect_size()[1]
+            imgui.end_main_menu_bar()
+            return main_menu_height
+        return 0
+
+    def draw_node_preview_grid(width, height):
+        nonlocal current_node
+        with imgui.begin_child(
+            "node_preview_grid", width=width, height=height, border=True
+        ):
+            preview_size = 125
+            n_cols = int(imgui.get_content_region_available()[0] // (preview_size + 5))
+            n_cols = max(1, n_cols)
+            for i, node in enumerate(nodes):
+                if node == current_node:
+                    imgui.push_style_color(imgui.COLOR_BORDER, 1.0, 1.0, 0.0, 1.0)
+
+                imgui.begin_child(
+                    f"preview_{i}",
+                    width=preview_size,
+                    height=preview_size,
+                    border=True,
+                    flags=imgui.WINDOW_NO_SCROLLBAR,
+                )
+
+                if node == current_node:
+                    imgui.pop_style_color()
+
+                if imgui.invisible_button(
+                    f"preview_button_{i}", width=preview_size, height=preview_size
+                ):
+                    current_node = node
+
+                s = (preview_size - 10) / max(node.output_texture.size)
+                image_width = node.output_texture.size[0] * s
+                image_height = node.output_texture.size[1] * s
+
+                imgui.set_cursor_pos_x((preview_size - image_width) / 2 - 1)
+                imgui.set_cursor_pos_y((preview_size - image_height) / 2 - 1)
+
+                imgui.image(
+                    node.output_texture.glo,
+                    width=image_width,
+                    height=image_height,
+                    uv0=(0, 1),
+                    uv1=(1, 0),
+                )
+
+                imgui.end_child()
+
+                if (i + 1) % n_cols != 0:
+                    imgui.same_line()
+                else:
+                    imgui.spacing()
+
+    def draw_shader_tab():
+        nonlocal current_node
+        new_current_node: Node | None = None
+
+        if imgui.button(str(current_node.fs_file_path)):
+            file_path = crossfiledialog.open_file(
+                title="Select Fragment Shader",
+                start_dir=str(_RESOURCES_DIR / "shaders"),
+                filter=["*.glsl", "*.frag"],
+            )
+            if file_path:
+                try:
+                    new_current_node = Node(file_path)
+                except Exception as _:
+                    logger.exception("Failed to set fragment shader")
+
+        imgui.same_line()
+        imgui.text("File")
+
+        # ----------------------------------------------------------------
+        # Replace current node with the new one
+        if new_current_node is not None:
+            idx = nodes.index(current_node)
+            old_current_node = nodes[idx]
+            new_current_node.uniform_data = old_current_node.uniform_data.copy()
+
+            old_current_node.release()
+            nodes[idx] = new_current_node
+            current_node = new_current_node
+            new_current_node = None
+
+    def draw_uniforms_tab():
+        for uniform in current_node.iter_uniforms():
+            value = current_node.uniform_data.get(uniform.name)
+            if value is None:
+                continue
+
+            if uniform.gl_type == 35678:  # type: ignore
+                if imgui.image_button(
+                    value.glo, width=50, height=50, uv0=(0, 1), uv1=(1, 0)
+                ):
+                    file_path = crossfiledialog.open_file(
+                        title="Select Texture",
+                        filter=["*.png", "*.jpg", "*.jpeg", "*.bmp"],
+                    )
+                    if file_path:
+                        image = ImageOps.flip(Image.open(file_path).convert("RGBA"))
+                        current_node.uniform_data[uniform.name].release()
+                        current_node.uniform_data[uniform.name] = gl.texture(
+                            image.size,
+                            4,
+                            np.array(image).tobytes(),
+                            dtype="f1",
+                        )
+                imgui.same_line()
+                imgui.text(uniform.name)
+            else:
+                fmt = uniform.fmt  # type: ignore
+                is_time = uniform.name == "u_time"
+                is_aspect = uniform.name == "u_aspect"
+                is_color = uniform.name.endswith("color")
+                change_speed = max(0.01, 0.01 * np.mean(np.abs(value)))
+
+                if is_time and fmt == "1f":
+                    value = glfw.get_time()
+                    imgui.text(f"{uniform.name}: {value:.3f}")
+                elif is_aspect and fmt == "1f":
+                    value = np.divide(*current_node.output_texture.size)
+                    imgui.text(f"{uniform.name}: {value:.3f}")
+                elif is_color and fmt == "3f":
+                    value = imgui.color_edit3(uniform.name, *value)[1]
+                elif is_color and fmt == "4f":
+                    value = imgui.color_edit4(uniform.name, *value)[1]
+                elif fmt == "1f":
+                    value = imgui.drag_float(
+                        uniform.name, value, change_speed=change_speed
+                    )[1]
+                elif fmt == "2f":
+                    value = imgui.drag_float2(
+                        uniform.name, *value, change_speed=change_speed
+                    )[1]
+                elif fmt == "3f":
+                    value = imgui.drag_float3(
+                        uniform.name, *value, change_speed=change_speed
+                    )[1]
+
+                current_node.uniform_data[uniform.name] = value
+
+    def draw_logs_tab():
+        imgui.text("Logs will be here soon...")
+
+    def draw_node_settings(width, height):
+        with imgui.begin_child(
+            "node_settings", width=width, height=height, border=True
+        ):
+            if imgui.begin_tab_bar("node_settings_tabs").opened:
+                if imgui.begin_tab_item("Uniforms").selected:  # type: ignore
+                    draw_uniforms_tab()
+                    imgui.end_tab_item()
+                if imgui.begin_tab_item("Shader").selected:  # type: ignore
+                    draw_shader_tab()
+                    imgui.end_tab_item()
+                if imgui.begin_tab_item("Logs").selected:  # type: ignore
+                    draw_logs_tab()
+                    imgui.end_tab_item()
+                imgui.end_tab_bar()
+
     while not glfw.window_should_close(window):
         window_width, window_height = glfw.get_window_size(window)
         start_time = glfw.get_time()
         glfw.poll_events()
         imgui_renderer.process_inputs()
         imgui.new_frame()
-
-        new_current_node: Node | None = None
 
         # ----------------------------------------------------------------
         # Render nodes
@@ -223,42 +399,17 @@ def main():
         if io.key_ctrl and imgui.is_key_pressed(ord("D")):
             delete_current_node()
 
-        if imgui.is_key_pressed(
-            imgui.get_key_index(imgui.KEY_LEFT_ARROW),
-            repeat=True,
-        ):
+        if imgui.is_key_pressed(imgui.get_key_index(imgui.KEY_LEFT_ARROW), repeat=True):
             select_next_current_node(-1)
 
         if imgui.is_key_pressed(
-            imgui.get_key_index(imgui.KEY_RIGHT_ARROW),
-            repeat=True,
+            imgui.get_key_index(imgui.KEY_RIGHT_ARROW), repeat=True
         ):
             select_next_current_node(+1)
 
         # ----------------------------------------------------------------
         # Main menu bar
-        main_menu_height = 0
-
-        if imgui.begin_main_menu_bar().opened:
-            # ------------------------------------------------------------
-            # Node menu
-            if imgui.begin_menu("Node", True).opened:
-                if imgui.menu_item("New", "Ctrl+N", False, True)[1]:
-                    create_new_current_node()
-
-                if imgui.menu_item("Delete Current", "Ctrl+D", False, True)[1]:
-                    delete_current_node()
-
-                if imgui.menu_item("Select Next", "->", False, True)[1]:
-                    select_next_current_node(+1)
-
-                if imgui.menu_item("Select Previous", "<-", False, True)[1]:
-                    select_next_current_node(-1)
-
-                imgui.end_menu()  # Node
-
-            main_menu_height = imgui.get_item_rect_size()[1]
-            imgui.end_main_menu_bar()  # main menu
+        main_menu_height = draw_main_menu_bar()
 
         # ----------------------------------------------------------------
         # Main window
@@ -305,162 +456,14 @@ def main():
             height=control_panel_height,
             border=False,
         ):
-            # ------------------------------------------------------------
-            # Node previews
-            node_preview_width, node_preview_height = (
-                imgui.get_content_region_available()
-            )
-            node_preview_width = node_preview_width / 3.0
-            with imgui.begin_child(
-                "node_previews",
-                width=node_preview_width,
-                height=node_preview_height,
-                border=True,
-            ):
-                preview_size = 125
-                n_cols = int(
-                    imgui.get_content_region_available()[0] // (preview_size + 5)
-                )
-                n_cols = max(1, n_cols)
-                for i, node in enumerate(nodes):
-                    if node == current_node:
-                        imgui.push_style_color(imgui.COLOR_BORDER, 1.0, 1.0, 0.0, 1.0)
-
-                    imgui.begin_child(
-                        f"node_preview_{i}",
-                        width=preview_size,
-                        height=preview_size,
-                        border=True,
-                        flags=imgui.WINDOW_NO_SCROLLBAR,
-                    )
-
-                    if node == current_node:
-                        imgui.pop_style_color()
-
-                    if imgui.invisible_button(
-                        f"node_preview_button_{i}",
-                        width=preview_size,
-                        height=preview_size,
-                    ):
-                        current_node = node
-
-                    s = (preview_size - 10) / max(node.output_texture.size)
-                    image_width = node.output_texture.size[0] * s
-                    image_height = node.output_texture.size[1] * s
-
-                    imgui.set_cursor_pos_x((preview_size - image_width) / 2 - 1)
-                    imgui.set_cursor_pos_y((preview_size - image_height) / 2 - 1)
-
-                    imgui.image(
-                        node.output_texture.glo,
-                        width=image_width,
-                        height=image_height,
-                        uv0=(0, 1),
-                        uv1=(1, 0),
-                    )
-
-                    imgui.end_child()  # node_preview_i
-
-                    # Handle grid layout
-                    if (i + 1) % n_cols != 0:
-                        imgui.same_line()
-                    else:
-                        imgui.spacing()
-
-            # ------------------------------------------------------------
-            # Node settings and uniforms
+            node_preview_width = control_panel_width / 3.0
+            draw_node_preview_grid(node_preview_width, control_panel_height)
             imgui.same_line()
-            uniforms_width, uniforms_height = imgui.get_content_region_available()
-
-            imgui.begin_child(
-                "shader_settings",
-                width=uniforms_width,
-                height=uniforms_height,
-                border=True,
-            )
-
-            # --------------------------------------------------------
-            # Settings
-            if imgui.button(str(current_node.fs_file_path)):
-                file_path = crossfiledialog.open_file(
-                    title="Select Fragment Shader",
-                    start_dir=str(_RESOURCES_DIR / "shaders"),
-                    filter=["*.glsl", "*.frag"],
-                )
-                if file_path:
-                    try:
-                        new_current_node = Node(file_path)
-                    except Exception as _:
-                        logger.exception("Failed to set fragment shader")
-            imgui.same_line()
-            imgui.text("File")
-
-            # --------------------------------------------------------
-            # Uniforms
-            for uniform in current_node.iter_uniforms():
-                value = current_node.uniform_data.get(uniform.name)
-                if value is None:
-                    continue
-
-                if uniform.gl_type == 35678:  # type: ignore
-                    if imgui.image_button(
-                        value.glo,
-                        width=50,
-                        height=50,
-                        uv0=(0, 1),
-                        uv1=(1, 0),
-                    ):
-                        file_path = crossfiledialog.open_file(
-                            title="Select Texture",
-                            filter=["*.png", "*.jpg", "*.jpeg", "*.bmp"],
-                        )
-                        if file_path:
-                            image = ImageOps.flip(Image.open(file_path).convert("RGBA"))
-                            current_node.uniform_data[uniform.name].release()
-                            current_node.uniform_data[uniform.name] = gl.texture(
-                                image.size,
-                                4,
-                                np.array(image).tobytes(),
-                                dtype="f1",
-                            )
-                    imgui.same_line()
-                    imgui.text(uniform.name)
-                else:
-                    fmt = uniform.fmt  # type: ignore
-                    is_time = uniform.name == "u_time"
-                    is_aspect = uniform.name == "u_aspect"
-                    is_color = uniform.name.endswith("color")
-                    change_speed = max(0.01, 0.01 * np.mean(np.abs(value)))
-
-                    if is_time and fmt == "1f":
-                        value = glfw.get_time()
-                        imgui.text(f"{uniform.name}: {value:.3f}")
-                    elif is_aspect and fmt == "1f":
-                        value = np.divide(*current_node.output_texture.size)
-                        imgui.text(f"{uniform.name}: {value:.3f}")
-                    elif is_color and fmt == "3f":
-                        value = imgui.color_edit3(uniform.name, *value)[1]
-                    elif is_color and fmt == "4f":
-                        value = imgui.color_edit4(uniform.name, *value)[1]
-                    elif fmt == "1f":
-                        value = imgui.drag_float(
-                            uniform.name, value, change_speed=change_speed
-                        )[1]
-                    elif fmt == "2f":
-                        value = imgui.drag_float2(
-                            uniform.name, *value, change_speed=change_speed
-                        )[1]
-                    elif fmt == "3f":
-                        value = imgui.drag_float3(
-                            uniform.name, *value, change_speed=change_speed
-                        )[1]
-
-                    current_node.uniform_data[uniform.name] = value
-
-            imgui.end_child()  # shader_settings
+            settings_width = control_panel_width - node_preview_width
+            draw_node_settings(settings_width, control_panel_height)
 
         # ----------------------------------------------------------------
-        imgui.end()  # ShaderBox
+        imgui.end()
 
         gl.clear_errors()
         try:
@@ -476,18 +479,6 @@ def main():
 
         if glfw.get_key(window, glfw.KEY_ESCAPE) == glfw.PRESS:
             break
-
-        # ----------------------------------------------------------------
-        # Replace current node with the new one
-        if new_current_node is not None:
-            idx = nodes.index(current_node)
-            old_current_node = nodes[idx]
-            new_current_node.uniform_data = old_current_node.uniform_data.copy()
-
-            old_current_node.release()
-            nodes[idx] = new_current_node
-            current_node = new_current_node
-            new_current_node = None
 
 
 if __name__ == "__main__":
