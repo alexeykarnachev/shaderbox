@@ -8,6 +8,7 @@ import imgui
 import moderngl
 import numpy as np
 from imgui.integrations.glfw import GlfwRenderer
+from loguru import logger
 from PIL import Image, ImageOps
 
 _RESOURCES_DIR = Path(str(files("shaderbox.resources")))
@@ -17,13 +18,15 @@ _DEFAULT_TEXTURE = ImageOps.flip(
 
 
 class Node:
-    def __init__(self) -> None:
+    def __init__(self, fs_file_path: str | Path | None = None) -> None:
         self.gl = moderngl.get_context()
         self.name = str(id(self))
 
         dir = _RESOURCES_DIR / "shaders"
-        self.fs_file_path: Path = dir / "default.frag.glsl"
         self.vs_file_path: Path = dir / "default.vert.glsl"
+        self.fs_file_path: Path = (
+            Path(fs_file_path) if fs_file_path else dir / "default.frag.glsl"
+        )
 
         self.program: moderngl.Program = self.gl.program(
             vertex_shader=self.vs_file_path.read_text(),
@@ -47,6 +50,17 @@ class Node:
 
         self.uniform_data = {}
 
+    def release(self):
+        self.program.release()
+        self.vbo.release()
+        self.vao.release()
+        self.output_texture.release()
+        self.fbo.release()
+
+        for data in self.uniform_data:
+            if isinstance(data, moderngl.Texture):
+                data.release()
+
     def iter_uniforms(self):
         for uniform_name in self.program:
             uniform = self.program[uniform_name]
@@ -58,12 +72,17 @@ class Node:
         gl = moderngl.get_context()
         self.fbo.use()
 
+        # ----------------------------------------------------------------
+        # Assign program uniforms
         texture_unit = 0
+        seen_uniform_names = set()
+
         for uniform in self.iter_uniforms():
+            seen_uniform_names.add(uniform.name)
 
             if uniform.gl_type == 35678:  # type: ignore
                 texture = self.uniform_data.get(uniform.name)
-                if texture is None:
+                if texture is None or isinstance(texture.mglo, moderngl.InvalidObject):
                     texture = gl.texture(
                         _DEFAULT_TEXTURE.size,
                         4,
@@ -84,6 +103,15 @@ class Node:
 
             self.program[uniform.name] = value
 
+        # ----------------------------------------------------------------
+        # Clear stale uniform data
+        for uniform_name in self.uniform_data:
+            if uniform_name not in seen_uniform_names:
+                data = self.uniform_data.pop(uniform_name)
+                if isinstance(data, moderngl.Texture):
+                    data.release()
+
+        # Render
         gl.clear()
         self.vao.render()
 
@@ -120,7 +148,7 @@ def main():
     nodes = [Node() for _ in range(10)]
     current_node = nodes[0]
 
-    def create_new_node():
+    def create_new_current_node():
         nonlocal current_node
 
         node = Node()
@@ -144,6 +172,8 @@ def main():
         imgui_renderer.process_inputs()
         imgui.new_frame()
 
+        new_current_node: Node | None = None
+
         # ----------------------------------------------------------------
         # Render nodes
         for node in nodes:
@@ -156,7 +186,7 @@ def main():
         # Handle hotkeys
         io = imgui.get_io()
         if io.key_ctrl and imgui.is_key_pressed(ord("N")):
-            create_new_node()
+            create_new_current_node()
 
         if io.key_ctrl and imgui.is_key_pressed(ord("D")):
             delete_current_node()
@@ -170,7 +200,7 @@ def main():
             # Node menu
             if imgui.begin_menu("Node", True).opened:
                 if imgui.menu_item("New", "Ctrl+N", False, True)[1]:
-                    create_new_node()
+                    create_new_current_node()
 
                 if imgui.menu_item("Delete Current", "Ctrl+D", False, True)[1]:
                     delete_current_node()
@@ -288,15 +318,33 @@ def main():
                         imgui.spacing()
 
             # ------------------------------------------------------------
-            # Uniforms
+            # Node settings and uniforms
             imgui.same_line()
             uniforms_width, uniforms_height = imgui.get_content_region_available()
             with imgui.begin_child(
-                "uniforms",
+                "node_settings",
                 width=uniforms_width,
                 height=uniforms_height,
                 border=True,
             ):
+                # --------------------------------------------------------
+                # Settings
+                if imgui.button(str(current_node.fs_file_path)):
+                    file_path = crossfiledialog.open_file(
+                        title="Select Fragment Shader",
+                        start_dir=str(_RESOURCES_DIR / "shaders"),
+                        filter=["*.glsl", "*.frag"],
+                    )
+                    if file_path:
+                        try:
+                            new_current_node = Node(file_path)
+                        except Exception as _:
+                            logger.exception("Failed to set fragment shader")
+                imgui.same_line()
+                imgui.text("Fragmen shader")
+
+                # --------------------------------------------------------
+                # Uniforms
                 for uniform in current_node.iter_uniforms():
                     value = current_node.uniform_data[uniform.name]
 
@@ -371,6 +419,18 @@ def main():
 
         if glfw.get_key(window, glfw.KEY_ESCAPE) == glfw.PRESS:
             break
+
+        # ----------------------------------------------------------------
+        # Replace current node with the new one
+        if new_current_node is not None:
+            idx = nodes.index(current_node)
+            old_current_node = nodes[idx]
+            new_current_node.uniform_data = old_current_node.uniform_data.copy()
+
+            old_current_node.release()
+            nodes[idx] = new_current_node
+            current_node = new_current_node
+            new_current_node = None
 
 
 if __name__ == "__main__":
