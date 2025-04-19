@@ -101,7 +101,13 @@ class Node:
         for uniform in self.iter_uniforms():
             seen_uniform_names.add(uniform.name)
 
-            if uniform.gl_type == 35678:  # type: ignore
+            if uniform.name == "u_time":
+                value = glfw.get_time()
+                self.uniform_data[uniform.name] = value
+            elif uniform.name == "u_aspect":
+                value = np.divide(*self.output_texture.size)
+                self.uniform_data[uniform.name] = value
+            elif uniform.gl_type == 35678:  # type: ignore
                 texture = self.uniform_data.get(uniform.name)
                 if texture is None or isinstance(texture.mglo, moderngl.InvalidObject):
                     texture = self.gl.texture(
@@ -292,16 +298,11 @@ class UI:
                 imgui.text(uniform.name)
             else:
                 fmt = uniform.fmt  # type: ignore
-                is_time = uniform.name == "u_time"
-                is_aspect = uniform.name == "u_aspect"
                 is_color = uniform.name.endswith("color")
                 change_speed = max(0.01, 0.01 * np.mean(np.abs(value)))
 
-                if is_time and fmt == "1f":
-                    value = glfw.get_time()
-                    imgui.text(f"{uniform.name}: {value:.3f}")
-                elif is_aspect and fmt == "1f":
-                    value = np.divide(*self.current_node.output_texture.size)
+                if uniform.name in ["u_time", "u_aspect"]:
+                    value = self.current_node.uniform_data[uniform.name]
                     imgui.text(f"{uniform.name}: {value:.3f}")
                 elif is_color and fmt == "3f":
                     value = imgui.color_edit3(uniform.name, *value)[1]
