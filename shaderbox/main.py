@@ -27,17 +27,17 @@ class Node:
         self.fs_file_path: Path = (
             Path(fs_file_path) if fs_file_path else dir / "default.frag.glsl"
         )
-
-        self.program: moderngl.Program = self.gl.program(
-            vertex_shader=self.vs_file_path.read_text(),
-            fragment_shader=self.fs_file_path.read_text(),
-        )
+        self.fs_file_mtime = self.fs_file_path.lstat().st_mtime
 
         self.vbo: moderngl.Buffer = self.gl.buffer(
             np.array(
                 [-1.0, -1.0, 1.0, -1.0, -1.0, 1.0, 1.0, -1.0, 1.0, 1.0, -1.0, 1.0],
                 dtype="f4",
             )
+        )
+        self.program: moderngl.Program = self.gl.program(
+            vertex_shader=self.vs_file_path.read_text(),
+            fragment_shader=self.fs_file_path.read_text(),
         )
         self.vao: moderngl.VertexArray = self.gl.vertex_array(
             self.program, [(self.vbo, "2f", "a_pos")]
@@ -49,6 +49,26 @@ class Node:
         )
 
         self.uniform_data = {}
+
+    def _reload_if_needed(self):
+        try:
+            mtime = self.fs_file_path.lstat().st_mtime
+        except FileNotFoundError:
+            pass
+        else:
+            if mtime != self.fs_file_mtime:
+                self.fs_file_mtime = self.fs_file_path.lstat().st_mtime
+
+                self.program.release()
+                self.vao.release()
+
+                self.program: moderngl.Program = self.gl.program(
+                    vertex_shader=self.vs_file_path.read_text(),
+                    fragment_shader=self.fs_file_path.read_text(),
+                )
+                self.vao: moderngl.VertexArray = self.gl.vertex_array(
+                    self.program, [(self.vbo, "2f", "a_pos")]
+                )
 
     def release(self):
         self.program.release()
@@ -69,7 +89,6 @@ class Node:
                 yield uniform
 
     def render(self):
-        gl = moderngl.get_context()
         self.fbo.use()
 
         # ----------------------------------------------------------------
@@ -83,7 +102,7 @@ class Node:
             if uniform.gl_type == 35678:  # type: ignore
                 texture = self.uniform_data.get(uniform.name)
                 if texture is None or isinstance(texture.mglo, moderngl.InvalidObject):
-                    texture = gl.texture(
+                    texture = self.gl.texture(
                         _DEFAULT_TEXTURE.size,
                         4,
                         np.array(_DEFAULT_TEXTURE).tobytes(),
@@ -103,17 +122,19 @@ class Node:
 
             self.program[uniform.name] = value
 
+        # Render
+        self.gl.clear()
+        self.vao.render()
+
         # ----------------------------------------------------------------
         # Clear stale uniform data
-        for uniform_name in self.uniform_data:
+        for uniform_name in self.uniform_data.copy():
             if uniform_name not in seen_uniform_names:
                 data = self.uniform_data.pop(uniform_name)
                 if isinstance(data, moderngl.Texture):
                     data.release()
 
-        # Render
-        gl.clear()
-        self.vao.render()
+        self._reload_if_needed()
 
 
 def main():
@@ -346,7 +367,9 @@ def main():
                 # --------------------------------------------------------
                 # Uniforms
                 for uniform in current_node.iter_uniforms():
-                    value = current_node.uniform_data[uniform.name]
+                    value = current_node.uniform_data.get(uniform.name)
+                    if value is None:
+                        continue
 
                     if uniform.gl_type == 35678:  # type: ignore
                         if imgui.image_button(
@@ -409,8 +432,11 @@ def main():
         imgui.end()  # ShaderBox
 
         gl.clear_errors()
-        imgui.render()
-        imgui_renderer.render(imgui.get_draw_data())
+        try:
+            imgui.render()
+            imgui_renderer.render(imgui.get_draw_data())
+        except Exception:
+            logger.warning("Failed to render imgui draw data")
 
         glfw.swap_buffers(window)
 

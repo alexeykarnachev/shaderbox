@@ -26,7 +26,7 @@ void main() {
 
     vec3 texture_color = texture2D(u_texture, vs_uv).rgb;
 
-    float brightness = 0.5 * (sin(u_time * u_blink_frequency) + 1.0);
+    float brightness = 0.5 * (sin(u_time * u_blink_frequency * 2.0) + 1.0);
 
     vec3 color = (1.0 - brightness) * texture_color + brightness * line * u_color;
     fs_color = vec4(color, 1.0);
