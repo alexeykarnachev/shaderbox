@@ -139,75 +139,45 @@ class Node:
         self._reload_if_needed()
 
 
-def main():
-    glfw.init()
+class UI:
+    def __init__(self, window, nodes: list[Node]):
+        imgui.create_context()
 
-    monitor = glfw.get_primary_monitor()
-    video_mode = glfw.get_video_mode(monitor)
-    screen_width = video_mode.size[0]
-    window_width = screen_width // 2
-    window_height = video_mode.size[1]
+        self.window = window
+        self.nodes = nodes
+        self.current_node = self.nodes[0]
+        self.imgui_renderer = GlfwRenderer(window)
 
-    window = glfw.create_window(
-        width=window_width,
-        height=window_height,
-        title="ShaderBox",
-        monitor=None,
-        share=None,
-    )
-
-    glfw.make_context_current(window)
-    monitor_pos = glfw.get_monitor_pos(monitor)
-    monitor_x, monitor_y = monitor_pos
-    # for the left side: window_x = monitor_x
-    window_x = monitor_x + screen_width - window_width
-
-    glfw.set_window_pos(window, window_x, monitor_y)
-
-    gl = moderngl.create_context(standalone=False)
-    imgui.create_context()
-    imgui_renderer = GlfwRenderer(window)
-
-    nodes = [Node()]
-    current_node = nodes[0]
-
-    def create_new_current_node():
-        nonlocal current_node
-
+    def create_new_current_node(self):
         node = Node()
-        nodes.append(node)
+        self.nodes.append(node)
+        self.current_node = node
 
-        current_node = node
-
-    def delete_current_node():
-        nonlocal current_node
-
-        if len(nodes) == 1:
+    def delete_current_node(self):
+        if len(self.nodes) == 1:
             return
 
-        nodes.remove(current_node)
-        current_node = nodes[-1]
+        self.nodes.remove(self.current_node)
+        self.current_node = self.nodes[-1]
 
-    def select_next_current_node(step: int = +1):
-        nonlocal current_node
+    def select_next_current_node(self, step: int = +1):
+        idx = self.nodes.index(self.current_node)
+        self.current_node = self.nodes[(idx + step) % len(self.nodes)]
 
-        idx = nodes.index(current_node)
-        current_node = nodes[(idx + step) % len(nodes)]
-
-    def draw_main_menu_bar():
+    def draw_main_menu_bar(self):
         if imgui.begin_main_menu_bar().opened:
             if imgui.begin_menu("Node", True).opened:
                 if imgui.menu_item("New", "Ctrl+N", False, True)[1]:
-                    create_new_current_node()
+                    self.create_new_current_node()
 
                 if imgui.menu_item("Delete Current", "Ctrl+D", False, True)[1]:
-                    delete_current_node()
+                    self.delete_current_node()
 
                 if imgui.menu_item("Select Next", "->", False, True)[1]:
-                    select_next_current_node(+1)
+                    self.select_next_current_node(+1)
 
                 if imgui.menu_item("Select Previous", "<-", False, True)[1]:
-                    select_next_current_node(-1)
+                    self.select_next_current_node(-1)
 
                 imgui.end_menu()
             main_menu_height = imgui.get_item_rect_size()[1]
@@ -215,16 +185,15 @@ def main():
             return main_menu_height
         return 0
 
-    def draw_node_preview_grid(width, height):
-        nonlocal current_node
+    def draw_node_preview_grid(self, width, height):
         with imgui.begin_child(
             "node_preview_grid", width=width, height=height, border=True
         ):
             preview_size = 125
             n_cols = int(imgui.get_content_region_available()[0] // (preview_size + 5))
             n_cols = max(1, n_cols)
-            for i, node in enumerate(nodes):
-                if node == current_node:
+            for i, node in enumerate(self.nodes):
+                if node == self.current_node:
                     imgui.push_style_color(imgui.COLOR_BORDER, 1.0, 1.0, 0.0, 1.0)
 
                 imgui.begin_child(
@@ -235,13 +204,13 @@ def main():
                     flags=imgui.WINDOW_NO_SCROLLBAR,
                 )
 
-                if node == current_node:
+                if node == self.current_node:
                     imgui.pop_style_color()
 
                 if imgui.invisible_button(
                     f"preview_button_{i}", width=preview_size, height=preview_size
                 ):
-                    current_node = node
+                    self.current_node = node
 
                 s = (preview_size - 10) / max(node.output_texture.size)
                 image_width = node.output_texture.size[0] * s
@@ -265,11 +234,10 @@ def main():
                 else:
                     imgui.spacing()
 
-    def draw_shader_tab():
-        nonlocal current_node
+    def draw_shader_tab(self):
         new_current_node: Node | None = None
 
-        if imgui.button(str(current_node.fs_file_path)):
+        if imgui.button(str(self.current_node.fs_file_path)):
             file_path = crossfiledialog.open_file(
                 title="Select Fragment Shader",
                 start_dir=str(_RESOURCES_DIR / "shaders"),
@@ -287,18 +255,17 @@ def main():
         # ----------------------------------------------------------------
         # Replace current node with the new one
         if new_current_node is not None:
-            idx = nodes.index(current_node)
-            old_current_node = nodes[idx]
+            idx = self.nodes.index(self.current_node)
+            old_current_node = self.nodes[idx]
             new_current_node.uniform_data = old_current_node.uniform_data.copy()
 
             old_current_node.release()
-            nodes[idx] = new_current_node
-            current_node = new_current_node
-            new_current_node = None
+            self.nodes[idx] = new_current_node
+            self.current_node = new_current_node
 
-    def draw_uniforms_tab():
-        for uniform in current_node.iter_uniforms():
-            value = current_node.uniform_data.get(uniform.name)
+    def draw_uniforms_tab(self):
+        for uniform in self.current_node.iter_uniforms():
+            value = self.current_node.uniform_data.get(uniform.name)
             if value is None:
                 continue
 
@@ -312,12 +279,14 @@ def main():
                     )
                     if file_path:
                         image = ImageOps.flip(Image.open(file_path).convert("RGBA"))
-                        current_node.uniform_data[uniform.name].release()
-                        current_node.uniform_data[uniform.name] = gl.texture(
-                            image.size,
-                            4,
-                            np.array(image).tobytes(),
-                            dtype="f1",
+                        self.current_node.uniform_data[uniform.name].release()
+                        self.current_node.uniform_data[uniform.name] = (
+                            self.current_node.gl.texture(
+                                image.size,
+                                4,
+                                np.array(image).tobytes(),
+                                dtype="f1",
+                            )
                         )
                 imgui.same_line()
                 imgui.text(uniform.name)
@@ -332,7 +301,7 @@ def main():
                     value = glfw.get_time()
                     imgui.text(f"{uniform.name}: {value:.3f}")
                 elif is_aspect and fmt == "1f":
-                    value = np.divide(*current_node.output_texture.size)
+                    value = np.divide(*self.current_node.output_texture.size)
                     imgui.text(f"{uniform.name}: {value:.3f}")
                 elif is_color and fmt == "3f":
                     value = imgui.color_edit3(uniform.name, *value)[1]
@@ -351,65 +320,50 @@ def main():
                         uniform.name, *value, change_speed=change_speed
                     )[1]
 
-                current_node.uniform_data[uniform.name] = value
+                self.current_node.uniform_data[uniform.name] = value
 
-    def draw_logs_tab():
+    def draw_logs_tab(self):
         imgui.text("Logs will be here soon...")
 
-    def draw_node_settings(width, height):
+    def draw_node_settings(self, width, height):
         with imgui.begin_child(
             "node_settings", width=width, height=height, border=True
         ):
             if imgui.begin_tab_bar("node_settings_tabs").opened:
                 if imgui.begin_tab_item("Uniforms").selected:  # type: ignore
-                    draw_uniforms_tab()
+                    self.draw_uniforms_tab()
                     imgui.end_tab_item()
                 if imgui.begin_tab_item("Shader").selected:  # type: ignore
-                    draw_shader_tab()
+                    self.draw_shader_tab()
                     imgui.end_tab_item()
                 if imgui.begin_tab_item("Logs").selected:  # type: ignore
-                    draw_logs_tab()
+                    self.draw_logs_tab()
                     imgui.end_tab_item()
                 imgui.end_tab_bar()
 
-    while not glfw.window_should_close(window):
-        window_width, window_height = glfw.get_window_size(window)
-        start_time = glfw.get_time()
-        glfw.poll_events()
-        imgui_renderer.process_inputs()
-        imgui.new_frame()
-
-        # ----------------------------------------------------------------
-        # Render nodes
-        for node in nodes:
-            try:
-                node.render()
-            except Exception as e:
-                logger.error(f"Failed to render node {node.name}: {e}")
-
-        gl.screen.use()
-        gl.clear()
-
-        # ----------------------------------------------------------------
-        # Handle hotkeys
+    def process_hotkeys(self):
         io = imgui.get_io()
         if io.key_ctrl and imgui.is_key_pressed(ord("N")):
-            create_new_current_node()
+            self.create_new_current_node()
 
         if io.key_ctrl and imgui.is_key_pressed(ord("D")):
-            delete_current_node()
+            self.delete_current_node()
 
         if imgui.is_key_pressed(imgui.get_key_index(imgui.KEY_LEFT_ARROW), repeat=True):
-            select_next_current_node(-1)
+            self.select_next_current_node(-1)
 
         if imgui.is_key_pressed(
             imgui.get_key_index(imgui.KEY_RIGHT_ARROW), repeat=True
         ):
-            select_next_current_node(+1)
+            self.select_next_current_node(+1)
+
+    def render(self, window_width, window_height):
+        self.imgui_renderer.process_inputs()
+        imgui.new_frame()
 
         # ----------------------------------------------------------------
         # Main menu bar
-        main_menu_height = draw_main_menu_bar()
+        main_menu_height = self.draw_main_menu_bar()
 
         # ----------------------------------------------------------------
         # Main window
@@ -425,7 +379,7 @@ def main():
         control_panel_min_height = 600
 
         # ----------------------------------------------------------------
-        # current node image
+        # Current node image
         min_image_height = 100
 
         max_image_height = max(
@@ -433,12 +387,12 @@ def main():
             imgui.get_content_region_available()[1] - control_panel_min_height,
         )
         max_image_width = imgui.get_content_region_available()[0]
-        image_aspect = np.divide(*current_node.output_texture.size)
+        image_aspect = np.divide(*self.current_node.output_texture.size)
         image_width = min(max_image_width, max_image_height * image_aspect)
         image_height = min(max_image_height, max_image_width / image_aspect)
 
         imgui.image(
-            current_node.output_texture.glo,
+            self.current_node.output_texture.glo,
             width=image_width,
             height=image_height,
             uv0=(0, 1),
@@ -457,18 +411,71 @@ def main():
             border=False,
         ):
             node_preview_width = control_panel_width / 3.0
-            draw_node_preview_grid(node_preview_width, control_panel_height)
+            self.draw_node_preview_grid(node_preview_width, control_panel_height)
             imgui.same_line()
             settings_width = control_panel_width - node_preview_width
-            draw_node_settings(settings_width, control_panel_height)
+            self.draw_node_settings(settings_width, control_panel_height)
 
         # ----------------------------------------------------------------
         imgui.end()
 
+        imgui.render()
+        self.imgui_renderer.render(imgui.get_draw_data())
+
+
+def main():
+    glfw.init()
+
+    monitor = glfw.get_primary_monitor()
+    video_mode = glfw.get_video_mode(monitor)
+    screen_width = video_mode.size[0]
+    window_width = screen_width // 2
+    window_height = video_mode.size[1]
+
+    window = glfw.create_window(
+        width=window_width,
+        height=window_height,
+        title="ShaderBox",
+        monitor=None,
+        share=None,
+    )
+
+    glfw.make_context_current(window)
+    monitor_pos = glfw.get_monitor_pos(monitor)
+    monitor_x, monitor_y = monitor_pos
+    window_x = monitor_x + screen_width - window_width
+
+    glfw.set_window_pos(window, window_x, monitor_y)
+
+    gl = moderngl.create_context(standalone=False)
+    nodes = [Node()]
+    ui = UI(window=window, nodes=nodes)
+
+    while not glfw.window_should_close(window):
+        window_width, window_height = glfw.get_window_size(window)
+        start_time = glfw.get_time()
+        glfw.poll_events()
+
+        # ----------------------------------------------------------------
+        # Render nodes
+        for node in nodes:
+            try:
+                node.render()
+            except Exception as e:
+                logger.error(f"Failed to render node {node.name}: {e}")
+
+        gl.screen.use()
+        gl.clear()
+
+        # ----------------------------------------------------------------
+        # Handle hotkeys
+        ui.process_hotkeys()
+
+        # ----------------------------------------------------------------
+        # Render UI
         gl.clear_errors()
         try:
-            imgui.render()
-            imgui_renderer.render(imgui.get_draw_data())
+            ui.render(window_width, window_height)
         except Exception:
             logger.warning("Failed to render imgui draw data")
 
