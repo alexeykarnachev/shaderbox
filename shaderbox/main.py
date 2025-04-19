@@ -166,7 +166,7 @@ def main():
     imgui.create_context()
     imgui_renderer = GlfwRenderer(window)
 
-    nodes = [Node() for _ in range(10)]
+    nodes = [Node()]
     current_node = nodes[0]
 
     def create_new_current_node():
@@ -405,10 +405,10 @@ def main():
 
                         if is_time and fmt == "1f":
                             value = glfw.get_time()
-                            imgui.text(f"Time: {value:.3f}")
+                            imgui.text(f"{uniform.name}: {value:.3f}")
                         elif is_aspect and fmt == "1f":
                             value = np.divide(*current_node.output_texture.size)
-                            imgui.text(f"Aspect: {value:.3f}")
+                            imgui.text(f"{uniform.name}: {value:.3f}")
                         elif is_color and fmt == "3f":
                             value = imgui.color_edit3(uniform.name, *value)[1]
                         elif is_color and fmt == "4f":
