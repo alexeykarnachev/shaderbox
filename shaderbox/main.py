@@ -373,11 +373,11 @@ class UI:
             "node_settings", width=width, height=height, border=True
         ):
             if imgui.begin_tab_bar("node_settings_tabs").opened:
-                if imgui.begin_tab_item("Uniforms").selected:  # type: ignore
-                    self.draw_uniforms_tab()
-                    imgui.end_tab_item()
                 if imgui.begin_tab_item("Shader").selected:  # type: ignore
                     self.draw_shader_tab()
+                    imgui.end_tab_item()
+                if imgui.begin_tab_item("Uniforms").selected:  # type: ignore
+                    self.draw_uniforms_tab()
                     imgui.end_tab_item()
                 if imgui.begin_tab_item("Logs").selected:  # type: ignore
                     self.draw_logs_tab()
