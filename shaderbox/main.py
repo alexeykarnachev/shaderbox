@@ -28,21 +28,6 @@ class Node:
         self.fs_file_path: Path = (
             Path(fs_file_path) if fs_file_path else _DEFAULT_FS_FILE_PATH
         )
-        self.fs_file_mtime = self.fs_file_path.lstat().st_mtime
-
-        self.program: moderngl.Program = self.gl.program(
-            vertex_shader=self.vs_file_path.read_text(),
-            fragment_shader=self.fs_file_path.read_text(),
-        )
-        self.vbo: moderngl.Buffer = self.gl.buffer(
-            np.array(
-                [-1.0, -1.0, 1.0, -1.0, -1.0, 1.0, 1.0, -1.0, 1.0, 1.0, -1.0, 1.0],
-                dtype="f4",
-            )
-        )
-        self.vao: moderngl.VertexArray = self.gl.vertex_array(
-            self.program, [(self.vbo, "2f", "a_pos")]
-        )
 
         self.output_texture: moderngl.Texture = self.gl.texture((1280, 960), 4)
         self.fbo: moderngl.Framebuffer = self.gl.framebuffer(
@@ -50,32 +35,21 @@ class Node:
         )
 
         self.uniform_data = {}
+        self.shader_error: str = ""
+        self.fs_file_mtime: float | None = None
 
-    def _reload_if_needed(self):
-        try:
-            mtime = self.fs_file_path.lstat().st_mtime
-        except FileNotFoundError:
-            pass
-        else:
-            if mtime != self.fs_file_mtime:
-                self.fs_file_mtime = mtime
-
-                program = self.gl.program(
-                    vertex_shader=self.vs_file_path.read_text(),
-                    fragment_shader=self.fs_file_path.read_text(),
-                )
-                vao = self.gl.vertex_array(program, [(self.vbo, "2f", "a_pos")])
-
-                self.program.release()
-                self.vao.release()
-
-                self.program = program
-                self.vao = vao
+        # Will be initialized lazily during the render
+        self.program: moderngl.Program | None = None
+        self.vbo: moderngl.Buffer | None = None
+        self.vao: moderngl.VertexArray | None = None
 
     def release(self):
-        self.program.release()
-        self.vbo.release()
-        self.vao.release()
+        if self.program:
+            self.program.release()
+        if self.vbo:
+            self.vbo.release()
+        if self.vao:
+            self.vao.release()
         self.output_texture.release()
         self.fbo.release()
 
@@ -84,6 +58,9 @@ class Node:
                 data.release()
 
     def iter_uniforms(self):
+        if not self.program:
+            return
+
         for uniform_name in self.program:
             uniform = self.program[uniform_name]
 
@@ -91,7 +68,44 @@ class Node:
                 yield uniform
 
     def render(self):
-        self.fbo.use()
+        # ----------------------------------------------------------------
+        # Reload if file changed
+        mtime = self.fs_file_mtime
+        if self.fs_file_path.is_file():
+            mtime = self.fs_file_path.lstat().st_mtime
+
+        if mtime != self.fs_file_mtime:
+            self.fs_file_mtime = mtime
+            self.shader_error = ""
+
+            try:
+                program = self.gl.program(
+                    vertex_shader=self.vs_file_path.read_text(),
+                    fragment_shader=self.fs_file_path.read_text(),
+                )
+            except Exception as e:
+                logger.error(f"Failed to compile shader: {e}")
+                self.shader_error = str(e)
+                return
+
+            if self.program:
+                self.program.release()
+            if self.vbo:
+                self.vbo.release()
+            if self.vao:
+                self.vao.release()
+
+            self.program = program
+            self.vbo = self.gl.buffer(
+                np.array(
+                    [-1.0, -1.0, 1.0, -1.0, -1.0, 1.0, 1.0, -1.0, 1.0, 1.0, -1.0, 1.0],
+                    dtype="f4",
+                )
+            )
+            self.vao = self.gl.vertex_array(program, [(self.vbo, "2f", "a_pos")])
+
+        if not self.program or not self.vao:
+            return
 
         # ----------------------------------------------------------------
         # Assign program uniforms
@@ -132,6 +146,7 @@ class Node:
             self.program[uniform.name] = value
 
         # Render
+        self.fbo.use()
         self.gl.clear()
         self.vao.render()
 
@@ -142,8 +157,6 @@ class Node:
                 data = self.uniform_data.pop(uniform_data_key)
                 if isinstance(data, moderngl.Texture):
                     data.release()
-
-        self._reload_if_needed()
 
 
 class UI:
@@ -201,7 +214,11 @@ class UI:
             n_cols = max(1, n_cols)
             for i, node in enumerate(self.nodes):
                 if node == self.current_node:
-                    imgui.push_style_color(imgui.COLOR_BORDER, 1.0, 1.0, 0.0, 1.0)
+                    if node.shader_error:
+                        color = (1.0, 0.0, 0.0, 1.0)
+                    else:
+                        color = (0.0, 1.0, 0.0, 1.0)
+                    imgui.push_style_color(imgui.COLOR_BORDER, *color)
 
                 imgui.begin_child(
                     f"preview_{i}",
@@ -361,6 +378,7 @@ class UI:
             self.select_next_current_node(+1)
 
     def render(self, window_width, window_height):
+        self.process_hotkeys()
         self.imgui_renderer.process_inputs()
         imgui.new_frame()
 
@@ -394,13 +412,30 @@ class UI:
         image_width = min(max_image_width, max_image_height * image_aspect)
         image_height = min(max_image_height, max_image_width / image_aspect)
 
+        has_error = self.current_node.shader_error != ""
+        cursor_pos = imgui.get_cursor_screen_pos()
         imgui.image(
             self.current_node.output_texture.glo,
             width=image_width,
             height=image_height,
             uv0=(0, 1),
             uv1=(1, 0),
+            tint_color=(0.2, 0.2, 0.2, 1.0) if has_error else (1.0, 1.0, 1.0, 1.0),
         )
+
+        if has_error:
+            draw_list = imgui.get_window_draw_list()
+            text_size = imgui.calc_text_size(self.current_node.shader_error)
+            text_x = cursor_pos[0] + (image_width - text_size[0]) / 2
+            text_y = cursor_pos[1] + (image_height - text_size[1]) / 2
+            draw_list.add_text(
+                text_x,
+                text_y,
+                imgui.color_convert_float4_to_u32(1.0, 0.0, 0.0, 1.0),
+                self.current_node.shader_error,
+            )
+
+        imgui.set_cursor_screen_pos((cursor_pos[0], cursor_pos[1] + image_height))  # type: ignore
 
         # ----------------------------------------------------------------
         # Control panel
@@ -421,9 +456,13 @@ class UI:
 
         # ----------------------------------------------------------------
         imgui.end()
-
         imgui.render()
-        self.imgui_renderer.render(imgui.get_draw_data())
+        moderngl.get_context().clear_errors()
+
+        try:
+            self.imgui_renderer.render(imgui.get_draw_data())
+        except Exception as e:
+            logger.warning(f"Failed to render imgui draw data: {e}")
 
 
 def main():
@@ -462,25 +501,12 @@ def main():
         # ----------------------------------------------------------------
         # Render nodes
         for node in nodes:
-            try:
-                node.render()
-            except Exception as e:
-                logger.error(f"Failed to render node {node.name}: {e}")
+            node.render()
 
         gl.screen.use()
         gl.clear()
 
-        # ----------------------------------------------------------------
-        # Handle hotkeys
-        ui.process_hotkeys()
-
-        # ----------------------------------------------------------------
-        # Render UI
-        gl.clear_errors()
-        try:
-            ui.render(window_width, window_height)
-        except Exception:
-            logger.warning("Failed to render imgui draw data")
+        ui.render(window_width, window_height)
 
         glfw.swap_buffers(window)
 
