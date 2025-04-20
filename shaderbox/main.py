@@ -20,7 +20,11 @@ _DEFAULT_TEXTURE = ImageOps.flip(
 
 
 class Node:
-    def __init__(self, fs_file_path: str | Path | None = None) -> None:
+    def __init__(
+        self,
+        fs_file_path: str | Path | None = None,
+        output_texture_size: tuple[int, int] | None = None,
+    ) -> None:
         self.gl = moderngl.get_context()
         self.name = str(id(self))
 
@@ -29,10 +33,9 @@ class Node:
             Path(fs_file_path) if fs_file_path else _DEFAULT_FS_FILE_PATH
         )
 
-        self.output_texture: moderngl.Texture = self.gl.texture((1280, 960), 4)
-        self.fbo: moderngl.Framebuffer = self.gl.framebuffer(
-            color_attachments=[self.output_texture]
-        )
+        self.output_texture_size = output_texture_size or (1280, 960)
+        self.output_texture = self.gl.texture(self.output_texture_size, 4)
+        self.fbo = self.gl.framebuffer(color_attachments=[self.output_texture])
 
         self.uniform_data = {}
         self.shader_error: str = ""
@@ -42,6 +45,14 @@ class Node:
         self.program: moderngl.Program | None = None
         self.vbo: moderngl.Buffer | None = None
         self.vao: moderngl.VertexArray | None = None
+
+    def reset_output_texture_size(self, output_texture_size: tuple[int, int]):
+        self.output_texture.release()
+        self.fbo.release()
+
+        self.output_texture_size = output_texture_size
+        self.output_texture = self.gl.texture(self.output_texture_size, 4)
+        self.fbo = self.gl.framebuffer(color_attachments=[self.output_texture])
 
     def release(self):
         if self.program:
@@ -69,7 +80,7 @@ class Node:
 
     def render(self):
         # ----------------------------------------------------------------
-        # Reload if file changed
+        # Reload if file modified
         mtime = self.fs_file_mtime
         if self.fs_file_path.is_file():
             mtime = self.fs_file_path.lstat().st_mtime
@@ -261,6 +272,7 @@ class UI:
     def draw_shader_tab(self):
         new_current_node: Node | None = None
 
+        imgui.text("Fragment shader file:")
         if imgui.button(str(self.current_node.fs_file_path)):
             file_path = crossfiledialog.open_file(
                 title="Select Fragment Shader",
@@ -273,8 +285,19 @@ class UI:
                 except Exception as _:
                     logger.exception("Failed to set fragment shader")
 
-        imgui.same_line()
-        imgui.text("File")
+        imgui.spacing()
+
+        # ----------------------------------------------------------------
+        # Output texture size radio buttons
+        imgui.text("Output resolution:")
+        resolutions = [(640, 480), (1280, 720), (1280, 960), (1920, 1080), (2560, 1440)]
+        current = self.current_node.output_texture_size
+        selected = next((i for i, r in enumerate(resolutions) if r == current), 0)
+
+        for i, (w, h) in enumerate(resolutions):
+            if imgui.radio_button(f"{w}x{h}", i == selected):
+                self.current_node.reset_output_texture_size((w, h))
+            imgui.same_line()
 
         # ----------------------------------------------------------------
         # Replace current node with the new one
