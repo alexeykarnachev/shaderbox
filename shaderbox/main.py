@@ -318,6 +318,8 @@ class UI:
                 continue
 
             if uniform.gl_type == 35678:  # type: ignore
+                imgui.begin_child("asdfasdf")
+                imgui.text(f"{uniform.name}:")
                 if imgui.image_button(
                     value.glo, width=50, height=50, uv0=(0, 1), uv1=(1, 0)
                 ):
@@ -336,8 +338,7 @@ class UI:
                                 dtype="f1",
                             )
                         )
-                imgui.same_line()
-                imgui.text(uniform.name)
+                imgui.end_child()
             else:
                 fmt = uniform.fmt  # type: ignore
                 is_color = uniform.name.endswith("color")
@@ -368,10 +369,8 @@ class UI:
     def draw_logs_tab(self):
         imgui.text("Logs will be here soon...")
 
-    def draw_node_settings(self, width, height):
-        with imgui.begin_child(
-            "node_settings", width=width, height=height, border=True
-        ):
+    def draw_node_settings(self):
+        with imgui.begin_child("node_settings", border=True):
             if imgui.begin_tab_bar("node_settings_tabs").opened:
                 if imgui.begin_tab_item("Shader").selected:  # type: ignore
                     self.draw_shader_tab()
@@ -474,8 +473,7 @@ class UI:
             node_preview_width = control_panel_width / 3.0
             self.draw_node_preview_grid(node_preview_width, control_panel_height)
             imgui.same_line()
-            settings_width = control_panel_width - node_preview_width
-            self.draw_node_settings(settings_width, control_panel_height)
+            self.draw_node_settings()
 
         # ----------------------------------------------------------------
         imgui.end()
