@@ -1,3 +1,4 @@
+import json
 import time
 from importlib.resources import files
 from pathlib import Path
@@ -26,9 +27,10 @@ class Node:
         self,
         fs_file_path: str | Path | None = None,
         output_texture_size: tuple[int, int] | None = None,
+        name: str | None = None,
     ) -> None:
         self.gl = moderngl.get_context()
-        self.name = str(id(self))
+        self.name = name or str(id(self))
 
         self.vs_file_path: Path = _DEFAULT_VS_FILE_PATH
         self.fs_file_path: Path = (
@@ -47,6 +49,105 @@ class Node:
         self.program: moderngl.Program | None = None
         self.vbo: moderngl.Buffer | None = None
         self.vao: moderngl.VertexArray | None = None
+
+    def save(self, directory: str | Path, copy_shader: bool = True) -> None:
+        directory = Path(directory) / self.name
+        directory.mkdir(parents=True, exist_ok=True)
+
+        textures_dir = directory / "textures"
+        textures_dir.mkdir(exist_ok=True)
+
+        metadata = {
+            "fs_file_path": str(self.fs_file_path.absolute()),
+            "output_texture_size": list(self.output_texture_size),
+            "uniforms": {},
+        }
+
+        if copy_shader:
+            shader_dest = directory / "shader.fs.glsl"
+            shader_dest.write_text(self.fs_file_path.read_text())
+            metadata["fs_file_path"] = "shader.fs.glsl"
+
+        # ----------------------------------------------------------------
+        # Save uniforms
+        for uniform in self.iter_uniforms():
+            uniform_data_key = f"{uniform.name}_{uniform.fmt}"  # type: ignore
+            value = self.uniform_data.get(uniform_data_key)
+            if value is None:
+                continue
+
+            if uniform.name in ["u_time", "u_aspect"]:
+                continue
+
+            if uniform.gl_type == 35678:  # type: ignore
+                texture_data = value.read()
+                image = Image.frombytes(
+                    "RGBA", (value.width, value.height), texture_data
+                )
+
+                texture_path = textures_dir / f"{uniform.name}.png"
+                image.save(texture_path, format="PNG")
+                metadata["uniforms"][uniform_data_key] = str(
+                    texture_path.relative_to(directory)
+                )
+            else:
+                if isinstance(value, int | float):
+                    metadata["uniforms"][uniform_data_key] = value
+                elif isinstance(value, tuple):
+                    metadata["uniforms"][uniform_data_key] = list(value)
+                else:
+                    logger.warning(
+                        f"Skipping unsupported uniform type for {uniform.name}: {type(value)}"
+                    )
+
+        meta_file_path = directory / "node.json"
+        with meta_file_path.open("w") as f:
+            json.dump(metadata, f, indent=4)
+
+    @classmethod
+    def load(cls, directory: str | Path) -> "Node":
+        directory = Path(directory)
+        if not directory.is_dir():
+            raise ValueError(f"Directory does not exist: {directory}")
+
+        meta_file_path = directory / "node.json"
+        with meta_file_path.open() as f:
+            metadata = json.load(f)
+
+        fs_file_path = Path(metadata["fs_file_path"])
+        if not fs_file_path.is_absolute():
+            fs_file_path = directory / fs_file_path
+        if not fs_file_path.is_file():
+            raise ValueError(f"Fragment shader file not found: {fs_file_path}")
+
+        node = cls(
+            fs_file_path=fs_file_path,
+            output_texture_size=tuple(metadata["output_texture_size"]),
+            name=directory.name,
+        )
+
+        # ----------------------------------------------------------------
+        # Load uniforms
+        for uniform_data_key, value in metadata["uniforms"].items():
+            if isinstance(value, str) and value.startswith("textures/"):
+                texture_path = directory / value
+                if not texture_path.is_file():
+                    raise ValueError(f"Texture file not found: {texture_path}")
+                image = Image.open(texture_path).convert("RGBA")
+                texture = node.gl.texture(
+                    image.size,
+                    4,
+                    np.array(image).tobytes(),
+                    dtype="f1",
+                )
+                node.uniform_data[uniform_data_key] = texture
+            else:
+                if isinstance(value, list):
+                    node.uniform_data[uniform_data_key] = tuple(value)
+                else:
+                    node.uniform_data[uniform_data_key] = value
+
+        return node
 
     def reset_output_texture_size(self, output_texture_size: tuple[int, int]):
         self.output_texture.release()
@@ -181,6 +282,43 @@ class UI:
         self.current_node = self.nodes[0]
         self.imgui_renderer = GlfwRenderer(window)
 
+        # Save pop-up data
+        self.open_save_popup = False
+        self.save_node_name = ""
+        self.copy_shader = True
+        self.reopen_after_save = True
+
+    def save_current_node(self):
+        try:
+            directory = crossfiledialog.choose_folder(
+                title="Select Save Directory",
+            )
+            logger.debug(f"Selected directory: {directory}")
+            if directory:
+                self.current_node.name = self.save_node_name or self.current_node.name
+                self.current_node.save(directory, self.copy_shader)
+                if self.reopen_after_save:
+                    node = Node.load(Path(directory) / self.current_node.name)
+                    idx = self.nodes.index(self.current_node)
+                    self.current_node.release()
+                    self.nodes[idx] = node
+                    self.current_node = node
+        except Exception as e:
+            logger.error(str(e))
+
+    def load_node(self):
+        try:
+            directory = crossfiledialog.choose_folder(
+                title="Select Node Directory",
+            )
+            logger.debug(f"Selected directory: {directory}")
+            if directory:
+                node = Node.load(directory)
+                self.nodes.append(node)
+                self.current_node = node
+        except Exception as e:
+            logger.error(str(e))
+
     def create_new_current_node(self):
         node = Node()
         self.nodes.append(node)
@@ -212,9 +350,68 @@ class UI:
                 if imgui.menu_item("Select Previous", "<-", False)[1]:
                     self.select_next_current_node(-1)
 
+                imgui.separator()
+
+                if imgui.menu_item("Save Current", "Ctrl+S", False)[1]:
+                    self.save_node_name = self.current_node.name
+                    self.copy_shader = False
+                    self.reopen_after_save = False
+                    self.open_save_popup = True
+
+                if imgui.menu_item("Load", "Ctrl+O", False)[1]:
+                    self.load_node()
+
                 imgui.end_menu()
+
             main_menu_height = imgui.get_item_rect_size()[1]
             imgui.end_main_menu_bar()
+
+            if self.open_save_popup:
+                imgui.open_popup("save_node_popup")
+                self.open_save_popup = False
+
+            if imgui.begin_popup_modal("save_node_popup").opened:
+                window_width, window_height = glfw.get_window_size(self.window)
+                popup_width, popup_height = imgui.get_window_size()
+                imgui.set_window_position(
+                    (window_width - popup_width) / 2,
+                    (window_height - popup_height) / 2,
+                    imgui.ONCE,
+                )
+
+                imgui.text("Node Name:")
+                _, self.save_node_name = imgui.input_text(
+                    "##name", self.save_node_name, 256
+                )
+
+                _, self.copy_shader = imgui.checkbox("Copy Shader", self.copy_shader)
+                if imgui.is_item_hovered():
+                    imgui.begin_tooltip()
+                    imgui.text(
+                        "Copy the fragment shader to shader.fs.glsl in the node directory"
+                    )
+                    imgui.end_tooltip()
+
+                _, self.reopen_after_save = imgui.checkbox(
+                    "Reopen after save", self.reopen_after_save
+                )
+
+                if imgui.is_item_hovered():
+                    imgui.begin_tooltip()
+                    imgui.text(
+                        "Replace the current node with the saved one, loading from the new directory"
+                    )
+                    imgui.end_tooltip()
+
+                if imgui.button("Save"):
+                    self.save_current_node()
+                    imgui.close_current_popup()
+
+                imgui.same_line()
+                if imgui.button("Cancel"):
+                    imgui.close_current_popup()
+
+                imgui.end_popup()
             return main_menu_height
         return 0
 
@@ -497,13 +694,17 @@ class UI:
         io = imgui.get_io()
         if io.key_ctrl and imgui.is_key_pressed(ord("N")):
             self.create_new_current_node()
-
         if io.key_ctrl and imgui.is_key_pressed(ord("D")):
             self.delete_current_node()
-
+        if io.key_ctrl and imgui.is_key_pressed(ord("S")):
+            self.save_node_name = self.current_node.name
+            self.copy_shader = True
+            self.reopen_after_save = True
+            self.open_save_popup = True
+        if io.key_ctrl and imgui.is_key_pressed(ord("O")):
+            self.load_node()
         if imgui.is_key_pressed(imgui.get_key_index(imgui.KEY_LEFT_ARROW), repeat=True):
             self.select_next_current_node(-1)
-
         if imgui.is_key_pressed(
             imgui.get_key_index(imgui.KEY_RIGHT_ARROW), repeat=True
         ):
@@ -588,6 +789,8 @@ class UI:
         # ----------------------------------------------------------------
         imgui.end()
         imgui.render()
+
+        glfw.make_context_current(self.window)
         moderngl.get_context().clear_errors()
 
         try:
