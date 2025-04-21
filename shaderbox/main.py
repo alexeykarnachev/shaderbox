@@ -81,8 +81,8 @@ class Node:
 
             if uniform.gl_type == 35678:  # type: ignore
                 texture_data = value.read()
-                image = Image.frombytes(
-                    "RGBA", (value.width, value.height), texture_data
+                image = ImageOps.flip(
+                    Image.frombytes("RGBA", (value.width, value.height), texture_data)
                 )
 
                 texture_path = textures_dir / f"{uniform.name}.png"
@@ -133,7 +133,7 @@ class Node:
                 texture_path = directory / value
                 if not texture_path.is_file():
                     raise ValueError(f"Texture file not found: {texture_path}")
-                image = Image.open(texture_path).convert("RGBA")
+                image = ImageOps.flip(Image.open(texture_path).convert("RGBA"))
                 texture = node.gl.texture(
                     image.size,
                     4,
@@ -366,11 +366,12 @@ class UI:
             main_menu_height = imgui.get_item_rect_size()[1]
             imgui.end_main_menu_bar()
 
+            save_popup_name = f"Save current node: {self.current_node.name}"
             if self.open_save_popup:
-                imgui.open_popup("save_node_popup")
+                imgui.open_popup(save_popup_name)
                 self.open_save_popup = False
 
-            if imgui.begin_popup_modal("save_node_popup").opened:
+            if imgui.begin_popup_modal(save_popup_name).opened:
                 window_width, window_height = glfw.get_window_size(self.window)
                 popup_width, popup_height = imgui.get_window_size()
                 imgui.set_window_position(
@@ -653,19 +654,27 @@ class UI:
                         value = imgui.color_edit4(uniform.name, *value)[1]  # type: ignore
                     elif uniform.fmt == "1f":  # type: ignore
                         value = imgui.drag_float(
-                            uniform.name, value, change_speed=change_speed  # type: ignore
+                            uniform.name,
+                            value,  # type: ignore
+                            change_speed=change_speed,
                         )[1]
                     elif uniform.fmt == "2f":  # type: ignore
                         value = imgui.drag_float2(
-                            uniform.name, *value, change_speed=change_speed  # type: ignore
+                            uniform.name,
+                            *value,  # type: ignore
+                            change_speed=change_speed,
                         )[1]
                     elif uniform.fmt == "3f":  # type: ignore
                         value = imgui.drag_float3(
-                            uniform.name, *value, change_speed=change_speed  # type: ignore
+                            uniform.name,
+                            *value,  # type: ignore
+                            change_speed=change_speed,
                         )[1]
                     elif uniform.fmt == "4f":  # type: ignore
                         value = imgui.drag_float4(
-                            uniform.name, *value, change_speed=change_speed  # type: ignore
+                            uniform.name,
+                            *value,  # type: ignore
+                            change_speed=change_speed,
                         )[1]
 
                     self.current_node.uniform_data[uniform_data_key] = value
