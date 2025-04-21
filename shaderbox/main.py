@@ -354,8 +354,8 @@ class UI:
 
                 if imgui.menu_item("Save Current", "Ctrl+S", False)[1]:
                     self.save_node_name = self.current_node.name
-                    self.copy_shader = False
-                    self.reopen_after_save = False
+                    self.copy_shader = True
+                    self.reopen_after_save = True
                     self.open_save_popup = True
 
                 if imgui.menu_item("Load", "Ctrl+O", False)[1]:
