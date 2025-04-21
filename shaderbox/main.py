@@ -1,4 +1,6 @@
+import base64
 import json
+import tempfile
 import time
 from importlib.resources import files
 from pathlib import Path
@@ -27,10 +29,8 @@ class Node:
         self,
         fs_file_path: str | Path | None = None,
         output_texture_size: tuple[int, int] | None = None,
-        name: str | None = None,
     ) -> None:
         self.gl = moderngl.get_context()
-        self.name = name or str(id(self))
 
         self.vs_file_path: Path = _DEFAULT_VS_FILE_PATH
         self.fs_file_path: Path = (
@@ -50,23 +50,13 @@ class Node:
         self.vbo: moderngl.Buffer | None = None
         self.vao: moderngl.VertexArray | None = None
 
-    def save(self, directory: str | Path, copy_shader: bool = True) -> None:
-        directory = Path(directory) / self.name
-        directory.mkdir(parents=True, exist_ok=True)
-
-        textures_dir = directory / "textures"
-        textures_dir.mkdir(exist_ok=True)
-
+    def save(self, file_path: str | Path) -> None:
+        file_path = Path(file_path)
         metadata = {
-            "fs_file_path": str(self.fs_file_path.absolute()),
+            "shader_code": self.fs_file_path.read_text(),
             "output_texture_size": list(self.output_texture_size),
             "uniforms": {},
         }
-
-        if copy_shader:
-            shader_dest = directory / "shader.fs.glsl"
-            shader_dest.write_text(self.fs_file_path.read_text())
-            metadata["fs_file_path"] = "shader.fs.glsl"
 
         # ----------------------------------------------------------------
         # Save uniforms
@@ -84,12 +74,17 @@ class Node:
                 image = ImageOps.flip(
                     Image.frombytes("RGBA", (value.width, value.height), texture_data)
                 )
+                from io import BytesIO
 
-                texture_path = textures_dir / f"{uniform.name}.png"
-                image.save(texture_path, format="PNG")
-                metadata["uniforms"][uniform_data_key] = str(
-                    texture_path.relative_to(directory)
-                )
+                buffer = BytesIO()
+                image.save(buffer, format="PNG")
+                encoded = base64.b64encode(buffer.getvalue()).decode("utf-8")
+                metadata["uniforms"][uniform_data_key] = {
+                    "type": "texture",
+                    "width": value.width,
+                    "height": value.height,
+                    "data": encoded,
+                }
             else:
                 if isinstance(value, int | float):
                     metadata["uniforms"][uniform_data_key] = value
@@ -100,42 +95,45 @@ class Node:
                         f"Skipping unsupported uniform type for {uniform.name}: {type(value)}"
                     )
 
-        meta_file_path = directory / "node.json"
-        with meta_file_path.open("w") as f:
+        with file_path.open("w") as f:
             json.dump(metadata, f, indent=4)
 
     @classmethod
-    def load(cls, directory: str | Path) -> "Node":
-        directory = Path(directory)
-        if not directory.is_dir():
-            raise ValueError(f"Directory does not exist: {directory}")
+    def load(cls, file_path: str | Path) -> "Node":
+        file_path = Path(file_path)
+        if not file_path.is_file():
+            raise ValueError(f"File does not exist: {file_path}")
 
-        meta_file_path = directory / "node.json"
-        with meta_file_path.open() as f:
+        with file_path.open() as f:
             metadata = json.load(f)
 
-        fs_file_path = Path(metadata["fs_file_path"])
-        if not fs_file_path.is_absolute():
-            fs_file_path = directory / fs_file_path
-        if not fs_file_path.is_file():
-            raise ValueError(f"Fragment shader file not found: {fs_file_path}")
+        shader_code = metadata.get("shader_code")
+        if not shader_code:
+            raise ValueError("No shader code provided in node file")
+
+        # Write shader code to a temporary file in the system's temp directory
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".frag.glsl", delete=False, prefix=f"{file_path.stem}_"
+        ) as temp_file:
+            temp_file.write(shader_code)
+            fs_file_path = Path(temp_file.name)
+        logger.debug(f"Created temporary shader file: {fs_file_path}")
 
         node = cls(
             fs_file_path=fs_file_path,
             output_texture_size=tuple(metadata["output_texture_size"]),
-            name=directory.name,
         )
 
         # ----------------------------------------------------------------
         # Load uniforms
         for uniform_data_key, value in metadata["uniforms"].items():
-            if isinstance(value, str) and value.startswith("textures/"):
-                texture_path = directory / value
-                if not texture_path.is_file():
-                    raise ValueError(f"Texture file not found: {texture_path}")
-                image = ImageOps.flip(Image.open(texture_path).convert("RGBA"))
+            if isinstance(value, dict) and value.get("type") == "texture":
+                decoded = base64.b64decode(value["data"])
+                from io import BytesIO
+
+                image = ImageOps.flip(Image.open(BytesIO(decoded)).convert("RGBA"))
                 texture = node.gl.texture(
-                    image.size,
+                    (value["width"], value["height"]),
                     4,
                     np.array(image).tobytes(),
                     dtype="f1",
@@ -282,38 +280,35 @@ class UI:
         self.current_node = self.nodes[0]
         self.imgui_renderer = GlfwRenderer(window)
 
-        # Save pop-up data
-        self.open_save_popup = False
-        self.save_node_name = ""
-        self.copy_shader = True
-        self.reopen_after_save = True
-
     def save_current_node(self):
+        file_path = crossfiledialog.save_file(
+            title="Save Node",
+            start_dir=str(_RESOURCES_DIR),
+        )
+
+        file_path = Path(file_path)
         try:
-            directory = crossfiledialog.choose_folder(
-                title="Select Save Directory",
-            )
-            logger.debug(f"Selected directory: {directory}")
-            if directory:
-                self.current_node.name = self.save_node_name or self.current_node.name
-                self.current_node.save(directory, self.copy_shader)
-                if self.reopen_after_save:
-                    node = Node.load(Path(directory) / self.current_node.name)
-                    idx = self.nodes.index(self.current_node)
-                    self.current_node.release()
-                    self.nodes[idx] = node
-                    self.current_node = node
+            self.current_node.save(file_path)
+            logger.info(f"Saved node to: {file_path}")
+
+            node = Node.load(file_path)
+            idx = self.nodes.index(self.current_node)
+            self.current_node.release()
+            self.nodes[idx] = node
+            self.current_node = node
+            logger.debug(f"Reopened node with temporary shader: {node.fs_file_path}")
         except Exception as e:
-            logger.error(str(e))
+            logger.error(f"Failed to save node: {e}")
 
     def load_node(self):
         try:
-            directory = crossfiledialog.choose_folder(
-                title="Select Node Directory",
+            file_path = crossfiledialog.open_file(
+                title="Load Node",
+                start_dir=str(_RESOURCES_DIR),
             )
-            logger.debug(f"Selected directory: {directory}")
-            if directory:
-                node = Node.load(directory)
+            logger.debug(f"Selected file: {file_path}")
+            if file_path:
+                node = Node.load(file_path)
                 self.nodes.append(node)
                 self.current_node = node
         except Exception as e:
@@ -353,10 +348,7 @@ class UI:
                 imgui.separator()
 
                 if imgui.menu_item("Save Current", "Ctrl+S", False)[1]:
-                    self.save_node_name = self.current_node.name
-                    self.copy_shader = True
-                    self.reopen_after_save = True
-                    self.open_save_popup = True
+                    self.save_current_node()
 
                 if imgui.menu_item("Load", "Ctrl+O", False)[1]:
                     self.load_node()
@@ -365,54 +357,6 @@ class UI:
 
             main_menu_height = imgui.get_item_rect_size()[1]
             imgui.end_main_menu_bar()
-
-            save_popup_name = f"Save current node: {self.current_node.name}"
-            if self.open_save_popup:
-                imgui.open_popup(save_popup_name)
-                self.open_save_popup = False
-
-            if imgui.begin_popup_modal(save_popup_name).opened:
-                window_width, window_height = glfw.get_window_size(self.window)
-                popup_width, popup_height = imgui.get_window_size()
-                imgui.set_window_position(
-                    (window_width - popup_width) / 2,
-                    (window_height - popup_height) / 2,
-                    imgui.ONCE,
-                )
-
-                imgui.text("Node Name:")
-                _, self.save_node_name = imgui.input_text(
-                    "##name", self.save_node_name, 256
-                )
-
-                _, self.copy_shader = imgui.checkbox("Copy Shader", self.copy_shader)
-                if imgui.is_item_hovered():
-                    imgui.begin_tooltip()
-                    imgui.text(
-                        "Copy the fragment shader to shader.fs.glsl in the node directory"
-                    )
-                    imgui.end_tooltip()
-
-                _, self.reopen_after_save = imgui.checkbox(
-                    "Reopen after save", self.reopen_after_save
-                )
-
-                if imgui.is_item_hovered():
-                    imgui.begin_tooltip()
-                    imgui.text(
-                        "Replace the current node with the saved one, loading from the new directory"
-                    )
-                    imgui.end_tooltip()
-
-                if imgui.button("Save"):
-                    self.save_current_node()
-                    imgui.close_current_popup()
-
-                imgui.same_line()
-                if imgui.button("Cancel"):
-                    imgui.close_current_popup()
-
-                imgui.end_popup()
             return main_menu_height
         return 0
 
@@ -706,10 +650,7 @@ class UI:
         if io.key_ctrl and imgui.is_key_pressed(ord("D")):
             self.delete_current_node()
         if io.key_ctrl and imgui.is_key_pressed(ord("S")):
-            self.save_node_name = self.current_node.name
-            self.copy_shader = True
-            self.reopen_after_save = True
-            self.open_save_popup = True
+            self.save_current_node()
         if io.key_ctrl and imgui.is_key_pressed(ord("O")):
             self.load_node()
         if imgui.is_key_pressed(imgui.get_key_index(imgui.KEY_LEFT_ARROW), repeat=True):
