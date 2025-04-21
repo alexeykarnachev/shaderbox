@@ -11,6 +11,8 @@ from imgui.integrations.glfw import GlfwRenderer
 from loguru import logger
 from PIL import Image, ImageOps
 
+from shaderbox.vendors import get_modelbox_depthmap
+
 _RESOURCES_DIR = Path(str(files("shaderbox.resources")))
 _DEFAULT_VS_FILE_PATH = _RESOURCES_DIR / "shaders" / "default.vert.glsl"
 _DEFAULT_FS_FILE_PATH = _RESOURCES_DIR / "shaders" / "default.frag.glsl"
@@ -197,17 +199,17 @@ class UI:
 
     def draw_main_menu_bar(self):
         if imgui.begin_main_menu_bar().opened:
-            if imgui.begin_menu("Node", True).opened:
-                if imgui.menu_item("New", "Ctrl+N", False, True)[1]:
+            if imgui.begin_menu("Node").opened:
+                if imgui.menu_item("New", "Ctrl+N", False)[1]:
                     self.create_new_current_node()
 
-                if imgui.menu_item("Delete Current", "Ctrl+D", False, True)[1]:
+                if imgui.menu_item("Delete Current", "Ctrl+D", False)[1]:
                     self.delete_current_node()
 
-                if imgui.menu_item("Select Next", "->", False, True)[1]:
+                if imgui.menu_item("Select Next", "->", False)[1]:
                     self.select_next_current_node(+1)
 
-                if imgui.menu_item("Select Previous", "<-", False, True)[1]:
+                if imgui.menu_item("Select Previous", "<-", False)[1]:
                     self.select_next_current_node(-1)
 
                 imgui.end_menu()
@@ -311,60 +313,168 @@ class UI:
             self.current_node = new_current_node
 
     def draw_uniforms_tab(self):
+        # ----------------------------------------------------------------
+        # Collect and group uniforms
+        uniform_groups = {
+            "special": [],  # u_time, u_aspect (read-only)
+            "textures": [],  # gl_type == 35678
+            "floats": [],  # fmt == "1f"
+            "vec2": [],  # fmt == "2f"
+            "vec3": [],  # fmt == "3f"
+            "colors": [],  # name ends with "color"
+            "vec4": [],  # fmt == "4f" and not color
+        }
+
         for uniform in self.current_node.iter_uniforms():
             uniform_data_key = f"{uniform.name}_{uniform.fmt}"  # type: ignore
             value = self.current_node.uniform_data.get(uniform_data_key)
             if value is None:
                 continue
 
-            if uniform.gl_type == 35678:  # type: ignore
-                imgui.begin_child("asdfasdf")
-                imgui.text(f"{uniform.name}:")
-                if imgui.image_button(
-                    value.glo, width=50, height=50, uv0=(0, 1), uv1=(1, 0)
-                ):
-                    file_path = crossfiledialog.open_file(
-                        title="Select Texture",
-                        filter=["*.png", "*.jpg", "*.jpeg", "*.bmp"],
-                    )
-                    if file_path:
-                        image = ImageOps.flip(Image.open(file_path).convert("RGBA"))
-                        self.current_node.uniform_data[uniform_data_key].release()
-                        self.current_node.uniform_data[uniform_data_key] = (
-                            self.current_node.gl.texture(
-                                image.size,
+            if uniform.name in ["u_time", "u_aspect"]:
+                uniform_groups["special"].append((uniform, uniform_data_key, value))
+            elif uniform.gl_type == 35678:  # type: ignore
+                uniform_groups["textures"].append((uniform, uniform_data_key, value))
+            elif uniform.name.endswith("color"):
+                uniform_groups["colors"].append((uniform, uniform_data_key, value))
+            elif uniform.fmt == "1f":  # type: ignore
+                uniform_groups["floats"].append((uniform, uniform_data_key, value))
+            elif uniform.fmt == "2f":  # type: ignore
+                uniform_groups["vec2"].append((uniform, uniform_data_key, value))
+            elif uniform.fmt == "3f":  # type: ignore
+                uniform_groups["vec3"].append((uniform, uniform_data_key, value))
+            elif uniform.fmt == "4f":  # type: ignore
+                uniform_groups["vec4"].append((uniform, uniform_data_key, value))
+
+        # ----------------------------------------------------------------
+        # Render each group
+        uniform_texture_image_height = 80
+
+        for group_name, uniforms in uniform_groups.items():
+            if not uniforms:
+                continue
+
+            max_text_width = 0
+            item_count = len(uniforms)
+
+            if group_name == "textures":
+                for uniform, _, _ in uniforms:
+                    text_width = imgui.calc_text_size(f"{uniform.name}:").x
+                    max_text_width = max(max_text_width, text_width)
+                height_per_item = uniform_texture_image_height + 10
+            elif group_name == "colors":
+                for uniform, _, _ in uniforms:
+                    text_width = imgui.calc_text_size(f"{uniform.name}:").x
+                    max_text_width = max(max_text_width, text_width)
+                height_per_item = imgui.get_text_line_height_with_spacing()
+            elif group_name == "special":
+                for uniform, _, value in uniforms:
+                    text_width = imgui.calc_text_size(f"{uniform.name}: {value:.3f}").x
+                    max_text_width = max(max_text_width, text_width)
+                height_per_item = imgui.get_text_line_height_with_spacing()
+            else:  # float, vec2, vec3, vec4
+                for uniform, _, _ in uniforms:
+                    text_width = imgui.calc_text_size(f"{uniform.name}:").x
+                    max_text_width = max(max_text_width, text_width)
+                height_per_item = 1.5 * imgui.get_text_line_height_with_spacing()
+
+            total_height = height_per_item * item_count + 20
+
+            imgui.push_style_color(imgui.COLOR_BORDER, 0.15, 0.15, 0.15)
+            imgui.begin_child(
+                f"{group_name}_group",
+                width=0,
+                height=total_height,
+                border=True,
+                flags=imgui.WINDOW_NO_SCROLLBAR,
+            )
+
+            for uniform, uniform_data_key, value in uniforms:
+                if group_name == "textures":
+                    image_height = uniform_texture_image_height
+                    image_width = image_height * value.width / max(value.height, 1)
+                    if imgui.image_button(
+                        value.glo,
+                        width=image_width,
+                        height=image_height,
+                        uv0=(0, 1),
+                        uv1=(1, 0),
+                    ):
+                        file_path = crossfiledialog.open_file(
+                            title="Select Texture",
+                            filter=["*.png", "*.jpg", "*.jpeg", "*.bmp"],
+                        )
+                        if file_path:
+                            image = ImageOps.flip(Image.open(file_path).convert("RGBA"))
+                            self.current_node.uniform_data[uniform_data_key].release()
+                            self.current_node.uniform_data[uniform_data_key] = (
+                                self.current_node.gl.texture(
+                                    image.size,
+                                    4,
+                                    np.array(image).tobytes(),
+                                    dtype="f1",
+                                )
+                            )
+                    imgui.same_line()
+
+                    imgui.begin_group()
+                    imgui.text(uniform.name)
+                    if imgui.button("To depthmap"):
+                        texture_data = value.read()
+                        image = Image.frombytes(
+                            "RGBA", (value.width, value.height), texture_data
+                        )
+                        try:
+                            depthmap = get_modelbox_depthmap(image).convert("RGBA")
+                            new_texture = self.current_node.gl.texture(
+                                depthmap.size,
                                 4,
-                                np.array(image).tobytes(),
+                                np.array(depthmap).tobytes(),
                                 dtype="f1",
                             )
-                        )
-                imgui.end_child()
-            else:
-                fmt = uniform.fmt  # type: ignore
-                is_color = uniform.name.endswith("color")
-                change_speed = max(0.01, 0.01 * np.mean(np.abs(value)))
+                            self.current_node.uniform_data[uniform_data_key].release()
+                            self.current_node.uniform_data[uniform_data_key] = (
+                                new_texture
+                            )
+                        except Exception as e:
+                            logger.error(str(e))
+                    imgui.end_group()
 
-                if uniform.name in ["u_time", "u_aspect"]:
-                    value = self.current_node.uniform_data[uniform_data_key]
+                elif group_name == "special":
                     imgui.text(f"{uniform.name}: {value:.3f}")
-                elif is_color and fmt == "3f":
-                    value = imgui.color_edit3(uniform.name, *value)[1]
-                elif is_color and fmt == "4f":
-                    value = imgui.color_edit4(uniform.name, *value)[1]
-                elif fmt == "1f":
-                    value = imgui.drag_float(
-                        uniform.name, value, change_speed=change_speed
-                    )[1]
-                elif fmt == "2f":
-                    value = imgui.drag_float2(
-                        uniform.name, *value, change_speed=change_speed
-                    )[1]
-                elif fmt == "3f":
-                    value = imgui.drag_float3(
-                        uniform.name, *value, change_speed=change_speed
-                    )[1]
+                else:
+                    is_color = uniform.name.endswith("color")
+                    change_speed = (
+                        max(0.01, 0.01 * np.mean(np.abs(value)))  # type: ignore
+                        if isinstance(value, int | float | tuple)
+                        else 0.01
+                    )
 
-                self.current_node.uniform_data[uniform_data_key] = value
+                    if is_color and uniform.fmt == "3f":  # type: ignore
+                        value = imgui.color_edit3(uniform.name, *value)[1]  # type: ignore
+                    elif is_color and uniform.fmt == "4f":  # type: ignore
+                        value = imgui.color_edit4(uniform.name, *value)[1]  # type: ignore
+                    elif uniform.fmt == "1f":  # type: ignore
+                        value = imgui.drag_float(
+                            uniform.name, value, change_speed=change_speed  # type: ignore
+                        )[1]
+                    elif uniform.fmt == "2f":  # type: ignore
+                        value = imgui.drag_float2(
+                            uniform.name, *value, change_speed=change_speed  # type: ignore
+                        )[1]
+                    elif uniform.fmt == "3f":  # type: ignore
+                        value = imgui.drag_float3(
+                            uniform.name, *value, change_speed=change_speed  # type: ignore
+                        )[1]
+                    elif uniform.fmt == "4f":  # type: ignore
+                        value = imgui.drag_float4(
+                            uniform.name, *value, change_speed=change_speed  # type: ignore
+                        )[1]
+
+                    self.current_node.uniform_data[uniform_data_key] = value
+
+            imgui.end_child()
+            imgui.pop_style_color()
 
     def draw_logs_tab(self):
         imgui.text("Logs will be here soon...")
