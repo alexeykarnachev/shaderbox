@@ -1,6 +1,7 @@
-import base64
+import contextlib
+import hashlib
 import json
-import tempfile
+import shutil
 import time
 from importlib.resources import files
 from pathlib import Path
@@ -12,7 +13,9 @@ import moderngl
 import numpy as np
 from imgui.integrations.glfw import GlfwRenderer
 from loguru import logger
+from OpenGL.GL import GLError
 from PIL import Image, ImageOps
+from platformdirs import user_data_dir
 
 from shaderbox.vendors import get_modelbox_depthmap
 
@@ -23,6 +26,15 @@ _DEFAULT_TEXTURE = ImageOps.flip(
     Image.open(_RESOURCES_DIR.resolve() / "textures" / "default.jpeg").convert("RGBA")
 )
 
+_APP_DIR = Path(user_data_dir("shaderbox"))
+_NODES_DIR = _APP_DIR / "nodes"
+_SHADERS_DIR = _APP_DIR / "shaders"
+_TEXTURES_DIR = _APP_DIR / "textures"
+
+_NODES_DIR.mkdir(exist_ok=True, parents=True)
+_SHADERS_DIR.mkdir(exist_ok=True, parents=True)
+_TEXTURES_DIR.mkdir(exist_ok=True, parents=True)
+
 
 class Node:
     def __init__(
@@ -31,6 +43,9 @@ class Node:
         output_texture_size: tuple[int, int] | None = None,
     ) -> None:
         self.gl = moderngl.get_context()
+
+        name_hash = f"{id(self)}{time.time()}"
+        self.name = hashlib.md5(name_hash.encode()).hexdigest()[:8]
 
         self.vs_file_path: Path = _DEFAULT_VS_FILE_PATH
         self.fs_file_path: Path = (
@@ -50,13 +65,28 @@ class Node:
         self.vbo: moderngl.Buffer | None = None
         self.vao: moderngl.VertexArray | None = None
 
-    def save(self, file_path: str | Path) -> None:
+    def save(self, file_path: str | Path | None = None) -> None:
+        file_path = file_path or (_NODES_DIR / f"{self.name}.json")
         file_path = Path(file_path)
+        file_path.parent.mkdir(exist_ok=True, parents=True)
+
         metadata = {
-            "shader_code": self.fs_file_path.read_text(),
             "output_texture_size": list(self.output_texture_size),
             "uniforms": {},
         }
+
+        try:
+            relative_fs_file_path = self.fs_file_path.relative_to(_SHADERS_DIR)
+        except ValueError:
+            shader_filename = f"{self.name}_frag.glsl"
+            target_path = _SHADERS_DIR / shader_filename
+            shutil.copy(self.fs_file_path, target_path)
+            self.fs_file_path = target_path
+            logger.info(f"Copied shader to: {target_path}")
+
+            relative_fs_file_path = target_path.relative_to(_SHADERS_DIR)
+
+        metadata["shader"] = str(relative_fs_file_path)
 
         # ----------------------------------------------------------------
         # Save uniforms
@@ -74,17 +104,20 @@ class Node:
                 image = ImageOps.flip(
                     Image.frombytes("RGBA", (value.width, value.height), texture_data)
                 )
-                from io import BytesIO
 
-                buffer = BytesIO()
-                image.save(buffer, format="PNG")
-                encoded = base64.b64encode(buffer.getvalue()).decode("utf-8")
-                metadata["uniforms"][uniform_data_key] = {
-                    "type": "texture",
-                    "width": value.width,
-                    "height": value.height,
-                    "data": encoded,
-                }
+                texture_filename = f"{self.name}_{uniform_data_key}.png"
+                texture_path = _TEXTURES_DIR / texture_filename
+                try:
+                    image.save(texture_path, format="PNG")
+                    metadata["uniforms"][uniform_data_key] = {
+                        "type": "texture",
+                        "width": value.width,
+                        "height": value.height,
+                        "path": str(texture_path.relative_to(_APP_DIR)),
+                    }
+                except Exception as e:
+                    logger.error(f"Failed to save texture to {texture_path}: {e}")
+                    continue
             else:
                 if isinstance(value, int | float):
                     metadata["uniforms"][uniform_data_key] = value
@@ -97,53 +130,39 @@ class Node:
 
         with file_path.open("w") as f:
             json.dump(metadata, f, indent=4)
+        logger.info(f"Saved node to: {file_path}")
 
     @classmethod
     def load(cls, file_path: str | Path) -> "Node":
         file_path = Path(file_path)
-        if not file_path.is_file():
-            raise ValueError(f"File does not exist: {file_path}")
-
         with file_path.open() as f:
             metadata = json.load(f)
 
-        shader_code = metadata.get("shader_code")
-        if not shader_code:
-            raise ValueError("No shader code provided in node file")
-
-        # Write shader code to a temporary file in the system's temp directory
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".frag.glsl", delete=False, prefix=f"{file_path.stem}_"
-        ) as temp_file:
-            temp_file.write(shader_code)
-            fs_file_path = Path(temp_file.name)
-        logger.debug(f"Created temporary shader file: {fs_file_path}")
-
+        relative_fs_file_path = metadata.get("shader")
+        fs_file_path = _SHADERS_DIR / relative_fs_file_path
         node = cls(
             fs_file_path=fs_file_path,
             output_texture_size=tuple(metadata["output_texture_size"]),
         )
+        node.name = file_path.stem
 
         # ----------------------------------------------------------------
         # Load uniforms
         for uniform_data_key, value in metadata["uniforms"].items():
             if isinstance(value, dict) and value.get("type") == "texture":
-                decoded = base64.b64decode(value["data"])
-                from io import BytesIO
-
-                image = ImageOps.flip(Image.open(BytesIO(decoded)).convert("RGBA"))
+                file_path = _APP_DIR / value["path"]
+                image = ImageOps.flip(Image.open(file_path).convert("RGBA"))
                 texture = node.gl.texture(
                     (value["width"], value["height"]),
                     4,
                     np.array(image).tobytes(),
                     dtype="f1",
                 )
-                node.uniform_data[uniform_data_key] = texture
-            else:
-                if isinstance(value, list):
-                    node.uniform_data[uniform_data_key] = tuple(value)
-                else:
-                    node.uniform_data[uniform_data_key] = value
+                value = texture
+            elif isinstance(value, list):
+                value = tuple(value)
+
+            node.uniform_data[uniform_data_key] = value
 
         return node
 
@@ -162,10 +181,11 @@ class Node:
             self.vbo.release()
         if self.vao:
             self.vao.release()
+
         self.output_texture.release()
         self.fbo.release()
 
-        for data in self.uniform_data:
+        for data in self.uniform_data.values():
             if isinstance(data, moderngl.Texture):
                 data.release()
 
@@ -175,16 +195,17 @@ class Node:
 
         for uniform_name in self.program:
             uniform = self.program[uniform_name]
-
             if isinstance(uniform, moderngl.Uniform):
                 yield uniform
 
     def render(self):
-        # ----------------------------------------------------------------
         # Reload if file modified
         mtime = self.fs_file_mtime
         if self.fs_file_path.is_file():
-            mtime = self.fs_file_path.lstat().st_mtime
+            try:
+                mtime = self.fs_file_path.lstat().st_mtime
+            except Exception as e:
+                logger.error(f"Failed to check file modification time: {e}")
 
         if mtime != self.fs_file_mtime:
             self.fs_file_mtime = mtime
@@ -219,7 +240,6 @@ class Node:
         if not self.program or not self.vao:
             return
 
-        # ----------------------------------------------------------------
         # Assign program uniforms
         texture_unit = 0
         seen_uniform_data_keys = set()
@@ -262,7 +282,6 @@ class Node:
         self.gl.clear()
         self.vao.render()
 
-        # ----------------------------------------------------------------
         # Clear stale uniform data
         for uniform_data_key in self.uniform_data.copy():
             if uniform_data_key not in seen_uniform_data_keys:
@@ -274,45 +293,34 @@ class Node:
 class UI:
     def __init__(self, window, nodes: list[Node]):
         imgui.create_context()
-
         self.window = window
         self.nodes = nodes
         self.current_node = self.nodes[0]
         self.imgui_renderer = GlfwRenderer(window)
 
     def save_current_node(self):
-        file_path = crossfiledialog.save_file(
-            title="Save Node",
-            start_dir=str(_RESOURCES_DIR),
-        )
+        self.current_node.save()
+        logger.info(f"Saved node: {self.current_node.name}")
 
-        file_path = Path(file_path)
-        try:
-            self.current_node.save(file_path)
-            logger.info(f"Saved node to: {file_path}")
+        node = Node.load(_NODES_DIR / f"{self.current_node.name}.json")
 
-            node = Node.load(file_path)
-            idx = self.nodes.index(self.current_node)
-            self.current_node.release()
-            self.nodes[idx] = node
-            self.current_node = node
-            logger.debug(f"Reopened node with temporary shader: {node.fs_file_path}")
-        except Exception as e:
-            logger.error(f"Failed to save node: {e}")
+        idx = self.nodes.index(self.current_node)
+        self.current_node.release()
+        self.nodes[idx] = node
+        self.current_node = node
+        logger.debug(f"Reopened node: {node.name}")
 
     def load_node(self):
-        try:
-            file_path = crossfiledialog.open_file(
-                title="Load Node",
-                start_dir=str(_RESOURCES_DIR),
-            )
-            logger.debug(f"Selected file: {file_path}")
-            if file_path:
-                node = Node.load(file_path)
-                self.nodes.append(node)
-                self.current_node = node
-        except Exception as e:
-            logger.error(str(e))
+        file_path = crossfiledialog.open_file(
+            title="Load Node",
+            start_dir=str(_NODES_DIR),
+            filter=["*.json"],
+        )
+        logger.debug(f"Selected file: {file_path}")
+        if file_path:
+            node = Node.load(file_path)
+            self.nodes.append(node)
+            self.current_node = node
 
     def create_new_current_node(self):
         node = Node()
@@ -420,7 +428,7 @@ class UI:
         if imgui.button(str(self.current_node.fs_file_path)):
             file_path = crossfiledialog.open_file(
                 title="Select Fragment Shader",
-                start_dir=str(_RESOURCES_DIR / "shaders"),
+                start_dir=str(_SHADERS_DIR),
                 filter=["*.glsl", "*.frag"],
             )
             if file_path:
@@ -743,10 +751,8 @@ class UI:
         glfw.make_context_current(self.window)
         moderngl.get_context().clear_errors()
 
-        try:
+        with contextlib.suppress(GLError):
             self.imgui_renderer.render(imgui.get_draw_data())
-        except Exception as e:
-            logger.warning(f"Failed to render imgui draw data: {e}")
 
 
 def main():
