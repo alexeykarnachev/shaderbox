@@ -22,30 +22,26 @@ from shaderbox.vendors import get_modelbox_depthmap
 _RESOURCES_DIR = Path(str(files("shaderbox.resources")))
 _DEFAULT_VS_FILE_PATH = _RESOURCES_DIR / "shaders" / "default.vert.glsl"
 _DEFAULT_FS_FILE_PATH = _RESOURCES_DIR / "shaders" / "default.frag.glsl"
-_DEFAULT_TEXTURE = ImageOps.flip(
-    Image.open(_RESOURCES_DIR.resolve() / "textures" / "default.jpeg").convert("RGBA")
+_DEFAULT_IMAGE = ImageOps.flip(
+    Image.open(_RESOURCES_DIR / "textures" / "default.jpeg").convert("RGBA")
 )
-
 _APP_DIR = Path(user_data_dir("shaderbox"))
 _NODES_DIR = _APP_DIR / "nodes"
-
+_TRASH_DIR = _APP_DIR / "trash"
 _NODES_DIR.mkdir(exist_ok=True, parents=True)
 
 
 class Node:
     def __init__(
         self,
-        fs_file_path: str | Path | None = None,
+        fs_source: str | None = None,
         output_texture_size: tuple[int, int] | None = None,
     ) -> None:
         self.gl = moderngl.get_context()
 
-        name_hash = f"{id(self)}{time.time()}"
-        self.name = hashlib.md5(name_hash.encode()).hexdigest()[:8]
-
-        self.vs_file_path: Path = _DEFAULT_VS_FILE_PATH
-        self.fs_file_path: Path = (
-            Path(fs_file_path) if fs_file_path else _DEFAULT_FS_FILE_PATH
+        self.vs_source: str = _DEFAULT_VS_FILE_PATH.read_text()
+        self.fs_source: str = (
+            fs_source if fs_source else _DEFAULT_FS_FILE_PATH.read_text()
         )
 
         self.output_texture_size = output_texture_size or (1280, 960)
@@ -54,107 +50,25 @@ class Node:
 
         self.uniform_data = {}
         self.shader_error: str = ""
-        self.fs_file_mtime: float | None = None
 
         # Will be initialized lazily during the render
         self.program: moderngl.Program | None = None
         self.vbo: moderngl.Buffer | None = None
         self.vao: moderngl.VertexArray | None = None
 
-    def save(self, file_path: str | Path | None = None) -> None:
-        node_dir = _NODES_DIR / self.name
-        node_dir.mkdir(exist_ok=True, parents=True)
-        file_path = node_dir / "node.json"
+    def release_program(self, new_fs_source: str = ""):
+        self.fs_source = new_fs_source
 
-        metadata = {
-            "output_texture_size": list(self.output_texture_size),
-            "uniforms": {},
-        }
+        if self.program:
+            self.program.release()
+        if self.vbo:
+            self.vbo.release()
+        if self.vao:
+            self.vao.release()
 
-        # Copy shader to node directory
-        shader_path = node_dir / "shader.glsl"
-        if not shader_path.exists():
-            shutil.copy(self.fs_file_path, shader_path)
-            self.fs_file_path = shader_path
-            logger.info(f"Copied shader to: {shader_path}")
-
-        metadata["shader"] = "shader.glsl"
-
-        # Save uniforms
-        for uniform in self.iter_uniforms():
-            uniform_data_key = f"{uniform.name}_{uniform.fmt}"  # type: ignore
-            value = self.uniform_data.get(uniform_data_key)
-            if value is None:
-                continue
-
-            if uniform.name in ["u_time", "u_aspect"]:
-                continue
-
-            if uniform.gl_type == 35678:  # type: ignore
-                texture_data = value.read()
-                image = ImageOps.flip(
-                    Image.frombytes("RGBA", (value.width, value.height), texture_data)
-                )
-
-                textures_dir = node_dir / "textures"
-                textures_dir.mkdir(exist_ok=True)
-                texture_filename = f"{uniform_data_key}.png"
-                texture_path = textures_dir / texture_filename
-                image.save(texture_path, format="PNG")
-                metadata["uniforms"][uniform_data_key] = {
-                    "type": "texture",
-                    "width": value.width,
-                    "height": value.height,
-                    "path": f"textures/{texture_filename}",
-                }
-            else:
-                if isinstance(value, int | float):
-                    metadata["uniforms"][uniform_data_key] = value
-                elif isinstance(value, tuple):
-                    metadata["uniforms"][uniform_data_key] = list(value)
-                else:
-                    logger.warning(
-                        f"Skipping unsupported uniform type for {uniform.name}: {type(value)}"
-                    )
-
-        with file_path.open("w") as f:
-            json.dump(metadata, f, indent=4)
-        logger.info(f"Saved node to: {file_path}")
-
-    @classmethod
-    def load(cls, file_path: str | Path) -> "Node":
-        file_path = Path(file_path)
-        with file_path.open() as f:
-            metadata = json.load(f)
-
-        relative_fs_file_path = metadata["shader"]
-        node_dir = file_path.parent
-        fs_file_path = node_dir / relative_fs_file_path
-
-        node = cls(
-            fs_file_path=fs_file_path,
-            output_texture_size=tuple(metadata["output_texture_size"]),
-        )
-        node.name = node_dir.name
-
-        # Load uniforms
-        for uniform_data_key, value in metadata["uniforms"].items():
-            if isinstance(value, dict) and value.get("type") == "texture":
-                file_path = node_dir / value["path"]
-                image = ImageOps.flip(Image.open(file_path).convert("RGBA"))
-                texture = node.gl.texture(
-                    (value["width"], value["height"]),
-                    4,
-                    np.array(image).tobytes(),
-                    dtype="f1",
-                )
-                value = texture
-            elif isinstance(value, list):
-                value = tuple(value)
-
-            node.uniform_data[uniform_data_key] = value
-
-        return node
+        self.program = None
+        self.vbo = None
+        self.vao = None
 
     def reset_output_texture_size(self, output_texture_size: tuple[int, int]):
         self.output_texture.release()
@@ -165,12 +79,7 @@ class Node:
         self.fbo = self.gl.framebuffer(color_attachments=[self.output_texture])
 
     def release(self):
-        if self.program:
-            self.program.release()
-        if self.vbo:
-            self.vbo.release()
-        if self.vao:
-            self.vao.release()
+        self.release_program()
 
         self.output_texture.release()
         self.fbo.release()
@@ -189,27 +98,24 @@ class Node:
                 yield uniform
 
     def render(self):
-        # Reload if file modified
-        mtime = self.fs_file_mtime
-        if self.fs_file_path.is_file():
-            try:
-                mtime = self.fs_file_path.lstat().st_mtime
-            except Exception as e:
-                logger.error(f"Failed to check file modification time: {e}")
-
-        if mtime != self.fs_file_mtime:
-            self.fs_file_mtime = mtime
-            self.shader_error = ""
+        # ----------------------------------------------------------------
+        # Lazily initialize program, vbo, and vao
+        if not self.program or not self.vbo or not self.vao:
 
             try:
                 program = self.gl.program(
-                    vertex_shader=self.vs_file_path.read_text(),
-                    fragment_shader=self.fs_file_path.read_text(),
+                    vertex_shader=self.vs_source,
+                    fragment_shader=self.fs_source,
                 )
             except Exception as e:
-                logger.error(f"Failed to compile shader: {e}")
-                self.shader_error = str(e)
+                err = str(e)
+                if err != self.shader_error:
+                    logger.error(f"Failed to compile shader: {e}")
+                    self.shader_error = err
+
                 return
+
+            self.shader_error = ""
 
             if self.program:
                 self.program.release()
@@ -230,6 +136,7 @@ class Node:
         if not self.program or not self.vao:
             return
 
+        # ----------------------------------------------------------------
         # Assign program uniforms
         texture_unit = 0
         seen_uniform_data_keys = set()
@@ -248,9 +155,9 @@ class Node:
                 texture = self.uniform_data.get(uniform_data_key)
                 if texture is None or isinstance(texture.mglo, moderngl.InvalidObject):
                     texture = self.gl.texture(
-                        _DEFAULT_TEXTURE.size,
+                        _DEFAULT_IMAGE.size,
                         4,
-                        np.array(_DEFAULT_TEXTURE).tobytes(),
+                        np.array(_DEFAULT_IMAGE).tobytes(),
                         dtype="f1",
                     )
                     self.uniform_data[uniform_data_key] = texture
@@ -272,6 +179,7 @@ class Node:
         self.gl.clear()
         self.vao.render()
 
+        # ----------------------------------------------------------------
         # Clear stale uniform data
         for uniform_data_key in self.uniform_data.copy():
             if uniform_data_key not in seen_uniform_data_keys:
@@ -280,48 +188,183 @@ class Node:
                     data.release()
 
 
-class UI:
-    def __init__(self, window, nodes: list[Node]):
+class App:
+    def __init__(self):
+        glfw.init()
+
+        monitor = glfw.get_primary_monitor()
+        video_mode = glfw.get_video_mode(monitor)
+        screen_width = video_mode.size[0]
+        window_width = screen_width // 2
+        window_height = video_mode.size[1]
+
+        window = glfw.create_window(
+            width=window_width,
+            height=window_height,
+            title="ShaderBox",
+            monitor=None,
+            share=None,
+        )
+
+        glfw.make_context_current(window)
+        monitor_pos = glfw.get_monitor_pos(monitor)
+        monitor_x, monitor_y = monitor_pos
+        window_x = monitor_x + screen_width - window_width
+
+        glfw.set_window_pos(window, window_x, monitor_y)
+
+        self.current_node_name: str | None = None
+        self.nodes: dict[str, Node] = {}
+        self.node_mtimes: dict[str, float] = {}
+
+        node_dirs = sorted(_NODES_DIR.iterdir(), key=lambda x: x.stat().st_ctime)
+        for node_dir in node_dirs:
+            if node_dir.is_dir():
+                node, mtime = self.load_node(node_dir)
+                name = node_dir.name
+
+                self.nodes[name] = node
+                self.node_mtimes[name] = mtime
+                self.current_node_name = name
+
         imgui.create_context()
         self.window = window
-        self.nodes = nodes
-        self.current_node = nodes[0]
         self.imgui_renderer = GlfwRenderer(window)
 
-    def save_current_node(self):
-        self.current_node.save()
-        logger.info(f"Saved node: {self.current_node.name}")
+    @staticmethod
+    def load_node(node_dir: Path | str) -> tuple[Node, float]:
+        node_dir = Path(node_dir)
+        with (node_dir / "node.json").open() as f:
+            metadata = json.load(f)
 
-        node = Node.load(_NODES_DIR / self.current_node.name / "node.json")
-        idx = self.nodes.index(self.current_node)
-        self.current_node.release()
-        self.nodes[idx] = node
-        self.current_node = node
-        logger.debug(f"Reopened node: {node.name}")
+        fs_file_path = node_dir / "shader.frag.glsl"
+        mtime = fs_file_path.lstat().st_mtime if fs_file_path.exists() else 0.0
+
+        node = Node(
+            fs_source=fs_file_path.read_text(),
+            output_texture_size=tuple(metadata["output_texture_size"]),
+        )
+
+        # ----------------------------------------------------------------
+        # Load uniforms
+        for uniform_data_key, value in metadata["uniforms"].items():
+            if isinstance(value, dict) and value.get("type") == "texture":
+                file_path = node_dir / value["file_path"]
+                image = ImageOps.flip(Image.open(file_path).convert("RGBA"))
+                texture = node.gl.texture(
+                    (value["width"], value["height"]),
+                    4,
+                    np.array(image).tobytes(),
+                    dtype="f1",
+                )
+                value = texture
+            elif isinstance(value, list):
+                value = tuple(value)
+
+            node.uniform_data[uniform_data_key] = value
+
+        return node, mtime
+
+    def save_node(self, node: Node, name: str):
+        node_dir = _NODES_DIR / name
+        node_dir.mkdir(exist_ok=True, parents=True)
+
+        metadata = {
+            "output_texture_size": list(node.output_texture_size),
+            "uniforms": {},
+        }
+
+        fs_file_path = node_dir / "shader.frag.glsl"
+        if not fs_file_path.exists():
+            with fs_file_path.open("w") as f:
+                f.write(node.fs_source)
+                self.node_mtimes[name] = fs_file_path.lstat().st_mtime
+
+        # ----------------------------------------------------------------
+        # Save uniforms
+        for uniform in node.iter_uniforms():
+            uniform_data_key = f"{uniform.name}_{uniform.fmt}"  # type: ignore
+            value = node.uniform_data.get(uniform_data_key)
+            if value is None:
+                continue
+
+            if uniform.name in ["u_time", "u_aspect"]:
+                continue
+
+            if uniform.gl_type == 35678:  # type: ignore
+                texture_data = value.read()
+                image = ImageOps.flip(
+                    Image.frombytes("RGBA", (value.width, value.height), texture_data)
+                )
+
+                textures_dir = node_dir / "textures"
+                textures_dir.mkdir(exist_ok=True)
+                texture_filename = f"{uniform_data_key}.png"
+                image.save(textures_dir / texture_filename, format="PNG")
+                metadata["uniforms"][uniform_data_key] = {
+                    "type": "texture",
+                    "width": value.width,
+                    "height": value.height,
+                    "file_path": f"textures/{texture_filename}",
+                }
+            else:
+                if isinstance(value, int | float):
+                    metadata["uniforms"][uniform_data_key] = value
+                elif isinstance(value, tuple):
+                    metadata["uniforms"][uniform_data_key] = list(value)
+                else:
+                    logger.warning(
+                        f"Skipping unsupported uniform type for {uniform.name}: {type(value)}"
+                    )
+
+        with (node_dir / "node.json").open("w") as f:
+            json.dump(metadata, f, indent=4)
+
+        logger.info(f"Node {name} saved: {node_dir}")
+
+    def save_current_node(self):
+        if self.current_node_name is None:
+            logger.info("Current node is None, nothing to save")
+            return
+
+        name = self.current_node_name
+        node = self.nodes[name]
+
+        self.save_node(node, name)
 
     def create_new_current_node(self):
         node = Node()
-        self.nodes.append(node)
-        self.current_node = node
-        logger.info(f"Created new node: {node.name}")
+        name = hashlib.md5(f"{id(node)}{time.time()}".encode()).hexdigest()[:8]
+
+        self.nodes[name] = node
+        self.current_node_name = name
+
+        logger.info(f"Node created: {name}")
+        self.save_current_node()
 
     def delete_current_node(self):
-        node_dir = _NODES_DIR / self.current_node.name
-        if node_dir.exists():
-            shutil.rmtree(node_dir)
-            logger.info(f"Deleted node directory: {node_dir}")
+        if self.current_node_name is None:
+            logger.info("Current node is None, nothing to delete")
+            return
 
-        self.nodes.remove(self.current_node)
-        self.current_node.release()
-        if not self.nodes:
-            self.create_new_current_node()
-        else:
-            self.current_node = self.nodes[-1]
-        logger.info("Deleted node")
+        name = self.current_node_name
+        node = self.nodes.pop(name)
+        del self.node_mtimes[name]
+
+        node.release()
+
+        self.current_node_name = next(iter(self.nodes)) if self.nodes else None
+
+        shutil.move(_NODES_DIR / name, _TRASH_DIR / name)
+        logger.info(f"Node deleted: {name}")
 
     def select_next_current_node(self, step: int = +1):
-        idx = self.nodes.index(self.current_node)
-        self.current_node = self.nodes[(idx + step) % len(self.nodes)]
+        if self.current_node_name is None:
+            return
+
+        keys = list(self.nodes.keys())
+        idx = keys.index(self.current_node_name)
+        self.current_node_name = keys[(idx + step) % len(keys)]
 
     def draw_main_menu_bar(self):
         if imgui.begin_main_menu_bar().opened:
@@ -357,8 +400,8 @@ class UI:
             preview_size = 125
             n_cols = int(imgui.get_content_region_available()[0] // (preview_size + 5))
             n_cols = max(1, n_cols)
-            for i, node in enumerate(self.nodes):
-                if node == self.current_node:
+            for i, (name, node) in enumerate(self.nodes.items()):
+                if name == self.current_node_name:
                     if node.shader_error:
                         color = (1.0, 0.0, 0.0, 1.0)
                     else:
@@ -366,20 +409,20 @@ class UI:
                     imgui.push_style_color(imgui.COLOR_BORDER, *color)
 
                 imgui.begin_child(
-                    f"preview_{i}",
+                    f"preview_{name}",
                     width=preview_size,
                     height=preview_size,
                     border=True,
                     flags=imgui.WINDOW_NO_SCROLLBAR,
                 )
 
-                if node == self.current_node:
+                if name == self.current_node_name:
                     imgui.pop_style_color()
 
                 if imgui.invisible_button(
-                    f"preview_button_{i}", width=preview_size, height=preview_size
+                    f"preview_button_{name}", width=preview_size, height=preview_size
                 ):
-                    self.current_node = node
+                    self.current_node_name = name
 
                 s = (preview_size - 10) / max(node.output_texture.size)
                 image_width = node.output_texture.size[0] * s
@@ -403,23 +446,21 @@ class UI:
                 else:
                     imgui.spacing()
 
-    def draw_shader_tab(self):
-        imgui.text("Fragment shader file:")
-        imgui.text(str(self.current_node.fs_file_path))
-        imgui.spacing()
-
-        # Output texture size radio buttons
+    @staticmethod
+    def draw_shader_tab(node: Node):
         imgui.text("Output resolution:")
         resolutions = [(640, 480), (1280, 720), (1280, 960), (1920, 1080), (2560, 1440)]
-        current = self.current_node.output_texture_size
+        current = node.output_texture_size
         selected = next((i for i, r in enumerate(resolutions) if r == current), 0)
 
         for i, (w, h) in enumerate(resolutions):
             if imgui.radio_button(f"{w}x{h}", i == selected):
-                self.current_node.reset_output_texture_size((w, h))
+                node.reset_output_texture_size((w, h))
             imgui.same_line()
 
-    def draw_uniforms_tab(self):
+    @staticmethod
+    def draw_uniforms_tab(node: Node):
+        # ----------------------------------------------------------------
         # Collect and group uniforms
         uniform_groups = {
             "special": [],  # u_time, u_aspect (read-only)
@@ -431,9 +472,9 @@ class UI:
             "vec4": [],  # fmt == "4f" and not color
         }
 
-        for uniform in self.current_node.iter_uniforms():
+        for uniform in node.iter_uniforms():
             uniform_data_key = f"{uniform.name}_{uniform.fmt}"  # type: ignore
-            value = self.current_node.uniform_data.get(uniform_data_key)
+            value = node.uniform_data.get(uniform_data_key)
             if value is None:
                 continue
 
@@ -452,6 +493,7 @@ class UI:
             elif uniform.fmt == "4f":  # type: ignore
                 uniform_groups["vec4"].append((uniform, uniform_data_key, value))
 
+        # ----------------------------------------------------------------
         # Render each group
         uniform_texture_image_height = 80
 
@@ -511,14 +553,12 @@ class UI:
                         )
                         if file_path:
                             image = ImageOps.flip(Image.open(file_path).convert("RGBA"))
-                            self.current_node.uniform_data[uniform_data_key].release()
-                            self.current_node.uniform_data[uniform_data_key] = (
-                                self.current_node.gl.texture(
-                                    image.size,
-                                    4,
-                                    np.array(image).tobytes(),
-                                    dtype="f1",
-                                )
+                            node.uniform_data[uniform_data_key].release()
+                            node.uniform_data[uniform_data_key] = node.gl.texture(
+                                image.size,
+                                4,
+                                np.array(image).tobytes(),
+                                dtype="f1",
                             )
                     imgui.same_line()
 
@@ -531,16 +571,14 @@ class UI:
                         )
                         try:
                             depthmap = get_modelbox_depthmap(image).convert("RGBA")
-                            new_texture = self.current_node.gl.texture(
+                            new_texture = node.gl.texture(
                                 depthmap.size,
                                 4,
                                 np.array(depthmap).tobytes(),
                                 dtype="f1",
                             )
-                            self.current_node.uniform_data[uniform_data_key].release()
-                            self.current_node.uniform_data[uniform_data_key] = (
-                                new_texture
-                            )
+                            node.uniform_data[uniform_data_key].release()
+                            node.uniform_data[uniform_data_key] = new_texture
                         except Exception as e:
                             logger.error(str(e))
                     imgui.end_group()
@@ -584,7 +622,7 @@ class UI:
                             change_speed=change_speed,
                         )[1]
 
-                    self.current_node.uniform_data[uniform_data_key] = value
+                    node.uniform_data[uniform_data_key] = value
 
             imgui.end_child()
             imgui.pop_style_color()
@@ -593,17 +631,26 @@ class UI:
         imgui.text("Logs will be here soon...")
 
     def draw_node_settings(self):
+        if self.current_node_name is not None:
+            node = self.nodes.get(self.current_node_name)
+        else:
+            node = None
+
         with imgui.begin_child("node_settings", border=True):
             if imgui.begin_tab_bar("node_settings_tabs").opened:
-                if imgui.begin_tab_item("Shader").selected:  # type: ignore
-                    self.draw_shader_tab()
-                    imgui.end_tab_item()
-                if imgui.begin_tab_item("Uniforms").selected:  # type: ignore
-                    self.draw_uniforms_tab()
-                    imgui.end_tab_item()
+
+                if node:
+                    if imgui.begin_tab_item("Shader").selected:  # type: ignore
+                        self.draw_shader_tab(node)
+                        imgui.end_tab_item()
+                    if imgui.begin_tab_item("Uniforms").selected:  # type: ignore
+                        self.draw_uniforms_tab(node)
+                        imgui.end_tab_item()
+
                 if imgui.begin_tab_item("Logs").selected:  # type: ignore
                     self.draw_logs_tab()
                     imgui.end_tab_item()
+
                 imgui.end_tab_bar()
 
     def process_hotkeys(self):
@@ -621,15 +668,59 @@ class UI:
         ):
             self.select_next_current_node(+1)
 
-    def render(self, window_width, window_height):
+    def run(self):
+        while not glfw.window_should_close(self.window):
+            start_time = glfw.get_time()
+
+            self.update_and_draw()
+
+            elapsed_time = glfw.get_time() - start_time
+            time.sleep(max(0.0, 1.0 / 60.0 - elapsed_time))
+
+            if glfw.get_key(self.window, glfw.KEY_ESCAPE) == glfw.PRESS:
+                break
+
+    def update_and_draw(self):
+        # ----------------------------------------------------------------
+        # Prepare frame
+        gl = moderngl.get_context()
+        window_width, window_height = glfw.get_window_size(self.window)
+        glfw.poll_events()
+
+        # ----------------------------------------------------------------
+        # Check for shader file changes and reload nodes
+        for name in list(self.nodes.keys()):
+            node_dir = _NODES_DIR / name
+            fs_file_path = node_dir / "shader.frag.glsl"
+
+            if not fs_file_path.exists():
+                return
+
+            mtime = fs_file_path.lstat().st_mtime
+            if mtime != self.node_mtimes[name]:
+                logger.info(f"Reloading node {name} due to shader file change")
+                self.nodes[name].release_program(fs_file_path.read_text())
+                self.node_mtimes[name] = mtime
+
+        # Render nodes
+        for node in self.nodes.values():
+            node.render()
+
+        # ----------------------------------------------------------------
+        # Draw UI
+        gl.screen.use()
+        gl.clear()
+
         self.process_hotkeys()
         self.imgui_renderer.process_inputs()
         imgui.new_frame()
 
+        # ----------------------------------------------------------------
+        # Main window
+
         # Main menu bar
         main_menu_height = self.draw_main_menu_bar()
 
-        # Main window
         imgui.set_next_window_size(window_width, window_height - main_menu_height)
         imgui.set_next_window_position(0, main_menu_height)
         imgui.begin(
@@ -641,42 +732,64 @@ class UI:
 
         control_panel_min_height = 600
 
+        # ----------------------------------------------------------------
         # Current node image
-        min_image_height = 100
-        max_image_height = max(
-            min_image_height,
-            imgui.get_content_region_available()[1] - control_panel_min_height,
-        )
-        max_image_width = imgui.get_content_region_available()[0]
-        image_aspect = np.divide(*self.current_node.output_texture.size)
-        image_width = min(max_image_width, max_image_height * image_aspect)
-        image_height = min(max_image_height, max_image_width / image_aspect)
-
-        has_error = self.current_node.shader_error != ""
         cursor_pos = imgui.get_cursor_screen_pos()
-        imgui.image(
-            self.current_node.output_texture.glo,
-            width=image_width,
-            height=image_height,
-            uv0=(0, 1),
-            uv1=(1, 0),
-            tint_color=(0.2, 0.2, 0.2, 1.0) if has_error else (1.0, 1.0, 1.0, 1.0),
-        )
 
-        if has_error:
-            draw_list = imgui.get_window_draw_list()
-            text_size = imgui.calc_text_size(self.current_node.shader_error)
+        if self.current_node_name is None:
+            image_width, image_height = imgui.get_content_region_available()
+            image_height = max(image_height - control_panel_min_height, 400)
+
+            message = "To create a new node, press Ctrl+N"
+            text_size = imgui.calc_text_size(message)
             text_x = cursor_pos[0] + (image_width - text_size[0]) / 2
             text_y = cursor_pos[1] + (image_height - text_size[1]) / 2
+
+            draw_list = imgui.get_window_draw_list()
             draw_list.add_text(
                 text_x,
                 text_y,
-                imgui.color_convert_float4_to_u32(1.0, 0.0, 0.0, 1.0),
-                self.current_node.shader_error,
+                imgui.color_convert_float4_to_u32(1.0, 1.0, 0.0, 1.0),
+                message,
             )
+        else:
+            node = self.nodes[self.current_node_name]
+
+            min_image_height = 100
+            max_image_height = max(
+                min_image_height,
+                imgui.get_content_region_available()[1] - control_panel_min_height,
+            )
+            max_image_width = imgui.get_content_region_available()[0]
+            image_aspect = np.divide(*node.output_texture.size)
+            image_width = min(max_image_width, max_image_height * image_aspect)
+            image_height = min(max_image_height, max_image_width / image_aspect)
+
+            has_error = node.shader_error != ""
+            imgui.image(
+                node.output_texture.glo,
+                width=image_width,
+                height=image_height,
+                uv0=(0, 1),
+                uv1=(1, 0),
+                tint_color=(0.2, 0.2, 0.2, 1.0) if has_error else (1.0, 1.0, 1.0, 1.0),
+            )
+
+            if has_error:
+                draw_list = imgui.get_window_draw_list()
+                text_size = imgui.calc_text_size(node.shader_error)
+                text_x = cursor_pos[0] + (image_width - text_size[0]) / 2
+                text_y = cursor_pos[1] + (image_height - text_size[1]) / 2
+                draw_list.add_text(
+                    text_x,
+                    text_y,
+                    imgui.color_convert_float4_to_u32(1.0, 0.0, 0.0, 1.0),
+                    node.shader_error,
+                )
 
         imgui.set_cursor_screen_pos((cursor_pos[0], cursor_pos[1] + image_height))  # type: ignore
 
+        # ----------------------------------------------------------------
         # Control panel
         region_width, region_height = imgui.get_content_region_available()
         control_panel_height = max(control_panel_min_height, region_height)
@@ -692,6 +805,7 @@ class UI:
             imgui.same_line()
             self.draw_node_settings()
 
+        # Finalize frame
         imgui.end()
         imgui.render()
 
@@ -701,70 +815,12 @@ class UI:
         with contextlib.suppress(GLError):
             self.imgui_renderer.render(imgui.get_draw_data())
 
+        glfw.swap_buffers(self.window)
+
 
 def main():
-    glfw.init()
-
-    monitor = glfw.get_primary_monitor()
-    video_mode = glfw.get_video_mode(monitor)
-    screen_width = video_mode.size[0]
-    window_width = screen_width // 2
-    window_height = video_mode.size[1]
-
-    window = glfw.create_window(
-        width=window_width,
-        height=window_height,
-        title="ShaderBox",
-        monitor=None,
-        share=None,
-    )
-
-    glfw.make_context_current(window)
-    monitor_pos = glfw.get_monitor_pos(monitor)
-    monitor_x, monitor_y = monitor_pos
-    window_x = monitor_x + screen_width - window_width
-
-    glfw.set_window_pos(window, window_x, monitor_y)
-
-    gl = moderngl.create_context(standalone=False)
-
-    # Load all nodes from _NODES_DIR
-    nodes = []
-    for node_dir in _NODES_DIR.glob("*"):
-        if node_dir.is_dir():
-            node = Node.load(node_dir / "node.json")
-            nodes.append(node)
-            logger.info(f"Loaded node: {node.name}")
-
-    # Create default node if empty
-    if not nodes:
-        node = Node()
-        nodes.append(node)
-        logger.info(f"Created default node: {node.name}")
-
-    ui = UI(window=window, nodes=nodes)
-
-    while not glfw.window_should_close(window):
-        window_width, window_height = glfw.get_window_size(window)
-        start_time = glfw.get_time()
-        glfw.poll_events()
-
-        # Render nodes
-        for node in nodes:
-            node.render()
-
-        gl.screen.use()
-        gl.clear()
-
-        ui.render(window_width, window_height)
-
-        glfw.swap_buffers(window)
-
-        elapsed_time = glfw.get_time() - start_time
-        time.sleep(max(0.0, 1.0 / 60.0 - elapsed_time))
-
-        if glfw.get_key(window, glfw.KEY_ESCAPE) == glfw.PRESS:
-            break
+    ui = App()
+    ui.run()
 
 
 if __name__ == "__main__":
