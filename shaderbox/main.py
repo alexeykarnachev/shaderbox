@@ -101,7 +101,6 @@ class Node:
         # ----------------------------------------------------------------
         # Lazily initialize program, vbo, and vao
         if not self.program or not self.vbo or not self.vao:
-
             try:
                 program = self.gl.program(
                     vertex_shader=self.vs_source,
@@ -638,7 +637,6 @@ class App:
 
         with imgui.begin_child("node_settings", border=True):
             if imgui.begin_tab_bar("node_settings_tabs").opened:
-
                 if node:
                     if imgui.begin_tab_item("Shader").selected:  # type: ignore
                         self.draw_shader_tab(node)
