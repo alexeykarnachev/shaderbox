@@ -2,6 +2,7 @@ import contextlib
 import hashlib
 import json
 import shutil
+import subprocess
 import time
 from importlib.resources import files
 from pathlib import Path
@@ -25,10 +26,13 @@ _DEFAULT_FS_FILE_PATH = _RESOURCES_DIR / "shaders" / "default.frag.glsl"
 _DEFAULT_IMAGE = ImageOps.flip(
     Image.open(_RESOURCES_DIR / "textures" / "default.jpeg").convert("RGBA")
 )
+
 _APP_DIR = Path(user_data_dir("shaderbox"))
 _NODES_DIR = _APP_DIR / "nodes"
 _TRASH_DIR = _APP_DIR / "trash"
+
 _NODES_DIR.mkdir(exist_ok=True, parents=True)
+_TRASH_DIR.mkdir(exist_ok=True, parents=True)
 
 
 class Node:
@@ -264,8 +268,31 @@ class App:
 
         return node, mtime
 
-    def save_node(self, node: Node, name: str):
-        node_dir = _NODES_DIR / name
+    def edit_node_fs_file(self, node_name: str):
+        fs_file_path = _NODES_DIR / node_name / "shader.frag.glsl"
+        wd = fs_file_path.parent.parent
+        editor = "nvim" if shutil.which("nvim") else "vim"
+
+        try:
+            subprocess.Popen(
+                ["gnome-terminal", "--", editor, str(fs_file_path)],
+                cwd=str(wd),
+                start_new_session=True,
+            )
+        except Exception as e:
+            logger.error(
+                f"Failed to open {fs_file_path} in {editor} with new terminal: {e}"
+            )
+
+    def edit_current_node_fs_file(self):
+        if self.current_node_name:
+            self.edit_node_fs_file(self.current_node_name)
+        else:
+            logger.warning("Nothing to edit")
+
+    def save_node(self, node_name: str):
+        node = self.nodes[node_name]
+        node_dir = _NODES_DIR / node_name
         node_dir.mkdir(exist_ok=True, parents=True)
 
         metadata = {
@@ -277,15 +304,17 @@ class App:
         if not fs_file_path.exists():
             with fs_file_path.open("w") as f:
                 f.write(node.fs_source)
-                self.node_mtimes[name] = fs_file_path.lstat().st_mtime
+                self.node_mtimes[node_name] = fs_file_path.lstat().st_mtime
 
         # ----------------------------------------------------------------
         # Save uniforms
         for uniform in node.iter_uniforms():
             uniform_data_key = f"{uniform.name}_{uniform.fmt}"  # type: ignore
             value = node.uniform_data.get(uniform_data_key)
+
             if value is None:
-                continue
+                value = uniform.value
+                node.uniform_data[uniform_data_key] = value
 
             if uniform.name in ["u_time", "u_aspect"]:
                 continue
@@ -319,17 +348,13 @@ class App:
         with (node_dir / "node.json").open("w") as f:
             json.dump(metadata, f, indent=4)
 
-        logger.info(f"Node {name} saved: {node_dir}")
+        logger.info(f"Node {node_name} saved: {node_dir}")
 
     def save_current_node(self):
-        if self.current_node_name is None:
-            logger.info("Current node is None, nothing to save")
-            return
-
-        name = self.current_node_name
-        node = self.nodes[name]
-
-        self.save_node(node, name)
+        if self.current_node_name:
+            self.save_node(self.current_node_name)
+        else:
+            logger.warning("Nothing to save")
 
     def create_new_current_node(self):
         node = Node()
@@ -338,8 +363,8 @@ class App:
         self.nodes[name] = node
         self.current_node_name = name
 
+        self.save_node(name)
         logger.info(f"Node created: {name}")
-        self.save_current_node()
 
     def delete_current_node(self):
         if self.current_node_name is None:
@@ -384,6 +409,12 @@ class App:
 
                 if imgui.menu_item("Save Current", "Ctrl+S", False)[1]:
                     self.save_current_node()
+
+                imgui.end_menu()
+
+            if imgui.begin_menu("Shader").opened:
+                if imgui.menu_item("Edit", "Ctrl+E", False)[1]:
+                    self.edit_current_node_fs_file()
 
                 imgui.end_menu()
 
@@ -445,8 +476,22 @@ class App:
                 else:
                     imgui.spacing()
 
-    @staticmethod
-    def draw_shader_tab(node: Node):
+    def draw_shader_tab(self):
+        if self.current_node_name:
+            node = self.nodes[self.current_node_name]
+        else:
+            return
+
+        node_name = self.current_node_name
+        fs_file_path = _NODES_DIR / node_name / "shader.frag.glsl"
+
+        imgui.text_colored(str(fs_file_path), 0.5, 0.5, 0.5)
+
+        if imgui.button("Edit", width=80):
+            self.edit_node_fs_file(node_name)
+
+        imgui.spacing()
+
         imgui.text("Output resolution:")
         resolutions = [(640, 480), (1280, 720), (1280, 960), (1920, 1080), (2560, 1440)]
         current = node.output_texture_size
@@ -457,8 +502,12 @@ class App:
                 node.reset_output_texture_size((w, h))
             imgui.same_line()
 
-    @staticmethod
-    def draw_uniforms_tab(node: Node):
+    def draw_uniforms_tab(self):
+        if self.current_node_name:
+            node = self.nodes[self.current_node_name]
+        else:
+            return
+
         # ----------------------------------------------------------------
         # Collect and group uniforms
         uniform_groups = {
@@ -630,20 +679,14 @@ class App:
         imgui.text("Logs will be here soon...")
 
     def draw_node_settings(self):
-        if self.current_node_name is not None:
-            node = self.nodes.get(self.current_node_name)
-        else:
-            node = None
-
         with imgui.begin_child("node_settings", border=True):
             if imgui.begin_tab_bar("node_settings_tabs").opened:
-                if node:
-                    if imgui.begin_tab_item("Shader").selected:  # type: ignore
-                        self.draw_shader_tab(node)
-                        imgui.end_tab_item()
-                    if imgui.begin_tab_item("Uniforms").selected:  # type: ignore
-                        self.draw_uniforms_tab(node)
-                        imgui.end_tab_item()
+                if imgui.begin_tab_item("Shader").selected:  # type: ignore
+                    self.draw_shader_tab()
+                    imgui.end_tab_item()
+                if imgui.begin_tab_item("Uniforms").selected:  # type: ignore
+                    self.draw_uniforms_tab()
+                    imgui.end_tab_item()
 
                 if imgui.begin_tab_item("Logs").selected:  # type: ignore
                     self.draw_logs_tab()
@@ -659,6 +702,8 @@ class App:
             self.delete_current_node()
         if io.key_ctrl and imgui.is_key_pressed(ord("S")):
             self.save_current_node()
+        if io.key_ctrl and imgui.is_key_pressed(ord("E")):
+            self.edit_current_node_fs_file()
         if imgui.is_key_pressed(imgui.get_key_index(imgui.KEY_LEFT_ARROW), repeat=True):
             self.select_next_current_node(-1)
         if imgui.is_key_pressed(
@@ -688,8 +733,7 @@ class App:
         # ----------------------------------------------------------------
         # Check for shader file changes and reload nodes
         for name in list(self.nodes.keys()):
-            node_dir = _NODES_DIR / name
-            fs_file_path = node_dir / "shader.frag.glsl"
+            fs_file_path = _NODES_DIR / name / "shader.frag.glsl"
 
             if not fs_file_path.exists():
                 return
