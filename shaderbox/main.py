@@ -191,6 +191,40 @@ class Node:
                     data.release()
 
 
+class UIUniform:
+    def __init__(self, uniform: moderngl.Uniform) -> None:
+        self.uniform = uniform
+        self.name = uniform.name
+        self.array_length = uniform.array_length
+        self.dimension = uniform.dimension
+        self.gl_type = uniform.gl_type  # type: ignore
+        self.is_special = self.name in ("u_time", "u_aspect")
+        self.is_image = self.gl_type == 35678
+        self.is_color = (
+            self.array_length == 1
+            and self.dimension in [3, 4]
+            and self.name.endswith("color")
+        )
+
+    @property
+    def group_name(self) -> str:
+        if self.array_length > 1 or self.is_special:
+            return "special"
+        elif self.is_image:
+            return "image"
+        elif self.is_color:
+            return "color"
+        else:
+            return "drag"
+
+    @property
+    def height(self) -> float:
+        if self.group_name == "image":
+            return 95
+        else:
+            return imgui.get_text_line_height_with_spacing()
+
+
 class App:
     def __init__(self):
         glfw.init()
@@ -501,45 +535,97 @@ class App:
                 node.reset_output_texture_size((w, h))
             imgui.same_line()
 
+    def draw_ui_uniform(self, ui_uniform: UIUniform, node: Node):
+        uniform_name = ui_uniform.name
+        value = node.uniform_values.get(uniform_name, ui_uniform.uniform.value)
+
+        if ui_uniform.group_name == "special":
+            if ui_uniform.array_length > 1:
+                value_str = ", ".join(f"{v:.3f}" for v in value)
+                imgui.text(f"{uniform_name}[{ui_uniform.array_length}]: [{value_str}]")
+            else:
+                imgui.text(f"{uniform_name}: {value:.3f}")
+
+        elif ui_uniform.group_name == "image":
+            texture = value
+            image_height = 90
+            image_width = image_height * texture.width / max(texture.height, 1)
+            if imgui.image_button(
+                texture.glo,
+                width=image_width,
+                height=image_height,
+                uv0=(0, 1),
+                uv1=(1, 0),
+            ):
+                file_path = crossfiledialog.open_file(
+                    title="Select Texture",
+                    filter=["*.png", "*.jpg", "*.jpeg", "*.bmp"],
+                )
+                if file_path:
+                    image = ImageOps.flip(Image.open(file_path).convert("RGBA"))
+                    texture.release()
+                    new_texture = node.gl.texture(
+                        image.size, 4, np.array(image).tobytes(), dtype="f1"
+                    )
+                    node.uniform_values[uniform_name] = new_texture
+
+            imgui.same_line()
+            imgui.begin_group()
+            imgui.text(uniform_name)
+
+            if imgui.button("To depthmap"):
+                texture_data = texture.read()
+                image = Image.frombytes(
+                    "RGBA", (texture.width, texture.height), texture_data
+                )
+                try:
+                    depthmap = get_modelbox_depthmap(image).convert("RGBA")
+                    new_texture = node.gl.texture(
+                        depthmap.size,
+                        4,
+                        np.array(depthmap).tobytes(),
+                        dtype="f1",
+                    )
+                    texture.release()
+                    value = new_texture
+                except Exception as e:
+                    logger.error(str(e))
+            imgui.end_group()
+
+        elif ui_uniform.group_name == "color":
+            fn = getattr(imgui, f"color_edit{ui_uniform.dimension}")
+            value = fn(uniform_name, *value)[1]
+
+        elif ui_uniform.group_name == "drag":
+            change_speed = 0.01
+            if ui_uniform.dimension == 1:
+                value = imgui.drag_float(uniform_name, value, change_speed)
+            else:
+                fn = getattr(imgui, f"drag_float{ui_uniform.dimension}")
+                value = fn(uniform_name, *value, change_speed)[1]
+
+        node.uniform_values[uniform_name] = value
+
     def draw_uniforms_tab(self):
         if self.current_node_name:
             node = self.nodes[self.current_node_name]
         else:
             return
 
-        # ----------------------------------------------------------------
-        # Collect and group uniforms
-        uniform_groups = defaultdict(lambda: [])
-        for uniform in node.iter_uniforms():
-            value = node.uniform_values.get(uniform.name)
+        # Collect UIUniform instances
+        ui_uniforms = [UIUniform(uniform) for uniform in node.iter_uniforms()]
 
-            if value is None:
-                continue
+        # Group them by group_name
+        uniform_groups = defaultdict(list)
+        for ui_uniform in ui_uniforms:
+            uniform_groups[ui_uniform.group_name].append(ui_uniform)
 
-            fmt = uniform.fmt  # type: ignore
-            if uniform.name in ["u_time", "u_aspect"]:
-                group_name = f"{fmt[0]}_special"
-            elif uniform.gl_type == 35678:  # type: ignore
-                group_name = "texture"
-            elif uniform.name.endswith("color") and fmt in ["3f", "4f"]:
-                group_name = f"{fmt[0]}_color"
-            else:
-                group_name = fmt
-
-            uniform_groups[group_name].append(uniform.name)
-
-        uniform_texture_image_height = 80
-        text_line_height = imgui.get_text_line_height_with_spacing()
-
-        for group_name, uniform_names in uniform_groups.items():
-            if group_name == "texture":
-                height_per_item = uniform_texture_image_height + 10
-            elif group_name.endswith("color") or group_name.endswith("special"):
-                height_per_item = text_line_height
-            else:
-                height_per_item = 1.5 * text_line_height
-
-            total_height = height_per_item * len(uniform_names) + 20
+        # Draw each group
+        for group_name, ui_uniforms_in_group in uniform_groups.items():
+            # Calculate total height for the group
+            total_height = (
+                sum(ui_uniform.height for ui_uniform in ui_uniforms_in_group) + 20
+            )
 
             imgui.push_style_color(imgui.COLOR_BORDER, 0.15, 0.15, 0.15)
             imgui.begin_child(
@@ -550,62 +636,8 @@ class App:
                 flags=imgui.WINDOW_NO_SCROLLBAR,
             )
 
-            for uniform_name in uniform_names:
-                value = node.uniform_values[uniform_name]
-
-                if group_name == "texture":
-                    image_height = uniform_texture_image_height
-                    image_width = image_height * value.width / max(value.height, 1)
-                    if imgui.image_button(
-                        value.glo,
-                        width=image_width,
-                        height=image_height,
-                        uv0=(0, 1),
-                        uv1=(1, 0),
-                    ):
-                        file_path = crossfiledialog.open_file(
-                            title="Select Texture",
-                            filter=["*.png", "*.jpg", "*.jpeg", "*.bmp"],
-                        )
-                        if file_path:
-                            image = ImageOps.flip(Image.open(file_path).convert("RGBA"))
-                            node.uniform_values[uniform_name].release()
-                            value = node.gl.texture(
-                                image.size, 4, np.array(image).tobytes(), dtype="f1"
-                            )
-                    imgui.same_line()
-                    imgui.begin_group()
-                    imgui.text(uniform_name)
-                    if imgui.button("To depthmap"):
-                        texture_data = value.read()
-                        image = Image.frombytes(
-                            "RGBA", (value.width, value.height), texture_data
-                        )
-                        try:
-                            depthmap = get_modelbox_depthmap(image).convert("RGBA")
-                            new_texture = node.gl.texture(
-                                depthmap.size,
-                                4,
-                                np.array(depthmap).tobytes(),
-                                dtype="f1",
-                            )
-                            node.uniform_values[uniform_name].release()
-                            value = new_texture
-                        except Exception as e:
-                            logger.error(str(e))
-                    imgui.end_group()
-                elif group_name.endswith("special"):
-                    imgui.text(f"{uniform_name}: {value:.3f}")
-                elif group_name.endswith("color"):
-                    fn = getattr(imgui, f"color_edit{group_name[0]}")
-                    value = fn(uniform_name, *value)[1]
-                else:
-                    fn = getattr(imgui, f"drag_float{group_name[0]}")
-                    change_speed = 0.01 * np.mean(np.abs(value)).squeeze()
-                    change_speed = np.clip(change_speed, 0.01, change_speed)
-                    value = fn(uniform_name, *value, change_speed=change_speed)[1]
-
-                node.uniform_values[uniform_name] = value
+            for ui_uniform in ui_uniforms_in_group:
+                self.draw_ui_uniform(ui_uniform, node)
 
             imgui.end_child()
             imgui.pop_style_color()
