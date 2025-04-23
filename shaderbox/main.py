@@ -4,6 +4,7 @@ import json
 import shutil
 import subprocess
 import time
+from collections import defaultdict
 from importlib.resources import files
 from pathlib import Path
 
@@ -508,69 +509,37 @@ class App:
 
         # ----------------------------------------------------------------
         # Collect and group uniforms
-        uniform_groups = {
-            "special": [],  # u_time, u_aspect (read-only)
-            "textures": [],  # gl_type == 35678
-            "floats": [],  # fmt == "1f"
-            "vec2": [],  # fmt == "2f"
-            "vec3": [],  # fmt == "3f"
-            "colors": [],  # name ends with "color"
-            "vec4": [],  # fmt == "4f" and not color
-        }
-
+        uniform_groups = defaultdict(lambda: [])
         for uniform in node.iter_uniforms():
             value = node.uniform_values.get(uniform.name)
+
             if value is None:
                 continue
 
+            fmt = uniform.fmt  # type: ignore
             if uniform.name in ["u_time", "u_aspect"]:
-                uniform_groups["special"].append((uniform, value))
+                group_name = f"{fmt[0]}_special"
             elif uniform.gl_type == 35678:  # type: ignore
-                uniform_groups["textures"].append((uniform, value))
-            elif uniform.name.endswith("color"):
-                uniform_groups["colors"].append((uniform, value))
-            elif uniform.fmt == "1f":  # type: ignore
-                uniform_groups["floats"].append((uniform, value))
-            elif uniform.fmt == "2f":  # type: ignore
-                uniform_groups["vec2"].append((uniform, value))
-            elif uniform.fmt == "3f":  # type: ignore
-                uniform_groups["vec3"].append((uniform, value))
-            elif uniform.fmt == "4f":  # type: ignore
-                uniform_groups["vec4"].append((uniform, value))
+                group_name = "texture"
+            elif uniform.name.endswith("color") and fmt in ["3f", "4f"]:
+                group_name = f"{fmt[0]}_color"
+            else:
+                group_name = fmt
 
-        # ----------------------------------------------------------------
-        # Render each group
+            uniform_groups[group_name].append(uniform.name)
+
         uniform_texture_image_height = 80
+        text_line_height = imgui.get_text_line_height_with_spacing()
 
-        for group_name, uniforms in uniform_groups.items():
-            if not uniforms:
-                continue
-
-            max_text_width = 0
-            item_count = len(uniforms)
-
-            if group_name == "textures":
-                for uniform, _ in uniforms:
-                    text_width = imgui.calc_text_size(f"{uniform.name}:").x
-                    max_text_width = max(max_text_width, text_width)
+        for group_name, uniform_names in uniform_groups.items():
+            if group_name == "texture":
                 height_per_item = uniform_texture_image_height + 10
-            elif group_name == "colors":
-                for uniform, _ in uniforms:
-                    text_width = imgui.calc_text_size(f"{uniform.name}:").x
-                    max_text_width = max(max_text_width, text_width)
-                height_per_item = imgui.get_text_line_height_with_spacing()
-            elif group_name == "special":
-                for uniform, value in uniforms:
-                    text_width = imgui.calc_text_size(f"{uniform.name}: {value:.3f}").x
-                    max_text_width = max(max_text_width, text_width)
-                height_per_item = imgui.get_text_line_height_with_spacing()
-            else:  # float, vec2, vec3, vec4
-                for uniform, _ in uniforms:
-                    text_width = imgui.calc_text_size(f"{uniform.name}:").x
-                    max_text_width = max(max_text_width, text_width)
-                height_per_item = 1.5 * imgui.get_text_line_height_with_spacing()
+            elif group_name.endswith("color") or group_name.endswith("special"):
+                height_per_item = text_line_height
+            else:
+                height_per_item = 1.5 * text_line_height
 
-            total_height = height_per_item * item_count + 20
+            total_height = height_per_item * len(uniform_names) + 20
 
             imgui.push_style_color(imgui.COLOR_BORDER, 0.15, 0.15, 0.15)
             imgui.begin_child(
@@ -581,8 +550,10 @@ class App:
                 flags=imgui.WINDOW_NO_SCROLLBAR,
             )
 
-            for uniform, value in uniforms:
-                if group_name == "textures":
+            for uniform_name in uniform_names:
+                value = node.uniform_values[uniform_name]
+
+                if group_name == "texture":
                     image_height = uniform_texture_image_height
                     image_width = image_height * value.width / max(value.height, 1)
                     if imgui.image_button(
@@ -598,17 +569,13 @@ class App:
                         )
                         if file_path:
                             image = ImageOps.flip(Image.open(file_path).convert("RGBA"))
-                            node.uniform_values[uniform.name].release()
-                            node.uniform_values[uniform.name] = node.gl.texture(
-                                image.size,
-                                4,
-                                np.array(image).tobytes(),
-                                dtype="f1",
+                            node.uniform_values[uniform_name].release()
+                            value = node.gl.texture(
+                                image.size, 4, np.array(image).tobytes(), dtype="f1"
                             )
                     imgui.same_line()
-
                     imgui.begin_group()
-                    imgui.text(uniform.name)
+                    imgui.text(uniform_name)
                     if imgui.button("To depthmap"):
                         texture_data = value.read()
                         image = Image.frombytes(
@@ -622,52 +589,23 @@ class App:
                                 np.array(depthmap).tobytes(),
                                 dtype="f1",
                             )
-                            node.uniform_values[uniform.name].release()
-                            node.uniform_values[uniform.name] = new_texture
+                            node.uniform_values[uniform_name].release()
+                            value = new_texture
                         except Exception as e:
                             logger.error(str(e))
                     imgui.end_group()
-
-                elif group_name == "special":
-                    imgui.text(f"{uniform.name}: {value:.3f}")
+                elif group_name.endswith("special"):
+                    imgui.text(f"{uniform_name}: {value:.3f}")
+                elif group_name.endswith("color"):
+                    fn = getattr(imgui, f"color_edit{group_name[0]}")
+                    value = fn(uniform_name, *value)[1]
                 else:
-                    is_color = uniform.name.endswith("color")
-                    change_speed = (
-                        max(0.01, 0.01 * np.mean(np.abs(value)))  # type: ignore
-                        if isinstance(value, int | float | tuple)
-                        else 0.01
-                    )
+                    fn = getattr(imgui, f"drag_float{group_name[0]}")
+                    change_speed = 0.01 * np.mean(np.abs(value)).squeeze()
+                    change_speed = np.clip(change_speed, 0.01, change_speed)
+                    value = fn(uniform_name, *value, change_speed=change_speed)[1]
 
-                    if is_color and uniform.fmt == "3f":  # type: ignore
-                        value = imgui.color_edit3(uniform.name, *value)[1]  # type: ignore
-                    elif is_color and uniform.fmt == "4f":  # type: ignore
-                        value = imgui.color_edit4(uniform.name, *value)[1]  # type: ignore
-                    elif uniform.fmt == "1f":  # type: ignore
-                        value = imgui.drag_float(
-                            uniform.name,
-                            value,  # type: ignore
-                            change_speed=change_speed,
-                        )[1]
-                    elif uniform.fmt == "2f":  # type: ignore
-                        value = imgui.drag_float2(
-                            uniform.name,
-                            *value,  # type: ignore
-                            change_speed=change_speed,
-                        )[1]
-                    elif uniform.fmt == "3f":  # type: ignore
-                        value = imgui.drag_float3(
-                            uniform.name,
-                            *value,  # type: ignore
-                            change_speed=change_speed,
-                        )[1]
-                    elif uniform.fmt == "4f":  # type: ignore
-                        value = imgui.drag_float4(
-                            uniform.name,
-                            *value,  # type: ignore
-                            change_speed=change_speed,
-                        )[1]
-
-                    node.uniform_values[uniform.name] = value
+                node.uniform_values[uniform_name] = value
 
             imgui.end_child()
             imgui.pop_style_color()
