@@ -7,6 +7,7 @@ import time
 from collections import defaultdict
 from importlib.resources import files
 from pathlib import Path
+from typing import Any
 
 import crossfiledialog
 import glfw
@@ -24,8 +25,8 @@ from shaderbox.vendors import get_modelbox_depthmap
 _RESOURCES_DIR = Path(str(files("shaderbox.resources")))
 _DEFAULT_VS_FILE_PATH = _RESOURCES_DIR / "shaders" / "default.vert.glsl"
 _DEFAULT_FS_FILE_PATH = _RESOURCES_DIR / "shaders" / "default.frag.glsl"
-_DEFAULT_IMAGE = ImageOps.flip(
-    Image.open(_RESOURCES_DIR / "textures" / "default.jpeg").convert("RGBA")
+_DEFAULT_IMAGE = Image.open(_RESOURCES_DIR / "textures" / "default.jpeg").convert(
+    "RGBA"
 )
 
 _APP_DIR = Path(user_data_dir("shaderbox"))
@@ -53,7 +54,7 @@ class Node:
         self.output_texture = self.gl.texture(self.output_texture_size, 4)
         self.fbo = self.gl.framebuffer(color_attachments=[self.output_texture])
 
-        self.uniform_values = {}
+        self._uniform_values = {}
         self.shader_error: str = ""
 
         # Will be initialized lazily during the render
@@ -89,7 +90,7 @@ class Node:
         self.output_texture.release()
         self.fbo.release()
 
-        for data in self.uniform_values.values():
+        for data in self._uniform_values.values():
             if isinstance(data, moderngl.Texture):
                 data.release()
 
@@ -150,30 +151,26 @@ class Node:
 
             if uniform.name == "u_time":
                 value = glfw.get_time()
-                self.uniform_values[uniform.name] = value
+                self._uniform_values[uniform.name] = value
             elif uniform.name == "u_aspect":
                 value = np.divide(*self.output_texture.size)
-                self.uniform_values[uniform.name] = value
+                self._uniform_values[uniform.name] = value
             elif uniform.gl_type == 35678:  # type: ignore
-                texture = self.uniform_values.get(uniform.name)
+                texture = self._uniform_values.get(uniform.name)
                 if texture is None or isinstance(texture.mglo, moderngl.InvalidObject):
-                    texture = self.gl.texture(
-                        _DEFAULT_IMAGE.size,
-                        4,
-                        np.array(_DEFAULT_IMAGE).tobytes(),
-                        dtype="f1",
+                    self._uniform_values[uniform.name] = load_texture_from_image(
+                        _DEFAULT_IMAGE
                     )
-                    self.uniform_values[uniform.name] = texture
 
-                texture = self.uniform_values[uniform.name]
+                texture = self._uniform_values[uniform.name]
                 texture.use(location=texture_unit)
                 value = texture_unit
                 texture_unit += 1
             else:
-                value = self.uniform_values.get(uniform.name)
+                value = self._uniform_values.get(uniform.name)
                 if value is None:
                     value = uniform.value
-                    self.uniform_values[uniform.name] = value
+                    self._uniform_values[uniform.name] = value
 
             self.program[uniform.name] = value
 
@@ -184,11 +181,27 @@ class Node:
 
         # ----------------------------------------------------------------
         # Clear stale uniform data
-        for uniform_name in self.uniform_values.copy():
+        for uniform_name in self._uniform_values.copy():
             if uniform_name not in seen_uniform_names:
-                data = self.uniform_values.pop(uniform_name)
+                data = self._uniform_values.pop(uniform_name)
                 if isinstance(data, moderngl.Texture):
                     data.release()
+
+    def set_uniform_value(self, name: str, value: Any):
+        old_value = self._uniform_values.get(name)
+        if isinstance(old_value, moderngl.Texture) and old_value.glo != value.glo:
+            old_value.release()
+
+        self._uniform_values[name] = value
+
+    def get_uniform_value(self, name: str) -> Any:
+        value = self._uniform_values.get(name)
+        if value is None and self.program is not None and name in self.program:
+            uniform = self.program[name]
+            value = uniform.value  # type: ignore
+            self._uniform_values[name] = value
+
+        return value
 
 
 class UIUniform:
@@ -221,8 +234,34 @@ class UIUniform:
     def height(self) -> float:
         if self.group_name == "image":
             return 95
+        elif self.group_name == "drag":
+            return 5 + imgui.get_text_line_height_with_spacing()
         else:
             return imgui.get_text_line_height_with_spacing()
+
+
+def load_texture_from_image(
+    image_or_file_path: Image.Image | Path,
+    extra: Any | None = None,
+) -> moderngl.Texture:
+    if isinstance(image_or_file_path, Path):
+        image = Image.open(image_or_file_path)
+    else:
+        image = image_or_file_path
+
+    gl = moderngl.get_context()
+    prepared_image = ImageOps.flip(image.convert("RGBA"))
+    texture = gl.texture(image.size, 4, np.array(prepared_image).tobytes(), dtype="f1")
+    texture.extra = {"image": image} if extra is None else extra
+    return texture
+
+
+def load_image_from_texture(texture: moderngl.Texture) -> Image.Image:
+    texture_data = texture.read()
+    image = ImageOps.flip(
+        Image.frombytes("RGBA", (texture.width, texture.height), texture_data)
+    )
+    return image
 
 
 class App:
@@ -286,19 +325,11 @@ class App:
         # Load uniforms
         for uniform_name, value in metadata["uniforms"].items():
             if isinstance(value, dict) and value.get("type") == "texture":
-                file_path = node_dir / value["file_path"]
-                image = ImageOps.flip(Image.open(file_path).convert("RGBA"))
-                texture = node.gl.texture(
-                    (value["width"], value["height"]),
-                    4,
-                    np.array(image).tobytes(),
-                    dtype="f1",
-                )
-                value = texture
+                value = load_texture_from_image(node_dir / value["file_path"])
             elif isinstance(value, list):
                 value = tuple(value)
 
-            node.uniform_values[uniform_name] = value
+            node.set_uniform_value(uniform_name, value)
 
         return node, mtime
 
@@ -343,21 +374,13 @@ class App:
         # ----------------------------------------------------------------
         # Save uniforms
         for uniform in node.iter_uniforms():
-            value = node.uniform_values.get(uniform.name)
-
-            if value is None:
-                value = uniform.value
-                node.uniform_values[uniform.name] = value
-
             if uniform.name in ["u_time", "u_aspect"]:
                 continue
 
-            if uniform.gl_type == 35678:  # type: ignore
-                texture_data = value.read()
-                image = ImageOps.flip(
-                    Image.frombytes("RGBA", (value.width, value.height), texture_data)
-                )
+            value = node.get_uniform_value(uniform.name)
 
+            if uniform.gl_type == 35678:  # type: ignore
+                image = load_image_from_texture(value)
                 textures_dir = node_dir / "textures"
                 textures_dir.mkdir(exist_ok=True)
                 texture_filename = f"{uniform.name}.png"
@@ -537,7 +560,7 @@ class App:
 
     def draw_ui_uniform(self, ui_uniform: UIUniform, node: Node):
         uniform_name = ui_uniform.name
-        value = node.uniform_values.get(uniform_name, ui_uniform.uniform.value)
+        value = node.get_uniform_value(uniform_name)
 
         if ui_uniform.group_name == "special":
             if ui_uniform.array_length > 1:
@@ -562,32 +585,21 @@ class App:
                     filter=["*.png", "*.jpg", "*.jpeg", "*.bmp"],
                 )
                 if file_path:
-                    image = ImageOps.flip(Image.open(file_path).convert("RGBA"))
-                    texture.release()
-                    new_texture = node.gl.texture(
-                        image.size, 4, np.array(image).tobytes(), dtype="f1"
-                    )
-                    node.uniform_values[uniform_name] = new_texture
+                    value = load_texture_from_image(file_path)
 
             imgui.same_line()
             imgui.begin_group()
             imgui.text(uniform_name)
 
+            imgui.same_line()
+            if imgui.button(f"Reset##{ui_uniform.name}"):
+                value = load_texture_from_image(texture.extra["image"])
+
             if imgui.button(f"To depthmap##{ui_uniform.name}"):
-                texture_data = texture.read()
-                image = Image.frombytes(
-                    "RGBA", (texture.width, texture.height), texture_data
-                )
+                image = load_image_from_texture(texture)
                 try:
-                    depthmap = get_modelbox_depthmap(image).convert("RGBA")
-                    new_texture = node.gl.texture(
-                        depthmap.size,
-                        4,
-                        np.array(depthmap).tobytes(),
-                        dtype="f1",
-                    )
-                    texture.release()
-                    value = new_texture
+                    depthmap_image = get_modelbox_depthmap(image)
+                    value = load_texture_from_image(depthmap_image, {"image": image})
                 except Exception as e:
                     logger.error(str(e))
             imgui.end_group()
@@ -599,12 +611,12 @@ class App:
         elif ui_uniform.group_name == "drag":
             change_speed = 0.01
             if ui_uniform.dimension == 1:
-                value = imgui.drag_float(uniform_name, value, change_speed)
+                value = imgui.drag_float(uniform_name, value, change_speed)[1]
             else:
                 fn = getattr(imgui, f"drag_float{ui_uniform.dimension}")
                 value = fn(uniform_name, *value, change_speed)[1]
 
-        node.uniform_values[uniform_name] = value
+        node.set_uniform_value(uniform_name, value)
 
     def draw_uniforms_tab(self):
         if self.current_node_name:
