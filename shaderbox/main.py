@@ -806,6 +806,7 @@ class App:
                 uv0=(0, 1),
                 uv1=(1, 0),
                 tint_color=(0.2, 0.2, 0.2, 1.0) if has_error else (1.0, 1.0, 1.0, 1.0),
+                border_color=(0.2, 0.2, 0.2, 1.0)
             )
 
             if has_error:
@@ -820,7 +821,7 @@ class App:
                     node.shader_error,
                 )
 
-        imgui.set_cursor_screen_pos((cursor_pos[0], cursor_pos[1] + image_height))  # type: ignore
+        imgui.set_cursor_screen_pos((cursor_pos[0], cursor_pos[1] + image_height + 10))  # type: ignore
 
         # ----------------------------------------------------------------
         # Control panel
