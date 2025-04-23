@@ -576,18 +576,13 @@ class App:
 
         # ----------------------------------------------------------------
         # Uniforms
-
-        # Collect UIUniform instances
         ui_uniforms = [UIUniform(uniform) for uniform in node.iter_uniforms()]
 
-        # Group them by group_name
         uniform_groups = defaultdict(list)
         for ui_uniform in ui_uniforms:
             uniform_groups[ui_uniform.group_name].append(ui_uniform)
 
-        # Draw each group
         for group_name, ui_uniforms_in_group in uniform_groups.items():
-            # Calculate total height for the group
             total_height = (
                 sum(ui_uniform.height for ui_uniform in ui_uniforms_in_group) + 20
             )
@@ -666,8 +661,6 @@ class App:
                 value = fn(uniform_name, *value, change_speed)[1]
 
         node.set_uniform_value(uniform_name, value)
-
-    # def draw_uniforms_tab(self):
 
     def draw_logs_tab(self):
         imgui.text("Logs will be here soon...")
@@ -806,7 +799,7 @@ class App:
                 uv0=(0, 1),
                 uv1=(1, 0),
                 tint_color=(0.2, 0.2, 0.2, 1.0) if has_error else (1.0, 1.0, 1.0, 1.0),
-                border_color=(0.2, 0.2, 0.2, 1.0)
+                border_color=(0.2, 0.2, 0.2, 1.0),
             )
 
             if has_error:
