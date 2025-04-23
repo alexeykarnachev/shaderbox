@@ -157,7 +157,11 @@ class Node:
                 self._uniform_values[uniform.name] = value
             elif uniform.gl_type == 35678:  # type: ignore
                 texture = self._uniform_values.get(uniform.name)
-                if texture is None or isinstance(texture.mglo, moderngl.InvalidObject):
+                if (
+                    texture is None
+                    or not isinstance(texture, moderngl.Texture)
+                    or isinstance(texture.mglo, moderngl.InvalidObject)
+                ):
                     self._uniform_values[uniform.name] = load_texture_from_image(
                         _DEFAULT_IMAGE
                     )
