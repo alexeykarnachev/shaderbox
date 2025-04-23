@@ -573,7 +573,7 @@ class App:
             imgui.begin_group()
             imgui.text(uniform_name)
 
-            if imgui.button("To depthmap"):
+            if imgui.button(f"To depthmap##{ui_uniform.name}"):
                 texture_data = texture.read()
                 image = Image.frombytes(
                     "RGBA", (texture.width, texture.height), texture_data
