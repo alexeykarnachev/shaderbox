@@ -559,7 +559,14 @@ class App:
         imgui.spacing()
 
         imgui.text("Output resolution:")
-        resolutions = [(640, 480), (1280, 720), (1280, 960), (1920, 1080), (2560, 1440)]
+        resolutions = [
+            (1080, 1920),
+            (960, 1280),
+            (1080, 1080),
+            (1280, 960),
+            (1920, 1080),
+            (3440, 1440),
+        ]
         current = node.output_texture_size
         selected = next((i for i, r in enumerate(resolutions) if r == current), 0)
 
