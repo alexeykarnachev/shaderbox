@@ -52,7 +52,7 @@ class Node:
         self.output_texture = self.gl.texture(self.output_texture_size, 4)
         self.fbo = self.gl.framebuffer(color_attachments=[self.output_texture])
 
-        self.uniform_data = {}
+        self.uniform_values = {}
         self.shader_error: str = ""
 
         # Will be initialized lazily during the render
@@ -88,7 +88,7 @@ class Node:
         self.output_texture.release()
         self.fbo.release()
 
-        for data in self.uniform_data.values():
+        for data in self.uniform_values.values():
             if isinstance(data, moderngl.Texture):
                 data.release()
 
@@ -142,20 +142,19 @@ class Node:
         # ----------------------------------------------------------------
         # Assign program uniforms
         texture_unit = 0
-        seen_uniform_data_keys = set()
+        seen_uniform_names = set()
 
         for uniform in self.iter_uniforms():
-            uniform_data_key = f"{uniform.name}_{uniform.fmt}"  # type: ignore
-            seen_uniform_data_keys.add(uniform_data_key)
+            seen_uniform_names.add(uniform.name)
 
             if uniform.name == "u_time":
                 value = glfw.get_time()
-                self.uniform_data[uniform_data_key] = value
+                self.uniform_values[uniform.name] = value
             elif uniform.name == "u_aspect":
                 value = np.divide(*self.output_texture.size)
-                self.uniform_data[uniform_data_key] = value
+                self.uniform_values[uniform.name] = value
             elif uniform.gl_type == 35678:  # type: ignore
-                texture = self.uniform_data.get(uniform_data_key)
+                texture = self.uniform_values.get(uniform.name)
                 if texture is None or isinstance(texture.mglo, moderngl.InvalidObject):
                     texture = self.gl.texture(
                         _DEFAULT_IMAGE.size,
@@ -163,17 +162,17 @@ class Node:
                         np.array(_DEFAULT_IMAGE).tobytes(),
                         dtype="f1",
                     )
-                    self.uniform_data[uniform_data_key] = texture
+                    self.uniform_values[uniform.name] = texture
 
-                texture = self.uniform_data[uniform_data_key]
+                texture = self.uniform_values[uniform.name]
                 texture.use(location=texture_unit)
                 value = texture_unit
                 texture_unit += 1
             else:
-                value = self.uniform_data.get(uniform_data_key)
+                value = self.uniform_values.get(uniform.name)
                 if value is None:
                     value = uniform.value
-                    self.uniform_data[uniform_data_key] = value
+                    self.uniform_values[uniform.name] = value
 
             self.program[uniform.name] = value
 
@@ -184,9 +183,9 @@ class Node:
 
         # ----------------------------------------------------------------
         # Clear stale uniform data
-        for uniform_data_key in self.uniform_data.copy():
-            if uniform_data_key not in seen_uniform_data_keys:
-                data = self.uniform_data.pop(uniform_data_key)
+        for uniform_name in self.uniform_values.copy():
+            if uniform_name not in seen_uniform_names:
+                data = self.uniform_values.pop(uniform_name)
                 if isinstance(data, moderngl.Texture):
                     data.release()
 
@@ -250,7 +249,7 @@ class App:
 
         # ----------------------------------------------------------------
         # Load uniforms
-        for uniform_data_key, value in metadata["uniforms"].items():
+        for uniform_name, value in metadata["uniforms"].items():
             if isinstance(value, dict) and value.get("type") == "texture":
                 file_path = node_dir / value["file_path"]
                 image = ImageOps.flip(Image.open(file_path).convert("RGBA"))
@@ -264,7 +263,7 @@ class App:
             elif isinstance(value, list):
                 value = tuple(value)
 
-            node.uniform_data[uniform_data_key] = value
+            node.uniform_values[uniform_name] = value
 
         return node, mtime
 
@@ -309,12 +308,11 @@ class App:
         # ----------------------------------------------------------------
         # Save uniforms
         for uniform in node.iter_uniforms():
-            uniform_data_key = f"{uniform.name}_{uniform.fmt}"  # type: ignore
-            value = node.uniform_data.get(uniform_data_key)
+            value = node.uniform_values.get(uniform.name)
 
             if value is None:
                 value = uniform.value
-                node.uniform_data[uniform_data_key] = value
+                node.uniform_values[uniform.name] = value
 
             if uniform.name in ["u_time", "u_aspect"]:
                 continue
@@ -327,9 +325,9 @@ class App:
 
                 textures_dir = node_dir / "textures"
                 textures_dir.mkdir(exist_ok=True)
-                texture_filename = f"{uniform_data_key}.png"
+                texture_filename = f"{uniform.name}.png"
                 image.save(textures_dir / texture_filename, format="PNG")
-                metadata["uniforms"][uniform_data_key] = {
+                metadata["uniforms"][uniform.name] = {
                     "type": "texture",
                     "width": value.width,
                     "height": value.height,
@@ -337,9 +335,9 @@ class App:
                 }
             else:
                 if isinstance(value, int | float):
-                    metadata["uniforms"][uniform_data_key] = value
+                    metadata["uniforms"][uniform.name] = value
                 elif isinstance(value, tuple):
-                    metadata["uniforms"][uniform_data_key] = list(value)
+                    metadata["uniforms"][uniform.name] = list(value)
                 else:
                     logger.warning(
                         f"Skipping unsupported uniform type for {uniform.name}: {type(value)}"
@@ -521,25 +519,24 @@ class App:
         }
 
         for uniform in node.iter_uniforms():
-            uniform_data_key = f"{uniform.name}_{uniform.fmt}"  # type: ignore
-            value = node.uniform_data.get(uniform_data_key)
+            value = node.uniform_values.get(uniform.name)
             if value is None:
                 continue
 
             if uniform.name in ["u_time", "u_aspect"]:
-                uniform_groups["special"].append((uniform, uniform_data_key, value))
+                uniform_groups["special"].append((uniform, value))
             elif uniform.gl_type == 35678:  # type: ignore
-                uniform_groups["textures"].append((uniform, uniform_data_key, value))
+                uniform_groups["textures"].append((uniform, value))
             elif uniform.name.endswith("color"):
-                uniform_groups["colors"].append((uniform, uniform_data_key, value))
+                uniform_groups["colors"].append((uniform, value))
             elif uniform.fmt == "1f":  # type: ignore
-                uniform_groups["floats"].append((uniform, uniform_data_key, value))
+                uniform_groups["floats"].append((uniform, value))
             elif uniform.fmt == "2f":  # type: ignore
-                uniform_groups["vec2"].append((uniform, uniform_data_key, value))
+                uniform_groups["vec2"].append((uniform, value))
             elif uniform.fmt == "3f":  # type: ignore
-                uniform_groups["vec3"].append((uniform, uniform_data_key, value))
+                uniform_groups["vec3"].append((uniform, value))
             elif uniform.fmt == "4f":  # type: ignore
-                uniform_groups["vec4"].append((uniform, uniform_data_key, value))
+                uniform_groups["vec4"].append((uniform, value))
 
         # ----------------------------------------------------------------
         # Render each group
@@ -553,22 +550,22 @@ class App:
             item_count = len(uniforms)
 
             if group_name == "textures":
-                for uniform, _, _ in uniforms:
+                for uniform, _ in uniforms:
                     text_width = imgui.calc_text_size(f"{uniform.name}:").x
                     max_text_width = max(max_text_width, text_width)
                 height_per_item = uniform_texture_image_height + 10
             elif group_name == "colors":
-                for uniform, _, _ in uniforms:
+                for uniform, _ in uniforms:
                     text_width = imgui.calc_text_size(f"{uniform.name}:").x
                     max_text_width = max(max_text_width, text_width)
                 height_per_item = imgui.get_text_line_height_with_spacing()
             elif group_name == "special":
-                for uniform, _, value in uniforms:
+                for uniform, value in uniforms:
                     text_width = imgui.calc_text_size(f"{uniform.name}: {value:.3f}").x
                     max_text_width = max(max_text_width, text_width)
                 height_per_item = imgui.get_text_line_height_with_spacing()
             else:  # float, vec2, vec3, vec4
-                for uniform, _, _ in uniforms:
+                for uniform, _ in uniforms:
                     text_width = imgui.calc_text_size(f"{uniform.name}:").x
                     max_text_width = max(max_text_width, text_width)
                 height_per_item = 1.5 * imgui.get_text_line_height_with_spacing()
@@ -584,7 +581,7 @@ class App:
                 flags=imgui.WINDOW_NO_SCROLLBAR,
             )
 
-            for uniform, uniform_data_key, value in uniforms:
+            for uniform, value in uniforms:
                 if group_name == "textures":
                     image_height = uniform_texture_image_height
                     image_width = image_height * value.width / max(value.height, 1)
@@ -601,8 +598,8 @@ class App:
                         )
                         if file_path:
                             image = ImageOps.flip(Image.open(file_path).convert("RGBA"))
-                            node.uniform_data[uniform_data_key].release()
-                            node.uniform_data[uniform_data_key] = node.gl.texture(
+                            node.uniform_values[uniform.name].release()
+                            node.uniform_values[uniform.name] = node.gl.texture(
                                 image.size,
                                 4,
                                 np.array(image).tobytes(),
@@ -625,8 +622,8 @@ class App:
                                 np.array(depthmap).tobytes(),
                                 dtype="f1",
                             )
-                            node.uniform_data[uniform_data_key].release()
-                            node.uniform_data[uniform_data_key] = new_texture
+                            node.uniform_values[uniform.name].release()
+                            node.uniform_values[uniform.name] = new_texture
                         except Exception as e:
                             logger.error(str(e))
                     imgui.end_group()
@@ -670,7 +667,7 @@ class App:
                             change_speed=change_speed,
                         )[1]
 
-                    node.uniform_data[uniform_data_key] = value
+                    node.uniform_values[uniform.name] = value
 
             imgui.end_child()
             imgui.pop_style_color()
