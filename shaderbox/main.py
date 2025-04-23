@@ -172,14 +172,20 @@ class Node:
                     value = uniform.value
                     self._uniform_values[uniform.name] = value
 
-            self.program[uniform.name] = value
+            try:
+                self.program[uniform.name] = value
+            except Exception as _:
+                logger.warning(
+                    f"Failed to set uniform '{uniform.name}' with value {value}. "
+                    "Cached value will be cleared."
+                )
+                self._uniform_values.pop(uniform.name)
 
         # Render
         self.fbo.use()
         self.gl.clear()
         self.vao.render()
 
-        # ----------------------------------------------------------------
         # Clear stale uniform data
         for uniform_name in self._uniform_values.copy():
             if uniform_name not in seen_uniform_names:
@@ -241,10 +247,10 @@ class UIUniform:
 
 
 def load_texture_from_image(
-    image_or_file_path: Image.Image | Path,
+    image_or_file_path: Image.Image | Path | str,
     extra: Any | None = None,
 ) -> moderngl.Texture:
-    if isinstance(image_or_file_path, Path):
+    if not isinstance(image_or_file_path, Image.Image):
         image = Image.open(image_or_file_path)
     else:
         image = image_or_file_path
