@@ -459,27 +459,22 @@ class App:
     def draw_main_menu_bar(self):
         if imgui.begin_main_menu_bar().opened:
             if imgui.begin_menu("Node").opened:
-                if imgui.menu_item("New", "Ctrl+N", False)[1]:
+                if imgui.menu_item("New node", "Ctrl+N", False)[1]:
                     self.create_new_current_node()
 
-                if imgui.menu_item("Delete Current", "Ctrl+D", False)[1]:
+                if imgui.menu_item("Delete current node", "Ctrl+D", False)[1]:
                     self.delete_current_node()
 
-                if imgui.menu_item("Select Next", "->", False)[1]:
+                if imgui.menu_item("Select next node", "->", False)[1]:
                     self.select_next_current_node(+1)
 
-                if imgui.menu_item("Select Previous", "<-", False)[1]:
+                if imgui.menu_item("Select previous node", "<-", False)[1]:
                     self.select_next_current_node(-1)
 
-                imgui.separator()
-
-                if imgui.menu_item("Save Current", "Ctrl+S", False)[1]:
+                if imgui.menu_item("Save current node", "Ctrl+S", False)[1]:
                     self.save_current_node()
 
-                imgui.end_menu()
-
-            if imgui.begin_menu("Shader").opened:
-                if imgui.menu_item("Edit", "Ctrl+E", False)[1]:
+                if imgui.menu_item("Edit current node", "Ctrl+E", False)[1]:
                     self.edit_current_node_fs_file()
 
                 imgui.end_menu()
@@ -573,7 +568,44 @@ class App:
         for i, (w, h) in enumerate(resolutions):
             if imgui.radio_button(f"{w}x{h}", i == selected):
                 node.reset_output_texture_size((w, h))
-            imgui.same_line()
+
+            if i != len(resolutions) - 1:
+                imgui.same_line()
+
+        imgui.new_line()
+
+        # ----------------------------------------------------------------
+        # Uniforms
+
+        # Collect UIUniform instances
+        ui_uniforms = [UIUniform(uniform) for uniform in node.iter_uniforms()]
+
+        # Group them by group_name
+        uniform_groups = defaultdict(list)
+        for ui_uniform in ui_uniforms:
+            uniform_groups[ui_uniform.group_name].append(ui_uniform)
+
+        # Draw each group
+        for group_name, ui_uniforms_in_group in uniform_groups.items():
+            # Calculate total height for the group
+            total_height = (
+                sum(ui_uniform.height for ui_uniform in ui_uniforms_in_group) + 20
+            )
+
+            imgui.push_style_color(imgui.COLOR_BORDER, 0.15, 0.15, 0.15)
+            imgui.begin_child(
+                f"{group_name}_group",
+                width=0,
+                height=total_height,
+                border=True,
+                flags=imgui.WINDOW_NO_SCROLLBAR,
+            )
+
+            for ui_uniform in ui_uniforms_in_group:
+                self.draw_ui_uniform(ui_uniform, node)
+
+            imgui.end_child()
+            imgui.pop_style_color()
 
     def draw_ui_uniform(self, ui_uniform: UIUniform, node: Node):
         uniform_name = ui_uniform.name
@@ -635,41 +667,7 @@ class App:
 
         node.set_uniform_value(uniform_name, value)
 
-    def draw_uniforms_tab(self):
-        if self.current_node_name:
-            node = self.nodes[self.current_node_name]
-        else:
-            return
-
-        # Collect UIUniform instances
-        ui_uniforms = [UIUniform(uniform) for uniform in node.iter_uniforms()]
-
-        # Group them by group_name
-        uniform_groups = defaultdict(list)
-        for ui_uniform in ui_uniforms:
-            uniform_groups[ui_uniform.group_name].append(ui_uniform)
-
-        # Draw each group
-        for group_name, ui_uniforms_in_group in uniform_groups.items():
-            # Calculate total height for the group
-            total_height = (
-                sum(ui_uniform.height for ui_uniform in ui_uniforms_in_group) + 20
-            )
-
-            imgui.push_style_color(imgui.COLOR_BORDER, 0.15, 0.15, 0.15)
-            imgui.begin_child(
-                f"{group_name}_group",
-                width=0,
-                height=total_height,
-                border=True,
-                flags=imgui.WINDOW_NO_SCROLLBAR,
-            )
-
-            for ui_uniform in ui_uniforms_in_group:
-                self.draw_ui_uniform(ui_uniform, node)
-
-            imgui.end_child()
-            imgui.pop_style_color()
+    # def draw_uniforms_tab(self):
 
     def draw_logs_tab(self):
         imgui.text("Logs will be here soon...")
@@ -679,9 +677,6 @@ class App:
             if imgui.begin_tab_bar("node_settings_tabs").opened:
                 if imgui.begin_tab_item("Shader").selected:  # type: ignore
                     self.draw_shader_tab()
-                    imgui.end_tab_item()
-                if imgui.begin_tab_item("Uniforms").selected:  # type: ignore
-                    self.draw_uniforms_tab()
                     imgui.end_tab_item()
 
                 if imgui.begin_tab_item("Logs").selected:  # type: ignore
