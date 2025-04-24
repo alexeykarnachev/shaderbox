@@ -5,7 +5,7 @@ import httpx
 from PIL import Image
 
 
-def get_modelbox_depthmap(image: Image.Image):
+def get_modelbox_depthmap(image: Image.Image) -> Image.Image:
     url = "http://localhost:8228/infer_depth_pro"
 
     buffer = BytesIO()

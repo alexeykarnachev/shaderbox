@@ -57,7 +57,7 @@ class Node:
         self.output_texture = self.gl.texture(self.output_texture_size, 4)
         self.fbo = self.gl.framebuffer(color_attachments=[self.output_texture])
 
-        self._uniform_values = {}
+        self._uniform_values: dict[str, Any] = {}
         self.shader_error: str = ""
 
         # Will be initialized lazily during the render
@@ -65,7 +65,7 @@ class Node:
         self.vbo: moderngl.Buffer | None = None
         self.vao: moderngl.VertexArray | None = None
 
-    def release_program(self, new_fs_source: str = ""):
+    def release_program(self, new_fs_source: str = "") -> None:
         self.fs_source = new_fs_source
 
         if self.program:
@@ -79,7 +79,7 @@ class Node:
         self.vbo = None
         self.vao = None
 
-    def reset_output_texture_size(self, output_texture_size: tuple[int, int]):
+    def reset_output_texture_size(self, output_texture_size: tuple[int, int]) -> None:
         self.output_texture.release()
         self.fbo.release()
 
@@ -87,7 +87,7 @@ class Node:
         self.output_texture = self.gl.texture(self.output_texture_size, 4)
         self.fbo = self.gl.framebuffer(color_attachments=[self.output_texture])
 
-    def release(self):
+    def release(self) -> None:
         self.release_program()
 
         self.output_texture.release()
@@ -97,7 +97,7 @@ class Node:
             if isinstance(data, moderngl.Texture):
                 data.release()
 
-    def iter_uniforms(self):
+    def iter_uniforms(self) -> moderngl.iterable.Object:
         if not self.program:
             return
 
@@ -106,7 +106,7 @@ class Node:
             if isinstance(uniform, moderngl.Uniform):
                 yield uniform
 
-    def render(self):
+    def render(self) -> None:
         # ----------------------------------------------------------------
         # Lazily initialize program, vbo, and vao
         if not self.program or not self.vbo or not self.vao:
@@ -200,7 +200,7 @@ class Node:
                 if isinstance(data, moderngl.Texture):
                     data.release()
 
-    def set_uniform_value(self, name: str, value: Any):
+    def set_uniform_value(self, name: str, value: Any) -> None:
         old_value = self._uniform_values.get(name)
         if isinstance(old_value, moderngl.Texture) and old_value.glo != value.glo:
             old_value.release()
@@ -244,13 +244,14 @@ class UIUniform:
             return "drag"
 
     @property
-    def height(self) -> float:
+    def height(self) -> int:
         if self.group_name == "image":
             return 115
         elif self.group_name == "drag":
-            return 5 + imgui.get_text_line_height_with_spacing()
+            spacing: int = imgui.get_text_line_height_with_spacing()
+            return 5 + spacing
         else:
-            return imgui.get_text_line_height_with_spacing()
+            return imgui.get_text_line_height_with_spacing()  # type: ignore
 
 
 def load_texture_from_image(
@@ -277,7 +278,7 @@ def load_image_from_texture(texture: moderngl.Texture) -> Image.Image:
     return image
 
 
-def get_resolution_str(name, w, h):
+def get_resolution_str(name: str | None, w: int, h: int) -> str:
     g = math.gcd(w, h)
     w_ratio, h_ratio = w // g, h // g
     aspect = f"{w_ratio}:{h_ratio}"
@@ -296,7 +297,7 @@ class NodeUIState:
 
 
 class App:
-    def __init__(self):
+    def __init__(self) -> None:
         glfw.init()
 
         monitor = glfw.get_primary_monitor()
@@ -344,6 +345,8 @@ class App:
 
     @property
     def current_node_ui_state(self) -> NodeUIState:
+        if self.current_node_name is None:
+            return NodeUIState()
         return self._node_ui_state[self.current_node_name]
 
     @staticmethod
@@ -372,7 +375,7 @@ class App:
 
         return node, mtime, metadata
 
-    def edit_node_fs_file(self, node_name: str):
+    def edit_node_fs_file(self, node_name: str) -> None:
         fs_file_path = _NODES_DIR / node_name / "shader.frag.glsl"
         wd = fs_file_path.parent.parent
         editor = "nvim" if shutil.which("nvim") else "vim"
@@ -388,18 +391,18 @@ class App:
                 f"Failed to open {fs_file_path} in {editor} with new terminal: {e}"
             )
 
-    def edit_current_node_fs_file(self):
+    def edit_current_node_fs_file(self) -> None:
         if self.current_node_name:
             self.edit_node_fs_file(self.current_node_name)
         else:
             logger.warning("Nothing to edit")
 
-    def save_node(self, node_name: str):
+    def save_node(self, node_name: str) -> None:
         node = self.nodes[node_name]
         node_dir = _NODES_DIR / node_name
         node_dir.mkdir(exist_ok=True, parents=True)
 
-        metadata = {
+        metadata: dict[str, Any] = {
             "output_texture_size": list(node.output_texture_size),
             "uniforms": {},
             "ui_state": asdict(self._node_ui_state[node_name]),
@@ -446,13 +449,13 @@ class App:
 
         logger.info(f"Node {node_name} saved: {node_dir}")
 
-    def save_current_node(self):
+    def save_current_node(self) -> None:
         if self.current_node_name:
             self.save_node(self.current_node_name)
         else:
             logger.warning("Nothing to save")
 
-    def create_new_current_node(self):
+    def create_new_current_node(self) -> None:
         node = Node()
         name = hashlib.md5(f"{id(node)}{time.time()}".encode()).hexdigest()[:8]
 
@@ -462,7 +465,7 @@ class App:
         self.save_node(name)
         logger.info(f"Node created: {name}")
 
-    def delete_current_node(self):
+    def delete_current_node(self) -> None:
         if self.current_node_name is None:
             logger.info("Current node is None, nothing to delete")
             return
@@ -478,7 +481,7 @@ class App:
         shutil.move(_NODES_DIR / name, _TRASH_DIR / name)
         logger.info(f"Node deleted: {name}")
 
-    def select_next_current_node(self, step: int = +1):
+    def select_next_current_node(self, step: int = +1) -> None:
         if self.current_node_name is None:
             return
 
@@ -486,7 +489,7 @@ class App:
         idx = keys.index(self.current_node_name)
         self.current_node_name = keys[(idx + step) % len(keys)]
 
-    def draw_main_menu_bar(self):
+    def draw_main_menu_bar(self) -> int:
         if imgui.begin_main_menu_bar().opened:
             if imgui.begin_menu("Node").opened:
                 if imgui.menu_item("New node", "Ctrl+N", False)[1]:
@@ -509,12 +512,13 @@ class App:
 
                 imgui.end_menu()
 
-            main_menu_height = imgui.get_item_rect_size()[1]
+            size = imgui.get_item_rect_size()
+            main_menu_height: int = size[1]  # type: ignore
             imgui.end_main_menu_bar()
             return main_menu_height
         return 0
 
-    def draw_node_preview_grid(self, width, height):
+    def draw_node_preview_grid(self, width: int, height: int) -> None:
         with imgui.begin_child(
             "node_preview_grid", width=width, height=height, border=True
         ):
@@ -569,7 +573,7 @@ class App:
                 else:
                     imgui.spacing()
 
-    def draw_shader_tab(self):
+    def draw_shader_tab(self) -> None:
         if self.current_node_name:
             node = self.nodes[self.current_node_name]
         else:
@@ -682,7 +686,7 @@ class App:
             self.draw_selected_uniform_settings()
             imgui.end_child()
 
-    def draw_selected_uniform_settings(self):
+    def draw_selected_uniform_settings(self) -> None:
         if self.current_node_name is None:
             return
 
@@ -773,7 +777,7 @@ class App:
                 except Exception as e:
                     logger.error(str(e))
 
-    def draw_ui_uniform(self, ui_uniform: UIUniform):
+    def draw_ui_uniform(self, ui_uniform: UIUniform) -> None:
         if self.current_node_name is None:
             return
 
@@ -811,9 +815,9 @@ class App:
                 uv0=(0, 1),
                 uv1=(1, 0),
             ):
-                self._node_ui_state[self.current_node_name].selected_uniform_name = (
-                    ui_uniform.name
-                )
+                self._node_ui_state[
+                    self.current_node_name
+                ].selected_uniform_name = ui_uniform.name
             imgui.spacing()
             imgui.pop_style_color(n_styles)
 
@@ -831,10 +835,10 @@ class App:
 
         node.set_uniform_value(ui_uniform.name, value)
 
-    def draw_logs_tab(self):
+    def draw_logs_tab(self) -> None:
         imgui.text("Logs will be here soon...")
 
-    def draw_node_settings(self):
+    def draw_node_settings(self) -> None:
         with imgui.begin_child("node_settings", border=True):
             if imgui.begin_tab_bar("node_settings_tabs").opened:
                 if imgui.begin_tab_item("Shader").selected:  # type: ignore
@@ -847,7 +851,7 @@ class App:
 
                 imgui.end_tab_bar()
 
-    def process_hotkeys(self):
+    def process_hotkeys(self) -> None:
         io = imgui.get_io()
         if io.key_ctrl and imgui.is_key_pressed(ord("N")):
             self.create_new_current_node()
@@ -864,7 +868,7 @@ class App:
         ):
             self.select_next_current_node(+1)
 
-    def run(self):
+    def run(self) -> None:
         while not glfw.window_should_close(self.window):
             start_time = glfw.get_time()
 
@@ -878,7 +882,7 @@ class App:
 
         self.save_current_node()
 
-    def update_and_draw(self):
+    def update_and_draw(self) -> None:
         # ----------------------------------------------------------------
         # Prepare frame
         gl = moderngl.get_context()
@@ -1018,7 +1022,7 @@ class App:
         glfw.swap_buffers(self.window)
 
 
-def main():
+def main() -> None:
     ui = App()
     ui.run()
 
