@@ -6,7 +6,7 @@ import shutil
 import subprocess
 import time
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from importlib.resources import files
 from pathlib import Path
 from typing import Any
@@ -324,28 +324,30 @@ class App:
         self.nodes: dict[str, Node] = {}
         self.node_mtimes: dict[str, float] = {}
 
-        node_dirs = sorted(_NODES_DIR.iterdir(), key=lambda x: x.stat().st_ctime)
-        for node_dir in node_dirs:
-            if node_dir.is_dir():
-                node, mtime = self.load_node(node_dir)
-                name = node_dir.name
-
-                self.nodes[name] = node
-                self.node_mtimes[name] = mtime
-                self.current_node_name = name
-
         imgui.create_context()
         self.window = window
         self.imgui_renderer = GlfwRenderer(window)
 
+        # ----------------------------------------------------------------
+        # Load nodes
         self._node_ui_state = defaultdict(NodeUIState)
+        node_dirs = sorted(_NODES_DIR.iterdir(), key=lambda x: x.stat().st_ctime)
+        for node_dir in node_dirs:
+            if node_dir.is_dir():
+                node, mtime, metadata = self.load_node(node_dir)
+                name = node_dir.name
+
+                self.nodes[name] = node
+                self.node_mtimes[name] = mtime
+                self._node_ui_state[name] = NodeUIState(**metadata.get("ui_state", {}))
+                self.current_node_name = name
 
     @property
     def current_node_ui_state(self) -> NodeUIState:
         return self._node_ui_state[self.current_node_name]
 
     @staticmethod
-    def load_node(node_dir: Path | str) -> tuple[Node, float]:
+    def load_node(node_dir: Path | str) -> tuple[Node, float, dict]:
         node_dir = Path(node_dir)
         with (node_dir / "node.json").open() as f:
             metadata = json.load(f)
@@ -368,7 +370,7 @@ class App:
 
             node.set_uniform_value(uniform_name, value)
 
-        return node, mtime
+        return node, mtime, metadata
 
     def edit_node_fs_file(self, node_name: str):
         fs_file_path = _NODES_DIR / node_name / "shader.frag.glsl"
@@ -400,6 +402,7 @@ class App:
         metadata = {
             "output_texture_size": list(node.output_texture_size),
             "uniforms": {},
+            "ui_state": asdict(self._node_ui_state[node_name]),
         }
 
         fs_file_path = node_dir / "shader.frag.glsl"
@@ -808,9 +811,9 @@ class App:
                 uv0=(0, 1),
                 uv1=(1, 0),
             ):
-                self._node_ui_state[
-                    self.current_node_name
-                ].selected_uniform_name = ui_uniform.name
+                self._node_ui_state[self.current_node_name].selected_uniform_name = (
+                    ui_uniform.name
+                )
             imgui.spacing()
             imgui.pop_style_color(n_styles)
 
@@ -872,6 +875,8 @@ class App:
 
             if glfw.get_key(self.window, glfw.KEY_ESCAPE) == glfw.PRESS:
                 break
+
+        self.save_current_node()
 
     def update_and_draw(self):
         # ----------------------------------------------------------------
