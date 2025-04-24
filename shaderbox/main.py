@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import time
 from collections import defaultdict
+from dataclasses import dataclass
 from importlib.resources import files
 from pathlib import Path
 from typing import Any
@@ -244,7 +245,7 @@ class UIUniform:
     @property
     def height(self) -> float:
         if self.group_name == "image":
-            return 95
+            return 115
         elif self.group_name == "drag":
             return 5 + imgui.get_text_line_height_with_spacing()
         else:
@@ -284,6 +285,12 @@ def get_resolution_str(name, w, h):
         parts.append(name)
     parts.append(aspect)
     return " | ".join(parts)
+
+
+@dataclass
+class NodeUIState:
+    resolution_combo_idx: int = 0
+    selected_uniform_name: str = ""
 
 
 class App:
@@ -329,7 +336,11 @@ class App:
         self.window = window
         self.imgui_renderer = GlfwRenderer(window)
 
-        self._resolution_combo_idx = 0
+        self._node_ui_state = defaultdict(NodeUIState)
+
+    @property
+    def current_node_ui_state(self) -> NodeUIState:
+        return self._node_ui_state[self.current_node_name]
 
     @staticmethod
     def load_node(node_dir: Path | str) -> tuple[Node, float]:
@@ -508,13 +519,14 @@ class App:
             for i, (name, node) in enumerate(self.nodes.items()):
                 if name == self.current_node_name:
                     if node.shader_error:
-                        color = (1.0, 0.0, 0.0, 1.0)
+                        color = (1.0, 0.0, 0.0, 1.0)  # Red for error
                     else:
-                        color = (0.0, 1.0, 0.0, 1.0)
+                        color = (0.0, 1.0, 0.0, 1.0)  # Green for selected
                     imgui.push_style_color(imgui.COLOR_BORDER, *color)
 
+                # Use a unique ID for each node's child window
                 imgui.begin_child(
-                    f"preview_{name}",
+                    f"preview_{name}",  # Fixed: unique ID using f-string
                     width=preview_size,
                     height=preview_size,
                     border=True,
@@ -524,6 +536,7 @@ class App:
                 if name == self.current_node_name:
                     imgui.pop_style_color()
 
+                # Use a unique ID for the invisible button
                 if imgui.invisible_button(
                     f"preview_button_{name}", width=preview_size, height=preview_size
                 ):
@@ -609,31 +622,31 @@ class App:
             if (w, h) != node.output_texture_size and (w, h) not in uniform_sizes:
                 resolution_items.append(get_resolution_str(None, w, h))
 
-        changed, new_index = imgui.combo(
-            "##Resolution",
-            self._resolution_combo_idx,
-            resolution_items if resolution_items else ["None"],
-        )
-        if changed and new_index >= 0:
-            self._resolution_combo_idx = new_index
-
-        selected_resolution_str = resolution_items[self._resolution_combo_idx]
+        idx = self._node_ui_state[self.current_node_name].resolution_combo_idx
+        changed, new_index = imgui.combo("##Resolution", idx, resolution_items)
+        if changed:
+            idx = max(0, new_index)
+        idx = min(idx, len(resolution_items) - 1)
 
         imgui.same_line()
         if imgui.button("Apply"):
-            w, h = map(int, selected_resolution_str.split(" | ")[0].split("x"))
+            w, h = map(int, resolution_items[idx].split(" | ")[0].split("x"))
             node.reset_output_texture_size((w, h))
 
         # ----------------------------------------------------------------
         # Uniforms
         imgui.new_line()
 
-        ui_uniforms = [UIUniform(uniform) for uniform in node.iter_uniforms()]
+        ui_uniforms = {u.name: UIUniform(u) for u in node.iter_uniforms()}
 
         uniform_groups = defaultdict(list)
-        for ui_uniform in ui_uniforms:
-            uniform_groups[ui_uniform.group_name].append(ui_uniform)
+        for u in ui_uniforms.values():
+            uniform_groups[u.group_name].append(u)
 
+        imgui.begin_child(
+            "uniform_groups",
+            width=imgui.get_content_region_available_width() // 2,
+        )
         for group_name, ui_uniforms_in_group in uniform_groups.items():
             total_height = (
                 sum(ui_uniform.height for ui_uniform in ui_uniforms_in_group) + 20
@@ -642,33 +655,114 @@ class App:
             imgui.push_style_color(imgui.COLOR_BORDER, 0.15, 0.15, 0.15)
             imgui.begin_child(
                 f"{group_name}_group",
-                width=0,
                 height=total_height,
                 border=True,
                 flags=imgui.WINDOW_NO_SCROLLBAR,
             )
 
             for ui_uniform in ui_uniforms_in_group:
-                self.draw_ui_uniform(ui_uniform, node)
+                self.draw_ui_uniform(ui_uniform)
 
             imgui.end_child()
             imgui.pop_style_color()
 
-    def draw_ui_uniform(self, ui_uniform: UIUniform, node: Node):
-        uniform_name = ui_uniform.name
-        value = node.get_uniform_value(uniform_name)
+        imgui.end_child()
+
+        selected_uniform_name = self._node_ui_state[
+            self.current_node_name
+        ].selected_uniform_name
+        if selected_uniform_name:
+            imgui.same_line()
+            imgui.begin_child("selected_uniform_settings", border=True)
+            self.draw_selected_uniform_settings()
+            imgui.end_child()
+
+    def draw_selected_uniform_settings(self):
+        if self.current_node_name is None:
+            return
+
+        node = self.nodes[self.current_node_name]
+        if not node.program:
+            return
+
+        selected_uniform_name = self.current_node_ui_state.selected_uniform_name
+        if not selected_uniform_name or selected_uniform_name not in node.program:
+            return
+
+        uniform = node.program[selected_uniform_name]
+        if not isinstance(uniform, moderngl.Uniform):
+            return
+
+        ui_uniform = UIUniform(uniform)
+        if ui_uniform.group_name == "image":
+            texture = node.get_uniform_value(ui_uniform.name)
+
+            imgui.text(get_resolution_str(ui_uniform.name, *texture.size))
+            imgui.new_line()
+
+            image_height = 300
+            max_image_width = imgui.get_content_region_available()[0]
+            image_aspect = np.divide(*node.output_texture.size)
+            image_width = min(max_image_width, image_height * image_aspect)
+            image_height = min(image_height, max_image_width / image_aspect)
+
+            imgui.image(
+                texture.glo,
+                width=image_width,
+                height=image_height,
+                uv0=(0, 1),
+                uv1=(1, 0),
+            )
+
+            if imgui.button("Load image"):
+                file_path = crossfiledialog.open_file(
+                    title="Select Texture",
+                    filter=["*.png", "*.jpg", "*.jpeg", "*.bmp"],
+                )
+                if file_path:
+                    texture = load_texture_from_image(file_path)
+                    node.set_uniform_value(ui_uniform.name, texture)
+
+            if imgui.button("To depthmap"):
+                image = load_image_from_texture(texture)
+                try:
+                    depthmap_image = get_modelbox_depthmap(image)
+                    texture = load_texture_from_image(depthmap_image, {"image": image})
+                    node.set_uniform_value(ui_uniform.name, texture)
+                except Exception as e:
+                    logger.error(str(e))
+
+    def draw_ui_uniform(self, ui_uniform: UIUniform):
+        if self.current_node_name is None:
+            return
+
+        node = self.nodes[self.current_node_name]
+        value = node.get_uniform_value(ui_uniform.name)
 
         if ui_uniform.group_name == "special":
             if ui_uniform.array_length > 1:
                 value_str = ", ".join(f"{v:.3f}" for v in value)
-                imgui.text(f"{uniform_name}[{ui_uniform.array_length}]: [{value_str}]")
+                imgui.text(
+                    f"{ui_uniform.name}[{ui_uniform.array_length}]: [{value_str}]"
+                )
             else:
-                imgui.text(f"{uniform_name}: {value:.3f}")
+                imgui.text(f"{ui_uniform.name}: {value:.3f}")
 
         elif ui_uniform.group_name == "image":
             texture = value
             image_height = 90
             image_width = image_height * texture.width / max(texture.height, 1)
+
+            imgui.text(ui_uniform.name)
+
+            n_styles = 0
+            if self.current_node_ui_state.selected_uniform_name == ui_uniform.name:
+                color = (0.0, 1.0, 0.0, 1.0)
+                imgui.push_style_color(imgui.COLOR_BUTTON, *color)
+                imgui.push_style_color(imgui.COLOR_BUTTON_HOVERED, *color)
+                imgui.push_style_color(imgui.COLOR_BUTTON_ACTIVE, *color)
+                n_styles += 3
+
             if imgui.image_button(
                 texture.glo,
                 width=image_width,
@@ -676,43 +770,25 @@ class App:
                 uv0=(0, 1),
                 uv1=(1, 0),
             ):
-                file_path = crossfiledialog.open_file(
-                    title="Select Texture",
-                    filter=["*.png", "*.jpg", "*.jpeg", "*.bmp"],
+                self._node_ui_state[self.current_node_name].selected_uniform_name = (
+                    ui_uniform.name
                 )
-                if file_path:
-                    value = load_texture_from_image(file_path)
-
-            imgui.same_line()
-            imgui.begin_group()
-            imgui.text(uniform_name)
-
-            imgui.same_line()
-            if imgui.button(f"Reset##{ui_uniform.name}"):
-                value = load_texture_from_image(texture.extra["image"])
-
-            if imgui.button(f"To depthmap##{ui_uniform.name}"):
-                image = load_image_from_texture(texture)
-                try:
-                    depthmap_image = get_modelbox_depthmap(image)
-                    value = load_texture_from_image(depthmap_image, {"image": image})
-                except Exception as e:
-                    logger.error(str(e))
-            imgui.end_group()
+            imgui.spacing()
+            imgui.pop_style_color(n_styles)
 
         elif ui_uniform.group_name == "color":
             fn = getattr(imgui, f"color_edit{ui_uniform.dimension}")
-            value = fn(uniform_name, *value)[1]
+            value = fn(ui_uniform.name, *value)[1]
 
         elif ui_uniform.group_name == "drag":
             change_speed = 0.01
             if ui_uniform.dimension == 1:
-                value = imgui.drag_float(uniform_name, value, change_speed)[1]
+                value = imgui.drag_float(ui_uniform.name, value, change_speed)[1]
             else:
                 fn = getattr(imgui, f"drag_float{ui_uniform.dimension}")
-                value = fn(uniform_name, *value, change_speed)[1]
+                value = fn(ui_uniform.name, *value, change_speed)[1]
 
-        node.set_uniform_value(uniform_name, value)
+        node.set_uniform_value(ui_uniform.name, value)
 
     def draw_logs_tab(self):
         imgui.text("Logs will be here soon...")
@@ -805,7 +881,8 @@ class App:
             "ShaderBox",
             flags=imgui.WINDOW_NO_COLLAPSE
             | imgui.WINDOW_ALWAYS_AUTO_RESIZE
-            | imgui.WINDOW_NO_TITLE_BAR,
+            | imgui.WINDOW_NO_TITLE_BAR
+            | imgui.WINDOW_NO_SCROLLBAR,
         )
 
         control_panel_min_height = 600
@@ -836,7 +913,7 @@ class App:
             min_image_height = 100
             max_image_height = max(
                 min_image_height,
-                imgui.get_content_region_available()[1] - control_panel_min_height,
+                imgui.get_content_region_available()[1] - control_panel_min_height - 10,
             )
             max_image_width = imgui.get_content_region_available()[0]
             image_aspect = np.divide(*node.output_texture.size)
