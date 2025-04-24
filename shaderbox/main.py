@@ -898,6 +898,7 @@ class App:
                 logger.info(f"Reloading node {name} due to shader file change")
                 self.nodes[name].release_program(fs_file_path.read_text())
                 self.node_mtimes[name] = mtime
+                self.save_node(name)
 
         # Render nodes
         for node in self.nodes.values():
