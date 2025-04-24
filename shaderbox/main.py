@@ -97,14 +97,15 @@ class Node:
             if isinstance(data, moderngl.Texture):
                 data.release()
 
-    def iter_uniforms(self) -> moderngl.iterable.Object:
-        if not self.program:
-            return
+    def get_uniforms(self) -> list[moderngl.Uniform]:
+        uniforms: list[moderngl.Uniform] = []
+        if self.program:
+            for uniform_name in self.program:
+                uniform = self.program[uniform_name]
+                if isinstance(uniform, moderngl.Uniform):
+                    uniforms.append(uniform)
 
-        for uniform_name in self.program:
-            uniform = self.program[uniform_name]
-            if isinstance(uniform, moderngl.Uniform):
-                yield uniform
+        return uniforms
 
     def render(self) -> None:
         # ----------------------------------------------------------------
@@ -149,7 +150,7 @@ class Node:
         texture_unit = 0
         seen_uniform_names = set()
 
-        for uniform in self.iter_uniforms():
+        for uniform in self.get_uniforms():
             seen_uniform_names.add(uniform.name)
 
             if uniform.name == "u_time":
@@ -225,7 +226,7 @@ class UIUniform:
         self.dimension = uniform.dimension
         self.gl_type = uniform.gl_type  # type: ignore
         self.is_special = self.name in ("u_time", "u_aspect")
-        self.is_image = self.gl_type == 35678
+        self.is_image = self.gl_type == GL_SAMPLER_2D
         self.is_color = (
             self.array_length == 1
             and self.dimension in [3, 4]
@@ -416,13 +417,13 @@ class App:
 
         # ----------------------------------------------------------------
         # Save uniforms
-        for uniform in node.iter_uniforms():
+        for uniform in node.get_uniforms():
             if uniform.name in ["u_time", "u_aspect"]:
                 continue
 
             value = node.get_uniform_value(uniform.name)
 
-            if uniform.gl_type == 35678:  # type: ignore
+            if uniform.gl_type == GL_SAMPLER_2D:  # type: ignore
                 image = load_image_from_texture(value)
                 textures_dir = node_dir / "textures"
                 textures_dir.mkdir(exist_ok=True)
@@ -605,7 +606,7 @@ class App:
         uniform_resolutions = []
         matching_uniforms = []
         uniform_sizes = set()
-        for uniform in node.iter_uniforms():
+        for uniform in node.get_uniforms():
             if uniform.gl_type == GL_SAMPLER_2D:  # type: ignore
                 texture = node.get_uniform_value(uniform.name)
                 w, h = texture.size
@@ -646,7 +647,7 @@ class App:
         # Uniforms
         imgui.new_line()
 
-        ui_uniforms = {u.name: UIUniform(u) for u in node.iter_uniforms()}
+        ui_uniforms = {u.name: UIUniform(u) for u in node.get_uniforms()}
 
         uniform_groups = defaultdict(list)
         for u in ui_uniforms.values():
@@ -742,7 +743,9 @@ class App:
                     texture = load_texture_from_image(file_path)
                     node.set_uniform_value(ui_uniform.name, texture)
 
-            if imgui.button("To depthmap"):
+            imgui.separator()
+            imgui.text("Depthmap")
+            if imgui.button("Apply##depthmap"):
                 image = load_image_from_texture(texture)
                 try:
                     depthmap_image = get_modelbox_depthmap(image)
@@ -762,7 +765,7 @@ class App:
             self.current_node_ui_state.blur_kernel_size = new_kernel_size
 
             imgui.same_line()
-            if imgui.button("Apply"):
+            if imgui.button("Apply##blur"):
                 image = load_image_from_texture(texture)
                 try:
                     img_array = np.array(image.convert("RGB"))
