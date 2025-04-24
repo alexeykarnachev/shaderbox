@@ -808,9 +808,9 @@ class App:
                 uv0=(0, 1),
                 uv1=(1, 0),
             ):
-                self._node_ui_state[self.current_node_name].selected_uniform_name = (
-                    ui_uniform.name
-                )
+                self._node_ui_state[
+                    self.current_node_name
+                ].selected_uniform_name = ui_uniform.name
             imgui.spacing()
             imgui.pop_style_color(n_styles)
 
