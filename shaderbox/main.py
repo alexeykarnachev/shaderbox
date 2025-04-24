@@ -1,6 +1,7 @@
 import contextlib
 import hashlib
 import json
+import math
 import shutil
 import subprocess
 import time
@@ -16,7 +17,7 @@ import moderngl
 import numpy as np
 from imgui.integrations.glfw import GlfwRenderer
 from loguru import logger
-from OpenGL.GL import GLError
+from OpenGL.GL import GL_SAMPLER_2D, GLError
 from PIL import Image, ImageOps
 from platformdirs import user_data_dir
 
@@ -155,7 +156,7 @@ class Node:
             elif uniform.name == "u_aspect":
                 value = np.divide(*self.output_texture.size)
                 self._uniform_values[uniform.name] = value
-            elif uniform.gl_type == 35678:  # type: ignore
+            elif uniform.gl_type == GL_SAMPLER_2D:  # type: ignore
                 texture = self._uniform_values.get(uniform.name)
                 if (
                     texture is None
@@ -274,6 +275,17 @@ def load_image_from_texture(texture: moderngl.Texture) -> Image.Image:
     return image
 
 
+def get_resolution_str(name, w, h):
+    g = math.gcd(w, h)
+    w_ratio, h_ratio = w // g, h // g
+    aspect = f"{w_ratio}:{h_ratio}"
+    parts = [f"{w}x{h}"]
+    if name:
+        parts.append(name)
+    parts.append(aspect)
+    return " | ".join(parts)
+
+
 class App:
     def __init__(self):
         glfw.init()
@@ -316,6 +328,8 @@ class App:
         imgui.create_context()
         self.window = window
         self.imgui_renderer = GlfwRenderer(window)
+
+        self._resolution_combo_idx = 0
 
     @staticmethod
     def load_node(node_dir: Path | str) -> tuple[Node, float]:
@@ -546,15 +560,18 @@ class App:
         node_name = self.current_node_name
         fs_file_path = _NODES_DIR / node_name / "shader.frag.glsl"
 
+        # ----------------------------------------------------------------
+        # Edit button
         imgui.text_colored(str(fs_file_path), 0.5, 0.5, 0.5)
-
+        imgui.same_line()
         if imgui.button("Edit", width=80):
             self.edit_node_fs_file(node_name)
 
+        # ----------------------------------------------------------------
+        # Resolutions combobox
         imgui.spacing()
 
-        imgui.text("Output resolution:")
-        resolutions = [
+        standard_resolutions = [
             (1080, 1920),
             (960, 1280),
             (1080, 1080),
@@ -562,20 +579,55 @@ class App:
             (1920, 1080),
             (3440, 1440),
         ]
-        current = node.output_texture_size
-        selected = next((i for i, r in enumerate(resolutions) if r == current), 0)
 
-        for i, (w, h) in enumerate(resolutions):
-            if imgui.radio_button(f"{w}x{h}", i == selected):
-                node.reset_output_texture_size((w, h))
+        uniform_resolutions = []
+        matching_uniforms = []
+        uniform_sizes = set()
+        for uniform in node.iter_uniforms():
+            if uniform.gl_type == GL_SAMPLER_2D:  # type: ignore
+                texture = node.get_uniform_value(uniform.name)
+                w, h = texture.size
+                if (w, h) == node.output_texture_size:
+                    matching_uniforms.append(uniform.name)
+                else:
+                    uniform_resolutions.append((w, h, uniform.name))
+                    uniform_sizes.add((w, h))
 
-            if i != len(resolutions) - 1:
-                imgui.same_line()
+        imgui.text(
+            "Current resolution: " + get_resolution_str(None, *node.output_texture_size)
+        )
+        if matching_uniforms:
+            imgui.same_line()
+            imgui.text_colored("(" + ", ".join(matching_uniforms) + ")", 0.5, 0.5, 0.5)
 
-        imgui.new_line()
+        resolution_items = []
+
+        for w, h, name in uniform_resolutions:
+            resolution_items.append(get_resolution_str(name, w, h))
+
+        for w, h in standard_resolutions:
+            if (w, h) != node.output_texture_size and (w, h) not in uniform_sizes:
+                resolution_items.append(get_resolution_str(None, w, h))
+
+        changed, new_index = imgui.combo(
+            "##Resolution",
+            self._resolution_combo_idx,
+            resolution_items if resolution_items else ["None"],
+        )
+        if changed and new_index >= 0:
+            self._resolution_combo_idx = new_index
+
+        selected_resolution_str = resolution_items[self._resolution_combo_idx]
+
+        imgui.same_line()
+        if imgui.button("Apply"):
+            w, h = map(int, selected_resolution_str.split(" | ")[0].split("x"))
+            node.reset_output_texture_size((w, h))
 
         # ----------------------------------------------------------------
         # Uniforms
+        imgui.new_line()
+
         ui_uniforms = [UIUniform(uniform) for uniform in node.iter_uniforms()]
 
         uniform_groups = defaultdict(list)
