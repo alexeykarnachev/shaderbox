@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import crossfiledialog
+import cv2
 import glfw
 import imgui
 import moderngl
@@ -291,6 +292,7 @@ def get_resolution_str(name, w, h):
 class NodeUIState:
     resolution_combo_idx: int = 0
     selected_uniform_name: str = ""
+    blur_kernel_size: int = 50
 
 
 class App:
@@ -713,6 +715,16 @@ class App:
                 uv0=(0, 1),
                 uv1=(1, 0),
             )
+            imgui.same_line()
+
+            if (
+                texture.extra is not None
+                and "image" in texture.extra
+                and imgui.button("Reset")
+            ):
+                original_image = texture.extra["image"]
+                texture = load_texture_from_image(original_image)
+                node.set_uniform_value(ui_uniform.name, texture)
 
             if imgui.button("Load image"):
                 file_path = crossfiledialog.open_file(
@@ -727,7 +739,33 @@ class App:
                 image = load_image_from_texture(texture)
                 try:
                     depthmap_image = get_modelbox_depthmap(image)
-                    texture = load_texture_from_image(depthmap_image, {"image": image})
+                    extra = texture.extra or {"image": image}
+                    texture = load_texture_from_image(depthmap_image, extra)
+                    node.set_uniform_value(ui_uniform.name, texture)
+                except Exception as e:
+                    logger.error(str(e))
+
+            imgui.separator()
+            imgui.text("Gaussian blur")
+            kernel_size = self.current_node_ui_state.blur_kernel_size
+            new_kernel_size = imgui.slider_int(
+                "##kernel_size", kernel_size, min_value=10, max_value=100, format="%d"
+            )[1]
+            new_kernel_size = max(3, new_kernel_size | 1)
+            self.current_node_ui_state.blur_kernel_size = new_kernel_size
+
+            imgui.same_line()
+            if imgui.button("Apply"):
+                image = load_image_from_texture(texture)
+                try:
+                    img_array = np.array(image.convert("RGB"))
+                    kernel_size = self.current_node_ui_state.blur_kernel_size
+                    blurred_array = cv2.GaussianBlur(
+                        img_array, (kernel_size, kernel_size), 0
+                    )
+                    blurred_image = Image.fromarray(blurred_array).convert("RGBA")
+                    extra = texture.extra or {"image": image}
+                    texture = load_texture_from_image(blurred_image, extra)
                     node.set_uniform_value(ui_uniform.name, texture)
                 except Exception as e:
                     logger.error(str(e))
