@@ -166,7 +166,7 @@ class Node:
                     or not isinstance(texture, moderngl.Texture)
                     or isinstance(texture.mglo, moderngl.InvalidObject)
                 ):
-                    self._uniform_values[uniform.name] = load_texture_from_image(
+                    self._uniform_values[uniform.name] = image_to_texture(
                         _DEFAULT_IMAGE
                     )
 
@@ -255,9 +255,8 @@ class UIUniform:
             return imgui.get_text_line_height_with_spacing()  # type: ignore
 
 
-def load_texture_from_image(
+def image_to_texture(
     image_or_file_path: Image.Image | Path | str,
-    extra: Any | None = None,
 ) -> moderngl.Texture:
     if not isinstance(image_or_file_path, Image.Image):
         image = Image.open(image_or_file_path)
@@ -267,11 +266,10 @@ def load_texture_from_image(
     gl = moderngl.get_context()
     prepared_image = ImageOps.flip(image.convert("RGBA"))
     texture = gl.texture(image.size, 4, np.array(prepared_image).tobytes(), dtype="f1")
-    texture.extra = {"image": image} if extra is None else extra
     return texture
 
 
-def load_image_from_texture(texture: moderngl.Texture) -> Image.Image:
+def texture_to_image(texture: moderngl.Texture) -> Image.Image:
     texture_data = texture.read()
     image = ImageOps.flip(
         Image.frombytes("RGBA", (texture.width, texture.height), texture_data)
@@ -312,7 +310,7 @@ def depthmap_to_normals(
 
 
 @dataclass
-class NodeUIState:
+class UINodeState:
     resolution_combo_idx: int = 0
     selected_uniform_name: str = ""
     blur_kernel_size: int = 50
@@ -354,7 +352,7 @@ class App:
 
         # ----------------------------------------------------------------
         # Load nodes
-        self._node_ui_state = defaultdict(NodeUIState)
+        self._node_ui_state = defaultdict(UINodeState)
         node_dirs = sorted(_NODES_DIR.iterdir(), key=lambda x: x.stat().st_ctime)
         for node_dir in node_dirs:
             if node_dir.is_dir():
@@ -363,13 +361,13 @@ class App:
 
                 self.nodes[name] = node
                 self.node_mtimes[name] = mtime
-                self._node_ui_state[name] = NodeUIState(**metadata.get("ui_state", {}))
+                self._node_ui_state[name] = UINodeState(**metadata.get("ui_state", {}))
                 self.current_node_name = name
 
     @property
-    def current_node_ui_state(self) -> NodeUIState:
+    def current_node_ui_state(self) -> UINodeState:
         if self.current_node_name is None:
-            return NodeUIState()
+            return UINodeState()
         return self._node_ui_state[self.current_node_name]
 
     @staticmethod
@@ -390,7 +388,7 @@ class App:
         # Load uniforms
         for uniform_name, value in metadata["uniforms"].items():
             if isinstance(value, dict) and value.get("type") == "texture":
-                value = load_texture_from_image(node_dir / value["file_path"])
+                value = image_to_texture(node_dir / value["file_path"])
             elif isinstance(value, list):
                 value = tuple(value)
 
@@ -446,7 +444,7 @@ class App:
             value = node.get_uniform_value(uniform.name)
 
             if uniform.gl_type == GL_SAMPLER_2D:  # type: ignore
-                image = load_image_from_texture(value)
+                image = texture_to_image(value)
                 textures_dir = node_dir / "textures"
                 textures_dir.mkdir(exist_ok=True)
                 texture_filename = f"{uniform.name}.png"
@@ -730,24 +728,6 @@ class App:
             texture = node.get_uniform_value(ui_uniform.name)
 
             imgui.text(get_resolution_str(ui_uniform.name, *texture.size))
-            if imgui.button("Load image"):
-                file_path = crossfiledialog.open_file(
-                    title="Select Texture",
-                    filter=["*.png", "*.jpg", "*.jpeg", "*.bmp"],
-                )
-                if file_path:
-                    texture = load_texture_from_image(file_path)
-                    node.set_uniform_value(ui_uniform.name, texture)
-
-            imgui.same_line()
-            if (
-                texture.extra is not None
-                and "image" in texture.extra
-                and imgui.button("Reset")
-            ):
-                original_image = texture.extra["image"]
-                texture = load_texture_from_image(original_image)
-                node.set_uniform_value(ui_uniform.name, texture)
 
             max_image_width = imgui.get_content_region_available()[0]
             max_image_height = 0.5 * imgui.get_content_region_available()[1]
@@ -767,11 +747,10 @@ class App:
             imgui.separator()
 
             if imgui.button("As depthmap"):
-                image = load_image_from_texture(texture)
+                image = texture_to_image(texture)
                 try:
                     depthmap_image = get_modelbox_depthmap(image)
-                    extra = texture.extra or {"image": image}
-                    texture = load_texture_from_image(depthmap_image, extra)
+                    texture = image_to_texture(depthmap_image)
                     node.set_uniform_value(ui_uniform.name, texture)
                 except Exception as e:
                     logger.error(str(e))
@@ -791,7 +770,7 @@ class App:
 
             imgui.same_line()
             if imgui.button("Apply##blur"):
-                image = load_image_from_texture(texture)
+                image = texture_to_image(texture)
                 try:
                     img_array = np.array(image.convert("RGB"))
                     kernel_size = self.current_node_ui_state.blur_kernel_size
@@ -799,8 +778,7 @@ class App:
                         img_array, (kernel_size, kernel_size), 0
                     )
                     blurred_image = Image.fromarray(blurred_array).convert("RGBA")
-                    extra = texture.extra or {"image": image}
-                    texture = load_texture_from_image(blurred_image, extra)
+                    texture = image_to_texture(blurred_image)
                     node.set_uniform_value(ui_uniform.name, texture)
                 except Exception as e:
                     logger.error(str(e))
@@ -820,13 +798,12 @@ class App:
 
             imgui.same_line()
             if imgui.button("Apply##normals"):
-                image = load_image_from_texture(texture)
+                image = texture_to_image(texture)
                 try:
                     depthmap_image = get_modelbox_depthmap(image)
                     kernel_size = self.current_node_ui_state.normals_kernel_size
                     normals_image = depthmap_to_normals(depthmap_image, kernel_size)
-                    extra = texture.extra or {"image": image}
-                    texture = load_texture_from_image(normals_image, extra)
+                    texture = image_to_texture(normals_image)
                     node.set_uniform_value(ui_uniform.name, texture)
                 except Exception as e:
                     logger.error(str(e))
@@ -872,8 +849,19 @@ class App:
                 self._node_ui_state[
                     self.current_node_name
                 ].selected_uniform_name = ui_uniform.name
-            imgui.spacing()
+
             imgui.pop_style_color(n_styles)
+
+            imgui.same_line()
+            if imgui.button(f"Load##{ui_uniform.name}"):
+                file_path = crossfiledialog.open_file(
+                    title="Select Texture",
+                    filter=["*.png", "*.jpg", "*.jpeg", "*.bmp"],
+                )
+                if file_path:
+                    value = image_to_texture(file_path)
+
+            imgui.spacing()
 
         elif ui_uniform.group_name == "color":
             fn = getattr(imgui, f"color_edit{ui_uniform.dimension}")
