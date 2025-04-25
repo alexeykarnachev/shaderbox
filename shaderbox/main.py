@@ -708,32 +708,6 @@ class App:
             texture = node.get_uniform_value(ui_uniform.name)
 
             imgui.text(get_resolution_str(ui_uniform.name, *texture.size))
-            imgui.new_line()
-
-            image_height = 300
-            max_image_width = imgui.get_content_region_available()[0]
-            image_aspect = np.divide(*node.output_texture.size)
-            image_width = min(max_image_width, image_height * image_aspect)
-            image_height = min(image_height, max_image_width / image_aspect)
-
-            imgui.image(
-                texture.glo,
-                width=image_width,
-                height=image_height,
-                uv0=(0, 1),
-                uv1=(1, 0),
-            )
-            imgui.same_line()
-
-            if (
-                texture.extra is not None
-                and "image" in texture.extra
-                and imgui.button("Reset")
-            ):
-                original_image = texture.extra["image"]
-                texture = load_texture_from_image(original_image)
-                node.set_uniform_value(ui_uniform.name, texture)
-
             if imgui.button("Load image"):
                 file_path = crossfiledialog.open_file(
                     title="Select Texture",
@@ -743,9 +717,34 @@ class App:
                     texture = load_texture_from_image(file_path)
                     node.set_uniform_value(ui_uniform.name, texture)
 
+            imgui.same_line()
+            if (
+                texture.extra is not None
+                and "image" in texture.extra
+                and imgui.button("Reset")
+            ):
+                original_image = texture.extra["image"]
+                texture = load_texture_from_image(original_image)
+                node.set_uniform_value(ui_uniform.name, texture)
+
+            max_image_width = imgui.get_content_region_available()[0]
+            max_image_height = 0.7 * imgui.get_content_region_available()[1]
+            image_aspect = np.divide(*texture.size)
+            image_width = min(max_image_width, max_image_height * image_aspect)
+            image_height = min(max_image_height, max_image_width / image_aspect)
+
+            imgui.image(
+                texture.glo,
+                width=image_width,
+                height=image_height,
+                uv0=(0, 1),
+                uv1=(1, 0),
+            )
+
+            imgui.spacing()
             imgui.separator()
-            imgui.text("Depthmap")
-            if imgui.button("Apply##depthmap"):
+
+            if imgui.button("To depthmap"):
                 image = load_image_from_texture(texture)
                 try:
                     depthmap_image = get_modelbox_depthmap(image)
@@ -779,6 +778,7 @@ class App:
                     node.set_uniform_value(ui_uniform.name, texture)
                 except Exception as e:
                     logger.error(str(e))
+            imgui.separator()
 
     def draw_ui_uniform(self, ui_uniform: UIUniform) -> None:
         if self.current_node_name is None:
