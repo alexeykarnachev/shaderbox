@@ -856,7 +856,7 @@ class App:
             if imgui.button(f"Load##{ui_uniform.name}"):
                 file_path = crossfiledialog.open_file(
                     title="Select Texture",
-                    filter=["*.png", "*.jpg", "*.jpeg", "*.bmp"],
+                    filter=["*.png", "*.jpg", "*.jpeg", "*.bmp", "*.webp"],
                 )
                 if file_path:
                     value = image_to_texture(file_path)
