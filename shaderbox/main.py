@@ -6,7 +6,7 @@ import shutil
 import subprocess
 import time
 from collections import defaultdict
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, fields
 from importlib.resources import files
 from pathlib import Path
 from typing import Any
@@ -370,7 +370,21 @@ class App:
 
                 self.nodes[name] = node
                 self.node_mtimes[name] = mtime
-                self._node_ui_state[name] = UINodeState(**metadata.get("ui_state", {}))
+
+                ui_state_dict = metadata.get("ui_state", {})
+                valid_fields = {f.name for f in fields(UINodeState)}
+
+                invalid_keys = [k for k in ui_state_dict if k not in valid_fields]
+                if invalid_keys:
+                    logger.warning(
+                        f"Ignored invalid UINodeState keys for node '{name}': {invalid_keys}"
+                    )
+
+                filtered_ui_state = {
+                    k: v for k, v in ui_state_dict.items() if k in valid_fields
+                }
+
+                self._node_ui_state[name] = UINodeState(**filtered_ui_state)
                 self.current_node_name = name
 
     @property
@@ -613,14 +627,7 @@ class App:
         fs_file_path = _NODES_DIR / node_name / "shader.frag.glsl"
 
         # ----------------------------------------------------------------
-        # Edit button
-        imgui.text_colored(str(fs_file_path), 0.5, 0.5, 0.5)
-        imgui.same_line()
-        if imgui.button("Edit", width=80):
-            self.edit_node_fs_file(node_name)
-
-        # ----------------------------------------------------------------
-        # Resolutions combobox
+        # Collect resolution items
         imgui.spacing()
 
         standard_resolutions = [
@@ -645,13 +652,6 @@ class App:
                     uniform_resolutions.append((w, h, uniform.name))
                     uniform_sizes.add((w, h))
 
-        imgui.text(
-            "Current resolution: " + get_resolution_str(None, *node.output_texture_size)
-        )
-        if matching_uniforms:
-            imgui.same_line()
-            imgui.text_colored("(" + ", ".join(matching_uniforms) + ")", 0.5, 0.5, 0.5)
-
         resolution_items = []
 
         for w, h, name in uniform_resolutions:
@@ -661,21 +661,42 @@ class App:
             if (w, h) != node.output_texture_size and (w, h) not in uniform_sizes:
                 resolution_items.append(get_resolution_str(None, w, h))
 
+        # ----------------------------------------------------------------
+        # Edit button
+        if imgui.button("Edit", width=80):
+            self.edit_node_fs_file(node_name)
+
+        imgui.same_line()
+        imgui.text_colored(str(fs_file_path), 0.5, 0.5, 0.5)
+
+        # ----------------------------------------------------------------
+        # Current resolution text
+        imgui.text(
+            "Current resolution: " + get_resolution_str(None, *node.output_texture_size)
+        )
+        if matching_uniforms:
+            imgui.same_line()
+            imgui.text_colored("(" + ", ".join(matching_uniforms) + ")", 0.5, 0.5, 0.5)
+
+        # ----------------------------------------------------------------
+        # Resolution combobox
         idx = self._node_ui_state[self.current_node_name].resolution_combo_idx
-        changed, new_index = imgui.combo("##Resolution", idx, resolution_items)
+        changed, new_index = imgui.combo("##resolution", idx, resolution_items)
         if changed:
             idx = max(0, new_index)
         idx = min(idx, len(resolution_items) - 1)
 
         imgui.same_line()
-        if imgui.button("Apply"):
+        if imgui.button("Apply##resolution"):
             w, h = map(int, resolution_items[idx].split(" | ")[0].split("x"))
             node.reset_output_texture_size((w, h))
 
+        imgui.new_line()
+        imgui.separator()
+        imgui.spacing()
+
         # ----------------------------------------------------------------
         # Uniforms
-        imgui.new_line()
-
         ui_uniforms = {u.name: UIUniform(u) for u in node.get_uniforms()}
 
         uniform_groups = defaultdict(list)
