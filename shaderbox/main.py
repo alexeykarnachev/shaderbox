@@ -23,7 +23,7 @@ from OpenGL.GL import GL_SAMPLER_2D, GLError
 from PIL import Image, ImageOps
 from platformdirs import user_data_dir
 
-from shaderbox.vendors import get_modelbox_depthmap
+from shaderbox.vendors import get_modelbox_bg_removal, get_modelbox_depthmap
 
 _RESOURCES_DIR = Path(str(files("shaderbox.resources")))
 _DEFAULT_VS_FILE_PATH = _RESOURCES_DIR / "shaders" / "default.vert.glsl"
@@ -307,6 +307,15 @@ def depthmap_to_normals(
     normals_rgb = ((normals + 1.0) * 127.5).astype(np.uint8)
 
     return Image.fromarray(normals_rgb)
+
+
+def zero_low_alpha_pixels(image: Image.Image, min_alpha: float = 1.0) -> Image.Image:
+    img_array = np.array(image)
+    alpha_threshold = int(min_alpha * 255)
+    low_alpha_mask = img_array[:, :, 3] < alpha_threshold
+    img_array[:, :, :3][low_alpha_mask] = 0
+
+    return Image.fromarray(img_array, mode="RGBA")
 
 
 @dataclass
@@ -749,8 +758,18 @@ class App:
             if imgui.button("As depthmap"):
                 image = texture_to_image(texture)
                 try:
-                    depthmap_image = get_modelbox_depthmap(image)
+                    depthmap_image = get_modelbox_depthmap(zero_low_alpha_pixels(image))
                     texture = image_to_texture(depthmap_image)
+                    node.set_uniform_value(ui_uniform.name, texture)
+                except Exception as e:
+                    logger.error(str(e))
+
+            imgui.same_line()
+            if imgui.button("Remove bg"):
+                image = texture_to_image(texture)
+                try:
+                    nobg_image = get_modelbox_bg_removal(zero_low_alpha_pixels(image))
+                    texture = image_to_texture(nobg_image)
                     node.set_uniform_value(ui_uniform.name, texture)
                 except Exception as e:
                     logger.error(str(e))
@@ -800,7 +819,7 @@ class App:
             if imgui.button("Apply##normals"):
                 image = texture_to_image(texture)
                 try:
-                    depthmap_image = get_modelbox_depthmap(image)
+                    depthmap_image = get_modelbox_depthmap(zero_low_alpha_pixels(image))
                     kernel_size = self.current_node_ui_state.normals_kernel_size
                     normals_image = depthmap_to_normals(depthmap_image, kernel_size)
                     texture = image_to_texture(normals_image)
