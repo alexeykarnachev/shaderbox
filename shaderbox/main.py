@@ -290,11 +290,33 @@ def get_resolution_str(name: str | None, w: int, h: int) -> str:
     return " | ".join(parts)
 
 
+def depthmap_to_normals(
+    depthmap_image: Image.Image, kernel_size: int = 3
+) -> Image.Image:
+    kernel_size = max(3, kernel_size | 1)
+
+    depth_array = np.array(depthmap_image.convert("L"), dtype=np.float32)
+
+    grad_x = cv2.Sobel(depth_array, cv2.CV_32F, 1, 0, ksize=kernel_size)
+    grad_y = cv2.Sobel(depth_array, cv2.CV_32F, 0, 1, ksize=kernel_size)
+
+    normals = np.dstack((grad_x, -grad_y, np.ones_like(depth_array)))
+
+    norm = np.linalg.norm(normals, axis=2, keepdims=True)
+    norm[norm < 1e-6] = 1e-6
+    normals = normals / norm
+
+    normals_rgb = ((normals + 1.0) * 127.5).astype(np.uint8)
+
+    return Image.fromarray(normals_rgb)
+
+
 @dataclass
 class NodeUIState:
     resolution_combo_idx: int = 0
     selected_uniform_name: str = ""
     blur_kernel_size: int = 50
+    normals_kernel_size: int = 3
 
 
 class App:
@@ -728,7 +750,7 @@ class App:
                 node.set_uniform_value(ui_uniform.name, texture)
 
             max_image_width = imgui.get_content_region_available()[0]
-            max_image_height = 0.7 * imgui.get_content_region_available()[1]
+            max_image_height = 0.5 * imgui.get_content_region_available()[1]
             image_aspect = np.divide(*texture.size)
             image_width = min(max_image_width, max_image_height * image_aspect)
             image_height = min(max_image_height, max_image_width / image_aspect)
@@ -744,7 +766,7 @@ class App:
             imgui.spacing()
             imgui.separator()
 
-            if imgui.button("To depthmap"):
+            if imgui.button("As depthmap"):
                 image = load_image_from_texture(texture)
                 try:
                     depthmap_image = get_modelbox_depthmap(image)
@@ -758,7 +780,11 @@ class App:
             imgui.text("Gaussian blur")
             kernel_size = self.current_node_ui_state.blur_kernel_size
             new_kernel_size = imgui.slider_int(
-                "##kernel_size", kernel_size, min_value=10, max_value=100, format="%d"
+                "##blur_kernel_size",
+                kernel_size,
+                min_value=10,
+                max_value=100,
+                format="%d",
             )[1]
             new_kernel_size = max(3, new_kernel_size | 1)
             self.current_node_ui_state.blur_kernel_size = new_kernel_size
@@ -778,7 +804,32 @@ class App:
                     node.set_uniform_value(ui_uniform.name, texture)
                 except Exception as e:
                     logger.error(str(e))
+
             imgui.separator()
+            imgui.text("Normals")
+            kernel_size = self.current_node_ui_state.normals_kernel_size
+            new_kernel_size = imgui.slider_int(
+                "##normals_kernel_size",
+                kernel_size,
+                min_value=3,
+                max_value=31,
+                format="%d",
+            )[1]
+            new_kernel_size = max(3, new_kernel_size | 1)
+            self.current_node_ui_state.normals_kernel_size = new_kernel_size
+
+            imgui.same_line()
+            if imgui.button("Apply##normals"):
+                image = load_image_from_texture(texture)
+                try:
+                    depthmap_image = get_modelbox_depthmap(image)
+                    kernel_size = self.current_node_ui_state.normals_kernel_size
+                    normals_image = depthmap_to_normals(depthmap_image, kernel_size)
+                    extra = texture.extra or {"image": image}
+                    texture = load_texture_from_image(normals_image, extra)
+                    node.set_uniform_value(ui_uniform.name, texture)
+                except Exception as e:
+                    logger.error(str(e))
 
     def draw_ui_uniform(self, ui_uniform: UIUniform) -> None:
         if self.current_node_name is None:
