@@ -9,7 +9,7 @@ from collections import defaultdict
 from dataclasses import asdict, dataclass, fields
 from importlib.resources import files
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 import crossfiledialog
 import cv2
@@ -159,6 +159,9 @@ class Node:
             elif uniform.name == "u_aspect":
                 value = np.divide(*self.output_texture.size)
                 self._uniform_values[uniform.name] = value
+            elif uniform.name == "u_resolution":
+                value = self.output_texture.size
+                self._uniform_values[uniform.name] = value
             elif uniform.gl_type == GL_SAMPLER_2D:  # type: ignore
                 texture = self._uniform_values.get(uniform.name)
                 if (
@@ -225,7 +228,7 @@ class UIUniform:
         self.array_length = uniform.array_length
         self.dimension = uniform.dimension
         self.gl_type = uniform.gl_type  # type: ignore
-        self.is_special = self.name in ("u_time", "u_aspect")
+        self.is_special = self.name in ("u_time", "u_aspect", "u_resolution")
         self.is_image = self.gl_type == GL_SAMPLER_2D
         self.is_color = (
             self.array_length == 1
@@ -461,7 +464,7 @@ class App:
         # ----------------------------------------------------------------
         # Save uniforms
         for uniform in node.get_uniforms():
-            if uniform.name in ["u_time", "u_aspect"]:
+            if uniform.name in ["u_time", "u_aspect", "u_resolution"]:
                 continue
 
             value = node.get_uniform_value(uniform.name)
@@ -857,12 +860,22 @@ class App:
 
         if ui_uniform.group_name == "special":
             if ui_uniform.array_length > 1:
+                # Handle array of floats (tuple or list)
                 value_str = ", ".join(f"{v:.3f}" for v in value)
                 imgui.text(
                     f"{ui_uniform.name}[{ui_uniform.array_length}]: [{value_str}]"
                 )
-            else:
+            elif ui_uniform.dimension == 1:
+                # Handle single float
                 imgui.text(f"{ui_uniform.name}: {value:.3f}")
+            else:
+                # Handle multi-dimensional case (e.g., vec2, vec3, vec4)
+                if isinstance(value, Iterable):
+                    value_str = ", ".join(f"{v:.3f}" for v in value)
+                    imgui.text(f"{ui_uniform.name}: [{value_str}]")
+                else:
+                    # Fallback for unexpected cases
+                    imgui.text(f"{ui_uniform.name}: {value}")
 
         elif ui_uniform.group_name == "image":
             texture = value
