@@ -6,10 +6,11 @@ import shutil
 import subprocess
 import time
 from collections import defaultdict
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass, fields
 from importlib.resources import files
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 import crossfiledialog
 import cv2
