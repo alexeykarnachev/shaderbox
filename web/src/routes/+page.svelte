@@ -1,5 +1,9 @@
 <script lang="ts">
+    import ShaderButton from "$lib/components/ShaderButton.svelte";
 </script>
 
-<h1 class="font-bold text-2xl text-red-500 underline">Welcome to SvelteKit</h1>
-<p>Visit <a href="https://svelte.dev/docs/kit">svelte.dev/docs/kit</a> to read the documentation</p>
+<div class="flex flex-row">
+    <div class="flex h-screen min-w-60 flex-col border border-red-500 text-2xl">
+        <ShaderButton text="Green Scan"/>
+    </div>
+</div>
