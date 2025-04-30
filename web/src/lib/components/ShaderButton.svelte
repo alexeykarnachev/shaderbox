@@ -9,11 +9,11 @@
 
 <style>
     .shader_button {
-        background-color: #333;
-        color: white;
-        border: none;
-        padding: 6px 12px;
         cursor: pointer;
+        border: none;
+        background-color: #333;
+        padding: 6px 12px;
+        color: white;
     }
 
     .shader_button:hover {

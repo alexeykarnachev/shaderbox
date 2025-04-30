@@ -8,6 +8,10 @@ declare global {
         // interface PageState {}
         // interface Platform {}
     }
+
+    type AppState = {
+        current_page: string;
+    };
 }
 
 export {};
