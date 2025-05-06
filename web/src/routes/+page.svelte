@@ -4,7 +4,15 @@
 
     let base_image_file: File | null = null;
 
-    function shader_button_onclick(shader_name: string) {}
+    async function shader_button_onclick(shader_name: string) {
+        if (base_image_file === null) return;
+
+        let body = JSON.stringify({ name: shader_name, image: image });
+        await fetch("/api/apply_shader", {
+            method: "POST",
+            body: body
+        });
+    }
 </script>
 
 <div class="flex flex-row gap-1">

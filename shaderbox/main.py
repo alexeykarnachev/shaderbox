@@ -957,12 +957,6 @@ class App:
             self.save_current_node()
         if io.key_ctrl and imgui.is_key_pressed(ord("E")):
             self.edit_current_node_fs_file()
-        # if imgui.is_key_pressed(imgui.get_key_index(imgui.KEY_LEFT_ARROW), repeat=True):
-        #     self.select_next_current_node(-1)
-        # if imgui.is_key_pressed(
-        #     imgui.get_key_index(imgui.KEY_RIGHT_ARROW), repeat=True
-        # ):
-        #     self.select_next_current_node(+1)
 
     def run(self) -> None:
         while not glfw.window_should_close(self.window):
