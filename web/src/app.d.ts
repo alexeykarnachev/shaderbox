@@ -10,7 +10,6 @@ declare global {
     }
 
     type AppState = {
-        current_page: string;
         base_image: string | null;
     };
 }

@@ -1,9 +1,9 @@
 <script lang="ts">
     export let text = "";
-    export let on_click = () => {};
+    export let onclick = () => {};
 </script>
 
-<button on:click={on_click} class="shader_button">
+<button {onclick} class="shader_button">
     {text}
 </button>
 

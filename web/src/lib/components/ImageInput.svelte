@@ -1,29 +1,32 @@
 <script lang="ts">
-    import { app_state } from "$lib/app_state.svelte";
+    let { file = $bindable(null) }: { file: File | null } = $props();
+    let img_src: string | null = $state(null);
 
     let prevent_default = (e: Event) => e.preventDefault();
-
-    function load_base_image(file: File) {
-        const reader = new FileReader();
-        reader.onload = () => {
-            app_state.base_image = (reader.result as string).split(",")[1];
-        };
-        reader.readAsDataURL(file);
-    }
 
     function area_ondrop(e: DragEvent) {
         e.preventDefault();
         if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
-            load_base_image(e.dataTransfer.files[0]);
+            file = e.dataTransfer.files[0];
         }
     }
 
     function input_onchange(e: Event) {
         const input = e.target as HTMLInputElement;
         if (input.files && input.files.length > 0) {
-            load_base_image(input.files[0]);
+            file = input.files[0];
         }
     }
+
+    $effect(() => {
+        if (img_src !== null) {
+            URL.revokeObjectURL(img_src);
+        }
+
+        if (file !== null) {
+            img_src = URL.createObjectURL(file);
+        }
+    });
 </script>
 
 <div id="image_input_container">
@@ -34,11 +37,10 @@
         role="region"
         id="drop_area"
     >
-        {#if app_state.base_image}
-            <img src="data:image/png;base64,{app_state.base_image}" alt="Base" />
-            <p>Base image</p>
+        {#if img_src !== null}
+            <img src={img_src} alt="" />
         {:else}
-            <p>Upload base image</p>
+            <p>Drag and drop an image here or click to select</p>
         {/if}
     </label>
     <input type="file" onchange={input_onchange} id="file_input" accept="image/*" />
@@ -55,7 +57,8 @@
         display: flex;
         flex: 1;
         flex-direction: column;
-        justify-content: flex-end;
+        justify-content: center;
+        align-items: center;
         cursor: pointer;
         background: #202020;
         padding: 20px;
@@ -65,9 +68,8 @@
     }
 
     #drop_area img {
-        display: block;
-        width: 100%;
-        height: 100%;
+        max-width: 100%;
+        max-height: 100%;
         object-fit: contain;
     }
 
