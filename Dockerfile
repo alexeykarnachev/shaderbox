@@ -17,4 +17,3 @@ COPY .env .
 ENV PYTHONPATH=/app
 
 CMD ["/app/.venv/bin/uvicorn", "shaderbox.app:app", "--host", "0.0.0.0", "--port", "8229"]
-

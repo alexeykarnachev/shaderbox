@@ -6,4 +6,3 @@ services:
     ports:
       - "8229:8229"
     restart: unless-stopped
-
