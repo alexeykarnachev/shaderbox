@@ -5,29 +5,29 @@ from loguru import logger
 from pydantic import BaseModel
 
 
-class ApplyNodeResult(BaseModel):
-    image: str
-
-
 class ApplyNodeRequest(BaseModel):
     image: UploadFile
+    node_name: str
 
     class Config:
         arbitrary_types_allowed = True
 
 
+class ApplyNodeResult(BaseModel):
+    image: str
+
+
 _body_multipart = Body(media_type="multipart/form-data")
 
 
-@post("/infer_depth_pro", media_type="application/json")
+@post("/apply_node", media_type="application/json")
 async def apply_node(
     data: ApplyNodeRequest = _body_multipart,
 ) -> ApplyNodeResult:
-    logger.debug("Received image file")
     try:
         return ApplyNodeResult(image="")
     except Exception as e:
-        logger.exception(f"Inference failed: {e}")
+        logger.exception(f"Failed to apply node: {e}")
         raise
 
 

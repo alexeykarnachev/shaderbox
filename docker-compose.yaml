@@ -1,0 +1,9 @@
+services:
+  litestar-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8229:8229"
+    restart: unless-stopped
+
