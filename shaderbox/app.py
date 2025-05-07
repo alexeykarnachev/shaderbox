@@ -6,8 +6,8 @@ from pydantic import BaseModel
 
 
 class ApplyNodeRequest(BaseModel):
+    name: str
     image: UploadFile
-    node_name: str
 
     class Config:
         arbitrary_types_allowed = True

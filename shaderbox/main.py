@@ -8,7 +8,6 @@ import time
 from collections import defaultdict
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass, fields
-from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
@@ -21,17 +20,11 @@ import numpy as np
 from imgui.integrations.glfw import GlfwRenderer
 from loguru import logger
 from OpenGL.GL import GL_SAMPLER_2D, GLError
-from PIL import Image, ImageOps
+from PIL import Image
 from platformdirs import user_data_dir
 
+from shaderbox.core import Node, image_to_texture, texture_to_image
 from shaderbox.vendors import get_modelbox_bg_removal, get_modelbox_depthmap
-
-_RESOURCES_DIR = Path(str(files("shaderbox.resources")))
-_DEFAULT_VS_FILE_PATH = _RESOURCES_DIR / "shaders" / "default.vert.glsl"
-_DEFAULT_FS_FILE_PATH = _RESOURCES_DIR / "shaders" / "default.frag.glsl"
-_DEFAULT_IMAGE = Image.open(_RESOURCES_DIR / "textures" / "default.jpeg").convert(
-    "RGBA"
-)
 
 _APP_DIR = Path(user_data_dir("shaderbox"))
 _NODES_DIR = _APP_DIR / "nodes"
@@ -39,187 +32,6 @@ _TRASH_DIR = _APP_DIR / "trash"
 
 _NODES_DIR.mkdir(exist_ok=True, parents=True)
 _TRASH_DIR.mkdir(exist_ok=True, parents=True)
-
-
-class Node:
-    def __init__(
-        self,
-        fs_source: str | None = None,
-        output_texture_size: tuple[int, int] | None = None,
-    ) -> None:
-        self.gl = moderngl.get_context()
-
-        self.vs_source: str = _DEFAULT_VS_FILE_PATH.read_text()
-        self.fs_source: str = (
-            fs_source if fs_source else _DEFAULT_FS_FILE_PATH.read_text()
-        )
-
-        self.output_texture_size = output_texture_size or (1280, 960)
-        self.output_texture = self.gl.texture(self.output_texture_size, 4)
-        self.fbo = self.gl.framebuffer(color_attachments=[self.output_texture])
-
-        self._uniform_values: dict[str, Any] = {}
-        self.shader_error: str = ""
-
-        # Will be initialized lazily during the render
-        self.program: moderngl.Program | None = None
-        self.vbo: moderngl.Buffer | None = None
-        self.vao: moderngl.VertexArray | None = None
-
-    def release_program(self, new_fs_source: str = "") -> None:
-        self.fs_source = new_fs_source
-
-        if self.program:
-            self.program.release()
-        if self.vbo:
-            self.vbo.release()
-        if self.vao:
-            self.vao.release()
-
-        self.program = None
-        self.vbo = None
-        self.vao = None
-
-    def reset_output_texture_size(self, output_texture_size: tuple[int, int]) -> None:
-        self.output_texture.release()
-        self.fbo.release()
-
-        self.output_texture_size = output_texture_size
-        self.output_texture = self.gl.texture(self.output_texture_size, 4)
-        self.fbo = self.gl.framebuffer(color_attachments=[self.output_texture])
-
-    def release(self) -> None:
-        self.release_program()
-
-        self.output_texture.release()
-        self.fbo.release()
-
-        for data in self._uniform_values.values():
-            if isinstance(data, moderngl.Texture):
-                data.release()
-
-    def get_uniforms(self) -> list[moderngl.Uniform]:
-        uniforms: list[moderngl.Uniform] = []
-        if self.program:
-            for uniform_name in self.program:
-                uniform = self.program[uniform_name]
-                if isinstance(uniform, moderngl.Uniform):
-                    uniforms.append(uniform)
-
-        return uniforms
-
-    def render(self) -> None:
-        # ----------------------------------------------------------------
-        # Lazily initialize program, vbo, and vao
-        if not self.program or not self.vbo or not self.vao:
-            try:
-                program = self.gl.program(
-                    vertex_shader=self.vs_source,
-                    fragment_shader=self.fs_source,
-                )
-            except Exception as e:
-                err = str(e)
-                if err != self.shader_error:
-                    logger.error(f"Failed to compile shader: {e}")
-                    self.shader_error = err
-
-                return
-
-            self.shader_error = ""
-
-            if self.program:
-                self.program.release()
-            if self.vbo:
-                self.vbo.release()
-            if self.vao:
-                self.vao.release()
-
-            self.program = program
-            self.vbo = self.gl.buffer(
-                np.array(
-                    [-1.0, -1.0, 1.0, -1.0, -1.0, 1.0, 1.0, -1.0, 1.0, 1.0, -1.0, 1.0],
-                    dtype="f4",
-                )
-            )
-            self.vao = self.gl.vertex_array(program, [(self.vbo, "2f", "a_pos")])
-
-        if not self.program or not self.vao:
-            return
-
-        # ----------------------------------------------------------------
-        # Assign program uniforms
-        texture_unit = 0
-        seen_uniform_names = set()
-
-        for uniform in self.get_uniforms():
-            seen_uniform_names.add(uniform.name)
-
-            if uniform.name == "u_time":
-                value = glfw.get_time()
-                self._uniform_values[uniform.name] = value
-            elif uniform.name == "u_aspect":
-                value = np.divide(*self.output_texture.size)
-                self._uniform_values[uniform.name] = value
-            elif uniform.name == "u_resolution":
-                value = self.output_texture.size
-                self._uniform_values[uniform.name] = value
-            elif uniform.gl_type == GL_SAMPLER_2D:  # type: ignore
-                texture = self._uniform_values.get(uniform.name)
-                if (
-                    texture is None
-                    or not isinstance(texture, moderngl.Texture)
-                    or isinstance(texture.mglo, moderngl.InvalidObject)
-                ):
-                    self._uniform_values[uniform.name] = image_to_texture(
-                        _DEFAULT_IMAGE
-                    )
-
-                texture = self._uniform_values[uniform.name]
-                texture.use(location=texture_unit)
-                value = texture_unit
-                texture_unit += 1
-            else:
-                value = self._uniform_values.get(uniform.name)
-                if value is None:
-                    value = uniform.value
-                    self._uniform_values[uniform.name] = value
-
-            try:
-                self.program[uniform.name] = value
-            except Exception as _:
-                logger.warning(
-                    f"Failed to set uniform '{uniform.name}' with value {value}. "
-                    "Cached value will be cleared."
-                )
-                self._uniform_values.pop(uniform.name)
-
-        # Render
-        self.fbo.use()
-        self.gl.clear()
-        self.vao.render()
-
-        # Clear stale uniform data
-        for uniform_name in self._uniform_values.copy():
-            if uniform_name not in seen_uniform_names:
-                data = self._uniform_values.pop(uniform_name)
-                if isinstance(data, moderngl.Texture):
-                    data.release()
-
-    def set_uniform_value(self, name: str, value: Any) -> None:
-        old_value = self._uniform_values.get(name)
-        if isinstance(old_value, moderngl.Texture) and old_value.glo != value.glo:
-            old_value.release()
-
-        self._uniform_values[name] = value
-
-    def get_uniform_value(self, name: str) -> Any:
-        value = self._uniform_values.get(name)
-        if value is None and self.program is not None and name in self.program:
-            uniform = self.program[name]
-            value = uniform.value  # type: ignore
-            self._uniform_values[name] = value
-
-        return value
 
 
 class UIUniform:
@@ -257,28 +69,6 @@ class UIUniform:
             return 5 + spacing
         else:
             return imgui.get_text_line_height_with_spacing()  # type: ignore
-
-
-def image_to_texture(
-    image_or_file_path: Image.Image | Path | str,
-) -> moderngl.Texture:
-    if not isinstance(image_or_file_path, Image.Image):
-        image = Image.open(image_or_file_path)
-    else:
-        image = image_or_file_path
-
-    gl = moderngl.get_context()
-    prepared_image = ImageOps.flip(image.convert("RGBA"))
-    texture = gl.texture(image.size, 4, np.array(prepared_image).tobytes(), dtype="f1")
-    return texture
-
-
-def texture_to_image(texture: moderngl.Texture) -> Image.Image:
-    texture_data = texture.read()
-    image = ImageOps.flip(
-        Image.frombytes("RGBA", (texture.width, texture.height), texture_data)
-    )
-    return image
 
 
 def get_resolution_str(name: str | None, w: int, h: int) -> str:

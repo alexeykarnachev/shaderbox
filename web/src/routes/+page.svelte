@@ -4,14 +4,28 @@
 
     let base_image_file: File | null = null;
 
-    async function shader_button_onclick(shader_name: string) {
+    async function shader_button_onclick(name: string) {
         if (base_image_file === null) return;
 
-        let body = JSON.stringify({ name: shader_name, image: image });
-        await fetch("/api/apply_shader", {
-            method: "POST",
-            body: body
-        });
+        try {
+            let form_data = new FormData();
+            form_data.append("image", base_image_file);
+            form_data.append("name", name);
+
+            let response = await fetch("/api/apply_node", {
+                method: "POST",
+                body: form_data
+            });
+
+            if (!response.ok) {
+                throw new Error();
+            }
+
+            let result = await response.json();
+            console.log(result);
+        } catch (err) {
+            console.error("Failed to apply shader");
+        }
     }
 </script>
 

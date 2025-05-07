@@ -19,13 +19,16 @@
     }
 
     $effect(() => {
-        if (img_src !== null) {
-            URL.revokeObjectURL(img_src);
-        }
+        img_src = file !== null ? URL.createObjectURL(file) : null;
+    });
 
-        if (file !== null) {
-            img_src = URL.createObjectURL(file);
-        }
+    $effect(() => {
+        const current_src = img_src;
+        return () => {
+            if (current_src !== null) {
+                URL.revokeObjectURL(current_src);
+            }
+        };
     });
 </script>
 
