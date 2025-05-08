@@ -16,13 +16,13 @@
                 method: "POST",
                 body: form_data
             });
+            console.log(response);
 
             if (!response.ok) {
                 throw new Error();
             }
 
             let result = await response.json();
-            console.log(result);
         } catch (err) {
             console.error("Failed to apply shader");
         }

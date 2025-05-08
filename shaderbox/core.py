@@ -1,3 +1,4 @@
+import json
 from importlib.resources import files
 from pathlib import Path
 from typing import Any
@@ -60,6 +61,37 @@ class Node:
         self.program: moderngl.Program | None = None
         self.vbo: moderngl.Buffer | None = None
         self.vao: moderngl.VertexArray | None = None
+
+    @classmethod
+    def load_from_dir(
+        cls,
+        node_dir: Path | str,
+        gl: moderngl.Context | None = None,
+    ) -> tuple["Node", float, dict]:
+        node_dir = Path(node_dir)
+        with (node_dir / "node.json").open() as f:
+            metadata = json.load(f)
+
+        fs_file_path = node_dir / "shader.frag.glsl"
+        mtime = fs_file_path.lstat().st_mtime if fs_file_path.exists() else 0.0
+
+        node = Node(
+            gl=gl,
+            fs_source=fs_file_path.read_text(),
+            output_texture_size=tuple(metadata["output_texture_size"]),
+        )
+
+        # ----------------------------------------------------------------
+        # Load uniforms
+        for uniform_name, value in metadata["uniforms"].items():
+            if isinstance(value, dict) and value.get("type") == "texture":
+                value = image_to_texture(node_dir / value["file_path"])
+            elif isinstance(value, list):
+                value = tuple(value)
+
+            node.set_uniform_value(uniform_name, value)
+
+        return node, mtime, metadata
 
     def release_program(self, new_fs_source: str = "") -> None:
         self.fs_source = new_fs_source

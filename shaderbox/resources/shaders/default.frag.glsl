@@ -1,4 +1,4 @@
-#version 460
+#version 460 core
 
 in vec2 vs_uv;
 out vec4 fs_color;

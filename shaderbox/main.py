@@ -159,7 +159,7 @@ class App:
         node_dirs = sorted(_NODES_DIR.iterdir(), key=lambda x: x.stat().st_ctime)
         for node_dir in node_dirs:
             if node_dir.is_dir():
-                node, mtime, metadata = self.load_node(node_dir)
+                node, mtime, metadata = Node.load_from_dir(node_dir)
                 name = node_dir.name
 
                 self.nodes[name] = node
@@ -186,32 +186,6 @@ class App:
         if self.current_node_name is None:
             return UINodeState()
         return self._node_ui_state[self.current_node_name]
-
-    @staticmethod
-    def load_node(node_dir: Path | str) -> tuple[Node, float, dict]:
-        node_dir = Path(node_dir)
-        with (node_dir / "node.json").open() as f:
-            metadata = json.load(f)
-
-        fs_file_path = node_dir / "shader.frag.glsl"
-        mtime = fs_file_path.lstat().st_mtime if fs_file_path.exists() else 0.0
-
-        node = Node(
-            fs_source=fs_file_path.read_text(),
-            output_texture_size=tuple(metadata["output_texture_size"]),
-        )
-
-        # ----------------------------------------------------------------
-        # Load uniforms
-        for uniform_name, value in metadata["uniforms"].items():
-            if isinstance(value, dict) and value.get("type") == "texture":
-                value = image_to_texture(node_dir / value["file_path"])
-            elif isinstance(value, list):
-                value = tuple(value)
-
-            node.set_uniform_value(uniform_name, value)
-
-        return node, mtime, metadata
 
     def edit_node_fs_file(self, node_name: str) -> None:
         fs_file_path = _NODES_DIR / node_name / "shader.frag.glsl"

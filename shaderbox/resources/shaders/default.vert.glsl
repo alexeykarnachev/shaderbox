@@ -1,4 +1,4 @@
-#version 460
+#version 460 core
 
 in vec2 a_pos;
 out vec2 vs_uv;

@@ -6,3 +6,14 @@ services:
     ports:
       - "8229:8229"
     restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    volumes:
+      - ${HOME}/.local/share/shaderbox:/root/.local/share/shaderbox
+      - ${HOME}/.local/share/shaderbox/videos:/app/videos
+    command: ["uv", "run", "uvicorn", "shaderbox.app:app", "--host", "0.0.0.0", "--port", "8229"]
