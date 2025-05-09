@@ -64,8 +64,8 @@ async def apply_node(data: ApplyNodeRequest = _body_multipart) -> ApplyNodeResul
         u_image = image_to_texture(image)
         u_depthmap = image_to_texture(depthmap)
 
-        node.set_uniform_value("u_image", u_image)
-        node.set_uniform_value("u_depthmap", u_depthmap)
+        node.set_uniform_value("u_photo", u_image)
+        node.set_uniform_value("u_depth", u_depthmap)
         node.reset_output_texture_size(u_image.size)
 
         node.render_to_video(

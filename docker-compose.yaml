@@ -1,10 +1,9 @@
 services:
   litestar-api:
+    network_mode: "host"
     build:
       context: .
       dockerfile: Dockerfile
-    ports:
-      - "8229:8229"
     restart: unless-stopped
     deploy:
       resources:

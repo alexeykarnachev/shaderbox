@@ -29,7 +29,6 @@ RUN pip install uv && uv sync --no-dev
 
 # Copy application code
 COPY shaderbox ./shaderbox/
-COPY .env .
 
 ENV PYTHONPATH=/app
 ENV NVIDIA_VISIBLE_DEVICES=all
