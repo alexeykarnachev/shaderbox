@@ -1,6 +1,8 @@
+import base64
 import hashlib
 import sys
 import time
+from io import BytesIO
 from pathlib import Path
 
 import moderngl
@@ -8,12 +10,13 @@ from litestar import Litestar, post
 from litestar.datastructures import UploadFile
 from litestar.enums import MediaType
 from litestar.params import Body
-from litestar.response import File
 from loguru import logger
+from PIL import Image
 from platformdirs import user_data_dir
 from pydantic import BaseModel
 
-from shaderbox.core import Node
+from shaderbox.core import Node, image_to_texture
+from shaderbox.vendors import get_modelbox_depthmap
 
 logger.remove()
 logger.add(sys.stderr, level="DEBUG", backtrace=True, diagnose=True)
@@ -40,30 +43,40 @@ class ApplyNodeRequest(BaseModel):
         arbitrary_types_allowed = True
 
 
+class ApplyNodeResult(BaseModel):
+    video: str
+
+
 _body_multipart = Body(media_type="multipart/form-data")
 
 
 @post("/apply_node", media_type=MediaType.JSON)
-async def apply_node(data: ApplyNodeRequest = _body_multipart) -> File:
+async def apply_node(data: ApplyNodeRequest = _body_multipart) -> ApplyNodeResult:
     try:
         node = _NODES[data.name]
-
         hash = hashlib.md5(f"{id(data)}{time.time()}".encode()).hexdigest()[:8]
         output_path = _VIDEOS_DIR / f"{data.name}_{hash}.webm"
 
+        image_bytes = await data.image.read()
+        image = Image.open(BytesIO(image_bytes))
+        depthmap = get_modelbox_depthmap(image)
+
+        u_image = image_to_texture(image)
+        u_depthmap = image_to_texture(depthmap)
+
+        node.set_uniform_value("u_image", u_image)
+        node.set_uniform_value("u_depthmap", u_depthmap)
+        node.reset_output_texture_size(u_image.size)
+
         node.render_to_video(
             output_path=output_path,
-            duration=1.0,
-            fps=10,
+            duration=2.0,
+            fps=30,
         )
-
         logger.debug(f"Video rendered: {output_path}")
-        return File(
-            path=output_path,
-            filename="output.webm",
-            media_type="video/webm",
-            content_disposition_type="attachment",
-        )
+        with output_path.open("rb") as f:
+            video_data = base64.b64encode(f.read()).decode("utf-8")
+        return ApplyNodeResult(video=video_data)
     except Exception as e:
         logger.exception(f"Failed to apply node: {e}")
         raise

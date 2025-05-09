@@ -3,6 +3,7 @@
     import ShaderButton from "$lib/components/ShaderButton.svelte";
 
     let base_image_file: File | null = null;
+    let video_url: string | null = null;
 
     async function shader_button_onclick(name: string) {
         if (base_image_file === null) return;
@@ -22,9 +23,13 @@
                 throw new Error();
             }
 
-            let result = await response.json();
+            const result = await response.json();
+            const video = await fetch(`data:video/webm;base64,${result.video}`);
+            const blob = await video.blob();
+
+            video_url = URL.createObjectURL(blob);
         } catch (err) {
-            console.error("Failed to apply shader");
+            console.error("Failed to apply shader:", err);
         }
     }
 </script>
@@ -42,4 +47,10 @@
             onclick={() => shader_button_onclick("green_scan")}
         />
     </div>
+
+    {#if video_url}
+        <video controls autoplay src={video_url} class="max-w-xs">
+            <track kind="captions" label="No captions available" src="" />
+        </video>
+    {/if}
 </div>
