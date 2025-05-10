@@ -115,6 +115,9 @@ def zero_low_alpha_pixels(image: Image.Image, min_alpha: float = 1.0) -> Image.I
 @dataclass
 class UINodeState:
     resolution_combo_idx: int = 0
+    video_quality_combo_idx: int = 0
+    video_duration: int = 5
+    video_file_path: str | None = None
     selected_uniform_name: str = ""
     blur_kernel_size: int = 50
     normals_kernel_size: int = 3
@@ -438,7 +441,7 @@ class App:
         imgui.text_colored(str(fs_file_path), 0.5, 0.5, 0.5)
 
         # ----------------------------------------------------------------
-        # Current resolution text
+        # Resolution combobox
         imgui.text(
             "Current resolution: " + get_resolution_str(None, *node.output_texture_size)
         )
@@ -446,17 +449,18 @@ class App:
             imgui.same_line()
             imgui.text_colored("(" + ", ".join(matching_uniforms) + ")", 0.5, 0.5, 0.5)
 
-        # ----------------------------------------------------------------
-        # Resolution combobox
-        idx = self._node_ui_state[self.current_node_name].resolution_combo_idx
-        changed, new_index = imgui.combo("##resolution", idx, resolution_items)
-        if changed:
-            idx = max(0, new_index)
-        idx = min(idx, len(resolution_items) - 1)
+        self.draw_combobox("resolution_combo_idx", resolution_items)
 
         imgui.same_line()
         if imgui.button("Apply##resolution"):
-            w, h = map(int, resolution_items[idx].split(" | ")[0].split("x"))
+            w, h = map(
+                int,
+                resolution_items[
+                    self._node_ui_state[self.current_node_name].resolution_combo_idx
+                ]
+                .split(" | ")[0]
+                .split("x"),
+            )
             node.reset_output_texture_size((w, h))
 
         imgui.new_line()
@@ -504,6 +508,20 @@ class App:
             imgui.begin_child("selected_uniform_settings", border=True)
             self.draw_selected_uniform_settings()
             imgui.end_child()
+
+    def draw_combobox(self, id: str, item_names: list[str]) -> str:
+        if not hasattr(self.current_node_ui_state, id):
+            setattr(self.current_node_ui_state, id, 0)
+        idx = getattr(self.current_node_ui_state, id)
+
+        changed, new_index = imgui.combo(f"##{id}", idx, item_names)
+        if changed:
+            idx = max(0, new_index)
+
+        idx = min(idx, len(item_names) - 1)
+        setattr(self._node_ui_state[self.current_node_name], id, idx)
+
+        return item_names[idx]
 
     def draw_selected_uniform_settings(self) -> None:
         if self.current_node_name is None:
@@ -698,6 +716,60 @@ class App:
     def draw_logs_tab(self) -> None:
         imgui.text("Logs will be here soon...")
 
+    def draw_render_tab(self) -> None:
+        available_extensions = [".webm", ".mp4"]
+
+        # ----------------------------------------------------------------
+        # Video output file
+        file_path = None
+        if imgui.button("Output file:##video_file_path"):
+            file_path = crossfiledialog.save_file(
+                title=f"Output file path ({available_extensions})",
+            )
+            if file_path:
+                video_extension = Path(file_path).suffix
+                if video_extension not in available_extensions:
+                    self.current_node_ui_state.video_file_path = None
+                    logger.warning(
+                        f"Can't select {video_extension} file, "
+                        f"available extensions are: {available_extensions}"
+                    )
+                else:
+                    self.current_node_ui_state.video_file_path = file_path
+
+        if self.current_node_ui_state.video_file_path:
+            imgui.same_line()
+            imgui.text_colored(
+                self.current_node_ui_state.video_file_path, 0.5, 0.5, 0.5
+            )
+
+        # ----------------------------------------------------------------
+        # Video quality combobox
+        imgui.text("Quality:")
+        self.draw_combobox("video_quality_combo_idx", ["low", "medium", "high"])
+
+        # ----------------------------------------------------------------
+        # Video duration
+        imgui.text("Duration, s:")
+        video_duration = self.current_node_ui_state.video_duration
+        video_duration = imgui.slider_int(
+            "##video_duration",
+            video_duration,
+            min_value=1,
+            max_value=60,
+            format="%d",
+        )[1]
+        self.current_node_ui_state.video_duration = video_duration
+
+        # ----------------------------------------------------------------
+        # Render button
+        file_path = self.current_node_ui_state.video_file_path
+        if file_path:
+            imgui.spacing()
+            if imgui.button("Render##video"):
+                node = self.nodes[self.current_node_name]  # type: ignore
+                node.render_to_video(file_path, duration=video_duration)
+
     def draw_node_settings(self) -> None:
         with imgui.begin_child("node_settings", border=True):
             if imgui.begin_tab_bar("node_settings_tabs").opened:
@@ -707,6 +779,10 @@ class App:
 
                 if imgui.begin_tab_item("Logs").selected:  # type: ignore
                     self.draw_logs_tab()
+                    imgui.end_tab_item()
+
+                if imgui.begin_tab_item("Render").selected:  # type: ignore
+                    self.draw_render_tab()
                     imgui.end_tab_item()
 
                 imgui.end_tab_bar()
