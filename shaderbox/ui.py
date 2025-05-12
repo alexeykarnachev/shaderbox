@@ -65,7 +65,7 @@ class UIUniform:
     @property
     def height(self) -> int:
         if self.group_name == "image":
-            return 115
+            return 120
         elif self.group_name == "drag":
             spacing: int = imgui.get_text_line_height_with_spacing()
             return 5 + spacing
@@ -131,6 +131,7 @@ class UIAppState:
     tg_bot_token: str = ""
     tg_user_id: str = ""
     tg_sticker_set_name: str = ""
+    tg_sticker_set: dict[str, Any] | None = None
 
 
 class App:
@@ -542,14 +543,6 @@ class App:
             self.draw_selected_uniform_settings()
             imgui.end_child()
 
-        # ----------------------------------------------------------------
-        # Render
-        imgui.new_line()
-        imgui.separator()
-        imgui.spacing()
-
-        self.draw_render()
-
     def draw_selected_uniform_settings(self) -> None:
         if self.current_node_name is None:
             return
@@ -668,7 +661,7 @@ class App:
                 except Exception as e:
                     logger.error(str(e))
 
-    def draw_render(self) -> None:
+    def draw_render_tab(self) -> None:
         available_extensions = [".webm", ".mp4"]
         available_qualities = ["low", "medium-low", "medium-high", "high"]
         available_fps = ["15", "30", "60", "120"]
@@ -853,20 +846,30 @@ class App:
 
                 bot = tg.Bot(token=self.app_ui_state.tg_bot_token)
 
-                sticker_set = None
-                with contextlib.suppress(tg.error.BadRequest):
+                try:
                     sticker_set = asyncio.run(
                         bot.get_sticker_set(name=self.app_ui_state.tg_sticker_set_name)
                     )
+                    self.app_ui_state.tg_sticker_set = sticker_set.to_dict()
+                    print(self.app_ui_state.tg_sticker_set)
+                except tg.error.BadRequest as e:
+                    msg = str(e)
+                    logger.error("Bad request: " + str(e))
 
-                if sticker_set is None:
-                    imgui.text_colored("Sticker set doesn't exist", 1.0, 0.0, 0.0)
+                    if msg == "Stickerset_invalid":
+                        pass
+                except tg.error.InvalidToken:
+                    logger.error("Invalid telegram token")
 
     def draw_node_settings(self) -> None:
         with imgui.begin_child("node_settings", border=True):
             if imgui.begin_tab_bar("node_settings_tabs").opened:
                 if imgui.begin_tab_item("Node").selected:  # type: ignore
                     self.draw_node_tab()
+                    imgui.end_tab_item()
+
+                if imgui.begin_tab_item("Render").selected:  # type: ignore
+                    self.draw_render_tab()
                     imgui.end_tab_item()
 
                 if imgui.begin_tab_item("Tg stickers").selected:  # type: ignore
