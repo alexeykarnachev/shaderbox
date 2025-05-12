@@ -1,3 +1,4 @@
+import asyncio
 import contextlib
 import hashlib
 import json
@@ -118,6 +119,9 @@ class UINodeState:
     video_quality_combo_idx: int = 0
     video_duration: int = 5
     video_file_path: str | None = None
+    tg_bot_token: str = ""
+    tg_user_id: str = ""
+    tg_sticker_set_name: str = ""
     selected_uniform_name: str = ""
     blur_kernel_size: int = 50
     normals_kernel_size: int = 3
@@ -514,8 +518,8 @@ class App:
             setattr(self.current_node_ui_state, id, 0)
         idx = getattr(self.current_node_ui_state, id)
 
-        changed, new_index = imgui.combo(f"##{id}", idx, item_names)
-        if changed:
+        is_changed, new_index = imgui.combo(f"##{id}", idx, item_names)
+        if is_changed:
             idx = max(0, new_index)
 
         idx = min(idx, len(item_names) - 1)
@@ -713,9 +717,6 @@ class App:
 
         node.set_uniform_value(ui_uniform.name, value)
 
-    def draw_logs_tab(self) -> None:
-        imgui.text("Logs will be here soon...")
-
     def draw_render_tab(self) -> None:
         available_extensions = [".webm", ".mp4"]
         available_qualities = ["low", "medium-low", "medium-high", "high"]
@@ -782,6 +783,38 @@ class App:
                     quality=quality_idx,
                 )
 
+    def draw_tg_stickers_tab(self) -> None:
+        with imgui.begin_child("tg_settings", border=True):
+            self.current_node_ui_state.tg_bot_token = imgui.input_text(
+                "Bot token",
+                self.current_node_ui_state.tg_bot_token,
+                flags=imgui.INPUT_TEXT_PASSWORD,
+            )[1]
+
+            self.current_node_ui_state.tg_user_id = imgui.input_text(
+                "User id",
+                self.current_node_ui_state.tg_user_id,
+                flags=imgui.INPUT_TEXT_CHARS_DECIMAL,
+            )[1]
+
+            self.current_node_ui_state.tg_sticker_set_name = imgui.input_text(
+                "Sticker set name",
+                self.current_node_ui_state.tg_sticker_set_name,
+                flags=imgui.INPUT_TEXT_CHARS_NO_BLANK,
+            )[1]
+
+            if imgui.button("Connect", width=80):
+                import telegram as tg
+
+                bot = tg.Bot(token=self.current_node_ui_state.tg_bot_token)
+                sticker_set = asyncio.run(
+                    bot.get_sticker_set(
+                        name=self.current_node_ui_state.tg_sticker_set_name
+                    )
+                )
+                print(sticker_set)
+                # telegram.error.BadRequest: Stickerset_invalid
+
     def draw_node_settings(self) -> None:
         with imgui.begin_child("node_settings", border=True):
             if imgui.begin_tab_bar("node_settings_tabs").opened:
@@ -789,12 +822,12 @@ class App:
                     self.draw_shader_tab()
                     imgui.end_tab_item()
 
-                if imgui.begin_tab_item("Logs").selected:  # type: ignore
-                    self.draw_logs_tab()
-                    imgui.end_tab_item()
-
                 if imgui.begin_tab_item("Render").selected:  # type: ignore
                     self.draw_render_tab()
+                    imgui.end_tab_item()
+
+                if imgui.begin_tab_item("Tg stickers").selected:  # type: ignore
+                    self.draw_tg_stickers_tab()
                     imgui.end_tab_item()
 
                 imgui.end_tab_bar()

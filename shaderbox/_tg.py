@@ -7,7 +7,6 @@ TELEGRAM_BOT_TOKEN = "7497996082:AAEGQin96OvPZ1afUD2X_iz--WYYiaW2JEs"
 TELEGRAM_USER_ID = 284330085
 bot = tg.Bot(token=TELEGRAM_BOT_TOKEN)
 
-
 with Path("/home/akarnachev/src/shaderbox/new_low.webm").open("rb") as f:
     data = f.read()
 
