@@ -30,6 +30,7 @@ from shaderbox.vendors import get_modelbox_bg_removal, get_modelbox_depthmap
 _APP_DIR = Path(user_data_dir("shaderbox"))
 _NODES_DIR = _APP_DIR / "nodes"
 _TRASH_DIR = _APP_DIR / "trash"
+_APP_STATE_FILE = _APP_DIR / "app_state.json"
 
 _NODES_DIR.mkdir(exist_ok=True, parents=True)
 _TRASH_DIR.mkdir(exist_ok=True, parents=True)
@@ -117,14 +118,19 @@ def zero_low_alpha_pixels(image: Image.Image, min_alpha: float = 1.0) -> Image.I
 class UINodeState:
     resolution_combo_idx: int = 0
     video_quality_combo_idx: int = 0
+    video_fps_combo_idx: int = 0
     video_duration: int = 5
     video_file_path: str | None = None
-    tg_bot_token: str = ""
-    tg_user_id: str = ""
-    tg_sticker_set_name: str = ""
     selected_uniform_name: str = ""
     blur_kernel_size: int = 50
     normals_kernel_size: int = 3
+
+
+@dataclass
+class UIAppState:
+    tg_bot_token: str = ""
+    tg_user_id: str = ""
+    tg_sticker_set_name: str = ""
 
 
 class App:
@@ -160,6 +166,8 @@ class App:
         self.window = window
         self.imgui_renderer = GlfwRenderer(window)
 
+        self.app_ui_state = UIAppState()
+
         # ----------------------------------------------------------------
         # Load nodes
         self._node_ui_state = defaultdict(UINodeState)
@@ -187,6 +195,17 @@ class App:
 
                 self._node_ui_state[name] = UINodeState(**filtered_ui_state)
                 self.current_node_name = name
+
+        # ----------------------------------------------------------------
+        # Load app state
+        if _APP_STATE_FILE.exists():
+            with _APP_STATE_FILE.open("r") as f:
+                app_state_dict = json.load(f)
+                valid_fields = {f.name for f in fields(UIAppState)}
+                filtered_app_state = {
+                    k: v for k, v in app_state_dict.items() if k in valid_fields
+                }
+                self.app_ui_state = UIAppState(**filtered_app_state)
 
     @property
     def current_node_ui_state(self) -> UINodeState:
@@ -273,6 +292,11 @@ class App:
             self.save_node(self.current_node_name)
         else:
             logger.warning("Nothing to save")
+
+    def save_app_state(self) -> None:
+        app_state_dict = asdict(self.app_ui_state)
+        with _APP_STATE_FILE.open("w") as f:
+            json.dump(app_state_dict, f, indent=4)
 
     def create_new_current_node(self) -> None:
         node = Node()
@@ -392,7 +416,7 @@ class App:
                 else:
                     imgui.spacing()
 
-    def draw_shader_tab(self) -> None:
+    def draw_node_tab(self) -> None:
         if self.current_node_name:
             node = self.nodes[self.current_node_name]
         else:
@@ -453,15 +477,20 @@ class App:
             imgui.same_line()
             imgui.text_colored("(" + ", ".join(matching_uniforms) + ")", 0.5, 0.5, 0.5)
 
-        self.draw_combobox("resolution_combo_idx", resolution_items)
+        self.current_node_ui_state.resolution_combo_idx = imgui.combo(
+            "##resolution_combo_idx",
+            self.current_node_ui_state.resolution_combo_idx,
+            resolution_items,
+        )[1]
+        self.current_node_ui_state.resolution_combo_idx = min(
+            self.current_node_ui_state.resolution_combo_idx, len(resolution_items) - 1
+        )
 
         imgui.same_line()
         if imgui.button("Apply##resolution"):
             w, h = map(
                 int,
-                resolution_items[
-                    self._node_ui_state[self.current_node_name].resolution_combo_idx
-                ]
+                resolution_items[self.current_node_ui_state.resolution_combo_idx]
                 .split(" | ")[0]
                 .split("x"),
             )
@@ -513,19 +542,13 @@ class App:
             self.draw_selected_uniform_settings()
             imgui.end_child()
 
-    def draw_combobox(self, id: str, item_names: list[str]) -> int:
-        if not hasattr(self.current_node_ui_state, id):
-            setattr(self.current_node_ui_state, id, 0)
-        idx = getattr(self.current_node_ui_state, id)
+        # ----------------------------------------------------------------
+        # Render
+        imgui.new_line()
+        imgui.separator()
+        imgui.spacing()
 
-        is_changed, new_index = imgui.combo(f"##{id}", idx, item_names)
-        if is_changed:
-            idx = max(0, new_index)
-
-        idx = min(idx, len(item_names) - 1)
-        setattr(self._node_ui_state[self.current_node_name], id, idx)
-
-        return idx
+        self.draw_render()
 
     def draw_selected_uniform_settings(self) -> None:
         if self.current_node_name is None:
@@ -535,11 +558,13 @@ class App:
         if not node.program:
             return
 
-        selected_uniform_name = self.current_node_ui_state.selected_uniform_name
-        if not selected_uniform_name or selected_uniform_name not in node.program:
+        if (
+            not self.current_node_ui_state.selected_uniform_name
+            or self.current_node_ui_state.selected_uniform_name not in node.program
+        ):
             return
 
-        uniform = node.program[selected_uniform_name]
+        uniform = node.program[self.current_node_ui_state.selected_uniform_name]
         if not isinstance(uniform, moderngl.Uniform):
             return
 
@@ -587,25 +612,29 @@ class App:
 
             imgui.separator()
             imgui.text("Gaussian blur")
-            kernel_size = self.current_node_ui_state.blur_kernel_size
-            new_kernel_size = imgui.slider_int(
+            self.current_node_ui_state.blur_kernel_size = imgui.slider_int(
                 "##blur_kernel_size",
-                kernel_size,
+                self.current_node_ui_state.blur_kernel_size,
                 min_value=10,
                 max_value=100,
                 format="%d",
             )[1]
-            new_kernel_size = max(3, new_kernel_size | 1)
-            self.current_node_ui_state.blur_kernel_size = new_kernel_size
+            self.current_node_ui_state.blur_kernel_size = max(
+                3, self.current_node_ui_state.blur_kernel_size | 1
+            )
 
             imgui.same_line()
             if imgui.button("Apply##blur"):
                 image = texture_to_image(texture)
                 try:
                     img_array = np.array(image.convert("RGB"))
-                    kernel_size = self.current_node_ui_state.blur_kernel_size
                     blurred_array = cv2.GaussianBlur(
-                        img_array, (kernel_size, kernel_size), 0
+                        img_array,
+                        (
+                            self.current_node_ui_state.blur_kernel_size,
+                            self.current_node_ui_state.blur_kernel_size,
+                        ),
+                        0,
                     )
                     blurred_image = Image.fromarray(blurred_array).convert("RGBA")
                     texture = image_to_texture(blurred_image)
@@ -615,28 +644,110 @@ class App:
 
             imgui.separator()
             imgui.text("Normals")
-            kernel_size = self.current_node_ui_state.normals_kernel_size
-            new_kernel_size = imgui.slider_int(
+            self.current_node_ui_state.normals_kernel_size = imgui.slider_int(
                 "##normals_kernel_size",
-                kernel_size,
+                self.current_node_ui_state.normals_kernel_size,
                 min_value=3,
                 max_value=31,
                 format="%d",
             )[1]
-            new_kernel_size = max(3, new_kernel_size | 1)
-            self.current_node_ui_state.normals_kernel_size = new_kernel_size
+            self.current_node_ui_state.normals_kernel_size = max(
+                3, self.current_node_ui_state.normals_kernel_size | 1
+            )
 
             imgui.same_line()
             if imgui.button("Apply##normals"):
                 image = texture_to_image(texture)
                 try:
                     depthmap_image = get_modelbox_depthmap(zero_low_alpha_pixels(image))
-                    kernel_size = self.current_node_ui_state.normals_kernel_size
-                    normals_image = depthmap_to_normals(depthmap_image, kernel_size)
+                    normals_image = depthmap_to_normals(
+                        depthmap_image, self.current_node_ui_state.normals_kernel_size
+                    )
                     texture = image_to_texture(normals_image)
                     node.set_uniform_value(ui_uniform.name, texture)
                 except Exception as e:
                     logger.error(str(e))
+
+    def draw_render(self) -> None:
+        available_extensions = [".webm", ".mp4"]
+        available_qualities = ["low", "medium-low", "medium-high", "high"]
+        available_fps = ["15", "30", "60", "120"]
+
+        # ----------------------------------------------------------------
+        # Video output file
+        file_path = None
+        if imgui.button("Output file:##video_file_path"):
+            file_path = crossfiledialog.save_file(
+                title=f"Output file path ({available_extensions})",
+            )
+            if file_path:
+                video_extension = Path(file_path).suffix
+                if video_extension not in available_extensions:
+                    self.current_node_ui_state.video_file_path = None
+                    logger.warning(
+                        f"Can't select {video_extension} file, "
+                        f"available extensions are: {available_extensions}"
+                    )
+                else:
+                    self.current_node_ui_state.video_file_path = file_path
+
+        if self.current_node_ui_state.video_file_path:
+            imgui.same_line()
+            imgui.text_colored(
+                self.current_node_ui_state.video_file_path, 0.5, 0.5, 0.5
+            )
+
+        # ----------------------------------------------------------------
+        # Video fps combobox
+        imgui.text("FPS:")
+        self.current_node_ui_state.video_fps_combo_idx = imgui.combo(
+            "##video_fps_combo_idx",
+            self.current_node_ui_state.video_fps_combo_idx,
+            available_fps,
+        )[1]
+        self.current_node_ui_state.video_fps_combo_idx = min(
+            self.current_node_ui_state.video_fps_combo_idx, len(available_fps) - 1
+        )
+
+        # ----------------------------------------------------------------
+        # Video quality combobox
+        imgui.text("Quality:")
+        self.current_node_ui_state.video_quality_combo_idx = imgui.combo(
+            "##video_quality_combo_idx",
+            self.current_node_ui_state.video_quality_combo_idx,
+            available_qualities,
+        )[1]
+        self.current_node_ui_state.video_quality_combo_idx = min(
+            self.current_node_ui_state.video_quality_combo_idx,
+            len(available_qualities) - 1,
+        )
+
+        # ----------------------------------------------------------------
+        # Video duration
+        imgui.text("Duration, s:")
+        self.current_node_ui_state.video_duration = imgui.slider_int(
+            "##video_duration",
+            self.current_node_ui_state.video_duration,
+            min_value=1,
+            max_value=60,
+            format="%d",
+        )[1]
+
+        # ----------------------------------------------------------------
+        # Render button
+        file_path = self.current_node_ui_state.video_file_path
+        if file_path:
+            imgui.spacing()
+            if imgui.button("Render##video"):
+                node = self.nodes[self.current_node_name]  # type: ignore
+                node.render_to_video(
+                    file_path,
+                    duration=self.current_node_ui_state.video_duration,
+                    fps=int(
+                        available_fps[self.current_node_ui_state.video_fps_combo_idx]
+                    ),
+                    quality=self.current_node_ui_state.video_quality_combo_idx,
+                )
 
     def draw_ui_uniform(self, ui_uniform: UIUniform) -> None:
         if self.current_node_name is None:
@@ -717,113 +828,45 @@ class App:
 
         node.set_uniform_value(ui_uniform.name, value)
 
-    def draw_render_tab(self) -> None:
-        available_extensions = [".webm", ".mp4"]
-        available_qualities = ["low", "medium-low", "medium-high", "high"]
-        available_fps = ["15", "30", "60", "120"]
-
-        # ----------------------------------------------------------------
-        # Video output file
-        file_path = None
-        if imgui.button("Output file:##video_file_path"):
-            file_path = crossfiledialog.save_file(
-                title=f"Output file path ({available_extensions})",
-            )
-            if file_path:
-                video_extension = Path(file_path).suffix
-                if video_extension not in available_extensions:
-                    self.current_node_ui_state.video_file_path = None
-                    logger.warning(
-                        f"Can't select {video_extension} file, "
-                        f"available extensions are: {available_extensions}"
-                    )
-                else:
-                    self.current_node_ui_state.video_file_path = file_path
-
-        if self.current_node_ui_state.video_file_path:
-            imgui.same_line()
-            imgui.text_colored(
-                self.current_node_ui_state.video_file_path, 0.5, 0.5, 0.5
-            )
-
-        # ----------------------------------------------------------------
-        # Video fps combobox
-        imgui.text("FPS:")
-        fps_idx = self.draw_combobox("video_fps_combo_idx", available_fps)
-
-        # ----------------------------------------------------------------
-        # Video quality combobox
-        imgui.text("Quality:")
-        quality_idx = self.draw_combobox("video_quality_combo_idx", available_qualities)
-
-        # ----------------------------------------------------------------
-        # Video duration
-        imgui.text("Duration, s:")
-        video_duration = self.current_node_ui_state.video_duration
-        video_duration = imgui.slider_int(
-            "##video_duration",
-            video_duration,
-            min_value=1,
-            max_value=60,
-            format="%d",
-        )[1]
-        self.current_node_ui_state.video_duration = video_duration
-
-        # ----------------------------------------------------------------
-        # Render button
-        file_path = self.current_node_ui_state.video_file_path
-        if file_path:
-            imgui.spacing()
-            if imgui.button("Render##video"):
-                node = self.nodes[self.current_node_name]  # type: ignore
-                node.render_to_video(
-                    file_path,
-                    duration=video_duration,
-                    fps=int(available_fps[fps_idx]),
-                    quality=quality_idx,
-                )
-
     def draw_tg_stickers_tab(self) -> None:
         with imgui.begin_child("tg_settings", border=True):
-            self.current_node_ui_state.tg_bot_token = imgui.input_text(
+            self.app_ui_state.tg_bot_token = imgui.input_text(
                 "Bot token",
-                self.current_node_ui_state.tg_bot_token,
+                self.app_ui_state.tg_bot_token,
                 flags=imgui.INPUT_TEXT_PASSWORD,
             )[1]
 
-            self.current_node_ui_state.tg_user_id = imgui.input_text(
+            self.app_ui_state.tg_user_id = imgui.input_text(
                 "User id",
-                self.current_node_ui_state.tg_user_id,
+                self.app_ui_state.tg_user_id,
                 flags=imgui.INPUT_TEXT_CHARS_DECIMAL,
             )[1]
 
-            self.current_node_ui_state.tg_sticker_set_name = imgui.input_text(
+            self.app_ui_state.tg_sticker_set_name = imgui.input_text(
                 "Sticker set name",
-                self.current_node_ui_state.tg_sticker_set_name,
+                self.app_ui_state.tg_sticker_set_name,
                 flags=imgui.INPUT_TEXT_CHARS_NO_BLANK,
             )[1]
 
             if imgui.button("Connect", width=80):
                 import telegram as tg
 
-                bot = tg.Bot(token=self.current_node_ui_state.tg_bot_token)
-                sticker_set = asyncio.run(
-                    bot.get_sticker_set(
-                        name=self.current_node_ui_state.tg_sticker_set_name
+                bot = tg.Bot(token=self.app_ui_state.tg_bot_token)
+
+                sticker_set = None
+                with contextlib.suppress(tg.error.BadRequest):
+                    sticker_set = asyncio.run(
+                        bot.get_sticker_set(name=self.app_ui_state.tg_sticker_set_name)
                     )
-                )
-                print(sticker_set)
-                # telegram.error.BadRequest: Stickerset_invalid
+
+                if sticker_set is None:
+                    imgui.text_colored("Sticker set doesn't exist", 1.0, 0.0, 0.0)
 
     def draw_node_settings(self) -> None:
         with imgui.begin_child("node_settings", border=True):
             if imgui.begin_tab_bar("node_settings_tabs").opened:
-                if imgui.begin_tab_item("Shader").selected:  # type: ignore
-                    self.draw_shader_tab()
-                    imgui.end_tab_item()
-
-                if imgui.begin_tab_item("Render").selected:  # type: ignore
-                    self.draw_render_tab()
+                if imgui.begin_tab_item("Node").selected:  # type: ignore
+                    self.draw_node_tab()
                     imgui.end_tab_item()
 
                 if imgui.begin_tab_item("Tg stickers").selected:  # type: ignore
@@ -856,6 +899,7 @@ class App:
                 break
 
         self.save_current_node()
+        self.save_app_state()
 
     def update_and_draw(self) -> None:
         # ----------------------------------------------------------------
