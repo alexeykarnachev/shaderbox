@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import hashlib
+import io
 import json
 import math
 import shutil
@@ -18,6 +19,7 @@ import glfw
 import imgui
 import moderngl
 import numpy as np
+import telegram as tg
 from imgui.integrations.glfw import GlfwRenderer
 from loguru import logger
 from OpenGL.GL import GL_SAMPLER_2D, GLError
@@ -131,12 +133,12 @@ class UIAppState:
     tg_bot_token: str = ""
     tg_user_id: str = ""
     tg_sticker_set_name: str = ""
-    tg_sticker_set: dict[str, Any] | None = None
 
 
 class App:
     def __init__(self) -> None:
         glfw.init()
+        self._loop = asyncio.new_event_loop()
 
         monitor = glfw.get_primary_monitor()
         video_mode = glfw.get_video_mode(monitor)
@@ -207,6 +209,12 @@ class App:
                     k: v for k, v in app_state_dict.items() if k in valid_fields
                 }
                 self.app_ui_state = UIAppState(**filtered_app_state)
+
+        # ----------------------------------------------------------------
+        # Telegram
+        self._tg_bot: tg.Bot | None = None
+        self._tg_sticker_textures: list[moderngl.Texture] = []
+        self._tg_selected_sticker_idx: int = 0
 
     @property
     def current_node_ui_state(self) -> UINodeState:
@@ -751,21 +759,17 @@ class App:
 
         if ui_uniform.group_name == "special":
             if ui_uniform.array_length > 1:
-                # Handle array of floats (tuple or list)
                 value_str = ", ".join(f"{v:.3f}" for v in value)
                 imgui.text(
                     f"{ui_uniform.name}[{ui_uniform.array_length}]: [{value_str}]"
                 )
             elif ui_uniform.dimension == 1:
-                # Handle single float
                 imgui.text(f"{ui_uniform.name}: {value:.3f}")
             else:
-                # Handle multi-dimensional case (e.g., vec2, vec3, vec4)
                 if isinstance(value, Iterable):
                     value_str = ", ".join(f"{v:.3f}" for v in value)
                     imgui.text(f"{ui_uniform.name}: [{value_str}]")
                 else:
-                    # Fallback for unexpected cases
                     imgui.text(f"{ui_uniform.name}: {value}")
 
         elif ui_uniform.group_name == "image":
@@ -822,44 +826,85 @@ class App:
         node.set_uniform_value(ui_uniform.name, value)
 
     def draw_tg_stickers_tab(self) -> None:
-        with imgui.begin_child("tg_settings", border=True):
-            self.app_ui_state.tg_bot_token = imgui.input_text(
-                "Bot token",
-                self.app_ui_state.tg_bot_token,
-                flags=imgui.INPUT_TEXT_PASSWORD,
-            )[1]
+        # ----------------------------------------------------------------
+        # Telegram settings
+        self.app_ui_state.tg_bot_token = imgui.input_text(
+            "Bot token",
+            self.app_ui_state.tg_bot_token,
+            flags=imgui.INPUT_TEXT_PASSWORD,
+        )[1]
 
-            self.app_ui_state.tg_user_id = imgui.input_text(
-                "User id",
-                self.app_ui_state.tg_user_id,
-                flags=imgui.INPUT_TEXT_CHARS_DECIMAL,
-            )[1]
+        self.app_ui_state.tg_user_id = imgui.input_text(
+            "User id",
+            self.app_ui_state.tg_user_id,
+            flags=imgui.INPUT_TEXT_CHARS_DECIMAL,
+        )[1]
 
-            self.app_ui_state.tg_sticker_set_name = imgui.input_text(
-                "Sticker set name",
-                self.app_ui_state.tg_sticker_set_name,
-                flags=imgui.INPUT_TEXT_CHARS_NO_BLANK,
-            )[1]
+        self.app_ui_state.tg_sticker_set_name = imgui.input_text(
+            "Sticker set name",
+            self.app_ui_state.tg_sticker_set_name,
+            flags=imgui.INPUT_TEXT_CHARS_NO_BLANK,
+        )[1]
 
-            if imgui.button("Connect", width=80):
-                import telegram as tg
+        # ----------------------------------------------------------------
+        # Connect to sticker set
+        if imgui.button("Connect", width=80):
+            import telegram as tg
 
-                bot = tg.Bot(token=self.app_ui_state.tg_bot_token)
+            for texture in self._tg_sticker_textures:
+                texture.release()
+            self._tg_sticker_textures = []
 
-                try:
-                    sticker_set = asyncio.run(
-                        bot.get_sticker_set(name=self.app_ui_state.tg_sticker_set_name)
-                    )
-                    self.app_ui_state.tg_sticker_set = sticker_set.to_dict()
-                    print(self.app_ui_state.tg_sticker_set)
-                except tg.error.BadRequest as e:
-                    msg = str(e)
-                    logger.error("Bad request: " + str(e))
+            if not self._tg_bot:
+                self._tg_bot = tg.Bot(token=self.app_ui_state.tg_bot_token)
 
-                    if msg == "Stickerset_invalid":
-                        pass
-                except tg.error.InvalidToken:
-                    logger.error("Invalid telegram token")
+            try:
+                get_sticker_set_coro = self._tg_bot.get_sticker_set(
+                    name=self.app_ui_state.tg_sticker_set_name
+                )
+                sticker_set = self._loop.run_until_complete(get_sticker_set_coro)
+                for sticker in sticker_set.stickers:
+                    file = self._loop.run_until_complete(sticker.thumbnail.get_file())  # type: ignore
+                    barray = self._loop.run_until_complete(file.download_as_bytearray())
+                    image = Image.open(io.BytesIO(barray))
+                    texture = image_to_texture(image)
+                    self._tg_sticker_textures.append(texture)
+            except tg.error.InvalidToken:
+                logger.error("Invalid telegram token")
+            except tg.error.BadRequest as e:
+                if str(e) == "Stickerset_invalid":
+                    logger.info("Sticker set doesn't exist yet")
+                else:
+                    raise e
+
+        imgui.new_line()
+        imgui.separator()
+        imgui.spacing()
+
+        # ----------------------------------------------------------------
+        # Sticker thumbnails
+        for i, texture in enumerate(self._tg_sticker_textures):
+            image_height = 90
+            image_width = image_height * texture.width / max(texture.height, 1)
+
+            n_styles = 0
+            if self._tg_selected_sticker_idx == i:
+                color = (0.0, 1.0, 0.0, 1.0)
+                imgui.push_style_color(imgui.COLOR_BUTTON, *color)
+                imgui.push_style_color(imgui.COLOR_BUTTON_HOVERED, *color)
+                imgui.push_style_color(imgui.COLOR_BUTTON_ACTIVE, *color)
+                n_styles += 3
+
+            if imgui.image_button(
+                texture.glo,
+                width=image_width,
+                height=image_height,
+                uv0=(0, 1),
+                uv1=(1, 0),
+            ):
+                self._tg_selected_sticker_idx = i
+
+            imgui.pop_style_color(n_styles)
 
     def draw_node_settings(self) -> None:
         with imgui.begin_child("node_settings", border=True):
