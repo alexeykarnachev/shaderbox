@@ -226,14 +226,7 @@ class Node:
             self._uniform_values[name] = value
         return value
 
-    def render_to_image(
-        self,
-        output_size: tuple[int, int] | None = None,
-        u_time: float | None = 0.0,
-    ) -> Image.Image:
-        if output_size and self.output_texture_size != output_size:
-            self.reset_output_texture_size(output_size)
-
+    def render_to_image(self, u_time: float | None = 0.0) -> Image.Image:
         self.render(u_time=u_time)
 
         if self.shader_error:
@@ -243,29 +236,55 @@ class Node:
 
     def render_to_video(
         self,
-        output_path: str | Path,
-        output_size: tuple[int, int] | None = None,
+        file_path: str | Path,
         duration: float = 5.0,
         fps: int = 30,
+        quality: int = 2,
     ) -> None:
-        output_path = Path(output_path)
-        extension = output_path.suffix
+        if not 0 <= quality <= 3:
+            raise ValueError("Quality must be an integer between 0 and 3")
+
+        file_path = Path(file_path)
+        extension = file_path.suffix
 
         if extension == ".mp4":
             codec = "libx264"
             pixelformat = "yuv420p"
-            ffmpeg_params = ["-crf", "23", "-preset", "medium"]
+
+            mp4_crf = [33, 28, 23, 18]
+            mp4_presets = ["ultrafast", "fast", "medium", "slow"]
+
+            crf = mp4_crf[quality]
+            preset = mp4_presets[quality]
+            ffmpeg_params = ["-crf", str(crf), "-preset", preset]
         elif extension == ".webm":
             codec = "libvpx-vp9"
-            pixelformat = "yuv444p"
-            ffmpeg_params = ["-crf", "30", "-b:v", "0"]
+            pixelformat = "yuv420p"
+
+            webm_crf = [50, 40, 30, 20]
+            webm_cpu_used = [5, 4, 3, 2]
+
+            crf = webm_crf[quality]
+            cpu_used = webm_cpu_used[quality]
+            ffmpeg_params = [
+                "-crf",
+                str(crf),
+                "-b:v",
+                "0",
+                "-cpu-used",
+                str(cpu_used),
+                "-deadline",
+                "realtime",
+                "-threads",
+                "0",
+            ]
         else:
             raise ValueError(
                 f"Unsupported extension: {extension}, only .mp4 and .webm are allowed"
             )
 
         writer = imageio.get_writer(
-            output_path,
+            file_path,
             fps=fps,
             codec=codec,
             ffmpeg_params=ffmpeg_params,
@@ -275,33 +294,8 @@ class Node:
         n_frames = int(duration * fps)
         for i in range(n_frames):
             u_time = i / fps
-            frame = self.render_to_image(output_size, u_time)
+            frame = self.render_to_image(u_time)
             frame_np = np.array(frame.convert("RGB"))
             writer.append_data(frame_np)
 
         writer.close()
-
-    def render_to_gif(
-        self,
-        output_path: str | Path,
-        output_size: tuple[int, int] | None = None,
-        duration: float = 5.0,
-        fps: int = 30,
-    ) -> None:
-        frames = []
-        n_frames = int(duration * fps)
-        for i in range(n_frames):
-            u_time = i / fps
-            frame = self.render_to_image(output_size, u_time)
-            frames.append(frame)
-
-        frames[0].save(
-            output_path,
-            save_all=True,
-            append_images=frames[1:],
-            duration=1000 / fps,
-            loop=0,
-        )
-
-        for frame in frames:
-            frame.close()

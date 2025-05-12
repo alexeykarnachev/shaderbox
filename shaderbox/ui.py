@@ -509,7 +509,7 @@ class App:
             self.draw_selected_uniform_settings()
             imgui.end_child()
 
-    def draw_combobox(self, id: str, item_names: list[str]) -> str:
+    def draw_combobox(self, id: str, item_names: list[str]) -> int:
         if not hasattr(self.current_node_ui_state, id):
             setattr(self.current_node_ui_state, id, 0)
         idx = getattr(self.current_node_ui_state, id)
@@ -521,7 +521,7 @@ class App:
         idx = min(idx, len(item_names) - 1)
         setattr(self._node_ui_state[self.current_node_name], id, idx)
 
-        return item_names[idx]
+        return idx
 
     def draw_selected_uniform_settings(self) -> None:
         if self.current_node_name is None:
@@ -718,6 +718,8 @@ class App:
 
     def draw_render_tab(self) -> None:
         available_extensions = [".webm", ".mp4"]
+        available_qualities = ["low", "medium-low", "medium-high", "high"]
+        available_fps = ["15", "30", "60", "120"]
 
         # ----------------------------------------------------------------
         # Video output file
@@ -744,9 +746,14 @@ class App:
             )
 
         # ----------------------------------------------------------------
+        # Video fps combobox
+        imgui.text("FPS:")
+        fps_idx = self.draw_combobox("video_fps_combo_idx", available_fps)
+
+        # ----------------------------------------------------------------
         # Video quality combobox
         imgui.text("Quality:")
-        self.draw_combobox("video_quality_combo_idx", ["low", "medium", "high"])
+        quality_idx = self.draw_combobox("video_quality_combo_idx", available_qualities)
 
         # ----------------------------------------------------------------
         # Video duration
@@ -768,7 +775,12 @@ class App:
             imgui.spacing()
             if imgui.button("Render##video"):
                 node = self.nodes[self.current_node_name]  # type: ignore
-                node.render_to_video(file_path, duration=video_duration)
+                node.render_to_video(
+                    file_path,
+                    duration=video_duration,
+                    fps=int(available_fps[fps_idx]),
+                    quality=quality_idx,
+                )
 
     def draw_node_settings(self) -> None:
         with imgui.begin_child("node_settings", border=True):
