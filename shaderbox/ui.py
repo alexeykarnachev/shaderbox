@@ -75,6 +75,155 @@ class UIUniform:
             return imgui.get_text_line_height_with_spacing()  # type: ignore
 
 
+class UITelegramSticker:
+    def __init__(
+        self,
+        sticker: tg.Sticker,
+        loop: asyncio.AbstractEventLoop,
+        bot: tg.Bot,
+    ) -> None:
+        """Initialize a Telegram sticker with necessary dependencies."""
+        self.sticker = sticker
+        self.loop = loop
+        self.bot = bot
+        self.texture: moderngl.Texture | None = None
+        self.video_cap: cv2.VideoCapture | None = None
+        self.is_playing: bool = False
+        self.last_frame_time: float = 0
+        self.video_path: Path | None = None
+
+    def load_texture(self, barray: bytes | None = None) -> None:
+        """Load the sticker's texture, using thumbnail or main file."""
+        if self.texture:
+            self.texture.release()
+            self.texture = None
+
+        if barray:
+            # Use provided byte array (e.g., from thumbnail or main file)
+            try:
+                image = Image.open(io.BytesIO(barray))
+                self.texture = image_to_texture(image)
+            except Exception as e:
+                logger.error(
+                    f"Failed to load texture from byte array for sticker {self.sticker.file_id}: {e}"
+                )
+                self.texture = None
+        elif self.sticker.thumbnail:
+            # Try loading from thumbnail
+            try:
+                file = self.loop.run_until_complete(
+                    self.bot.get_file(self.sticker.thumbnail.file_id)
+                )
+                barray = bytes(
+                    self.loop.run_until_complete(file.download_as_bytearray())
+                )  # Convert bytearray to bytes
+                image = Image.open(io.BytesIO(barray))
+                self.texture = image_to_texture(image)
+            except Exception as e:
+                logger.error(
+                    f"Failed to load thumbnail for sticker {self.sticker.file_id}: {e}"
+                )
+                self.texture = None
+        else:
+            # No thumbnail; try main file
+            try:
+                file = self.loop.run_until_complete(
+                    self.bot.get_file(self.sticker.file_id)
+                )
+                barray = bytes(
+                    self.loop.run_until_complete(file.download_as_bytearray())
+                )  # Convert bytearray to bytes
+                image = Image.open(io.BytesIO(barray))
+                self.texture = image_to_texture(image)
+            except Exception as e:
+                logger.error(
+                    f"Failed to load main file for sticker {self.sticker.file_id}: {e}"
+                )
+                self.texture = None
+
+    def start_playback(self) -> None:
+        """Start video playback for video stickers if not already playing."""
+        if not self.sticker.is_video or self.is_playing:
+            return
+        try:
+            file = self.loop.run_until_complete(self.bot.get_file(self.sticker.file_id))
+            video_bytes = bytes(
+                self.loop.run_until_complete(file.download_as_bytearray())
+            )
+            self.video_path = _APP_DIR / f"temp_sticker_{id(self)}.webm"
+            with self.video_path.open("wb") as f:
+                f.write(video_bytes)
+            self.video_cap = cv2.VideoCapture(str(self.video_path))
+            if self.video_cap.isOpened():
+                self.is_playing = True
+                self.last_frame_time = glfw.get_time()
+            else:
+                self.video_path.unlink(missing_ok=True)
+                self.video_path = None
+        except Exception as e:
+            logger.error(
+                f"Failed to start playback for sticker {self.sticker.file_id}: {e}"
+            )
+
+    def update_video_frame(self, current_time: float) -> None:
+        """Update the texture with the next video frame if it's time to do so."""
+        if not self.is_playing or not self.video_cap:
+            return
+        fps = self.video_cap.get(cv2.CAP_PROP_FPS) or 30
+        frame_interval = 1.0 / fps
+        if current_time - self.last_frame_time >= frame_interval:
+            ret, frame = self.video_cap.read()
+            if ret:
+                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGBA)
+                image = Image.fromarray(frame_rgb)
+                if self.texture:
+                    self.texture.release()
+                self.texture = image_to_texture(image)
+                self.last_frame_time = current_time
+            else:
+                # Loop the video
+                self.video_cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+        if not self.video_cap.isOpened():
+            self.stop_playback()
+
+    def stop_playback(self) -> None:
+        """Stop video playback and restore the thumbnail texture."""
+        if self.video_cap:
+            self.video_cap.release()
+            self.video_cap = None
+        if self.video_path:
+            self.video_path.unlink(missing_ok=True)
+            self.video_path = None
+        self.is_playing = False
+        if self.sticker.thumbnail:
+            try:
+                file = self.loop.run_until_complete(
+                    self.bot.get_file(self.sticker.thumbnail.file_id)
+                )
+                barray = bytes(
+                    self.loop.run_until_complete(file.download_as_bytearray())
+                )
+                self.load_texture(barray)
+            except Exception as e:
+                logger.error(
+                    f"Failed to restore thumbnail for sticker {self.sticker.file_id}: {e}"
+                )
+                self.texture = None
+        else:
+            # No thumbnail; try main file
+            self.load_texture()
+
+    def release(self) -> None:
+        if self.texture:
+            self.texture.release()
+
+        if self.video_cap:
+            self.video_cap.release()
+
+        if self.video_path:
+            self.video_path.unlink(missing_ok=True)
+
+
 def get_resolution_str(name: str | None, w: int, h: int) -> str:
     g = math.gcd(w, h)
     w_ratio, h_ratio = w // g, h // g
@@ -213,8 +362,9 @@ class App:
         # ----------------------------------------------------------------
         # Telegram
         self._tg_bot: tg.Bot | None = None
-        self._tg_sticker_textures: list[moderngl.Texture] = []
+        self._tg_stickers: list[UITelegramSticker] = []
         self._tg_selected_sticker_idx: int = 0
+        self._tg_is_connected: bool = False
 
     @property
     def current_node_ui_state(self) -> UINodeState:
@@ -306,6 +456,10 @@ class App:
         app_state_dict = asdict(self.app_ui_state)
         with _APP_STATE_FILE.open("w") as f:
             json.dump(app_state_dict, f, indent=4)
+
+    def save(self) -> None:
+        self.save_current_node()
+        self.save_app_state()
 
     def create_new_current_node(self) -> None:
         node = Node()
@@ -849,11 +1003,9 @@ class App:
         # ----------------------------------------------------------------
         # Connect to sticker set
         if imgui.button("Connect", width=80):
-            import telegram as tg
-
-            for texture in self._tg_sticker_textures:
-                texture.release()
-            self._tg_sticker_textures = []
+            for sticker in self._tg_stickers:
+                sticker.release()
+            self._tg_stickers = []
 
             if not self._tg_bot:
                 self._tg_bot = tg.Bot(token=self.app_ui_state.tg_bot_token)
@@ -863,12 +1015,30 @@ class App:
                     name=self.app_ui_state.tg_sticker_set_name
                 )
                 sticker_set = self._loop.run_until_complete(get_sticker_set_coro)
-                for sticker in sticker_set.stickers:
-                    file = self._loop.run_until_complete(sticker.thumbnail.get_file())  # type: ignore
-                    barray = self._loop.run_until_complete(file.download_as_bytearray())
-                    image = Image.open(io.BytesIO(barray))
-                    texture = image_to_texture(image)
-                    self._tg_sticker_textures.append(texture)
+
+                async def get_sticker_barray(sticker: tg.Sticker) -> bytes | None:
+                    if sticker.thumbnail:
+                        file = await sticker.thumbnail.get_file()  # type: ignore
+                        barray = bytes(await file.download_as_bytearray())
+                        return barray
+                    return None
+
+                async def process_stickers(
+                    stickers: Iterable[tg.Sticker],
+                ) -> list[bytes | None]:
+                    coros = [get_sticker_barray(s) for s in stickers]
+                    barrays = await asyncio.gather(*coros)
+                    return barrays
+
+                barrays = self._loop.run_until_complete(
+                    process_stickers(sticker_set.stickers)
+                )
+
+                for barray, sticker in zip(barrays, sticker_set.stickers, strict=True):
+                    ui_sticker = UITelegramSticker(sticker, self._loop, self._tg_bot)
+                    ui_sticker.load_texture(barray)
+                    self._tg_stickers.append(ui_sticker)
+                self._tg_is_connected = True
             except tg.error.InvalidToken:
                 logger.error("Invalid telegram token")
             except tg.error.BadRequest as e:
@@ -882,29 +1052,87 @@ class App:
         imgui.spacing()
 
         # ----------------------------------------------------------------
-        # Sticker thumbnails
-        for i, texture in enumerate(self._tg_sticker_textures):
+        # Sticker thumbnails and settings
+        available_width, available_height = imgui.get_content_region_available()
+        sticker_grid_width = 0.3 * available_width
+
+        imgui.begin_child(
+            "sticker_grid",
+            width=sticker_grid_width,
+            height=available_height,
+            border=True,
+        )
+
+        for i, sticker in enumerate(self._tg_stickers):
+            if sticker.sticker.is_video and not sticker.is_playing:
+                sticker.start_playback()
+            if sticker.is_playing:
+                sticker.update_video_frame(glfw.get_time())
+
+            texture = sticker.texture
             image_height = 90
-            image_width = image_height * texture.width / max(texture.height, 1)
+
+            if texture:
+                image_width = image_height * texture.width / max(texture.height, 1)
+            else:
+                image_width = image_height
+
+            image_width = int(image_width)
+            imgui.text(f"Sticker {i}")
 
             n_styles = 0
-            if self._tg_selected_sticker_idx == i:
-                color = (0.0, 1.0, 0.0, 1.0)
+            if i == self._tg_selected_sticker_idx:
+                color = (0.0, 1.0, 0.0, 1.0)  # Green for selected
                 imgui.push_style_color(imgui.COLOR_BUTTON, *color)
                 imgui.push_style_color(imgui.COLOR_BUTTON_HOVERED, *color)
                 imgui.push_style_color(imgui.COLOR_BUTTON_ACTIVE, *color)
                 n_styles += 3
 
-            if imgui.image_button(
-                texture.glo,
-                width=image_width,
-                height=image_height,
-                uv0=(0, 1),
-                uv1=(1, 0),
-            ):
-                self._tg_selected_sticker_idx = i
+            if texture:
+                if imgui.image_button(
+                    texture.glo,
+                    width=image_width,
+                    height=image_height,
+                    uv0=(0, 1),
+                    uv1=(1, 0),
+                ):
+                    self._tg_selected_sticker_idx = i
+            else:
+                if imgui.button("No Texture", width=image_width, height=image_height):
+                    self._tg_selected_sticker_idx = i
 
             imgui.pop_style_color(n_styles)
+            imgui.spacing()
+
+        imgui.end_child()
+
+        imgui.same_line()
+        imgui.begin_child("selected_sticker_settings", border=True)
+
+        if self._tg_selected_sticker_idx < len(self._tg_stickers):
+            selected_sticker = self._tg_stickers[self._tg_selected_sticker_idx]
+            selected_texture = selected_sticker.texture
+            imgui.text(f"Selected sticker: {self._tg_selected_sticker_idx}")
+
+            if selected_texture:
+                max_image_width = imgui.get_content_region_available()[0]
+                max_image_height = 200
+                image_aspect = selected_texture.width / selected_texture.height
+                image_width = min(max_image_width, max_image_height * image_aspect)
+                image_height = min(max_image_height, max_image_width / image_aspect)
+                imgui.image(
+                    selected_texture.glo,
+                    width=image_width,
+                    height=image_height,
+                    uv0=(0, 1),
+                    uv1=(1, 0),
+                )
+            else:
+                imgui.text("No texture available")
+        else:
+            imgui.text("No sticker selected")
+
+        imgui.end_child()
 
     def draw_node_settings(self) -> None:
         with imgui.begin_child("node_settings", border=True):
@@ -930,7 +1158,7 @@ class App:
         if io.key_ctrl and imgui.is_key_pressed(ord("D")):
             self.delete_current_node()
         if io.key_ctrl and imgui.is_key_pressed(ord("S")):
-            self.save_current_node()
+            self.save()
         if io.key_ctrl and imgui.is_key_pressed(ord("E")):
             self.edit_current_node_fs_file()
 
@@ -946,8 +1174,7 @@ class App:
             if glfw.get_key(self.window, glfw.KEY_ESCAPE) == glfw.PRESS:
                 break
 
-        self.save_current_node()
-        self.save_app_state()
+        self.save()
 
     def update_and_draw(self) -> None:
         # ----------------------------------------------------------------
