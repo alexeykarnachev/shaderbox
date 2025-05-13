@@ -32,10 +32,12 @@ from shaderbox.vendors import get_modelbox_bg_removal, get_modelbox_depthmap
 _APP_DIR = Path(user_data_dir("shaderbox"))
 _NODES_DIR = _APP_DIR / "nodes"
 _TRASH_DIR = _APP_DIR / "trash"
+_VIDEO_DIR = _APP_DIR / "video"
 _APP_STATE_FILE = _APP_DIR / "app_state.json"
 
 _NODES_DIR.mkdir(exist_ok=True, parents=True)
 _TRASH_DIR.mkdir(exist_ok=True, parents=True)
+_VIDEO_DIR.mkdir(exist_ok=True, parents=True)
 
 
 class UIUniform:
@@ -75,78 +77,63 @@ class UIUniform:
             return imgui.get_text_line_height_with_spacing()  # type: ignore
 
 
-class UIVideo:
-    def __init__(self, file_path: Path):
-        self._cap = cv2.VideoCapture(str(file_path))
-
+class UITelegramSticker:
+    def __init__(self, sticker: tg.Sticker):
+        self._sticker = sticker
         self._last_update_time: float = 0.0
-        self._file_path = file_path
 
-        self.texture: moderngl.Texture | None = None
+        self._video_file_path: Path
+        self._texture: moderngl.Texture
+
+        self._video_capture: cv2.VideoCapture | None = None
+
+    async def load(self) -> "UITelegramSticker":
+        bot = self._sticker.get_bot()
+
+        if self._sticker.is_video:
+            file_name = self._sticker.file_id + ".webm"
+            self._video_file_path = _VIDEO_DIR / file_name
+
+            file = await bot.get_file(self._sticker.file_id)
+            await file.download_to_drive(self._video_file_path)
+
+            self._video_capture = cv2.VideoCapture(str(self._video_file_path))
+
+        if self._sticker.thumbnail:
+            file = await bot.get_file(self._sticker.thumbnail.file_id)
+            barray = await file.download_as_bytearray()
+            image = Image.open(io.BytesIO(barray))
+        else:
+            image = Image.new("RGBA", (512, 512), (255, 0, 0, 255))
+
+        self._texture = image_to_texture(image)
+
+        return self
 
     def update(self, current_time: float) -> None:
-        if not self._cap.isOpened():
+        # Update makes sense only for video stickers
+        if self._video_capture is None:
             return
 
-        frame_period = 1.0 / (self._cap.get(cv2.CAP_PROP_FPS) or 30)
+        frame_period = 1.0 / self._video_capture.get(cv2.CAP_PROP_FPS)
+
         if current_time - self._last_update_time >= frame_period:
-            ret, frame = self._cap.read()
-            if ret:
+            is_frame, frame = self._video_capture.read()
+            if is_frame:
                 frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGBA)
                 image = Image.fromarray(frame_rgb)
-                if self.texture:
-                    self.texture.release()
-                self.texture = image_to_texture(image)
+                self._texture.release()
+                self._texture = image_to_texture(image)
                 self._last_update_time = current_time
             else:  # Loop the video
-                self._cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                self._video_capture.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
     def release(self) -> None:
-        if self.texture:
-            self.texture.release()
+        if self._video_capture:
+            self._video_capture.release()
+            self._video_file_path.unlink()
 
-        self._cap.release()
-        self._file_path.unlink(missing_ok=True)
-
-
-async def load_sticker_texture(bot: tg.Bot, sticker: tg.Sticker) -> moderngl.Texture:
-    file_id = sticker.thumbnail.file_id if sticker.thumbnail else sticker.file_id
-    file = await bot.get_file(file_id)
-    barray = bytes(await file.download_as_bytearray())
-    image = Image.open(io.BytesIO(barray))
-    return image_to_texture(image)
-
-
-async def load_sticker_video(bot: tg.Bot, sticker: tg.Sticker) -> UIVideo:
-    file = await bot.get_file(sticker.file_id)
-    video_bytes = bytes(await file.download_as_bytearray())
-    video_path = _APP_DIR / f"temp_sticker_{sticker.file_id}.webm"
-    with video_path.open("wb") as f:
-        f.write(video_bytes)
-    return UIVideo(video_path)
-
-
-class UITelegramSticker:
-    def __init__(
-        self,
-        sticker: tg.Sticker,
-        texture: moderngl.Texture | None = None,
-        video: UIVideo | None = None,
-    ):
-        self.sticker = sticker
-        self.texture = texture  # Static texture or None if video
-        self.video = video  # Video handler if applicable
-
-    def update(self, current_time: float) -> None:
-        if self.video:
-            self.video.update(current_time)
-            self.texture = self.video.texture  # Update texture from video
-
-    def release(self) -> None:
-        if self.texture and not self.video:  # Only release texture if static
-            self.texture.release()
-        if self.video:
-            self.video.release()
+        self._texture.release()
 
 
 def get_resolution_str(name: str | None, w: int, h: int) -> str:
@@ -286,10 +273,8 @@ class App:
 
         # ----------------------------------------------------------------
         # Telegram
-        self._tg_bot: tg.Bot | None = None
         self._tg_stickers: list[UITelegramSticker] = []
         self._tg_selected_sticker_idx: int = 0
-        self._tg_is_connected: bool = False
 
     @property
     def current_node_ui_state(self) -> UINodeState:
@@ -927,40 +912,25 @@ class App:
 
         # ----------------------------------------------------------------
         # Connect to sticker set
+        async def load_stickers() -> list[UITelegramSticker]:
+            bot = tg.Bot(token=self.app_ui_state.tg_bot_token)
+            sticker_set = await bot.get_sticker_set(
+                name=self.app_ui_state.tg_sticker_set_name
+            )
+            coros = [UITelegramSticker(s).load() for s in sticker_set.stickers]
+            return await asyncio.gather(*coros)
+
         if imgui.button("Connect", width=80):
             for sticker in self._tg_stickers:
                 sticker.release()
-            self._tg_stickers = []
-
-            if not self._tg_bot:
-                self._tg_bot = tg.Bot(token=self.app_ui_state.tg_bot_token)
 
             try:
-                sticker_set = self._loop.run_until_complete(
-                    self._tg_bot.get_sticker_set(
-                        name=self.app_ui_state.tg_sticker_set_name
-                    )
-                )
-
-                # Process stickers
-                for sticker in sticker_set.stickers:
-                    if sticker.is_video:
-                        video = self._loop.run_until_complete(
-                            load_sticker_video(self._tg_bot, sticker)
-                        )
-                        ui_sticker = UITelegramSticker(sticker, video=video)
-                    else:
-                        texture = self._loop.run_until_complete(
-                            load_sticker_texture(self._tg_bot, sticker)
-                        )
-                        ui_sticker = UITelegramSticker(sticker, texture=texture)
-                    self._tg_stickers.append(ui_sticker)
-                self._tg_is_connected = True
+                self._tg_stickers = self._loop.run_until_complete(load_stickers())
             except tg.error.InvalidToken:
                 logger.error("Invalid telegram token")
             except tg.error.BadRequest as e:
                 if str(e) == "Stickerset_invalid":
-                    logger.info("Sticker set doesn't exist yet")
+                    logger.info("Sticker set doesn't exist")
                 else:
                     raise e
 
@@ -980,9 +950,10 @@ class App:
             border=True,
         )
 
+        current_time = glfw.get_time()
         for i, sticker in enumerate(self._tg_stickers):
-            sticker.update(glfw.get_time())
-            texture = sticker.texture
+            sticker.update(current_time)
+            texture = sticker._texture
             image_height = 90
 
             if texture:
@@ -1024,7 +995,7 @@ class App:
 
         if self._tg_selected_sticker_idx < len(self._tg_stickers):
             selected_sticker = self._tg_stickers[self._tg_selected_sticker_idx]
-            selected_texture = selected_sticker.texture
+            selected_texture = selected_sticker._texture
             imgui.text(f"Selected sticker: {self._tg_selected_sticker_idx}")
 
             if selected_texture:
