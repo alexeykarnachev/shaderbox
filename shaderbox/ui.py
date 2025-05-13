@@ -75,153 +75,78 @@ class UIUniform:
             return imgui.get_text_line_height_with_spacing()  # type: ignore
 
 
-class UITelegramSticker:
-    def __init__(
-        self,
-        sticker: tg.Sticker,
-        loop: asyncio.AbstractEventLoop,
-        bot: tg.Bot,
-    ) -> None:
-        """Initialize a Telegram sticker with necessary dependencies."""
-        self.sticker = sticker
-        self.loop = loop
-        self.bot = bot
+class UIVideo:
+    def __init__(self, file_path: Path):
+        self._cap = cv2.VideoCapture(str(file_path))
+
+        self._last_update_time: float = 0.0
+        self._file_path = file_path
+
         self.texture: moderngl.Texture | None = None
-        self.video_cap: cv2.VideoCapture | None = None
-        self.is_playing: bool = False
-        self.last_frame_time: float = 0
-        self.video_path: Path | None = None
 
-    def load_texture(self, barray: bytes | None = None) -> None:
-        """Load the sticker's texture, using thumbnail or main file."""
-        if self.texture:
-            self.texture.release()
-            self.texture = None
-
-        if barray:
-            # Use provided byte array (e.g., from thumbnail or main file)
-            try:
-                image = Image.open(io.BytesIO(barray))
-                self.texture = image_to_texture(image)
-            except Exception as e:
-                logger.error(
-                    f"Failed to load texture from byte array for sticker {self.sticker.file_id}: {e}"
-                )
-                self.texture = None
-        elif self.sticker.thumbnail:
-            # Try loading from thumbnail
-            try:
-                file = self.loop.run_until_complete(
-                    self.bot.get_file(self.sticker.thumbnail.file_id)
-                )
-                barray = bytes(
-                    self.loop.run_until_complete(file.download_as_bytearray())
-                )  # Convert bytearray to bytes
-                image = Image.open(io.BytesIO(barray))
-                self.texture = image_to_texture(image)
-            except Exception as e:
-                logger.error(
-                    f"Failed to load thumbnail for sticker {self.sticker.file_id}: {e}"
-                )
-                self.texture = None
-        else:
-            # No thumbnail; try main file
-            try:
-                file = self.loop.run_until_complete(
-                    self.bot.get_file(self.sticker.file_id)
-                )
-                barray = bytes(
-                    self.loop.run_until_complete(file.download_as_bytearray())
-                )  # Convert bytearray to bytes
-                image = Image.open(io.BytesIO(barray))
-                self.texture = image_to_texture(image)
-            except Exception as e:
-                logger.error(
-                    f"Failed to load main file for sticker {self.sticker.file_id}: {e}"
-                )
-                self.texture = None
-
-    def start_playback(self) -> None:
-        """Start video playback for video stickers if not already playing."""
-        if not self.sticker.is_video or self.is_playing:
+    def update(self, current_time: float) -> None:
+        if not self._cap.isOpened():
             return
-        try:
-            file = self.loop.run_until_complete(self.bot.get_file(self.sticker.file_id))
-            video_bytes = bytes(
-                self.loop.run_until_complete(file.download_as_bytearray())
-            )
-            self.video_path = _APP_DIR / f"temp_sticker_{id(self)}.webm"
-            with self.video_path.open("wb") as f:
-                f.write(video_bytes)
-            self.video_cap = cv2.VideoCapture(str(self.video_path))
-            if self.video_cap.isOpened():
-                self.is_playing = True
-                self.last_frame_time = glfw.get_time()
-            else:
-                self.video_path.unlink(missing_ok=True)
-                self.video_path = None
-        except Exception as e:
-            logger.error(
-                f"Failed to start playback for sticker {self.sticker.file_id}: {e}"
-            )
 
-    def update_video_frame(self, current_time: float) -> None:
-        """Update the texture with the next video frame if it's time to do so."""
-        if not self.is_playing or not self.video_cap:
-            return
-        fps = self.video_cap.get(cv2.CAP_PROP_FPS) or 30
-        frame_interval = 1.0 / fps
-        if current_time - self.last_frame_time >= frame_interval:
-            ret, frame = self.video_cap.read()
+        frame_period = 1.0 / (self._cap.get(cv2.CAP_PROP_FPS) or 30)
+        if current_time - self._last_update_time >= frame_period:
+            ret, frame = self._cap.read()
             if ret:
                 frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGBA)
                 image = Image.fromarray(frame_rgb)
                 if self.texture:
                     self.texture.release()
                 self.texture = image_to_texture(image)
-                self.last_frame_time = current_time
-            else:
-                # Loop the video
-                self.video_cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-        if not self.video_cap.isOpened():
-            self.stop_playback()
-
-    def stop_playback(self) -> None:
-        """Stop video playback and restore the thumbnail texture."""
-        if self.video_cap:
-            self.video_cap.release()
-            self.video_cap = None
-        if self.video_path:
-            self.video_path.unlink(missing_ok=True)
-            self.video_path = None
-        self.is_playing = False
-        if self.sticker.thumbnail:
-            try:
-                file = self.loop.run_until_complete(
-                    self.bot.get_file(self.sticker.thumbnail.file_id)
-                )
-                barray = bytes(
-                    self.loop.run_until_complete(file.download_as_bytearray())
-                )
-                self.load_texture(barray)
-            except Exception as e:
-                logger.error(
-                    f"Failed to restore thumbnail for sticker {self.sticker.file_id}: {e}"
-                )
-                self.texture = None
-        else:
-            # No thumbnail; try main file
-            self.load_texture()
+                self._last_update_time = current_time
+            else:  # Loop the video
+                self._cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
     def release(self) -> None:
         if self.texture:
             self.texture.release()
 
-        if self.video_cap:
-            self.video_cap.release()
+        self._cap.release()
+        self._file_path.unlink(missing_ok=True)
 
-        if self.video_path:
-            self.video_path.unlink(missing_ok=True)
+
+async def load_sticker_texture(bot: tg.Bot, sticker: tg.Sticker) -> moderngl.Texture:
+    file_id = sticker.thumbnail.file_id if sticker.thumbnail else sticker.file_id
+    file = await bot.get_file(file_id)
+    barray = bytes(await file.download_as_bytearray())
+    image = Image.open(io.BytesIO(barray))
+    return image_to_texture(image)
+
+
+async def load_sticker_video(bot: tg.Bot, sticker: tg.Sticker) -> UIVideo:
+    file = await bot.get_file(sticker.file_id)
+    video_bytes = bytes(await file.download_as_bytearray())
+    video_path = _APP_DIR / f"temp_sticker_{sticker.file_id}.webm"
+    with video_path.open("wb") as f:
+        f.write(video_bytes)
+    return UIVideo(video_path)
+
+
+class UITelegramSticker:
+    def __init__(
+        self,
+        sticker: tg.Sticker,
+        texture: moderngl.Texture | None = None,
+        video: UIVideo | None = None,
+    ):
+        self.sticker = sticker
+        self.texture = texture  # Static texture or None if video
+        self.video = video  # Video handler if applicable
+
+    def update(self, current_time: float) -> None:
+        if self.video:
+            self.video.update(current_time)
+            self.texture = self.video.texture  # Update texture from video
+
+    def release(self) -> None:
+        if self.texture and not self.video:  # Only release texture if static
+            self.texture.release()
+        if self.video:
+            self.video.release()
 
 
 def get_resolution_str(name: str | None, w: int, h: int) -> str:
@@ -1011,32 +936,24 @@ class App:
                 self._tg_bot = tg.Bot(token=self.app_ui_state.tg_bot_token)
 
             try:
-                get_sticker_set_coro = self._tg_bot.get_sticker_set(
-                    name=self.app_ui_state.tg_sticker_set_name
-                )
-                sticker_set = self._loop.run_until_complete(get_sticker_set_coro)
-
-                async def get_sticker_barray(sticker: tg.Sticker) -> bytes | None:
-                    if sticker.thumbnail:
-                        file = await sticker.thumbnail.get_file()  # type: ignore
-                        barray = bytes(await file.download_as_bytearray())
-                        return barray
-                    return None
-
-                async def process_stickers(
-                    stickers: Iterable[tg.Sticker],
-                ) -> list[bytes | None]:
-                    coros = [get_sticker_barray(s) for s in stickers]
-                    barrays = await asyncio.gather(*coros)
-                    return barrays
-
-                barrays = self._loop.run_until_complete(
-                    process_stickers(sticker_set.stickers)
+                sticker_set = self._loop.run_until_complete(
+                    self._tg_bot.get_sticker_set(
+                        name=self.app_ui_state.tg_sticker_set_name
+                    )
                 )
 
-                for barray, sticker in zip(barrays, sticker_set.stickers, strict=True):
-                    ui_sticker = UITelegramSticker(sticker, self._loop, self._tg_bot)
-                    ui_sticker.load_texture(barray)
+                # Process stickers
+                for sticker in sticker_set.stickers:
+                    if sticker.is_video:
+                        video = self._loop.run_until_complete(
+                            load_sticker_video(self._tg_bot, sticker)
+                        )
+                        ui_sticker = UITelegramSticker(sticker, video=video)
+                    else:
+                        texture = self._loop.run_until_complete(
+                            load_sticker_texture(self._tg_bot, sticker)
+                        )
+                        ui_sticker = UITelegramSticker(sticker, texture=texture)
                     self._tg_stickers.append(ui_sticker)
                 self._tg_is_connected = True
             except tg.error.InvalidToken:
@@ -1064,11 +981,7 @@ class App:
         )
 
         for i, sticker in enumerate(self._tg_stickers):
-            if sticker.sticker.is_video and not sticker.is_playing:
-                sticker.start_playback()
-            if sticker.is_playing:
-                sticker.update_video_frame(glfw.get_time())
-
+            sticker.update(glfw.get_time())
             texture = sticker.texture
             image_height = 90
 
