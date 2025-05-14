@@ -9,7 +9,6 @@ import subprocess
 import time
 from collections import defaultdict
 from collections.abc import Iterable
-from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +24,7 @@ from loguru import logger
 from OpenGL.GL import GL_SAMPLER_2D, GLError
 from PIL import Image
 from platformdirs import user_data_dir
+from pydantic import BaseModel
 
 from shaderbox.core import Node, image_to_texture, texture_to_image
 from shaderbox.vendors import get_modelbox_bg_removal, get_modelbox_depthmap
@@ -198,30 +198,30 @@ def zero_low_alpha_pixels(image: Image.Image, min_alpha: float = 1.0) -> Image.I
     return Image.fromarray(img_array, mode="RGBA")
 
 
-@dataclass
-class UINodeState:
+class UIVideoSettingsState(BaseModel):
+    file_path: Path | None = None
+    quality_combo_idx: int = 0
+    fps: int = 30
+    duration: float = 5.0
+
+
+class UINodeState(BaseModel):
+    video_settings: UIVideoSettingsState = UIVideoSettingsState()
+
     resolution_combo_idx: int = 0
-    video_quality_combo_idx: int = 0
-    video_fps: int = 30
-    video_duration: float = 5.0
-    video_file_path: str | None = None
     selected_uniform_name: str = ""
     blur_kernel_size: int = 50
     normals_kernel_size: int = 3
 
 
-@dataclass
-class UIAppState:
+class UIAppState(BaseModel):
     tg_bot_token: str = ""
     tg_user_id: str = ""
     tg_sticker_set_name: str = ""
 
 
-@dataclass
-class UITgStickerState:
-    video_quality_combo_idx: int = 0
-    video_fps: int = 30
-    video_duration: float = 3.0
+class UITgStickerState(BaseModel):
+    video_settings: UIVideoSettingsState = UIVideoSettingsState()
 
 
 class App:
@@ -271,16 +271,16 @@ class App:
                 self.node_mtimes[name] = mtime
 
                 ui_state_dict = meta.get("ui_state", {})
-                valid_fields = {f.name for f in fields(UINodeState)}
+                fields = UINodeState.model_fields
 
-                invalid_keys = [k for k in ui_state_dict if k not in valid_fields]
+                invalid_keys = [k for k in ui_state_dict if k not in fields]
                 if invalid_keys:
                     logger.warning(
                         f"Ignored invalid UINodeState keys for node '{name}': {invalid_keys}"
                     )
 
                 filtered_ui_state = {
-                    k: v for k, v in ui_state_dict.items() if k in valid_fields
+                    k: v for k, v in ui_state_dict.items() if k in fields
                 }
 
                 self._node_ui_state[name] = UINodeState(**filtered_ui_state)
@@ -290,21 +290,25 @@ class App:
         # Load ui states
         self.ui_app_state = UIAppState()
         self.ui_tg_sticker_state = UITgStickerState()
-
-        for state_field_name, state_file_path, state_class in [
+        states: list[tuple[str, Path, type[BaseModel]]] = [
             ("ui_app_state", _APP_STATE_FILE_PATH, UIAppState),
             (
                 "ui_tg_sticker_state",
                 _TG_STICKER_STATE_FILE_PATH,
                 UITgStickerState,
             ),
-        ]:
+        ]
+
+        for state_field_name, state_file_path, state_class in states:
             if state_file_path.exists():
                 with state_file_path.open("r") as f:
-                    state = json.load(f)
-                    valid_fields = {f.name for f in fields(state_class)}
-                    state = {k: v for k, v in state.items() if k in valid_fields}
-                    setattr(self, state_field_name, state_class(**state))
+                    state_dict = json.load(f)
+                    state_dict = {
+                        k: v
+                        for k, v in state_dict.items()
+                        if k in state_class.model_fields
+                    }
+                    setattr(self, state_field_name, state_class(**state_dict))
 
         # ----------------------------------------------------------------
         # Tg
@@ -366,10 +370,11 @@ class App:
         node_dir = _NODES_DIR / node_name
         node_dir.mkdir(exist_ok=True, parents=True)
 
+        ui_state_dict = self._node_ui_state[node_name].model_dump()
         meta: dict[str, Any] = {
             "output_texture_size": list(node.output_texture_size),
             "uniforms": {},
-            "ui_state": asdict(self._node_ui_state[node_name]),
+            "ui_state": ui_state_dict,
         }
 
         fs_file_path = node_dir / "shader.frag.glsl"
@@ -420,7 +425,7 @@ class App:
             logger.warning("Nothing to save")
 
     def save_app_state(self) -> None:
-        app_state_dict = asdict(self.ui_app_state)
+        app_state_dict = self.ui_app_state.model_dump()
         with _APP_STATE_FILE_PATH.open("w") as f:
             json.dump(app_state_dict, f, indent=4)
 
@@ -791,77 +796,7 @@ class App:
                     logger.error(str(e))
 
     def draw_render_tab(self) -> None:
-        available_extensions = [".webm", ".mp4"]
-        available_qualities = ["low", "medium-low", "medium-high", "high"]
-
-        # ----------------------------------------------------------------
-        # Video output file
-        file_path = None
-        if imgui.button("Output file:##video_file_path"):
-            file_path = crossfiledialog.save_file(
-                title=f"Output file path ({available_extensions})",
-            )
-            if file_path:
-                video_extension = Path(file_path).suffix
-                if video_extension not in available_extensions:
-                    self.ui_current_node_state.video_file_path = None
-                    logger.warning(
-                        f"Can't select {video_extension} file, "
-                        f"available extensions are: {available_extensions}"
-                    )
-                else:
-                    self.ui_current_node_state.video_file_path = file_path
-
-        if self.ui_current_node_state.video_file_path:
-            imgui.same_line()
-            imgui.text_colored(
-                self.ui_current_node_state.video_file_path, 0.5, 0.5, 0.5
-            )
-
-        # ----------------------------------------------------------------
-        # Video fps combobox
-        self.ui_current_node_state.video_fps = imgui.drag_int(
-            "FPS##video_fps",
-            self.ui_current_node_state.video_fps,
-            1,
-        )[1]
-
-        # ----------------------------------------------------------------
-        # Video quality combobox
-        self.ui_current_node_state.video_quality_combo_idx = imgui.combo(
-            "Quality##video_quality_combo_idx",
-            self.ui_current_node_state.video_quality_combo_idx,
-            available_qualities,
-        )[1]
-        self.ui_current_node_state.video_quality_combo_idx = min(
-            self.ui_current_node_state.video_quality_combo_idx,
-            len(available_qualities) - 1,
-        )
-
-        # ----------------------------------------------------------------
-        # Video duration
-        self.ui_current_node_state.video_duration = imgui.drag_float(
-            "Duration, s##video_duration",
-            self.ui_current_node_state.video_duration,
-            0.1,
-        )[1]
-        self.ui_current_node_state.video_duration = max(
-            0.1, self.ui_current_node_state.video_duration
-        )
-
-        # ----------------------------------------------------------------
-        # Render button
-        file_path = self.ui_current_node_state.video_file_path
-        if file_path:
-            imgui.spacing()
-            if imgui.button("Render##video"):
-                node = self.nodes[self.current_node_name]  # type: ignore
-                node.render_to_video(
-                    file_path,
-                    duration=self.ui_current_node_state.video_duration,
-                    fps=self.ui_current_node_state.video_fps,
-                    quality=self.ui_current_node_state.video_quality_combo_idx,
-                )
+        self.draw_video_settings(self.ui_current_node_state.video_settings)
 
     def draw_ui_uniform(self, ui_uniform: UIUniform) -> None:
         if self.current_node_name is None:
@@ -1022,40 +957,73 @@ class App:
 
             imgui.separator()
 
-            available_qualities = ["low", "medium-low", "medium-high", "high"]
-
-            # ----------------------------------------------------------------
-            # Video fps combobox
-            self.ui_tg_sticker_state.video_fps = imgui.drag_int(
-                "FPS##video_fps",
-                self.ui_tg_sticker_state.video_fps,
-                1,
-            )[1]
-
-            # ----------------------------------------------------------------
-            # Video quality combobox
-            self.ui_tg_sticker_state.video_quality_combo_idx = imgui.combo(
-                "Quality##video_quality_combo_idx",
-                self.ui_tg_sticker_state.video_quality_combo_idx,
-                available_qualities,
-            )[1]
-            self.ui_tg_sticker_state.video_quality_combo_idx = min(
-                self.ui_tg_sticker_state.video_quality_combo_idx,
-                len(available_qualities) - 1,
-            )
-
-            # ----------------------------------------------------------------
-            # Video duration
-            self.ui_tg_sticker_state.video_duration = imgui.drag_float(
-                "Duration, s##video_duration",
-                self.ui_tg_sticker_state.video_duration,
-                0.1,
-            )[1]
-            self.ui_tg_sticker_state.video_duration = max(
-                0.1, self.ui_tg_sticker_state.video_duration
-            )
+            self.draw_video_settings(self.ui_tg_sticker_state.video_settings)
 
         imgui.end_child()
+
+    def draw_video_settings(self, state: UIVideoSettingsState) -> None:
+        available_extensions = [".webm", ".mp4"]
+        available_qualities = ["low", "medium-low", "medium-high", "high"]
+
+        # ----------------------------------------------------------------
+        # File path
+        file_path = None
+        if imgui.button("File:##video_file_path"):
+            file_path = crossfiledialog.save_file(
+                title=f"File path ({available_extensions})",
+            )
+            if file_path:
+                video_extension = Path(file_path).suffix
+                if video_extension not in available_extensions:
+                    state.file_path = None
+                    logger.warning(
+                        f"Can't select {video_extension} file, "
+                        f"available extensions are: {available_extensions}"
+                    )
+                else:
+                    state.file_path = file_path
+
+        if state.file_path:
+            imgui.same_line()
+            imgui.text_colored(str(state.file_path), 0.5, 0.5, 0.5)
+
+        # ----------------------------------------------------------------
+        # Quality
+        state.quality_combo_idx = imgui.combo(
+            "Quality##video_quality_combo_idx",
+            state.quality_combo_idx,
+            available_qualities,
+        )[1]
+        state.quality_combo_idx = min(
+            state.quality_combo_idx, len(available_qualities) - 1
+        )
+
+        # ----------------------------------------------------------------
+        # FPS
+        state.fps = imgui.drag_int("FPS##video_fps", state.fps, 1)[1]
+        state.fps = max(10, state.fps)
+
+        # ----------------------------------------------------------------
+        # Duration
+        state.duration = imgui.drag_float(
+            "Duration, s##video_duration",
+            state.duration,
+            0.1,
+        )[1]
+        state.duration = max(0.1, state.duration)
+
+        # ----------------------------------------------------------------
+        # Render button
+        if state.file_path:
+            imgui.spacing()
+            if imgui.button("Render##video"):
+                node = self.nodes[self.current_node_name]  # type: ignore
+                node.render_to_video(
+                    state.file_path,
+                    duration=state.duration,
+                    fps=state.fps,
+                    quality=state.quality_combo_idx,
+                )
 
     def draw_node_settings(self) -> None:
         with imgui.begin_child("node_settings", border=True):
