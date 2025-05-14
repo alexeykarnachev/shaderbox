@@ -276,6 +276,28 @@ class App:
         self._tg_stickers: list[UITelegramSticker] = []
         self._tg_selected_sticker_idx: int = 0
 
+    def fetch_tg_stickers(self) -> None:
+        async def _fetch() -> list[UITelegramSticker]:
+            bot = tg.Bot(token=self.app_ui_state.tg_bot_token)
+            sticker_set = await bot.get_sticker_set(
+                name=self.app_ui_state.tg_sticker_set_name
+            )
+            coros = [UITelegramSticker(s).load() for s in sticker_set.stickers]
+            return await asyncio.gather(*coros)
+
+        for sticker in self._tg_stickers:
+            sticker.release()
+
+        try:
+            self._tg_stickers = self._loop.run_until_complete(_fetch())
+        except tg.error.InvalidToken:
+            logger.error("Invalid telegram token")
+        except tg.error.BadRequest as e:
+            if str(e) == "Stickerset_invalid":
+                logger.info("Sticker set doesn't exist")
+            else:
+                raise e
+
     @property
     def current_node_ui_state(self) -> UINodeState:
         if self.current_node_name is None:
@@ -910,29 +932,8 @@ class App:
             flags=imgui.INPUT_TEXT_CHARS_NO_BLANK,
         )[1]
 
-        # ----------------------------------------------------------------
-        # Connect to sticker set
-        async def load_stickers() -> list[UITelegramSticker]:
-            bot = tg.Bot(token=self.app_ui_state.tg_bot_token)
-            sticker_set = await bot.get_sticker_set(
-                name=self.app_ui_state.tg_sticker_set_name
-            )
-            coros = [UITelegramSticker(s).load() for s in sticker_set.stickers]
-            return await asyncio.gather(*coros)
-
-        if imgui.button("Connect", width=80):
-            for sticker in self._tg_stickers:
-                sticker.release()
-
-            try:
-                self._tg_stickers = self._loop.run_until_complete(load_stickers())
-            except tg.error.InvalidToken:
-                logger.error("Invalid telegram token")
-            except tg.error.BadRequest as e:
-                if str(e) == "Stickerset_invalid":
-                    logger.info("Sticker set doesn't exist")
-                else:
-                    raise e
+        if imgui.button("Fetch", width=80):
+            self.fetch_tg_stickers()
 
         imgui.new_line()
         imgui.separator()
@@ -953,37 +954,27 @@ class App:
         current_time = glfw.get_time()
         for i, sticker in enumerate(self._tg_stickers):
             sticker.update(current_time)
-            texture = sticker._texture
-            image_height = 90
-
-            if texture:
-                image_width = image_height * texture.width / max(texture.height, 1)
-            else:
-                image_width = image_height
-
-            image_width = int(image_width)
-            imgui.text(f"Sticker {i}")
 
             n_styles = 0
             if i == self._tg_selected_sticker_idx:
-                color = (0.0, 1.0, 0.0, 1.0)  # Green for selected
+                color = (0.0, 1.0, 0.0, 1.0)
                 imgui.push_style_color(imgui.COLOR_BUTTON, *color)
                 imgui.push_style_color(imgui.COLOR_BUTTON_HOVERED, *color)
                 imgui.push_style_color(imgui.COLOR_BUTTON_ACTIVE, *color)
                 n_styles += 3
 
-            if texture:
-                if imgui.image_button(
-                    texture.glo,
-                    width=image_width,
-                    height=image_height,
-                    uv0=(0, 1),
-                    uv1=(1, 0),
-                ):
-                    self._tg_selected_sticker_idx = i
-            else:
-                if imgui.button("No Texture", width=image_width, height=image_height):
-                    self._tg_selected_sticker_idx = i
+            texture = sticker._texture
+            image_height = 90
+            image_width = image_height * texture.width // max(texture.height, 1)
+
+            if imgui.image_button(
+                texture.glo,
+                width=image_width,
+                height=image_height,
+                uv0=(0, 1),
+                uv1=(1, 0),
+            ):
+                self._tg_selected_sticker_idx = i
 
             imgui.pop_style_color(n_styles)
             imgui.spacing()
@@ -993,28 +984,27 @@ class App:
         imgui.same_line()
         imgui.begin_child("selected_sticker_settings", border=True)
 
+        # ----------------------------------------------------------------
+        # Selected sticker settings
         if self._tg_selected_sticker_idx < len(self._tg_stickers):
             selected_sticker = self._tg_stickers[self._tg_selected_sticker_idx]
             selected_texture = selected_sticker._texture
             imgui.text(f"Selected sticker: {self._tg_selected_sticker_idx}")
 
-            if selected_texture:
-                max_image_width = imgui.get_content_region_available()[0]
-                max_image_height = 200
-                image_aspect = selected_texture.width / selected_texture.height
-                image_width = min(max_image_width, max_image_height * image_aspect)
-                image_height = min(max_image_height, max_image_width / image_aspect)
-                imgui.image(
-                    selected_texture.glo,
-                    width=image_width,
-                    height=image_height,
-                    uv0=(0, 1),
-                    uv1=(1, 0),
-                )
-            else:
-                imgui.text("No texture available")
-        else:
-            imgui.text("No sticker selected")
+            max_image_width = imgui.get_content_region_available()[0]
+            max_image_height = 200
+            image_aspect = selected_texture.width / selected_texture.height
+            image_width = min(max_image_width, max_image_height * image_aspect)
+            image_height = min(max_image_height, max_image_width / image_aspect)
+            imgui.image(
+                selected_texture.glo,
+                width=image_width,
+                height=image_height,
+                uv0=(0, 1),
+                uv1=(1, 0),
+            )
+
+            imgui.separator()
 
         imgui.end_child()
 
