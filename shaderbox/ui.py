@@ -987,24 +987,8 @@ class App:
         # ----------------------------------------------------------------
         # Selected sticker settings
         if self._tg_selected_sticker_idx < len(self._tg_stickers):
-            selected_sticker = self._tg_stickers[self._tg_selected_sticker_idx]
-            selected_texture = selected_sticker._texture
-            imgui.text(f"Selected sticker: {self._tg_selected_sticker_idx}")
-
-            max_image_width = imgui.get_content_region_available()[0]
-            max_image_height = 200
-            image_aspect = selected_texture.width / selected_texture.height
-            image_width = min(max_image_width, max_image_height * image_aspect)
-            image_height = min(max_image_height, max_image_width / image_aspect)
-            imgui.image(
-                selected_texture.glo,
-                width=image_width,
-                height=image_height,
-                uv0=(0, 1),
-                uv1=(1, 0),
-            )
-
-            imgui.separator()
+            sticker = self._tg_stickers[self._tg_selected_sticker_idx]
+            texture = sticker._texture
 
         imgui.end_child()
 
