@@ -199,7 +199,7 @@ def zero_low_alpha_pixels(image: Image.Image, min_alpha: float = 1.0) -> Image.I
 
 
 class UIVideoSettingsState(BaseModel):
-    file_path: Path | None = None
+    file_path: str | None = None
     quality_combo_idx: int = 0
     fps: int = 30
     duration: float = 5.0
