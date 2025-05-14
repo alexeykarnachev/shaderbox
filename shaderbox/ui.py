@@ -78,81 +78,87 @@ class UIUniform:
             return imgui.get_text_line_height_with_spacing()  # type: ignore
 
 
+class UIVideo:
+    def __init__(self, file_path: str | Path):
+        self._file_path = file_path
+
+        self._last_update_time: float = 0.0
+        self._cap = cv2.VideoCapture(str(self._file_path))
+
+        self.width = int(self._cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        self.height = int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        self.n_frames = self._cap.get(cv2.CAP_PROP_FRAME_COUNT)
+        self.fps = int(self._cap.get(cv2.CAP_PROP_FPS))
+        self.duration = self.n_frames / self.fps
+
+        self.texture: moderngl.Texture = image_to_texture(
+            Image.new("RGBA", (self.width, self.height), (255, 0, 0, 255))
+        )
+
+    def update(self, current_time: float) -> None:
+        frame_period = 1.0 / self.fps
+
+        if current_time - self._last_update_time >= frame_period:
+            is_frame, frame = self._cap.read()
+            if is_frame:
+                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGBA)
+                image = Image.fromarray(frame_rgb)
+                self.texture.release()
+                self.texture = image_to_texture(image)
+                self._last_update_time = current_time
+            else:  # Loop the video
+                self._cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+
+    def release(self) -> None:
+        self._cap.release()
+        self.texture.release()
+
+
 class UITgSticker:
     def __init__(self, sticker: tg.Sticker):
         self._sticker = sticker
-        self._last_update_time: float = 0.0
 
-        self._video_file_path: Path
-        self._texture: moderngl.Texture
+        self._video: UIVideo | None = None
+        self._thumbnail_texture: moderngl.Texture = image_to_texture(
+            Image.new("RGBA", (512, 512), (255, 0, 0, 255))
+        )
 
-        self._video_capture: cv2.VideoCapture | None = None
-
-        self._meta: dict[str, Any] = {}
+        self._file_path: Path | None = None
 
     @property
-    def meta(self) -> dict[str, Any]:
-        return self._meta.copy()
+    def thumbnail_texture(self) -> moderngl.Texture:
+        if self._video:
+            return self._video.texture
+        else:
+            return self._texture
 
     async def load(self) -> "UITgSticker":
         bot = self._sticker.get_bot()
 
         if self._sticker.is_video:
             file_name = self._sticker.file_id + ".webm"
-            self._video_file_path = _VIDEO_DIR / file_name
+            file_path = _VIDEO_DIR / file_name
 
             file = await bot.get_file(self._sticker.file_id)
-            await file.download_to_drive(self._video_file_path)
+            await file.download_to_drive(self._file_path)
 
-            self._video_capture = cv2.VideoCapture(str(self._video_file_path))
-
-            self._meta["is_video"] = True
-            self._meta["n_frames"] = self._video_capture.get(cv2.CAP_PROP_FRAME_COUNT)
-            self._meta["fps"] = int(self._video_capture.get(cv2.CAP_PROP_FPS))
-            self._meta["duration"] = self._meta["n_frames"] / self._meta["fps"]
-            self._meta["width"] = int(self._video_capture.get(cv2.CAP_PROP_FRAME_WIDTH))
-            self._meta["height"] = int(
-                self._video_capture.get(cv2.CAP_PROP_FRAME_HEIGHT)
-            )
+            self._file_path = file_path
+            self._video = UIVideo(file_path)
 
         if self._sticker.thumbnail:
             file = await bot.get_file(self._sticker.thumbnail.file_id)
             barray = await file.download_as_bytearray()
-            image = Image.open(io.BytesIO(barray))
-        else:
-            image = Image.new("RGBA", (512, 512), (255, 0, 0, 255))
-
-        if not self._sticker.is_video:
-            self._meta["is_video"] = False
-            self._meta["width"] = image.width
-            self._meta["height"] = image.height
-
-        self._texture = image_to_texture(image)
+            self._texture = image_to_texture(Image.open(io.BytesIO(barray)))
 
         return self
 
     def update(self, current_time: float) -> None:
-        # Update makes sense only for video stickers
-        if self._video_capture is None:
-            return
-
-        frame_period = 1.0 / self._video_capture.get(cv2.CAP_PROP_FPS)
-
-        if current_time - self._last_update_time >= frame_period:
-            is_frame, frame = self._video_capture.read()
-            if is_frame:
-                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGBA)
-                image = Image.fromarray(frame_rgb)
-                self._texture.release()
-                self._texture = image_to_texture(image)
-                self._last_update_time = current_time
-            else:  # Loop the video
-                self._video_capture.set(cv2.CAP_PROP_POS_FRAMES, 0)
+        if self._video:
+            self._video.update(current_time)
 
     def release(self) -> None:
-        if self._video_capture:
-            self._video_capture.release()
-            self._video_file_path.unlink()
+        if self._video:
+            self._video.release()
 
         self._texture.release()
 
@@ -952,8 +958,12 @@ class App:
             sticker = self._tg_stickers[self._tg_selected_sticker_idx]
             texture = sticker._texture
 
-            for key, value in sticker.meta.items():
-                imgui.text(f"{key}: {value}")
+            if sticker._video:
+                imgui.text(f"Dimension: {sticker._video.width}x{sticker._video.height}")
+                imgui.text(f"Duration: {sticker._video.duration} sec")
+                imgui.text(f"FPS: {sticker._video.fps}")
+            else:
+                imgui.text(f"Size: {sticker._texture.width}x{sticker._texture.height}")
 
             imgui.separator()
 
