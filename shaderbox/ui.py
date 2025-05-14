@@ -33,7 +33,8 @@ _APP_DIR = Path(user_data_dir("shaderbox"))
 _NODES_DIR = _APP_DIR / "nodes"
 _TRASH_DIR = _APP_DIR / "trash"
 _VIDEO_DIR = _APP_DIR / "video"
-_APP_STATE_FILE = _APP_DIR / "app_state.json"
+_APP_STATE_FILE_PATH = _APP_DIR / "app_state.json"
+_TG_STICKER_STATE_FILE_PATH = _APP_DIR / "tg_sticker.json"
 
 _NODES_DIR.mkdir(exist_ok=True, parents=True)
 _TRASH_DIR.mkdir(exist_ok=True, parents=True)
@@ -77,7 +78,7 @@ class UIUniform:
             return imgui.get_text_line_height_with_spacing()  # type: ignore
 
 
-class UITelegramSticker:
+class UITgSticker:
     def __init__(self, sticker: tg.Sticker):
         self._sticker = sticker
         self._last_update_time: float = 0.0
@@ -87,7 +88,13 @@ class UITelegramSticker:
 
         self._video_capture: cv2.VideoCapture | None = None
 
-    async def load(self) -> "UITelegramSticker":
+        self._meta: dict[str, Any] = {}
+
+    @property
+    def meta(self) -> dict[str, Any]:
+        return self._meta.copy()
+
+    async def load(self) -> "UITgSticker":
         bot = self._sticker.get_bot()
 
         if self._sticker.is_video:
@@ -99,12 +106,26 @@ class UITelegramSticker:
 
             self._video_capture = cv2.VideoCapture(str(self._video_file_path))
 
+            self._meta["is_video"] = True
+            self._meta["n_frames"] = self._video_capture.get(cv2.CAP_PROP_FRAME_COUNT)
+            self._meta["fps"] = int(self._video_capture.get(cv2.CAP_PROP_FPS))
+            self._meta["duration"] = self._meta["n_frames"] / self._meta["fps"]
+            self._meta["width"] = int(self._video_capture.get(cv2.CAP_PROP_FRAME_WIDTH))
+            self._meta["height"] = int(
+                self._video_capture.get(cv2.CAP_PROP_FRAME_HEIGHT)
+            )
+
         if self._sticker.thumbnail:
             file = await bot.get_file(self._sticker.thumbnail.file_id)
             barray = await file.download_as_bytearray()
             image = Image.open(io.BytesIO(barray))
         else:
             image = Image.new("RGBA", (512, 512), (255, 0, 0, 255))
+
+        if not self._sticker.is_video:
+            self._meta["is_video"] = False
+            self._meta["width"] = image.width
+            self._meta["height"] = image.height
 
         self._texture = image_to_texture(image)
 
@@ -181,8 +202,8 @@ def zero_low_alpha_pixels(image: Image.Image, min_alpha: float = 1.0) -> Image.I
 class UINodeState:
     resolution_combo_idx: int = 0
     video_quality_combo_idx: int = 0
-    video_fps_combo_idx: int = 0
-    video_duration: int = 5
+    video_fps: int = 30
+    video_duration: float = 5.0
     video_file_path: str | None = None
     selected_uniform_name: str = ""
     blur_kernel_size: int = 50
@@ -194,6 +215,13 @@ class UIAppState:
     tg_bot_token: str = ""
     tg_user_id: str = ""
     tg_sticker_set_name: str = ""
+
+
+@dataclass
+class UITgStickerState:
+    video_quality_combo_idx: int = 0
+    video_fps: int = 30
+    video_duration: float = 3.0
 
 
 class App:
@@ -230,21 +258,19 @@ class App:
         self.window = window
         self.imgui_renderer = GlfwRenderer(window)
 
-        self.app_ui_state = UIAppState()
-
         # ----------------------------------------------------------------
         # Load nodes
         self._node_ui_state = defaultdict(UINodeState)
         node_dirs = sorted(_NODES_DIR.iterdir(), key=lambda x: x.stat().st_ctime)
         for node_dir in node_dirs:
             if node_dir.is_dir():
-                node, mtime, metadata = Node.load_from_dir(node_dir)
+                node, mtime, meta = Node.load_from_dir(node_dir)
                 name = node_dir.name
 
                 self.nodes[name] = node
                 self.node_mtimes[name] = mtime
 
-                ui_state_dict = metadata.get("ui_state", {})
+                ui_state_dict = meta.get("ui_state", {})
                 valid_fields = {f.name for f in fields(UINodeState)}
 
                 invalid_keys = [k for k in ui_state_dict if k not in valid_fields]
@@ -261,28 +287,37 @@ class App:
                 self.current_node_name = name
 
         # ----------------------------------------------------------------
-        # Load app state
-        if _APP_STATE_FILE.exists():
-            with _APP_STATE_FILE.open("r") as f:
-                app_state_dict = json.load(f)
-                valid_fields = {f.name for f in fields(UIAppState)}
-                filtered_app_state = {
-                    k: v for k, v in app_state_dict.items() if k in valid_fields
-                }
-                self.app_ui_state = UIAppState(**filtered_app_state)
+        # Load ui states
+        self.ui_app_state = UIAppState()
+        self.ui_tg_sticker_state = UITgStickerState()
+
+        for state_field_name, state_file_path, state_class in [
+            ("ui_app_state", _APP_STATE_FILE_PATH, UIAppState),
+            (
+                "ui_tg_sticker_state",
+                _TG_STICKER_STATE_FILE_PATH,
+                UITgStickerState,
+            ),
+        ]:
+            if state_file_path.exists():
+                with state_file_path.open("r") as f:
+                    state = json.load(f)
+                    valid_fields = {f.name for f in fields(state_class)}
+                    state = {k: v for k, v in state.items() if k in valid_fields}
+                    setattr(self, state_field_name, state_class(**state))
 
         # ----------------------------------------------------------------
-        # Telegram
-        self._tg_stickers: list[UITelegramSticker] = []
+        # Tg
+        self._tg_stickers: list[UITgSticker] = []
         self._tg_selected_sticker_idx: int = 0
 
     def fetch_tg_stickers(self) -> None:
-        async def _fetch() -> list[UITelegramSticker]:
-            bot = tg.Bot(token=self.app_ui_state.tg_bot_token)
+        async def _fetch() -> list[UITgSticker]:
+            bot = tg.Bot(token=self.ui_app_state.tg_bot_token)
             sticker_set = await bot.get_sticker_set(
-                name=self.app_ui_state.tg_sticker_set_name
+                name=self.ui_app_state.tg_sticker_set_name
             )
-            coros = [UITelegramSticker(s).load() for s in sticker_set.stickers]
+            coros = [UITgSticker(s).load() for s in sticker_set.stickers]
             return await asyncio.gather(*coros)
 
         for sticker in self._tg_stickers:
@@ -299,7 +334,7 @@ class App:
                 raise e
 
     @property
-    def current_node_ui_state(self) -> UINodeState:
+    def ui_current_node_state(self) -> UINodeState:
         if self.current_node_name is None:
             return UINodeState()
         return self._node_ui_state[self.current_node_name]
@@ -331,7 +366,7 @@ class App:
         node_dir = _NODES_DIR / node_name
         node_dir.mkdir(exist_ok=True, parents=True)
 
-        metadata: dict[str, Any] = {
+        meta: dict[str, Any] = {
             "output_texture_size": list(node.output_texture_size),
             "uniforms": {},
             "ui_state": asdict(self._node_ui_state[node_name]),
@@ -357,7 +392,7 @@ class App:
                 textures_dir.mkdir(exist_ok=True)
                 texture_filename = f"{uniform.name}.png"
                 image.save(textures_dir / texture_filename, format="PNG")
-                metadata["uniforms"][uniform.name] = {
+                meta["uniforms"][uniform.name] = {
                     "type": "texture",
                     "width": value.width,
                     "height": value.height,
@@ -365,16 +400,16 @@ class App:
                 }
             else:
                 if isinstance(value, int | float):
-                    metadata["uniforms"][uniform.name] = value
+                    meta["uniforms"][uniform.name] = value
                 elif isinstance(value, tuple):
-                    metadata["uniforms"][uniform.name] = list(value)
+                    meta["uniforms"][uniform.name] = list(value)
                 else:
                     logger.warning(
                         f"Skipping unsupported uniform type for {uniform.name}: {type(value)}"
                     )
 
         with (node_dir / "node.json").open("w") as f:
-            json.dump(metadata, f, indent=4)
+            json.dump(meta, f, indent=4)
 
         logger.info(f"Node {node_name} saved: {node_dir}")
 
@@ -385,8 +420,8 @@ class App:
             logger.warning("Nothing to save")
 
     def save_app_state(self) -> None:
-        app_state_dict = asdict(self.app_ui_state)
-        with _APP_STATE_FILE.open("w") as f:
+        app_state_dict = asdict(self.ui_app_state)
+        with _APP_STATE_FILE_PATH.open("w") as f:
             json.dump(app_state_dict, f, indent=4)
 
     def save(self) -> None:
@@ -572,20 +607,20 @@ class App:
             imgui.same_line()
             imgui.text_colored("(" + ", ".join(matching_uniforms) + ")", 0.5, 0.5, 0.5)
 
-        self.current_node_ui_state.resolution_combo_idx = imgui.combo(
+        self.ui_current_node_state.resolution_combo_idx = imgui.combo(
             "##resolution_combo_idx",
-            self.current_node_ui_state.resolution_combo_idx,
+            self.ui_current_node_state.resolution_combo_idx,
             resolution_items,
         )[1]
-        self.current_node_ui_state.resolution_combo_idx = min(
-            self.current_node_ui_state.resolution_combo_idx, len(resolution_items) - 1
+        self.ui_current_node_state.resolution_combo_idx = min(
+            self.ui_current_node_state.resolution_combo_idx, len(resolution_items) - 1
         )
 
         imgui.same_line()
         if imgui.button("Apply##resolution"):
             w, h = map(
                 int,
-                resolution_items[self.current_node_ui_state.resolution_combo_idx]
+                resolution_items[self.ui_current_node_state.resolution_combo_idx]
                 .split(" | ")[0]
                 .split("x"),
             )
@@ -646,12 +681,12 @@ class App:
             return
 
         if (
-            not self.current_node_ui_state.selected_uniform_name
-            or self.current_node_ui_state.selected_uniform_name not in node.program
+            not self.ui_current_node_state.selected_uniform_name
+            or self.ui_current_node_state.selected_uniform_name not in node.program
         ):
             return
 
-        uniform = node.program[self.current_node_ui_state.selected_uniform_name]
+        uniform = node.program[self.ui_current_node_state.selected_uniform_name]
         if not isinstance(uniform, moderngl.Uniform):
             return
 
@@ -699,15 +734,15 @@ class App:
 
             imgui.separator()
             imgui.text("Gaussian blur")
-            self.current_node_ui_state.blur_kernel_size = imgui.slider_int(
+            self.ui_current_node_state.blur_kernel_size = imgui.slider_int(
                 "##blur_kernel_size",
-                self.current_node_ui_state.blur_kernel_size,
+                self.ui_current_node_state.blur_kernel_size,
                 min_value=10,
                 max_value=100,
                 format="%d",
             )[1]
-            self.current_node_ui_state.blur_kernel_size = max(
-                3, self.current_node_ui_state.blur_kernel_size | 1
+            self.ui_current_node_state.blur_kernel_size = max(
+                3, self.ui_current_node_state.blur_kernel_size | 1
             )
 
             imgui.same_line()
@@ -718,8 +753,8 @@ class App:
                     blurred_array = cv2.GaussianBlur(
                         img_array,
                         (
-                            self.current_node_ui_state.blur_kernel_size,
-                            self.current_node_ui_state.blur_kernel_size,
+                            self.ui_current_node_state.blur_kernel_size,
+                            self.ui_current_node_state.blur_kernel_size,
                         ),
                         0,
                     )
@@ -731,15 +766,15 @@ class App:
 
             imgui.separator()
             imgui.text("Normals")
-            self.current_node_ui_state.normals_kernel_size = imgui.slider_int(
+            self.ui_current_node_state.normals_kernel_size = imgui.slider_int(
                 "##normals_kernel_size",
-                self.current_node_ui_state.normals_kernel_size,
+                self.ui_current_node_state.normals_kernel_size,
                 min_value=3,
                 max_value=31,
                 format="%d",
             )[1]
-            self.current_node_ui_state.normals_kernel_size = max(
-                3, self.current_node_ui_state.normals_kernel_size | 1
+            self.ui_current_node_state.normals_kernel_size = max(
+                3, self.ui_current_node_state.normals_kernel_size | 1
             )
 
             imgui.same_line()
@@ -748,7 +783,7 @@ class App:
                 try:
                     depthmap_image = get_modelbox_depthmap(zero_low_alpha_pixels(image))
                     normals_image = depthmap_to_normals(
-                        depthmap_image, self.current_node_ui_state.normals_kernel_size
+                        depthmap_image, self.ui_current_node_state.normals_kernel_size
                     )
                     texture = image_to_texture(normals_image)
                     node.set_uniform_value(ui_uniform.name, texture)
@@ -758,7 +793,6 @@ class App:
     def draw_render_tab(self) -> None:
         available_extensions = [".webm", ".mp4"]
         available_qualities = ["low", "medium-low", "medium-high", "high"]
-        available_fps = ["15", "30", "60", "120"]
 
         # ----------------------------------------------------------------
         # Video output file
@@ -770,70 +804,63 @@ class App:
             if file_path:
                 video_extension = Path(file_path).suffix
                 if video_extension not in available_extensions:
-                    self.current_node_ui_state.video_file_path = None
+                    self.ui_current_node_state.video_file_path = None
                     logger.warning(
                         f"Can't select {video_extension} file, "
                         f"available extensions are: {available_extensions}"
                     )
                 else:
-                    self.current_node_ui_state.video_file_path = file_path
+                    self.ui_current_node_state.video_file_path = file_path
 
-        if self.current_node_ui_state.video_file_path:
+        if self.ui_current_node_state.video_file_path:
             imgui.same_line()
             imgui.text_colored(
-                self.current_node_ui_state.video_file_path, 0.5, 0.5, 0.5
+                self.ui_current_node_state.video_file_path, 0.5, 0.5, 0.5
             )
 
         # ----------------------------------------------------------------
         # Video fps combobox
-        imgui.text("FPS:")
-        self.current_node_ui_state.video_fps_combo_idx = imgui.combo(
-            "##video_fps_combo_idx",
-            self.current_node_ui_state.video_fps_combo_idx,
-            available_fps,
+        self.ui_current_node_state.video_fps = imgui.drag_int(
+            "FPS##video_fps",
+            self.ui_current_node_state.video_fps,
+            1,
         )[1]
-        self.current_node_ui_state.video_fps_combo_idx = min(
-            self.current_node_ui_state.video_fps_combo_idx, len(available_fps) - 1
-        )
 
         # ----------------------------------------------------------------
         # Video quality combobox
-        imgui.text("Quality:")
-        self.current_node_ui_state.video_quality_combo_idx = imgui.combo(
-            "##video_quality_combo_idx",
-            self.current_node_ui_state.video_quality_combo_idx,
+        self.ui_current_node_state.video_quality_combo_idx = imgui.combo(
+            "Quality##video_quality_combo_idx",
+            self.ui_current_node_state.video_quality_combo_idx,
             available_qualities,
         )[1]
-        self.current_node_ui_state.video_quality_combo_idx = min(
-            self.current_node_ui_state.video_quality_combo_idx,
+        self.ui_current_node_state.video_quality_combo_idx = min(
+            self.ui_current_node_state.video_quality_combo_idx,
             len(available_qualities) - 1,
         )
 
         # ----------------------------------------------------------------
         # Video duration
-        imgui.text("Duration, s:")
-        self.current_node_ui_state.video_duration = imgui.slider_int(
-            "##video_duration",
-            self.current_node_ui_state.video_duration,
-            min_value=1,
-            max_value=60,
-            format="%d",
+        self.ui_current_node_state.video_duration = imgui.drag_float(
+            "Duration, s##video_duration",
+            self.ui_current_node_state.video_duration,
+            0.1,
         )[1]
+        self.ui_current_node_state.video_duration = max(
+            0.1, self.ui_current_node_state.video_duration
+        )
 
         # ----------------------------------------------------------------
         # Render button
-        file_path = self.current_node_ui_state.video_file_path
+        file_path = self.ui_current_node_state.video_file_path
         if file_path:
             imgui.spacing()
             if imgui.button("Render##video"):
                 node = self.nodes[self.current_node_name]  # type: ignore
                 node.render_to_video(
                     file_path,
-                    duration=self.current_node_ui_state.video_duration,
-                    fps=int(
-                        available_fps[self.current_node_ui_state.video_fps_combo_idx]
-                    ),
-                    quality=self.current_node_ui_state.video_quality_combo_idx,
+                    duration=self.ui_current_node_state.video_duration,
+                    fps=self.ui_current_node_state.video_fps,
+                    quality=self.ui_current_node_state.video_quality_combo_idx,
                 )
 
     def draw_ui_uniform(self, ui_uniform: UIUniform) -> None:
@@ -866,7 +893,7 @@ class App:
             imgui.text(ui_uniform.name)
 
             n_styles = 0
-            if self.current_node_ui_state.selected_uniform_name == ui_uniform.name:
+            if self.ui_current_node_state.selected_uniform_name == ui_uniform.name:
                 color = (0.0, 1.0, 0.0, 1.0)
                 imgui.push_style_color(imgui.COLOR_BUTTON, *color)
                 imgui.push_style_color(imgui.COLOR_BUTTON_HOVERED, *color)
@@ -913,22 +940,22 @@ class App:
 
     def draw_tg_stickers_tab(self) -> None:
         # ----------------------------------------------------------------
-        # Telegram settings
-        self.app_ui_state.tg_bot_token = imgui.input_text(
+        # Tg settings
+        self.ui_app_state.tg_bot_token = imgui.input_text(
             "Bot token",
-            self.app_ui_state.tg_bot_token,
+            self.ui_app_state.tg_bot_token,
             flags=imgui.INPUT_TEXT_PASSWORD,
         )[1]
 
-        self.app_ui_state.tg_user_id = imgui.input_text(
+        self.ui_app_state.tg_user_id = imgui.input_text(
             "User id",
-            self.app_ui_state.tg_user_id,
+            self.ui_app_state.tg_user_id,
             flags=imgui.INPUT_TEXT_CHARS_DECIMAL,
         )[1]
 
-        self.app_ui_state.tg_sticker_set_name = imgui.input_text(
+        self.ui_app_state.tg_sticker_set_name = imgui.input_text(
             "Sticker set name",
-            self.app_ui_state.tg_sticker_set_name,
+            self.ui_app_state.tg_sticker_set_name,
             flags=imgui.INPUT_TEXT_CHARS_NO_BLANK,
         )[1]
 
@@ -989,6 +1016,44 @@ class App:
         if self._tg_selected_sticker_idx < len(self._tg_stickers):
             sticker = self._tg_stickers[self._tg_selected_sticker_idx]
             texture = sticker._texture
+
+            for key, value in sticker.meta.items():
+                imgui.text(f"{key}: {value}")
+
+            imgui.separator()
+
+            available_qualities = ["low", "medium-low", "medium-high", "high"]
+
+            # ----------------------------------------------------------------
+            # Video fps combobox
+            self.ui_tg_sticker_state.video_fps = imgui.drag_int(
+                "FPS##video_fps",
+                self.ui_tg_sticker_state.video_fps,
+                1,
+            )[1]
+
+            # ----------------------------------------------------------------
+            # Video quality combobox
+            self.ui_tg_sticker_state.video_quality_combo_idx = imgui.combo(
+                "Quality##video_quality_combo_idx",
+                self.ui_tg_sticker_state.video_quality_combo_idx,
+                available_qualities,
+            )[1]
+            self.ui_tg_sticker_state.video_quality_combo_idx = min(
+                self.ui_tg_sticker_state.video_quality_combo_idx,
+                len(available_qualities) - 1,
+            )
+
+            # ----------------------------------------------------------------
+            # Video duration
+            self.ui_tg_sticker_state.video_duration = imgui.drag_float(
+                "Duration, s##video_duration",
+                self.ui_tg_sticker_state.video_duration,
+                0.1,
+            )[1]
+            self.ui_tg_sticker_state.video_duration = max(
+                0.1, self.ui_tg_sticker_state.video_duration
+            )
 
         imgui.end_child()
 
