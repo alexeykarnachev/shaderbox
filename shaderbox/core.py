@@ -43,6 +43,16 @@ def texture_to_image(texture: moderngl.Texture) -> Image.Image:
     return image
 
 
+class VideoDetails(BaseModel):
+    quality: int = 0
+    file_path: str = ""
+    file_size: int = 0
+    width: int = 0
+    height: int = 0
+    fps: int = 0
+    duration: float = 0.0
+
+
 class Node:
     def __init__(
         self,
@@ -238,15 +248,12 @@ class Node:
 
     def render_to_video(
         self,
-        file_path: str | Path,
-        duration: float = 5.0,
-        fps: int = 30,
-        quality: int = 2,
-    ) -> None:
-        if not 0 <= quality <= 3:
+        details: VideoDetails,
+    ) -> VideoDetails:
+        if not 0 <= details.quality <= 3:
             raise ValueError("Quality must be an integer between 0 and 3")
 
-        file_path = Path(file_path)
+        file_path = Path(details.file_path)
         extension = file_path.suffix
 
         if extension == ".mp4":
@@ -256,8 +263,8 @@ class Node:
             mp4_crf = [33, 28, 23, 18]
             mp4_presets = ["ultrafast", "fast", "medium", "slow"]
 
-            crf = mp4_crf[quality]
-            preset = mp4_presets[quality]
+            crf = mp4_crf[details.quality]
+            preset = mp4_presets[details.quality]
             ffmpeg_params = ["-crf", str(crf), "-preset", preset]
         elif extension == ".webm":
             codec = "libvpx-vp9"
@@ -266,8 +273,8 @@ class Node:
             webm_crf = [50, 40, 30, 20]
             webm_cpu_used = [5, 4, 3, 2]
 
-            crf = webm_crf[quality]
-            cpu_used = webm_cpu_used[quality]
+            crf = webm_crf[details.quality]
+            cpu_used = webm_cpu_used[details.quality]
             ffmpeg_params = [
                 "-crf",
                 str(crf),
@@ -287,30 +294,28 @@ class Node:
 
         writer = imageio.get_writer(
             file_path,
-            fps=fps,
+            fps=details.fps,
             codec=codec,
             ffmpeg_params=ffmpeg_params,
             pixelformat=pixelformat,
         )
 
-        n_frames = int(duration * fps)
+        n_frames = int(details.duration * details.fps)
         for i in range(n_frames):
-            u_time = i / fps
+            u_time = i / details.fps
             frame = self.render_to_image(u_time)
             frame_np = np.array(frame.convert("RGB"))
             writer.append_data(frame_np)
 
         writer.close()
 
+        # ----------------------------------------------------------------
+        # Update details from the saved video
+        video = Video(file_path)
+        new_details = video.details
+        video.release()
 
-class VideoDetails(BaseModel):
-    quality: int = 0
-    file_path: str = ""
-    file_size: int = 0
-    width: int = 0
-    height: int = 0
-    fps: int = 0
-    duration: float = 0.0
+        return new_details
 
 
 class Video:

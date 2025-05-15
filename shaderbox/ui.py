@@ -759,7 +759,9 @@ class App:
                     logger.error(str(e))
 
     def draw_render_tab(self) -> None:
-        self.draw_video_details(self.ui_current_node_state.video_details)
+        self.ui_current_node_state.video_details = self.draw_video_details(
+            self.ui_current_node_state.video_details
+        )
 
     def draw_ui_uniform(self, ui_uniform: UIUniform) -> None:
         if self.current_node_name is None:
@@ -918,7 +920,7 @@ class App:
             if sticker._video:
                 imgui.separator()
 
-                self.draw_video_details(
+                sticker._video.details = self.draw_video_details(
                     details=sticker._video.details,
                     is_changeable=False,
                 )
@@ -931,7 +933,8 @@ class App:
         self,
         details: VideoDetails,
         is_changeable: bool = True,
-    ) -> None:
+    ) -> VideoDetails:
+        details = details.model_copy()
         available_extensions = [".webm", ".mp4"]
         available_qualities = ["low", "medium-low", "medium-high", "high"]
 
@@ -959,6 +962,7 @@ class App:
         if details.file_path:
             imgui.same_line()
             imgui.text_colored(str(details.file_path), 0.5, 0.5, 0.5)
+            imgui.text(f"File size: {details.file_size} B")
 
         # ----------------------------------------------------------------
         # Quality
@@ -996,12 +1000,9 @@ class App:
             imgui.spacing()
             if imgui.button("Render##video"):
                 node = self.nodes[self.current_node_name]  # type: ignore
-                node.render_to_video(
-                    details.file_path,
-                    duration=details.duration,
-                    fps=details.fps,
-                    quality=details.quality,
-                )
+                details = node.render_to_video(details)
+
+        return details
 
     def draw_node_settings(self) -> None:
         with imgui.begin_child("node_settings", border=True):
