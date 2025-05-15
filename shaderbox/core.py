@@ -3,6 +3,7 @@ from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
+import cv2
 import glfw
 import imageio
 import moderngl
@@ -10,6 +11,7 @@ import numpy as np
 from loguru import logger
 from OpenGL.GL import GL_SAMPLER_2D
 from PIL import Image, ImageOps
+from pydantic import BaseModel
 
 _RESOURCES_DIR = Path(str(files("shaderbox.resources")))
 _DEFAULT_VS_FILE_PATH = _RESOURCES_DIR / "shaders" / "default.vert.glsl"
@@ -299,3 +301,55 @@ class Node:
             writer.append_data(frame_np)
 
         writer.close()
+
+
+class VideoDetails(BaseModel):
+    quality: int = 0
+    file_path: str = ""
+    file_size: int = 0
+    width: int = 0
+    height: int = 0
+    fps: int = 0
+    duration: float = 0.0
+
+
+class Video:
+    def __init__(self, file_path: str | Path):
+        file_path = str(file_path)
+        self._cap = cv2.VideoCapture(file_path)
+
+        width = int(self._cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        fps = int(self._cap.get(cv2.CAP_PROP_FPS))
+
+        self.details = VideoDetails(
+            file_path=file_path,
+            file_size=Path(file_path).stat().st_size,
+            width=width,
+            height=height,
+            fps=fps,
+            duration=self._cap.get(cv2.CAP_PROP_FRAME_COUNT) / fps,
+        )
+
+        self.texture: moderngl.Texture = image_to_texture(
+            Image.new("RGBA", (width, height), (255, 0, 0, 255))
+        )
+
+        self._frame_period = 1.0 / fps
+        self._last_update_time: float = 0.0
+
+    def update(self, current_time: float) -> None:
+        if current_time - self._last_update_time >= self._frame_period:
+            is_frame, frame = self._cap.read()
+            if is_frame:
+                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGBA)
+                image = Image.fromarray(frame_rgb)
+                self.texture.release()
+                self.texture = image_to_texture(image)
+                self._last_update_time = current_time
+            else:  # Loop the video
+                self._cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+
+    def release(self) -> None:
+        self._cap.release()
+        self.texture.release()

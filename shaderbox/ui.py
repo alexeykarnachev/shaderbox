@@ -26,7 +26,7 @@ from PIL import Image
 from platformdirs import user_data_dir
 from pydantic import BaseModel
 
-from shaderbox.core import Node, image_to_texture, texture_to_image
+from shaderbox.core import Node, Video, VideoDetails, image_to_texture, texture_to_image
 from shaderbox.vendors import get_modelbox_bg_removal, get_modelbox_depthmap
 
 _APP_DIR = Path(user_data_dir("shaderbox"))
@@ -78,47 +78,11 @@ class UIUniform:
             return imgui.get_text_line_height_with_spacing()  # type: ignore
 
 
-class UIVideo:
-    def __init__(self, file_path: str | Path):
-        self._file_path = file_path
-
-        self._last_update_time: float = 0.0
-        self._cap = cv2.VideoCapture(str(self._file_path))
-
-        self.width = int(self._cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        self.height = int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        self.n_frames = self._cap.get(cv2.CAP_PROP_FRAME_COUNT)
-        self.fps = int(self._cap.get(cv2.CAP_PROP_FPS))
-        self.duration = self.n_frames / self.fps
-
-        self.texture: moderngl.Texture = image_to_texture(
-            Image.new("RGBA", (self.width, self.height), (255, 0, 0, 255))
-        )
-
-    def update(self, current_time: float) -> None:
-        frame_period = 1.0 / self.fps
-
-        if current_time - self._last_update_time >= frame_period:
-            is_frame, frame = self._cap.read()
-            if is_frame:
-                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGBA)
-                image = Image.fromarray(frame_rgb)
-                self.texture.release()
-                self.texture = image_to_texture(image)
-                self._last_update_time = current_time
-            else:  # Loop the video
-                self._cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-
-    def release(self) -> None:
-        self._cap.release()
-        self.texture.release()
-
-
 class UITgSticker:
     def __init__(self, sticker: tg.Sticker):
         self._sticker = sticker
 
-        self._video: UIVideo | None = None
+        self._video: Video | None = None
         self._thumbnail_texture: moderngl.Texture = image_to_texture(
             Image.new("RGBA", (512, 512), (255, 0, 0, 255))
         )
@@ -143,7 +107,7 @@ class UITgSticker:
             await file.download_to_drive(self._file_path)
 
             self._file_path = file_path
-            self._video = UIVideo(file_path)
+            self._video = Video(file_path)
 
         if self._sticker.thumbnail:
             file = await bot.get_file(self._sticker.thumbnail.file_id)
@@ -204,15 +168,8 @@ def zero_low_alpha_pixels(image: Image.Image, min_alpha: float = 1.0) -> Image.I
     return Image.fromarray(img_array, mode="RGBA")
 
 
-class UIVideoSettingsState(BaseModel):
-    file_path: str | None = None
-    quality_combo_idx: int = 0
-    fps: int = 30
-    duration: float = 5.0
-
-
 class UINodeState(BaseModel):
-    video_settings: UIVideoSettingsState = UIVideoSettingsState()
+    video_details: VideoDetails = VideoDetails()
 
     resolution_combo_idx: int = 0
     selected_uniform_name: str = ""
@@ -227,7 +184,7 @@ class UIAppState(BaseModel):
 
 
 class UITgStickerState(BaseModel):
-    video_settings: UIVideoSettingsState = UIVideoSettingsState()
+    video_details: VideoDetails = VideoDetails()
 
 
 class App:
@@ -802,7 +759,7 @@ class App:
                     logger.error(str(e))
 
     def draw_render_tab(self) -> None:
-        self.draw_video_settings(self.ui_current_node_state.video_settings)
+        self.draw_video_details(self.ui_current_node_state.video_details)
 
     def draw_ui_uniform(self, ui_uniform: UIUniform) -> None:
         if self.current_node_name is None:
@@ -959,80 +916,91 @@ class App:
             texture = sticker._texture
 
             if sticker._video:
-                imgui.text(f"Dimension: {sticker._video.width}x{sticker._video.height}")
-                imgui.text(f"Duration: {sticker._video.duration} sec")
-                imgui.text(f"FPS: {sticker._video.fps}")
+                imgui.separator()
+
+                self.draw_video_details(
+                    details=sticker._video.details,
+                    is_changeable=False,
+                )
             else:
                 imgui.text(f"Size: {sticker._texture.width}x{sticker._texture.height}")
 
-            imgui.separator()
-
-            self.draw_video_settings(self.ui_tg_sticker_state.video_settings)
-
         imgui.end_child()
 
-    def draw_video_settings(self, state: UIVideoSettingsState) -> None:
+    def draw_video_details(
+        self,
+        details: VideoDetails,
+        is_changeable: bool = True,
+    ) -> None:
         available_extensions = [".webm", ".mp4"]
         available_qualities = ["low", "medium-low", "medium-high", "high"]
 
         # ----------------------------------------------------------------
         # File path
         file_path = None
-        if imgui.button("File:##video_file_path"):
-            file_path = crossfiledialog.save_file(
-                title=f"File path ({available_extensions})",
-            )
-            if file_path:
-                video_extension = Path(file_path).suffix
-                if video_extension not in available_extensions:
-                    state.file_path = None
-                    logger.warning(
-                        f"Can't select {video_extension} file, "
-                        f"available extensions are: {available_extensions}"
-                    )
-                else:
-                    state.file_path = file_path
+        if is_changeable:
+            if imgui.button("File:##video_file_path"):
+                file_path = crossfiledialog.save_file(
+                    title=f"File path ({available_extensions})",
+                )
+                if file_path:
+                    video_extension = Path(file_path).suffix
+                    if video_extension not in available_extensions:
+                        details.file_path = ""
+                        logger.warning(
+                            f"Can't select {video_extension} file, "
+                            f"available extensions are: {available_extensions}"
+                        )
+                    else:
+                        details.file_path = file_path
+        else:
+            imgui.text("File:")
 
-        if state.file_path:
+        if details.file_path:
             imgui.same_line()
-            imgui.text_colored(str(state.file_path), 0.5, 0.5, 0.5)
+            imgui.text_colored(str(details.file_path), 0.5, 0.5, 0.5)
 
         # ----------------------------------------------------------------
         # Quality
-        state.quality_combo_idx = imgui.combo(
-            "Quality##video_quality_combo_idx",
-            state.quality_combo_idx,
-            available_qualities,
-        )[1]
-        state.quality_combo_idx = min(
-            state.quality_combo_idx, len(available_qualities) - 1
-        )
+        if is_changeable:
+            details.quality = imgui.combo(
+                "Quality##video_quality_combo_idx",
+                details.quality,
+                available_qualities,
+            )[1]
+            details.quality = min(details.quality, len(available_qualities) - 1)
 
         # ----------------------------------------------------------------
         # FPS
-        state.fps = imgui.drag_int("FPS##video_fps", state.fps, 1)[1]
-        state.fps = max(10, state.fps)
+        if is_changeable:
+            details.fps = imgui.drag_int("FPS##video_fps", details.fps, 1)[1]
+        else:
+            imgui.text(f"FPS: {details.fps}")
+        details.fps = max(10, details.fps)
 
         # ----------------------------------------------------------------
         # Duration
-        state.duration = imgui.drag_float(
-            "Duration, s##video_duration",
-            state.duration,
-            0.1,
-        )[1]
-        state.duration = max(0.1, state.duration)
+        if is_changeable:
+            details.duration = imgui.drag_float(
+                "Duration, sec##video_duration",
+                details.duration,
+                0.1,
+            )[1]
+        else:
+            imgui.text(f"Duration: {details.duration} sec")
+        details.duration = max(0.1, details.duration)
 
         # ----------------------------------------------------------------
         # Render button
-        if state.file_path:
+        if details.file_path and is_changeable:
             imgui.spacing()
             if imgui.button("Render##video"):
                 node = self.nodes[self.current_node_name]  # type: ignore
                 node.render_to_video(
-                    state.file_path,
-                    duration=state.duration,
-                    fps=state.fps,
-                    quality=state.quality_combo_idx,
+                    details.file_path,
+                    duration=details.duration,
+                    fps=details.fps,
+                    quality=details.quality,
                 )
 
     def draw_node_settings(self) -> None:
