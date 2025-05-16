@@ -1,7 +1,8 @@
 import json
 from importlib.resources import files
+from os import PathLike
 from pathlib import Path
-from typing import Any
+from typing import IO, Any
 
 import cv2
 import glfw
@@ -10,37 +11,9 @@ import moderngl
 import numpy as np
 from loguru import logger
 from OpenGL.GL import GL_SAMPLER_2D
-from PIL import Image, ImageOps
+from PIL import Image as PILImage
+from PIL import ImageOps
 from pydantic import BaseModel
-
-_RESOURCES_DIR = Path(str(files("shaderbox.resources")))
-_DEFAULT_VS_FILE_PATH = _RESOURCES_DIR / "shaders" / "default.vert.glsl"
-_DEFAULT_FS_FILE_PATH = _RESOURCES_DIR / "shaders" / "default.frag.glsl"
-_DEFAULT_IMAGE = Image.open(_RESOURCES_DIR / "textures" / "default.jpeg").convert(
-    "RGBA"
-)
-
-
-def image_to_texture(
-    image_or_file_path: Image.Image | Path | str,
-) -> moderngl.Texture:
-    if not isinstance(image_or_file_path, Image.Image):
-        image = Image.open(image_or_file_path)
-    else:
-        image = image_or_file_path
-
-    gl = moderngl.get_context()
-    prepared_image = ImageOps.flip(image.convert("RGBA"))
-    texture = gl.texture(image.size, 4, np.array(prepared_image).tobytes(), dtype="f1")
-    return texture
-
-
-def texture_to_image(texture: moderngl.Texture) -> Image.Image:
-    texture_data = texture.read()
-    image = ImageOps.flip(
-        Image.frombytes("RGBA", (texture.width, texture.height), texture_data)
-    )
-    return image
 
 
 class VideoDetails(BaseModel):
@@ -53,7 +26,145 @@ class VideoDetails(BaseModel):
     duration: float = 0.0
 
 
+class ImageDetails(BaseModel):
+    file_path: str = ""
+    file_size: int = 0
+    width: int = 0
+    height: int = 0
+
+
+class Image:
+    def __init__(
+        self, src: PathLike | PILImage.Image | moderngl.Texture | np.ndarray | IO[bytes]
+    ) -> None:
+        self._image: PILImage.Image
+        self._texture: moderngl.Texture | None = None
+
+        file_path: str = ""
+        file_size: int = 0
+
+        if isinstance(src, moderngl.Texture):
+            # Flip image when reading from texture (opengl)
+            self._image = ImageOps.flip(
+                PILImage.frombytes("RGBA", (src.width, src.height), src.read())
+            )
+        elif isinstance(src, PathLike):
+            file_path = str(src)
+            file_size = Path(file_path).stat().st_size
+            self._image = PILImage.open(file_path)
+        elif isinstance(src, PILImage.Image):
+            self._image = src
+        elif isinstance(src, np.ndarray):
+            self._image = PILImage.fromarray(src)
+        else:
+            self._image = PILImage.open(src)
+
+        self._image = self._image.convert("RGBA")
+        self.details = ImageDetails(
+            file_path=file_path,
+            file_size=file_size,
+            width=self._image.width,
+            height=self._image.height,
+        )
+
+    @classmethod
+    def from_color(
+        cls, size: tuple[int, int], color: tuple[float, float, float]
+    ) -> "Image":
+        r, g, b = (int(c * 255) for c in color)
+        image = PILImage.new("RGBA", size, color=(r, g, b, 255))
+        return cls(image)
+
+    @property
+    def texture(self) -> moderngl.Texture:
+        if self._texture is None:
+            self._texture = moderngl.get_context().texture(
+                size=self._image.size,
+                components=4,
+                # Flip image when writing to texture (opengl)
+                data=np.array(ImageOps.flip(self._image)).tobytes(),
+                dtype="f1",
+            )
+
+        return self._texture
+
+    def save(self, file_path: PathLike | IO[bytes], format: str | None = None) -> None:
+        self._image.save(file_path, format=format)  # type: ignore
+
+    def release(self) -> None:
+        if self._texture is not None:
+            self._texture.release()
+            self._texture = None
+
+
+class Video:
+    def __init__(self, file_path: PathLike):
+        self._cap = cv2.VideoCapture(str(file_path))
+
+        width = int(self._cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        fps = int(self._cap.get(cv2.CAP_PROP_FPS))
+
+        self.details = VideoDetails(
+            file_path=str(file_path),
+            file_size=Path(file_path).stat().st_size,
+            width=width,
+            height=height,
+            fps=fps,
+            duration=self._cap.get(cv2.CAP_PROP_FRAME_COUNT) / fps,
+        )
+
+        self._texture: moderngl.Texture | None = None
+
+        self._frame_period = 1.0 / fps
+        self._last_update_time: float = 0.0
+
+    @property
+    def texture(self) -> moderngl.Texture:
+        if self._texture is None:
+            self._cap.grab()
+            frame = self._cap.retrieve()[1]
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGBA)
+            self._texture = moderngl.get_context().texture(
+                size=frame_rgb.shape[:2],
+                components=4,
+                data=frame_rgb.tobytes(),
+                dtype="u1",
+            )
+
+        return self._texture
+
+    def update(self, current_time: float) -> None:
+        if current_time - self._last_update_time >= self._frame_period:
+            is_frame, frame = self._cap.read()
+            if is_frame:
+                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGBA)
+                data = frame_rgb.tobytes()
+
+                if self._texture is None:
+                    self._texture = moderngl.get_context().texture(
+                        size=frame_rgb.shape[:2], components=4, dtype="u1"
+                    )
+                self._texture.write(data)
+
+                self._last_update_time = current_time
+            else:  # Loop the video
+                self._cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+
+    def release(self) -> None:
+        self._cap.release()
+
+        if self._texture is not None:
+            self._texture.release()
+            self._texture = None
+
+
 class Node:
+    _RESOURCES_DIR = Path(str(files("shaderbox.resources")))
+    _DEFAULT_VS_FILE_PATH = _RESOURCES_DIR / "shaders" / "default.vert.glsl"
+    _DEFAULT_FS_FILE_PATH = _RESOURCES_DIR / "shaders" / "default.frag.glsl"
+    _DEFAULT_IMAGE_FILE_PATH = _RESOURCES_DIR / "textures" / "default.jpeg"
+
     def __init__(
         self,
         gl: moderngl.Context | None = None,
@@ -61,9 +172,9 @@ class Node:
         output_texture_size: tuple[int, int] | None = None,
     ) -> None:
         self._gl = gl or moderngl.get_context()
-        self.vs_source: str = _DEFAULT_VS_FILE_PATH.read_text()
+        self.vs_source: str = self._DEFAULT_VS_FILE_PATH.read_text()
         self.fs_source: str = (
-            fs_source if fs_source else _DEFAULT_FS_FILE_PATH.read_text()
+            fs_source if fs_source else self._DEFAULT_FS_FILE_PATH.read_text()
         )
         self.output_texture_size = output_texture_size or (1280, 960)
         self.output_texture = self._gl.texture(self.output_texture_size, 4)
@@ -73,6 +184,23 @@ class Node:
         self.program: moderngl.Program | None = None
         self.vbo: moderngl.Buffer | None = None
         self.vao: moderngl.VertexArray | None = None
+
+        self.last_rendered_image: Image | None = None
+        self.last_rendered_video: Video | None = None
+
+    @property
+    def last_rendered_image_details(self) -> ImageDetails:
+        if self.last_rendered_image is not None:
+            return self.last_rendered_image.details
+        else:
+            return ImageDetails()
+
+    @property
+    def last_rendered_video_details(self) -> VideoDetails:
+        if self.last_rendered_video is not None:
+            return self.last_rendered_video.details
+        else:
+            return VideoDetails()
 
     @classmethod
     def load_from_dir(
@@ -97,7 +225,7 @@ class Node:
         # Load uniforms
         for uniform_name, value in metadata["uniforms"].items():
             if isinstance(value, dict) and value.get("type") == "texture":
-                value = image_to_texture(node_dir / value["file_path"])
+                value = Image(node_dir / value["file_path"]).texture
             elif isinstance(value, list):
                 value = tuple(value)
 
@@ -131,6 +259,12 @@ class Node:
         for data in self._uniform_values.values():
             if isinstance(data, moderngl.Texture):
                 data.release()
+
+        if self.last_rendered_image is not None:
+            self.last_rendered_image.release()
+
+        if self.last_rendered_video is not None:
+            self.last_rendered_video.release()
 
     def get_uniforms(self) -> list[moderngl.Uniform]:
         uniforms: list[moderngl.Uniform] = []
@@ -194,7 +328,7 @@ class Node:
                     or not isinstance(texture, moderngl.Texture)
                     or isinstance(texture.mglo, moderngl.InvalidObject)
                 ):
-                    texture = image_to_texture(_DEFAULT_IMAGE)
+                    texture = Image(self._DEFAULT_IMAGE_FILE_PATH).texture
                     self.set_uniform_value(uniform.name, texture)
                 texture.use(location=texture_unit)
                 value = texture_unit
@@ -238,18 +372,16 @@ class Node:
             self._uniform_values[name] = value
         return value
 
-    def render_to_image(self, u_time: float | None = 0.0) -> Image.Image:
+    def render_image(self, u_time: float | None = 0.0) -> "Node":
         self.render(u_time=u_time)
 
-        if self.shader_error:
-            raise ValueError(f"Shader compilation failed: {self.shader_error}")
+        if self.last_rendered_image is not None:
+            self.last_rendered_image.release()
+        self.last_rendered_image = Image(self.output_texture)
 
-        return texture_to_image(self.output_texture)
+        return self
 
-    def render_to_video(
-        self,
-        details: VideoDetails,
-    ) -> VideoDetails:
+    def render_video(self, details: VideoDetails) -> "Node":
         if not 0 <= details.quality <= 3:
             raise ValueError("Quality must be an integer between 0 and 3")
 
@@ -302,59 +434,21 @@ class Node:
 
         n_frames = int(details.duration * details.fps)
         for i in range(n_frames):
-            u_time = i / details.fps
-            frame = self.render_to_image(u_time)
-            frame_np = np.array(frame.convert("RGB"))
-            writer.append_data(frame_np)
+            self.render(u_time=i / details.fps)
+
+            texture_data = self.output_texture.read()
+            frame = np.frombuffer(texture_data, dtype=np.uint8).reshape(
+                self.output_texture.height, self.output_texture.width, 4
+            )
+            frame = np.flipud(frame)[:, :, :3]
+            writer.append_data(frame)
 
         writer.close()
 
-        # ----------------------------------------------------------------
-        # Update details from the saved video
         video = Video(file_path)
-        new_details = video.details
-        video.release()
 
-        return new_details
+        if self.last_rendered_video is not None:
+            self.last_rendered_video.release()
+        self.last_rendered_video = video
 
-
-class Video:
-    def __init__(self, file_path: str | Path):
-        file_path = str(file_path)
-        self._cap = cv2.VideoCapture(file_path)
-
-        width = int(self._cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        height = int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        fps = int(self._cap.get(cv2.CAP_PROP_FPS))
-
-        self.details = VideoDetails(
-            file_path=file_path,
-            file_size=Path(file_path).stat().st_size,
-            width=width,
-            height=height,
-            fps=fps,
-            duration=self._cap.get(cv2.CAP_PROP_FRAME_COUNT) / fps,
-        )
-
-        self.texture: moderngl.Texture = image_to_texture(
-            Image.new("RGBA", (width, height), (255, 0, 0, 255))
-        )
-
-        self._frame_period = 1.0 / fps
-        self._last_update_time: float = 0.0
-
-    def update(self, current_time: float) -> None:
-        if current_time - self._last_update_time >= self._frame_period:
-            is_frame, frame = self._cap.read()
-            if is_frame:
-                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGBA)
-                image = Image.fromarray(frame_rgb)
-                self.texture.release()
-                self.texture = image_to_texture(image)
-                self._last_update_time = current_time
-            else:  # Loop the video
-                self._cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-
-    def release(self) -> None:
-        self._cap.release()
-        self.texture.release()
+        return self

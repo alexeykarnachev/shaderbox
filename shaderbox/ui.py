@@ -1,7 +1,6 @@
 import asyncio
 import contextlib
 import hashlib
-import io
 import json
 import math
 import shutil
@@ -22,23 +21,63 @@ import telegram as tg
 from imgui.integrations.glfw import GlfwRenderer
 from loguru import logger
 from OpenGL.GL import GL_SAMPLER_2D, GLError
-from PIL import Image
 from platformdirs import user_data_dir
 from pydantic import BaseModel
 
-from shaderbox.core import Node, Video, VideoDetails, image_to_texture, texture_to_image
+from shaderbox.core import Image, Node, Video, VideoDetails
 from shaderbox.vendors import get_modelbox_bg_removal, get_modelbox_depthmap
 
 _APP_DIR = Path(user_data_dir("shaderbox"))
 _NODES_DIR = _APP_DIR / "nodes"
 _TRASH_DIR = _APP_DIR / "trash"
-_VIDEO_DIR = _APP_DIR / "video"
+_VIDEOS_DIR = _APP_DIR / "videos"
+_IMAGES_DIR = _APP_DIR / "images"
 _APP_STATE_FILE_PATH = _APP_DIR / "app_state.json"
 _TG_STICKER_STATE_FILE_PATH = _APP_DIR / "tg_sticker.json"
 
 _NODES_DIR.mkdir(exist_ok=True, parents=True)
 _TRASH_DIR.mkdir(exist_ok=True, parents=True)
-_VIDEO_DIR.mkdir(exist_ok=True, parents=True)
+_VIDEOS_DIR.mkdir(exist_ok=True, parents=True)
+_IMAGES_DIR.mkdir(exist_ok=True, parents=True)
+
+
+def get_resolution_str(name: str | None, w: int, h: int) -> str:
+    g = math.gcd(w, h)
+    w_ratio, h_ratio = w // g, h // g
+    aspect = f"{w_ratio}:{h_ratio}"
+    parts = [f"{w}x{h}"]
+    if name:
+        parts.append(name)
+    parts.append(aspect)
+    return " | ".join(parts)
+
+
+def depthmap_to_normals(depthmap_image: Image, kernel_size: int = 3) -> Image:
+    kernel_size = max(3, kernel_size | 1)
+
+    depth_array = np.array(depthmap_image._image.convert("L"), dtype=np.float32)
+
+    grad_x = cv2.Sobel(depth_array, cv2.CV_32F, 1, 0, ksize=kernel_size)
+    grad_y = cv2.Sobel(depth_array, cv2.CV_32F, 0, 1, ksize=kernel_size)
+
+    normals = np.dstack((grad_x, -grad_y, np.ones_like(depth_array)))
+
+    norm = np.linalg.norm(normals, axis=2, keepdims=True)
+    norm[norm < 1e-6] = 1e-6
+    normals = normals / norm
+
+    normals_rgb = ((normals + 1.0) * 127.5).astype(np.uint8)
+
+    return Image(normals_rgb)
+
+
+def zero_low_alpha_pixels(image: Image, min_alpha: float = 1.0) -> Image:
+    img_array = np.array(image._image)
+    alpha_threshold = int(min_alpha * 255)
+    low_alpha_mask = img_array[:, :, 3] < alpha_threshold
+    img_array[:, :, :3][low_alpha_mask] = 0
+
+    return Image(img_array)
 
 
 class UIUniform:
@@ -83,36 +122,27 @@ class UITgSticker:
         self._sticker = sticker
 
         self._video: Video | None = None
-        self._thumbnail_texture: moderngl.Texture = image_to_texture(
-            Image.new("RGBA", (512, 512), (255, 0, 0, 255))
-        )
-
-        self._file_path: Path | None = None
-
-    @property
-    def thumbnail_texture(self) -> moderngl.Texture:
-        if self._video:
-            return self._video.texture
-        else:
-            return self._texture
+        self._image: Image = Image.from_color((512, 512), (1.0, 0.0, 0.0))
 
     async def load(self) -> "UITgSticker":
         bot = self._sticker.get_bot()
 
         if self._sticker.is_video:
             file_name = self._sticker.file_id + ".webm"
-            file_path = _VIDEO_DIR / file_name
+            file_path = _VIDEOS_DIR / file_name
 
             file = await bot.get_file(self._sticker.file_id)
-            await file.download_to_drive(self._file_path)
+            await file.download_to_drive(file_path)
 
-            self._file_path = file_path
             self._video = Video(file_path)
 
         if self._sticker.thumbnail:
+            file_name = self._sticker.thumbnail.file_id + ".webp"
+            file_path = _IMAGES_DIR / file_name
+
             file = await bot.get_file(self._sticker.thumbnail.file_id)
-            barray = await file.download_as_bytearray()
-            self._texture = image_to_texture(Image.open(io.BytesIO(barray)))
+            await file.download_to_drive(file_path)
+            self._image = Image(file_path)
 
         return self
 
@@ -120,52 +150,18 @@ class UITgSticker:
         if self._video:
             self._video.update(current_time)
 
-    def release(self) -> None:
+    def get_thumbnail_texture(self) -> moderngl.Texture:
         if self._video:
+            return self._video.texture
+        else:
+            return self._image.texture
+
+    def release(self) -> None:
+        self._image.release()
+
+        if self._video is not None:
             self._video.release()
-
-        self._texture.release()
-
-
-def get_resolution_str(name: str | None, w: int, h: int) -> str:
-    g = math.gcd(w, h)
-    w_ratio, h_ratio = w // g, h // g
-    aspect = f"{w_ratio}:{h_ratio}"
-    parts = [f"{w}x{h}"]
-    if name:
-        parts.append(name)
-    parts.append(aspect)
-    return " | ".join(parts)
-
-
-def depthmap_to_normals(
-    depthmap_image: Image.Image, kernel_size: int = 3
-) -> Image.Image:
-    kernel_size = max(3, kernel_size | 1)
-
-    depth_array = np.array(depthmap_image.convert("L"), dtype=np.float32)
-
-    grad_x = cv2.Sobel(depth_array, cv2.CV_32F, 1, 0, ksize=kernel_size)
-    grad_y = cv2.Sobel(depth_array, cv2.CV_32F, 0, 1, ksize=kernel_size)
-
-    normals = np.dstack((grad_x, -grad_y, np.ones_like(depth_array)))
-
-    norm = np.linalg.norm(normals, axis=2, keepdims=True)
-    norm[norm < 1e-6] = 1e-6
-    normals = normals / norm
-
-    normals_rgb = ((normals + 1.0) * 127.5).astype(np.uint8)
-
-    return Image.fromarray(normals_rgb)
-
-
-def zero_low_alpha_pixels(image: Image.Image, min_alpha: float = 1.0) -> Image.Image:
-    img_array = np.array(image)
-    alpha_threshold = int(min_alpha * 255)
-    low_alpha_mask = img_array[:, :, 3] < alpha_threshold
-    img_array[:, :, :3][low_alpha_mask] = 0
-
-    return Image.fromarray(img_array, mode="RGBA")
+            self._video = None
 
 
 class UINodeState(BaseModel):
@@ -287,9 +283,6 @@ class App:
             coros = [UITgSticker(s).load() for s in sticker_set.stickers]
             return await asyncio.gather(*coros)
 
-        for sticker in self._tg_stickers:
-            sticker.release()
-
         try:
             self._tg_stickers = self._loop.run_until_complete(_fetch())
         except tg.error.InvalidToken:
@@ -355,11 +348,11 @@ class App:
             value = node.get_uniform_value(uniform.name)
 
             if uniform.gl_type == GL_SAMPLER_2D:  # type: ignore
-                image = texture_to_image(value)
                 textures_dir = node_dir / "textures"
                 textures_dir.mkdir(exist_ok=True)
                 texture_filename = f"{uniform.name}.png"
-                image.save(textures_dir / texture_filename, format="PNG")
+
+                Image(value).save(textures_dir / texture_filename, format="PNG")
                 meta["uniforms"][uniform.name] = {
                     "type": "texture",
                     "width": value.width,
@@ -682,21 +675,25 @@ class App:
             imgui.separator()
 
             if imgui.button("As depthmap"):
-                image = texture_to_image(texture)
                 try:
-                    depthmap_image = get_modelbox_depthmap(zero_low_alpha_pixels(image))
-                    texture = image_to_texture(depthmap_image)
-                    node.set_uniform_value(ui_uniform.name, texture)
+                    node.set_uniform_value(
+                        ui_uniform.name,
+                        get_modelbox_depthmap(
+                            zero_low_alpha_pixels(Image(texture))
+                        ).texture,
+                    )
                 except Exception as e:
                     logger.error(str(e))
 
             imgui.same_line()
             if imgui.button("Remove bg"):
-                image = texture_to_image(texture)
                 try:
-                    nobg_image = get_modelbox_bg_removal(zero_low_alpha_pixels(image))
-                    texture = image_to_texture(nobg_image)
-                    node.set_uniform_value(ui_uniform.name, texture)
+                    node.set_uniform_value(
+                        ui_uniform.name,
+                        get_modelbox_bg_removal(
+                            zero_low_alpha_pixels(Image(texture))
+                        ).texture,
+                    )
                 except Exception as e:
                     logger.error(str(e))
 
@@ -715,20 +712,20 @@ class App:
 
             imgui.same_line()
             if imgui.button("Apply##blur"):
-                image = texture_to_image(texture)
                 try:
-                    img_array = np.array(image.convert("RGB"))
-                    blurred_array = cv2.GaussianBlur(
-                        img_array,
-                        (
-                            self.ui_current_node_state.blur_kernel_size,
-                            self.ui_current_node_state.blur_kernel_size,
-                        ),
-                        0,
+                    node.set_uniform_value(
+                        ui_uniform.name,
+                        Image(
+                            cv2.GaussianBlur(
+                                np.array(Image(texture)._image.convert("RGB")),
+                                (
+                                    self.ui_current_node_state.blur_kernel_size,
+                                    self.ui_current_node_state.blur_kernel_size,
+                                ),
+                                0,
+                            )
+                        ).texture,
                     )
-                    blurred_image = Image.fromarray(blurred_array).convert("RGBA")
-                    texture = image_to_texture(blurred_image)
-                    node.set_uniform_value(ui_uniform.name, texture)
                 except Exception as e:
                     logger.error(str(e))
 
@@ -747,14 +744,12 @@ class App:
 
             imgui.same_line()
             if imgui.button("Apply##normals"):
-                image = texture_to_image(texture)
                 try:
-                    depthmap_image = get_modelbox_depthmap(zero_low_alpha_pixels(image))
-                    normals_image = depthmap_to_normals(
-                        depthmap_image, self.ui_current_node_state.normals_kernel_size
+                    image = depthmap_to_normals(
+                        get_modelbox_depthmap(zero_low_alpha_pixels(Image(texture))),
+                        self.ui_current_node_state.normals_kernel_size,
                     )
-                    texture = image_to_texture(normals_image)
-                    node.set_uniform_value(ui_uniform.name, texture)
+                    node.set_uniform_value(ui_uniform.name, image.texture)
                 except Exception as e:
                     logger.error(str(e))
 
@@ -820,7 +815,7 @@ class App:
                     filter=["*.png", "*.jpg", "*.jpeg", "*.bmp", "*.webp"],
                 )
                 if file_path:
-                    value = image_to_texture(file_path)
+                    value = Image(file_path).texture
 
             imgui.spacing()
 
@@ -890,7 +885,7 @@ class App:
                 imgui.push_style_color(imgui.COLOR_BUTTON_ACTIVE, *color)
                 n_styles += 3
 
-            texture = sticker._texture
+            texture = sticker._image.texture
             image_height = 90
             image_width = image_height * texture.width // max(texture.height, 1)
 
@@ -915,17 +910,20 @@ class App:
         # Selected sticker settings
         if self._tg_selected_sticker_idx < len(self._tg_stickers):
             sticker = self._tg_stickers[self._tg_selected_sticker_idx]
-            texture = sticker._texture
+            texture = sticker._image.texture
 
             if sticker._video:
-                imgui.separator()
-
                 sticker._video.details = self.draw_video_details(
                     details=sticker._video.details,
                     is_changeable=False,
                 )
             else:
-                imgui.text(f"Size: {sticker._texture.width}x{sticker._texture.height}")
+                details = sticker._image.details
+                imgui.text(f"Size: {details.width}x{details.height}")
+                imgui.text("File:")
+                imgui.same_line()
+                imgui.text_colored(str(details.file_path), 0.5, 0.5, 0.5)
+                imgui.text(f"File size: {details.file_size} B")
 
         imgui.end_child()
 
@@ -1000,7 +998,7 @@ class App:
             imgui.spacing()
             if imgui.button("Render##video"):
                 node = self.nodes[self.current_node_name]  # type: ignore
-                details = node.render_to_video(details)
+                details = node.render_video(details).last_rendered_video_details
 
         return details
 
@@ -1045,6 +1043,12 @@ class App:
                 break
 
         self.save()
+
+        for sticker in self._tg_stickers:
+            sticker.release()
+
+        for node in self.nodes.values():
+            node.release()
 
     def update_and_draw(self) -> None:
         # ----------------------------------------------------------------
