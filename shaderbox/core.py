@@ -124,12 +124,14 @@ class Video:
         if self._texture is None:
             self._cap.grab()
             frame = self._cap.retrieve()[1]
-            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGBA)
+            frame = np.flipud(frame)
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGBA)
+            frame = frame.astype(np.float32) / 255.0
             self._texture = moderngl.get_context().texture(
-                size=frame_rgb.shape[:2],
+                size=(frame.shape[1], frame.shape[0]),
                 components=4,
-                data=frame_rgb.tobytes(),
-                dtype="u1",
+                data=frame,
+                dtype="f4",
             )
 
         return self._texture
@@ -138,15 +140,18 @@ class Video:
         if current_time - self._last_update_time >= self._frame_period:
             is_frame, frame = self._cap.read()
             if is_frame:
-                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGBA)
-                data = frame_rgb.tobytes()
-
+                frame = np.flipud(frame)
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGBA)
+                frame = frame.astype(np.float32) / 255.0
                 if self._texture is None:
                     self._texture = moderngl.get_context().texture(
-                        size=frame_rgb.shape[:2], components=4, dtype="u1"
+                        size=(frame.shape[1], frame.shape[0]),
+                        components=4,
+                        data=frame,
+                        dtype="f4",
                     )
-                self._texture.write(data)
 
+                self._texture.write(frame)
                 self._last_update_time = current_time
             else:  # Loop the video
                 self._cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
@@ -382,9 +387,6 @@ class Node:
         return self
 
     def render_video(self, details: VideoDetails) -> "Node":
-        if not 0 <= details.quality <= 3:
-            raise ValueError("Quality must be an integer between 0 and 3")
-
         file_path = Path(details.file_path)
         extension = file_path.suffix
 
@@ -397,7 +399,14 @@ class Node:
 
             crf = mp4_crf[details.quality]
             preset = mp4_presets[details.quality]
-            ffmpeg_params = ["-crf", str(crf), "-preset", preset]
+            ffmpeg_params = [
+                "-crf",
+                str(crf),
+                "-preset",
+                preset,
+                "-vf",
+                f"scale={details.width}:{details.height}:force_original_aspect_ratio=decrease,pad={details.width}:{details.height}:(ow-iw)/2:(oh-ih)/2",
+            ]
         elif extension == ".webm":
             codec = "libvpx-vp9"
             pixelformat = "yuv420p"
@@ -418,6 +427,8 @@ class Node:
                 "realtime",
                 "-threads",
                 "0",
+                "-vf",
+                f"scale={details.width}:{details.height}:force_original_aspect_ratio=decrease,pad={details.width}:{details.height}:(ow-iw)/2:(oh-ih)/2",
             ]
         else:
             raise ValueError(

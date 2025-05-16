@@ -885,7 +885,7 @@ class App:
                 imgui.push_style_color(imgui.COLOR_BUTTON_ACTIVE, *color)
                 n_styles += 3
 
-            texture = sticker._image.texture
+            texture = sticker.get_thumbnail_texture()
             image_height = 90
             image_width = image_height * texture.width // max(texture.height, 1)
 
@@ -919,10 +919,10 @@ class App:
                 )
             else:
                 details = sticker._image.details
-                imgui.text(f"Size: {details.width}x{details.height}")
                 imgui.text("File:")
                 imgui.same_line()
                 imgui.text_colored(str(details.file_path), 0.5, 0.5, 0.5)
+                imgui.text(f"Size: {details.width}x{details.height}")
                 imgui.text(f"File size: {details.file_size} B")
 
         imgui.end_child()
@@ -961,6 +961,35 @@ class App:
             imgui.same_line()
             imgui.text_colored(str(details.file_path), 0.5, 0.5, 0.5)
             imgui.text(f"File size: {details.file_size} B")
+
+        # ----------------------------------------------------------------
+        # Resolution
+        if self.current_node_name:
+            node = self.nodes[self.current_node_name]
+            original_width, original_height = node.output_texture.size
+            aspect_ratio = original_width / max(original_height, 1)
+
+            is_sticker_size = details.width == 512 or details.height == 512
+
+            if is_changeable:
+                is_sticker_size = imgui.checkbox(
+                    "Use sticker size (512px)", is_sticker_size
+                )[1]
+
+                if is_sticker_size:
+                    if original_width >= original_height:
+                        details.width = 512
+                        details.height = int(512 / aspect_ratio)
+                    else:
+                        details.height = 512
+                        details.width = int(512 * aspect_ratio)
+                else:
+                    details.width = original_width
+                    details.height = original_height
+
+            imgui.text(f"Resolution: {details.width}x{details.height}")
+        else:
+            imgui.text("Resolution: N/A")
 
         # ----------------------------------------------------------------
         # Quality
