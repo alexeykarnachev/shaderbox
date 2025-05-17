@@ -7,7 +7,7 @@ import shutil
 import subprocess
 import time
 from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -24,7 +24,15 @@ from OpenGL.GL import GL_SAMPLER_2D, GLError
 from platformdirs import user_data_dir
 from pydantic import BaseModel
 
-from shaderbox.core import Image, Node, Video, VideoDetails
+from shaderbox.core import (
+    FileDetails,
+    Image,
+    ImageDetails,
+    Node,
+    ResolutionDetails,
+    Video,
+    VideoDetails,
+)
 from shaderbox.vendors import get_modelbox_bg_removal, get_modelbox_depthmap
 
 _APP_DIR = Path(user_data_dir("shaderbox"))
@@ -918,14 +926,75 @@ class App:
                     is_changeable=False,
                 )
             else:
-                details = sticker._image.details
-                imgui.text("File:")
-                imgui.same_line()
-                imgui.text_colored(str(details.file_path), 0.5, 0.5, 0.5)
-                imgui.text(f"Size: {details.width}x{details.height}")
-                imgui.text(f"File size: {details.file_size} B")
+                sticker._image.details = self.draw_image_details(
+                    details=sticker._image.details,
+                    is_changeable=False,
+                )
 
         imgui.end_child()
+
+    @staticmethod
+    def draw_file_details(
+        details: FileDetails,
+        extensions: Sequence[str] | None = None,
+        is_changeable: bool = True,
+    ) -> FileDetails:
+        details = details.model_copy()
+
+        file_path = None
+        if is_changeable:
+            if imgui.button("File:##file_path"):
+                file_path = crossfiledialog.save_file(
+                    title="File path",
+                )
+                if file_path:
+                    extension = Path(file_path).suffix
+                    if extensions and extension not in extensions:
+                        details.path = ""
+                        logger.warning(
+                            f"Can't select {extension} file, "
+                            f"available extensions are: {extensions}"
+                        )
+                    else:
+                        details.path = file_path
+        else:
+            imgui.text("File:")
+
+        if details.path:
+            imgui.same_line()
+            imgui.text_colored(str(details.path), 0.5, 0.5, 0.5)
+            imgui.text(f"File size: {details.size} B")
+
+        return details
+
+    @staticmethod
+    def draw_resolution_details(
+        details: ResolutionDetails,
+        aspect: float | None = None,
+        is_changeable: bool = True,
+    ) -> ResolutionDetails:
+        details = details.model_copy()
+
+        if is_changeable:
+            is_height_changed, new_height = imgui.drag_int(
+                "Height", details.height, min_value=16, max_value=2560
+            )
+            is_width_changed, new_width = imgui.drag_int(
+                "Width", details.width, min_value=16, max_value=2560
+            )
+
+            if aspect is not None:
+                if is_height_changed:
+                    new_width = new_height * aspect
+                elif is_width_changed:
+                    new_height = new_width / aspect
+
+            details.width = new_width
+            details.height = new_height
+        else:
+            imgui.text(f"Resolution: {details.width}x{details.height}")
+
+        return details
 
     def draw_video_details(
         self,
@@ -933,63 +1002,16 @@ class App:
         is_changeable: bool = True,
     ) -> VideoDetails:
         details = details.model_copy()
-        available_extensions = [".webm", ".mp4"]
         available_qualities = ["low", "medium-low", "medium-high", "high"]
+        node = self.nodes[self.current_node_name]  # type: ignore
 
         # ----------------------------------------------------------------
         # File path
-        file_path = None
-        if is_changeable:
-            if imgui.button("File:##video_file_path"):
-                file_path = crossfiledialog.save_file(
-                    title=f"File path ({available_extensions})",
-                )
-                if file_path:
-                    video_extension = Path(file_path).suffix
-                    if video_extension not in available_extensions:
-                        details.file_path = ""
-                        logger.warning(
-                            f"Can't select {video_extension} file, "
-                            f"available extensions are: {available_extensions}"
-                        )
-                    else:
-                        details.file_path = file_path
-        else:
-            imgui.text("File:")
-
-        if details.file_path:
-            imgui.same_line()
-            imgui.text_colored(str(details.file_path), 0.5, 0.5, 0.5)
-            imgui.text(f"File size: {details.file_size} B")
-
-        # ----------------------------------------------------------------
-        # Resolution
-        if self.current_node_name:
-            node = self.nodes[self.current_node_name]
-            original_width, original_height = node.output_texture.size
-            aspect_ratio = original_width / max(original_height, 1)
-
-            is_sticker_size = details.width == 512 or details.height == 512
-
-            if is_changeable:
-                is_sticker_size = imgui.checkbox(
-                    "Use sticker size (512px)", is_sticker_size
-                )[1]
-
-                if is_sticker_size:
-                    if original_width >= original_height:
-                        details.width = 512
-                        details.height = int(512 / aspect_ratio)
-                    else:
-                        details.height = 512
-                        details.width = int(512 * aspect_ratio)
-                else:
-                    details.width = original_width
-                    details.height = original_height
-
-            imgui.text(f"Resolution: {details.width}x{details.height}")
-        else:
-            imgui.text("Resolution: N/A")
+        details.file_details = self.draw_file_details(
+            details.file_details,
+            extensions=[".webm", ".mp4"],
+            is_changeable=is_changeable,
+        )
 
         # ----------------------------------------------------------------
         # Quality
@@ -1002,9 +1024,30 @@ class App:
             details.quality = min(details.quality, len(available_qualities) - 1)
 
         # ----------------------------------------------------------------
+        # Resolution
+        details.resolution_details = self.draw_resolution_details(
+            details.resolution_details,
+            aspect=np.divide(*node.output_texture.size),
+            is_changeable=is_changeable,
+        )
+
+        if (
+            imgui.button("Reset resolution##video_resolution")
+            or not details.resolution_details.width
+            or not details.resolution_details.height
+        ):
+            details.resolution_details.width = node.output_texture.width
+            details.resolution_details.height = node.output_texture.height
+
+        # ----------------------------------------------------------------
         # FPS
         if is_changeable:
-            details.fps = imgui.drag_int("FPS##video_fps", details.fps, 1)[1]
+            details.fps = imgui.drag_int(
+                "FPS##video_fps",
+                details.fps,
+                min_value=10,
+                max_value=60,
+            )[1]
         else:
             imgui.text(f"FPS: {details.fps}")
         details.fps = max(10, details.fps)
@@ -1023,12 +1066,18 @@ class App:
 
         # ----------------------------------------------------------------
         # Render button
-        if details.file_path and is_changeable:
+        if details.file_details.path and is_changeable:
             imgui.spacing()
             if imgui.button("Render##video"):
-                node = self.nodes[self.current_node_name]  # type: ignore
                 details = node.render_video(details).last_rendered_video_details
 
+        return details
+
+    def draw_image_details(
+        self,
+        details: ImageDetails,
+        is_changeable: bool = True,
+    ) -> ImageDetails:
         return details
 
     def draw_node_settings(self) -> None:

@@ -16,21 +16,27 @@ from PIL import ImageOps
 from pydantic import BaseModel
 
 
-class VideoDetails(BaseModel):
-    quality: int = 0
-    file_path: str = ""
-    file_size: int = 0
+class FileDetails(BaseModel):
+    path: str = ""
+    size: int = 0
+
+
+class ResolutionDetails(BaseModel):
     width: int = 0
     height: int = 0
+
+
+class VideoDetails(BaseModel):
+    file_details: FileDetails = FileDetails()
+    resolution_details: ResolutionDetails = ResolutionDetails()
+    quality: int = 0
     fps: int = 0
     duration: float = 0.0
 
 
 class ImageDetails(BaseModel):
-    file_path: str = ""
-    file_size: int = 0
-    width: int = 0
-    height: int = 0
+    file_details: FileDetails = FileDetails()
+    resolution_details: ResolutionDetails = ResolutionDetails()
 
 
 class Image:
@@ -61,10 +67,10 @@ class Image:
 
         self._image = self._image.convert("RGBA")
         self.details = ImageDetails(
-            file_path=file_path,
-            file_size=file_size,
-            width=self._image.width,
-            height=self._image.height,
+            file_details=FileDetails(path=file_path, size=file_size),
+            resolution_details=ResolutionDetails(
+                width=self._image.width, height=self._image.height
+            ),
         )
 
     @classmethod
@@ -104,12 +110,11 @@ class Video:
         width = int(self._cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         fps = int(self._cap.get(cv2.CAP_PROP_FPS))
+        file_size = Path(file_path).stat().st_size
 
         self.details = VideoDetails(
-            file_path=str(file_path),
-            file_size=Path(file_path).stat().st_size,
-            width=width,
-            height=height,
+            file_details=FileDetails(path=str(file_path), size=file_size),
+            resolution_details=ResolutionDetails(width=width, height=height),
             fps=fps,
             duration=self._cap.get(cv2.CAP_PROP_FRAME_COUNT) / fps,
         )
@@ -387,8 +392,10 @@ class Node:
         return self
 
     def render_video(self, details: VideoDetails) -> "Node":
-        file_path = Path(details.file_path)
+        file_path = Path(details.file_details.path)
         extension = file_path.suffix
+        width = details.resolution_details.width
+        height = details.resolution_details.height
 
         if extension == ".mp4":
             codec = "libx264"
@@ -405,7 +412,7 @@ class Node:
                 "-preset",
                 preset,
                 "-vf",
-                f"scale={details.width}:{details.height}:force_original_aspect_ratio=decrease,pad={details.width}:{details.height}:(ow-iw)/2:(oh-ih)/2",
+                f"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2",
             ]
         elif extension == ".webm":
             codec = "libvpx-vp9"
@@ -428,7 +435,7 @@ class Node:
                 "-threads",
                 "0",
                 "-vf",
-                f"scale={details.width}:{details.height}:force_original_aspect_ratio=decrease,pad={details.width}:{details.height}:(ow-iw)/2:(oh-ih)/2",
+                f"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2",
             ]
         else:
             raise ValueError(
