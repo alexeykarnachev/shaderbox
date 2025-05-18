@@ -967,13 +967,14 @@ class App:
 
         return details
 
-    @staticmethod
     def draw_resolution_details(
+        self,
         details: ResolutionDetails,
         aspect: float | None = None,
         is_changeable: bool = True,
     ) -> ResolutionDetails:
         details = details.model_copy()
+        node = self.nodes[self.current_node_name]  # type: ignore
 
         if is_changeable:
             is_height_changed, new_height = imgui.drag_int(
@@ -991,8 +992,43 @@ class App:
 
             details.width = new_width
             details.height = new_height
+
+            if (
+                imgui.button("Reset resolution##video_resolution")
+                or not details.width
+                or not details.height
+            ):
+                details.width = node.output_texture.width
+                details.height = node.output_texture.height
+
         else:
             imgui.text(f"Resolution: {details.width}x{details.height}")
+
+        return details
+
+    def draw_image_details(
+        self,
+        details: ImageDetails,
+        is_changeable: bool = True,
+    ) -> ImageDetails:
+        details = details.model_copy()
+        node = self.nodes[self.current_node_name]  # type: ignore
+
+        # ----------------------------------------------------------------
+        # File path
+        details.file_details = self.draw_file_details(
+            details.file_details,
+            extensions=[".png", ".jpeg", ".webp"],
+            is_changeable=is_changeable,
+        )
+
+        # ----------------------------------------------------------------
+        # Resolution
+        details.resolution_details = self.draw_resolution_details(
+            details.resolution_details,
+            aspect=np.divide(*node.output_texture.size),
+            is_changeable=is_changeable,
+        )
 
         return details
 
@@ -1004,14 +1040,6 @@ class App:
         details = details.model_copy()
         available_qualities = ["low", "medium-low", "medium-high", "high"]
         node = self.nodes[self.current_node_name]  # type: ignore
-
-        # ----------------------------------------------------------------
-        # File path
-        details.file_details = self.draw_file_details(
-            details.file_details,
-            extensions=[".webm", ".mp4"],
-            is_changeable=is_changeable,
-        )
 
         # ----------------------------------------------------------------
         # Quality
@@ -1030,14 +1058,6 @@ class App:
             aspect=np.divide(*node.output_texture.size),
             is_changeable=is_changeable,
         )
-
-        if (
-            imgui.button("Reset resolution##video_resolution")
-            or not details.resolution_details.width
-            or not details.resolution_details.height
-        ):
-            details.resolution_details.width = node.output_texture.width
-            details.resolution_details.height = node.output_texture.height
 
         # ----------------------------------------------------------------
         # FPS
@@ -1065,19 +1085,20 @@ class App:
         details.duration = max(0.1, details.duration)
 
         # ----------------------------------------------------------------
+        # File path
+        details.file_details = self.draw_file_details(
+            details.file_details,
+            extensions=[".webm", ".mp4"],
+            is_changeable=is_changeable,
+        )
+
+        # ----------------------------------------------------------------
         # Render button
         if details.file_details.path and is_changeable:
             imgui.spacing()
             if imgui.button("Render##video"):
                 details = node.render_video(details).last_rendered_video_details
 
-        return details
-
-    def draw_image_details(
-        self,
-        details: ImageDetails,
-        is_changeable: bool = True,
-    ) -> ImageDetails:
         return details
 
     def draw_node_settings(self) -> None:
