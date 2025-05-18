@@ -20,6 +20,13 @@ class FileDetails(BaseModel):
     path: str = ""
     size: int = 0
 
+    @classmethod
+    def from_file_path(cls, file_path: PathLike) -> "FileDetails":
+        return cls(
+            path=str(file_path),
+            size=Path(file_path).stat().st_size,
+        )
+
 
 class ResolutionDetails(BaseModel):
     width: int = 0
@@ -39,6 +46,14 @@ class ImageDetails(BaseModel):
     resolution_details: ResolutionDetails = ResolutionDetails()
 
 
+def texture_to_pil(texture: moderngl.Texture) -> PILImage.Image:
+    size = (texture.width, texture.height)
+
+    # Flip image when reading from texture (opengl)
+    image = ImageOps.flip(PILImage.frombytes("RGBA", size, texture.read()))
+    return image
+
+
 class Image:
     def __init__(
         self, src: PathLike | PILImage.Image | moderngl.Texture | np.ndarray | IO[bytes]
@@ -46,18 +61,10 @@ class Image:
         self._image: PILImage.Image
         self._texture: moderngl.Texture | None = None
 
-        file_path: str = ""
-        file_size: int = 0
-
         if isinstance(src, moderngl.Texture):
-            # Flip image when reading from texture (opengl)
-            self._image = ImageOps.flip(
-                PILImage.frombytes("RGBA", (src.width, src.height), src.read())
-            )
+            self._image = texture_to_pil(src)
         elif isinstance(src, PathLike):
-            file_path = str(src)
-            file_size = Path(file_path).stat().st_size
-            self._image = PILImage.open(file_path)
+            self._image = PILImage.open(str(src))
         elif isinstance(src, PILImage.Image):
             self._image = src
         elif isinstance(src, np.ndarray):
@@ -65,9 +72,15 @@ class Image:
         else:
             self._image = PILImage.open(src)
 
+        file_details = (
+            FileDetails.from_file_path(src)
+            if isinstance(src, PathLike)
+            else FileDetails()
+        )
+
         self._image = self._image.convert("RGBA")
         self.details = ImageDetails(
-            file_details=FileDetails(path=file_path, size=file_size),
+            file_details=file_details,
             resolution_details=ResolutionDetails(
                 width=self._image.width, height=self._image.height
             ),
@@ -93,9 +106,6 @@ class Image:
             )
 
         return self._texture
-
-    def save(self, file_path: PathLike | IO[bytes], format: str | None = None) -> None:
-        self._image.save(file_path, format=format)  # type: ignore
 
     def release(self) -> None:
         if self._texture is not None:
@@ -382,12 +392,21 @@ class Node:
             self._uniform_values[name] = value
         return value
 
-    def render_image(self, u_time: float | None = 0.0) -> "Node":
+    def render_image(self, details: ImageDetails, u_time: float | None = 0.0) -> "Node":
+        file_path = Path(details.file_details.path)
         self.render(u_time=u_time)
+
+        pil_image = texture_to_pil(self.output_texture)
+        pil_image = pil_image.resize(
+            (details.resolution_details.width, details.resolution_details.height)
+        )
+
+        pil_image.save(file_path)
+        logger.info(f"Image saved: {file_path}")
 
         if self.last_rendered_image is not None:
             self.last_rendered_image.release()
-        self.last_rendered_image = Image(self.output_texture)
+        self.last_rendered_image = Image(file_path)
 
         return self
 
@@ -462,11 +481,10 @@ class Node:
             writer.append_data(frame)
 
         writer.close()
-
-        video = Video(file_path)
+        logger.info(f"Video saved: {details.file_details.path}")
 
         if self.last_rendered_video is not None:
             self.last_rendered_video.release()
-        self.last_rendered_video = video
+        self.last_rendered_video = Video(file_path)
 
         return self

@@ -8,7 +8,7 @@ from shaderbox.core import Image
 
 def _post_image_to_endpoint(url: str, image: Image) -> str:
     buffer = BytesIO()
-    image.save(buffer, format="PNG")
+    image._image.save(buffer, format="PNG")
     buffer.seek(0)
 
     with httpx.Client() as client:

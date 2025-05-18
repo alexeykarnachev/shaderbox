@@ -173,9 +173,11 @@ class UITgSticker:
 
 
 class UINodeState(BaseModel):
-    video_details: VideoDetails = VideoDetails()
+    render_video_details: VideoDetails = VideoDetails()
+    render_image_details: ImageDetails = ImageDetails()
+    render_output_type_idx: int = 0
 
-    resolution_combo_idx: int = 0
+    resolution_idx: int = 0
     selected_uniform_name: str = ""
     blur_kernel_size: int = 50
     normals_kernel_size: int = 3
@@ -360,7 +362,7 @@ class App:
                 textures_dir.mkdir(exist_ok=True)
                 texture_filename = f"{uniform.name}.png"
 
-                Image(value).save(textures_dir / texture_filename, format="PNG")
+                Image(value)._image.save(textures_dir / texture_filename, format="PNG")
                 meta["uniforms"][uniform.name] = {
                     "type": "texture",
                     "width": value.width,
@@ -576,20 +578,17 @@ class App:
             imgui.same_line()
             imgui.text_colored("(" + ", ".join(matching_uniforms) + ")", 0.5, 0.5, 0.5)
 
-        self.ui_current_node_state.resolution_combo_idx = imgui.combo(
-            "##resolution_combo_idx",
-            self.ui_current_node_state.resolution_combo_idx,
+        self.ui_current_node_state.resolution_idx = imgui.combo(
+            "##resolution_idx",
+            self.ui_current_node_state.resolution_idx,
             resolution_items,
         )[1]
-        self.ui_current_node_state.resolution_combo_idx = min(
-            self.ui_current_node_state.resolution_combo_idx, len(resolution_items) - 1
-        )
 
         imgui.same_line()
         if imgui.button("Apply##resolution"):
             w, h = map(
                 int,
-                resolution_items[self.ui_current_node_state.resolution_combo_idx]
+                resolution_items[self.ui_current_node_state.resolution_idx]
                 .split(" | ")[0]
                 .split("x"),
             )
@@ -762,9 +761,20 @@ class App:
                     logger.error(str(e))
 
     def draw_render_tab(self) -> None:
-        self.ui_current_node_state.video_details = self.draw_video_details(
-            self.ui_current_node_state.video_details
-        )
+        self.ui_current_node_state.render_output_type_idx = imgui.combo(
+            "Output type##render_output_type_idx",
+            self.ui_current_node_state.render_output_type_idx,
+            ["video", "image"],
+        )[1]
+
+        if self.ui_current_node_state.render_output_type_idx == 0:
+            self.ui_current_node_state.render_video_details = self.draw_video_details(
+                self.ui_current_node_state.render_video_details
+            )
+        else:
+            self.ui_current_node_state.render_image_details = self.draw_image_details(
+                self.ui_current_node_state.render_image_details
+            )
 
     def draw_ui_uniform(self, ui_uniform: UIUniform) -> None:
         if self.current_node_name is None:
@@ -1015,6 +1025,14 @@ class App:
         node = self.nodes[self.current_node_name]  # type: ignore
 
         # ----------------------------------------------------------------
+        # Resolution
+        details.resolution_details = self.draw_resolution_details(
+            details.resolution_details,
+            aspect=np.divide(*node.output_texture.size),
+            is_changeable=is_changeable,
+        )
+
+        # ----------------------------------------------------------------
         # File path
         details.file_details = self.draw_file_details(
             details.file_details,
@@ -1023,12 +1041,11 @@ class App:
         )
 
         # ----------------------------------------------------------------
-        # Resolution
-        details.resolution_details = self.draw_resolution_details(
-            details.resolution_details,
-            aspect=np.divide(*node.output_texture.size),
-            is_changeable=is_changeable,
-        )
+        # Render button
+        if details.file_details.path and is_changeable:
+            imgui.spacing()
+            if imgui.button("Render##image"):
+                details = node.render_image(details).last_rendered_image_details
 
         return details
 
@@ -1045,11 +1062,10 @@ class App:
         # Quality
         if is_changeable:
             details.quality = imgui.combo(
-                "Quality##video_quality_combo_idx",
+                "Quality##video_quality_idx",
                 details.quality,
                 available_qualities,
             )[1]
-            details.quality = min(details.quality, len(available_qualities) - 1)
 
         # ----------------------------------------------------------------
         # Resolution
