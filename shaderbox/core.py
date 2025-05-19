@@ -16,37 +16,6 @@ from PIL import ImageOps
 from pydantic import BaseModel
 
 
-def adjust_size(
-    size: tuple[int, int],
-    width: int | None = None,
-    height: int | None = None,
-    aspect: float | None = None,
-) -> tuple[int, int]:
-    if (width, height, aspect).count(None) != 1:
-        raise ValueError("Exactly one of width, height, or aspect must be provided")
-
-    original_width, original_height = size
-
-    if width is not None:
-        if width <= 0:
-            raise ValueError("Width must be positive")
-        new_height = round(width * original_height / original_width)
-        return (width, new_height)
-    elif height is not None:
-        new_width = round(height * original_width / original_height)
-        return (new_width, height)
-    elif aspect is not None:
-        current_aspect = original_width / original_height
-        if aspect > current_aspect:
-            new_width = round(original_height * aspect)
-            return (new_width, original_height)
-        else:
-            new_height = round(original_width / aspect)
-            return (original_width, new_height)
-    else:
-        return size
-
-
 class FileDetails(BaseModel):
     path: str = ""
     size: int = 0
@@ -214,17 +183,29 @@ class Canvas:
     def __init__(
         self,
         gl: moderngl.Context | None = None,
-        texture_size: tuple[int, int] | None = None,
+        size: tuple[int, int] | None = None,
     ) -> None:
         self._gl = gl or moderngl.get_context()
 
-        self.texture_size = texture_size or (1280, 960)
-        self.texture = self._gl.texture(self.texture_size, 4)
+        self.texture: moderngl.Texture
+        self.fbo: moderngl.Framebuffer
+
+        self._init(size)
+
+    def _init(self, size: tuple[int, int] | None) -> None:
+        self.texture = self._gl.texture(size or (1280, 960), 4)
         self.fbo = self._gl.framebuffer(color_attachments=[self.texture])
 
     def release(self) -> None:
         self.texture.release()
         self.fbo.release()
+
+    def set_size(self, size: tuple[int, int]) -> None:
+        if size == self.texture.size:
+            return
+
+        self.release()
+        self._init(size)
 
 
 class Node:
@@ -245,7 +226,7 @@ class Node:
             fs_source if fs_source else self._DEFAULT_FS_FILE_PATH.read_text()
         )
 
-        self.canvas = Canvas(texture_size=canvas_size, gl=self._gl)
+        self.canvas = Canvas(size=canvas_size, gl=self._gl)
 
         self._uniform_values: dict[str, Any] = {}
         self.shader_error: str = ""
@@ -312,10 +293,6 @@ class Node:
         self.program = None
         self.vbo = None
         self.vao = None
-
-    def reset_canvas_size(self, size: tuple[int, int]) -> None:
-        self.canvas.release()
-        self.canvas = Canvas(texture_size=size)
 
     def release(self) -> None:
         self.release_program()

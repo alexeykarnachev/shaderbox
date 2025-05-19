@@ -25,6 +25,7 @@ from platformdirs import user_data_dir
 from pydantic import BaseModel
 
 from shaderbox.core import (
+    Canvas,
     FileDetails,
     Image,
     ImageDetails,
@@ -47,6 +48,37 @@ _NODES_DIR.mkdir(exist_ok=True, parents=True)
 _TRASH_DIR.mkdir(exist_ok=True, parents=True)
 _VIDEOS_DIR.mkdir(exist_ok=True, parents=True)
 _IMAGES_DIR.mkdir(exist_ok=True, parents=True)
+
+
+def adjust_size(
+    size: tuple[int, int],
+    width: int | None = None,
+    height: int | None = None,
+    aspect: float | None = None,
+) -> tuple[int, int]:
+    if (width, height, aspect).count(None) != 2:
+        raise ValueError("Exactly one of width, height, or aspect must be provided")
+
+    original_width, original_height = size
+
+    if width is not None:
+        if width <= 0:
+            raise ValueError("Width must be positive")
+        new_height = round(width * original_height / original_width)
+        return (width, new_height)
+    elif height is not None:
+        new_width = round(height * original_width / original_height)
+        return (new_width, height)
+    elif aspect is not None:
+        current_aspect = original_width / original_height
+        if aspect > current_aspect:
+            new_width = round(original_height * aspect)
+            return (new_width, original_height)
+        else:
+            new_height = round(original_width / aspect)
+            return (original_width, new_height)
+    else:
+        return size
 
 
 def get_resolution_str(name: str | None, w: int, h: int) -> str:
@@ -222,6 +254,8 @@ class App:
         self.current_node_name: str | None = None
         self.nodes: dict[str, Node] = {}
         self.node_mtimes: dict[str, float] = {}
+
+        self.preview_canvas = Canvas()
 
         imgui.create_context()
         self.window = window
@@ -592,7 +626,7 @@ class App:
                 .split(" | ")[0]
                 .split("x"),
             )
-            node.reset_canvas_size((w, h))
+            node.canvas.set_size((w, h))
 
         imgui.new_line()
         imgui.separator()
@@ -1082,14 +1116,12 @@ class App:
 
         # ----------------------------------------------------------------
         # Render preview
-        image_height = 256
-        image_width = image_height * np.divide(*node.canvas.texture.size)
-
+        imgui.text("Render preview:")
         has_error = node.shader_error != ""
         imgui.image(
-            node.canvas.texture.glo,
-            width=image_width,
-            height=image_height,
+            self.preview_canvas.texture.glo,
+            width=self.preview_canvas.texture.size[0],
+            height=self.preview_canvas.texture.size[1],
             uv0=(0, 1),
             uv1=(1, 0),
             tint_color=(0.2, 0.2, 0.2, 1.0) if has_error else (1.0, 1.0, 1.0, 1.0),
@@ -1103,7 +1135,9 @@ class App:
             if imgui.button("Render##video"):
                 details = node.render_video(details).last_rendered_video_details
         else:
-            imgui.text("Select output file path to render the video")
+            imgui.text_colored(
+                "Select output file path to render the video", *(1.0, 1.0, 0.0)
+            )
 
         return details
 
@@ -1177,9 +1211,23 @@ class App:
                 self.node_mtimes[name] = mtime
                 self.save_node(name)
 
-        # Render nodes
+        # ----------------------------------------------------------------
+        # Render all nodes
         for node in self.nodes.values():
             node.render()
+
+        # ----------------------------------------------------------------
+        # Render current node preview
+        preview_image_width = 200
+        if self.current_node_name:
+            node = self.nodes[self.current_node_name]
+
+            u_time = glfw.get_time()
+            duration = self.ui_current_node_state.render_video_details.duration
+            u_time -= duration * (u_time // duration)
+            size = adjust_size(node.canvas.texture.size, width=preview_image_width)
+            self.preview_canvas.set_size(size)
+            node.render(u_time, canvas=self.preview_canvas)
 
         # ----------------------------------------------------------------
         # Draw UI
