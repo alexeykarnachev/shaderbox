@@ -80,6 +80,12 @@ def adjust_size(
         return size
 
 
+def mod(a: float, b: float) -> float:
+    if b == 0.0:
+        return 0.0
+    return a - b * (a // b)
+
+
 def get_resolution_str(name: str | None, w: int, h: int) -> str:
     g = math.gcd(w, h)
     w_ratio, h_ratio = w // g, h // g
@@ -160,8 +166,11 @@ class UITgSticker:
     def __init__(self, sticker: tg.Sticker):
         self._sticker = sticker
 
-        self._video: Video | None = None
-        self._image: Image = Image.from_color((512, 512), (1.0, 0.0, 0.0))
+        self.video: Video | None = None
+        self.image: Image = Image.from_color((512, 512), (1.0, 0.0, 0.0))
+
+        self.render_media_details: MediaDetails = MediaDetails()
+        self.preview_canvas: Canvas
 
     async def load(self) -> "UITgSticker":
         bot = self._sticker.get_bot()
@@ -173,7 +182,8 @@ class UITgSticker:
             file = await bot.get_file(self._sticker.file_id)
             await file.download_to_drive(file_path)
 
-            self._video = Video(file_path)
+            self.video = Video(file_path)
+            self.render_media_details = self.video.details
 
         if self._sticker.thumbnail:
             file_name = self._sticker.thumbnail.file_id + ".webp"
@@ -181,26 +191,29 @@ class UITgSticker:
 
             file = await bot.get_file(self._sticker.thumbnail.file_id)
             await file.download_to_drive(file_path)
-            self._image = Image(file_path)
+            self.image = Image(file_path)
+            self.render_media_details = self.image.details
+
+        self.preview_canvas = Canvas()
 
         return self
 
     def update(self, current_time: float) -> None:
-        if self._video:
-            self._video.update(current_time)
+        if self.video:
+            self.video.update(current_time)
 
     def get_thumbnail_texture(self) -> moderngl.Texture:
-        if self._video:
-            return self._video.texture
+        if self.video:
+            return self.video.texture
         else:
-            return self._image.texture
+            return self.image.texture
 
     def release(self) -> None:
-        self._image.release()
+        self.image.release()
 
-        if self._video is not None:
-            self._video.release()
-            self._video = None
+        if self.video is not None:
+            self.video.release()
+            self.video = None
 
 
 class UINodeState(BaseModel):
@@ -791,15 +804,6 @@ class App:
                 except Exception as e:
                     logger.error(str(e))
 
-    def draw_render_tab(self) -> None:
-        self.ui_current_node_state.render_media_details = self.draw_media_details(
-            self.ui_current_node_state.render_media_details
-        )
-
-        self.ui_current_node_state.render_media_details = self.draw_render_button(
-            self.ui_current_node_state.render_media_details
-        )
-
     def draw_ui_uniform(self, ui_uniform: UIUniform) -> None:
         if self.current_node_name is None:
             return
@@ -952,42 +956,55 @@ class App:
         # Selected sticker settings
         if self._tg_selected_sticker_idx < len(self._tg_stickers):
             sticker = self._tg_stickers[self._tg_selected_sticker_idx]
-            texture = sticker._image.texture
 
-            if sticker._video:
-                sticker._video.details = self.draw_media_details(
-                    details=sticker._video.details,
-                )
-            else:
-                sticker._image.details = self.draw_media_details(
-                    details=sticker._image.details,
-                )
+            self.draw_media_details(
+                details=sticker.video.details
+                if sticker.video
+                else sticker.image.details,
+                is_changeable=False,
+            )
+
+            imgui.separator()
+
+            sticker.render_media_details = self.draw_media_details(
+                sticker.render_media_details
+            )
+            sticker.render_media_details = self.draw_render_button(
+                sticker.render_media_details,
+                sticker.preview_canvas.texture,
+            )
 
         imgui.end_child()
 
-    def draw_render_button(self, details: MediaDetails) -> MediaDetails:
+    def draw_render_button(
+        self,
+        details: MediaDetails,
+        preview_texture: moderngl.Texture | None,
+    ) -> MediaDetails:
         node = self.nodes[self.current_node_name]  # type: ignore
 
         # ----------------------------------------------------------------
         # Preview canvas
-        imgui.text("Render preview:")
-        has_error = node.shader_error != ""
-        imgui.image(
-            self.preview_canvas.texture.glo,
-            width=self.preview_canvas.texture.size[0],
-            height=self.preview_canvas.texture.size[1],
-            uv0=(0, 1),
-            uv1=(1, 0),
-            tint_color=(0.2, 0.2, 0.2, 1.0) if has_error else (1.0, 1.0, 1.0, 1.0),
-            border_color=(0.2, 0.2, 0.2, 1.0),
-        )
+        if preview_texture is not None:
+            imgui.text("Render preview:")
+            imgui.image(
+                preview_texture.glo,
+                width=preview_texture.size[0],
+                height=preview_texture.size[1],
+                uv0=(0, 1),
+                uv1=(1, 0),
+                border_color=(0.2, 0.2, 0.2, 1.0),
+            )
 
         # ----------------------------------------------------------------
         # Render button
         media_type = "video" if details.is_video else "image"
         if details.file_details.path:
             if imgui.button("Render##media"):
-                details = node.render_media(details)
+                try:
+                    details = node.render_media(details)
+                except Exception as e:
+                    logger.error(f"Failed to render media: {e}")
         else:
             imgui.text_colored(
                 f"Select output file path to render the {media_type}", *(1.0, 1.0, 0.0)
@@ -1049,68 +1066,31 @@ class App:
         details.width = new_width
         details.height = new_height
 
-        if (
-            imgui.button("Reset resolution##video_resolution")
-            or not details.width
-            or not details.height
-        ):
-            details.width = node.canvas.texture.width
-            details.height = node.canvas.texture.height
+        width, height = node.canvas.texture.size
+        if imgui.button(f"{width}x{height}") or not details.width or not details.height:
+            details.width = width
+            details.height = height
 
         return details
 
-    def draw_media_details(self, details: MediaDetails) -> MediaDetails:
-        def _draw_image_details(details: MediaDetails) -> MediaDetails:
-            details = details.model_copy()
-            node = self.nodes[self.current_node_name]  # type: ignore
+    def draw_media_details(
+        self, details: MediaDetails, is_changeable: bool = True
+    ) -> MediaDetails:
+        details = details.model_copy()
 
-            details.resolution_details = self.draw_resolution_details(
-                details.resolution_details,
-                aspect=np.divide(*node.canvas.texture.size),
-            )
+        if not is_changeable:
+            imgui.text(f"Output type: {'video' if details.is_video else 'image'}")
+            imgui.text(f"Width: {details.resolution_details.width}")
+            imgui.text(f"Height: {details.resolution_details.height}")
 
-            details.file_details = self.draw_file_details(
-                details.file_details,
-                extensions=[".png", ".jpeg", ".webp"],
-            )
+            if details.is_video:
+                imgui.text(f"Quality: {details.quality}")
+                imgui.text(f"FPS: {details.fps}")
+                imgui.text(f"Duration: {details.duration} sec")
 
-            return details
-
-        def _draw_video_details(details: MediaDetails) -> MediaDetails:
-            details = details.model_copy()
-            available_qualities = ["low", "medium-low", "medium-high", "high"]
-            node = self.nodes[self.current_node_name]  # type: ignore
-
-            details.quality = imgui.combo(
-                "Quality##video_quality_idx",
-                details.quality,
-                available_qualities,
-            )[1]
-
-            details.resolution_details = self.draw_resolution_details(
-                details.resolution_details,
-                aspect=np.divide(*node.canvas.texture.size),
-            )
-
-            details.fps = imgui.drag_int(
-                "FPS##video_fps",
-                details.fps,
-                min_value=10,
-                max_value=60,
-            )[1]
-
-            details.duration = imgui.drag_float(
-                "Duration, sec##video_duration",
-                details.duration,
-                change_speed=0.1,
-                min_value=1.0,
-                max_value=60.0,
-            )[1]
-
-            details.file_details = self.draw_file_details(
-                details.file_details,
-                extensions=[".webm", ".mp4"],
-            )
+            if details.file_details.path:
+                imgui.text(f"File: {details.file_details.path}")
+                imgui.text(f"File size: {details.file_details.size} B")
 
             return details
 
@@ -1121,10 +1101,43 @@ class App:
         )[1]
         details.is_video = idx == 0
 
-        if details.is_video:
-            return _draw_video_details(details)
+        if self.current_node_name:
+            node = self.nodes[self.current_node_name]
+            aspect = np.divide(*node.canvas.texture.size)
         else:
-            return _draw_image_details(details)
+            aspect = None
+
+        if details.is_video:
+            available_qualities = ["low", "medium-low", "medium-high", "high"]
+
+            details.quality = imgui.combo(
+                "Quality##video_quality_idx", details.quality, available_qualities
+            )[1]
+            details.resolution_details = self.draw_resolution_details(
+                details.resolution_details, aspect=aspect
+            )
+            details.fps = imgui.drag_int(
+                "FPS##video_fps", details.fps, min_value=10, max_value=60
+            )[1]
+            details.duration = imgui.drag_float(
+                "Duration, sec##video_duration",
+                details.duration,
+                change_speed=0.1,
+                min_value=1.0,
+                max_value=60.0,
+            )[1]
+            details.file_details = self.draw_file_details(
+                details.file_details, extensions=[".webm", ".mp4"]
+            )
+        else:
+            details.resolution_details = self.draw_resolution_details(
+                details.resolution_details, aspect=aspect
+            )
+            details.file_details = self.draw_file_details(
+                details.file_details, extensions=[".png", ".jpeg", ".webp"]
+            )
+
+        return details
 
     def draw_node_settings(self) -> None:
         with imgui.begin_child("node_settings", border=True):
@@ -1134,7 +1147,17 @@ class App:
                     imgui.end_tab_item()
 
                 if imgui.begin_tab_item("Render").selected:  # type: ignore
-                    self.draw_render_tab()
+                    self.ui_current_node_state.render_media_details = (
+                        self.draw_media_details(
+                            self.ui_current_node_state.render_media_details
+                        )
+                    )
+                    self.ui_current_node_state.render_media_details = (
+                        self.draw_render_button(
+                            self.ui_current_node_state.render_media_details,
+                            self.preview_canvas.texture,
+                        )
+                    )
                     imgui.end_tab_item()
 
                 if imgui.begin_tab_item("Tg stickers").selected:  # type: ignore
@@ -1143,89 +1166,8 @@ class App:
 
                 imgui.end_tab_bar()
 
-    def process_hotkeys(self) -> None:
-        io = imgui.get_io()
-        if io.key_ctrl and imgui.is_key_pressed(ord("N")):
-            self.create_new_current_node()
-        if io.key_ctrl and imgui.is_key_pressed(ord("D")):
-            self.delete_current_node()
-        if io.key_ctrl and imgui.is_key_pressed(ord("S")):
-            self.save()
-        if io.key_ctrl and imgui.is_key_pressed(ord("E")):
-            self.edit_current_node_fs_file()
-
-    def run(self) -> None:
-        while not glfw.window_should_close(self.window):
-            start_time = glfw.get_time()
-
-            self.update_and_draw()
-
-            elapsed_time = glfw.get_time() - start_time
-            time.sleep(max(0.0, 1.0 / 60.0 - elapsed_time))
-
-            if glfw.get_key(self.window, glfw.KEY_ESCAPE) == glfw.PRESS:
-                break
-
-        self.save()
-
-        for sticker in self._tg_stickers:
-            sticker.release()
-
-        for node in self.nodes.values():
-            node.release()
-
-    def update_and_draw(self) -> None:
-        # ----------------------------------------------------------------
-        # Prepare frame
-        gl = moderngl.get_context()
+    def draw_all(self) -> None:
         window_width, window_height = glfw.get_window_size(self.window)
-        glfw.poll_events()
-
-        # ----------------------------------------------------------------
-        # Check for shader file changes and reload nodes
-        for name in list(self.nodes.keys()):
-            fs_file_path = _NODES_DIR / name / "shader.frag.glsl"
-
-            if not fs_file_path.exists():
-                return
-
-            mtime = fs_file_path.lstat().st_mtime
-            if mtime != self.node_mtimes[name]:
-                logger.info(f"Reloading node {name} due to shader file change")
-                self.nodes[name].release_program(fs_file_path.read_text())
-                self.node_mtimes[name] = mtime
-                self.save_node(name)
-
-        # ----------------------------------------------------------------
-        # Render all nodes
-        for node in self.nodes.values():
-            node.render()
-
-        # ----------------------------------------------------------------
-        # Render current node preview
-        preview_image_width = 200
-        if self.current_node_name:
-            node = self.nodes[self.current_node_name]
-
-            if self.ui_current_node_state.render_media_details.is_video:
-                u_time = glfw.get_time()
-                duration = self.ui_current_node_state.render_media_details.duration
-                u_time -= duration * (u_time // (duration or 1.0))
-            else:
-                u_time = 0
-
-            size = adjust_size(node.canvas.texture.size, width=preview_image_width)
-            self.preview_canvas.set_size(size)
-            node.render(u_time, canvas=self.preview_canvas)
-
-        # ----------------------------------------------------------------
-        # Draw UI
-        gl.screen.use()
-        gl.clear()
-
-        self.process_hotkeys()
-        self.imgui_renderer.process_inputs()
-        imgui.new_frame()
 
         # ----------------------------------------------------------------
         # Main window
@@ -1318,6 +1260,99 @@ class App:
             self.draw_node_preview_grid(node_preview_width, control_panel_height)
             imgui.same_line()
             self.draw_node_settings()
+
+    def process_hotkeys(self) -> None:
+        io = imgui.get_io()
+        if io.key_ctrl and imgui.is_key_pressed(ord("N")):
+            self.create_new_current_node()
+        if io.key_ctrl and imgui.is_key_pressed(ord("D")):
+            self.delete_current_node()
+        if io.key_ctrl and imgui.is_key_pressed(ord("S")):
+            self.save()
+        if io.key_ctrl and imgui.is_key_pressed(ord("E")):
+            self.edit_current_node_fs_file()
+
+    def run(self) -> None:
+        while not glfw.window_should_close(self.window):
+            start_time = glfw.get_time()
+
+            self.update_and_draw()
+
+            elapsed_time = glfw.get_time() - start_time
+            time.sleep(max(0.0, 1.0 / 60.0 - elapsed_time))
+
+            if glfw.get_key(self.window, glfw.KEY_ESCAPE) == glfw.PRESS:
+                break
+
+        self.save()
+
+        for sticker in self._tg_stickers:
+            sticker.release()
+
+        for node in self.nodes.values():
+            node.release()
+
+    def update_and_draw(self) -> None:
+        # ----------------------------------------------------------------
+        # Prepare frame
+        gl = moderngl.get_context()
+        glfw.poll_events()
+
+        # ----------------------------------------------------------------
+        # Check for shader file changes and reload nodes
+        for name in list(self.nodes.keys()):
+            fs_file_path = _NODES_DIR / name / "shader.frag.glsl"
+
+            if not fs_file_path.exists():
+                return
+
+            mtime = fs_file_path.lstat().st_mtime
+            if mtime != self.node_mtimes[name]:
+                logger.info(f"Reloading node {name} due to shader file change")
+                self.nodes[name].release_program(fs_file_path.read_text())
+                self.node_mtimes[name] = mtime
+                self.save_node(name)
+
+        # ----------------------------------------------------------------
+        # Render all nodes
+        for node in self.nodes.values():
+            node.render()
+
+        # ----------------------------------------------------------------
+        # Render previews
+        if self.current_node_name:
+            node = self.nodes[self.current_node_name]
+            preview_size = adjust_size(node.canvas.texture.size, width=200)
+
+            def _render_preview(canvas: Canvas, media_details: MediaDetails) -> None:
+                canvas.set_size(preview_size)
+                u_time = (
+                    mod(glfw.get_time(), media_details.duration)
+                    if media_details.is_video
+                    else 0
+                )
+                node.render(u_time, canvas=canvas)
+
+            # Render current node preview
+            _render_preview(
+                self.preview_canvas, self.ui_current_node_state.render_media_details
+            )
+
+            # Render current sticker preview
+            if self._tg_selected_sticker_idx < len(self._tg_stickers):
+                sticker = self._tg_stickers[self._tg_selected_sticker_idx]
+                _render_preview(sticker.preview_canvas, sticker.render_media_details)
+
+        # ----------------------------------------------------------------
+        # Draw UI
+        gl.screen.use()
+        gl.clear()
+
+        self.process_hotkeys()
+        self.imgui_renderer.process_inputs()
+        imgui.new_frame()
+
+        self.draw_all()
 
         # Finalize frame
         imgui.end()
