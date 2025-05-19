@@ -338,7 +338,7 @@ class App:
 
         ui_state_dict = self._node_ui_state[node_name].model_dump()
         meta: dict[str, Any] = {
-            "output_texture_size": list(node.output_texture_size),
+            "canvas_size": list(node.canvas.texture.size),
             "uniforms": {},
             "ui_state": ui_state_dict,
         }
@@ -495,15 +495,15 @@ class App:
                 ):
                     self.current_node_name = name
 
-                s = (preview_size - 10) / max(node.output_texture.size)
-                image_width = node.output_texture.size[0] * s
-                image_height = node.output_texture.size[1] * s
+                s = (preview_size - 10) / max(node.canvas.texture.size)
+                image_width = node.canvas.texture.size[0] * s
+                image_height = node.canvas.texture.size[1] * s
 
                 imgui.set_cursor_pos_x((preview_size - image_width) / 2 - 1)
                 imgui.set_cursor_pos_y((preview_size - image_height) / 2 - 1)
 
                 imgui.image(
-                    node.output_texture.glo,
+                    node.canvas.texture.glo,
                     width=image_width,
                     height=image_height,
                     uv0=(0, 1),
@@ -546,7 +546,7 @@ class App:
             if uniform.gl_type == GL_SAMPLER_2D:  # type: ignore
                 texture = node.get_uniform_value(uniform.name)
                 w, h = texture.size
-                if (w, h) == node.output_texture_size:
+                if (w, h) == node.canvas.texture.size:
                     matching_uniforms.append(uniform.name)
                 else:
                     uniform_resolutions.append((w, h, uniform.name))
@@ -558,7 +558,7 @@ class App:
             resolution_items.append(get_resolution_str(name, w, h))
 
         for w, h in standard_resolutions:
-            if (w, h) != node.output_texture_size and (w, h) not in uniform_sizes:
+            if (w, h) != node.canvas.texture.size and (w, h) not in uniform_sizes:
                 resolution_items.append(get_resolution_str(None, w, h))
 
         # ----------------------------------------------------------------
@@ -572,7 +572,7 @@ class App:
         # ----------------------------------------------------------------
         # Resolution combobox
         imgui.text(
-            "Current resolution: " + get_resolution_str(None, *node.output_texture_size)
+            "Current resolution: " + get_resolution_str(None, *node.canvas.texture.size)
         )
         if matching_uniforms:
             imgui.same_line()
@@ -592,7 +592,7 @@ class App:
                 .split(" | ")[0]
                 .split("x"),
             )
-            node.reset_output_texture_size((w, h))
+            node.reset_canvas_size((w, h))
 
         imgui.new_line()
         imgui.separator()
@@ -933,12 +933,10 @@ class App:
             if sticker._video:
                 sticker._video.details = self.draw_video_details(
                     details=sticker._video.details,
-                    is_changeable=False,
                 )
             else:
                 sticker._image.details = self.draw_image_details(
                     details=sticker._image.details,
-                    is_changeable=False,
                 )
 
         imgui.end_child()
@@ -947,28 +945,24 @@ class App:
     def draw_file_details(
         details: FileDetails,
         extensions: Sequence[str] | None = None,
-        is_changeable: bool = True,
     ) -> FileDetails:
         details = details.model_copy()
 
         file_path = None
-        if is_changeable:
-            if imgui.button("File:##file_path"):
-                file_path = crossfiledialog.save_file(
-                    title="File path",
-                )
-                if file_path:
-                    extension = Path(file_path).suffix
-                    if extensions and extension not in extensions:
-                        details.path = ""
-                        logger.warning(
-                            f"Can't select {extension} file, "
-                            f"available extensions are: {extensions}"
-                        )
-                    else:
-                        details.path = file_path
-        else:
-            imgui.text("File:")
+        if imgui.button("File:##file_path"):
+            file_path = crossfiledialog.save_file(
+                title="File path",
+            )
+            if file_path:
+                extension = Path(file_path).suffix
+                if extensions and extension not in extensions:
+                    details.path = ""
+                    logger.warning(
+                        f"Can't select {extension} file, "
+                        f"available extensions are: {extensions}"
+                    )
+                else:
+                    details.path = file_path
 
         if details.path:
             imgui.same_line()
@@ -981,46 +975,37 @@ class App:
         self,
         details: ResolutionDetails,
         aspect: float | None = None,
-        is_changeable: bool = True,
     ) -> ResolutionDetails:
         details = details.model_copy()
         node = self.nodes[self.current_node_name]  # type: ignore
 
-        if is_changeable:
-            is_height_changed, new_height = imgui.drag_int(
-                "Height", details.height, min_value=16, max_value=2560
-            )
-            is_width_changed, new_width = imgui.drag_int(
-                "Width", details.width, min_value=16, max_value=2560
-            )
+        is_height_changed, new_height = imgui.drag_int(
+            "Height", details.height, min_value=16, max_value=2560
+        )
+        is_width_changed, new_width = imgui.drag_int(
+            "Width", details.width, min_value=16, max_value=2560
+        )
 
-            if aspect is not None:
-                if is_height_changed:
-                    new_width = new_height * aspect
-                elif is_width_changed:
-                    new_height = new_width / aspect
+        if aspect is not None:
+            if is_height_changed:
+                new_width = new_height * aspect
+            elif is_width_changed:
+                new_height = new_width / aspect
 
-            details.width = new_width
-            details.height = new_height
+        details.width = new_width
+        details.height = new_height
 
-            if (
-                imgui.button("Reset resolution##video_resolution")
-                or not details.width
-                or not details.height
-            ):
-                details.width = node.output_texture.width
-                details.height = node.output_texture.height
-
-        else:
-            imgui.text(f"Resolution: {details.width}x{details.height}")
+        if (
+            imgui.button("Reset resolution##video_resolution")
+            or not details.width
+            or not details.height
+        ):
+            details.width = node.canvas.texture.width
+            details.height = node.canvas.texture.height
 
         return details
 
-    def draw_image_details(
-        self,
-        details: ImageDetails,
-        is_changeable: bool = True,
-    ) -> ImageDetails:
+    def draw_image_details(self, details: ImageDetails) -> ImageDetails:
         details = details.model_copy()
         node = self.nodes[self.current_node_name]  # type: ignore
 
@@ -1028,8 +1013,7 @@ class App:
         # Resolution
         details.resolution_details = self.draw_resolution_details(
             details.resolution_details,
-            aspect=np.divide(*node.output_texture.size),
-            is_changeable=is_changeable,
+            aspect=np.divide(*node.canvas.texture.size),
         )
 
         # ----------------------------------------------------------------
@@ -1037,83 +1021,89 @@ class App:
         details.file_details = self.draw_file_details(
             details.file_details,
             extensions=[".png", ".jpeg", ".webp"],
-            is_changeable=is_changeable,
         )
 
         # ----------------------------------------------------------------
         # Render button
-        if details.file_details.path and is_changeable:
+        if details.file_details.path:
             imgui.spacing()
             if imgui.button("Render##image"):
                 details = node.render_image(details).last_rendered_image_details
+        else:
+            imgui.text("Select output file path to render the image")
 
         return details
 
-    def draw_video_details(
-        self,
-        details: VideoDetails,
-        is_changeable: bool = True,
-    ) -> VideoDetails:
+    def draw_video_details(self, details: VideoDetails) -> VideoDetails:
         details = details.model_copy()
         available_qualities = ["low", "medium-low", "medium-high", "high"]
         node = self.nodes[self.current_node_name]  # type: ignore
 
         # ----------------------------------------------------------------
         # Quality
-        if is_changeable:
-            details.quality = imgui.combo(
-                "Quality##video_quality_idx",
-                details.quality,
-                available_qualities,
-            )[1]
+        details.quality = imgui.combo(
+            "Quality##video_quality_idx",
+            details.quality,
+            available_qualities,
+        )[1]
 
         # ----------------------------------------------------------------
         # Resolution
         details.resolution_details = self.draw_resolution_details(
             details.resolution_details,
-            aspect=np.divide(*node.output_texture.size),
-            is_changeable=is_changeable,
+            aspect=np.divide(*node.canvas.texture.size),
         )
 
         # ----------------------------------------------------------------
         # FPS
-        if is_changeable:
-            details.fps = imgui.drag_int(
-                "FPS##video_fps",
-                details.fps,
-                min_value=10,
-                max_value=60,
-            )[1]
-        else:
-            imgui.text(f"FPS: {details.fps}")
-        details.fps = max(10, details.fps)
+        details.fps = imgui.drag_int(
+            "FPS##video_fps",
+            details.fps,
+            min_value=10,
+            max_value=60,
+        )[1]
 
         # ----------------------------------------------------------------
         # Duration
-        if is_changeable:
-            details.duration = imgui.drag_float(
-                "Duration, sec##video_duration",
-                details.duration,
-                0.1,
-            )[1]
-        else:
-            imgui.text(f"Duration: {details.duration} sec")
-        details.duration = max(0.1, details.duration)
+        details.duration = imgui.drag_float(
+            "Duration, sec##video_duration",
+            details.duration,
+            change_speed=0.1,
+            min_value=1.0,
+            max_value=60.0,
+        )[1]
 
         # ----------------------------------------------------------------
         # File path
         details.file_details = self.draw_file_details(
             details.file_details,
             extensions=[".webm", ".mp4"],
-            is_changeable=is_changeable,
+        )
+
+        # ----------------------------------------------------------------
+        # Render preview
+        image_height = 256
+        image_width = image_height * np.divide(*node.canvas.texture.size)
+
+        has_error = node.shader_error != ""
+        imgui.image(
+            node.canvas.texture.glo,
+            width=image_width,
+            height=image_height,
+            uv0=(0, 1),
+            uv1=(1, 0),
+            tint_color=(0.2, 0.2, 0.2, 1.0) if has_error else (1.0, 1.0, 1.0, 1.0),
+            border_color=(0.2, 0.2, 0.2, 1.0),
         )
 
         # ----------------------------------------------------------------
         # Render button
-        if details.file_details.path and is_changeable:
+        if details.file_details.path:
             imgui.spacing()
             if imgui.button("Render##video"):
                 details = node.render_video(details).last_rendered_video_details
+        else:
+            imgui.text("Select output file path to render the video")
 
         return details
 
@@ -1247,13 +1237,13 @@ class App:
                 imgui.get_content_region_available()[1] - control_panel_min_height - 10,
             )
             max_image_width = imgui.get_content_region_available()[0]
-            image_aspect = np.divide(*node.output_texture.size)
+            image_aspect = np.divide(*node.canvas.texture.size)
             image_width = min(max_image_width, max_image_height * image_aspect)
             image_height = min(max_image_height, max_image_width / image_aspect)
 
             has_error = node.shader_error != ""
             imgui.image(
-                node.output_texture.glo,
+                node.canvas.texture.glo,
                 width=image_width,
                 height=image_height,
                 uv0=(0, 1),

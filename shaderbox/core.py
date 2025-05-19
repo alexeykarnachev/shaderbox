@@ -16,6 +16,37 @@ from PIL import ImageOps
 from pydantic import BaseModel
 
 
+def adjust_size(
+    size: tuple[int, int],
+    width: int | None = None,
+    height: int | None = None,
+    aspect: float | None = None,
+) -> tuple[int, int]:
+    if (width, height, aspect).count(None) != 1:
+        raise ValueError("Exactly one of width, height, or aspect must be provided")
+
+    original_width, original_height = size
+
+    if width is not None:
+        if width <= 0:
+            raise ValueError("Width must be positive")
+        new_height = round(width * original_height / original_width)
+        return (width, new_height)
+    elif height is not None:
+        new_width = round(height * original_width / original_height)
+        return (new_width, height)
+    elif aspect is not None:
+        current_aspect = original_width / original_height
+        if aspect > current_aspect:
+            new_width = round(original_height * aspect)
+            return (new_width, original_height)
+        else:
+            new_height = round(original_width / aspect)
+            return (original_width, new_height)
+    else:
+        return size
+
+
 class FileDetails(BaseModel):
     path: str = ""
     size: int = 0
@@ -179,6 +210,23 @@ class Video:
             self._texture = None
 
 
+class Canvas:
+    def __init__(
+        self,
+        gl: moderngl.Context | None = None,
+        texture_size: tuple[int, int] | None = None,
+    ) -> None:
+        self._gl = gl or moderngl.get_context()
+
+        self.texture_size = texture_size or (1280, 960)
+        self.texture = self._gl.texture(self.texture_size, 4)
+        self.fbo = self._gl.framebuffer(color_attachments=[self.texture])
+
+    def release(self) -> None:
+        self.texture.release()
+        self.fbo.release()
+
+
 class Node:
     _RESOURCES_DIR = Path(str(files("shaderbox.resources")))
     _DEFAULT_VS_FILE_PATH = _RESOURCES_DIR / "shaders" / "default.vert.glsl"
@@ -189,16 +237,16 @@ class Node:
         self,
         gl: moderngl.Context | None = None,
         fs_source: str | None = None,
-        output_texture_size: tuple[int, int] | None = None,
+        canvas_size: tuple[int, int] | None = None,
     ) -> None:
         self._gl = gl or moderngl.get_context()
         self.vs_source: str = self._DEFAULT_VS_FILE_PATH.read_text()
         self.fs_source: str = (
             fs_source if fs_source else self._DEFAULT_FS_FILE_PATH.read_text()
         )
-        self.output_texture_size = output_texture_size or (1280, 960)
-        self.output_texture = self._gl.texture(self.output_texture_size, 4)
-        self.fbo = self._gl.framebuffer(color_attachments=[self.output_texture])
+
+        self.canvas = Canvas(texture_size=canvas_size, gl=self._gl)
+
         self._uniform_values: dict[str, Any] = {}
         self.shader_error: str = ""
         self.program: moderngl.Program | None = None
@@ -238,7 +286,7 @@ class Node:
         node = Node(
             gl=gl,
             fs_source=fs_file_path.read_text(),
-            output_texture_size=tuple(metadata["output_texture_size"]),
+            canvas_size=metadata.get("canvas_size"),
         )
 
         # ----------------------------------------------------------------
@@ -265,17 +313,14 @@ class Node:
         self.vbo = None
         self.vao = None
 
-    def reset_output_texture_size(self, output_texture_size: tuple[int, int]) -> None:
-        self.output_texture.release()
-        self.fbo.release()
-        self.output_texture_size = output_texture_size
-        self.output_texture = self._gl.texture(self.output_texture_size, 4)
-        self.fbo = self._gl.framebuffer(color_attachments=[self.output_texture])
+    def reset_canvas_size(self, size: tuple[int, int]) -> None:
+        self.canvas.release()
+        self.canvas = Canvas(texture_size=size)
 
     def release(self) -> None:
         self.release_program()
-        self.output_texture.release()
-        self.fbo.release()
+        self.canvas.release()
+
         for data in self._uniform_values.values():
             if isinstance(data, moderngl.Texture):
                 data.release()
@@ -295,7 +340,9 @@ class Node:
                     uniforms.append(uniform)
         return uniforms
 
-    def render(self, u_time: float | None = None) -> None:
+    def render(self, u_time: float | None = None, canvas: Canvas | None = None) -> None:
+        canvas = canvas or self.canvas
+
         if not self.program or not self.vbo or not self.vao:
             try:
                 program = self._gl.program(
@@ -336,10 +383,10 @@ class Node:
                 value = u_time if u_time is not None else glfw.get_time()
                 self.set_uniform_value(uniform.name, value)
             elif uniform.name == "u_aspect":
-                value = np.divide(*self.output_texture.size)
+                value = np.divide(*canvas.texture.size)
                 self.set_uniform_value(uniform.name, value)
             elif uniform.name == "u_resolution":
-                value = self.output_texture.size
+                value = canvas.texture.size
                 self.set_uniform_value(uniform.name, value)
             elif uniform.gl_type == GL_SAMPLER_2D:  # type: ignore
                 texture = self._uniform_values.get(uniform.name)
@@ -368,7 +415,7 @@ class Node:
                 )
                 self._uniform_values.pop(uniform.name)
 
-        self.fbo.use()
+        canvas.fbo.use()
         self._gl.clear()
         self.vao.render()
 
@@ -396,9 +443,9 @@ class Node:
         file_path = Path(details.file_details.path)
         self.render(u_time=u_time)
 
-        pil_image = texture_to_pil(self.output_texture)
+        pil_image = texture_to_pil(self.canvas.texture)
         pil_image = pil_image.resize(
-            (details.resolution_details.width, details.resolution_details.height)
+            (details.resolution_details.height, details.resolution_details.width)
         )
 
         pil_image.save(file_path)
@@ -473,9 +520,9 @@ class Node:
         for i in range(n_frames):
             self.render(u_time=i / details.fps)
 
-            texture_data = self.output_texture.read()
+            texture_data = self.canvas.texture.read()
             frame = np.frombuffer(texture_data, dtype=np.uint8).reshape(
-                self.output_texture.height, self.output_texture.width, 4
+                self.canvas.texture.height, self.canvas.texture.width, 4
             )
             frame = np.flipud(frame)[:, :, :3]
             writer.append_data(frame)
