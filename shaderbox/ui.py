@@ -28,11 +28,10 @@ from shaderbox.core import (
     Canvas,
     FileDetails,
     Image,
-    ImageDetails,
+    MediaDetails,
     Node,
     ResolutionDetails,
     Video,
-    VideoDetails,
 )
 from shaderbox.vendors import get_modelbox_bg_removal, get_modelbox_depthmap
 
@@ -205,9 +204,7 @@ class UITgSticker:
 
 
 class UINodeState(BaseModel):
-    render_video_details: VideoDetails = VideoDetails()
-    render_image_details: ImageDetails = ImageDetails()
-    render_output_type_idx: int = 0
+    render_media_details: MediaDetails = MediaDetails()
 
     resolution_idx: int = 0
     selected_uniform_name: str = ""
@@ -222,7 +219,7 @@ class UIAppState(BaseModel):
 
 
 class UITgStickerState(BaseModel):
-    video_details: VideoDetails = VideoDetails()
+    video_details: MediaDetails = MediaDetails()
 
 
 class App:
@@ -795,20 +792,13 @@ class App:
                     logger.error(str(e))
 
     def draw_render_tab(self) -> None:
-        self.ui_current_node_state.render_output_type_idx = imgui.combo(
-            "Output type##render_output_type_idx",
-            self.ui_current_node_state.render_output_type_idx,
-            ["video", "image"],
-        )[1]
+        self.ui_current_node_state.render_media_details = self.draw_media_details(
+            self.ui_current_node_state.render_media_details
+        )
 
-        if self.ui_current_node_state.render_output_type_idx == 0:
-            self.ui_current_node_state.render_video_details = self.draw_video_details(
-                self.ui_current_node_state.render_video_details
-            )
-        else:
-            self.ui_current_node_state.render_image_details = self.draw_image_details(
-                self.ui_current_node_state.render_image_details
-            )
+        self.ui_current_node_state.render_media_details = self.draw_render_button(
+            self.ui_current_node_state.render_media_details
+        )
 
     def draw_ui_uniform(self, ui_uniform: UIUniform) -> None:
         if self.current_node_name is None:
@@ -965,15 +955,45 @@ class App:
             texture = sticker._image.texture
 
             if sticker._video:
-                sticker._video.details = self.draw_video_details(
+                sticker._video.details = self.draw_media_details(
                     details=sticker._video.details,
                 )
             else:
-                sticker._image.details = self.draw_image_details(
+                sticker._image.details = self.draw_media_details(
                     details=sticker._image.details,
                 )
 
         imgui.end_child()
+
+    def draw_render_button(self, details: MediaDetails) -> MediaDetails:
+        node = self.nodes[self.current_node_name]  # type: ignore
+
+        # ----------------------------------------------------------------
+        # Preview canvas
+        imgui.text("Render preview:")
+        has_error = node.shader_error != ""
+        imgui.image(
+            self.preview_canvas.texture.glo,
+            width=self.preview_canvas.texture.size[0],
+            height=self.preview_canvas.texture.size[1],
+            uv0=(0, 1),
+            uv1=(1, 0),
+            tint_color=(0.2, 0.2, 0.2, 1.0) if has_error else (1.0, 1.0, 1.0, 1.0),
+            border_color=(0.2, 0.2, 0.2, 1.0),
+        )
+
+        # ----------------------------------------------------------------
+        # Render button
+        media_type = "video" if details.is_video else "image"
+        if details.file_details.path:
+            if imgui.button("Render##media"):
+                details = node.render_media(details)
+        else:
+            imgui.text_colored(
+                f"Select output file path to render the {media_type}", *(1.0, 1.0, 0.0)
+            )
+
+        return details
 
     @staticmethod
     def draw_file_details(
@@ -1039,107 +1059,72 @@ class App:
 
         return details
 
-    def draw_image_details(self, details: ImageDetails) -> ImageDetails:
-        details = details.model_copy()
-        node = self.nodes[self.current_node_name]  # type: ignore
+    def draw_media_details(self, details: MediaDetails) -> MediaDetails:
+        def _draw_image_details(details: MediaDetails) -> MediaDetails:
+            details = details.model_copy()
+            node = self.nodes[self.current_node_name]  # type: ignore
 
-        # ----------------------------------------------------------------
-        # Resolution
-        details.resolution_details = self.draw_resolution_details(
-            details.resolution_details,
-            aspect=np.divide(*node.canvas.texture.size),
-        )
-
-        # ----------------------------------------------------------------
-        # File path
-        details.file_details = self.draw_file_details(
-            details.file_details,
-            extensions=[".png", ".jpeg", ".webp"],
-        )
-
-        # ----------------------------------------------------------------
-        # Render button
-        if details.file_details.path:
-            imgui.spacing()
-            if imgui.button("Render##image"):
-                details = node.render_image(details).last_rendered_image_details
-        else:
-            imgui.text("Select output file path to render the image")
-
-        return details
-
-    def draw_video_details(self, details: VideoDetails) -> VideoDetails:
-        details = details.model_copy()
-        available_qualities = ["low", "medium-low", "medium-high", "high"]
-        node = self.nodes[self.current_node_name]  # type: ignore
-
-        # ----------------------------------------------------------------
-        # Quality
-        details.quality = imgui.combo(
-            "Quality##video_quality_idx",
-            details.quality,
-            available_qualities,
-        )[1]
-
-        # ----------------------------------------------------------------
-        # Resolution
-        details.resolution_details = self.draw_resolution_details(
-            details.resolution_details,
-            aspect=np.divide(*node.canvas.texture.size),
-        )
-
-        # ----------------------------------------------------------------
-        # FPS
-        details.fps = imgui.drag_int(
-            "FPS##video_fps",
-            details.fps,
-            min_value=10,
-            max_value=60,
-        )[1]
-
-        # ----------------------------------------------------------------
-        # Duration
-        details.duration = imgui.drag_float(
-            "Duration, sec##video_duration",
-            details.duration,
-            change_speed=0.1,
-            min_value=1.0,
-            max_value=60.0,
-        )[1]
-
-        # ----------------------------------------------------------------
-        # File path
-        details.file_details = self.draw_file_details(
-            details.file_details,
-            extensions=[".webm", ".mp4"],
-        )
-
-        # ----------------------------------------------------------------
-        # Render preview
-        imgui.text("Render preview:")
-        has_error = node.shader_error != ""
-        imgui.image(
-            self.preview_canvas.texture.glo,
-            width=self.preview_canvas.texture.size[0],
-            height=self.preview_canvas.texture.size[1],
-            uv0=(0, 1),
-            uv1=(1, 0),
-            tint_color=(0.2, 0.2, 0.2, 1.0) if has_error else (1.0, 1.0, 1.0, 1.0),
-            border_color=(0.2, 0.2, 0.2, 1.0),
-        )
-
-        # ----------------------------------------------------------------
-        # Render button
-        if details.file_details.path:
-            imgui.spacing()
-            if imgui.button("Render##video"):
-                details = node.render_video(details).last_rendered_video_details
-        else:
-            imgui.text_colored(
-                "Select output file path to render the video", *(1.0, 1.0, 0.0)
+            details.resolution_details = self.draw_resolution_details(
+                details.resolution_details,
+                aspect=np.divide(*node.canvas.texture.size),
             )
 
-        return details
+            details.file_details = self.draw_file_details(
+                details.file_details,
+                extensions=[".png", ".jpeg", ".webp"],
+            )
+
+            return details
+
+        def _draw_video_details(details: MediaDetails) -> MediaDetails:
+            details = details.model_copy()
+            available_qualities = ["low", "medium-low", "medium-high", "high"]
+            node = self.nodes[self.current_node_name]  # type: ignore
+
+            details.quality = imgui.combo(
+                "Quality##video_quality_idx",
+                details.quality,
+                available_qualities,
+            )[1]
+
+            details.resolution_details = self.draw_resolution_details(
+                details.resolution_details,
+                aspect=np.divide(*node.canvas.texture.size),
+            )
+
+            details.fps = imgui.drag_int(
+                "FPS##video_fps",
+                details.fps,
+                min_value=10,
+                max_value=60,
+            )[1]
+
+            details.duration = imgui.drag_float(
+                "Duration, sec##video_duration",
+                details.duration,
+                change_speed=0.1,
+                min_value=1.0,
+                max_value=60.0,
+            )[1]
+
+            details.file_details = self.draw_file_details(
+                details.file_details,
+                extensions=[".webm", ".mp4"],
+            )
+
+            return details
+
+        name = "video" if details.is_video else "image"
+        options = ["video", "image"]
+        idx = imgui.combo(
+            "Output type##render_output_type_idx", options.index(name), options
+        )[1]
+        details.is_video = idx == 0
+
+        if details.is_video:
+            return _draw_video_details(details)
+        else:
+            return _draw_image_details(details)
 
     def draw_node_settings(self) -> None:
         with imgui.begin_child("node_settings", border=True):
@@ -1222,9 +1207,13 @@ class App:
         if self.current_node_name:
             node = self.nodes[self.current_node_name]
 
-            u_time = glfw.get_time()
-            duration = self.ui_current_node_state.render_video_details.duration
-            u_time -= duration * (u_time // duration)
+            if self.ui_current_node_state.render_media_details.is_video:
+                u_time = glfw.get_time()
+                duration = self.ui_current_node_state.render_media_details.duration
+                u_time -= duration * (u_time // (duration or 1.0))
+            else:
+                u_time = 0
+
             size = adjust_size(node.canvas.texture.size, width=preview_image_width)
             self.preview_canvas.set_size(size)
             node.render(u_time, canvas=self.preview_canvas)

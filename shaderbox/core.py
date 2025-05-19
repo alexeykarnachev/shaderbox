@@ -33,17 +33,13 @@ class ResolutionDetails(BaseModel):
     height: int = 0
 
 
-class VideoDetails(BaseModel):
+class MediaDetails(BaseModel):
+    is_video: bool = True
     file_details: FileDetails = FileDetails()
     resolution_details: ResolutionDetails = ResolutionDetails()
     quality: int = 0
-    fps: int = 0
-    duration: float = 0.0
-
-
-class ImageDetails(BaseModel):
-    file_details: FileDetails = FileDetails()
-    resolution_details: ResolutionDetails = ResolutionDetails()
+    fps: int = 30
+    duration: float = 1.0
 
 
 def texture_to_pil(texture: moderngl.Texture) -> PILImage.Image:
@@ -79,7 +75,8 @@ class Image:
         )
 
         self._image = self._image.convert("RGBA")
-        self.details = ImageDetails(
+        self.details = MediaDetails(
+            is_video=False,
             file_details=file_details,
             resolution_details=ResolutionDetails(
                 width=self._image.width, height=self._image.height
@@ -122,7 +119,8 @@ class Video:
         fps = int(self._cap.get(cv2.CAP_PROP_FPS))
         file_size = Path(file_path).stat().st_size
 
-        self.details = VideoDetails(
+        self.details = MediaDetails(
+            is_video=True,
             file_details=FileDetails(path=str(file_path), size=file_size),
             resolution_details=ResolutionDetails(width=width, height=height),
             fps=fps,
@@ -234,23 +232,6 @@ class Node:
         self.vbo: moderngl.Buffer | None = None
         self.vao: moderngl.VertexArray | None = None
 
-        self.last_rendered_image: Image | None = None
-        self.last_rendered_video: Video | None = None
-
-    @property
-    def last_rendered_image_details(self) -> ImageDetails:
-        if self.last_rendered_image is not None:
-            return self.last_rendered_image.details
-        else:
-            return ImageDetails()
-
-    @property
-    def last_rendered_video_details(self) -> VideoDetails:
-        if self.last_rendered_video is not None:
-            return self.last_rendered_video.details
-        else:
-            return VideoDetails()
-
     @classmethod
     def load_from_dir(
         cls,
@@ -301,12 +282,6 @@ class Node:
         for data in self._uniform_values.values():
             if isinstance(data, moderngl.Texture):
                 data.release()
-
-        if self.last_rendered_image is not None:
-            self.last_rendered_image.release()
-
-        if self.last_rendered_video is not None:
-            self.last_rendered_video.release()
 
     def get_uniforms(self) -> list[moderngl.Uniform]:
         uniforms: list[moderngl.Uniform] = []
@@ -416,7 +391,9 @@ class Node:
             self._uniform_values[name] = value
         return value
 
-    def render_image(self, details: ImageDetails, u_time: float | None = 0.0) -> "Node":
+    def _render_image(
+        self, details: MediaDetails, u_time: float | None = 0.0
+    ) -> MediaDetails:
         file_path = Path(details.file_details.path)
         self.render(u_time=u_time)
 
@@ -428,13 +405,13 @@ class Node:
         pil_image.save(file_path)
         logger.info(f"Image saved: {file_path}")
 
-        if self.last_rendered_image is not None:
-            self.last_rendered_image.release()
-        self.last_rendered_image = Image(file_path)
+        rendered_image = Image(file_path)
+        rendered_details = rendered_image.details
+        rendered_image.release()
 
-        return self
+        return rendered_details
 
-    def render_video(self, details: VideoDetails) -> "Node":
+    def _render_video(self, details: MediaDetails) -> MediaDetails:
         file_path = Path(details.file_details.path)
         extension = file_path.suffix
         width = details.resolution_details.width
@@ -507,8 +484,14 @@ class Node:
         writer.close()
         logger.info(f"Video saved: {details.file_details.path}")
 
-        if self.last_rendered_video is not None:
-            self.last_rendered_video.release()
-        self.last_rendered_video = Video(file_path)
+        rendered_video = Video(file_path)
+        rendered_details = rendered_video.details
+        rendered_video.release()
 
-        return self
+        return rendered_details
+
+    def render_media(self, details: MediaDetails) -> MediaDetails:
+        if details.is_video:
+            return self._render_video(details)
+        else:
+            return self._render_image(details)
