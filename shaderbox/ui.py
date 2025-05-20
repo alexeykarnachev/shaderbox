@@ -966,9 +966,12 @@ class App:
 
             imgui.separator()
 
-            sticker.render_media_details = self.draw_media_details(
-                sticker.render_media_details
-            )
+            render_media_details = sticker.render_media_details
+            extension = ".webm" if render_media_details.is_video else ".webp"
+            file_path = (_TRASH_DIR / "last_sticker").with_suffix(extension)
+            render_media_details.file_details.path = str(file_path)
+
+            sticker.render_media_details = self.draw_media_details(render_media_details)
             sticker.render_media_details = self.draw_render_button(
                 sticker.render_media_details,
                 sticker.preview_canvas.texture,
@@ -1016,11 +1019,12 @@ class App:
     def draw_file_details(
         details: FileDetails,
         extensions: Sequence[str] | None = None,
+        is_changeable: bool = True,
     ) -> FileDetails:
         details = details.model_copy()
 
         file_path = None
-        if imgui.button("File:##file_path"):
+        if is_changeable and imgui.button("File:##file_path"):
             file_path = crossfiledialog.save_file(
                 title="File path",
             )
@@ -1034,6 +1038,8 @@ class App:
                     )
                 else:
                     details.path = file_path
+        elif not is_changeable:
+            imgui.text("File:")
 
         if details.path:
             imgui.same_line()
@@ -1046,15 +1052,21 @@ class App:
         self,
         details: ResolutionDetails,
         aspect: float | None = None,
+        is_changeable: bool = True,
     ) -> ResolutionDetails:
         details = details.model_copy()
+
+        if not is_changeable:
+            imgui.text(f"Resolution: {details.width}x{details.height}")
+            return details
+
         node = self.nodes[self.current_node_name]  # type: ignore
 
-        is_height_changed, new_height = imgui.drag_int(
-            "Height", details.height, min_value=16, max_value=2560
-        )
         is_width_changed, new_width = imgui.drag_int(
             "Width", details.width, min_value=16, max_value=2560
+        )
+        is_height_changed, new_height = imgui.drag_int(
+            "Height", details.height, min_value=16, max_value=2560
         )
 
         if aspect is not None:
@@ -1074,32 +1086,11 @@ class App:
         return details
 
     def draw_media_details(
-        self, details: MediaDetails, is_changeable: bool = True
+        self,
+        details: MediaDetails,
+        is_changeable: bool = True,
     ) -> MediaDetails:
         details = details.model_copy()
-
-        if not is_changeable:
-            imgui.text(f"Output type: {'video' if details.is_video else 'image'}")
-            imgui.text(f"Width: {details.resolution_details.width}")
-            imgui.text(f"Height: {details.resolution_details.height}")
-
-            if details.is_video:
-                imgui.text(f"Quality: {details.quality}")
-                imgui.text(f"FPS: {details.fps}")
-                imgui.text(f"Duration: {details.duration} sec")
-
-            if details.file_details.path:
-                imgui.text(f"File: {details.file_details.path}")
-                imgui.text(f"File size: {details.file_details.size} B")
-
-            return details
-
-        name = "video" if details.is_video else "image"
-        options = ["video", "image"]
-        idx = imgui.combo(
-            "Output type##render_output_type_idx", options.index(name), options
-        )[1]
-        details.is_video = idx == 0
 
         if self.current_node_name:
             node = self.nodes[self.current_node_name]
@@ -1107,15 +1098,24 @@ class App:
         else:
             aspect = None
 
-        if details.is_video:
-            available_qualities = ["low", "medium-low", "medium-high", "high"]
-
-            details.quality = imgui.combo(
-                "Quality##video_quality_idx", details.quality, available_qualities
+        output_type_name = "video" if details.is_video else "image"
+        if is_changeable:
+            options = ["video", "image"]
+            idx = imgui.combo(
+                "Output type##render_output_type_idx",
+                options.index(output_type_name),
+                items=options,
             )[1]
-            details.resolution_details = self.draw_resolution_details(
-                details.resolution_details, aspect=aspect
-            )
+            details.is_video = idx == 0
+        else:
+            imgui.text(f"Output type: {output_type_name}")
+
+        if details.is_video and is_changeable:
+            details.quality = imgui.combo(
+                "Quality##video_quality_idx",
+                details.quality,
+                items=["low", "medium-low", "medium-high", "high"],
+            )[1]
             details.fps = imgui.drag_int(
                 "FPS##video_fps", details.fps, min_value=10, max_value=60
             )[1]
@@ -1126,16 +1126,22 @@ class App:
                 min_value=1.0,
                 max_value=60.0,
             )[1]
-            details.file_details = self.draw_file_details(
-                details.file_details, extensions=[".webm", ".mp4"]
-            )
-        else:
-            details.resolution_details = self.draw_resolution_details(
-                details.resolution_details, aspect=aspect
-            )
-            details.file_details = self.draw_file_details(
-                details.file_details, extensions=[".png", ".jpeg", ".webp"]
-            )
+        elif details.is_video:
+            imgui.text(f"FPS: {details.fps}")
+            imgui.text(f"Duration: {details.duration} sec")
+
+        details.resolution_details = self.draw_resolution_details(
+            details.resolution_details,
+            aspect=aspect,
+            is_changeable=is_changeable,
+        )
+        details.file_details = self.draw_file_details(
+            details.file_details,
+            extensions=[".webm", ".mp4"]
+            if details.is_video
+            else [".png", ".jpeg", ".webp"],
+            is_changeable=is_changeable,
+        )
 
         return details
 
