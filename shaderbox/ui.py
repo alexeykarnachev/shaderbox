@@ -9,7 +9,7 @@ import time
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import crossfiledialog
 import cv2
@@ -22,7 +22,7 @@ from imgui.integrations.glfw import GlfwRenderer
 from loguru import logger
 from OpenGL.GL import GL_SAMPLER_2D, GLError
 from platformdirs import user_data_dir
-from pydantic import BaseModel
+from pydantic import BaseModel, computed_field
 
 from shaderbox.core import (
     Canvas,
@@ -34,6 +34,8 @@ from shaderbox.core import (
     Video,
 )
 from shaderbox.vendors import get_modelbox_bg_removal, get_modelbox_depthmap
+
+_APP_START_TIME = int(time.time() * 1000)
 
 _APP_DIR = Path(user_data_dir("shaderbox"))
 _NODES_DIR = _APP_DIR / "nodes"
@@ -54,15 +56,14 @@ def adjust_size(
     width: int | None = None,
     height: int | None = None,
     aspect: float | None = None,
+    max_size: int | None = None,
 ) -> tuple[int, int]:
-    if (width, height, aspect).count(None) != 2:
-        raise ValueError("Exactly one of width, height, or aspect must be provided")
+    if (width, height, aspect, max_size).count(None) != 3:
+        return size
 
     original_width, original_height = size
 
     if width is not None:
-        if width <= 0:
-            raise ValueError("Width must be positive")
         new_height = round(width * original_height / original_width)
         return (width, new_height)
     elif height is not None:
@@ -76,6 +77,15 @@ def adjust_size(
         else:
             new_height = round(original_width / aspect)
             return (original_width, new_height)
+    elif max_size is not None:
+        if original_width >= original_height:
+            new_width = max_size
+            new_height = round(max_size * original_height / original_width)
+            return (new_width, new_height)
+        else:
+            new_height = max_size
+            new_width = round(max_size * original_width / original_height)
+            return (new_width, new_height)
     else:
         return size
 
@@ -162,6 +172,35 @@ class UIUniform:
             return imgui.get_text_line_height_with_spacing()  # type: ignore
 
 
+class UIMessage(BaseModel):
+    text: str = ""
+    level: Literal["success", "warning", "error"]
+
+    @computed_field
+    @property
+    def color(self) -> tuple[float, float, float]:
+        return {
+            "success": (0.0, 1.0, 0.0),
+            "warning": (1.0, 1.0, 0.0),
+            "error": (1.0, 0.0, 0.0),
+        }[self.level]
+
+    @classmethod
+    def success(cls, text: str = "") -> "UIMessage":
+        return cls(text=text, level="success")
+
+    @classmethod
+    def warning(cls, text: str = "") -> "UIMessage":
+        return cls(text=text, level="warning")
+
+    @classmethod
+    def error(cls, text: str = "") -> "UIMessage":
+        return cls(text=text, level="error")
+
+    def __repr__(self) -> str:
+        return self.text
+
+
 class UITgSticker:
     def __init__(self, sticker: tg.Sticker):
         self._sticker = sticker
@@ -172,8 +211,16 @@ class UITgSticker:
         self.render_media_details: MediaDetails = MediaDetails()
         self.preview_canvas: Canvas
 
+        self.log_message: UIMessage = UIMessage(
+            text="Submit button will be available after render", level="warning"
+        )
+
     async def load(self) -> "UITgSticker":
         bot = self._sticker.get_bot()
+        render_file_name = (
+            f"{_APP_START_TIME}_{hashlib.md5(str(id(self)).encode()).hexdigest()[:8]}"
+        )
+        render_file_path = _TRASH_DIR / render_file_name
 
         if self._sticker.is_video:
             file_name = self._sticker.file_id + ".webm"
@@ -185,15 +232,21 @@ class UITgSticker:
             self.video = Video(file_path)
             self.render_media_details = self.video.details
 
+            render_file_path = render_file_path.with_suffix(".webm")
+
         if self._sticker.thumbnail:
             file_name = self._sticker.thumbnail.file_id + ".webp"
             file_path = _IMAGES_DIR / file_name
 
             file = await bot.get_file(self._sticker.thumbnail.file_id)
             await file.download_to_drive(file_path)
+
             self.image = Image(file_path)
             self.render_media_details = self.image.details
 
+            render_file_path = render_file_path.with_suffix(".webp")
+
+        self.render_media_details.file_details.path = str(render_file_path)
         self.preview_canvas = Canvas()
 
         return self
@@ -966,16 +1019,57 @@ class App:
 
             imgui.separator()
 
-            render_media_details = sticker.render_media_details
-            extension = ".webm" if render_media_details.is_video else ".webp"
-            file_path = (_TRASH_DIR / "last_sticker").with_suffix(extension)
-            render_media_details.file_details.path = str(file_path)
+            file_path = Path(sticker.render_media_details.file_details.path)
+            if sticker.render_media_details.is_video:
+                file_path = file_path.with_suffix(".webm")
+            else:
+                file_path = file_path.with_suffix(".webp")
+            sticker.render_media_details.file_details.path = str(file_path)
 
-            sticker.render_media_details = self.draw_media_details(render_media_details)
-            sticker.render_media_details = self.draw_render_button(
+            sticker.render_media_details = self.draw_media_details(
+                sticker.render_media_details
+            )
+            is_rendered, sticker.render_media_details = self.draw_render_button(
                 sticker.render_media_details,
                 sticker.preview_canvas.texture,
             )
+            if is_rendered:
+                sticker.log_message = UIMessage.success("Rendered!")
+
+            if file_path.exists():
+                imgui.same_line()
+                if imgui.button("Submit##sticker"):
+                    bot = sticker._sticker.get_bot()
+                    self._loop.run_until_complete(bot.initialize())
+
+                    input_sticker = tg.InputSticker(
+                        sticker=file_path.read_bytes(),
+                        emoji_list=["😁"],
+                        format=(
+                            tg.constants.StickerFormat.VIDEO
+                            if sticker.render_media_details.is_video
+                            else tg.constants.StickerFormat.STATIC
+                        ),
+                    )
+
+                    try:
+                        self._loop.run_until_complete(
+                            bot.replace_sticker_in_set(
+                                user_id=int(self.ui_app_state.tg_user_id),
+                                name=f"test_by_{bot.username}",
+                                old_sticker=sticker._sticker,
+                                sticker=input_sticker,
+                            )
+                        )
+                        sticker.log_message = UIMessage.success(
+                            "Submitted! Now you can re-fetch stickerset."
+                        )
+                    except Exception as e:
+                        sticker.log_message = UIMessage.error(f"Failed to submit: {e}")
+                        logger.error(e)
+
+            imgui.same_line()
+            imgui.text_colored(sticker.log_message.text, *sticker.log_message.color)
 
         imgui.end_child()
 
@@ -983,7 +1077,7 @@ class App:
         self,
         details: MediaDetails,
         preview_texture: moderngl.Texture | None,
-    ) -> MediaDetails:
+    ) -> tuple[bool, MediaDetails]:
         node = self.nodes[self.current_node_name]  # type: ignore
 
         # ----------------------------------------------------------------
@@ -1001,11 +1095,13 @@ class App:
 
         # ----------------------------------------------------------------
         # Render button
+        is_rendered = False
         media_type = "video" if details.is_video else "image"
         if details.file_details.path:
             if imgui.button("Render##media"):
                 try:
                     details = node.render_media(details)
+                    is_rendered = True
                 except Exception as e:
                     logger.error(f"Failed to render media: {e}")
         else:
@@ -1013,7 +1109,7 @@ class App:
                 f"Select output file path to render the {media_type}", *(1.0, 1.0, 0.0)
             )
 
-        return details
+        return is_rendered, details
 
     @staticmethod
     def draw_file_details(
@@ -1079,6 +1175,12 @@ class App:
         details.height = new_height
 
         width, height = node.canvas.texture.size
+        if imgui.button(f"{width}x{height}") or not details.width or not details.height:
+            details.width = width
+            details.height = height
+
+        imgui.same_line()
+        width, height = adjust_size(node.canvas.texture.size, max_size=512)
         if imgui.button(f"{width}x{height}") or not details.width or not details.height:
             details.width = width
             details.height = height
@@ -1158,7 +1260,7 @@ class App:
                             self.ui_current_node_state.render_media_details
                         )
                     )
-                    self.ui_current_node_state.render_media_details = (
+                    _, self.ui_current_node_state.render_media_details = (
                         self.draw_render_button(
                             self.ui_current_node_state.render_media_details,
                             self.preview_canvas.texture,

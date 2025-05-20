@@ -399,7 +399,7 @@ class Node:
 
         pil_image = texture_to_pil(self.canvas.texture)
         pil_image = pil_image.resize(
-            (details.resolution_details.height, details.resolution_details.width)
+            (details.resolution_details.width, details.resolution_details.height)
         )
 
         pil_image.save(file_path)
