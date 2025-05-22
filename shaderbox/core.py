@@ -486,6 +486,7 @@ class Node:
 
         rendered_video = Video(file_path)
         rendered_details = rendered_video.details
+        rendered_details.quality = details.quality
         rendered_video.release()
 
         return rendered_details

@@ -202,52 +202,55 @@ class UIMessage(BaseModel):
 
 
 class UITgSticker:
-    def __init__(self, sticker: tg.Sticker):
+    def __init__(self, sticker: tg.Sticker | None = None):
         self._sticker = sticker
 
         self.video: Video | None = None
-        self.image: Image = Image.from_color((512, 512), (1.0, 0.0, 0.0))
+        self.image: Image = Image.from_color((512, 512), (0.10, 0.24, 0.39))
 
-        self.render_media_details: MediaDetails = MediaDetails()
-        self.preview_canvas: Canvas
+        self.preview_canvas = Canvas()
+
+        render_file_name = f"{_APP_START_TIME}_{hashlib.md5(str(id(self)).encode()).hexdigest()[:8]}.webm"
+        render_file_path = _TRASH_DIR / render_file_name
+        self.render_media_details: MediaDetails = MediaDetails(is_video=True)
+        self.render_media_details.file_details.path = str(render_file_path)
 
         self.log_message: UIMessage = UIMessage(
             text="Submit button will be available after render", level="warning"
         )
 
     async def load(self) -> "UITgSticker":
-        bot = self._sticker.get_bot()
-        render_file_name = (
-            f"{_APP_START_TIME}_{hashlib.md5(str(id(self)).encode()).hexdigest()[:8]}"
-        )
-        render_file_path = _TRASH_DIR / render_file_name
+        render_file_path = Path(self.render_media_details.file_details.path)
 
-        if self._sticker.is_video:
-            file_name = self._sticker.file_id + ".webm"
-            file_path = _VIDEOS_DIR / file_name
+        if self._sticker is not None:
+            bot = self._sticker.get_bot()
 
-            file = await bot.get_file(self._sticker.file_id)
-            await file.download_to_drive(file_path)
+            if self._sticker.is_video:
+                file_name = self._sticker.file_id + ".webm"
+                file_path = _VIDEOS_DIR / file_name
 
-            self.video = Video(file_path)
-            self.render_media_details = self.video.details
+                file = await bot.get_file(self._sticker.file_id)
+                await file.download_to_drive(file_path)
 
-            render_file_path = render_file_path.with_suffix(".webm")
+                self.video = Video(file_path)
+                render_file_path = render_file_path.with_suffix(".webm")
 
-        if self._sticker.thumbnail:
-            file_name = self._sticker.thumbnail.file_id + ".webp"
-            file_path = _IMAGES_DIR / file_name
+            if self._sticker.thumbnail:
+                file_name = self._sticker.thumbnail.file_id + ".webp"
+                file_path = _IMAGES_DIR / file_name
 
-            file = await bot.get_file(self._sticker.thumbnail.file_id)
-            await file.download_to_drive(file_path)
+                file = await bot.get_file(self._sticker.thumbnail.file_id)
+                await file.download_to_drive(file_path)
 
-            self.image = Image(file_path)
-            self.render_media_details = self.image.details
+                self.image = Image(file_path)
+                render_file_path = render_file_path.with_suffix(".webp")
 
-            render_file_path = render_file_path.with_suffix(".webp")
+            if self.video:
+                self.render_media_details = self.video.details
+            else:
+                self.render_media_details = self.image.details
 
         self.render_media_details.file_details.path = str(render_file_path)
-        self.preview_canvas = Canvas()
 
         return self
 
@@ -380,11 +383,14 @@ class App:
         # Tg
         self._tg_stickers: list[UITgSticker] = []
         self._tg_selected_sticker_idx: int = 0
+        self._tg_stickers_bot: tg.Bot
 
     def fetch_tg_stickers(self) -> None:
         async def _fetch() -> list[UITgSticker]:
-            bot = tg.Bot(token=self.ui_app_state.tg_bot_token)
-            sticker_set = await bot.get_sticker_set(
+            self._tg_stickers_bot = tg.Bot(token=self.ui_app_state.tg_bot_token)
+            await self._tg_stickers_bot.initialize()
+
+            sticker_set = await self._tg_stickers_bot.get_sticker_set(
                 name=self.ui_app_state.tg_sticker_set_name
             )
             coros = [UITgSticker(s).load() for s in sticker_set.stickers]
@@ -399,6 +405,9 @@ class App:
                 logger.info("Sticker set doesn't exist")
             else:
                 raise e
+
+        new_sticker = UITgSticker()
+        self._tg_stickers.insert(0, new_sticker)
 
     @property
     def ui_current_node_state(self) -> UINodeState:
@@ -958,8 +967,6 @@ class App:
         imgui.separator()
         imgui.spacing()
 
-        # ----------------------------------------------------------------
-        # Sticker thumbnails and settings
         available_width, available_height = imgui.get_content_region_available()
         sticker_grid_width = 0.3 * available_width
 
@@ -970,6 +977,8 @@ class App:
             border=True,
         )
 
+        # ----------------------------------------------------------------
+        # Sticker previews
         current_time = glfw.get_time()
         for i, sticker in enumerate(self._tg_stickers):
             sticker.update(current_time)
@@ -998,13 +1007,13 @@ class App:
             imgui.pop_style_color(n_styles)
 
             imgui.same_line()
-            if imgui.button(f"Delete##{id(sticker)}"):
-                bot = sticker._sticker.get_bot()
-                self._loop.run_until_complete(bot.initialize())
+            if sticker._sticker and imgui.button(f"Delete##{id(sticker)}"):
                 self._loop.run_until_complete(
-                    bot.delete_sticker_from_set(sticker._sticker)
+                    self._tg_stickers_bot.delete_sticker_from_set(sticker._sticker)
                 )
                 self.fetch_tg_stickers()
+            elif not sticker._sticker:
+                imgui.text_colored("New sticker", *(0.5, 0.5, 0.5))
 
             imgui.spacing()
 
@@ -1047,9 +1056,6 @@ class App:
             if file_path.exists():
                 imgui.same_line()
                 if imgui.button("Submit##sticker"):
-                    bot = sticker._sticker.get_bot()
-                    self._loop.run_until_complete(bot.initialize())
-
                     input_sticker = tg.InputSticker(
                         sticker=file_path.read_bytes(),
                         emoji_list=["😁"],
@@ -1061,14 +1067,24 @@ class App:
                     )
 
                     try:
-                        self._loop.run_until_complete(
-                            bot.replace_sticker_in_set(
-                                user_id=int(self.ui_app_state.tg_user_id),
-                                name=f"test_by_{bot.username}",
-                                old_sticker=sticker._sticker,
-                                sticker=input_sticker,
+                        if sticker._sticker is not None:
+                            self._loop.run_until_complete(
+                                self._tg_stickers_bot.replace_sticker_in_set(
+                                    user_id=int(self.ui_app_state.tg_user_id),
+                                    name=f"test_by_{self._tg_stickers_bot.username}",
+                                    old_sticker=sticker._sticker,
+                                    sticker=input_sticker,
+                                )
                             )
-                        )
+                        else:
+                            self._loop.run_until_complete(
+                                self._tg_stickers_bot.add_sticker_to_set(
+                                    user_id=int(self.ui_app_state.tg_user_id),
+                                    name=f"test_by_{self._tg_stickers_bot.username}",
+                                    sticker=input_sticker,
+                                )
+                            )
+
                         self.fetch_tg_stickers()
                     except Exception as e:
                         sticker.log_message = UIMessage.error(f"Failed to submit: {e}")
