@@ -569,14 +569,13 @@ class App:
             for i, (name, node) in enumerate(self.nodes.items()):
                 if name == self.current_node_name:
                     if node.shader_error:
-                        color = (1.0, 0.0, 0.0, 1.0)  # Red for error
+                        color = (1.0, 0.0, 0.0, 1.0)
                     else:
-                        color = (0.0, 1.0, 0.0, 1.0)  # Green for selected
+                        color = (0.0, 1.0, 0.0, 1.0)
                     imgui.push_style_color(imgui.COLOR_BORDER, *color)
 
-                # Use a unique ID for each node's child window
                 imgui.begin_child(
-                    f"preview_{name}",  # Fixed: unique ID using f-string
+                    f"preview_{name}",
                     width=preview_size,
                     height=preview_size,
                     border=True,
@@ -586,7 +585,6 @@ class App:
                 if name == self.current_node_name:
                     imgui.pop_style_color()
 
-                # Use a unique ID for the invisible button
                 if imgui.invisible_button(
                     f"preview_button_{name}", width=preview_size, height=preview_size
                 ):
@@ -998,6 +996,16 @@ class App:
                 self._tg_selected_sticker_idx = i
 
             imgui.pop_style_color(n_styles)
+
+            imgui.same_line()
+            if imgui.button(f"Delete##{id(sticker)}"):
+                bot = sticker._sticker.get_bot()
+                self._loop.run_until_complete(bot.initialize())
+                self._loop.run_until_complete(
+                    bot.delete_sticker_from_set(sticker._sticker)
+                )
+                self.fetch_tg_stickers()
+
             imgui.spacing()
 
         imgui.end_child()
@@ -1061,9 +1069,7 @@ class App:
                                 sticker=input_sticker,
                             )
                         )
-                        sticker.log_message = UIMessage.success(
-                            "Submitted! Now you can re-fetch stickerset."
-                        )
+                        self.fetch_tg_stickers()
                     except Exception as e:
                         sticker.log_message = UIMessage.error(f"Failed to submit: {e}")
                         logger.error(e)
