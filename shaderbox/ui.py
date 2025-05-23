@@ -1444,11 +1444,6 @@ class App:
                 self.save_node(name)
 
         # ----------------------------------------------------------------
-        # Render all nodes
-        for node in self.nodes.values():
-            node.render()
-
-        # ----------------------------------------------------------------
         # Render previews
         if self.current_node_name:
             node = self.nodes[self.current_node_name]
@@ -1472,6 +1467,11 @@ class App:
             if self._tg_selected_sticker_idx < len(self._tg_stickers):
                 sticker = self._tg_stickers[self._tg_selected_sticker_idx]
                 _render_preview(sticker.preview_canvas, sticker.render_media_details)
+
+        # ----------------------------------------------------------------
+        # Render all nodes
+        for node in self.nodes.values():
+            node.render()
 
         # ----------------------------------------------------------------
         # Draw UI
