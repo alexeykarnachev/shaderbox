@@ -290,6 +290,7 @@ class Node:
                 uniform = self.program[uniform_name]
                 if isinstance(uniform, moderngl.Uniform):
                     uniforms.append(uniform)
+
         return uniforms
 
     def render(self, u_time: float | None = None, canvas: Canvas | None = None) -> None:
@@ -307,6 +308,7 @@ class Node:
                     logger.error(f"Failed to compile shader: {e}")
                     self.shader_error = err
                 return
+
             self.shader_error = ""
             if self.program:
                 self.program.release()
@@ -314,6 +316,7 @@ class Node:
                 self.vbo.release()
             if self.vao:
                 self.vao.release()
+
             self.program = program
             self.vbo = self._gl.buffer(
                 np.array(
@@ -389,6 +392,7 @@ class Node:
             uniform = self.program[name]
             value = uniform.value  # type: ignore
             self._uniform_values[name] = value
+
         return value
 
     def _render_image(
