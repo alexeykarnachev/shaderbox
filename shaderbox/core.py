@@ -436,11 +436,9 @@ class Node:
             ]
         elif extension == ".webm":
             codec = "libvpx-vp9"
-            pixelformat = "yuv420p"
-
+            pixelformat = "yuva420p"
             webm_crf = [50, 40, 30, 20]
             webm_cpu_used = [5, 4, 3, 2]
-
             crf = webm_crf[details.quality]
             cpu_used = webm_cpu_used[details.quality]
             ffmpeg_params = [
@@ -456,6 +454,9 @@ class Node:
                 "0",
                 "-vf",
                 f"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2",
+                "-auto-alt-ref",
+                "0",
+                "-an",
             ]
         else:
             raise ValueError(
@@ -468,6 +469,7 @@ class Node:
             codec=codec,
             ffmpeg_params=ffmpeg_params,
             pixelformat=pixelformat,
+            input_params=["-pixel_format", "bgra"],
         )
 
         n_frames = int(details.duration * details.fps)
@@ -478,7 +480,7 @@ class Node:
             frame = np.frombuffer(texture_data, dtype=np.uint8).reshape(
                 self.canvas.texture.height, self.canvas.texture.width, 4
             )
-            frame = np.flipud(frame)[:, :, :3]
+            frame = np.flipud(frame)
             writer.append_data(frame)
 
         writer.close()
