@@ -1364,8 +1364,8 @@ class App:
             if has_error:
                 draw_list = imgui.get_window_draw_list()
                 text_size = imgui.calc_text_size(node.shader_error)
-                text_x = cursor_pos[0] + (image_width - text_size[0]) / 2
-                text_y = cursor_pos[1] + (image_height - text_size[1]) / 2
+                text_x = cursor_pos[0] + 10.0
+                text_y = cursor_pos[1] + 10.0
                 draw_list.add_text(
                     text_x,
                     text_y,
