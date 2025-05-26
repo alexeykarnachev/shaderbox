@@ -8,6 +8,7 @@ import subprocess
 import time
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
+from enum import Enum, auto
 from pathlib import Path
 from typing import Any, Literal
 
@@ -20,11 +21,12 @@ import numpy as np
 import telegram as tg
 from imgui.integrations.glfw import GlfwRenderer
 from loguru import logger
-from OpenGL.GL import GL_SAMPLER_2D, GLError
+from OpenGL.GL import GL_FLOAT, GL_SAMPLER_2D, GL_UNSIGNED_INT, GLError
 from platformdirs import user_data_dir
-from pydantic import BaseModel, computed_field
+from pydantic import BaseModel
 
 from shaderbox.core import (
+    RESOURCES_DIR,
     Canvas,
     FileDetails,
     Image,
@@ -135,50 +137,61 @@ def zero_low_alpha_pixels(image: Image, min_alpha: float = 1.0) -> Image:
     return Image(img_array)
 
 
+class UIUniformInputType(Enum):
+    IMAGE = auto()
+    ARRAY = auto()
+    COLOR = auto()
+    TEXT = auto()
+    DRAG = auto()
+    AUTO = auto()
+
+
 class UIUniform:
     def __init__(self, uniform: moderngl.Uniform) -> None:
         self.uniform = uniform
         self.name = uniform.name
-        self.array_length = uniform.array_length
-        self.dimension = uniform.dimension
         self.gl_type = uniform.gl_type  # type: ignore
-        self.is_special = self.name in ("u_time", "u_aspect", "u_resolution")
-        self.is_image = self.gl_type == GL_SAMPLER_2D
-        self.is_color = (
+        self.dimension = uniform.dimension
+        self.array_length = uniform.array_length
+
+        if self.name in ("u_time", "u_aspect", "u_resolution"):
+            self.input_type = UIUniformInputType.AUTO
+        elif self.gl_type == GL_SAMPLER_2D:
+            self.input_type = UIUniformInputType.IMAGE
+        elif self.array_length > 1:
+            self.input_type = UIUniformInputType.ARRAY
+        elif (
             self.array_length == 1
-            and self.dimension in [3, 4]
+            and self.dimension in (3, 4)
             and self.name.endswith("color")
-        )
-
-    @property
-    def group_name(self) -> str:
-        if self.array_length > 1 or self.is_special:
-            return "special"
-        elif self.is_image:
-            return "image"
-        elif self.is_color:
-            return "color"
+        ):
+            self.input_type = UIUniformInputType.COLOR
+        elif self.array_length == 1 and self.dimension in (1, 2, 3, 4):
+            self.input_type = UIUniformInputType.DRAG
         else:
-            return "drag"
+            self.input_type = UIUniformInputType.AUTO
 
-    @property
-    def height(self) -> int:
-        if self.group_name == "image":
+    def get_ui_height(self) -> int:
+        if self.input_type == UIUniformInputType.IMAGE:
             return 120
-        elif self.group_name == "drag":
+        elif self.input_type == UIUniformInputType.DRAG:
             spacing: int = imgui.get_text_line_height_with_spacing()
             return 5 + spacing
         else:
             return imgui.get_text_line_height_with_spacing()  # type: ignore
 
 
+def get_uniform_hash(u: moderngl.Uniform) -> int:
+    key = f"{u.name}_{u.array_length}_{u.dimension}_{u.gl_type}"  # type: ignore
+    hash = hashlib.md5(key.encode()).digest()
+    return int.from_bytes(hash, "big")
+
+
 class UIMessage(BaseModel):
     text: str = ""
     level: Literal["success", "warning", "error"]
 
-    @computed_field
-    @property
-    def color(self) -> tuple[float, float, float]:
+    def get_color(self) -> tuple[float, float, float]:
         return {
             "success": (0.0, 1.0, 0.0),
             "warning": (1.0, 1.0, 0.0),
@@ -320,12 +333,15 @@ class App:
         self.current_node_name: str | None = None
         self.nodes: dict[str, Node] = {}
         self.node_mtimes: dict[str, float] = {}
+        self.node_ui_uniforms: dict[str, dict[int, UIUniform]] = {}
 
         self.preview_canvas = Canvas()
 
         imgui.create_context()
         self.window = window
         self.imgui_renderer = GlfwRenderer(window)
+
+        self._font_14 = self.get_font(14)
 
         # ----------------------------------------------------------------
         # Load nodes
@@ -384,6 +400,16 @@ class App:
         self._tg_stickers: list[UITgSticker] = []
         self._tg_selected_sticker_idx: int = 0
         self._tg_stickers_bot: tg.Bot
+
+    def get_font(self, size: int) -> Any:
+        fonts = imgui.get_io().fonts
+        font = fonts.add_font_from_file_ttf(
+            str(RESOURCES_DIR / "fonts" / "Anonymous_Pro" / "AnonymousPro-Regular.ttf"),
+            size_pixels=size,
+            glyph_ranges=fonts.get_glyph_ranges_cyrillic(),
+        )
+        self.imgui_renderer.refresh_font_texture()
+        return font
 
     def fetch_tg_stickers(self) -> None:
         async def _fetch() -> list[UITgSticker]:
@@ -704,56 +730,37 @@ class App:
 
         # ----------------------------------------------------------------
         # Uniforms
-        ui_uniforms = {u.name: UIUniform(u) for u in node.get_uniforms()}
-
-        uniform_groups = defaultdict(list)
-        for u in ui_uniforms.values():
-            uniform_groups[u.group_name].append(u)
+        ui_uniforms = self.node_ui_uniforms.setdefault(node_name, {})
+        for uniform in node.get_uniforms():
+            hash = get_uniform_hash(uniform)
+            if hash not in ui_uniforms:
+                ui_uniforms[hash] = UIUniform(uniform)
 
         imgui.begin_child(
-            "uniform_groups",
+            "ui_uniforms",
             width=imgui.get_content_region_available_width() // 2,
         )
-        for group_name, ui_uniforms_in_group in uniform_groups.items():
-            total_height = (
-                sum(ui_uniform.height for ui_uniform in ui_uniforms_in_group) + 20
-            )
-
-            imgui.push_style_color(imgui.COLOR_BORDER, 0.15, 0.15, 0.15)
-            imgui.begin_child(
-                f"{group_name}_group",
-                height=total_height,
-                border=True,
-                flags=imgui.WINDOW_NO_SCROLLBAR,
-            )
-
-            for ui_uniform in ui_uniforms_in_group:
-                self.draw_ui_uniform(ui_uniform)
-
-            imgui.end_child()
-            imgui.pop_style_color()
+        for ui_uniform in ui_uniforms.values():
+            self.draw_ui_uniform(ui_uniform)
 
         imgui.end_child()
 
-        selected_uniform_name = self._node_ui_state[
-            self.current_node_name
-        ].selected_uniform_name
-        if selected_uniform_name:
+        if self._node_ui_state[self.current_node_name].selected_uniform_name:
             imgui.same_line()
             imgui.begin_child("selected_uniform_settings", border=True)
-            self.draw_selected_uniform_settings()
+            self.draw_selected_ui_uniform_settings()
             imgui.end_child()
 
-    def draw_selected_uniform_settings(self) -> None:
-        if self.current_node_name is None:
+    def draw_selected_ui_uniform_settings(self) -> None:
+        if not self.current_node_name:
             return
 
-        node = self.nodes[self.current_node_name]
-        if not node.program:
-            return
+        node = self.nodes.get(self.current_node_name)
 
         if (
-            not self.ui_current_node_state.selected_uniform_name
+            not node
+            or not node.program
+            or not self.ui_current_node_state.selected_uniform_name
             or self.ui_current_node_state.selected_uniform_name not in node.program
         ):
             return
@@ -762,8 +769,15 @@ class App:
         if not isinstance(uniform, moderngl.Uniform):
             return
 
-        ui_uniform = UIUniform(uniform)
-        if ui_uniform.group_name == "image":
+        ui_uniform = self.node_ui_uniforms[self.current_node_name][
+            get_uniform_hash(uniform)
+        ]
+
+        imgui.text(f"{ui_uniform.name} - {ui_uniform.input_type.name}")
+        imgui.separator()
+        imgui.spacing()
+
+        if ui_uniform.input_type == UIUniformInputType.IMAGE:
             texture = node.get_uniform_value(ui_uniform.name)
 
             imgui.text(get_resolution_str(ui_uniform.name, *texture.size))
@@ -863,6 +877,23 @@ class App:
                     node.set_uniform_value(ui_uniform.name, image.texture)
                 except Exception as e:
                     logger.error(str(e))
+        elif ui_uniform.input_type in (
+            UIUniformInputType.ARRAY,
+            UIUniformInputType.TEXT,
+        ):
+            current_idx = 0 if ui_uniform.input_type == UIUniformInputType.ARRAY else 1
+            new_idx = imgui.combo(
+                "Input type##ui_uniform", current_idx, items=["ARRAY", "TEXT"]
+            )[1]
+
+            ui_uniform.input_type = (
+                UIUniformInputType.ARRAY if new_idx == 0 else UIUniformInputType.TEXT
+            )
+        else:
+            imgui.text_colored(
+                "TODO: Implement controls for this type of uniform input",
+                *(1.0, 1.0, 0.0),
+            )
 
     def draw_ui_uniform(self, ui_uniform: UIUniform) -> None:
         if self.current_node_name is None:
@@ -871,13 +902,8 @@ class App:
         node = self.nodes[self.current_node_name]
         value = node.get_uniform_value(ui_uniform.name)
 
-        if ui_uniform.group_name == "special":
-            if ui_uniform.array_length > 1:
-                value_str = ", ".join(f"{v:.3f}" for v in value)
-                imgui.text(
-                    f"{ui_uniform.name}[{ui_uniform.array_length}]: [{value_str}]"
-                )
-            elif ui_uniform.dimension == 1:
+        if ui_uniform.input_type == UIUniformInputType.AUTO:
+            if ui_uniform.dimension == 1:
                 imgui.text(f"{ui_uniform.name}: {value:.3f}")
             else:
                 if isinstance(value, Iterable):
@@ -886,7 +912,22 @@ class App:
                 else:
                     imgui.text(f"{ui_uniform.name}: {value}")
 
-        elif ui_uniform.group_name == "image":
+        elif ui_uniform.input_type == UIUniformInputType.ARRAY:
+            py_type = {GL_FLOAT: float, GL_UNSIGNED_INT: int}.get(ui_uniform.gl_type)
+
+            if py_type is not None:
+                value_str = ", ".join(map(str, value))
+                is_changed, value_str = imgui.input_text(ui_uniform.name, value_str)
+                if is_changed:
+                    with contextlib.suppress(Exception):
+                        value = [py_type(x.strip()) for x in value_str.split(",")]
+            else:
+                value_str = ", ".join(f"{v:.3f}" for v in value)
+                imgui.text(
+                    f"{ui_uniform.name}[{ui_uniform.array_length}]: [{value_str}]"
+                )
+
+        elif ui_uniform.input_type == UIUniformInputType.IMAGE:
             texture = value
             image_height = 90
             image_width = image_height * texture.width / max(texture.height, 1)
@@ -922,14 +963,17 @@ class App:
                 )
                 if file_path:
                     value = Image(file_path).texture
+                    self._node_ui_state[
+                        self.current_node_name
+                    ].selected_uniform_name = ui_uniform.name
 
             imgui.spacing()
 
-        elif ui_uniform.group_name == "color":
+        elif ui_uniform.input_type == UIUniformInputType.COLOR:
             fn = getattr(imgui, f"color_edit{ui_uniform.dimension}")
             value = fn(ui_uniform.name, *value)[1]
 
-        elif ui_uniform.group_name == "drag":
+        elif ui_uniform.input_type == UIUniformInputType.DRAG:
             change_speed = 0.01
             if ui_uniform.dimension == 1:
                 value = imgui.drag_float(ui_uniform.name, value, change_speed)[1]
@@ -938,6 +982,13 @@ class App:
                 value = fn(ui_uniform.name, *value, change_speed)[1]
 
         node.set_uniform_value(ui_uniform.name, value)
+
+        if ui_uniform.input_type != UIUniformInputType.AUTO and (
+            imgui.is_item_clicked() or imgui.is_item_active()
+        ):
+            self._node_ui_state[
+                self.current_node_name
+            ].selected_uniform_name = ui_uniform.name
 
     def draw_tg_stickers_tab(self) -> None:
         # ----------------------------------------------------------------
@@ -1091,7 +1142,9 @@ class App:
                         logger.error(e)
 
             imgui.same_line()
-            imgui.text_colored(sticker.log_message.text, *sticker.log_message.color)
+            imgui.text_colored(
+                sticker.log_message.text, *sticker.log_message.get_color()
+            )
 
         imgui.end_child()
 
@@ -1297,6 +1350,8 @@ class App:
                 imgui.end_tab_bar()
 
     def draw_all(self) -> None:
+        imgui.push_font(self._font_14)
+
         window_width, window_height = glfw.get_window_size(self.window)
 
         # ----------------------------------------------------------------
@@ -1390,6 +1445,8 @@ class App:
             self.draw_node_preview_grid(node_preview_width, control_panel_height)
             imgui.same_line()
             self.draw_node_settings()
+
+        imgui.pop_font()
 
     def process_hotkeys(self) -> None:
         io = imgui.get_io()

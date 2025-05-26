@@ -15,6 +15,8 @@ from PIL import Image as PILImage
 from PIL import ImageOps
 from pydantic import BaseModel
 
+RESOURCES_DIR = Path(str(files("shaderbox.resources")))
+
 
 class FileDetails(BaseModel):
     path: str = ""
@@ -207,10 +209,9 @@ class Canvas:
 
 
 class Node:
-    _RESOURCES_DIR = Path(str(files("shaderbox.resources")))
-    _DEFAULT_VS_FILE_PATH = _RESOURCES_DIR / "shaders" / "default.vert.glsl"
-    _DEFAULT_FS_FILE_PATH = _RESOURCES_DIR / "shaders" / "default.frag.glsl"
-    _DEFAULT_IMAGE_FILE_PATH = _RESOURCES_DIR / "textures" / "default.jpeg"
+    _DEFAULT_VS_FILE_PATH = RESOURCES_DIR / "shaders" / "default.vert.glsl"
+    _DEFAULT_FS_FILE_PATH = RESOURCES_DIR / "shaders" / "default.frag.glsl"
+    _DEFAULT_IMAGE_FILE_PATH = RESOURCES_DIR / "textures" / "default.jpeg"
 
     def __init__(
         self,
