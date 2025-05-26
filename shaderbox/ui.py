@@ -8,7 +8,6 @@ import subprocess
 import time
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
-from enum import Enum, auto
 from pathlib import Path
 from typing import Any, Literal
 
@@ -137,56 +136,6 @@ def zero_low_alpha_pixels(image: Image, min_alpha: float = 1.0) -> Image:
     return Image(img_array)
 
 
-class UIUniformInputType(Enum):
-    IMAGE = auto()
-    ARRAY = auto()
-    COLOR = auto()
-    TEXT = auto()
-    DRAG = auto()
-    AUTO = auto()
-
-
-class UIUniform:
-    def __init__(self, uniform: moderngl.Uniform) -> None:
-        self.uniform = uniform
-        self.name = uniform.name
-        self.gl_type = uniform.gl_type  # type: ignore
-        self.dimension = uniform.dimension
-        self.array_length = uniform.array_length
-
-        if self.name in ("u_time", "u_aspect", "u_resolution"):
-            self.input_type = UIUniformInputType.AUTO
-        elif self.gl_type == GL_SAMPLER_2D:
-            self.input_type = UIUniformInputType.IMAGE
-        elif self.array_length > 1:
-            self.input_type = UIUniformInputType.ARRAY
-        elif (
-            self.array_length == 1
-            and self.dimension in (3, 4)
-            and self.name.endswith("color")
-        ):
-            self.input_type = UIUniformInputType.COLOR
-        elif self.array_length == 1 and self.dimension in (1, 2, 3, 4):
-            self.input_type = UIUniformInputType.DRAG
-        else:
-            self.input_type = UIUniformInputType.AUTO
-
-    def get_ui_height(self) -> int:
-        if self.input_type == UIUniformInputType.IMAGE:
-            return 120
-        elif self.input_type == UIUniformInputType.DRAG:
-            spacing: int = imgui.get_text_line_height_with_spacing()
-            return 5 + spacing
-        else:
-            return imgui.get_text_line_height_with_spacing()  # type: ignore
-
-
-def get_uniform_hash(u: moderngl.Uniform) -> int:
-    key = f"{u.name}_{u.array_length}_{u.dimension}_{u.gl_type}"  # type: ignore
-    hash = hashlib.md5(key.encode()).digest()
-    return int.from_bytes(hash, "big")
-
-
 class UIMessage(BaseModel):
     text: str = ""
     level: Literal["success", "warning", "error"]
@@ -285,8 +234,65 @@ class UITgSticker:
             self.video = None
 
 
+UIUniformInputType = Literal["image", "array", "color", "text", "drag", "auto"]
+
+
+class UIUniform(BaseModel):
+    name: str
+    gl_type: int
+    dimension: int
+    array_length: int
+    input_type: UIUniformInputType = "auto"
+
+    model_config = {"arbitrary_types_allowed": True}
+
+    @classmethod
+    def from_uniform(cls, uniform: moderngl.Uniform) -> "UIUniform":
+        return cls(
+            name=uniform.name,
+            gl_type=uniform.gl_type,  # type: ignore
+            dimension=uniform.dimension,
+            array_length=uniform.array_length,
+        ).reset_input_type()
+
+    def reset_input_type(self) -> "UIUniform":
+        if self.name in ("u_time", "u_aspect", "u_resolution"):
+            self.input_type = "auto"
+        elif self.gl_type == GL_SAMPLER_2D:
+            self.input_type = "image"
+        elif self.array_length > 1:
+            self.input_type = "array"
+        elif (
+            self.array_length == 1
+            and self.dimension in (3, 4)
+            and self.name.endswith("color")
+        ):
+            self.input_type = "color"
+        elif self.array_length == 1 and self.dimension in (1, 2, 3, 4):
+            self.input_type = "drag"
+        else:
+            self.input_type = "auto"
+
+        return self
+
+    def get_ui_height(self) -> int:
+        if self.input_type == "image":
+            return 120
+        elif self.input_type == "drag":
+            return 5 + imgui.get_text_line_height_with_spacing()  # type: ignore
+        else:
+            return imgui.get_text_line_height_with_spacing()  # type: ignore
+
+
+def get_uniform_hash(u: moderngl.Uniform) -> int:
+    key = f"{u.name}_{u.array_length}_{u.dimension}_{u.gl_type}"  # type: ignore
+    hash = hashlib.md5(key.encode()).digest()
+    return int.from_bytes(hash, "big")
+
+
 class UINodeState(BaseModel):
     render_media_details: MediaDetails = MediaDetails()
+    ui_uniforms: dict[int, UIUniform] = {}
 
     resolution_idx: int = 0
     selected_uniform_name: str = ""
@@ -333,7 +339,6 @@ class App:
         self.current_node_name: str | None = None
         self.nodes: dict[str, Node] = {}
         self.node_mtimes: dict[str, float] = {}
-        self.node_ui_uniforms: dict[str, dict[int, UIUniform]] = {}
 
         self.preview_canvas = Canvas()
 
@@ -504,7 +509,7 @@ class App:
             else:
                 if isinstance(value, int | float):
                     meta["uniforms"][uniform.name] = value
-                elif isinstance(value, tuple):
+                elif isinstance(value, tuple | list):
                     meta["uniforms"][uniform.name] = list(value)
                 else:
                     logger.warning(
@@ -730,11 +735,11 @@ class App:
 
         # ----------------------------------------------------------------
         # Uniforms
-        ui_uniforms = self.node_ui_uniforms.setdefault(node_name, {})
+        ui_uniforms = self.ui_current_node_state.ui_uniforms
         for uniform in node.get_uniforms():
             hash = get_uniform_hash(uniform)
             if hash not in ui_uniforms:
-                ui_uniforms[hash] = UIUniform(uniform)
+                ui_uniforms[hash] = UIUniform.from_uniform(uniform)
 
         imgui.begin_child(
             "ui_uniforms",
@@ -769,15 +774,12 @@ class App:
         if not isinstance(uniform, moderngl.Uniform):
             return
 
-        ui_uniform = self.node_ui_uniforms[self.current_node_name][
-            get_uniform_hash(uniform)
-        ]
-
-        imgui.text(f"{ui_uniform.name} - {ui_uniform.input_type.name}")
+        ui_uniform = self.ui_current_node_state.ui_uniforms[get_uniform_hash(uniform)]
+        imgui.text(f"{ui_uniform.name} - {ui_uniform.input_type}")
         imgui.separator()
         imgui.spacing()
 
-        if ui_uniform.input_type == UIUniformInputType.IMAGE:
+        if ui_uniform.input_type == "image":
             texture = node.get_uniform_value(ui_uniform.name)
 
             imgui.text(get_resolution_str(ui_uniform.name, *texture.size))
@@ -877,18 +879,13 @@ class App:
                     node.set_uniform_value(ui_uniform.name, image.texture)
                 except Exception as e:
                     logger.error(str(e))
-        elif ui_uniform.input_type in (
-            UIUniformInputType.ARRAY,
-            UIUniformInputType.TEXT,
-        ):
-            current_idx = 0 if ui_uniform.input_type == UIUniformInputType.ARRAY else 1
+        elif ui_uniform.input_type in ("array", "text"):
+            current_idx = 0 if ui_uniform.input_type == "array" else 1
             new_idx = imgui.combo(
-                "Input type##ui_uniform", current_idx, items=["ARRAY", "TEXT"]
+                "Input type##ui_uniform", current_idx, items=["array", "text"]
             )[1]
 
-            ui_uniform.input_type = (
-                UIUniformInputType.ARRAY if new_idx == 0 else UIUniformInputType.TEXT
-            )
+            ui_uniform.input_type = "array" if new_idx == 0 else "text"
         else:
             imgui.text_colored(
                 "TODO: Implement controls for this type of uniform input",
@@ -902,9 +899,13 @@ class App:
         node = self.nodes[self.current_node_name]
         value = node.get_uniform_value(ui_uniform.name)
 
-        if ui_uniform.input_type == UIUniformInputType.AUTO:
+        if ui_uniform.input_type == "auto":
             if ui_uniform.dimension == 1:
-                imgui.text(f"{ui_uniform.name}: {value:.3f}")
+                try:
+                    imgui.text(f"{ui_uniform.name}: {value:.3f}")
+                except Exception as e:
+                    print(ui_uniform)
+                    raise e
             else:
                 if isinstance(value, Iterable):
                     value_str = ", ".join(f"{v:.3f}" for v in value)
@@ -912,7 +913,7 @@ class App:
                 else:
                     imgui.text(f"{ui_uniform.name}: {value}")
 
-        elif ui_uniform.input_type == UIUniformInputType.ARRAY:
+        elif ui_uniform.input_type == "array":
             py_type = {GL_FLOAT: float, GL_UNSIGNED_INT: int}.get(ui_uniform.gl_type)
 
             if py_type is not None:
@@ -927,7 +928,7 @@ class App:
                     f"{ui_uniform.name}[{ui_uniform.array_length}]: [{value_str}]"
                 )
 
-        elif ui_uniform.input_type == UIUniformInputType.IMAGE:
+        elif ui_uniform.input_type == "image":
             texture = value
             image_height = 90
             image_width = image_height * texture.width / max(texture.height, 1)
@@ -969,11 +970,11 @@ class App:
 
             imgui.spacing()
 
-        elif ui_uniform.input_type == UIUniformInputType.COLOR:
+        elif ui_uniform.input_type == "color":
             fn = getattr(imgui, f"color_edit{ui_uniform.dimension}")
             value = fn(ui_uniform.name, *value)[1]
 
-        elif ui_uniform.input_type == UIUniformInputType.DRAG:
+        elif ui_uniform.input_type == "drag":
             change_speed = 0.01
             if ui_uniform.dimension == 1:
                 value = imgui.drag_float(ui_uniform.name, value, change_speed)[1]
@@ -983,7 +984,7 @@ class App:
 
         node.set_uniform_value(ui_uniform.name, value)
 
-        if ui_uniform.input_type != UIUniformInputType.AUTO and (
+        if ui_uniform.input_type != "auto" and (
             imgui.is_item_clicked() or imgui.is_item_active()
         ):
             self._node_ui_state[
