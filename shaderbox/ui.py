@@ -326,6 +326,7 @@ class UINodeState(BaseModel):
 
 class UIAppState(BaseModel):
     current_node_name: str = ""
+    is_render_all_nodes: bool = True
 
     tg_bot_token: str = ""
     tg_user_id: str = ""
@@ -370,6 +371,7 @@ class App:
         imgui.create_context()
         self.window = window
         self.imgui_renderer = GlfwRenderer(window)
+        self.frame_idx = 0
 
         self._font_14 = self.get_font(14)
 
@@ -629,6 +631,10 @@ class App:
         with imgui.begin_child(
             "node_preview_grid", width=width, height=height, border=True
         ):
+            self.ui_app_state.is_render_all_nodes = imgui.checkbox(
+                "Render all", self.ui_app_state.is_render_all_nodes
+            )[1]
+
             preview_size = 125
             n_cols = int(imgui.get_content_region_available()[0] // (preview_size + 5))
             n_cols = max(1, n_cols)
@@ -1563,9 +1569,14 @@ class App:
                 _render_preview(sticker.preview_canvas, sticker.render_media_details)
 
         # ----------------------------------------------------------------
-        # Render all nodes
+        # Render nodes
         for node in self.nodes.values():
-            node.render()
+            if (
+                self.ui_app_state.is_render_all_nodes
+                or node == self.nodes[self.ui_app_state.current_node_name]
+                or self.frame_idx == 0
+            ):
+                node.render()
 
         # ----------------------------------------------------------------
         # Draw UI
@@ -1589,6 +1600,7 @@ class App:
             self.imgui_renderer.render(imgui.get_draw_data())
 
         glfw.swap_buffers(self.window)
+        self.frame_idx += 1
 
 
 def main() -> None:
