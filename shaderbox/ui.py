@@ -935,6 +935,9 @@ class App:
         node = self.nodes[self.ui_app_state.current_node_name]
         value = node.get_uniform_value(ui_uniform.name)
 
+        if value is None:
+            return
+
         if ui_uniform.input_type == "auto":
             if ui_uniform.dimension == 1:
                 try:
