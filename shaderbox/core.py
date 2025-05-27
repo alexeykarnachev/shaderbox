@@ -364,10 +364,10 @@ class Node:
 
             try:
                 self.program[uniform.name] = value
-            except Exception as _:
+            except Exception as e:
                 logger.warning(
-                    f"Failed to set uniform '{uniform.name}' with value {value}. "
-                    "Cached value will be cleared."
+                    f"Failed to set uniform '{uniform.name}' with value {value} ({e}). "
+                    f"Cached value will be cleared"
                 )
                 self._uniform_values.pop(uniform.name)
 

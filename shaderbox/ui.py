@@ -136,6 +136,32 @@ def zero_low_alpha_pixels(image: Image, min_alpha: float = 1.0) -> Image:
     return Image(img_array)
 
 
+def get_uniform_hash(u: moderngl.Uniform) -> int:
+    key = f"{u.name}_{u.array_length}_{u.dimension}_{u.gl_type}"  # type: ignore
+    hash = hashlib.md5(key.encode()).digest()
+    return int.from_bytes(hash, "big")
+
+
+def unicode_to_str(char_inds: list[int]) -> str:
+    eos_idx = char_inds.index(0)
+    chars = []
+    for i in range(0, eos_idx):
+        chars.append(chr(char_inds[i]))
+    text = "".join(chars)
+
+    return text
+
+
+def str_to_unicode(text: str, max_n_chars: int) -> list[int]:
+    if len(text) >= max_n_chars:
+        text = text[:max_n_chars]
+    char_inds = [ord(c) for c in text]
+    pad_len = max_n_chars - len(char_inds)
+    char_inds += [0] * pad_len
+
+    return char_inds
+
+
 class UIMessage(BaseModel):
     text: str = ""
     level: Literal["success", "warning", "error"]
@@ -263,6 +289,10 @@ class UIUniform(BaseModel):
         elif self.array_length > 1:
             self.input_type = "array"
         elif (
+            self.array_length > 1 and self.dimension == 1 and self.name.endswith("text")
+        ):
+            self.input_type = "text"
+        elif (
             self.array_length == 1
             and self.dimension in (3, 4)
             and self.name.endswith("color")
@@ -284,12 +314,6 @@ class UIUniform(BaseModel):
             return imgui.get_text_line_height_with_spacing()  # type: ignore
 
 
-def get_uniform_hash(u: moderngl.Uniform) -> int:
-    key = f"{u.name}_{u.array_length}_{u.dimension}_{u.gl_type}"  # type: ignore
-    hash = hashlib.md5(key.encode()).digest()
-    return int.from_bytes(hash, "big")
-
-
 class UINodeState(BaseModel):
     render_media_details: MediaDetails = MediaDetails()
     ui_uniforms: dict[int, UIUniform] = {}
@@ -301,6 +325,8 @@ class UINodeState(BaseModel):
 
 
 class UIAppState(BaseModel):
+    current_node_name: str = ""
+
     tg_bot_token: str = ""
     tg_user_id: str = ""
     tg_sticker_set_name: str = ""
@@ -336,7 +362,6 @@ class App:
 
         glfw.set_window_pos(window, window_x, monitor_y)
 
-        self.current_node_name: str | None = None
         self.nodes: dict[str, Node] = {}
         self.node_mtimes: dict[str, float] = {}
 
@@ -374,7 +399,6 @@ class App:
                 }
 
                 self._node_ui_state[name] = UINodeState(**filtered_ui_state)
-                self.current_node_name = name
 
         # ----------------------------------------------------------------
         # Load ui states
@@ -442,9 +466,9 @@ class App:
 
     @property
     def ui_current_node_state(self) -> UINodeState:
-        if self.current_node_name is None:
+        if not self.ui_app_state.current_node_name:
             return UINodeState()
-        return self._node_ui_state[self.current_node_name]
+        return self._node_ui_state[self.ui_app_state.current_node_name]
 
     def edit_node_fs_file(self, node_name: str) -> None:
         fs_file_path = _NODES_DIR / node_name / "shader.frag.glsl"
@@ -463,8 +487,8 @@ class App:
             )
 
     def edit_current_node_fs_file(self) -> None:
-        if self.current_node_name:
-            self.edit_node_fs_file(self.current_node_name)
+        if self.ui_app_state.current_node_name:
+            self.edit_node_fs_file(self.ui_app_state.current_node_name)
         else:
             logger.warning("Nothing to edit")
 
@@ -522,8 +546,8 @@ class App:
         logger.info(f"Node {node_name} saved: {node_dir}")
 
     def save_current_node(self) -> None:
-        if self.current_node_name:
-            self.save_node(self.current_node_name)
+        if self.ui_app_state.current_node_name:
+            self.save_node(self.ui_app_state.current_node_name)
         else:
             logger.warning("Nothing to save")
 
@@ -541,34 +565,36 @@ class App:
         name = hashlib.md5(f"{id(node)}{time.time()}".encode()).hexdigest()[:8]
 
         self.nodes[name] = node
-        self.current_node_name = name
+        self.ui_app_state.current_node_name = name
 
         self.save_node(name)
         logger.info(f"Node created: {name}")
 
     def delete_current_node(self) -> None:
-        if self.current_node_name is None:
+        if not self.ui_app_state.current_node_name:
             logger.info("Current node is None, nothing to delete")
             return
 
-        name = self.current_node_name
+        name = self.ui_app_state.current_node_name
         node = self.nodes.pop(name)
         del self.node_mtimes[name]
 
         node.release()
 
-        self.current_node_name = next(iter(self.nodes)) if self.nodes else None
+        self.ui_app_state.current_node_name = (
+            next(iter(self.nodes)) if self.nodes else ""
+        )
 
         shutil.move(_NODES_DIR / name, _TRASH_DIR / name)
         logger.info(f"Node deleted: {name}")
 
     def select_next_current_node(self, step: int = +1) -> None:
-        if self.current_node_name is None:
+        if not self.ui_app_state.current_node_name:
             return
 
         keys = list(self.nodes.keys())
-        idx = keys.index(self.current_node_name)
-        self.current_node_name = keys[(idx + step) % len(keys)]
+        idx = keys.index(self.ui_app_state.current_node_name)
+        self.ui_app_state.current_node_name = keys[(idx + step) % len(keys)]
 
     def draw_main_menu_bar(self) -> int:
         if imgui.begin_main_menu_bar().opened:
@@ -607,7 +633,7 @@ class App:
             n_cols = int(imgui.get_content_region_available()[0] // (preview_size + 5))
             n_cols = max(1, n_cols)
             for i, (name, node) in enumerate(self.nodes.items()):
-                if name == self.current_node_name:
+                if name == self.ui_app_state.current_node_name:
                     if node.shader_error:
                         color = (1.0, 0.0, 0.0, 1.0)
                     else:
@@ -622,13 +648,13 @@ class App:
                     flags=imgui.WINDOW_NO_SCROLLBAR,
                 )
 
-                if name == self.current_node_name:
+                if name == self.ui_app_state.current_node_name:
                     imgui.pop_style_color()
 
                 if imgui.invisible_button(
                     f"preview_button_{name}", width=preview_size, height=preview_size
                 ):
-                    self.current_node_name = name
+                    self.ui_app_state.current_node_name = name
 
                 s = (preview_size - 10) / max(node.canvas.texture.size)
                 image_width = node.canvas.texture.size[0] * s
@@ -653,12 +679,12 @@ class App:
                     imgui.spacing()
 
     def draw_node_tab(self) -> None:
-        if self.current_node_name:
-            node = self.nodes[self.current_node_name]
+        if self.ui_app_state.current_node_name:
+            node = self.nodes[self.ui_app_state.current_node_name]
         else:
             return
 
-        node_name = self.current_node_name
+        node_name = self.ui_app_state.current_node_name
         fs_file_path = _NODES_DIR / node_name / "shader.frag.glsl"
 
         # ----------------------------------------------------------------
@@ -750,17 +776,19 @@ class App:
 
         imgui.end_child()
 
-        if self._node_ui_state[self.current_node_name].selected_uniform_name:
+        if self._node_ui_state[
+            self.ui_app_state.current_node_name
+        ].selected_uniform_name:
             imgui.same_line()
             imgui.begin_child("selected_uniform_settings", border=True)
             self.draw_selected_ui_uniform_settings()
             imgui.end_child()
 
     def draw_selected_ui_uniform_settings(self) -> None:
-        if not self.current_node_name:
+        if not self.ui_app_state.current_node_name:
             return
 
-        node = self.nodes.get(self.current_node_name)
+        node = self.nodes.get(self.ui_app_state.current_node_name)
 
         if (
             not node
@@ -779,9 +807,10 @@ class App:
         imgui.separator()
         imgui.spacing()
 
-        if ui_uniform.input_type == "image":
-            texture = node.get_uniform_value(ui_uniform.name)
+        value = node.get_uniform_value(ui_uniform.name)
 
+        if ui_uniform.input_type == "image":
+            texture = value
             imgui.text(get_resolution_str(ui_uniform.name, *texture.size))
 
             max_image_width = imgui.get_content_region_available()[0]
@@ -799,7 +828,6 @@ class App:
             )
 
             imgui.spacing()
-            imgui.separator()
 
             if imgui.button("As depthmap"):
                 try:
@@ -824,7 +852,6 @@ class App:
                 except Exception as e:
                     logger.error(str(e))
 
-            imgui.separator()
             imgui.text("Gaussian blur")
             self.ui_current_node_state.blur_kernel_size = imgui.slider_int(
                 "##blur_kernel_size",
@@ -856,7 +883,6 @@ class App:
                 except Exception as e:
                     logger.error(str(e))
 
-            imgui.separator()
             imgui.text("Normals")
             self.ui_current_node_state.normals_kernel_size = imgui.slider_int(
                 "##normals_kernel_size",
@@ -879,24 +905,28 @@ class App:
                     node.set_uniform_value(ui_uniform.name, image.texture)
                 except Exception as e:
                     logger.error(str(e))
-        elif ui_uniform.input_type in ("array", "text"):
+
+        if (
+            ui_uniform.input_type in ("array", "text")
+            and ui_uniform.gl_type == GL_UNSIGNED_INT
+        ):
             current_idx = 0 if ui_uniform.input_type == "array" else 1
             new_idx = imgui.combo(
                 "Input type##ui_uniform", current_idx, items=["array", "text"]
             )[1]
 
             ui_uniform.input_type = "array" if new_idx == 0 else "text"
-        else:
-            imgui.text_colored(
-                "TODO: Implement controls for this type of uniform input",
-                *(1.0, 1.0, 0.0),
-            )
+
+        if ui_uniform.input_type == "text":
+            text = unicode_to_str(value)
+            imgui.text_colored(text, *(0.5, 0.5, 0.5))
+            imgui.text(f"Length: {len(text)}")
 
     def draw_ui_uniform(self, ui_uniform: UIUniform) -> None:
-        if self.current_node_name is None:
+        if not self.ui_app_state.current_node_name:
             return
 
-        node = self.nodes[self.current_node_name]
+        node = self.nodes[self.ui_app_state.current_node_name]
         value = node.get_uniform_value(ui_uniform.name)
 
         if ui_uniform.input_type == "auto":
@@ -928,6 +958,14 @@ class App:
                     f"{ui_uniform.name}[{ui_uniform.array_length}]: [{value_str}]"
                 )
 
+        elif ui_uniform.input_type == "text":
+            text = unicode_to_str(value)
+            is_changed, text = imgui.input_text(ui_uniform.name, text)
+
+            if is_changed:
+                value = str_to_unicode(text, ui_uniform.array_length)
+                node.set_uniform_value(ui_uniform.name, value)
+
         elif ui_uniform.input_type == "image":
             texture = value
             image_height = 90
@@ -951,7 +989,7 @@ class App:
                 uv1=(1, 0),
             ):
                 self._node_ui_state[
-                    self.current_node_name
+                    self.ui_app_state.current_node_name
                 ].selected_uniform_name = ui_uniform.name
 
             imgui.pop_style_color(n_styles)
@@ -965,10 +1003,8 @@ class App:
                 if file_path:
                     value = Image(file_path).texture
                     self._node_ui_state[
-                        self.current_node_name
+                        self.ui_app_state.current_node_name
                     ].selected_uniform_name = ui_uniform.name
-
-            imgui.spacing()
 
         elif ui_uniform.input_type == "color":
             fn = getattr(imgui, f"color_edit{ui_uniform.dimension}")
@@ -988,7 +1024,7 @@ class App:
             imgui.is_item_clicked() or imgui.is_item_active()
         ):
             self._node_ui_state[
-                self.current_node_name
+                self.ui_app_state.current_node_name
             ].selected_uniform_name = ui_uniform.name
 
     def draw_tg_stickers_tab(self) -> None:
@@ -1154,7 +1190,7 @@ class App:
         details: MediaDetails,
         preview_texture: moderngl.Texture | None,
     ) -> tuple[bool, MediaDetails]:
-        node = self.nodes[self.current_node_name]  # type: ignore
+        node = self.nodes[self.ui_app_state.current_node_name]  # type: ignore
 
         # ----------------------------------------------------------------
         # Preview canvas
@@ -1232,7 +1268,7 @@ class App:
             imgui.text(f"Resolution: {details.width}x{details.height}")
             return details
 
-        node = self.nodes[self.current_node_name]  # type: ignore
+        node = self.nodes[self.ui_app_state.current_node_name]  # type: ignore
 
         is_width_changed, new_width = imgui.drag_int(
             "Width", details.width, min_value=16, max_value=2560
@@ -1270,8 +1306,8 @@ class App:
     ) -> MediaDetails:
         details = details.model_copy()
 
-        if self.current_node_name:
-            node = self.nodes[self.current_node_name]
+        if self.ui_app_state.current_node_name:
+            node = self.nodes[self.ui_app_state.current_node_name]
             aspect = np.divide(*node.canvas.texture.size)
         else:
             aspect = None
@@ -1377,7 +1413,7 @@ class App:
         # Current node image
         cursor_pos = imgui.get_cursor_screen_pos()
 
-        if self.current_node_name is None:
+        if not self.ui_app_state.current_node_name:
             image_width, image_height = imgui.get_content_region_available()
             image_height = max(image_height - control_panel_min_height, 400)
 
@@ -1394,7 +1430,7 @@ class App:
                 message,
             )
         else:
-            node = self.nodes[self.current_node_name]
+            node = self.nodes[self.ui_app_state.current_node_name]
 
             min_image_height = 100
             max_image_height = max(
@@ -1503,8 +1539,8 @@ class App:
 
         # ----------------------------------------------------------------
         # Render previews
-        if self.current_node_name:
-            node = self.nodes[self.current_node_name]
+        if self.ui_app_state.current_node_name:
+            node = self.nodes[self.ui_app_state.current_node_name]
             preview_size = adjust_size(node.canvas.texture.size, width=200)
 
             def _render_preview(canvas: Canvas, media_details: MediaDetails) -> None:
