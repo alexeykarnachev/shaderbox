@@ -286,12 +286,10 @@ class UIUniform(BaseModel):
             self.input_type = "auto"
         elif self.gl_type == GL_SAMPLER_2D:
             self.input_type = "image"
+        elif self.array_length > 1 and self.name.endswith("text"):
+            self.input_type = "text"
         elif self.array_length > 1:
             self.input_type = "array"
-        elif (
-            self.array_length > 1 and self.dimension == 1 and self.name.endswith("text")
-        ):
-            self.input_type = "text"
         elif (
             self.array_length == 1
             and self.dimension in (3, 4)
