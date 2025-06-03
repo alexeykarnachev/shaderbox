@@ -596,35 +596,6 @@ class App:
         idx = keys.index(self.ui_app_state.current_node_name)
         self.ui_app_state.current_node_name = keys[(idx + step) % len(keys)]
 
-    def draw_main_menu_bar(self) -> int:
-        if imgui.begin_main_menu_bar().opened:
-            if imgui.begin_menu("Node").opened:
-                if imgui.menu_item("New node", "Ctrl+N", False)[1]:
-                    self.create_new_current_node()
-
-                if imgui.menu_item("Delete current node", "Ctrl+D", False)[1]:
-                    self.delete_current_node()
-
-                if imgui.menu_item("Select next node", "->", False)[1]:
-                    self.select_next_current_node(+1)
-
-                if imgui.menu_item("Select previous node", "<-", False)[1]:
-                    self.select_next_current_node(-1)
-
-                if imgui.menu_item("Save current node", "Ctrl+S", False)[1]:
-                    self.save_current_node()
-
-                if imgui.menu_item("Edit current node", "Ctrl+E", False)[1]:
-                    self.edit_current_node_fs_file()
-
-                imgui.end_menu()
-
-            size = imgui.get_item_rect_size()
-            main_menu_height: int = size[1]  # type: ignore
-            imgui.end_main_menu_bar()
-            return main_menu_height
-        return 0
-
     def draw_node_preview_grid(self, width: int, height: int) -> None:
         with imgui.begin_child(
             "node_preview_grid", width=width, height=height, border=True
@@ -632,6 +603,26 @@ class App:
             self.ui_app_state.is_render_all_nodes = imgui.checkbox(
                 "Render all", self.ui_app_state.is_render_all_nodes
             )[1]
+
+            if imgui.is_item_hovered():
+                imgui.begin_tooltip()
+                imgui.text(
+                    "If checked, renders all nodes, otherwise, renders only the selected one."
+                )
+                imgui.end_tooltip()
+
+            imgui.same_line()
+            imgui.set_cursor_pos_x(width - 14)
+            imgui.text_colored("?", *(0.5, 0.5, 0.5))
+            if imgui.is_item_hovered():
+                imgui.begin_tooltip()
+                imgui.text("CREATE new node         CTRL+N")
+                imgui.text("SAVE current node       CTRL+S")
+                imgui.text("EDIT current node       CTRL+E")
+                imgui.text("DELETE current node     CTRL+D")
+                imgui.text("PREVIOUS node             <-")
+                imgui.text("NEXT node                 ->")
+                imgui.end_tooltip()
 
             preview_size = 125
             n_cols = int(imgui.get_content_region_available()[0] // (preview_size + 5))
@@ -1400,12 +1391,8 @@ class App:
 
         # ----------------------------------------------------------------
         # Main window
-
-        # Main menu bar
-        main_menu_height = self.draw_main_menu_bar()
-
-        imgui.set_next_window_size(window_width, window_height - main_menu_height)
-        imgui.set_next_window_position(0, main_menu_height)
+        imgui.set_next_window_size(window_width, window_height)
+        imgui.set_next_window_position(0, 0)
         imgui.begin(
             "ShaderBox",
             flags=imgui.WINDOW_NO_COLLAPSE
@@ -1494,14 +1481,21 @@ class App:
 
     def process_hotkeys(self) -> None:
         io = imgui.get_io()
+
         if io.key_ctrl and imgui.is_key_pressed(ord("N")):
             self.create_new_current_node()
-        if io.key_ctrl and imgui.is_key_pressed(ord("D")):
-            self.delete_current_node()
         if io.key_ctrl and imgui.is_key_pressed(ord("S")):
             self.save()
         if io.key_ctrl and imgui.is_key_pressed(ord("E")):
             self.edit_current_node_fs_file()
+        if io.key_ctrl and imgui.is_key_pressed(ord("D")):
+            self.delete_current_node()
+
+        if not imgui.is_any_item_active():
+            if imgui.is_key_pressed(glfw.KEY_LEFT, repeat=True):
+                self.select_next_current_node(-1)
+            if imgui.is_key_pressed(glfw.KEY_RIGHT, repeat=True):
+                self.select_next_current_node(+1)
 
     def run(self) -> None:
         while not glfw.window_should_close(self.window):
