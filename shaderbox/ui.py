@@ -22,7 +22,8 @@ from imgui.integrations.glfw import GlfwRenderer
 from loguru import logger
 from OpenGL.GL import GL_FLOAT, GL_SAMPLER_2D, GL_UNSIGNED_INT, GLError
 from platformdirs import user_data_dir
-from pydantic import BaseModel
+from pydantic import BaseModel, DirectoryPath
+from pydantic_settings import BaseSettings
 
 from shaderbox.core import (
     RESOURCES_DIR,
@@ -36,20 +37,76 @@ from shaderbox.core import (
 )
 from shaderbox.vendors import get_modelbox_bg_removal, get_modelbox_depthmap
 
-_APP_START_TIME = int(time.time() * 1000)
 
-_APP_DIR = Path(user_data_dir("shaderbox"))
-_NODES_DIR = _APP_DIR / "nodes"
-_TRASH_DIR = _APP_DIR / "trash"
-_VIDEOS_DIR = _APP_DIR / "videos"
-_IMAGES_DIR = _APP_DIR / "images"
-_APP_STATE_FILE_PATH = _APP_DIR / "app_state.json"
-_TG_STICKER_STATE_FILE_PATH = _APP_DIR / "tg_sticker.json"
+class Settings(BaseSettings):
+    app_start_time: int = int(time.time() * 1000)
 
-_NODES_DIR.mkdir(exist_ok=True, parents=True)
-_TRASH_DIR.mkdir(exist_ok=True, parents=True)
-_VIDEOS_DIR.mkdir(exist_ok=True, parents=True)
-_IMAGES_DIR.mkdir(exist_ok=True, parents=True)
+    project_dir: DirectoryPath
+
+    def __init__(self, **data):  # type: ignore
+        if "project_dir" not in data or data["project_dir"] is None:
+            data["project_dir"] = self.get_project_dir()
+        else:
+            self.set_project_dir(data["project_dir"])
+
+        super().__init__(**data)
+
+    @property
+    def _app_dir(self) -> Path:
+        return Path(user_data_dir("shaderbox"))
+
+    @property
+    def _project_dir_file(self) -> Path:
+        return self._app_dir / "project_dir"
+
+    def get_project_dir(self) -> DirectoryPath:
+        try:
+            project_dir = Path(self._project_dir_file.read_text().strip())
+        except FileNotFoundError:
+            project_dir = self._create_dir_if_needed(
+                self._app_dir / "projects" / "default"
+            )
+            self._project_dir_file.write_text(str(project_dir))
+
+        return project_dir
+
+    def set_project_dir(self, project_dir: DirectoryPath) -> None:
+        self.project_dir = Path(project_dir)
+        (self._app_dir / "project_dir").write_text(str(self.project_dir))
+
+    @staticmethod
+    def _create_dir_if_needed(path: Path) -> Path:
+        if not path.exists():
+            path.mkdir(parents=True)
+            logger.info(f"Directory created: {path}")
+        return path
+
+    @property
+    def nodes_dir(self) -> Path:
+        return self._create_dir_if_needed(self.project_dir / "nodes")
+
+    @property
+    def trash_dir(self) -> Path:
+        return self._create_dir_if_needed(self.project_dir / "trash")
+
+    @property
+    def videos_dir(self) -> Path:
+        return self._create_dir_if_needed(self.project_dir / "videos")
+
+    @property
+    def images_dir(self) -> Path:
+        return self._create_dir_if_needed(self.project_dir / "images")
+
+    @property
+    def app_state_file_path(self) -> Path:
+        return Path(self.project_dir / "app_state.json")
+
+    @property
+    def tg_sticker_state_file_path(self) -> Path:
+        return Path(self.project_dir / "tg_sticker.json")
+
+
+SETTINGS = Settings()
 
 
 def adjust_size(
@@ -198,8 +255,8 @@ class UITgSticker:
 
         self.preview_canvas = Canvas()
 
-        render_file_name = f"{_APP_START_TIME}_{hashlib.md5(str(id(self)).encode()).hexdigest()[:8]}.webm"
-        render_file_path = _TRASH_DIR / render_file_name
+        render_file_name = f"{SETTINGS.app_start_time}_{hashlib.md5(str(id(self)).encode()).hexdigest()[:8]}.webm"
+        render_file_path = SETTINGS.trash_dir / render_file_name
         self.render_media_details: MediaDetails = MediaDetails(is_video=True)
         self.render_media_details.file_details.path = str(render_file_path)
 
@@ -215,7 +272,7 @@ class UITgSticker:
 
             if self._sticker.is_video:
                 file_name = self._sticker.file_id + ".webm"
-                file_path = _VIDEOS_DIR / file_name
+                file_path = SETTINGS.videos_dir / file_name
 
                 file = await bot.get_file(self._sticker.file_id)
                 await file.download_to_drive(file_path)
@@ -225,7 +282,7 @@ class UITgSticker:
 
             if self._sticker.thumbnail:
                 file_name = self._sticker.thumbnail.file_id + ".webp"
-                file_path = _IMAGES_DIR / file_name
+                file_path = SETTINGS.images_dir / file_name
 
                 file = await bot.get_file(self._sticker.thumbnail.file_id)
                 await file.download_to_drive(file_path)
@@ -326,6 +383,8 @@ class UIAppState(BaseModel):
     current_node_name: str = ""
     is_render_all_nodes: bool = True
 
+
+class UITgState(BaseModel):
     tg_bot_token: str = ""
     tg_user_id: str = ""
     tg_sticker_set_name: str = ""
@@ -361,22 +420,26 @@ class App:
 
         glfw.set_window_pos(window, window_x, monitor_y)
 
-        self.nodes: dict[str, Node] = {}
-        self.node_mtimes: dict[str, float] = {}
-
-        self.preview_canvas = Canvas()
-
         imgui.create_context()
         self.window = window
         self.imgui_renderer = GlfwRenderer(window)
-        self.frame_idx = 0
-
         self._font_14 = self.get_font(14)
+        self.preview_canvas = Canvas()
+
+        self._init()
+
+    def _init(self) -> None:
+        self.nodes: dict[str, Node] = {}
+        self.node_mtimes: dict[str, float] = {}
+
+        self.frame_idx = 0
 
         # ----------------------------------------------------------------
         # Load nodes
         self._node_ui_state = defaultdict(UINodeState)
-        node_dirs = sorted(_NODES_DIR.iterdir(), key=lambda x: x.stat().st_ctime)
+        node_dirs = sorted(
+            SETTINGS.nodes_dir.iterdir(), key=lambda x: x.stat().st_ctime
+        )
         for node_dir in node_dirs:
             if node_dir.is_dir():
                 node, mtime, meta = Node.load_from_dir(node_dir)
@@ -403,12 +466,14 @@ class App:
         # ----------------------------------------------------------------
         # Load ui states
         self.ui_app_state = UIAppState()
+        self.ui_tg_state = UITgState()
         self.ui_tg_sticker_state = UITgStickerState()
         states: list[tuple[str, Path, type[BaseModel]]] = [
-            ("ui_app_state", _APP_STATE_FILE_PATH, UIAppState),
+            ("ui_app_state", SETTINGS.app_state_file_path, UIAppState),
+            ("ui_tg_state", SETTINGS.app_state_file_path, UITgState),
             (
                 "ui_tg_sticker_state",
-                _TG_STICKER_STATE_FILE_PATH,
+                SETTINGS.tg_sticker_state_file_path,
                 UITgStickerState,
             ),
         ]
@@ -442,11 +507,11 @@ class App:
 
     def fetch_tg_stickers(self) -> None:
         async def _fetch() -> list[UITgSticker]:
-            self._tg_stickers_bot = tg.Bot(token=self.ui_app_state.tg_bot_token)
+            self._tg_stickers_bot = tg.Bot(token=self.ui_tg_state.tg_bot_token)
             await self._tg_stickers_bot.initialize()
 
             sticker_set = await self._tg_stickers_bot.get_sticker_set(
-                name=self.ui_app_state.tg_sticker_set_name
+                name=self.ui_tg_state.tg_sticker_set_name
             )
             coros = [UITgSticker(s).load() for s in sticker_set.stickers]
             return await asyncio.gather(*coros)
@@ -471,7 +536,7 @@ class App:
         return self._node_ui_state[self.ui_app_state.current_node_name]
 
     def edit_node_fs_file(self, node_name: str) -> None:
-        fs_file_path = _NODES_DIR / node_name / "shader.frag.glsl"
+        fs_file_path = SETTINGS.nodes_dir / node_name / "shader.frag.glsl"
         wd = fs_file_path.parent.parent
         editor = "nvim" if shutil.which("nvim") else "vim"
 
@@ -494,7 +559,7 @@ class App:
 
     def save_node(self, node_name: str) -> None:
         node = self.nodes[node_name]
-        node_dir = _NODES_DIR / node_name
+        node_dir = SETTINGS.nodes_dir / node_name
         node_dir.mkdir(exist_ok=True, parents=True)
 
         ui_state_dict = self._node_ui_state[node_name].model_dump()
@@ -553,12 +618,19 @@ class App:
 
     def save_app_state(self) -> None:
         app_state_dict = self.ui_app_state.model_dump()
-        with _APP_STATE_FILE_PATH.open("w") as f:
+        with SETTINGS.app_state_file_path.open("w") as f:
             json.dump(app_state_dict, f, indent=4)
 
     def save(self) -> None:
         self.save_current_node()
         self.save_app_state()
+
+    def release(self) -> None:
+        for sticker in self._tg_stickers:
+            sticker.release()
+
+        for node in self.nodes.values():
+            node.release()
 
     def create_new_current_node(self) -> None:
         node = Node()
@@ -585,7 +657,7 @@ class App:
             next(iter(self.nodes)) if self.nodes else ""
         )
 
-        shutil.move(_NODES_DIR / name, _TRASH_DIR / name)
+        shutil.move(SETTINGS.nodes_dir / name, SETTINGS.trash_dir / name)
         logger.info(f"Node deleted: {name}")
 
     def select_next_current_node(self, step: int = +1) -> None:
@@ -600,6 +672,15 @@ class App:
         with imgui.begin_child(
             "node_preview_grid", width=width, height=height, border=True
         ):
+            if imgui.button("Settings"):
+                imgui.open_popup("Settings##popup")
+
+            if imgui.begin_popup_modal("Settings##popup").opened:
+                self.draw_settings()
+                imgui.end_popup()
+
+            imgui.same_line()
+
             self.ui_app_state.is_render_all_nodes = imgui.checkbox(
                 "Render all", self.ui_app_state.is_render_all_nodes
             )[1]
@@ -673,6 +754,20 @@ class App:
                 else:
                     imgui.spacing()
 
+    def draw_settings(self) -> None:
+        project_dir = SETTINGS.get_project_dir()
+        if imgui.button(str(project_dir)):
+            project_dir = crossfiledialog.choose_folder(
+                title="Project", start_dir=str(project_dir.parent)
+            )
+            if project_dir:
+                SETTINGS.set_project_dir(project_dir)
+                self.release()
+                self._init()
+
+        if imgui.button("Close"):
+            imgui.close_current_popup()
+
     def draw_node_tab(self) -> None:
         if self.ui_app_state.current_node_name:
             node = self.nodes[self.ui_app_state.current_node_name]
@@ -680,7 +775,7 @@ class App:
             return
 
         node_name = self.ui_app_state.current_node_name
-        fs_file_path = _NODES_DIR / node_name / "shader.frag.glsl"
+        fs_file_path = SETTINGS.nodes_dir / node_name / "shader.frag.glsl"
 
         # ----------------------------------------------------------------
         # Collect resolution items
@@ -1028,21 +1123,21 @@ class App:
     def draw_tg_stickers_tab(self) -> None:
         # ----------------------------------------------------------------
         # Tg settings
-        self.ui_app_state.tg_bot_token = imgui.input_text(
+        self.ui_tg_state.tg_bot_token = imgui.input_text(
             "Bot token",
-            self.ui_app_state.tg_bot_token,
+            self.ui_tg_state.tg_bot_token,
             flags=imgui.INPUT_TEXT_PASSWORD,
         )[1]
 
-        self.ui_app_state.tg_user_id = imgui.input_text(
+        self.ui_tg_state.tg_user_id = imgui.input_text(
             "User id",
-            self.ui_app_state.tg_user_id,
+            self.ui_tg_state.tg_user_id,
             flags=imgui.INPUT_TEXT_CHARS_DECIMAL,
         )[1]
 
-        self.ui_app_state.tg_sticker_set_name = imgui.input_text(
+        self.ui_tg_state.tg_sticker_set_name = imgui.input_text(
             "Sticker set name",
-            self.ui_app_state.tg_sticker_set_name,
+            self.ui_tg_state.tg_sticker_set_name,
             flags=imgui.INPUT_TEXT_CHARS_NO_BLANK,
         )[1]
 
@@ -1156,7 +1251,7 @@ class App:
                         if sticker._sticker is not None:
                             self._loop.run_until_complete(
                                 self._tg_stickers_bot.replace_sticker_in_set(
-                                    user_id=int(self.ui_app_state.tg_user_id),
+                                    user_id=int(self.ui_tg_state.tg_user_id),
                                     name=f"test_by_{self._tg_stickers_bot.username}",
                                     old_sticker=sticker._sticker,
                                     sticker=input_sticker,
@@ -1165,7 +1260,7 @@ class App:
                         else:
                             self._loop.run_until_complete(
                                 self._tg_stickers_bot.add_sticker_to_set(
-                                    user_id=int(self.ui_app_state.tg_user_id),
+                                    user_id=int(self.ui_tg_state.tg_user_id),
                                     name=f"test_by_{self._tg_stickers_bot.username}",
                                     sticker=input_sticker,
                                 )
@@ -1510,12 +1605,7 @@ class App:
                 break
 
         self.save()
-
-        for sticker in self._tg_stickers:
-            sticker.release()
-
-        for node in self.nodes.values():
-            node.release()
+        self.release()
 
     def update_and_draw(self) -> None:
         # ----------------------------------------------------------------
@@ -1526,7 +1616,7 @@ class App:
         # ----------------------------------------------------------------
         # Check for shader file changes and reload nodes
         for name in list(self.nodes.keys()):
-            fs_file_path = _NODES_DIR / name / "shader.frag.glsl"
+            fs_file_path = SETTINGS.nodes_dir / name / "shader.frag.glsl"
 
             if not fs_file_path.exists():
                 return
