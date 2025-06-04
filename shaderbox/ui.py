@@ -22,8 +22,7 @@ from imgui.integrations.glfw import GlfwRenderer
 from loguru import logger
 from OpenGL.GL import GL_FLOAT, GL_SAMPLER_2D, GL_UNSIGNED_INT, GLError
 from platformdirs import user_data_dir
-from pydantic import BaseModel, DirectoryPath
-from pydantic_settings import BaseSettings
+from pydantic import BaseModel
 
 from shaderbox.core import (
     RESOURCES_DIR,
@@ -36,77 +35,6 @@ from shaderbox.core import (
     Video,
 )
 from shaderbox.vendors import get_modelbox_bg_removal, get_modelbox_depthmap
-
-
-class Settings(BaseSettings):
-    app_start_time: int = int(time.time() * 1000)
-
-    project_dir: DirectoryPath
-
-    def __init__(self, **data):  # type: ignore
-        if "project_dir" not in data or data["project_dir"] is None:
-            data["project_dir"] = self.get_project_dir()
-        else:
-            self.set_project_dir(data["project_dir"])
-
-        super().__init__(**data)
-
-    @property
-    def _app_dir(self) -> Path:
-        return Path(user_data_dir("shaderbox"))
-
-    @property
-    def _project_dir_file(self) -> Path:
-        return self._app_dir / "project_dir"
-
-    def get_project_dir(self) -> DirectoryPath:
-        try:
-            project_dir = Path(self._project_dir_file.read_text().strip())
-        except FileNotFoundError:
-            project_dir = self._create_dir_if_needed(
-                self._app_dir / "projects" / "default"
-            )
-            self._project_dir_file.write_text(str(project_dir))
-
-        return project_dir
-
-    def set_project_dir(self, project_dir: DirectoryPath) -> None:
-        self.project_dir = Path(project_dir)
-        (self._app_dir / "project_dir").write_text(str(self.project_dir))
-
-    @staticmethod
-    def _create_dir_if_needed(path: Path) -> Path:
-        if not path.exists():
-            path.mkdir(parents=True)
-            logger.info(f"Directory created: {path}")
-        return path
-
-    @property
-    def nodes_dir(self) -> Path:
-        return self._create_dir_if_needed(self.project_dir / "nodes")
-
-    @property
-    def trash_dir(self) -> Path:
-        return self._create_dir_if_needed(self.project_dir / "trash")
-
-    @property
-    def videos_dir(self) -> Path:
-        return self._create_dir_if_needed(self.project_dir / "videos")
-
-    @property
-    def images_dir(self) -> Path:
-        return self._create_dir_if_needed(self.project_dir / "images")
-
-    @property
-    def app_state_file_path(self) -> Path:
-        return Path(self.project_dir / "app_state.json")
-
-    @property
-    def tg_sticker_state_file_path(self) -> Path:
-        return Path(self.project_dir / "tg_sticker.json")
-
-
-SETTINGS = Settings()
 
 
 def adjust_size(
@@ -247,7 +175,8 @@ class UIMessage(BaseModel):
 
 
 class UITgSticker:
-    def __init__(self, sticker: tg.Sticker | None = None):
+    def __init__(self, media_dir: Path, sticker: tg.Sticker | None = None):
+        self.media_dir = media_dir
         self._sticker = sticker
 
         self.video: Video | None = None
@@ -255,10 +184,10 @@ class UITgSticker:
 
         self.preview_canvas = Canvas()
 
-        render_file_name = f"{SETTINGS.app_start_time}_{hashlib.md5(str(id(self)).encode()).hexdigest()[:8]}.webm"
-        render_file_path = SETTINGS.trash_dir / render_file_name
+        media_file_name = f"{hashlib.md5(str(id(self)).encode()).hexdigest()[:8]}.webm"
+        media_file_path = self.media_dir / media_file_name
         self.render_media_details: MediaDetails = MediaDetails(is_video=True)
-        self.render_media_details.file_details.path = str(render_file_path)
+        self.render_media_details.file_details.path = str(media_file_path)
 
         self.log_message: UIMessage = UIMessage(
             text="Submit button will be available after render", level="warning"
@@ -272,7 +201,7 @@ class UITgSticker:
 
             if self._sticker.is_video:
                 file_name = self._sticker.file_id + ".webm"
-                file_path = SETTINGS.videos_dir / file_name
+                file_path = self.media_dir / file_name
 
                 file = await bot.get_file(self._sticker.file_id)
                 await file.download_to_drive(file_path)
@@ -282,7 +211,7 @@ class UITgSticker:
 
             if self._sticker.thumbnail:
                 file_name = self._sticker.thumbnail.file_id + ".webp"
-                file_path = SETTINGS.images_dir / file_name
+                file_path = self.media_dir / file_name
 
                 file = await bot.get_file(self._sticker.thumbnail.file_id)
                 await file.download_to_drive(file_path)
@@ -395,7 +324,13 @@ class UITgStickerState(BaseModel):
 
 
 class App:
-    def __init__(self) -> None:
+    def __init__(self, project_dir: Path | None = None) -> None:
+        if project_dir is None:
+            if self.project_dir_file_path.exists():
+                project_dir = Path(self.project_dir_file_path.read_text())
+            else:
+                project_dir = self.default_project_dir
+
         glfw.init()
         self._loop = asyncio.new_event_loop()
 
@@ -426,20 +361,81 @@ class App:
         self._font_14 = self.get_font(14)
         self.preview_canvas = Canvas()
 
-        self._init()
-
-    def _init(self) -> None:
         self.nodes: dict[str, Node] = {}
         self.node_mtimes: dict[str, float] = {}
+        self.ui_app_state = UIAppState()
+        self.ui_tg_state = UITgState()
+        self.ui_tg_sticker_state = UITgStickerState()
+        self._tg_stickers: list[UITgSticker] = []
+        self._tg_selected_sticker_idx: int = 0
+        self._tg_stickers_bot: tg.Bot
 
+        self._init(project_dir)
+
+    @staticmethod
+    def _create_dir_if_needed(path: Path | str) -> Path:
+        path = Path(path)
+
+        if not path.exists():
+            path.mkdir(parents=True)
+            logger.info(f"Directory created: {path}")
+
+        return path
+
+    @property
+    def app_dir(self) -> Path:
+        return Path(user_data_dir("shaderbox"))
+
+    @property
+    def project_dir_file_path(self) -> Path:
+        return self.app_dir / "project_dir"
+
+    @property
+    def default_projects_root_dir(self) -> Path:
+        return self._create_dir_if_needed(self.app_dir / "projects")
+
+    @property
+    def default_project_dir(self) -> Path:
+        return self._create_dir_if_needed(self.default_projects_root_dir / "default")
+
+    @property
+    def app_state_file_path(self) -> Path:
+        return Path(self.project_dir / "app_state.json")
+
+    @property
+    def tg_sticker_state_file_path(self) -> Path:
+        return Path(self.project_dir / "tg_sticker.json")
+
+    @property
+    def nodes_dir(self) -> Path:
+        return self._create_dir_if_needed(self.project_dir / "nodes")
+
+    @property
+    def media_dir(self) -> Path:
+        return self._create_dir_if_needed(self.project_dir / "media")
+
+    @property
+    def trash_dir(self) -> Path:
+        return self._create_dir_if_needed(self.project_dir / "trash")
+
+    def _init(self, project_dir: Path) -> None:
+        self.release()
+
+        self.app_start_time = int(time.time() * 1000)
         self.frame_idx = 0
+
+        self.nodes.clear()
+        self.node_mtimes.clear()
+        self._tg_stickers.clear()
+
+        self.project_dir = self._create_dir_if_needed(project_dir)
+        self.project_dir_file_path.write_text(str(self.project_dir))
+        logger.info(f"Project loaded: {self.project_dir}")
 
         # ----------------------------------------------------------------
         # Load nodes
         self._node_ui_state = defaultdict(UINodeState)
-        node_dirs = sorted(
-            SETTINGS.nodes_dir.iterdir(), key=lambda x: x.stat().st_ctime
-        )
+        node_dirs = sorted(self.nodes_dir.iterdir(), key=lambda x: x.stat().st_ctime)
         for node_dir in node_dirs:
             if node_dir.is_dir():
                 node, mtime, meta = Node.load_from_dir(node_dir)
@@ -465,15 +461,12 @@ class App:
 
         # ----------------------------------------------------------------
         # Load ui states
-        self.ui_app_state = UIAppState()
-        self.ui_tg_state = UITgState()
-        self.ui_tg_sticker_state = UITgStickerState()
         states: list[tuple[str, Path, type[BaseModel]]] = [
-            ("ui_app_state", SETTINGS.app_state_file_path, UIAppState),
-            ("ui_tg_state", SETTINGS.app_state_file_path, UITgState),
+            ("ui_app_state", self.app_state_file_path, UIAppState),
+            ("ui_tg_state", self.app_state_file_path, UITgState),
             (
                 "ui_tg_sticker_state",
-                SETTINGS.tg_sticker_state_file_path,
+                self.tg_sticker_state_file_path,
                 UITgStickerState,
             ),
         ]
@@ -488,12 +481,6 @@ class App:
                         if k in state_class.model_fields
                     }
                     setattr(self, state_field_name, state_class(**state_dict))
-
-        # ----------------------------------------------------------------
-        # Tg
-        self._tg_stickers: list[UITgSticker] = []
-        self._tg_selected_sticker_idx: int = 0
-        self._tg_stickers_bot: tg.Bot
 
     def get_font(self, size: int) -> Any:
         fonts = imgui.get_io().fonts
@@ -513,7 +500,10 @@ class App:
             sticker_set = await self._tg_stickers_bot.get_sticker_set(
                 name=self.ui_tg_state.tg_sticker_set_name
             )
-            coros = [UITgSticker(s).load() for s in sticker_set.stickers]
+            coros = [
+                UITgSticker(media_dir=self.media_dir, sticker=sticker).load()
+                for sticker in sticker_set.stickers
+            ]
             return await asyncio.gather(*coros)
 
         try:
@@ -526,7 +516,7 @@ class App:
             else:
                 raise e
 
-        new_sticker = UITgSticker()
+        new_sticker = UITgSticker(media_dir=self.media_dir)
         self._tg_stickers.insert(0, new_sticker)
 
     @property
@@ -536,7 +526,7 @@ class App:
         return self._node_ui_state[self.ui_app_state.current_node_name]
 
     def edit_node_fs_file(self, node_name: str) -> None:
-        fs_file_path = SETTINGS.nodes_dir / node_name / "shader.frag.glsl"
+        fs_file_path = self.nodes_dir / node_name / "shader.frag.glsl"
         wd = fs_file_path.parent.parent
         editor = "nvim" if shutil.which("nvim") else "vim"
 
@@ -559,7 +549,7 @@ class App:
 
     def save_node(self, node_name: str) -> None:
         node = self.nodes[node_name]
-        node_dir = SETTINGS.nodes_dir / node_name
+        node_dir = self.nodes_dir / node_name
         node_dir.mkdir(exist_ok=True, parents=True)
 
         ui_state_dict = self._node_ui_state[node_name].model_dump()
@@ -618,7 +608,7 @@ class App:
 
     def save_app_state(self) -> None:
         app_state_dict = self.ui_app_state.model_dump()
-        with SETTINGS.app_state_file_path.open("w") as f:
+        with self.app_state_file_path.open("w") as f:
             json.dump(app_state_dict, f, indent=4)
 
     def save(self) -> None:
@@ -657,7 +647,7 @@ class App:
             next(iter(self.nodes)) if self.nodes else ""
         )
 
-        shutil.move(SETTINGS.nodes_dir / name, SETTINGS.trash_dir / name)
+        shutil.move(self.nodes_dir / name, self.trash_dir / name)
         logger.info(f"Node deleted: {name}")
 
     def select_next_current_node(self, step: int = +1) -> None:
@@ -755,16 +745,22 @@ class App:
                     imgui.spacing()
 
     def draw_settings(self) -> None:
-        project_dir = SETTINGS.get_project_dir()
-        if imgui.button(str(project_dir)):
+        imgui.text("Project:")
+        imgui.text_colored(str(self.project_dir), *(0.5, 0.5, 0.5))
+
+        if imgui.button("Open##project"):
+            start_dir = str(
+                self.project_dir.parent
+                if self.project_dir
+                else self.default_projects_root_dir
+            )
             project_dir = crossfiledialog.choose_folder(
-                title="Project", start_dir=str(project_dir.parent)
+                title="Project", start_dir=start_dir
             )
             if project_dir:
-                SETTINGS.set_project_dir(project_dir)
-                self.release()
-                self._init()
+                self._init(project_dir)
 
+        imgui.new_line()
         if imgui.button("Close"):
             imgui.close_current_popup()
 
@@ -775,7 +771,7 @@ class App:
             return
 
         node_name = self.ui_app_state.current_node_name
-        fs_file_path = SETTINGS.nodes_dir / node_name / "shader.frag.glsl"
+        fs_file_path = self.nodes_dir / node_name / "shader.frag.glsl"
 
         # ----------------------------------------------------------------
         # Collect resolution items
@@ -1616,7 +1612,7 @@ class App:
         # ----------------------------------------------------------------
         # Check for shader file changes and reload nodes
         for name in list(self.nodes.keys()):
-            fs_file_path = SETTINGS.nodes_dir / name / "shader.frag.glsl"
+            fs_file_path = self.nodes_dir / name / "shader.frag.glsl"
 
             if not fs_file_path.exists():
                 return
@@ -1654,16 +1650,6 @@ class App:
                 _render_preview(sticker.preview_canvas, sticker.render_media_details)
 
         # ----------------------------------------------------------------
-        # Render nodes
-        for node in self.nodes.values():
-            if (
-                self.ui_app_state.is_render_all_nodes
-                or node == self.nodes[self.ui_app_state.current_node_name]
-                or self.frame_idx == 0
-            ):
-                node.render()
-
-        # ----------------------------------------------------------------
         # Draw UI
         gl.screen.use()
         gl.clear()
@@ -1685,6 +1671,17 @@ class App:
             self.imgui_renderer.render(imgui.get_draw_data())
 
         glfw.swap_buffers(self.window)
+
+        # ----------------------------------------------------------------
+        # Render nodes
+        for node in self.nodes.values():
+            if (
+                self.ui_app_state.is_render_all_nodes
+                or node == self.nodes[self.ui_app_state.current_node_name]
+                or self.frame_idx == 0
+            ):
+                node.render()
+
         self.frame_idx += 1
 
 
