@@ -5,9 +5,9 @@
     ],
     "uniforms": {
         "u_cam_pos": [
-            0.0,
-            -0.05000000074505806,
-            -1.059999942779541
+            0.009999999776482582,
+            0.07000000029802322,
+            -0.4699999988079071
         ],
         "u_depth": {
             "type": "texture",
@@ -21,7 +21,12 @@
             "height": 1280,
             "file_path": "textures/u_image.png"
         },
-        "u_rm_max_n_steps": 512.2100219726562
+        "u_image_offset": [
+            0.019999999552965164,
+            -0.029999999329447746
+        ],
+        "u_rm_max_n_steps": 128.0,
+        "u_zoomout": 2.75
     },
     "ui_state": {
         "render_media_details": {
@@ -73,10 +78,24 @@
                 "dimension": 1,
                 "array_length": 1,
                 "input_type": "drag"
+            },
+            "175292901384630696900745298802211388217": {
+                "name": "u_image_offset",
+                "gl_type": 35664,
+                "dimension": 2,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "28817900879564012086563967923611592100": {
+                "name": "u_zoomout",
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
             }
         },
         "resolution_idx": 0,
-        "selected_uniform_name": "u_rm_max_n_steps",
+        "selected_uniform_name": "u_cam_pos",
         "blur_kernel_size": 21,
         "normals_kernel_size": 13
     }

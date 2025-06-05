@@ -10,6 +10,9 @@ uniform float u_rm_max_n_steps = 256;
 
 uniform vec3 u_cam_pos = vec3(0.0, 0.0, -1.0);
 
+uniform float u_zoomout = 2.0;
+uniform vec2 u_image_offset = vec2(0.0, 0.0);
+
 uniform sampler2D u_image;
 uniform sampler2D u_depth;
 
@@ -187,9 +190,9 @@ ParallaxResult do_parallax(vec2 uv, vec3 cam_pos, float max_n_steps) {
 float hash(float seed) { return fract(sin(seed * 43758.5453) * 43758.5453); }
 
 void main() {
-    ParallaxResult pr = do_parallax(vs_uv, u_cam_pos, u_rm_max_n_steps);
+    vec2 p = (vs_uv - 0.5) * u_zoomout + 0.5 - u_image_offset;
+    ParallaxResult pr = do_parallax(p, u_cam_pos, u_rm_max_n_steps);
 
-    vec3 step_color = vec3(hash(pr.step_idx), hash(pr.step_idx + u_rm_max_n_steps), hash(pr.step_idx + 2.0 * u_rm_max_n_steps));
     vec3 image_color = texture2D(u_image, pr.uv).rgb;
     vec3 color = pr.is_success * image_color;
 
