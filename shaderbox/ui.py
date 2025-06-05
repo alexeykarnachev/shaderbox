@@ -662,15 +662,6 @@ class App:
         with imgui.begin_child(
             "node_preview_grid", width=width, height=height, border=True
         ):
-            if imgui.button("Settings"):
-                imgui.open_popup("Settings##popup")
-
-            if imgui.begin_popup_modal("Settings##popup").opened:
-                self.draw_settings()
-                imgui.end_popup()
-
-            imgui.same_line()
-
             self.ui_app_state.is_render_all_nodes = imgui.checkbox(
                 "Render all", self.ui_app_state.is_render_all_nodes
             )[1]
@@ -1493,6 +1484,15 @@ class App:
         )
 
         control_panel_min_height = 600
+
+        # ----------------------------------------------------------------
+        # Main menu bar
+        if imgui.button("Settings"):
+            imgui.open_popup("Settings##popup")
+
+        if imgui.begin_popup_modal("Settings##popup").opened:
+            self.draw_settings()
+            imgui.end_popup()
 
         # ----------------------------------------------------------------
         # Current node image
