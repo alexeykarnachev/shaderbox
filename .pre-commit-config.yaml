@@ -3,7 +3,9 @@ repos:
     rev: v4.5.0
     hooks:
       - id: trailing-whitespace
+        exclude: ^projects/
       - id: end-of-file-fixer
+        exclude: ^projects/
       - id: check-yaml
       - id: check-toml
       - id: check-added-large-files
@@ -13,8 +15,10 @@ repos:
     hooks:
       - id: ruff
         args: [--fix]
+        exclude: ^projects/
       - id: ruff-format
         args: [--line-length=88]
+        exclude: ^projects/
 
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.9.0
@@ -25,4 +29,4 @@ repos:
           - types-requests
           - types-setuptools
           - types-pillow
-        exclude: ^tests/
+        exclude: ^(tests|projects)/
