@@ -6,7 +6,6 @@ import math
 import shutil
 import subprocess
 import time
-from collections import defaultdict
 from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 from typing import Any, Literal
@@ -323,6 +322,39 @@ class UITgStickerState(BaseModel):
     video_details: MediaDetails = MediaDetails()
 
 
+def load_nodes_from_dir(
+    root_dir: Path,
+) -> tuple[dict[str, Node], dict[str, float], dict[str, UINodeState]]:
+    nodes = {}
+    mtimes = {}
+    ui_states = {}
+
+    node_dirs = sorted(root_dir.iterdir(), key=lambda x: x.stat().st_ctime)
+
+    for node_dir in node_dirs:
+        if node_dir.is_dir():
+            node, mtime, meta = Node.load_from_dir(node_dir)
+            name = node_dir.name
+
+            nodes[name] = node
+            mtimes[name] = mtime
+
+            ui_state_dict = meta.get("ui_state", {})
+            fields = UINodeState.model_fields
+
+            invalid_keys = [k for k in ui_state_dict if k not in fields]
+            if invalid_keys:
+                logger.warning(
+                    f"Ignored invalid UINodeState keys for node '{name}': {invalid_keys}"
+                )
+
+            filtered_ui_state = {k: v for k, v in ui_state_dict.items() if k in fields}
+
+            ui_states[name] = UINodeState(**filtered_ui_state)
+
+    return nodes, mtimes, ui_states
+
+
 class App:
     _SETTINGS_POPUP_LABEL = "Settings##popup"
     _NODE_TEMPLATE_POPUP_LABEL = "Node template##popup"
@@ -439,30 +471,9 @@ class App:
 
         # ----------------------------------------------------------------
         # Load nodes
-        self._node_ui_state = defaultdict(UINodeState)
-        node_dirs = sorted(self.nodes_dir.iterdir(), key=lambda x: x.stat().st_ctime)
-        for node_dir in node_dirs:
-            if node_dir.is_dir():
-                node, mtime, meta = Node.load_from_dir(node_dir)
-                name = node_dir.name
-
-                self.nodes[name] = node
-                self.node_mtimes[name] = mtime
-
-                ui_state_dict = meta.get("ui_state", {})
-                fields = UINodeState.model_fields
-
-                invalid_keys = [k for k in ui_state_dict if k not in fields]
-                if invalid_keys:
-                    logger.warning(
-                        f"Ignored invalid UINodeState keys for node '{name}': {invalid_keys}"
-                    )
-
-                filtered_ui_state = {
-                    k: v for k, v in ui_state_dict.items() if k in fields
-                }
-
-                self._node_ui_state[name] = UINodeState(**filtered_ui_state)
+        self.nodes, self.node_mtimes, self.node_ui_states = load_nodes_from_dir(
+            self.nodes_dir
+        )
 
         # ----------------------------------------------------------------
         # Load ui states
@@ -528,7 +539,7 @@ class App:
     def ui_current_node_state(self) -> UINodeState:
         if not self.ui_app_state.current_node_name:
             return UINodeState()
-        return self._node_ui_state[self.ui_app_state.current_node_name]
+        return self.node_ui_states[self.ui_app_state.current_node_name]
 
     def edit_node_fs_file(self, node_name: str) -> None:
         fs_file_path = self.nodes_dir / node_name / "shader.frag.glsl"
@@ -557,7 +568,9 @@ class App:
         node_dir = self.nodes_dir / node_name
         node_dir.mkdir(exist_ok=True, parents=True)
 
-        ui_state_dict = self._node_ui_state[node_name].model_dump()
+        ui_state_dict = self.node_ui_states.setdefault(
+            node_name, UINodeState()
+        ).model_dump()
         meta: dict[str, Any] = {
             "canvas_size": list(node.canvas.texture.size),
             "uniforms": {},
@@ -878,7 +891,7 @@ class App:
 
         imgui.end_child()
 
-        if self._node_ui_state[
+        if self.node_ui_states[
             self.ui_app_state.current_node_name
         ].selected_uniform_name:
             imgui.same_line()
@@ -1089,7 +1102,7 @@ class App:
                 uv0=(0, 1),
                 uv1=(1, 0),
             ):
-                self._node_ui_state[
+                self.node_ui_states[
                     self.ui_app_state.current_node_name
                 ].selected_uniform_name = ui_uniform.name
 
@@ -1103,7 +1116,7 @@ class App:
                 )
                 if file_path:
                     value = Image(file_path).texture
-                    self._node_ui_state[
+                    self.node_ui_states[
                         self.ui_app_state.current_node_name
                     ].selected_uniform_name = ui_uniform.name
 
@@ -1124,7 +1137,7 @@ class App:
         if ui_uniform.input_type != "auto" and (
             imgui.is_item_clicked() or imgui.is_item_active()
         ):
-            self._node_ui_state[
+            self.node_ui_states[
                 self.ui_app_state.current_node_name
             ].selected_uniform_name = ui_uniform.name
 
