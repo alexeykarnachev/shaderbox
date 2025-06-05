@@ -16,4 +16,5 @@ wheels/
 *.jpg
 *.jpeg
 
+trash/
 tg_state.json
