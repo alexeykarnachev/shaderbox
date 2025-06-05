@@ -1,0 +1,28 @@
+{
+    "canvas_size": [
+        1280,
+        960
+    ],
+    "uniforms": {},
+    "ui_state": {
+        "render_media_details": {
+            "is_video": true,
+            "file_details": {
+                "path": "",
+                "size": 0
+            },
+            "resolution_details": {
+                "width": 0,
+                "height": 0
+            },
+            "quality": 0,
+            "fps": 30,
+            "duration": 1.0
+        },
+        "ui_uniforms": {},
+        "resolution_idx": 0,
+        "selected_uniform_name": "",
+        "blur_kernel_size": 50,
+        "normals_kernel_size": 3
+    }
+}

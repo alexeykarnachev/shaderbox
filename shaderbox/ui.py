@@ -7,7 +7,7 @@ import shutil
 import subprocess
 import time
 from collections import defaultdict
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 from typing import Any, Literal
 
@@ -324,6 +324,9 @@ class UITgStickerState(BaseModel):
 
 
 class App:
+    _SETTINGS_POPUP_LABEL = "Settings##popup"
+    _NODE_TEMPLATE_POPUP_LABEL = "Node template##popup"
+
     def __init__(self, project_dir: Path | None = None) -> None:
         if project_dir is None:
             if self.project_dir_file_path.exists():
@@ -369,6 +372,8 @@ class App:
         self._tg_stickers: list[UITgSticker] = []
         self._tg_selected_sticker_idx: int = 0
         self._tg_stickers_bot: tg.Bot
+
+        self._active_popup_label: str | None = None
 
         self._init(project_dir)
 
@@ -600,6 +605,17 @@ class App:
 
         logger.info(f"Node {node_name} saved: {node_dir}")
 
+    def draw_popup_if_opened(self, label: str, draw_func: Callable[[], bool]) -> None:
+        if self._active_popup_label != label:
+            return
+
+        if imgui.begin_popup_modal(label).opened:
+            if not draw_func():
+                self._active_popup_label = None
+                imgui.close_current_popup()
+
+            imgui.end_popup()
+
     def save_current_node(self) -> None:
         if self.ui_app_state.current_node_name:
             self.save_node(self.ui_app_state.current_node_name)
@@ -622,7 +638,7 @@ class App:
         for node in self.nodes.values():
             node.release()
 
-    def create_new_current_node(self) -> None:
+    def create_new_node(self) -> None:
         node = Node()
         name = hashlib.md5(f"{id(node)}{time.time()}".encode()).hexdigest()[:8]
 
@@ -735,7 +751,10 @@ class App:
                 else:
                     imgui.spacing()
 
-    def draw_settings(self) -> None:
+    def draw_node_template(self) -> bool:
+        return self.draw_settings()
+
+    def draw_settings(self) -> bool:
         imgui.text("Project:")
         imgui.text_colored(str(self.project_dir), *(0.5, 0.5, 0.5))
 
@@ -752,8 +771,9 @@ class App:
                 self._init(project_dir)
 
         imgui.new_line()
-        if imgui.button("Close"):
-            imgui.close_current_popup()
+
+        is_opened = not imgui.button("Close")
+        return is_opened
 
     def draw_node_tab(self) -> None:
         if self.ui_app_state.current_node_name:
@@ -763,6 +783,11 @@ class App:
 
         node_name = self.ui_app_state.current_node_name
         fs_file_path = self.nodes_dir / node_name / "shader.frag.glsl"
+
+        # ----------------------------------------------------------------
+        # Select node template
+        if imgui.button("Select template"):
+            self._active_popup_label = self._NODE_TEMPLATE_POPUP_LABEL
 
         # ----------------------------------------------------------------
         # Collect resolution items
@@ -1011,11 +1036,7 @@ class App:
 
         if ui_uniform.input_type == "auto":
             if ui_uniform.dimension == 1:
-                try:
-                    imgui.text(f"{ui_uniform.name}: {value:.3f}")
-                except Exception as e:
-                    print(ui_uniform)
-                    raise e
+                imgui.text(f"{ui_uniform.name}: {value:.3f}")
             else:
                 if isinstance(value, Iterable):
                     value_str = ", ".join(f"{v:.3f}" for v in value)
@@ -1485,14 +1506,12 @@ class App:
 
         control_panel_min_height = 600
 
+        self.process_hotkeys()
+
         # ----------------------------------------------------------------
         # Main menu bar
         if imgui.button("Settings"):
-            imgui.open_popup("Settings##popup")
-
-        if imgui.begin_popup_modal("Settings##popup").opened:
-            self.draw_settings()
-            imgui.end_popup()
+            self._active_popup_label = self._SETTINGS_POPUP_LABEL
 
         # ----------------------------------------------------------------
         # Current node image
@@ -1568,13 +1587,31 @@ class App:
             imgui.same_line()
             self.draw_node_settings()
 
+        # ----------------------------------------------------------------
+        # Popups
+        if self._active_popup_label is not None and not imgui.is_popup_open(
+            self._active_popup_label
+        ):
+            imgui.open_popup(self._active_popup_label)
+
+        self.draw_popup_if_opened(
+            self._SETTINGS_POPUP_LABEL,
+            self.draw_settings,
+        )
+        self.draw_popup_if_opened(
+            self._NODE_TEMPLATE_POPUP_LABEL,
+            self.draw_node_template,
+        )
+
         imgui.pop_font()
 
     def process_hotkeys(self) -> None:
         io = imgui.get_io()
 
+        if io.key_alt and imgui.is_key_pressed(ord("S")):
+            self._active_popup_label = self._SETTINGS_POPUP_LABEL
         if io.key_ctrl and imgui.is_key_pressed(ord("N")):
-            self.create_new_current_node()
+            self.create_new_node()
         if io.key_ctrl and imgui.is_key_pressed(ord("S")):
             self.save()
         if io.key_ctrl and imgui.is_key_pressed(ord("E")):
@@ -1597,8 +1634,11 @@ class App:
             elapsed_time = glfw.get_time() - start_time
             time.sleep(max(0.0, 1.0 / 60.0 - elapsed_time))
 
-            if glfw.get_key(self.window, glfw.KEY_ESCAPE) == glfw.PRESS:
-                break
+            if imgui.is_key_pressed(glfw.KEY_ESCAPE, repeat=False):
+                if self._active_popup_label is None:
+                    glfw.set_window_should_close(self.window, True)
+
+                self._active_popup_label = None
 
         self.save()
         self.release()
@@ -1654,7 +1694,6 @@ class App:
         gl.screen.use()
         gl.clear()
 
-        self.process_hotkeys()
         self.imgui_renderer.process_inputs()
         imgui.new_frame()
 
