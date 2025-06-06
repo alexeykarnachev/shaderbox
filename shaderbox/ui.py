@@ -462,7 +462,7 @@ def load_nodes_from_dir(root_dir: Path) -> dict[str, UINode]:
 
 class App:
     _SETTINGS_POPUP_LABEL = "Settings##popup"
-    _NODE_TEMPLATE_POPUP_LABEL = "Node template##popup"
+    _NODE_TEMPLATE_SELECTOR_POPUP_LABEL = "Node template selector##popup"
 
     def __init__(self, project_dir: Path | None = None) -> None:
         if project_dir is None:
@@ -779,7 +779,7 @@ class App:
                 else:
                     imgui.spacing()
 
-    def draw_node_template(self) -> bool:
+    def draw_node_template_selector(self) -> bool:
         return self.draw_settings()
 
     def draw_settings(self) -> bool:
@@ -815,7 +815,7 @@ class App:
         # ----------------------------------------------------------------
         # Select node template
         if imgui.button("Select template"):
-            self._active_popup_label = self._NODE_TEMPLATE_POPUP_LABEL
+            self._active_popup_label = self._NODE_TEMPLATE_SELECTOR_POPUP_LABEL
 
         # ----------------------------------------------------------------
         # Collect resolution items
@@ -1624,8 +1624,8 @@ class App:
             self.draw_settings,
         )
         self.draw_popup_if_opened(
-            self._NODE_TEMPLATE_POPUP_LABEL,
-            self.draw_node_template,
+            self._NODE_TEMPLATE_SELECTOR_POPUP_LABEL,
+            self.draw_node_template_selector,
         )
 
         imgui.pop_font()
