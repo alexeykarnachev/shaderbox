@@ -4,10 +4,10 @@
         1280
     ],
     "uniforms": {
-        "u_char_scale": 0.7599999904632568,
+        "u_char_scale": 0.7400000095367432,
         "u_offset": [
-            0.03999999910593033,
-            -0.07999999821186066
+            0.05000000074505806,
+            -0.4099999964237213
         ],
         "u_text[0]": [
             1059,
@@ -208,17 +208,17 @@
             0
         ],
         "u_text_color": [
-            1.0,
-            0.0,
-            0.0
+            0.44179102778434753,
+            0.7209302186965942,
+            0.3386695384979248
         ],
-        "u_text_smoothness": 0.009999999776482582,
+        "u_text_smoothness": 0.05999999865889549,
         "u_text_spacing": [
-            -0.30000001192092896,
-            1.2400000095367432
+            -0.2800000011920929,
+            1.3899999856948853
         ],
-        "u_text_thickness": 0.10999999940395355,
-        "u_zoomout": 20.670000076293945
+        "u_text_thickness": 0.23999999463558197,
+        "u_zoomout": 21.219999313354492
     },
     "ui_state": {
         "render_media_details": {
@@ -336,7 +336,7 @@
             }
         },
         "resolution_idx": 0,
-        "selected_uniform_name": "u_text_thickness",
+        "selected_uniform_name": "u_char_scale",
         "blur_kernel_size": 50,
         "normals_kernel_size": 3
     }
