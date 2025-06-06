@@ -146,6 +146,14 @@ def str_to_unicode(text: str, max_n_chars: int) -> list[int]:
     return char_inds
 
 
+def get_dir_hash(dir: Path) -> str:
+    hasher = hashlib.sha256()
+    for file in sorted(Path(dir).rglob("*")):
+        if file.is_file():
+            hasher.update(file.read_bytes())
+    return hasher.hexdigest()
+
+
 class UIMessage(BaseModel):
     text: str = ""
     level: Literal["success", "warning", "error"]
@@ -335,14 +343,14 @@ class UINode(BaseModel):
         self.name = hashlib.md5(f"{id(self)}{time.time()}".encode()).hexdigest()[:8]
         return self
 
-    def save(self, dir: Path) -> None:
+    def save(self, dir: Path, save_ui_state: bool = True) -> None:
         dir.mkdir(exist_ok=True, parents=True)
 
-        ui_state_dict = self.ui_state.model_dump()
+        ui_state = self.ui_state if save_ui_state else UINodeState()
         meta: dict[str, Any] = {
             "canvas_size": list(self.node.canvas.texture.size),
             "uniforms": {},
-            "ui_state": ui_state_dict,
+            "ui_state": ui_state.model_dump(),
         }
 
         fs_file_path = dir / "shader.frag.glsl"
@@ -400,7 +408,7 @@ class UINode(BaseModel):
             width=size,
             height=size,
             border=True,
-            flags=imgui.WINDOW_NO_SCROLLBAR,
+            flags=imgui.WINDOW_NO_SCROLLBAR | imgui.WINDOW_NO_SCROLL_WITH_MOUSE,
         )
 
         imgui.pop_style_color(n_styles)
@@ -429,35 +437,39 @@ class UINode(BaseModel):
         return is_clicked
 
 
+def load_node_from_dir(node_dir: Path) -> UINode:
+    node, mtime, meta = Node.load_from_dir(node_dir)
+    name = node_dir.name
+
+    ui_state_dict = meta.get("ui_state", {})
+    fields = UINodeState.model_fields
+
+    invalid_keys = [k for k in ui_state_dict if k not in fields]
+    if invalid_keys:
+        logger.warning(
+            f"Ignored invalid UINodeState keys for node '{name}': {invalid_keys}"
+        )
+
+    filtered_ui_state = {k: v for k, v in ui_state_dict.items() if k in fields}
+    ui_state = UINodeState(**filtered_ui_state)
+
+    return UINode(
+        node=node,
+        mtime=mtime,
+        ui_state=ui_state,
+    )
+
+
 def load_nodes_from_dir(root_dir: Path) -> dict[str, UINode]:
-    nodes = {}
+    ui_nodes = {}
 
     node_dirs = sorted(root_dir.iterdir(), key=lambda x: x.stat().st_ctime)
 
     for node_dir in node_dirs:
         if node_dir.is_dir():
-            node, mtime, meta = Node.load_from_dir(node_dir)
-            name = node_dir.name
+            ui_nodes[node_dir.name] = load_node_from_dir(node_dir)
 
-            ui_state_dict = meta.get("ui_state", {})
-            fields = UINodeState.model_fields
-
-            invalid_keys = [k for k in ui_state_dict if k not in fields]
-            if invalid_keys:
-                logger.warning(
-                    f"Ignored invalid UINodeState keys for node '{name}': {invalid_keys}"
-                )
-
-            filtered_ui_state = {k: v for k, v in ui_state_dict.items() if k in fields}
-            ui_state = UINodeState(**filtered_ui_state)
-
-            nodes[name] = UINode(
-                node=node,
-                mtime=mtime,
-                ui_state=ui_state,
-            )
-
-    return nodes
+    return ui_nodes
 
 
 class App:
@@ -502,6 +514,7 @@ class App:
         self.preview_canvas = Canvas()
 
         self.ui_nodes: dict[str, UINode] = {}
+        self.ui_node_templates: dict[str, UINode] = {}
         self.ui_app_state = UIAppState()
         self.ui_tg_state = UITgState()
         self.ui_tg_sticker_state = UITgStickerState()
@@ -540,6 +553,10 @@ class App:
         return self._create_dir_if_needed(self.default_projects_root_dir / "default")
 
     @property
+    def node_templates_dir(self) -> Path:
+        return RESOURCES_DIR / "node_templates"
+
+    @property
     def app_state_file_path(self) -> Path:
         return Path(self.project_dir / "app_state.json")
 
@@ -575,6 +592,7 @@ class App:
         # ----------------------------------------------------------------
         # Load nodes
         self.ui_nodes = load_nodes_from_dir(self.nodes_dir)
+        self.ui_node_templates = load_nodes_from_dir(self.node_templates_dir)
 
         # ----------------------------------------------------------------
         # Load ui states
@@ -664,10 +682,16 @@ class App:
         else:
             logger.warning("Nothing to edit")
 
-    def save_node(self, node_name: str) -> None:
-        node_dir = self.nodes_dir / node_name
-        self.ui_nodes[node_name].save(node_dir)
+    def save_node(
+        self,
+        node_name: str,
+        dir: Path | None = None,
+        save_ui_state: bool = True,
+    ) -> Path:
+        node_dir = (dir or self.nodes_dir) / node_name
+        self.ui_nodes[node_name].save(node_dir, save_ui_state=save_ui_state)
         logger.info(f"Node {node_name} saved: {node_dir}")
+        return node_dir
 
     def draw_popup_if_opened(self, label: str, draw_func: Callable[[], bool]) -> None:
         if self._active_popup_label != label:
@@ -700,6 +724,9 @@ class App:
             sticker.release()
 
         for node in self.ui_nodes.values():
+            node.node.release()
+
+        for node in self.ui_node_templates.values():
             node.node.release()
 
     def create_new_node(self) -> None:
@@ -780,7 +807,16 @@ class App:
                     imgui.spacing()
 
     def draw_node_template_selector(self) -> bool:
-        return self.draw_settings()
+        for ui_node in self.ui_node_templates.values():
+            ui_node.draw_preview_button((1.0, 0.0, 0.0), 125)
+
+        imgui.new_line()
+        is_keep_opened = not imgui.button("Close")
+
+        if not is_keep_opened:
+            pass
+
+        return is_keep_opened
 
     def draw_settings(self) -> bool:
         imgui.text("Project:")
@@ -800,8 +836,8 @@ class App:
 
         imgui.new_line()
 
-        is_opened = not imgui.button("Close")
-        return is_opened
+        is_keep_opened = not imgui.button("Close")
+        return is_keep_opened
 
     def draw_node_tab(self) -> None:
         if self.ui_app_state.current_node_name:
@@ -813,9 +849,20 @@ class App:
         fs_file_path = self.nodes_dir / node_name / "shader.frag.glsl"
 
         # ----------------------------------------------------------------
-        # Select node template
+        # Node menu bar
         if imgui.button("Select template"):
             self._active_popup_label = self._NODE_TEMPLATE_SELECTOR_POPUP_LABEL
+
+        imgui.same_line()
+        if imgui.button("Save as template"):
+            dir = self.save_node(
+                node_name,
+                dir=self.node_templates_dir,
+                save_ui_state=False,
+            )
+            if node_name in self.ui_node_templates:
+                self.ui_node_templates[node_name].node.release()
+            self.ui_node_templates[node_name] = load_node_from_dir(dir)
 
         # ----------------------------------------------------------------
         # Collect resolution items
@@ -1526,7 +1573,8 @@ class App:
             flags=imgui.WINDOW_NO_COLLAPSE
             | imgui.WINDOW_ALWAYS_AUTO_RESIZE
             | imgui.WINDOW_NO_TITLE_BAR
-            | imgui.WINDOW_NO_SCROLLBAR,
+            | imgui.WINDOW_NO_SCROLLBAR
+            | imgui.WINDOW_NO_SCROLL_WITH_MOUSE,
         )
 
         control_panel_min_height = 600
@@ -1738,12 +1786,16 @@ class App:
 
         # ----------------------------------------------------------------
         # Render nodes
-        for ui_node in self.ui_nodes.values():
-            if (
-                self.ui_app_state.is_render_all_nodes
-                or ui_node == self.ui_nodes[self.ui_app_state.current_node_name]
-                or self.frame_idx == 0
-            ):
+        if self._active_popup_label is None:
+            for ui_node in self.ui_nodes.values():
+                if (
+                    self.ui_app_state.is_render_all_nodes
+                    or ui_node == self.ui_nodes[self.ui_app_state.current_node_name]
+                    or self.frame_idx == 0
+                ):
+                    ui_node.node.render()
+        elif self._active_popup_label == self._NODE_TEMPLATE_SELECTOR_POPUP_LABEL:
+            for ui_node in self.ui_node_templates.values():
                 ui_node.node.render()
 
         self.frame_idx += 1
