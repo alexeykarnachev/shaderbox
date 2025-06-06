@@ -8,7 +8,7 @@ import subprocess
 import time
 from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Self
 
 import crossfiledialog
 import cv2
@@ -21,7 +21,7 @@ from imgui.integrations.glfw import GlfwRenderer
 from loguru import logger
 from OpenGL.GL import GL_FLOAT, GL_SAMPLER_2D, GL_UNSIGNED_INT, GLError
 from platformdirs import user_data_dir
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 from shaderbox.core import (
     RESOURCES_DIR,
@@ -324,10 +324,16 @@ class UITgStickerState(BaseModel):
 
 class UINode(BaseModel):
     node: Node
+    name: str = ""
     mtime: float = 0
     ui_state: UINodeState = UINodeState()
 
     model_config = {"arbitrary_types_allowed": True}
+
+    @model_validator(mode="after")  # type: ignore
+    def set_name(self) -> Self:
+        self.name = hashlib.md5(f"{id(self)}{time.time()}".encode()).hexdigest()[:8]
+        return self
 
     def save(self, dir: Path) -> None:
         dir.mkdir(exist_ok=True, parents=True)
@@ -377,6 +383,50 @@ class UINode(BaseModel):
 
         with (dir / "node.json").open("w") as f:
             json.dump(meta, f, indent=4)
+
+    def draw_preview_button(
+        self,
+        border_color: tuple[float, float, float] | None,
+        size: float,
+    ) -> bool:
+        n_styles = 0
+        if border_color is not None:
+            imgui.push_style_color(imgui.COLOR_BORDER, *border_color)
+            n_styles += 1
+
+        label = f"node_preview_{id(self)}"
+        imgui.begin_child(
+            label,
+            width=size,
+            height=size,
+            border=True,
+            flags=imgui.WINDOW_NO_SCROLLBAR,
+        )
+
+        imgui.pop_style_color(n_styles)
+
+        is_clicked = False
+        if imgui.invisible_button(f"{label}##button", width=size, height=size):
+            is_clicked = True
+
+        s = (size - 10) / max(self.node.canvas.texture.size)
+        image_width = self.node.canvas.texture.size[0] * s
+        image_height = self.node.canvas.texture.size[1] * s
+
+        imgui.set_cursor_pos_x((size - image_width) / 2 - 1)
+        imgui.set_cursor_pos_y((size - image_height) / 2 - 1)
+
+        imgui.image(
+            self.node.canvas.texture.glo,
+            width=image_width,
+            height=image_height,
+            uv0=(0, 1),
+            uv1=(1, 0),
+        )
+
+        imgui.end_child()
+
+        return is_clicked
 
 
 def load_nodes_from_dir(root_dir: Path) -> dict[str, UINode]:
@@ -653,15 +703,11 @@ class App:
             node.node.release()
 
     def create_new_node(self) -> None:
-        node = Node()
-        mtime = time.time()
-        name = hashlib.md5(f"{id(node)}{mtime}".encode()).hexdigest()[:8]
-
-        self.ui_nodes[name] = UINode(node=node)
-        self.ui_app_state.current_node_name = name
-
-        self.save_node(name)
-        logger.info(f"Node created: {name}")
+        ui_node = UINode(node=Node())
+        self.ui_nodes[ui_node.name] = ui_node
+        self.ui_app_state.current_node_name = ui_node.name
+        self.save_node(ui_node.name)
+        logger.info(f"Node created: {ui_node.name}")
 
     def delete_current_node(self) -> None:
         if not self.ui_app_state.current_node_name:
@@ -717,46 +763,16 @@ class App:
             preview_size = 125
             n_cols = int(imgui.get_content_region_available()[0] // (preview_size + 5))
             n_cols = max(1, n_cols)
-            for i, (name, node) in enumerate(self.ui_nodes.items()):
+            for i, (name, ui_node) in enumerate(self.ui_nodes.items()):
+                border_color = None
                 if name == self.ui_app_state.current_node_name:
-                    if node.node.shader_error:
-                        color = (1.0, 0.0, 0.0, 1.0)
+                    if ui_node.node.shader_error:
+                        border_color = (1.0, 0.0, 0.0)
                     else:
-                        color = (0.0, 1.0, 0.0, 1.0)
-                    imgui.push_style_color(imgui.COLOR_BORDER, *color)
+                        border_color = (0.0, 1.0, 0.0)
 
-                imgui.begin_child(
-                    f"preview_{name}",
-                    width=preview_size,
-                    height=preview_size,
-                    border=True,
-                    flags=imgui.WINDOW_NO_SCROLLBAR,
-                )
-
-                if name == self.ui_app_state.current_node_name:
-                    imgui.pop_style_color()
-
-                if imgui.invisible_button(
-                    f"preview_button_{name}", width=preview_size, height=preview_size
-                ):
+                if ui_node.draw_preview_button(border_color, preview_size):
                     self.ui_app_state.current_node_name = name
-
-                s = (preview_size - 10) / max(node.node.canvas.texture.size)
-                image_width = node.node.canvas.texture.size[0] * s
-                image_height = node.node.canvas.texture.size[1] * s
-
-                imgui.set_cursor_pos_x((preview_size - image_width) / 2 - 1)
-                imgui.set_cursor_pos_y((preview_size - image_height) / 2 - 1)
-
-                imgui.image(
-                    node.node.canvas.texture.glo,
-                    width=image_width,
-                    height=image_height,
-                    uv0=(0, 1),
-                    uv1=(1, 0),
-                )
-
-                imgui.end_child()
 
                 if (i + 1) % n_cols != 0:
                     imgui.same_line()
@@ -1666,11 +1682,11 @@ class App:
             if not fs_file_path.exists():
                 return
 
-            mtime = fs_file_path.lstat().st_mtime
-            if mtime != self.ui_nodes[name].mtime:
+            fs_file_mtime = fs_file_path.lstat().st_mtime
+            if fs_file_mtime != self.ui_nodes[name].mtime:
                 logger.info(f"Reloading node {name} due to shader file change")
                 self.ui_nodes[name].node.release_program(fs_file_path.read_text())
-                self.ui_nodes[name].mtime = mtime
+                self.ui_nodes[name].mtime = fs_file_mtime
                 self.save_node(name)
 
         # ----------------------------------------------------------------
