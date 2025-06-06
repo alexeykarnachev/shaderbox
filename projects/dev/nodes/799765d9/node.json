@@ -208,8 +208,8 @@
             0
         ],
         "u_text_color": [
-            0.44179102778434753,
             0.7209302186965942,
+            0.5413565635681152,
             0.3386695384979248
         ],
         "u_text_smoothness": 0.05999999865889549,
@@ -336,7 +336,7 @@
             }
         },
         "resolution_idx": 0,
-        "selected_uniform_name": "u_char_scale",
+        "selected_uniform_name": "u_text_color",
         "blur_kernel_size": 50,
         "normals_kernel_size": 3
     }

@@ -329,6 +329,55 @@ class UINode(BaseModel):
 
     model_config = {"arbitrary_types_allowed": True}
 
+    def save(self, dir: Path) -> None:
+        dir.mkdir(exist_ok=True, parents=True)
+
+        ui_state_dict = self.ui_state.model_dump()
+        meta: dict[str, Any] = {
+            "canvas_size": list(self.node.canvas.texture.size),
+            "uniforms": {},
+            "ui_state": ui_state_dict,
+        }
+
+        fs_file_path = dir / "shader.frag.glsl"
+        if not fs_file_path.exists():
+            with fs_file_path.open("w") as f:
+                f.write(self.node.fs_source)
+                self.mtime = fs_file_path.lstat().st_mtime
+
+        # ----------------------------------------------------------------
+        # Save uniforms
+        for uniform in self.node.get_uniforms():
+            if uniform.name in ["u_time", "u_aspect", "u_resolution"]:
+                continue
+
+            value = self.node.get_uniform_value(uniform.name)
+
+            if uniform.gl_type == GL_SAMPLER_2D:  # type: ignore
+                textures_dir = dir / "textures"
+                textures_dir.mkdir(exist_ok=True)
+                texture_filename = f"{uniform.name}.png"
+
+                Image(value)._image.save(textures_dir / texture_filename, format="PNG")
+                meta["uniforms"][uniform.name] = {
+                    "type": "texture",
+                    "width": value.width,
+                    "height": value.height,
+                    "file_path": f"textures/{texture_filename}",
+                }
+            else:
+                if isinstance(value, int | float):
+                    meta["uniforms"][uniform.name] = value
+                elif isinstance(value, tuple | list):
+                    meta["uniforms"][uniform.name] = list(value)
+                else:
+                    logger.warning(
+                        f"Skipping unsupported uniform type for {uniform.name}: {type(value)}"
+                    )
+
+        with (dir / "node.json").open("w") as f:
+            json.dump(meta, f, indent=4)
+
 
 def load_nodes_from_dir(root_dir: Path) -> dict[str, UINode]:
     nodes = {}
@@ -566,56 +615,8 @@ class App:
             logger.warning("Nothing to edit")
 
     def save_node(self, node_name: str) -> None:
-        ui_node = self.ui_nodes[node_name]
         node_dir = self.nodes_dir / node_name
-        node_dir.mkdir(exist_ok=True, parents=True)
-
-        ui_state_dict = self.ui_nodes[node_name].ui_state.model_dump()
-        meta: dict[str, Any] = {
-            "canvas_size": list(ui_node.node.canvas.texture.size),
-            "uniforms": {},
-            "ui_state": ui_state_dict,
-        }
-
-        fs_file_path = node_dir / "shader.frag.glsl"
-        if not fs_file_path.exists():
-            with fs_file_path.open("w") as f:
-                f.write(ui_node.node.fs_source)
-                self.ui_nodes[node_name].mtime = fs_file_path.lstat().st_mtime
-
-        # ----------------------------------------------------------------
-        # Save uniforms
-        for uniform in ui_node.node.get_uniforms():
-            if uniform.name in ["u_time", "u_aspect", "u_resolution"]:
-                continue
-
-            value = ui_node.node.get_uniform_value(uniform.name)
-
-            if uniform.gl_type == GL_SAMPLER_2D:  # type: ignore
-                textures_dir = node_dir / "textures"
-                textures_dir.mkdir(exist_ok=True)
-                texture_filename = f"{uniform.name}.png"
-
-                Image(value)._image.save(textures_dir / texture_filename, format="PNG")
-                meta["uniforms"][uniform.name] = {
-                    "type": "texture",
-                    "width": value.width,
-                    "height": value.height,
-                    "file_path": f"textures/{texture_filename}",
-                }
-            else:
-                if isinstance(value, int | float):
-                    meta["uniforms"][uniform.name] = value
-                elif isinstance(value, tuple | list):
-                    meta["uniforms"][uniform.name] = list(value)
-                else:
-                    logger.warning(
-                        f"Skipping unsupported uniform type for {uniform.name}: {type(value)}"
-                    )
-
-        with (node_dir / "node.json").open("w") as f:
-            json.dump(meta, f, indent=4)
-
+        self.ui_nodes[node_name].save(node_dir)
         logger.info(f"Node {node_name} saved: {node_dir}")
 
     def draw_popup_if_opened(self, label: str, draw_func: Callable[[], bool]) -> None:
