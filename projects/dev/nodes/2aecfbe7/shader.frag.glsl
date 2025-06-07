@@ -1191,7 +1191,8 @@ float get_text_line(float line_width, float line_smoothness) {
     float y = u_zoomout;
     for (uint i = 0; i < N_TEXT_LINES; ++i, y -= u_text_spacing.y) {
         for (uint j = 0; j < MAX_TEXT_LEN; ++j) {
-            uint char_unicode_idx = u_text[i][j];
+            // uint char_unicode_idx = u_text[i][j];
+            uint char_unicode_idx = 0;
 
             if (char_unicode_idx == 0) {
                 break;
@@ -1327,7 +1328,8 @@ void main() {
     float y = u_zoomout;
     for (uint i = 0; i < N_TEXT_LINES; ++i, y -= u_text_spacing.y) {
         for (uint j = 0; j < MAX_TEXT_LEN; ++j) {
-            uint char_unicode_idx = u_text[i][j];
+            // uint char_unicode_idx = u_text[i][j];
+            uint char_unicode_idx = 0;
 
             if (char_unicode_idx == 0) {
                 break;

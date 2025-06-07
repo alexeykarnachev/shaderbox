@@ -3,10 +3,9 @@
         1280,
         960
     ],
-    "uniforms": {
-        "u_zoomout": 4.0
-    },
+    "uniforms": {},
     "ui_state": {
+        "ui_name": "UV Mango",
         "render_media_details": {
             "is_video": true,
             "file_details": {
@@ -35,6 +34,13 @@
                 "dimension": 1,
                 "array_length": 1,
                 "input_type": "drag"
+            },
+            "37154164850612245702881750831795076973": {
+                "name": "u_time",
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "auto"
             }
         },
         "resolution_idx": 3,
