@@ -6,27 +6,27 @@
     "uniforms": {
         "u_cam_pos": [
             0.009999999776482582,
-            -0.6100000143051147,
+            -0.07000000029802322,
             -0.5099999904632568
         ],
         "u_depth": {
-            "type": "texture",
+            "type": "image",
             "width": 960,
             "height": 1280,
-            "file_path": "textures/u_depth.png"
+            "file_path": "images/u_depth.png"
         },
         "u_image": {
-            "type": "texture",
+            "type": "image",
             "width": 960,
             "height": 1280,
-            "file_path": "textures/u_image.png"
+            "file_path": "images/u_image.png"
         },
         "u_image_offset": [
             -0.03999999910593033,
-            0.5699999928474426
+            0.029999999329447746
         ],
-        "u_rm_max_n_steps": 130.8000030517578,
-        "u_zoomout": 2.25
+        "u_rm_max_n_steps": 130.55999755859375,
+        "u_zoomout": 1.2799999713897705
     },
     "ui_state": {
         "ui_name": "e62ad71d",
@@ -96,7 +96,7 @@
             }
         },
         "resolution_idx": 0,
-        "selected_uniform_name": "u_cam_pos",
+        "selected_uniform_name": "u_zoomout",
         "blur_kernel_size": 21,
         "normals_kernel_size": 13
     }

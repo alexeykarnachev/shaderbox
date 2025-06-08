@@ -6,16 +6,16 @@
     "uniforms": {
         "plane_speed": 0.12999999523162842,
         "u_depth": {
-            "type": "texture",
+            "type": "image",
             "width": 960,
             "height": 1280,
-            "file_path": "textures/u_depth.png"
+            "file_path": "images/u_depth.png"
         },
         "u_photo": {
-            "type": "texture",
+            "type": "image",
             "width": 960,
             "height": 1280,
-            "file_path": "textures/u_photo.png"
+            "file_path": "images/u_photo.png"
         },
         "u_text_color": [
             1.0,
@@ -156,7 +156,7 @@
             }
         },
         "resolution_idx": 0,
-        "selected_uniform_name": "u_text[2]",
+        "selected_uniform_name": "u_depth",
         "blur_kernel_size": 51,
         "normals_kernel_size": 3
     }

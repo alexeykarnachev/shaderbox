@@ -386,16 +386,17 @@ class UINode(BaseModel):
             value = self.node.get_uniform_value(uniform.name)
 
             if uniform.gl_type == GL_SAMPLER_2D:  # type: ignore
-                textures_dir = dir / "textures"
-                textures_dir.mkdir(exist_ok=True)
-                texture_filename = f"{uniform.name}.png"
+                image: Image = value
+                images_dir = dir / "images"
+                images_dir.mkdir(exist_ok=True)
+                image_filename = f"{uniform.name}.png"
 
-                Image(value)._image.save(textures_dir / texture_filename, format="PNG")
+                image._image.save(images_dir / image_filename, format="PNG")
                 meta["uniforms"][uniform.name] = {
-                    "type": "texture",
-                    "width": value.width,
-                    "height": value.height,
-                    "file_path": f"textures/{texture_filename}",
+                    "type": "image",
+                    "width": image._image.width,
+                    "height": image._image.height,
+                    "file_path": f"images/{image_filename}",
                 }
             else:
                 if isinstance(value, int | float):
@@ -940,8 +941,8 @@ class App:
         uniform_sizes = set()
         for uniform in ui_node.node.get_uniforms():
             if uniform.gl_type == GL_SAMPLER_2D:  # type: ignore
-                texture = ui_node.node.get_uniform_value(uniform.name)
-                w, h = texture.size
+                image = ui_node.node.get_uniform_value(uniform.name)
+                w, h = image._image.size
                 if (w, h) == ui_node.node.canvas.texture.size:
                     matching_uniforms.append(uniform.name)
                 else:
@@ -1041,17 +1042,17 @@ class App:
         value = ui_node.node.get_uniform_value(ui_uniform.name)
 
         if ui_uniform.input_type == "image":
-            texture = value
-            imgui.text(get_resolution_str(ui_uniform.name, *texture.size))
+            image = value
+            imgui.text(get_resolution_str(ui_uniform.name, *image._image.size))
 
             max_image_width = imgui.get_content_region_available()[0]
             max_image_height = 0.5 * imgui.get_content_region_available()[1]
-            image_aspect = np.divide(*texture.size)
+            image_aspect = np.divide(*image._image.size)
             image_width = min(max_image_width, max_image_height * image_aspect)
             image_height = min(max_image_height, max_image_width / image_aspect)
 
             imgui.image(
-                texture.glo,
+                image.texture.glo,
                 width=image_width,
                 height=image_height,
                 uv0=(0, 1),
@@ -1065,8 +1066,8 @@ class App:
                     ui_node.node.set_uniform_value(
                         ui_uniform.name,
                         get_modelbox_depthmap(
-                            zero_low_alpha_pixels(Image(texture))
-                        ).texture,
+                            zero_low_alpha_pixels(Image(image.texture))
+                        ),
                     )
                 except Exception as e:
                     logger.error(str(e))
@@ -1077,8 +1078,8 @@ class App:
                     ui_node.node.set_uniform_value(
                         ui_uniform.name,
                         get_modelbox_bg_removal(
-                            zero_low_alpha_pixels(Image(texture))
-                        ).texture,
+                            zero_low_alpha_pixels(Image(image.texture))
+                        ),
                     )
                 except Exception as e:
                     logger.error(str(e))
@@ -1102,14 +1103,14 @@ class App:
                         ui_uniform.name,
                         Image(
                             cv2.GaussianBlur(
-                                np.array(Image(texture)._image.convert("RGB")),
+                                np.array(Image(image.texture)._image.convert("RGB")),
                                 (
                                     self.ui_current_node_state.blur_kernel_size,
                                     self.ui_current_node_state.blur_kernel_size,
                                 ),
                                 0,
                             )
-                        ).texture,
+                        ),
                     )
                 except Exception as e:
                     logger.error(str(e))
@@ -1130,10 +1131,12 @@ class App:
             if imgui.button("Apply##normals"):
                 try:
                     image = depthmap_to_normals(
-                        get_modelbox_depthmap(zero_low_alpha_pixels(Image(texture))),
+                        get_modelbox_depthmap(
+                            zero_low_alpha_pixels(Image(image.texture))
+                        ),
                         self.ui_current_node_state.normals_kernel_size,
                     )
-                    ui_node.node.set_uniform_value(ui_uniform.name, image.texture)
+                    ui_node.node.set_uniform_value(ui_uniform.name, image)
                 except Exception as e:
                     logger.error(str(e))
 
@@ -1197,9 +1200,11 @@ class App:
                 ui_node.node.set_uniform_value(ui_uniform.name, value)
 
         elif ui_uniform.input_type == "image":
-            texture = value
+            image: Image = value
             image_height = 90
-            image_width = image_height * texture.width / max(texture.height, 1)
+            image_width = (
+                image_height * image._image.width / max(image._image.height, 1)
+            )
 
             imgui.text(ui_uniform.name)
 
@@ -1212,7 +1217,7 @@ class App:
                 n_styles += 3
 
             if imgui.image_button(
-                texture.glo,
+                image.texture.glo,
                 width=image_width,
                 height=image_height,
                 uv0=(0, 1),
@@ -1229,7 +1234,7 @@ class App:
                     filter=["*.png", "*.jpg", "*.jpeg", "*.bmp", "*.webp"],
                 )
                 if file_path:
-                    value = Image(file_path).texture
+                    value = Image(file_path)
                     self.ui_current_node_state.selected_uniform_name = ui_uniform.name
 
         elif ui_uniform.input_type == "color":
@@ -1244,7 +1249,7 @@ class App:
                 fn = getattr(imgui, f"drag_float{ui_uniform.dimension}")
                 value = fn(ui_uniform.name, *value, change_speed)[1]
 
-        ui_node.node.set_uniform_value(ui_uniform.name, value)
+        ui_node.node.set_uniform_value(ui_uniform.name, value)  # type: ignore
 
         if ui_uniform.input_type != "auto" and (
             imgui.is_item_clicked() or imgui.is_item_active()

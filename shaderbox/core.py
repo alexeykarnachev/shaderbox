@@ -1,4 +1,5 @@
 import json
+from collections.abc import Sequence
 from importlib.resources import files
 from os import PathLike
 from pathlib import Path
@@ -255,12 +256,12 @@ class Node:
         # ----------------------------------------------------------------
         # Load uniforms
         for uniform_name, value in metadata["uniforms"].items():
-            if isinstance(value, dict) and value.get("type") == "texture":
-                value = Image(node_dir / value["file_path"]).texture
+            if isinstance(value, dict) and value.get("type") == "image":
+                value = Image(node_dir / value["file_path"])
             elif isinstance(value, list):
                 value = tuple(value)
 
-            node.set_uniform_value(uniform_name, value)
+            node.set_uniform_value(uniform_name, value)  # type: ignore
 
         return node, mtime, metadata
 
@@ -281,7 +282,7 @@ class Node:
         self.canvas.release()
 
         for data in self._uniform_values.values():
-            if isinstance(data, moderngl.Texture):
+            if isinstance(data, Image):
                 data.release()
 
     def get_uniforms(self) -> list[moderngl.Uniform]:
@@ -345,15 +346,15 @@ class Node:
                 value = canvas.texture.size
                 self.set_uniform_value(uniform.name, value)
             elif uniform.gl_type == GL_SAMPLER_2D:  # type: ignore
-                texture = self._uniform_values.get(uniform.name)
+                image = self._uniform_values.get(uniform.name)
                 if (
-                    texture is None
-                    or not isinstance(texture, moderngl.Texture)
-                    or isinstance(texture.mglo, moderngl.InvalidObject)
+                    image is None
+                    or not isinstance(image, Image)
+                    or isinstance(image.texture.mglo, moderngl.InvalidObject)
                 ):
-                    texture = Image(self._DEFAULT_IMAGE_FILE_PATH).texture
-                    self.set_uniform_value(uniform.name, texture)
-                texture.use(location=texture_unit)
+                    image = Image(self._DEFAULT_IMAGE_FILE_PATH)
+                    self.set_uniform_value(uniform.name, image)
+                image.texture.use(location=texture_unit)
                 value = texture_unit
                 texture_unit += 1
             else:
@@ -381,9 +382,15 @@ class Node:
                 if isinstance(data, moderngl.Texture):
                     data.release()
 
-    def set_uniform_value(self, name: str, value: Any) -> None:
+    def set_uniform_value(
+        self,
+        name: str,
+        value: int | float | Sequence[int] | Sequence[float] | Image | Video,
+    ) -> None:
         old_value = self._uniform_values.get(name)
-        if isinstance(old_value, moderngl.Texture) and old_value.glo != value.glo:
+        if isinstance(old_value, Image) and (
+            not isinstance(value, Image) or (old_value.texture.glo != value.texture.glo)
+        ):
             old_value.release()
         self._uniform_values[name] = value
 
