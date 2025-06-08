@@ -96,7 +96,7 @@
             }
         },
         "resolution_idx": 0,
-        "selected_uniform_name": "u_zoomout",
+        "selected_uniform_name": "u_image",
         "blur_kernel_size": 21,
         "normals_kernel_size": 13
     }
