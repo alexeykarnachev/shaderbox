@@ -333,15 +333,11 @@ class UIAppState(BaseModel):
     selected_node_template_dir: str = ""
     is_render_all_nodes: bool = True
 
-
-class UITgState(BaseModel):
     tg_bot_token: str = ""
     tg_user_id: str = ""
     tg_sticker_set_name: str = ""
 
-
-class UITgStickerState(BaseModel):
-    video_details: MediaDetails = MediaDetails()
+    tg_sticker_video_details: MediaDetails = MediaDetails()
 
 
 class UINode(BaseModel):
@@ -545,8 +541,6 @@ class App:
         self.ui_nodes: dict[str, UINode] = {}
         self.ui_node_templates: dict[str, UINode] = {}
         self.ui_app_state = UIAppState()
-        self.ui_tg_state = UITgState()
-        self.ui_tg_sticker_state = UITgStickerState()
         self._tg_stickers: list[UITgSticker] = []
         self._tg_selected_sticker_idx: int = 0
         self._tg_stickers_bot: tg.Bot
@@ -624,27 +618,14 @@ class App:
         self.ui_node_templates = load_nodes_from_dir(self.node_templates_dir)
 
         # ----------------------------------------------------------------
-        # Load ui states
-        states: list[tuple[str, Path, type[BaseModel]]] = [
-            ("ui_app_state", self.app_state_file_path, UIAppState),
-            ("ui_tg_state", self.app_state_file_path, UITgState),
-            (
-                "ui_tg_sticker_state",
-                self.tg_sticker_state_file_path,
-                UITgStickerState,
-            ),
-        ]
-
-        for state_field_name, state_file_path, state_class in states:
-            if state_file_path.exists():
-                with state_file_path.open("r") as f:
-                    state_dict = json.load(f)
-                    state_dict = {
-                        k: v
-                        for k, v in state_dict.items()
-                        if k in state_class.model_fields
-                    }
-                    setattr(self, state_field_name, state_class(**state_dict))
+        # Load ui state
+        if self.app_state_file_path.exists():
+            with self.app_state_file_path.open("r") as f:
+                state_dict = json.load(f)
+                state_dict = {
+                    k: v for k, v in state_dict.items() if k in UIAppState.model_fields
+                }
+                self.ui_app_state = UIAppState(**state_dict)
 
     def get_font(self, size: int) -> Any:
         fonts = imgui.get_io().fonts
@@ -658,11 +639,11 @@ class App:
 
     def fetch_tg_stickers(self) -> None:
         async def _fetch() -> list[UITgSticker]:
-            self._tg_stickers_bot = tg.Bot(token=self.ui_tg_state.tg_bot_token)
+            self._tg_stickers_bot = tg.Bot(token=self.ui_app_state.tg_bot_token)
             await self._tg_stickers_bot.initialize()
 
             sticker_set = await self._tg_stickers_bot.get_sticker_set(
-                name=self.ui_tg_state.tg_sticker_set_name
+                name=self.ui_app_state.tg_sticker_set_name
             )
             coros = [
                 UITgSticker(media_dir=self.media_dir, sticker=sticker).load()
@@ -1259,21 +1240,26 @@ class App:
     def draw_tg_stickers_tab(self) -> None:
         # ----------------------------------------------------------------
         # Tg settings
-        self.ui_tg_state.tg_bot_token = imgui.input_text(
+        imgui.text_colored(
+            "This token will be stored in the project's files, so do not accidentally commit it.",
+            *(1.0, 1.0, 0.0),
+        )
+        self.ui_app_state.tg_bot_token = imgui.input_text(
             "Bot token",
-            self.ui_tg_state.tg_bot_token,
+            self.ui_app_state.tg_bot_token,
             flags=imgui.INPUT_TEXT_PASSWORD,
         )[1]
+        imgui.spacing()
 
-        self.ui_tg_state.tg_user_id = imgui.input_text(
+        self.ui_app_state.tg_user_id = imgui.input_text(
             "User id",
-            self.ui_tg_state.tg_user_id,
+            self.ui_app_state.tg_user_id,
             flags=imgui.INPUT_TEXT_CHARS_DECIMAL,
         )[1]
 
-        self.ui_tg_state.tg_sticker_set_name = imgui.input_text(
+        self.ui_app_state.tg_sticker_set_name = imgui.input_text(
             "Sticker set name",
-            self.ui_tg_state.tg_sticker_set_name,
+            self.ui_app_state.tg_sticker_set_name,
             flags=imgui.INPUT_TEXT_CHARS_NO_BLANK,
         )[1]
 
@@ -1387,7 +1373,7 @@ class App:
                         if sticker._sticker is not None:
                             self._loop.run_until_complete(
                                 self._tg_stickers_bot.replace_sticker_in_set(
-                                    user_id=int(self.ui_tg_state.tg_user_id),
+                                    user_id=int(self.ui_app_state.tg_user_id),
                                     name=f"test_by_{self._tg_stickers_bot.username}",
                                     old_sticker=sticker._sticker,
                                     sticker=input_sticker,
@@ -1396,7 +1382,7 @@ class App:
                         else:
                             self._loop.run_until_complete(
                                 self._tg_stickers_bot.add_sticker_to_set(
-                                    user_id=int(self.ui_tg_state.tg_user_id),
+                                    user_id=int(self.ui_app_state.tg_user_id),
                                     name=f"test_by_{self._tg_stickers_bot.username}",
                                     sticker=input_sticker,
                                 )
