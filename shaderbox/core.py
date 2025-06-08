@@ -1,4 +1,7 @@
+import contextlib
 import json
+import shutil
+from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from importlib.resources import files
 from os import PathLike
@@ -53,7 +56,23 @@ def texture_to_pil(texture: moderngl.Texture) -> PILImage.Image:
     return image
 
 
-class Image:
+class MediaWithTexture(ABC):
+    @property
+    @abstractmethod
+    def texture(self) -> moderngl.Texture: ...
+
+    @abstractmethod
+    def update(self, t: float) -> None: ...
+
+    @abstractmethod
+    def release(self) -> None: ...
+
+    @abstractmethod
+    def save(self, dir: Path, file_name_wo_ext: str) -> Path:
+        pass
+
+
+class Image(MediaWithTexture):
     def __init__(
         self, src: PathLike | PILImage.Image | moderngl.Texture | np.ndarray | IO[bytes]
     ) -> None:
@@ -107,13 +126,22 @@ class Image:
 
         return self._texture
 
+    def update(self, t: float) -> None:
+        _ = t
+
+    def save(self, dir: Path, file_name_wo_ext: str) -> Path:
+        dir.mkdir(exist_ok=True, parents=True)
+        file_path = (dir / file_name_wo_ext).with_suffix(".png")
+        self._image.save(file_path, format="PNG")
+        return file_path
+
     def release(self) -> None:
         if self._texture is not None:
             self._texture.release()
             self._texture = None
 
 
-class Video:
+class Video(MediaWithTexture):
     def __init__(self, file_path: PathLike):
         self._cap = cv2.VideoCapture(str(file_path))
 
@@ -133,7 +161,11 @@ class Video:
         self._texture: moderngl.Texture | None = None
 
         self._frame_period = 1.0 / fps
-        self._last_update_time: float = 0.0
+        self._last_frame_idx: int = -1
+
+    def restart(self) -> None:
+        self._cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+        self._last_frame_idx = -1
 
     @property
     def texture(self) -> moderngl.Texture:
@@ -152,25 +184,45 @@ class Video:
 
         return self._texture
 
-    def update(self, current_time: float) -> None:
-        if current_time - self._last_update_time >= self._frame_period:
-            is_frame, frame = self._cap.read()
-            if is_frame:
-                frame = np.flipud(frame)
-                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGBA)
-                frame = frame.astype(np.float32) / 255.0
-                if self._texture is None:
-                    self._texture = moderngl.get_context().texture(
-                        size=(frame.shape[1], frame.shape[0]),
-                        components=4,
-                        data=frame,
-                        dtype="f4",
-                    )
+    def update(self, t: float) -> None:
+        fps = self._cap.get(cv2.CAP_PROP_FPS)
+        n_frames = int(self._cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
+        target_frame_idx = int(t * fps) % n_frames
+
+        # We already have this frame in the texture, skip
+        if self._last_frame_idx == target_frame_idx:
+            return
+
+        # Skip part of the video, because our t is faster than the video's framerate
+        if self._last_frame_idx == -1 or target_frame_idx - self._last_frame_idx != 1:
+            self._cap.set(cv2.CAP_PROP_POS_FRAMES, target_frame_idx)
+
+        is_frame, frame = self._cap.read()
+        if is_frame:
+            frame = np.flipud(frame)
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGBA)
+            frame = frame.astype(np.float32) / 255.0
+            if self._texture is None:
+                self._texture = moderngl.get_context().texture(
+                    size=(frame.shape[1], frame.shape[0]),
+                    components=4,
+                    data=frame,
+                    dtype="f4",
+                )
+            else:
                 self._texture.write(frame)
-                self._last_update_time = current_time
-            else:  # Loop the video
-                self._cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            self._last_frame_idx = target_frame_idx
+
+    def save(self, dir: Path, file_name_wo_ext: str) -> Path:
+        dir.mkdir(exist_ok=True, parents=True)
+        ext = Path(self.details.file_details.path).suffix
+        file_path = (dir / file_name_wo_ext).with_suffix(ext)
+
+        with contextlib.suppress(shutil.SameFileError):
+            shutil.copy2(self.details.file_details.path, file_path)
+
+        return file_path
 
     def release(self) -> None:
         self._cap.release()
@@ -256,8 +308,10 @@ class Node:
         # ----------------------------------------------------------------
         # Load uniforms
         for uniform_name, value in metadata["uniforms"].items():
-            if isinstance(value, dict) and value.get("type") == "image":
-                value = Image(node_dir / value["file_path"])
+            if isinstance(value, dict):
+                file_path = Path(value["file_path"])
+                media_cls = {".png": Image, ".mp4": Video}[file_path.suffix]
+                value = media_cls(node_dir / value["file_path"])
             elif isinstance(value, list):
                 value = tuple(value)
 
@@ -282,7 +336,7 @@ class Node:
         self.canvas.release()
 
         for data in self._uniform_values.values():
-            if isinstance(data, Image):
+            if isinstance(data, MediaWithTexture):
                 data.release()
 
     def get_uniforms(self) -> list[moderngl.Uniform]:
@@ -334,10 +388,11 @@ class Node:
         texture_unit = 0
         seen_uniform_names = set()
 
+        time = u_time if u_time is not None else glfw.get_time()
         for uniform in self.get_uniforms():
             seen_uniform_names.add(uniform.name)
             if uniform.name == "u_time":
-                value = u_time if u_time is not None else glfw.get_time()
+                value = time
                 self.set_uniform_value(uniform.name, value)
             elif uniform.name == "u_aspect":
                 value = np.divide(*canvas.texture.size)
@@ -346,15 +401,18 @@ class Node:
                 value = canvas.texture.size
                 self.set_uniform_value(uniform.name, value)
             elif uniform.gl_type == GL_SAMPLER_2D:  # type: ignore
-                image = self._uniform_values.get(uniform.name)
+                media = self._uniform_values.get(uniform.name)
+
                 if (
-                    image is None
-                    or not isinstance(image, Image)
-                    or isinstance(image.texture.mglo, moderngl.InvalidObject)
+                    media is None
+                    or not isinstance(media, MediaWithTexture)
+                    or isinstance(media.texture.mglo, moderngl.InvalidObject)
                 ):
-                    image = Image(self._DEFAULT_IMAGE_FILE_PATH)
-                    self.set_uniform_value(uniform.name, image)
-                image.texture.use(location=texture_unit)
+                    media = Image(self._DEFAULT_IMAGE_FILE_PATH)
+                    self.set_uniform_value(uniform.name, media)
+
+                media.update(time)
+                media.texture.use(location=texture_unit)
                 value = texture_unit
                 texture_unit += 1
             else:
@@ -385,13 +443,16 @@ class Node:
     def set_uniform_value(
         self,
         name: str,
-        value: int | float | Sequence[int] | Sequence[float] | Image | Video,
+        value: int | float | Sequence[int] | Sequence[float] | MediaWithTexture,
     ) -> None:
         old_value = self._uniform_values.get(name)
-        if isinstance(old_value, Image) and (
-            not isinstance(value, Image) or (old_value.texture.glo != value.texture.glo)
+
+        if isinstance(old_value, MediaWithTexture) and (
+            not isinstance(value, MediaWithTexture)
+            or (old_value.texture.glo != value.texture.glo)
         ):
             old_value.release()
+
         self._uniform_values[name] = value
 
     def get_uniform_value(self, name: str) -> Any:
@@ -402,6 +463,13 @@ class Node:
             self._uniform_values[name] = value
 
         return value
+
+    def restart_video_uniforms(self) -> None:
+        for uniform in self.get_uniforms():
+            video = self._uniform_values.get(uniform.name)
+            if isinstance(video, Video):
+                video.restart()
+                logger.info(f"Video uniform '{uniform.name}' restarted")
 
     def _render_image(
         self, details: MediaDetails, u_time: float | None = 0.0
@@ -484,9 +552,10 @@ class Node:
             input_params=["-pixel_format", "bgra"],
         )
 
+        self.restart_video_uniforms()
         n_frames = int(details.duration * details.fps)
         for i in range(n_frames):
-            self.render(u_time=i / details.fps)
+            self.render(i / details.fps)
 
             texture_data = self.canvas.texture.read()
             frame = np.frombuffer(texture_data, dtype=np.uint8).reshape(

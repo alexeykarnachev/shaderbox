@@ -29,6 +29,7 @@ from shaderbox.core import (
     FileDetails,
     Image,
     MediaDetails,
+    MediaWithTexture,
     Node,
     ResolutionDetails,
     Video,
@@ -245,9 +246,9 @@ class UITgSticker:
 
         return self
 
-    def update(self, current_time: float) -> None:
+    def update(self, t: float) -> None:
         if self.video:
-            self.video.update(current_time)
+            self.video.update(t)
 
     def get_thumbnail_texture(self) -> moderngl.Texture:
         if self.video:
@@ -263,7 +264,7 @@ class UITgSticker:
             self.video = None
 
 
-UIUniformInputType = Literal["image", "array", "color", "text", "drag", "auto"]
+UIUniformInputType = Literal["texture", "array", "color", "text", "drag", "auto"]
 
 
 class UIUniform(BaseModel):
@@ -288,7 +289,7 @@ class UIUniform(BaseModel):
         if self.name in ("u_time", "u_aspect", "u_resolution"):
             self.input_type = "auto"
         elif self.gl_type == GL_SAMPLER_2D:
-            self.input_type = "image"
+            self.input_type = "texture"
         elif self.array_length > 1 and self.name.endswith("text"):
             self.input_type = "text"
         elif self.array_length > 1:
@@ -381,28 +382,21 @@ class UINode(BaseModel):
 
             value = self.node.get_uniform_value(uniform.name)
 
-            if uniform.gl_type == GL_SAMPLER_2D:  # type: ignore
-                image: Image = value
-                images_dir = dir / "images"
-                images_dir.mkdir(exist_ok=True)
-                image_filename = f"{uniform.name}.png"
-
-                image._image.save(images_dir / image_filename, format="PNG")
+            if uniform.gl_type == GL_SAMPLER_2D and isinstance(value, MediaWithTexture):  # type: ignore
+                media: MediaWithTexture = value
+                file_name_wo_ext = uniform.name
+                file_path = media.save(dir / "media", file_name_wo_ext)
                 meta["uniforms"][uniform.name] = {
-                    "type": "image",
-                    "width": image._image.width,
-                    "height": image._image.height,
-                    "file_path": f"images/{image_filename}",
+                    "file_path": str(file_path),
                 }
+            elif isinstance(value, int | float):
+                meta["uniforms"][uniform.name] = value
+            elif isinstance(value, tuple | list):
+                meta["uniforms"][uniform.name] = list(value)
             else:
-                if isinstance(value, int | float):
-                    meta["uniforms"][uniform.name] = value
-                elif isinstance(value, tuple | list):
-                    meta["uniforms"][uniform.name] = list(value)
-                else:
-                    logger.warning(
-                        f"Skipping unsupported uniform type for {uniform.name}: {type(value)}"
-                    )
+                logger.warning(
+                    f"Skipping unsupported uniform type for {uniform.name}: {type(value)}"
+                )
 
         with (dir / "node.json").open("w") as f:
             json.dump(meta, f, indent=4)
@@ -547,6 +541,7 @@ class App:
 
         self._active_popup_label: str | None = None
 
+        self.global_fps = 0.0
         self._init(project_dir)
 
     @staticmethod
@@ -627,6 +622,15 @@ class App:
                 }
                 self.ui_app_state = UIAppState(**state_dict)
 
+                if (
+                    self.ui_app_state.current_node_dir
+                    and self.ui_app_state.current_node_dir not in self.ui_nodes
+                ):
+                    logger.warning(
+                        f"Node {self.ui_app_state.current_node_dir} not found"
+                    )
+                    self.ui_app_state.current_node_dir = ""
+
     def get_font(self, size: int) -> Any:
         fonts = imgui.get_io().fonts
         font = fonts.add_font_from_file_ttf(
@@ -699,7 +703,7 @@ class App:
     ) -> Path:
         node_dir = (root_dir or self.nodes_dir) / ui_node.dir
         ui_node.save(node_dir)
-        logger.info(f"Node {ui_node.ui_state.ui_name} saved: {node_dir}")
+        logger.info(f"Node '{ui_node.ui_state.ui_name}' saved: {node_dir}")
         return node_dir
 
     def draw_popup_if_opened(self, label: str, draw_func: Callable[[], bool]) -> None:
@@ -818,15 +822,15 @@ class App:
     def draw_node_creator(self) -> bool:
         is_template_selected = False
 
-        for ui_node_tempalte in self.ui_node_templates.values():
-            if ui_node_tempalte.dir == self.ui_app_state.selected_node_template_dir:
+        for ui_node_template in self.ui_node_templates.values():
+            if ui_node_template.dir == self.ui_app_state.selected_node_template_dir:
                 border_color = (0.0, 1.0, 0.0)
                 is_template_selected = True
             else:
                 border_color = None
 
-            if ui_node_tempalte.draw_preview_button(border_color, 125):
-                self.ui_app_state.selected_node_template_dir = ui_node_tempalte.dir
+            if ui_node_template.draw_preview_button(border_color, 125):
+                self.ui_app_state.selected_node_template_dir = ui_node_template.dir
 
         imgui.new_line()
 
@@ -922,8 +926,8 @@ class App:
         uniform_sizes = set()
         for uniform in ui_node.node.get_uniforms():
             if uniform.gl_type == GL_SAMPLER_2D:  # type: ignore
-                image = ui_node.node.get_uniform_value(uniform.name)
-                w, h = image._image.size
+                media: MediaWithTexture = ui_node.node.get_uniform_value(uniform.name)
+                w, h = media.texture.size
                 if (w, h) == ui_node.node.canvas.texture.size:
                     matching_uniforms.append(uniform.name)
                 else:
@@ -996,6 +1000,78 @@ class App:
             self.draw_selected_ui_uniform_settings()
             imgui.end_child()
 
+    def draw_image_filters(
+        self, image: Image, ui_node_state: UINodeState
+    ) -> Image | None:
+        filtered_image = None
+
+        if imgui.button("As depthmap"):
+            try:
+                filtered_image = get_modelbox_depthmap(
+                    zero_low_alpha_pixels(Image(image.texture))
+                )
+            except Exception as e:
+                logger.error(str(e))
+
+        imgui.same_line()
+        if imgui.button("Remove bg"):
+            try:
+                filtered_image = get_modelbox_bg_removal(
+                    zero_low_alpha_pixels(Image(image.texture))
+                )
+            except Exception as e:
+                logger.error(str(e))
+
+        imgui.text("Gaussian blur")
+        ui_node_state.blur_kernel_size = imgui.slider_int(
+            "##blur_kernel_size",
+            ui_node_state.blur_kernel_size,
+            min_value=10,
+            max_value=100,
+            format="%d",
+        )[1]
+        ui_node_state.blur_kernel_size = max(3, ui_node_state.blur_kernel_size | 1)
+
+        imgui.same_line()
+        if imgui.button("Apply##blur"):
+            try:
+                filtered_image = Image(
+                    cv2.GaussianBlur(
+                        np.array(Image(image.texture)._image.convert("RGB")),
+                        (
+                            ui_node_state.blur_kernel_size,
+                            ui_node_state.blur_kernel_size,
+                        ),
+                        0,
+                    )
+                )
+            except Exception as e:
+                logger.error(str(e))
+
+        imgui.text("Normals")
+        ui_node_state.normals_kernel_size = imgui.slider_int(
+            "##normals_kernel_size",
+            ui_node_state.normals_kernel_size,
+            min_value=3,
+            max_value=31,
+            format="%d",
+        )[1]
+        ui_node_state.normals_kernel_size = max(
+            3, ui_node_state.normals_kernel_size | 1
+        )
+
+        imgui.same_line()
+        if imgui.button("Apply##normals"):
+            try:
+                filtered_image = depthmap_to_normals(
+                    get_modelbox_depthmap(zero_low_alpha_pixels(Image(image.texture))),
+                    ui_node_state.normals_kernel_size,
+                )
+            except Exception as e:
+                logger.error(str(e))
+
+        return filtered_image
+
     def draw_selected_ui_uniform_settings(self) -> None:
         if not self.ui_app_state.current_node_dir:
             return
@@ -1022,18 +1098,18 @@ class App:
 
         value = ui_node.node.get_uniform_value(ui_uniform.name)
 
-        if ui_uniform.input_type == "image":
-            image = value
-            imgui.text(get_resolution_str(ui_uniform.name, *image._image.size))
+        if ui_uniform.input_type == "texture":
+            media = value
+            imgui.text(get_resolution_str(ui_uniform.name, *media.texture.size))
 
             max_image_width = imgui.get_content_region_available()[0]
             max_image_height = 0.5 * imgui.get_content_region_available()[1]
-            image_aspect = np.divide(*image._image.size)
+            image_aspect = np.divide(*media.texture.size)
             image_width = min(max_image_width, max_image_height * image_aspect)
             image_height = min(max_image_height, max_image_width / image_aspect)
 
             imgui.image(
-                image.texture.glo,
+                media.texture.glo,
                 width=image_width,
                 height=image_height,
                 uv0=(0, 1),
@@ -1042,84 +1118,12 @@ class App:
 
             imgui.spacing()
 
-            if imgui.button("As depthmap"):
-                try:
-                    ui_node.node.set_uniform_value(
-                        ui_uniform.name,
-                        get_modelbox_depthmap(
-                            zero_low_alpha_pixels(Image(image.texture))
-                        ),
-                    )
-                except Exception as e:
-                    logger.error(str(e))
-
-            imgui.same_line()
-            if imgui.button("Remove bg"):
-                try:
-                    ui_node.node.set_uniform_value(
-                        ui_uniform.name,
-                        get_modelbox_bg_removal(
-                            zero_low_alpha_pixels(Image(image.texture))
-                        ),
-                    )
-                except Exception as e:
-                    logger.error(str(e))
-
-            imgui.text("Gaussian blur")
-            self.ui_current_node_state.blur_kernel_size = imgui.slider_int(
-                "##blur_kernel_size",
-                self.ui_current_node_state.blur_kernel_size,
-                min_value=10,
-                max_value=100,
-                format="%d",
-            )[1]
-            self.ui_current_node_state.blur_kernel_size = max(
-                3, self.ui_current_node_state.blur_kernel_size | 1
-            )
-
-            imgui.same_line()
-            if imgui.button("Apply##blur"):
-                try:
-                    ui_node.node.set_uniform_value(
-                        ui_uniform.name,
-                        Image(
-                            cv2.GaussianBlur(
-                                np.array(Image(image.texture)._image.convert("RGB")),
-                                (
-                                    self.ui_current_node_state.blur_kernel_size,
-                                    self.ui_current_node_state.blur_kernel_size,
-                                ),
-                                0,
-                            )
-                        ),
-                    )
-                except Exception as e:
-                    logger.error(str(e))
-
-            imgui.text("Normals")
-            self.ui_current_node_state.normals_kernel_size = imgui.slider_int(
-                "##normals_kernel_size",
-                self.ui_current_node_state.normals_kernel_size,
-                min_value=3,
-                max_value=31,
-                format="%d",
-            )[1]
-            self.ui_current_node_state.normals_kernel_size = max(
-                3, self.ui_current_node_state.normals_kernel_size | 1
-            )
-
-            imgui.same_line()
-            if imgui.button("Apply##normals"):
-                try:
-                    image = depthmap_to_normals(
-                        get_modelbox_depthmap(
-                            zero_low_alpha_pixels(Image(image.texture))
-                        ),
-                        self.ui_current_node_state.normals_kernel_size,
-                    )
-                    ui_node.node.set_uniform_value(ui_uniform.name, image)
-                except Exception as e:
-                    logger.error(str(e))
+            if isinstance(media, Image) and (
+                filtered_image := self.draw_image_filters(
+                    media, self.ui_current_node_state
+                )
+            ):
+                ui_node.node.set_uniform_value(ui_uniform.name, filtered_image)
 
         if (
             ui_uniform.input_type in ("array", "text")
@@ -1180,11 +1184,11 @@ class App:
                 value = str_to_unicode(text, ui_uniform.array_length)
                 ui_node.node.set_uniform_value(ui_uniform.name, value)
 
-        elif ui_uniform.input_type == "image":
-            image: Image = value
+        elif ui_uniform.input_type == "texture":
+            media: MediaWithTexture = value
             image_height = 90
             image_width = (
-                image_height * image._image.width / max(image._image.height, 1)
+                image_height * media.texture.width / max(media.texture.height, 1)
             )
 
             imgui.text(ui_uniform.name)
@@ -1198,7 +1202,7 @@ class App:
                 n_styles += 3
 
             if imgui.image_button(
-                image.texture.glo,
+                media.texture.glo,
                 width=image_width,
                 height=image_height,
                 uv0=(0, 1),
@@ -1210,12 +1214,24 @@ class App:
 
             imgui.same_line()
             if imgui.button(f"Load##{ui_uniform.name}"):
-                file_path = crossfiledialog.open_file(
-                    title="Select Texture",
-                    filter=["*.png", "*.jpg", "*.jpeg", "*.bmp", "*.webp"],
+                image_extensions = [".png", ".jpg", ".jpeg", ".bmp", ".webp"]
+                video_extensions = [".mp4", ".webm"]
+                filter = ["*" + ext for ext in image_extensions + video_extensions]
+                file_path = Path(
+                    crossfiledialog.open_file(
+                        title="Select image or video", filter=filter
+                    )
+                    or ""
                 )
-                if file_path:
-                    value = Image(file_path)
+
+                media_cls = None
+                if file_path.suffix in image_extensions:
+                    media_cls = Image
+                elif file_path.suffix in video_extensions:
+                    media_cls = Video  # type: ignore
+
+                if media_cls:
+                    value = media_cls(file_path)
                     self.ui_current_node_state.selected_uniform_name = ui_uniform.name
 
         elif ui_uniform.input_type == "color":
@@ -1282,9 +1298,9 @@ class App:
 
         # ----------------------------------------------------------------
         # Sticker previews
-        current_time = glfw.get_time()
+        time = glfw.get_time()
         for i, sticker in enumerate(self._tg_stickers):
-            sticker.update(current_time)
+            sticker.update(time)
 
             n_styles = 0
             if i == self._tg_selected_sticker_idx:
@@ -1467,7 +1483,7 @@ class App:
         if details.path:
             imgui.same_line()
             imgui.text_colored(str(details.path), 0.5, 0.5, 0.5)
-            imgui.text(f"File size: {details.size} B")
+            imgui.text(f"File size: {details.size // 1024} KB")
 
         return details
 
@@ -1628,6 +1644,9 @@ class App:
         if imgui.button("Settings"):
             self._active_popup_label = self._SETTINGS_POPUP_LABEL
 
+        imgui.same_line()
+        imgui.text(f"Global FPS: {round(self.global_fps)}")
+
         # ----------------------------------------------------------------
         # Current node image
         cursor_pos = imgui.get_cursor_screen_pos()
@@ -1761,6 +1780,12 @@ class App:
 
                 self._active_popup_label = None
 
+            fps = 1.0 / (glfw.get_time() - start_time)
+            if self.global_fps <= 0.0:
+                self.global_fps = fps
+            else:
+                self.global_fps = 0.95 * self.global_fps + 0.05 * fps
+
         self.save()
         self.release()
 
@@ -1792,24 +1817,17 @@ class App:
             ui_node = self.ui_nodes[self.ui_app_state.current_node_dir]
             preview_size = adjust_size(ui_node.node.canvas.texture.size, width=200)
 
-            def _render_preview(canvas: Canvas, media_details: MediaDetails) -> None:
+            def _render_preview(canvas: Canvas) -> None:
                 canvas.set_size(preview_size)
-                u_time = (
-                    mod(glfw.get_time(), media_details.duration)
-                    if media_details.is_video
-                    else 0
-                )
-                ui_node.node.render(u_time, canvas=canvas)
+                ui_node.node.render(canvas=canvas)
 
             # Render current node preview
-            _render_preview(
-                self.preview_canvas, self.ui_current_node_state.render_media_details
-            )
+            _render_preview(self.preview_canvas)
 
             # Render current sticker preview
             if self._tg_selected_sticker_idx < len(self._tg_stickers):
                 sticker = self._tg_stickers[self._tg_selected_sticker_idx]
-                _render_preview(sticker.preview_canvas, sticker.render_media_details)
+                _render_preview(sticker.preview_canvas)
 
         # ----------------------------------------------------------------
         # Draw UI

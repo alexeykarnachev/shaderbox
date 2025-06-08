@@ -6,27 +6,24 @@
     "uniforms": {
         "plane_speed": 0.12999999523162842,
         "u_depth": {
-            "type": "image",
-            "width": 960,
-            "height": 1280,
-            "file_path": "images/u_depth.png"
+            "file_path": "/home/akarnachev/src/shaderbox/shaderbox/resources/node_templates/866c757e/media/u_depth.png"
         },
         "u_photo": {
-            "type": "image",
-            "width": 960,
-            "height": 1280,
-            "file_path": "images/u_photo.png"
+            "file_path": "/home/akarnachev/src/shaderbox/shaderbox/resources/node_templates/866c757e/media/u_photo.png"
         },
         "u_text_color": [
             1.0,
             0.0,
             0.0
         ],
-        "u_text_smoothness": 0.009999999776482582,
-        "u_text_thickness": 0.05000000074505806
+        "u_text_smoothness": 0.3700000047683716,
+        "u_text_thickness": 0.05000000074505806,
+        "u_video": {
+            "file_path": "/home/akarnachev/src/shaderbox/shaderbox/resources/node_templates/866c757e/media/u_video.mp4"
+        }
     },
     "ui_state": {
-        "ui_name": "2aecfbe7",
+        "ui_name": "Green Scan + Video",
         "render_media_details": {
             "is_video": true,
             "file_details": {
@@ -61,14 +58,14 @@
                 "gl_type": 35678,
                 "dimension": 1,
                 "array_length": 1,
-                "input_type": "image"
+                "input_type": "texture"
             },
             "137816605663413188181111987666908946720": {
                 "name": "u_photo",
                 "gl_type": 35678,
                 "dimension": 1,
                 "array_length": 1,
-                "input_type": "image"
+                "input_type": "texture"
             },
             "95105375544120391393734104492114489830": {
                 "name": "u_resolution",
@@ -153,10 +150,17 @@
                 "dimension": 3,
                 "array_length": 1,
                 "input_type": "color"
+            },
+            "153146117399062861966997351148076474387": {
+                "name": "u_video",
+                "gl_type": 35678,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "texture"
             }
         },
         "resolution_idx": 0,
-        "selected_uniform_name": "u_depth",
+        "selected_uniform_name": "u_text_smoothness",
         "blur_kernel_size": 51,
         "normals_kernel_size": 3
     }

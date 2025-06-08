@@ -1,15 +1,22 @@
 #version 460 core
-
+#define PI 3.141592
 #define MAX_DIST 9999.9
 #define MIN_SMOOTHNESS 0.0001
 #define MAX_TEXT_LEN 64
-#define N_TEXT_LINES 2
+#define N_TEXT_LINES 3
 
 in vec2 vs_uv;
 out vec4 fs_color;
 
 uniform float u_time;
 uniform float u_aspect;
+uniform vec2 u_resolution;
+
+uniform sampler2D u_photo;
+uniform sampler2D u_depth;
+uniform sampler2D u_video;
+
+uniform float plane_speed = 0.1;
 
 uniform float u_zoomout = 10.0;
 uniform float u_char_scale = 0.5;
@@ -18,11 +25,219 @@ uniform vec2 u_text_spacing = vec2(0.0, 0.0);
 
 uniform float u_text_thickness = 0.05;
 uniform float u_text_smoothness = 0.01;
-
-uniform float u_animation_period = 3.0;
-uniform float u_blink_speed = 1.0;
+uniform vec3 u_text_color = vec3(1.0, 0.0, 0.0);
 
 uniform uint u_text[N_TEXT_LINES][MAX_TEXT_LEN]; // Changed to 2D array
+
+const vec2 poisson_disk87[87] = vec2[87](vec2(-0.488690, 0.046349),
+                                         vec2(0.496064, 0.018367),
+                                         vec2(-0.027347, -0.461505),
+                                         vec2(-0.090074, 0.490283),
+                                         vec2(0.294474, 0.366950),
+                                         vec2(0.305608, -0.360041),
+                                         vec2(-0.346198, -0.357278),
+                                         vec2(-0.308924, 0.353038),
+                                         vec2(-0.437547, -0.177748),
+                                         vec2(0.446996, -0.129850),
+                                         vec2(0.117621, -0.444649),
+                                         vec2(0.171424, 0.418258),
+                                         vec2(-0.227789, -0.410446),
+                                         vec2(0.210264, -0.422608),
+                                         vec2(-0.414136, -0.268376),
+                                         vec2(0.368202, 0.316549),
+                                         vec2(-0.480689, 0.127069),
+                                         vec2(0.481128, -0.056358),
+                                         vec2(-0.458004, -0.063002),
+                                         vec2(0.409361, 0.201972),
+                                         vec2(-0.176597, 0.424044),
+                                         vec2(-0.095380, -0.441734),
+                                         vec2(0.326086, -0.280594),
+                                         vec2(-0.411327, 0.184757),
+                                         vec2(-0.291534, -0.300406),
+                                         vec2(0.400901, -0.002308),
+                                         vec2(0.020255, 0.445511),
+                                         vec2(0.302251, 0.275637),
+                                         vec2(0.387805, -0.223370),
+                                         vec2(-0.378395, 0.062614),
+                                         vec2(0.405052, 0.101681),
+                                         vec2(-0.010340, -0.355322),
+                                         vec2(-0.034931, 0.383699),
+                                         vec2(-0.318953, -0.225899),
+                                         vec2(0.349283, -0.140001),
+                                         vec2(-0.253974, 0.299183),
+                                         vec2(0.188226, 0.342914),
+                                         vec2(0.212083, -0.294545),
+                                         vec2(-0.188320, -0.308466),
+                                         vec2(-0.373708, -0.070538),
+                                         vec2(0.114322, -0.356677),
+                                         vec2(-0.154401, 0.348207),
+                                         vec2(-0.321713, 0.260043),
+                                         vec2(-0.086797, -0.349277),
+                                         vec2(-0.360294, -0.144808),
+                                         vec2(-0.323996, 0.188199),
+                                         vec2(0.277830, -0.204128),
+                                         vec2(0.087828, 0.351992),
+                                         vec2(-0.215777, -0.234955),
+                                         vec2(0.291437, 0.171860),
+                                         vec2(0.027249, -0.255925),
+                                         vec2(-0.316361, -0.013941),
+                                         vec2(0.346679, -0.066942),
+                                         vec2(-0.103280, -0.273636),
+                                         vec2(-0.017802, 0.310973),
+                                         vec2(-0.280809, -0.120043),
+                                         vec2(-0.282912, 0.117500),
+                                         vec2(0.267574, -0.036973),
+                                         vec2(-0.034965, -0.223502),
+                                         vec2(0.109677, 0.256372),
+                                         vec2(-0.204519, -0.116846),
+                                         vec2(0.144105, -0.181736),
+                                         vec2(-0.140560, 0.215101),
+                                         vec2(0.271573, 0.102406),
+                                         vec2(0.220437, 0.203459),
+                                         vec2(-0.242979, -0.027494),
+                                         vec2(-0.050135, 0.239871),
+                                         vec2(-0.152652, -0.193125),
+                                         vec2(-0.220532, 0.179600),
+                                         vec2(0.216867, -0.096770),
+                                         vec2(-0.164884, 0.122109),
+                                         vec2(0.251078, 0.034090),
+                                         vec2(0.016515, -0.175206),
+                                         vec2(0.042304, 0.216117),
+                                         vec2(-0.133933, -0.060601),
+                                         vec2(0.184659, 0.135680),
+                                         vec2(-0.161273, 0.024207),
+                                         vec2(-0.056532, -0.154410),
+                                         vec2(-0.082706, 0.083129),
+                                         vec2(0.081409, -0.088060),
+                                         vec2(0.115078, 0.156566),
+                                         vec2(0.133209, 0.061211),
+                                         vec2(0.002618, -0.101328),
+                                         vec2(0.132926, -0.013988),
+                                         vec2(-0.027172, -0.017586),
+                                         vec2(0.022969, 0.116469),
+                                         vec2(0.036262, 0.015085));
+
+// Simple pseudo-random hash function
+float hash(vec2 p) {
+    p = fract(p * vec2(123.45, 678.90));
+    p += dot(p, p + vec2(45.67, 89.01));
+    return fract(p.x * p.y * 43758.5453);
+}
+
+// Description : Array and textureless GLSL 2D/3D/4D simplex
+//               noise functions.
+//      Author : Ian McEwan, Ashima Arts.
+//  Maintainer : stegu
+//     Lastmod : 20110822 (ijm)
+//     License : Copyright (C) 2011 Ashima Arts. All rights reserved.
+//               Distributed under the MIT License. See LICENSE file.
+//               https://github.com/ashima/webgl-noise
+//               https://github.com/stegu/webgl-noise
+
+vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+
+float mod289(float x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+
+vec4 permute(vec4 x) { return mod289(((x * 34.0) + 10.0) * x); }
+
+float permute(float x) { return mod289(((x * 34.0) + 10.0) * x); }
+
+vec4 taylorInvSqrt(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
+
+float taylorInvSqrt(float r) { return 1.79284291400159 - 0.85373472095314 * r; }
+
+vec4 grad4(float j, vec4 ip) {
+    const vec4 ones = vec4(1.0, 1.0, 1.0, -1.0);
+    vec4 p, s;
+
+    p.xyz = floor(fract(vec3(j) * ip.xyz) * 7.0) * ip.z - 1.0;
+    p.w = 1.5 - dot(abs(p.xyz), ones.xyz);
+    s = vec4(lessThan(p, vec4(0.0)));
+    p.xyz = p.xyz + (s.xyz * 2.0 - 1.0) * s.www;
+
+    return p;
+}
+
+// (sqrt(5) - 1)/4 = F4, used once below
+#define F4 0.309016994374947451
+
+float snoise(vec4 v) {
+    const vec4 C = vec4(0.138196601125011,   // (5 - sqrt(5))/20  G4
+                        0.276393202250021,   // 2 * G4
+                        0.414589803375032,   // 3 * G4
+                        -0.447213595499958); // -1 + 4 * G4
+
+    // First corner
+    vec4 i = floor(v + dot(v, vec4(F4)));
+    vec4 x0 = v - i + dot(i, C.xxxx);
+
+    // Other corners
+
+    // Rank sorting originally contributed by Bill Licea-Kane, AMD (formerly
+    // ATI)
+    vec4 i0;
+    vec3 isX = step(x0.yzw, x0.xxx);
+    vec3 isYZ = step(x0.zww, x0.yyz);
+    //  i0.x = dot( isX, vec3( 1.0 ) );
+    i0.x = isX.x + isX.y + isX.z;
+    i0.yzw = 1.0 - isX;
+    //  i0.y += dot( isYZ.xy, vec2( 1.0 ) );
+    i0.y += isYZ.x + isYZ.y;
+    i0.zw += 1.0 - isYZ.xy;
+    i0.z += isYZ.z;
+    i0.w += 1.0 - isYZ.z;
+
+    // i0 now contains the unique values 0,1,2,3 in each channel
+    vec4 i3 = clamp(i0, 0.0, 1.0);
+    vec4 i2 = clamp(i0 - 1.0, 0.0, 1.0);
+    vec4 i1 = clamp(i0 - 2.0, 0.0, 1.0);
+
+    //  x0 = x0 - 0.0 + 0.0 * C.xxxx
+    //  x1 = x0 - i1  + 1.0 * C.xxxx
+    //  x2 = x0 - i2  + 2.0 * C.xxxx
+    //  x3 = x0 - i3  + 3.0 * C.xxxx
+    //  x4 = x0 - 1.0 + 4.0 * C.xxxx
+    vec4 x1 = x0 - i1 + C.xxxx;
+    vec4 x2 = x0 - i2 + C.yyyy;
+    vec4 x3 = x0 - i3 + C.zzzz;
+    vec4 x4 = x0 + C.wwww;
+
+    // Permutations
+    i = mod289(i);
+    float j0 = permute(permute(permute(permute(i.w) + i.z) + i.y) + i.x);
+    vec4 j1 =
+        permute(permute(permute(permute(i.w + vec4(i1.w, i2.w, i3.w, 1.0)) +
+                                i.z + vec4(i1.z, i2.z, i3.z, 1.0)) +
+                        i.y + vec4(i1.y, i2.y, i3.y, 1.0)) +
+                i.x + vec4(i1.x, i2.x, i3.x, 1.0));
+
+    // Gradients: 7x7x6 points over a cube, mapped onto a 4-cross polytope
+    // 7*7*6 = 294, which is close to the ring size 17*17 = 289.
+    vec4 ip = vec4(1.0 / 294.0, 1.0 / 49.0, 1.0 / 7.0, 0.0);
+
+    vec4 p0 = grad4(j0, ip);
+    vec4 p1 = grad4(j1.x, ip);
+    vec4 p2 = grad4(j1.y, ip);
+    vec4 p3 = grad4(j1.z, ip);
+    vec4 p4 = grad4(j1.w, ip);
+
+    // Normalise gradients
+    vec4 norm =
+        taylorInvSqrt(vec4(dot(p0, p0), dot(p1, p1), dot(p2, p2), dot(p3, p3)));
+    p0 *= norm.x;
+    p1 *= norm.y;
+    p2 *= norm.z;
+    p3 *= norm.w;
+    p4 *= taylorInvSqrt(dot(p4, p4));
+
+    // Mix contributions from the five corners
+    vec3 m0 = max(0.57 - vec3(dot(x0, x0), dot(x1, x1), dot(x2, x2)), 0.0);
+    vec2 m1 = max(0.57 - vec2(dot(x3, x3), dot(x4, x4)), 0.0);
+    m0 = m0 * m0;
+    m1 = m1 * m1;
+    return 60.1 * (dot(m0 * m0, vec3(dot(p0, x0), dot(p1, x1), dot(p2, x2))) +
+                   dot(m1 * m1, vec2(dot(p3, x3), dot(p4, x4))));
+}
 
 float get_dist_to_line(vec2 p, vec2 a, vec2 b) {
     vec2 ab = b - a;
@@ -965,184 +1180,176 @@ float get_dist_to_latin_char(vec2 p, uint char_unicode_idx) {
     }
 }
 
-float get_line(float dist, float width, float smoothness) {
+float get_line(float dist, float thickness, float smoothness) {
     smoothness = max(MIN_SMOOTHNESS, smoothness);
-    return 1.0 - smoothstep(0.0, smoothness, dist - width);
+    return 1.0 - smoothstep(0.0, smoothness, dist - thickness);
 }
 
-// Description : Array and textureless GLSL 2D/3D/4D simplex
-//               noise functions.
-//      Author : Ian McEwan, Ashima Arts.
-//  Maintainer : stegu
-//     Lastmod : 20110822 (ijm)
-//     License : Copyright (C) 2011 Ashima Arts. All rights reserved.
-//               Distributed under the MIT License. See LICENSE file.
-//               https://github.com/ashima/webgl-noise
-//               https://github.com/stegu/webgl-noise
-
-vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
-
-float mod289(float x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
-
-vec4 permute(vec4 x) { return mod289(((x * 34.0) + 10.0) * x); }
-
-float permute(float x) { return mod289(((x * 34.0) + 10.0) * x); }
-
-vec4 taylorInvSqrt(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
-
-float taylorInvSqrt(float r) { return 1.79284291400159 - 0.85373472095314 * r; }
-
-vec4 grad4(float j, vec4 ip) {
-    const vec4 ones = vec4(1.0, 1.0, 1.0, -1.0);
-    vec4 p, s;
-
-    p.xyz = floor(fract(vec3(j) * ip.xyz) * 7.0) * ip.z - 1.0;
-    p.w = 1.5 - dot(abs(p.xyz), ones.xyz);
-    s = vec4(lessThan(p, vec4(0.0)));
-    p.xyz = p.xyz + (s.xyz * 2.0 - 1.0) * s.www;
-
-    return p;
-}
-
-// (sqrt(5) - 1)/4 = F4, used once below
-#define F4 0.309016994374947451
-
-float snoise(vec4 v) {
-    const vec4 C = vec4(0.138196601125011,   // (5 - sqrt(5))/20  G4
-                        0.276393202250021,   // 2 * G4
-                        0.414589803375032,   // 3 * G4
-                        -0.447213595499958); // -1 + 4 * G4
-
-    // First corner
-    vec4 i = floor(v + dot(v, vec4(F4)));
-    vec4 x0 = v - i + dot(i, C.xxxx);
-
-    // Other corners
-
-    // Rank sorting originally contributed by Bill Licea-Kane, AMD (formerly
-    // ATI)
-    vec4 i0;
-    vec3 isX = step(x0.yzw, x0.xxx);
-    vec3 isYZ = step(x0.zww, x0.yyz);
-    //  i0.x = dot( isX, vec3( 1.0 ) );
-    i0.x = isX.x + isX.y + isX.z;
-    i0.yzw = 1.0 - isX;
-    //  i0.y += dot( isYZ.xy, vec2( 1.0 ) );
-    i0.y += isYZ.x + isYZ.y;
-    i0.zw += 1.0 - isYZ.xy;
-    i0.z += isYZ.z;
-    i0.w += 1.0 - isYZ.z;
-
-    // i0 now contains the unique values 0,1,2,3 in each channel
-    vec4 i3 = clamp(i0, 0.0, 1.0);
-    vec4 i2 = clamp(i0 - 1.0, 0.0, 1.0);
-    vec4 i1 = clamp(i0 - 2.0, 0.0, 1.0);
-
-    //  x0 = x0 - 0.0 + 0.0 * C.xxxx
-    //  x1 = x0 - i1  + 1.0 * C.xxxx
-    //  x2 = x0 - i2  + 2.0 * C.xxxx
-    //  x3 = x0 - i3  + 3.0 * C.xxxx
-    //  x4 = x0 - 1.0 + 4.0 * C.xxxx
-    vec4 x1 = x0 - i1 + C.xxxx;
-    vec4 x2 = x0 - i2 + C.yyyy;
-    vec4 x3 = x0 - i3 + C.zzzz;
-    vec4 x4 = x0 + C.wwww;
-
-    // Permutations
-    i = mod289(i);
-    float j0 = permute(permute(permute(permute(i.w) + i.z) + i.y) + i.x);
-    vec4 j1 =
-        permute(permute(permute(permute(i.w + vec4(i1.w, i2.w, i3.w, 1.0)) +
-                                i.z + vec4(i1.z, i2.z, i3.z, 1.0)) +
-                        i.y + vec4(i1.y, i2.y, i3.y, 1.0)) +
-                i.x + vec4(i1.x, i2.x, i3.x, 1.0));
-
-    // Gradients: 7x7x6 points over a cube, mapped onto a 4-cross polytope
-    // 7*7*6 = 294, which is close to the ring size 17*17 = 289.
-    vec4 ip = vec4(1.0 / 294.0, 1.0 / 49.0, 1.0 / 7.0, 0.0);
-
-    vec4 p0 = grad4(j0, ip);
-    vec4 p1 = grad4(j1.x, ip);
-    vec4 p2 = grad4(j1.y, ip);
-    vec4 p3 = grad4(j1.z, ip);
-    vec4 p4 = grad4(j1.w, ip);
-
-    // Normalise gradients
-    vec4 norm =
-        taylorInvSqrt(vec4(dot(p0, p0), dot(p1, p1), dot(p2, p2), dot(p3, p3)));
-    p0 *= norm.x;
-    p1 *= norm.y;
-    p2 *= norm.z;
-    p3 *= norm.w;
-    p4 *= taylorInvSqrt(dot(p4, p4));
-
-    // Mix contributions from the five corners
-    vec3 m0 = max(0.57 - vec3(dot(x0, x0), dot(x1, x1), dot(x2, x2)), 0.0);
-    vec2 m1 = max(0.57 - vec2(dot(x3, x3), dot(x4, x4)), 0.0);
-    m0 = m0 * m0;
-    m1 = m1 * m1;
-    return 60.1 * (dot(m0 * m0, vec3(dot(p0, x0), dot(p1, x1), dot(p2, x2))) +
-                   dot(m1 * m1, vec2(dot(p3, x3), dot(p4, x4))));
-}
-
-void main() {
-    float p = abs(2.0 * mod(u_time, u_animation_period / u_blink_speed) /
-                      (u_animation_period / u_blink_speed) -
-                  1.0);
-    vec2 offset = u_offset;
-
-    offset.y += 0.01 * snoise(vec4(vs_uv * 8.0, 2.0 * p, 0.0));
-    vec2 uv = (vs_uv - offset) * vec2(u_aspect, 1.0) * u_zoomout;
+float get_text_line(float line_width, float line_smoothness) {
+    vec2 uv = (vs_uv - u_offset) * vec2(u_aspect, 1.0) * u_zoomout;
 
     float dist = MAX_DIST;
     float y = u_zoomout;
-
-    uint line_idx = 0;
-    uint char_idx = 0;
-
     for (uint i = 0; i < N_TEXT_LINES; ++i, y -= u_text_spacing.y) {
-
         for (uint j = 0; j < MAX_TEXT_LEN; ++j) {
-            uint char_unicode_idx = u_text[i][j];
+            // uint char_unicode_idx = u_text[i][j];
+            uint char_unicode_idx = 0;
 
             if (char_unicode_idx == 0) {
                 break;
             }
 
             vec2 char_pos = vec2(float(j) * (1.0 + u_text_spacing.x), y);
-
             vec2 p = 2.0 * (uv - char_pos) / u_char_scale;
             float char_dist = get_dist_to_latin_char(p, char_unicode_idx);
-
-            if (char_dist < dist) {
-                dist = char_dist;
-                line_idx = i;
-                char_idx = j;
-            }
+            dist = min(dist, char_dist);
         }
     }
 
-    vec3 color_0 = vec3(1.0, 0.0, 0.0);
-    vec3 color_1 = vec3(0.0, 0.0, 1.0);
+    float line = get_line(dist, u_text_thickness, u_text_smoothness);
 
-    vec3 line_color;
-    if (line_idx == 0) {
-        line_color = mix(color_0, color_1, p);
-    } else if (line_idx == 1) {
-        line_color = mix(color_0, color_1, 1.0 - p);
+    return line;
+}
+
+void main() {
+    // Plane and ray setup
+    float noise = snoise(vec4(4.0 * vs_uv.x, 128.0 * vs_uv.y, 0.0, 0.0));
+    float plane_z = 2.0 * abs(fract(plane_speed * u_time) - 0.5);
+    plane_z = pow(plane_z, 2.0);
+    plane_z += 0.035 * noise;
+    plane_z = clamp(plane_z, 0.1, 0.4);
+
+    vec3 plane_p = vec3(0.0, 0.0, plane_z);
+    vec3 plane_n = normalize(vec3(0.0, 0.0, 1.0));
+    vec3 sp = vec3((vs_uv - 0.5) * vec2(u_aspect, 1.0), 0.0);
+
+    vec3 cam_pos = vec3(0.15 * sin(0.33 * u_time * 2.0 * PI),
+                        0.15 * cos(0.33 * u_time * 2.0 * PI),
+                        -0.15);
+    vec3 p = sp;
+    vec3 ray_dir = normalize(sp - cam_pos);
+    float plane_depth =
+        (dot(plane_n, plane_p) - dot(plane_n, p)) / dot(plane_n, ray_dir);
+
+    float max_n_steps = 10000.0;
+    float step_size = 1.0 / max_n_steps;
+
+    // Ray marching loop
+    float nearest_depth_to_plane = 1.0;
+    float step_idx = 0.0;
+    vec2 plane_uv = vec2(0.0);
+    vec3 color = vec3(1.0, 0.0, 0.0);
+    float depth;
+    vec2 uv;
+    float diff = 0.0;
+    while (true) {
+        if (step_idx >= max_n_steps) {
+            color = vec3(0.0, 0.0, 0.0);
+            break;
+        }
+
+        uv = p.xy / vec2(u_aspect, 1.0) + 0.5;
+        if (uv.x >= 1.0 || uv.x <= 0.0 || uv.y >= 1.0 || uv.y <= 0.0) {
+            color = vec3(0.0, 0.0, 0.0);
+            break;
+        }
+
+        depth = texture2D(u_depth, uv).r;
+        depth = clamp(depth, 0.01, 0.99);
+
+        plane_uv = p.xy / vec2(u_aspect) + 0.5;
+        nearest_depth_to_plane =
+            min(nearest_depth_to_plane, abs(p.z - plane_depth));
+
+        diff = p.z - depth;
+        if (diff >= 0.0) {
+            vec3 video_color = texture2D(u_video, uv).rgb;
+            video_color.g = video_color.r;
+            video_color.r = 0.0;
+
+            vec3 photo_color = texture2D(u_photo, uv).rgb;
+            color = video_color + pow(photo_color, vec3(3.0));
+            break;
+        }
+
+        p += step_size * ray_dir;
+        step_idx += 1.0;
     }
 
-    float text_smoothness = u_text_smoothness * (line_color.r + 0.5);
-    float n = snoise(vec4(32.0 * vs_uv, p * 1.0, 0.0));
-    float text_thickness = u_text_thickness + 0.3 * (0.5 * n + 0.5);
+    // Apply plane effect
+    float d = nearest_depth_to_plane;
+    float plane_brightness = 2.0;
+    float plane_intensity =
+        plane_brightness / dot(vec3(1.0, 500.0, 1000.0), vec3(1.0, d, d * d));
+    vec3 plane_color = vec3(0.12, 1.0, 0.1);
 
-    float line = get_line(dist, text_thickness, text_smoothness);
-    vec3 color = line_color * line;
+    color = plane_color * plane_intensity +
+            clamp(1.0 - plane_intensity, 0.0, 1.0) * color;
+
+    // Outline detection with Poisson disk sampling
+
+    if (nearest_depth_to_plane <= step_size) {
+        depth = texture2D(u_depth, uv).r;
+        d = 1.0 - clamp(depth, 0.5, 1.0);
+        color = d * vec3(0.0, 1.0, 0.0);
+
+        float sample_radius = 8.0;
+        int max_num_samples = 256;
+        int num_samples = 0;
+
+        float rand = hash(uv * u_resolution);
+        vec2 rand_offset =
+            vec2(cos(rand * 6.28318530718), sin(rand * 6.28318530718)) * 0.1;
+
+        float center_depth = texture2D(u_depth, uv).r;
+        float outline_strength = 0.0;
+        for (int i = 0; i < max_num_samples; i++) {
+            vec2 poisson_point = poisson_disk87[i] + rand_offset / u_resolution;
+            vec2 sample_uv = uv + poisson_point * sample_radius / u_resolution;
+
+            if (sample_uv.x >= 0.0 && sample_uv.x <= 1.0 &&
+                sample_uv.y >= 0.0 && sample_uv.y <= 1.0) {
+                float sample_depth = texture2D(u_depth, sample_uv).r;
+                float depth_diff = abs(center_depth - sample_depth);
+                outline_strength += depth_diff;
+                num_samples += 1;
+            }
+        }
+
+        outline_strength /= float(num_samples);
+
+        outline_strength =
+            (1.0 - depth) * smoothstep(0.0, 0.001, outline_strength);
+        color = vec3(0.1, outline_strength, 0.05);
+    }
 
     float alpha = 1.0;
-    if (color.r + color.g + color.b < 0.05) {
+    if (color.r < 0.01 && color.g < 0.01 && color.b < 0.01) {
         alpha = 0.0;
     }
+
+    vec2 text_uv = (plane_uv - u_offset) * vec2(u_aspect, 1.0) * u_zoomout;
+
+    float dist = MAX_DIST;
+    float y = u_zoomout;
+    for (uint i = 0; i < N_TEXT_LINES; ++i, y -= u_text_spacing.y) {
+        for (uint j = 0; j < MAX_TEXT_LEN; ++j) {
+            // uint char_unicode_idx = u_text[i][j];
+            uint char_unicode_idx = 0;
+
+            if (char_unicode_idx == 0) {
+                break;
+            }
+
+            vec2 char_pos = vec2(float(j) * (1.0 + u_text_spacing.x), y);
+            vec2 p = 2.0 * (text_uv - char_pos) / u_char_scale;
+            float char_dist = get_dist_to_latin_char(p, char_unicode_idx);
+            dist = min(dist, char_dist);
+        }
+    }
+
+    float line = get_line(dist, u_text_thickness, u_text_smoothness);
+    color = (1.0 - line) * color + line * u_text_color;
 
     fs_color = vec4(color, alpha);
 }
