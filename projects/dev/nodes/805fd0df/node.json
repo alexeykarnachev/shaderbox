@@ -1,0 +1,69 @@
+{
+    "canvas_size": [
+        1080,
+        1080
+    ],
+    "uniforms": {
+        "u_video": {
+            "file_path": "/home/akarnachev/src/shaderbox/projects/dev/nodes/805fd0df/media/u_video.mp4"
+        }
+    },
+    "ui_state": {
+        "ui_name": "UV Mango",
+        "render_media_details": {
+            "is_video": true,
+            "file_details": {
+                "path": "",
+                "size": 0
+            },
+            "resolution_details": {
+                "width": 0,
+                "height": 0
+            },
+            "quality": 0,
+            "fps": 30,
+            "duration": 1.0
+        },
+        "ui_uniforms": {
+            "260085533400259490348506664942395818974": {
+                "name": "u_aspect",
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "auto"
+            },
+            "28817900879564012086563967923611592100": {
+                "name": "u_zoomout",
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "37154164850612245702881750831795076973": {
+                "name": "u_time",
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "auto"
+            },
+            "153146117399062861966997351148076474387": {
+                "name": "u_video",
+                "gl_type": 35678,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "texture"
+            },
+            "287685113353201782305884862525381458179": {
+                "name": "u_depth",
+                "gl_type": 35678,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "texture"
+            }
+        },
+        "resolution_idx": 2,
+        "selected_uniform_name": "u_video",
+        "blur_kernel_size": 51,
+        "normals_kernel_size": 3
+    }
+}

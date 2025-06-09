@@ -34,7 +34,12 @@ from shaderbox.core import (
     ResolutionDetails,
     Video,
 )
-from shaderbox.vendors import get_modelbox_bg_removal, get_modelbox_depthmap
+from shaderbox.vendors import (
+    get_modelbox_bg_removal,
+    get_modelbox_bg_removal_video,
+    get_modelbox_depthmap,
+    get_modelbox_depthmap_video,
+)
 
 
 def adjust_size(
@@ -1003,20 +1008,20 @@ class App:
     def draw_image_filters(
         self, image: Image, ui_node_state: UINodeState
     ) -> Image | None:
-        filtered_image = None
+        result = None
 
         if imgui.button("As depthmap"):
             try:
-                filtered_image = get_modelbox_depthmap(
+                result = get_modelbox_depthmap(
                     zero_low_alpha_pixels(Image(image.texture))
                 )
             except Exception as e:
                 logger.error(str(e))
 
         imgui.same_line()
-        if imgui.button("Remove bg"):
+        if imgui.button("As background map"):
             try:
-                filtered_image = get_modelbox_bg_removal(
+                result = get_modelbox_bg_removal(
                     zero_low_alpha_pixels(Image(image.texture))
                 )
             except Exception as e:
@@ -1035,7 +1040,7 @@ class App:
         imgui.same_line()
         if imgui.button("Apply##blur"):
             try:
-                filtered_image = Image(
+                result = Image(
                     cv2.GaussianBlur(
                         np.array(Image(image.texture)._image.convert("RGB")),
                         (
@@ -1063,14 +1068,32 @@ class App:
         imgui.same_line()
         if imgui.button("Apply##normals"):
             try:
-                filtered_image = depthmap_to_normals(
+                result = depthmap_to_normals(
                     get_modelbox_depthmap(zero_low_alpha_pixels(Image(image.texture))),
                     ui_node_state.normals_kernel_size,
                 )
             except Exception as e:
                 logger.error(str(e))
 
-        return filtered_image
+        return result
+
+    def draw_video_filters(self, video: Video) -> Video | None:
+        result = None
+
+        if imgui.button("As depthmap"):
+            try:
+                result = get_modelbox_depthmap_video(video)
+            except Exception as e:
+                logger.error(str(e))
+
+        imgui.same_line()
+        if imgui.button("As background map"):
+            try:
+                result = get_modelbox_bg_removal_video(video)
+            except Exception as e:
+                logger.error(str(e))
+
+        return result
 
     def draw_selected_ui_uniform_settings(self) -> None:
         if not self.ui_app_state.current_node_dir:
@@ -1118,12 +1141,15 @@ class App:
 
             imgui.spacing()
 
-            if isinstance(media, Image) and (
-                filtered_image := self.draw_image_filters(
-                    media, self.ui_current_node_state
-                )
-            ):
-                ui_node.node.set_uniform_value(ui_uniform.name, filtered_image)
+            if isinstance(media, Image):
+                result = self.draw_image_filters(media, self.ui_current_node_state)
+                if result:
+                    ui_node.node.set_uniform_value(ui_uniform.name, result)
+
+            elif isinstance(media, Video):
+                result = self.draw_video_filters(media)  # type: ignore
+                if result:
+                    ui_node.node.set_uniform_value(ui_uniform.name, result)
 
         if (
             ui_uniform.input_type in ("array", "text")
