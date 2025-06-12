@@ -434,11 +434,11 @@ class Node:
         self._gl.clear()
         self.vao.render()
 
-        for uniform_name in self._uniform_values.copy():
-            if uniform_name not in seen_uniform_names:
-                data = self._uniform_values.pop(uniform_name)
-                if isinstance(data, moderngl.Texture):
-                    data.release()
+        # for uniform_name in self._uniform_values.copy():
+        #     if uniform_name not in seen_uniform_names:
+        #         data = self._uniform_values.pop(uniform_name)
+        #         if isinstance(data, moderngl.Texture):
+        #             data.release()
 
     def set_uniform_value(
         self,
@@ -497,13 +497,15 @@ class Node:
         width = details.resolution_details.width
         height = details.resolution_details.height
 
+        # Ensure resolution is divisible by 16 for codec compatibility
+        width = (width + 15) // 16 * 16
+        height = (height + 15) // 16 * 16
+
         if extension == ".mp4":
             codec = "libx264"
             pixelformat = "yuv420p"
-
             mp4_crf = [33, 28, 23, 18]
             mp4_presets = ["ultrafast", "fast", "medium", "slow"]
-
             crf = mp4_crf[details.quality]
             preset = mp4_presets[details.quality]
             ffmpeg_params = [
@@ -511,8 +513,6 @@ class Node:
                 str(crf),
                 "-preset",
                 preset,
-                "-vf",
-                f"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2",
             ]
         elif extension == ".webm":
             codec = "libvpx-vp9"
@@ -532,8 +532,6 @@ class Node:
                 "realtime",
                 "-threads",
                 "0",
-                "-vf",
-                f"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2",
                 "-auto-alt-ref",
                 "0",
                 "-an",
@@ -550,6 +548,7 @@ class Node:
             ffmpeg_params=ffmpeg_params,
             pixelformat=pixelformat,
             input_params=["-pixel_format", "bgra"],
+            output_params=["-s", f"{width}x{height}"],
         )
 
         self.restart_video_uniforms()

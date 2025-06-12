@@ -1,15 +1,40 @@
 {
     "canvas_size": [
-        1080,
-        1080
+        963,
+        1280
     ],
     "uniforms": {
-        "u_video": {
-            "file_path": "/home/akarnachev/src/shaderbox/projects/dev/nodes/805fd0df/media/u_video.mp4"
-        }
+        "u_background": {
+            "file_path": "/home/akarnachev/src/shaderbox/projects/dev/nodes/805fd0df/media/u_background.png"
+        },
+        "u_cam_dist": 0.5,
+        "u_cam_pow": 0.5,
+        "u_center_0": [
+            0.5299999713897705,
+            0.8199999928474426
+        ],
+        "u_depth": {
+            "file_path": "/home/akarnachev/src/shaderbox/projects/dev/nodes/805fd0df/media/u_depth.png"
+        },
+        "u_edge_0": 0.5699999928474426,
+        "u_global_tint_color": [
+            0.10115181654691696,
+            0.049561914056539536,
+            0.13488370180130005
+        ],
+        "u_image": {
+            "file_path": "/home/akarnachev/src/shaderbox/projects/dev/nodes/805fd0df/media/u_image.png"
+        },
+        "u_offset": [
+            0.3799999952316284,
+            0.4099999964237213
+        ],
+        "u_radius_0": 0.003000000026077032,
+        "u_smoothness_0": 0.18000000715255737,
+        "u_zoomout": 0.25
     },
     "ui_state": {
-        "ui_name": "UV Mango",
+        "ui_name": "Solyanoy",
         "render_media_details": {
             "is_video": true,
             "file_details": {
@@ -17,8 +42,8 @@
                 "size": 0
             },
             "resolution_details": {
-                "width": 0,
-                "height": 0
+                "width": 963,
+                "height": 1280
             },
             "quality": 0,
             "fps": 30,
@@ -59,10 +84,115 @@
                 "dimension": 1,
                 "array_length": 1,
                 "input_type": "texture"
+            },
+            "298626367673662534095187619679730017816": {
+                "name": "u_image",
+                "gl_type": 35678,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "texture"
+            },
+            "306760354270586786345026974936972287895": {
+                "name": "u_background",
+                "gl_type": 35678,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "texture"
+            },
+            "51165776148015846914717928432198300410": {
+                "name": "u_global_tint",
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "93150438789217361313320991842508099868": {
+                "name": "u_global_tint_color",
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "color"
+            },
+            "322872685217103838388018030726793013027": {
+                "name": "u_radius_0",
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "32562276647641024004880516074132559663": {
+                "name": "u_edge_0",
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "259485694904484448886636626476952176845": {
+                "name": "u_gap_0",
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "95200557116743122901945389155798366994": {
+                "name": "u_smoothness_0",
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "283755464771925174288401502598271684528": {
+                "name": "u_edge_1",
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "181393210552887558202231248142781414003": {
+                "name": "u_smoothness_1",
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "260629952299707989589611984375333521846": {
+                "name": "u_offset",
+                "gl_type": 35664,
+                "dimension": 2,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "291895055638399944319283219234671005435": {
+                "name": "u_center_0",
+                "gl_type": 35664,
+                "dimension": 2,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "103660577229381383352686934847790412315": {
+                "name": "u_camp_dist",
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "323470249539053589075357100607537933228": {
+                "name": "u_cam_dist",
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "306997118964189262164322998843050152661": {
+                "name": "u_cam_pow",
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
             }
         },
-        "resolution_idx": 2,
-        "selected_uniform_name": "u_video",
+        "resolution_idx": 0,
+        "selected_uniform_name": "u_global_tint_color",
         "blur_kernel_size": 51,
         "normals_kernel_size": 3
     }
