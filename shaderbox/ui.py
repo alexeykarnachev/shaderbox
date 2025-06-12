@@ -34,12 +34,7 @@ from shaderbox.core import (
     ResolutionDetails,
     Video,
 )
-from shaderbox.vendors import (
-    get_modelbox_bg_removal,
-    get_modelbox_bg_removal_video,
-    get_modelbox_depthmap,
-    get_modelbox_depthmap_video,
-)
+from shaderbox.vendors import image_to_background_mask, image_to_depth_mask
 
 
 def adjust_size(
@@ -108,7 +103,7 @@ def get_resolution_str(name: str | None, w: int, h: int) -> str:
     return " | ".join(parts)
 
 
-def depthmap_to_normals(depthmap_image: Image, kernel_size: int = 3) -> Image:
+def depth_mask_to_normals(depthmap_image: Image, kernel_size: int = 3) -> Image:
     kernel_size = max(3, kernel_size | 1)
 
     depth_array = np.array(depthmap_image._image.convert("L"), dtype=np.float32)
@@ -1010,18 +1005,18 @@ class App:
     ) -> Image | None:
         result = None
 
-        if imgui.button("As depthmap"):
+        if imgui.button("To depth mask"):
             try:
-                result = get_modelbox_depthmap(
+                result = image_to_depth_mask(
                     zero_low_alpha_pixels(Image(image.texture))
                 )
             except Exception as e:
                 logger.error(str(e))
 
         imgui.same_line()
-        if imgui.button("As background map"):
+        if imgui.button("To background mask"):
             try:
-                result = get_modelbox_bg_removal(
+                result = image_to_background_mask(
                     zero_low_alpha_pixels(Image(image.texture))
                 )
             except Exception as e:
@@ -1068,28 +1063,10 @@ class App:
         imgui.same_line()
         if imgui.button("Apply##normals"):
             try:
-                result = depthmap_to_normals(
-                    get_modelbox_depthmap(zero_low_alpha_pixels(Image(image.texture))),
+                result = depth_mask_to_normals(
+                    image_to_depth_mask(zero_low_alpha_pixels(Image(image.texture))),
                     ui_node_state.normals_kernel_size,
                 )
-            except Exception as e:
-                logger.error(str(e))
-
-        return result
-
-    def draw_video_filters(self, video: Video) -> Video | None:
-        result = None
-
-        if imgui.button("As depthmap"):
-            try:
-                result = get_modelbox_depthmap_video(video)
-            except Exception as e:
-                logger.error(str(e))
-
-        imgui.same_line()
-        if imgui.button("As background map"):
-            try:
-                result = get_modelbox_bg_removal_video(video)
             except Exception as e:
                 logger.error(str(e))
 
@@ -1147,9 +1124,7 @@ class App:
                     ui_node.node.set_uniform_value(ui_uniform.name, result)
 
             elif isinstance(media, Video):
-                result = self.draw_video_filters(media)  # type: ignore
-                if result:
-                    ui_node.node.set_uniform_value(ui_uniform.name, result)
+                pass
 
         if (
             ui_uniform.input_type in ("array", "text")

@@ -5,7 +5,7 @@
     ],
     "uniforms": {
         "u_background": {
-            "file_path": "/home/akarnachev/src/shaderbox/projects/dev/nodes/805fd0df/media/u_background.png"
+            "file_path": "/home/akarnachev/src/shaderbox/shaderbox/resources/node_templates/805fd0df/media/u_background.png"
         },
         "u_cam_dist": 0.5,
         "u_cam_pow": 0.5,
@@ -14,7 +14,7 @@
             0.28999999165534973
         ],
         "u_depth": {
-            "file_path": "/home/akarnachev/src/shaderbox/projects/dev/nodes/805fd0df/media/u_depth.png"
+            "file_path": "/home/akarnachev/src/shaderbox/shaderbox/resources/node_templates/805fd0df/media/u_depth.png"
         },
         "u_edge_0": 0.5699999928474426,
         "u_global_0_color": [
@@ -28,7 +28,7 @@
             0.006576521787792444
         ],
         "u_image": {
-            "file_path": "/home/akarnachev/src/shaderbox/projects/dev/nodes/805fd0df/media/u_image.png"
+            "file_path": "/home/akarnachev/src/shaderbox/shaderbox/resources/node_templates/805fd0df/media/u_image.png"
         },
         "u_offset": [
             0.3799999952316284,
