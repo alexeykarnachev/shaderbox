@@ -3,7 +3,22 @@
         960,
         1280
     ],
-    "uniforms": {},
+    "uniforms": {
+        "plane_speed": 0.10000000149011612,
+        "u_depth": {
+            "file_path": "/home/akarnachev/src/shaderbox/projects/dev/nodes/6d476423/media/u_depth.png"
+        },
+        "u_photo": {
+            "file_path": "/home/akarnachev/src/shaderbox/projects/dev/nodes/6d476423/media/u_photo.png"
+        },
+        "u_text_color": [
+            1.0,
+            0.0,
+            0.0
+        ],
+        "u_text_smoothness": 0.009999999776482582,
+        "u_text_thickness": 0.05000000074505806
+    },
     "ui_state": {
         "ui_name": "Green Scan",
         "render_media_details": {

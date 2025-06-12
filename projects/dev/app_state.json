@@ -1,5 +1,5 @@
 {
-    "current_node_dir": "805fd0df",
+    "current_node_dir": "6d476423",
     "selected_node_template_dir": "2aecfbe7",
     "is_render_all_nodes": true,
     "tg_bot_token": "7497996082:AAEGQin96OvPZ1afUD2X_iz--WYYiaW2JEs",
@@ -18,5 +18,6 @@
         "quality": 0,
         "fps": 30,
         "duration": 1.0
-    }
+    },
+    "image_to_image_model_idx": 0
 }

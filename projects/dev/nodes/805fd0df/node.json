@@ -226,7 +226,7 @@
             }
         },
         "resolution_idx": 0,
-        "selected_uniform_name": "u_period",
+        "selected_uniform_name": "u_depth",
         "blur_kernel_size": 51,
         "normals_kernel_size": 3
     }

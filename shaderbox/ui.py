@@ -34,7 +34,7 @@ from shaderbox.core import (
     ResolutionDetails,
     Video,
 )
-from shaderbox.vendors import image_to_background_mask, image_to_depth_mask
+from shaderbox.vendors import get_image_to_image_model_names, infer_image_to_image
 
 
 def adjust_size(
@@ -340,6 +340,8 @@ class UIAppState(BaseModel):
 
     tg_sticker_video_details: MediaDetails = MediaDetails()
 
+    image_to_image_model_idx: int = 0
+
 
 class UINode(BaseModel):
     node: Node
@@ -539,8 +541,9 @@ class App:
         self._tg_selected_sticker_idx: int = 0
         self._tg_stickers_bot: tg.Bot
 
-        self._active_popup_label: str | None = None
+        self.image_to_image_model_names: list[str] = []
 
+        self._active_popup_label: str | None = None
         self.global_fps = 0.0
         self._init(project_dir)
 
@@ -596,6 +599,7 @@ class App:
 
     def _init(self, project_dir: Path) -> None:
         self.release()
+        self.fetch_vendors()
 
         self.app_start_time = int(time.time() * 1000)
         self.frame_idx = 0
@@ -630,6 +634,13 @@ class App:
                         f"Node {self.ui_app_state.current_node_dir} not found"
                     )
                     self.ui_app_state.current_node_dir = ""
+
+    def fetch_vendors(self) -> None:
+        try:
+            self.image_to_image_model_names = get_image_to_image_model_names()
+        except Exception as e:
+            logger.error(f"Failed to fetch image-to-image model names: {e}")
+            self.image_to_image_model_names = []
 
     def get_font(self, size: int) -> Any:
         fonts = imgui.get_io().fonts
@@ -1000,77 +1011,38 @@ class App:
             self.draw_selected_ui_uniform_settings()
             imgui.end_child()
 
-    def draw_image_filters(
-        self, image: Image, ui_node_state: UINodeState
-    ) -> Image | None:
-        result = None
+    def draw_image_to_image(self, image: Image) -> Image | None:
+        out_image: Image | None = None
 
-        if imgui.button("To depth mask"):
-            try:
-                result = image_to_depth_mask(
-                    zero_low_alpha_pixels(Image(image.texture))
-                )
-            except Exception as e:
-                logger.error(str(e))
+        if not self.image_to_image_model_names:
+            imgui.text_colored(
+                "Image-to-image models are not available", *(1.0, 1.0, 0.0)
+            )
+            if imgui.button("Refresh##image_to_image"):
+                self.fetch_vendors()
+        else:
+            imgui.text("Image-to-image")
 
-        imgui.same_line()
-        if imgui.button("To background mask"):
-            try:
-                result = image_to_background_mask(
-                    zero_low_alpha_pixels(Image(image.texture))
-                )
-            except Exception as e:
-                logger.error(str(e))
+            self.ui_app_state.image_to_image_model_idx = min(
+                self.ui_app_state.image_to_image_model_idx,
+                len(self.image_to_image_model_names) - 1,
+            )
 
-        imgui.text("Gaussian blur")
-        ui_node_state.blur_kernel_size = imgui.slider_int(
-            "##blur_kernel_size",
-            ui_node_state.blur_kernel_size,
-            min_value=10,
-            max_value=100,
-            format="%d",
-        )[1]
-        ui_node_state.blur_kernel_size = max(3, ui_node_state.blur_kernel_size | 1)
+            self.ui_app_state.image_to_image_model_idx = imgui.combo(
+                "##image_to_image_model_idx",
+                self.ui_app_state.image_to_image_model_idx,
+                self.image_to_image_model_names,
+            )[1]
 
-        imgui.same_line()
-        if imgui.button("Apply##blur"):
-            try:
-                result = Image(
-                    cv2.GaussianBlur(
-                        np.array(Image(image.texture)._image.convert("RGB")),
-                        (
-                            ui_node_state.blur_kernel_size,
-                            ui_node_state.blur_kernel_size,
-                        ),
-                        0,
-                    )
-                )
-            except Exception as e:
-                logger.error(str(e))
+            model_name = self.image_to_image_model_names[
+                self.ui_app_state.image_to_image_model_idx
+            ]
 
-        imgui.text("Normals")
-        ui_node_state.normals_kernel_size = imgui.slider_int(
-            "##normals_kernel_size",
-            ui_node_state.normals_kernel_size,
-            min_value=3,
-            max_value=31,
-            format="%d",
-        )[1]
-        ui_node_state.normals_kernel_size = max(
-            3, ui_node_state.normals_kernel_size | 1
-        )
+            imgui.same_line()
+            if imgui.button("Apply##image_to_image"):
+                out_image = infer_image_to_image(image, model_name=model_name)
 
-        imgui.same_line()
-        if imgui.button("Apply##normals"):
-            try:
-                result = depth_mask_to_normals(
-                    image_to_depth_mask(zero_low_alpha_pixels(Image(image.texture))),
-                    ui_node_state.normals_kernel_size,
-                )
-            except Exception as e:
-                logger.error(str(e))
-
-        return result
+        return out_image
 
     def draw_selected_ui_uniform_settings(self) -> None:
         if not self.ui_app_state.current_node_dir:
@@ -1119,9 +1091,12 @@ class App:
             imgui.spacing()
 
             if isinstance(media, Image):
-                result = self.draw_image_filters(media, self.ui_current_node_state)
-                if result:
-                    ui_node.node.set_uniform_value(ui_uniform.name, result)
+                imgui.separator()
+                imgui.spacing()
+
+                out_image = self.draw_image_to_image(media)
+                if out_image:
+                    ui_node.node.set_uniform_value(ui_uniform.name, out_image)
 
             elif isinstance(media, Video):
                 pass

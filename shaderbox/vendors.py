@@ -4,41 +4,36 @@ from io import BytesIO
 import httpx
 
 from shaderbox.core import Image
+from shaderbox.settings import settings
 
 
-def _post_image_to_endpoint(
-    url: str,
-    image: Image,
-    model_name: str,
-) -> str:
+def get_image_to_image_model_names() -> list[str]:
+    with httpx.Client() as client:
+        response = client.get(
+            settings.modelbox_image_to_image_url,
+            timeout=5.0,
+        )
+        response.raise_for_status()
+    return response.json()  # type: ignore
+
+
+def infer_image_to_image(image: Image, model_name: str) -> Image:
     buffer = BytesIO()
     image._image.save(buffer, format="PNG")
     buffer.seek(0)
 
-    image_base64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
-
+    inp_image_base64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
     with httpx.Client() as client:
         response = client.post(
-            url,
-            json={"image_base64": image_base64, "model_name": model_name},
+            settings.modelbox_image_to_image_url,
+            json={"image_base64": inp_image_base64, "model_name": model_name},
             timeout=30.0,
         )
         response.raise_for_status()
-    return str(response.json()["image_base64"])
 
-
-def image_to_depth_mask(image: Image) -> Image:
-    url = "http://0.0.0.0:8228/image_to_depth_mask"
-    base64_image = _post_image_to_endpoint(url, image, model_name="depth_pro")
-    image_data = base64.b64decode(base64_image)
-    return Image(BytesIO(image_data))
-
-
-def image_to_background_mask(image: Image) -> Image:
-    url = "http://0.0.0.0:8228/image_to_background_mask"
-    base64_image = _post_image_to_endpoint(url, image, model_name="rmbg")
-    image_data = base64.b64decode(base64_image)
-    return Image(BytesIO(image_data))
+    out_image_base64 = str(response.json()["image_base64"])
+    out_image = Image(BytesIO(base64.b64decode(out_image_base64)))
+    return out_image
 
 
 # def get_modelbox_depthmap_video(video: Video) -> Video:
