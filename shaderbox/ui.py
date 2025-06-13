@@ -325,8 +325,8 @@ class UINodeState(BaseModel):
     resolution_idx: int = 0
     selected_uniform_name: str = ""
 
-    blur_kernel_size: int = 50
-    normals_kernel_size: int = 3
+    video_to_video_smoothing_window: int = 5
+    video_to_video_smoothing_sigma: float = 1.0
 
 
 class UIAppState(BaseModel):
@@ -1020,7 +1020,7 @@ class App:
             if imgui.button("Refresh##image_to_image"):
                 self.fetch_vendors()
         else:
-            imgui.text("Image-to-image")
+            imgui.text("DL model")
 
             self.ui_app_state.image_to_image_model_idx = min(
                 self.ui_app_state.image_to_image_model_idx,
@@ -1038,10 +1038,46 @@ class App:
             ]
 
             imgui.same_line()
-            if imgui.button("Apply##image_to_image"):
+            if imgui.button("Apply##image_to_image_model"):
                 out_image = infer_image_to_image(image, model_name=model_name)
 
         return out_image
+
+    def draw_video_to_video(self, video: Video) -> Video | None:
+        out_video: Video | None = None
+
+        imgui.text("Smoothing")
+
+        self.ui_current_node_state.video_to_video_smoothing_window = imgui.drag_int(
+            "Window",
+            self.ui_current_node_state.video_to_video_smoothing_window,
+            min_value=3,
+        )[1]
+
+        self.ui_current_node_state.video_to_video_smoothing_sigma = imgui.drag_float(
+            "Sigma",
+            self.ui_current_node_state.video_to_video_smoothing_sigma,
+            min_value=0.01,
+            change_speed=0.01,
+        )[1]
+
+        if imgui.button("Apply##video_to_video_smoothing"):
+            inp_file_path = Path(video.details.file_details.path)
+            name = inp_file_path.stem
+
+            w = self.ui_current_node_state.video_to_video_smoothing_window
+            s = self.ui_current_node_state.video_to_video_smoothing_sigma
+            name = f"{name}_w:{w}_s:{s}"
+            out_file_path = (self.trash_dir / name).with_suffix(inp_file_path.suffix)
+
+            video.apply_temporal_smoothing(
+                out_file_path=out_file_path,
+                window_size=w,
+                sigma=s,
+            )
+            out_video = Video(out_file_path)
+
+        return out_video
 
     def draw_selected_ui_uniform_settings(self) -> None:
         if not self.ui_app_state.current_node_dir:
@@ -1070,7 +1106,7 @@ class App:
         value = ui_node.node.get_uniform_value(ui_uniform.name)
 
         if ui_uniform.input_type == "texture":
-            media = value
+            media: MediaWithTexture = value
             imgui.text(get_resolution_str(ui_uniform.name, *media.texture.size))
 
             max_image_width = imgui.get_content_region_available()[0]
@@ -1087,18 +1123,19 @@ class App:
                 uv1=(1, 0),
             )
 
+            imgui.new_line()
+            imgui.separator()
             imgui.spacing()
 
             if isinstance(media, Image):
-                imgui.separator()
-                imgui.spacing()
-
                 out_image = self.draw_image_to_image(media)
                 if out_image:
                     ui_node.node.set_uniform_value(ui_uniform.name, out_image)
 
             elif isinstance(media, Video):
-                pass
+                out_video = self.draw_video_to_video(media)
+                if out_video:
+                    ui_node.node.set_uniform_value(ui_uniform.name, out_video)
 
         if (
             ui_uniform.input_type in ("array", "text")

@@ -1,6 +1,7 @@
 import contextlib
 import json
 import shutil
+import subprocess
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from importlib.resources import files
@@ -61,6 +62,10 @@ class MediaWithTexture(ABC):
     @abstractmethod
     def texture(self) -> moderngl.Texture: ...
 
+    @property
+    @abstractmethod
+    def details(self) -> MediaDetails: ...
+
     @abstractmethod
     def update(self, t: float) -> None: ...
 
@@ -97,7 +102,7 @@ class Image(MediaWithTexture):
         )
 
         self._image = self._image.convert("RGBA")
-        self.details = MediaDetails(
+        self._details = MediaDetails(
             is_video=False,
             file_details=file_details,
             resolution_details=ResolutionDetails(
@@ -112,6 +117,10 @@ class Image(MediaWithTexture):
         r, g, b = (int(c * 255) for c in color)
         image = PILImage.new("RGBA", size, color=(r, g, b, 255))
         return cls(image)
+
+    @property
+    def details(self) -> MediaDetails:
+        return self._details
 
     @property
     def texture(self) -> moderngl.Texture:
@@ -150,7 +159,7 @@ class Video(MediaWithTexture):
         fps = int(self._cap.get(cv2.CAP_PROP_FPS))
         file_size = Path(file_path).stat().st_size
 
-        self.details = MediaDetails(
+        self._details = MediaDetails(
             is_video=True,
             file_details=FileDetails(path=str(file_path), size=file_size),
             resolution_details=ResolutionDetails(width=width, height=height),
@@ -166,6 +175,10 @@ class Video(MediaWithTexture):
     def restart(self) -> None:
         self._cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
         self._last_frame_idx = -1
+
+    @property
+    def details(self) -> MediaDetails:
+        return self._details
 
     @property
     def texture(self) -> moderngl.Texture:
@@ -229,7 +242,50 @@ class Video(MediaWithTexture):
 
         if self._texture is not None:
             self._texture.release()
-            self._texture = None
+
+    def apply_temporal_smoothing(
+        self,
+        out_file_path: Path,
+        window_size: int = 5,
+        sigma: float = 1.0,
+        quality: int = 2,
+    ) -> None:
+        kernel = np.exp(
+            -(np.arange(-(window_size // 2), window_size // 2 + 1) ** 2)
+            / (2 * sigma**2)
+        )
+        kernel = kernel / np.sum(kernel)
+        weights = " ".join(f"{w:.6f}" for w in kernel)
+
+        mp4_crf = [33, 28, 23, 18]
+        mp4_presets = ["ultrafast", "fast", "medium", "slow"]
+        crf = mp4_crf[quality]
+        preset = mp4_presets[quality]
+
+        ffmpeg_cmd = [
+            "ffmpeg",
+            "-i",
+            str(self.details.file_details.path),
+            "-vf",
+            f"format=yuv420p,tmix=frames={window_size}:weights={weights}",
+            "-c:v",
+            "libx264",
+            "-preset",
+            preset,
+            "-crf",
+            str(crf),
+            "-c:a",
+            "copy",
+            "-y",
+            str(out_file_path),
+        ]
+
+        subprocess.run(
+            ffmpeg_cmd,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
 
 
 class Canvas:
