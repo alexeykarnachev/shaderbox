@@ -7,25 +7,25 @@
         "u_background": {
             "file_path": "/home/akarnachev/src/shaderbox/projects/dev/nodes/805fd0df/media/u_background.png"
         },
-        "u_cam_dist": 0.5,
-        "u_cam_pow": 0.5,
+        "u_cam_dist": 0.3700000047683716,
+        "u_cam_pow": 0.25,
         "u_center_0": [
-            0.5299999713897705,
-            0.28999999165534973
+            0.1599999964237213,
+            0.25
         ],
         "u_depth": {
             "file_path": "/home/akarnachev/src/shaderbox/projects/dev/nodes/805fd0df/media/u_depth.png"
         },
-        "u_edge_0": 0.5699999928474426,
+        "u_edge_0": 0.5899999737739563,
         "u_global_0_color": [
-            0.1990012228488922,
-            0.0,
-            0.23255813121795654
+            0.8439733982086182,
+            0.25031909346580505,
+            0.9441860318183899
         ],
         "u_global_1_color": [
-            0.0,
-            0.17674416303634644,
-            0.006576521787792444
+            0.10046511143445969,
+            0.6000000238418579,
+            0.11905242502689362
         ],
         "u_image": {
             "file_path": "/home/akarnachev/src/shaderbox/projects/dev/nodes/805fd0df/media/u_image.png"
@@ -34,18 +34,18 @@
             0.3799999952316284,
             0.4099999964237213
         ],
-        "u_period": 2.0,
-        "u_radius_0": 0.003000000026077032,
-        "u_smoothness_0": 0.18000000715255737,
-        "u_zoomout": 0.25
+        "u_period": 3.299999952316284,
+        "u_radius_0": 0.15299999713897705,
+        "u_smoothness_0": 0.15000000596046448,
+        "u_zoomout": 0.1899999976158142
     },
     "ui_state": {
         "ui_name": "Solyanoy",
         "render_media_details": {
             "is_video": true,
             "file_details": {
-                "path": "/home/akarnachev/Downloads/solynaya.mp4",
-                "size": 41090359
+                "path": "/home/akarnachev/Downloads/egor.mp4",
+                "size": 57945153
             },
             "resolution_details": {
                 "width": 976,
@@ -219,6 +219,13 @@
             },
             "291780761042140901182733419579673728255": {
                 "name": "u_global_1_color",
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "color"
+            },
+            "58494956139758085513787518104289170721": {
+                "name": "u_background_color",
                 "gl_type": 35665,
                 "dimension": 3,
                 "array_length": 1,

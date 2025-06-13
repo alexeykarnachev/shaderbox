@@ -206,6 +206,7 @@ float color_to_brightness(vec3 color) {
 
 void main() {
     float progress = mod(u_time, u_period) / u_period;
+    progress = progress + 0.025 * snoise(vec4(vs_uv.x, 64.0 * (vs_uv.y - u_time), 0.0, 0.0));
     progress = abs((progress * 2.0) - 1.0);
 
     // Initial UV transformation and distance to center
@@ -223,15 +224,15 @@ void main() {
 
     // Camera distance and position
     float camera_dist = u_cam_dist * (1.0 - pow(dist_to_center, u_cam_pow));
-    float cam_motion = 0.025 + 0.1 * pow(dist_to_center, 2.0);
-    vec3 camera_pos = vec3(cam_motion * sin(progress * 2.0 * PI),
-                           cam_motion * cos(progress * 2.0 * PI),
-                           -camera_dist);
+    float cam_motion = 0.001 + 0.01 * pow(dist_to_center, 2.0);
+    vec3 camera_pos = vec3(cam_motion * sin(progress * 8.0 * PI) + 0.01 * sin(progress * 2.0 * PI),
+                           cam_motion * cos(progress * 8.0 * PI) + 0.01 * cos(progress * 2.0 * PI),
+                           -camera_dist + 0.0025 * cos(progress * 2.0 * PI));
 
     // Ray marching setup
     vec3 ray_pos = screen_pos;
     vec3 ray_dir = normalize(screen_pos - camera_pos);
-    const int max_steps = 1024;
+    const int max_steps = 2048;
     float step_size = 1.0 / float(max_steps);
     int step_count = 0;
     vec3 hit_color;
@@ -312,8 +313,16 @@ void main() {
     final_color = pow(4.0 * final_color, vec3(4.0));
 
     final_color =
-        final_color + 0.75 * final_color * sin(progress * 2.0 * PI * 2.0);
+        final_color + 0.75 * final_color * (sin(progress * 2.0 * PI * 2.0) + 1.0) * 0.5;
+
+
+    // Background
+    background = 1.0 - background;
+    float background_brightness = 0.5 + 0.5 * (sin(progress * 8.0 * PI) + 1.0);
+    background_brightness = pow(background_brightness, 2.0);
+    vec3 background_color = mix(u_global_1_color, u_global_0_color, progress) * background * background_brightness;
 
     // Output final fragment color
+    final_color = final_color + background_color;
     fs_color = vec4(final_color, 1.0);
 }
