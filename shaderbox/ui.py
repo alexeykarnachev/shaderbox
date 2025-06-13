@@ -371,10 +371,9 @@ class UINode(BaseModel):
         }
 
         fs_file_path = dir / "shader.frag.glsl"
-        if not fs_file_path.exists():
-            with fs_file_path.open("w") as f:
-                f.write(self.node.fs_source)
-                self.mtime = fs_file_path.lstat().st_mtime
+        with fs_file_path.open("w") as f:
+            f.write(self.node.fs_source)
+            self.mtime = fs_file_path.lstat().st_mtime
 
         # ----------------------------------------------------------------
         # Save uniforms
@@ -1833,7 +1832,7 @@ class App:
             for ui_node in self.ui_nodes.values():
                 if (
                     self.ui_app_state.is_render_all_nodes
-                    or ui_node == self.ui_nodes[self.ui_app_state.current_node_dir]
+                    or ui_node == self.ui_nodes.get(self.ui_app_state.current_node_dir)
                     or self.frame_idx == 0
                 ):
                     ui_node.node.render()
