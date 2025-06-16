@@ -23,6 +23,7 @@ from OpenGL.GL import GL_FLOAT, GL_SAMPLER_2D, GL_UNSIGNED_INT, GLError
 from platformdirs import user_data_dir
 from pydantic import BaseModel, model_validator
 
+from shaderbox import modelbox
 from shaderbox.core import (
     RESOURCES_DIR,
     Canvas,
@@ -34,7 +35,6 @@ from shaderbox.core import (
     ResolutionDetails,
     Video,
 )
-from shaderbox.vendors import get_image_to_image_model_names, infer_image_to_image
 
 
 def adjust_size(
@@ -340,7 +340,7 @@ class UIAppState(BaseModel):
 
     tg_sticker_video_details: MediaDetails = MediaDetails()
 
-    image_to_image_model_idx: int = 0
+    media_model_idx: int = 0
 
 
 class UINode(BaseModel):
@@ -540,7 +540,7 @@ class App:
         self._tg_selected_sticker_idx: int = 0
         self._tg_stickers_bot: tg.Bot
 
-        self.image_to_image_model_names: list[str] = []
+        self.modelbox_info: dict[str, Any] = {}
 
         self._active_popup_label: str | None = None
         self.global_fps = 0.0
@@ -598,7 +598,7 @@ class App:
 
     def _init(self, project_dir: Path) -> None:
         self.release()
-        self.fetch_vendors()
+        self.fetch_modelbox_info()
 
         self.app_start_time = int(time.time() * 1000)
         self.frame_idx = 0
@@ -634,12 +634,12 @@ class App:
                     )
                     self.ui_app_state.current_node_dir = ""
 
-    def fetch_vendors(self) -> None:
+    def fetch_modelbox_info(self) -> None:
         try:
-            self.image_to_image_model_names = get_image_to_image_model_names()
+            self.modelbox_info = modelbox.fetch_modelbox_info()
         except Exception as e:
-            logger.error(f"Failed to fetch image-to-image model names: {e}")
-            self.image_to_image_model_names = []
+            logger.error(f"Failed to fetch media model names: {e}")
+            self.modelbox_info = {}
 
     def get_font(self, size: int) -> Any:
         fonts = imgui.get_io().fonts
@@ -1010,41 +1010,44 @@ class App:
             self.draw_selected_ui_uniform_settings()
             imgui.end_child()
 
-    def draw_image_to_image(self, image: Image) -> Image | None:
-        out_image: Image | None = None
+    T = TypeVar("T", Image, Video)
 
-        if not self.image_to_image_model_names:
-            imgui.text_colored(
-                "Image-to-image models are not available", *(1.0, 1.0, 0.0)
-            )
-            if imgui.button("Refresh##image_to_image"):
-                self.fetch_vendors()
+    def draw_media_models(self, input_media: T) -> T:
+        output_media: Image | Video | None = None
+        media_model_names = self.modelbox_info.get("media_model_names")
+
+        if not media_model_names:
+            imgui.text_colored("Media models are not available", *(1.0, 1.0, 0.0))
+            if imgui.button("Refresh##media"):
+                self.fetch_modelbox_info()
         else:
-            imgui.text("DL model")
+            imgui.text("Media model")
 
-            self.ui_app_state.image_to_image_model_idx = min(
-                self.ui_app_state.image_to_image_model_idx,
-                len(self.image_to_image_model_names) - 1,
+            self.ui_app_state.media_model_idx = min(
+                self.ui_app_state.media_model_idx,
+                len(media_model_names) - 1,
             )
 
-            self.ui_app_state.image_to_image_model_idx = imgui.combo(
-                "##image_to_image_model_idx",
-                self.ui_app_state.image_to_image_model_idx,
-                self.image_to_image_model_names,
+            self.ui_app_state.media_model_idx = imgui.combo(
+                "##media_model_idx",
+                self.ui_app_state.media_model_idx,
+                media_model_names,
             )[1]
 
-            model_name = self.image_to_image_model_names[
-                self.ui_app_state.image_to_image_model_idx
-            ]
+            model_name = media_model_names[self.ui_app_state.media_model_idx]
 
             imgui.same_line()
-            if imgui.button("Apply##image_to_image_model"):
-                out_image = infer_image_to_image(image, model_name=model_name)
+            if imgui.button("Apply##media_model"):
+                output_media = modelbox.infer_media_model(
+                    input_media,
+                    model_name=model_name,
+                    output_dir=self.media_dir,
+                )
 
-        return out_image
+        return output_media or input_media  # type: ignore
 
-    def draw_video_to_video(self, video: Video) -> Video | None:
-        out_video: Video | None = None
+    def draw_video_filters(self, input_video: Video) -> Video:
+        output_video: Video | None = None
 
         imgui.text("Smoothing")
 
@@ -1062,22 +1065,24 @@ class App:
         )[1]
 
         if imgui.button("Apply##video_to_video_smoothing"):
-            inp_file_path = Path(video.details.file_details.path)
-            name = inp_file_path.stem
+            input_file_path = Path(input_video.details.file_details.path)
+            name = input_file_path.stem
 
             w = self.ui_current_node_state.video_to_video_smoothing_window
             s = self.ui_current_node_state.video_to_video_smoothing_sigma
             name = f"{name}_w:{w}_s:{s}"
-            out_file_path = (self.trash_dir / name).with_suffix(inp_file_path.suffix)
+            output_file_path = (self.trash_dir / name).with_suffix(
+                input_file_path.suffix
+            )
 
-            video.apply_temporal_smoothing(
-                out_file_path=out_file_path,
+            input_video.apply_temporal_smoothing(
+                output_file_path=output_file_path,
                 window_size=w,
                 sigma=s,
             )
-            out_video = Video(out_file_path)
+            output_video = Video(output_file_path)
 
-        return out_video
+        return output_video or input_video
 
     def draw_selected_ui_uniform_settings(self) -> None:
         if not self.ui_app_state.current_node_dir:
@@ -1127,15 +1132,12 @@ class App:
             imgui.separator()
             imgui.spacing()
 
-            if isinstance(media, Image):
-                out_image = self.draw_image_to_image(media)
-                if out_image:
-                    ui_node.node.set_uniform_value(ui_uniform.name, out_image)
+            output_media = self.draw_media_models(media)  # type: ignore
+            if isinstance(output_media, Video):
+                output_media = self.draw_video_filters(output_media)
 
-            elif isinstance(media, Video):
-                out_video = self.draw_video_to_video(media)
-                if out_video:
-                    ui_node.node.set_uniform_value(ui_uniform.name, out_video)
+            if media != output_media:
+                ui_node.node.set_uniform_value(ui_uniform.name, output_media)
 
         if (
             ui_uniform.input_type in ("array", "text")

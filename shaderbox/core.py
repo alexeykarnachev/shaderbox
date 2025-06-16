@@ -245,7 +245,7 @@ class Video(MediaWithTexture):
 
     def apply_temporal_smoothing(
         self,
-        out_file_path: Path,
+        output_file_path: Path,
         window_size: int = 5,
         sigma: float = 1.0,
         quality: int = 2,
@@ -277,7 +277,7 @@ class Video(MediaWithTexture):
             "-c:a",
             "copy",
             "-y",
-            str(out_file_path),
+            str(output_file_path),
         ]
 
         subprocess.run(

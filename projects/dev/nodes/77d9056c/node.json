@@ -1,15 +1,11 @@
 {
     "canvas_size": [
-        384,
-        384
+        1280,
+        960
     ],
-    "uniforms": {
-        "u_video": {
-            "file_path": "/home/akarnachev/src/shaderbox/projects/dev/nodes/6c9a9cb6/media/u_video.mp4"
-        }
-    },
+    "uniforms": {},
     "ui_state": {
-        "ui_name": "Video",
+        "ui_name": "UV Mango",
         "render_media_details": {
             "is_video": true,
             "file_details": {
@@ -45,18 +41,11 @@
                 "dimension": 1,
                 "array_length": 1,
                 "input_type": "auto"
-            },
-            "153146117399062861966997351148076474387": {
-                "name": "u_video",
-                "gl_type": 35678,
-                "dimension": 1,
-                "array_length": 1,
-                "input_type": "texture"
             }
         },
-        "resolution_idx": 0,
-        "selected_uniform_name": "u_video",
-        "video_to_video_smoothing_window": 30,
-        "video_to_video_smoothing_sigma": 1.440000057220459
+        "resolution_idx": 3,
+        "selected_uniform_name": "",
+        "video_to_video_smoothing_window": 5,
+        "video_to_video_smoothing_sigma": 1.0
     }
 }

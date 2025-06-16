@@ -5,6 +5,9 @@
     ],
     "uniforms": {
         "plane_speed": 0.10000000149011612,
+        "u_background": {
+            "file_path": "/home/akarnachev/src/shaderbox/projects/dev/nodes/6d476423/media/u_background.png"
+        },
         "u_depth": {
             "file_path": "/home/akarnachev/src/shaderbox/projects/dev/nodes/6d476423/media/u_depth.png"
         },
@@ -147,11 +150,18 @@
                 "dimension": 3,
                 "array_length": 1,
                 "input_type": "color"
+            },
+            "306760354270586786345026974936972287895": {
+                "name": "u_background",
+                "gl_type": 35678,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "texture"
             }
         },
         "resolution_idx": 0,
         "selected_uniform_name": "u_depth",
-        "blur_kernel_size": 51,
-        "normals_kernel_size": 3
+        "video_to_video_smoothing_window": 5,
+        "video_to_video_smoothing_sigma": 1.0
     }
 }

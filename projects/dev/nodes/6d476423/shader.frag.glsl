@@ -14,6 +14,7 @@ uniform vec2 u_resolution;
 
 uniform sampler2D u_photo;
 uniform sampler2D u_depth;
+uniform sampler2D u_background;
 
 uniform float plane_speed = 0.1;
 
@@ -1263,6 +1264,7 @@ void main() {
         diff = p.z - depth;
         if (diff >= 0.0) {
             color = texture2D(u_photo, uv).rgb;
+            color *= texture2D(u_background, uv).r;
             break;
         }
 
