@@ -1823,7 +1823,6 @@ class App:
                 ui_node = self.ui_nodes[name]
                 ui_node.node.release_program(fs_file_path.read_text())
                 ui_node.mtime = fs_file_mtime
-                self.save_ui_node(ui_node)
 
         # ----------------------------------------------------------------
         # Render previews

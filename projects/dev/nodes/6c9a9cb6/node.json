@@ -4,6 +4,11 @@
         384
     ],
     "uniforms": {
+        "u_rgb_weights": [
+            0.9599999785423279,
+            -1.1699999570846558,
+            0.2199999988079071
+        ],
         "u_video": {
             "file_path": "/home/akarnachev/src/shaderbox/projects/dev/nodes/6c9a9cb6/media/u_video.mp4"
         }
@@ -52,11 +57,18 @@
                 "dimension": 1,
                 "array_length": 1,
                 "input_type": "texture"
+            },
+            "233797805849044180281379332962650381089": {
+                "name": "u_rgb_weights",
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "drag"
             }
         },
         "resolution_idx": 0,
         "selected_uniform_name": "u_video",
-        "video_to_video_smoothing_window": 30,
-        "video_to_video_smoothing_sigma": 1.440000057220459
+        "video_to_video_smoothing_window": 7,
+        "video_to_video_smoothing_sigma": 0.36000001430511475
     }
 }
