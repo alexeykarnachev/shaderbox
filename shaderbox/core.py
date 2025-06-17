@@ -395,7 +395,7 @@ class Node:
             if isinstance(data, MediaWithTexture):
                 data.release()
 
-    def get_uniforms(self) -> list[moderngl.Uniform]:
+    def get_active_uniforms(self) -> list[moderngl.Uniform]:
         uniforms: list[moderngl.Uniform] = []
         if self.program:
             for uniform_name in self.program:
@@ -445,7 +445,7 @@ class Node:
         seen_uniform_names = set()
 
         time = u_time if u_time is not None else glfw.get_time()
-        for uniform in self.get_uniforms():
+        for uniform in self.get_active_uniforms():
             seen_uniform_names.add(uniform.name)
             if uniform.name == "u_time":
                 value = time
@@ -521,7 +521,7 @@ class Node:
         return value
 
     def restart_video_uniforms(self) -> None:
-        for uniform in self.get_uniforms():
+        for uniform in self.get_active_uniforms():
             video = self._uniform_values.get(uniform.name)
             if isinstance(video, Video):
                 video.restart()

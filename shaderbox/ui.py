@@ -377,7 +377,7 @@ class UINode(BaseModel):
 
         # ----------------------------------------------------------------
         # Save uniforms
-        for uniform in self.node.get_uniforms():
+        for uniform in self.node.get_active_uniforms():
             if uniform.name in ["u_time", "u_aspect", "u_resolution"]:
                 continue
 
@@ -934,7 +934,7 @@ class App:
         uniform_resolutions = []
         matching_uniforms = []
         uniform_sizes = set()
-        for uniform in ui_node.node.get_uniforms():
+        for uniform in ui_node.node.get_active_uniforms():
             if uniform.gl_type == GL_SAMPLER_2D:  # type: ignore
                 media: MediaWithTexture = ui_node.node.get_uniform_value(uniform.name)
                 w, h = media.texture.size
@@ -990,7 +990,9 @@ class App:
         # ----------------------------------------------------------------
         # Uniforms
         ui_uniforms = self.ui_current_node_state.ui_uniforms
-        for uniform in ui_node.node.get_uniforms():
+        active_uniform_names = []
+        for uniform in ui_node.node.get_active_uniforms():
+            active_uniform_names.append(uniform.name)
             hash = get_uniform_hash(uniform)
             if hash not in ui_uniforms:
                 ui_uniforms[hash] = UIUniform.from_uniform(uniform)
@@ -1000,7 +1002,8 @@ class App:
             width=imgui.get_content_region_available_width() // 2,
         )
         for ui_uniform in ui_uniforms.values():
-            self.draw_ui_uniform(ui_uniform)
+            if ui_uniform.name in active_uniform_names:
+                self.draw_ui_uniform(ui_uniform)
 
         imgui.end_child()
 

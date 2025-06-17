@@ -4,10 +4,58 @@
         384
     ],
     "uniforms": {
-        "u_rgb_weights": [
-            0.9599999785423279,
-            -1.1699999570846558,
-            0.2199999988079071
+        "u_base_hand_color": [
+            0.1568627506494522,
+            0.1568627506494522,
+            1.0
+        ],
+        "u_base_ring_color": [
+            1.0,
+            0.0,
+            0.0
+        ],
+        "u_hand_e0": [
+            0.0,
+            0.30000001192092896
+        ],
+        "u_hand_e1": [
+            0.10000000149011612,
+            0.6000000238418579
+        ],
+        "u_hand_p0": 0.6700000166893005,
+        "u_hand_w0": [
+            1.340000033378601,
+            -1.4500000476837158,
+            0.15000000596046448
+        ],
+        "u_hand_w1": [
+            0.17000000178813934,
+            1.7200000286102295,
+            -0.49000000953674316
+        ],
+        "u_ring_attenuation": [
+            0.9700000286102295,
+            2.990000009536743,
+            16.770000457763672
+        ],
+        "u_ring_e0": [
+            0.0,
+            0.1899999976158142
+        ],
+        "u_ring_e1": [
+            0.03999999910593033,
+            0.25999999046325684
+        ],
+        "u_ring_p0": 1.0099999904632568,
+        "u_ring_w0": [
+            0.9200000166893005,
+            -0.019999999552965164,
+            -0.699999988079071
+        ],
+        "u_ring_w1": [
+            2.5299999713897705,
+            -0.38999998569488525,
+            -1.5099999904632568
         ],
         "u_video": {
             "file_path": "/home/akarnachev/src/shaderbox/projects/dev/nodes/6c9a9cb6/media/u_video.mp4"
@@ -22,12 +70,12 @@
                 "size": 0
             },
             "resolution_details": {
-                "width": 0,
-                "height": 0
+                "width": 512,
+                "height": 512
             },
             "quality": 0,
             "fps": 30,
-            "duration": 1.0
+            "duration": 2.0
         },
         "ui_uniforms": {
             "260085533400259490348506664942395818974": {
@@ -64,11 +112,193 @@
                 "dimension": 3,
                 "array_length": 1,
                 "input_type": "drag"
+            },
+            "90407767401150870772209150434043959211": {
+                "name": "u_rgb_powers",
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "66451881041259802704059399993433067130": {
+                "name": "u_rgb_weights_0",
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "94062084510394695378240340192182311733": {
+                "name": "u_rgb_weights_1",
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "38418509474648039258653659894897579248": {
+                "name": "u_rgb_weights_2",
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "196991421818861188082785742936953379884": {
+                "name": "u_rgb_weights_3",
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "293042644432109729112183718676004304883": {
+                "name": "u_ring_base_color",
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "color"
+            },
+            "26061020123824982073208881751362536470": {
+                "name": "u_hand_base_color",
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "color"
+            },
+            "337882379966275965557571892865437811309": {
+                "name": "u_hand_e0",
+                "gl_type": 35664,
+                "dimension": 2,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "241177793546181689274655786091794302747": {
+                "name": "u_hand_e1",
+                "gl_type": 35664,
+                "dimension": 2,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "292818106743881148521884343750911201138": {
+                "name": "u_hand_p0",
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "122266168410833790860849651595446386949": {
+                "name": "u_hand_w0",
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "126098002851414153793852269490917474781": {
+                "name": "u_hand_w1",
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "94429851797145702136533418270394051168": {
+                "name": "u_ring_e0",
+                "gl_type": 35664,
+                "dimension": 2,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "152056720624546459560867846119896681598": {
+                "name": "u_ring_e1",
+                "gl_type": 35664,
+                "dimension": 2,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "11737542702454254893485944255899466311": {
+                "name": "u_ring_p0",
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "324284461920214566936085066888304525143": {
+                "name": "u_ring_w0",
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "47093471722034274681675787033579599610": {
+                "name": "u_ring_w1",
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "177585640538453178591964973679424883590": {
+                "name": "u_bot_e0",
+                "gl_type": 35664,
+                "dimension": 2,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "315480722962309097239282997814320033890": {
+                "name": "u_bot_e1",
+                "gl_type": 35664,
+                "dimension": 2,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "129734350751404634015816075580246512368": {
+                "name": "u_bot_p0",
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "131889969190479057464965284268434483792": {
+                "name": "u_bot_w0",
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "295740154793529794117441673087950145329": {
+                "name": "u_bot_w1",
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "118692622225427761899103082943510503783": {
+                "name": "u_base_hand_color",
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "color"
+            },
+            "302531479834744458325085414698947881247": {
+                "name": "u_base_ring_color",
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "color"
+            },
+            "175032474443875179380392951941712332973": {
+                "name": "u_ring_attenuation",
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "72654553083883672616053786682447259592": {
+                "name": "u_tmp",
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
             }
         },
         "resolution_idx": 0,
-        "selected_uniform_name": "u_video",
-        "video_to_video_smoothing_window": 7,
-        "video_to_video_smoothing_sigma": 0.36000001430511475
+        "selected_uniform_name": "u_base_hand_color",
+        "video_to_video_smoothing_window": 9,
+        "video_to_video_smoothing_sigma": 0.4099999964237213
     }
 }
