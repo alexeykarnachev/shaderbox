@@ -837,6 +837,7 @@ dependencies = [
     { name = "pydantic-settings" },
     { name = "pyimgui-stubs" },
     { name = "python-telegram-bot" },
+    { name = "uuid" },
     { name = "uvicorn" },
 ]
 
@@ -865,6 +866,7 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.9.1" },
     { name = "pyimgui-stubs", specifier = ">=0.0.2" },
     { name = "python-telegram-bot", specifier = ">=22.0" },
+    { name = "uuid", specifier = ">=1.30" },
     { name = "uvicorn", specifier = ">=0.34.2" },
 ]
 
@@ -913,6 +915,12 @@ sdist = { url = "https://files.pythonhosted.org/packages/95/32/1a225d6164441be76
 wheels = [
     { url = "https://files.pythonhosted.org/packages/5c/23/c7abc0ca0a1526a0774eca151daeb8de62ec457e77262b66b359c3c7679e/tzdata-2025.2-py2.py3-none-any.whl", hash = "sha256:1a403fada01ff9221ca8044d701868fa132215d84beb92242d9acd2147f667a8", size = 347839 },
 ]
+
+[[package]]
+name = "uuid"
+version = "1.30"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/ce/63/f42f5aa951ebf2c8dac81f77a8edcc1c218640a2a35a03b9ff2d4aa64c3d/uuid-1.30.tar.gz", hash = "sha256:1f87cc004ac5120466f36c5beae48b4c48cc411968eed0eaecd3da82aa96193f", size = 5811 }
 
 [[package]]
 name = "uvicorn"

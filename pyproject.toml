@@ -23,6 +23,7 @@ dependencies = [
     "pyimgui-stubs>=0.0.2",
     "python-telegram-bot>=22.0",
     "uvicorn>=0.34.2",
+    "uuid>=1.30",
 ]
 
 [build-system]

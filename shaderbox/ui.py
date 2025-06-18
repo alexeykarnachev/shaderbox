@@ -9,6 +9,7 @@ import time
 from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 from typing import Any, Literal, Self, TypeVar
+from uuid import uuid4
 
 import crossfiledialog
 import cv2
@@ -332,6 +333,7 @@ class UINodeState(BaseModel):
 class UIAppState(BaseModel):
     current_node_dir: str = ""
     selected_node_template_dir: str = ""
+    new_node_name: str = ""
     is_render_all_nodes: bool = True
 
     tg_bot_token: str = ""
@@ -345,7 +347,10 @@ class UIAppState(BaseModel):
 
 class UINode(BaseModel):
     node: Node
-    dir: str = ""  # Some kind of unique id
+
+    # Some kind of unique id and also name of the directory to save the node
+    dir: str = ""
+
     mtime: float = 0
     ui_state: UINodeState = UINodeState()
 
@@ -359,9 +364,10 @@ class UINode(BaseModel):
         return self
 
     def reset_dir(self) -> None:
-        self.dir = hashlib.md5(f"{id(self)}{time.time()}".encode()).hexdigest()[:8]
+        self.dir = str(uuid4())
 
-    def save(self, dir: Path) -> None:
+    def save(self, root_dir: Path, dir_name: str | None = None) -> Path:
+        dir = root_dir / (dir_name or self.dir)
         dir.mkdir(exist_ok=True, parents=True)
 
         meta: dict[str, Any] = {
@@ -401,6 +407,8 @@ class UINode(BaseModel):
 
         with (dir / "node.json").open("w") as f:
             json.dump(meta, f, indent=4)
+
+        return dir
 
     def draw_preview_button(
         self,
@@ -710,11 +718,12 @@ class App:
         self,
         ui_node: UINode,
         root_dir: Path | None = None,
+        dir_name: str | None = None,
     ) -> Path:
-        node_dir = (root_dir or self.nodes_dir) / ui_node.dir
-        ui_node.save(node_dir)
-        logger.info(f"Node '{ui_node.ui_state.ui_name}' saved: {node_dir}")
-        return node_dir
+        root_dir = root_dir or self.nodes_dir
+        dir = ui_node.save(root_dir, dir_name)
+        logger.info(f"Node '{ui_node.ui_state.ui_name}' saved: {dir}")
+        return dir
 
     def draw_popup_if_opened(self, label: str, draw_func: Callable[[], bool]) -> None:
         if self._active_popup_label != label:
@@ -810,7 +819,7 @@ class App:
                 imgui.text("NEXT node                 ->")
                 imgui.end_tooltip()
 
-            preview_size = 125
+            preview_size = 150
             n_cols = int(imgui.get_content_region_available()[0] // (preview_size + 5))
             n_cols = max(1, n_cols)
             for i, (name, ui_node) in enumerate(self.ui_nodes.items()):
@@ -830,45 +839,62 @@ class App:
                     imgui.spacing()
 
     def draw_node_creator(self) -> bool:
+        imgui.text("Select template:")
+
         is_template_selected = False
 
-        for ui_node_template in self.ui_node_templates.values():
+        preview_size = 150
+        available_width = imgui.get_content_region_available()[0]
+        n_cols = max(1, int(available_width // (preview_size + 5)))
+
+        for i, ui_node_template in enumerate(self.ui_node_templates.values()):
             if ui_node_template.dir == self.ui_app_state.selected_node_template_dir:
                 border_color = (0.0, 1.0, 0.0)
                 is_template_selected = True
             else:
                 border_color = None
 
-            if ui_node_template.draw_preview_button(border_color, 125):
+            if ui_node_template.draw_preview_button(border_color, preview_size):
                 self.ui_app_state.selected_node_template_dir = ui_node_template.dir
+                self.ui_app_state.new_node_name = ui_node_template.ui_state.ui_name
+
+            if (i + 1) % n_cols != 0 and i != len(self.ui_node_templates) - 1:
+                imgui.same_line()
+            else:
+                imgui.spacing()
 
         imgui.new_line()
 
-        is_keep_opened = not imgui.button("Cancel")
+        button_width = 80
+        total_button_width = (
+            button_width if not is_template_selected else button_width * 2 + 10
+        )
+        imgui.set_cursor_pos_x((available_width - total_button_width) / 2)
 
-        if is_template_selected:
-            imgui.same_line()
+        is_keep_opened = True
+        if imgui.button("Create", width=button_width) and is_template_selected:
+            self.create_node_from_selected_template()
+            is_keep_opened = False
 
-            if imgui.button("Create"):
-                selected_template = self.ui_node_templates[
-                    self.ui_app_state.selected_node_template_dir
-                ]
-
-                new_node = load_node_from_dir(
-                    self.node_templates_dir / selected_template.dir
-                )
-                new_node.reset_dir()
-
-                self.ui_nodes[new_node.dir] = new_node
-                self.ui_app_state.current_node_dir = new_node.dir
-                self.save_ui_node(new_node)
-
-                is_keep_opened = False
-                logger.info(
-                    f"Applied template {self.ui_app_state.selected_node_template_dir} to new node {new_node.dir}"
-                )
+        imgui.same_line()
+        is_keep_opened &= not imgui.button("Cancel", width=button_width)
 
         return is_keep_opened
+
+    def create_node_from_selected_template(self) -> None:
+        selected_template = self.ui_node_templates[
+            self.ui_app_state.selected_node_template_dir
+        ]
+
+        new_node = load_node_from_dir(self.node_templates_dir / selected_template.dir)
+        new_node.reset_dir()
+
+        self.ui_nodes[new_node.dir] = new_node
+        self.ui_app_state.current_node_dir = new_node.dir
+        self.save_ui_node(new_node)
+        logger.info(
+            f"New node {new_node.dir} created from template {self.ui_app_state.selected_node_template_dir}"
+        )
 
     def draw_settings(self) -> bool:
         imgui.text("Project:")
@@ -911,10 +937,12 @@ class App:
         imgui.same_line()
 
         if imgui.button("Save as template"):
-            dir = self.save_ui_node(ui_node, root_dir=self.node_templates_dir)
-            if ui_node.dir in self.ui_node_templates:
-                self.ui_node_templates[ui_node.dir].node.release()
-            self.ui_node_templates[ui_node.dir] = load_node_from_dir(dir)
+            dir = self.save_ui_node(
+                ui_node,
+                root_dir=self.node_templates_dir,
+                dir_name=str(uuid4()),
+            )
+            self.ui_node_templates[dir.name] = load_node_from_dir(dir)
 
         imgui.new_line()
         imgui.separator()
@@ -1658,6 +1686,10 @@ class App:
 
         # ----------------------------------------------------------------
         # Main menu bar
+        if imgui.button("New node"):
+            self._active_popup_label = self._NODE_CREATOR_POPUP_LABEL
+
+        imgui.same_line()
         if imgui.button("Settings"):
             self._active_popup_label = self._SETTINGS_POPUP_LABEL
 
@@ -1733,7 +1765,7 @@ class App:
             height=control_panel_height,
             border=False,
         ):
-            node_preview_width = control_panel_width / 3.0
+            node_preview_width = control_panel_width / 2.6
             self.draw_node_preview_grid(node_preview_width, control_panel_height)
             imgui.same_line()
             self.draw_node_settings()
@@ -1777,10 +1809,13 @@ class App:
                 if imgui.is_key_pressed(glfw.KEY_RIGHT, repeat=True):
                     self.select_next_current_node(+1)
             if self._active_popup_label == self._NODE_CREATOR_POPUP_LABEL:
-                if imgui.is_key_pressed(glfw.KEY_UP, repeat=True):
+                if imgui.is_key_pressed(glfw.KEY_LEFT, repeat=True):
                     self.select_next_template(-1)
-                if imgui.is_key_pressed(glfw.KEY_DOWN, repeat=True):
+                if imgui.is_key_pressed(glfw.KEY_RIGHT, repeat=True):
                     self.select_next_template(+1)
+                if imgui.is_key_pressed(glfw.KEY_ENTER, repeat=False):
+                    self.create_node_from_selected_template()
+                    self._active_popup_label = None
 
     def run(self) -> None:
         while not glfw.window_should_close(self.window):
