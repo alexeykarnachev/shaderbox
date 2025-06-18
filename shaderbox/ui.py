@@ -897,10 +897,11 @@ class App:
         )
 
     def draw_settings(self) -> bool:
-        imgui.text("Project:")
+        imgui.text("Current project:")
+        imgui.same_line()
         imgui.text_colored(str(self.project_dir), *(0.5, 0.5, 0.5))
 
-        if imgui.button("Open##project"):
+        if imgui.button("Open another##project"):
             start_dir = str(
                 self.project_dir.parent
                 if self.project_dir
@@ -914,7 +915,7 @@ class App:
 
         imgui.new_line()
 
-        is_keep_opened = not imgui.button("Close")
+        is_keep_opened = not imgui.button("Cancel")
         return is_keep_opened
 
     def draw_node_tab(self) -> None:
