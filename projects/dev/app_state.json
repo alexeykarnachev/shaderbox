@@ -1,7 +1,7 @@
 {
-    "current_node_dir": "e16caf06-6a1f-4b9e-9dc0-4f9474ef4a04",
-    "selected_node_template_dir": "77d9056c",
-    "new_node_name": "Spoty",
+    "current_node_dir": "4cd022ca-1ff3-4136-9a5d-8c3719541d7e",
+    "selected_node_template_dir": "866c757e",
+    "new_node_name": "Green Scan + Video",
     "is_render_all_nodes": false,
     "tg_bot_token": "7497996082:AAEGQin96OvPZ1afUD2X_iz--WYYiaW2JEs",
     "tg_user_id": "284330085",
@@ -20,5 +20,5 @@
         "fps": 30,
         "duration": 1.0
     },
-    "media_model_idx": 1
+    "media_model_idx": 0
 }

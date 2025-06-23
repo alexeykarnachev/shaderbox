@@ -1,0 +1,130 @@
+{
+    "canvas_size": [
+        960,
+        1280
+    ],
+    "uniforms": {
+        "u_background_color": [
+            0.05098039284348488,
+            0.3490196168422699,
+            1.0
+        ],
+        "u_depth": {
+            "file_path": "/home/akarnachev/src/shaderbox/shaderbox/resources/node_templates/462aa3c9-f0b1-4238-aa7b-5796d39f0fc7/media/u_depth.png"
+        },
+        "u_image": {
+            "file_path": "/home/akarnachev/src/shaderbox/shaderbox/resources/node_templates/462aa3c9-f0b1-4238-aa7b-5796d39f0fc7/media/u_image.png"
+        },
+        "u_light_brightness": 3.119999885559082,
+        "u_light_color": [
+            0.6715413928031921,
+            0.7996761798858643,
+            0.869767427444458
+        ],
+        "u_light_dir": [
+            -0.03999999910593033,
+            0.0,
+            -0.009999999776482582
+        ]
+    },
+    "ui_state": {
+        "ui_name": "Chillintano",
+        "render_media_details": {
+            "is_video": true,
+            "file_details": {
+                "path": "",
+                "size": 0
+            },
+            "resolution_details": {
+                "width": 0,
+                "height": 0
+            },
+            "quality": 0,
+            "fps": 30,
+            "duration": 1.0
+        },
+        "ui_uniforms": {
+            "260085533400259490348506664942395818974": {
+                "name": "u_aspect",
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "auto"
+            },
+            "28817900879564012086563967923611592100": {
+                "name": "u_zoomout",
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "37154164850612245702881750831795076973": {
+                "name": "u_time",
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "auto"
+            },
+            "287685113353201782305884862525381458179": {
+                "name": "u_depth",
+                "gl_type": 35678,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "texture"
+            },
+            "298626367673662534095187619679730017816": {
+                "name": "u_image",
+                "gl_type": 35678,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "texture"
+            },
+            "95105375544120391393734104492114489830": {
+                "name": "u_resolution",
+                "gl_type": 35664,
+                "dimension": 2,
+                "array_length": 1,
+                "input_type": "auto"
+            },
+            "55228167817892312414584469152620976711": {
+                "name": "u_light_dir",
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "193999297997469156100601663000175183974": {
+                "name": "u_light_color",
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "color"
+            },
+            "308845336689677351495563594732570862876": {
+                "name": "u_light_brightness",
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "58494956139758085513787518104289170721": {
+                "name": "u_background_color",
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "color"
+            },
+            "65102915502772741246480721267455710842": {
+                "name": "u_frame_color",
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "color"
+            }
+        },
+        "resolution_idx": 1,
+        "selected_uniform_name": "u_frame_color",
+        "video_to_video_smoothing_window": 5,
+        "video_to_video_smoothing_sigma": 1.0
+    }
+}

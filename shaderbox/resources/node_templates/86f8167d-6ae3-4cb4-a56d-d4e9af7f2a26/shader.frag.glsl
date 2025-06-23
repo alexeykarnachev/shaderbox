@@ -1,21 +1,20 @@
 #version 460 core
-#define PI 3.141592
 
 in vec2 vs_uv;
 
 uniform float u_time;
 uniform float u_aspect;
 
-uniform float u_scale = 1.0;
-uniform vec2 u_offset = vec2(0.0, 0.0);
+uniform vec2 u_resolution;
 
 uniform sampler2D u_image;
-uniform sampler2D u_background;
+uniform sampler2D u_depth;
 
-uniform vec3 u_body_color = vec3(0.0, 0.0, 0.0);
-uniform vec3 u_body_weights = vec3(1.0, 1.0, 1.0);
-uniform vec2 u_body_edge_0 = vec2(0.0, 0.1);
-uniform vec2 u_body_edge_1 = vec2(0.8, 0.85);
+uniform vec3 u_light_dir = vec3(1.0, -1.0, 0.0);
+uniform vec3 u_light_color = vec3(1.0, 0.2, 0.1);
+uniform float u_light_brightness = 2.0;
+
+uniform vec3 u_background_color = vec3(0.0, 0.0, 1.0);
 
 out vec4 fs_color;
 
@@ -134,37 +133,47 @@ float snoise(vec4 v) {
                    dot(m1 * m1, vec2(dot(p3, x3), dot(p4, x4))));
 }
 
+vec3 compute_normal(vec2 uv, float depth_scale, vec2 texel_size) {
+    float k = 12.0;
+    float depth_left = texture(u_depth, uv - k * vec2(texel_size.x, 0.0)).r;
+    float depth_right = texture(u_depth, uv + k * vec2(texel_size.x, 0.0)).r;
+    float depth_bottom = texture(u_depth, uv - k * vec2(0.0, texel_size.y)).r;
+    float depth_top = texture(u_depth, uv + k * vec2(0.0, texel_size.y)).r;
+
+    float dx = (depth_left - depth_right) * 0.5 / texel_size.x * depth_scale;
+    float dy = (depth_bottom - depth_top) * 0.5 / texel_size.y * depth_scale;
+
+    vec3 normal = normalize(vec3(-dx, -dy, 1.0));
+    return normal;
+}
+
 void main() {
-    vec2 uv = ((vs_uv - 0.5) + u_offset) / u_scale + 0.5;
-
-    float uv_noise_strength = 0.05 * smoothstep(0.1, 0.2, pow(0.5 * (sin(u_time * 2.0 * PI) + 1.0), 6.0));
-    float uv_noise = uv_noise_strength *
-                     snoise(vec4(uv_noise_strength * 10.0 * vs_uv.x, 40.0 * vs_uv.y, 0.0, 0.0));
-    uv += uv_noise;
-
-    float background = texture(u_background, uv).r;
+    vec2 uv = vs_uv;
     vec3 image_color = texture(u_image, uv).rgb;
+    float depth = texture(u_depth, uv).r;
 
-    float body_diff = dot((image_color - u_body_color), u_body_weights);
-    float body = 1.0 - smoothstep(u_body_edge_0.x, u_body_edge_0.y, body_diff);
-    body = smoothstep(0.0, 0.01, body + background);
+    vec2 texel_size = 1.0 / u_resolution;
+    float depth_scale = 1.0;
 
-    vec3 color = image_color * body;
-    body = dot(abs(color - u_body_color), vec3(1.0));
-    body = smoothstep(u_body_edge_1.x, u_body_edge_1.y, body);
+    vec3 normal = compute_normal(uv, depth_scale, texel_size);
 
+    float d = (1.0 - depth);
 
-    vec3 base_color = vec3(1.0, 1.0, 1.0);
-    uv_noise = abs(uv_noise);
-    if (uv_noise > 0.02) {
-        base_color = vec3(1.0, 0.0, 0.0);
-    } else if (uv_noise > 0.01) {
-        base_color = vec3(0.0, 1.0, 0.0);
-    } else if (uv_noise > 0.006) {
-        base_color = vec3(0.0, 0.0, 1.0);
-    }
+    float k = max(0.0, dot(-normal, normalize(u_light_dir)));
+    k = pow(k, 4.0);
 
-    color = vec3(body) * base_color;
+    vec3 foreground_color =
+        d * k * image_color * u_light_color * u_light_brightness;
+    foreground_color += 0.1;
+    foreground_color = pow(foreground_color, vec3(1.2));
 
+    vec2 uv_offset = vec2(snoise(vec4(16.0 * uv.x, 32.0 * uv.y - u_time, u_time, 0.0)),
+                          snoise(vec4(16.0 * uv.x, 32.0 * uv.y - u_time, 10.0, u_time)));
+    uv_offset *= 0.1;
+    vec3 background_color = texture(u_image, uv + uv_offset).rgb;
+    background_color = smoothstep(0.8, 1.0, depth) * background_color;
+    background_color = background_color * u_background_color;
+
+    vec3 color = foreground_color + background_color;
     fs_color = vec4(color, 1.0);
 }
