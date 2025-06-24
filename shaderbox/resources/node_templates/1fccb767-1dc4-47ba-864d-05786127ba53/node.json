@@ -5,13 +5,13 @@
     ],
     "uniforms": {
         "u_background": {
-            "file_path": "/home/akarnachev/src/shaderbox/projects/dev/nodes/4cd022ca-1ff3-4136-9a5d-8c3719541d7e/media/u_background.png"
+            "file_path": "/home/akarnachev/src/shaderbox/shaderbox/resources/node_templates/1fccb767-1dc4-47ba-864d-05786127ba53/media/u_background.png"
         },
         "u_depth": {
-            "file_path": "/home/akarnachev/src/shaderbox/projects/dev/nodes/4cd022ca-1ff3-4136-9a5d-8c3719541d7e/media/u_depth.png"
+            "file_path": "/home/akarnachev/src/shaderbox/shaderbox/resources/node_templates/1fccb767-1dc4-47ba-864d-05786127ba53/media/u_depth.png"
         },
         "u_image": {
-            "file_path": "/home/akarnachev/src/shaderbox/projects/dev/nodes/4cd022ca-1ff3-4136-9a5d-8c3719541d7e/media/u_image.png"
+            "file_path": "/home/akarnachev/src/shaderbox/shaderbox/resources/node_templates/1fccb767-1dc4-47ba-864d-05786127ba53/media/u_image.png"
         },
         "u_offset": [
             -0.11999999731779099,

@@ -1,0 +1,78 @@
+{
+    "canvas_size": [
+        1280,
+        960
+    ],
+    "uniforms": {},
+    "ui_state": {
+        "ui_name": "UV Mango",
+        "render_media_details": {
+            "is_video": true,
+            "file_details": {
+                "path": "",
+                "size": 0
+            },
+            "resolution_details": {
+                "width": 0,
+                "height": 0
+            },
+            "quality": 0,
+            "fps": 30,
+            "duration": 1.0
+        },
+        "ui_uniforms": {
+            "260085533400259490348506664942395818974": {
+                "name": "u_aspect",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "auto"
+            },
+            "28817900879564012086563967923611592100": {
+                "name": "u_zoomout",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "37154164850612245702881750831795076973": {
+                "name": "u_time",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "auto"
+            },
+            "71596007430801448042839857491741602037": {
+                "name": "ubo_0",
+                "is_ubo": true,
+                "gl_type": 0,
+                "dimension": 0,
+                "array_length": 0,
+                "input_type": "none"
+            },
+            "127893019699018217339815105176985050057": {
+                "name": "ubo_0",
+                "is_ubo": true,
+                "gl_type": 0,
+                "dimension": 0,
+                "array_length": 0,
+                "input_type": "none"
+            },
+            "210386642440137308720920568558798635428": {
+                "name": "ubo_0",
+                "is_ubo": true,
+                "gl_type": 0,
+                "dimension": 0,
+                "array_length": 0,
+                "input_type": "none"
+            }
+        },
+        "resolution_idx": 3,
+        "selected_uniform_name": "",
+        "video_to_video_smoothing_window": 5,
+        "video_to_video_smoothing_sigma": 1.0
+    }
+}

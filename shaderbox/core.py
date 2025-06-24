@@ -1,6 +1,7 @@
 import contextlib
 import json
 import shutil
+import struct
 import subprocess
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
@@ -317,6 +318,19 @@ class Canvas:
         self._init(size)
 
 
+class UniformBuffer:
+    def __init__(self, size: int, gl: moderngl.Context | None = None) -> None:
+        self._gl = gl or moderngl.get_context()
+        self.size = size
+
+        self.data = bytearray(1024)
+        self.data[:16] = struct.pack("4f", 0.0, 1.0, 0.0, 1.0)
+        self.ubo = self._gl.buffer(self.data, dynamic=True)
+
+    def release(self) -> None:
+        self.ubo.release()
+
+
 class Node:
     _DEFAULT_VS_FILE_PATH = RESOURCES_DIR / "shaders" / "default.vert.glsl"
     _DEFAULT_FS_FILE_PATH = RESOURCES_DIR / "shaders" / "default.frag.glsl"
@@ -395,12 +409,12 @@ class Node:
             if isinstance(data, MediaWithTexture):
                 data.release()
 
-    def get_active_uniforms(self) -> list[moderngl.Uniform]:
-        uniforms: list[moderngl.Uniform] = []
+    def get_active_uniforms(self) -> list[moderngl.Uniform | moderngl.UniformBlock]:
+        uniforms: list[moderngl.Uniform | moderngl.UniformBlock] = []
         if self.program:
             for uniform_name in self.program:
                 uniform = self.program[uniform_name]
-                if isinstance(uniform, moderngl.Uniform):
+                if isinstance(uniform, moderngl.Uniform | moderngl.UniformBlock):
                     uniforms.append(uniform)
 
         return uniforms
@@ -442,66 +456,80 @@ class Node:
             return
 
         texture_unit = 0
-        seen_uniform_names = set()
-
         time = u_time if u_time is not None else glfw.get_time()
         for uniform in self.get_active_uniforms():
-            seen_uniform_names.add(uniform.name)
-            if uniform.name == "u_time":
-                value = time
-                self.set_uniform_value(uniform.name, value)
-            elif uniform.name == "u_aspect":
-                value = np.divide(*canvas.texture.size)
-                self.set_uniform_value(uniform.name, value)
-            elif uniform.name == "u_resolution":
-                value = canvas.texture.size
-                self.set_uniform_value(uniform.name, value)
-            elif uniform.gl_type == GL_SAMPLER_2D:  # type: ignore
-                media = self._uniform_values.get(uniform.name)
+            value = self._uniform_values.get(uniform.name)
+            value_for_program = None
 
+            if isinstance(uniform, moderngl.UniformBlock):
                 if (
-                    media is None
-                    or not isinstance(media, MediaWithTexture)
-                    or isinstance(media.texture.mglo, moderngl.InvalidObject)
+                    value is None
+                    or not isinstance(value, UniformBuffer)
+                    or isinstance(value.ubo.mglo, moderngl.InvalidObject)
+                    or value.size != uniform.size
                 ):
-                    media = Image(self._DEFAULT_IMAGE_FILE_PATH)
-                    self.set_uniform_value(uniform.name, media)
-
-                media.update(time)
-                media.texture.use(location=texture_unit)
-                value = texture_unit
-                texture_unit += 1
-            else:
-                value = self._uniform_values.get(uniform.name)
-                if value is None:
-                    value = uniform.value
+                    value = UniformBuffer(uniform.size)
                     self.set_uniform_value(uniform.name, value)
 
-            try:
-                self.program[uniform.name] = value
-            except Exception as e:
-                logger.warning(
-                    f"Failed to set uniform '{uniform.name}' with value {value} ({e}). "
-                    f"Cached value will be cleared"
-                )
-                self._uniform_values.pop(uniform.name)
+                value.ubo.bind_to_uniform_block(uniform.index)
+            elif getattr(uniform, "gl_type", None) == GL_SAMPLER_2D:
+                if (
+                    value is None
+                    or not isinstance(value, MediaWithTexture)
+                    or isinstance(value.texture.mglo, moderngl.InvalidObject)
+                ):
+                    value = Image(self._DEFAULT_IMAGE_FILE_PATH)
+                    self.set_uniform_value(uniform.name, value)
+
+                value.update(time)
+                value.texture.use(location=texture_unit)
+                value_for_program = texture_unit
+                texture_unit += 1
+            elif uniform.name == "u_time":
+                value_for_program = time
+                self.set_uniform_value(uniform.name, value_for_program)
+            elif uniform.name == "u_aspect":
+                value_for_program = np.divide(*canvas.texture.size)
+                self.set_uniform_value(uniform.name, value_for_program)
+            elif uniform.name == "u_resolution":
+                value_for_program = canvas.texture.size
+                self.set_uniform_value(uniform.name, value_for_program)
+            elif value is None:
+                value_for_program = uniform.value
+                self.set_uniform_value(uniform.name, value_for_program)
+
+            if value_for_program is not None:
+                try:
+                    self.program[uniform.name] = value_for_program
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to set uniform '{uniform.name}' with value {value} ({e}). "
+                        f"Cached value will be cleared"
+                    )
+                    self._uniform_values.pop(uniform.name)
 
         canvas.fbo.use()
         self._gl.clear()
         self.vao.render()
 
-        # for uniform_name in self._uniform_values.copy():
-        #     if uniform_name not in seen_uniform_names:
-        #         data = self._uniform_values.pop(uniform_name)
-        #         if isinstance(data, moderngl.Texture):
-        #             data.release()
-
     def set_uniform_value(
         self,
         name: str,
-        value: int | float | Sequence[int] | Sequence[float] | MediaWithTexture,
+        value: int
+        | float
+        | Sequence[int]
+        | Sequence[float]
+        | MediaWithTexture
+        | UniformBuffer,
     ) -> None:
         old_value = self._uniform_values.get(name)
+
+        if isinstance(old_value, UniformBuffer) and (
+            not isinstance(value, UniformBuffer)
+            or old_value.ubo.glo != value.ubo.glo
+            or old_value.size != value.size
+        ):
+            old_value.release()
 
         if isinstance(old_value, MediaWithTexture) and (
             not isinstance(value, MediaWithTexture)

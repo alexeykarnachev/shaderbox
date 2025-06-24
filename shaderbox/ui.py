@@ -132,8 +132,12 @@ def zero_low_alpha_pixels(image: Image, min_alpha: float = 1.0) -> Image:
     return Image(img_array)
 
 
-def get_uniform_hash(u: moderngl.Uniform) -> int:
-    key = f"{u.name}_{u.array_length}_{u.dimension}_{u.gl_type}"  # type: ignore
+def get_uniform_hash(u: moderngl.Uniform | moderngl.UniformBlock) -> int:
+    if isinstance(u, moderngl.Uniform):
+        key = f"{u.name}_{u.array_length}_{u.dimension}_{u.gl_type}"  # type: ignore
+    else:
+        key = f"{u.name}_{u.size}"
+
     hash = hashlib.md5(key.encode()).digest()
     return int.from_bytes(hash, "big")
 
@@ -265,29 +269,43 @@ class UITgSticker:
             self.video = None
 
 
-UIUniformInputType = Literal["texture", "array", "color", "text", "drag", "auto"]
+UIUniformInputType = Literal[
+    "texture", "array", "color", "text", "drag", "auto", "none"
+]
 
 
 class UIUniform(BaseModel):
     name: str
-    gl_type: int
-    dimension: int
-    array_length: int
+    is_ubo: bool = False
+    gl_type: int = 0
+    dimension: int = 0
+    array_length: int = 0
     input_type: UIUniformInputType = "auto"
 
     model_config = {"arbitrary_types_allowed": True}
 
     @classmethod
-    def from_uniform(cls, uniform: moderngl.Uniform) -> "UIUniform":
-        return cls(
-            name=uniform.name,
-            gl_type=uniform.gl_type,  # type: ignore
-            dimension=uniform.dimension,
-            array_length=uniform.array_length,
-        ).reset_input_type()
+    def from_uniform(
+        cls, uniform: moderngl.Uniform | moderngl.UniformBlock
+    ) -> "UIUniform":
+        if isinstance(uniform, moderngl.Uniform):
+            return cls(
+                name=uniform.name,
+                is_ubo=False,
+                gl_type=uniform.gl_type,  # type: ignore
+                dimension=uniform.dimension,
+                array_length=uniform.array_length,
+            ).reset_input_type()
+        else:
+            return cls(
+                name=uniform.name,
+                is_ubo=True,
+            ).reset_input_type()
 
     def reset_input_type(self) -> "UIUniform":
-        if self.name in ("u_time", "u_aspect", "u_resolution"):
+        if self.is_ubo:
+            self.input_type = "none"
+        elif self.name in ("u_time", "u_aspect", "u_resolution"):
             self.input_type = "auto"
         elif self.gl_type == GL_SAMPLER_2D:
             self.input_type = "texture"
@@ -389,7 +407,9 @@ class UINode(BaseModel):
 
             value = self.node.get_uniform_value(uniform.name)
 
-            if uniform.gl_type == GL_SAMPLER_2D and isinstance(value, MediaWithTexture):  # type: ignore
+            if getattr(uniform, "gl_type", None) == GL_SAMPLER_2D and isinstance(
+                value, MediaWithTexture
+            ):
                 media: MediaWithTexture = value
                 file_name_wo_ext = uniform.name
                 file_path = media.save(dir / "media", file_name_wo_ext)
@@ -516,8 +536,7 @@ class App:
 
         monitor = glfw.get_primary_monitor()
         video_mode = glfw.get_video_mode(monitor)
-        screen_width = video_mode.size[0]
-        window_width = screen_width // 2
+        window_width = video_mode.size[0]
         window_height = video_mode.size[1]
 
         window = glfw.create_window(
@@ -529,11 +548,6 @@ class App:
         )
 
         glfw.make_context_current(window)
-        monitor_pos = glfw.get_monitor_pos(monitor)
-        monitor_x, monitor_y = monitor_pos
-        window_x = monitor_x + screen_width - window_width
-
-        glfw.set_window_pos(window, window_x, monitor_y)
 
         imgui.create_context()
         self.window = window
@@ -552,6 +566,12 @@ class App:
 
         self._active_popup_label: str | None = None
         self.global_fps = 0.0
+
+        editor_fs_source = Path(
+            RESOURCES_DIR / "shaders" / "editor.frag.glsl"
+        ).read_text()
+        self.editor_node = Node(fs_source=editor_fs_source)
+
         self._init(project_dir)
 
     @staticmethod
@@ -964,7 +984,7 @@ class App:
         matching_uniforms = []
         uniform_sizes = set()
         for uniform in ui_node.node.get_active_uniforms():
-            if uniform.gl_type == GL_SAMPLER_2D:  # type: ignore
+            if getattr(uniform, "gl_type", None) == GL_SAMPLER_2D:  # type: ignore
                 media: MediaWithTexture = ui_node.node.get_uniform_value(uniform.name)
                 w, h = media.texture.size
                 if (w, h) == ui_node.node.canvas.texture.size:
@@ -1194,10 +1214,9 @@ class App:
         ui_node = self.ui_nodes[self.ui_app_state.current_node_dir]
         value = ui_node.node.get_uniform_value(ui_uniform.name)
 
-        if value is None:
-            return
-
-        if ui_uniform.input_type == "auto":
+        if ui_uniform.input_type == "none":
+            imgui.text_colored(f"{ui_uniform.name} can't be viewed", *(1.0, 1.0, 0.0))
+        elif ui_uniform.input_type == "auto":
             if ui_uniform.dimension == 1:
                 imgui.text(f"{ui_uniform.name}: {value:.3f}")
             else:
@@ -1669,11 +1688,36 @@ class App:
         window_width, window_height = glfw.get_window_size(self.window)
 
         # ----------------------------------------------------------------
-        # Main window
-        imgui.set_next_window_size(window_width, window_height)
+        # Editor
+        imgui.set_next_window_size(window_width // 2, window_height)
         imgui.set_next_window_position(0, 0)
         imgui.begin(
-            "ShaderBox",
+            "ShaderBox - Editor",
+            flags=imgui.WINDOW_NO_COLLAPSE
+            | imgui.WINDOW_ALWAYS_AUTO_RESIZE
+            | imgui.WINDOW_NO_TITLE_BAR
+            | imgui.WINDOW_NO_SCROLLBAR
+            | imgui.WINDOW_NO_SCROLL_WITH_MOUSE,
+        )
+
+        image_width, image_height = imgui.get_content_region_available()
+        imgui.image(
+            self.editor_node.canvas.texture.glo,
+            width=image_width,
+            height=image_height,
+            uv0=(0, 1),
+            uv1=(1, 0),
+            border_color=(0.2, 0.2, 0.2, 1.0),
+        )
+
+        imgui.end()
+
+        # ----------------------------------------------------------------
+        # Main window
+        imgui.set_next_window_size(window_width // 2, window_height)
+        imgui.set_next_window_position(window_width // 2, 0)
+        imgui.begin(
+            "ShaderBox - UI",
             flags=imgui.WINDOW_NO_COLLAPSE
             | imgui.WINDOW_ALWAYS_AUTO_RESIZE
             | imgui.WINDOW_NO_TITLE_BAR
@@ -1905,6 +1949,8 @@ class App:
 
         # ----------------------------------------------------------------
         # Render nodes
+        self.editor_node.render()
+
         if self._active_popup_label is None:
             for ui_node in self.ui_nodes.values():
                 if (
