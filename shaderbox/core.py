@@ -16,6 +16,7 @@ import imageio
 import moderngl
 import numpy as np
 from loguru import logger
+from numpy.typing import NDArray
 from OpenGL.GL import GL_SAMPLER_2D
 from PIL import Image as PILImage
 from PIL import ImageOps
@@ -461,26 +462,13 @@ class Node:
             value = self._uniform_values.get(uniform.name)
             value_for_program = None
 
-            if isinstance(uniform, moderngl.UniformBlock):
-                if (
-                    value is None
-                    or not isinstance(value, UniformBuffer)
-                    or isinstance(value.ubo.mglo, moderngl.InvalidObject)
-                    or value.size != uniform.size
-                ):
-                    value = UniformBuffer(uniform.size)
-                    self.set_uniform_value(uniform.name, value)
-
+            if isinstance(uniform, moderngl.UniformBlock) and isinstance(
+                value, UniformBuffer
+            ):
                 value.ubo.bind_to_uniform_block(uniform.index)
-            elif getattr(uniform, "gl_type", None) == GL_SAMPLER_2D:
-                if (
-                    value is None
-                    or not isinstance(value, MediaWithTexture)
-                    or isinstance(value.texture.mglo, moderngl.InvalidObject)
-                ):
-                    value = Image(self._DEFAULT_IMAGE_FILE_PATH)
-                    self.set_uniform_value(uniform.name, value)
-
+            elif getattr(uniform, "gl_type", None) == GL_SAMPLER_2D and isinstance(
+                value, MediaWithTexture
+            ):
                 value.update(time)
                 value.texture.use(location=texture_unit)
                 value_for_program = texture_unit
@@ -497,6 +485,8 @@ class Node:
             elif value is None:
                 value_for_program = uniform.value
                 self.set_uniform_value(uniform.name, value_for_program)
+            else:
+                value_for_program = value
 
             if value_for_program is not None:
                 try:
@@ -515,29 +505,25 @@ class Node:
     def set_uniform_value(
         self,
         name: str,
-        value: int
+        new_value: int
         | float
         | Sequence[int]
         | Sequence[float]
         | MediaWithTexture
-        | UniformBuffer,
-    ) -> None:
+        | NDArray[np.float32],
+    ) -> (
+        None
+        | int
+        | float
+        | Sequence[int]
+        | Sequence[float]
+        | MediaWithTexture
+        | NDArray[np.float32]
+    ):
         old_value = self._uniform_values.get(name)
+        self._uniform_values[name] = new_value
 
-        if isinstance(old_value, UniformBuffer) and (
-            not isinstance(value, UniformBuffer)
-            or old_value.ubo.glo != value.ubo.glo
-            or old_value.size != value.size
-        ):
-            old_value.release()
-
-        if isinstance(old_value, MediaWithTexture) and (
-            not isinstance(value, MediaWithTexture)
-            or (old_value.texture.glo != value.texture.glo)
-        ):
-            old_value.release()
-
-        self._uniform_values[name] = value
+        return old_value
 
     def get_uniform_value(self, name: str) -> Any:
         value = self._uniform_values.get(name)

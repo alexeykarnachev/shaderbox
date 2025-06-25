@@ -276,7 +276,6 @@ UIUniformInputType = Literal[
 
 class UIUniform(BaseModel):
     name: str
-    is_ubo: bool = False
     gl_type: int = 0
     dimension: int = 0
     array_length: int = 0
@@ -288,24 +287,26 @@ class UIUniform(BaseModel):
     def from_uniform(
         cls, uniform: moderngl.Uniform | moderngl.UniformBlock
     ) -> "UIUniform":
-        if isinstance(uniform, moderngl.Uniform):
-            return cls(
-                name=uniform.name,
-                is_ubo=False,
-                gl_type=uniform.gl_type,  # type: ignore
-                dimension=uniform.dimension,
-                array_length=uniform.array_length,
-            ).reset_input_type()
+        name = uniform.name
+
+        if isinstance(uniform, moderngl.UniformBlock):
+            gl_type = GL_FLOAT
+            dimension = 4
+            array_length = uniform.size // 4
         else:
-            return cls(
-                name=uniform.name,
-                is_ubo=True,
-            ).reset_input_type()
+            gl_type = uniform.gl_type  # type: ignore
+            dimension = uniform.dimension
+            array_length = uniform.array_length
+
+        return cls(
+            name=name,
+            gl_type=gl_type,  # type: ignore
+            dimension=dimension,
+            array_length=array_length,
+        ).reset_input_type()
 
     def reset_input_type(self) -> "UIUniform":
-        if self.is_ubo:
-            self.input_type = "none"
-        elif self.name in ("u_time", "u_aspect", "u_resolution"):
+        if self.name in ("u_time", "u_aspect", "u_resolution"):
             self.input_type = "auto"
         elif self.gl_type == GL_SAMPLER_2D:
             self.input_type = "texture"
@@ -518,6 +519,13 @@ def load_nodes_from_dir(root_dir: Path) -> dict[str, UINode]:
             ui_nodes[node_dir.name] = load_node_from_dir(node_dir)
 
     return ui_nodes
+
+
+def try_to_release(value: Any) -> bool:
+    if release := getattr(value, "release", None):
+        release()
+        return True
+    return False
 
 
 class App:
@@ -1160,20 +1168,19 @@ class App:
         imgui.separator()
         imgui.spacing()
 
-        value = ui_node.node.get_uniform_value(ui_uniform.name)
+        current_value = ui_node.node.get_uniform_value(ui_uniform.name)
 
         if ui_uniform.input_type == "texture":
-            media: MediaWithTexture = value
-            imgui.text(get_resolution_str(ui_uniform.name, *media.texture.size))
+            imgui.text(get_resolution_str(ui_uniform.name, *current_value.texture.size))
 
             max_image_width = imgui.get_content_region_available()[0]
             max_image_height = 0.5 * imgui.get_content_region_available()[1]
-            image_aspect = np.divide(*media.texture.size)
+            image_aspect = np.divide(*current_value.texture.size)
             image_width = min(max_image_width, max_image_height * image_aspect)
             image_height = min(max_image_height, max_image_width / image_aspect)
 
             imgui.image(
-                media.texture.glo,
+                current_value.texture.glo,
                 width=image_width,
                 height=image_height,
                 uv0=(0, 1),
@@ -1184,12 +1191,14 @@ class App:
             imgui.separator()
             imgui.spacing()
 
-            output_media = self.draw_media_models(media)  # type: ignore
-            if isinstance(output_media, Video):
-                output_media = self.draw_video_filters(output_media)
+            new_value = self.draw_media_models(current_value)  # type: ignore
+            if isinstance(new_value, Video):
+                new_value = self.draw_video_filters(new_value)
 
-            if media != output_media:
-                ui_node.node.set_uniform_value(ui_uniform.name, output_media)
+            if current_value != new_value:
+                try_to_release(
+                    ui_node.node.set_uniform_value(ui_uniform.name, new_value)
+                )
 
         if (
             ui_uniform.input_type in ("array", "text")
@@ -1203,7 +1212,7 @@ class App:
             ui_uniform.input_type = "array" if new_idx == 0 else "text"
 
         if ui_uniform.input_type == "text":
-            text = unicode_to_str(value)
+            text = unicode_to_str(current_value)
             imgui.text_colored(text, *(0.5, 0.5, 0.5))
             imgui.text(f"Length: {len(text)}")
 
@@ -1212,48 +1221,49 @@ class App:
             return
 
         ui_node = self.ui_nodes[self.ui_app_state.current_node_dir]
-        value = ui_node.node.get_uniform_value(ui_uniform.name)
+        current_value = ui_node.node.get_uniform_value(ui_uniform.name)
+        new_value = None
 
         if ui_uniform.input_type == "none":
             imgui.text_colored(f"{ui_uniform.name} can't be viewed", *(1.0, 1.0, 0.0))
         elif ui_uniform.input_type == "auto":
             if ui_uniform.dimension == 1:
-                imgui.text(f"{ui_uniform.name}: {value:.3f}")
+                imgui.text(f"{ui_uniform.name}: {current_value:.3f}")
             else:
-                if isinstance(value, Iterable):
-                    value_str = ", ".join(f"{v:.3f}" for v in value)
+                if isinstance(current_value, Iterable):
+                    value_str = ", ".join(f"{v:.3f}" for v in current_value)
                     imgui.text(f"{ui_uniform.name}: [{value_str}]")
                 else:
-                    imgui.text(f"{ui_uniform.name}: {value}")
+                    imgui.text(f"{ui_uniform.name}: {current_value}")
 
         elif ui_uniform.input_type == "array":
             py_type = {GL_FLOAT: float, GL_UNSIGNED_INT: int}.get(ui_uniform.gl_type)
 
             if py_type is not None:
-                value_str = ", ".join(map(str, value))
+                value_str = ", ".join(map(str, current_value))
                 is_changed, value_str = imgui.input_text(ui_uniform.name, value_str)
                 if is_changed:
                     with contextlib.suppress(Exception):
-                        value = [py_type(x.strip()) for x in value_str.split(",")]
+                        new_value = [py_type(x.strip()) for x in value_str.split(",")]
             else:
-                value_str = ", ".join(f"{v:.3f}" for v in value)
+                value_str = ", ".join(f"{v:.3f}" for v in current_value)
                 imgui.text(
                     f"{ui_uniform.name}[{ui_uniform.array_length}]: [{value_str}]"
                 )
 
         elif ui_uniform.input_type == "text":
-            text = unicode_to_str(value)
+            text = unicode_to_str(current_value)
             is_changed, text = imgui.input_text(ui_uniform.name, text)
 
             if is_changed:
-                value = str_to_unicode(text, ui_uniform.array_length)
-                ui_node.node.set_uniform_value(ui_uniform.name, value)
+                new_value = str_to_unicode(text, ui_uniform.array_length)
 
         elif ui_uniform.input_type == "texture":
-            media: MediaWithTexture = value
             image_height = 90
             image_width = (
-                image_height * media.texture.width / max(media.texture.height, 1)
+                image_height
+                * current_value.texture.width
+                / max(current_value.texture.height, 1)
             )
 
             imgui.text(ui_uniform.name)
@@ -1267,7 +1277,7 @@ class App:
                 n_styles += 3
 
             if imgui.image_button(
-                media.texture.glo,
+                current_value.texture.glo,
                 width=image_width,
                 height=image_height,
                 uv0=(0, 1),
@@ -1296,22 +1306,29 @@ class App:
                     media_cls = Video  # type: ignore
 
                 if media_cls:
-                    value = media_cls(file_path)
+                    new_value = media_cls(file_path)  # type: ignore
                     self.ui_current_node_state.selected_uniform_name = ui_uniform.name
 
         elif ui_uniform.input_type == "color":
             fn = getattr(imgui, f"color_edit{ui_uniform.dimension}")
-            value = fn(ui_uniform.name, *value)[1]
+            new_value = fn(ui_uniform.name, *current_value)[1]
 
         elif ui_uniform.input_type == "drag":
             change_speed = 0.01
             if ui_uniform.dimension == 1:
-                value = imgui.drag_float(ui_uniform.name, value, change_speed)[1]
+                new_value = imgui.drag_float(
+                    ui_uniform.name, current_value, change_speed
+                )[1]
             else:
                 fn = getattr(imgui, f"drag_float{ui_uniform.dimension}")
-                value = fn(ui_uniform.name, *value, change_speed)[1]
+                new_value = fn(ui_uniform.name, *current_value, change_speed)[1]
 
-        ui_node.node.set_uniform_value(ui_uniform.name, value)  # type: ignore
+        if new_value is not None:
+            ui_node.node.set_uniform_value(ui_uniform.name, new_value)  # type: ignore
+            if try_to_release(current_value):
+                logger.info(
+                    f"Uniform '{ui_uniform.name}' has been updated, the old value released"
+                )
 
         if ui_uniform.input_type != "auto" and (
             imgui.is_item_clicked() or imgui.is_item_active()
