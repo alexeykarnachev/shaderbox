@@ -34,8 +34,13 @@ from shaderbox.core import (
     MediaWithTexture,
     Node,
     ResolutionDetails,
+    UniformValue,
     Video,
 )
+
+IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".bmp", ".webp"]
+VIDEO_EXTENSIONS = [".mp4", ".webm"]
+MEDIA_EXTENSIONS = IMAGE_EXTENSIONS + VIDEO_EXTENSIONS
 
 
 def adjust_size(
@@ -269,9 +274,7 @@ class UITgSticker:
             self.video = None
 
 
-UIUniformInputType = Literal[
-    "texture", "array", "color", "text", "drag", "auto", "none"
-]
+UIUniformInputType = Literal["texture", "array", "color", "text", "drag", "auto"]
 
 
 class UIUniform(BaseModel):
@@ -406,7 +409,7 @@ class UINode(BaseModel):
             if uniform.name in ["u_time", "u_aspect", "u_resolution"]:
                 continue
 
-            value = self.node.get_uniform_value(uniform.name)
+            value = self.node.uniform_values[uniform.name]
 
             if getattr(uniform, "gl_type", None) == GL_SAMPLER_2D and isinstance(
                 value, MediaWithTexture
@@ -993,8 +996,9 @@ class App:
         uniform_sizes = set()
         for uniform in ui_node.node.get_active_uniforms():
             if getattr(uniform, "gl_type", None) == GL_SAMPLER_2D:  # type: ignore
-                media: MediaWithTexture = ui_node.node.get_uniform_value(uniform.name)
-                w, h = media.texture.size
+                value = ui_node.node.uniform_values[uniform.name]
+
+                w, h = value.texture.size
                 if (w, h) == ui_node.node.canvas.texture.size:
                     matching_uniforms.append(uniform.name)
                 else:
@@ -1168,9 +1172,11 @@ class App:
         imgui.separator()
         imgui.spacing()
 
-        current_value = ui_node.node.get_uniform_value(ui_uniform.name)
+        current_value = ui_node.node.uniform_values.get(uniform.name)
 
         if ui_uniform.input_type == "texture":
+            assert isinstance(current_value, MediaWithTexture)
+
             imgui.text(get_resolution_str(ui_uniform.name, *current_value.texture.size))
 
             max_image_width = imgui.get_content_region_available()[0]
@@ -1196,9 +1202,8 @@ class App:
                 new_value = self.draw_video_filters(new_value)
 
             if current_value != new_value:
-                try_to_release(
-                    ui_node.node.set_uniform_value(ui_uniform.name, new_value)
-                )
+                try_to_release(current_value)
+                ui_node.node.uniform_values[ui_uniform.name] = new_value
 
         if (
             ui_uniform.input_type in ("array", "text")
@@ -1212,7 +1217,7 @@ class App:
             ui_uniform.input_type = "array" if new_idx == 0 else "text"
 
         if ui_uniform.input_type == "text":
-            text = unicode_to_str(current_value)
+            text = unicode_to_str(current_value)  # type: ignore
             imgui.text_colored(text, *(0.5, 0.5, 0.5))
             imgui.text(f"Length: {len(text)}")
 
@@ -1221,12 +1226,10 @@ class App:
             return
 
         ui_node = self.ui_nodes[self.ui_app_state.current_node_dir]
-        current_value = ui_node.node.get_uniform_value(ui_uniform.name)
+        current_value: UniformValue = ui_node.node.uniform_values[ui_uniform.name]
         new_value = None
 
-        if ui_uniform.input_type == "none":
-            imgui.text_colored(f"{ui_uniform.name} can't be viewed", *(1.0, 1.0, 0.0))
-        elif ui_uniform.input_type == "auto":
+        if ui_uniform.input_type == "auto":
             if ui_uniform.dimension == 1:
                 imgui.text(f"{ui_uniform.name}: {current_value:.3f}")
             else:
@@ -1237,6 +1240,8 @@ class App:
                     imgui.text(f"{ui_uniform.name}: {current_value}")
 
         elif ui_uniform.input_type == "array":
+            assert isinstance(current_value, Sequence)
+
             py_type = {GL_FLOAT: float, GL_UNSIGNED_INT: int}.get(ui_uniform.gl_type)
 
             if py_type is not None:
@@ -1252,21 +1257,14 @@ class App:
                 )
 
         elif ui_uniform.input_type == "text":
-            text = unicode_to_str(current_value)
+            text = unicode_to_str(current_value)  # type: ignore
             is_changed, text = imgui.input_text(ui_uniform.name, text)
 
             if is_changed:
                 new_value = str_to_unicode(text, ui_uniform.array_length)
 
         elif ui_uniform.input_type == "texture":
-            image_height = 90
-            image_width = (
-                image_height
-                * current_value.texture.width
-                / max(current_value.texture.height, 1)
-            )
-
-            imgui.text(ui_uniform.name)
+            assert isinstance(current_value, MediaWithTexture)
 
             n_styles = 0
             if self.ui_current_node_state.selected_uniform_name == ui_uniform.name:
@@ -1276,8 +1274,23 @@ class App:
                 imgui.push_style_color(imgui.COLOR_BUTTON_ACTIVE, *color)
                 n_styles += 3
 
+            button_texture_id = 0
+            image_height = 90
+            image_width = 90
+
+            if current_value is not None:
+                image_width = (
+                    image_height
+                    * current_value.texture.width
+                    / max(current_value.texture.height, 1)
+                )
+
+                imgui.text(ui_uniform.name)
+
+                button_texture_id = current_value.texture.glo
+
             if imgui.image_button(
-                current_value.texture.glo,
+                button_texture_id,
                 width=image_width,
                 height=image_height,
                 uv0=(0, 1),
@@ -1289,9 +1302,7 @@ class App:
 
             imgui.same_line()
             if imgui.button(f"Load##{ui_uniform.name}"):
-                image_extensions = [".png", ".jpg", ".jpeg", ".bmp", ".webp"]
-                video_extensions = [".mp4", ".webm"]
-                filter = ["*" + ext for ext in image_extensions + video_extensions]
+                filter = ["*" + ext for ext in MEDIA_EXTENSIONS]
                 file_path = Path(
                     crossfiledialog.open_file(
                         title="Select image or video", filter=filter
@@ -1300,9 +1311,9 @@ class App:
                 )
 
                 media_cls = None
-                if file_path.suffix in image_extensions:
+                if file_path.suffix in IMAGE_EXTENSIONS:
                     media_cls = Image
-                elif file_path.suffix in video_extensions:
+                elif file_path.suffix in VIDEO_EXTENSIONS:
                     media_cls = Video  # type: ignore
 
                 if media_cls:
@@ -1310,25 +1321,26 @@ class App:
                     self.ui_current_node_state.selected_uniform_name = ui_uniform.name
 
         elif ui_uniform.input_type == "color":
+            assert isinstance(current_value, Sequence)
+
             fn = getattr(imgui, f"color_edit{ui_uniform.dimension}")
             new_value = fn(ui_uniform.name, *current_value)[1]
 
         elif ui_uniform.input_type == "drag":
             change_speed = 0.01
             if ui_uniform.dimension == 1:
+                assert isinstance(current_value, float)
                 new_value = imgui.drag_float(
                     ui_uniform.name, current_value, change_speed
                 )[1]
             else:
+                assert isinstance(current_value, Sequence)
                 fn = getattr(imgui, f"drag_float{ui_uniform.dimension}")
                 new_value = fn(ui_uniform.name, *current_value, change_speed)[1]
 
         if new_value is not None:
-            ui_node.node.set_uniform_value(ui_uniform.name, new_value)  # type: ignore
-            if try_to_release(current_value):
-                logger.info(
-                    f"Uniform '{ui_uniform.name}' has been updated, the old value released"
-                )
+            try_to_release(current_value)
+            ui_node.node.uniform_values[ui_uniform.name] = new_value
 
         if ui_uniform.input_type != "auto" and (
             imgui.is_item_clicked() or imgui.is_item_active()
@@ -1943,6 +1955,22 @@ class App:
                 _render_preview(sticker.preview_canvas)
 
         # ----------------------------------------------------------------
+        # Render nodes
+        self.editor_node.render()
+
+        if self._active_popup_label is None:
+            for ui_node in self.ui_nodes.values():
+                if (
+                    self.ui_app_state.is_render_all_nodes
+                    or ui_node == self.ui_nodes.get(self.ui_app_state.current_node_dir)
+                    or self.frame_idx == 0
+                ):
+                    ui_node.node.render()
+        elif self._active_popup_label == self._NODE_CREATOR_POPUP_LABEL:
+            for ui_node in self.ui_node_templates.values():
+                ui_node.node.render()
+
+        # ----------------------------------------------------------------
         # Draw UI
         gl.screen.use()
         gl.clear()
@@ -1963,22 +1991,6 @@ class App:
             self.imgui_renderer.render(imgui.get_draw_data())
 
         glfw.swap_buffers(self.window)
-
-        # ----------------------------------------------------------------
-        # Render nodes
-        self.editor_node.render()
-
-        if self._active_popup_label is None:
-            for ui_node in self.ui_nodes.values():
-                if (
-                    self.ui_app_state.is_render_all_nodes
-                    or ui_node == self.ui_nodes.get(self.ui_app_state.current_node_dir)
-                    or self.frame_idx == 0
-                ):
-                    ui_node.node.render()
-        elif self._active_popup_label == self._NODE_CREATOR_POPUP_LABEL:
-            for ui_node in self.ui_node_templates.values():
-                ui_node.node.render()
 
         self.frame_idx += 1
 

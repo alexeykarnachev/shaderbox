@@ -1,7 +1,6 @@
 import contextlib
 import json
 import shutil
-import struct
 import subprocess
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
@@ -16,7 +15,6 @@ import imageio
 import moderngl
 import numpy as np
 from loguru import logger
-from numpy.typing import NDArray
 from OpenGL.GL import GL_SAMPLER_2D
 from PIL import Image as PILImage
 from PIL import ImageOps
@@ -319,17 +317,9 @@ class Canvas:
         self._init(size)
 
 
-class UniformBuffer:
-    def __init__(self, size: int, gl: moderngl.Context | None = None) -> None:
-        self._gl = gl or moderngl.get_context()
-        self.size = size
-
-        self.data = bytearray(1024)
-        self.data[:16] = struct.pack("4f", 0.0, 1.0, 0.0, 1.0)
-        self.ubo = self._gl.buffer(self.data, dynamic=True)
-
-    def release(self) -> None:
-        self.ubo.release()
+UniformValue = (
+    int | float | Sequence[int] | Sequence[float] | MediaWithTexture | moderngl.Buffer
+)
 
 
 class Node:
@@ -351,7 +341,7 @@ class Node:
 
         self.canvas = Canvas(size=canvas_size, gl=self._gl)
 
-        self._uniform_values: dict[str, Any] = {}
+        self.uniform_values: dict[str, Any] = {}
         self.shader_error: str = ""
         self.program: moderngl.Program | None = None
         self.vbo: moderngl.Buffer | None = None
@@ -386,7 +376,7 @@ class Node:
             elif isinstance(value, list):
                 value = tuple(value)
 
-            node.set_uniform_value(uniform_name, value)  # type: ignore
+            node.uniform_values[uniform_name] = value
 
         return node, mtime, metadata
 
@@ -405,10 +395,6 @@ class Node:
     def release(self) -> None:
         self.release_program()
         self.canvas.release()
-
-        for data in self._uniform_values.values():
-            if isinstance(data, MediaWithTexture):
-                data.release()
 
     def get_active_uniforms(self) -> list[moderngl.Uniform | moderngl.UniformBlock]:
         uniforms: list[moderngl.Uniform | moderngl.UniformBlock] = []
@@ -459,33 +445,41 @@ class Node:
         texture_unit = 0
         time = u_time if u_time is not None else glfw.get_time()
         for uniform in self.get_active_uniforms():
-            value = self._uniform_values.get(uniform.name)
+            value = self.uniform_values.get(uniform.name)
+
             value_for_program = None
 
-            if isinstance(uniform, moderngl.UniformBlock) and isinstance(
-                value, UniformBuffer
-            ):
-                value.ubo.bind_to_uniform_block(uniform.index)
-            elif getattr(uniform, "gl_type", None) == GL_SAMPLER_2D and isinstance(
-                value, MediaWithTexture
-            ):
+            if isinstance(uniform, moderngl.UniformBlock):
+                if value is None:
+                    pass
+                else:
+                    assert isinstance(value, moderngl.Buffer)
+                    value.bind_to_uniform_block(uniform.index)
+
+            elif getattr(uniform, "gl_type", None) == GL_SAMPLER_2D:
+                value = value or Image(self._DEFAULT_IMAGE_FILE_PATH)
+                value_for_program = texture_unit
+
+                assert isinstance(value, MediaWithTexture)
                 value.update(time)
                 value.texture.use(location=texture_unit)
-                value_for_program = texture_unit
                 texture_unit += 1
+
             elif uniform.name == "u_time":
-                value_for_program = time
-                self.set_uniform_value(uniform.name, value_for_program)
+                value = time
+
             elif uniform.name == "u_aspect":
-                value_for_program = np.divide(*canvas.texture.size)
-                self.set_uniform_value(uniform.name, value_for_program)
+                value = np.divide(*canvas.texture.size)
+
             elif uniform.name == "u_resolution":
-                value_for_program = canvas.texture.size
-                self.set_uniform_value(uniform.name, value_for_program)
+                value = canvas.texture.size
+
             elif value is None:
-                value_for_program = uniform.value
-                self.set_uniform_value(uniform.name, value_for_program)
-            else:
+                value = uniform.value
+
+            self.uniform_values[uniform.name] = value
+
+            if value_for_program is None:
                 value_for_program = value
 
             if value_for_program is not None:
@@ -496,47 +490,15 @@ class Node:
                         f"Failed to set uniform '{uniform.name}' with value {value} ({e}). "
                         f"Cached value will be cleared"
                     )
-                    self._uniform_values.pop(uniform.name)
+                    self.uniform_values.pop(uniform.name)
 
         canvas.fbo.use()
         self._gl.clear()
         self.vao.render()
 
-    def set_uniform_value(
-        self,
-        name: str,
-        new_value: int
-        | float
-        | Sequence[int]
-        | Sequence[float]
-        | MediaWithTexture
-        | NDArray[np.float32],
-    ) -> (
-        None
-        | int
-        | float
-        | Sequence[int]
-        | Sequence[float]
-        | MediaWithTexture
-        | NDArray[np.float32]
-    ):
-        old_value = self._uniform_values.get(name)
-        self._uniform_values[name] = new_value
-
-        return old_value
-
-    def get_uniform_value(self, name: str) -> Any:
-        value = self._uniform_values.get(name)
-        if value is None and self.program is not None and name in self.program:
-            uniform = self.program[name]
-            value = uniform.value  # type: ignore
-            self._uniform_values[name] = value
-
-        return value
-
     def restart_video_uniforms(self) -> None:
         for uniform in self.get_active_uniforms():
-            video = self._uniform_values.get(uniform.name)
+            video = self.uniform_values.get(uniform.name)
             if isinstance(video, Video):
                 video.restart()
                 logger.info(f"Video uniform '{uniform.name}' restarted")
