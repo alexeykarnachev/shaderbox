@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import contextlib
 import hashlib
 import json
@@ -274,14 +275,17 @@ class UITgSticker:
             self.video = None
 
 
-UIUniformInputType = Literal["texture", "array", "color", "text", "drag", "auto"]
+UIUniformInputType = Literal[
+    "texture", "buffer", "array", "color", "text", "drag", "auto"
+]
 
 
 class UIUniform(BaseModel):
     name: str
-    gl_type: int = 0
-    dimension: int = 0
-    array_length: int = 0
+    is_ubo: bool = False
+    gl_type: int = -1
+    dimension: int = -1
+    array_length: int = -1
     input_type: UIUniformInputType = "auto"
 
     model_config = {"arbitrary_types_allowed": True}
@@ -293,23 +297,23 @@ class UIUniform(BaseModel):
         name = uniform.name
 
         if isinstance(uniform, moderngl.UniformBlock):
-            gl_type = GL_FLOAT
-            dimension = 4
-            array_length = uniform.size // 4
+            return cls(
+                name=name,
+                is_ubo=True,
+            ).reset_input_type()
         else:
-            gl_type = uniform.gl_type  # type: ignore
-            dimension = uniform.dimension
-            array_length = uniform.array_length
-
-        return cls(
-            name=name,
-            gl_type=gl_type,  # type: ignore
-            dimension=dimension,
-            array_length=array_length,
-        ).reset_input_type()
+            return cls(
+                name=name,
+                is_ubo=False,
+                gl_type=uniform.gl_type,  # type: ignore
+                dimension=uniform.dimension,
+                array_length=uniform.array_length,
+            ).reset_input_type()
 
     def reset_input_type(self) -> "UIUniform":
-        if self.name in ("u_time", "u_aspect", "u_resolution"):
+        if self.is_ubo:
+            self.input_type = "buffer"
+        elif self.name in ("u_time", "u_aspect", "u_resolution"):
             self.input_type = "auto"
         elif self.gl_type == GL_SAMPLER_2D:
             self.input_type = "texture"
@@ -424,9 +428,13 @@ class UINode(BaseModel):
                 meta["uniforms"][uniform.name] = value
             elif isinstance(value, tuple | list):
                 meta["uniforms"][uniform.name] = list(value)
+            elif isinstance(value, moderngl.Buffer):
+                meta["uniforms"][uniform.name] = {
+                    "base64": base64.b64encode(value.read()).decode("utf-8"),
+                }
             else:
                 logger.warning(
-                    f"Skipping unsupported uniform type for {uniform.name}: {type(value)}"
+                    f"Can't to save unsupported uniform type for {uniform.name}: {type(value)}"
                 )
 
         with (dir / "node.json").open("w") as f:
@@ -1164,7 +1172,7 @@ class App:
             return
 
         uniform = ui_node.node.program[self.ui_current_node_state.selected_uniform_name]
-        if not isinstance(uniform, moderngl.Uniform):
+        if not isinstance(uniform, moderngl.Uniform | moderngl.UniformBlock):
             return
 
         ui_uniform = self.ui_current_node_state.ui_uniforms[get_uniform_hash(uniform)]
@@ -1205,7 +1213,7 @@ class App:
                 try_to_release(current_value)
                 ui_node.node.uniform_values[ui_uniform.name] = new_value
 
-        if (
+        elif (
             ui_uniform.input_type in ("array", "text")
             and ui_uniform.gl_type == GL_UNSIGNED_INT
         ):
@@ -1216,10 +1224,13 @@ class App:
 
             ui_uniform.input_type = "array" if new_idx == 0 else "text"
 
-        if ui_uniform.input_type == "text":
+        elif ui_uniform.input_type == "text":
             text = unicode_to_str(current_value)  # type: ignore
             imgui.text_colored(text, *(0.5, 0.5, 0.5))
             imgui.text(f"Length: {len(text)}")
+
+        elif ui_uniform.input_type == "buffer":
+            imgui.text(f"Size: {uniform.size} B")  # type: ignore
 
     def draw_ui_uniform(self, ui_uniform: UIUniform) -> None:
         if not self.ui_app_state.current_node_dir:
@@ -1238,6 +1249,16 @@ class App:
                     imgui.text(f"{ui_uniform.name}: [{value_str}]")
                 else:
                     imgui.text(f"{ui_uniform.name}: {current_value}")
+
+        elif ui_uniform.input_type == "buffer":
+            assert isinstance(current_value, moderngl.Buffer)
+
+            if imgui.button("Randomize"):
+                data = np.random.rand(current_value.size // 4).astype(np.float32)
+                current_value.write(data)
+
+            imgui.same_line()
+            imgui.text(ui_uniform.name)
 
         elif ui_uniform.input_type == "array":
             assert isinstance(current_value, Sequence)

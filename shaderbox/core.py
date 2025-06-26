@@ -1,3 +1,4 @@
+import base64
 import contextlib
 import json
 import shutil
@@ -370,9 +371,19 @@ class Node:
         # Load uniforms
         for uniform_name, value in metadata["uniforms"].items():
             if isinstance(value, dict):
-                file_path = Path(value["file_path"])
-                media_cls = {".png": Image, ".mp4": Video}[file_path.suffix]
-                value = media_cls(node_dir / value["file_path"])
+                file_path = value.get("file_path")
+                value_base64 = value.get("base64")
+
+                if file_path is not None:
+                    file_path = Path(file_path)
+                    media_cls = {".png": Image, ".mp4": Video}[file_path.suffix]
+                    value = media_cls(node_dir / value["file_path"])
+                elif value_base64 is not None:
+                    value_bytes = base64.b64decode(value_base64)
+                    value = node._gl.buffer(value_bytes)
+                else:
+                    raise ValueError("Unknown uniform dict format")
+
             elif isinstance(value, list):
                 value = tuple(value)
 
@@ -451,36 +462,42 @@ class Node:
 
             if isinstance(uniform, moderngl.UniformBlock):
                 if value is None:
-                    pass
-                else:
-                    assert isinstance(value, moderngl.Buffer)
-                    value.bind_to_uniform_block(uniform.index)
+                    value = self._gl.buffer(np.zeros(uniform.size, dtype=np.int8))
+
+                assert isinstance(value, moderngl.Buffer)
+                value.bind_to_uniform_block(uniform.index)
 
             elif getattr(uniform, "gl_type", None) == GL_SAMPLER_2D:
-                value = value or Image(self._DEFAULT_IMAGE_FILE_PATH)
-                value_for_program = texture_unit
+                if value is None:
+                    value = Image(self._DEFAULT_IMAGE_FILE_PATH)
 
                 assert isinstance(value, MediaWithTexture)
                 value.update(time)
                 value.texture.use(location=texture_unit)
+
+                value_for_program = texture_unit
                 texture_unit += 1
 
             elif uniform.name == "u_time":
                 value = time
+                value_for_program = value
 
             elif uniform.name == "u_aspect":
                 value = np.divide(*canvas.texture.size)
+                value_for_program = value
 
             elif uniform.name == "u_resolution":
                 value = canvas.texture.size
+                value_for_program = value
 
             elif value is None:
                 value = uniform.value
+                value_for_program = value
+
+            else:
+                value_for_program = value
 
             self.uniform_values[uniform.name] = value
-
-            if value_for_program is None:
-                value_for_program = value
 
             if value_for_program is not None:
                 try:
