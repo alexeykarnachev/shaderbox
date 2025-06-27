@@ -1173,9 +1173,8 @@ class App:
             "ui_uniforms",
             width=imgui.get_content_region_available_width() // 2,
         )
-        for hash, ui_uniform in ui_uniforms.items():
-            if hash in active_uniform_hashes:
-                self.draw_ui_uniform(ui_uniform)
+        for hash in active_uniform_hashes:
+            self.draw_ui_uniform(ui_uniforms[hash])
 
         imgui.end_child()
 
