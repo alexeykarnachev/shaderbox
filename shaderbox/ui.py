@@ -1161,9 +1161,10 @@ class App:
         # ----------------------------------------------------------------
         # Uniforms
         ui_uniforms = self.ui_current_node_state.ui_uniforms
-        active_uniform_names = []
+
+        active_uniform_hashes = []
         for uniform in ui_node.node.get_active_uniforms():
-            active_uniform_names.append(uniform.name)
+            active_uniform_hashes.append(get_uniform_hash(uniform))
             hash = get_uniform_hash(uniform)
             if hash not in ui_uniforms:
                 ui_uniforms[hash] = UIUniform.from_uniform(uniform)
@@ -1172,8 +1173,8 @@ class App:
             "ui_uniforms",
             width=imgui.get_content_region_available_width() // 2,
         )
-        for ui_uniform in ui_uniforms.values():
-            if ui_uniform.name in active_uniform_names:
+        for hash, ui_uniform in ui_uniforms.items():
+            if hash in active_uniform_hashes:
                 self.draw_ui_uniform(ui_uniform)
 
         imgui.end_child()
