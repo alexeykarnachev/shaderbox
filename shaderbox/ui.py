@@ -14,6 +14,7 @@ from uuid import uuid4
 
 import crossfiledialog
 import cv2
+import freetype
 import glfw
 import imgui
 import moderngl
@@ -415,23 +416,43 @@ class UINode(BaseModel):
 
             value = self.node.uniform_values[uniform.name]
 
-            if getattr(uniform, "gl_type", None) == GL_SAMPLER_2D and isinstance(
-                value, MediaWithTexture
-            ):
-                media: MediaWithTexture = value
+            if getattr(uniform, "gl_type", None) == GL_SAMPLER_2D:
                 file_name_wo_ext = uniform.name
-                file_path = media.save(dir / "media", file_name_wo_ext)
+
+                if isinstance(value, MediaWithTexture):
+                    file_path = value.save(dir / "media", file_name_wo_ext)
+                    size = value.texture.size
+                    components = value.texture.components
+                elif isinstance(value, moderngl.Texture):
+                    data = value.read()
+                    file_path = (dir / "textures" / file_name_wo_ext).with_suffix(
+                        ".bin"
+                    )
+                    size = value.size
+                    components = value.components
+                    file_path.write_bytes(data)
+                else:
+                    raise ValueError(
+                        f"Uniform value must have a type MediaWithTexture or moderngl.Texture, but this one is {type(value)}"
+                    )
+
                 meta["uniforms"][uniform.name] = {
                     "file_path": str(file_path),
+                    "size": size,
+                    "components": components,
                 }
+
             elif isinstance(value, int | float):
                 meta["uniforms"][uniform.name] = value
+
             elif isinstance(value, tuple | list):
                 meta["uniforms"][uniform.name] = list(value)
+
             elif isinstance(value, moderngl.Buffer):
                 meta["uniforms"][uniform.name] = {
                     "base64": base64.b64encode(value.read()).decode("utf-8"),
                 }
+
             else:
                 logger.warning(
                     f"Can't to save unsupported uniform type for {uniform.name}: {type(value)}"
@@ -539,6 +560,75 @@ def try_to_release(value: Any) -> bool:
     return False
 
 
+def extract_font_data(font_path, font_size=14):
+    # Initialize FreeType face
+    face = freetype.Face(font_path)
+    face.set_pixel_sizes(0, font_size)
+
+    # Parameters for the texture texture
+    texture_width = 512
+    texture_height = 512
+    padding = 2
+    current_x, current_y = padding, padding
+    max_row_height = 0
+
+    # Dictionary to store glyph data
+    glyphs = {}
+    texture_data = np.zeros((texture_height, texture_width, 4), dtype=np.uint8)
+
+    # Load glyphs for ASCII and some Cyrillic (adjust range as needed)
+    for char_code in range(32, 127):  # ASCII printable characters
+        face.load_char(char_code, freetype.FT_LOAD_RENDER)  # type: ignore
+        bitmap = face.glyph.bitmap
+        if bitmap.width == 0 or bitmap.rows == 0:
+            continue
+
+        # Check if we need to move to the next row
+        if current_x + bitmap.width + padding > texture_width:
+            current_x = padding
+            current_y += max_row_height + padding
+            max_row_height = 0
+
+        # Check if texture height is exceeded
+        if current_y + bitmap.rows + padding > texture_height:
+            raise ValueError("Font texture too small for glyphs")
+
+        # Copy bitmap to texture (grayscale to RGBA)
+        for y in range(bitmap.rows):
+            for x in range(bitmap.width):
+                if current_y + y < texture_height and current_x + x < texture_width:
+                    alpha = bitmap.buffer[y * bitmap.pitch + x]
+                    texture_data[current_y + y, current_x + x] = [255, 255, 255, alpha]
+
+        # Store UV coordinates (normalized)
+        u0 = current_x / texture_width
+        v0 = current_y / texture_height
+        u1 = (current_x + bitmap.width) / texture_width
+        v1 = (current_y + bitmap.rows) / texture_height
+        glyphs[char_code] = ((u0, v0), (u1, v1))
+
+        # Update position
+        current_x += bitmap.width + padding
+        max_row_height = max(max_row_height, bitmap.rows)
+
+    # Create ModernGL texture
+    ctx = moderngl.get_context()
+
+    # TODO: REMOVE
+    texture_data.fill(255)
+
+    texture = ctx.texture(
+        size=(texture_width, texture_height),
+        components=4,
+        data=texture_data,
+        dtype="u1",
+    )
+    texture.filter = (moderngl.LINEAR, moderngl.LINEAR)
+    texture.swizzle = "RGBA"
+
+    return texture, glyphs
+
+
 class App:
     _SETTINGS_POPUP_LABEL = "Settings##popup"
     _NODE_CREATOR_POPUP_LABEL = "New node##popup"
@@ -590,6 +680,18 @@ class App:
             RESOURCES_DIR / "shaders" / "editor.frag.glsl"
         ).read_text()
         self.editor_node = Node(fs_source=editor_fs_source)
+        self.editor_grid_size = (256, 256)
+        self.editor_glyph_size_px = (14.0, 14.0)
+        self.editor_glyph_atlas_texture, self.editor_glyphs = extract_font_data(
+            str(RESOURCES_DIR / "fonts" / "Anonymous_Pro" / "AnonymousPro-Regular.ttf"),
+            font_size=14,
+        )
+        self.editor_glyph_uvs_texture = moderngl.get_context().texture(
+            size=self.editor_grid_size,
+            components=4,
+            data=np.random.rand(*self.editor_grid_size, 4).astype(np.float32),
+            dtype="f4",
+        )
 
         self._init(project_dir)
 
@@ -1976,9 +2078,17 @@ class App:
                 _render_preview(sticker.preview_canvas)
 
         # ----------------------------------------------------------------
-        # Render nodes
+        # Render editor node
+        self.editor_node.uniform_values["u_grid_size"] = self.editor_grid_size
+        self.editor_node.uniform_values["glyph_size_px"] = self.editor_glyph_size_px
+        self.editor_node.uniform_values["u_glyph_atlas"] = (
+            self.editor_glyph_atlas_texture
+        )
+        self.editor_node.uniform_values["u_glyph_uvs"] = self.editor_glyph_uvs_texture
         self.editor_node.render()
 
+        # ----------------------------------------------------------------
+        # Render regular nodes
         if self._active_popup_label is None:
             for ui_node in self.ui_nodes.values():
                 if (

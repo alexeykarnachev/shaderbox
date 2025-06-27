@@ -319,7 +319,13 @@ class Canvas:
 
 
 UniformValue = (
-    int | float | Sequence[int] | Sequence[float] | MediaWithTexture | moderngl.Buffer
+    int
+    | float
+    | Sequence[int]
+    | Sequence[float]
+    | MediaWithTexture
+    | moderngl.Texture
+    | moderngl.Buffer
 )
 
 
@@ -376,8 +382,21 @@ class Node:
 
                 if file_path is not None:
                     file_path = Path(file_path)
-                    media_cls = {".png": Image, ".mp4": Video}[file_path.suffix]
-                    value = media_cls(node_dir / value["file_path"])
+                    dir_name = file_path.parent.name
+                    if dir_name == "media":
+                        media_cls = {".png": Image, ".mp4": Video}[file_path.suffix]
+                        value = media_cls(node_dir / value["file_path"])
+                    elif dir_name == "textures":
+                        data = (node_dir / value["file_path"]).read_bytes()
+                        value = node._gl.texture(
+                            size=value["size"],
+                            components=value["components"],
+                            data=data,
+                        )
+                    else:
+                        raise ValueError(
+                            f"Failed to load uniform data from dir '{dir_name}': it should be stored in 'media' or 'textures' dir"
+                        )
                 elif value_base64 is not None:
                     value_bytes = base64.b64decode(value_base64)
                     value = node._gl.buffer(value_bytes)
@@ -471,10 +490,17 @@ class Node:
                 if value is None:
                     value = Image(self._DEFAULT_IMAGE_FILE_PATH)
 
-                assert isinstance(value, MediaWithTexture)
-                value.update(time)
-                value.texture.use(location=texture_unit)
+                if isinstance(value, MediaWithTexture):
+                    value.update(time)
+                    texture = value.texture
+                elif isinstance(value, moderngl.Texture):
+                    texture = value
+                else:
+                    raise ValueError(
+                        f"Uniform value must have a type MediaWithTexture or moderngl.Texture, but this one is {type(value)}"
+                    )
 
+                texture.use(location=texture_unit)
                 value_for_program = texture_unit
                 texture_unit += 1
 
