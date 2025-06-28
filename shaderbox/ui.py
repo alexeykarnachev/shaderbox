@@ -704,7 +704,7 @@ class Editor:
         return self._node.canvas.texture
 
     @property
-    def n_lines(self) -> int:
+    def n_lines_visible(self) -> int:
         return self._node.canvas.texture.size[1] // self._font.glyph_size_px[1]
 
     def set_canvas_size(self, size: tuple[int, int]) -> None:
@@ -716,7 +716,8 @@ class Editor:
         self._glyph_metrics_data.fill(0.0)
         self._glyph_uvs_data.fill(0.0)
 
-        for i_line in range(self._top_line_idx, self._top_line_idx + self.n_lines):
+        n_lines = min(self.n_lines_visible, len(self._lines))
+        for i_line in range(self._top_line_idx, self._top_line_idx + n_lines):
             ord_line = self._lines[i_line]
 
             if not ord_line:
@@ -734,6 +735,13 @@ class Editor:
 
     def set_top_line_idx(self, idx: int) -> None:
         self._top_line_idx = idx
+        self._update_textures()
+
+    def inc_top_line_idx(self, step: int) -> None:
+        if step == 0:
+            return
+
+        self._top_line_idx = max(0, min(self._top_line_idx + step, len(self._lines)))
         self._update_textures()
 
     def set_text_src(self, src: str) -> None:
@@ -1945,13 +1953,127 @@ class App:
 
                 imgui.end_tab_bar()
 
-    def draw_imgui(self) -> None:
+    # def process_hotkeys(self) -> None:
+
+    def run(self) -> None:
+        while not glfw.window_should_close(self.window):
+            start_time = glfw.get_time()
+
+            self.update_and_draw()
+
+            elapsed_time = glfw.get_time() - start_time
+            time.sleep(max(0.0, 1.0 / 60.0 - elapsed_time))
+
+            if imgui.is_key_pressed(glfw.KEY_ESCAPE, repeat=False):
+                if self._active_popup_label is None:
+                    glfw.set_window_should_close(self.window, True)
+
+                self._active_popup_label = None
+
+            fps = 1.0 / (glfw.get_time() - start_time)
+            if self.global_fps <= 0.0:
+                self.global_fps = fps
+            else:
+                self.global_fps = 0.95 * self.global_fps + 0.05 * fps
+
+        self.save()
+        self.release()
+
+    def update_and_draw(self) -> None:
+        # ----------------------------------------------------------------
+        # Prepare frame
+        gl = moderngl.get_context()
+        glfw.poll_events()
+
+        # ----------------------------------------------------------------
+        # Check for shader file changes and reload nodes
+        for name in list(self.ui_nodes.keys()):
+            fs_file_path = self.nodes_dir / name / "shader.frag.glsl"
+
+            if not fs_file_path.exists():
+                return
+
+            fs_file_mtime = fs_file_path.lstat().st_mtime
+            if fs_file_mtime != self.ui_nodes[name].mtime:
+                logger.info(f"Reloading node {name} due to shader file change")
+                ui_node = self.ui_nodes[name]
+                ui_node.node.release_program(fs_file_path.read_text())
+                ui_node.mtime = fs_file_mtime
+
+        # ----------------------------------------------------------------
+        # Render previews
+        if self.ui_app_state.current_node_dir:
+            ui_node = self.ui_nodes[self.ui_app_state.current_node_dir]
+            preview_size = adjust_size(ui_node.node.canvas.texture.size, width=200)
+
+            def _render_preview(canvas: Canvas) -> None:
+                canvas.set_size(preview_size)
+                ui_node.node.render(canvas=canvas)
+
+            # Render current node preview
+            _render_preview(self.preview_canvas)
+
+            # Render current sticker preview
+            if self._tg_selected_sticker_idx < len(self._tg_stickers):
+                sticker = self._tg_stickers[self._tg_selected_sticker_idx]
+                _render_preview(sticker.preview_canvas)
+
+        # ----------------------------------------------------------------
+        # Render regular nodes
+        if self._active_popup_label is None:
+            for ui_node in self.ui_nodes.values():
+                if (
+                    self.ui_app_state.is_render_all_nodes
+                    or ui_node == self.ui_nodes.get(self.ui_app_state.current_node_dir)
+                    or self.frame_idx == 0
+                ):
+                    ui_node.node.render()
+        elif self._active_popup_label == self._NODE_CREATOR_POPUP_LABEL:
+            for ui_node in self.ui_node_templates.values():
+                ui_node.node.render()
+
+        # ----------------------------------------------------------------
+        # Process hotkeys
+        io = imgui.get_io()
+
+        if io.key_alt and imgui.is_key_pressed(ord("S")):
+            self._active_popup_label = self._SETTINGS_POPUP_LABEL
+        if io.key_ctrl and imgui.is_key_pressed(ord("N")):
+            self._active_popup_label = self._NODE_CREATOR_POPUP_LABEL
+        if io.key_ctrl and imgui.is_key_pressed(ord("S")):
+            self.save()
+        if io.key_ctrl and imgui.is_key_pressed(ord("E")):
+            self.edit_current_node_fs_file()
+        if io.key_ctrl and imgui.is_key_pressed(ord("D")):
+            self.delete_current_node()
+
+        if not imgui.is_any_item_active():
+            if not self._active_popup_label:
+                if imgui.is_key_pressed(glfw.KEY_LEFT, repeat=True):
+                    self.select_next_current_node(-1)
+                if imgui.is_key_pressed(glfw.KEY_RIGHT, repeat=True):
+                    self.select_next_current_node(+1)
+            if self._active_popup_label == self._NODE_CREATOR_POPUP_LABEL:
+                if imgui.is_key_pressed(glfw.KEY_LEFT, repeat=True):
+                    self.select_next_template(-1)
+                if imgui.is_key_pressed(glfw.KEY_RIGHT, repeat=True):
+                    self.select_next_template(+1)
+                if imgui.is_key_pressed(glfw.KEY_ENTER, repeat=False):
+                    self.create_node_from_selected_template()
+                    self._active_popup_label = None
+
+        # ----------------------------------------------------------------
+        # Prepare new frame
+        self.imgui_renderer.process_inputs()
+        imgui.new_frame()
         imgui.push_font(self._font_14)
 
         window_width, window_height = glfw.get_window_size(self.window)
 
         # ----------------------------------------------------------------
-        # Editor
+        # Draw editor
+        self.editor.render()
+
         imgui.set_next_window_size(window_width // 2, window_height)
         imgui.set_next_window_position(0, 0)
         imgui.begin(
@@ -1974,6 +2096,8 @@ class App:
             uv1=(1, 0),
             border_color=(0.2, 0.2, 0.2, 1.0),
         )
+        if imgui.is_item_hovered():
+            self.editor.inc_top_line_idx(int(io.mouse_wheel))
 
         imgui.end()
 
@@ -1991,8 +2115,6 @@ class App:
         )
 
         control_panel_min_height = 600
-
-        self.process_hotkeys()
 
         # ----------------------------------------------------------------
         # Main menu bar
@@ -2098,137 +2220,16 @@ class App:
 
         imgui.pop_font()
 
-    def process_hotkeys(self) -> None:
-        io = imgui.get_io()
-
-        if io.key_alt and imgui.is_key_pressed(ord("S")):
-            self._active_popup_label = self._SETTINGS_POPUP_LABEL
-        if io.key_ctrl and imgui.is_key_pressed(ord("N")):
-            self._active_popup_label = self._NODE_CREATOR_POPUP_LABEL
-        if io.key_ctrl and imgui.is_key_pressed(ord("S")):
-            self.save()
-        if io.key_ctrl and imgui.is_key_pressed(ord("E")):
-            self.edit_current_node_fs_file()
-        if io.key_ctrl and imgui.is_key_pressed(ord("D")):
-            self.delete_current_node()
-
-        if not imgui.is_any_item_active():
-            if not self._active_popup_label:
-                if imgui.is_key_pressed(glfw.KEY_LEFT, repeat=True):
-                    self.select_next_current_node(-1)
-                if imgui.is_key_pressed(glfw.KEY_RIGHT, repeat=True):
-                    self.select_next_current_node(+1)
-            if self._active_popup_label == self._NODE_CREATOR_POPUP_LABEL:
-                if imgui.is_key_pressed(glfw.KEY_LEFT, repeat=True):
-                    self.select_next_template(-1)
-                if imgui.is_key_pressed(glfw.KEY_RIGHT, repeat=True):
-                    self.select_next_template(+1)
-                if imgui.is_key_pressed(glfw.KEY_ENTER, repeat=False):
-                    self.create_node_from_selected_template()
-                    self._active_popup_label = None
-
-    def run(self) -> None:
-        while not glfw.window_should_close(self.window):
-            start_time = glfw.get_time()
-
-            self.update_and_draw()
-
-            elapsed_time = glfw.get_time() - start_time
-            time.sleep(max(0.0, 1.0 / 60.0 - elapsed_time))
-
-            if imgui.is_key_pressed(glfw.KEY_ESCAPE, repeat=False):
-                if self._active_popup_label is None:
-                    glfw.set_window_should_close(self.window, True)
-
-                self._active_popup_label = None
-
-            fps = 1.0 / (glfw.get_time() - start_time)
-            if self.global_fps <= 0.0:
-                self.global_fps = fps
-            else:
-                self.global_fps = 0.95 * self.global_fps + 0.05 * fps
-
-        self.save()
-        self.release()
-
-    def update_and_draw(self) -> None:
         # ----------------------------------------------------------------
-        # Prepare frame
-        gl = moderngl.get_context()
-        glfw.poll_events()
-
-        # ----------------------------------------------------------------
-        # Check for shader file changes and reload nodes
-        for name in list(self.ui_nodes.keys()):
-            fs_file_path = self.nodes_dir / name / "shader.frag.glsl"
-
-            if not fs_file_path.exists():
-                return
-
-            fs_file_mtime = fs_file_path.lstat().st_mtime
-            if fs_file_mtime != self.ui_nodes[name].mtime:
-                logger.info(f"Reloading node {name} due to shader file change")
-                ui_node = self.ui_nodes[name]
-                ui_node.node.release_program(fs_file_path.read_text())
-                ui_node.mtime = fs_file_mtime
-
-        # ----------------------------------------------------------------
-        # Render previews
-        if self.ui_app_state.current_node_dir:
-            ui_node = self.ui_nodes[self.ui_app_state.current_node_dir]
-            preview_size = adjust_size(ui_node.node.canvas.texture.size, width=200)
-
-            def _render_preview(canvas: Canvas) -> None:
-                canvas.set_size(preview_size)
-                ui_node.node.render(canvas=canvas)
-
-            # Render current node preview
-            _render_preview(self.preview_canvas)
-
-            # Render current sticker preview
-            if self._tg_selected_sticker_idx < len(self._tg_stickers):
-                sticker = self._tg_stickers[self._tg_selected_sticker_idx]
-                _render_preview(sticker.preview_canvas)
-
-        # ----------------------------------------------------------------
-        # Render regular nodes
-        if self._active_popup_label is None:
-            for ui_node in self.ui_nodes.values():
-                if (
-                    self.ui_app_state.is_render_all_nodes
-                    or ui_node == self.ui_nodes.get(self.ui_app_state.current_node_dir)
-                    or self.frame_idx == 0
-                ):
-                    ui_node.node.render()
-        elif self._active_popup_label == self._NODE_CREATOR_POPUP_LABEL:
-            for ui_node in self.ui_node_templates.values():
-                ui_node.node.render()
-
-        # ----------------------------------------------------------------
-        # Render editor
-        if self.ui_app_state.current_node_dir:
-            ui_node = self.ui_nodes[self.ui_app_state.current_node_dir]
-            self.editor.set_text_src(ui_node.node.fs_source)
-
-        self.editor.render()
-
-        # ----------------------------------------------------------------
-        # Draw UI
-        gl.screen.use()
-        gl.clear()
-
-        self.imgui_renderer.process_inputs()
-        imgui.new_frame()
-
-        self.draw_imgui()
-
-        # Finalize frame
+        # Finalize and draw the frame
         imgui.end()
         imgui.render()
 
         glfw.make_context_current(self.window)
         moderngl.get_context().clear_errors()
 
+        gl.screen.use()
+        gl.clear()
         with contextlib.suppress(GLError):
             self.imgui_renderer.render(imgui.get_draw_data())
 
