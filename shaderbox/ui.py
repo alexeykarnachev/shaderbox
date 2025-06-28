@@ -560,73 +560,109 @@ def try_to_release(value: Any) -> bool:
     return False
 
 
-def extract_font_data(font_path, font_size=14):
-    # Initialize FreeType face
-    face = freetype.Face(font_path)
-    face.set_pixel_sizes(0, font_size)
+class Font:
+    def __init__(self, file_path: Path | str, size: int):
+        face = freetype.Face(str(file_path))
+        face.set_pixel_sizes(0, size)
 
-    # Parameters for the texture texture
-    texture_width = 512
-    texture_height = 512
-    padding = 2
-    current_x, current_y = padding, padding
-    max_row_height = 0
+        # Atlas texture parameters
+        texture_width = 512
+        texture_height = 512
+        padding = 2
+        current_x, current_y = padding, padding
+        max_row_height = 0
 
-    # Dictionary to store glyph data
-    glyphs = {}
-    texture_data = np.zeros((texture_height, texture_width, 4), dtype=np.uint8)
+        texture_data = np.zeros((texture_height, texture_width, 1), dtype=np.uint8)
 
-    # Load glyphs for ASCII and some Cyrillic (adjust range as needed)
-    for char_code in range(32, 127):  # ASCII printable characters
-        face.load_char(char_code, freetype.FT_LOAD_RENDER)  # type: ignore
-        bitmap = face.glyph.bitmap
-        if bitmap.width == 0 or bitmap.rows == 0:
-            continue
+        # Monospaced cell size (in pixels)
+        cell_width = (
+            face.max_advance_width / 64.0
+        )  # Convert from 26.6 fixed-point to pixels
+        cell_height = size  # Approximate height based on font size
 
-        # Check if we need to move to the next row
-        if current_x + bitmap.width + padding > texture_width:
-            current_x = padding
-            current_y += max_row_height + padding
-            max_row_height = 0
+        # Store glyph data
+        glyphs = {}
 
-        # Check if texture height is exceeded
-        if current_y + bitmap.rows + padding > texture_height:
-            raise ValueError("Font texture too small for glyphs")
+        # Special case for the space
+        glyphs[32] = {
+            "uv": [0.0, 0.0, 0.0, 0.0],
+            "metrics": [face.glyph.advance.x / 64.0 / cell_width, 0.0, 0.0, 0.0],
+        }
 
-        # Copy bitmap to texture (grayscale to RGBA)
-        for y in range(bitmap.rows):
-            for x in range(bitmap.width):
-                if current_y + y < texture_height and current_x + x < texture_width:
-                    alpha = bitmap.buffer[y * bitmap.pitch + x]
-                    texture_data[current_y + y, current_x + x] = [255, 255, 255, alpha]
+        # Extract glyphs for printable ASCII characters (33 to 126)
+        for char_code in range(33, 127):
+            face.load_char(char_code, freetype.FT_LOAD_RENDER)  # type: ignore
+            bitmap = face.glyph.bitmap
 
-        # Store UV coordinates (normalized)
-        u0 = current_x / texture_width
-        v0 = current_y / texture_height
-        u1 = (current_x + bitmap.width) / texture_width
-        v1 = (current_y + bitmap.rows) / texture_height
-        glyphs[char_code] = ((u0, v0), (u1, v1))
+            # Skip empty glyphs
+            if bitmap.width == 0 or bitmap.rows == 0:
+                continue
 
-        # Update position
-        current_x += bitmap.width + padding
-        max_row_height = max(max_row_height, bitmap.rows)
+            # Move to next row if necessary
+            if current_x + bitmap.width + padding > texture_width:
+                current_x = padding
+                current_y += max_row_height + padding
+                max_row_height = 0
 
-    # Create ModernGL texture
-    ctx = moderngl.get_context()
+            # Check atlas bounds
+            if current_y + bitmap.rows + padding > texture_height:
+                raise ValueError("Glyph atlas texture too small")
 
-    # TODO: REMOVE
-    texture_data.fill(255)
+            # Convert bitmap to NumPy array
+            bitmap_array = np.array(bitmap.buffer, dtype=np.uint8).reshape(
+                bitmap.rows, bitmap.pitch
+            )[:, : bitmap.width]
+            bitmap_array = np.flipud(bitmap_array)  # Flip for OpenGL
 
-    texture = ctx.texture(
-        size=(texture_width, texture_height),
-        components=4,
-        data=texture_data,
-        dtype="u1",
-    )
-    texture.filter = (moderngl.LINEAR, moderngl.LINEAR)
-    texture.swizzle = "RGBA"
+            # Fill atlas texture (white glyph with alpha)
+            target_slice = texture_data[
+                current_y : current_y + bitmap.rows,
+                current_x : current_x + bitmap.width,
+            ]
+            target_slice[:, :, 0] = bitmap_array
 
-    return texture, glyphs
+            # Normalized UV coordinates
+            u0 = current_x / texture_width
+            v0 = current_y / texture_height
+            u1 = (current_x + bitmap.width) / texture_width
+            v1 = (current_y + bitmap.rows) / texture_height
+
+            # Normalized metrics relative to cell size
+            glyph_width = bitmap.width / cell_width
+            glyph_height = bitmap.rows / cell_height
+            bearing_x = face.glyph.bitmap_left / cell_width
+            bearing_y = (
+                face.glyph.bitmap_top - bitmap.rows
+            ) / cell_height  # Origin at bottom
+
+            glyphs[char_code] = {
+                "uv": [u0, v0, u1, v1],
+                "metrics": [glyph_width, glyph_height, bearing_x, bearing_y],
+            }
+
+            # Update atlas position
+            current_x += bitmap.width + padding
+            max_row_height = max(max_row_height, bitmap.rows)
+
+        # Adjust bearing_y
+        min_bearing_y = min(g["metrics"][3] for g in glyphs.values())
+        baseline_y = -min_bearing_y if min_bearing_y < 0 else 0
+        for char_code in glyphs:
+            glyphs[char_code]["metrics"][3] += baseline_y
+
+        # Create glyph atlas texture
+        gl = moderngl.get_context()
+        atlas_texture = gl.texture(
+            size=(texture_width, texture_height),
+            components=1,
+            data=texture_data.tobytes(),
+            dtype="f1",
+        )
+        atlas_texture.filter = (moderngl.LINEAR, moderngl.LINEAR)
+
+        self.glyphs = glyphs
+        self.glyph_size_px = (cell_width, cell_height)
+        self.atlas_texture = atlas_texture
 
 
 class App:
@@ -676,23 +712,43 @@ class App:
         self._active_popup_label: str | None = None
         self.global_fps = 0.0
 
+        # ----------------------------------------------------------------
+        # Editor (TODO: factor this shit out)
         editor_fs_source = Path(
             RESOURCES_DIR / "shaders" / "editor.frag.glsl"
         ).read_text()
         self.editor_node = Node(fs_source=editor_fs_source)
         self.editor_grid_size = (256, 256)
-        self.editor_glyph_size_px = (14.0, 14.0)
-        self.editor_glyph_atlas_texture, self.editor_glyphs = extract_font_data(
-            str(RESOURCES_DIR / "fonts" / "Anonymous_Pro" / "AnonymousPro-Regular.ttf"),
-            font_size=14,
+        self.editor_font = Font(
+            file_path=str(
+                RESOURCES_DIR / "fonts" / "Anonymous_Pro" / "AnonymousPro-Regular.ttf"
+            ),
+            size=28,
         )
+
+        glyph_uvs_data = np.zeros((*self.editor_grid_size, 4), dtype=np.float32)
+        glyph_metrics_data = np.zeros((*self.editor_grid_size, 4), dtype=np.float32)
+        for i, ch in enumerate(
+            'The quick brown fox jumps over the lazy dog! if __name__ == "__main__":'
+        ):
+            glyph_uvs_data[0, i, :] = self.editor_font.glyphs[ord(ch)]["uv"]
+            glyph_metrics_data[0, i, :] = self.editor_font.glyphs[ord(ch)]["metrics"]
+
         self.editor_glyph_uvs_texture = moderngl.get_context().texture(
             size=self.editor_grid_size,
             components=4,
-            data=np.random.rand(*self.editor_grid_size, 4).astype(np.float32),
+            data=glyph_uvs_data,
             dtype="f4",
         )
 
+        self.editor_glyph_metrics_texture = moderngl.get_context().texture(
+            size=self.editor_grid_size,
+            components=4,
+            data=glyph_metrics_data,
+            dtype="f4",
+        )
+
+        # ----------------------------------------------------------------
         self._init(project_dir)
 
     @staticmethod
@@ -1853,6 +1909,8 @@ class App:
         )
 
         image_width, image_height = imgui.get_content_region_available()
+        self.editor_node.canvas.set_size((int(image_width), int(image_height)))
+
         imgui.image(
             self.editor_node.canvas.texture.glo,
             width=image_width,
@@ -2080,11 +2138,16 @@ class App:
         # ----------------------------------------------------------------
         # Render editor node
         self.editor_node.uniform_values["u_grid_size"] = self.editor_grid_size
-        self.editor_node.uniform_values["glyph_size_px"] = self.editor_glyph_size_px
+        self.editor_node.uniform_values["u_glyph_size_px"] = (
+            self.editor_font.glyph_size_px
+        )
         self.editor_node.uniform_values["u_glyph_atlas"] = (
-            self.editor_glyph_atlas_texture
+            self.editor_font.atlas_texture
         )
         self.editor_node.uniform_values["u_glyph_uvs"] = self.editor_glyph_uvs_texture
+        self.editor_node.uniform_values["u_glyph_metrics"] = (
+            self.editor_glyph_metrics_texture
+        )
         self.editor_node.render()
 
         # ----------------------------------------------------------------

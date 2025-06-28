@@ -303,7 +303,7 @@ class Canvas:
         self._init(size)
 
     def _init(self, size: tuple[int, int] | None) -> None:
-        self.texture = self._gl.texture(size or (1280, 960), 4)
+        self.texture = self._gl.texture(size or (64, 64), 4)
         self.fbo = self._gl.framebuffer(color_attachments=[self.texture])
 
     def release(self) -> None:

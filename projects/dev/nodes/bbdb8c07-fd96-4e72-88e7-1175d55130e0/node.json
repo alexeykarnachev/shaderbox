@@ -5,12 +5,22 @@
     ],
     "uniforms": {
         "u_background": {
-            "file_path": "/home/akarnachev/src/shaderbox/projects/dev/nodes/bbdb8c07-fd96-4e72-88e7-1175d55130e0/media/u_background.png"
+            "file_path": "/home/akarnachev/src/shaderbox/projects/dev/nodes/bbdb8c07-fd96-4e72-88e7-1175d55130e0/media/u_background.png",
+            "size": [
+                960,
+                1280
+            ],
+            "components": 4
         },
         "u_background_n_samples": 32.0,
         "u_background_sample_radius": 10.670000076293945,
         "u_depth": {
-            "file_path": "/home/akarnachev/src/shaderbox/projects/dev/nodes/bbdb8c07-fd96-4e72-88e7-1175d55130e0/media/u_depth.png"
+            "file_path": "/home/akarnachev/src/shaderbox/projects/dev/nodes/bbdb8c07-fd96-4e72-88e7-1175d55130e0/media/u_depth.png",
+            "size": [
+                960,
+                1280
+            ],
+            "components": 4
         },
         "u_depth_n_samples": 32.0,
         "u_depth_sample_radius": 8.0,
