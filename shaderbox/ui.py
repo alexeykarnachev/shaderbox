@@ -661,8 +661,98 @@ class Font:
         atlas_texture.filter = (moderngl.LINEAR, moderngl.LINEAR)
 
         self.glyphs = glyphs
-        self.glyph_size_px = (cell_width, cell_height)
+        self.glyph_size_px: tuple[int, int] = (cell_width, cell_height)
         self.atlas_texture = atlas_texture
+
+
+class Editor:
+    def __init__(self, gl: moderngl.Context | None = None) -> None:
+        self._gl = gl or moderngl.get_context()
+
+        self._node = Node(
+            fs_source=Path(RESOURCES_DIR / "shaders" / "editor.frag.glsl").read_text()
+        )
+        self._grid_size = (1024, 1024)  # (n_rows, n_cols)
+        self._font = Font(
+            file_path=str(
+                RESOURCES_DIR / "fonts" / "Anonymous_Pro" / "AnonymousPro-Regular.ttf"
+            ),
+            size=28,
+        )
+
+        self._glyph_uvs_data = np.zeros((*self._grid_size, 4), dtype=np.float32)
+        self._glyph_uvs_texture = self._gl.texture(
+            size=(self._grid_size[1], self._grid_size[0]),
+            components=4,
+            data=self._glyph_uvs_data,
+            dtype="f4",
+        )
+
+        self._glyph_metrics_data = np.zeros((*self._grid_size, 4), dtype=np.float32)
+        self._glyph_metrics_texture = self._gl.texture(
+            size=(self._grid_size[1], self._grid_size[0]),
+            components=4,
+            data=self._glyph_metrics_data,
+            dtype="f4",
+        )
+
+        self._lines: list[list[int]] = []
+        self._top_line_idx = 0
+
+    @property
+    def canvas_texture(self) -> moderngl.Texture:
+        return self._node.canvas.texture
+
+    @property
+    def n_lines(self) -> int:
+        return self._node.canvas.texture.size[1] // self._font.glyph_size_px[1]
+
+    def set_canvas_size(self, size: tuple[int, int]) -> None:
+        width = int(size[0])
+        height = int(size[1])
+        self._node.canvas.set_size((width, height))
+
+    def _update_textures(self) -> None:
+        self._glyph_metrics_data.fill(0.0)
+        self._glyph_uvs_data.fill(0.0)
+
+        for i_line in range(self._top_line_idx, self._top_line_idx + self.n_lines):
+            ord_line = self._lines[i_line]
+
+            if not ord_line:
+                continue
+
+            uvs_line = [self._font.glyphs[idx]["uv"] for idx in ord_line]
+            metrics_line = [self._font.glyphs[idx]["metrics"] for idx in ord_line]
+
+            i_row = i_line - self._top_line_idx
+            self._glyph_uvs_data[i_row, : len(uvs_line), :] = uvs_line
+            self._glyph_metrics_data[i_row, : len(metrics_line), :] = metrics_line
+
+        self._glyph_uvs_texture.write(self._glyph_uvs_data)
+        self._glyph_metrics_texture.write(self._glyph_metrics_data)
+
+    def set_top_line_idx(self, idx: int) -> None:
+        self._top_line_idx = idx
+        self._update_textures()
+
+    def set_text_src(self, src: str) -> None:
+        self._lines = []
+        self._top_line_idx = 0
+
+        for text_line in src.split("\n"):
+            ord_line = [ord(ch) for ch in text_line]
+            self._lines.append(ord_line)
+
+        self._update_textures()
+
+    def render(self) -> None:
+        self._node.uniform_values["u_grid_size"] = self._grid_size
+        self._node.uniform_values["u_glyph_size_px"] = self._font.glyph_size_px
+        self._node.uniform_values["u_glyph_atlas"] = self._font.atlas_texture
+        self._node.uniform_values["u_glyph_uvs"] = self._glyph_uvs_texture
+        self._node.uniform_values["u_glyph_metrics"] = self._glyph_metrics_texture
+        self._node.render()
 
 
 class App:
@@ -712,43 +802,8 @@ class App:
         self._active_popup_label: str | None = None
         self.global_fps = 0.0
 
-        # ----------------------------------------------------------------
-        # Editor (TODO: factor this shit out)
-        editor_fs_source = Path(
-            RESOURCES_DIR / "shaders" / "editor.frag.glsl"
-        ).read_text()
-        self.editor_node = Node(fs_source=editor_fs_source)
-        self.editor_grid_size = (256, 256)
-        self.editor_font = Font(
-            file_path=str(
-                RESOURCES_DIR / "fonts" / "Anonymous_Pro" / "AnonymousPro-Regular.ttf"
-            ),
-            size=28,
-        )
+        self.editor = Editor()
 
-        glyph_uvs_data = np.zeros((*self.editor_grid_size, 4), dtype=np.float32)
-        glyph_metrics_data = np.zeros((*self.editor_grid_size, 4), dtype=np.float32)
-        for i, ch in enumerate(
-            'The quick brown fox jumps over the lazy dog! if __name__ == "__main__":'
-        ):
-            glyph_uvs_data[0, i, :] = self.editor_font.glyphs[ord(ch)]["uv"]
-            glyph_metrics_data[0, i, :] = self.editor_font.glyphs[ord(ch)]["metrics"]
-
-        self.editor_glyph_uvs_texture = moderngl.get_context().texture(
-            size=self.editor_grid_size,
-            components=4,
-            data=glyph_uvs_data,
-            dtype="f4",
-        )
-
-        self.editor_glyph_metrics_texture = moderngl.get_context().texture(
-            size=self.editor_grid_size,
-            components=4,
-            data=glyph_metrics_data,
-            dtype="f4",
-        )
-
-        # ----------------------------------------------------------------
         self._init(project_dir)
 
     @staticmethod
@@ -1890,7 +1945,7 @@ class App:
 
                 imgui.end_tab_bar()
 
-    def draw_all(self) -> None:
+    def draw_imgui(self) -> None:
         imgui.push_font(self._font_14)
 
         window_width, window_height = glfw.get_window_size(self.window)
@@ -1909,10 +1964,10 @@ class App:
         )
 
         image_width, image_height = imgui.get_content_region_available()
-        self.editor_node.canvas.set_size((int(image_width), int(image_height)))
+        self.editor.set_canvas_size((image_width, image_height))
 
         imgui.image(
-            self.editor_node.canvas.texture.glo,
+            self.editor.canvas_texture.glo,
             width=image_width,
             height=image_height,
             uv0=(0, 1),
@@ -2136,21 +2191,6 @@ class App:
                 _render_preview(sticker.preview_canvas)
 
         # ----------------------------------------------------------------
-        # Render editor node
-        self.editor_node.uniform_values["u_grid_size"] = self.editor_grid_size
-        self.editor_node.uniform_values["u_glyph_size_px"] = (
-            self.editor_font.glyph_size_px
-        )
-        self.editor_node.uniform_values["u_glyph_atlas"] = (
-            self.editor_font.atlas_texture
-        )
-        self.editor_node.uniform_values["u_glyph_uvs"] = self.editor_glyph_uvs_texture
-        self.editor_node.uniform_values["u_glyph_metrics"] = (
-            self.editor_glyph_metrics_texture
-        )
-        self.editor_node.render()
-
-        # ----------------------------------------------------------------
         # Render regular nodes
         if self._active_popup_label is None:
             for ui_node in self.ui_nodes.values():
@@ -2165,6 +2205,14 @@ class App:
                 ui_node.node.render()
 
         # ----------------------------------------------------------------
+        # Render editor
+        if self.ui_app_state.current_node_dir:
+            ui_node = self.ui_nodes[self.ui_app_state.current_node_dir]
+            self.editor.set_text_src(ui_node.node.fs_source)
+
+        self.editor.render()
+
+        # ----------------------------------------------------------------
         # Draw UI
         gl.screen.use()
         gl.clear()
@@ -2172,7 +2220,7 @@ class App:
         self.imgui_renderer.process_inputs()
         imgui.new_frame()
 
-        self.draw_all()
+        self.draw_imgui()
 
         # Finalize frame
         imgui.end()
