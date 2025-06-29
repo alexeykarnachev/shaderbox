@@ -25,6 +25,7 @@ dependencies = [
     "uvicorn>=0.34.2",
     "uuid>=1.30",
     "freetype-py>=2.5.1",
+    "more-itertools>=10.7.0",
 ]
 
 [build-system]

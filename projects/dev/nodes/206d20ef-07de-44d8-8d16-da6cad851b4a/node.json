@@ -26,9 +26,9 @@
             0.8199999928474426
         ],
         "u_body_weights": [
-            29.8700008392334,
-            11.869999885559082,
-            -2.3499999046325684
+            27.8799991607666,
+            12.920000076293945,
+            -0.6899999976158142
         ],
         "u_image": {
             "file_path": "/home/akarnachev/src/shaderbox/projects/dev/nodes/206d20ef-07de-44d8-8d16-da6cad851b4a/media/u_image.png",
@@ -39,10 +39,10 @@
             "components": 4
         },
         "u_offset": [
-            0.3499999940395355,
-            0.03999999910593033
+            0.27000001072883606,
+            0.029999999329447746
         ],
-        "u_scale": 2.6600000858306885
+        "u_scale": 1.9900000095367432
     },
     "ui_state": {
         "ui_name": "Spoty",
@@ -167,7 +167,7 @@
             }
         },
         "resolution_idx": 0,
-        "selected_uniform_name": "u_body_edge_1",
+        "selected_uniform_name": "u_offset",
         "video_to_video_smoothing_window": 5,
         "video_to_video_smoothing_sigma": 1.0
     }

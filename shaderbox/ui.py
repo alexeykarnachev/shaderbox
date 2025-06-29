@@ -22,6 +22,7 @@ import numpy as np
 import telegram as tg
 from imgui.integrations.glfw import GlfwRenderer
 from loguru import logger
+from more_itertools import chunked
 from OpenGL.GL import GL_FLOAT, GL_SAMPLER_2D, GL_UNSIGNED_INT, GLError
 from platformdirs import user_data_dir
 from pydantic import BaseModel, model_validator
@@ -686,7 +687,6 @@ class Editor:
         self._node = Node(
             fs_source=Path(RESOURCES_DIR / "shaders" / "editor.frag.glsl").read_text()
         )
-        self._grid_size = (1024, 1024)  # (n_rows, n_cols)
         self._font = Font(
             file_path=str(
                 RESOURCES_DIR / "fonts" / "Anonymous_Pro" / "AnonymousPro-Regular.ttf"
@@ -694,36 +694,16 @@ class Editor:
             size=28,
         )
 
-        self._glyph_uvs_data = np.zeros((*self._grid_size, 4), dtype=np.float32)
-        self._glyph_uvs_texture = self._gl.texture(
-            size=(self._grid_size[1], self._grid_size[0]),
-            components=4,
-            data=self._glyph_uvs_data,
-            dtype="f4",
-        )
+        self._lines: list[str]
+        self._top_line_idx: int
+        self._grid_size: tuple[int, int]
 
-        self._glyph_metrics_data = np.zeros((*self._grid_size, 4), dtype=np.float32)
-        self._glyph_metrics_texture = self._gl.texture(
-            size=(self._grid_size[1], self._grid_size[0]),
-            components=4,
-            data=self._glyph_metrics_data,
-            dtype="f4",
-        )
-
-        self._lines: list[list[int]] = []
-        self._top_line_idx = 0
+        self._glyph_uvs_texture: moderngl.Texture | None = None
+        self._glyph_metrics_texture: moderngl.Texture | None = None
 
     @property
     def canvas_texture(self) -> moderngl.Texture:
         return self._node.canvas.texture
-
-    @property
-    def n_lines_visible(self) -> int:
-        n_lines_visible_max: int = (
-            self._node.canvas.texture.size[1] // self._font.glyph_size_px[1]
-        )
-        n_lines_visible: int = min(len(self._lines), n_lines_visible_max)
-        return n_lines_visible
 
     def set_canvas_size(self, size: tuple[int, int]) -> None:
         width = int(size[0])
@@ -731,27 +711,71 @@ class Editor:
         if self._node.canvas.set_size((width, height)):
             self._update_textures()
 
+    def set_text(self, text: str) -> None:
+        self._top_line_idx = 0
+        self._lines = text.split("\n")
+        self._update_textures()
+
     def _update_textures(self) -> None:
-        self._glyph_metrics_data.fill(0.0)
-        self._glyph_uvs_data.fill(0.0)
+        w, h = self._node.canvas.texture.size
+        self._grid_size = (
+            int(w // self._font.glyph_size_px[0]),
+            int(h // self._font.glyph_size_px[1]),
+        )
 
-        n_lines_visible = min(self.n_lines_visible, len(self._lines))
-        bot_line_idx = min(len(self._lines) - 1, self._top_line_idx + n_lines_visible)
-        for i_line in range(self._top_line_idx, bot_line_idx):
-            ord_line = self._lines[i_line]
+        grid_n_cols, grid_n_rows = self._grid_size
+        data_size = (grid_n_rows, grid_n_cols, 4)
 
-            if not ord_line:
+        glyph_uvs_data = np.zeros(data_size, dtype=np.float32)
+        glyph_metrics_data = np.zeros(data_size, dtype=np.float32)
+
+        i_row = 0
+        i_line = self._top_line_idx
+        while i_row < grid_n_rows and i_line < len(self._lines):
+            line = self._lines[i_line]
+            i_line += 1
+
+            if not line:
+                i_row += 1
                 continue
 
-            uvs_line = [self._font.glyphs[idx]["uv"] for idx in ord_line]
-            metrics_line = [self._font.glyphs[idx]["metrics"] for idx in ord_line]
+            for line_chunk in chunked(line, grid_n_cols):
+                ord_line = list(map(ord, line_chunk))
+                uvs_line = [self._font.glyphs[idx]["uv"] for idx in ord_line]
+                metrics_line = [self._font.glyphs[idx]["metrics"] for idx in ord_line]
 
-            i_row = i_line - self._top_line_idx
-            self._glyph_uvs_data[i_row, : len(uvs_line), :] = uvs_line
-            self._glyph_metrics_data[i_row, : len(metrics_line), :] = metrics_line
+                glyph_uvs_data[i_row, : len(uvs_line), :] = uvs_line
+                glyph_metrics_data[i_row, : len(metrics_line), :] = metrics_line
+                i_row += 1
 
-        self._glyph_uvs_texture.write(self._glyph_uvs_data)
-        self._glyph_metrics_texture.write(self._glyph_metrics_data)
+                if i_row == grid_n_rows:
+                    break
+
+        if (
+            self._glyph_uvs_texture is None
+            or self._glyph_uvs_texture.size != self._grid_size
+        ):
+            self._glyph_uvs_texture = self._gl.texture(
+                size=self._grid_size,
+                components=4,
+                data=glyph_uvs_data,
+                dtype="f4",
+            )
+        else:
+            self._glyph_uvs_texture.write(glyph_uvs_data)
+
+        if (
+            self._glyph_metrics_texture is None
+            or self._glyph_metrics_texture.size != self._grid_size
+        ):
+            self._glyph_metrics_texture = self._gl.texture(
+                size=self._grid_size,
+                components=4,
+                data=glyph_metrics_data,
+                dtype="f4",
+            )
+        else:
+            self._glyph_metrics_texture.write(glyph_metrics_data)
 
     def set_top_line_idx(self, idx: int) -> None:
         self._top_line_idx = idx
@@ -762,16 +786,6 @@ class Editor:
             return
 
         self._top_line_idx = max(0, min(self._top_line_idx + step, len(self._lines)))
-        self._update_textures()
-
-    def set_text_src(self, src: str) -> None:
-        self._lines = []
-        self._top_line_idx = 0
-
-        for text_line in src.split("\n"):
-            ord_line = [ord(ch) for ch in text_line]
-            self._lines.append(ord_line)
-
         self._update_textures()
 
     def render(self) -> None:
@@ -901,7 +915,7 @@ class App:
         self._ui_app_state.current_node_id = id
 
         ui_node = self.ui_nodes[id]
-        self.editor.set_text_src(ui_node.node.fs_source)
+        self.editor.set_text(text=ui_node.node.fs_source)
 
     def _init(self, project_dir: Path) -> None:
         self.release()
@@ -934,9 +948,7 @@ class App:
                 ui_app_state = UIAppState(**state_dict)
 
                 if ui_node := self.ui_nodes.get(ui_app_state.current_node_id):
-                    self.editor.set_text_src(ui_node.node.fs_source)
-                else:
-                    self.editor.set_text_src("")
+                    self.editor.set_text(text=ui_node.node.fs_source)
 
                 self._ui_app_state = ui_app_state
 
