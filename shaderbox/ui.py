@@ -87,10 +87,21 @@ def adjust_size(
 K = TypeVar("K")
 
 
-def select_next_value(values: Sequence[K], current_key: K | None, step: int = 1) -> K:
+def select_next_value(
+    values: Sequence[K],
+    current_value: K | None,
+    default_value: K,
+    step: int = 1,
+) -> K:
+    if not values:
+        return default_value
+
     idx = (
-        0 if not current_key or current_key not in values else values.index(current_key)
+        0
+        if not current_value or current_value not in values
+        else values.index(current_value)
     )
+
     return values[(idx + step) % len(values)]
 
 
@@ -358,8 +369,8 @@ class UINodeState(BaseModel):
 
 
 class UIAppState(BaseModel):
-    current_node_dir: str = ""
-    selected_node_template_dir: str = ""
+    current_node_id: str = ""
+    selected_node_template_id: str = ""
     new_node_name: str = ""
     is_render_all_nodes: bool = True
 
@@ -371,12 +382,17 @@ class UIAppState(BaseModel):
 
     media_model_idx: int = 0
 
+    def save(self, file_path: str | Path) -> None:
+        app_state_dict = self.model_dump()
+        with Path(file_path).open("w") as f:
+            json.dump(app_state_dict, f, indent=4)
+
 
 class UINode(BaseModel):
     node: Node
 
     # Some kind of unique id and also name of the directory to save the node
-    dir: str = ""
+    id: str = ""
 
     mtime: float = 0
     ui_state: UINodeState = UINodeState()
@@ -384,17 +400,17 @@ class UINode(BaseModel):
     model_config = {"arbitrary_types_allowed": True}
 
     @model_validator(mode="after")  # type: ignore
-    def _dir_validator(self) -> Self:
-        if not self.dir:
-            self.reset_dir()
+    def _id_validator(self) -> Self:
+        if not self.id:
+            self.reset_id()
 
         return self
 
-    def reset_dir(self) -> None:
-        self.dir = str(uuid4())
+    def reset_id(self) -> None:
+        self.id = str(uuid4())
 
     def save(self, root_dir: Path, dir_name: str | None = None) -> Path:
-        dir = root_dir / (dir_name or self.dir)
+        dir = root_dir / (dir_name or self.id)
         dir.mkdir(exist_ok=True, parents=True)
 
         meta: dict[str, Any] = {
@@ -534,7 +550,7 @@ def load_node_from_dir(node_dir: Path) -> UINode:
     ui_state = UINodeState(**filtered_ui_state)
 
     return UINode(
-        dir=dir_name,
+        id=dir_name,
         node=node,
         mtime=mtime,
         ui_state=ui_state,
@@ -800,7 +816,7 @@ class App:
 
         self.ui_nodes: dict[str, UINode] = {}
         self.ui_node_templates: dict[str, UINode] = {}
-        self.ui_app_state = UIAppState()
+        self._ui_app_state = UIAppState()
         self._tg_stickers: list[UITgSticker] = []
         self._tg_selected_sticker_idx: int = 0
         self._tg_stickers_bot: tg.Bot
@@ -864,6 +880,22 @@ class App:
     def trash_dir(self) -> Path:
         return self._create_dir_if_needed(self.project_dir / "trash")
 
+    @property
+    def current_node_id(self) -> str:
+        return self._ui_app_state.current_node_id
+
+    @property
+    def current_node_ui_state_or_default(self) -> UINodeState:
+        node_id = self.current_node_id
+
+        if not node_id:
+            return UINodeState()
+
+        return self.ui_nodes[node_id].ui_state
+
+    def set_current_node_id(self, id: str = "") -> None:
+        self._ui_app_state.current_node_id = id
+
     def _init(self, project_dir: Path) -> None:
         self.release()
         self.fetch_modelbox_info()
@@ -891,16 +923,11 @@ class App:
                 state_dict = {
                     k: v for k, v in state_dict.items() if k in UIAppState.model_fields
                 }
-                self.ui_app_state = UIAppState(**state_dict)
+                self._ui_app_state = UIAppState(**state_dict)
 
-                if (
-                    self.ui_app_state.current_node_dir
-                    and self.ui_app_state.current_node_dir not in self.ui_nodes
-                ):
-                    logger.warning(
-                        f"Node {self.ui_app_state.current_node_dir} not found"
-                    )
-                    self.ui_app_state.current_node_dir = ""
+                if self.current_node_id and self.current_node_id not in self.ui_nodes:
+                    logger.warning(f"Node {self.current_node_id} not found")
+                    self.set_current_node_id()
 
     def fetch_modelbox_info(self) -> None:
         try:
@@ -921,11 +948,11 @@ class App:
 
     def fetch_tg_stickers(self) -> None:
         async def _fetch() -> list[UITgSticker]:
-            self._tg_stickers_bot = tg.Bot(token=self.ui_app_state.tg_bot_token)
+            self._tg_stickers_bot = tg.Bot(token=self._ui_app_state.tg_bot_token)
             await self._tg_stickers_bot.initialize()
 
             sticker_set = await self._tg_stickers_bot.get_sticker_set(
-                name=self.ui_app_state.tg_sticker_set_name
+                name=self._ui_app_state.tg_sticker_set_name
             )
             coros = [
                 UITgSticker(media_dir=self.media_dir, sticker=sticker).load()
@@ -946,14 +973,11 @@ class App:
         new_sticker = UITgSticker(media_dir=self.media_dir)
         self._tg_stickers.insert(0, new_sticker)
 
-    @property
-    def ui_current_node_state(self) -> UINodeState:
-        if not self.ui_app_state.current_node_dir:
-            return UINodeState()
-        return self.ui_nodes[self.ui_app_state.current_node_dir].ui_state
+    def edit_current_node_fs_file(self) -> None:
+        if not self.current_node_id:
+            logger.warning("Nothing to edit")
 
-    def edit_node_fs_file(self, node_name: str) -> None:
-        fs_file_path = self.nodes_dir / node_name / "shader.frag.glsl"
+        fs_file_path = self.nodes_dir / self.current_node_id / "shader.frag.glsl"
         wd = fs_file_path.parent.parent
         editor = "nvim" if shutil.which("nvim") else "vim"
 
@@ -967,12 +991,6 @@ class App:
             logger.error(
                 f"Failed to open {fs_file_path} in {editor} with new terminal: {e}"
             )
-
-    def edit_current_node_fs_file(self) -> None:
-        if self.ui_app_state.current_node_dir:
-            self.edit_node_fs_file(self.ui_app_state.current_node_dir)
-        else:
-            logger.warning("Nothing to edit")
 
     def save_ui_node(
         self,
@@ -996,20 +1014,11 @@ class App:
 
             imgui.end_popup()
 
-    def save_current_node(self) -> None:
-        if self.ui_app_state.current_node_dir:
-            self.save_ui_node(self.ui_nodes[self.ui_app_state.current_node_dir])
-        else:
-            logger.warning("Nothing to save")
-
-    def save_app_state(self) -> None:
-        app_state_dict = self.ui_app_state.model_dump()
-        with self.app_state_file_path.open("w") as f:
-            json.dump(app_state_dict, f, indent=4)
-
     def save(self) -> None:
-        self.save_current_node()
-        self.save_app_state()
+        if self.current_node_id:
+            self.save_ui_node(self.ui_nodes[self.current_node_id])
+
+        self._ui_app_state.save(self.app_state_file_path)
 
     def release(self) -> None:
         for sticker in self._tg_stickers:
@@ -1022,41 +1031,50 @@ class App:
             node.node.release()
 
     def delete_current_node(self) -> None:
-        if not self.ui_app_state.current_node_dir:
-            logger.info("Current node is None, nothing to delete")
+        node_id = self.current_node_id
+
+        if not node_id:
             return
 
-        name = self.ui_app_state.current_node_dir
-        self.ui_nodes.pop(name).node.release()
-
-        self.ui_app_state.current_node_dir = (
-            next(iter(self.ui_nodes)) if self.ui_nodes else ""
+        new_node_id = select_next_value(
+            values=list(self.ui_nodes.keys()),
+            current_value=self.current_node_id,
+            default_value="",
         )
 
-        shutil.move(self.nodes_dir / name, self.trash_dir / name)
-        logger.info(f"Node deleted: {name}")
+        if new_node_id == node_id:
+            new_node_id = ""
+
+        self.ui_nodes.pop(node_id).node.release()
+        self.set_current_node_id(new_node_id)
+        shutil.move(self.nodes_dir / node_id, self.trash_dir / node_id)
+
+        logger.info(f"Node deleted: {node_id}")
 
     def select_next_current_node(self, step: int = +1) -> None:
-        if not self.ui_nodes:
-            return
-
-        self.ui_app_state.current_node_dir = select_next_value(
-            list(self.ui_nodes.keys()), self.ui_app_state.current_node_dir, step
+        self.set_current_node_id(
+            select_next_value(
+                values=list(self.ui_nodes.keys()),
+                current_value=self.current_node_id,
+                default_value="",
+                step=step,
+            )
         )
 
     def select_next_template(self, step: int = +1) -> None:
-        self.ui_app_state.selected_node_template_dir = select_next_value(
-            list(self.ui_node_templates.keys()),
-            self.ui_app_state.selected_node_template_dir,
-            step,
+        self._ui_app_state.selected_node_template_id = select_next_value(
+            values=list(self.ui_node_templates.keys()),
+            current_value=self._ui_app_state.selected_node_template_id,
+            default_value="",
+            step=step,
         )
 
     def draw_node_preview_grid(self, width: int, height: int) -> None:
         with imgui.begin_child(
             "node_preview_grid", width=width, height=height, border=True
         ):
-            self.ui_app_state.is_render_all_nodes = imgui.checkbox(
-                "Render all", self.ui_app_state.is_render_all_nodes
+            self._ui_app_state.is_render_all_nodes = imgui.checkbox(
+                "Render all", self._ui_app_state.is_render_all_nodes
             )[1]
 
             if imgui.is_item_hovered():
@@ -1082,16 +1100,16 @@ class App:
             preview_size = 150
             n_cols = int(imgui.get_content_region_available()[0] // (preview_size + 5))
             n_cols = max(1, n_cols)
-            for i, (name, ui_node) in enumerate(self.ui_nodes.items()):
+            for i, (id, ui_node) in enumerate(self.ui_nodes.items()):
                 border_color = None
-                if name == self.ui_app_state.current_node_dir:
+                if id == self.current_node_id:
                     if ui_node.node.shader_error:
                         border_color = (1.0, 0.0, 0.0)
                     else:
                         border_color = (0.0, 1.0, 0.0)
 
                 if ui_node.draw_preview_button(border_color, preview_size):
-                    self.ui_app_state.current_node_dir = name
+                    self.set_current_node_id(id)
 
                 if (i + 1) % n_cols != 0:
                     imgui.same_line()
@@ -1108,15 +1126,15 @@ class App:
         n_cols = max(1, int(available_width // (preview_size + 5)))
 
         for i, ui_node_template in enumerate(self.ui_node_templates.values()):
-            if ui_node_template.dir == self.ui_app_state.selected_node_template_dir:
+            if ui_node_template.id == self._ui_app_state.selected_node_template_id:
                 border_color = (0.0, 1.0, 0.0)
                 is_template_selected = True
             else:
                 border_color = None
 
             if ui_node_template.draw_preview_button(border_color, preview_size):
-                self.ui_app_state.selected_node_template_dir = ui_node_template.dir
-                self.ui_app_state.new_node_name = ui_node_template.ui_state.ui_name
+                self._ui_app_state.selected_node_template_id = ui_node_template.id
+                self._ui_app_state.new_node_name = ui_node_template.ui_state.ui_name
 
             if (i + 1) % n_cols != 0 and i != len(self.ui_node_templates) - 1:
                 imgui.same_line()
@@ -1143,17 +1161,17 @@ class App:
 
     def create_node_from_selected_template(self) -> None:
         selected_template = self.ui_node_templates[
-            self.ui_app_state.selected_node_template_dir
+            self._ui_app_state.selected_node_template_id
         ]
 
-        new_node = load_node_from_dir(self.node_templates_dir / selected_template.dir)
-        new_node.reset_dir()
+        new_node = load_node_from_dir(self.node_templates_dir / selected_template.id)
+        new_node.reset_id()
 
-        self.ui_nodes[new_node.dir] = new_node
-        self.ui_app_state.current_node_dir = new_node.dir
+        self.ui_nodes[new_node.id] = new_node
+        self.set_current_node_id(new_node.id)
         self.save_ui_node(new_node)
         logger.info(
-            f"New node {new_node.dir} created from template {self.ui_app_state.selected_node_template_dir}"
+            f"New node {new_node.id} created from template {self._ui_app_state.selected_node_template_id}"
         )
 
     def draw_settings(self) -> bool:
@@ -1179,12 +1197,10 @@ class App:
         return is_keep_opened
 
     def draw_node_tab(self) -> None:
-        if self.ui_app_state.current_node_dir:
-            ui_node = self.ui_nodes[self.ui_app_state.current_node_dir]
-        else:
+        if not (ui_node := self.ui_nodes.get(self.current_node_id)):
             return
 
-        fs_file_path = self.nodes_dir / ui_node.dir / "shader.frag.glsl"
+        fs_file_path = self.nodes_dir / ui_node.id / "shader.frag.glsl"
         imgui.text_colored(str(fs_file_path), 0.5, 0.5, 0.5)
 
         imgui.spacing()
@@ -1194,7 +1210,7 @@ class App:
         # ----------------------------------------------------------------
         # Node menu bar
         if imgui.button("Edit code", width=80):
-            self.edit_node_fs_file(ui_node.dir)
+            self.edit_current_node_fs_file()
         imgui.same_line()
 
         if imgui.button("Save as template"):
@@ -1257,17 +1273,16 @@ class App:
             imgui.same_line()
             imgui.text_colored("(" + ", ".join(matching_uniforms) + ")", 0.5, 0.5, 0.5)
 
-        self.ui_current_node_state.resolution_idx = imgui.combo(
-            "##resolution_idx",
-            self.ui_current_node_state.resolution_idx,
-            resolution_items,
+        node_ui_state = self.current_node_ui_state_or_default
+        node_ui_state.resolution_idx = imgui.combo(
+            "##resolution_idx", node_ui_state.resolution_idx, resolution_items
         )[1]
 
         imgui.same_line()
         if imgui.button("Apply##resolution"):
             w, h = map(
                 int,
-                resolution_items[self.ui_current_node_state.resolution_idx]
+                resolution_items[node_ui_state.resolution_idx]
                 .split(" | ")[0]
                 .split("x"),
             )
@@ -1279,7 +1294,7 @@ class App:
 
         # ----------------------------------------------------------------
         # Uniforms
-        ui_uniforms = self.ui_current_node_state.ui_uniforms
+        ui_uniforms = node_ui_state.ui_uniforms
 
         active_uniform_hashes = []
         for uniform in ui_node.node.get_active_uniforms():
@@ -1297,7 +1312,7 @@ class App:
 
         imgui.end_child()
 
-        if self.ui_current_node_state.selected_uniform_name:
+        if node_ui_state.selected_uniform_name:
             imgui.same_line()
             imgui.begin_child("selected_uniform_settings", border=True)
             self.draw_selected_ui_uniform_settings()
@@ -1316,18 +1331,18 @@ class App:
         else:
             imgui.text("Media model")
 
-            self.ui_app_state.media_model_idx = min(
-                self.ui_app_state.media_model_idx,
+            self._ui_app_state.media_model_idx = min(
+                self._ui_app_state.media_model_idx,
                 len(media_model_names) - 1,
             )
 
-            self.ui_app_state.media_model_idx = imgui.combo(
+            self._ui_app_state.media_model_idx = imgui.combo(
                 "##media_model_idx",
-                self.ui_app_state.media_model_idx,
+                self._ui_app_state.media_model_idx,
                 media_model_names,
             )[1]
 
-            model_name = media_model_names[self.ui_app_state.media_model_idx]
+            model_name = media_model_names[self._ui_app_state.media_model_idx]
 
             imgui.same_line()
             if imgui.button("Apply##media_model"):
@@ -1344,15 +1359,16 @@ class App:
 
         imgui.text("Smoothing")
 
-        self.ui_current_node_state.video_to_video_smoothing_window = imgui.drag_int(
+        node_ui_state = self.current_node_ui_state_or_default
+        node_ui_state.video_to_video_smoothing_window = imgui.drag_int(
             "Window",
-            self.ui_current_node_state.video_to_video_smoothing_window,
+            node_ui_state.video_to_video_smoothing_window,
             min_value=3,
         )[1]
 
-        self.ui_current_node_state.video_to_video_smoothing_sigma = imgui.drag_float(
+        node_ui_state.video_to_video_smoothing_sigma = imgui.drag_float(
             "Sigma",
-            self.ui_current_node_state.video_to_video_smoothing_sigma,
+            node_ui_state.video_to_video_smoothing_sigma,
             min_value=0.01,
             change_speed=0.01,
         )[1]
@@ -1361,8 +1377,8 @@ class App:
             input_file_path = Path(input_video.details.file_details.path)
             name = input_file_path.stem
 
-            w = self.ui_current_node_state.video_to_video_smoothing_window
-            s = self.ui_current_node_state.video_to_video_smoothing_sigma
+            w = node_ui_state.video_to_video_smoothing_window
+            s = node_ui_state.video_to_video_smoothing_sigma
             name = f"{name}_w:{w}_s:{s}"
             output_file_path = (self.trash_dir / name).with_suffix(
                 input_file_path.suffix
@@ -1378,25 +1394,21 @@ class App:
         return output_video or input_video
 
     def draw_selected_ui_uniform_settings(self) -> None:
-        if not self.ui_app_state.current_node_dir:
-            return
-
-        ui_node = self.ui_nodes.get(self.ui_app_state.current_node_dir)
+        ui_node = self.ui_nodes.get(self._ui_app_state.current_node_id)
 
         if (
             not ui_node
             or not ui_node.node.program
-            or not self.ui_current_node_state.selected_uniform_name
-            or self.ui_current_node_state.selected_uniform_name
-            not in ui_node.node.program
+            or not ui_node.ui_state.selected_uniform_name
+            or ui_node.ui_state.selected_uniform_name not in ui_node.node.program
         ):
             return
 
-        uniform = ui_node.node.program[self.ui_current_node_state.selected_uniform_name]
+        uniform = ui_node.node.program[ui_node.ui_state.selected_uniform_name]
         if not isinstance(uniform, moderngl.Uniform | moderngl.UniformBlock):
             return
 
-        ui_uniform = self.ui_current_node_state.ui_uniforms[get_uniform_hash(uniform)]
+        ui_uniform = ui_node.ui_state.ui_uniforms[get_uniform_hash(uniform)]
         imgui.text(f"{ui_uniform.name} - {ui_uniform.input_type}")
         imgui.separator()
         imgui.spacing()
@@ -1454,10 +1466,9 @@ class App:
             imgui.text(f"Size: {uniform.size} B")  # type: ignore
 
     def draw_ui_uniform(self, ui_uniform: UIUniform) -> None:
-        if not self.ui_app_state.current_node_dir:
+        if not (ui_node := self.ui_nodes.get(self.current_node_id)):
             return
 
-        ui_node = self.ui_nodes[self.ui_app_state.current_node_dir]
         current_value: UniformValue = ui_node.node.uniform_values[ui_uniform.name]
         new_value = None
 
@@ -1509,7 +1520,7 @@ class App:
             assert isinstance(current_value, MediaWithTexture)
 
             n_styles = 0
-            if self.ui_current_node_state.selected_uniform_name == ui_uniform.name:
+            if ui_node.ui_state.selected_uniform_name == ui_uniform.name:
                 color = (0.0, 1.0, 0.0, 1.0)
                 imgui.push_style_color(imgui.COLOR_BUTTON, *color)
                 imgui.push_style_color(imgui.COLOR_BUTTON_HOVERED, *color)
@@ -1538,7 +1549,7 @@ class App:
                 uv0=(0, 1),
                 uv1=(1, 0),
             ):
-                self.ui_current_node_state.selected_uniform_name = ui_uniform.name
+                ui_node.ui_state.selected_uniform_name = ui_uniform.name
 
             imgui.pop_style_color(n_styles)
 
@@ -1560,7 +1571,7 @@ class App:
 
                 if media_cls:
                     new_value = media_cls(file_path)  # type: ignore
-                    self.ui_current_node_state.selected_uniform_name = ui_uniform.name
+                    ui_node.ui_state.selected_uniform_name = ui_uniform.name
 
         elif ui_uniform.input_type == "color":
             assert isinstance(current_value, Sequence)
@@ -1587,7 +1598,19 @@ class App:
         if ui_uniform.input_type != "auto" and (
             imgui.is_item_clicked() or imgui.is_item_active()
         ):
-            self.ui_current_node_state.selected_uniform_name = ui_uniform.name
+            ui_node.ui_state.selected_uniform_name = ui_uniform.name
+
+    def draw_render_tab(self) -> None:
+        if not (ui_node := self.ui_nodes.get(self.current_node_id)):
+            return
+
+        ui_node.ui_state.render_media_details = self.draw_media_details(
+            ui_node.ui_state.render_media_details
+        )
+        _, ui_node.ui_state.render_media_details = self.draw_render_button(
+            ui_node.ui_state.render_media_details,
+            self.preview_canvas.texture,
+        )
 
     def draw_tg_stickers_tab(self) -> None:
         # ----------------------------------------------------------------
@@ -1596,22 +1619,22 @@ class App:
             "This token will be stored in the project's files, so do not accidentally commit it.",
             *(1.0, 1.0, 0.0),
         )
-        self.ui_app_state.tg_bot_token = imgui.input_text(
+        self._ui_app_state.tg_bot_token = imgui.input_text(
             "Bot token",
-            self.ui_app_state.tg_bot_token,
+            self._ui_app_state.tg_bot_token,
             flags=imgui.INPUT_TEXT_PASSWORD,
         )[1]
         imgui.spacing()
 
-        self.ui_app_state.tg_user_id = imgui.input_text(
+        self._ui_app_state.tg_user_id = imgui.input_text(
             "User id",
-            self.ui_app_state.tg_user_id,
+            self._ui_app_state.tg_user_id,
             flags=imgui.INPUT_TEXT_CHARS_DECIMAL,
         )[1]
 
-        self.ui_app_state.tg_sticker_set_name = imgui.input_text(
+        self._ui_app_state.tg_sticker_set_name = imgui.input_text(
             "Sticker set name",
-            self.ui_app_state.tg_sticker_set_name,
+            self._ui_app_state.tg_sticker_set_name,
             flags=imgui.INPUT_TEXT_CHARS_NO_BLANK,
         )[1]
 
@@ -1725,7 +1748,7 @@ class App:
                         if sticker._sticker is not None:
                             self._loop.run_until_complete(
                                 self._tg_stickers_bot.replace_sticker_in_set(
-                                    user_id=int(self.ui_app_state.tg_user_id),
+                                    user_id=int(self._ui_app_state.tg_user_id),
                                     name=f"test_by_{self._tg_stickers_bot.username}",
                                     old_sticker=sticker._sticker,
                                     sticker=input_sticker,
@@ -1734,7 +1757,7 @@ class App:
                         else:
                             self._loop.run_until_complete(
                                 self._tg_stickers_bot.add_sticker_to_set(
-                                    user_id=int(self.ui_app_state.tg_user_id),
+                                    user_id=int(self._ui_app_state.tg_user_id),
                                     name=f"test_by_{self._tg_stickers_bot.username}",
                                     sticker=input_sticker,
                                 )
@@ -1745,7 +1768,6 @@ class App:
                         sticker.log_message = UIMessage.error(f"Failed to submit: {e}")
                         logger.error(e)
 
-            imgui.same_line()
             imgui.text_colored(
                 sticker.log_message.text, *sticker.log_message.get_color()
             )
@@ -1757,8 +1779,6 @@ class App:
         details: MediaDetails,
         preview_texture: moderngl.Texture | None,
     ) -> tuple[bool, MediaDetails]:
-        ui_node = self.ui_nodes[self.ui_app_state.current_node_dir]  # type: ignore
-
         # ----------------------------------------------------------------
         # Preview canvas
         if preview_texture is not None:
@@ -1777,7 +1797,11 @@ class App:
         is_rendered = False
         media_type = "video" if details.is_video else "image"
         if details.file_details.path:
-            if imgui.button("Render##media"):
+            if not (ui_node := self.ui_nodes.get(self.current_node_id)):
+                imgui.text_colored(
+                    "Node is not selected, nothing to render", *(1.0, 1.0, 0.0)
+                )
+            elif imgui.button("Render##media"):
                 try:
                     details = ui_node.node.render_media(details)
                     is_rendered = True
@@ -1831,11 +1855,12 @@ class App:
     ) -> ResolutionDetails:
         details = details.model_copy()
 
+        if not (ui_node := self.ui_nodes.get(self._ui_app_state.current_node_id)):
+            return details
+
         if not is_changeable:
             imgui.text(f"Resolution: {details.width}x{details.height}")
             return details
-
-        ui_node = self.ui_nodes[self.ui_app_state.current_node_dir]  # type: ignore
 
         is_width_changed, new_width = imgui.drag_int(
             "Width", details.width, min_value=16, max_value=2560
@@ -1872,12 +1897,10 @@ class App:
         is_changeable: bool = True,
     ) -> MediaDetails:
         details = details.model_copy()
+        aspect = None
 
-        if self.ui_app_state.current_node_dir:
-            ui_node = self.ui_nodes[self.ui_app_state.current_node_dir]
+        if ui_node := self.ui_nodes.get(self._ui_app_state.current_node_id):
             aspect = np.divide(*ui_node.node.canvas.texture.size)
-        else:
-            aspect = None
 
         output_type_name = "video" if details.is_video else "image"
         if is_changeable:
@@ -1934,17 +1957,7 @@ class App:
                     imgui.end_tab_item()
 
                 if imgui.begin_tab_item("Render").selected:  # type: ignore
-                    self.ui_current_node_state.render_media_details = (
-                        self.draw_media_details(
-                            self.ui_current_node_state.render_media_details
-                        )
-                    )
-                    _, self.ui_current_node_state.render_media_details = (
-                        self.draw_render_button(
-                            self.ui_current_node_state.render_media_details,
-                            self.preview_canvas.texture,
-                        )
-                    )
+                    self.draw_render_tab()
                     imgui.end_tab_item()
 
                 if imgui.begin_tab_item("Tg stickers").selected:  # type: ignore
@@ -1952,8 +1965,6 @@ class App:
                     imgui.end_tab_item()
 
                 imgui.end_tab_bar()
-
-    # def process_hotkeys(self) -> None:
 
     def run(self) -> None:
         while not glfw.window_should_close(self.window):
@@ -1963,12 +1974,6 @@ class App:
 
             elapsed_time = glfw.get_time() - start_time
             time.sleep(max(0.0, 1.0 / 60.0 - elapsed_time))
-
-            if imgui.is_key_pressed(glfw.KEY_ESCAPE, repeat=False):
-                if self._active_popup_label is None:
-                    glfw.set_window_should_close(self.window, True)
-
-                self._active_popup_label = None
 
             fps = 1.0 / (glfw.get_time() - start_time)
             if self.global_fps <= 0.0:
@@ -1980,11 +1985,6 @@ class App:
         self.release()
 
     def update_and_draw(self) -> None:
-        # ----------------------------------------------------------------
-        # Prepare frame
-        gl = moderngl.get_context()
-        glfw.poll_events()
-
         # ----------------------------------------------------------------
         # Check for shader file changes and reload nodes
         for name in list(self.ui_nodes.keys()):
@@ -2002,29 +2002,27 @@ class App:
 
         # ----------------------------------------------------------------
         # Render previews
-        if self.ui_app_state.current_node_dir:
-            ui_node = self.ui_nodes[self.ui_app_state.current_node_dir]
+        if ui_node := self.ui_nodes.get(self._ui_app_state.current_node_id):
             preview_size = adjust_size(ui_node.node.canvas.texture.size, width=200)
 
-            def _render_preview(canvas: Canvas) -> None:
-                canvas.set_size(preview_size)
-                ui_node.node.render(canvas=canvas)
-
             # Render current node preview
-            _render_preview(self.preview_canvas)
+            self.preview_canvas.set_size(preview_size)
+            ui_node.node.render(canvas=self.preview_canvas)
 
             # Render current sticker preview
             if self._tg_selected_sticker_idx < len(self._tg_stickers):
                 sticker = self._tg_stickers[self._tg_selected_sticker_idx]
-                _render_preview(sticker.preview_canvas)
+
+                sticker.preview_canvas.set_size(preview_size)
+                ui_node.node.render(canvas=sticker.preview_canvas)
 
         # ----------------------------------------------------------------
-        # Render regular nodes
+        # Render nodes
         if self._active_popup_label is None:
             for ui_node in self.ui_nodes.values():
                 if (
-                    self.ui_app_state.is_render_all_nodes
-                    or ui_node == self.ui_nodes.get(self.ui_app_state.current_node_dir)
+                    self._ui_app_state.is_render_all_nodes
+                    or ui_node == self.ui_nodes.get(self.current_node_id)
                     or self.frame_idx == 0
                 ):
                     ui_node.node.render()
@@ -2032,8 +2030,11 @@ class App:
             for ui_node in self.ui_node_templates.values():
                 ui_node.node.render()
 
+        self.editor.render()
+
         # ----------------------------------------------------------------
         # Process hotkeys
+        glfw.poll_events()
         io = imgui.get_io()
 
         if io.key_alt and imgui.is_key_pressed(ord("S")):
@@ -2046,6 +2047,11 @@ class App:
             self.edit_current_node_fs_file()
         if io.key_ctrl and imgui.is_key_pressed(ord("D")):
             self.delete_current_node()
+
+        if imgui.is_key_pressed(glfw.KEY_ESCAPE, repeat=False):
+            if self._active_popup_label is None:
+                glfw.set_window_should_close(self.window, True)
+            self._active_popup_label = None
 
         if not imgui.is_any_item_active():
             if not self._active_popup_label:
@@ -2072,8 +2078,6 @@ class App:
 
         # ----------------------------------------------------------------
         # Draw editor
-        self.editor.render()
-
         imgui.set_next_window_size(window_width // 2, window_height)
         imgui.set_next_window_position(0, 0)
         imgui.begin(
@@ -2132,25 +2136,7 @@ class App:
         # Current node image
         cursor_pos = imgui.get_cursor_screen_pos()
 
-        if not self.ui_app_state.current_node_dir:
-            image_width, image_height = imgui.get_content_region_available()
-            image_height = max(image_height - control_panel_min_height, 400)
-
-            message = "To create a new node, press Ctrl+N"
-            text_size = imgui.calc_text_size(message)
-            text_x = cursor_pos[0] + (image_width - text_size[0]) / 2
-            text_y = cursor_pos[1] + (image_height - text_size[1]) / 2
-
-            draw_list = imgui.get_window_draw_list()
-            draw_list.add_text(
-                text_x,
-                text_y,
-                imgui.color_convert_float4_to_u32(1.0, 1.0, 0.0, 1.0),
-                message,
-            )
-        else:
-            ui_node = self.ui_nodes[self.ui_app_state.current_node_dir]
-
+        if ui_node := self.ui_nodes.get(self.current_node_id):
             min_image_height = 100
             max_image_height = max(
                 min_image_height,
@@ -2183,6 +2169,22 @@ class App:
                     imgui.color_convert_float4_to_u32(1.0, 0.0, 0.0, 1.0),
                     ui_node.node.shader_error,
                 )
+        else:
+            image_width, image_height = imgui.get_content_region_available()
+            image_height = max(image_height - control_panel_min_height, 400)
+
+            message = "To create a new node, press Ctrl+N"
+            text_size = imgui.calc_text_size(message)
+            text_x = cursor_pos[0] + (image_width - text_size[0]) / 2
+            text_y = cursor_pos[1] + (image_height - text_size[1]) / 2
+
+            draw_list = imgui.get_window_draw_list()
+            draw_list.add_text(
+                text_x,
+                text_y,
+                imgui.color_convert_float4_to_u32(1.0, 1.0, 0.0, 1.0),
+                message,
+            )
 
         imgui.set_cursor_screen_pos((cursor_pos[0], cursor_pos[1] + image_height + 10))  # type: ignore
 
@@ -2228,8 +2230,10 @@ class App:
         glfw.make_context_current(self.window)
         moderngl.get_context().clear_errors()
 
+        gl = moderngl.get_context()
         gl.screen.use()
         gl.clear()
+
         with contextlib.suppress(GLError):
             self.imgui_renderer.render(imgui.get_draw_data())
 
