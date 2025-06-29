@@ -4,6 +4,7 @@ import contextlib
 import hashlib
 import json
 import math
+import re
 import shutil
 import subprocess
 import time
@@ -22,7 +23,7 @@ import numpy as np
 import telegram as tg
 from imgui.integrations.glfw import GlfwRenderer
 from loguru import logger
-from more_itertools import chunked
+from numpy.typing import NDArray
 from OpenGL.GL import GL_FLOAT, GL_SAMPLER_2D, GL_UNSIGNED_INT, GLError
 from platformdirs import user_data_dir
 from pydantic import BaseModel, model_validator
@@ -694,9 +695,13 @@ class Editor:
             size=28,
         )
 
-        self._lines: list[str]
-        self._top_line_idx: int
-        self._grid_size: tuple[int, int]
+        self._lines: list[str] = []
+        self._top_line_idx: int = 0
+
+        self._grid_size: tuple[int, int] = (1, 1)
+
+        self._glyph_uvs_data: NDArray[np.float32] | None = None
+        self._glyph_metrics_data: NDArray[np.float32] | None = None
 
         self._glyph_uvs_texture: moderngl.Texture | None = None
         self._glyph_metrics_texture: moderngl.Texture | None = None
@@ -709,84 +714,128 @@ class Editor:
         width = int(size[0])
         height = int(size[1])
         if self._node.canvas.set_size((width, height)):
-            self._update_textures()
+            self._update()
 
     def set_text(self, text: str) -> None:
-        self._top_line_idx = 0
         self._lines = text.split("\n")
-        self._update_textures()
 
-    def _update_textures(self) -> None:
+        self._top_line_idx = 0
+
+        self._update()
+
+    def _update_glyphs_data(self) -> None:
         w, h = self._node.canvas.texture.size
-        self._grid_size = (
-            int(w // self._font.glyph_size_px[0]),
-            int(h // self._font.glyph_size_px[1]),
-        )
 
-        grid_n_cols, grid_n_rows = self._grid_size
-        data_size = (grid_n_rows, grid_n_cols, 4)
+        grid_n_cols = int(w // self._font.glyph_size_px[0])
+        grid_n_rows = int(h // self._font.glyph_size_px[1])
+        data_size = (grid_n_rows, grid_n_cols)
+        self._grid_size = (grid_n_cols, grid_n_rows)
 
-        glyph_uvs_data = np.zeros(data_size, dtype=np.float32)
-        glyph_metrics_data = np.zeros(data_size, dtype=np.float32)
+        if self._glyph_uvs_data is None or self._glyph_uvs_data.size != data_size:
+            self._glyph_uvs_data = np.zeros(
+                (grid_n_rows, grid_n_cols, 4), dtype=np.float32
+            )
+        else:
+            self._glyph_uvs_data.fill(0.0)
+
+        if (
+            self._glyph_metrics_data is None
+            or self._glyph_metrics_data.size != data_size
+        ):
+            self._glyph_metrics_data = np.zeros(
+                (grid_n_rows, grid_n_cols, 4), dtype=np.float32
+            )
+        else:
+            self._glyph_metrics_data.fill(0.0)
 
         i_row = 0
         i_line = self._top_line_idx
+
         while i_row < grid_n_rows and i_line < len(self._lines):
             line = self._lines[i_line]
-            i_line += 1
 
-            if not line:
-                i_row += 1
-                continue
+            line_pad = 0
+            with contextlib.suppress(StopIteration):
+                first_printable_match = next(re.finditer(r"\S", line))
+                line_pad = first_printable_match.span()[0]
+            line = line.lstrip()
 
-            for line_chunk in chunked(line, grid_n_cols):
-                ord_line = list(map(ord, line_chunk))
-                uvs_line = [self._font.glyphs[idx]["uv"] for idx in ord_line]
-                metrics_line = [self._font.glyphs[idx]["metrics"] for idx in ord_line]
+            i_col = line_pad
+            for ch in line:
+                ch_ord = ord(ch)
+                self._glyph_uvs_data[i_row][i_col] = self._font.glyphs[ch_ord]["uv"]
+                self._glyph_metrics_data[i_row][i_col] = self._font.glyphs[ch_ord][
+                    "metrics"
+                ]
 
-                glyph_uvs_data[i_row, : len(uvs_line), :] = uvs_line
-                glyph_metrics_data[i_row, : len(metrics_line), :] = metrics_line
-                i_row += 1
+                i_col += 1
 
-                if i_row == grid_n_rows:
+                if i_col >= grid_n_cols:
+                    i_col = line_pad
+                    i_row += 1
+
+                if i_row >= grid_n_rows:
                     break
 
-        if (
-            self._glyph_uvs_texture is None
-            or self._glyph_uvs_texture.size != self._grid_size
-        ):
+            i_row += 1
+            i_line += 1
+
+    def _update_glyphs_textures(self) -> None:
+        if self._glyph_uvs_texture is None:
             self._glyph_uvs_texture = self._gl.texture(
                 size=self._grid_size,
                 components=4,
-                data=glyph_uvs_data,
+                data=self._glyph_uvs_data,
+                dtype="f4",
+            )
+
+        if self._glyph_uvs_texture.size != self._grid_size:
+            self._glyph_uvs_texture.release()
+            self._glyph_uvs_texture = self._gl.texture(
+                size=self._grid_size,
+                components=4,
+                data=self._glyph_uvs_data,
                 dtype="f4",
             )
         else:
-            self._glyph_uvs_texture.write(glyph_uvs_data)
+            self._glyph_uvs_texture.write(self._glyph_uvs_data)
 
-        if (
-            self._glyph_metrics_texture is None
-            or self._glyph_metrics_texture.size != self._grid_size
-        ):
+        if self._glyph_metrics_texture is None:
             self._glyph_metrics_texture = self._gl.texture(
                 size=self._grid_size,
                 components=4,
-                data=glyph_metrics_data,
+                data=self._glyph_metrics_data,
+                dtype="f4",
+            )
+
+        if self._glyph_metrics_texture.size != self._grid_size:
+            self._glyph_metrics_texture.release()
+            self._glyph_metrics_texture = self._gl.texture(
+                size=self._grid_size,
+                components=4,
+                data=self._glyph_metrics_data,
                 dtype="f4",
             )
         else:
-            self._glyph_metrics_texture.write(glyph_metrics_data)
+            self._glyph_metrics_texture.write(self._glyph_metrics_data)
+
+    def _update(self) -> None:
+        self._update_glyphs_data()
+        self._update_glyphs_textures()
 
     def set_top_line_idx(self, idx: int) -> None:
         self._top_line_idx = idx
-        self._update_textures()
+        self._update()
 
     def inc_top_line_idx(self, step: int) -> None:
         if step == 0:
             return
 
         self._top_line_idx = max(0, min(self._top_line_idx + step, len(self._lines)))
-        self._update_textures()
+        self._update()
+
+    def inc_cursor(self, step: tuple[int, int]) -> None:
+        pass
 
     def render(self) -> None:
         self._node.uniform_values["u_grid_size"] = self._grid_size
@@ -794,6 +843,7 @@ class Editor:
         self._node.uniform_values["u_glyph_atlas"] = self._font.atlas_texture
         self._node.uniform_values["u_glyph_uvs"] = self._glyph_uvs_texture
         self._node.uniform_values["u_glyph_metrics"] = self._glyph_metrics_texture
+        # self._node.uniform_values["u_cursor_grid_pos"] = self._cursor_grid_pos
         self._node.render()
 
 
@@ -845,6 +895,7 @@ class App:
         self.global_fps = 0.0
 
         self.editor = Editor()
+        self._is_editor_active = False
 
         self._init(project_dir)
 
@@ -2061,36 +2112,49 @@ class App:
         glfw.poll_events()
         io = imgui.get_io()
 
-        if io.key_alt and imgui.is_key_pressed(ord("S")):
-            self._active_popup_label = self._SETTINGS_POPUP_LABEL
-        if io.key_ctrl and imgui.is_key_pressed(ord("N")):
-            self._active_popup_label = self._NODE_CREATOR_POPUP_LABEL
-        if io.key_ctrl and imgui.is_key_pressed(ord("S")):
-            self.save()
-        if io.key_ctrl and imgui.is_key_pressed(ord("E")):
-            self.edit_current_node_fs_file()
-        if io.key_ctrl and imgui.is_key_pressed(ord("D")):
-            self.delete_current_node()
+        if self._is_editor_active:
+            self.editor.inc_top_line_idx(-int(io.mouse_wheel))
 
-        if imgui.is_key_pressed(glfw.KEY_ESCAPE, repeat=False):
-            if self._active_popup_label is None:
-                glfw.set_window_should_close(self.window, True)
-            self._active_popup_label = None
+            if imgui.is_key_pressed(glfw.KEY_LEFT, repeat=True):
+                self.editor.inc_cursor((-1, 0))
+            if imgui.is_key_pressed(glfw.KEY_RIGHT, repeat=True):
+                self.editor.inc_cursor((+1, 0))
+            if imgui.is_key_pressed(glfw.KEY_UP, repeat=True):
+                self.editor.inc_cursor((0, -1))
+            if imgui.is_key_pressed(glfw.KEY_DOWN, repeat=True):
+                self.editor.inc_cursor((0, +1))
 
-        if not imgui.is_any_item_active():
-            if not self._active_popup_label:
-                if imgui.is_key_pressed(glfw.KEY_LEFT, repeat=True):
-                    self.select_next_current_node(-1)
-                if imgui.is_key_pressed(glfw.KEY_RIGHT, repeat=True):
-                    self.select_next_current_node(+1)
-            if self._active_popup_label == self._NODE_CREATOR_POPUP_LABEL:
-                if imgui.is_key_pressed(glfw.KEY_LEFT, repeat=True):
-                    self.select_next_template(-1)
-                if imgui.is_key_pressed(glfw.KEY_RIGHT, repeat=True):
-                    self.select_next_template(+1)
-                if imgui.is_key_pressed(glfw.KEY_ENTER, repeat=False):
-                    self.create_node_from_selected_template()
-                    self._active_popup_label = None
+        else:
+            if io.key_alt and imgui.is_key_pressed(ord("S")):
+                self._active_popup_label = self._SETTINGS_POPUP_LABEL
+            if io.key_ctrl and imgui.is_key_pressed(ord("N")):
+                self._active_popup_label = self._NODE_CREATOR_POPUP_LABEL
+            if io.key_ctrl and imgui.is_key_pressed(ord("S")):
+                self.save()
+            if io.key_ctrl and imgui.is_key_pressed(ord("E")):
+                self.edit_current_node_fs_file()
+            if io.key_ctrl and imgui.is_key_pressed(ord("D")):
+                self.delete_current_node()
+
+            if imgui.is_key_pressed(glfw.KEY_ESCAPE, repeat=False):
+                if self._active_popup_label is None:
+                    glfw.set_window_should_close(self.window, True)
+                self._active_popup_label = None
+
+            if not imgui.is_any_item_active():
+                if not self._active_popup_label:
+                    if imgui.is_key_pressed(glfw.KEY_LEFT, repeat=True):
+                        self.select_next_current_node(-1)
+                    if imgui.is_key_pressed(glfw.KEY_RIGHT, repeat=True):
+                        self.select_next_current_node(+1)
+                if self._active_popup_label == self._NODE_CREATOR_POPUP_LABEL:
+                    if imgui.is_key_pressed(glfw.KEY_LEFT, repeat=True):
+                        self.select_next_template(-1)
+                    if imgui.is_key_pressed(glfw.KEY_RIGHT, repeat=True):
+                        self.select_next_template(+1)
+                    if imgui.is_key_pressed(glfw.KEY_ENTER, repeat=False):
+                        self.create_node_from_selected_template()
+                        self._active_popup_label = None
 
         # ----------------------------------------------------------------
         # Prepare new frame
@@ -2124,8 +2188,8 @@ class App:
             uv1=(1, 0),
             border_color=(0.2, 0.2, 0.2, 1.0),
         )
-        if imgui.is_item_hovered():
-            self.editor.inc_top_line_idx(-int(io.mouse_wheel))
+
+        self._is_editor_active = imgui.is_item_hovered()
 
         imgui.end()
 
