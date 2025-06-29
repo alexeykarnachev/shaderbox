@@ -719,10 +719,11 @@ class Editor:
 
     @property
     def n_lines_visible(self) -> int:
-        return min(
-            len(self._lines),
-            self._node.canvas.texture.size[1] // self._font.glyph_size_px[1],
+        n_lines_visible_max: int = (
+            self._node.canvas.texture.size[1] // self._font.glyph_size_px[1]
         )
+        n_lines_visible: int = min(len(self._lines), n_lines_visible_max)
+        return n_lines_visible
 
     def set_canvas_size(self, size: tuple[int, int]) -> None:
         width = int(size[0])
@@ -2012,7 +2013,8 @@ class App:
 
         # ----------------------------------------------------------------
         # Render previews
-        if ui_node := self.ui_nodes.get(self._ui_app_state.current_node_id):
+        if self._ui_app_state.current_node_id in self.ui_nodes:
+            ui_node = self.ui_nodes[self._ui_app_state.current_node_id]
             preview_size = adjust_size(ui_node.node.canvas.texture.size, width=200)
 
             # Render current node preview
@@ -2146,7 +2148,8 @@ class App:
         # Current node image
         cursor_pos = imgui.get_cursor_screen_pos()
 
-        if ui_node := self.ui_nodes.get(self.current_node_id):
+        if self.current_node_id in self.ui_nodes:
+            ui_node = self.ui_nodes[self.current_node_id]
             min_image_height = 100
             max_image_height = max(
                 min_image_height,
