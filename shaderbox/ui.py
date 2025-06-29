@@ -390,8 +390,6 @@ class UIAppState(BaseModel):
 
 class UINode(BaseModel):
     node: Node
-
-    # Some kind of unique id and also name of the directory to save the node
     id: str = ""
 
     mtime: float = 0
@@ -721,19 +719,24 @@ class Editor:
 
     @property
     def n_lines_visible(self) -> int:
-        return self._node.canvas.texture.size[1] // self._font.glyph_size_px[1]
+        return min(
+            len(self._lines),
+            self._node.canvas.texture.size[1] // self._font.glyph_size_px[1],
+        )
 
     def set_canvas_size(self, size: tuple[int, int]) -> None:
         width = int(size[0])
         height = int(size[1])
-        self._node.canvas.set_size((width, height))
+        if self._node.canvas.set_size((width, height)):
+            self._update_textures()
 
     def _update_textures(self) -> None:
         self._glyph_metrics_data.fill(0.0)
         self._glyph_uvs_data.fill(0.0)
 
-        n_lines = min(self.n_lines_visible, len(self._lines))
-        for i_line in range(self._top_line_idx, self._top_line_idx + n_lines):
+        n_lines_visible = min(self.n_lines_visible, len(self._lines))
+        bot_line_idx = min(len(self._lines) - 1, self._top_line_idx + n_lines_visible)
+        for i_line in range(self._top_line_idx, bot_line_idx):
             ord_line = self._lines[i_line]
 
             if not ord_line:
@@ -896,6 +899,9 @@ class App:
     def set_current_node_id(self, id: str = "") -> None:
         self._ui_app_state.current_node_id = id
 
+        ui_node = self.ui_nodes[id]
+        self.editor.set_text_src(ui_node.node.fs_source)
+
     def _init(self, project_dir: Path) -> None:
         self.release()
         self.fetch_modelbox_info()
@@ -923,11 +929,15 @@ class App:
                 state_dict = {
                     k: v for k, v in state_dict.items() if k in UIAppState.model_fields
                 }
-                self._ui_app_state = UIAppState(**state_dict)
 
-                if self.current_node_id and self.current_node_id not in self.ui_nodes:
-                    logger.warning(f"Node {self.current_node_id} not found")
-                    self.set_current_node_id()
+                ui_app_state = UIAppState(**state_dict)
+
+                if ui_node := self.ui_nodes.get(ui_app_state.current_node_id):
+                    self.editor.set_text_src(ui_node.node.fs_source)
+                else:
+                    self.editor.set_text_src("")
+
+                self._ui_app_state = ui_app_state
 
     def fetch_modelbox_info(self) -> None:
         try:
@@ -2101,7 +2111,7 @@ class App:
             border_color=(0.2, 0.2, 0.2, 1.0),
         )
         if imgui.is_item_hovered():
-            self.editor.inc_top_line_idx(int(io.mouse_wheel))
+            self.editor.inc_top_line_idx(-int(io.mouse_wheel))
 
         imgui.end()
 

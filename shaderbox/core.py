@@ -310,12 +310,13 @@ class Canvas:
         self.texture.release()
         self.fbo.release()
 
-    def set_size(self, size: tuple[int, int]) -> None:
+    def set_size(self, size: tuple[int, int]) -> bool:
         if size == self.texture.size:
-            return
+            return False
 
         self.release()
         self._init(size)
+        return True
 
 
 UniformValue = (
