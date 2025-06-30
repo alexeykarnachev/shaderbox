@@ -282,6 +282,7 @@ class UITgSticker:
             return self.image.texture
 
     def release(self) -> None:
+        self.preview_canvas.release()
         self.image.release()
 
         if self.video is not None:
@@ -578,25 +579,26 @@ def try_to_release(value: Any) -> bool:
 
 class Font:
     def __init__(self, file_path: Path | str, size: int):
+        # Load the font face
         face = freetype.Face(str(file_path))
-        face.set_pixel_sizes(0, size)
+        face.set_pixel_sizes(0, size)  # Set font height to 'size' pixels
 
         # Atlas texture parameters
-        texture_width = 512
-        texture_height = 512
+        texture_width = 1024
+        texture_height = 1024
         padding = 2
         current_x, current_y = padding, padding
         max_row_height = 0
 
         texture_data = np.zeros((texture_height, texture_width, 1), dtype=np.uint8)
 
-        # Monospaced cell size (in pixels)
-        cell_width = (
-            face.max_advance_width / 64.0
-        )  # Convert from 26.6 fixed-point to pixels
-        cell_height = size  # Approximate height based on font size
+        # Calculate cell width for monospaced font
+        # Use the advance width of a representative glyph (e.g., 'M')
+        face.load_char("M", freetype.FT_LOAD_RENDER)  # type: ignore
+        cell_width = face.glyph.advance.x / 64.0  # Convert to pixels
+        cell_height = size  # Approximate height based on requested size
+        # Alternatively: cell_height = (face.ascender - face.descender) / 64.0
 
-        # Store glyph data
         glyphs = {}
 
         # Special case for the space
@@ -677,8 +679,14 @@ class Font:
         atlas_texture.filter = (moderngl.LINEAR, moderngl.LINEAR)
 
         self.glyphs = glyphs
-        self.glyph_size_px: tuple[int, int] = (cell_width, cell_height)
+        self.glyph_size_px: tuple[float, float] = (
+            cell_width,
+            cell_height,
+        )  # Updated to float
         self.atlas_texture = atlas_texture
+
+    def release(self) -> None:
+        self.atlas_texture.release()
 
 
 class Editor:
@@ -692,7 +700,7 @@ class Editor:
             file_path=str(
                 RESOURCES_DIR / "fonts" / "Anonymous_Pro" / "AnonymousPro-Regular.ttf"
             ),
-            size=28,
+            size=24,
         )
 
         self._lines: list[str] = []
@@ -700,11 +708,24 @@ class Editor:
 
         self._grid_size: tuple[int, int] = (1, 1)
 
-        self._glyph_uvs_data: NDArray[np.float32] | None = None
-        self._glyph_metrics_data: NDArray[np.float32] | None = None
+        self._grid_uvs_data: NDArray[np.float32] | None = None
+        self._grid_metrics_data: NDArray[np.float32] | None = None
 
-        self._glyph_uvs_texture: moderngl.Texture | None = None
-        self._glyph_metrics_texture: moderngl.Texture | None = None
+        self._grid_uvs_texture: moderngl.Texture | None = None
+        self._grid_metrics_texture: moderngl.Texture | None = None
+
+        self._cursor_line_pos: tuple[int, int] = (0, 0)
+        self._desired_cursor_char_idx = 0
+        self._line_to_grid: dict[tuple[int, int], tuple[int, int]] = {}
+
+    def release(self) -> None:
+        self._node.release()
+
+        if self._grid_uvs_texture is not None:
+            self._grid_uvs_texture.release()
+
+        if self._grid_metrics_texture is not None:
+            self._grid_metrics_texture.release()
 
     @property
     def canvas_texture(self) -> moderngl.Texture:
@@ -723,7 +744,7 @@ class Editor:
 
         self._update()
 
-    def _update_glyphs_data(self) -> None:
+    def _update(self) -> None:
         w, h = self._node.canvas.texture.size
 
         grid_n_cols = int(w // self._font.glyph_size_px[0])
@@ -731,25 +752,23 @@ class Editor:
         data_size = (grid_n_rows, grid_n_cols)
         self._grid_size = (grid_n_cols, grid_n_rows)
 
-        if self._glyph_uvs_data is None or self._glyph_uvs_data.size != data_size:
-            self._glyph_uvs_data = np.zeros(
+        if self._grid_uvs_data is None or self._grid_uvs_data.size != data_size:
+            self._grid_uvs_data = np.zeros(
                 (grid_n_rows, grid_n_cols, 4), dtype=np.float32
             )
         else:
-            self._glyph_uvs_data.fill(0.0)
+            self._grid_uvs_data.fill(0.0)
 
-        if (
-            self._glyph_metrics_data is None
-            or self._glyph_metrics_data.size != data_size
-        ):
-            self._glyph_metrics_data = np.zeros(
+        if self._grid_metrics_data is None or self._grid_metrics_data.size != data_size:
+            self._grid_metrics_data = np.zeros(
                 (grid_n_rows, grid_n_cols, 4), dtype=np.float32
             )
         else:
-            self._glyph_metrics_data.fill(0.0)
+            self._grid_metrics_data.fill(0.0)
 
         i_row = 0
         i_line = self._top_line_idx
+        self._line_to_grid.clear()
 
         while i_row < grid_n_rows and i_line < len(self._lines):
             line = self._lines[i_line]
@@ -758,13 +777,14 @@ class Editor:
             with contextlib.suppress(StopIteration):
                 first_printable_match = next(re.finditer(r"\S", line))
                 line_pad = first_printable_match.span()[0]
-            line = line.lstrip()
 
-            i_col = line_pad
-            for ch in line:
+            i_col = 0
+            for i_ch, ch in enumerate(line):
+                self._line_to_grid[(i_line, i_ch)] = (i_row, i_col)
+
                 ch_ord = ord(ch)
-                self._glyph_uvs_data[i_row][i_col] = self._font.glyphs[ch_ord]["uv"]
-                self._glyph_metrics_data[i_row][i_col] = self._font.glyphs[ch_ord][
+                self._grid_uvs_data[i_row][i_col] = self._font.glyphs[ch_ord]["uv"]
+                self._grid_metrics_data[i_row][i_col] = self._font.glyphs[ch_ord][
                     "metrics"
                 ]
 
@@ -777,51 +797,51 @@ class Editor:
                 if i_row >= grid_n_rows:
                     break
 
+            # Handles empty lines and also rightmost cursor position
+            self._line_to_grid[(i_line, len(line))] = (i_row, i_col)
+
             i_row += 1
             i_line += 1
 
-    def _update_glyphs_textures(self) -> None:
-        if self._glyph_uvs_texture is None:
-            self._glyph_uvs_texture = self._gl.texture(
+        # ----------------------------------------------------------------
+        # Update textures
+        if self._grid_uvs_texture is None:
+            self._grid_uvs_texture = self._gl.texture(
                 size=self._grid_size,
                 components=4,
-                data=self._glyph_uvs_data,
+                data=self._grid_uvs_data,
                 dtype="f4",
             )
 
-        if self._glyph_uvs_texture.size != self._grid_size:
-            self._glyph_uvs_texture.release()
-            self._glyph_uvs_texture = self._gl.texture(
+        if self._grid_uvs_texture.size != self._grid_size:
+            self._grid_uvs_texture.release()
+            self._grid_uvs_texture = self._gl.texture(
                 size=self._grid_size,
                 components=4,
-                data=self._glyph_uvs_data,
-                dtype="f4",
-            )
-        else:
-            self._glyph_uvs_texture.write(self._glyph_uvs_data)
-
-        if self._glyph_metrics_texture is None:
-            self._glyph_metrics_texture = self._gl.texture(
-                size=self._grid_size,
-                components=4,
-                data=self._glyph_metrics_data,
-                dtype="f4",
-            )
-
-        if self._glyph_metrics_texture.size != self._grid_size:
-            self._glyph_metrics_texture.release()
-            self._glyph_metrics_texture = self._gl.texture(
-                size=self._grid_size,
-                components=4,
-                data=self._glyph_metrics_data,
+                data=self._grid_uvs_data,
                 dtype="f4",
             )
         else:
-            self._glyph_metrics_texture.write(self._glyph_metrics_data)
+            self._grid_uvs_texture.write(self._grid_uvs_data)
 
-    def _update(self) -> None:
-        self._update_glyphs_data()
-        self._update_glyphs_textures()
+        if self._grid_metrics_texture is None:
+            self._grid_metrics_texture = self._gl.texture(
+                size=self._grid_size,
+                components=4,
+                data=self._grid_metrics_data,
+                dtype="f4",
+            )
+
+        if self._grid_metrics_texture.size != self._grid_size:
+            self._grid_metrics_texture.release()
+            self._grid_metrics_texture = self._gl.texture(
+                size=self._grid_size,
+                components=4,
+                data=self._grid_metrics_data,
+                dtype="f4",
+            )
+        else:
+            self._grid_metrics_texture.write(self._grid_metrics_data)
 
     def set_top_line_idx(self, idx: int) -> None:
         self._top_line_idx = idx
@@ -834,16 +854,33 @@ class Editor:
         self._top_line_idx = max(0, min(self._top_line_idx + step, len(self._lines)))
         self._update()
 
-    def inc_cursor(self, step: tuple[int, int]) -> None:
-        pass
+    def move_cursor_vertically(self, step: int = +1) -> None:
+        new_line_idx = max(
+            0, min(len(self._lines) - 1, self._cursor_line_pos[0] - step)
+        )
+        line_length = len(self._lines[new_line_idx])
+        new_char_idx = min(line_length, self._desired_cursor_char_idx)
+
+        self._cursor_line_pos = (new_line_idx, new_char_idx)
+        self._update()
+
+    def move_cursor_horizontally(self, step: int = +1) -> None:
+        line_length = len(self._lines[self._cursor_line_pos[0]])
+        new_char_idx = max(0, min(line_length, self._cursor_line_pos[1] + step))
+
+        self._desired_cursor_char_idx = new_char_idx
+        self._cursor_line_pos = (self._cursor_line_pos[0], new_char_idx)
+        self._update()
 
     def render(self) -> None:
+        cursor_grid_pos = self._line_to_grid[self._cursor_line_pos]
+
         self._node.uniform_values["u_grid_size"] = self._grid_size
         self._node.uniform_values["u_glyph_size_px"] = self._font.glyph_size_px
         self._node.uniform_values["u_glyph_atlas"] = self._font.atlas_texture
-        self._node.uniform_values["u_glyph_uvs"] = self._glyph_uvs_texture
-        self._node.uniform_values["u_glyph_metrics"] = self._glyph_metrics_texture
-        # self._node.uniform_values["u_cursor_grid_pos"] = self._cursor_grid_pos
+        self._node.uniform_values["u_grid_uvs"] = self._grid_uvs_texture
+        self._node.uniform_values["u_grid_metrics"] = self._grid_metrics_texture
+        self._node.uniform_values["u_cursor_grid_pos"] = cursor_grid_pos
         self._node.render()
 
 
@@ -880,7 +917,7 @@ class App:
         self.window = window
         self.imgui_renderer = GlfwRenderer(window)
         self._font_14 = self.get_font(14)
-        self.preview_canvas = Canvas()
+        self.preview_canvas: Canvas
 
         self.ui_nodes: dict[str, UINode] = {}
         self.ui_node_templates: dict[str, UINode] = {}
@@ -894,7 +931,7 @@ class App:
         self._active_popup_label: str | None = None
         self.global_fps = 0.0
 
-        self.editor = Editor()
+        self.editor: Editor
         self._is_editor_active = False
 
         self._init(project_dir)
@@ -971,6 +1008,9 @@ class App:
     def _init(self, project_dir: Path) -> None:
         self.release()
         self.fetch_modelbox_info()
+
+        self.preview_canvas = Canvas()
+        self.editor = Editor()
 
         self.app_start_time = int(time.time() * 1000)
         self.frame_idx = 0
@@ -1103,6 +1143,12 @@ class App:
 
         for node in self.ui_node_templates.values():
             node.node.release()
+
+        if hasattr(self, "preview_canvas"):
+            self.preview_canvas.release()
+
+        if hasattr(self, "editor"):
+            self.editor.release()
 
     def delete_current_node(self) -> None:
         node_id = self.current_node_id
@@ -2116,13 +2162,13 @@ class App:
             self.editor.inc_top_line_idx(-int(io.mouse_wheel))
 
             if imgui.is_key_pressed(glfw.KEY_LEFT, repeat=True):
-                self.editor.inc_cursor((-1, 0))
+                self.editor.move_cursor_horizontally(-1)
             if imgui.is_key_pressed(glfw.KEY_RIGHT, repeat=True):
-                self.editor.inc_cursor((+1, 0))
+                self.editor.move_cursor_horizontally(+1)
             if imgui.is_key_pressed(glfw.KEY_UP, repeat=True):
-                self.editor.inc_cursor((0, -1))
+                self.editor.move_cursor_vertically(+1)
             if imgui.is_key_pressed(glfw.KEY_DOWN, repeat=True):
-                self.editor.inc_cursor((0, +1))
+                self.editor.move_cursor_vertically(-1)
 
         else:
             if io.key_alt and imgui.is_key_pressed(ord("S")):
