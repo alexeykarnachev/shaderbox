@@ -4,7 +4,6 @@ import contextlib
 import hashlib
 import json
 import math
-import re
 import shutil
 import subprocess
 import time
@@ -15,7 +14,6 @@ from uuid import uuid4
 
 import crossfiledialog
 import cv2
-import freetype
 import glfw
 import imgui
 import moderngl
@@ -23,7 +21,6 @@ import numpy as np
 import telegram as tg
 from imgui.integrations.glfw import GlfwRenderer
 from loguru import logger
-from numpy.typing import NDArray
 from OpenGL.GL import GL_FLOAT, GL_SAMPLER_2D, GL_UNSIGNED_INT, GLError
 from platformdirs import user_data_dir
 from pydantic import BaseModel, model_validator
@@ -34,6 +31,7 @@ from shaderbox.core import (
     Canvas,
     FileDetails,
     Image,
+    KeyEvent,
     MediaDetails,
     MediaWithTexture,
     Node,
@@ -41,6 +39,7 @@ from shaderbox.core import (
     UniformValue,
     Video,
 )
+from shaderbox.text_editor import TextEditor
 
 IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".bmp", ".webp"]
 VIDEO_EXTENSIONS = [".mp4", ".webm"]
@@ -577,355 +576,6 @@ def try_to_release(value: Any) -> bool:
     return False
 
 
-class Font:
-    def __init__(self, file_path: Path | str, size: int):
-        # Load the font face
-        face = freetype.Face(str(file_path))
-        face.set_pixel_sizes(0, size)  # Set font height to 'size' pixels
-
-        # Atlas texture parameters
-        texture_width = 1024
-        texture_height = 1024
-        padding = 2
-        current_x, current_y = padding, padding
-        max_row_height = 0
-
-        texture_data = np.zeros((texture_height, texture_width, 1), dtype=np.uint8)
-
-        # Calculate cell width for monospaced font
-        # Use the advance width of a representative glyph (e.g., 'M')
-        face.load_char("M", freetype.FT_LOAD_RENDER)  # type: ignore
-        cell_width = face.glyph.advance.x / 64.0  # Convert to pixels
-        cell_height = size  # Approximate height based on requested size
-        # Alternatively: cell_height = (face.ascender - face.descender) / 64.0
-
-        glyphs = {}
-
-        # Special case for the space
-        glyphs[32] = {
-            "uv": [0.0, 0.0, 0.0, 0.0],
-            "metrics": [face.glyph.advance.x / 64.0 / cell_width, 0.0, 0.0, 0.0],
-        }
-
-        # Extract glyphs for printable ASCII characters (33 to 126)
-        for char_code in range(33, 127):
-            face.load_char(char_code, freetype.FT_LOAD_RENDER)  # type: ignore
-            bitmap = face.glyph.bitmap
-
-            # Skip empty glyphs
-            if bitmap.width == 0 or bitmap.rows == 0:
-                continue
-
-            # Move to next row if necessary
-            if current_x + bitmap.width + padding > texture_width:
-                current_x = padding
-                current_y += max_row_height + padding
-                max_row_height = 0
-
-            # Check atlas bounds
-            if current_y + bitmap.rows + padding > texture_height:
-                raise ValueError("Glyph atlas texture too small")
-
-            # Convert bitmap to NumPy array
-            bitmap_array = np.array(bitmap.buffer, dtype=np.uint8).reshape(
-                bitmap.rows, bitmap.pitch
-            )[:, : bitmap.width]
-            bitmap_array = np.flipud(bitmap_array)  # Flip for OpenGL
-
-            # Fill atlas texture (white glyph with alpha)
-            target_slice = texture_data[
-                current_y : current_y + bitmap.rows,
-                current_x : current_x + bitmap.width,
-            ]
-            target_slice[:, :, 0] = bitmap_array
-
-            # Normalized UV coordinates
-            u0 = current_x / texture_width
-            v0 = current_y / texture_height
-            u1 = (current_x + bitmap.width) / texture_width
-            v1 = (current_y + bitmap.rows) / texture_height
-
-            # Normalized metrics relative to cell size
-            glyph_width = bitmap.width / cell_width
-            glyph_height = bitmap.rows / cell_height
-            bearing_x = face.glyph.bitmap_left / cell_width
-            bearing_y = (
-                face.glyph.bitmap_top - bitmap.rows
-            ) / cell_height  # Origin at bottom
-
-            glyphs[char_code] = {
-                "uv": [u0, v0, u1, v1],
-                "metrics": [glyph_width, glyph_height, bearing_x, bearing_y],
-            }
-
-            # Update atlas position
-            current_x += bitmap.width + padding
-            max_row_height = max(max_row_height, bitmap.rows)
-
-        # Adjust bearing_y
-        min_bearing_y = min(g["metrics"][3] for g in glyphs.values())
-        baseline_y = -min_bearing_y if min_bearing_y < 0 else 0
-        for char_code in glyphs:
-            glyphs[char_code]["metrics"][3] += baseline_y
-
-        # Create glyph atlas texture
-        gl = moderngl.get_context()
-        atlas_texture = gl.texture(
-            size=(texture_width, texture_height),
-            components=1,
-            data=texture_data.tobytes(),
-            dtype="f1",
-        )
-        atlas_texture.filter = (moderngl.LINEAR, moderngl.LINEAR)
-
-        self.glyphs = glyphs
-        self.glyph_size_px: tuple[float, float] = (
-            cell_width,
-            cell_height,
-        )  # Updated to float
-        self.atlas_texture = atlas_texture
-
-    def release(self) -> None:
-        self.atlas_texture.release()
-
-
-class KeyEvent(BaseModel):
-    key: int = -1
-    scancode: int = -1
-    action: int = -1
-    mods: int = -1
-
-
-class Editor:
-    def __init__(self, gl: moderngl.Context | None = None) -> None:
-        self._gl = gl or moderngl.get_context()
-
-        self._node = Node(
-            fs_source=Path(RESOURCES_DIR / "shaders" / "editor.frag.glsl").read_text()
-        )
-        self._font = Font(
-            file_path=str(
-                RESOURCES_DIR / "fonts" / "Anonymous_Pro" / "AnonymousPro-Regular.ttf"
-            ),
-            size=24,
-        )
-
-        self._lines: list[str] = []
-        self._top_line_idx: int = 0
-
-        self._grid_size: tuple[int, int] = (1, 1)
-
-        self._grid_uvs_data: NDArray[np.float32] | None = None
-        self._grid_metrics_data: NDArray[np.float32] | None = None
-
-        self._grid_uvs_texture: moderngl.Texture | None = None
-        self._grid_metrics_texture: moderngl.Texture | None = None
-
-        self._cursor_line_pos: tuple[int, int] = (0, 0)
-        self._desired_cursor_char_idx = 0
-        self._line_to_grid: dict[tuple[int, int], tuple[int, int]] = {}
-        self._grid_to_line: dict[tuple[int, int], tuple[int, int]] = {}
-
-    def release(self) -> None:
-        self._node.release()
-
-        if self._grid_uvs_texture is not None:
-            self._grid_uvs_texture.release()
-
-        if self._grid_metrics_texture is not None:
-            self._grid_metrics_texture.release()
-
-    @property
-    def canvas_texture(self) -> moderngl.Texture:
-        return self._node.canvas.texture
-
-    def set_canvas_size(self, size: tuple[int, int]) -> None:
-        width = int(size[0])
-        height = int(size[1])
-        if self._node.canvas.set_size((width, height)):
-            self._update()
-
-    def set_text(self, text: str) -> None:
-        self._lines = text.split("\n")
-
-        self._top_line_idx = 0
-
-        self._update()
-
-    def process_mouse_wheel(self, y_offset: int) -> None:
-        if y_offset == 0:
-            return
-
-        self._inc_top_line_idx(-int(y_offset))
-
-        self._update()
-
-    def process_key_event(self, event: KeyEvent) -> None:
-        if event.key == -1:
-            return
-
-        print(event)
-
-        # if imgui.is_key_pressed(glfw.KEY_LEFT, repeat=True):
-        #     self.move_cursor_horizontally(-1)
-        # if imgui.is_key_pressed(glfw.KEY_RIGHT, repeat=True):
-        #     self.move_cursor_horizontally(+1)
-        # if imgui.is_key_pressed(glfw.KEY_UP, repeat=True):
-        #     self.move_cursor_vertically(+1)
-        # if imgui.is_key_pressed(glfw.KEY_DOWN, repeat=True):
-        #     self.move_cursor_vertically(-1)
-
-        self._update()
-
-    def render(self) -> None:
-        cursor_grid_pos = self._line_to_grid.get(self._cursor_line_pos, (-1, -1))
-
-        self._node.uniform_values["u_grid_size"] = self._grid_size
-        self._node.uniform_values["u_glyph_size_px"] = self._font.glyph_size_px
-        self._node.uniform_values["u_glyph_atlas"] = self._font.atlas_texture
-        self._node.uniform_values["u_grid_uvs"] = self._grid_uvs_texture
-        self._node.uniform_values["u_grid_metrics"] = self._grid_metrics_texture
-        self._node.uniform_values["u_cursor_grid_pos"] = cursor_grid_pos
-        self._node.render()
-
-    def _update(self) -> None:
-        grid_n_rows = int(
-            self._node.canvas.texture.size[1] / self._font.glyph_size_px[1]
-        )
-        grid_n_cols = int(
-            self._node.canvas.texture.size[0] / self._font.glyph_size_px[0]
-        )
-
-        data_size = (grid_n_rows, grid_n_cols)
-        self._grid_size = (grid_n_cols, grid_n_rows)
-
-        if self._grid_uvs_data is None or self._grid_uvs_data.size != data_size:
-            self._grid_uvs_data = np.zeros(
-                (grid_n_rows, grid_n_cols, 4), dtype=np.float32
-            )
-        else:
-            self._grid_uvs_data.fill(0.0)
-
-        if self._grid_metrics_data is None or self._grid_metrics_data.size != data_size:
-            self._grid_metrics_data = np.zeros(
-                (grid_n_rows, grid_n_cols, 4), dtype=np.float32
-            )
-        else:
-            self._grid_metrics_data.fill(0.0)
-
-        i_row = 0
-        i_line = self._top_line_idx
-        bot_line_idx = self._top_line_idx
-
-        self._line_to_grid.clear()
-        self._grid_to_line.clear()
-
-        while i_row < grid_n_rows and i_line < len(self._lines):
-            line = self._lines[i_line]
-
-            line_pad = 0
-            with contextlib.suppress(StopIteration):
-                first_printable_match = next(re.finditer(r"\S", line))
-                line_pad = first_printable_match.span()[0]
-
-            i_col = 0
-            for i_ch, ch in enumerate(line):
-                self._line_to_grid[(i_line, i_ch)] = (i_row, i_col)
-                self._grid_to_line[(i_row, i_col)] = (i_line, i_ch)
-
-                ch_ord = ord(ch)
-                self._grid_uvs_data[i_row][i_col] = self._font.glyphs[ch_ord]["uv"]
-                self._grid_metrics_data[i_row][i_col] = self._font.glyphs[ch_ord][
-                    "metrics"
-                ]
-
-                i_col += 1
-
-                if i_col >= grid_n_cols:
-                    i_col = line_pad
-                    i_row += 1
-
-                if i_row >= grid_n_rows:
-                    break
-
-            # Handles empty lines and also rightmost cursor position
-            self._line_to_grid[(i_line, len(line))] = (i_row, i_col)
-            self._grid_to_line[(i_row, i_col)] = (i_line, len(line))
-
-            bot_line_idx = i_line
-            i_row += 1
-            i_line += 1
-
-        # ----------------------------------------------------------------
-        # Ensure cursor visible
-        if self._cursor_line_pos[0] < self._top_line_idx:
-            self._move_cursor_vertically(self._cursor_line_pos[0] - self._top_line_idx)
-        elif self._cursor_line_pos[0] > bot_line_idx:
-            self._move_cursor_vertically(self._cursor_line_pos[0] - bot_line_idx)
-
-        # ----------------------------------------------------------------
-        # Update textures
-        if self._grid_uvs_texture is None:
-            self._grid_uvs_texture = self._gl.texture(
-                size=self._grid_size,
-                components=4,
-                data=self._grid_uvs_data,
-                dtype="f4",
-            )
-
-        if self._grid_uvs_texture.size != self._grid_size:
-            self._grid_uvs_texture.release()
-            self._grid_uvs_texture = self._gl.texture(
-                size=self._grid_size,
-                components=4,
-                data=self._grid_uvs_data,
-                dtype="f4",
-            )
-        else:
-            self._grid_uvs_texture.write(self._grid_uvs_data)
-
-        if self._grid_metrics_texture is None:
-            self._grid_metrics_texture = self._gl.texture(
-                size=self._grid_size,
-                components=4,
-                data=self._grid_metrics_data,
-                dtype="f4",
-            )
-
-        if self._grid_metrics_texture.size != self._grid_size:
-            self._grid_metrics_texture.release()
-            self._grid_metrics_texture = self._gl.texture(
-                size=self._grid_size,
-                components=4,
-                data=self._grid_metrics_data,
-                dtype="f4",
-            )
-        else:
-            self._grid_metrics_texture.write(self._grid_metrics_data)
-
-    def _inc_top_line_idx(self, step: int) -> None:
-        if step == 0:
-            return
-
-        self._top_line_idx = max(0, min(self._top_line_idx + step, len(self._lines)))
-
-    def _move_cursor_vertically(self, step: int = +1) -> None:
-        new_line_idx = max(
-            0, min(len(self._lines) - 1, self._cursor_line_pos[0] - step)
-        )
-        line_length = len(self._lines[new_line_idx])
-        new_char_idx = min(line_length, self._desired_cursor_char_idx)
-
-        self._cursor_line_pos = (new_line_idx, new_char_idx)
-
-    def _move_cursor_horizontally(self, step: int = +1) -> None:
-        line_length = len(self._lines[self._cursor_line_pos[0]])
-        new_char_idx = max(0, min(line_length, self._cursor_line_pos[1] + step))
-
-        self._desired_cursor_char_idx = new_char_idx
-        self._cursor_line_pos = (self._cursor_line_pos[0], new_char_idx)
-
-
 class App:
     _SETTINGS_POPUP_LABEL = "Settings##popup"
     _NODE_CREATOR_POPUP_LABEL = "New node##popup"
@@ -979,7 +629,7 @@ class App:
         self._active_popup_label: str | None = None
         self.global_fps = 0.0
 
-        self.editor: Editor
+        self.text_editor: TextEditor
         self._is_editor_active = False
 
         self._init(project_dir)
@@ -1074,14 +724,14 @@ class App:
         self._ui_app_state.current_node_id = id
 
         ui_node = self.ui_nodes[id]
-        self.editor.set_text(text=ui_node.node.fs_source)
+        self.text_editor.set_text(text=ui_node.node.fs_source)
 
     def _init(self, project_dir: Path) -> None:
         self.release()
         self.fetch_modelbox_info()
 
         self.preview_canvas = Canvas()
-        self.editor = Editor()
+        self.text_editor = TextEditor()
 
         self.app_start_time = int(time.time() * 1000)
         self.frame_idx = 0
@@ -1110,7 +760,7 @@ class App:
                 ui_app_state = UIAppState(**state_dict)
 
                 if ui_node := self.ui_nodes.get(ui_app_state.current_node_id):
-                    self.editor.set_text(text=ui_node.node.fs_source)
+                    self.text_editor.set_text(text=ui_node.node.fs_source)
 
                 self._ui_app_state = ui_app_state
 
@@ -1218,8 +868,8 @@ class App:
         if hasattr(self, "preview_canvas"):
             self.preview_canvas.release()
 
-        if hasattr(self, "editor"):
-            self.editor.release()
+        if hasattr(self, "text_editor"):
+            self.text_editor.release()
 
     def delete_current_node(self) -> None:
         node_id = self.current_node_id
@@ -2222,7 +1872,7 @@ class App:
             for ui_node in self.ui_node_templates.values():
                 ui_node.node.render()
 
-        self.editor.render()
+        self.text_editor.render()
 
         # ----------------------------------------------------------------
         # Process hotkeys
@@ -2231,8 +1881,8 @@ class App:
         io = imgui.get_io()
 
         if self._is_editor_active:
-            self.editor.process_mouse_wheel(self._last_mouse_wheel)
-            self.editor.process_key_event(self._last_key_event)
+            self.text_editor.process_mouse_wheel(self._last_mouse_wheel)
+            self.text_editor.process_key_event(self._last_key_event)
         else:
             if io.key_alt and imgui.is_key_pressed(ord("S")):
                 self._active_popup_label = self._SETTINGS_POPUP_LABEL
@@ -2290,10 +1940,10 @@ class App:
         )
 
         image_width, image_height = imgui.get_content_region_available()
-        self.editor.set_canvas_size((image_width, image_height))
+        self.text_editor.set_canvas_size((image_width, image_height))
 
         imgui.image(
-            self.editor.canvas_texture.glo,
+            self.text_editor.canvas_texture.glo,
             width=image_width,
             height=image_height,
             uv0=(0, 1),
