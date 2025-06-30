@@ -689,6 +689,13 @@ class Font:
         self.atlas_texture.release()
 
 
+class KeyEvent(BaseModel):
+    key: int = -1
+    scancode: int = -1
+    action: int = -1
+    mods: int = -1
+
+
 class Editor:
     def __init__(self, gl: moderngl.Context | None = None) -> None:
         self._gl = gl or moderngl.get_context()
@@ -717,6 +724,7 @@ class Editor:
         self._cursor_line_pos: tuple[int, int] = (0, 0)
         self._desired_cursor_char_idx = 0
         self._line_to_grid: dict[tuple[int, int], tuple[int, int]] = {}
+        self._grid_to_line: dict[tuple[int, int], tuple[int, int]] = {}
 
     def release(self) -> None:
         self._node.release()
@@ -744,11 +752,50 @@ class Editor:
 
         self._update()
 
-    def _update(self) -> None:
-        w, h = self._node.canvas.texture.size
+    def process_mouse_wheel(self, y_offset: int) -> None:
+        if y_offset == 0:
+            return
 
-        grid_n_cols = int(w // self._font.glyph_size_px[0])
-        grid_n_rows = int(h // self._font.glyph_size_px[1])
+        self._inc_top_line_idx(-int(y_offset))
+
+        self._update()
+
+    def process_key_event(self, event: KeyEvent) -> None:
+        if event.key == -1:
+            return
+
+        print(event)
+
+        # if imgui.is_key_pressed(glfw.KEY_LEFT, repeat=True):
+        #     self.move_cursor_horizontally(-1)
+        # if imgui.is_key_pressed(glfw.KEY_RIGHT, repeat=True):
+        #     self.move_cursor_horizontally(+1)
+        # if imgui.is_key_pressed(glfw.KEY_UP, repeat=True):
+        #     self.move_cursor_vertically(+1)
+        # if imgui.is_key_pressed(glfw.KEY_DOWN, repeat=True):
+        #     self.move_cursor_vertically(-1)
+
+        self._update()
+
+    def render(self) -> None:
+        cursor_grid_pos = self._line_to_grid.get(self._cursor_line_pos, (-1, -1))
+
+        self._node.uniform_values["u_grid_size"] = self._grid_size
+        self._node.uniform_values["u_glyph_size_px"] = self._font.glyph_size_px
+        self._node.uniform_values["u_glyph_atlas"] = self._font.atlas_texture
+        self._node.uniform_values["u_grid_uvs"] = self._grid_uvs_texture
+        self._node.uniform_values["u_grid_metrics"] = self._grid_metrics_texture
+        self._node.uniform_values["u_cursor_grid_pos"] = cursor_grid_pos
+        self._node.render()
+
+    def _update(self) -> None:
+        grid_n_rows = int(
+            self._node.canvas.texture.size[1] / self._font.glyph_size_px[1]
+        )
+        grid_n_cols = int(
+            self._node.canvas.texture.size[0] / self._font.glyph_size_px[0]
+        )
+
         data_size = (grid_n_rows, grid_n_cols)
         self._grid_size = (grid_n_cols, grid_n_rows)
 
@@ -768,7 +815,10 @@ class Editor:
 
         i_row = 0
         i_line = self._top_line_idx
+        bot_line_idx = self._top_line_idx
+
         self._line_to_grid.clear()
+        self._grid_to_line.clear()
 
         while i_row < grid_n_rows and i_line < len(self._lines):
             line = self._lines[i_line]
@@ -781,6 +831,7 @@ class Editor:
             i_col = 0
             for i_ch, ch in enumerate(line):
                 self._line_to_grid[(i_line, i_ch)] = (i_row, i_col)
+                self._grid_to_line[(i_row, i_col)] = (i_line, i_ch)
 
                 ch_ord = ord(ch)
                 self._grid_uvs_data[i_row][i_col] = self._font.glyphs[ch_ord]["uv"]
@@ -799,9 +850,18 @@ class Editor:
 
             # Handles empty lines and also rightmost cursor position
             self._line_to_grid[(i_line, len(line))] = (i_row, i_col)
+            self._grid_to_line[(i_row, i_col)] = (i_line, len(line))
 
+            bot_line_idx = i_line
             i_row += 1
             i_line += 1
+
+        # ----------------------------------------------------------------
+        # Ensure cursor visible
+        if self._cursor_line_pos[0] < self._top_line_idx:
+            self._move_cursor_vertically(self._cursor_line_pos[0] - self._top_line_idx)
+        elif self._cursor_line_pos[0] > bot_line_idx:
+            self._move_cursor_vertically(self._cursor_line_pos[0] - bot_line_idx)
 
         # ----------------------------------------------------------------
         # Update textures
@@ -843,18 +903,13 @@ class Editor:
         else:
             self._grid_metrics_texture.write(self._grid_metrics_data)
 
-    def set_top_line_idx(self, idx: int) -> None:
-        self._top_line_idx = idx
-        self._update()
-
-    def inc_top_line_idx(self, step: int) -> None:
+    def _inc_top_line_idx(self, step: int) -> None:
         if step == 0:
             return
 
         self._top_line_idx = max(0, min(self._top_line_idx + step, len(self._lines)))
-        self._update()
 
-    def move_cursor_vertically(self, step: int = +1) -> None:
+    def _move_cursor_vertically(self, step: int = +1) -> None:
         new_line_idx = max(
             0, min(len(self._lines) - 1, self._cursor_line_pos[0] - step)
         )
@@ -862,26 +917,13 @@ class Editor:
         new_char_idx = min(line_length, self._desired_cursor_char_idx)
 
         self._cursor_line_pos = (new_line_idx, new_char_idx)
-        self._update()
 
-    def move_cursor_horizontally(self, step: int = +1) -> None:
+    def _move_cursor_horizontally(self, step: int = +1) -> None:
         line_length = len(self._lines[self._cursor_line_pos[0]])
         new_char_idx = max(0, min(line_length, self._cursor_line_pos[1] + step))
 
         self._desired_cursor_char_idx = new_char_idx
         self._cursor_line_pos = (self._cursor_line_pos[0], new_char_idx)
-        self._update()
-
-    def render(self) -> None:
-        cursor_grid_pos = self._line_to_grid[self._cursor_line_pos]
-
-        self._node.uniform_values["u_grid_size"] = self._grid_size
-        self._node.uniform_values["u_glyph_size_px"] = self._font.glyph_size_px
-        self._node.uniform_values["u_glyph_atlas"] = self._font.atlas_texture
-        self._node.uniform_values["u_grid_uvs"] = self._grid_uvs_texture
-        self._node.uniform_values["u_grid_metrics"] = self._grid_metrics_texture
-        self._node.uniform_values["u_cursor_grid_pos"] = cursor_grid_pos
-        self._node.render()
 
 
 class App:
@@ -912,10 +954,16 @@ class App:
         )
 
         glfw.make_context_current(window)
+        glfw.set_key_callback(window, self._glfw_key_callback)
+        glfw.set_scroll_callback(window, self._glfw_scroll_callback)
 
         imgui.create_context()
         self.window = window
-        self.imgui_renderer = GlfwRenderer(window)
+        self.imgui_renderer = GlfwRenderer(window, attach_callbacks=False)
+
+        self._last_key_event: KeyEvent = KeyEvent()
+        self._last_mouse_wheel: int = 0
+
         self._font_14 = self.get_font(14)
         self.preview_canvas: Canvas
 
@@ -998,6 +1046,29 @@ class App:
             return UINodeState()
 
         return self.ui_nodes[node_id].ui_state
+
+    def _glfw_key_callback(
+        self, window: Any, key: int, scancode: int, action: int, mods: int
+    ) -> None:
+        self.imgui_renderer.keyboard_callback(
+            window,
+            key=key,
+            scancode=scancode,
+            action=action,
+            mods=mods,
+        )
+
+        self._last_key_event.key = key
+        self._last_key_event.scancode = scancode
+        self._last_key_event.action = action
+        self._last_key_event.mods = mods
+
+    def _glfw_scroll_callback(self, window: Any, x_offset: int, y_offset: int) -> None:
+        self.imgui_renderer.scroll_callback(
+            window, x_offset=x_offset, y_offset=y_offset
+        )
+
+        self._last_mouse_wheel = y_offset
 
     def set_current_node_id(self, id: str = "") -> None:
         self._ui_app_state.current_node_id = id
@@ -2156,20 +2227,12 @@ class App:
         # ----------------------------------------------------------------
         # Process hotkeys
         glfw.poll_events()
+        self.imgui_renderer.process_inputs()
         io = imgui.get_io()
 
         if self._is_editor_active:
-            self.editor.inc_top_line_idx(-int(io.mouse_wheel))
-
-            if imgui.is_key_pressed(glfw.KEY_LEFT, repeat=True):
-                self.editor.move_cursor_horizontally(-1)
-            if imgui.is_key_pressed(glfw.KEY_RIGHT, repeat=True):
-                self.editor.move_cursor_horizontally(+1)
-            if imgui.is_key_pressed(glfw.KEY_UP, repeat=True):
-                self.editor.move_cursor_vertically(+1)
-            if imgui.is_key_pressed(glfw.KEY_DOWN, repeat=True):
-                self.editor.move_cursor_vertically(-1)
-
+            self.editor.process_mouse_wheel(self._last_mouse_wheel)
+            self.editor.process_key_event(self._last_key_event)
         else:
             if io.key_alt and imgui.is_key_pressed(ord("S")):
                 self._active_popup_label = self._SETTINGS_POPUP_LABEL
@@ -2202,9 +2265,12 @@ class App:
                         self.create_node_from_selected_template()
                         self._active_popup_label = None
 
+        # Reset input events
+        self._last_key_event.key = -1
+        self._last_mouse_wheel = 0
+
         # ----------------------------------------------------------------
         # Prepare new frame
-        self.imgui_renderer.process_inputs()
         imgui.new_frame()
         imgui.push_font(self._font_14)
 
