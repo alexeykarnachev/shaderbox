@@ -385,6 +385,8 @@ class UIAppState(BaseModel):
 
     media_model_idx: int = 0
 
+    global_target_fps: int = 60
+
     def save(self, file_path: str | Path) -> None:
         app_state_dict = self.model_dump()
         with Path(file_path).open("w") as f:
@@ -619,6 +621,7 @@ class Notifications:
 
 class App:
     _NODE_CREATOR_POPUP_LABEL = "New node##popup"
+    _SETTINGS_POPUP_LABEL = "Settings##popup"
 
     def __init__(self, project_dir: Path | None = None) -> None:
         if project_dir is None:
@@ -1050,6 +1053,24 @@ class App:
 
         imgui.same_line()
         is_keep_opened &= not imgui.button("Cancel", width=button_width)
+
+        return is_keep_opened
+
+    def draw_settings(self) -> bool:
+        self._ui_app_state.global_target_fps = imgui.drag_int(
+            "Global target FPS",
+            self._ui_app_state.global_target_fps,
+            min_value=30,
+            max_value=240,
+        )[1]
+
+        button_width = 80
+        available_width = imgui.get_content_region_available()[0]
+        imgui.set_cursor_pos_x((available_width - button_width) / 2)
+
+        is_keep_opened = True
+        if imgui.button("Close", width=button_width):
+            is_keep_opened = False
 
         return is_keep_opened
 
@@ -1854,7 +1875,8 @@ class App:
             self.update_and_draw()
 
             elapsed_time = glfw.get_time() - start_time
-            time.sleep(max(0.0, 1.0 / 60.0 - elapsed_time))
+            target_fps = self._ui_app_state.global_target_fps
+            time.sleep(max(0.0, 1.0 / target_fps - elapsed_time))
 
             fps = 1.0 / (glfw.get_time() - start_time)
             if self.global_fps <= 0.0:
@@ -1929,6 +1951,9 @@ class App:
         if io.key_ctrl and imgui.is_key_pressed(ord("N")):
             self._active_popup_label = self._NODE_CREATOR_POPUP_LABEL
 
+        if io.key_alt and imgui.is_key_pressed(ord("S")):
+            self._active_popup_label = self._SETTINGS_POPUP_LABEL
+
         if imgui.is_key_pressed(glfw.KEY_ESCAPE, repeat=False):
             if self._active_popup_label is None:
                 glfw.set_window_should_close(self.window, True)
@@ -1978,6 +2003,10 @@ class App:
         # Main menu bar
         if imgui.button("Open project"):
             self.open_project()
+
+        imgui.same_line()
+        if imgui.button("Settings"):
+            self._active_popup_label = self._SETTINGS_POPUP_LABEL
 
         imgui.same_line()
         imgui.text(f"Global FPS: {round(self.global_fps)}")
@@ -2065,6 +2094,10 @@ class App:
         self.draw_popup_if_opened(
             self._NODE_CREATOR_POPUP_LABEL,
             self.draw_node_creator,
+        )
+        self.draw_popup_if_opened(
+            self._SETTINGS_POPUP_LABEL,
+            self.draw_settings,
         )
 
         imgui.push_font(self._font_18)

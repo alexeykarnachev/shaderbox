@@ -410,6 +410,7 @@ class Node:
 
             node.uniform_values[uniform_name] = value
 
+        node.render()  # Warm-up the node
         return node, mtime, metadata
 
     def release_program(self, new_fs_source: str = "") -> None:

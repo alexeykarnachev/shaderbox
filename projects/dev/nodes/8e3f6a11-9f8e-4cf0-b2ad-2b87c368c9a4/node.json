@@ -1,0 +1,183 @@
+{
+    "canvas_size": [
+        960,
+        1280
+    ],
+    "uniforms": {
+        "plane_speed": 0.12999999523162842,
+        "u_depth": {
+            "file_path": "/home/akarnachev/src/shaderbox/projects/dev/nodes/8e3f6a11-9f8e-4cf0-b2ad-2b87c368c9a4/media/u_depth.png",
+            "size": [
+                960,
+                1280
+            ],
+            "components": 4
+        },
+        "u_photo": {
+            "file_path": "/home/akarnachev/src/shaderbox/projects/dev/nodes/8e3f6a11-9f8e-4cf0-b2ad-2b87c368c9a4/media/u_photo.png",
+            "size": [
+                960,
+                1280
+            ],
+            "components": 4
+        },
+        "u_text_color": [
+            1.0,
+            0.0,
+            0.0
+        ],
+        "u_text_smoothness": 0.009999999776482582,
+        "u_text_thickness": 0.05000000074505806
+    },
+    "ui_state": {
+        "ui_name": "Green Scan",
+        "render_media_details": {
+            "is_video": true,
+            "file_details": {
+                "path": "/home/akarnachev/Downloads/spoty_3d.webm",
+                "size": 11759088
+            },
+            "resolution_details": {
+                "width": 960,
+                "height": 1280
+            },
+            "quality": 3,
+            "fps": 30,
+            "duration": 10.0
+        },
+        "ui_uniforms": {
+            "253862203346945299178786440022935245906": {
+                "name": "plane_speed",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "260085533400259490348506664942395818974": {
+                "name": "u_aspect",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "auto"
+            },
+            "287685113353201782305884862525381458179": {
+                "name": "u_depth",
+                "is_ubo": false,
+                "gl_type": 35678,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "texture"
+            },
+            "137816605663413188181111987666908946720": {
+                "name": "u_photo",
+                "is_ubo": false,
+                "gl_type": 35678,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "texture"
+            },
+            "95105375544120391393734104492114489830": {
+                "name": "u_resolution",
+                "is_ubo": false,
+                "gl_type": 35664,
+                "dimension": 2,
+                "array_length": 1,
+                "input_type": "auto"
+            },
+            "37154164850612245702881750831795076973": {
+                "name": "u_time",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "auto"
+            },
+            "329687756358551023569655392199314929713": {
+                "name": "u_text[0]",
+                "is_ubo": false,
+                "gl_type": 5125,
+                "dimension": 1,
+                "array_length": 64,
+                "input_type": "text"
+            },
+            "35376269741260153526277969501082733192": {
+                "name": "u_text[1]",
+                "is_ubo": false,
+                "gl_type": 5125,
+                "dimension": 1,
+                "array_length": 64,
+                "input_type": "text"
+            },
+            "337908202291589838803764372275075387700": {
+                "name": "u_text[2]",
+                "is_ubo": false,
+                "gl_type": 5125,
+                "dimension": 1,
+                "array_length": 64,
+                "input_type": "array"
+            },
+            "236213899470479700316631155775786327073": {
+                "name": "u_char_scale",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "260629952299707989589611984375333521846": {
+                "name": "u_offset",
+                "is_ubo": false,
+                "gl_type": 35664,
+                "dimension": 2,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "251013143038755702551577541197126192762": {
+                "name": "u_text_smoothness",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "34000617721421200058381681420356492834": {
+                "name": "u_text_spacing",
+                "is_ubo": false,
+                "gl_type": 35664,
+                "dimension": 2,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "118819038468438939857032935935375560316": {
+                "name": "u_text_thickness",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "28817900879564012086563967923611592100": {
+                "name": "u_zoomout",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "183543307082416608884519225484308431530": {
+                "name": "u_text_color",
+                "is_ubo": false,
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "color"
+            }
+        },
+        "resolution_idx": 0,
+        "selected_uniform_name": "u_depth",
+        "video_to_video_smoothing_window": 5,
+        "video_to_video_smoothing_sigma": 1.0
+    }
+}
