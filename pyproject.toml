@@ -26,6 +26,7 @@ dependencies = [
     "uuid>=1.30",
     "freetype-py>=2.5.1",
     "more-itertools>=10.7.0",
+    "pyperclip>=1.9.0",
 ]
 
 [build-system]

@@ -7,6 +7,7 @@ import math
 import shutil
 import subprocess
 import time
+from collections import deque
 from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 from typing import Any, Literal, Self, TypeVar
@@ -18,6 +19,7 @@ import glfw
 import imgui
 import moderngl
 import numpy as np
+import pyperclip
 import telegram as tg
 from imgui.integrations.glfw import GlfwRenderer
 from loguru import logger
@@ -39,7 +41,6 @@ from shaderbox.core import (
     UniformValue,
     Video,
 )
-from shaderbox.text_editor import TextEditor
 
 IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".bmp", ".webp"]
 VIDEO_EXTENSIONS = [".mp4", ".webm"]
@@ -576,8 +577,47 @@ def try_to_release(value: Any) -> bool:
     return False
 
 
+class Notifications:
+    def __init__(self, stack_size: int = 5) -> None:
+        self._stack = deque(maxlen=stack_size)  # type: ignore
+
+    def push(self, text: str, color=(0.0, 1.0, 0.0), ttl=5.0) -> None:  # type: ignore
+        self._stack.appendleft([text, color, ttl])
+
+    def update_and_draw(self) -> None:
+        # ----------------------------------------------------------------
+        # Update
+        alive_inds = []
+        for i in range(len(self._stack)):
+            self._stack[i][2] -= imgui.get_io().delta_time
+            if self._stack[i][2] > 0.0:
+                alive_inds.append(i)
+
+        if len(alive_inds) != len(self._stack):
+            self._stack = deque(
+                [self._stack[i] for i in alive_inds], maxlen=self._stack.maxlen
+            )
+
+        if not self._stack:
+            return
+
+        # ----------------------------------------------------------------
+        # Draw
+        pad = 10.0
+        gap = 7.0
+
+        window_size = imgui.get_window_size()
+        current_y = pad
+
+        for text, color, _ in self._stack:
+            text_size = imgui.calc_text_size(text)
+            x = window_size.x - text_size.x - pad
+            imgui.set_cursor_pos((x, current_y))  # type: ignore
+            imgui.text_colored(text, *color)
+            current_y += text_size.y + gap
+
+
 class App:
-    _SETTINGS_POPUP_LABEL = "Settings##popup"
     _NODE_CREATOR_POPUP_LABEL = "New node##popup"
 
     def __init__(self, project_dir: Path | None = None) -> None:
@@ -592,7 +632,7 @@ class App:
 
         monitor = glfw.get_primary_monitor()
         video_mode = glfw.get_video_mode(monitor)
-        window_width = video_mode.size[0]
+        window_width = video_mode.size[0] // 2
         window_height = video_mode.size[1]
 
         window = glfw.create_window(
@@ -606,6 +646,7 @@ class App:
         glfw.make_context_current(window)
         glfw.set_key_callback(window, self._glfw_key_callback)
         glfw.set_scroll_callback(window, self._glfw_scroll_callback)
+        glfw.set_window_pos(window, window_width, 0)
 
         imgui.create_context()
         self.window = window
@@ -614,7 +655,11 @@ class App:
         self._last_key_event: KeyEvent = KeyEvent()
         self._last_mouse_wheel: int = 0
 
+        self._notifications = Notifications()
+
         self._font_14 = self.get_font(14)
+        self._font_18 = self.get_font(18)
+
         self.preview_canvas: Canvas
 
         self.ui_nodes: dict[str, UINode] = {}
@@ -628,9 +673,6 @@ class App:
 
         self._active_popup_label: str | None = None
         self.global_fps = 0.0
-
-        self.text_editor: TextEditor
-        self._is_editor_active = False
 
         self._init(project_dir)
 
@@ -723,15 +765,11 @@ class App:
     def set_current_node_id(self, id: str = "") -> None:
         self._ui_app_state.current_node_id = id
 
-        ui_node = self.ui_nodes[id]
-        self.text_editor.set_text(text=ui_node.node.fs_source)
-
     def _init(self, project_dir: Path) -> None:
         self.release()
         self.fetch_modelbox_info()
 
         self.preview_canvas = Canvas()
-        self.text_editor = TextEditor()
 
         self.app_start_time = int(time.time() * 1000)
         self.frame_idx = 0
@@ -758,9 +796,6 @@ class App:
                 }
 
                 ui_app_state = UIAppState(**state_dict)
-
-                if ui_node := self.ui_nodes.get(ui_app_state.current_node_id):
-                    self.text_editor.set_text(text=ui_node.node.fs_source)
 
                 self._ui_app_state = ui_app_state
 
@@ -811,6 +846,7 @@ class App:
     def edit_current_node_fs_file(self) -> None:
         if not self.current_node_id:
             logger.warning("Nothing to edit")
+            return
 
         fs_file_path = self.nodes_dir / self.current_node_id / "shader.frag.glsl"
         wd = fs_file_path.parent.parent
@@ -835,7 +871,10 @@ class App:
     ) -> Path:
         root_dir = root_dir or self.nodes_dir
         dir = ui_node.save(root_dir, dir_name)
+
         logger.info(f"Node '{ui_node.ui_state.ui_name}' saved: {dir}")
+        self._notifications.push(f"Node '{ui_node.ui_state.ui_name}' saved")
+
         return dir
 
     def draw_popup_if_opened(self, label: str, draw_func: Callable[[], bool]) -> None:
@@ -868,8 +907,17 @@ class App:
         if hasattr(self, "preview_canvas"):
             self.preview_canvas.release()
 
-        if hasattr(self, "text_editor"):
-            self.text_editor.release()
+    def open_project(self) -> None:
+        start_dir = str(
+            self.project_dir.parent
+            if self.project_dir
+            else self.default_projects_root_dir
+        )
+        project_dir = crossfiledialog.choose_folder(
+            title="Open project", start_dir=start_dir
+        )
+        if project_dir:
+            self._init(project_dir)
 
     def delete_current_node(self) -> None:
         node_id = self.current_node_id
@@ -914,6 +962,11 @@ class App:
         with imgui.begin_child(
             "node_preview_grid", width=width, height=height, border=True
         ):
+            if imgui.button("New node"):
+                self._active_popup_label = self._NODE_CREATOR_POPUP_LABEL
+
+            imgui.same_line()
+
             self._ui_app_state.is_render_all_nodes = imgui.checkbox(
                 "Render all", self._ui_app_state.is_render_all_nodes
             )[1]
@@ -1015,41 +1068,27 @@ class App:
             f"New node {new_node.id} created from template {self._ui_app_state.selected_node_template_id}"
         )
 
-    def draw_settings(self) -> bool:
-        imgui.text("Current project:")
-        imgui.same_line()
-        imgui.text_colored(str(self.project_dir), *(0.5, 0.5, 0.5))
-
-        if imgui.button("Open another##project"):
-            start_dir = str(
-                self.project_dir.parent
-                if self.project_dir
-                else self.default_projects_root_dir
-            )
-            project_dir = crossfiledialog.choose_folder(
-                title="Project", start_dir=start_dir
-            )
-            if project_dir:
-                self._init(project_dir)
-
-        imgui.new_line()
-
-        is_keep_opened = not imgui.button("Cancel")
-        return is_keep_opened
-
     def draw_node_tab(self) -> None:
         if not (ui_node := self.ui_nodes.get(self.current_node_id)):
             return
 
+        # ----------------------------------------------------------------
+        # Node fragment shader file path
         fs_file_path = self.nodes_dir / ui_node.id / "shader.frag.glsl"
-        imgui.text_colored(str(fs_file_path), 0.5, 0.5, 0.5)
+        fs_file_path = fs_file_path.relative_to(self.project_dir)
 
+        imgui.push_style_color(imgui.COLOR_TEXT, *(0.5, 0.5, 0.5))
+        if imgui.selectable(str(fs_file_path), False)[0]:
+            pyperclip.copy(str(fs_file_path))
+            self._notifications.push("Copied to clipboard!")
+        imgui.pop_style_color()
+
+        # ----------------------------------------------------------------
+        # Node menu bar
         imgui.spacing()
         ui_node.ui_state.ui_name = imgui.input_text("Name", ui_node.ui_state.ui_name)[1]
         imgui.spacing()
 
-        # ----------------------------------------------------------------
-        # Node menu bar
         if imgui.button("Edit code", width=80):
             self.edit_current_node_fs_file()
         imgui.same_line()
@@ -1061,6 +1100,7 @@ class App:
                 dir_name=str(uuid4()),
             )
             self.ui_node_templates[dir.name] = load_node_from_dir(dir)
+            self._notifications.push("New template created")
 
         imgui.new_line()
         imgui.separator()
@@ -1121,13 +1161,13 @@ class App:
 
         imgui.same_line()
         if imgui.button("Apply##resolution"):
+            resolution_str = resolution_items[node_ui_state.resolution_idx]
             w, h = map(
                 int,
-                resolution_items[node_ui_state.resolution_idx]
-                .split(" | ")[0]
-                .split("x"),
+                resolution_str.split(" | ")[0].split("x"),
             )
             ui_node.node.canvas.set_size((w, h))
+            self._notifications.push(f"Canvas resolution changed: {resolution_str}")
 
         imgui.new_line()
         imgui.separator()
@@ -1872,48 +1912,42 @@ class App:
             for ui_node in self.ui_node_templates.values():
                 ui_node.node.render()
 
-        self.text_editor.render()
-
         # ----------------------------------------------------------------
         # Process hotkeys
         glfw.poll_events()
         self.imgui_renderer.process_inputs()
         io = imgui.get_io()
 
-        if self._is_editor_active:
-            self.text_editor.process_mouse_wheel(self._last_mouse_wheel)
-            self.text_editor.process_key_event(self._last_key_event)
-        else:
-            if io.key_alt and imgui.is_key_pressed(ord("S")):
-                self._active_popup_label = self._SETTINGS_POPUP_LABEL
-            if io.key_ctrl and imgui.is_key_pressed(ord("N")):
-                self._active_popup_label = self._NODE_CREATOR_POPUP_LABEL
-            if io.key_ctrl and imgui.is_key_pressed(ord("S")):
-                self.save()
-            if io.key_ctrl and imgui.is_key_pressed(ord("E")):
-                self.edit_current_node_fs_file()
-            if io.key_ctrl and imgui.is_key_pressed(ord("D")):
-                self.delete_current_node()
+        if io.key_ctrl and imgui.is_key_pressed(ord("O")):
+            self.open_project()
+        if io.key_ctrl and imgui.is_key_pressed(ord("S")):
+            self.save()
+        if io.key_ctrl and imgui.is_key_pressed(ord("E")):
+            self.edit_current_node_fs_file()
+        if io.key_ctrl and imgui.is_key_pressed(ord("D")):
+            self.delete_current_node()
+        if io.key_ctrl and imgui.is_key_pressed(ord("N")):
+            self._active_popup_label = self._NODE_CREATOR_POPUP_LABEL
 
-            if imgui.is_key_pressed(glfw.KEY_ESCAPE, repeat=False):
-                if self._active_popup_label is None:
-                    glfw.set_window_should_close(self.window, True)
-                self._active_popup_label = None
+        if imgui.is_key_pressed(glfw.KEY_ESCAPE, repeat=False):
+            if self._active_popup_label is None:
+                glfw.set_window_should_close(self.window, True)
+            self._active_popup_label = None
 
-            if not imgui.is_any_item_active():
-                if not self._active_popup_label:
-                    if imgui.is_key_pressed(glfw.KEY_LEFT, repeat=True):
-                        self.select_next_current_node(-1)
-                    if imgui.is_key_pressed(glfw.KEY_RIGHT, repeat=True):
-                        self.select_next_current_node(+1)
-                if self._active_popup_label == self._NODE_CREATOR_POPUP_LABEL:
-                    if imgui.is_key_pressed(glfw.KEY_LEFT, repeat=True):
-                        self.select_next_template(-1)
-                    if imgui.is_key_pressed(glfw.KEY_RIGHT, repeat=True):
-                        self.select_next_template(+1)
-                    if imgui.is_key_pressed(glfw.KEY_ENTER, repeat=False):
-                        self.create_node_from_selected_template()
-                        self._active_popup_label = None
+        if not imgui.is_any_item_active():
+            if not self._active_popup_label:
+                if imgui.is_key_pressed(glfw.KEY_LEFT, repeat=True):
+                    self.select_next_current_node(-1)
+                if imgui.is_key_pressed(glfw.KEY_RIGHT, repeat=True):
+                    self.select_next_current_node(+1)
+            if self._active_popup_label == self._NODE_CREATOR_POPUP_LABEL:
+                if imgui.is_key_pressed(glfw.KEY_LEFT, repeat=True):
+                    self.select_next_template(-1)
+                if imgui.is_key_pressed(glfw.KEY_RIGHT, repeat=True):
+                    self.select_next_template(+1)
+                if imgui.is_key_pressed(glfw.KEY_ENTER, repeat=False):
+                    self.create_node_from_selected_template()
+                    self._active_popup_label = None
 
         # Reset input events
         self._last_key_event.key = -1
@@ -1924,41 +1958,11 @@ class App:
         imgui.new_frame()
         imgui.push_font(self._font_14)
 
-        window_width, window_height = glfw.get_window_size(self.window)
-
-        # ----------------------------------------------------------------
-        # Draw editor
-        imgui.set_next_window_size(window_width // 2, window_height)
-        imgui.set_next_window_position(0, 0)
-        imgui.begin(
-            "ShaderBox - Editor",
-            flags=imgui.WINDOW_NO_COLLAPSE
-            | imgui.WINDOW_ALWAYS_AUTO_RESIZE
-            | imgui.WINDOW_NO_TITLE_BAR
-            | imgui.WINDOW_NO_SCROLLBAR
-            | imgui.WINDOW_NO_SCROLL_WITH_MOUSE,
-        )
-
-        image_width, image_height = imgui.get_content_region_available()
-        self.text_editor.set_canvas_size((image_width, image_height))
-
-        imgui.image(
-            self.text_editor.canvas_texture.glo,
-            width=image_width,
-            height=image_height,
-            uv0=(0, 1),
-            uv1=(1, 0),
-            border_color=(0.2, 0.2, 0.2, 1.0),
-        )
-
-        self._is_editor_active = imgui.is_item_hovered()
-
-        imgui.end()
-
         # ----------------------------------------------------------------
         # Main window
-        imgui.set_next_window_size(window_width // 2, window_height)
-        imgui.set_next_window_position(window_width // 2, 0)
+        window_width, window_height = glfw.get_window_size(self.window)
+        imgui.set_next_window_size(window_width, window_height)
+        imgui.set_next_window_position(0, 0)
         imgui.begin(
             "ShaderBox - UI",
             flags=imgui.WINDOW_NO_COLLAPSE
@@ -1972,12 +1976,8 @@ class App:
 
         # ----------------------------------------------------------------
         # Main menu bar
-        if imgui.button("New node"):
-            self._active_popup_label = self._NODE_CREATOR_POPUP_LABEL
-
-        imgui.same_line()
-        if imgui.button("Settings"):
-            self._active_popup_label = self._SETTINGS_POPUP_LABEL
+        if imgui.button("Open project"):
+            self.open_project()
 
         imgui.same_line()
         imgui.text(f"Global FPS: {round(self.global_fps)}")
@@ -2056,21 +2056,21 @@ class App:
             self.draw_node_settings()
 
         # ----------------------------------------------------------------
-        # Popups
+        # Popups and notifications
         if self._active_popup_label is not None and not imgui.is_popup_open(
             self._active_popup_label
         ):
             imgui.open_popup(self._active_popup_label)
 
         self.draw_popup_if_opened(
-            self._SETTINGS_POPUP_LABEL,
-            self.draw_settings,
-        )
-        self.draw_popup_if_opened(
             self._NODE_CREATOR_POPUP_LABEL,
             self.draw_node_creator,
         )
 
+        imgui.push_font(self._font_18)
+        self._notifications.update_and_draw()
+
+        imgui.pop_font()
         imgui.pop_font()
 
         # ----------------------------------------------------------------
