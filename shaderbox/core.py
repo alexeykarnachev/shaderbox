@@ -768,10 +768,3 @@ class Font:
 
     def release(self) -> None:
         self.atlas_texture.release()
-
-
-class KeyEvent(BaseModel):
-    key: int = -1
-    scancode: int = -1
-    action: int = -1
-    mods: int = -1

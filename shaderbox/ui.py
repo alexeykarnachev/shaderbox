@@ -33,7 +33,6 @@ from shaderbox.core import (
     Canvas,
     FileDetails,
     Image,
-    KeyEvent,
     MediaDetails,
     MediaWithTexture,
     Node,
@@ -647,16 +646,11 @@ class App:
         )
 
         glfw.make_context_current(window)
-        glfw.set_key_callback(window, self._glfw_key_callback)
-        glfw.set_scroll_callback(window, self._glfw_scroll_callback)
         glfw.set_window_pos(window, window_width, 0)
 
         imgui.create_context()
         self.window = window
-        self.imgui_renderer = GlfwRenderer(window, attach_callbacks=False)
-
-        self._last_key_event: KeyEvent = KeyEvent()
-        self._last_mouse_wheel: int = 0
+        self.imgui_renderer = GlfwRenderer(window)
 
         self._notifications = Notifications()
 
@@ -741,29 +735,6 @@ class App:
             return UINodeState()
 
         return self.ui_nodes[node_id].ui_state
-
-    def _glfw_key_callback(
-        self, window: Any, key: int, scancode: int, action: int, mods: int
-    ) -> None:
-        self.imgui_renderer.keyboard_callback(
-            window,
-            key=key,
-            scancode=scancode,
-            action=action,
-            mods=mods,
-        )
-
-        self._last_key_event.key = key
-        self._last_key_event.scancode = scancode
-        self._last_key_event.action = action
-        self._last_key_event.mods = mods
-
-    def _glfw_scroll_callback(self, window: Any, x_offset: int, y_offset: int) -> None:
-        self.imgui_renderer.scroll_callback(
-            window, x_offset=x_offset, y_offset=y_offset
-        )
-
-        self._last_mouse_wheel = y_offset
 
     def set_current_node_id(self, id: str = "") -> None:
         self._ui_app_state.current_node_id = id
@@ -1973,10 +1944,6 @@ class App:
                 if imgui.is_key_pressed(glfw.KEY_ENTER, repeat=False):
                     self.create_node_from_selected_template()
                     self._active_popup_label = None
-
-        # Reset input events
-        self._last_key_event.key = -1
-        self._last_mouse_wheel = 0
 
         # ----------------------------------------------------------------
         # Prepare new frame
