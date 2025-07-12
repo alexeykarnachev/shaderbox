@@ -21,5 +21,6 @@
         "duration": 1.0
     },
     "media_model_idx": 0,
-    "global_target_fps": 30
+    "global_target_fps": 30,
+    "text_editor_cmd": "gnome-terminal -- nvim {file_path}"
 }

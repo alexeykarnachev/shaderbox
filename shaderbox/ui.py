@@ -4,6 +4,7 @@ import contextlib
 import hashlib
 import json
 import math
+import platform
 import shutil
 import subprocess
 import time
@@ -385,6 +386,8 @@ class UIAppState(BaseModel):
     media_model_idx: int = 0
 
     global_target_fps: int = 60
+
+    text_editor_cmd: str = ""
 
     def save(self, file_path: str | Path) -> None:
         app_state_dict = self.model_dump()
@@ -824,18 +827,20 @@ class App:
 
         fs_file_path = self.nodes_dir / self.current_node_id / "shader.frag.glsl"
         wd = fs_file_path.parent.parent
-        editor = "nvim" if shutil.which("nvim") else "vim"
+
+        cmd = self._ui_app_state.text_editor_cmd
+        cmd = cmd.format(file_path=fs_file_path)
 
         try:
             subprocess.Popen(
-                ["gnome-terminal", "--", editor, str(fs_file_path)],
+                cmd.split(),
                 cwd=str(wd),
                 start_new_session=True,
             )
         except Exception as e:
-            logger.error(
-                f"Failed to open {fs_file_path} in {editor} with new terminal: {e}"
-            )
+            err = "Failed to open text editor, please setup text editor command in settings"
+            self._notifications.push(err, color=(1, 0, 0))
+            logger.error(f"Failed to execute the command {cmd}: {e}")
 
     def save_ui_node(
         self,
@@ -1035,6 +1040,86 @@ class App:
             max_value=240,
         )[1]
 
+        # ----------------------------------------------------------------
+        # Text editor command
+        imgui.spacing()
+
+        # Define editor commands based on OS
+        system = platform.system()
+        editor_commands: dict[str, dict[str, str]] = {
+            "nvim": {
+                "Windows": "cmd /c start nvim {file_path}",
+                "Linux": "gnome-terminal -- nvim {file_path}",
+                "Darwin": 'osascript -e \'tell app "Terminal" to do script "nvim {file_path}"\'',
+            },
+            "vim": {
+                "Windows": "cmd /c start vim {file_path}",
+                "Linux": "gnome-terminal -- vim {file_path}",
+                "Darwin": 'osascript -e \'tell app "Terminal" to do script "vim {file_path}"\'',
+            },
+            "nano": {
+                "Windows": "cmd /c start nano {file_path}",
+                "Linux": "gnome-terminal -- nano {file_path}",
+                "Darwin": 'osascript -e \'tell app "Terminal" to do script "nano {file_path}"\'',
+            },
+            "code": {  # VSCode
+                "Windows": "code {file_path}",
+                "Linux": "code {file_path}",
+                "Darwin": "code {file_path}",
+            },
+            "emacs": {
+                "Windows": "cmd /c start emacs {file_path}",
+                "Linux": "gnome-terminal -- emacs {file_path}",
+                "Darwin": 'osascript -e \'tell app "Terminal" to do script "emacs {file_path}"\'',
+            },
+            "notepad++": {
+                "Windows": "notepad++ {file_path}",
+                "Linux": "",
+                "Darwin": "",
+            },
+            "devenv": {  # Visual Studio
+                "Windows": "devenv {file_path}",
+                "Linux": "",
+                "Darwin": "",
+            },
+        }
+
+        # Check available editors
+        available_editors = []
+        for editor, commands in editor_commands.items():
+            if commands.get(system) and shutil.which(editor):
+                available_editors.append(editor)
+
+        # Display input field
+        imgui.new_line()
+        width = imgui.get_content_region_available_width()
+        self._ui_app_state.text_editor_cmd = imgui.input_text(
+            "Text editor cmd", self._ui_app_state.text_editor_cmd
+        )[1]
+
+        imgui.same_line()
+        imgui.set_cursor_pos_x(width)
+        imgui.text_colored("?", *(0.5, 0.5, 0.5))
+        if imgui.is_item_hovered():
+            imgui.begin_tooltip()
+            example = editor_commands["nvim"].get(system)
+            imgui.text(
+                "This command will be executed when you click 'Edit code' "
+                "button in the node tab or when you click CTRL+E"
+            )
+            imgui.text(f"Example: `{example}`")
+            imgui.end_tooltip()
+
+        # Display buttons for available editors only
+        for i, editor in enumerate(available_editors):
+            if i > 0:
+                imgui.same_line()
+            if imgui.button("VS" if editor == "devenv" else editor):
+                self._ui_app_state.text_editor_cmd = editor_commands[editor][system]
+
+        # ----------------------------------------------------------------
+        # Close button
+        imgui.new_line()
         button_width = 80
         available_width = imgui.get_content_region_available()[0]
         imgui.set_cursor_pos_x((available_width - button_width) / 2)
