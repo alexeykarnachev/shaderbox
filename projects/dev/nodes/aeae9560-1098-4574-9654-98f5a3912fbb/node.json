@@ -6,13 +6,13 @@
     "uniforms": {
         "u_cam_look_at": [
             0.0,
-            0.7900000214576721,
-            0.0
+            1.100000023841858,
+            -0.009999999776482582
         ],
         "u_cam_pos": [
-            -4.559999942779541,
-            4.300000190734863,
-            12.899999618530273
+            0.1077771708369255,
+            1.093999981880188,
+            1.0230000019073486
         ]
     },
     "ui_state": {
@@ -40,22 +40,6 @@
                 "array_length": 1,
                 "input_type": "auto"
             },
-            "28817900879564012086563967923611592100": {
-                "name": "u_zoomout",
-                "is_ubo": false,
-                "gl_type": 5126,
-                "dimension": 1,
-                "array_length": 1,
-                "input_type": "drag"
-            },
-            "37154164850612245702881750831795076973": {
-                "name": "u_time",
-                "is_ubo": false,
-                "gl_type": 5126,
-                "dimension": 1,
-                "array_length": 1,
-                "input_type": "auto"
-            },
             "39928523783279715234744860550160666689": {
                 "name": "u_cam_look_at",
                 "is_ubo": false,
@@ -74,7 +58,7 @@
             }
         },
         "resolution_idx": 1,
-        "selected_uniform_name": "u_cam_look_at",
+        "selected_uniform_name": "u_cam_pos",
         "video_to_video_smoothing_window": 5,
         "video_to_video_smoothing_sigma": 1.0
     }

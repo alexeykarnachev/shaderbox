@@ -8,6 +8,7 @@ import platform
 import shutil
 import subprocess
 import time
+import webbrowser
 from collections import deque
 from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
@@ -388,6 +389,7 @@ class UIAppState(BaseModel):
     global_target_fps: int = 60
 
     text_editor_cmd: str = ""
+    modelbox_url: str = "http://127.0.0.1:8228/"
 
     def save(self, file_path: str | Path) -> None:
         app_state_dict = self.model_dump()
@@ -777,11 +779,19 @@ class App:
                 self._ui_app_state = ui_app_state
 
     def fetch_modelbox_info(self) -> None:
+        self.modelbox_info = {}
+
+        if not self._ui_app_state.modelbox_url:
+            return
+
         try:
-            self.modelbox_info = modelbox.fetch_modelbox_info()
+            self.modelbox_info = modelbox.fetch_modelbox_info(
+                self._ui_app_state.modelbox_url
+            )
         except Exception as e:
-            logger.error(f"Failed to fetch media model names: {e}")
-            self.modelbox_info = {}
+            err = "Failed to fetch ModelBox media model names"
+            logger.error(f"{err}: {e}")
+            self._notifications.push(err)
 
     def get_font(self, size: int) -> Any:
         fonts = imgui.get_io().fonts
@@ -1043,6 +1053,8 @@ class App:
         # ----------------------------------------------------------------
         # Text editor command
         imgui.spacing()
+        imgui.separator()
+        imgui.spacing()
 
         # Define editor commands based on OS
         system = platform.system()
@@ -1091,7 +1103,6 @@ class App:
                 available_editors.append(editor)
 
         # Display input field
-        imgui.new_line()
         width = imgui.get_content_region_available_width()
         self._ui_app_state.text_editor_cmd = imgui.input_text(
             "Text editor cmd", self._ui_app_state.text_editor_cmd
@@ -1104,8 +1115,7 @@ class App:
             imgui.begin_tooltip()
             example = editor_commands["nvim"].get(system)
             imgui.text(
-                "This command will be executed when you click 'Edit code' "
-                "button in the node tab or when you click CTRL+E"
+                "This command will be executed when you click 'Edit code' (CTRL+E)"
             )
             imgui.text(f"Example: `{example}`")
             imgui.end_tooltip()
@@ -1118,7 +1128,35 @@ class App:
                 self._ui_app_state.text_editor_cmd = editor_commands[editor][system]
 
         # ----------------------------------------------------------------
+        # Modelbox url
+        imgui.spacing()
+        imgui.separator()
+        imgui.spacing()
+
+        self._ui_app_state.modelbox_url = imgui.input_text(
+            "ModelBox url", self._ui_app_state.modelbox_url
+        )[1]
+
+        if imgui.button("Install from GitHub##modelbox"):
+            url = "https://github.com/alexeykarnachev/modelbox"
+            webbrowser.open(url)
+
+        imgui.same_line()
+        imgui.set_cursor_pos_x(width)
+        imgui.text_colored("?", *(0.5, 0.5, 0.5))
+        if imgui.is_item_hovered():
+            imgui.begin_tooltip()
+            imgui.text(
+                "ModelBox is a service which provides image processing models (depth estimation, background removal). You can apply these models to your image and video uniforms. Click README to check the installation instruction"
+            )
+            imgui.end_tooltip()
+
+        # ----------------------------------------------------------------
         # Close button
+        imgui.spacing()
+        imgui.separator()
+        imgui.spacing()
+
         imgui.new_line()
         button_width = 80
         available_width = imgui.get_content_region_available()[0]
@@ -1265,8 +1303,13 @@ class App:
             "ui_uniforms",
             width=imgui.get_content_region_available_width() // 2,
         )
+
+        imgui.push_style_color(imgui.COLOR_SEPARATOR, *(0.15, 0.15, 0.15))
         for hash in active_uniform_hashes:
             self.draw_ui_uniform(ui_uniforms[hash])
+            imgui.spacing()
+            imgui.separator()
+        imgui.pop_style_color()
 
         imgui.end_child()
 
@@ -1304,11 +1347,17 @@ class App:
 
             imgui.same_line()
             if imgui.button("Apply##media_model"):
-                output_media = modelbox.infer_media_model(
-                    input_media,
-                    model_name=model_name,
-                    output_dir=self.media_dir,
-                )
+                try:
+                    output_media = modelbox.infer_media_model(
+                        modelbox_url=self._ui_app_state.modelbox_url,
+                        media=input_media,
+                        model_name=model_name,
+                        output_dir=self.media_dir,
+                    )
+                except Exception as e:
+                    err = "Failed to infer ModelBox media model"
+                    logger.error(f"{err}: {e}")
+                    self._notifications.push(err, (1, 0, 0))
 
         return output_media or input_media  # type: ignore
 
@@ -1403,6 +1452,14 @@ class App:
             if current_value != new_value:
                 try_to_release(current_value)
                 ui_node.node.uniform_values[ui_uniform.name] = new_value
+
+        elif ui_uniform.input_type in ("drag", "color"):
+            current_idx = 0 if ui_uniform.input_type == "drag" else 1
+            new_idx = imgui.combo(
+                "Input type##ui_uniform", current_idx, items=["drag", "color"]
+            )[1]
+
+            ui_uniform.input_type = "drag" if new_idx == 0 else "color"
 
         elif (
             ui_uniform.input_type in ("array", "text")
@@ -1534,20 +1591,23 @@ class App:
         elif ui_uniform.input_type == "color":
             assert isinstance(current_value, Sequence)
 
+            imgui.text(ui_uniform.name)
             fn = getattr(imgui, f"color_edit{ui_uniform.dimension}")
-            new_value = fn(ui_uniform.name, *current_value)[1]
+            new_value = fn(f"##{ui_uniform.name}", *current_value)[1]
 
         elif ui_uniform.input_type == "drag":
+            imgui.text(ui_uniform.name)
+
             change_speed = 0.01
             if ui_uniform.dimension == 1:
                 assert isinstance(current_value, float)
                 new_value = imgui.drag_float(
-                    ui_uniform.name, current_value, change_speed
+                    f"##{ui_uniform.name}", current_value, change_speed
                 )[1]
             else:
                 assert isinstance(current_value, Sequence)
                 fn = getattr(imgui, f"drag_float{ui_uniform.dimension}")
-                new_value = fn(ui_uniform.name, *current_value, change_speed)[1]
+                new_value = fn(f"##{ui_uniform.name}", *current_value, change_speed)[1]
 
         if new_value is not None:
             try_to_release(current_value)
