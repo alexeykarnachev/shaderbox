@@ -1,20 +1,11 @@
 {
     "canvas_size": [
-        960,
-        1280
+        1280,
+        960
     ],
-    "uniforms": {
-        "u_image": {
-            "file_path": "media/u_image.png",
-            "size": [
-                960,
-                1280
-            ],
-            "components": 4
-        }
-    },
+    "uniforms": {},
     "ui_state": {
-        "ui_name": "UV Mango 2",
+        "ui_name": "UV Mango",
         "render_media_details": {
             "is_video": true,
             "file_details": {
@@ -53,17 +44,9 @@
                 "dimension": 1,
                 "array_length": 1,
                 "input_type": "auto"
-            },
-            "298626367673662534095187619679730017816": {
-                "name": "u_image",
-                "is_ubo": false,
-                "gl_type": 35678,
-                "dimension": 1,
-                "array_length": 1,
-                "input_type": "texture"
             }
         },
-        "resolution_idx": 0,
+        "resolution_idx": 3,
         "selected_uniform_name": "",
         "video_to_video_smoothing_window": 5,
         "video_to_video_smoothing_sigma": 1.0

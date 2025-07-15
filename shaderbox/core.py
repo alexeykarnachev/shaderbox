@@ -663,11 +663,9 @@ class Node:
 
 class Font:
     def __init__(self, file_path: Path | str, size: int):
-        # Load the font face
         face = freetype.Face(str(file_path))
         face.set_pixel_sizes(0, size)  # Set font height to 'size' pixels
 
-        # Atlas texture parameters
         texture_width = 1024
         texture_height = 1024
         padding = 2
@@ -676,12 +674,9 @@ class Font:
 
         texture_data = np.zeros((texture_height, texture_width, 1), dtype=np.uint8)
 
-        # Calculate cell width for monospaced font
-        # Use the advance width of a representative glyph (e.g., 'M')
         face.load_char("M", freetype.FT_LOAD_RENDER)  # type: ignore
-        cell_width = face.glyph.advance.x / 64.0  # Convert to pixels
-        cell_height = size  # Approximate height based on requested size
-        # Alternatively: cell_height = (face.ascender - face.descender) / 64.0
+        cell_width = face.glyph.advance.x / 64.0
+        cell_height = size
 
         glyphs = {}
 
@@ -691,68 +686,56 @@ class Font:
             "metrics": [face.glyph.advance.x / 64.0 / cell_width, 0.0, 0.0, 0.0],
         }
 
-        # Extract glyphs for printable ASCII characters (33 to 126)
+        # Printable ASCII characters (33 to 126)
         for char_code in range(33, 127):
             face.load_char(char_code, freetype.FT_LOAD_RENDER)  # type: ignore
             bitmap = face.glyph.bitmap
 
-            # Skip empty glyphs
             if bitmap.width == 0 or bitmap.rows == 0:
                 continue
 
-            # Move to next row if necessary
             if current_x + bitmap.width + padding > texture_width:
                 current_x = padding
                 current_y += max_row_height + padding
                 max_row_height = 0
 
-            # Check atlas bounds
             if current_y + bitmap.rows + padding > texture_height:
                 raise ValueError("Glyph atlas texture too small")
 
-            # Convert bitmap to NumPy array
             bitmap_array = np.array(bitmap.buffer, dtype=np.uint8).reshape(
                 bitmap.rows, bitmap.pitch
             )[:, : bitmap.width]
             bitmap_array = np.flipud(bitmap_array)  # Flip for OpenGL
 
-            # Fill atlas texture (white glyph with alpha)
             target_slice = texture_data[
                 current_y : current_y + bitmap.rows,
                 current_x : current_x + bitmap.width,
             ]
             target_slice[:, :, 0] = bitmap_array
 
-            # Normalized UV coordinates
             u0 = current_x / texture_width
             v0 = current_y / texture_height
             u1 = (current_x + bitmap.width) / texture_width
             v1 = (current_y + bitmap.rows) / texture_height
 
-            # Normalized metrics relative to cell size
             glyph_width = bitmap.width / cell_width
             glyph_height = bitmap.rows / cell_height
             bearing_x = face.glyph.bitmap_left / cell_width
-            bearing_y = (
-                face.glyph.bitmap_top - bitmap.rows
-            ) / cell_height  # Origin at bottom
+            bearing_y = (face.glyph.bitmap_top - bitmap.rows) / cell_height
 
             glyphs[char_code] = {
                 "uv": [u0, v0, u1, v1],
                 "metrics": [glyph_width, glyph_height, bearing_x, bearing_y],
             }
 
-            # Update atlas position
             current_x += bitmap.width + padding
             max_row_height = max(max_row_height, bitmap.rows)
 
-        # Adjust bearing_y
         min_bearing_y = min(g["metrics"][3] for g in glyphs.values())
         baseline_y = -min_bearing_y if min_bearing_y < 0 else 0
         for char_code in glyphs:
             glyphs[char_code]["metrics"][3] += baseline_y
 
-        # Create glyph atlas texture
         gl = moderngl.get_context()
         atlas_texture = gl.texture(
             size=(texture_width, texture_height),
@@ -763,10 +746,7 @@ class Font:
         atlas_texture.filter = (moderngl.LINEAR, moderngl.LINEAR)
 
         self.glyphs = glyphs
-        self.glyph_size_px: tuple[float, float] = (
-            cell_width,
-            cell_height,
-        )  # Updated to float
+        self.glyph_size_px: tuple[float, float] = (cell_width, cell_height)
         self.atlas_texture = atlas_texture
 
     def release(self) -> None:

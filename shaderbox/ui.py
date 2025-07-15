@@ -1056,7 +1056,6 @@ class App:
         imgui.separator()
         imgui.spacing()
 
-        # Define editor commands based on OS
         system = platform.system()
         editor_commands: dict[str, dict[str, str]] = {
             "nvim": {
@@ -1096,13 +1095,11 @@ class App:
             },
         }
 
-        # Check available editors
         available_editors = []
         for editor, commands in editor_commands.items():
             if commands.get(system) and shutil.which(editor):
                 available_editors.append(editor)
 
-        # Display input field
         width = imgui.get_content_region_available_width()
         self._ui_app_state.text_editor_cmd = imgui.input_text(
             "Text editor cmd", self._ui_app_state.text_editor_cmd
@@ -1120,7 +1117,6 @@ class App:
             imgui.text(f"Example: `{example}`")
             imgui.end_tooltip()
 
-        # Display buttons for available editors only
         for i, editor in enumerate(available_editors):
             if i > 0:
                 imgui.same_line()
