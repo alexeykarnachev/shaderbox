@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Any, TypeVar
 from urllib.parse import urljoin
 
-import httpx
+import requests
 
 from shaderbox.core import Image, Video
 
@@ -11,9 +11,9 @@ def _post_file(modelbox_url: str, file_path: Path | str) -> str:
     url = urljoin(modelbox_url, "file")
     file_path = Path(file_path)
 
-    with file_path.open("rb") as file, httpx.Client(verify=False) as client:
-        response = client.post(
-            url, files={"file": (file_path.name, file)}, timeout=10.0
+    with file_path.open("rb") as file:
+        response = requests.post(
+            url, files={"file": (file_path.name, file)}, timeout=10.0, verify=False
         )
         response.raise_for_status()
     return str(response.json())
@@ -22,9 +22,8 @@ def _post_file(modelbox_url: str, file_path: Path | str) -> str:
 def _get_file(modelbox_url: str, file_name: str, output_path: Path) -> None:
     url = urljoin(modelbox_url, "file")
 
-    with httpx.Client(verify=False) as client:
-        response = client.get(f"{url}/{file_name}", timeout=10.0)
-        response.raise_for_status()
+    response = requests.get(f"{url}/{file_name}", timeout=10.0, verify=False)
+    response.raise_for_status()
 
     with output_path.open("wb") as file:
         file.write(response.content)
@@ -33,9 +32,8 @@ def _get_file(modelbox_url: str, file_name: str, output_path: Path) -> None:
 def fetch_modelbox_info(modelbox_url: str) -> dict[str, Any]:
     url = urljoin(modelbox_url, "info")
 
-    with httpx.Client(verify=False) as client:
-        response = client.get(url, timeout=10.0)
-        response.raise_for_status()
+    response = requests.get(url, timeout=10.0, verify=False)
+    response.raise_for_status()
     return response.json()  # type: ignore
 
 
@@ -51,16 +49,16 @@ def infer_media_model(
     input_file_name = _post_file(modelbox_url, media.details.file_details.path)
 
     url = urljoin(modelbox_url, "media_model")
-    with httpx.Client(verify=False) as client:
-        response = client.post(
-            url,
-            json={
-                "file_name": input_file_name,
-                "model_name": model_name,
-            },
-            timeout=600.0,
-        )
-        response.raise_for_status()
+    response = requests.post(
+        url,
+        json={
+            "file_name": input_file_name,
+            "model_name": model_name,
+        },
+        timeout=600.0,
+        verify=False,
+    )
+    response.raise_for_status()
 
     output_file_name = response.json()["file_name"]
     output_file_path = Path(output_dir / output_file_name)

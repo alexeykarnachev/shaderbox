@@ -8,7 +8,6 @@ requires-python = ">=3.12"
 dependencies = [
     "crossfiledialog>=1.0.0",
     "glfw>=2.8.0",
-    "httpx>=0.28.1",
     "imageio[ffmpeg]>=2.37.0",
     "imgui[glfw]>=2.0.0",
     "litestar>=2.16.0",
@@ -28,6 +27,7 @@ dependencies = [
     "more-itertools>=10.7.0",
     "pyperclip>=1.9.0",
     "pywin32>=311; sys_platform == 'win32'",
+    "requests>=2.32.4",
 ]
 
 [build-system]
