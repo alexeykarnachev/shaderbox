@@ -11,7 +11,7 @@ def _post_file(modelbox_url: str, file_path: Path | str) -> str:
     url = urljoin(modelbox_url, "file")
     file_path = Path(file_path)
 
-    with file_path.open("rb") as file, httpx.Client() as client:
+    with file_path.open("rb") as file, httpx.Client(verify=False) as client:
         response = client.post(
             url, files={"file": (file_path.name, file)}, timeout=10.0
         )
@@ -22,7 +22,7 @@ def _post_file(modelbox_url: str, file_path: Path | str) -> str:
 def _get_file(modelbox_url: str, file_name: str, output_path: Path) -> None:
     url = urljoin(modelbox_url, "file")
 
-    with httpx.Client() as client:
+    with httpx.Client(verify=False) as client:
         response = client.get(f"{url}/{file_name}", timeout=10.0)
         response.raise_for_status()
 
@@ -33,8 +33,8 @@ def _get_file(modelbox_url: str, file_name: str, output_path: Path) -> None:
 def fetch_modelbox_info(modelbox_url: str) -> dict[str, Any]:
     url = urljoin(modelbox_url, "info")
 
-    with httpx.Client() as client:
-        response = client.get(url, timeout=1.0)
+    with httpx.Client(verify=False) as client:
+        response = client.get(url, timeout=10.0)
         response.raise_for_status()
     return response.json()  # type: ignore
 
@@ -51,7 +51,7 @@ def infer_media_model(
     input_file_name = _post_file(modelbox_url, media.details.file_details.path)
 
     url = urljoin(modelbox_url, "media_model")
-    with httpx.Client() as client:
+    with httpx.Client(verify=False) as client:
         response = client.post(
             url,
             json={
