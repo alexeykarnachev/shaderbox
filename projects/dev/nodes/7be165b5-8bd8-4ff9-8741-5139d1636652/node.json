@@ -1,0 +1,226 @@
+{
+    "canvas_size": [
+        1280,
+        960
+    ],
+    "uniforms": {
+        "u_char_scale": 0.5,
+        "u_color": [
+            0.6639005541801453,
+            0.8883720636367798,
+            0.22725796699523926
+        ],
+        "u_offset": [
+            0.125,
+            -0.49000000953674316
+        ],
+        "u_text": [
+            83,
+            72,
+            65,
+            68,
+            69,
+            82,
+            66,
+            79,
+            88,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+        ],
+        "u_text_smoothness": 0.009999999776482582,
+        "u_text_spacing": [
+            -0.5199999809265137,
+            0.0
+        ],
+        "u_text_thickness": 0.14000000059604645,
+        "u_zoomout": 3.809999942779541
+    },
+    "ui_state": {
+        "ui_name": "Text Rendering",
+        "render_media_details": {
+            "is_video": true,
+            "file_details": {
+                "path": "",
+                "size": 0
+            },
+            "resolution_details": {
+                "width": 0,
+                "height": 0
+            },
+            "quality": 0,
+            "fps": 30,
+            "duration": 1.0
+        },
+        "ui_uniforms": {
+            "260085533400259490348506664942395818974": {
+                "name": "u_aspect",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "auto"
+            },
+            "28817900879564012086563967923611592100": {
+                "name": "u_zoomout",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "37154164850612245702881750831795076973": {
+                "name": "u_time",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "auto"
+            },
+            "202866653389117650863463432680324663425": {
+                "name": "u_animation_period",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "175179654276849601846676263067783849850": {
+                "name": "u_blink_speed",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "236213899470479700316631155775786327073": {
+                "name": "u_char_scale",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "260629952299707989589611984375333521846": {
+                "name": "u_offset",
+                "is_ubo": false,
+                "gl_type": 35664,
+                "dimension": 2,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "329687756358551023569655392199314929713": {
+                "name": "u_text[0]",
+                "is_ubo": false,
+                "gl_type": 5125,
+                "dimension": 1,
+                "array_length": 64,
+                "input_type": "text"
+            },
+            "35376269741260153526277969501082733192": {
+                "name": "u_text[1]",
+                "is_ubo": false,
+                "gl_type": 5125,
+                "dimension": 1,
+                "array_length": 64,
+                "input_type": "array"
+            },
+            "251013143038755702551577541197126192762": {
+                "name": "u_text_smoothness",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "34000617721421200058381681420356492834": {
+                "name": "u_text_spacing",
+                "is_ubo": false,
+                "gl_type": 35664,
+                "dimension": 2,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "118819038468438939857032935935375560316": {
+                "name": "u_text_thickness",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "178490649872072500124933657403313984376": {
+                "name": "u_color",
+                "is_ubo": false,
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "color"
+            },
+            "251228466681692601567427940138716486789": {
+                "name": "u_text",
+                "is_ubo": false,
+                "gl_type": 5125,
+                "dimension": 1,
+                "array_length": 64,
+                "input_type": "text"
+            }
+        },
+        "resolution_idx": 3,
+        "selected_uniform_name": "u_text_thickness",
+        "video_to_video_smoothing_window": 5,
+        "video_to_video_smoothing_sigma": 1.0
+    }
+}

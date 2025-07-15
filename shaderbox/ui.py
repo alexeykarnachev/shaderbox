@@ -791,7 +791,7 @@ class App:
         except Exception as e:
             err = "Failed to fetch ModelBox media model names"
             logger.error(f"{err}: {e}")
-            self._notifications.push(err)
+            self._notifications.push(err, color=(1, 0, 0))
 
     def get_font(self, size: int) -> Any:
         fonts = imgui.get_io().fonts
@@ -851,6 +851,32 @@ class App:
             err = "Failed to open text editor, please setup text editor command in settings"
             self._notifications.push(err, color=(1, 0, 0))
             logger.error(f"Failed to execute the command {cmd}: {e}")
+
+    def open_current_node_dir(self) -> None:
+        if not self.current_node_id:
+            logger.warning("No node selected")
+            return
+
+        node_dir = self.nodes_dir / self.current_node_id
+
+        if not node_dir.exists():
+            logger.warning(f"Node directory does not exist: {node_dir}")
+            return
+
+        system = platform.system()
+        try:
+            if system == "Windows":
+                subprocess.Popen(["explorer", str(node_dir)], start_new_session=True)
+            elif system == "Darwin":  # macOS
+                subprocess.Popen(["open", str(node_dir)], start_new_session=True)
+            else:  # Linux and other Unix-like systems
+                subprocess.Popen(["xdg-open", str(node_dir)], start_new_session=True)
+
+            logger.info(f"Opened directory: {node_dir}")
+        except Exception as e:
+            err = "Failed to open directory"
+            self._notifications.push(err, color=(1, 0, 0))
+            logger.error(f"Failed to open directory {node_dir}: {e}")
 
     def save_ui_node(
         self,
@@ -1056,50 +1082,6 @@ class App:
         imgui.separator()
         imgui.spacing()
 
-        system = platform.system()
-        editor_commands: dict[str, dict[str, str]] = {
-            "nvim": {
-                "Windows": "cmd /c start nvim {file_path}",
-                "Linux": "gnome-terminal -- nvim {file_path}",
-                "Darwin": 'osascript -e \'tell app "Terminal" to do script "nvim {file_path}"\'',
-            },
-            "vim": {
-                "Windows": "cmd /c start vim {file_path}",
-                "Linux": "gnome-terminal -- vim {file_path}",
-                "Darwin": 'osascript -e \'tell app "Terminal" to do script "vim {file_path}"\'',
-            },
-            "nano": {
-                "Windows": "cmd /c start nano {file_path}",
-                "Linux": "gnome-terminal -- nano {file_path}",
-                "Darwin": 'osascript -e \'tell app "Terminal" to do script "nano {file_path}"\'',
-            },
-            "code": {  # VSCode
-                "Windows": "code {file_path}",
-                "Linux": "code {file_path}",
-                "Darwin": "code {file_path}",
-            },
-            "emacs": {
-                "Windows": "cmd /c start emacs {file_path}",
-                "Linux": "gnome-terminal -- emacs {file_path}",
-                "Darwin": 'osascript -e \'tell app "Terminal" to do script "emacs {file_path}"\'',
-            },
-            "notepad++": {
-                "Windows": "notepad++ {file_path}",
-                "Linux": "",
-                "Darwin": "",
-            },
-            "devenv": {  # Visual Studio
-                "Windows": "devenv {file_path}",
-                "Linux": "",
-                "Darwin": "",
-            },
-        }
-
-        available_editors = []
-        for editor, commands in editor_commands.items():
-            if commands.get(system) and shutil.which(editor):
-                available_editors.append(editor)
-
         width = imgui.get_content_region_available_width()
         self._ui_app_state.text_editor_cmd = imgui.input_text(
             "Text editor cmd", self._ui_app_state.text_editor_cmd
@@ -1110,18 +1092,32 @@ class App:
         imgui.text_colored("?", *(0.5, 0.5, 0.5))
         if imgui.is_item_hovered():
             imgui.begin_tooltip()
-            example = editor_commands["nvim"].get(system)
             imgui.text(
                 "This command will be executed when you click 'Edit code' (CTRL+E)"
             )
-            imgui.text(f"Example: `{example}`")
+            imgui.text(
+                "The '{file_path}' placeholder will be replaced with the actual shader file path."
+            )
+            imgui.spacing()
+            imgui.text("Examples:")
+            imgui.text("Linux:")
+            imgui.text("  code {file_path}")
+            imgui.text("  gnome-terminal -- nvim {file_path}")
+            imgui.text("  gnome-terminal -- nano {file_path}")
+            imgui.spacing()
+            imgui.text("Windows:")
+            imgui.text("  code {file_path}")
+            imgui.text("  notepad++ {file_path}")
+            imgui.text("  cmd /c start nvim {file_path}")
+            imgui.new_line()
+            imgui.text(
+                "Alternatively, you can click the 'Open dir' button in the editor"
+            )
+            imgui.text(
+                "to open the node directory and manually open the shader.frag.glsl file."
+            )
+            imgui.spacing()
             imgui.end_tooltip()
-
-        for i, editor in enumerate(available_editors):
-            if i > 0:
-                imgui.same_line()
-            if imgui.button("VS" if editor == "devenv" else editor):
-                self._ui_app_state.text_editor_cmd = editor_commands[editor][system]
 
         # ----------------------------------------------------------------
         # Modelbox url
@@ -1143,7 +1139,11 @@ class App:
         if imgui.is_item_hovered():
             imgui.begin_tooltip()
             imgui.text(
-                "ModelBox is a service which provides image processing models (depth estimation, background removal). You can apply these models to your image and video uniforms. Click README to check the installation instruction"
+                "ModelBox is a service which provides AI-powered image processing models."
+            )
+            imgui.text("You can apply these models to your image and video uniforms.")
+            imgui.text(
+                "Click 'Install from GitHub' button to check the installation instruction."
             )
             imgui.end_tooltip()
 
@@ -1185,12 +1185,12 @@ class App:
 
         # ----------------------------------------------------------------
         # Node fragment shader file path
-        fs_file_path = self.nodes_dir / ui_node.id / "shader.frag.glsl"
-        fs_file_path = fs_file_path.relative_to(self.project_dir)
+        full_file_path = self.nodes_dir / ui_node.id / "shader.frag.glsl"
+        local_file_path = full_file_path.relative_to(self.project_dir)
 
         imgui.push_style_color(imgui.COLOR_TEXT, *(0.5, 0.5, 0.5))
-        if imgui.selectable(str(fs_file_path), False)[0]:
-            pyperclip.copy(str(fs_file_path))
+        if imgui.selectable(str(local_file_path), False)[0]:
+            pyperclip.copy(str(full_file_path))
             self._notifications.push("Copied to clipboard!")
         imgui.pop_style_color()
 
@@ -1202,8 +1202,12 @@ class App:
 
         if imgui.button("Edit code", width=80):
             self.edit_current_node_fs_file()
-        imgui.same_line()
 
+        imgui.same_line()
+        if imgui.button("Open dir", width=80):
+            self.open_current_node_dir()
+
+        imgui.same_line()
         if imgui.button("Save as template"):
             dir = self.save_ui_node(
                 ui_node,
