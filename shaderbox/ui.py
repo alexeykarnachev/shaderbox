@@ -444,13 +444,13 @@ class UINode(BaseModel):
 
                 if isinstance(value, MediaWithTexture):
                     file_path = value.save(dir / "media", file_name_wo_ext)
+                    local_file_path = f"media/{file_path.name}"
                     size = value.texture.size
                     components = value.texture.components
                 elif isinstance(value, moderngl.Texture):
                     data = value.read()
-                    file_path = (dir / "textures" / file_name_wo_ext).with_suffix(
-                        ".bin"
-                    )
+                    local_file_path = f"textures/{file_name_wo_ext}.bin"
+                    file_path = dir / local_file_path
                     size = value.size
                     components = value.components
                     file_path.write_bytes(data)
@@ -460,7 +460,7 @@ class UINode(BaseModel):
                     )
 
                 meta["uniforms"][uniform.name] = {
-                    "file_path": str(file_path),
+                    "file_path": local_file_path,
                     "size": size,
                     "components": components,
                 }

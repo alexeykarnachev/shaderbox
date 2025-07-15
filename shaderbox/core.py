@@ -381,17 +381,18 @@ class Node:
         # Load uniforms
         for uniform_name, value in metadata["uniforms"].items():
             if isinstance(value, dict):
-                file_path = value.get("file_path")
+                local_file_path = value.get("file_path")
                 value_base64 = value.get("base64")
 
-                if file_path is not None:
-                    file_path = Path(file_path)
+                if local_file_path is not None:
+                    file_path = node_dir / local_file_path
                     dir_name = file_path.parent.name
+
                     if dir_name == "media":
                         media_cls = {".png": Image, ".mp4": Video}[file_path.suffix]
-                        value = media_cls(node_dir / value["file_path"])
+                        value = media_cls(file_path)
                     elif dir_name == "textures":
-                        data = (node_dir / value["file_path"]).read_bytes()
+                        data = file_path.read_bytes()
                         value = node._gl.texture(
                             size=value["size"],
                             components=value["components"],
