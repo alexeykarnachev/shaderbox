@@ -1052,19 +1052,13 @@ class App:
 
         imgui.new_line()
 
-        button_width = 80
-        total_button_width = (
-            button_width if not is_template_selected else button_width * 2 + 10
-        )
-        imgui.set_cursor_pos_x((available_width - total_button_width) / 2)
-
         is_keep_opened = True
-        if imgui.button("Create", width=button_width) and is_template_selected:
+        if imgui.button("Create", width=80) and is_template_selected:
             self.create_node_from_selected_template()
             is_keep_opened = False
 
         imgui.same_line()
-        is_keep_opened &= not imgui.button("Cancel", width=button_width)
+        is_keep_opened &= not imgui.button("Cancel", width=80)
 
         return is_keep_opened
 
@@ -1154,12 +1148,9 @@ class App:
         imgui.spacing()
 
         imgui.new_line()
-        button_width = 80
-        available_width = imgui.get_content_region_available()[0]
-        imgui.set_cursor_pos_x((available_width - button_width) / 2)
 
         is_keep_opened = True
-        if imgui.button("Close", width=button_width):
+        if imgui.button("Close", width=80):
             is_keep_opened = False
 
         return is_keep_opened
@@ -1832,8 +1823,8 @@ class App:
 
         return is_rendered, details
 
-    @staticmethod
     def draw_file_details(
+        self,
         details: FileDetails,
         extensions: Sequence[str] | None = None,
         is_changeable: bool = True,
@@ -1849,19 +1840,23 @@ class App:
                 extension = Path(file_path).suffix
                 if extensions and extension not in extensions:
                     details.path = ""
-                    logger.warning(
-                        f"Can't select {extension} file, "
-                        f"available extensions are: {extensions}"
-                    )
+                    err = f"Can't select {extension} file, available extensions are: {extensions}"
+                    logger.warning(err)
+                    self._notifications.push(err, (1, 0, 0))
                 else:
                     details.path = file_path
         elif not is_changeable:
             imgui.text("File:")
 
+        imgui.same_line()
         if details.path:
-            imgui.same_line()
             imgui.text_colored(str(details.path), 0.5, 0.5, 0.5)
             imgui.text(f"File size: {details.size // 1024} KB")
+        else:
+            text = "Select file path"
+            if extensions:
+                text += f" ({', '.join(extensions)})"
+            imgui.text_colored(text, 0.5, 0.5, 0.5)
 
         return details
 
@@ -1959,9 +1954,7 @@ class App:
         )
         details.file_details = self.draw_file_details(
             details.file_details,
-            extensions=[".webm", ".mp4"]
-            if details.is_video
-            else [".png", ".jpeg", ".webp"],
+            extensions=VIDEO_EXTENSIONS if details.is_video else IMAGE_EXTENSIONS,
             is_changeable=is_changeable,
         )
 
