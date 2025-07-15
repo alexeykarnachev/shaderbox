@@ -1,0 +1,15 @@
+# itch.io Configuration Example
+# Copy this file to itch-config and edit the values
+
+# Your itch.io username
+ITCH_USER="your-username"
+
+# Your game's URL slug on itch.io (e.g., if your game is at https://username.itch.io/my-game, use "my-game")
+ITCH_GAME="shaderbox"
+
+# Optional: Custom version override (if empty, will use version from pyproject.toml)
+# CUSTOM_VERSION="1.0.0"
+
+# Optional: Custom channel names (default: "windows" and "linux")
+# WINDOWS_CHANNEL="windows"
+# LINUX_CHANNEL="linux"
