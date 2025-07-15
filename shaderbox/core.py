@@ -343,9 +343,11 @@ class Node:
         canvas_size: tuple[int, int] | None = None,
     ) -> None:
         self._gl = gl or moderngl.get_context()
-        self.vs_source: str = self._DEFAULT_VS_FILE_PATH.read_text()
+        self.vs_source: str = self._DEFAULT_VS_FILE_PATH.read_text(encoding="utf-8")
         self.fs_source: str = (
-            fs_source if fs_source else self._DEFAULT_FS_FILE_PATH.read_text()
+            fs_source
+            if fs_source
+            else self._DEFAULT_FS_FILE_PATH.read_text(encoding="utf-8")
         )
 
         self.canvas = Canvas(size=canvas_size, gl=self._gl)
@@ -371,7 +373,7 @@ class Node:
 
         node = Node(
             gl=gl,
-            fs_source=fs_file_path.read_text(),
+            fs_source=fs_file_path.read_text(encoding="utf-8"),
             canvas_size=metadata.get("canvas_size"),
         )
 
