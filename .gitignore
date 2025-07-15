@@ -9,12 +9,5 @@ wheels/
 
 .env
 
-*.mp4
-*.webm
-*.gif
-*.png
-*.jpg
-*.jpeg
-
 trash/
 tg_state.json
