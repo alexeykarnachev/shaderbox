@@ -389,7 +389,7 @@ class UIAppState(BaseModel):
     global_target_fps: int = 60
 
     text_editor_cmd: str = ""
-    modelbox_url: str = "http://127.0.0.1:8228/"
+    modelbox_url: str = "http://localhost:8228/"
 
     def save(self, file_path: str | Path) -> None:
         app_state_dict = self.model_dump()
