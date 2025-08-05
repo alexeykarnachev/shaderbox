@@ -3,6 +3,12 @@ A real-time GLSL fragment shader editor with automatic uniform detection and vis
 
 Download on [itch.io](https://where-is-your-keyboard.itch.io/shaderbox)
 
+
+![screenshot_0](./screenshot_0.png)
+![screenshot_1](./screenshot_1.png)
+![screenshot_2](./screenshot_2.png)
+
+
 ## Features:
 - Live shader editing with automatic recompilation
 - Automatic uniform detection from shader code with UI generation
