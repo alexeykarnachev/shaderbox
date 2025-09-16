@@ -30,22 +30,25 @@ from platformdirs import user_data_dir
 from pydantic import BaseModel, model_validator
 
 from shaderbox import modelbox
-from shaderbox.core import (
+from shaderbox.constants import (
+    IMAGE_EXTENSIONS,
+    MEDIA_EXTENSIONS,
     RESOURCES_DIR,
+    VIDEO_EXTENSIONS,
+)
+from shaderbox.core import (
     Canvas,
+    Node,
+    UniformValue,
+)
+from shaderbox.media import (
     FileDetails,
     Image,
     MediaDetails,
     MediaWithTexture,
-    Node,
     ResolutionDetails,
-    UniformValue,
     Video,
 )
-
-IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".bmp", ".webp"]
-VIDEO_EXTENSIONS = [".mp4", ".webm"]
-MEDIA_EXTENSIONS = IMAGE_EXTENSIONS + VIDEO_EXTENSIONS
 
 
 def adjust_size(

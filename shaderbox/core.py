@@ -1,16 +1,9 @@
 import base64
-import contextlib
 import json
-import shutil
-import subprocess
-from abc import ABC, abstractmethod
 from collections.abc import Sequence
-from importlib.resources import files
-from os import PathLike
 from pathlib import Path
-from typing import IO, Any
+from typing import Any
 
-import cv2
 import freetype
 import glfw
 import imageio
@@ -18,276 +11,34 @@ import moderngl
 import numpy as np
 from loguru import logger
 from OpenGL.GL import GL_SAMPLER_2D
-from PIL import Image as PILImage
-from PIL import ImageOps
-from pydantic import BaseModel
 
-RESOURCES_DIR = Path(str(files("shaderbox.resources")))
-
-
-class FileDetails(BaseModel):
-    path: str = ""
-    size: int = 0
-
-    @classmethod
-    def from_file_path(cls, file_path: PathLike) -> "FileDetails":
-        return cls(
-            path=str(file_path),
-            size=Path(file_path).stat().st_size,
-        )
-
-
-class ResolutionDetails(BaseModel):
-    width: int = 0
-    height: int = 0
-
-
-class MediaDetails(BaseModel):
-    is_video: bool = True
-    file_details: FileDetails = FileDetails()
-    resolution_details: ResolutionDetails = ResolutionDetails()
-    quality: int = 0
-    fps: int = 30
-    duration: float = 1.0
-
-
-def texture_to_pil(texture: moderngl.Texture) -> PILImage.Image:
-    size = (texture.width, texture.height)
-
-    # Flip image when reading from texture (opengl)
-    image = ImageOps.flip(PILImage.frombytes("RGBA", size, texture.read()))
-    return image
-
-
-class MediaWithTexture(ABC):
-    @property
-    @abstractmethod
-    def texture(self) -> moderngl.Texture: ...
-
-    @property
-    @abstractmethod
-    def details(self) -> MediaDetails: ...
-
-    @abstractmethod
-    def update(self, t: float) -> None: ...
-
-    @abstractmethod
-    def release(self) -> None: ...
-
-    @abstractmethod
-    def save(self, dir: Path, file_name_wo_ext: str) -> Path:
-        pass
-
-
-class Image(MediaWithTexture):
-    def __init__(
-        self, src: PathLike | PILImage.Image | moderngl.Texture | np.ndarray | IO[bytes]
-    ) -> None:
-        self._image: PILImage.Image
-        self._texture: moderngl.Texture | None = None
-
-        if isinstance(src, moderngl.Texture):
-            self._image = texture_to_pil(src)
-        elif isinstance(src, PathLike):
-            self._image = PILImage.open(str(src))
-        elif isinstance(src, PILImage.Image):
-            self._image = src
-        elif isinstance(src, np.ndarray):
-            self._image = PILImage.fromarray(src)
-        else:
-            self._image = PILImage.open(src)
-
-        file_details = (
-            FileDetails.from_file_path(src)
-            if isinstance(src, PathLike)
-            else FileDetails()
-        )
-
-        self._image = self._image.convert("RGBA")
-        self._details = MediaDetails(
-            is_video=False,
-            file_details=file_details,
-            resolution_details=ResolutionDetails(
-                width=self._image.width, height=self._image.height
-            ),
-        )
-
-    @classmethod
-    def from_color(
-        cls, size: tuple[int, int], color: tuple[float, float, float]
-    ) -> "Image":
-        r, g, b = (int(c * 255) for c in color)
-        image = PILImage.new("RGBA", size, color=(r, g, b, 255))
-        return cls(image)
-
-    @property
-    def details(self) -> MediaDetails:
-        return self._details
-
-    @property
-    def texture(self) -> moderngl.Texture:
-        if self._texture is None:
-            self._texture = moderngl.get_context().texture(
-                size=self._image.size,
-                components=4,
-                # Flip image when writing to texture (opengl)
-                data=np.array(ImageOps.flip(self._image)).tobytes(),
-                dtype="f1",
-            )
-
-        return self._texture
-
-    def update(self, t: float) -> None:
-        _ = t
-
-    def save(self, dir: Path, file_name_wo_ext: str) -> Path:
-        dir.mkdir(exist_ok=True, parents=True)
-        file_path = (dir / file_name_wo_ext).with_suffix(".png")
-        self._image.save(file_path, format="PNG")
-        return file_path
-
-    def release(self) -> None:
-        if self._texture is not None:
-            self._texture.release()
-            self._texture = None
-
-
-class Video(MediaWithTexture):
-    def __init__(self, file_path: PathLike):
-        self._cap = cv2.VideoCapture(str(file_path))
-
-        width = int(self._cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        height = int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        fps = int(self._cap.get(cv2.CAP_PROP_FPS))
-        file_size = Path(file_path).stat().st_size
-
-        self._details = MediaDetails(
-            is_video=True,
-            file_details=FileDetails(path=str(file_path), size=file_size),
-            resolution_details=ResolutionDetails(width=width, height=height),
-            fps=fps,
-            duration=self._cap.get(cv2.CAP_PROP_FRAME_COUNT) / fps,
-        )
-
-        self._texture: moderngl.Texture | None = None
-
-        self._frame_period = 1.0 / fps
-        self._last_frame_idx: int = -1
-
-    def restart(self) -> None:
-        self._cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-        self._last_frame_idx = -1
-
-    @property
-    def details(self) -> MediaDetails:
-        return self._details
-
-    @property
-    def texture(self) -> moderngl.Texture:
-        if self._texture is None:
-            self._cap.grab()
-            frame = self._cap.retrieve()[1]
-            frame = np.flipud(frame)
-            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGBA)
-            frame = frame.astype(np.float32) / 255.0
-            self._texture = moderngl.get_context().texture(
-                size=(frame.shape[1], frame.shape[0]),
-                components=4,
-                data=frame,
-                dtype="f4",
-            )
-
-        return self._texture
-
-    def update(self, t: float) -> None:
-        fps = self._cap.get(cv2.CAP_PROP_FPS)
-        n_frames = int(self._cap.get(cv2.CAP_PROP_FRAME_COUNT))
-
-        target_frame_idx = int(t * fps) % n_frames
-
-        # We already have this frame in the texture, skip
-        if self._last_frame_idx == target_frame_idx:
-            return
-
-        # Skip part of the video, because our t is faster than the video's framerate
-        if self._last_frame_idx == -1 or target_frame_idx - self._last_frame_idx != 1:
-            self._cap.set(cv2.CAP_PROP_POS_FRAMES, target_frame_idx)
-
-        is_frame, frame = self._cap.read()
-        if is_frame:
-            frame = np.flipud(frame)
-            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGBA)
-            frame = frame.astype(np.float32) / 255.0
-            if self._texture is None:
-                self._texture = moderngl.get_context().texture(
-                    size=(frame.shape[1], frame.shape[0]),
-                    components=4,
-                    data=frame,
-                    dtype="f4",
-                )
-            else:
-                self._texture.write(frame)
-            self._last_frame_idx = target_frame_idx
-
-    def save(self, dir: Path, file_name_wo_ext: str) -> Path:
-        dir.mkdir(exist_ok=True, parents=True)
-        ext = Path(self.details.file_details.path).suffix
-        file_path = (dir / file_name_wo_ext).with_suffix(ext)
-
-        with contextlib.suppress(shutil.SameFileError):
-            shutil.copy2(self.details.file_details.path, file_path)
-
-        return file_path
-
-    def release(self) -> None:
-        self._cap.release()
-
-        if self._texture is not None:
-            self._texture.release()
-
-    def apply_temporal_smoothing(
-        self,
-        output_file_path: Path,
-        window_size: int = 5,
-        sigma: float = 1.0,
-        quality: int = 2,
-    ) -> None:
-        kernel = np.exp(
-            -(np.arange(-(window_size // 2), window_size // 2 + 1) ** 2)
-            / (2 * sigma**2)
-        )
-        kernel = kernel / np.sum(kernel)
-        weights = " ".join(f"{w:.6f}" for w in kernel)
-
-        mp4_crf = [33, 28, 23, 18]
-        mp4_presets = ["ultrafast", "fast", "medium", "slow"]
-        crf = mp4_crf[quality]
-        preset = mp4_presets[quality]
-
-        ffmpeg_cmd = [
-            "ffmpeg",
-            "-i",
-            str(self.details.file_details.path),
-            "-vf",
-            f"format=yuv420p,tmix=frames={window_size}:weights={weights}",
-            "-c:v",
-            "libx264",
-            "-preset",
-            preset,
-            "-crf",
-            str(crf),
-            "-c:a",
-            "copy",
-            "-y",
-            str(output_file_path),
-        ]
-
-        subprocess.run(
-            ffmpeg_cmd,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
+from shaderbox.constants import (
+    DEFAULT_CANVAS_SIZE,
+    DEFAULT_FS_FILE_PATH,
+    DEFAULT_IMAGE_FILE_PATH,
+    DEFAULT_VS_FILE_PATH,
+    FONT_ATLAS_PADDING,
+    FONT_ATLAS_SIZE,
+    FULLSCREEN_QUAD_VERTICES,
+    MEDIA_DIR_NAME,
+    MP4_CRF_VALUES,
+    MP4_PRESETS,
+    PRINTABLE_ASCII_END,
+    PRINTABLE_ASCII_START,
+    SPACE_CHAR_CODE,
+    SUPPORTED_MEDIA_EXTENSIONS,
+    TEXTURES_DIR_NAME,
+    VIDEO_RESOLUTION_ALIGNMENT,
+    WEBM_CPU_USED_VALUES,
+    WEBM_CRF_VALUES,
+)
+from shaderbox.media import (
+    Image,
+    MediaDetails,
+    MediaWithTexture,
+    Video,
+    texture_to_pil,
+)
 
 
 class Canvas:
@@ -304,7 +55,7 @@ class Canvas:
         self._init(size)
 
     def _init(self, size: tuple[int, int] | None) -> None:
-        self.texture = self._gl.texture(size or (64, 64), 4)
+        self.texture = self._gl.texture(size or DEFAULT_CANVAS_SIZE, 4)
         self.fbo = self._gl.framebuffer(color_attachments=[self.texture])
 
     def release(self) -> None:
@@ -332,9 +83,9 @@ UniformValue = (
 
 
 class Node:
-    _DEFAULT_VS_FILE_PATH = RESOURCES_DIR / "shaders" / "default.vert.glsl"
-    _DEFAULT_FS_FILE_PATH = RESOURCES_DIR / "shaders" / "default.frag.glsl"
-    _DEFAULT_IMAGE_FILE_PATH = RESOURCES_DIR / "textures" / "default.jpeg"
+    _DEFAULT_VS_FILE_PATH = DEFAULT_VS_FILE_PATH
+    _DEFAULT_FS_FILE_PATH = DEFAULT_FS_FILE_PATH
+    _DEFAULT_IMAGE_FILE_PATH = DEFAULT_IMAGE_FILE_PATH
 
     def __init__(
         self,
@@ -388,10 +139,13 @@ class Node:
                     file_path = node_dir / local_file_path
                     dir_name = file_path.parent.name
 
-                    if dir_name == "media":
-                        media_cls = {".png": Image, ".mp4": Video}[file_path.suffix]
+                    if dir_name == MEDIA_DIR_NAME:
+                        media_cls = {
+                            ext: globals()[cls_name]
+                            for ext, cls_name in SUPPORTED_MEDIA_EXTENSIONS.items()
+                        }[file_path.suffix]
                         value = media_cls(file_path)
-                    elif dir_name == "textures":
+                    elif dir_name == TEXTURES_DIR_NAME:
                         data = file_path.read_bytes()
                         value = node._gl.texture(
                             size=value["size"],
@@ -400,7 +154,7 @@ class Node:
                         )
                     else:
                         raise ValueError(
-                            f"Failed to load uniform data from dir '{dir_name}': it should be stored in 'media' or 'textures' dir"
+                            f"Failed to load uniform data from dir '{dir_name}': it should be stored in '{MEDIA_DIR_NAME}' or '{TEXTURES_DIR_NAME}' dir"
                         )
                 elif value_base64 is not None:
                     value_bytes = base64.b64decode(value_base64)
@@ -467,12 +221,7 @@ class Node:
                 self.vao.release()
 
             self.program = program
-            self.vbo = self._gl.buffer(
-                np.array(
-                    [-1.0, -1.0, 1.0, -1.0, -1.0, 1.0, 1.0, -1.0, 1.0, 1.0, -1.0, 1.0],
-                    dtype="f4",
-                )
-            )
+            self.vbo = self._gl.buffer(np.array(FULLSCREEN_QUAD_VERTICES, dtype="f4"))
             self.vao = self._gl.vertex_array(program, [(self.vbo, "2f", "a_pos")])
 
         if not self.program or not self.vao:
@@ -578,17 +327,16 @@ class Node:
         width = details.resolution_details.width
         height = details.resolution_details.height
 
-        # Ensure resolution is divisible by 16 for codec compatibility
-        width = (width + 15) // 16 * 16
-        height = (height + 15) // 16 * 16
+        # Ensure resolution is divisible by alignment for codec compatibility
+        alignment = VIDEO_RESOLUTION_ALIGNMENT
+        width = (width + alignment - 1) // alignment * alignment
+        height = (height + alignment - 1) // alignment * alignment
 
         if extension == ".mp4":
             codec = "libx264"
             pixelformat = "yuv420p"
-            mp4_crf = [33, 28, 23, 18]
-            mp4_presets = ["ultrafast", "fast", "medium", "slow"]
-            crf = mp4_crf[details.quality]
-            preset = mp4_presets[details.quality]
+            crf = MP4_CRF_VALUES[details.quality]
+            preset = MP4_PRESETS[details.quality]
             ffmpeg_params = [
                 "-crf",
                 str(crf),
@@ -598,10 +346,8 @@ class Node:
         elif extension == ".webm":
             codec = "libvpx-vp9"
             pixelformat = "yuva420p"
-            webm_crf = [50, 40, 30, 20]
-            webm_cpu_used = [5, 4, 3, 2]
-            crf = webm_crf[details.quality]
-            cpu_used = webm_cpu_used[details.quality]
+            crf = WEBM_CRF_VALUES[details.quality]
+            cpu_used = WEBM_CPU_USED_VALUES[details.quality]
             ffmpeg_params = [
                 "-crf",
                 str(crf),
@@ -666,9 +412,8 @@ class Font:
         face = freetype.Face(str(file_path))
         face.set_pixel_sizes(0, size)  # Set font height to 'size' pixels
 
-        texture_width = 1024
-        texture_height = 1024
-        padding = 2
+        texture_width, texture_height = FONT_ATLAS_SIZE
+        padding = FONT_ATLAS_PADDING
         current_x, current_y = padding, padding
         max_row_height = 0
 
@@ -681,13 +426,13 @@ class Font:
         glyphs = {}
 
         # Special case for the space
-        glyphs[32] = {
+        glyphs[SPACE_CHAR_CODE] = {
             "uv": [0.0, 0.0, 0.0, 0.0],
             "metrics": [face.glyph.advance.x / 64.0 / cell_width, 0.0, 0.0, 0.0],
         }
 
-        # Printable ASCII characters (33 to 126)
-        for char_code in range(33, 127):
+        # Printable ASCII characters
+        for char_code in range(PRINTABLE_ASCII_START, PRINTABLE_ASCII_END):
             face.load_char(char_code, freetype.FT_LOAD_RENDER)  # type: ignore
             bitmap = face.glyph.bitmap
 

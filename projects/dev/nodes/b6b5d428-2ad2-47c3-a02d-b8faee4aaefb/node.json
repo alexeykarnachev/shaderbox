@@ -1,0 +1,103 @@
+{
+    "canvas_size": [
+        1280,
+        960
+    ],
+    "uniforms": {
+        "u_box_size": [
+            4.199999809265137,
+            1.0099999904632568,
+            4.53000020980835
+        ],
+        "u_cam_pos": [
+            5.21999979019165,
+            4.659999847412109,
+            4.769999980926514
+        ],
+        "u_focal_len": 0.9399999976158142,
+        "u_look_at": [
+            0.3799999952316284,
+            -2.6700000762939453,
+            0.0
+        ]
+    },
+    "ui_state": {
+        "ui_name": "UV Mango",
+        "render_media_details": {
+            "is_video": true,
+            "file_details": {
+                "path": "",
+                "size": 0
+            },
+            "resolution_details": {
+                "width": 0,
+                "height": 0
+            },
+            "quality": 0,
+            "fps": 30,
+            "duration": 1.0
+        },
+        "ui_uniforms": {
+            "260085533400259490348506664942395818974": {
+                "name": "u_aspect",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "auto"
+            },
+            "28817900879564012086563967923611592100": {
+                "name": "u_zoomout",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "37154164850612245702881750831795076973": {
+                "name": "u_time",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "auto"
+            },
+            "65306524459533408279159412561230281913": {
+                "name": "u_cam_pos",
+                "is_ubo": false,
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "18187419613339661940390652074377250102": {
+                "name": "u_focal_len",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "243318466105755787237514090170658872126": {
+                "name": "u_look_at",
+                "is_ubo": false,
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "129716647733194987009006013361312088636": {
+                "name": "u_box_size",
+                "is_ubo": false,
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "drag"
+            }
+        },
+        "resolution_idx": 3,
+        "selected_uniform_name": "u_box_size",
+        "video_to_video_smoothing_window": 5,
+        "video_to_video_smoothing_sigma": 1.0
+    }
+}
