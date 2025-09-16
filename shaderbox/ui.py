@@ -1,6 +1,5 @@
 import asyncio
 import contextlib
-import json
 import platform
 import shutil
 import subprocess
@@ -17,7 +16,6 @@ import imgui
 import moderngl
 import numpy as np
 import pyperclip
-import telegram as tg
 from imgui.integrations.glfw import GlfwRenderer
 from loguru import logger
 from OpenGL.GL import GL_FLOAT, GL_SAMPLER_2D, GL_UNSIGNED_INT, GLError
@@ -40,12 +38,12 @@ from shaderbox.media import (
     Video,
 )
 from shaderbox.notifications import Notifications
+from shaderbox.sharing import ShareConfiguration, ShareManager
+from shaderbox.telegram_provider import TelegramShareProvider
 from shaderbox.ui_models import (
     UIAppState,
-    UIMessage,
     UINode,
     UINodeState,
-    UITgSticker,
     UIUniform,
     load_node_from_dir,
     load_nodes_from_dir,
@@ -105,9 +103,7 @@ class App:
         self.ui_nodes: dict[str, UINode] = {}
         self.ui_node_templates: dict[str, UINode] = {}
         self._ui_app_state = UIAppState()
-        self._tg_stickers: list[UITgSticker] = []
-        self._tg_selected_sticker_idx: int = 0
-        self._tg_stickers_bot: tg.Bot
+        self._share_manager = ShareManager()
 
         self.modelbox_info: dict[str, Any] = {}
 
@@ -151,10 +147,6 @@ class App:
         return Path(self.project_dir / "app_state.json")
 
     @property
-    def tg_sticker_state_file_path(self) -> Path:
-        return Path(self.project_dir / "tg_sticker.json")
-
-    @property
     def nodes_dir(self) -> Path:
         return self._create_dir_if_needed(self.project_dir / "nodes")
 
@@ -192,7 +184,7 @@ class App:
         self.frame_idx = 0
 
         self.ui_nodes.clear()
-        self._tg_stickers.clear()
+        self._share_manager.media_list.clear()
 
         self.project_dir = self._create_dir_if_needed(project_dir)
         self.project_dir_file_path.write_text(str(self.project_dir))
@@ -206,15 +198,34 @@ class App:
         # ----------------------------------------------------------------
         # Load ui state
         if self.app_state_file_path.exists():
-            with self.app_state_file_path.open("r") as f:
-                state_dict = json.load(f)
-                state_dict = {
-                    k: v for k, v in state_dict.items() if k in UIAppState.model_fields
-                }
+            self._ui_app_state = UIAppState.load_and_migrate(self.app_state_file_path)
 
-                ui_app_state = UIAppState(**state_dict)
+        # Initialize share manager
+        self._init_share_manager()
 
-                self._ui_app_state = ui_app_state
+    def _init_share_manager(self) -> None:
+        """Initialize share manager with available providers"""
+        # Create telegram provider with configuration
+        telegram_config = ShareConfiguration(
+            provider_id="telegram",
+            display_name="Telegram Stickers",
+            settings=self._ui_app_state.share_provider_configs.get("telegram", {}),
+        )
+        telegram_provider = TelegramShareProvider(telegram_config, self.media_dir)
+        self._share_manager.register_provider(telegram_provider)
+
+        # Set active provider
+        if self._ui_app_state.active_share_provider:
+            self._share_manager.set_active_provider(
+                self._ui_app_state.active_share_provider
+            )
+
+        # Initialize with at least a new media slot
+        if not self._share_manager.media_list:
+            try:
+                self._share_manager.add_new_media()
+            except Exception as e:
+                logger.error(f"Failed to add initial media slot: {e}")
 
     def fetch_modelbox_info(self) -> None:
         self.modelbox_info = {}
@@ -241,32 +252,37 @@ class App:
         self.imgui_renderer.refresh_font_texture()
         return font
 
-    def fetch_tg_stickers(self) -> None:
-        async def _fetch() -> list[UITgSticker]:
-            self._tg_stickers_bot = tg.Bot(token=self._ui_app_state.tg_bot_token)
-            await self._tg_stickers_bot.initialize()
+    def refresh_share_media(self) -> None:
+        """Refresh media list from the active share provider"""
 
-            sticker_set = await self._tg_stickers_bot.get_sticker_set(
-                name=self._ui_app_state.tg_sticker_set_name
-            )
-            coros = [
-                UITgSticker(media_dir=self.media_dir, sticker=sticker).load()
-                for sticker in sticker_set.stickers
-            ]
-            return await asyncio.gather(*coros)
+        async def _refresh() -> None:
+            provider = self._share_manager.get_active_provider()
+            if provider:
+                if await provider.initialize():
+                    await self._share_manager.refresh_media()
+                    self._notifications.push(
+                        "Share media refreshed successfully!", (0.0, 1.0, 0.0)
+                    )
+                else:
+                    # Create an empty media list with just a new media slot
+                    self._share_manager.media_list = []
+                    self._share_manager.add_new_media()
+                    self._notifications.push(
+                        "Failed to initialize provider - check configuration",
+                        (1.0, 1.0, 0.0),
+                    )
 
         try:
-            self._tg_stickers = self._loop.run_until_complete(_fetch())
-        except tg.error.InvalidToken:
-            logger.error("Invalid telegram token")
-        except tg.error.BadRequest as e:
-            if str(e) == "Stickerset_invalid":
-                logger.info("Sticker set doesn't exist")
-            else:
-                raise e
-
-        new_sticker = UITgSticker(media_dir=self.media_dir)
-        self._tg_stickers.insert(0, new_sticker)
+            self._loop.run_until_complete(_refresh())
+        except Exception as e:
+            logger.error(f"Failed to refresh share media: {e}")
+            # Create an empty media list with just a new media slot
+            self._share_manager.media_list = []
+            try:
+                self._share_manager.add_new_media()
+            except Exception as add_error:
+                logger.error(f"Failed to add new media: {add_error}")
+            self._notifications.push(f"Error refreshing media: {e!s}", (1.0, 0.0, 0.0))
 
     def edit_current_node_fs_file(self) -> None:
         if not self.current_node_id:
@@ -348,8 +364,10 @@ class App:
         self._ui_app_state.save(self.app_state_file_path)
 
     def release(self) -> None:
-        for sticker in self._tg_stickers:
-            sticker.release()
+        # Release share media resources
+        for media in self._share_manager.media_list:
+            if hasattr(media, "release"):
+                media.release()
 
         for node in self.ui_nodes.values():
             node.node.release()
@@ -976,7 +994,7 @@ class App:
             image_width = 90
 
             if current_value is not None:
-                image_width = (
+                image_width = int(
                     image_height
                     * current_value.texture.width
                     / max(current_value.texture.height, 1)
@@ -1059,164 +1077,230 @@ class App:
             self.preview_canvas.texture,
         )
 
-    def draw_tg_stickers_tab(self) -> None:
+    def draw_share_tab(self) -> None:
         # ----------------------------------------------------------------
-        # Tg settings
+        # Provider selection
+        provider_names = [
+            self._share_manager.providers[pid].display_name
+            for pid in self._share_manager.get_provider_list()
+        ]
+
+        if provider_names:
+            current_provider = self._share_manager.get_active_provider()
+            current_idx = 0
+            if current_provider:
+                provider_ids = self._share_manager.get_provider_list()
+                current_idx = (
+                    provider_ids.index(current_provider.provider_id)
+                    if current_provider.provider_id in provider_ids
+                    else 0
+                )
+
+            changed, new_idx = imgui.combo(
+                "Share Provider", current_idx, provider_names
+            )
+            if changed and new_idx != current_idx:
+                provider_ids = self._share_manager.get_provider_list()
+                new_provider_id = provider_ids[new_idx]
+                self._share_manager.set_active_provider(new_provider_id)
+                self._ui_app_state.active_share_provider = new_provider_id
+
+        provider = self._share_manager.get_active_provider()
+        if not provider:
+            imgui.text("No share providers available")
+            return
+
+        imgui.spacing()
+        imgui.separator()
+
+        # ----------------------------------------------------------------
+        # Provider configuration
         imgui.text_colored(
-            "This token will be stored in the project's files, so do not accidentally commit it.",
+            f"Configuration for {provider.display_name}", *(0.8, 0.8, 1.0)
+        )
+        imgui.text_colored(
+            "These settings will be stored in the project's files.",
             *(1.0, 1.0, 0.0),
         )
-        self._ui_app_state.tg_bot_token = imgui.input_text(
-            "Bot token",
-            self._ui_app_state.tg_bot_token,
-            flags=imgui.INPUT_TEXT_PASSWORD,
-        )[1]
+
+        config_fields = provider.get_configuration_fields()
+        settings = self._ui_app_state.share_provider_configs.setdefault(
+            provider.provider_id, {}
+        )
+
+        for field in config_fields:
+            field_name = field["name"]
+            label = field["label"]
+
+            current_value = settings.get(field_name, "")
+
+            flags = 0
+            if field_name == "bot_token":
+                flags = imgui.INPUT_TEXT_PASSWORD
+            elif field_name == "user_id":
+                flags = imgui.INPUT_TEXT_CHARS_DECIMAL
+            elif field_name == "sticker_set_name":
+                flags = imgui.INPUT_TEXT_CHARS_NO_BLANK
+
+            _, new_value = imgui.input_text(label, current_value, flags=flags)
+            settings[field_name] = new_value
+
+        # Update provider configuration
+        provider.config.settings = settings
+        provider.config.is_configured = provider.validate_configuration()
+
+        if imgui.button("Refresh Media", width=100):
+            try:
+                self.refresh_share_media()
+            except Exception as e:
+                logger.error(f"Error refreshing media: {e}")
+                self._notifications.push(
+                    f"Error refreshing media: {e!s}", (1.0, 0.0, 0.0)
+                )
+
         imgui.spacing()
-
-        self._ui_app_state.tg_user_id = imgui.input_text(
-            "User id",
-            self._ui_app_state.tg_user_id,
-            flags=imgui.INPUT_TEXT_CHARS_DECIMAL,
-        )[1]
-
-        self._ui_app_state.tg_sticker_set_name = imgui.input_text(
-            "Sticker set name",
-            self._ui_app_state.tg_sticker_set_name,
-            flags=imgui.INPUT_TEXT_CHARS_NO_BLANK,
-        )[1]
-
-        if imgui.button("Fetch", width=80):
-            self.fetch_tg_stickers()
-
-        imgui.new_line()
         imgui.separator()
         imgui.spacing()
 
+        # ----------------------------------------------------------------
+        # Media grid and settings
         available_width, available_height = imgui.get_content_region_available()
-        sticker_grid_width = 0.3 * available_width
+        media_grid_width = 0.3 * available_width
 
         imgui.begin_child(
-            "sticker_grid",
-            width=sticker_grid_width,
+            "media_grid",
+            width=media_grid_width,
             height=available_height,
             border=True,
         )
 
-        # ----------------------------------------------------------------
-        # Sticker previews
+        # Media previews
         time = glfw.get_time()
-        for i, sticker in enumerate(self._tg_stickers):
-            sticker.update(time)
+        for i, media in enumerate(self._share_manager.media_list):
+            if hasattr(media, "update"):
+                media.update(time)
 
             n_styles = 0
-            if i == self._tg_selected_sticker_idx:
+            if i == self._share_manager.selected_media_index:
                 color = (0.0, 1.0, 0.0, 1.0)
                 imgui.push_style_color(imgui.COLOR_BUTTON, *color)
                 imgui.push_style_color(imgui.COLOR_BUTTON_HOVERED, *color)
                 imgui.push_style_color(imgui.COLOR_BUTTON_ACTIVE, *color)
                 n_styles += 3
 
-            texture = sticker.get_thumbnail_texture()
-            image_height = 90
-            image_width = image_height * texture.width // max(texture.height, 1)
+            # Get texture for preview
+            if hasattr(media, "get_thumbnail_texture"):
+                texture = media.get_thumbnail_texture()
+                image_height = 90
+                image_width = image_height * texture.width // max(texture.height, 1)
 
-            if imgui.image_button(
-                texture.glo,
-                width=image_width,
-                height=image_height,
-                uv0=(0, 1),
-                uv1=(1, 0),
-            ):
-                self._tg_selected_sticker_idx = i
+                if imgui.image_button(
+                    texture.glo,
+                    width=image_width,
+                    height=image_height,
+                    uv0=(0, 1),
+                    uv1=(1, 0),
+                ):
+                    self._share_manager.selected_media_index = i
+            else:
+                # Fallback for media without thumbnails
+                if imgui.button(f"Media {i + 1}", width=90, height=90):
+                    self._share_manager.selected_media_index = i
 
             imgui.pop_style_color(n_styles)
 
+            # Delete button for existing media
             imgui.same_line()
-            if sticker._sticker and imgui.button(f"Delete##{id(sticker)}"):
-                self._loop.run_until_complete(
-                    self._tg_stickers_bot.delete_sticker_from_set(sticker._sticker)
-                )
-                self.fetch_tg_stickers()
-            elif not sticker._sticker:
-                imgui.text_colored("New sticker", *(0.5, 0.5, 0.5))
+            if (
+                hasattr(media, "_sticker")
+                and media._sticker
+                and imgui.button(f"Delete##{id(media)}")
+            ):
+
+                async def _delete(media_to_delete: Any = media) -> None:
+                    success = await provider.delete_media(media_to_delete)
+                    if success:
+                        await self._share_manager.refresh_media()
+
+                try:
+                    self._loop.run_until_complete(_delete())
+                except Exception as e:
+                    logger.error(f"Error deleting media: {e}")
+                    self._notifications.push(
+                        f"Error deleting media: {e!s}", (1.0, 0.0, 0.0)
+                    )
+            elif not hasattr(media, "_sticker") or not media._sticker:
+                imgui.text_colored("New media", *(0.5, 0.5, 0.5))
 
             imgui.spacing()
 
         imgui.end_child()
 
         imgui.same_line()
-        imgui.begin_child("selected_sticker_settings", border=True)
+        imgui.begin_child("selected_media_settings", border=True)
 
         # ----------------------------------------------------------------
-        # Selected sticker settings
-        if self._tg_selected_sticker_idx < len(self._tg_stickers):
-            sticker = self._tg_stickers[self._tg_selected_sticker_idx]
-
-            self.draw_media_details(
-                details=sticker.video.details
-                if sticker.video
-                else sticker.image.details,
-                is_changeable=False,
-            )
+        # Selected media settings
+        selected_media = self._share_manager.get_selected_media()
+        if selected_media:
+            # Show source media details if available
+            if hasattr(selected_media, "video") and selected_media.video:
+                self.draw_media_details(
+                    details=selected_media.video.details, is_changeable=False
+                )
+            elif hasattr(selected_media, "image") and selected_media.image:
+                self.draw_media_details(
+                    details=selected_media.image.details, is_changeable=False
+                )
 
             imgui.separator()
 
-            file_path = Path(sticker.render_media_details.file_details.path)
-            if sticker.render_media_details.is_video:
+            # Render settings
+            file_path = Path(selected_media.media_details.file_details.path)
+            if selected_media.media_details.is_video:
                 file_path = file_path.with_suffix(".webm")
             else:
                 file_path = file_path.with_suffix(".webp")
-            sticker.render_media_details.file_details.path = str(file_path)
+            selected_media.media_details.file_details.path = str(file_path)
 
-            sticker.render_media_details = self.draw_media_details(
-                sticker.render_media_details
+            selected_media.media_details = self.draw_media_details(
+                selected_media.media_details
             )
-            is_rendered, sticker.render_media_details = self.draw_render_button(
-                sticker.render_media_details,
-                sticker.preview_canvas.texture,
+
+            # Render button
+            preview_texture = None
+            if hasattr(selected_media, "preview_canvas"):
+                preview_texture = selected_media.preview_canvas.texture
+
+            is_rendered, selected_media.media_details = self.draw_render_button(
+                selected_media.media_details,
+                preview_texture,
             )
+
             if is_rendered:
-                sticker.log_message = UIMessage.success("Rendered!")
+                selected_media.update_log("Rendered successfully!")
 
+            # Upload button
             if file_path.exists():
                 imgui.same_line()
-                if imgui.button("Submit##sticker"):
-                    input_sticker = tg.InputSticker(
-                        sticker=file_path.read_bytes(),
-                        emoji_list=["😁"],
-                        format=(
-                            tg.constants.StickerFormat.VIDEO
-                            if sticker.render_media_details.is_video
-                            else tg.constants.StickerFormat.STATIC
-                        ),
-                    )
+                if imgui.button("Upload##media"):
+
+                    async def _upload() -> None:
+                        success = await provider.upload_media(selected_media, file_path)
+                        if success:
+                            await self._share_manager.refresh_media()
 
                     try:
-                        if sticker._sticker is not None:
-                            self._loop.run_until_complete(
-                                self._tg_stickers_bot.replace_sticker_in_set(
-                                    user_id=int(self._ui_app_state.tg_user_id),
-                                    name=f"test_by_{self._tg_stickers_bot.username}",
-                                    old_sticker=sticker._sticker,
-                                    sticker=input_sticker,
-                                )
-                            )
-                        else:
-                            self._loop.run_until_complete(
-                                self._tg_stickers_bot.add_sticker_to_set(
-                                    user_id=int(self._ui_app_state.tg_user_id),
-                                    name=f"test_by_{self._tg_stickers_bot.username}",
-                                    sticker=input_sticker,
-                                )
-                            )
-
-                        self.fetch_tg_stickers()
+                        self._loop.run_until_complete(_upload())
                     except Exception as e:
-                        sticker.log_message = UIMessage.error(f"Failed to submit: {e}")
-                        logger.error(e)
+                        logger.error(f"Error uploading media: {e}")
+                        self._notifications.push(
+                            f"Error uploading media: {e!s}", (1.0, 0.0, 0.0)
+                        )
 
+            # Show log message
             imgui.text_colored(
-                sticker.log_message.text, *sticker.log_message.get_color()
+                selected_media.log_message.text, *selected_media.log_message.get_color()
             )
 
         imgui.end_child()
@@ -1409,11 +1493,22 @@ class App:
                     self.draw_render_tab()
                     imgui.end_tab_item()
 
-                if imgui.begin_tab_item("Tg stickers").selected:  # type: ignore
-                    self.draw_tg_stickers_tab()
+                if imgui.begin_tab_item("Share").selected:  # type: ignore
+                    self._draw_share_tab_safe()
                     imgui.end_tab_item()
 
                 imgui.end_tab_bar()
+
+    def _draw_share_tab_safe(self) -> None:
+        """Safely draw share tab with error handling"""
+        try:
+            self.draw_share_tab()
+        except Exception as e:
+            logger.error(f"Error in share tab: {e}")
+            self._notifications.push(f"Error in share tab: {e!s}", (1.0, 0.0, 0.0))
+            # Show a minimal error message in the tab
+            imgui.text_colored("An error occurred in the share tab.", *(1.0, 0.0, 0.0))
+            imgui.text("Check the logs for more details.")
 
     def run(self) -> None:
         while not glfw.window_should_close(self.window):
@@ -1460,12 +1555,11 @@ class App:
             self.preview_canvas.set_size(preview_size)
             ui_node.node.render(canvas=self.preview_canvas)
 
-            # Render current sticker preview
-            if self._tg_selected_sticker_idx < len(self._tg_stickers):
-                sticker = self._tg_stickers[self._tg_selected_sticker_idx]
-
-                sticker.preview_canvas.set_size(preview_size)
-                ui_node.node.render(canvas=sticker.preview_canvas)
+            # Render current share media preview
+            selected_media = self._share_manager.get_selected_media()
+            if selected_media and hasattr(selected_media, "preview_canvas"):
+                selected_media.preview_canvas.set_size(preview_size)
+                ui_node.node.render(canvas=selected_media.preview_canvas)
 
         # ----------------------------------------------------------------
         # Render nodes
@@ -1625,7 +1719,13 @@ class App:
             node_preview_width = control_panel_width / 2.6
             self.draw_node_preview_grid(node_preview_width, control_panel_height)
             imgui.same_line()
-            self.draw_node_settings()
+            try:
+                self.draw_node_settings()
+            except Exception as e:
+                logger.error(f"Error in node settings: {e}")
+                self._notifications.push(
+                    f"Error in node settings: {e!s}", (1.0, 0.0, 0.0)
+                )
 
         # ----------------------------------------------------------------
         # Popups and notifications

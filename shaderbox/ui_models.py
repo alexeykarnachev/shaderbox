@@ -208,11 +208,8 @@ class UIAppState(BaseModel):
     new_node_name: str = ""
     is_render_all_nodes: bool = True
 
-    tg_bot_token: str = ""
-    tg_user_id: str = ""
-    tg_sticker_set_name: str = ""
-
-    tg_sticker_video_details: MediaDetails = MediaDetails()
+    share_provider_configs: dict[str, dict[str, Any]] = {}
+    active_share_provider: str = "telegram"
 
     media_model_idx: int = 0
 
@@ -227,6 +224,35 @@ class UIAppState(BaseModel):
             import json
 
             json.dump(app_state_dict, f, indent=4)
+
+    @classmethod
+    def load_and_migrate(cls, file_path: str | Path) -> UIAppState:
+        """Load app state and migrate old telegram fields to new sharing format"""
+        import json
+
+        with Path(file_path).open("r") as f:
+            data = json.load(f)
+
+        # Migrate old telegram fields to new sharing format
+        if any(key.startswith("tg_") for key in data):
+            telegram_config = {}
+
+            if "tg_bot_token" in data:
+                telegram_config["bot_token"] = data.pop("tg_bot_token")
+            if "tg_user_id" in data:
+                telegram_config["user_id"] = data.pop("tg_user_id")
+            if "tg_sticker_set_name" in data:
+                telegram_config["sticker_set_name"] = data.pop("tg_sticker_set_name")
+
+            # Remove old telegram video details field
+            data.pop("tg_sticker_video_details", None)
+
+            if telegram_config:
+                data.setdefault("share_provider_configs", {})
+                data["share_provider_configs"]["telegram"] = telegram_config
+                data.setdefault("active_share_provider", "telegram")
+
+        return cls(**data)
 
 
 class UINode(BaseModel):
