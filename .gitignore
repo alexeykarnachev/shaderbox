@@ -13,3 +13,7 @@ trash/
 tg_state.json
 
 itch-config
+
+imgui.ini
+tmp.mp4
+ai_docs/_*.md
