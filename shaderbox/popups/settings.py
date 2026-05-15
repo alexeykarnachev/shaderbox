@@ -43,9 +43,7 @@ def _draw_body(app: App) -> bool:
     imgui.text_colored("?", *(0.5, 0.5, 0.5))
     if imgui.is_item_hovered():
         imgui.begin_tooltip()
-        imgui.text(
-            "This command will be executed when you click 'Edit code' (CTRL+E)"
-        )
+        imgui.text("This command will be executed when you click 'Edit code' (CTRL+E)")
         imgui.text(
             "The '{file_path}' placeholder will be replaced with the actual shader file path."
         )
@@ -61,9 +59,7 @@ def _draw_body(app: App) -> bool:
         imgui.text("  notepad++ {file_path}")
         imgui.text("  cmd /c start nvim {file_path}")
         imgui.new_line()
-        imgui.text(
-            "Alternatively, you can click the 'Open dir' button in the editor"
-        )
+        imgui.text("Alternatively, you can click the 'Open dir' button in the editor")
         imgui.text(
             "to open the node directory and manually open the shader.frag.glsl file."
         )

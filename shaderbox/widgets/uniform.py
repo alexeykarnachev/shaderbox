@@ -148,9 +148,7 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
                     new_value = [py_type(x.strip()) for x in value_str.split(",")]
         else:
             value_str = ", ".join(f"{v:.3f}" for v in current_value)
-            imgui.text(
-                f"{ui_uniform.name}[{ui_uniform.array_length}]: [{value_str}]"
-            )
+            imgui.text(f"{ui_uniform.name}[{ui_uniform.array_length}]: [{value_str}]")
 
     elif ui_uniform.input_type == "text":
         text = unicode_to_str(current_value)  # type: ignore
@@ -200,9 +198,7 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
         if imgui.button(f"Load##{ui_uniform.name}"):
             filter = ["*" + ext for ext in MEDIA_EXTENSIONS]
             file_path = Path(
-                crossfiledialog.open_file(
-                    title="Select image or video", filter=filter
-                )
+                crossfiledialog.open_file(title="Select image or video", filter=filter)
                 or ""
             )
 
