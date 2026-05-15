@@ -22,6 +22,29 @@ Format per entry:
 
 ---
 
+## 2026-05-15 — exporter refactor spec drafted + plan-locked (backlog items 2 + 3)
+- Drafted `ai_docs/features/001_exporter_refactor.md` — first feature spec; high-blast-radius
+  shape per `dev_flow.md`. Three parallel reviewers (domain-fit on YouTube/X/Telegram APIs,
+  architecture on GL lifecycle + threading, devil's-advocate steelmanning the boring fix) ran
+  pre-spec; their findings reshaped the design substantially (GL-free `RenderedArtifact`, mailbox
+  progress stream, `prepare()`/`export()` split, auth as a first-class sub-protocol). User then
+  pushed back hard on the keyring decision — dropped it, credentials stay in `app_state.json`
+  (revisit when YouTube/X land). All 12 design decisions locked; 0 open questions remaining.
+- Scope: Telegram exporter ported onto the new abstractions; YouTube + X explicitly out of scope.
+  Resolves at impl time: `todo.md [DEFERRAL] two near-identical sticker models` (incl.
+  re-tightening pyright by dropping `|| true`) and `todo.md [DEFERRAL] blocking asyncio` (folded
+  in via per-exporter worker-thread + mailbox). Advances `[DEFERRAL] split ui.py` by landing
+  `tabs/share.py` as the first real `tabs/*.py` extraction.
+- decisions: kept `python-telegram-bot` (wrap async in worker thread); stayed on `master` (no
+  feature branch — solo project); credentials stay in JSON (no keyring — no real threat model
+  yet); kept current share-tab live-preview UX (selected sticker shows live shader render).
+- refs: `ai_docs/features/001_exporter_refactor.md`. No code changes this session.
+- open thread: **start a fresh session for impl** — context is dense from spec-drafting + 3
+  reviewer reports; cold context will be cleaner. Fresh session walks `CLAUDE.md` → this entry →
+  `ai_docs/features/001_exporter_refactor.md` and proceeds to `dev_flow.md` step 4 (pre-impl
+  review) with 1-2 reviewers, then step 5 (implement). Telegram is the only concrete exporter;
+  manual verification needs your bot token + user id + sticker set name.
+
 ## 2026-05-15 — dead `ui_utils` sweep (backlog item 1)
 - Deleted 4 dead helpers from `ui_utils.py`: `mod` (no callers), `depth_mask_to_normals` and
   `zero_low_alpha_pixels` (no callers; both reached into `Image._image` private — the only
