@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import telegram as tg
 from loguru import logger
@@ -47,8 +47,6 @@ class TelegramShareableMedia:
 
     def update_log(self, message: str, level: str = "success") -> None:
         """Update the log message for this media"""
-        from typing import Literal, cast
-
         valid_level = cast(Literal["success", "warning", "error"], level)
         self.log_message = UIMessage(text=message, level=valid_level)
 

@@ -15,7 +15,7 @@ code review, the sanitization sweep.
 - Type checker: **pyright** (not mypy), basic mode, via `make check`. It's **non-blocking for now**
   (pre-existing type debt in `ui.py` — see `## Known quirks`) but its findings print; don't add new
   pyright errors.
-- `uv` for everything (`uv run`, `uv add`, `uv add --dev`) — never bare `python` / `pip`.
+- `uv` for everything (`uv run`, `uv add`, `uv add --group dev`) — never bare `python` / `pip`.
 - Commit messages: short, concise, single-line, ASCII; no footers / co-authored-by.
 
 ## Design decisions (we decided X; revisit if Y)

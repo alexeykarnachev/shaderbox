@@ -36,8 +36,8 @@ where they're needed. `conventions.md` is auto-loaded below.
   branch** — don't create per-feature branches (a feature is a sequence of commits, not a branch);
   branch only if the user explicitly asks. (This overrides the generic "branch before committing on
   the default branch" agent default.)
-- **`uv`, not `python`/`pip`:** `uv sync`, `uv add <pkg>`, `uv add --dev <pkg>` (this repo uses
-  `[tool.uv] dev-dependencies`, so `--dev`, not `--group dev`), `uv run …`.
+- **`uv`, not `python`/`pip`:** `uv sync`, `uv add <pkg>`, `uv add --group dev <pkg>` (this repo uses
+  `[dependency-groups] dev`), `uv run …`.
 - **Run `make check` before declaring anything done** — ruff fix+format → pyright (delegates to
   `pre-commit run --all-files`). If ruff fails, fix it. Pyright is **non-blocking for now** (the repo
   has pre-existing type debt — `ui.py`'s share-tab dispatch); its findings print but don't fail the

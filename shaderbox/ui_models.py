@@ -1,24 +1,19 @@
 from __future__ import annotations
 
 import base64
-import hashlib
 import json
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, Self
+from typing import Any, Literal, Self
 from uuid import uuid4
 
 import imgui
 import moderngl
-import telegram as tg
 from loguru import logger
 from OpenGL.GL import GL_SAMPLER_2D
 from pydantic import BaseModel, model_validator
 
-from shaderbox.core import Canvas, Node
-from shaderbox.media import Image, MediaDetails, MediaWithTexture, Video
-
-if TYPE_CHECKING:
-    pass
+from shaderbox.core import Node
+from shaderbox.media import MediaDetails, MediaWithTexture
 
 
 class UIMessage(BaseModel):
@@ -46,79 +41,6 @@ class UIMessage(BaseModel):
 
     def __repr__(self) -> str:
         return self.text
-
-
-class UITgSticker:
-    def __init__(self, media_dir: Path, sticker: tg.Sticker | None = None):
-        self.media_dir = media_dir
-        self._sticker = sticker
-
-        self.video: Video | None = None
-        self.image: Image = Image.from_color((512, 512), (0.10, 0.24, 0.39))
-
-        self.preview_canvas = Canvas()
-
-        media_file_name = f"{hashlib.md5(str(id(self)).encode()).hexdigest()[:8]}.webm"
-        media_file_path = self.media_dir / media_file_name
-        self.render_media_details: MediaDetails = MediaDetails(is_video=True)
-        self.render_media_details.file_details.path = str(media_file_path)
-
-        self.log_message: UIMessage = UIMessage(
-            text="Submit button will be available after render", level="warning"
-        )
-
-    async def load(self) -> UITgSticker:
-        render_file_path = Path(self.render_media_details.file_details.path)
-
-        if self._sticker is not None:
-            bot = self._sticker.get_bot()
-
-            if self._sticker.is_video:
-                file_name = self._sticker.file_id + ".webm"
-                file_path = self.media_dir / file_name
-
-                file = await bot.get_file(self._sticker.file_id)
-                await file.download_to_drive(file_path)
-
-                self.video = Video(file_path)
-                render_file_path = render_file_path.with_suffix(".webm")
-
-            if self._sticker.thumbnail:
-                file_name = self._sticker.thumbnail.file_id + ".webp"
-                file_path = self.media_dir / file_name
-
-                file = await bot.get_file(self._sticker.thumbnail.file_id)
-                await file.download_to_drive(file_path)
-
-                self.image = Image(file_path)
-                render_file_path = render_file_path.with_suffix(".webp")
-
-            if self.video:
-                self.render_media_details = self.video.details
-            else:
-                self.render_media_details = self.image.details
-
-        self.render_media_details.file_details.path = str(render_file_path)
-
-        return self
-
-    def update(self, t: float) -> None:
-        if self.video:
-            self.video.update(t)
-
-    def get_thumbnail_texture(self) -> moderngl.Texture:
-        if self.video:
-            return self.video.texture
-        else:
-            return self.image.texture
-
-    def release(self) -> None:
-        self.preview_canvas.release()
-        self.image.release()
-
-        if self.video is not None:
-            self.video.release()
-            self.video = None
 
 
 UIUniformInputType = Literal[
@@ -181,9 +103,7 @@ class UIUniform(BaseModel):
         return self
 
     def get_ui_height(self) -> int:
-        if self.input_type == "image":
-            return 120
-        elif self.input_type == "drag":
+        if self.input_type == "drag":
             return 5 + imgui.get_text_line_height_with_spacing()  # type: ignore
         else:
             return imgui.get_text_line_height_with_spacing()  # type: ignore
@@ -221,15 +141,11 @@ class UIAppState(BaseModel):
     def save(self, file_path: str | Path) -> None:
         app_state_dict = self.model_dump()
         with Path(file_path).open("w") as f:
-            import json
-
             json.dump(app_state_dict, f, indent=4)
 
     @classmethod
     def load_and_migrate(cls, file_path: str | Path) -> UIAppState:
         """Load app state and migrate old telegram fields to new sharing format"""
-        import json
-
         with Path(file_path).open("r") as f:
             data = json.load(f)
 
