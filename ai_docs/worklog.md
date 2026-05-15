@@ -22,6 +22,36 @@ Format per entry:
 
 ---
 
+## 2026-05-15 — Tier-1 cleanup batch (backlog item 1)
+- Dropped unused deps (`litestar`, `uvicorn`, `uuid`-backport) from `pyproject.toml`; migrated
+  `[tool.uv] dev-dependencies` → `[dependency-groups] dev` (kills the `uv` deprecation warning).
+  Removed 3 inline-import violations (`telegram_provider.py:50`, `ui_models.py:224,231`). Deleted
+  dead `UITgSticker` class (`ui_models.py:51-121`) — superseded by `ShareableMedia` +
+  `TelegramShareableMedia` in `7cee0b4`; pruned its now-orphan imports (`hashlib`, `telegram as tg`,
+  `Image`, `Canvas`, `Video`, `TYPE_CHECKING`). Removed dead `"image"` branch in
+  `UIUniform.get_ui_height` (`ui_models.py:184`) — was a stale enum-era reference, the literal type
+  uses `"texture"` (the rename in `82f974a` missed this branch). Updated `CLAUDE.md` +
+  `conventions.md` to reference `uv add --group dev` instead of `--dev`. `make check` clean — 16
+  pre-existing pyright errors remain (the ShareableMedia type debt, unchanged).
+- decisions: ran as a mechanical change, not the feature flow — all-local, no design surface. The
+  sticker-models deferral (`todo.md`) is narrowed from 3 models → 2 (UITgSticker no longer in the
+  picture).
+- refs: `7d3c44e`; files: `pyproject.toml`, `shaderbox/{telegram_provider,ui_models}.py`, `uv.lock`,
+  `CLAUDE.md`, `ai_docs/conventions.md`.
+- open thread: resumption backlog (rough order; re-confirm before starting each):
+  1. **Bootstrap pytest** (was item 2): headless GL fixture (`moderngl.create_standalone_context()`)
+     around `core.py` (uniform-type dispatch, `VIDEO_RESOLUTION_ALIGNMENT` rounding, node round-trip)
+     + `ui_utils.py` pure helpers — safety net for items 2-5 below.
+  2. Decide on the dead `ui_utils` helpers: `mod` (delete), `depth_mask_to_normals` /
+     `zero_low_alpha_pixels` (wire to ModelBox or delete).
+  3. Collapse the 2 sticker models (`TelegramShareableMedia` / `ShareableMedia`) into one behind a
+     real interface; kill the `hasattr`-driven dispatch in the share tab. Re-tighten pyright (drop
+     `|| true` from `.pre-commit-config.yaml`).
+  4. Move blocking Telegram/ModelBox calls off the render thread (`_loop.run_until_complete` in
+     imgui-frame draw paths; ModelBox's synchronous `requests`) — worker thread + result queue.
+  5. Split `ui.py` (1778-line `App` god-class) — extract `widgets.py`, `tabs/*.py`, `hotkeys.py`,
+     `project.py`. The big one.
+
 ## 2026-05-12 — AI dev-flow scaffold landed
 - Created `CLAUDE.md` (anchor + cold-start chain), `ai_docs/{dev_flow,worklog,todo,conventions}.md`,
   `.claude/skills/sanitize/SKILL.md`, `Makefile` (`make check`); gitignored `imgui.ini` + `tmp.mp4`

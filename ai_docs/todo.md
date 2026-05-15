@@ -28,16 +28,15 @@ Format:
 
 ---
 
-## [DEFERRAL] three near-identical sticker models (incl. dead `UITgSticker`) — also gates re-tightening pyright
+## [DEFERRAL] two near-identical sticker models — also gates re-tightening pyright
 - **Trigger:** next time you touch the share tab (`ui.py draw_share_tab`) or `telegram_provider.py`.
-- `UITgSticker` (`ui_models.py:51`, dead — superseded), `TelegramShareableMedia`
-  (`telegram_provider.py:16`), `ShareableMedia` (`sharing.py:22`) all model "video|image +
-  preview_canvas + log_message". `draw_share_tab` does `hasattr`-driven dispatch over them
-  (`ui.py:1180,1192,1215,1232,1247,…`) and the provider `cast`s `TelegramShareableMedia` →
-  `ShareableMedia` (`telegram_provider.py:193,272`). Collapse to one model behind a real interface;
-  delete `UITgSticker` as part of it. (Backlog item 4 — see worklog `open thread:`.) **When this lands:
-  the ~16 pyright `reportAttributeAccessIssue` errors in `ui.py` go away → drop the `|| true` from the
-  pyright hook in `.pre-commit-config.yaml` so it's blocking again** (see `conventions.md ## Known quirks`).
+- `TelegramShareableMedia` (`telegram_provider.py:16`) and `ShareableMedia` (`sharing.py:22`) both
+  model "video|image + preview_canvas + log_message". `draw_share_tab` does `hasattr`-driven dispatch
+  over them (`ui.py:1180,1192,1215,1232,1247,…`) and the provider `cast`s `TelegramShareableMedia` →
+  `ShareableMedia` (`telegram_provider.py:193,272`). Collapse to one model behind a real interface.
+  (Backlog item 4 — see worklog `open thread:`.) **When this lands: the ~16 pyright
+  `reportAttributeAccessIssue` errors in `ui.py` go away → drop the `|| true` from the pyright hook
+  in `.pre-commit-config.yaml` so it's blocking again** (see `conventions.md ## Known quirks`).
 
 ## [DEFERRAL] blocking asyncio / blocking HTTP in the render loop
 - **Trigger:** first user report of the share tab freezing the UI, or next time you grep for
