@@ -15,7 +15,7 @@ backlog) + `ai_docs/todo.md` (landmines/triggers) → this file.
 | Trigger | Shape |
 |---|---|
 | **Small / mechanical change** — bug fix, log line, kwarg, trivial type fix, doc tweak, dep bump, dead-code deletion that touches no public surface, a `.gitignore` edit | Just do it. `make check`. Optionally `/simplify` on the diff. No spec, no review ceremony; worklog entry only if it's worth a fresh agent knowing. |
-| **Feature** — new module, a real behavior change, a refactor with blast radius (splitting `ui.py`, collapsing the sticker models, unblocking the render loop), acceptance criteria a quick test can't pin | The feature flow below. |
+| **Feature** — new module, a real behavior change, a refactor with blast radius (splitting `ui.py`, collapsing the sticker models, unblocking the render loop), acceptance criteria a quick manual check can't pin | The feature flow below. |
 | **Research / brainstorm** — "let's think about X", "should we do Y", "investigate Z"; output is *knowledge*, not code | Research freely (read code, throwaway scripts). Deliver a chat report; if worth keeping, write `ai_docs/<topic>.md`. **Don't half-start an implementation.** If it seeds a feature, re-enter at the feature flow. |
 
 When unsure, default to the loosest shape that proves the change; escalate if it grows. The agent
@@ -51,7 +51,7 @@ corrects.
    trigger fires — if one contradicts the request, halt and reconcile (or get the user to confirm
    the change) *before* drafting. Minimum spec sections (keep the headers even when "N/A"): *Goal* /
    *Out of scope* (each deferral with a trigger) / *Design decisions* (numbered, lock-in only — open
-   questions separate) / *Files touched* / *Testing* (what unit tests land, what's verified by hand) /
+   questions separate) / *Files touched* / *Manual verification* (what's verified by hand in the app) /
    *Open questions for the user*. Either self-write or spawn the built-in `Plan` agent (read-only —
    feed it the research findings + paths + `conventions.md` + every file the spec will touch, or it
    re-derives blind). Once 2-3 specs exist, add a small "specs by shape" index to `CLAUDE.md`.
@@ -62,9 +62,9 @@ corrects.
 4. **Pre-implementation review** (per the preamble — 1-2 in parallel for a mid feature; 0-1 for
    tiny/small; up to 2 for high-blast-radius). Roles for 2: *correctness & design* (internal
    inconsistencies, convention violations, missing touches, anything contradicting a locked Design
-   decision) and *tests & blast-radius* (does the test list catch realistic bugs, any pure-air tests,
-   any invariant nothing verifies, does it correctly fold the `todo.md` deferrals this feature's
-   trigger fires). A reviewer may return "this shouldn't land in current form" → bubbles to the user.
+   decision) and *verification & blast-radius* (does the manual-verification list catch realistic
+   bugs, any invariant nothing verifies, does it correctly fold the `todo.md` deferrals this
+   feature's trigger fires). A reviewer may return "this shouldn't land in current form" → bubbles to the user.
    **Disagreeing reviewers:** a design disagreement → the main agent decides and documents the call
    in a "Review history" section of the spec; only a "should not land" finding escalates to the user.
    **Triage:** fix findings inline in the spec, or add the "Review history" section recording what was
@@ -76,14 +76,12 @@ corrects.
    default to the robust answer, not a shim — only shortcut if the robust path is hugely out of
    scope, and then surface the trade-off so the user can choose. After impl: glance the diff for new
    `# pyright: ignore` / `# type: ignore` (outside imgui calls) / `# noqa` / `TODO` / inline imports /
-   `Any` on real-typed params — any of those means a shortcut was taken; fix it. Run the tests in the
-   spec's Testing list;
-   **a hanging test is a blocker, not a flake** — kill it, find the hang, fix the test (or the code).
+   `Any` on real-typed params — any of those means a shortcut was taken; fix it.
 
 6. **Post-implementation review** (per the preamble — 2-3 in parallel for a mid feature; 0-1 for
    tiny/small; 3+ for high-blast-radius). Roles: *code correctness* (bugs, races, GL-context
-   lifecycle, resource leaks, error handling, test coverage vs the spec's list), *architecture &
-   conventions* (module boundaries, where things live, duplication, the imgui-interop patterns), and
+   lifecycle, resource leaks, error handling), *architecture & conventions* (module boundaries,
+   where things live, duplication, the imgui-interop patterns), and
    for a high-blast-radius diff a *spec-fidelity audit* (walks the spec end-to-end against the diff —
    every locked decision actually landed). Each reviewer runs `git show --stat <impl-commit>` first to
    know the full surface, reads every changed file end-to-end, and states which it skipped and why (a
@@ -163,13 +161,6 @@ the repo has pre-existing type debt (`ui.py`'s share-tab `hasattr`-dispatch — 
 `|| true`'s past a non-zero exit; re-tighten it (drop the `|| true`) once that refactor lands. Don't
 add *new* pyright errors in the meantime.
 
-### Tests (once they exist)
-`uv run pytest`. **Headless GL:** `core.py` / `media.py` / `fonts.py` all call
-`moderngl.get_context()`, so they need a context — use `moderngl.create_standalone_context()` in a
-fixture (no window). `ui_utils.py` is mostly pure Python (testable as-is); anything touching `imgui.*`
-is not unit-testable. Long renders / test runs (the video-export path runs N frames through ffmpeg) →
-run in the background or an ad-hoc sub-agent so they don't bloat context.
-
 ### Build / ship to itch.io
 `./build.sh` → `dist/shaderbox-{windows.zip,linux.tar.gz}` → `./upload-itch.sh` (needs `butler` + an
 `itch-config` file). Maintainer-triggered, not the agent's.
@@ -195,6 +186,3 @@ Why the docs are shaped this way. Short list, kept honest:
 - **Robust defaults on blocking open questions.** No shim, no "we'll fix it later" — default to the
   robust answer; only shortcut if the robust path is hugely out of scope, and then surface the
   trade-off so the user can choose.
-- **Don't weaken a failing test to make a run green** — even one written earlier the same session. A
-  red assertion is a finding to surface, not an inconvenience to edit. Revert any change to it, report
-  the failure, get sign-off before touching it.

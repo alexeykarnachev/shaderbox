@@ -53,15 +53,6 @@ Format:
   UI code should already go in the smallest plausible new module (`conventions.md ## Design decisions`).
   (Backlog item 6 — likely run as a high-blast-radius feature, not a drive-by.)
 
-## [DEFERRAL] no test suite; headless-GL recipe untested
-- **Trigger:** before plan-locking any feature spec that lists `core.py`, `media.py`, `fonts.py`, or
-  `ui_utils.py` in `## Files touched`.
-- No `tests/` dir, no test deps. Bootstrap pytest: add `pytest` to dev-deps; a
-  `moderngl.create_standalone_context()` fixture; then `core.py` (uniform-type dispatch in
-  `Node.render`, the `VIDEO_RESOLUTION_ALIGNMENT` rounding, node round-trip via `load_from_dir`/`save`)
-  + `ui_utils.py` pure helpers (`adjust_size`, `select_next_value`, `get_resolution_str`,
-  `str_to_unicode`/`unicode_to_str`). The safety net for the refactors above. (Backlog item 2.)
-
 ## [DEFERRAL] dead/orphaned `ui_utils` helpers
 - **Trigger:** next time you touch `ui_utils.py`, or when wiring ModelBox's depth-map / bg-removal
   features (README advertises them).

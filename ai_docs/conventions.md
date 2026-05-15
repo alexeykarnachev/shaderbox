@@ -44,7 +44,7 @@ of constraining future code; SDK footguns go to `## Known quirks`, not here.)*
   re-tightened (drop the `|| true`) once the sticker-models refactor lands — see
   `todo.md [DEFERRAL] three near-identical sticker models`.
 - **A live moderngl context must exist before constructing `Image` / `Video` / `Font` / `Canvas` /
-  `Node`** — they call `moderngl.get_context()` lazily. In the app, `glfw.make_context_current(window)`
-  handles it; in tests, `moderngl.create_standalone_context()` in a fixture.
+  `Node`** — they call `moderngl.get_context()` lazily. In the app,
+  `glfw.make_context_current(window)` handles it.
 - **`modelbox.py` imports `Image` / `Video` from `shaderbox.core`** (which re-exports them from
   `media`) — reaching through `core` for `media` types. Minor module-boundary smell; left as-is.

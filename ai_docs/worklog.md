@@ -39,17 +39,14 @@ Format per entry:
 - refs: `7d3c44e`; files: `pyproject.toml`, `shaderbox/{telegram_provider,ui_models}.py`, `uv.lock`,
   `CLAUDE.md`, `ai_docs/conventions.md`.
 - open thread: resumption backlog (rough order; re-confirm before starting each):
-  1. **Bootstrap pytest** (was item 2): headless GL fixture (`moderngl.create_standalone_context()`)
-     around `core.py` (uniform-type dispatch, `VIDEO_RESOLUTION_ALIGNMENT` rounding, node round-trip)
-     + `ui_utils.py` pure helpers — safety net for items 2-5 below.
-  2. Decide on the dead `ui_utils` helpers: `mod` (delete), `depth_mask_to_normals` /
+  1. Decide on the dead `ui_utils` helpers: `mod` (delete), `depth_mask_to_normals` /
      `zero_low_alpha_pixels` (wire to ModelBox or delete).
-  3. Collapse the 2 sticker models (`TelegramShareableMedia` / `ShareableMedia`) into one behind a
+  2. Collapse the 2 sticker models (`TelegramShareableMedia` / `ShareableMedia`) into one behind a
      real interface; kill the `hasattr`-driven dispatch in the share tab. Re-tighten pyright (drop
      `|| true` from `.pre-commit-config.yaml`).
-  4. Move blocking Telegram/ModelBox calls off the render thread (`_loop.run_until_complete` in
+  3. Move blocking Telegram/ModelBox calls off the render thread (`_loop.run_until_complete` in
      imgui-frame draw paths; ModelBox's synchronous `requests`) — worker thread + result queue.
-  5. Split `ui.py` (1778-line `App` god-class) — extract `widgets.py`, `tabs/*.py`, `hotkeys.py`,
+  4. Split `ui.py` (1778-line `App` god-class) — extract `widgets.py`, `tabs/*.py`, `hotkeys.py`,
      `project.py`. The big one.
 
 ## 2026-05-12 — AI dev-flow scaffold landed
