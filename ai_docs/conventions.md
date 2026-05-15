@@ -74,11 +74,6 @@ of constraining future code; SDK footguns go to `## Known quirks`, not here.)*
 - **pyimgui's stubs are incomplete** → a scoped `# pyright: ignore[reportAttributeAccessIssue]` (or
   `# type: ignore`) on an `imgui.*` call that pyright can't resolve is sanctioned. NOT a general
   license — type suppression anywhere else means a real error to fix.
-- **Pre-existing pyright debt across the repo** — `ui.py`, `media.py`, `core.py`, `modelbox.py`
-  haven't been audited for strict-typing compliance. The pre-commit pyright hook is `|| true`'d
-  (non-blocking) because of this. Don't add *new* errors. Re-tightening (drop the `|| true`) is
-  tracked separately and gated on the cleanup backlog reaching a clean state — see
-  `todo.md [DEFERRAL] re-tighten pyright`.
 - **A live moderngl context must exist before constructing `Image` / `Video` / `Font` / `Canvas` /
   `Node`** — they call `moderngl.get_context()` lazily. In the app,
   `glfw.make_context_current(window)` handles it.

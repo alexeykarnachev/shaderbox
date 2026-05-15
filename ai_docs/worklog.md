@@ -22,6 +22,29 @@ Format per entry:
 
 ---
 
+## 2026-05-15 — pyright re-tightening (tiny, decision-driven)
+- Dropped `|| true` from the pyright pre-commit hook in `.pre-commit-config.yaml` (line 29); the
+  hook now blocks on failure. Verified with `make check`: 0 errors, 0 warnings, 0 informations.
+  Stale doc bullets removed: `[DEFERRAL] re-tighten pyright` deleted from `todo.md`; the
+  "Pre-existing pyright debt across the repo" bullet in `conventions.md ## Known quirks` deleted;
+  `CLAUDE.md` and `dev_flow.md ## Recipes` paragraphs that described pyright as non-blocking
+  rewritten as blocking.
+- decisions: triggered by a parallel-agent assessment of the queued `project.py` extraction. Three
+  read-only research agents (pro-extraction architect, skeptic, third-options scout) ran in
+  parallel: 2/3 recommended against `project.py` now (skeptic: "same AppContext shape feature 002
+  reversed"; scout: project.py ranked 3rd by ROI). Scout surfaced the free win — pyright was
+  already at 0 errors, the `|| true` was legacy debt protection no longer load-bearing. Skipped
+  project.py; ordering revised to pyright-now → smoke-test-next → re-evaluate project.py.
+- refs: working tree (uncommitted).
+- open thread: **next = headless smoke test** per `todo.md [DEFERRAL] headless smoke test` —
+  `scripts/smoke.py` (~60 lines) creates `App` against `projects/dev/` with an invisible glfw
+  window, runs ~200 frames of `update_and_draw`, asserts no exception + invariants (popup-mutex,
+  current_node_id sanity, no released-texture leaks). Wire into `make check` or `make smoke`.
+  Tiny-to-mid scope. After that: re-evaluate whether `project.py` extraction earns its keep
+  (default: keep deferred with sharper trigger — see `[DEFERRAL] split ui.py / app.py further`).
+  Parallel-track items still in `todo.md`: ModelBox blocking HTTP (real UX bug), in-app replay
+  (debug aid).
+
 ## 2026-05-15 — hotkeys.py extraction (tiny mechanical)
 - Pulled the ~40-line hotkey block out of `ui.py:update_and_draw` into new
   `shaderbox/hotkeys.py` exposing `process_hotkeys(app: App)`. Literal cut/paste — zero

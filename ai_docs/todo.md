@@ -36,22 +36,23 @@ Format:
   this deferral was resolved by feature 001 (worker-thread + mailbox in `exporters/telegram.py`);
   ModelBox needs the same shape (worker thread + result queue) or to be made async.
 
-## [DEFERRAL] re-tighten pyright
-- **Trigger:** when the cleanup backlog reaches a clean state (i.e. after `[DEFERRAL] split ui.py`
-  or whatever audit pass clears the remaining type debt).
-- The pyright pre-commit hook is `|| true`'d (`.pre-commit-config.yaml`) because of pre-existing
-  type debt across `ui.py`, `media.py`, `core.py`, `modelbox.py`. Feature 001 cleaned up the
-  share-tab `hasattr`-dispatch errors but other modules weren't audited. Drop the `|| true` once
-  a sweep brings the total to zero. Don't add new errors in the meantime.
-
 ## [DEFERRAL] split `ui.py` / `app.py` further
-- **Trigger:** next time you add a tab or want to extract a remaining chunk.
+- **Trigger:** when editing `app.py` feels painful (search-and-replace across the file misses
+  something, or a method's blast radius is unclear because too many siblings share state), OR
+  when a 4th tab module needs cross-cutting `App` operations not currently on its public API.
+  NOT a default next-step — a 2026-05-15 parallel-agent assessment of `project.py` extraction
+  concluded the current 373-line `app.py` is coherent state on a single entity and the
+  extraction would be premature abstraction (same shape as feature 002's reversed AppContext).
 - Progress: 1778 (single ui.py) → 1508 (feature 001, `tabs/share.py`) → after feature 002:
   `app.py` 373 + `ui.py` 294 + `tabs/{node,render,share,share_state}.py` 398 +
   `widgets/*.py` 547 + `popups/*.py` 166 → after `hotkeys.py` extraction: `ui.py` 255 +
-  `hotkeys.py` 45. Remaining extractions inside `app.py`: `project.py` (the
-  `@property` paths + `save` / `open_project` / `delete_current_node` lifecycle). `App` is the
-  state-holder; widgets/popups/tabs/hotkeys take `app: App` directly (no `AppContext` wrapper).
+  `hotkeys.py` 45.
+- Candidate shapes (if the trigger ever fires): `ProjectPaths` frozen dataclass (extract the 9
+  `@property` paths into a value type, `app.paths.nodes_dir` etc.) OR `shaderbox/project.py`
+  free functions taking `app: App` (`save` / `open_project` / `delete_current_node` /
+  `create_node_from_selected_template` / `select_next_*`). The two are orthogonal — paths are a
+  value domain, lifecycle is an action domain. `App` is the state-holder; widgets/popups/tabs/
+  hotkeys take `app: App` directly (no `AppContext` wrapper).
 
 ## [DEFERRAL] headless smoke test
 - **Trigger:** next time a refactor lands in `ui.py` / `widgets/*.py` / `popups/*.py` and you

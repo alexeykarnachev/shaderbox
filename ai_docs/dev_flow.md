@@ -180,11 +180,8 @@ external HTTP service (the app degrades gracefully without it).
 The single canonical lint/typecheck command — delegates to `uv run pre-commit run --all-files`:
 ruff fix, ruff format, then **pyright** (chosen over mypy on purpose — fewer false positives, less
 friction; `[tool.pyright]` in `pyproject.toml`, basic mode). `.pre-commit-config.yaml` is the source
-of truth for the config. Run before declaring anything done. **Pyright is non-blocking for now** —
-the repo has pre-existing type debt across `ui.py`, `media.py`, `core.py`, `modelbox.py` (see
-`conventions.md ## Known quirks` and `todo.md [DEFERRAL] re-tighten pyright`), so the hook prints
-pyright's findings but `|| true`'s past a non-zero exit. Don't add *new* pyright errors in the
-meantime.
+of truth for the config. Run before declaring anything done. Both ruff and pyright **block on
+failure** — the repo is currently at 0 pyright errors; keep it that way.
 
 ### Build / ship to itch.io
 `./build.sh` → `dist/shaderbox-{windows.zip,linux.tar.gz}` → `./upload-itch.sh` (needs `butler` + an

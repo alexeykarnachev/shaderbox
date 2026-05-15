@@ -23,8 +23,5 @@ repos:
         language: system
         types: [python]
         pass_filenames: false
-        # non-blocking for now — pre-existing type debt across the repo (not just the share-tab
-        # which feature 001 cleaned up). Surfacing findings is useful; gating on them isn't, until
-        # the cleanup backlog reaches a clean state. Re-tighten by dropping `|| true`.
-        entry: bash -c 'uv run pyright shaderbox || true'
+        entry: uv run pyright shaderbox
         verbose: true
