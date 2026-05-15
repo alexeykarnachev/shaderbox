@@ -49,9 +49,17 @@ Format per entry:
   de-scoped to a separate effort (filed as new deferral); import discipline is method-affinity
   not import-affinity; `auth_state` is property not method; `draw_config_ui` is no-args mutating
   self-state, not (settings)->settings; `set_media_dir()` ABC method beats settings side-channel.
-- refs: pending commit (one large commit covering feature + post-impl fixes + sanitize sweep);
-  `ai_docs/features/001_exporter_refactor.md` (Review history fully populated).
-- open thread: **see top entry below — picking next refactor target.**
+- refs: commit `de7059d`; `ai_docs/features/001_exporter_refactor.md` (Review history fully
+  populated).
+- open thread: **feature 002 (UI widgets + popups extraction) drafted but NOT plan-locked with
+  user** — `ai_docs/features/002_ui_widgets_extraction.md`. User asked to organize the repo
+  before any new feature work, this is the next chunk. Fresh-session resumption: walk
+  `CLAUDE.md` → this entry → `ai_docs/features/002_ui_widgets_extraction.md`, answer the
+  4 `## Open questions for the user`, then proceed to `dev_flow.md` step 3 (plan-lock with
+  user) → step 4 (pre-impl review) → step 5 (implement). Backlog after 002: feature 003
+  (extract `tabs/node.py` + `tabs/render.py`), feature 004 (extract `hotkeys.py`), feature 005
+  (extract `project.py`), then revisit pyright re-tightening (`todo.md [DEFERRAL]`). ModelBox
+  blocking-HTTP deferral can be a parallel-track mid-feature when the user feels like it.
 
 ## 2026-05-15 — exporter refactor spec drafted + plan-locked (backlog items 2 + 3)
 - Drafted `ai_docs/features/001_exporter_refactor.md` — first feature spec; high-blast-radius
