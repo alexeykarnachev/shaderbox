@@ -38,7 +38,12 @@ Format per entry:
   picture).
 - refs: `7d3c44e`; files: `pyproject.toml`, `shaderbox/{telegram_provider,ui_models}.py`, `uv.lock`,
   `CLAUDE.md`, `ai_docs/conventions.md`.
-- open thread: resumption backlog (rough order; re-confirm before starting each):
+- open thread: **NEXT SESSION = Polina's re-design** (large, ui-wide). The docs aren't in the repo
+  yet — **stop here and ask the maintainer to provide them** before doing anything else (don't pick
+  up a cleanup item below as a warm-up). Treat as high-blast-radius feature flow per `dev_flow.md`;
+  it will likely supersede / reshape several of the items below, so don't pre-commit to them.
+
+  Cleanup backlog (paused until the re-design lands):
   1. Decide on the dead `ui_utils` helpers: `mod` (delete), `depth_mask_to_normals` /
      `zero_low_alpha_pixels` (wire to ModelBox or delete).
   2. Collapse the 2 sticker models (`TelegramShareableMedia` / `ShareableMedia`) into one behind a
@@ -47,7 +52,7 @@ Format per entry:
   3. Move blocking Telegram/ModelBox calls off the render thread (`_loop.run_until_complete` in
      imgui-frame draw paths; ModelBox's synchronous `requests`) — worker thread + result queue.
   4. Split `ui.py` (1778-line `App` god-class) — extract `widgets.py`, `tabs/*.py`, `hotkeys.py`,
-     `project.py`. The big one.
+     `project.py`. The big one. (May be folded into the re-design.)
 
 ## 2026-05-12 — AI dev-flow scaffold landed
 - Created `CLAUDE.md` (anchor + cold-start chain), `ai_docs/{dev_flow,worklog,todo,conventions}.md`,
