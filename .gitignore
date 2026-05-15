@@ -10,6 +10,7 @@ wheels/
 .env
 
 trash/
+exporter_scratch/
 tg_state.json
 
 itch-config

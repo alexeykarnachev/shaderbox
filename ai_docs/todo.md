@@ -44,11 +44,35 @@ Format:
   share-tab `hasattr`-dispatch errors but other modules weren't audited. Drop the `|| true` once
   a sweep brings the total to zero. Don't add new errors in the meantime.
 
-## [DEFERRAL] split `ui.py` (still ~1500-line god-class after feature 001)
-- **Trigger:** next time you add a tab or a reusable widget to `ui.py`.
-- `App` class spans ~1500 lines, 40+ methods (was 1778 before feature 001 extracted `tabs/share.py`).
-  Remaining extractions: `widgets.py` (the `draw_*_details` family), `tabs/render.py`, `tabs/node.py`,
-  `hotkeys.py`, `project.py`. New UI code should already go in the smallest plausible new module
-  (`conventions.md ## Design decisions`). The `tabs/*.py` pattern is set by `tabs/share.py` (free
-  `draw()` + optional `update()` + module-level `TabState`). Likely run as a high-blast-radius
-  feature, not a drive-by.
+## [DEFERRAL] split `ui.py` / `app.py` further
+- **Trigger:** next time you add a tab or want to extract a remaining chunk.
+- Progress: 1778 (single ui.py) → 1508 (feature 001, `tabs/share.py`) → after feature 002:
+  `app.py` 373 + `ui.py` 294 + `tabs/{node,render,share,share_state}.py` 398 +
+  `widgets/*.py` 547 + `popups/*.py` 166. Remaining extractions inside `app.py`: `hotkeys.py`
+  (the ~40-line hotkey block currently in `ui.py:update_and_draw`), `project.py` (the
+  `@property` paths + `save` / `open_project` / `delete_current_node` lifecycle). `App` is the
+  state-holder; widgets/popups/tabs take `app: App` directly (no `AppContext` wrapper).
+
+## [DEFERRAL] headless smoke test
+- **Trigger:** next time a refactor lands in `ui.py` / `widgets/*.py` / `popups/*.py` and you
+  want a faster verification than the 11-step manual UX sweep — or first time a regression slips
+  through manual testing.
+- Build a `scripts/smoke.py` that: creates `App` against `projects/dev/` with an invisible glfw
+  window (`glfw.window_hint(glfw.VISIBLE, glfw.FALSE)`), runs ~200 frames of `update_and_draw(app)`,
+  asserts no exception + invariants (`not (app.is_node_creator_open and app.is_settings_open)`,
+  `app.current_node_id == "" or app.current_node_id in app.ui_nodes`, no released textures in
+  `uniform_values`). Exit 0 on success. Wire into `make check` or a separate `make smoke`. ~60
+  lines. Catches import errors, callback dispatch failures, popup state machine crashes — the
+  bulk of refactor regressions. Doesn't catch visual bugs.
+
+## [DEFERRAL] in-app replay mechanism (debug)
+- **Trigger:** next time you hit a multi-step bug that's painful to reproduce manually, or when
+  you want to share a repro with future-you.
+- Add a "Debug → Replays" UI surface that lists JSON files from `replays/`, plays them back by
+  injecting synthetic actions into the existing hotkey/button code paths. DSL (rough): list of
+  `{frame, action: hotkey|click|assert, ...}` dicts. Intercept points: imgui io-state setting
+  for hotkeys (reuse the hotkey block in `ui.py:update_and_draw` as-is — currently ~`ui.py:86-124`),
+  thin `replay_aware_button(label)` wrapper for clicks (or globally wrap `imgui.button` in
+  replay mode). Not a test framework — for manual debugging / shareable repros. The smoke test
+  above is the right tool for actual regression testing. Probably worth a small feature spec
+  before building (touches imgui boundary, adds UI surface).

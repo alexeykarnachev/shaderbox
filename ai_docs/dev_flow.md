@@ -36,6 +36,11 @@ the size inline and the user corrects.
 - **High-blast-radius** (the `ui.py` split, a refactor across many modules, anything touching
   conventions): scale up — the upper end of the mid range or beyond (extra reviewers — e.g. a
   spec-fidelity auditor), plus a sanitization sweep even if it wouldn't normally warrant one.
+  **Watch for the cycle-from-types signal:** if a new module needs `app: App` (or any other
+  symbol from an upstream module that already imports the new module), the convention's
+  no-`TYPE_CHECKING` rule will force a structural split — anticipate it in the spec
+  ("module X holds the type; module Y holds the orchestration"), don't discover it at
+  impl time. Feature 002 surfaced this — see its post-impl reversal trail.
 
 The non-mid sizes are judged per situation: the agent proposes "this looks tiny — 1 reviewer, no
 manual check" or "this is high-blast-radius — 2 pre + 3 post + a spec-fidelity pass", and the user
@@ -130,9 +135,13 @@ worklog entry (if even that) + the cold-context glance is enough; for a feature,
 
 - **`core.py`** — `Canvas`, `Node`: GL program lifecycle, uniform introspection + binding,
   render-to-texture, image/video export. Needs a live GL context.
-- **`ui.py`** — `App`: the imgui frontend, ~1500-line god-class. **Being incrementally
-  extracted** — new UI code goes in the smallest plausible *new* module (`conventions.md ## Design
-  decisions`), not back into `ui.py`.
+- **`app.py`** — `App` class: state holder + lifecycle (project, GL context, node management,
+  popup-state booleans). ~370 lines. No UI drawing. Imported by `ui.py`, `widgets/`, `popups/`,
+  `tabs/`.
+- **`ui.py`** — thin entrypoint + orchestrator. ~290 lines. Contains `run(app)`,
+  `update_and_draw(app)` (the imgui frame loop: hotkeys, render gates, main window + image,
+  tab-bar dispatch), `_draw_node_settings(app)` (tab-bar dispatcher), and `main()`. No tab
+  bodies, no widget logic — those live in `tabs/`, `widgets/`, `popups/`.
 - **`ui_models.py`** — pydantic-ish `UINode` / `UINodeState` / `UIUniform` / `UIAppState` + node
   (de)serialization.
 - **`media.py`** — `Image` / `Video` (`MediaWithTexture` ABC), ffmpeg temporal smoothing.
@@ -140,9 +149,15 @@ worklog entry (if even that) + the cold-context glance is enough; for a feature,
   (`registry.py`), `TelegramExporter` (`telegram.py` — own worker thread + asyncio loop + sticker
   panel UI). Adding a new exporter: subclass `Exporter`, register in `App.__init__`. The
   thread-affinity contract (worker thread MUST NOT touch moderngl) is enforced by design.
-- **`tabs/share.py`** — first real tab module extracted from `ui.py`. Pattern: free `draw()` +
-  optional `update()` + module-level `TabState` dataclass — see `conventions.md ## Design
-  decisions` for the convention all future `tabs/*.py` modules follow.
+- **`tabs/`** — tab modules. Each tab is one file with `draw(app: App)` (imgui calls only) and
+  optional `update(app: App)` (pre-imgui GL work). Modules: `node.py`, `render.py`, `share.py`.
+  `share_state.py` holds the share-tab dataclass (`TabState`) separately to keep `app.py` free
+  of cyclic imports (app.py imports `share_state`, NOT `share`).
+- **`widgets/`** — stateless imgui-drawing functions taking `app: App`. Shape per widget fits its
+  job (no shared contract). Modules: `details.py`, `media_ops.py`, `node_grid.py`, `uniform.py`.
+- **`popups/`** — popup `draw(app: App)` free functions. Open/closed state lives on `App` as
+  `is_node_creator_open` / `is_settings_open` (helpers `app.open_node_creator()` /
+  `app.open_settings()` enforce mutual exclusion). Modules: `node_creator.py`, `settings.py`.
 - **`modelbox.py`** — thin HTTP client for the optional external ModelBox service.
 - **`fonts.py`** — freetype → GL atlas. **`ui_utils.py`** / **`constants.py`** / **`notifications.py`** — helpers.
 - **Node-dir data format:** a project lives in `<project>/nodes/<uuid>/{node.json, shader.frag.glsl,

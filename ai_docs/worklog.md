@@ -22,6 +22,42 @@ Format per entry:
 
 ---
 
+## 2026-05-15 — feature 002 (UI widgets + popups extraction) IMPLEMENTED with 3 post-impl reversals
+- Implemented per `ai_docs/features/002_ui_widgets_extraction.md`: extracted 10 widget/popup
+  methods from `ui.py` into `shaderbox/widgets/{details,media_ops,node_grid,uniform}.py` (547
+  lines) and `shaderbox/popups/{node_creator,settings}.py` (166 lines). Three post-impl reversals
+  reshaped the design: (1) `AppContext` dataclass deleted after investigation showed every
+  claimed benefit illusory — widgets/popups take `app: App` directly; (2) popup classes flattened
+  to free functions, `_is_open` state moved to plain booleans on `App` (`is_node_creator_open` /
+  `is_settings_open`) with mutex-preserving helpers `app.open_node_creator()` /
+  `app.open_settings()`; (3) `App` extracted to `shaderbox/app.py` (373 lines) and dispatch
+  methods moved to `ui.py` (294 lines) as free functions — broke the circular import surfaced
+  by widgets needing `App` for type annotations while `app.py` imported them.
+- Also in same wave (originally feature 003 scope): `tabs/node.py` + `tabs/render.py` extracted;
+  `tabs/share.py` harmonized to `draw(app: App)` / `update(app: App)` (state moved to
+  `tabs/share_state.py` to keep `app.py` cycle-free). `App` attrs `_share_tab_state`,
+  `_exporter_registry`, `_font_14/18` made public (cross-module accessed from `ui.py`).
+- Final layout (all `make check` clean, 0 pyright errors):
+  `app.py` 373 + `ui.py` 294 + `tabs/{node,render,share,share_state}.py` 398 +
+  `widgets/*` 547 + `popups/*` 166. `ui.py` net: 1508 → 294 (-1214).
+- decisions (load-bearing, see `conventions.md ## Design decisions` for full text):
+  three-layer architecture `app.py` (state) / `ui.py` (orchestrator) / `widgets`+`popups`+`tabs`
+  (pure logic); widgets are an organizational convention with no shape contract; popups are
+  free functions with state on App; `App.open_node_creator()` / `app.open_settings()` enforce
+  popup mutual exclusion.
+- review: 3 pre-impl reviewers (spec fidelity, architecture, devil's advocate) + 4 final
+  reviewers (architecture, semantic correctness, conventions/drift, devil's advocate) flagged
+  one BLOCKER (popup mutex broken when popup classes flattened — fixed via the `open_*` helpers)
+  and several MAJORs (underscore-private attrs accessed cross-module — dropped; `tabs/share.py`
+  inconsistency — harmonized in same wave; doc drift — patched in sanitize).
+- refs: `ai_docs/features/002_ui_widgets_extraction.md` (Review history shows full reversal
+  trail). Uncommitted on working tree at sanitize time.
+- open thread: manual UX verification (11-step list in spec § Manual verification) then commit.
+  Backlog after 002: `hotkeys.py` extraction (small, the ~40-line block in `ui.py:update_and_draw`),
+  `project.py` extraction (lifecycle methods off App), then revisit pyright re-tightening
+  (`todo.md [DEFERRAL]`). Smoke test + in-app replay parked in `todo.md`. ModelBox blocking-HTTP
+  deferral can be a parallel-track mid-feature.
+
 ## 2026-05-15 — feature 001 (exporter refactor) IMPLEMENTED end-to-end
 - Implemented per `ai_docs/features/001_exporter_refactor.md`: new `shaderbox/exporters/` subpkg
   (`base.py` ABC + value types, `registry.py`, `telegram.py` ~740 lines — own worker thread + own

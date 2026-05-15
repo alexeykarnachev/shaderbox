@@ -3,14 +3,14 @@
     "selected_node_template_id": "",
     "new_node_name": "",
     "is_render_all_nodes": true,
-    "share_provider_configs": {
+    "exporter_settings": {
         "telegram": {
             "bot_token": "asdfasdf",
             "user_id": "1551515",
             "sticker_set_name": "asdfsadf"
         }
     },
-    "active_share_provider": "telegram",
+    "active_exporter_id": "telegram",
     "media_model_idx": 0,
     "global_target_fps": 60,
     "text_editor_cmd": "gnome-terminal -- nvim {file_path}",

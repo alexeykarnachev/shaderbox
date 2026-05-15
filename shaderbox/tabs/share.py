@@ -1,60 +1,44 @@
-from collections.abc import Callable
-from dataclasses import dataclass, field
 from pathlib import Path
 from uuid import uuid4
 
 import imgui
 from loguru import logger
 
+from shaderbox.app import App
 from shaderbox.exporters.base import RenderedArtifact
-from shaderbox.exporters.registry import ExporterRegistry
 from shaderbox.media import MediaDetails
+from shaderbox.tabs.share_state import TabState
 from shaderbox.ui_models import UINode
 
 
-@dataclass
-class TabState:
-    scratch_dir: Path
-    media_details: MediaDetails = field(
-        default_factory=lambda: MediaDetails(is_video=True)
-    )
-    current_artifact: RenderedArtifact | None = None
-
-
-def make_state(scratch_dir: Path) -> TabState:
-    return TabState(scratch_dir=scratch_dir)
-
-
-def update(
-    state: TabState, registry: ExporterRegistry, current_node: UINode | None
-) -> None:
-    _ = state
-    exporter = registry.get_active()
+def update(app: App) -> None:
+    if app.share_tab_state is None:
+        return
+    exporter = app.exporter_registry.get_active()
     if exporter is None:
         return
+    current_node = app.ui_nodes.get(app.current_node_id)
     exporter.update(current_node)
 
 
-def draw(
-    state: TabState,
-    registry: ExporterRegistry,
-    current_node: UINode | None,
-    notifications_push: Callable[[str, tuple[float, float, float]], None],
-) -> None:
+def draw(app: App) -> None:
+    if app.share_tab_state is None:
+        return
     try:
-        _draw_inner(state, registry, current_node)
+        _draw_inner(app)
     except Exception as e:
         logger.exception("Error in share tab")
-        notifications_push(f"Error in share tab: {e!s}", (1.0, 0.0, 0.0))
+        app.notifications.push(f"Error in share tab: {e!s}", (1.0, 0.0, 0.0))
         imgui.text_colored("An error occurred in the share tab.", *(1.0, 0.0, 0.0))
         imgui.text("Check the logs for more details.")
 
 
-def _draw_inner(
-    state: TabState,
-    registry: ExporterRegistry,
-    current_node: UINode | None,
-) -> None:
+def _draw_inner(app: App) -> None:
+    assert app.share_tab_state is not None
+    state = app.share_tab_state
+    registry = app.exporter_registry
+    current_node = app.ui_nodes.get(app.current_node_id)
+
     ids: list[str] = registry.ids()
     if not ids:
         imgui.text("No exporters registered.")
