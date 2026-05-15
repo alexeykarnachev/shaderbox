@@ -48,10 +48,10 @@ Format:
 - **Trigger:** next time you add a tab or want to extract a remaining chunk.
 - Progress: 1778 (single ui.py) → 1508 (feature 001, `tabs/share.py`) → after feature 002:
   `app.py` 373 + `ui.py` 294 + `tabs/{node,render,share,share_state}.py` 398 +
-  `widgets/*.py` 547 + `popups/*.py` 166. Remaining extractions inside `app.py`: `hotkeys.py`
-  (the ~40-line hotkey block currently in `ui.py:update_and_draw`), `project.py` (the
+  `widgets/*.py` 547 + `popups/*.py` 166 → after `hotkeys.py` extraction: `ui.py` 255 +
+  `hotkeys.py` 45. Remaining extractions inside `app.py`: `project.py` (the
   `@property` paths + `save` / `open_project` / `delete_current_node` lifecycle). `App` is the
-  state-holder; widgets/popups/tabs take `app: App` directly (no `AppContext` wrapper).
+  state-holder; widgets/popups/tabs/hotkeys take `app: App` directly (no `AppContext` wrapper).
 
 ## [DEFERRAL] headless smoke test
 - **Trigger:** next time a refactor lands in `ui.py` / `widgets/*.py` / `popups/*.py` and you
@@ -71,7 +71,7 @@ Format:
 - Add a "Debug → Replays" UI surface that lists JSON files from `replays/`, plays them back by
   injecting synthetic actions into the existing hotkey/button code paths. DSL (rough): list of
   `{frame, action: hotkey|click|assert, ...}` dicts. Intercept points: imgui io-state setting
-  for hotkeys (reuse the hotkey block in `ui.py:update_and_draw` as-is — currently ~`ui.py:86-124`),
+  for hotkeys (reuse `shaderbox/hotkeys.py::process_hotkeys` as-is),
   thin `replay_aware_button(label)` wrapper for clicks (or globally wrap `imgui.button` in
   replay mode). Not a test framework — for manual debugging / shareable repros. The smoke test
   above is the right tool for actual regression testing. Probably worth a small feature spec

@@ -9,6 +9,7 @@ from loguru import logger
 from OpenGL.GL import GLError
 
 from shaderbox.app import App
+from shaderbox.hotkeys import process_hotkeys
 from shaderbox.popups.node_creator import draw_node_creator
 from shaderbox.popups.settings import draw_settings
 from shaderbox.tabs import node as node_tab
@@ -84,44 +85,7 @@ def update_and_draw(app: App) -> None:
 
     # ----------------------------------------------------------------
     # Process hotkeys
-    glfw.poll_events()
-    app.imgui_renderer.process_inputs()
-    io = imgui.get_io()
-
-    if io.key_ctrl and imgui.is_key_pressed(ord("O")):
-        app.open_project()
-    if io.key_ctrl and imgui.is_key_pressed(ord("S")):
-        app.save()
-    if io.key_ctrl and imgui.is_key_pressed(ord("E")):
-        app.edit_current_node_fs_file()
-    if io.key_ctrl and imgui.is_key_pressed(ord("D")):
-        app.delete_current_node()
-    if io.key_ctrl and imgui.is_key_pressed(ord("N")):
-        app.open_node_creator()
-
-    if io.key_alt and imgui.is_key_pressed(ord("S")):
-        app.open_settings()
-
-    if imgui.is_key_pressed(glfw.KEY_ESCAPE, repeat=False):
-        if not app.any_popup_open():
-            glfw.set_window_should_close(app.window, True)
-        app.is_node_creator_open = False
-        app.is_settings_open = False
-
-    if not imgui.is_any_item_active():
-        if not app.any_popup_open():
-            if imgui.is_key_pressed(glfw.KEY_LEFT, repeat=True):
-                app.select_next_current_node(-1)
-            if imgui.is_key_pressed(glfw.KEY_RIGHT, repeat=True):
-                app.select_next_current_node(+1)
-        if app.is_node_creator_open:
-            if imgui.is_key_pressed(glfw.KEY_LEFT, repeat=True):
-                app.select_next_template(-1)
-            if imgui.is_key_pressed(glfw.KEY_RIGHT, repeat=True):
-                app.select_next_template(+1)
-            if imgui.is_key_pressed(glfw.KEY_ENTER, repeat=False):
-                app.create_node_from_selected_template()
-                app.is_node_creator_open = False
+    process_hotkeys(app)
 
     # ----------------------------------------------------------------
     # Prepare new frame
@@ -231,9 +195,7 @@ def update_and_draw(app: App) -> None:
             _draw_node_settings(app)
         except Exception as e:
             logger.error(f"Error in node settings: {e}")
-            app.notifications.push(
-                f"Error in node settings: {e!s}", (1.0, 0.0, 0.0)
-            )
+            app.notifications.push(f"Error in node settings: {e!s}", (1.0, 0.0, 0.0))
 
     # ----------------------------------------------------------------
     # Popups and notifications
@@ -282,7 +244,6 @@ def _draw_node_settings(app: App) -> None:
                 imgui.end_tab_item()
 
             imgui.end_tab_bar()
-
 
 
 def main() -> None:

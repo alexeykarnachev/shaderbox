@@ -22,6 +22,24 @@ Format per entry:
 
 ---
 
+## 2026-05-15 — hotkeys.py extraction (tiny mechanical)
+- Pulled the ~40-line hotkey block out of `ui.py:update_and_draw` into new
+  `shaderbox/hotkeys.py` exposing `process_hotkeys(app: App)`. Literal cut/paste — zero
+  behavior change. `ui.py` 294 → 255; new `hotkeys.py` 45 lines.
+- Treated as tiny per `dev_flow.md` (1 module, mechanical, no new public API): no spec, no
+  review agents, no manual smoke (user skipped — diff is trivially obvious).
+- `make check` clean: 0 pyright errors. Doc patches in same wave: `todo.md` line-numbered
+  refs to the old block updated (`split ui.py` deferral progress line; in-app replay
+  intercept-point pointer), `dev_flow.md ## Recipes` module map adds the new module.
+- refs: working tree (uncommitted). `shaderbox/hotkeys.py`, `shaderbox/ui.py`.
+- open thread: **next = `project.py` extraction** — App's lifecycle methods (`save`,
+  `open_project`, `delete_current_node`, `create_node_from_selected_template`,
+  `select_next_*`, the `@property` paths). Mid-sized feature (multi-method, behavioral
+  surface) — likely warrants a short spec + 1 reviewer per dev_flow's mid shape. After
+  that: pyright re-tightening once `media.py` / `core.py` / `modelbox.py` debt clears.
+  Parallel-track items in `todo.md` unchanged (smoke test, in-app replay, ModelBox
+  blocking HTTP).
+
 ## 2026-05-15 — feature 002 (UI widgets + popups extraction) IMPLEMENTED with 3 post-impl reversals
 - Implemented per `ai_docs/features/002_ui_widgets_extraction.md`: extracted 10 widget/popup
   methods from `ui.py` into `shaderbox/widgets/{details,media_ops,node_grid,uniform}.py` (547

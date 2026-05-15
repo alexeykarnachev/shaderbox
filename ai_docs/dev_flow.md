@@ -138,10 +138,14 @@ worklog entry (if even that) + the cold-context glance is enough; for a feature,
 - **`app.py`** — `App` class: state holder + lifecycle (project, GL context, node management,
   popup-state booleans). ~370 lines. No UI drawing. Imported by `ui.py`, `widgets/`, `popups/`,
   `tabs/`.
-- **`ui.py`** — thin entrypoint + orchestrator. ~290 lines. Contains `run(app)`,
-  `update_and_draw(app)` (the imgui frame loop: hotkeys, render gates, main window + image,
+- **`ui.py`** — thin entrypoint + orchestrator. ~255 lines. Contains `run(app)`,
+  `update_and_draw(app)` (the imgui frame loop: render gates, main window + image,
   tab-bar dispatch), `_draw_node_settings(app)` (tab-bar dispatcher), and `main()`. No tab
-  bodies, no widget logic — those live in `tabs/`, `widgets/`, `popups/`.
+  bodies, no widget logic, no hotkey dispatch — those live in `tabs/`, `widgets/`, `popups/`,
+  `hotkeys.py`.
+- **`hotkeys.py`** — `process_hotkeys(app: App)`: glfw poll + imgui input processing + all
+  keyboard shortcut dispatch (Ctrl+O/S/E/D/N, Alt+S, Esc, arrows, Enter). Called from
+  `update_and_draw` once per frame.
 - **`ui_models.py`** — pydantic-ish `UINode` / `UINodeState` / `UIUniform` / `UIAppState` + node
   (de)serialization.
 - **`media.py`** — `Image` / `Video` (`MediaWithTexture` ABC), ffmpeg temporal smoothing.
