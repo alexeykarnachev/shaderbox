@@ -23,7 +23,7 @@ code review, the sanitization sweep.
 - **`ui.py` is a god-class being incrementally extracted.** New UI code goes in the smallest plausible
   *new* module (`widgets.py` / `tabs/*.py` / `hotkeys.py` / `project.py`), not back into `ui.py`.
   Revisit the target structure once 3+ extractions land. (Tracked: `todo.md [DEFERRAL] split ui.py`;
-  backlog item 6 in the worklog `open thread:`.)
+  backlog item 4 in the worklog `open thread:`.)
 - **No `async` in the codebase except where python-telegram-bot forces it** — and that should run off
   the render thread (a worker thread + result queue), not via `run_until_complete` inside the imgui
   frame. Revisit if the share path is rewritten. (Tracked: `todo.md [DEFERRAL] blocking asyncio…`.)
@@ -42,7 +42,7 @@ of constraining future code; SDK footguns go to `## Known quirks`, not here.)*
   declare them (they live on the concrete sticker classes the code `cast`s to). That's ~16 pyright
   errors. The pre-commit pyright hook is `|| true`'d (non-blocking) because of this; it'll be
   re-tightened (drop the `|| true`) once the sticker-models refactor lands — see
-  `todo.md [DEFERRAL] three near-identical sticker models`.
+  `todo.md [DEFERRAL] two near-identical sticker models`.
 - **A live moderngl context must exist before constructing `Image` / `Video` / `Font` / `Canvas` /
   `Node`** — they call `moderngl.get_context()` lazily. In the app,
   `glfw.make_context_current(window)` handles it.

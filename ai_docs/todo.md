@@ -52,10 +52,3 @@ Format:
   family — `:1348,1385,1429`), `tabs/*.py` (Node / Render / Share), `hotkeys.py`, `project.py`. New
   UI code should already go in the smallest plausible new module (`conventions.md ## Design decisions`).
   (Backlog item 6 — likely run as a high-blast-radius feature, not a drive-by.)
-
-## [DEFERRAL] dead/orphaned `ui_utils` helpers
-- **Trigger:** next time you touch `ui_utils.py`, or when wiring ModelBox's depth-map / bg-removal
-  features (README advertises them).
-- `mod()` (`ui_utils.py:73`) is dead. `depth_mask_to_normals` (`:90`) and `zero_low_alpha_pixels`
-  (`:109`) are unused and reach into `Image._image` (private) — they look like *intended* future
-  ModelBox wiring, not pure dead code. Decide: wire up or delete. (Backlog item 3.)

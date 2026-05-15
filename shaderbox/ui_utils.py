@@ -1,14 +1,9 @@
 import hashlib
 import math
 from collections.abc import Sequence
-from pathlib import Path
 from typing import Any, TypeVar
 
-import cv2
 import moderngl
-import numpy as np
-
-from shaderbox.media import Image
 
 K = TypeVar("K")
 
@@ -70,12 +65,6 @@ def select_next_value(
     return values[(idx + step) % len(values)]
 
 
-def mod(a: float, b: float) -> float:
-    if b == 0.0:
-        return 0.0
-    return a - b * (a // b)
-
-
 def get_resolution_str(name: str | None, w: int, h: int) -> str:
     g = math.gcd(w, h)
     w_ratio, h_ratio = w // g, h // g
@@ -85,34 +74,6 @@ def get_resolution_str(name: str | None, w: int, h: int) -> str:
         parts.append(name)
     parts.append(aspect)
     return " | ".join(parts)
-
-
-def depth_mask_to_normals(depthmap_image: Image, kernel_size: int = 3) -> Image:
-    kernel_size = max(3, kernel_size | 1)
-
-    depth_array = np.array(depthmap_image._image.convert("L"), dtype=np.float32)
-
-    grad_x = cv2.Sobel(depth_array, cv2.CV_32F, 1, 0, ksize=kernel_size)
-    grad_y = cv2.Sobel(depth_array, cv2.CV_32F, 0, 1, ksize=kernel_size)
-
-    normals = np.dstack((grad_x, -grad_y, np.ones_like(depth_array)))
-
-    norm = np.linalg.norm(normals, axis=2, keepdims=True)
-    norm[norm < 1e-6] = 1e-6
-    normals = normals / norm
-
-    normals_rgb = ((normals + 1.0) * 127.5).astype(np.uint8)
-
-    return Image(normals_rgb)
-
-
-def zero_low_alpha_pixels(image: Image, min_alpha: float = 1.0) -> Image:
-    img_array = np.array(image._image)
-    alpha_threshold = int(min_alpha * 255)
-    low_alpha_mask = img_array[:, :, 3] < alpha_threshold
-    img_array[:, :, :3][low_alpha_mask] = 0
-
-    return Image(img_array)
 
 
 def get_uniform_hash(u: moderngl.Uniform | moderngl.UniformBlock) -> int:
@@ -143,14 +104,6 @@ def str_to_unicode(text: str, max_n_chars: int) -> list[int]:
     char_inds += [0] * pad_len
 
     return char_inds
-
-
-def get_dir_hash(dir: Path) -> str:
-    hasher = hashlib.sha256()
-    for file in sorted(Path(dir).rglob("*")):
-        if file.is_file():
-            hasher.update(file.read_bytes())
-    return hasher.hexdigest()
 
 
 def try_to_release(value: Any) -> bool:

@@ -22,6 +22,27 @@ Format per entry:
 
 ---
 
+## 2026-05-15 — dead `ui_utils` sweep (backlog item 1)
+- Deleted 4 dead helpers from `ui_utils.py`: `mod` (no callers), `depth_mask_to_normals` and
+  `zero_low_alpha_pixels` (no callers; both reached into `Image._image` private — the only
+  `_image` reach-throughs outside `media.py`), `get_dir_hash` (no callers — spotted while sweeping).
+  Dropped now-orphan imports (`cv2`, `Image`, `from shaderbox.media import Image`, `Path`). 160 →
+  114 lines. Resolved `todo.md [DEFERRAL] dead/orphaned ui_utils helpers` in the same commit — its
+  premise ("future ModelBox wiring?") was wrong: ModelBox is server-side model dispatch
+  (`modelbox.infer_media_model`), not client-side numpy/cv2. README claim ("depth maps, background
+  removal") holds — those run through the existing `media_model_names` UI path. `make check` clean.
+- decisions: mechanical, no design surface — straight implementation, no planning agents.
+- refs: files: `shaderbox/ui_utils.py`, `ai_docs/{todo,conventions,worklog}.md`. (commit pending.)
+- open thread: continue the cleanup backlog:
+  1. ~~Dead `ui_utils` helpers — done this commit.~~
+  2. Collapse the 2 sticker models (`TelegramShareableMedia` / `ShareableMedia`) into one behind a
+     real interface; kill the `hasattr`-driven dispatch in the share tab. Re-tighten pyright (drop
+     `|| true` from `.pre-commit-config.yaml`).
+  3. Move blocking Telegram/ModelBox calls off the render thread (`_loop.run_until_complete` in
+     imgui-frame draw paths; ModelBox's synchronous `requests`) — worker thread + result queue.
+  4. Split `ui.py` (1778-line `App` god-class) — extract `widgets.py`, `tabs/*.py`, `hotkeys.py`,
+     `project.py`. The big one.
+
 ## 2026-05-15 — Tier-1 cleanup batch (backlog item 1)
 - Dropped unused deps (`litestar`, `uvicorn`, `uuid`-backport) from `pyproject.toml`; migrated
   `[tool.uv] dev-dependencies` → `[dependency-groups] dev` (kills the `uv` deprecation warning).
@@ -38,12 +59,7 @@ Format per entry:
   picture).
 - refs: `7d3c44e`; files: `pyproject.toml`, `shaderbox/{telegram_provider,ui_models}.py`, `uv.lock`,
   `CLAUDE.md`, `ai_docs/conventions.md`.
-- open thread: **NEXT SESSION = Polina's re-design** (large, ui-wide). The docs aren't in the repo
-  yet — **stop here and ask the maintainer to provide them** before doing anything else (don't pick
-  up a cleanup item below as a warm-up). Treat as high-blast-radius feature flow per `dev_flow.md`;
-  it will likely supersede / reshape several of the items below, so don't pre-commit to them.
-
-  Cleanup backlog (paused until the re-design lands):
+- open thread: continue the cleanup backlog, in order:
   1. Decide on the dead `ui_utils` helpers: `mod` (delete), `depth_mask_to_normals` /
      `zero_low_alpha_pixels` (wire to ModelBox or delete).
   2. Collapse the 2 sticker models (`TelegramShareableMedia` / `ShareableMedia`) into one behind a
@@ -52,7 +68,7 @@ Format per entry:
   3. Move blocking Telegram/ModelBox calls off the render thread (`_loop.run_until_complete` in
      imgui-frame draw paths; ModelBox's synchronous `requests`) — worker thread + result queue.
   4. Split `ui.py` (1778-line `App` god-class) — extract `widgets.py`, `tabs/*.py`, `hotkeys.py`,
-     `project.py`. The big one. (May be folded into the re-design.)
+     `project.py`. The big one.
 
 ## 2026-05-12 — AI dev-flow scaffold landed
 - Created `CLAUDE.md` (anchor + cold-start chain), `ai_docs/{dev_flow,worklog,todo,conventions}.md`,
