@@ -62,6 +62,6 @@ Format:
   `{frame, action: hotkey|click|assert, ...}` dicts. Intercept points: imgui io-state setting
   for hotkeys (reuse `shaderbox/hotkeys.py::process_hotkeys` as-is),
   thin `replay_aware_button(label)` wrapper for clicks (or globally wrap `imgui.button` in
-  replay mode). Not a test framework — for manual debugging / shareable repros. The smoke test
-  above is the right tool for actual regression testing. Probably worth a small feature spec
-  before building (touches imgui boundary, adds UI surface).
+  replay mode). Not a test framework — for manual debugging / shareable repros (the headless
+  smoke test in `scripts/smoke.py` is the right tool for actual regression testing). Probably
+  worth a small feature spec before building (touches imgui boundary, adds UI surface).
