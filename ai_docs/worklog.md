@@ -22,6 +22,29 @@ Format per entry:
 
 ---
 
+## 2026-05-15 — headless smoke test (tiny mechanical)
+- Added `scripts/smoke.py` (~65 lines): creates `App(project_dir=projects/dev/)` with
+  `glfw.window_hint(VISIBLE, FALSE)` set before App's `glfw.create_window` call, runs 200
+  frames of `update_and_draw`, asserts popup-mutex + `current_node_id ∈ ui_nodes ∪ {""}`.
+  Save/restore the user's `~/.local/share/shaderbox/project_dir` pointer around the test
+  (otherwise App's `_init` would clobber it). Exit 0 on success. ~1.5s runtime against the
+  2-node dev project.
+- Wired `make smoke` target (separate from `make check` — needs a real GL context, prints
+  noisy ModelBox connection errors when the optional service isn't running). Fixed stale
+  "pyright is non-blocking" comment in the existing `make check` target.
+- Doc updates in same wave: `[DEFERRAL] headless smoke test` deleted from `todo.md`
+  (resolved); `dev_flow.md ## Recipes` gets a `### make smoke` section + module-map entry
+  for `scripts/smoke.py`.
+- `make check` clean; `make smoke` clean.
+- refs: working tree (uncommitted). `scripts/smoke.py`, `Makefile`.
+- open thread: **next = re-evaluate project.py extraction with smoke test as safety net.**
+  The aggregated agent decision parked it (`todo.md [DEFERRAL] split ui.py / app.py further`
+  has the sharpened trigger) — default is to keep deferred unless `app.py` editing surfaces
+  real pain. Alternative next-steps if not project.py: ModelBox blocking HTTP unblock
+  (real UX bug, mid scope — apply feature-001 worker-thread + mailbox pattern to
+  `modelbox.infer_media_model`); in-app replay mechanism (debug aid, deferred until a
+  multi-step bug demands it).
+
 ## 2026-05-15 — pyright re-tightening (tiny, decision-driven)
 - Dropped `|| true` from the pyright pre-commit hook in `.pre-commit-config.yaml` (line 29); the
   hook now blocks on failure. Verified with `make check`: 0 errors, 0 warnings, 0 informations.

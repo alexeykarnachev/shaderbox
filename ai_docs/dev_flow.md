@@ -164,6 +164,9 @@ worklog entry (if even that) + the cold-context glance is enough; for a feature,
   `app.open_settings()` enforce mutual exclusion). Modules: `node_creator.py`, `settings.py`.
 - **`modelbox.py`** — thin HTTP client for the optional external ModelBox service.
 - **`fonts.py`** — freetype → GL atlas. **`ui_utils.py`** / **`constants.py`** / **`notifications.py`** — helpers.
+- **`scripts/smoke.py`** — headless smoke test (see `## Recipes > make smoke`). Not part of
+  `shaderbox/` proper; one-off script that imports `App` + `update_and_draw` and runs frames in
+  an invisible glfw window.
 - **Node-dir data format:** a project lives in `<project>/nodes/<uuid>/{node.json, shader.frag.glsl,
   media/, textures/}` + `<project>/app_state.json`. The active-project pointer is
   `~/.local/share/shaderbox/project_dir`; templates ship under `shaderbox/resources/node_templates/`.
@@ -182,6 +185,16 @@ ruff fix, ruff format, then **pyright** (chosen over mypy on purpose — fewer f
 friction; `[tool.pyright]` in `pyproject.toml`, basic mode). `.pre-commit-config.yaml` is the source
 of truth for the config. Run before declaring anything done. Both ruff and pyright **block on
 failure** — the repo is currently at 0 pyright errors; keep it that way.
+
+### `make smoke`
+Headless smoke test (`scripts/smoke.py`) — runs ~200 frames of `update_and_draw` against
+`projects/dev/` in an invisible glfw window, asserts popup-mutex + `current_node_id` invariants.
+~1.5s; catches import errors, callback dispatch failures, popup state-machine crashes, released-
+texture binding errors. Doesn't catch visual bugs. Run after any refactor in `ui.py` / `app.py` /
+`widgets/` / `popups/` / `tabs/` / `hotkeys.py` before declaring done; **not** wired into
+`make check` (needs a real GL context, prints noisy ModelBox connection errors when the optional
+service isn't running). Save/restore the user's `~/.local/share/shaderbox/project_dir` pointer is
+handled inside the script.
 
 ### Build / ship to itch.io
 `./build.sh` → `dist/shaderbox-{windows.zip,linux.tar.gz}` → `./upload-itch.sh` (needs `butler` + an

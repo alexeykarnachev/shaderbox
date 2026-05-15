@@ -54,18 +54,6 @@ Format:
   value domain, lifecycle is an action domain. `App` is the state-holder; widgets/popups/tabs/
   hotkeys take `app: App` directly (no `AppContext` wrapper).
 
-## [DEFERRAL] headless smoke test
-- **Trigger:** next time a refactor lands in `ui.py` / `widgets/*.py` / `popups/*.py` and you
-  want a faster verification than the 11-step manual UX sweep — or first time a regression slips
-  through manual testing.
-- Build a `scripts/smoke.py` that: creates `App` against `projects/dev/` with an invisible glfw
-  window (`glfw.window_hint(glfw.VISIBLE, glfw.FALSE)`), runs ~200 frames of `update_and_draw(app)`,
-  asserts no exception + invariants (`not (app.is_node_creator_open and app.is_settings_open)`,
-  `app.current_node_id == "" or app.current_node_id in app.ui_nodes`, no released textures in
-  `uniform_values`). Exit 0 on success. Wire into `make check` or a separate `make smoke`. ~60
-  lines. Catches import errors, callback dispatch failures, popup state machine crashes — the
-  bulk of refactor regressions. Doesn't catch visual bugs.
-
 ## [DEFERRAL] in-app replay mechanism (debug)
 - **Trigger:** next time you hit a multi-step bug that's painful to reproduce manually, or when
   you want to share a repro with future-you.
