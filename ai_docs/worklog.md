@@ -50,13 +50,18 @@ Format per entry:
   one BLOCKER (popup mutex broken when popup classes flattened — fixed via the `open_*` helpers)
   and several MAJORs (underscore-private attrs accessed cross-module — dropped; `tabs/share.py`
   inconsistency — harmonized in same wave; doc drift — patched in sanitize).
-- refs: `ai_docs/features/002_ui_widgets_extraction.md` (Review history shows full reversal
-  trail). Uncommitted on working tree at sanitize time.
-- open thread: manual UX verification (11-step list in spec § Manual verification) then commit.
-  Backlog after 002: `hotkeys.py` extraction (small, the ~40-line block in `ui.py:update_and_draw`),
-  `project.py` extraction (lifecycle methods off App), then revisit pyright re-tightening
-  (`todo.md [DEFERRAL]`). Smoke test + in-app replay parked in `todo.md`. ModelBox blocking-HTTP
-  deferral can be a parallel-track mid-feature.
+- refs: commit `7ad427f`; `ai_docs/features/002_ui_widgets_extraction.md` (Review history shows
+  full reversal trail). Manual UX verification passed before commit.
+- open thread: **next feature = `hotkeys.py` extraction** — the ~40-line hotkey block at
+  `ui.py:86-124` inside `update_and_draw` (Ctrl+N/Alt+S/Esc/arrow/Enter handling). Small/mid
+  feature: extract as `shaderbox/hotkeys.py` with one entrypoint `process_hotkeys(app)` called
+  from `update_and_draw`. Likely zero blockers — pure mechanical extraction; widgets/popups
+  pattern already set. Backlog after that: `project.py` extraction (App's lifecycle methods —
+  `save`, `open_project`, `delete_current_node`, `create_node_from_selected_template`,
+  `select_next_*`, the `@property` paths) — mid feature; then pyright re-tightening (drop
+  `|| true` once `app.py` / `media.py` / `core.py` / `modelbox.py` pyright debt is cleared).
+  Parallel-track items in `todo.md`: smoke test (60 lines, useful for future refactor
+  verification), in-app replay mechanism (debug aid), ModelBox blocking HTTP unblock.
 
 ## 2026-05-15 — feature 001 (exporter refactor) IMPLEMENTED end-to-end
 - Implemented per `ai_docs/features/001_exporter_refactor.md`: new `shaderbox/exporters/` subpkg
