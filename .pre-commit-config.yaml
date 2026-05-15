@@ -23,9 +23,8 @@ repos:
         language: system
         types: [python]
         pass_filenames: false
-        # non-blocking for now — the repo has pre-existing type debt (the share-tab
-        # hasattr-dispatch in ui.py). Surfacing it is useful; gating on it isn't, yet.
-        # Re-tighten once the sticker-models refactor lands (todo.md). `|| true` keeps
-        # the hook from failing the commit while still printing the findings.
+        # non-blocking for now — pre-existing type debt across the repo (not just the share-tab
+        # which feature 001 cleaned up). Surfacing findings is useful; gating on them isn't, until
+        # the cleanup backlog reaches a clean state. Re-tighten by dropping `|| true`.
         entry: bash -c 'uv run pyright shaderbox || true'
         verbose: true

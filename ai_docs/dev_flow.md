@@ -126,23 +126,29 @@ worklog entry (if even that) + the cold-context glance is enough; for a feature,
 ## Recipes
 
 ### Module map
-(11 files, flat `shaderbox/` package — this is the orientation `arch.md` would have been:)
+(Flat `shaderbox/` package + two subpackages — this is the orientation `arch.md` would have been:)
 
 - **`core.py`** — `Canvas`, `Node`: GL program lifecycle, uniform introspection + binding,
   render-to-texture, image/video export. Needs a live GL context.
-- **`ui.py`** — `App`: the whole imgui frontend, one ~1778-line god-class. **Being incrementally
+- **`ui.py`** — `App`: the imgui frontend, ~1500-line god-class. **Being incrementally
   extracted** — new UI code goes in the smallest plausible *new* module (`conventions.md ## Design
   decisions`), not back into `ui.py`.
 - **`ui_models.py`** — pydantic-ish `UINode` / `UINodeState` / `UIUniform` / `UIAppState` + node
   (de)serialization.
 - **`media.py`** — `Image` / `Video` (`MediaWithTexture` ABC), ffmpeg temporal smoothing.
-- **`sharing.py`** — `ShareProvider` ABC + `ShareManager`.
-- **`telegram_provider.py`** — Telegram sticker provider.
+- **`exporters/`** — `Exporter` ABC + `RenderedArtifact` value type (`base.py`), `ExporterRegistry`
+  (`registry.py`), `TelegramExporter` (`telegram.py` — own worker thread + asyncio loop + sticker
+  panel UI). Adding a new exporter: subclass `Exporter`, register in `App.__init__`. The
+  thread-affinity contract (worker thread MUST NOT touch moderngl) is enforced by design.
+- **`tabs/share.py`** — first real tab module extracted from `ui.py`. Pattern: free `draw()` +
+  optional `update()` + module-level `TabState` dataclass — see `conventions.md ## Design
+  decisions` for the convention all future `tabs/*.py` modules follow.
 - **`modelbox.py`** — thin HTTP client for the optional external ModelBox service.
 - **`fonts.py`** — freetype → GL atlas. **`ui_utils.py`** / **`constants.py`** / **`notifications.py`** — helpers.
 - **Node-dir data format:** a project lives in `<project>/nodes/<uuid>/{node.json, shader.frag.glsl,
   media/, textures/}` + `<project>/app_state.json`. The active-project pointer is
   `~/.local/share/shaderbox/project_dir`; templates ship under `shaderbox/resources/node_templates/`.
+  Exporter render-output scratch files live in `<project>/exporter_scratch/` (cleaned per export).
 
 ### Run the app
 `uv run python ./shaderbox/ui.py`. State lives in `~/.local/share/shaderbox/` + the active project's
@@ -156,10 +162,10 @@ The single canonical lint/typecheck command — delegates to `uv run pre-commit 
 ruff fix, ruff format, then **pyright** (chosen over mypy on purpose — fewer false positives, less
 friction; `[tool.pyright]` in `pyproject.toml`, basic mode). `.pre-commit-config.yaml` is the source
 of truth for the config. Run before declaring anything done. **Pyright is non-blocking for now** —
-the repo has pre-existing type debt (`ui.py`'s share-tab `hasattr`-dispatch — see
-`todo.md [DEFERRAL] three near-identical sticker models`), so the hook prints pyright's findings but
-`|| true`'s past a non-zero exit; re-tighten it (drop the `|| true`) once that refactor lands. Don't
-add *new* pyright errors in the meantime.
+the repo has pre-existing type debt across `ui.py`, `media.py`, `core.py`, `modelbox.py` (see
+`conventions.md ## Known quirks` and `todo.md [DEFERRAL] re-tighten pyright`), so the hook prints
+pyright's findings but `|| true`'s past a non-zero exit. Don't add *new* pyright errors in the
+meantime.
 
 ### Build / ship to itch.io
 `./build.sh` → `dist/shaderbox-{windows.zip,linux.tar.gz}` → `./upload-itch.sh` (needs `butler` + an

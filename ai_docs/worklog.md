@@ -22,6 +22,37 @@ Format per entry:
 
 ---
 
+## 2026-05-15 — feature 001 (exporter refactor) IMPLEMENTED end-to-end
+- Implemented per `ai_docs/features/001_exporter_refactor.md`: new `shaderbox/exporters/` subpkg
+  (`base.py` ABC + value types, `registry.py`, `telegram.py` ~740 lines — own worker thread + own
+  asyncio loop + own sticker-grid UI + ffmpeg prepare + mailbox progress); new
+  `shaderbox/tabs/share.py` (first `tabs/*.py` — sets the convention: free `draw()` + optional
+  `update()` + module-level `TabState`); deleted `shaderbox/{sharing,telegram_provider}.py`
+  (433 lines); modified `ui.py` (1778 → 1508, -270; deleted `draw_share_tab` + asyncio loop +
+  per-frame share preview + safe-wrapper) and `ui_models.py` (rename `share_provider_configs`
+  → `exporter_settings`, `active_share_provider` → `active_exporter_id`, added
+  `model_config = {"extra": "forbid"}`, `load_and_migrate` extended with new key-rename block
+  after the legacy `tg_*` block); updated `conventions.md` / `dev_flow.md` / `todo.md` /
+  `CLAUDE.md`. **Pyright 16 → 0 errors** (share-tab type debt fully cleaned up; broader debt
+  in `media.py` / `core.py` / `modelbox.py` parked under new `[DEFERRAL] re-tighten pyright`).
+- Two review rounds: 3 reviewers post-impl (code correctness, arch & conventions, spec-fidelity),
+  then 1 round-2 convergence reviewer after fixes. Convergent blockers fixed: removed banned
+  `from __future__ import annotations`, dropped banned `# type: ignore[union-attr]`, wrapped
+  `imgui.begin_child` in try/finally, cancellable shutdown drainage via
+  `loop.call_soon_threadsafe(task.cancel)`, cleanup on `prepare()` raise. Convergent majors
+  fixed: replaced `__media_dir` settings side-channel with `Exporter.set_media_dir()` ABC
+  method, `auth_state` → `@property`, relaxed Decision 15b from "no imports from media/core"
+  to "method affinity" (with spec amendment), `draw_config_ui()` no-args + new
+  `current_settings()` method, `rebind()` releases sticker GL handles, `_with_bot()` helper
+  for the 5 bot-init-shutdown copies, full `current_node: UINode | None` typing.
+- decisions (during impl, all amended into the spec's Review history): pyright re-tightening
+  de-scoped to a separate effort (filed as new deferral); import discipline is method-affinity
+  not import-affinity; `auth_state` is property not method; `draw_config_ui` is no-args mutating
+  self-state, not (settings)->settings; `set_media_dir()` ABC method beats settings side-channel.
+- refs: pending commit (one large commit covering feature + post-impl fixes + sanitize sweep);
+  `ai_docs/features/001_exporter_refactor.md` (Review history fully populated).
+- open thread: **see top entry below — picking next refactor target.**
+
 ## 2026-05-15 — exporter refactor spec drafted + plan-locked (backlog items 2 + 3)
 - Drafted `ai_docs/features/001_exporter_refactor.md` — first feature spec; high-blast-radius
   shape per `dev_flow.md`. Three parallel reviewers (domain-fit on YouTube/X/Telegram APIs,

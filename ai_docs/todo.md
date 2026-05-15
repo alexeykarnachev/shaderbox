@@ -28,27 +28,27 @@ Format:
 
 ---
 
-## [DEFERRAL] two near-identical sticker models — also gates re-tightening pyright
-- **Trigger:** next time you touch the share tab (`ui.py draw_share_tab`) or `telegram_provider.py`.
-- `TelegramShareableMedia` (`telegram_provider.py:16`) and `ShareableMedia` (`sharing.py:22`) both
-  model "video|image + preview_canvas + log_message". `draw_share_tab` does `hasattr`-driven dispatch
-  over them (`ui.py:1180,1192,1215,1232,1247,…`) and the provider `cast`s `TelegramShareableMedia` →
-  `ShareableMedia` (`telegram_provider.py:193,272`). Collapse to one model behind a real interface.
-  (Backlog item 4 — see worklog `open thread:`.) **When this lands: the ~16 pyright
-  `reportAttributeAccessIssue` errors in `ui.py` go away → drop the `|| true` from the pyright hook
-  in `.pre-commit-config.yaml` so it's blocking again** (see `conventions.md ## Known quirks`).
+## [DEFERRAL] blocking HTTP in the render loop (ModelBox)
+- **Trigger:** first user report of the ModelBox call freezing the UI, or next time you grep for
+  `requests.post` / edit `modelbox.py`.
+- `modelbox.infer_media_model` (`modelbox.py:52`) is synchronous `requests.post(timeout=600.0)`
+  called from the render thread → blocks the GL frame on a long inference. The Telegram half of
+  this deferral was resolved by feature 001 (worker-thread + mailbox in `exporters/telegram.py`);
+  ModelBox needs the same shape (worker thread + result queue) or to be made async.
 
-## [DEFERRAL] blocking asyncio / blocking HTTP in the render loop
-- **Trigger:** first user report of the share tab freezing the UI, or next time you grep for
-  `_loop.run_until_complete`.
-- `_loop.run_until_complete(...)` runs inside imgui-frame draw paths (`ui.py:276` refresh, `:1226`
-  delete, `:1294` upload) → blocks the GL frame on Telegram round-trips. ModelBox calls block too
-  (synchronous `requests` with `timeout=600.0`, `modelbox.py:52`). Move to a worker thread + result
-  queue, or drop async. (Backlog item 5.)
+## [DEFERRAL] re-tighten pyright
+- **Trigger:** when the cleanup backlog reaches a clean state (i.e. after `[DEFERRAL] split ui.py`
+  or whatever audit pass clears the remaining type debt).
+- The pyright pre-commit hook is `|| true`'d (`.pre-commit-config.yaml`) because of pre-existing
+  type debt across `ui.py`, `media.py`, `core.py`, `modelbox.py`. Feature 001 cleaned up the
+  share-tab `hasattr`-dispatch errors but other modules weren't audited. Drop the `|| true` once
+  a sweep brings the total to zero. Don't add new errors in the meantime.
 
-## [DEFERRAL] split `ui.py` (1778-line god-class)
+## [DEFERRAL] split `ui.py` (still ~1500-line god-class after feature 001)
 - **Trigger:** next time you add a tab or a reusable widget to `ui.py`.
-- One `App` class spanning `ui.py:62-1771`, 40+ methods. Extract `widgets.py` (the `draw_*_details`
-  family — `:1348,1385,1429`), `tabs/*.py` (Node / Render / Share), `hotkeys.py`, `project.py`. New
-  UI code should already go in the smallest plausible new module (`conventions.md ## Design decisions`).
-  (Backlog item 6 — likely run as a high-blast-radius feature, not a drive-by.)
+- `App` class spans ~1500 lines, 40+ methods (was 1778 before feature 001 extracted `tabs/share.py`).
+  Remaining extractions: `widgets.py` (the `draw_*_details` family), `tabs/render.py`, `tabs/node.py`,
+  `hotkeys.py`, `project.py`. New UI code should already go in the smallest plausible new module
+  (`conventions.md ## Design decisions`). The `tabs/*.py` pattern is set by `tabs/share.py` (free
+  `draw()` + optional `update()` + module-level `TabState`). Likely run as a high-blast-radius
+  feature, not a drive-by.

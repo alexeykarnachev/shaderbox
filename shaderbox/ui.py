@@ -1,4 +1,3 @@
-import asyncio
 import contextlib
 import platform
 import shutil
@@ -29,6 +28,8 @@ from shaderbox.constants import (
     VIDEO_EXTENSIONS,
 )
 from shaderbox.core import Canvas, UniformValue
+from shaderbox.exporters.registry import ExporterRegistry
+from shaderbox.exporters.telegram import TelegramExporter
 from shaderbox.media import (
     FileDetails,
     Image,
@@ -38,8 +39,7 @@ from shaderbox.media import (
     Video,
 )
 from shaderbox.notifications import Notifications
-from shaderbox.sharing import ShareConfiguration, ShareManager
-from shaderbox.telegram_provider import TelegramShareProvider
+from shaderbox.tabs import share as share_tab
 from shaderbox.ui_models import (
     UIAppState,
     UINode,
@@ -71,7 +71,6 @@ class App:
                 project_dir = self.default_project_dir
 
         glfw.init()
-        self._loop = asyncio.new_event_loop()
 
         monitor = glfw.get_primary_monitor()
         video_mode = glfw.get_video_mode(monitor)
@@ -103,7 +102,10 @@ class App:
         self.ui_nodes: dict[str, UINode] = {}
         self.ui_node_templates: dict[str, UINode] = {}
         self._ui_app_state = UIAppState()
-        self._share_manager = ShareManager()
+
+        self._exporter_registry = ExporterRegistry()
+        self._exporter_registry.register(TelegramExporter())
+        self._share_tab_state: share_tab.TabState | None = None
 
         self.modelbox_info: dict[str, Any] = {}
 
@@ -184,7 +186,6 @@ class App:
         self.frame_idx = 0
 
         self.ui_nodes.clear()
-        self._share_manager.media_list.clear()
 
         self.project_dir = self._create_dir_if_needed(project_dir)
         self.project_dir_file_path.write_text(str(self.project_dir))
@@ -200,32 +201,20 @@ class App:
         if self.app_state_file_path.exists():
             self._ui_app_state = UIAppState.load_and_migrate(self.app_state_file_path)
 
-        # Initialize share manager
-        self._init_share_manager()
-
-    def _init_share_manager(self) -> None:
-        """Initialize share manager with available providers"""
-        # Create telegram provider with configuration
-        telegram_config = ShareConfiguration(
-            provider_id="telegram",
-            display_name="Telegram Stickers",
-            settings=self._ui_app_state.share_provider_configs.get("telegram", {}),
-        )
-        telegram_provider = TelegramShareProvider(telegram_config, self.media_dir)
-        self._share_manager.register_provider(telegram_provider)
-
-        # Set active provider
-        if self._ui_app_state.active_share_provider:
-            self._share_manager.set_active_provider(
-                self._ui_app_state.active_share_provider
-            )
-
-        # Initialize with at least a new media slot
-        if not self._share_manager.media_list:
-            try:
-                self._share_manager.add_new_media()
-            except Exception as e:
-                logger.error(f"Failed to add initial media slot: {e}")
+        # ----------------------------------------------------------------
+        # Wire exporter registry to project state
+        scratch_dir = self._create_dir_if_needed(self.project_dir / "exporter_scratch")
+        if self._share_tab_state is None:
+            self._share_tab_state = share_tab.make_state(scratch_dir=scratch_dir)
+        else:
+            self._share_tab_state.scratch_dir = scratch_dir
+        for eid in self._exporter_registry.ids():
+            exporter = self._exporter_registry.get(eid)
+            if exporter is not None:
+                exporter.set_media_dir(self.media_dir)
+        self._exporter_registry.rebind(self._ui_app_state.exporter_settings)
+        if self._ui_app_state.active_exporter_id:
+            self._exporter_registry.set_active(self._ui_app_state.active_exporter_id)
 
     def fetch_modelbox_info(self) -> None:
         self.modelbox_info = {}
@@ -251,38 +240,6 @@ class App:
         )
         self.imgui_renderer.refresh_font_texture()
         return font
-
-    def refresh_share_media(self) -> None:
-        """Refresh media list from the active share provider"""
-
-        async def _refresh() -> None:
-            provider = self._share_manager.get_active_provider()
-            if provider:
-                if await provider.initialize():
-                    await self._share_manager.refresh_media()
-                    self._notifications.push(
-                        "Share media refreshed successfully!", (0.0, 1.0, 0.0)
-                    )
-                else:
-                    # Create an empty media list with just a new media slot
-                    self._share_manager.media_list = []
-                    self._share_manager.add_new_media()
-                    self._notifications.push(
-                        "Failed to initialize provider - check configuration",
-                        (1.0, 1.0, 0.0),
-                    )
-
-        try:
-            self._loop.run_until_complete(_refresh())
-        except Exception as e:
-            logger.error(f"Failed to refresh share media: {e}")
-            # Create an empty media list with just a new media slot
-            self._share_manager.media_list = []
-            try:
-                self._share_manager.add_new_media()
-            except Exception as add_error:
-                logger.error(f"Failed to add new media: {add_error}")
-            self._notifications.push(f"Error refreshing media: {e!s}", (1.0, 0.0, 0.0))
 
     def edit_current_node_fs_file(self) -> None:
         if not self.current_node_id:
@@ -361,13 +318,16 @@ class App:
         if self.current_node_id:
             self.save_ui_node(self.ui_nodes[self.current_node_id])
 
+        for eid in self._exporter_registry.ids():
+            exporter = self._exporter_registry.get(eid)
+            if exporter is not None:
+                self._ui_app_state.exporter_settings[eid] = exporter.current_settings()
+        self._ui_app_state.active_exporter_id = self._exporter_registry.active_id
+
         self._ui_app_state.save(self.app_state_file_path)
 
     def release(self) -> None:
-        # Release share media resources
-        for media in self._share_manager.media_list:
-            if hasattr(media, "release"):
-                media.release()
+        self._exporter_registry.release()
 
         for node in self.ui_nodes.values():
             node.node.release()
@@ -1077,234 +1037,6 @@ class App:
             self.preview_canvas.texture,
         )
 
-    def draw_share_tab(self) -> None:
-        # ----------------------------------------------------------------
-        # Provider selection
-        provider_names = [
-            self._share_manager.providers[pid].display_name
-            for pid in self._share_manager.get_provider_list()
-        ]
-
-        if provider_names:
-            current_provider = self._share_manager.get_active_provider()
-            current_idx = 0
-            if current_provider:
-                provider_ids = self._share_manager.get_provider_list()
-                current_idx = (
-                    provider_ids.index(current_provider.provider_id)
-                    if current_provider.provider_id in provider_ids
-                    else 0
-                )
-
-            changed, new_idx = imgui.combo(
-                "Share Provider", current_idx, provider_names
-            )
-            if changed and new_idx != current_idx:
-                provider_ids = self._share_manager.get_provider_list()
-                new_provider_id = provider_ids[new_idx]
-                self._share_manager.set_active_provider(new_provider_id)
-                self._ui_app_state.active_share_provider = new_provider_id
-
-        provider = self._share_manager.get_active_provider()
-        if not provider:
-            imgui.text("No share providers available")
-            return
-
-        imgui.spacing()
-        imgui.separator()
-
-        # ----------------------------------------------------------------
-        # Provider configuration
-        imgui.text_colored(
-            f"Configuration for {provider.display_name}", *(0.8, 0.8, 1.0)
-        )
-        imgui.text_colored(
-            "These settings will be stored in the project's files.",
-            *(1.0, 1.0, 0.0),
-        )
-
-        config_fields = provider.get_configuration_fields()
-        settings = self._ui_app_state.share_provider_configs.setdefault(
-            provider.provider_id, {}
-        )
-
-        for field in config_fields:
-            field_name = field["name"]
-            label = field["label"]
-
-            current_value = settings.get(field_name, "")
-
-            flags = 0
-            if field_name == "bot_token":
-                flags = imgui.INPUT_TEXT_PASSWORD
-            elif field_name == "user_id":
-                flags = imgui.INPUT_TEXT_CHARS_DECIMAL
-            elif field_name == "sticker_set_name":
-                flags = imgui.INPUT_TEXT_CHARS_NO_BLANK
-
-            _, new_value = imgui.input_text(label, current_value, flags=flags)
-            settings[field_name] = new_value
-
-        # Update provider configuration
-        provider.config.settings = settings
-        provider.config.is_configured = provider.validate_configuration()
-
-        if imgui.button("Refresh Media", width=100):
-            try:
-                self.refresh_share_media()
-            except Exception as e:
-                logger.error(f"Error refreshing media: {e}")
-                self._notifications.push(
-                    f"Error refreshing media: {e!s}", (1.0, 0.0, 0.0)
-                )
-
-        imgui.spacing()
-        imgui.separator()
-        imgui.spacing()
-
-        # ----------------------------------------------------------------
-        # Media grid and settings
-        available_width, available_height = imgui.get_content_region_available()
-        media_grid_width = 0.3 * available_width
-
-        imgui.begin_child(
-            "media_grid",
-            width=media_grid_width,
-            height=available_height,
-            border=True,
-        )
-
-        # Media previews
-        time = glfw.get_time()
-        for i, media in enumerate(self._share_manager.media_list):
-            if hasattr(media, "update"):
-                media.update(time)
-
-            n_styles = 0
-            if i == self._share_manager.selected_media_index:
-                color = (0.0, 1.0, 0.0, 1.0)
-                imgui.push_style_color(imgui.COLOR_BUTTON, *color)
-                imgui.push_style_color(imgui.COLOR_BUTTON_HOVERED, *color)
-                imgui.push_style_color(imgui.COLOR_BUTTON_ACTIVE, *color)
-                n_styles += 3
-
-            # Get texture for preview
-            if hasattr(media, "get_thumbnail_texture"):
-                texture = media.get_thumbnail_texture()
-                image_height = 90
-                image_width = image_height * texture.width // max(texture.height, 1)
-
-                if imgui.image_button(
-                    texture.glo,
-                    width=image_width,
-                    height=image_height,
-                    uv0=(0, 1),
-                    uv1=(1, 0),
-                ):
-                    self._share_manager.selected_media_index = i
-            else:
-                # Fallback for media without thumbnails
-                if imgui.button(f"Media {i + 1}", width=90, height=90):
-                    self._share_manager.selected_media_index = i
-
-            imgui.pop_style_color(n_styles)
-
-            # Delete button for existing media
-            imgui.same_line()
-            if (
-                hasattr(media, "_sticker")
-                and media._sticker
-                and imgui.button(f"Delete##{id(media)}")
-            ):
-
-                async def _delete(media_to_delete: Any = media) -> None:
-                    success = await provider.delete_media(media_to_delete)
-                    if success:
-                        await self._share_manager.refresh_media()
-
-                try:
-                    self._loop.run_until_complete(_delete())
-                except Exception as e:
-                    logger.error(f"Error deleting media: {e}")
-                    self._notifications.push(
-                        f"Error deleting media: {e!s}", (1.0, 0.0, 0.0)
-                    )
-            elif not hasattr(media, "_sticker") or not media._sticker:
-                imgui.text_colored("New media", *(0.5, 0.5, 0.5))
-
-            imgui.spacing()
-
-        imgui.end_child()
-
-        imgui.same_line()
-        imgui.begin_child("selected_media_settings", border=True)
-
-        # ----------------------------------------------------------------
-        # Selected media settings
-        selected_media = self._share_manager.get_selected_media()
-        if selected_media:
-            # Show source media details if available
-            if hasattr(selected_media, "video") and selected_media.video:
-                self.draw_media_details(
-                    details=selected_media.video.details, is_changeable=False
-                )
-            elif hasattr(selected_media, "image") and selected_media.image:
-                self.draw_media_details(
-                    details=selected_media.image.details, is_changeable=False
-                )
-
-            imgui.separator()
-
-            # Render settings
-            file_path = Path(selected_media.media_details.file_details.path)
-            if selected_media.media_details.is_video:
-                file_path = file_path.with_suffix(".webm")
-            else:
-                file_path = file_path.with_suffix(".webp")
-            selected_media.media_details.file_details.path = str(file_path)
-
-            selected_media.media_details = self.draw_media_details(
-                selected_media.media_details
-            )
-
-            # Render button
-            preview_texture = None
-            if hasattr(selected_media, "preview_canvas"):
-                preview_texture = selected_media.preview_canvas.texture
-
-            is_rendered, selected_media.media_details = self.draw_render_button(
-                selected_media.media_details,
-                preview_texture,
-            )
-
-            if is_rendered:
-                selected_media.update_log("Rendered successfully!")
-
-            # Upload button
-            if file_path.exists():
-                imgui.same_line()
-                if imgui.button("Upload##media"):
-
-                    async def _upload() -> None:
-                        success = await provider.upload_media(selected_media, file_path)
-                        if success:
-                            await self._share_manager.refresh_media()
-
-                    try:
-                        self._loop.run_until_complete(_upload())
-                    except Exception as e:
-                        logger.error(f"Error uploading media: {e}")
-                        self._notifications.push(
-                            f"Error uploading media: {e!s}", (1.0, 0.0, 0.0)
-                        )
-
-            # Show log message
-            imgui.text_colored(
-                selected_media.log_message.text, *selected_media.log_message.get_color()
-            )
-
-        imgui.end_child()
-
     def draw_render_button(
         self,
         details: MediaDetails,
@@ -1494,21 +1226,17 @@ class App:
                     imgui.end_tab_item()
 
                 if imgui.begin_tab_item("Share").selected:  # type: ignore
-                    self._draw_share_tab_safe()
+                    current_node = self.ui_nodes.get(self.current_node_id)
+                    if self._share_tab_state is not None:
+                        share_tab.draw(
+                            self._share_tab_state,
+                            self._exporter_registry,
+                            current_node,
+                            self._notifications.push,
+                        )
                     imgui.end_tab_item()
 
                 imgui.end_tab_bar()
-
-    def _draw_share_tab_safe(self) -> None:
-        """Safely draw share tab with error handling"""
-        try:
-            self.draw_share_tab()
-        except Exception as e:
-            logger.error(f"Error in share tab: {e}")
-            self._notifications.push(f"Error in share tab: {e!s}", (1.0, 0.0, 0.0))
-            # Show a minimal error message in the tab
-            imgui.text_colored("An error occurred in the share tab.", *(1.0, 0.0, 0.0))
-            imgui.text("Check the logs for more details.")
 
     def run(self) -> None:
         while not glfw.window_should_close(self.window):
@@ -1555,11 +1283,13 @@ class App:
             self.preview_canvas.set_size(preview_size)
             ui_node.node.render(canvas=self.preview_canvas)
 
-            # Render current share media preview
-            selected_media = self._share_manager.get_selected_media()
-            if selected_media and hasattr(selected_media, "preview_canvas"):
-                selected_media.preview_canvas.set_size(preview_size)
-                ui_node.node.render(canvas=selected_media.preview_canvas)
+            if self._share_tab_state is not None:
+                try:
+                    share_tab.update(
+                        self._share_tab_state, self._exporter_registry, ui_node
+                    )
+                except Exception as e:
+                    logger.exception(f"Error in share-tab update: {e}")
 
         # ----------------------------------------------------------------
         # Render nodes

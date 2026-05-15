@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import base64
 import json
 from pathlib import Path
@@ -28,15 +26,15 @@ class UIMessage(BaseModel):
         }[self.level]
 
     @classmethod
-    def success(cls, text: str = "") -> UIMessage:
+    def success(cls, text: str = "") -> Self:
         return cls(text=text, level="success")
 
     @classmethod
-    def warning(cls, text: str = "") -> UIMessage:
+    def warning(cls, text: str = "") -> Self:
         return cls(text=text, level="warning")
 
     @classmethod
-    def error(cls, text: str = "") -> UIMessage:
+    def error(cls, text: str = "") -> Self:
         return cls(text=text, level="error")
 
     def __repr__(self) -> str:
@@ -59,9 +57,7 @@ class UIUniform(BaseModel):
     model_config = {"arbitrary_types_allowed": True}
 
     @classmethod
-    def from_uniform(
-        cls, uniform: moderngl.Uniform | moderngl.UniformBlock
-    ) -> UIUniform:
+    def from_uniform(cls, uniform: moderngl.Uniform | moderngl.UniformBlock) -> Self:
         name = uniform.name
 
         if isinstance(uniform, moderngl.UniformBlock):
@@ -78,7 +74,7 @@ class UIUniform(BaseModel):
                 array_length=uniform.array_length,
             ).reset_input_type()
 
-    def reset_input_type(self) -> UIUniform:
+    def reset_input_type(self) -> Self:
         if self.is_ubo:
             self.input_type = "buffer"
         elif self.name in ("u_time", "u_aspect", "u_resolution"):
@@ -128,8 +124,8 @@ class UIAppState(BaseModel):
     new_node_name: str = ""
     is_render_all_nodes: bool = True
 
-    share_provider_configs: dict[str, dict[str, Any]] = {}
-    active_share_provider: str = "telegram"
+    exporter_settings: dict[str, dict[str, Any]] = {}
+    active_exporter_id: str = "telegram"
 
     media_model_idx: int = 0
 
@@ -138,20 +134,27 @@ class UIAppState(BaseModel):
     text_editor_cmd: str = ""
     modelbox_url: str = "http://localhost:8228/"
 
+    model_config = {"extra": "forbid"}
+
     def save(self, file_path: str | Path) -> None:
         app_state_dict = self.model_dump()
         with Path(file_path).open("w") as f:
             json.dump(app_state_dict, f, indent=4)
 
     @classmethod
-    def load_and_migrate(cls, file_path: str | Path) -> UIAppState:
-        """Load app state and migrate old telegram fields to new sharing format"""
+    def load_and_migrate(cls, file_path: str | Path) -> Self:
+        """Load app state with one-shot key migrations.
+
+        Two migration generations, both idempotent:
+          1. tg_* keys → share_provider_configs.telegram.* (legacy)
+          2. share_provider_configs → exporter_settings;
+             active_share_provider → active_exporter_id (this PR)
+        """
         with Path(file_path).open("r") as f:
             data = json.load(f)
 
-        # Migrate old telegram fields to new sharing format
         if any(key.startswith("tg_") for key in data):
-            telegram_config = {}
+            telegram_config: dict[str, Any] = {}
 
             if "tg_bot_token" in data:
                 telegram_config["bot_token"] = data.pop("tg_bot_token")
@@ -160,13 +163,17 @@ class UIAppState(BaseModel):
             if "tg_sticker_set_name" in data:
                 telegram_config["sticker_set_name"] = data.pop("tg_sticker_set_name")
 
-            # Remove old telegram video details field
             data.pop("tg_sticker_video_details", None)
 
             if telegram_config:
                 data.setdefault("share_provider_configs", {})
                 data["share_provider_configs"]["telegram"] = telegram_config
                 data.setdefault("active_share_provider", "telegram")
+
+        if "share_provider_configs" in data:
+            data["exporter_settings"] = data.pop("share_provider_configs")
+        if "active_share_provider" in data:
+            data["active_exporter_id"] = data.pop("active_share_provider")
 
         return cls(**data)
 

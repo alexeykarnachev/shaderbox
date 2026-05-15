@@ -39,9 +39,10 @@ where they're needed. `conventions.md` is auto-loaded below.
 - **`uv`, not `python`/`pip`:** `uv sync`, `uv add <pkg>`, `uv add --group dev <pkg>` (this repo uses
   `[dependency-groups] dev`), `uv run …`.
 - **Run `make check` before declaring anything done** — ruff fix+format → pyright (delegates to
-  `pre-commit run --all-files`). If ruff fails, fix it. Pyright is **non-blocking for now** (the repo
-  has pre-existing type debt — `ui.py`'s share-tab dispatch); its findings print but don't fail the
-  commit. Don't *add* new pyright errors. (`dev_flow.md ## Recipes` has the details.)
+  `pre-commit run --all-files`). If ruff fails, fix it. Pyright is **non-blocking for now** (pre-
+  existing type debt across `ui.py` / `media.py` / `core.py` / `modelbox.py`; the share-tab debt
+  was cleaned up by feature 001); its findings print but don't fail the commit. Don't *add* new
+  pyright errors. (`dev_flow.md ## Recipes` has the details.)
 - **Don't sidestep a convention.** A convention collision means the design is wrong — fix the design,
   don't `# noqa` / `# type: ignore` / inline-import past it. *The one sanctioned exception:* `# type:
   ignore` scoped to `imgui.*` calls (pyimgui's stubs genuinely lack symbols) — see
