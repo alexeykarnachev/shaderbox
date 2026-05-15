@@ -84,6 +84,10 @@ SANITIZE:
 - tooling: <nothing this session / suggested: ... / applied: ...>
 ```
 
+Then one final line — `/clear` readiness:
+- Ready: **Ready to `/clear`** — fresh agent resumes from: <quote open-thread verbatim>.
+- Not ready: **Not ready to `/clear`** — <one-phrase blocker>.
+
 ## What NOT to do
 
 - Don't rewrite docs wider than the work requires.
