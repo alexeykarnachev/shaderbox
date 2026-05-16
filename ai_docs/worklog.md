@@ -65,7 +65,7 @@ Format per entry:
 - Deferrals filed in `todo.md`: features 006 (embedded GLSL editor — PR 5), 007
   (Node tab restructure — PR 6), 008 (inline shader-error banner — PR 7), 009
   (Tweaks panel — PR 8). Each has a concrete trigger.
-- refs: squash-merged to master as `<SHA>` "feature 005: UI/UX redesign
+- refs: squash-merged to master as `194aa0f` "feature 005: UI/UX redesign
   foundation". Feature branch deleted. Pushed.
 - open thread: **feature 006 (embedded GLSL editor) is the next natural feature
   to pick up, but trigger is "when the placeholder feels like friction in daily
