@@ -138,7 +138,7 @@ Filter-format translation:
 - pfd: `filters=["Image Files", "*.png *.jpg"]` (alternating label/pattern pairs, space-
   separated within a pattern). Adapt the 1 call site in `widgets/uniform.py`.
 
-### 7. Window flags BREAKING (enum form); modifier keys + font loading unchanged
+### 7. Window flags BREAKING (enum form); modifier keys unchanged
 - **Window flags**: imgui-bundle exposes `WindowFlags_(enum.IntFlag)` with snake_case members.
   pyimgui's UPPER_CASE module-level constants (`imgui.WINDOW_NO_COLLAPSE`,
   `imgui.WINDOW_ALWAYS_AUTO_RESIZE`, `imgui.WINDOW_NO_TITLE_BAR`, `imgui.WINDOW_NO_SCROLLBAR`,
@@ -147,14 +147,15 @@ Filter-format translation:
   `ui.py:138-142` (the main window's `imgui.begin(flags=...)` call).
 - **Modifier keys**: `imgui.get_io().key_ctrl`, `io.key_alt`, `io.key_shift` — same `IO`
   attribute surface, unchanged.
-- **Font loading**: `fonts.add_font_from_file_ttf(path, size_pixels=..., glyph_ranges=...)` +
-  `imgui_renderer.refresh_font_texture()` — identical API. `App.get_font()` migrates verbatim.
 
 **Source**: imgui-bundle pyi stub
 (https://raw.githubusercontent.com/pthom/imgui_bundle/main/bindings/imgui_bundle/imgui/__init__.pyi)
 grep'd directly for `WindowFlags_` — confirms `class WindowFlags_(enum.IntFlag)` with snake_case
 members; NO module-level `WINDOW_*` aliases. (Spike round 1 missed this; pre-impl review
 caught it.)
+
+(Font loading covered separately in Decision 10 below — Dear ImGui 1.92 reworked the font
+system; the spike's "identical API" claim was wrong.)
 
 ### 8. Strip the imgui-related `# type: ignore` markers; fix underlying types
 **Scope**: 20 `# type: ignore` markers currently in the codebase, but only **8 are imgui-
@@ -187,6 +188,83 @@ also updated.
 **Non-goal**: this feature is NOT a general type-debt sweep. The 12 non-imgui ignores stay
 untouched. If post-migration audit suggests fixing them is cheap, file a separate
 `[DEFERRAL]` with a concrete trigger.
+
+### 10. Font system rewritten in Dear ImGui 1.92 (BREAKING — spike missed)
+Pre-impl validation against the installed `imgui-bundle 1.92.801` pyi surfaced three font-API
+breaks that the spike round 1 + 2 missed (it cited the pre-1.92 shape).
+
+- **`imgui.push_font(font)` → `imgui.push_font(font, font_size_base_unscaled)`** — second arg
+  is now **required** (an `Optional[float]` size; pass `0.0` to keep current). The pyi comment
+  warns against passing `get_font_size()` because global scaling would apply twice. **Rewrite**:
+  `imgui.push_font(app.font_14)` → `imgui.push_font(app.font_14, 14.0)`. Pass the raw
+  rasterized size (the value originally passed to `add_font_from_file_ttf`'s `size_pixels`).
+  Sites: `ui.py:93` (font_14 base push) and `ui.py:205` (font_18 for notifications).
+
+- **`fonts.get_glyph_ranges_cyrillic()` + `glyph_ranges=` kwarg REMOVED** — Dear ImGui 1.92
+  switched to dynamic on-demand glyph loading driven by
+  `ImGuiBackendFlags_RendererHasTextures`. The flag is set automatically by the
+  imgui-bundle renderer (`opengl_base_backend.py BaseOpenGLRenderer.__init__` line 26).
+  Cyrillic glyphs load on first render. **Rewrite**: drop the `glyph_ranges=` kwarg
+  entirely from `App.get_font()`; no replacement call needed. (Direct pyi quote at
+  `ImFontAtlas` class docstring line 11179: *"Since 1.92: specifying glyph ranges is only
+  useful/necessary if your backend doesn't support ImGuiBackendFlags_RendererHasTextures"*.)
+
+- **`imgui_renderer.refresh_font_texture()` REMOVED from renderer** — same dynamic-texture
+  rework; textures self-update each frame inside `render()`. The method does not exist on
+  `GlfwRenderer` / `ProgrammablePipelineRenderer` / `BaseOpenGLRenderer`. **Rewrite**: delete
+  the `self.imgui_renderer.refresh_font_texture()` call from `App.get_font()`.
+
+**Resulting `App.get_font()` body shrinks to**:
+```python
+def get_font(self, size: int) -> Any:
+    fonts = imgui.get_io().fonts
+    return fonts.add_font_from_file_ttf(
+        str(RESOURCES_DIR / "fonts" / "Anonymous_Pro" / "AnonymousPro-Regular.ttf"),
+        size_pixels=size,
+    )
+```
+And each `push_font` call site stores the rasterized size or passes a literal alongside the
+font handle.
+
+**Source**: imgui-bundle `imgui/__init__.pyi` lines 1064-1067 (push_font signature), 11179
+(dynamic-glyph comment), 11191-11193 (add_font_from_file_ttf signature), plus
+`python_backends/opengl_base_backend.py` line 26 (backend_flags self-set).
+
+### 11. pfd's poll-based dialog handles + blocking helper
+crossfiledialog's `choose_folder()` / `open_file()` / `save_file()` are **blocking** calls —
+they return the result string directly. pfd's `select_folder` / `open_file` / `save_file` are
+**classes** that construct a non-blocking native-dialog handle and expose `.ready(timeout_ms)`
++ `.result()`.
+
+The current call sites (`app.py::open_project`, `widgets/uniform.py`, `widgets/details.py`)
+treat the dialog as a synchronous one-shot. Preserving that shape minimizes blast radius and
+keeps the migration localized. **Add a small blocking helper** in `shaderbox/ui_utils.py`
+(module is already imgui-free per pre-impl audit, so no new cycle):
+
+```python
+def pfd_block(dialog: Any) -> Any:
+    \"\"\"Spin until a pfd dialog handle becomes ready, then return .result().
+    crossfiledialog blocked internally; pfd exposes the polling loop. The OS native
+    dialog runs in its own process; we just wait.\"\"\"
+    while not dialog.ready(20):
+        pass
+    return dialog.result()
+```
+
+Call sites become:
+- `app.py::open_project` — `pfd_block(pfd.select_folder("Open project", default_path=start_dir))`
+- `widgets/uniform.py` — `pfd_block(pfd.open_file(title, default_path=".", filters=[...]))[0]`
+  (returns `list[str]`; first item or empty)
+- `widgets/details.py` — `pfd_block(pfd.save_file(title, default_path="."))`
+  (returns `str`)
+
+**Source**: imgui-bundle official `demo_widgets.py:215-265` (canonical pfd usage pattern,
+poll-based), `portable_file_dialogs.pyi:102-164` (handle class signatures), `default_wait_timeout
+= 20` ms.
+
+**Trigger to revisit**: if a dialog stalls the imgui frame visibly on Linux (zenity/kdialog
+fork can spike), promote to the async poll-per-frame pattern shown in the demo. For now the
+synchronous shape mirrors current behavior.
 
 ### 9. Single feature branch, single coherent landing
 Per locked staging decision: work on `feature/imgui-bundle-migration` (branched from master).
@@ -240,8 +318,9 @@ branch on master (`git rebase origin/master`) before final merge — handles con
 **Out of files-touched (audited, confirmed no imgui calls):**
 - `shaderbox/fonts.py` — freetype glyph-atlas for the in-shader text-rendering shader, NOT
   imgui font. Zero imgui imports. (Originally listed in the spec draft; reviewer 1 caught this.)
-- `shaderbox/ui_utils.py` — no `imgui.*` calls (one moderngl-related `# type: ignore` here is
-  NOT in scope per Decision 8).
+- `shaderbox/ui_utils.py` — no `imgui.*` calls. Gets a new `pfd_block(dialog)` helper per
+  Decision 11 (pure-stdlib polling loop, no imgui import added). The pre-existing moderngl-
+  related `# type: ignore` here is NOT in scope per Decision 8.
 
 **Config:**
 - `pyproject.toml` — `uv remove imgui crossfiledialog` then `uv add imgui-bundle`. Verify
@@ -507,5 +586,32 @@ reviewer). Verdict-per-iter2-patch:
 `/tmp/review_004_iter3.md`. Three rounds of review surfaced 1 BLOCKER spike-missed
 (`text_colored` arg-swap), 1 BLOCKER spike-missed (WindowFlags enum form), 3 MAJOR
 verification gaps, and 5 MINOR clarifications. None blocked plan-lock; all patched in spec.
+
+**Pre-impl validation 0b/0c execution** (2026-05-16, during step 1 of impl). Validations
+PASS structurally but surfaced 4 new spec gaps from Dear ImGui 1.92's font/dialog rework
+that the prior 3 review rounds missed (the convergence loop verified API decisions against
+the upstream pyi via WebFetch, but did not install the package and grep the actual installed
+1.92.801 stubs). Findings:
+
+- **BLOCKER**: `imgui.push_font(font)` now requires `(font, font_size_base_unscaled)` —
+  second arg mandatory. Decision 10 added with full rewrite recipe for `ui.py:93,205`.
+- **BLOCKER**: `fonts.get_glyph_ranges_cyrillic()` + `glyph_ranges=` kwarg removed in
+  1.92 (dynamic on-demand glyph loading driven by `RendererHasTextures` backend flag,
+  set automatically by imgui-bundle's `BaseOpenGLRenderer.__init__`). Decision 10 has the
+  shrunk `App.get_font()` body. No replacement call needed.
+- **BLOCKER**: `imgui_renderer.refresh_font_texture()` removed from renderer. Decision 10
+  says delete the call.
+- **MAJOR**: pfd's `open_file` / `save_file` / `select_folder` are non-blocking class
+  handles, not blocking functions. Decision 11 added with a `pfd_block(dialog)` helper
+  in `ui_utils.py` to preserve crossfiledialog's synchronous call-site shape (the
+  zero-blast-radius option).
+
+Decisions 7 + 6 cross-referenced: Decision 7 trimmed (font-loading bullet moved to 10);
+Decision 6 stays valid (filter format unchanged) but the call-site shapes are now spelled
+out under Decision 11. Out-of-files-touched note updated for the `ui_utils.py` helper.
+Spec patched in same commit on `feature/imgui-bundle-migration` before any production code
+moves. Lesson: pre-impl convergence reviews must include an "install + grep" pass, not just
+upstream-fetch verification — frozen training data on imgui 1.91 vs. live 1.92.801 release
+caused the miss.
 
 **Post-impl review**: to be filled.

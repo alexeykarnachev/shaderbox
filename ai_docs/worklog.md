@@ -22,6 +22,62 @@ Format per entry:
 
 ---
 
+## 2026-05-16 — feature 004 (pyimgui → imgui-bundle migration) IMPLEMENTED
+- Spec: `ai_docs/features/004_imgui_bundle_migration.md`. 5 commits on
+  `feature/imgui-bundle-migration`: spec patch (`3c6b6e7`) + boot/frame-loop/hotkeys
+  (`1db7209`) + remaining widgets/popups/tabs/exporters (`16bdfee`) + docs
+  (`7a31202`) + convergence-iter2 fix (`6cf1d95`). 22 files, +539/-380.
+- Pre-impl validation 0b/0c surfaced 4 spec gaps the 3-round convergence review had
+  missed (the prior reviews fetched the upstream pyi via WebFetch but didn't install
+  + grep the actual `1.92.801` stubs):
+  - `push_font(font)` now requires `(font, size)` — 2 args mandatory.
+  - `get_glyph_ranges_cyrillic()` + `glyph_ranges=` kwarg REMOVED (1.92 dynamic
+    on-demand glyph loading via `BackendFlags_.renderer_has_textures`).
+  - `imgui_renderer.refresh_font_texture()` REMOVED.
+  - pfd `open_file`/`save_file`/`select_folder` are non-blocking class handles, not
+    blocking functions — needed a `pfd_block(dialog)` helper to preserve the
+    crossfiledialog synchronous call-site shape.
+  Patched as new Decisions 10 + 11 in the spec (commit `3c6b6e7`) before any
+  production code moved. Lesson: pre-impl convergence reviews must include an
+  "install + grep" pass, not just upstream-fetch — frozen training data on
+  imgui 1.91 vs. live 1.92.801 caused the miss.
+- Additional 1.92 breaks found during impl (not in spec; handled inline):
+  `imgui.image()` lost `tint_col`/`border_col` (moved to `image_with_bg`);
+  `is_key_pressed(ord("O"))` → `is_key_pressed(imgui.Key.o)`; `COLOR_TEXT` /
+  `WINDOW_NO_SCROLLBAR` / `INPUT_TEXT_PASSWORD` etc. all moved to namespaced
+  enums (`Col_.text`, `WindowFlags_.no_scrollbar`, `InputTextFlags_.password`);
+  `image_button` requires explicit `str_id` first arg; `imgui.begin` returns a
+  tuple — `imgui_ctx.begin` is the ctx-mgr wrapper; `imgui_ctx.begin_child`
+  requires `size: ImVec2` (strict), not bare tuples — must wrap as
+  `imgui.ImVec2(w, h)`. Captured in `conventions.md ## Known quirks`.
+- Post-impl review: 3 parallel adversarial reviewers (correctness +
+  architecture + spec-fidelity). Iter1: 1 PASS, 2 PARTIAL — correctness MINOR
+  (5 `begin_child`/`end_child` pairs missed Decision 5 ctx-mgr migration),
+  architecture MAJOR (notifications.py rewrite to dataclass violated spec
+  out-of-scope "stays as-is"). Iter2 patch (`6cf1d95`): migrated all 5
+  `begin_child` sites + reverted notifications.py to minimal diff (only import
+  swap + line-42 `text_colored` arg swap). Iter2 both PASS — CONVERGED.
+- `# type: ignore` audit: 20 markers on master → 8 on branch. The 12 imgui-related
+  markers stripped cleanly; the 6 non-imgui survivors (`moderngl.gl_type`,
+  `freetype.load_char`, `pydantic.model_validator`) untouched per Decision 8.
+  The CLAUDE.md "imgui exception" line + `conventions.md ## Known quirks` bullet
+  rewritten — imgui-bundle's stubs are complete, exception retired.
+- `make check`: 0 errors, 3 `reportMissingModuleSource` warnings on
+  `portable_file_dialogs` (`.pyi`-only stub, harmless, documented as a known
+  quirk). `make smoke`: 200 frames, exit 0, diff vs
+  `/tmp/smoke_baseline_pyimgui.log` is timestamps only.
+- Filed deferrals: `hello_imgui.apply_theme()` themes + `imgui-knobs` rotary
+  knobs — both rejected from this feature's scope to bound blast radius, both
+  trigger at the start of the planned UI/UX refactor with custom themes.
+- refs: 5 commits on `feature/imgui-bundle-migration`, awaiting squash-merge
+  to master after manual UX sweep clears.
+- open thread: **manual UX sweep (spec gates 3-13) is the last gate before
+  squash-merge to master.** The 13-step procedure lives in `ai_docs/features/
+  004_imgui_bundle_migration.md ## Manual verification`. After sweep clears:
+  `git rebase origin/master` (if conflicts) → squash-merge to master as one
+  commit "feature 004: migrate to imgui-bundle". If sweep finds bugs, fix on
+  the feature branch first.
+
 ## 2026-05-16 — feature 004 (pyimgui → imgui-bundle migration) PLAN-LOCKED, ready to implement
 - Spec: `ai_docs/features/004_imgui_bundle_migration.md` — large feature, high blast radius.
   9 locked design decisions, every API choice citation-verified against official imgui-bundle

@@ -1,15 +1,15 @@
 from collections.abc import Sequence
 from pathlib import Path
 
-import crossfiledialog
-import imgui
 import numpy as np
+from imgui_bundle import imgui
+from imgui_bundle import portable_file_dialogs as pfd
 from loguru import logger
 
 from shaderbox.app import App
 from shaderbox.constants import IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
 from shaderbox.media import FileDetails, MediaDetails, ResolutionDetails
-from shaderbox.ui_utils import adjust_size
+from shaderbox.ui_utils import adjust_size, pfd_block
 
 
 def draw_file_details(
@@ -20,11 +20,9 @@ def draw_file_details(
 ) -> FileDetails:
     details = details.model_copy()
 
-    file_path = None
+    file_path: str | None = None
     if is_changeable and imgui.button("File:##file_path"):
-        file_path = crossfiledialog.save_file(
-            title="File path",
-        )
+        file_path = pfd_block(pfd.save_file("File path", default_path="."))
         if file_path:
             extension = Path(file_path).suffix
             if extensions and extension not in extensions:
@@ -39,13 +37,13 @@ def draw_file_details(
 
     imgui.same_line()
     if details.path:
-        imgui.text_colored(str(details.path), 0.5, 0.5, 0.5)
+        imgui.text_colored((0.5, 0.5, 0.5, 1.0), str(details.path))
         imgui.text(f"File size: {details.size // 1024} KB")
     else:
         text = "Select file path"
         if extensions:
             text += f" ({', '.join(extensions)})"
-        imgui.text_colored(text, 0.5, 0.5, 0.5)
+        imgui.text_colored((0.5, 0.5, 0.5, 1.0), text)
 
     return details
 
@@ -66,17 +64,17 @@ def draw_resolution_details(
         return details
 
     is_width_changed, new_width = imgui.drag_int(
-        "Width", details.width, min_value=16, max_value=2560
+        "Width", details.width, v_min=16, v_max=2560
     )
     is_height_changed, new_height = imgui.drag_int(
-        "Height", details.height, min_value=16, max_value=2560
+        "Height", details.height, v_min=16, v_max=2560
     )
 
     if aspect is not None:
         if is_height_changed:
-            new_width = new_height * aspect
+            new_width = int(new_height * aspect)
         elif is_width_changed:
-            new_height = new_width / aspect
+            new_height = int(new_width / aspect)
 
     details.width = new_width
     details.height = new_height
@@ -124,15 +122,15 @@ def draw_media_details(
             details.quality,
             items=["low", "medium-low", "medium-high", "high"],
         )[1]
-        details.fps = imgui.drag_int(
-            "FPS##video_fps", details.fps, min_value=10, max_value=60
-        )[1]
+        details.fps = imgui.drag_int("FPS##video_fps", details.fps, v_min=10, v_max=60)[
+            1
+        ]
         details.duration = imgui.drag_float(
             "Duration, sec##video_duration",
             details.duration,
-            change_speed=0.1,
-            min_value=1.0,
-            max_value=60.0,
+            v_speed=0.1,
+            v_min=1.0,
+            v_max=60.0,
         )[1]
     elif details.is_video:
         imgui.text(f"FPS: {details.fps}")

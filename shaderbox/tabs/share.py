@@ -1,7 +1,7 @@
 from pathlib import Path
 from uuid import uuid4
 
-import imgui
+from imgui_bundle import imgui, imgui_ctx
 from loguru import logger
 
 from shaderbox.app import App
@@ -29,7 +29,7 @@ def draw(app: App) -> None:
     except Exception as e:
         logger.exception("Error in share tab")
         app.notifications.push(f"Error in share tab: {e!s}", (1.0, 0.0, 0.0))
-        imgui.text_colored("An error occurred in the share tab.", *(1.0, 0.0, 0.0))
+        imgui.text_colored((1.0, 0.0, 0.0, 1.0), "An error occurred in the share tab.")
         imgui.text("Check the logs for more details.")
 
 
@@ -64,10 +64,12 @@ def _draw_inner(app: App) -> None:
     imgui.separator()
     imgui.spacing()
 
-    imgui.text_colored(f"Configuration for {exporter.display_name}", *(0.8, 0.8, 1.0))
     imgui.text_colored(
+        (0.8, 0.8, 1.0, 1.0), f"Configuration for {exporter.display_name}"
+    )
+    imgui.text_colored(
+        (1.0, 1.0, 0.0, 1.0),
         "These settings are stored in the project's app_state.json.",
-        *(1.0, 1.0, 0.0),
     )
     exporter.draw_config_ui()
 
@@ -75,23 +77,21 @@ def _draw_inner(app: App) -> None:
     imgui.separator()
     imgui.spacing()
 
-    available_width, available_height = imgui.get_content_region_available()
+    avail = imgui.get_content_region_avail()
+    available_width = avail.x
+    available_height = avail.y
     left_width: float = 0.4 * available_width
 
-    imgui.begin_child(
-        "share_left", width=left_width, height=available_height, border=True
-    )
-    try:
+    with imgui_ctx.begin_child(
+        "share_left",
+        size=imgui.ImVec2(left_width, available_height),
+        child_flags=imgui.ChildFlags_.borders,
+    ):
         _draw_render_panel(state, current_node)
-    finally:
-        imgui.end_child()
 
     imgui.same_line()
-    imgui.begin_child("share_right", border=True)
-    try:
+    with imgui_ctx.begin_child("share_right", child_flags=imgui.ChildFlags_.borders):
         exporter.draw_target_panel(state.current_artifact, current_node)
-    finally:
-        imgui.end_child()
 
 
 def _draw_render_panel(state: TabState, current_node: UINode | None) -> None:
@@ -102,25 +102,25 @@ def _draw_render_panel(state: TabState, current_node: UINode | None) -> None:
         state.media_details.is_video = is_video
 
     state.media_details.fps = imgui.drag_int(
-        "FPS", state.media_details.fps, min_value=10, max_value=60
+        "FPS", state.media_details.fps, v_min=10, v_max=60
     )[1]
     state.media_details.duration = imgui.drag_float(
         "Duration (s)",
         state.media_details.duration,
-        change_speed=0.1,
-        min_value=0.1,
-        max_value=10.0,
+        v_speed=0.1,
+        v_min=0.1,
+        v_max=10.0,
     )[1]
 
     if current_node is None:
-        imgui.text_colored("Select a node to render.", *(1.0, 1.0, 0.0))
+        imgui.text_colored((1.0, 1.0, 0.0, 1.0), "Select a node to render.")
         return
 
     canvas_size: tuple[int, int] = current_node.node.canvas.texture.size
     state.media_details.resolution_details.width = canvas_size[0]
     state.media_details.resolution_details.height = canvas_size[1]
 
-    if imgui.button("Render", width=120):
+    if imgui.button("Render", size=(120, 0)):
         _render_into_state(state, current_node)
 
     artifact: RenderedArtifact | None = state.current_artifact

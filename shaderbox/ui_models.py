@@ -4,8 +4,8 @@ from pathlib import Path
 from typing import Any, Literal, Self
 from uuid import uuid4
 
-import imgui
 import moderngl
+from imgui_bundle import imgui, imgui_ctx
 from loguru import logger
 from OpenGL.GL import GL_SAMPLER_2D
 from pydantic import BaseModel, model_validator
@@ -98,11 +98,11 @@ class UIUniform(BaseModel):
 
         return self
 
-    def get_ui_height(self) -> int:
+    def get_ui_height(self) -> float:
         if self.input_type == "drag":
-            return 5 + imgui.get_text_line_height_with_spacing()  # type: ignore
+            return 5 + imgui.get_text_line_height_with_spacing()
         else:
-            return imgui.get_text_line_height_with_spacing()  # type: ignore
+            return imgui.get_text_line_height_with_spacing()
 
 
 class UINodeState(BaseModel):
@@ -275,48 +275,44 @@ class UINode(BaseModel):
     ) -> bool:
         n_styles = 0
         if border_color is not None:
-            imgui.push_style_color(imgui.COLOR_BORDER, *border_color)
+            imgui.push_style_color(imgui.Col_.border, (*border_color, 1.0))
             n_styles += 1
 
         text = self.ui_state.ui_name
         text_size = imgui.calc_text_size(text)
 
         label = f"node_preview_{id(self)}"
-        imgui.begin_child(
-            label,
-            width=size,
-            height=size + text_size.y,
-            border=True,
-            flags=imgui.WINDOW_NO_SCROLLBAR | imgui.WINDOW_NO_SCROLL_WITH_MOUSE,
-        )
-
-        imgui.pop_style_color(n_styles)
-
         is_clicked = False
-        if imgui.invisible_button(f"{label}##button", width=size, height=size):
-            is_clicked = True
+        with imgui_ctx.begin_child(
+            label,
+            size=imgui.ImVec2(size, size + text_size.y),
+            child_flags=imgui.ChildFlags_.borders,
+            window_flags=imgui.WindowFlags_.no_scrollbar
+            | imgui.WindowFlags_.no_scroll_with_mouse,
+        ):
+            imgui.pop_style_color(n_styles)
 
-        s = (size - 10) / max(self.node.canvas.texture.size)
-        image_width = self.node.canvas.texture.size[0] * s
-        image_height = self.node.canvas.texture.size[1] * s
+            if imgui.invisible_button(f"{label}##button", (size, size)):
+                is_clicked = True
 
-        imgui.set_cursor_pos_x((size - image_width) / 2 - 1)
-        imgui.set_cursor_pos_y((size - image_height) / 2 - 1)
+            s = (size - 10) / max(self.node.canvas.texture.size)
+            image_width = self.node.canvas.texture.size[0] * s
+            image_height = self.node.canvas.texture.size[1] * s
 
-        imgui.image(
-            self.node.canvas.texture.glo,
-            width=image_width,
-            height=image_height,
-            uv0=(0, 1),
-            uv1=(1, 0),
-        )
+            imgui.set_cursor_pos_x((size - image_width) / 2 - 1)
+            imgui.set_cursor_pos_y((size - image_height) / 2 - 1)
 
-        imgui.set_cursor_pos_x((size - text_size.x) / 2)
-        imgui.set_cursor_pos_y(size - text_size.y / 2)
+            imgui.image(
+                imgui.ImTextureRef(self.node.canvas.texture.glo),
+                image_size=(image_width, image_height),
+                uv0=(0, 1),
+                uv1=(1, 0),
+            )
 
-        imgui.text(text)
+            imgui.set_cursor_pos_x((size - text_size.x) / 2)
+            imgui.set_cursor_pos_y(size - text_size.y / 2)
 
-        imgui.end_child()
+            imgui.text(text)
 
         return is_clicked
 

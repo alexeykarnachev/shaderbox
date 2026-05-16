@@ -1,7 +1,7 @@
 from uuid import uuid4
 
-import imgui
 import pyperclip
+from imgui_bundle import imgui, imgui_ctx
 from OpenGL.GL import GL_SAMPLER_2D
 
 from shaderbox.app import App
@@ -20,7 +20,7 @@ def draw(app: App) -> None:
     full_file_path = app.nodes_dir / ui_node.id / "shader.frag.glsl"
     local_file_path = full_file_path.relative_to(app.project_dir)
 
-    imgui.push_style_color(imgui.COLOR_TEXT, *(0.5, 0.5, 0.5))
+    imgui.push_style_color(imgui.Col_.text, (0.5, 0.5, 0.5, 1.0))
     if imgui.selectable(str(local_file_path), False)[0]:
         pyperclip.copy(str(full_file_path))
         app.notifications.push("Copied to clipboard!")
@@ -30,11 +30,11 @@ def draw(app: App) -> None:
     ui_node.ui_state.ui_name = imgui.input_text("Name", ui_node.ui_state.ui_name)[1]
     imgui.spacing()
 
-    if imgui.button("Edit code", width=80):
+    if imgui.button("Edit code", size=(80, 0)):
         app.edit_current_node_fs_file()
 
     imgui.same_line()
-    if imgui.button("Open dir", width=80):
+    if imgui.button("Open dir", size=(80, 0)):
         app.open_current_node_dir()
 
     imgui.same_line()
@@ -95,7 +95,9 @@ def draw(app: App) -> None:
 
     if matching_uniforms:
         imgui.same_line()
-        imgui.text_colored("(" + ", ".join(matching_uniforms) + ")", 0.5, 0.5, 0.5)
+        imgui.text_colored(
+            (0.5, 0.5, 0.5, 1.0), "(" + ", ".join(matching_uniforms) + ")"
+        )
 
     node_ui_state = app.current_node_ui_state_or_default
     node_ui_state.resolution_idx = imgui.combo(
@@ -125,22 +127,20 @@ def draw(app: App) -> None:
         if hash not in ui_uniforms:
             ui_uniforms[hash] = UIUniform.from_uniform(uniform)
 
-    imgui.begin_child(
+    with imgui_ctx.begin_child(
         "ui_uniforms",
-        width=imgui.get_content_region_available_width() // 2,
-    )
-
-    imgui.push_style_color(imgui.COLOR_SEPARATOR, *(0.15, 0.15, 0.15))
-    for hash in active_uniform_hashes:
-        draw_ui_uniform(app, ui_uniforms[hash])
-        imgui.spacing()
-        imgui.separator()
-    imgui.pop_style_color()
-
-    imgui.end_child()
+        size=imgui.ImVec2(imgui.get_content_region_avail().x // 2, 0),
+    ):
+        imgui.push_style_color(imgui.Col_.separator, (0.15, 0.15, 0.15, 1.0))
+        for hash in active_uniform_hashes:
+            draw_ui_uniform(app, ui_uniforms[hash])
+            imgui.spacing()
+            imgui.separator()
+        imgui.pop_style_color()
 
     if node_ui_state.selected_uniform_name:
         imgui.same_line()
-        imgui.begin_child("selected_uniform_settings", border=True)
-        draw_selected_ui_uniform_settings(app)
-        imgui.end_child()
+        with imgui_ctx.begin_child(
+            "selected_uniform_settings", child_flags=imgui.ChildFlags_.borders
+        ):
+            draw_selected_ui_uniform_settings(app)

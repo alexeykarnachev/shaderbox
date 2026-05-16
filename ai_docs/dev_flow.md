@@ -76,12 +76,13 @@ corrects.
    rejected and why.
 
 5. **Implement** in one coherent diff. Re-read `conventions.md` from disk first (don't code from a
-   remembered version). Don't sidestep a convention (see the hard rule — imgui `# type: ignore` is
-   the one sanctioned exception). **Robust defaults:** when an open question blocks implementation,
-   default to the robust answer, not a shim — only shortcut if the robust path is hugely out of
-   scope, and then surface the trade-off so the user can choose. After impl: glance the diff for new
-   `# pyright: ignore` / `# type: ignore` (outside imgui calls) / `# noqa` / `TODO` / inline imports /
-   `Any` on real-typed params — any of those means a shortcut was taken; fix it.
+   remembered version). Don't sidestep a convention (see the hard rule — no sanctioned type-
+   suppression exceptions; imgui-bundle ships proper stubs as of feature 004). **Robust defaults:**
+   when an open question blocks implementation, default to the robust answer, not a shim — only
+   shortcut if the robust path is hugely out of scope, and then surface the trade-off so the user
+   can choose. After impl: glance the diff for new `# pyright: ignore` / `# type: ignore` / `# noqa`
+   / `TODO` / inline imports / `Any` on real-typed params — any of those means a shortcut was taken;
+   fix it.
 
 6. **Post-implementation review** (per the preamble — 2-3 in parallel for a mid feature; 0-1 for
    tiny/small; 3+ for high-blast-radius). Roles: *code correctness* (bugs, races, GL-context

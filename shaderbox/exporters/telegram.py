@@ -7,8 +7,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, TypeVar
 
-import imgui
 import telegram as tg
+from imgui_bundle import imgui
 from loguru import logger
 
 from shaderbox.core import Canvas
@@ -147,15 +147,15 @@ class TelegramExporter(Exporter):
         sticker_set_name: str = self._settings.get("sticker_set_name", "")
 
         _, bot_token = imgui.input_text(
-            "Bot token", bot_token, flags=imgui.INPUT_TEXT_PASSWORD
+            "Bot token", bot_token, flags=imgui.InputTextFlags_.password
         )
         _, user_id = imgui.input_text(
-            "User ID", user_id, flags=imgui.INPUT_TEXT_CHARS_DECIMAL
+            "User ID", user_id, flags=imgui.InputTextFlags_.chars_decimal
         )
         _, sticker_set_name = imgui.input_text(
             "Sticker set name",
             sticker_set_name,
-            flags=imgui.INPUT_TEXT_CHARS_NO_BLANK,
+            flags=imgui.InputTextFlags_.chars_no_blank,
         )
 
         self._settings["bot_token"] = bot_token
@@ -205,13 +205,13 @@ class TelegramExporter(Exporter):
             AuthState.ERROR: (1.0, 0.3, 0.3),
             AuthState.UNCONFIGURED: (1.0, 1.0, 0.0),
         }[state]
-        imgui.text_colored(f"Auth: {state.value}", *color)
+        imgui.text_colored((*color, 1.0), f"Auth: {state.value}")
         if self._render_state.auth_message:
-            imgui.text_colored(self._render_state.auth_message, *color)
+            imgui.text_colored((*color, 1.0), self._render_state.auth_message)
 
         if state != AuthState.AUTHED:
             imgui.text_colored(
-                "Authenticate to load existing stickers.", *(1.0, 1.0, 0.0)
+                (1.0, 1.0, 0.0, 1.0), "Authenticate to load existing stickers."
             )
             return
 
@@ -224,7 +224,7 @@ class TelegramExporter(Exporter):
 
         n_slots: int = len(self._render_state.sticker_slots)
         if n_slots == 0:
-            imgui.text_colored("No stickers in set.", *(0.5, 0.5, 0.5))
+            imgui.text_colored((0.5, 0.5, 0.5, 1.0), "No stickers in set.")
         else:
             imgui.text(f"{n_slots} sticker(s) in set:")
             for idx, slot in enumerate(self._render_state.sticker_slots):
@@ -241,12 +241,10 @@ class TelegramExporter(Exporter):
             if preview is not None:
                 tex = preview.texture
                 imgui.image(
-                    tex.glo,
-                    width=tex.size[0],
-                    height=tex.size[1],
+                    imgui.ImTextureRef(tex.glo),
+                    image_size=(tex.size[0], tex.size[1]),
                     uv0=(0, 1),
                     uv1=(1, 0),
-                    border_color=(0.2, 0.2, 0.2, 1.0),
                 )
 
             if artifact is not None and not self._render_state.in_flight:
@@ -272,7 +270,7 @@ class TelegramExporter(Exporter):
         imgui.spacing()
 
         if artifact is None:
-            imgui.text_colored("Render an artifact first.", *(1.0, 1.0, 0.0))
+            imgui.text_colored((1.0, 1.0, 0.0, 1.0), "Render an artifact first.")
         elif self._render_state.in_flight:
             prog: ExportProgress | None = self._render_state.last_progress
             if prog is not None:
@@ -289,7 +287,7 @@ class TelegramExporter(Exporter):
             terminal_color: tuple[float, float, float] = (
                 (1.0, 0.3, 0.3) if terminal.is_error else (0.0, 1.0, 0.0)
             )
-            imgui.text_colored(terminal.message, *terminal_color)
+            imgui.text_colored((*terminal_color, 1.0), terminal.message)
             if terminal.url:
                 imgui.text(terminal.url)
 
@@ -697,20 +695,26 @@ class TelegramExporter(Exporter):
         n_styles: int = 0
         if is_selected:
             color: tuple[float, float, float, float] = (0.0, 1.0, 0.0, 1.0)
-            imgui.push_style_color(imgui.COLOR_BUTTON, *color)
-            imgui.push_style_color(imgui.COLOR_BUTTON_HOVERED, *color)
-            imgui.push_style_color(imgui.COLOR_BUTTON_ACTIVE, *color)
+            imgui.push_style_color(imgui.Col_.button, color)
+            imgui.push_style_color(imgui.Col_.button_hovered, color)
+            imgui.push_style_color(imgui.Col_.button_active, color)
             n_styles += 3
 
         if thumbnail is not None:
             tex = thumbnail.texture
             h: int = _PREVIEW_THUMB_HEIGHT
             w: int = h * tex.size[0] // max(tex.size[1], 1)
-            if imgui.image_button(tex.glo, width=w, height=h, uv0=(0, 1), uv1=(1, 0)):
+            if imgui.image_button(
+                f"##sticker_{idx}",
+                imgui.ImTextureRef(tex.glo),
+                image_size=(w, h),
+                uv0=(0, 1),
+                uv1=(1, 0),
+            ):
                 self._render_state.selected_index = idx
         else:
             if imgui.button(
-                f"#{idx}", width=_PREVIEW_THUMB_HEIGHT, height=_PREVIEW_THUMB_HEIGHT
+                f"#{idx}", size=(_PREVIEW_THUMB_HEIGHT, _PREVIEW_THUMB_HEIGHT)
             ):
                 self._render_state.selected_index = idx
 

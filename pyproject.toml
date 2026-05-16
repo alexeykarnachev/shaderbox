@@ -6,10 +6,8 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
-    "crossfiledialog>=1.0.0",
     "glfw>=2.8.0",
     "imageio[ffmpeg]>=2.37.0",
-    "imgui[glfw]>=2.0.0",
     "loguru>=0.7.3",
     "moderngl>=5.12.0",
     "numpy>=2.2.4",
@@ -18,12 +16,13 @@ dependencies = [
     "platformdirs>=4.3.7",
     "pydantic-settings>=2.9.1",
     "pydantic>=2.11.4",
-    "pyimgui-stubs>=0.0.2",
     "python-telegram-bot>=22.0",
     "freetype-py>=2.5.1",
     "more-itertools>=10.7.0",
     "pyperclip>=1.9.0",
     "pywin32>=311; sys_platform == 'win32'",
+    "imgui-bundle>=1.92.801",
+    "pyopengl>=3.1.10",
 ]
 
 [build-system]

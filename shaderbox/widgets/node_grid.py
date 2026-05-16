@@ -1,11 +1,13 @@
-import imgui
+from imgui_bundle import imgui, imgui_ctx
 
 from shaderbox.app import App
 
 
 def draw_node_preview_grid(app: App, width: float, height: float) -> None:
-    with imgui.begin_child(
-        "node_preview_grid", width=width, height=height, border=True
+    with imgui_ctx.begin_child(
+        "node_preview_grid",
+        size=imgui.ImVec2(width, height),
+        child_flags=imgui.ChildFlags_.borders,
     ):
         if imgui.button("New node"):
             app.open_node_creator()
@@ -17,27 +19,25 @@ def draw_node_preview_grid(app: App, width: float, height: float) -> None:
         )[1]
 
         if imgui.is_item_hovered():
-            imgui.begin_tooltip()
-            imgui.text(
-                "If checked, renders all nodes, otherwise, renders only the selected one."
-            )
-            imgui.end_tooltip()
+            with imgui_ctx.begin_tooltip():
+                imgui.text(
+                    "If checked, renders all nodes, otherwise, renders only the selected one."
+                )
 
         imgui.same_line()
         imgui.set_cursor_pos_x(width - 14)
-        imgui.text_colored("?", *(0.5, 0.5, 0.5))
+        imgui.text_colored((0.5, 0.5, 0.5, 1.0), "?")
         if imgui.is_item_hovered():
-            imgui.begin_tooltip()
-            imgui.text("CREATE new node         CTRL+N")
-            imgui.text("SAVE current node       CTRL+S")
-            imgui.text("EDIT current node       CTRL+E")
-            imgui.text("DELETE current node     CTRL+D")
-            imgui.text("PREVIOUS node             <-")
-            imgui.text("NEXT node                 ->")
-            imgui.end_tooltip()
+            with imgui_ctx.begin_tooltip():
+                imgui.text("CREATE new node         CTRL+N")
+                imgui.text("SAVE current node       CTRL+S")
+                imgui.text("EDIT current node       CTRL+E")
+                imgui.text("DELETE current node     CTRL+D")
+                imgui.text("PREVIOUS node             <-")
+                imgui.text("NEXT node                 ->")
 
         preview_size = 150
-        n_cols = int(imgui.get_content_region_available()[0] // (preview_size + 5))
+        n_cols = int(imgui.get_content_region_avail().x // (preview_size + 5))
         n_cols = max(1, n_cols)
         for i, (id, ui_node) in enumerate(app.ui_nodes.items()):
             border_color: tuple[float, float, float] | None = None

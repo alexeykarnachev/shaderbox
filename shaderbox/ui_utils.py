@@ -111,3 +111,9 @@ def try_to_release(value: Any) -> bool:
         release()
         return True
     return False
+
+
+def pfd_block(dialog: Any) -> Any:
+    while not dialog.ready(20):
+        pass
+    return dialog.result()

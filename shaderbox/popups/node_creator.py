@@ -1,4 +1,4 @@
-import imgui
+from imgui_bundle import imgui, imgui_ctx
 
 from shaderbox.app import App
 
@@ -12,11 +12,10 @@ def draw_node_creator(app: App) -> None:
     if not imgui.is_popup_open(_LABEL):
         imgui.open_popup(_LABEL)
 
-    if imgui.begin_popup_modal(_LABEL).opened:
-        if not _draw_body(app):
+    with imgui_ctx.begin_popup_modal(_LABEL) as popup:
+        if popup.visible and not _draw_body(app):
             app.is_node_creator_open = False
             imgui.close_current_popup()
-        imgui.end_popup()
 
 
 def _draw_body(app: App) -> bool:
@@ -25,7 +24,7 @@ def _draw_body(app: App) -> bool:
     is_template_selected = False
 
     preview_size = 150
-    available_width = imgui.get_content_region_available()[0]
+    available_width = imgui.get_content_region_avail().x
     n_cols = max(1, int(available_width // (preview_size + 5)))
 
     for i, ui_node_template in enumerate(app.ui_node_templates.values()):
@@ -47,11 +46,11 @@ def _draw_body(app: App) -> bool:
     imgui.new_line()
 
     is_keep_opened: bool = True
-    if imgui.button("Create", width=80) and is_template_selected:
+    if imgui.button("Create", size=(80, 0)) and is_template_selected:
         app.create_node_from_selected_template()
         is_keep_opened = False
 
     imgui.same_line()
-    is_keep_opened &= not imgui.button("Cancel", width=80)
+    is_keep_opened &= not imgui.button("Cancel", size=(80, 0))
 
     return is_keep_opened

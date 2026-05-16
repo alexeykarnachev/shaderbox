@@ -1,6 +1,6 @@
 from collections import deque
 
-import imgui
+from imgui_bundle import imgui
 
 
 class Notifications:
@@ -38,6 +38,6 @@ class Notifications:
         for text, color, _ in self._stack:
             text_size = imgui.calc_text_size(text)
             x = window_size.x - text_size.x - pad
-            imgui.set_cursor_pos((x, current_y))  # type: ignore
-            imgui.text_colored(text, *color)
+            imgui.set_cursor_pos((x, current_y))
+            imgui.text_colored((*color, 1.0), text)
             current_y += text_size.y + gap

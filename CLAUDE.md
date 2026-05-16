@@ -1,6 +1,6 @@
 # ShaderBox
 
-A real-time GLSL fragment-shader playground. Stack: **moderngl + glfw + pyimgui** (Python 3.12).
+A real-time GLSL fragment-shader playground. Stack: **moderngl + glfw + imgui-bundle** (Python 3.12).
 You write a `.frag.glsl`; ShaderBox introspects the program's active uniforms and auto-generates
 imgui controls for them; hot-reloads on file mtime; exports to image/video; has a custom freetype
 glyph-atlas text-rendering shader; uploads to Telegram sticker sets. Ships on itch.io. Solo project.
@@ -41,9 +41,10 @@ where they're needed. `conventions.md` is auto-loaded below.
   `pre-commit run --all-files`). Both block the commit on failure. (`dev_flow.md ## Recipes` has
   the details.)
 - **Don't sidestep a convention.** A convention collision means the design is wrong — fix the design,
-  don't `# noqa` / `# type: ignore` / inline-import past it. *The one sanctioned exception:* `# type:
-  ignore` scoped to `imgui.*` calls (pyimgui's stubs genuinely lack symbols) — see
-  `conventions.md ## Known quirks`. Never use it to paper over a real type error in your own code.
+  don't `# noqa` / `# type: ignore` / inline-import past it. Never use type-suppression markers to
+  paper over a real type error in your own code. (Historical note: pyimgui's stub gaps used to need
+  scoped suppressions; imgui-bundle's stubs are complete, so that exception is retired — see
+  `conventions.md ## Known quirks` for the residual library-stub footguns that remain.)
 - **Code conventions** (full list → `conventions.md`): full type annotations on params/vars; minimal
   comments (only non-obvious logic); imports at module top only.
 - **Library docs + source are the source of truth.** For any non-trivial library API use, verify

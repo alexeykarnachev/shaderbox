@@ -1,6 +1,6 @@
 from pathlib import Path
 
-import imgui
+from imgui_bundle import imgui
 
 from shaderbox.app import App
 from shaderbox.media import Video
@@ -15,14 +15,14 @@ def draw_video_filters(app: App, input_video: Video) -> Video:
     node_ui_state.video_to_video_smoothing_window = imgui.drag_int(
         "Window",
         node_ui_state.video_to_video_smoothing_window,
-        min_value=3,
+        v_min=3,
     )[1]
 
     node_ui_state.video_to_video_smoothing_sigma = imgui.drag_float(
         "Sigma",
         node_ui_state.video_to_video_smoothing_sigma,
-        min_value=0.01,
-        change_speed=0.01,
+        v_min=0.01,
+        v_speed=0.01,
     )[1]
 
     if imgui.button("Apply##video_to_video_smoothing"):

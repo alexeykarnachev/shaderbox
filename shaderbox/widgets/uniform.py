@@ -2,10 +2,10 @@ import contextlib
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
-import crossfiledialog
-import imgui
 import moderngl
 import numpy as np
+from imgui_bundle import imgui
+from imgui_bundle import portable_file_dialogs as pfd
 from OpenGL.GL import GL_FLOAT, GL_UNSIGNED_INT
 
 from shaderbox.app import App
@@ -20,6 +20,7 @@ from shaderbox.ui_models import UIUniform
 from shaderbox.ui_utils import (
     get_resolution_str,
     get_uniform_hash,
+    pfd_block,
     str_to_unicode,
     try_to_release,
     unicode_to_str,
@@ -54,16 +55,16 @@ def draw_selected_ui_uniform_settings(app: App) -> None:
 
         imgui.text(get_resolution_str(ui_uniform.name, *current_value.texture.size))
 
-        max_image_width = imgui.get_content_region_available()[0]
-        max_image_height = 0.5 * imgui.get_content_region_available()[1]
+        avail = imgui.get_content_region_avail()
+        max_image_width = avail.x
+        max_image_height = 0.5 * avail.y
         image_aspect = np.divide(*current_value.texture.size)
         image_width = min(max_image_width, max_image_height * image_aspect)
         image_height = min(max_image_height, max_image_width / image_aspect)
 
         imgui.image(
-            current_value.texture.glo,
-            width=image_width,
-            height=image_height,
+            imgui.ImTextureRef(current_value.texture.glo),
+            image_size=(image_width, image_height),
             uv0=(0, 1),
             uv1=(1, 0),
         )
@@ -100,12 +101,14 @@ def draw_selected_ui_uniform_settings(app: App) -> None:
         ui_uniform.input_type = "array" if new_idx == 0 else "text"
 
     elif ui_uniform.input_type == "text":
-        text = unicode_to_str(current_value)  # type: ignore
-        imgui.text_colored(text, *(0.5, 0.5, 0.5))
+        assert isinstance(current_value, list)
+        text = unicode_to_str(current_value)
+        imgui.text_colored((0.5, 0.5, 0.5, 1.0), text)
         imgui.text(f"Length: {len(text)}")
 
     elif ui_uniform.input_type == "buffer":
-        imgui.text(f"Size: {uniform.size} B")  # type: ignore
+        assert isinstance(uniform, moderngl.UniformBlock)
+        imgui.text(f"Size: {uniform.size} B")
 
 
 def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
@@ -151,7 +154,8 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
             imgui.text(f"{ui_uniform.name}[{ui_uniform.array_length}]: [{value_str}]")
 
     elif ui_uniform.input_type == "text":
-        text = unicode_to_str(current_value)  # type: ignore
+        assert isinstance(current_value, list)
+        text = unicode_to_str([int(c) for c in current_value])
         is_changed, text = imgui.input_text(ui_uniform.name, text)
 
         if is_changed:
@@ -162,10 +166,10 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
 
         n_styles = 0
         if ui_node.ui_state.selected_uniform_name == ui_uniform.name:
-            color = (0.0, 1.0, 0.0, 1.0)
-            imgui.push_style_color(imgui.COLOR_BUTTON, *color)
-            imgui.push_style_color(imgui.COLOR_BUTTON_HOVERED, *color)
-            imgui.push_style_color(imgui.COLOR_BUTTON_ACTIVE, *color)
+            color: tuple[float, float, float, float] = (0.0, 1.0, 0.0, 1.0)
+            imgui.push_style_color(imgui.Col_.button, color)
+            imgui.push_style_color(imgui.Col_.button_hovered, color)
+            imgui.push_style_color(imgui.Col_.button_active, color)
             n_styles += 3
 
         button_texture_id = 0
@@ -184,9 +188,9 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
             button_texture_id = current_value.texture.glo
 
         if imgui.image_button(
-            button_texture_id,
-            width=image_width,
-            height=image_height,
+            f"##image_button_{ui_uniform.name}",
+            imgui.ImTextureRef(button_texture_id),
+            image_size=(image_width, image_height),
             uv0=(0, 1),
             uv1=(1, 0),
         ):
@@ -196,20 +200,24 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
 
         imgui.same_line()
         if imgui.button(f"Load##{ui_uniform.name}"):
-            filter = ["*" + ext for ext in MEDIA_EXTENSIONS]
-            file_path = Path(
-                crossfiledialog.open_file(title="Select image or video", filter=filter)
-                or ""
+            patterns = " ".join("*" + ext for ext in MEDIA_EXTENSIONS)
+            results = pfd_block(
+                pfd.open_file(
+                    "Select image or video",
+                    default_path=".",
+                    filters=["Media", patterns],
+                )
             )
+            file_path = Path(results[0]) if results else Path()
 
-            media_cls = None
+            media_cls: type[Image] | type[Video] | None = None
             if file_path.suffix in IMAGE_EXTENSIONS:
                 media_cls = Image
             elif file_path.suffix in VIDEO_EXTENSIONS:
-                media_cls = Video  # type: ignore
+                media_cls = Video
 
             if media_cls:
-                new_value = media_cls(file_path)  # type: ignore
+                new_value = media_cls(file_path)
                 ui_node.ui_state.selected_uniform_name = ui_uniform.name
 
     elif ui_uniform.input_type == "color":
@@ -217,7 +225,7 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
 
         imgui.text(ui_uniform.name)
         fn = getattr(imgui, f"color_edit{ui_uniform.dimension}")
-        new_value = fn(f"##{ui_uniform.name}", *current_value)[1]
+        new_value = fn(f"##{ui_uniform.name}", list(current_value))[1]
 
     elif ui_uniform.input_type == "drag":
         imgui.text(ui_uniform.name)
@@ -226,12 +234,12 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
         if ui_uniform.dimension == 1:
             assert isinstance(current_value, float)
             new_value = imgui.drag_float(
-                f"##{ui_uniform.name}", current_value, change_speed
+                f"##{ui_uniform.name}", current_value, v_speed=change_speed
             )[1]
         else:
             assert isinstance(current_value, Sequence)
             fn = getattr(imgui, f"drag_float{ui_uniform.dimension}")
-            new_value = fn(f"##{ui_uniform.name}", *current_value, change_speed)[1]
+            new_value = fn(f"##{ui_uniform.name}", list(current_value), change_speed)[1]
 
     if new_value is not None:
         try_to_release(current_value)

@@ -5,10 +5,10 @@ import time
 from pathlib import Path
 from typing import Any
 
-import crossfiledialog
 import glfw
-import imgui
-from imgui.integrations.glfw import GlfwRenderer
+from imgui_bundle import imgui
+from imgui_bundle import portable_file_dialogs as pfd
+from imgui_bundle.python_backends.glfw_backend import GlfwRenderer
 from loguru import logger
 from platformdirs import user_data_dir
 
@@ -25,7 +25,7 @@ from shaderbox.ui_models import (
     load_node_from_dir,
     load_nodes_from_dir,
 )
-from shaderbox.ui_utils import select_next_value
+from shaderbox.ui_utils import pfd_block, select_next_value
 
 
 class App:
@@ -193,13 +193,10 @@ class App:
 
     def get_font(self, size: int) -> Any:
         fonts = imgui.get_io().fonts
-        font = fonts.add_font_from_file_ttf(
+        return fonts.add_font_from_file_ttf(
             str(RESOURCES_DIR / "fonts" / "Anonymous_Pro" / "AnonymousPro-Regular.ttf"),
             size_pixels=size,
-            glyph_ranges=fonts.get_glyph_ranges_cyrillic(),
         )
-        self.imgui_renderer.refresh_font_texture()
-        return font
 
     def edit_current_node_fs_file(self) -> None:
         if not self.current_node_id:
@@ -293,8 +290,8 @@ class App:
             if self.project_dir
             else self.default_projects_root_dir
         )
-        project_dir = crossfiledialog.choose_folder(
-            title="Open project", start_dir=start_dir
+        project_dir = pfd_block(
+            pfd.select_folder("Open project", default_path=start_dir)
         )
         if project_dir:
             self._init(project_dir)

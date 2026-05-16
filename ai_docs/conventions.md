@@ -69,9 +69,23 @@ of constraining future code; SDK footguns go to `## Known quirks`, not here.)*
 
 ## Known quirks (library / SDK footguns + the workaround)
 
-- **pyimgui's stubs are incomplete** → a scoped `# pyright: ignore[reportAttributeAccessIssue]` (or
-  `# type: ignore`) on an `imgui.*` call that pyright can't resolve is sanctioned. NOT a general
-  license — type suppression anywhere else means a real error to fix.
+- **imgui-bundle's `portable_file_dialogs` ships only `.pyi` stubs** — pyright emits a
+  `reportMissingModuleSource` warning at the import line. The warning is harmless (the package is
+  C++-backed; there's no `.py` source to find). Warnings don't fail `make check`; ignore them.
+  Don't suppress with `# pyright: ignore` — that hides genuine resolve failures elsewhere.
+- **Dear ImGui 1.92 dropped pre-baked glyph ranges + `refresh_font_texture()`** in favor of
+  dynamic on-demand glyph loading (`BackendFlags_.renderer_has_textures`, set automatically by
+  imgui-bundle's `BaseOpenGLRenderer.__init__`). `add_font_from_file_ttf(path, size_pixels=N)`
+  is enough — no `glyph_ranges=` kwarg, no manual texture refresh. Cyrillic glyphs load when
+  text is first drawn.
+- **`imgui.push_font` now requires `(font, size_base_unscaled)`** — pass the rasterized size
+  (the one used in `add_font_from_file_ttf(size_pixels=...)`). Never pass `imgui.get_font_size()`
+  — that's the *post-scaling* value and would scale twice.
+- **`imgui.image(...)` lost `tint_col` / `border_col` since 1.91.9**. For tint, switch to
+  `imgui.image_with_bg(...)`. For border, push the `ImageBorderSize` style var (or live without).
+- **`pfd.open_file` / `save_file` / `select_folder` are non-blocking class handles, not blocking
+  functions.** Use the `pfd_block(dialog)` helper in `ui_utils.py` to spin until `.ready(20)` —
+  that mirrors crossfiledialog's synchronous shape at the call site.
 - **A live moderngl context must exist before constructing `Image` / `Video` / `Font` / `Canvas` /
   `Node`** — they call `moderngl.get_context()` lazily. In the app,
   `glfw.make_context_current(window)` handles it.

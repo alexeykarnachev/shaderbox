@@ -39,13 +39,25 @@ Format:
   `app.py` 373 + `ui.py` 294 + `tabs/{node,render,share,share_state}.py` 398 +
   `widgets/*.py` 547 + `popups/*.py` 166 → after `hotkeys.py` extraction: `ui.py` 255 +
   `hotkeys.py` 45 → after feature 003 (ModelBox removal): `app.py` 354 +
-  `widgets/*.py` 497 + `popups/*.py` 134.
+  `widgets/*.py` 497 + `popups/*.py` 134 → after feature 004 (imgui-bundle migration):
+  `app.py` 351 + `ui.py` 251 + `widgets/*.py` 503 + `popups/*.py` 135.
 - Candidate shapes (if the trigger ever fires): `ProjectPaths` frozen dataclass (extract the 9
   `@property` paths into a value type, `app.paths.nodes_dir` etc.) OR `shaderbox/project.py`
   free functions taking `app: App` (`save` / `open_project` / `delete_current_node` /
   `create_node_from_selected_template` / `select_next_*`). The two are orthogonal — paths are a
   value domain, lifecycle is an action domain. `App` is the state-holder; widgets/popups/tabs/
   hotkeys take `app: App` directly (no `AppContext` wrapper).
+
+## [DEFERRAL] adopt `hello_imgui.apply_theme()` + `imgui-knobs` during UI/UX refactor
+- **Trigger:** when starting the planned UI/UX refactor with custom themes — i.e. the moment a
+  concrete theme design starts taking shape (not before; adopting now is premature scaffolding
+  without a target).
+- `hello_imgui` ships ~15 named themes (`hello_imgui.apply_theme(ImGuiTheme_.darcula_darker)`)
+  + a live tweak GUI (`hello_imgui.show_theme_tweak_gui`). Adoption cost is ~5 LOC at theme
+  swap time. `imgui-knobs` (rotary knobs for shader parameter UX) is in the same trigger —
+  evaluate replacing `drag_float` widgets in `widgets/uniform.py` when drag UX feels
+  insufficient. Both rejected from feature 004 scope to keep blast radius bounded; both
+  available with no new dependency since `imgui-bundle` already bundles them.
 
 ## [DEFERRAL] in-app replay mechanism (debug)
 - **Trigger:** next time you hit a multi-step bug that's painful to reproduce manually, or when

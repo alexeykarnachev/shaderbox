@@ -1,5 +1,5 @@
-import imgui
 import moderngl
+from imgui_bundle import imgui
 from loguru import logger
 
 from shaderbox.app import App
@@ -30,12 +30,10 @@ def _draw_render_button(
     if preview_texture is not None:
         imgui.text("Render preview:")
         imgui.image(
-            preview_texture.glo,
-            width=preview_texture.size[0],
-            height=preview_texture.size[1],
+            imgui.ImTextureRef(preview_texture.glo),
+            image_size=(preview_texture.size[0], preview_texture.size[1]),
             uv0=(0, 1),
             uv1=(1, 0),
-            border_color=(0.2, 0.2, 0.2, 1.0),
         )
 
     is_rendered = False
@@ -43,7 +41,7 @@ def _draw_render_button(
     if details.file_details.path:
         if not (ui_node := app.ui_nodes.get(app.current_node_id)):
             imgui.text_colored(
-                "Node is not selected, nothing to render", *(1.0, 1.0, 0.0)
+                (1.0, 1.0, 0.0, 1.0), "Node is not selected, nothing to render"
             )
         elif imgui.button("Render##media"):
             try:
@@ -53,7 +51,8 @@ def _draw_render_button(
                 logger.error(f"Failed to render media: {e}")
     else:
         imgui.text_colored(
-            f"Select output file path to render the {media_type}", *(1.0, 1.0, 0.0)
+            (1.0, 1.0, 0.0, 1.0),
+            f"Select output file path to render the {media_type}",
         )
 
     return is_rendered, details
