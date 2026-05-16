@@ -16,6 +16,7 @@ from shaderbox.constants import (
 )
 from shaderbox.core import UniformValue
 from shaderbox.media import Image, MediaWithTexture, Video
+from shaderbox.theme import COLOR, SIZE
 from shaderbox.ui_models import UIUniform
 from shaderbox.ui_utils import (
     get_resolution_str,
@@ -103,7 +104,7 @@ def draw_selected_ui_uniform_settings(app: App) -> None:
     elif ui_uniform.input_type == "text":
         assert isinstance(current_value, list)
         text = unicode_to_str(current_value)
-        imgui.text_colored((0.5, 0.5, 0.5, 1.0), text)
+        imgui.text_colored(COLOR.FG_DIM, text)
         imgui.text(f"Length: {len(text)}")
 
     elif ui_uniform.input_type == "buffer":
@@ -166,15 +167,15 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
 
         n_styles = 0
         if ui_node.ui_state.selected_uniform_name == ui_uniform.name:
-            color: tuple[float, float, float, float] = (0.0, 1.0, 0.0, 1.0)
-            imgui.push_style_color(imgui.Col_.button, color)
-            imgui.push_style_color(imgui.Col_.button_hovered, color)
-            imgui.push_style_color(imgui.Col_.button_active, color)
+            highlight: tuple[float, float, float, float] = COLOR.ACCENT_PRIMARY
+            imgui.push_style_color(imgui.Col_.button, highlight)
+            imgui.push_style_color(imgui.Col_.button_hovered, highlight)
+            imgui.push_style_color(imgui.Col_.button_active, highlight)
             n_styles += 3
 
         button_texture_id = 0
-        image_height = 90
-        image_width = 90
+        image_height = SIZE.THUMB_SM
+        image_width = SIZE.THUMB_SM
 
         if current_value is not None:
             image_width = int(

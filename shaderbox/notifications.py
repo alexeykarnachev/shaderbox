@@ -2,17 +2,20 @@ from collections import deque
 
 from imgui_bundle import imgui
 
+from shaderbox.theme import COLOR
+
+_DEFAULT_COLOR: tuple[float, float, float] = COLOR.STATE_OK[:3]
+
 
 class Notifications:
     def __init__(self, stack_size: int = 5) -> None:
         self._stack = deque(maxlen=stack_size)  # type: ignore
 
-    def push(self, text: str, color=(0.0, 1.0, 0.0), ttl=5.0) -> None:  # type: ignore
+    def push(self, text: str, color=_DEFAULT_COLOR, ttl=5.0) -> None:  # type: ignore
         self._stack.appendleft([text, color, ttl])
 
-    def update_and_draw(self) -> None:
-        # ----------------------------------------------------------------
-        # Update
+    def update(self) -> None:
+        """Age the stack one frame. Discards expired toasts. Call once per frame."""
         alive_inds = []
         for i in range(len(self._stack)):
             self._stack[i][2] -= imgui.get_io().delta_time
@@ -24,20 +27,10 @@ class Notifications:
                 [self._stack[i] for i in alive_inds], maxlen=self._stack.maxlen
             )
 
+    @property
+    def head(self) -> tuple[str, tuple[float, float, float]] | None:
+        """Most-recent toast (text, color), or None if the stack is empty."""
         if not self._stack:
-            return
-
-        # ----------------------------------------------------------------
-        # Draw
-        pad = 10.0
-        gap = 7.0
-
-        window_size = imgui.get_window_size()
-        current_y = pad
-
-        for text, color, _ in self._stack:
-            text_size = imgui.calc_text_size(text)
-            x = window_size.x - text_size.x - pad
-            imgui.set_cursor_pos((x, current_y))
-            imgui.text_colored((*color, 1.0), text)
-            current_y += text_size.y + gap
+            return None
+        text, color, _ttl = self._stack[0]
+        return text, color

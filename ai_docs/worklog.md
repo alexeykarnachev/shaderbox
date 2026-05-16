@@ -22,6 +22,60 @@ Format per entry:
 
 ---
 
+## 2026-05-16 — feature 005 (UI/UX redesign foundation, PRs 1-4) IMPLEMENTED
+- Spec: `ai_docs/features/005_ui_redesign_foundation.md`. Squash-merged from
+  `feature/ui-redesign-foundation` (7 sub-commits) into master. Implements the
+  foundation of the gruvbox+wide-screen UI redesign delivered by the Claude
+  Design agent: theme drop-in, full token sweep, status bar, wide-screen layout.
+- Designer's deliverables archived at `ai_docs/design/{SPEC.md,tokens.json,
+  prototype.html,README.md}`. Token vocabulary is the source of truth for
+  `shaderbox/theme.py`.
+- Three `theme.py` fixes applied during drop-in:
+  - Removed `from __future__ import annotations` (conventions violation).
+  - Removed `_setattr_if` try/except slot-defense; replaced with direct
+    `style.set_color_(col.name, value)` against the pinned imgui-bundle 1.92.801
+    pyi. Pre-1.91 names (`nav_highlight`, `tab_active`, `tab_unfocused*`) dropped
+    entirely — they were renamed in Dear ImGui 1.91+.
+  - Removed `load_fonts(io)`; `App.get_font()` stays the single font-loading
+    entry point. JetBrains Mono adoption deferred (separate trigger).
+  - Replaced `style.colors[idx] = value` with `style.set_color_(idx, value)` —
+    imgui-bundle's `Style.Colors[]` array isn't exposed as a Python attribute;
+    only the `set_color_` method wraps it. Caught during PR 1 `make check`.
+- Token sweep landed: 28 hardcoded color tuples + 11 hardcoded size constants
+  consolidated into `COLOR.* / SIZE.* / SPACE.*` bags. Sanity grep returns 0
+  semantic color literals; only `(0.2, 0.2, 0.2)` shader-error dim tint remains
+  (explicitly deferred to feature 008 — replaced when error banner widget lands).
+- Wide-screen layout: glfw window switched from half-monitor to full-monitor.
+  Frame body restructured: topbar (~32px) → main split (left editor placeholder
+  + right pane with render card + node panel) → status bar (~24px pinned bottom)
+  → modals. Status bar absorbs FPS readout (relocated from topbar) + notifications
+  (relocated from top-right overlay). Shortcut legend always-visible right-aligned
+  in status bar. Editor placeholder is a centered "coming in feature 006" panel.
+- Post-impl review: 2 parallel adversarial reviewers (correctness/arch +
+  spec-fidelity). Iter1 surfaced: GLSL version segment missing from statusbar,
+  telegram.py thumb-height literal not migrated to SIZE token (spec-fidelity);
+  width math off-by-`SPACE.MD` in `_draw_main_split`, three `(1,0,0)` color
+  literals in app.py/details.py (architecture). Iter2 patches: added
+  `_draw_statusbar_glsl`, migrated telegram constants, replaced `SPACE.SM` with
+  `imgui.get_style().item_spacing.x` for split-gap math, swept the 3 stragglers
+  to `COLOR.STATE_ERROR[:3]`. Iter2 convergence reviewer: CONVERGED.
+- `make check`: 0 errors, 3 portable_file_dialogs `reportMissingModuleSource`
+  warnings (pre-existing, documented in conventions). `make smoke`: 200 frames,
+  exit 0, diff vs `/tmp/smoke_baseline_pre_005.log` is timestamps only.
+- Deferrals filed in `todo.md`: features 006 (embedded GLSL editor — PR 5), 007
+  (Node tab restructure — PR 6), 008 (inline shader-error banner — PR 7), 009
+  (Tweaks panel — PR 8). Each has a concrete trigger.
+- refs: squash-merged to master as `<SHA>` "feature 005: UI/UX redesign
+  foundation". Feature branch deleted. Pushed.
+- open thread: **feature 006 (embedded GLSL editor) is the next natural feature
+  to pick up, but trigger is "when the placeholder feels like friction in daily
+  use" — not a default next-step.** Manual UX sweep of master after squash-merge
+  (visually confirm: full-monitor window, gruvbox skin, status bar at bottom,
+  editor placeholder on left, render card + nodes on right) is recommended
+  before next session. Pre-impl validation for feature 006 should grep
+  `imgui_color_text_edit` symbols in the installed `imgui-bundle 1.92.801` pyi
+  before plan-locking.
+
 ## 2026-05-16 — feature 004 (pyimgui → imgui-bundle migration) IMPLEMENTED
 - Spec: `ai_docs/features/004_imgui_bundle_migration.md`. 5 commits on
   `feature/imgui-bundle-migration`: spec patch (`3c6b6e7`) + boot/frame-loop/hotkeys

@@ -48,6 +48,54 @@ Format:
   value domain, lifecycle is an action domain. `App` is the state-holder; widgets/popups/tabs/
   hotkeys take `app: App` directly (no `AppContext` wrapper).
 
+## [DEFERRAL] feature 006 — embedded GLSL editor (PR 5 from designer's adoption sequence)
+- **Trigger:** when the "GLSL editor / coming in feature 006" placeholder on the left
+  half of the main window starts feeling like real friction in daily use — i.e. the user
+  notices "I switch to vim more than I'd like" or "I want to see compile errors next to
+  the code that caused them".
+- Integrate `imgui_color_text_edit` (bundled in `imgui-bundle`). Wire syntax palette to
+  the `COLOR.SYN_*` tokens already exported by `shaderbox/theme.py`. Replace the
+  placeholder in `ui.py::_draw_editor_placeholder` with a real `imgui_color_text_edit`
+  `TextEditor` instance. Each `UINode` gets its own `TextEditor` lazily allocated and
+  switched when `current_node_id` changes. Save on `Ctrl+S` (file write + node
+  `release_program(source)` reload — already the existing reload path). Keep the
+  external-editor "Pop out" button as a fallback. Details: designer's `SPEC.md §3.1`.
+- Re-evaluate the 4 open questions in designer's `SPEC.md §16` during this feature's
+  plan-lock — particularly Q1 (editor library pick: `imgui_color_text_edit` is the
+  default; verify it actually works in imgui-bundle 1.92.801 before plan-locking) and
+  Q2 (multi-file: deferred unless a vertex-shader or `node.json` editor surface lands
+  in scope).
+
+## [DEFERRAL] feature 007 — Node tab restructure (PR 6 from designer's adoption sequence)
+- **Trigger:** blocked on feature 006 completing (the Node tab and the embedded editor
+  share screen real estate; restructuring without the editor leaves the right-half
+  layout in an awkward intermediate shape).
+- Collapse the current two-child Node tab (uniforms left, selected-uniform editor
+  right) into a single uniform list. Each row becomes a 3-column layout: name |
+  type pill | controls. Click the type pill to switch input_type (color↔drag,
+  array↔text, etc) via a popup menu — replacing the current `draw_selected_ui_uniform_
+  settings` side panel. Details: designer's `SPEC.md §8`.
+
+## [DEFERRAL] feature 008 — Inline shader-error banner (PR 7 from designer's adoption sequence)
+- **Trigger:** blocked on feature 006 completing (the banner's click-to-jump targets
+  the embedded editor's cursor).
+- Replace today's red `add_text` overlay on the dimmed render image with a real banner
+  widget rendered between the render card and the node panel. Parse GLSL error output
+  (`ERROR: 0:55:` or `0(55) : error:`) for `(line, col, message)`. Clicking the
+  `line:col` link jumps the editor cursor via `TextEditor.SetCursorPosition`. Details:
+  designer's `SPEC.md §5`.
+
+## [DEFERRAL] feature 009 — Tweaks panel (PR 8 from designer's adoption sequence)
+- **Trigger:** after the user has lived with the default gruvbox/yellow/tight/subtle
+  combination for ~1 week of daily use and has a signal (e.g. "I'd like to try the
+  aqua accent" or "comfortable spacing is annoying me, I want tighter"). Premature
+  to ship before a preference exists.
+- In-app Tweaks panel (toggled by the `Tweaks` placeholder button on the topbar) for
+  runtime accent / density / rounding / editor-side swaps. Persist in
+  `app_state.json::tweaks` (`AccentName / DensityName / RoundingName + side: left/right`).
+  On change, re-call `apply_theme(...)` with the new args; editor-side change is
+  layout-level and re-evaluates the split next frame. Details: designer's `SPEC.md §14`.
+
 ## [DEFERRAL] adopt `hello_imgui.apply_theme()` + `imgui-knobs` during UI/UX refactor
 - **Trigger:** when starting the planned UI/UX refactor with custom themes — i.e. the moment a
   concrete theme design starts taking shape (not before; adopting now is premature scaffolding

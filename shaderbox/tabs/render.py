@@ -4,6 +4,7 @@ from loguru import logger
 
 from shaderbox.app import App
 from shaderbox.media import MediaDetails
+from shaderbox.theme import COLOR
 from shaderbox.widgets.details import draw_media_details
 
 
@@ -41,7 +42,7 @@ def _draw_render_button(
     if details.file_details.path:
         if not (ui_node := app.ui_nodes.get(app.current_node_id)):
             imgui.text_colored(
-                (1.0, 1.0, 0.0, 1.0), "Node is not selected, nothing to render"
+                COLOR.STATE_WARN, "Node is not selected, nothing to render"
             )
         elif imgui.button("Render##media"):
             try:
@@ -51,7 +52,7 @@ def _draw_render_button(
                 logger.error(f"Failed to render media: {e}")
     else:
         imgui.text_colored(
-            (1.0, 1.0, 0.0, 1.0),
+            COLOR.STATE_WARN,
             f"Select output file path to render the {media_type}",
         )
 

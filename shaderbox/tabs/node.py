@@ -5,6 +5,7 @@ from imgui_bundle import imgui, imgui_ctx
 from OpenGL.GL import GL_SAMPLER_2D
 
 from shaderbox.app import App
+from shaderbox.theme import COLOR, SIZE
 from shaderbox.ui_models import UIUniform, load_node_from_dir
 from shaderbox.ui_utils import get_resolution_str, get_uniform_hash
 from shaderbox.widgets.uniform import (
@@ -20,7 +21,7 @@ def draw(app: App) -> None:
     full_file_path = app.nodes_dir / ui_node.id / "shader.frag.glsl"
     local_file_path = full_file_path.relative_to(app.project_dir)
 
-    imgui.push_style_color(imgui.Col_.text, (0.5, 0.5, 0.5, 1.0))
+    imgui.push_style_color(imgui.Col_.text, COLOR.FG_DIM)
     if imgui.selectable(str(local_file_path), False)[0]:
         pyperclip.copy(str(full_file_path))
         app.notifications.push("Copied to clipboard!")
@@ -30,11 +31,11 @@ def draw(app: App) -> None:
     ui_node.ui_state.ui_name = imgui.input_text("Name", ui_node.ui_state.ui_name)[1]
     imgui.spacing()
 
-    if imgui.button("Edit code", size=(80, 0)):
+    if imgui.button("Edit code", size=(SIZE.BTN_SM_W, 0)):
         app.edit_current_node_fs_file()
 
     imgui.same_line()
-    if imgui.button("Open dir", size=(80, 0)):
+    if imgui.button("Open dir", size=(SIZE.BTN_SM_W, 0)):
         app.open_current_node_dir()
 
     imgui.same_line()
@@ -95,9 +96,7 @@ def draw(app: App) -> None:
 
     if matching_uniforms:
         imgui.same_line()
-        imgui.text_colored(
-            (0.5, 0.5, 0.5, 1.0), "(" + ", ".join(matching_uniforms) + ")"
-        )
+        imgui.text_colored(COLOR.FG_DIM, "(" + ", ".join(matching_uniforms) + ")")
 
     node_ui_state = app.current_node_ui_state_or_default
     node_ui_state.resolution_idx = imgui.combo(
@@ -131,7 +130,7 @@ def draw(app: App) -> None:
         "ui_uniforms",
         size=imgui.ImVec2(imgui.get_content_region_avail().x // 2, 0),
     ):
-        imgui.push_style_color(imgui.Col_.separator, (0.15, 0.15, 0.15, 1.0))
+        imgui.push_style_color(imgui.Col_.separator, COLOR.BG_FRAME)
         for hash in active_uniform_hashes:
             draw_ui_uniform(app, ui_uniforms[hash])
             imgui.spacing()

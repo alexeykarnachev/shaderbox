@@ -1,6 +1,7 @@
 from imgui_bundle import imgui, imgui_ctx
 
 from shaderbox.app import App
+from shaderbox.theme import COLOR, SIZE, SPACE
 
 _LABEL = "New node##popup"
 
@@ -23,13 +24,15 @@ def _draw_body(app: App) -> bool:
 
     is_template_selected = False
 
-    preview_size = 150
+    preview_size = SIZE.THUMB_LG
     available_width = imgui.get_content_region_avail().x
-    n_cols = max(1, int(available_width // (preview_size + 5)))
+    n_cols = max(1, int(available_width // (preview_size + SPACE.SM)))
 
     for i, ui_node_template in enumerate(app.ui_node_templates.values()):
         if ui_node_template.id == app.app_state.selected_node_template_id:
-            border_color: tuple[float, float, float] | None = (0.0, 1.0, 0.0)
+            border_color: tuple[float, float, float, float] | None = (
+                COLOR.ACCENT_PRIMARY
+            )
             is_template_selected = True
         else:
             border_color = None
@@ -46,11 +49,11 @@ def _draw_body(app: App) -> bool:
     imgui.new_line()
 
     is_keep_opened: bool = True
-    if imgui.button("Create", size=(80, 0)) and is_template_selected:
+    if imgui.button("Create", size=(SIZE.BTN_SM_W, 0)) and is_template_selected:
         app.create_node_from_selected_template()
         is_keep_opened = False
 
     imgui.same_line()
-    is_keep_opened &= not imgui.button("Cancel", size=(80, 0))
+    is_keep_opened &= not imgui.button("Cancel", size=(SIZE.BTN_SM_W, 0))
 
     return is_keep_opened

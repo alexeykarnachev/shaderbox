@@ -12,17 +12,18 @@ from pydantic import BaseModel, model_validator
 
 from shaderbox.core import Node
 from shaderbox.media import MediaDetails, MediaWithTexture
+from shaderbox.theme import COLOR
 
 
 class UIMessage(BaseModel):
     text: str = ""
     level: Literal["success", "warning", "error"]
 
-    def get_color(self) -> tuple[float, float, float]:
+    def get_color(self) -> tuple[float, float, float, float]:
         return {
-            "success": (0.0, 1.0, 0.0),
-            "warning": (1.0, 1.0, 0.0),
-            "error": (1.0, 0.0, 0.0),
+            "success": COLOR.STATE_OK,
+            "warning": COLOR.STATE_WARN,
+            "error": COLOR.STATE_ERROR,
         }[self.level]
 
     @classmethod
@@ -270,12 +271,12 @@ class UINode(BaseModel):
 
     def draw_preview_button(
         self,
-        border_color: tuple[float, float, float] | None,
+        border_color: tuple[float, float, float, float] | None,
         size: float,
     ) -> bool:
         n_styles = 0
         if border_color is not None:
-            imgui.push_style_color(imgui.Col_.border, (*border_color, 1.0))
+            imgui.push_style_color(imgui.Col_.border, border_color)
             n_styles += 1
 
         text = self.ui_state.ui_name

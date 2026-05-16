@@ -9,6 +9,7 @@ from loguru import logger
 from shaderbox.app import App
 from shaderbox.constants import IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
 from shaderbox.media import FileDetails, MediaDetails, ResolutionDetails
+from shaderbox.theme import COLOR
 from shaderbox.ui_utils import adjust_size, pfd_block
 
 
@@ -29,7 +30,7 @@ def draw_file_details(
                 details.path = ""
                 err = f"Can't select {extension} file, available extensions are: {extensions}"
                 logger.warning(err)
-                app.notifications.push(err, (1, 0, 0))
+                app.notifications.push(err, COLOR.STATE_ERROR[:3])
             else:
                 details.path = file_path
     elif not is_changeable:
@@ -37,13 +38,13 @@ def draw_file_details(
 
     imgui.same_line()
     if details.path:
-        imgui.text_colored((0.5, 0.5, 0.5, 1.0), str(details.path))
+        imgui.text_colored(COLOR.FG_DIM, str(details.path))
         imgui.text(f"File size: {details.size // 1024} KB")
     else:
         text = "Select file path"
         if extensions:
             text += f" ({', '.join(extensions)})"
-        imgui.text_colored((0.5, 0.5, 0.5, 1.0), text)
+        imgui.text_colored(COLOR.FG_DIM, text)
 
     return details
 

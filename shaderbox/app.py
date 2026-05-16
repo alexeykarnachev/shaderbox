@@ -18,6 +18,7 @@ from shaderbox.exporters.registry import ExporterRegistry
 from shaderbox.exporters.telegram import TelegramExporter
 from shaderbox.notifications import Notifications
 from shaderbox.tabs import share_state
+from shaderbox.theme import COLOR, apply_theme
 from shaderbox.ui_models import (
     UIAppState,
     UINode,
@@ -40,7 +41,7 @@ class App:
 
         monitor = glfw.get_primary_monitor()
         video_mode = glfw.get_video_mode(monitor)
-        window_width = video_mode.size[0] // 2
+        window_width = video_mode.size[0]
         window_height = video_mode.size[1]
 
         window = glfw.create_window(
@@ -52,9 +53,10 @@ class App:
         )
 
         glfw.make_context_current(window)
-        glfw.set_window_pos(window, window_width, 0)
+        glfw.set_window_pos(window, 0, 0)
 
         imgui.create_context()
+        apply_theme(imgui.get_style())
         self.window = window
         self.imgui_renderer = GlfwRenderer(window)
 
@@ -217,7 +219,7 @@ class App:
             )
         except Exception as e:
             err = "Failed to open text editor, please setup text editor command in settings"
-            self.notifications.push(err, color=(1, 0, 0))
+            self.notifications.push(err, color=COLOR.STATE_ERROR[:3])
             logger.error(f"Failed to execute the command {cmd}: {e}")
 
     def open_current_node_dir(self) -> None:
@@ -243,7 +245,7 @@ class App:
             logger.info(f"Opened directory: {node_dir}")
         except Exception as e:
             err = "Failed to open directory"
-            self.notifications.push(err, color=(1, 0, 0))
+            self.notifications.push(err, color=COLOR.STATE_ERROR[:3])
             logger.error(f"Failed to open directory {node_dir}: {e}")
 
     def save_ui_node(

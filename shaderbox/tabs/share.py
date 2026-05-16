@@ -8,6 +8,7 @@ from shaderbox.app import App
 from shaderbox.exporters.base import RenderedArtifact
 from shaderbox.media import MediaDetails
 from shaderbox.tabs.share_state import TabState
+from shaderbox.theme import COLOR, SIZE
 from shaderbox.ui_models import UINode
 
 
@@ -28,8 +29,8 @@ def draw(app: App) -> None:
         _draw_inner(app)
     except Exception as e:
         logger.exception("Error in share tab")
-        app.notifications.push(f"Error in share tab: {e!s}", (1.0, 0.0, 0.0))
-        imgui.text_colored((1.0, 0.0, 0.0, 1.0), "An error occurred in the share tab.")
+        app.notifications.push(f"Error in share tab: {e!s}", COLOR.STATE_ERROR[:3])
+        imgui.text_colored(COLOR.STATE_ERROR, "An error occurred in the share tab.")
         imgui.text("Check the logs for more details.")
 
 
@@ -64,11 +65,9 @@ def _draw_inner(app: App) -> None:
     imgui.separator()
     imgui.spacing()
 
+    imgui.text_colored(COLOR.STATE_INFO, f"Configuration for {exporter.display_name}")
     imgui.text_colored(
-        (0.8, 0.8, 1.0, 1.0), f"Configuration for {exporter.display_name}"
-    )
-    imgui.text_colored(
-        (1.0, 1.0, 0.0, 1.0),
+        COLOR.STATE_WARN,
         "These settings are stored in the project's app_state.json.",
     )
     exporter.draw_config_ui()
@@ -113,14 +112,14 @@ def _draw_render_panel(state: TabState, current_node: UINode | None) -> None:
     )[1]
 
     if current_node is None:
-        imgui.text_colored((1.0, 1.0, 0.0, 1.0), "Select a node to render.")
+        imgui.text_colored(COLOR.STATE_WARN, "Select a node to render.")
         return
 
     canvas_size: tuple[int, int] = current_node.node.canvas.texture.size
     state.media_details.resolution_details.width = canvas_size[0]
     state.media_details.resolution_details.height = canvas_size[1]
 
-    if imgui.button("Render", size=(120, 0)):
+    if imgui.button("Render", size=(SIZE.BTN_MD_W, 0)):
         _render_into_state(state, current_node)
 
     artifact: RenderedArtifact | None = state.current_artifact

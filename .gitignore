@@ -18,3 +18,8 @@ itch-config
 imgui.ini
 tmp.mp4
 ai_docs/_*.md
+
+# Local design-handoff scratch (feature 005)
+handoff/
+handoff_flat/
+shaderbox-design-handoff-*.tar.gz

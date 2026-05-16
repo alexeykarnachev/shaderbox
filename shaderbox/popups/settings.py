@@ -1,6 +1,7 @@
 from imgui_bundle import imgui, imgui_ctx
 
 from shaderbox.app import App
+from shaderbox.theme import COLOR, SIZE
 
 _LABEL = "Settings##popup"
 
@@ -37,7 +38,7 @@ def _draw_body(app: App) -> bool:
 
     imgui.same_line()
     imgui.set_cursor_pos_x(width)
-    imgui.text_colored((0.5, 0.5, 0.5, 1.0), "?")
+    imgui.text_colored(COLOR.FG_DIM, "?")
     if imgui.is_item_hovered():
         with imgui_ctx.begin_tooltip():
             imgui.text(
@@ -73,7 +74,7 @@ def _draw_body(app: App) -> bool:
     imgui.new_line()
 
     is_keep_opened: bool = True
-    if imgui.button("Close", size=(80, 0)):
+    if imgui.button("Close", size=(SIZE.BTN_SM_W, 0)):
         is_keep_opened = False
 
     return is_keep_opened

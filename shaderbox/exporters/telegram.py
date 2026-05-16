@@ -22,14 +22,15 @@ from shaderbox.exporters.base import (
     RenderedArtifact,
 )
 from shaderbox.media import Image, Video
+from shaderbox.theme import COLOR, SIZE
 from shaderbox.ui_models import UINode
 
 _QUEUE_MAXSIZE = 128
 _DRAIN_TIMEOUT_SEC = 5.0
 _FFMPEG_TIMEOUT_SEC = 60
-_PREVIEW_THUMB_HEIGHT = 90
-_PREVIEW_CANVAS_WIDTH = 200
-_GRID_COLUMNS = 4
+_PREVIEW_THUMB_HEIGHT = SIZE.TG_THUMB_H
+_PREVIEW_CANVAS_WIDTH = SIZE.PREVIEW_W
+_GRID_COLUMNS = SIZE.TG_GRID_COLS
 _TG_VIDEO_MAX_BYTES = 256 * 1024
 _TG_VIDEO_MAX_DIM = 512
 _TG_VIDEO_MAX_DURATION_SEC = 3.0
@@ -200,18 +201,18 @@ class TelegramExporter(Exporter):
             self._render_state.preview_canvas = Canvas()
 
         state: AuthState = self._render_state.auth_state
-        color: tuple[float, float, float] = {
-            AuthState.AUTHED: (0.0, 1.0, 0.0),
-            AuthState.ERROR: (1.0, 0.3, 0.3),
-            AuthState.UNCONFIGURED: (1.0, 1.0, 0.0),
+        color: tuple[float, float, float, float] = {
+            AuthState.AUTHED: COLOR.STATE_OK,
+            AuthState.ERROR: COLOR.STATE_ERROR,
+            AuthState.UNCONFIGURED: COLOR.STATE_WARN,
         }[state]
-        imgui.text_colored((*color, 1.0), f"Auth: {state.value}")
+        imgui.text_colored(color, f"Auth: {state.value}")
         if self._render_state.auth_message:
-            imgui.text_colored((*color, 1.0), self._render_state.auth_message)
+            imgui.text_colored(color, self._render_state.auth_message)
 
         if state != AuthState.AUTHED:
             imgui.text_colored(
-                (1.0, 1.0, 0.0, 1.0), "Authenticate to load existing stickers."
+                COLOR.STATE_WARN, "Authenticate to load existing stickers."
             )
             return
 
@@ -224,7 +225,7 @@ class TelegramExporter(Exporter):
 
         n_slots: int = len(self._render_state.sticker_slots)
         if n_slots == 0:
-            imgui.text_colored((0.5, 0.5, 0.5, 1.0), "No stickers in set.")
+            imgui.text_colored(COLOR.FG_DIM, "No stickers in set.")
         else:
             imgui.text(f"{n_slots} sticker(s) in set:")
             for idx, slot in enumerate(self._render_state.sticker_slots):
@@ -270,7 +271,7 @@ class TelegramExporter(Exporter):
         imgui.spacing()
 
         if artifact is None:
-            imgui.text_colored((1.0, 1.0, 0.0, 1.0), "Render an artifact first.")
+            imgui.text_colored(COLOR.STATE_WARN, "Render an artifact first.")
         elif self._render_state.in_flight:
             prog: ExportProgress | None = self._render_state.last_progress
             if prog is not None:
@@ -284,10 +285,10 @@ class TelegramExporter(Exporter):
             and not self._render_state.in_flight
         ):
             terminal: ExportProgress = self._render_state.last_progress
-            terminal_color: tuple[float, float, float] = (
-                (1.0, 0.3, 0.3) if terminal.is_error else (0.0, 1.0, 0.0)
+            terminal_color: tuple[float, float, float, float] = (
+                COLOR.STATE_ERROR if terminal.is_error else COLOR.STATE_OK
             )
-            imgui.text_colored((*terminal_color, 1.0), terminal.message)
+            imgui.text_colored(terminal_color, terminal.message)
             if terminal.url:
                 imgui.text(terminal.url)
 
@@ -694,10 +695,10 @@ class TelegramExporter(Exporter):
 
         n_styles: int = 0
         if is_selected:
-            color: tuple[float, float, float, float] = (0.0, 1.0, 0.0, 1.0)
-            imgui.push_style_color(imgui.Col_.button, color)
-            imgui.push_style_color(imgui.Col_.button_hovered, color)
-            imgui.push_style_color(imgui.Col_.button_active, color)
+            highlight: tuple[float, float, float, float] = COLOR.ACCENT_PRIMARY
+            imgui.push_style_color(imgui.Col_.button, highlight)
+            imgui.push_style_color(imgui.Col_.button_hovered, highlight)
+            imgui.push_style_color(imgui.Col_.button_active, highlight)
             n_styles += 3
 
         if thumbnail is not None:
