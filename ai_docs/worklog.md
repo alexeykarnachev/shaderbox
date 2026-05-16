@@ -22,6 +22,42 @@ Format per entry:
 
 ---
 
+## 2026-05-16 — feature 003 (ModelBox removal) IMPLEMENTED
+- Spec: `ai_docs/features/003_modelbox_removal.md`. Goal: wipe all ModelBox integration
+  (HTTP client, settings UI, app-state fields, dependency). Maintainer plans in-process
+  PyTorch inference later; this feature clears the slate cleanly. -238 lines net across
+  14 files (1 delete, 6 code modifications, 1 dep removal, 6 doc updates).
+- Diff shape: deleted `shaderbox/modelbox.py` (68 LOC) + `draw_media_models` widget (~40
+  LOC) + Settings popup ModelBox block (28 LOC) + `App.modelbox_info` field +
+  `App.fetch_modelbox_info()` method + 2 `UIAppState` fields + the `requests` dep
+  (transitive `urllib3` / `charset-normalizer` auto-cleaned). Added `UIAppState`
+  migration generation 3 (`data.pop("modelbox_url"); data.pop("media_model_idx")`)
+  to keep existing `app_state.json` files loadable under pydantic's
+  `extra="forbid"`. Migration is silent + idempotent; first save after load writes a
+  clean file.
+- decisions (locked in spec): clean delete no shims; `requests` dropped; silent pop
+  migration; `widgets/media_ops.py` kept as single-function module (future PyTorch
+  reentry point); Settings section deleted not flag-hidden; README + CLAUDE.md prose
+  updated alongside code; no dead `app.modelbox_info` preserved.
+- review: 2 pre-impl reviewers (correctness/design + verification/blast-radius) →
+  SHIP-WITH-EDITS, edits applied inline (docstring "Two"→"Three", explicit import
+  surgery list, settings line range 73-94, transitive-dep note, exit-0 in manual step).
+  3 post-impl reviewers (code correctness + architecture/conventions + spec fidelity) →
+  all 3 SHIP, no blockers. Code-correctness reviewer ran `make check` + `make smoke` +
+  4 integration tests independently. Architecture reviewer flagged pre-existing pyright
+  drift in `conventions.md:16-18` as OBSERVATION (cleaned up in sanitize).
+- `make check` clean (0 pyright errors); `make smoke` clean (200 frames exit 0, no more
+  ModelBox connection-refused log noise). User skipped manual UX check; relied on
+  reviewer convergence + smoke + zero pyright.
+- refs: working tree (uncommitted).
+- open thread: **no urgent next-step.** Backlog: (a) `[DEFERRAL] in-app replay` — wait
+  for a multi-step bug that's painful to repro; (b) `[DEFERRAL] split ui.py / app.py
+  further` — wait for app.py editing to feel painful (parallel-agent assessment
+  parked this 2026-05-15); (c) **future feature: in-process PyTorch inference** to
+  replace ModelBox (no spec yet; out of scope for this feature). When that starts,
+  re-read the pre-removal commit (this commit's parent) for prior-art UX cues —
+  they're frozen in git history.
+
 ## 2026-05-15 — headless smoke test (tiny mechanical)
 - Added `scripts/smoke.py` (~65 lines): creates `App(project_dir=projects/dev/)` with
   `glfw.window_hint(VISIBLE, FALSE)` set before App's `glfw.create_window` call, runs 200

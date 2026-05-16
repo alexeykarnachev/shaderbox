@@ -1,5 +1,3 @@
-import webbrowser
-
 import imgui
 
 from shaderbox.app import App
@@ -64,32 +62,6 @@ def _draw_body(app: App) -> bool:
             "to open the node directory and manually open the shader.frag.glsl file."
         )
         imgui.spacing()
-        imgui.end_tooltip()
-
-    imgui.spacing()
-    imgui.separator()
-    imgui.spacing()
-
-    app.app_state.modelbox_url = imgui.input_text(
-        "ModelBox url", app.app_state.modelbox_url
-    )[1]
-
-    if imgui.button("Install from GitHub##modelbox"):
-        url = "https://github.com/alexeykarnachev/modelbox"
-        webbrowser.open(url)
-
-    imgui.same_line()
-    imgui.set_cursor_pos_x(width)
-    imgui.text_colored("?", *(0.5, 0.5, 0.5))
-    if imgui.is_item_hovered():
-        imgui.begin_tooltip()
-        imgui.text(
-            "ModelBox is a service which provides AI-powered image processing models."
-        )
-        imgui.text("You can apply these models to your image and video uniforms.")
-        imgui.text(
-            "Click 'Install from GitHub' button to check the installation instruction."
-        )
         imgui.end_tooltip()
 
     imgui.spacing()

@@ -1,55 +1,9 @@
 from pathlib import Path
-from typing import TypeVar
 
 import imgui
-from loguru import logger
 
-from shaderbox import modelbox
 from shaderbox.app import App
-from shaderbox.media import Image, Video
-
-T = TypeVar("T", Image, Video)
-
-
-def draw_media_models(app: App, input_media: T) -> T:
-    output_media: Image | Video | None = None
-    media_model_names = app.modelbox_info.get("media_model_names")
-
-    if not media_model_names:
-        imgui.text_colored("Media models are not available", *(1.0, 1.0, 0.0))
-        if imgui.button("Refresh##media"):
-            app.fetch_modelbox_info()
-    else:
-        imgui.text("Media model")
-
-        app.app_state.media_model_idx = min(
-            app.app_state.media_model_idx,
-            len(media_model_names) - 1,
-        )
-
-        app.app_state.media_model_idx = imgui.combo(
-            "##media_model_idx",
-            app.app_state.media_model_idx,
-            media_model_names,
-        )[1]
-
-        model_name = media_model_names[app.app_state.media_model_idx]
-
-        imgui.same_line()
-        if imgui.button("Apply##media_model"):
-            try:
-                output_media = modelbox.infer_media_model(
-                    modelbox_url=app.app_state.modelbox_url,
-                    media=input_media,
-                    model_name=model_name,
-                    output_dir=app.media_dir,
-                )
-            except Exception as e:
-                err = "Failed to infer ModelBox media model"
-                logger.error(f"{err}: {e}")
-                app.notifications.push(err, (1, 0, 0))
-
-    return output_media or input_media  # type: ignore
+from shaderbox.media import Video
 
 
 def draw_video_filters(app: App, input_video: Video) -> Video:

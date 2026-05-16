@@ -162,7 +162,6 @@ worklog entry (if even that) + the cold-context glance is enough; for a feature,
 - **`popups/`** — popup `draw(app: App)` free functions. Open/closed state lives on `App` as
   `is_node_creator_open` / `is_settings_open` (helpers `app.open_node_creator()` /
   `app.open_settings()` enforce mutual exclusion). Modules: `node_creator.py`, `settings.py`.
-- **`modelbox.py`** — thin HTTP client for the optional external ModelBox service.
 - **`fonts.py`** — freetype → GL atlas. **`ui_utils.py`** / **`constants.py`** / **`notifications.py`** — helpers.
 - **`scripts/smoke.py`** — headless smoke test (see `## Recipes > make smoke`). Not part of
   `shaderbox/` proper; one-off script that imports `App` + `update_and_draw` and runs frames in
@@ -176,8 +175,7 @@ worklog entry (if even that) + the cold-context glance is enough; for a feature,
 `uv run python ./shaderbox/ui.py`. State lives in `~/.local/share/shaderbox/` + the active project's
 files. The repo's `projects/dev/` is the maintainer's dev project (tracked, intentional). `imgui.ini`
 in the repo root is layout cruft (gitignored). **Can't be exercised unconfigured:** the Telegram
-share tab needs a bot token / user id / sticker-set name in app settings; ModelBox is an optional
-external HTTP service (the app degrades gracefully without it).
+share tab needs a bot token / user id / sticker-set name in app settings.
 
 ### `make check`
 The single canonical lint/typecheck command — delegates to `uv run pre-commit run --all-files`:
@@ -192,9 +190,8 @@ Headless smoke test (`scripts/smoke.py`) — runs ~200 frames of `update_and_dra
 ~1.5s; catches import errors, callback dispatch failures, popup state-machine crashes, released-
 texture binding errors. Doesn't catch visual bugs. Run after any refactor in `ui.py` / `app.py` /
 `widgets/` / `popups/` / `tabs/` / `hotkeys.py` before declaring done; **not** wired into
-`make check` (needs a real GL context, prints noisy ModelBox connection errors when the optional
-service isn't running). Save/restore the user's `~/.local/share/shaderbox/project_dir` pointer is
-handled inside the script.
+`make check` (needs a real GL context). Save/restore the user's
+`~/.local/share/shaderbox/project_dir` pointer is handled inside the script.
 
 ### Build / ship to itch.io
 `./build.sh` → `dist/shaderbox-{windows.zip,linux.tar.gz}` → `./upload-itch.sh` (needs `butler` + an

@@ -12,7 +12,6 @@ from imgui.integrations.glfw import GlfwRenderer
 from loguru import logger
 from platformdirs import user_data_dir
 
-from shaderbox import modelbox
 from shaderbox.constants import RESOURCES_DIR
 from shaderbox.core import Canvas
 from shaderbox.exporters.registry import ExporterRegistry
@@ -73,8 +72,6 @@ class App:
         self.exporter_registry = ExporterRegistry()
         self.exporter_registry.register(TelegramExporter())
         self.share_tab_state: share_state.TabState | None = None
-
-        self.modelbox_info: dict[str, Any] = {}
 
         self.is_node_creator_open: bool = False
         self.is_settings_open: bool = False
@@ -157,7 +154,6 @@ class App:
 
     def _init(self, project_dir: Path) -> None:
         self.release()
-        self.fetch_modelbox_info()
 
         self.preview_canvas = Canvas()
 
@@ -194,21 +190,6 @@ class App:
         self.exporter_registry.rebind(self.app_state.exporter_settings)
         if self.app_state.active_exporter_id:
             self.exporter_registry.set_active(self.app_state.active_exporter_id)
-
-    def fetch_modelbox_info(self) -> None:
-        self.modelbox_info = {}
-
-        if not self.app_state.modelbox_url:
-            return
-
-        try:
-            self.modelbox_info = modelbox.fetch_modelbox_info(
-                self.app_state.modelbox_url
-            )
-        except Exception as e:
-            err = "Failed to fetch ModelBox media model names"
-            logger.error(f"{err}: {e}")
-            self.notifications.push(err, color=(1, 0, 0))
 
     def get_font(self, size: int) -> Any:
         fonts = imgui.get_io().fonts

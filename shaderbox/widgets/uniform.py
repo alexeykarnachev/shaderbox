@@ -24,7 +24,7 @@ from shaderbox.ui_utils import (
     try_to_release,
     unicode_to_str,
 )
-from shaderbox.widgets.media_ops import draw_media_models, draw_video_filters
+from shaderbox.widgets.media_ops import draw_video_filters
 
 
 def draw_selected_ui_uniform_settings(app: App) -> None:
@@ -72,7 +72,7 @@ def draw_selected_ui_uniform_settings(app: App) -> None:
         imgui.separator()
         imgui.spacing()
 
-        new_value = draw_media_models(app, current_value)  # type: ignore
+        new_value = current_value
         if isinstance(new_value, Video):
             new_value = draw_video_filters(app, new_value)
 

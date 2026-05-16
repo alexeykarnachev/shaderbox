@@ -13,9 +13,8 @@ code review, the sanitization sweep.
   circular-import hack — a collision means the design is wrong. The one sanctioned type-suppression
   exception is in `## Known quirks`.
 - Never use `if TYPE_CHECKING:` to work-around circular imports. Circular imports is a sign of a bad design.
-- Type checker: **pyright** (not mypy), basic mode, via `make check`. **Non-blocking for now**
-  (pre-existing type debt across the repo — see `## Known quirks`). Findings print but the
-  pre-commit hook `|| true`'s past a non-zero exit. Don't add *new* pyright errors.
+- Type checker: **pyright** (not mypy), basic mode, via `make check` — blocks on failure.
+  Repo is at 0 errors; keep it that way.
 - `uv` for everything (`uv run`, `uv add`, `uv add --group dev`) — never bare `python` / `pip`.
 - Commit messages: short, concise, single-line, ASCII; no footers / co-authored-by.
 - Never use "from __future__ import annotations" - this is a noise.
@@ -57,8 +56,7 @@ code review, the sanitization sweep.
 - **No `async` in the codebase except where python-telegram-bot forces it** — and that runs off the
   render thread (per-exporter worker thread + own asyncio loop, see `exporters/telegram.py`),
   never via `run_until_complete` inside the imgui frame. Revisit if a future exporter brings a
-  new async-required dep that doesn't fit the worker-thread + own-loop pattern. (Tracked:
-  `todo.md [DEFERRAL] blocking HTTP in render loop` — narrowed to ModelBox after feature 001.)
+  new async-required dep that doesn't fit the worker-thread + own-loop pattern.
 - **Exporters: own thread, own panel, GL-free artifacts.** The `Exporter` ABC in
   `shaderbox/exporters/base.py` enforces a thread-affinity contract: render-thread methods may
   touch moderngl; worker-thread methods (`prepare`, `export`) MUST NOT — they only see
@@ -77,5 +75,3 @@ of constraining future code; SDK footguns go to `## Known quirks`, not here.)*
 - **A live moderngl context must exist before constructing `Image` / `Video` / `Font` / `Canvas` /
   `Node`** — they call `moderngl.get_context()` lazily. In the app,
   `glfw.make_context_current(window)` handles it.
-- **`modelbox.py` imports `Image` / `Video` from `shaderbox.core`** (which re-exports them from
-  `media`) — reaching through `core` for `media` types. Minor module-boundary smell; left as-is.

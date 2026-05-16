@@ -15,7 +15,6 @@ Download on [itch.io](https://where-is-your-keyboard.itch.io/shaderbox)
 - Support for various uniform types: vectors, colors, textures, arrays, and text
 - Image and video texture inputs
 - Export rendered shaders to images, videos, or Telegram stickers
-- Integration with ModelBox for AI-powered image processing (depth maps, background removal)
 
 ShaderBox automatically analyzes your GLSL code and creates appropriate UI controls for uniforms, making it easy to experiment with parameters in real-time. The editor handles texture loading, uniform management, and rendering output automatically.
 

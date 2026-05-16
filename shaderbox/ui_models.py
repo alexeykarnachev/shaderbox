@@ -127,12 +127,9 @@ class UIAppState(BaseModel):
     exporter_settings: dict[str, dict[str, Any]] = {}
     active_exporter_id: str = "telegram"
 
-    media_model_idx: int = 0
-
     global_target_fps: int = 60
 
     text_editor_cmd: str = ""
-    modelbox_url: str = "http://localhost:8228/"
 
     model_config = {"extra": "forbid"}
 
@@ -145,10 +142,11 @@ class UIAppState(BaseModel):
     def load_and_migrate(cls, file_path: str | Path) -> Self:
         """Load app state with one-shot key migrations.
 
-        Two migration generations, both idempotent:
+        Three migration generations, all idempotent:
           1. tg_* keys → share_provider_configs.telegram.* (legacy)
           2. share_provider_configs → exporter_settings;
-             active_share_provider → active_exporter_id (this PR)
+             active_share_provider → active_exporter_id (feature 001)
+          3. drop modelbox_url, media_model_idx (feature 003)
         """
         with Path(file_path).open("r") as f:
             data = json.load(f)
@@ -174,6 +172,9 @@ class UIAppState(BaseModel):
             data["exporter_settings"] = data.pop("share_provider_configs")
         if "active_share_provider" in data:
             data["active_exporter_id"] = data.pop("active_share_provider")
+
+        data.pop("modelbox_url", None)
+        data.pop("media_model_idx", None)
 
         return cls(**data)
 

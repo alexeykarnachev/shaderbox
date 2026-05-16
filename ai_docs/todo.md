@@ -28,14 +28,6 @@ Format:
 
 ---
 
-## [DEFERRAL] blocking HTTP in the render loop (ModelBox)
-- **Trigger:** first user report of the ModelBox call freezing the UI, or next time you grep for
-  `requests.post` / edit `modelbox.py`.
-- `modelbox.infer_media_model` (`modelbox.py:52`) is synchronous `requests.post(timeout=600.0)`
-  called from the render thread → blocks the GL frame on a long inference. The Telegram half of
-  this deferral was resolved by feature 001 (worker-thread + mailbox in `exporters/telegram.py`);
-  ModelBox needs the same shape (worker thread + result queue) or to be made async.
-
 ## [DEFERRAL] split `ui.py` / `app.py` further
 - **Trigger:** when editing `app.py` feels painful (search-and-replace across the file misses
   something, or a method's blast radius is unclear because too many siblings share state), OR
@@ -46,7 +38,8 @@ Format:
 - Progress: 1778 (single ui.py) → 1508 (feature 001, `tabs/share.py`) → after feature 002:
   `app.py` 373 + `ui.py` 294 + `tabs/{node,render,share,share_state}.py` 398 +
   `widgets/*.py` 547 + `popups/*.py` 166 → after `hotkeys.py` extraction: `ui.py` 255 +
-  `hotkeys.py` 45.
+  `hotkeys.py` 45 → after feature 003 (ModelBox removal): `app.py` 354 +
+  `widgets/*.py` 497 + `popups/*.py` 134.
 - Candidate shapes (if the trigger ever fires): `ProjectPaths` frozen dataclass (extract the 9
   `@property` paths into a value type, `app.paths.nodes_dir` etc.) OR `shaderbox/project.py`
   free functions taking `app: App` (`save` / `open_project` / `delete_current_node` /
