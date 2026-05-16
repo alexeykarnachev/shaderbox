@@ -162,7 +162,7 @@ class App:
 
         self.ui_nodes.clear()
 
-        self.project_dir = self._create_dir_if_needed(project_dir)
+        self.project_dir = self._create_dir_if_needed(project_dir).resolve()
         self.project_dir_file_path.write_text(str(self.project_dir))
         logger.info(f"Project loaded: {self.project_dir}")
 
