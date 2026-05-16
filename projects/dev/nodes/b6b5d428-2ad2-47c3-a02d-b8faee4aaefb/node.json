@@ -26,12 +26,12 @@
         "render_media_details": {
             "is_video": true,
             "file_details": {
-                "path": "",
-                "size": 0
+                "path": "/home/akarnachev/src/shaderbox/tmp.mp4",
+                "size": 239764
             },
             "resolution_details": {
-                "width": 0,
-                "height": 0
+                "width": 1280,
+                "height": 960
             },
             "quality": 0,
             "fps": 30,
