@@ -2,19 +2,13 @@
 
 ## Goal
 
-Remove all ModelBox integration from ShaderBox. The maintainer plans to replace it with
-in-process PyTorch inference later; this feature wipes the slate (no compat shims, no
-preserved API surface). After this lands, the codebase has no `modelbox.py` module, no
-HTTP client for an external inference service, no `requests` dependency, no ModelBox UI in
-the Settings popup, and no media-model dropdown on texture uniforms.
+Remove all ModelBox integration from ShaderBox. After this lands, the codebase has no
+`modelbox.py` module, no HTTP client for an external inference service, no `requests`
+dependency, no ModelBox UI in the Settings popup, and no media-model dropdown on texture
+uniforms. No compat shims, no preserved API surface.
 
 ## Out of scope
 
-- **In-process PyTorch inference design.** Future work; this spec doesn't anticipate its
-  shape. **Trigger to revisit:** when starting the PyTorch-inference feature, re-read the
-  pre-removal commit (`shaderbox/widgets/media_ops.py::draw_media_models`,
-  `shaderbox/popups/settings.py` ModelBox block, `shaderbox/modelbox.py`) for prior-art
-  UX cues — they're frozen in git history, not in the live tree.
 - **`shaderbox/media.py`'s `Image` / `Video`.** Stay as-is. They are the in-tree media
   types and were only *used* by modelbox.py for typing; they aren't conceptually tied to
   ModelBox.
@@ -43,8 +37,8 @@ the Settings popup, and no media-model dropdown on texture uniforms.
    strips the fields, the next `App.save()` writes a clean `app_state.json` without
    them. No user-visible warning. ModelBox is gone; the fields shouldn't survive.
 4. **`widgets/media_ops.py` keeps its name even though only `draw_video_filters` remains.**
-   Rationale: future PyTorch inference probably re-introduces media-model operations and
-   will live here again. Don't rename the file for one function then rename back later.
+   Rationale: widgets are an organizational convention (per `conventions.md`), single-
+   function modules are acceptable, and renaming for one function would just be churn.
 5. **No `media_ops.py` file deletion.** Per (4), keep the module shell — single function
    inside is acceptable; widgets are organizational only (per `conventions.md`).
 6. **Settings popup section deleted, not hidden behind a flag.** The "ModelBox url" input,
@@ -138,10 +132,10 @@ the Settings popup, and no media-model dropdown on texture uniforms.
 ## Open questions for the user
 
 None at draft time — the maintainer's instruction was unambiguous ("remove all of these
-features completely"; pytorch inference is "later" and explicitly out of scope here). The
-migration shape (silent pop) is the only judgment call and the spec locks it in as
-decision (3) — happy to revisit if the user prefers an explicit "ModelBox config dropped"
-notification on first load, but that's noise for a feature most users never configured.
+features completely"). The migration shape (silent pop) is the only judgment call and the
+spec locks it in as decision (3) — happy to revisit if the user prefers an explicit
+"ModelBox config dropped" notification on first load, but that's noise for a feature most
+users never configured.
 
 ## Review history
 
@@ -163,7 +157,6 @@ blast-radius).** Both verdicts: SHIP-WITH-EDITS. Convergent findings applied inl
 - (8) Manual verification step 2 made explicit about exit 0.
 
 No findings warranted DON'T-SHIP or design changes. Both reviewers confirmed clean blast
-radius — no hidden callers, `requests` is the only `requests` user, no PyTorch hints in
-the current tree.
+radius — no hidden callers, `requests` is the only `requests` user.
 
 **Post-impl review:** to be filled.
