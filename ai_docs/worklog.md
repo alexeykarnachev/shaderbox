@@ -69,14 +69,16 @@ Format per entry:
 - Filed deferrals: `hello_imgui.apply_theme()` themes + `imgui-knobs` rotary
   knobs — both rejected from this feature's scope to bound blast radius, both
   trigger at the start of the planned UI/UX refactor with custom themes.
-- refs: 5 commits on `feature/imgui-bundle-migration`, awaiting squash-merge
-  to master after manual UX sweep clears.
-- open thread: **manual UX sweep (spec gates 3-13) is the last gate before
-  squash-merge to master.** The 13-step procedure lives in `ai_docs/features/
-  004_imgui_bundle_migration.md ## Manual verification`. After sweep clears:
-  `git rebase origin/master` (if conflicts) → squash-merge to master as one
-  commit "feature 004: migrate to imgui-bundle". If sweep finds bugs, fix on
-  the feature branch first.
+- refs: squash-merged to master as `41f2737` "feature 004: migrate to
+  imgui-bundle". Feature branch deleted. Not pushed yet.
+- open thread: **manual UX sweep on master (deferred per user — squash-merge
+  done on smoke confidence).** Procedure: `ai_docs/features/004_imgui_bundle_
+  migration.md ## Manual verification`, gates 3-13 (settings popup, node
+  creator, hotkeys, uniform editor, tab bar, telegram UI w/ fallback, project
+  open, node grid, project switching FPS canary 60→45, save/restart). If a
+  gate fails, fix-forward on master (single squashed commit is a clean revert
+  target via `git revert 41f2737` if any catastrophic regression). Then
+  `git push origin master` when user gives the word.
 
 ## 2026-05-16 — feature 004 (pyimgui → imgui-bundle migration) PLAN-LOCKED, ready to implement
 - Spec: `ai_docs/features/004_imgui_bundle_migration.md` — large feature, high blast radius.
