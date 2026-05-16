@@ -46,6 +46,10 @@ where they're needed. `conventions.md` is auto-loaded below.
   `conventions.md ## Known quirks`. Never use it to paper over a real type error in your own code.
 - **Code conventions** (full list → `conventions.md`): full type annotations on params/vars; minimal
   comments (only non-obvious logic); imports at module top only.
+- **Library docs + source are the source of truth.** For any non-trivial library API use, verify
+  against the official docs and grep the library's source (in `.venv/lib/python*/site-packages/<lib>`
+  or upstream repo via WebFetch) — never guess from training data, never invent signatures. Adopt
+  the library's documented best-practice idiom even if it differs from the existing in-repo shape.
 
 ## Two meta-rules
 
