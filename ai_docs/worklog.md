@@ -22,6 +22,43 @@ Format per entry:
 
 ---
 
+## 2026-05-16 — feature 004 (pyimgui → imgui-bundle migration) PLAN-LOCKED, ready to implement
+- Spec: `ai_docs/features/004_imgui_bundle_migration.md` — large feature, high blast radius.
+  9 locked design decisions, every API choice citation-verified against official imgui-bundle
+  source (the pyi stub at github.com/pthom/imgui_bundle and python_backends/ source files).
+- Process so far: 2 research rounds (call inventory + integration layer) → 2 spike rounds
+  (5 UNCONFIRMED items resolved + bundled-addons audit) → spec draft → plan-lock with user →
+  pre-impl review round 1 (2 reviewers parallel, SHIP-WITH-EDITS, ~10 findings) → convergence
+  iter2 (1 NEW BLOCKER caught — `text_colored` arg-swap missed by 3 prior passes) → iter3
+  (file-count typo + 2 MAJOR clarifications) → loop converged PASS. The new global
+  "convergence loop" rule earned its keep on the `text_colored` catch specifically.
+- Scope: full pyimgui → imgui-bundle migration + adopt context-manager idiom (`with
+  imgui_ctx.begin_*`) per library's official demos + swap `crossfiledialog` →
+  `imgui_bundle.portable_file_dialogs` + aggressive strip of 8 imgui-related `# type: ignore`
+  (12 non-imgui markers stay untouched per Decision 8 scoping). 322 imgui calls across 15
+  files. Multi-day work.
+- Out of scope: `hello_imgui` boot/utilities (manual loop preserved); all other addons
+  (markdown, implot, imspinner, knobs, node-editor, etc. evaluated and rejected); custom
+  notifications class (44 LOC homegrown, no swap target).
+- Branch strategy (explicit override of repo's "current branch" default): work on
+  `feature/imgui-bundle-migration`. Squash-merge to master at completion. Rebase on
+  conflict during impl.
+- Pre-impl validation steps captured in spec (0a, 0b, 0c). **Step 0a baseline ALREADY
+  captured** at `/tmp/smoke_baseline_pyimgui.log` (242 bytes, exit 0, "200 frames, 2 nodes").
+  If the `/tmp/` file is missing when impl resumes, spec step 0a has the recovery procedure
+  (re-capture from master via git stash + checkout dance).
+- Future work parked in spec out-of-scope + filed as sanitize-time deferral: adopt
+  `hello_imgui.apply_theme()` utilities when the planned UI/UX refactor with custom themes
+  starts. `imgui-knobs` deferred for the same reason.
+- refs: working tree (uncommitted spec + this worklog entry).
+- open thread: **fresh agent picks up at task #25 — create `feature/imgui-bundle-migration`
+  branch off master, then execute the spec.** Sub-commits should be organized by logical
+  group (boot → frame loop → flags & inputs → widgets → popups → tabs → file dialogs →
+  cleanup) per Decision 9. Each commit aims to keep `make smoke` green where possible.
+  After implementation: 2-3 post-impl reviewers in parallel (architecture + correctness +
+  spec-fidelity, since this is high-blast-radius), full 13-step manual UX sweep, sanitize,
+  squash-merge.
+
 ## 2026-05-16 — feature 003 (ModelBox removal) IMPLEMENTED
 - Spec: `ai_docs/features/003_modelbox_removal.md`. Goal: wipe all ModelBox integration
   (HTTP client, settings UI, app-state fields, dependency). Clean slate, no compat shims.
