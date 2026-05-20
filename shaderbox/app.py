@@ -330,7 +330,11 @@ class App:
         self.flush_current_editor()
 
         if self.current_node_id:
-            self.save_ui_node(self.ui_nodes[self.current_node_id])
+            try:
+                self.save_ui_node(self.ui_nodes[self.current_node_id])
+            except Exception as e:
+                logger.error(f"Failed to save current node: {e}")
+                self.notifications.push(f"Save failed: {e!s}", COLOR.STATE_ERROR[:3])
 
         for eid in self.exporter_registry.ids():
             exporter = self.exporter_registry.get(eid)

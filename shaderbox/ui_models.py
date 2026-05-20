@@ -8,7 +8,7 @@ import moderngl
 from imgui_bundle import imgui, imgui_ctx
 from loguru import logger
 from OpenGL.GL import GL_SAMPLER_2D
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, ValidationError, model_validator
 
 from shaderbox.core import Node
 from shaderbox.media import MediaDetails, MediaWithTexture
@@ -160,8 +160,12 @@ class UIAppState(BaseModel):
           3. drop modelbox_url, media_model_idx (feature 003)
           4. drop text_editor_cmd (feature 006 — external editor removed)
         """
-        with Path(file_path).open("r") as f:
-            data = json.load(f)
+        try:
+            with Path(file_path).open("r") as f:
+                data = json.load(f)
+        except (OSError, json.JSONDecodeError) as e:
+            logger.error(f"Unreadable app_state ({e}); falling back to defaults")
+            return cls()
 
         if any(key.startswith("tg_") for key in data):
             telegram_config: dict[str, Any] = {}
@@ -189,7 +193,11 @@ class UIAppState(BaseModel):
         data.pop("media_model_idx", None)
         data.pop("text_editor_cmd", None)
 
-        return cls(**data)
+        try:
+            return cls(**data)
+        except ValidationError as e:
+            logger.error(f"Incompatible app_state ({e}); falling back to defaults")
+            return cls()
 
 
 class UINode(BaseModel):
@@ -361,7 +369,11 @@ def load_nodes_from_dir(root_dir: Path) -> dict[str, UINode]:
     node_dirs = sorted(root_dir.iterdir(), key=lambda x: x.stat().st_ctime)
 
     for node_dir in node_dirs:
-        if node_dir.is_dir():
+        if not node_dir.is_dir():
+            continue
+        try:
             ui_nodes[node_dir.name] = load_node_from_dir(node_dir)
+        except Exception as e:
+            logger.error(f"Skipping unreadable node '{node_dir.name}': {e}")
 
     return ui_nodes

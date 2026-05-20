@@ -152,9 +152,16 @@ class Video(MediaWithTexture):
     def __init__(self, file_path: PathLike) -> None:
         self._cap = cv2.VideoCapture(str(file_path))
 
+        if not self._cap.isOpened():
+            raise ValueError(
+                f"Could not open video (unsupported or corrupt): {file_path}"
+            )
+
         width = int(self._cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         fps = int(self._cap.get(cv2.CAP_PROP_FPS))
+        if fps <= 0:
+            raise ValueError(f"Video reports no frame rate (corrupt?): {file_path}")
         file_size = Path(file_path).stat().st_size
 
         self._details = MediaDetails(

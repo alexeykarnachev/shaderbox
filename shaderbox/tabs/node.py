@@ -23,8 +23,13 @@ def draw(app: App) -> None:
 
     imgui.push_style_color(imgui.Col_.text, COLOR.FG_DIM)
     if imgui.selectable(str(local_file_path), False)[0]:
-        pyperclip.copy(str(full_file_path))
-        app.notifications.push("Copied to clipboard!")
+        try:
+            pyperclip.copy(str(full_file_path))
+            app.notifications.push("Copied to clipboard!")
+        except pyperclip.PyperclipException:
+            app.notifications.push(
+                "No clipboard backend (install xclip or xsel)", COLOR.STATE_ERROR[:3]
+            )
     imgui.pop_style_color()
 
     imgui.spacing()
