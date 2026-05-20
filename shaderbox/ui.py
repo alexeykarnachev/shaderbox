@@ -190,10 +190,7 @@ def update_and_draw(app: App) -> None:
 def _draw_splitter(app: App, total_width: float, height: float) -> None:
     imgui.invisible_button("##editor_splitter", imgui.ImVec2(_SPLITTER_W, height))
     if imgui.is_item_hovered() or imgui.is_item_active():
-        # glfw cursor, not imgui.set_mouse_cursor — the glfw backend ignores imgui's
-        # requested cursor (see conventions.md ## Known quirks). code_tab.draw runs
-        # earlier in the frame and resets the cursor to None, so this override sticks
-        # only while the divider is hovered/dragged.
+        # glfw cursor — imgui cursors are no-op in this backend (conventions.md ## Known quirks)
         glfw.set_cursor(app.window, app.resize_ew_cursor)
     if imgui.is_item_active():
         delta_x = imgui.get_io().mouse_delta.x

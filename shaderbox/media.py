@@ -148,7 +148,7 @@ class Image(MediaWithTexture):
 
 
 class Video(MediaWithTexture):
-    def __init__(self, file_path: PathLike):
+    def __init__(self, file_path: PathLike) -> None:
         self._cap = cv2.VideoCapture(str(file_path))
 
         width = int(self._cap.get(cv2.CAP_PROP_FRAME_WIDTH))

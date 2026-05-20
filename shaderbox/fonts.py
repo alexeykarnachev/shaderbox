@@ -14,7 +14,7 @@ from shaderbox.constants import (
 
 
 class Font:
-    def __init__(self, file_path: Path | str, size: int):
+    def __init__(self, file_path: Path | str, size: int) -> None:
         face = freetype.Face(str(file_path))
         face.set_pixel_sizes(0, size)  # Set font height to 'size' pixels
 

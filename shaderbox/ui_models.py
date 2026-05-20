@@ -347,7 +347,6 @@ def load_node_from_dir(node_dir: Path) -> UINode:
     filtered_ui_state.setdefault("ui_name", dir_name)
     ui_state = UINodeState(**filtered_ui_state)
 
-    # Import UINode here to avoid circular import
     return UINode(
         id=dir_name,
         node=node,

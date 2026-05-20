@@ -44,9 +44,7 @@ def _hex(h: str, a: float = 1.0) -> tuple[float, float, float, float]:
     return (r, g, b, a)
 
 
-# Background ramp shifted darker (gruvbox-hard, deepened one notch). The app bg
-# is now #1d2021 (was #282828); a near-black floor (#161819) backs surfaces.
-# fg_* text ramp + accents unchanged.
+# Gruvbox-hard palette: near-black floor (bg_0h) backs surfaces, app bg is bg_0
 _P: dict[str, tuple[float, float, float, float]] = {
     "bg_0h": _hex("#161819"),
     "bg_0": _hex("#1d2021"),

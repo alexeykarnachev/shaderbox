@@ -15,11 +15,7 @@ def draw_editor_settings(app: App) -> None:
 
     with imgui_ctx.begin_popup_modal(_LABEL) as popup:
         if popup.visible and not _draw_body(app):
-            # Apply ONLY on close. Calling the editor's set_*() methods while this
-            # modal is open corrupts its glyph metrics and FPE-crashes the editor's
-            # next render() (imgui 1.92 dynamic-atlas interaction). So we mutate the
-            # plain settings model live in the popup, but push it to the TextEditor
-            # instances only once, here, after the modal is dismissed.
+            # Apply on close only — set_*() while the modal is open FPE-crashes the editor (conventions.md ## Known quirks)
             app.apply_editor_settings()
             app.is_editor_settings_open = False
             imgui.close_current_popup()
@@ -45,9 +41,9 @@ def _draw_body(app: App) -> bool:
     settings.font_size = imgui.drag_int(
         "Font size", settings.font_size, v_min=8, v_max=48
     )[1]
-    settings.tab_size = imgui.drag_int(
-        "Tab size", settings.tab_size, v_min=1, v_max=8
-    )[1]
+    settings.tab_size = imgui.drag_int("Tab size", settings.tab_size, v_min=1, v_max=8)[
+        1
+    ]
     settings.line_spacing = imgui.drag_float(
         "Line spacing", settings.line_spacing, v_min=1.0, v_max=2.0, v_speed=0.01
     )[1]

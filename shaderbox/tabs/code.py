@@ -36,11 +36,7 @@ def draw(app: App) -> None:
     settings = app.app_state.editor_settings
     imgui.push_font(app.font_14, float(settings.font_size))
 
-    # imgui_color_text_edit's render() raises a floating-point exception on any frame
-    # a popup is active (its glyph-metric divisor goes to zero while the editor window
-    # is not focused — see todo.md BLOCKER). While a popup is open, show a read-only
-    # plain-text snapshot of the source instead so the code stays visible; swap back to
-    # the live syntax-highlighted editor once the popup closes.
+    # render() FPEs while a popup is open (conventions.md ## Known quirks) — show a read-only snapshot instead
     if app.any_popup_open():
         glfw.set_cursor(app.window, None)
         _draw_code_snapshot(editor.get_text())
@@ -52,8 +48,7 @@ def draw(app: App) -> None:
         )
         hovering = imgui.is_mouse_hovering_rect(editor_pos, editor_max)
 
-        # Ctrl+scroll over the editor changes the font size. Read + consume the wheel
-        # BEFORE render() so the editor doesn't also scroll on the same event.
+        # Consume the Ctrl+scroll wheel BEFORE render() so the editor doesn't also scroll on it
         io = imgui.get_io()
         if hovering and io.key_ctrl and io.mouse_wheel != 0.0:
             new_size = settings.font_size + int(io.mouse_wheel)
@@ -62,9 +57,7 @@ def draw(app: App) -> None:
 
         editor.render("##glsl_editor", size=editor_size)
 
-        # The editor doesn't register as a hoverable imgui item (is_item_hovered is
-        # always False after render), and imgui-bundle's glfw backend ignores imgui's
-        # requested cursor, so drive the glfw cursor directly.
+        # glfw cursor driven directly — editor isn't a hoverable imgui item and imgui cursors are no-op here (conventions.md ## Known quirks)
         glfw.set_cursor(app.window, app.ibeam_cursor if hovering else None)
 
     imgui.pop_font()

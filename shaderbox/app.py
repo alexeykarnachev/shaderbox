@@ -62,10 +62,7 @@ class App:
         self.window = window
         self.imgui_renderer = GlfwRenderer(window)
 
-        # imgui-bundle's glfw backend doesn't sync imgui's requested mouse cursor to
-        # the OS, so we drive the glfw cursor ourselves (the editor wants an I-beam
-        # over its text area; the split divider wants a resize cursor — see
-        # tabs/code.py and ui.py::_draw_splitter).
+        # glfw cursors driven directly — imgui cursors are no-op in this backend (conventions.md ## Known quirks)
         self.ibeam_cursor = glfw.create_standard_cursor(glfw.IBEAM_CURSOR)
         self.resize_ew_cursor = glfw.create_standard_cursor(glfw.RESIZE_EW_CURSOR)
 
@@ -268,11 +265,7 @@ class App:
 
         node = self.ui_nodes[node_id].node
         node.release_program(editor.get_text())
-        # Re-render immediately: release_program frees the node's GL program, but the
-        # freed program stays GL-current until something binds a new one. Without this
-        # render, the imgui renderer (later in the same frame) captures the deleted
-        # program as last_program and its glUseProgram() restore crashes with GLError
-        # 1281. Re-rendering binds a fresh valid program first.
+        # Re-render to bind a valid program — a freed program left GL-current crashes the imgui renderer's restore (GLError 1281)
         node.render()
         self.editor_saved_undo[node_id] = editor.get_undo_index()
 

@@ -102,7 +102,7 @@ class Node:
         cls,
         node_dir: Path | str,
         gl: moderngl.Context | None = None,
-    ) -> tuple["Node", float, dict]:
+    ) -> tuple["Node", float, dict[str, Any]]:
         node_dir = Path(node_dir)
         with (node_dir / "node.json").open() as f:
             metadata = json.load(f)
@@ -169,11 +169,7 @@ class Node:
         self.program = None
         self.vbo = None
         self.vao = None
-        # Unbind: releasing the program leaves its now-deleted id as GL_CURRENT_PROGRAM.
-        # If nothing rebinds before the imgui renderer runs (e.g. a save whose new
-        # source fails to compile, so render() can't recompile), the renderer's
-        # end-of-frame glUseProgram(last_program) restore hits the deleted id ->
-        # GLError 1281. Binding 0 keeps the current program valid in all cases.
+        # Bind 0 — a deleted program left GL-current crashes the imgui renderer's end-of-frame restore (GLError 1281)
         glUseProgram(0)
 
     def release(self) -> None:
