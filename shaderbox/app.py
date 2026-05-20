@@ -41,7 +41,7 @@ class App:
 
         monitor = glfw.get_primary_monitor()
         video_mode = glfw.get_video_mode(monitor)
-        window_width = video_mode.size[0]
+        window_width = video_mode.size[0] // 2
         window_height = video_mode.size[1]
 
         window = glfw.create_window(
@@ -53,7 +53,7 @@ class App:
         )
 
         glfw.make_context_current(window)
-        glfw.set_window_pos(window, 0, 0)
+        glfw.set_window_pos(window, window_width, 0)
 
         imgui.create_context()
         apply_theme(imgui.get_style())

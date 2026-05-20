@@ -22,6 +22,39 @@ Format per entry:
 
 ---
 
+## 2026-05-20 — feature 005 LAYOUT reverted; gruvbox theme kept
+- User reviewed the running app side-by-side with `ai_docs/design/prototype.html`
+  and rejected the layout (feature 005's wide-screen 50/50 split + editor
+  placeholder + bottom status bar). A follow-on attempt to match the prototype's
+  right-pane layout (feature 006, branch `feature/ui-redesign-realize`) was also
+  rejected before merge.
+- Resolution: keep the gruvbox **theme + token sweep** (it refines the code —
+  every color/size now flows through `shaderbox/theme.py`), revert only the
+  **layout** back to the feature-004 shape (image on top, control panel below
+  with node-grid-left + node-settings-tabs-right; half-monitor window;
+  top-right notification overlay).
+- Mechanics: restored `ui.py` + `notifications.py` from feature 004 (`41f2737`),
+  reverted `app.py` window geometry to half-monitor, then re-applied the token
+  sweep onto those 3 files. The other 11 feature-005 files (theme.py + 10
+  token-only swaps in widgets/popups/tabs/exporters/ui_models) kept as-is.
+  Net diff vs feature 005: 3 files, layout-only.
+- `theme.py` (`apply_theme` + `COLOR`/`SIZE`/`SPACE` bags) stays. `app.py`
+  still calls `apply_theme(imgui.get_style())` at boot, so the app is
+  gruvbox-skinned with the OLD layout.
+- The unmerged `feature/ui-redesign-realize` branch (feature 006 — horizontal
+  node strip, type-pill uniforms, right-pane-only) is abandoned. Its spec
+  (`ai_docs/features/006_ui_redesign_realize.md`) and the prototype archive
+  stay on disk for reference but the code is not merged.
+- refs: branch `feature/keep-theme-revert-layout` (this work), to squash-merge
+  to master. `make check` 0 errors, `make smoke` 200 frames exit 0.
+- open thread: **gruvbox theme is live on the OLD (feature-004) layout.** The
+  designer's prototype layout is shelved — if revisited, start fresh from
+  `ai_docs/design/prototype.html` as the visual source-of-truth (don't
+  paraphrase via SPEC.md prose; that's what caused the two failed attempts).
+  features 007-009 deferrals in `todo.md` (embedded editor / error banner /
+  Tweaks panel) all assumed the new layout — re-scope them if the layout is
+  ever revisited.
+
 ## 2026-05-16 — feature 005 (UI/UX redesign foundation, PRs 1-4) IMPLEMENTED
 - Spec: `ai_docs/features/005_ui_redesign_foundation.md`. Squash-merged from
   `feature/ui-redesign-foundation` (7 sub-commits) into master. Implements the
