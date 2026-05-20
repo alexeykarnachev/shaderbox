@@ -269,7 +269,7 @@ def apply_theme(
     style.tab_rounding = float(rd["tab"])
 
     style.window_border_size = 1.0
-    style.child_border_size = 0.0
+    style.child_border_size = 1.0
     style.frame_border_size = 0.0
     style.popup_border_size = 1.0
     style.tab_border_size = 0.0
