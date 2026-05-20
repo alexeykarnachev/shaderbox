@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, TypeVar
 
+import imageio_ffmpeg
 import telegram as tg
 from imgui_bundle import imgui
 from loguru import logger
@@ -313,7 +314,7 @@ class TelegramExporter(Exporter):
             scale = f"-2:{_TG_VIDEO_MAX_DIM}"
 
         cmd: list[str] = [
-            "ffmpeg",
+            imageio_ffmpeg.get_ffmpeg_exe(),
             "-y",
             "-i",
             str(artifact.path),
