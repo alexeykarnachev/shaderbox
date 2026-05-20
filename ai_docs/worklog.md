@@ -22,6 +22,68 @@ Format per entry:
 
 ---
 
+## 2026-05-20 — feature 006 (inline GLSL editor) implemented; review-hardened
+- Inline `imgui_color_text_edit` editor, syntax-highlighted GLSL, edits the current node's
+  `shader.frag.glsl`. Edit + Ctrl+S saves to disk + hot-reloads. The external-editor mechanism
+  was REMOVED entirely (see cleanup below) — the inline editor fully replaces it.
+- decisions:
+  - **Layout: editor occupies the LEFT half of the main window, app on the RIGHT, draggable
+    splitter between** (`app_state.editor_split_fraction`, persisted). This SUPERSEDED the
+    plan-locked "Code tab in the node-settings tab bar" — the user saw the cramped tab version
+    running and rejected it ("the code should occupy the left half... a separate large tab"). A
+    deliberate revival of a left-editor split (rejected twice before for the *prototype* layout)
+    — recorded in spec Decision 1 + `conventions.md` as a conscious reversal.
+  - Editor state on `App` (`editors` + `editor_saved_undo` dicts); disk-wins on external edit;
+    `app.save()` flushes the dirty editor (via `release_program`) BEFORE `UINode.save` writes
+    the file, else the save clobbers the edit. (`conventions.md ## Design decisions`.)
+  - Palette: built-in `get_dark_palette()` — a custom gruvbox palette is impossible (no Python
+    write path to `TextEditor.Palette`); deferred in `todo.md`. User signed off.
+  - Fixed a latent `UINode.save` bug surfaced by the inline-save path: it captured `mtime`
+    inside the `with open()` block (before close-flush bumped it), so the watcher double-reloaded
+    one frame after every save. Moved the `lstat` after the block.
+  - **Editor visual options**: whitespace markers OFF by default (the thing the user noticed);
+    an "Options" button in the editor toolbar opens a popup (`popups/editor_settings.py`)
+    exposing whitespace / line-numbers / brackets / font-size / tab-size / line-spacing, persisted
+    in `UIAppState.editor_settings` (new `EditorSettings` model). Applied to all editor instances
+    via `app.apply_editor_settings()` ONLY on popup close (Close button + Esc) — NOT live, because
+    calling the editor's `set_*()` while a modal is open FPE-crashes it (see `todo.md` DEFERRAL).
+    Also: Ctrl+scroll over the editor changes font size live. A true gruvbox palette stays
+    impossible (read-only Palette), so colorscheme stays built-in dark — re-confirmed.
+  - **FPE workarounds (DEFERRAL in `todo.md`)**: `imgui_color_text_edit.render()` FPEs on a frame
+    a popup is active. Two guards: (1) `tabs/code.py` shows a dimmed plain-text snapshot instead
+    of `editor.render()` while `any_popup_open()` (so the code stays visible behind the modal);
+    (2) editor settings apply on-close only (above). Both cost a feature (no syntax colors behind
+    a modal; no live-preview) until upstream fixes the C++ div-by-zero.
+  - **GL-crash on save** (the one the user actually hit): `release_program` left the node's freed
+    GL program as `GL_CURRENT_PROGRAM`; the imgui renderer's end-of-frame `glUseProgram` restore
+    hit the deleted id → GLError 1281. Fixed in `core.py::release_program` with `glUseProgram(0)`
+    after release (covers both the recompile-success and recompile-fail/broken-GLSL save paths);
+    `flush_current_editor` also re-renders to rebind on success.
+  - **Removed the external-editor mechanism** (user: "cleanup this legacy shit"): deleted
+    `text_editor_cmd` (field + Settings panel field + its tooltip), `App.edit_current_node_fs_file`,
+    the `Ctrl+E` hotkey, and the "Pop out" button. Added a `load_and_migrate` step (gen 4) that
+    drops `text_editor_cmd` from existing app_state.json (the model is `extra="forbid"`). The
+    Settings popup now holds only Global target FPS. "Open dir" remains for manual file access.
+  - Cursor: imgui-bundle's glfw backend ignores `imgui.set_mouse_cursor`, so the editor (I-beam)
+    and the splitter (resize-EW) drive the OS cursor directly via `glfw.set_cursor(window, ...)`
+    with glfw standard cursors stored on `App`.
+- verification: pre-impl + post-impl review agents over several rounds (convergence — last round
+  caught the save-broken-GLSL crash edge + the dead splitter cursor, both fixed). Headless
+  clobber+lifecycle test (9 invariants) PASS; split layout + options popup + code-behind-modal
+  snapshot verified via screenshot; broken-GLSL save survives a real visible-window run. `make
+  check` 0 errors, `make smoke` 200 frames. NOTE: the original GLError-1281 save crash could not
+  be reproduced headlessly (GL id-reuse is nondeterministic), so the `glUseProgram(0)` fix is
+  sound-by-construction, not red→green-verified — needs a real-session confirm.
+- refs: NOT yet committed (working tree). Touches `app.py`, `ui.py`, `ui_models.py`,
+  `core.py` (the `glUseProgram(0)` GL-crash fix), `hotkeys.py`, `tabs/code.py` (NEW),
+  `tabs/node.py`, `popups/editor_settings.py` (NEW), `popups/settings.py`, + docs.
+  Spec: `ai_docs/features/006_inline_editor.md`.
+- open thread: **commit feature 006** (user hasn't asked yet). Then optionally the remaining
+  manual checks that need keystroke injection (no xdotool in this env): live splitter drag,
+  Ctrl+S round-trip in the GUI, node-switch edit-state survival — the logic is headless-verified
+  but a human eyeballing the running app would close them. Backlog after: `todo.md` deferrals
+  (gruvbox editor palette, inline shader-error display, ui.py/app.py split).
+
 ## 2026-05-20 — theme darkened; embedded-editor feature is next
 - Two small theme follow-ups after the layout revert (both on master, pushed):
   - `6cad89f` — restored `style.child_border_size = 1.0` in `theme.py`. The gruvbox

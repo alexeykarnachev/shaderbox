@@ -31,10 +31,6 @@ def draw(app: App) -> None:
     ui_node.ui_state.ui_name = imgui.input_text("Name", ui_node.ui_state.ui_name)[1]
     imgui.spacing()
 
-    if imgui.button("Edit code", size=(SIZE.BTN_SM_W, 0)):
-        app.edit_current_node_fs_file()
-
-    imgui.same_line()
     if imgui.button("Open dir", size=(SIZE.BTN_SM_W, 0)):
         app.open_current_node_dir()
 

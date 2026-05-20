@@ -13,8 +13,6 @@ def process_hotkeys(app: App) -> None:
         app.open_project()
     if io.key_ctrl and imgui.is_key_pressed(imgui.Key.s):
         app.save()
-    if io.key_ctrl and imgui.is_key_pressed(imgui.Key.e):
-        app.edit_current_node_fs_file()
     if io.key_ctrl and imgui.is_key_pressed(imgui.Key.d):
         app.delete_current_node()
     if io.key_ctrl and imgui.is_key_pressed(imgui.Key.n):
@@ -26,8 +24,12 @@ def process_hotkeys(app: App) -> None:
     if imgui.is_key_pressed(imgui.Key.escape, repeat=False):
         if not app.any_popup_open():
             glfw.set_window_should_close(app.window, True)
+        was_editor_settings_open = app.is_editor_settings_open
         app.is_node_creator_open = False
         app.is_settings_open = False
+        app.is_editor_settings_open = False
+        if was_editor_settings_open:
+            app.apply_editor_settings()
 
     if not imgui.is_any_item_active():
         if not app.any_popup_open():

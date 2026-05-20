@@ -1,7 +1,7 @@
 from imgui_bundle import imgui, imgui_ctx
 
 from shaderbox.app import App
-from shaderbox.theme import COLOR, SIZE
+from shaderbox.theme import SIZE
 
 _LABEL = "Settings##popup"
 
@@ -30,48 +30,6 @@ def _draw_body(app: App) -> bool:
     imgui.spacing()
     imgui.separator()
     imgui.spacing()
-
-    width = imgui.get_content_region_avail().x
-    app.app_state.text_editor_cmd = imgui.input_text(
-        "Text editor cmd", app.app_state.text_editor_cmd
-    )[1]
-
-    imgui.same_line()
-    imgui.set_cursor_pos_x(width)
-    imgui.text_colored(COLOR.FG_DIM, "?")
-    if imgui.is_item_hovered():
-        with imgui_ctx.begin_tooltip():
-            imgui.text(
-                "This command will be executed when you click 'Edit code' (CTRL+E)"
-            )
-            imgui.text(
-                "The '{file_path}' placeholder will be replaced with the actual shader file path."
-            )
-            imgui.spacing()
-            imgui.text("Examples:")
-            imgui.text("Linux:")
-            imgui.text("  code {file_path}")
-            imgui.text("  gnome-terminal -- nvim {file_path}")
-            imgui.text("  gnome-terminal -- nano {file_path}")
-            imgui.spacing()
-            imgui.text("Windows:")
-            imgui.text("  code {file_path}")
-            imgui.text("  notepad++ {file_path}")
-            imgui.text("  cmd /c start nvim {file_path}")
-            imgui.new_line()
-            imgui.text(
-                "Alternatively, you can click the 'Open dir' button in the editor"
-            )
-            imgui.text(
-                "to open the node directory and manually open the shader.frag.glsl file."
-            )
-            imgui.spacing()
-
-    imgui.spacing()
-    imgui.separator()
-    imgui.spacing()
-
-    imgui.new_line()
 
     is_keep_opened: bool = True
     if imgui.button("Close", size=(SIZE.BTN_SM_W, 0)):

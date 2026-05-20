@@ -9,7 +9,7 @@ import imageio
 import moderngl
 import numpy as np
 from loguru import logger
-from OpenGL.GL import GL_SAMPLER_2D
+from OpenGL.GL import GL_SAMPLER_2D, glUseProgram
 
 from shaderbox.constants import (
     DEFAULT_CANVAS_SIZE,
@@ -169,6 +169,12 @@ class Node:
         self.program = None
         self.vbo = None
         self.vao = None
+        # Unbind: releasing the program leaves its now-deleted id as GL_CURRENT_PROGRAM.
+        # If nothing rebinds before the imgui renderer runs (e.g. a save whose new
+        # source fails to compile, so render() can't recompile), the renderer's
+        # end-of-frame glUseProgram(last_program) restore hits the deleted id ->
+        # GLError 1281. Binding 0 keeps the current program valid in all cases.
+        glUseProgram(0)
 
     def release(self) -> None:
         self.release_program()

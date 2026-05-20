@@ -119,6 +119,15 @@ class UINodeState(BaseModel):
     video_to_video_smoothing_sigma: float = 1.0
 
 
+class EditorSettings(BaseModel):
+    show_whitespace: bool = False
+    show_line_numbers: bool = True
+    show_matching_brackets: bool = True
+    font_size: int = 16
+    tab_size: int = 4
+    line_spacing: float = 1.0
+
+
 class UIAppState(BaseModel):
     current_node_id: str = ""
     selected_node_template_id: str = ""
@@ -130,7 +139,8 @@ class UIAppState(BaseModel):
 
     global_target_fps: int = 60
 
-    text_editor_cmd: str = ""
+    editor_split_fraction: float = 0.5
+    editor_settings: EditorSettings = EditorSettings()
 
     model_config = {"extra": "forbid"}
 
@@ -143,11 +153,12 @@ class UIAppState(BaseModel):
     def load_and_migrate(cls, file_path: str | Path) -> Self:
         """Load app state with one-shot key migrations.
 
-        Three migration generations, all idempotent:
+        Four migration generations, all idempotent:
           1. tg_* keys → share_provider_configs.telegram.* (legacy)
           2. share_provider_configs → exporter_settings;
              active_share_provider → active_exporter_id (feature 001)
           3. drop modelbox_url, media_model_idx (feature 003)
+          4. drop text_editor_cmd (feature 006 — external editor removed)
         """
         with Path(file_path).open("r") as f:
             data = json.load(f)
@@ -176,6 +187,7 @@ class UIAppState(BaseModel):
 
         data.pop("modelbox_url", None)
         data.pop("media_model_idx", None)
+        data.pop("text_editor_cmd", None)
 
         return cls(**data)
 
@@ -212,7 +224,7 @@ class UINode(BaseModel):
         fs_file_path = dir / "shader.frag.glsl"
         with fs_file_path.open("w") as f:
             f.write(self.node.fs_source)
-            self.mtime = fs_file_path.lstat().st_mtime
+        self.mtime = fs_file_path.lstat().st_mtime
 
         # ----------------------------------------------------------------
         # Save uniforms

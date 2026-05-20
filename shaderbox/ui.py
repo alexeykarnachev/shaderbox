@@ -8,8 +8,10 @@ from loguru import logger
 
 from shaderbox.app import App
 from shaderbox.hotkeys import process_hotkeys
+from shaderbox.popups.editor_settings import draw_editor_settings
 from shaderbox.popups.node_creator import draw_node_creator
 from shaderbox.popups.settings import draw_settings
+from shaderbox.tabs import code as code_tab
 from shaderbox.tabs import node as node_tab
 from shaderbox.tabs import render as render_tab
 from shaderbox.tabs import share as share_tab
@@ -19,6 +21,9 @@ from shaderbox.widgets.node_grid import draw_node_preview_grid
 
 _FONT_14_SIZE = 14.0
 _FONT_18_SIZE = 18.0
+_EDITOR_MIN_W = 320.0
+_APP_PANEL_MIN_W = 360.0
+_SPLITTER_W = 6.0
 _MAIN_WINDOW_FLAGS = (
     imgui.WindowFlags_.no_collapse
     | imgui.WindowFlags_.always_auto_resize
@@ -61,8 +66,10 @@ def update_and_draw(app: App) -> None:
         if fs_file_mtime != app.ui_nodes[name].mtime:
             logger.info(f"Reloading node {name} due to shader file change")
             ui_node = app.ui_nodes[name]
-            ui_node.node.release_program(fs_file_path.read_text())
+            new_source = fs_file_path.read_text()
+            ui_node.node.release_program(new_source)
             ui_node.mtime = fs_file_mtime
+            app.sync_editor_from_disk(name, new_source)
 
     # ----------------------------------------------------------------
     # Render previews
@@ -109,8 +116,6 @@ def update_and_draw(app: App) -> None:
     imgui.set_next_window_size((window_width, window_height))
     imgui.set_next_window_pos((0, 0))
     with imgui_ctx.begin("ShaderBox - UI", flags=_MAIN_WINDOW_FLAGS):
-        control_panel_min_height = SIZE.PANEL_CTRL_MINH
-
         # ------------------------------------------------------------
         # Main menu bar
         if imgui.button("Open project"):
@@ -124,85 +129,39 @@ def update_and_draw(app: App) -> None:
         imgui.text(f"Global FPS: {round(app.global_fps)}")
 
         # ------------------------------------------------------------
-        # Current node image
-        cursor_pos = imgui.get_cursor_screen_pos()
-
-        if app.current_node_id in app.ui_nodes:
-            ui_node = app.ui_nodes[app.current_node_id]
-            min_image_height = 100
-            avail = imgui.get_content_region_avail()
-            max_image_height = max(
-                min_image_height,
-                avail.y - control_panel_min_height - 10,
-            )
-            max_image_width = avail.x
-            image_aspect = np.divide(*ui_node.node.canvas.texture.size)
-            image_width = min(max_image_width, max_image_height * image_aspect)
-            image_height = min(max_image_height, max_image_width / image_aspect)
-
-            has_error = ui_node.node.shader_error != ""
-            imgui.image_with_bg(
-                imgui.ImTextureRef(ui_node.node.canvas.texture.glo),
-                image_size=(image_width, image_height),
-                uv0=(0, 1),
-                uv1=(1, 0),
-                tint_col=(0.2, 0.2, 0.2, 1.0) if has_error else (1.0, 1.0, 1.0, 1.0),
-            )
-
-            if has_error:
-                draw_list = imgui.get_window_draw_list()
-                text_x = cursor_pos.x + float(SPACE.MD)
-                text_y = cursor_pos.y + float(SPACE.MD)
-                draw_list.add_text(
-                    (text_x, text_y),
-                    imgui.color_convert_float4_to_u32(COLOR.STATE_ERROR),
-                    ui_node.node.shader_error,
-                )
-        else:
-            avail = imgui.get_content_region_avail()
-            image_width = avail.x
-            image_height = max(avail.y - control_panel_min_height, 400)
-
-            message = "To create a new node, press Ctrl+N"
-            text_size = imgui.calc_text_size(message)
-            text_x = cursor_pos.x + (image_width - text_size.x) / 2
-            text_y = cursor_pos.y + (image_height - text_size.y) / 2
-
-            draw_list = imgui.get_window_draw_list()
-            draw_list.add_text(
-                (text_x, text_y),
-                imgui.color_convert_float4_to_u32(COLOR.STATE_WARN),
-                message,
-            )
-
-        imgui.set_cursor_screen_pos(
-            (cursor_pos.x, cursor_pos.y + image_height + float(SPACE.MD))
+        # Left editor / right app split
+        split_region = imgui.get_content_region_avail()
+        editor_width = max(
+            _EDITOR_MIN_W,
+            min(
+                split_region.x - _APP_PANEL_MIN_W,
+                split_region.x * app.app_state.editor_split_fraction,
+            ),
         )
 
-        # ------------------------------------------------------------
-        # Control panel
-        region = imgui.get_content_region_avail()
-        control_panel_height = max(control_panel_min_height, region.y)
-        control_panel_width = region.x
         with imgui_ctx.begin_child(
-            "control_panel",
-            size=imgui.ImVec2(control_panel_width, control_panel_height),
+            "code_editor", size=imgui.ImVec2(editor_width, split_region.y)
         ):
-            node_preview_width = control_panel_width / 2.6
-            draw_node_preview_grid(app, node_preview_width, control_panel_height)
-            imgui.same_line()
+            code_tab.draw(app)
+
+        imgui.same_line(spacing=0.0)
+        _draw_splitter(app, split_region.x, split_region.y)
+        imgui.same_line(spacing=0.0)
+
+        with imgui_ctx.begin_child("app_panel", size=imgui.ImVec2(0, split_region.y)):
             try:
-                _draw_node_settings(app)
+                _draw_app_panel(app)
             except Exception as e:
-                logger.error(f"Error in node settings: {e}")
+                logger.error(f"Error in app panel: {e}")
                 app.notifications.push(
-                    f"Error in node settings: {e!s}", COLOR.STATE_ERROR[:3]
+                    f"Error in app panel: {e!s}", COLOR.STATE_ERROR[:3]
                 )
 
         # ------------------------------------------------------------
         # Popups and notifications
         draw_node_creator(app)
         draw_settings(app)
+        draw_editor_settings(app)
 
         imgui.push_font(app.font_18, _FONT_18_SIZE)
         app.notifications.update_and_draw()
@@ -226,6 +185,101 @@ def update_and_draw(app: App) -> None:
     glfw.swap_buffers(app.window)
 
     app.frame_idx += 1
+
+
+def _draw_splitter(app: App, total_width: float, height: float) -> None:
+    imgui.invisible_button("##editor_splitter", imgui.ImVec2(_SPLITTER_W, height))
+    if imgui.is_item_hovered() or imgui.is_item_active():
+        # glfw cursor, not imgui.set_mouse_cursor — the glfw backend ignores imgui's
+        # requested cursor (see conventions.md ## Known quirks). code_tab.draw runs
+        # earlier in the frame and resets the cursor to None, so this override sticks
+        # only while the divider is hovered/dragged.
+        glfw.set_cursor(app.window, app.resize_ew_cursor)
+    if imgui.is_item_active():
+        delta_x = imgui.get_io().mouse_delta.x
+        if delta_x and total_width > 0.0:
+            fraction = app.app_state.editor_split_fraction + delta_x / total_width
+            app.app_state.editor_split_fraction = max(0.15, min(0.85, fraction))
+
+
+def _draw_app_panel(app: App) -> None:
+    control_panel_min_height = SIZE.PANEL_CTRL_MINH
+
+    # ----------------------------------------------------------------
+    # Current node image
+    cursor_pos = imgui.get_cursor_screen_pos()
+
+    if app.current_node_id in app.ui_nodes:
+        ui_node = app.ui_nodes[app.current_node_id]
+        min_image_height = 100
+        avail = imgui.get_content_region_avail()
+        max_image_height = max(
+            min_image_height,
+            avail.y - control_panel_min_height - 10,
+        )
+        max_image_width = avail.x
+        image_aspect = np.divide(*ui_node.node.canvas.texture.size)
+        image_width = min(max_image_width, max_image_height * image_aspect)
+        image_height = min(max_image_height, max_image_width / image_aspect)
+
+        has_error = ui_node.node.shader_error != ""
+        imgui.image_with_bg(
+            imgui.ImTextureRef(ui_node.node.canvas.texture.glo),
+            image_size=(image_width, image_height),
+            uv0=(0, 1),
+            uv1=(1, 0),
+            tint_col=(0.2, 0.2, 0.2, 1.0) if has_error else (1.0, 1.0, 1.0, 1.0),
+        )
+
+        if has_error:
+            draw_list = imgui.get_window_draw_list()
+            text_x = cursor_pos.x + float(SPACE.MD)
+            text_y = cursor_pos.y + float(SPACE.MD)
+            draw_list.add_text(
+                (text_x, text_y),
+                imgui.color_convert_float4_to_u32(COLOR.STATE_ERROR),
+                ui_node.node.shader_error,
+            )
+    else:
+        avail = imgui.get_content_region_avail()
+        image_width = avail.x
+        image_height = max(avail.y - control_panel_min_height, 400)
+
+        message = "To create a new node, press Ctrl+N"
+        text_size = imgui.calc_text_size(message)
+        text_x = cursor_pos.x + (image_width - text_size.x) / 2
+        text_y = cursor_pos.y + (image_height - text_size.y) / 2
+
+        draw_list = imgui.get_window_draw_list()
+        draw_list.add_text(
+            (text_x, text_y),
+            imgui.color_convert_float4_to_u32(COLOR.STATE_WARN),
+            message,
+        )
+
+    imgui.set_cursor_screen_pos(
+        (cursor_pos.x, cursor_pos.y + image_height + float(SPACE.MD))
+    )
+
+    # ----------------------------------------------------------------
+    # Control panel
+    region = imgui.get_content_region_avail()
+    control_panel_height = max(control_panel_min_height, region.y)
+    control_panel_width = region.x
+    with imgui_ctx.begin_child(
+        "control_panel",
+        size=imgui.ImVec2(control_panel_width, control_panel_height),
+    ):
+        node_preview_width = control_panel_width / 2.6
+        draw_node_preview_grid(app, node_preview_width, control_panel_height)
+        imgui.same_line()
+        try:
+            _draw_node_settings(app)
+        except Exception as e:
+            logger.error(f"Error in node settings: {e}")
+            app.notifications.push(
+                f"Error in node settings: {e!s}", COLOR.STATE_ERROR[:3]
+            )
 
 
 def _draw_node_settings(app: App) -> None:

@@ -7,6 +7,7 @@ from typing import Any
 
 import glfw
 from imgui_bundle import imgui
+from imgui_bundle import imgui_color_text_edit as text_edit
 from imgui_bundle import portable_file_dialogs as pfd
 from imgui_bundle.python_backends.glfw_backend import GlfwRenderer
 from loguru import logger
@@ -20,6 +21,7 @@ from shaderbox.notifications import Notifications
 from shaderbox.tabs import share_state
 from shaderbox.theme import COLOR, apply_theme
 from shaderbox.ui_models import (
+    EditorSettings,
     UIAppState,
     UINode,
     UINodeState,
@@ -60,6 +62,13 @@ class App:
         self.window = window
         self.imgui_renderer = GlfwRenderer(window)
 
+        # imgui-bundle's glfw backend doesn't sync imgui's requested mouse cursor to
+        # the OS, so we drive the glfw cursor ourselves (the editor wants an I-beam
+        # over its text area; the split divider wants a resize cursor — see
+        # tabs/code.py and ui.py::_draw_splitter).
+        self.ibeam_cursor = glfw.create_standard_cursor(glfw.IBEAM_CURSOR)
+        self.resize_ew_cursor = glfw.create_standard_cursor(glfw.RESIZE_EW_CURSOR)
+
         self.notifications = Notifications()
 
         self.font_14 = self.get_font(14)
@@ -77,20 +86,35 @@ class App:
 
         self.is_node_creator_open: bool = False
         self.is_settings_open: bool = False
+        self.is_editor_settings_open: bool = False
         self.global_fps = 0.0
+
+        self.editors: dict[str, text_edit.TextEditor] = {}
+        self.editor_saved_undo: dict[str, int] = {}
 
         self._init(project_dir)
 
     def any_popup_open(self) -> bool:
-        return self.is_node_creator_open or self.is_settings_open
+        return (
+            self.is_node_creator_open
+            or self.is_settings_open
+            or self.is_editor_settings_open
+        )
 
     def open_node_creator(self) -> None:
         self.is_node_creator_open = True
         self.is_settings_open = False
+        self.is_editor_settings_open = False
 
     def open_settings(self) -> None:
         self.is_settings_open = True
         self.is_node_creator_open = False
+        self.is_editor_settings_open = False
+
+    def open_editor_settings(self) -> None:
+        self.is_editor_settings_open = True
+        self.is_node_creator_open = False
+        self.is_settings_open = False
 
     @staticmethod
     def _create_dir_if_needed(path: Path | str) -> Path:
@@ -200,27 +224,64 @@ class App:
             size_pixels=size,
         )
 
-    def edit_current_node_fs_file(self) -> None:
-        if not self.current_node_id:
-            logger.warning("Nothing to edit")
+    def get_editor(self, node_id: str) -> text_edit.TextEditor:
+        editor = self.editors.get(node_id)
+        if editor is None:
+            editor = text_edit.TextEditor()
+            editor.set_language(text_edit.TextEditor.Language.glsl())
+            editor.set_palette(text_edit.TextEditor.get_dark_palette())
+            editor.set_text(self.ui_nodes[node_id].node.fs_source)
+            self.editors[node_id] = editor
+            self.editor_saved_undo[node_id] = editor.get_undo_index()
+            self._apply_editor_settings_to(editor)
+        return editor
+
+    def _apply_editor_settings_to(self, editor: text_edit.TextEditor) -> None:
+        settings: EditorSettings = self.app_state.editor_settings
+        editor.set_show_whitespaces_enabled(settings.show_whitespace)
+        editor.set_show_spaces_enabled(settings.show_whitespace)
+        editor.set_show_tabs_enabled(settings.show_whitespace)
+        editor.set_show_line_numbers_enabled(settings.show_line_numbers)
+        editor.set_show_matching_brackets(settings.show_matching_brackets)
+        editor.set_tab_size(settings.tab_size)
+        editor.set_line_spacing(settings.line_spacing)
+
+    def apply_editor_settings(self) -> None:
+        for editor in self.editors.values():
+            self._apply_editor_settings_to(editor)
+
+    def is_current_editor_dirty(self) -> bool:
+        node_id = self.current_node_id
+        editor = self.editors.get(node_id)
+        if editor is None:
+            return False
+        return editor.get_undo_index() != self.editor_saved_undo.get(node_id, 0)
+
+    def flush_current_editor(self) -> None:
+        node_id = self.current_node_id
+        if not node_id:
             return
 
-        fs_file_path = self.nodes_dir / self.current_node_id / "shader.frag.glsl"
-        wd = fs_file_path.parent.parent
+        editor = self.editors.get(node_id)
+        if editor is None or not self.is_current_editor_dirty():
+            return
 
-        cmd = self.app_state.text_editor_cmd
-        cmd = cmd.format(file_path=fs_file_path)
+        node = self.ui_nodes[node_id].node
+        node.release_program(editor.get_text())
+        # Re-render immediately: release_program frees the node's GL program, but the
+        # freed program stays GL-current until something binds a new one. Without this
+        # render, the imgui renderer (later in the same frame) captures the deleted
+        # program as last_program and its glUseProgram() restore crashes with GLError
+        # 1281. Re-rendering binds a fresh valid program first.
+        node.render()
+        self.editor_saved_undo[node_id] = editor.get_undo_index()
 
-        try:
-            subprocess.Popen(
-                cmd.split(),
-                cwd=str(wd),
-                start_new_session=True,
-            )
-        except Exception as e:
-            err = "Failed to open text editor, please setup text editor command in settings"
-            self.notifications.push(err, color=COLOR.STATE_ERROR[:3])
-            logger.error(f"Failed to execute the command {cmd}: {e}")
+    def sync_editor_from_disk(self, node_id: str, source: str) -> None:
+        editor = self.editors.get(node_id)
+        if editor is None:
+            return
+        editor.set_text(source)
+        self.editor_saved_undo[node_id] = editor.get_undo_index()
 
     def open_current_node_dir(self) -> None:
         if not self.current_node_id:
@@ -263,6 +324,8 @@ class App:
         return dir
 
     def save(self) -> None:
+        self.flush_current_editor()
+
         if self.current_node_id:
             self.save_ui_node(self.ui_nodes[self.current_node_id])
 
@@ -314,6 +377,8 @@ class App:
             new_node_id = ""
 
         self.ui_nodes.pop(node_id).node.release()
+        self.editors.pop(node_id, None)
+        self.editor_saved_undo.pop(node_id, None)
         self.set_current_node_id(new_node_id)
         shutil.move(self.nodes_dir / node_id, self.trash_dir / node_id)
 

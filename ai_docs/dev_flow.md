@@ -139,13 +139,15 @@ worklog entry (if even that) + the cold-context glance is enough; for a feature,
 - **`app.py`** — `App` class: state holder + lifecycle (project, GL context, node management,
   popup-state booleans). ~370 lines. No UI drawing. Imported by `ui.py`, `widgets/`, `popups/`,
   `tabs/`.
-- **`ui.py`** — thin entrypoint + orchestrator. ~255 lines. Contains `run(app)`,
-  `update_and_draw(app)` (the imgui frame loop: render gates, main window + image,
-  tab-bar dispatch), `_draw_node_settings(app)` (tab-bar dispatcher), and `main()`. No tab
-  bodies, no widget logic, no hotkey dispatch — those live in `tabs/`, `widgets/`, `popups/`,
-  `hotkeys.py`.
+- **`ui.py`** — thin entrypoint + orchestrator. Contains `run(app)`, `update_and_draw(app)`
+  (the imgui frame loop: render gates + the main-window left/right split — LEFT = code editor
+  via `code_tab.draw`, RIGHT = `_draw_app_panel`), `_draw_splitter(app, ...)` (draggable
+  divider, writes `app_state.editor_split_fraction`), `_draw_app_panel(app)` (render image +
+  control panel), `_draw_node_settings(app)` (Node/Render/Share tab-bar dispatcher), and
+  `main()`. No tab bodies, no widget logic, no hotkey dispatch — those live in `tabs/`,
+  `widgets/`, `popups/`, `hotkeys.py`.
 - **`hotkeys.py`** — `process_hotkeys(app: App)`: glfw poll + imgui input processing + all
-  keyboard shortcut dispatch (Ctrl+O/S/E/D/N, Alt+S, Esc, arrows, Enter). Called from
+  keyboard shortcut dispatch (Ctrl+O/S/D/N, Alt+S, Esc, arrows, Enter). Called from
   `update_and_draw` once per frame.
 - **`ui_models.py`** — pydantic-ish `UINode` / `UINodeState` / `UIUniform` / `UIAppState` + node
   (de)serialization.
@@ -154,15 +156,19 @@ worklog entry (if even that) + the cold-context glance is enough; for a feature,
   (`registry.py`), `TelegramExporter` (`telegram.py` — own worker thread + asyncio loop + sticker
   panel UI). Adding a new exporter: subclass `Exporter`, register in `App.__init__`. The
   thread-affinity contract (worker thread MUST NOT touch moderngl) is enforced by design.
-- **`tabs/`** — tab modules. Each tab is one file with `draw(app: App)` (imgui calls only) and
-  optional `update(app: App)` (pre-imgui GL work). Modules: `node.py`, `render.py`, `share.py`.
-  `share_state.py` holds the share-tab dataclass (`TabState`) separately to keep `app.py` free
-  of cyclic imports (app.py imports `share_state`, NOT `share`).
+- **`tabs/`** — `draw(app: App)`-shaped UI modules (imgui calls only) + optional
+  `update(app: App)` (pre-imgui GL work). Modules: `code.py` (the inline GLSL editor — drawn in
+  the main window's LEFT split, not the node-settings tab bar), `node.py`, `render.py`,
+  `share.py`. `share_state.py` holds the share-tab dataclass (`TabState`) separately to keep
+  `app.py` free of cyclic imports (app.py imports `share_state`, NOT `share`).
 - **`widgets/`** — stateless imgui-drawing functions taking `app: App`. Shape per widget fits its
   job (no shared contract). Modules: `details.py`, `media_ops.py`, `node_grid.py`, `uniform.py`.
 - **`popups/`** — popup `draw(app: App)` free functions. Open/closed state lives on `App` as
-  `is_node_creator_open` / `is_settings_open` (helpers `app.open_node_creator()` /
-  `app.open_settings()` enforce mutual exclusion). Modules: `node_creator.py`, `settings.py`.
+  `is_node_creator_open` / `is_settings_open` / `is_editor_settings_open` (helpers
+  `app.open_node_creator()` / `app.open_settings()` / `app.open_editor_settings()` enforce
+  mutual exclusion). Modules: `node_creator.py`, `settings.py`, `editor_settings.py` (the inline
+  editor's visual options — whitespace / line-numbers / brackets / font-size / tab-size /
+  line-spacing, applied via `app.apply_editor_settings()` on popup close).
 - **`fonts.py`** — freetype → GL atlas. **`ui_utils.py`** / **`constants.py`** / **`notifications.py`** — helpers.
 - **`scripts/smoke.py`** — headless smoke test (see `## Recipes > make smoke`). Not part of
   `shaderbox/` proper; one-off script that imports `App` + `update_and_draw` and runs frames in

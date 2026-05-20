@@ -28,6 +28,25 @@ Format:
 
 ---
 
+## [DEFERRAL] imgui_color_text_edit render() FPE — worked around with two guards
+- **Trigger:** if imgui-bundle fixes the upstream glyph-metric div-by-zero (or you upgrade and
+  the crash no longer reproduces), DROP both guards below and restore the lost features
+  (live syntax-highlighted editor behind modals; live-preview while changing editor options).
+  Also: if you touch `tabs/code.py`'s render gate or `popups/editor_settings.py`'s apply
+  timing, re-verify the crash stays suppressed.
+- The bug (NOT fixable from Python — it's a div-by-zero inside imgui-bundle's C++
+  `TextEditor::Render`, by `glyphSize.x/.y` from `ImGui::GetFontSize()` + the 1.92 dynamic font
+  atlas, when the editor window isn't focused). Two triggers, two workarounds in place:
+  1. Rendering the editor on a frame a popup is active → `tabs/code.py` shows a read-only
+     plain-text snapshot (`_draw_code_snapshot`) instead of `editor.render()` while
+     `any_popup_open()`. **Lost feature:** no syntax colors / cursor behind a modal.
+  2. Calling the editor's `set_*()` setters while a modal is open corrupts its glyph metrics →
+     next render FPEs. `popups/editor_settings.py` applies settings ONLY on close (Close button
+     + `hotkeys.py` Esc path), never live. **Lost feature:** no live-preview while dragging the
+     options sliders.
+- Reproduces only in the full app (bisected via headless `update_and_draw` cycles), on the
+  latest imgui-bundle (1.92.801). Surfaced building the editor-options popup (feature 006).
+
 ## [DEFERRAL] gruvbox palette match for the inline editor
 - **Trigger:** when imgui-bundle exposes a writable `imgui_color_text_edit.TextEditor.Palette`
   (per-slot setter or list-based constructor), OR if the built-in dark palette's mismatch with
