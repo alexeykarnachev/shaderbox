@@ -11,7 +11,6 @@ dependencies = [
     "loguru>=0.7.3",
     "moderngl>=5.12.0",
     "numpy>=2.2.4",
-    "opencv-python>=4.11.0.86",
     "pillow>=11.1.0",
     "platformdirs>=4.3.7",
     "pydantic-settings>=2.9.1",
@@ -20,10 +19,10 @@ dependencies = [
     "freetype-py>=2.5.1",
     "more-itertools>=10.7.0",
     "pyperclip>=1.9.0",
-    "pywin32>=311; sys_platform == 'win32'",
     "imgui-bundle>=1.92.801",
     "pyopengl>=3.1.10",
     "imageio-ffmpeg>=0.6.0",
+    "opencv-python-headless>=4.11.0.86",
 ]
 
 [build-system]
