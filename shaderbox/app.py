@@ -30,6 +30,10 @@ from shaderbox.ui_models import (
 )
 from shaderbox.ui_utils import pfd_block, select_next_value
 
+# The procedural starter shader seeded into an empty project on first run (no
+# external media to load, unlike the Image/Video templates).
+_STARTER_TEMPLATE_ID = "53724dbd-8efb-4c09-8c7d-28d626a066e7"  # "UV Mango"
+
 
 class App:
     def __init__(self, project_dir: Path | None = None) -> None:
@@ -203,6 +207,12 @@ class App:
         # Load nodes
         self.ui_nodes = load_nodes_from_dir(self.nodes_dir)
         self.ui_node_templates = load_nodes_from_dir(self.node_templates_dir)
+
+        # First run (empty project, no saved state): seed a starter node so the
+        # user lands on a live, editable shader instead of a blank canvas.
+        is_first_run = not self.ui_nodes and not self.app_state_file_path.exists()
+        if is_first_run:
+            self._seed_starter_node()
 
         # ----------------------------------------------------------------
         # Load ui state
@@ -408,6 +418,21 @@ class App:
             default_value="",
             step=step,
         )
+
+    def _seed_starter_node(self) -> None:
+        template_dir = self.node_templates_dir / _STARTER_TEMPLATE_ID
+        if not template_dir.is_dir():
+            logger.warning(f"Starter template missing ({template_dir}); skipping seed")
+            return
+        try:
+            new_node = load_node_from_dir(template_dir)
+            new_node.reset_id()
+            new_node.save(self.nodes_dir, new_node.id)
+            self.ui_nodes[new_node.id] = new_node
+            self.set_current_node_id(new_node.id)
+            logger.info(f"Seeded starter node {new_node.id} (first run)")
+        except Exception as e:
+            logger.error(f"Failed to seed starter node: {e}")
 
     def create_node_from_selected_template(self) -> None:
         selected_template = self.ui_node_templates[

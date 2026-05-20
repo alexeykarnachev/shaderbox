@@ -32,10 +32,11 @@ def draw_node_preview_grid(app: App, width: float, height: float) -> None:
             with imgui_ctx.begin_tooltip():
                 imgui.text("CREATE new node         CTRL+N")
                 imgui.text("SAVE current node       CTRL+S")
-                imgui.text("EDIT current node       CTRL+E")
                 imgui.text("DELETE current node     CTRL+D")
-                imgui.text("PREVIOUS node             <-")
-                imgui.text("NEXT node                 ->")
+                imgui.text("OPEN project            CTRL+O")
+                imgui.text("SETTINGS                 ALT+S")
+                imgui.text("PREVIOUS / NEXT node    <-  ->")
+                imgui.text("QUIT (no popup open)       ESC")
 
         preview_size = SIZE.THUMB_LG
         n_cols = int(imgui.get_content_region_avail().x // (preview_size + SPACE.SM))
