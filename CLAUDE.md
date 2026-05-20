@@ -10,10 +10,9 @@ glyph-atlas text-rendering shader; uploads to Telegram sticker sets. Ships on it
 For ANY work, follow this chain in order. Don't read sideways, don't pre-read auxiliary files.
 
 1. **This file.** Stack, hard rules, navigation, output style.
-2. **`ai_docs/worklog.md`** — where work left off, key decisions, what's next (the top entry's
-   `open thread:` line is the resumption backlog). Read first on "what's here / what's next". If the
-   top entry looks much older than `git log -1`, the worklog wasn't kept current — reconstruct recent
-   state from `git log` first.
+2. **`ai_docs/roadmap.md`** — what's built and what's next. The **Active context** banner answers
+   "what's here / what's next"; the feature table indexes each feature to its spec. Read first on
+   "what's the state here?". (Rows index, specs narrate — see `## Documentation discipline`.)
 3. **`ai_docs/todo.md`** — known blockers/deferrals, each with a **Trigger**. Grep by `Trigger`
    before working in an area. (Header explains `[BLOCKER]` vs `[DEFERRAL]` + what makes a good trigger.)
 4. **`ai_docs/dev_flow.md`** — the single source of truth for HOW work happens.
@@ -24,8 +23,8 @@ Quick routing (full version + the feature flow → `dev_flow.md`):
 - **research / brainstorm** → deliver a chat report (+ `ai_docs/<topic>.md` if worth keeping); don't
   half-start an implementation
 
-All other files (`features/*`, …) are referenced from `dev_flow.md` and `worklog.md` at the step
-where they're needed. `conventions.md` is auto-loaded below.
+All other files (`features/*`, …) are referenced from `dev_flow.md` and `roadmap.md` rows at the
+step where they're needed. `conventions.md` is auto-loaded below.
 
 ## Hard rules
 
@@ -57,13 +56,37 @@ where they're needed. `conventions.md` is auto-loaded below.
 (One-sentence summaries; full text → `dev_flow.md ## Maintainer habits`.)
 
 - **Sessions are disposable; knowledge is durable.** If a decision lives only in this chat it's lost
-  on `/clear` — file it (worklog entry / todo deferral / `conventions.md ## Design decisions` /
+  on `/clear` — file it (roadmap row/banner / todo deferral / `conventions.md ## Design decisions` /
   commit message). The cold-context resumability check (`/sanitize` step 6) gates suggesting `/clear`:
   simulate a fresh agent asking "what's next?", walk the chain, confirm it lands on the same
   next-action with the same blockers in a few reads — if not, the missing context IS the bug; write
   it to a file, not the chat.
 - **Docs are living.** User drops a fact that makes a doc stale → update the right file in the same
   wave, don't keep it in chat. Small → do it now and mention it; substantial → confirm first.
+
+## Documentation discipline
+
+The bar: docs stay **robust** (failures loud, not silent), **smooth** (a fresh agent executes without
+re-deriving rules), **cold-reloadable** (picks up "what's next?" in a few reads), **unbiased**
+(resists confirmation bias + sympathetic reading). Full rationale + banned-pattern list →
+`dev_flow.md ## Documentation discipline`.
+
+- **One canonical home per concept.** Pointers, not copies — a rule restated in 3 places drifts.
+- **Roadmap rows index; feature specs narrate.** A row is one table line + a `Spec:` pointer; the
+  story (what landed, the bug, the review rounds) lives in the spec or the commit message. If a row
+  wants a second sentence, that sentence belongs in the spec.
+- **The Active-context banner gets rewritten, not appended.** ≤200 words; date stamp = last edit of
+  the block. "Kept for traceability" history is the append-rot anti-pattern — git log is traceability.
+- **`todo.md` indexes triggers, not designs.** Each entry names a concrete observable trigger moment.
+- **Resolved entries get deleted in the resolving commit.** No `[RESOLVED]` headers, no strikethrough
+  retentions — git history is authoritative.
+- **Code comments state what's non-obvious about the code as it is now — never narrate development
+  history.** The "why we did it / what bug we hit / where the backstory lives" belongs in its
+  canonical home (`conventions.md ## Known quirks` / `todo.md`); the code points there in ≤1 line, or
+  says nothing. (`conventions.md ## Code rules` is the enforced form.)
+- **Cite by section name, not line number** — line numbers drift on every edit.
+- **Shape comments are load-bearing.** The `<!-- Shape: ... -->` / `<!-- Row shape: ... -->` pins at
+  the top of `roadmap.md`, `todo.md`, etc. train the next entry — don't strip them, don't violate them.
 
 ## Output style
 
@@ -83,8 +106,9 @@ where they're needed. `conventions.md` is auto-loaded below.
 
 ## Skills
 
-- `/sanitize` — the closing-out sweep (run before "done": walk `todo.md`, fix stale refs/docs,
-  append a `worklog.md` entry, cold-context check).
+- `/sanitize` — the closing-out sweep (run before "done": walk `todo.md` + `conventions.md`, audit
+  the code against the conventions, fix stale refs/docs, update the `roadmap.md` banner + rows,
+  cold-context check). Ends with a mandatory sweep-report table.
 
 ## Reply language
 

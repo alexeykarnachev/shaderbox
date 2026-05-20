@@ -4,14 +4,29 @@ Code rules + design decisions + known quirks. Auto-loaded via `@ai_docs/conventi
 of `CLAUDE.md`. Re-read end-to-end from disk before: spec drafting, spec validation, implementation,
 code review, the sanitization sweep.
 
+This file holds **generic, future-constraining rules** — how code, architecture, and design must be
+shaped. It is NOT a feature changelog: per-feature mechanics, instance lists, and the story of how a
+decision was reached belong in the feature spec (`ai_docs/features/NNN_*.md`); library/SDK footguns
+belong in `## Known quirks`. If a bullet doesn't constrain code you haven't written yet, it's noise.
+
 ## Code rules
 
 - Full type annotations on all params and variables.
 - Imports at module top only — never inside function bodies.
-- Minimal comments — only for non-obvious logic.
+- **Comments state what's non-obvious about the code as it is NOW — never narrate development
+  history.** Banned: the bug-we-hit story, the why-we-changed-it backstory, the "see <doc> for the
+  full saga", paragraph-length rationale. If a line needs a comment, it's one terse line naming the
+  non-obvious fact (a GL invariant, an upstream-bug workaround, an ordering constraint) — and if the
+  rationale is already captured in its canonical home (`## Known quirks` / `todo.md`), the comment
+  shrinks to a ≤1-line pointer or disappears. The section-banner `# ----` separators are fine; the
+  multi-line "here's what happened during development" blocks are the target. (Enforced in review +
+  `/sanitize`.)
+- **Stale counts rot faster than stale prose** — they look authoritative. When you change a number
+  the code reflects (uniform-type count, line counts, "N tabs"), update every doc that quotes it in
+  the same commit, or drop the count from the doc.
 - Don't sidestep a convention with `# noqa` / `# pyright: ignore` / `# type: ignore` / inline import /
-  circular-import hack — a collision means the design is wrong. The one sanctioned type-suppression
-  exception is in `## Known quirks`.
+  circular-import hack — a collision means the design is wrong. The sanctioned type-suppression
+  allowlist (upstream library-stub gaps only) is in `## Known quirks`.
 - Never use `if TYPE_CHECKING:` to work-around circular imports. Circular imports is a sign of a bad design.
 - Type checker: **pyright** (not mypy), basic mode, via `make check` — blocks on failure.
   Repo is at 0 errors; keep it that way.
@@ -21,85 +36,44 @@ code review, the sanitization sweep.
 
 ## Design decisions (we decided X; revisit if Y)
 
-- **Three-layer architecture: `app.py` = state, `ui.py` = orchestrator, `widgets`/`popups`/`tabs` = pure logic.**
-  `App` (in `shaderbox/app.py`) holds project state, GL context, and lifecycle methods — no UI
-  drawing. `ui.py` is a thin entrypoint owning the imgui frame loop (`run` + `update_and_draw`).
-  Widget/popup/tab modules contain stateless drawing functions that take `app: App` and read or
-  call through it. The split was forced by a circular-import surfaced when widgets needed to
-  type-annotate `app: App` while `App` imported widgets — addressed by extracting `App` into its
-  own module so widgets can import it without cycle. Revisit if a 4th UI sub-package feels
-  needed. (Tracked: `todo.md [DEFERRAL] split ui.py`.)
-- **`tabs/*.py` pattern: free `draw(app: App)` + optional `update(app: App)`.** Each tab is one
-  file with a public `draw()` that does imgui calls only and an optional `update()` that runs
-  from `update_and_draw` *before* imgui draws — for canvas ticks / mtime polls / anything that
-  touches GL state outside the frame body. Instances: `tabs/share.py` (feature 001),
-  `tabs/node.py` + `tabs/render.py` (feature 002 + harmonized `share.py`). If a tab needs persistent state, expose it on `App`
-  directly (e.g. `app.share_tab_state`); a state-only sibling module (`tabs/share_state.py`)
-  may hold its dataclass to keep `app.py` free of cyclic UI imports. Revisit when a 4th tab
-  module exists.
-- **Widgets in `widgets/*.py` take `app: App`; no wrapper, no protocol.** Each widget is a free
-  function. Widgets are an organizational convention, not a polymorphic contract — there is no
-  `Widget` ABC, no shared return shape. Each widget gets the shape that fits its job
-  (value-object editor returns updated model, value transformer returns value, action-firer
-  returns `None`). Decision rationale: an `AppContext` dataclass was tried briefly but every
-  claimed benefit (bounded coupling, test surface, callback decoupling) was either illusory or
-  equally provided by passing `app`. Revisit if a polymorphic widget consumer ever materializes
-  (a `list[Widget]` dispatcher) — that's when an interface earns its keep.
-- **Popups in `popups/*.py` are free functions; their open/closed state lives on `App`.** Each
-  popup module has one public `draw(app: App)` function that early-returns when the popup is
-  closed and renders the modal body when open. Open/closed state is plain booleans on
-  `App` (`is_node_creator_open`, `is_settings_open`, `is_editor_settings_open`); each
-  `app.open_*()` helper sets its own True and clears the others to preserve the "at most one
-  popup open" invariant — keep that pattern when adding a popup (clear ALL siblings, not just
-  one). `app.any_popup_open()` answers the render-gate question. No popup classes —
-  state belongs to the runtime (`App`), not the popup module. Revisit if a popup grows
-  widget-internal state that doesn't belong on `App`.
-- **All UI colors + sizes + spacing flow through `shaderbox/theme.py`'s `COLOR` /
-  `SIZE` / `SPACE` bags.** No hardcoded hex strings or magic pixel values in code.
-  `theme.py::apply_theme(style, accent, density, rounding)` writes the full gruvbox
-  theme into `ImGuiStyle` at boot (called once from `App.__init__` after
-  `imgui.create_context()`). It is re-callable at runtime to swap accent/density/
-  rounding, but nothing wires that up yet (the planned Tweaks panel was abandoned with
-  the layout redesign). Revisit if a fourth bag of tokens emerges (e.g. animation-
-  timing) — extend `theme.py` rather than carve out a parallel module.
+- **Three-layer UI architecture.** `app.py` = state holder + lifecycle (project, GL context, node
+  management, popup booleans) — no imgui drawing. `ui.py` = thin orchestrator owning the frame loop
+  (`run` + `update_and_draw`). `widgets`/`popups`/`tabs` = pure draw functions taking `app: App`.
+  (The split is forced by the no-`TYPE_CHECKING` rule: a draw fn annotating `app: App` while `App`
+  imports it would cycle — so `App` lives in its own module.) Revisit if a 4th UI sub-package is
+  needed. Tracked: `todo.md [DEFERRAL] split ui.py`.
+- **`tabs/*.py`: free `draw(app: App)` + optional `update(app: App)`.** `draw()` does imgui calls
+  only; `update()` runs *before* imgui draws, for GL/canvas/mtime work outside the frame body. Tab
+  state goes on `App` directly; a state-only sibling module (e.g. `tabs/share_state.py`) may hold
+  its dataclass to keep `app.py` import-cycle-free. Revisit when a 4th tab module exists.
+- **`widgets/*.py`: free functions taking `app: App`, no wrapper, no protocol.** Widgets are an
+  organizational convention, not a polymorphic contract — no `Widget` ABC, no shared return shape;
+  each gets the shape that fits its job. (An `AppContext` wrapper was tried and reverted — passing
+  `app` gave every claimed benefit.) Revisit if a polymorphic `list[Widget]` dispatcher materializes.
+- **`popups/*.py`: free `draw(app: App)` functions; open/closed state lives on `App` as booleans.**
+  Each `app.open_*()` helper sets its own flag True and clears ALL siblings — the "at most one popup
+  open" invariant; keep it when adding a popup. `app.any_popup_open()` is the render-gate question.
+  No popup classes. Revisit if a popup grows internal state that doesn't belong on `App`.
+- **All UI colors / sizes / spacing flow through `theme.py`'s `COLOR` / `SIZE` / `SPACE` bags** — no
+  hardcoded hex or magic pixel values in code. `apply_theme(style, …)` writes the theme into the
+  imgui style at boot and is re-callable at runtime. Revisit if a 4th token bag emerges (e.g.
+  animation timing) — extend `theme.py`, don't carve a parallel module.
+- **Inline editor state lives on `App`; disk is the source of truth.** One `TextEditor` per node
+  (+ a parallel dirty-baseline dict), created lazily; `app.save()` flushes the dirty editor before
+  writing the file; the mtime watcher re-syncs from disk on external change (disk wins). Editor
+  per-instance footguns (palette, FPE-while-modal, cursor, font sizing) live in `## Known quirks`.
+  Revisit if multi-file-per-node editing lands.
+- **No `async` except where python-telegram-bot forces it** — and that runs off the render thread
+  (worker thread + own asyncio loop), never `run_until_complete` inside the imgui frame. Revisit if
+  a new async-required dep doesn't fit the worker-thread + own-loop pattern.
+- **Exporters: own thread, own panel, GL-free artifacts.** The `Exporter` ABC enforces thread
+  affinity — render-thread methods may touch moderngl; worker-thread methods (`prepare`, `export`)
+  MUST NOT, they see only `RenderedArtifact` (a pure value type). Each exporter owns its own panel
+  UI. Revisit when a third concrete exporter lands.
 
-- **Inline GLSL editor state lives on `App`; disk is the source of truth.** One
-  `imgui_color_text_edit.TextEditor` per node, lazily created in `app.editors[node_id]`
-  (dirty baseline in the parallel `app.editor_saved_undo[node_id]` — `TextEditor` has no user
-  slot, and `set_text` does NOT advance the undo index, so the baseline is re-captured on
-  create / save-flush / external-sync). `app.save()` flushes the dirty editor FIRST
-  (`flush_current_editor` → `release_program(text)` sets `fs_source` before `UINode.save`
-  writes the file from `fs_source` — else the save clobbers the edit). The mtime watcher
-  re-syncs the editor from disk on an external change (disk wins, unsaved inline edits are
-  discarded — the user chose to edit externally). Both per-node dicts are popped in
-  `delete_current_node`. The editor draws in the main window's LEFT split (feature 006,
-  Decision 1 revised — a draggable splitter, not a tab). Visual options
-  (`UIAppState.editor_settings: EditorSettings` — whitespace / line-numbers / brackets /
-  tab-size / line-spacing / font-size, persisted in app_state.json) apply to ALL editor
-  instances: `get_editor` applies them on create, the editor-options popup calls
-  `app.apply_editor_settings()` to re-apply to every open editor ONLY on popup close (NOT live
-  while the modal is open — that FPE-crashes the editor's next render; see `todo.md` BLOCKER).
-  Font-size is the one
-  option NOT pushed into the `TextEditor` (it has no font API) — it's applied by
-  `push_font(app.font_14, size)` around `editor.render()` (imgui 1.92 rasterizes one font
-  handle at any size). Ctrl+scroll over the editor adjusts font-size live (read + consume
-  `io.mouse_wheel` before `render()` so the editor doesn't also scroll); changing only the
-  plain `font_size` int is FPE-safe (unlike the editor's `set_*` setters). The editor render is GATED behind `not any_popup_open()` — see the
-  `todo.md` BLOCKER (its `render()` FPEs while a modal is active). Revisit if multi-file-per-
-  node editing lands.
-- **No `async` in the codebase except where python-telegram-bot forces it** — and that runs off the
-  render thread (per-exporter worker thread + own asyncio loop, see `exporters/telegram.py`),
-  never via `run_until_complete` inside the imgui frame. Revisit if a future exporter brings a
-  new async-required dep that doesn't fit the worker-thread + own-loop pattern.
-- **Exporters: own thread, own panel, GL-free artifacts.** The `Exporter` ABC in
-  `shaderbox/exporters/base.py` enforces a thread-affinity contract: render-thread methods may
-  touch moderngl; worker-thread methods (`prepare`, `export`) MUST NOT — they only see
-  `RenderedArtifact` (a pure value type, no GL handles). Each exporter owns its own per-target
-  panel UI (no shared "list of remote items" widget). Revisit when a third concrete exporter lands.
-
-*(Grows as features land — each new cross-cutting choice gets a bullet with a revisit trigger. The
-sanitization sweep's noise audit deletes bullets that narrate a one-off implementation choice instead
-of constraining future code; SDK footguns go to `## Known quirks`, not here.)*
+*(Each bullet is a generic constraint on future code + a revisit trigger — NOT a feature changelog.
+The `/sanitize` noise audit deletes bullets that narrate a one-off implementation choice; per-feature
+mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
 
 ## Known quirks (library / SDK footguns + the workaround)
 
@@ -137,3 +111,12 @@ of constraining future code; SDK footguns go to `## Known quirks`, not here.)*
 - **A live moderngl context must exist before constructing `Image` / `Video` / `Font` / `Canvas` /
   `Node`** — they call `moderngl.get_context()` lazily. In the app,
   `glfw.make_context_current(window)` handles it.
+- **The sanctioned `# type: ignore` allowlist (upstream stub gaps only).** The no-suppression rule
+  has exactly these exceptions — all are missing/wrong annotations in third-party stubs, never our
+  own type errors. New markers outside this list are a design smell; fix the design, don't add to
+  the list. Re-audit when bumping `moderngl` / `freetype-py` / `pydantic`.
+  - `moderngl.Uniform.gl_type` — not in moderngl's stub (3 sites: `ui_models.py`, `ui_utils.py`,
+    `tabs/node.py`).
+  - `freetype.load_char(...)` — `freetype-py` ships no stubs (2 sites in `fonts.py`).
+  - `@model_validator(mode="after")` on a method returning `Self` — pydantic's decorator stub
+    mistypes the wrapped method (`ui_models.py`).

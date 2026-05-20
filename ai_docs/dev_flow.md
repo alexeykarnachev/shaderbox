@@ -5,8 +5,8 @@ pick the loosest shape that proves the change. Re-open this file between steps: 
 mode is pattern-matching a step name to a shorter remembered checklist and silently skipping the
 passes that weren't cached.
 
-The cold-start chain: `CLAUDE.md` → `ai_docs/worklog.md` (where work left off + the resumption
-backlog) + `ai_docs/todo.md` (landmines/triggers) → this file.
+The cold-start chain: `CLAUDE.md` → `ai_docs/roadmap.md` (what's built + the Active-context banner =
+what's next) + `ai_docs/todo.md` (landmines/triggers) → this file.
 
 ---
 
@@ -14,7 +14,7 @@ backlog) + `ai_docs/todo.md` (landmines/triggers) → this file.
 
 | Trigger | Shape |
 |---|---|
-| **Small / mechanical change** — bug fix, log line, kwarg, trivial type fix, doc tweak, dep bump, dead-code deletion that touches no public surface, a `.gitignore` edit | Just do it. `make check`. Optionally `/simplify` on the diff. No spec, no review ceremony; worklog entry only if it's worth a fresh agent knowing. |
+| **Small / mechanical change** — bug fix, log line, kwarg, trivial type fix, doc tweak, dep bump, dead-code deletion that touches no public surface, a `.gitignore` edit | Just do it. `make check`. Optionally `/simplify` on the diff. No spec, no review ceremony; a roadmap-banner touch only if it changes "what's next". |
 | **Feature** — new module, a real behavior change, a refactor with blast radius (splitting `ui.py`, collapsing the sticker models, unblocking the render loop), acceptance criteria a quick manual check can't pin | The feature flow below. |
 | **Research / brainstorm** — "let's think about X", "should we do Y", "investigate Z"; output is *knowledge*, not code | Research freely (read code, throwaway scripts). Deliver a chat report; if worth keeping, write `ai_docs/<topic>.md`. **Don't half-start an implementation.** If it seeds a feature, re-enter at the feature flow. |
 
@@ -102,9 +102,9 @@ corrects.
 8. **Sanitization sweep** — the `/sanitize` skill. Separate commit (or its own line in the commit
    message).
 
-9. **Done** — append a `worklog.md` entry; move open items to `todo.md` with concrete triggers; if
-   the feature cleared something off the resumption backlog or reshuffled the order, update the
-   worklog top entry's `open thread:` line.
+9. **Done** — add or flip the feature's `roadmap.md` row (status + `Spec:` pointer) and **rewrite**
+   the Active-context banner if "what's next" changed; move open items to `todo.md` with concrete
+   triggers. The story stays in the feature spec / commit message — the row is one line.
 
 ---
 
@@ -125,7 +125,7 @@ into a refactor):
 ## Closing out work
 
 Whatever the shape — before "done", run `/sanitize`. For a truly trivial mechanical change, the
-worklog entry (if even that) + the cold-context glance is enough; for a feature, the full pass.
+roadmap-banner touch (if even that) + the cold-context glance is enough; for a feature, the full pass.
 
 ---
 
@@ -206,6 +206,62 @@ texture binding errors. Doesn't catch visual bugs. Run after any refactor in `ui
 
 ---
 
+## Documentation discipline
+
+The headline list lives in `CLAUDE.md ## Documentation discipline` (always-loaded); the rationale +
+banned-pattern detail lives here (read at the moment you author a doc). These rules keep the docs
+**robust** (failures loud), **smooth** (no re-deriving rules), **cold-reloadable** (a fresh agent
+finds "what's next?" in a few reads), **unbiased** (resists sympathetic reading). **The leftovers
+train the next entry** — agents pattern-match on what's already in a file far harder than on a rule
+in another doc, so the shape-pin comments at the top of each artifact are load-bearing; match them,
+don't strip them.
+
+### One canonical home per concept
+A rule lives in exactly one file; everywhere else points at it. Restating the same rule in 3-5
+places guarantees drift. The **false-inheritance hybrid** — "inherits from X" then paraphrases and
+silently drops a clause — is banned: either point-only, or (rarely) copy literally + greppably.
+
+### Roadmap rows index; feature specs narrate
+Each row is one markdown table line (shape pinned at the top of `roadmap.md`). The landed-reality —
+file paths touched, line counts, the bug-fix story, the review-round trail — belongs in
+`ai_docs/features/NNN_*.md` or the commit message, not the row. If a row would spawn a second
+descriptive sentence, expand the spec instead. (This is what replaced the old narrative `worklog.md`:
+the narrative was useless noise; the durable facts are the spec + the row + the banner.)
+
+### The Active-context banner gets rewritten, NOT appended
+≤200 words. Date stamp = last-edit of the block, not the date of the work it summarises. "Banner
+history kept for traceability" is the append-rot anti-pattern — git log is traceability. Banned
+phrases inside the banner: "carry-over from earlier banner", "previous-action (archived…)".
+
+### `todo.md` is a grep-by-trigger index
+Each entry names a concrete observable trigger (a file/code touch, a count threshold, a user
+complaint with a measurable surface, a specific upstream change). Designs don't go here — they go in
+the feature spec or `conventions.md`. If N entries fire on the same trigger, they're ONE rolling
+entry, not N.
+
+### Code comments state the now, not the history
+A comment names what's non-obvious about the code as it currently is — a GL invariant, an
+upstream-bug workaround, an ordering constraint — in as few lines as possible. It does NOT narrate
+what bug we hit, why we changed it, or recount the development saga; that rationale lives in its
+canonical home (`conventions.md ## Known quirks` / `todo.md`) and the comment shrinks to a ≤1-line
+pointer or vanishes. The full rule is `conventions.md ## Code rules`; review + `/sanitize` enforce it.
+
+### Resolved entries get deleted in the resolving commit
+Git history is authoritative. Banned: `[RESOLVED]` headers, `~~strikethrough~~` retentions,
+`<details>`-collapsed "kept for posterity" blocks. They rot the live doc to memorialise work the
+diff already records.
+
+### Cite by section name, not line number
+Line numbers drift on every edit; cross-doc step ordinals diverge. Reference a section header or a
+quoted phrase — `conventions.md ## Known quirks` is greppable, "line 47" is not.
+
+### When you feel the pressure to violate one of these
+That's the signal the rule applies. The urge to cram one more useful fact into a row, append "for
+traceability" to a banner, or keep the comment-saga "because it's helpful" — is exactly the pressure
+these rules exist to resist.
+
+---
+
 ## Maintainer habits
 
 Why the docs are shaped this way. Short list, kept honest:
@@ -213,7 +269,7 @@ Why the docs are shaped this way. Short list, kept honest:
 - **Re-read, don't recall.** Open the file before citing it — compaction flattens the qualifier that
   mattered. Seconds to re-read, hours to undo a wrong decision built on a misremembered rule.
 - **Sessions are disposable; knowledge is durable.** If a decision only lives in this conversation,
-  it's lost on `/clear` — push it into a file (worklog entry, todo deferral, `conventions.md ##
+  it's lost on `/clear` — push it into a file (roadmap row/banner, todo deferral, `conventions.md ##
   Design decisions`, a commit message). The cold-context check (`/sanitize` step 6) is the gate.
 - **Docs are living.** User drops a fact that makes a doc stale → update the right file in the same
   wave, don't keep it in chat. Small → do it now and mention it; substantial → confirm first.

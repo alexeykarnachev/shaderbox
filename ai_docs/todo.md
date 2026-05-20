@@ -1,9 +1,9 @@
 # TODO — blockers & deferrals
 
 Known issues parked for later, each with a **Trigger** — the condition under which someone working in
-the repo should pick it up. NOT the ordered resumption backlog (that's the worklog top entry's
-`open thread:` line); this is a "heads up, here's a landmine / a deferred fix" registry. **Grep this
-file by `Trigger` before starting work in an area.**
+the repo should pick it up. NOT "what's next" (that's `roadmap.md`'s Active-context banner); this is a
+"heads up, here's a landmine / a deferred fix" registry. **Grep this file by `Trigger` before
+starting work in an area.**
 
 `[BLOCKER]` vs `[DEFERRAL]`: a BLOCKER is a silent foot-gun that fires, stops work, and must be
 resolved before proceeding. A DEFERRAL is deferred cleanup that the triggering work absorbs as
@@ -19,12 +19,12 @@ If you can't name a moment that demands attention, the deferral is wrong-shaped 
 don't file it. When a deferral resolves, delete the entry in the SAME commit as the fix (git history
 is authoritative — no "Resolved YYYY-MM-DD" headers).
 
-Format:
-```
-## [BLOCKER|DEFERRAL] <short title>
-- **Trigger:** <when to pick this up>
-- <context: what / why / where>
-```
+<!-- Shape (per entry):
+     ## [BLOCKER|DEFERRAL] <short title>
+     - **Trigger:** <a concrete observable moment — file/code touch, count threshold, user complaint with a measurable surface, a specific upstream change>
+     - <context: what / why / where>
+     Entries are an index of triggers, not a home for designs. Resolved → delete in the resolving commit.
+-->
 
 ---
 
