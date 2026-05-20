@@ -28,6 +28,16 @@ Format:
 
 ---
 
+## [DEFERRAL] gruvbox palette match for the inline editor
+- **Trigger:** when imgui-bundle exposes a writable `imgui_color_text_edit.TextEditor.Palette`
+  (per-slot setter or list-based constructor), OR if the built-in dark palette's mismatch with
+  the rest of the gruvbox UI visibly annoys in daily use.
+- Feature 006 ships the inline editor with the built-in `TextEditor.get_dark_palette()` because
+  the Palette has no Python write path in imgui-bundle 1.92.801 (spike-confirmed: `.get()` only,
+  `set_palette` rejects `list[int]`). The `COLOR.SYN_*` tokens in `theme.py` + the
+  `Color`→`SYN_*` mapping table in `ai_docs/features/006_inline_editor.md` (Decision 5) document
+  the intended mapping for when this becomes possible.
+
 ## [DEFERRAL] split `ui.py` / `app.py` further
 - **Trigger:** when editing `app.py` feels painful (search-and-replace across the file misses
   something, or a method's blast radius is unclear because too many siblings share state), OR

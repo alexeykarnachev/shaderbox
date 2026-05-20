@@ -35,14 +35,18 @@ Format per entry:
 - The selected-uniform detail pane (`u_box_size — drag / Input type` on the right of
   the Node tab) is correct + original — confirmed not a regression.
 - refs: master at `f242881`, pushed. `make check` clean, `make smoke` 200 frames.
-- open thread: **NEXT FEATURE — inline (in-app) GLSL code editor, replacing the
-  external-command `Edit code` button.** Use `imgui_color_text_edit` (bundled in
-  imgui-bundle 1.92.801 — verify the symbol/API exists before plan-locking; grep the
-  installed pyi). Wire its syntax palette to the `COLOR.SYN_*` tokens already in
-  `theme.py`. Per-`UINode` editor instance, switch on `current_node_id` change, save
-  on Ctrl+S → existing `node.release_program(source)` reload path. Keep external
-  editor as a "Pop out" fallback. IMPORTANT: design it for the CURRENT layout (image-
-  top, control-panel-below), NOT the shelved prototype's left-half editor pane.
+- open thread: **NEXT — implement feature 006 (inline GLSL editor). Spec PLAN-LOCKED
+  at `ai_docs/features/006_inline_editor.md` (no open questions).** Spiked
+  `imgui_color_text_edit` (works: GLSL language, text round-trip, cursor, dark palette).
+  Web-researched vim options → none Python-reachable (Zep has no binding); locked on the
+  standard-keymap editor + external "Pop out" for vim. Editor goes in a new **Code tab**
+  (leftmost) in the node-settings tab bar — NOT a pane (the prototype's side-by-side
+  layout is shelved). One un-derisked detail resolved during plan-lock: the gruvbox
+  editor palette is IMPOSSIBLE in imgui-bundle 1.92.801 (no Python palette-write path) →
+  v1 uses built-in `get_dark_palette()`, gruvbox match filed as a `todo.md` deferral.
+  Fresh agent: read the spec, confirm the plan with the user (esp. the non-gruvbox
+  editor palette compromise — flagged but not yet explicitly signed off), then branch
+  `feature/inline-editor` + execute.
 
 ## 2026-05-20 — feature 005 LAYOUT reverted; gruvbox theme kept
 - User reviewed the running app side-by-side with `ai_docs/design/prototype.html`
