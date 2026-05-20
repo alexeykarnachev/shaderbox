@@ -28,15 +28,15 @@ feature; brief points at the superseder).
 **As of 2026-05-20.**
 
 - **Done through feature 006**, all on `master`, pushed (`master == origin/master`).
-- **No `pending` feature rows** — no queued feature. Next work is a broader dev-discipline
-  refinement (this roadmap migration + convention/sanitize hardening), then whatever the user
-  picks up.
-- **Open work after that**: the `todo.md` deferrals fire on their own triggers — do NOT
-  speculatively pick them up. Feature 006 has a few manual GUI checks that need keystroke
-  injection (no xdotool here): live splitter drag, Ctrl+S round-trip, node-switch edit survival —
-  logic is headless-verified, a human eyeballing the app would close them.
-- **No open BLOCKERs.** One DEFERRAL-class workaround is live (the `imgui_color_text_edit`
-  render() FPE, two guards in place — `todo.md`).
+- **No active or queued work.** The dev-discipline refinement (worklog→roadmap migration,
+  documentation-discipline rules, generic-conventions rewrite, terse-comment cleanup) landed in
+  `bd3d9dd` + `eda5e7d`. Next work is whatever the user picks up.
+- **`todo.md` deferrals fire on their own triggers** — do NOT speculatively pick them up.
+- **Feature 006 leftover**: a few manual GUI checks need keystroke injection (no xdotool here) —
+  live splitter drag, Ctrl+S round-trip, node-switch edit survival. Logic is headless-verified; a
+  human eyeballing the app would close them.
+- **No open BLOCKERs.** One DEFERRAL-class workaround is live (the `imgui_color_text_edit` render()
+  FPE, two guards in place — `todo.md`).
 
 ## Features
 
