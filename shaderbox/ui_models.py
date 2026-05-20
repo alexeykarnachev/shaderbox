@@ -193,6 +193,15 @@ class UIAppState(BaseModel):
         data.pop("media_model_idx", None)
         data.pop("text_editor_cmd", None)
 
+        # Drop unknown keys (e.g. a field a newer build wrote) so they don't trip
+        # extra="forbid" and discard the user's real settings; only a genuinely
+        # bad typed value falls through to the defaults.
+        unknown = [k for k in data if k not in cls.model_fields]
+        if unknown:
+            logger.warning(f"Ignoring unknown app_state keys: {unknown}")
+            for k in unknown:
+                data.pop(k)
+
         try:
             return cls(**data)
         except ValidationError as e:

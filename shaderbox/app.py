@@ -37,6 +37,12 @@ _STARTER_TEMPLATE_ID = "53724dbd-8efb-4c09-8c7d-28d626a066e7"  # "UV Mango"
 
 class App:
     def __init__(self, project_dir: Path | None = None) -> None:
+        # Genuine first launch: no project pointer has ever been written, so we'll
+        # fall back to the default project and seed a starter node into it. Opening
+        # an existing/empty project later (via open_project) must NOT seed.
+        is_first_launch = (
+            project_dir is None and not self.project_dir_file_path.exists()
+        )
         if project_dir is None:
             if self.project_dir_file_path.exists():
                 project_dir = Path(self.project_dir_file_path.read_text())
@@ -103,7 +109,7 @@ class App:
         self.editors: dict[str, text_edit.TextEditor] = {}
         self.editor_saved_undo: dict[str, int] = {}
 
-        self._init(project_dir)
+        self._init(project_dir, seed_starter=is_first_launch)
 
     def any_popup_open(self) -> bool:
         return (
@@ -189,7 +195,7 @@ class App:
     def set_current_node_id(self, id: str = "") -> None:
         self.app_state.current_node_id = id
 
-    def _init(self, project_dir: Path) -> None:
+    def _init(self, project_dir: Path, seed_starter: bool = False) -> None:
         self.release()
 
         self.preview_canvas = Canvas()
@@ -208,10 +214,10 @@ class App:
         self.ui_nodes = load_nodes_from_dir(self.nodes_dir)
         self.ui_node_templates = load_nodes_from_dir(self.node_templates_dir)
 
-        # First run (empty project, no saved state): seed a starter node so the
-        # user lands on a live, editable shader instead of a blank canvas.
-        is_first_run = not self.ui_nodes and not self.app_state_file_path.exists()
-        if is_first_run:
+        # First launch only: seed a starter node into the empty default project so
+        # the user lands on a live, editable shader. NOT on open_project (which would
+        # pollute a folder the user picked expecting it empty).
+        if seed_starter and not self.ui_nodes:
             self._seed_starter_node()
 
         # ----------------------------------------------------------------
