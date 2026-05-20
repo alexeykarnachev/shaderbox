@@ -22,6 +22,28 @@ Format per entry:
 
 ---
 
+## 2026-05-20 — theme darkened; embedded-editor feature is next
+- Two small theme follow-ups after the layout revert (both on master, pushed):
+  - `6cad89f` — restored `style.child_border_size = 1.0` in `theme.py`. The gruvbox
+    spec had set it to 0 (flat aesthetic), which removed the panel-separation
+    borders the original UI had. User confirmed the original look (with borders) is
+    correct via `handoff/screens/04-tab-node.png`.
+  - `f242881` — deepened the background ramp. Gruvbox-dark's `#282828` read too
+    warm/muddy ("poop"). Shifted the whole `bg_*` ramp down one notch (app bg now
+    `#1d2021`, a near-black `#161819` floor backs surfaces; `fg_*` text + accents
+    unchanged). Stayed in gruvbox-hard family.
+- The selected-uniform detail pane (`u_box_size — drag / Input type` on the right of
+  the Node tab) is correct + original — confirmed not a regression.
+- refs: master at `f242881`, pushed. `make check` clean, `make smoke` 200 frames.
+- open thread: **NEXT FEATURE — inline (in-app) GLSL code editor, replacing the
+  external-command `Edit code` button.** Use `imgui_color_text_edit` (bundled in
+  imgui-bundle 1.92.801 — verify the symbol/API exists before plan-locking; grep the
+  installed pyi). Wire its syntax palette to the `COLOR.SYN_*` tokens already in
+  `theme.py`. Per-`UINode` editor instance, switch on `current_node_id` change, save
+  on Ctrl+S → existing `node.release_program(source)` reload path. Keep external
+  editor as a "Pop out" fallback. IMPORTANT: design it for the CURRENT layout (image-
+  top, control-panel-below), NOT the shelved prototype's left-half editor pane.
+
 ## 2026-05-20 — feature 005 LAYOUT reverted; gruvbox theme kept
 - User reviewed the running app side-by-side with `ai_docs/design/prototype.html`
   and rejected the layout (feature 005's wide-screen 50/50 split + editor
@@ -41,19 +63,16 @@ Format per entry:
 - `theme.py` (`apply_theme` + `COLOR`/`SIZE`/`SPACE` bags) stays. `app.py`
   still calls `apply_theme(imgui.get_style())` at boot, so the app is
   gruvbox-skinned with the OLD layout.
-- The unmerged `feature/ui-redesign-realize` branch (feature 006 — horizontal
-  node strip, type-pill uniforms, right-pane-only) is abandoned. Its spec
-  (`ai_docs/features/006_ui_redesign_realize.md`) and the prototype archive
-  stay on disk for reference but the code is not merged.
-- refs: branch `feature/keep-theme-revert-layout` (this work), to squash-merge
-  to master. `make check` 0 errors, `make smoke` 200 frames exit 0.
-- open thread: **gruvbox theme is live on the OLD (feature-004) layout.** The
-  designer's prototype layout is shelved — if revisited, start fresh from
-  `ai_docs/design/prototype.html` as the visual source-of-truth (don't
-  paraphrase via SPEC.md prose; that's what caused the two failed attempts).
-  features 007-009 deferrals in `todo.md` (embedded editor / error banner /
-  Tweaks panel) all assumed the new layout — re-scope them if the layout is
-  ever revisited.
+- The `feature/ui-redesign-realize` branch (the prototype-realization attempt —
+  horizontal node strip, type-pill uniforms, right-pane-only) was abandoned and
+  DELETED. Its spec was never merged to master (only `ai_docs/design/` prototype
+  archive remains, reference-only).
+- Lesson: when a design handoff has both a prototype and prose, read the
+  prototype's HTML/CSS as ground truth — paraphrasing via the prose SPEC.md is what
+  caused two failed layout attempts. If the prototype layout is ever revisited,
+  start fresh from `ai_docs/design/prototype.html`.
+- refs: merged to master `3d44719` (layout revert). `make check` 0 errors,
+  `make smoke` 200 frames exit 0.
 
 ## 2026-05-16 — feature 005 (UI/UX redesign foundation, PRs 1-4) IMPLEMENTED
 - Spec: `ai_docs/features/005_ui_redesign_foundation.md`. Squash-merged from

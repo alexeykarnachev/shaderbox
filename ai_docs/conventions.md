@@ -57,9 +57,10 @@ code review, the sanitization sweep.
   `SIZE` / `SPACE` bags.** No hardcoded hex strings or magic pixel values in code.
   `theme.py::apply_theme(style, accent, density, rounding)` writes the full gruvbox
   theme into `ImGuiStyle` at boot (called once from `App.__init__` after
-  `imgui.create_context()`). Re-callable at runtime to swap accent/density/rounding —
-  feature 009 wires this to a Tweaks panel. Revisit if a fourth bag of tokens emerges
-  (e.g. animation-timing) — extend `theme.py` rather than carve out a parallel module.
+  `imgui.create_context()`). It is re-callable at runtime to swap accent/density/
+  rounding, but nothing wires that up yet (the planned Tweaks panel was abandoned with
+  the layout redesign). Revisit if a fourth bag of tokens emerges (e.g. animation-
+  timing) — extend `theme.py` rather than carve out a parallel module.
 
 - **No `async` in the codebase except where python-telegram-bot forces it** — and that runs off the
   render thread (per-exporter worker thread + own asyncio loop, see `exporters/telegram.py`),

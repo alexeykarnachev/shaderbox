@@ -1,5 +1,12 @@
 # Feature 005 — UI/UX redesign foundation (PRs 1-4)
 
+> **PARTIALLY REVERTED (2026-05-20).** The theme + token sweep (PR 1-2) survive and are
+> live on master. The **layout** changes (PR 3 status bar, PR 4 wide-screen 50/50 split +
+> editor placeholder) were reverted — the user rejected the new layout side-by-side with
+> the prototype. The app uses the original feature-004 layout wearing the gruvbox theme.
+> See the 2026-05-20 worklog entry. The `ai_docs/design/` prototype archive is reference-
+> only; its layout is shelved.
+
 ## Goal
 
 Land the **foundation** of the gruvbox + wide-screen UI redesign delivered by the design
