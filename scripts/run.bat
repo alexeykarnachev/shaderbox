@@ -11,8 +11,8 @@ if %errorlevel% neq 0 (
     REM Download and install uv
     powershell -Command "irm https://astral.sh/uv/install.ps1 | iex"
 
-    REM Add uv to PATH for current session
-    set "PATH=%USERPROFILE%\.cargo\bin;%PATH%"
+    REM Add uv to PATH for current session (installer puts it in %USERPROFILE%\.local\bin)
+    set "PATH=%USERPROFILE%\.local\bin;%PATH%"
 
     REM Check if uv installation was successful
     where uv >nul 2>&1

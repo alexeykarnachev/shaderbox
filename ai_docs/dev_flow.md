@@ -202,7 +202,18 @@ texture binding errors. Doesn't catch visual bugs. Run after any refactor in `ui
 
 ### Build / ship to itch.io
 `./build.sh` → `dist/shaderbox-{windows.zip,linux.tar.gz}` → `./upload-itch.sh` (needs `butler` + an
-`itch-config` file). Maintainer-triggered, not the agent's.
+`itch-config` file). Maintainer-triggered, not the agent's. The bundle is a **source distribution**
+(ships `shaderbox/` + `uv.lock`; the user's machine runs `uv sync` + `uv run` via `run.sh`/`run.bat`
+on first launch) — not a frozen binary.
+
+**Clean-bundle invariant.** The bundle is an explicit allowlist (`shaderbox/` package +
+`pyproject.toml` / `uv.lock` / `.python-version` / `LICENSE` + the launcher + `scripts/README.md`).
+NO coding-agent or dev-flow files ship — `CLAUDE.md`, `ai_docs/`, `.claude/`, `Makefile`,
+`.pre-commit-config.yaml`, bytecode (`__pycache__` / `*.pyc`) are all excluded. `build.sh` strips
+bytecode and runs a verification gate that **aborts the build** if any forbidden pattern is found in
+the staged tree — so this is asserted, not assumed. When you add a file the app needs at runtime,
+add it to the `build.sh` allowlist (`ROOT_FILES` or under `shaderbox/`); when you add a new dev
+artifact, confirm it matches a `FORBIDDEN_*` pattern or the gate won't catch a future leak.
 
 ---
 
