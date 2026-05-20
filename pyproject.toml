@@ -23,6 +23,7 @@ dependencies = [
     "pywin32>=311; sys_platform == 'win32'",
     "imgui-bundle>=1.92.801",
     "pyopengl>=3.1.10",
+    "imageio-ffmpeg>=0.6.0",
 ]
 
 [build-system]

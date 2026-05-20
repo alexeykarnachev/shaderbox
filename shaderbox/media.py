@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import IO
 
 import cv2
+import imageio_ffmpeg
 import moderngl
 import numpy as np
 from PIL import Image as PILImage
@@ -258,7 +259,7 @@ class Video(MediaWithTexture):
         preset = MP4_PRESETS[quality]
 
         ffmpeg_cmd = [
-            "ffmpeg",
+            imageio_ffmpeg.get_ffmpeg_exe(),
             "-i",
             str(self.details.file_details.path),
             "-vf",
