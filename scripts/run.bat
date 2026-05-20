@@ -1,5 +1,8 @@
 @echo off
 setlocal
+REM Run from the script's own directory, so double-clicking from anywhere
+REM still finds .\shaderbox and the project.
+cd /d "%~dp0"
 echo ShaderBox Launcher
 echo.
 

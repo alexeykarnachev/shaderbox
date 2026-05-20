@@ -1,6 +1,10 @@
 #!/bin/bash
 set -e
 
+# Run from the script's own directory, so double-clicking from a file manager
+# (cwd = $HOME) still finds ./shaderbox and the project.
+cd "$(dirname "$(readlink -f "$0")")"
+
 echo "ShaderBox Launcher"
 echo
 

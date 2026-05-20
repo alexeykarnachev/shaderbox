@@ -1,10 +1,12 @@
 import time
+from pathlib import Path
 
 import glfw
 import moderngl
 import numpy as np
 from imgui_bundle import imgui, imgui_ctx
 from loguru import logger
+from platformdirs import user_data_dir
 
 from shaderbox.app import App
 from shaderbox.hotkeys import process_hotkeys
@@ -299,8 +301,17 @@ def _draw_node_settings(app: App) -> None:
 
 
 def main() -> None:
-    app = App()
-    run(app)
+    log_dir = Path(user_data_dir("shaderbox")) / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    logger.add(log_dir / "shaderbox_{time}.log", rotation="5 MB", retention=5)
+
+    try:
+        app = App()
+        run(app)
+    except Exception:
+        logger.exception("ShaderBox crashed")
+        logger.error(f"A crash log was written to {log_dir}")
+        raise
 
 
 if __name__ == "__main__":

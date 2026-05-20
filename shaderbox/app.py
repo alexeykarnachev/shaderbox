@@ -39,7 +39,10 @@ class App:
             else:
                 project_dir = self.default_project_dir
 
-        glfw.init()
+        if not glfw.init():
+            raise RuntimeError(
+                "Failed to initialize GLFW — no display or OpenGL driver available."
+            )
 
         monitor = glfw.get_primary_monitor()
         video_mode = glfw.get_video_mode(monitor)
@@ -53,6 +56,13 @@ class App:
             monitor=None,
             share=None,
         )
+
+        if not window:
+            glfw.terminate()
+            raise RuntimeError(
+                "Failed to create a window — your system may lack an OpenGL 3.3+ driver. "
+                "On Linux, install libgl1 + libglfw3; on Windows, update your GPU drivers."
+            )
 
         glfw.make_context_current(window)
         glfw.set_window_pos(window, window_width, 0)
