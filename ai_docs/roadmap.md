@@ -25,18 +25,21 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-**As of 2026-05-20.**
+**As of 2026-05-21.**
 
 - **Done through feature 006**, all on `master`, pushed (`master == origin/master`).
-- **No active or queued work.** The dev-discipline refinement (worklog→roadmap migration,
-  documentation-discipline rules, generic-conventions rewrite, terse-comment cleanup) landed in
-  `bd3d9dd` + `eda5e7d`. Next work is whatever the user picks up.
+- **A release-hardening + cross-OS + UX batch landed this session** (`3cdec97`..`7095150`),
+  prepping the next itch.io build: bundled ffmpeg (no system-PATH dep), launcher `cd`-to-dir +
+  fail-loud, crash-log file + glfw-init checks, corrupt project/state/media tolerance,
+  `opencv-python`→`headless`, first-run starter-node seed, maximized window, ESC-unfocus, Ctrl+Q
+  quit, editor options merged into Settings, arrow-nav gated on editor focus. `build.sh` gained a
+  clean-bundle verify gate.
+- **Next: ship the next version to itch.** Verified on Linux (`make check`+`smoke`, bundle clean);
+  **Windows verification deferred to manual testing on a real Windows box** (a QEMU VM was tried +
+  torn down — virtio-gpu gives no real GL for a Windows guest).
 - **`todo.md` deferrals fire on their own triggers** — do NOT speculatively pick them up.
-- **Feature 006 leftover**: a few manual GUI checks need keystroke injection (no xdotool here) —
-  live splitter drag, Ctrl+S round-trip, node-switch edit survival. Logic is headless-verified; a
-  human eyeballing the app would close them.
 - **No open BLOCKERs.** One DEFERRAL-class workaround is live (the `imgui_color_text_edit` render()
-  FPE, two guards in place — `todo.md`).
+  FPE — editor hidden behind modals, `todo.md`).
 
 ## Features
 
