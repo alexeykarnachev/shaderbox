@@ -28,22 +28,22 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
 
 ---
 
-## [DEFERRAL] imgui_color_text_edit render() FPE — worked around with two guards
+## [DEFERRAL] imgui_color_text_edit render() FPE — editor hidden behind modals
 - **Trigger:** if imgui-bundle fixes the upstream glyph-metric div-by-zero (or you upgrade and
-  the crash no longer reproduces), DROP both guards below and restore the lost features
-  (live syntax-highlighted editor behind modals; live-preview while changing editor options).
-  Also: if you touch `tabs/code.py`'s render gate or `popups/editor_settings.py`'s apply
-  timing, re-verify the crash stays suppressed.
+  the crash no longer reproduces), the two guards below become unnecessary — let the editor render
+  behind modals and apply settings live. Also: if you touch `tabs/code.py`'s render gate or
+  `popups/settings.py`'s editor-settings apply timing, re-verify the crash stays suppressed.
 - The bug (NOT fixable from Python — it's a div-by-zero inside imgui-bundle's C++
   `TextEditor::Render`, by `glyphSize.x/.y` from `ImGui::GetFontSize()` + the 1.92 dynamic font
-  atlas, when the editor window isn't focused). Two triggers, two workarounds in place:
-  1. Rendering the editor on a frame a popup is active → `tabs/code.py` shows a read-only
-     plain-text snapshot (`_draw_code_snapshot`) instead of `editor.render()` while
-     `any_popup_open()`. **Lost feature:** no syntax colors / cursor behind a modal.
+  atlas, when the editor window isn't focused). Two triggers, two guards:
+  1. Rendering the editor on a frame a popup is active → `tabs/code.py` simply does NOT draw the
+     editor while `any_popup_open()` (the left pane is empty until the popup closes). Earlier a
+     plain-text snapshot stood in here; removed as needless workaround complexity (user preferred
+     it just disappear).
   2. Calling the editor's `set_*()` setters while a modal is open corrupts its glyph metrics →
-     next render FPEs. `popups/editor_settings.py` applies settings ONLY on close (Close button
-     + `hotkeys.py` Esc path), never live. **Lost feature:** no live-preview while dragging the
-     options sliders.
+     next render FPEs. The editor options live in `popups/settings.py` and apply ONLY on close
+     (Close button + `hotkeys.py` Esc path), never live. **Lost feature:** no live-preview while
+     dragging the options sliders.
 - Reproduces only in the full app (bisected via headless `update_and_draw` cycles), on the
   latest imgui-bundle (1.92.801). Surfaced building the editor-options popup (feature 006).
 

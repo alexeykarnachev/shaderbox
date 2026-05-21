@@ -164,11 +164,10 @@ roadmap-banner touch (if even that) + the cold-context glance is enough; for a f
 - **`widgets/`** — stateless imgui-drawing functions taking `app: App`. Shape per widget fits its
   job (no shared contract). Modules: `details.py`, `media_ops.py`, `node_grid.py`, `uniform.py`.
 - **`popups/`** — popup `draw(app: App)` free functions. Open/closed state lives on `App` as
-  `is_node_creator_open` / `is_settings_open` / `is_editor_settings_open` (helpers
-  `app.open_node_creator()` / `app.open_settings()` / `app.open_editor_settings()` enforce
-  mutual exclusion). Modules: `node_creator.py`, `settings.py`, `editor_settings.py` (the inline
-  editor's visual options — whitespace / line-numbers / brackets / font-size / tab-size /
-  line-spacing, applied via `app.apply_editor_settings()` on popup close).
+  `is_node_creator_open` / `is_settings_open` (helpers `app.open_node_creator()` /
+  `app.open_settings()` enforce mutual exclusion). Modules: `node_creator.py`, `settings.py`
+  (global target FPS + the inline editor's visual options — whitespace / line-numbers / brackets /
+  font-size / tab-size / line-spacing, applied via `app.apply_editor_settings()` on popup close).
 - **`fonts.py`** — freetype → GL atlas. **`ui_utils.py`** / **`constants.py`** / **`notifications.py`** — helpers.
 - **`scripts/smoke.py`** — headless smoke test (see `## Recipes > make smoke`). Not part of
   `shaderbox/` proper; one-off script that imports `App` + `update_and_draw` and runs frames in

@@ -56,12 +56,11 @@ class App:
 
         monitor = glfw.get_primary_monitor()
         video_mode = glfw.get_video_mode(monitor)
-        window_width = video_mode.size[0] // 2
-        window_height = video_mode.size[1]
 
+        glfw.window_hint(glfw.MAXIMIZED, glfw.TRUE)
         window = glfw.create_window(
-            width=window_width,
-            height=window_height,
+            width=video_mode.size[0],
+            height=video_mode.size[1],
             title="ShaderBox",
             monitor=None,
             share=None,
@@ -75,7 +74,6 @@ class App:
             )
 
         glfw.make_context_current(window)
-        glfw.set_window_pos(window, window_width, 0)
 
         imgui.create_context()
         apply_theme(imgui.get_style())
@@ -103,7 +101,7 @@ class App:
 
         self.is_node_creator_open: bool = False
         self.is_settings_open: bool = False
-        self.is_editor_settings_open: bool = False
+        self.editor_focused: bool = False
         self.global_fps = 0.0
 
         self.editors: dict[str, text_edit.TextEditor] = {}
@@ -112,26 +110,15 @@ class App:
         self._init(project_dir, seed_starter=is_first_launch)
 
     def any_popup_open(self) -> bool:
-        return (
-            self.is_node_creator_open
-            or self.is_settings_open
-            or self.is_editor_settings_open
-        )
+        return self.is_node_creator_open or self.is_settings_open
 
     def open_node_creator(self) -> None:
         self.is_node_creator_open = True
         self.is_settings_open = False
-        self.is_editor_settings_open = False
 
     def open_settings(self) -> None:
         self.is_settings_open = True
         self.is_node_creator_open = False
-        self.is_editor_settings_open = False
-
-    def open_editor_settings(self) -> None:
-        self.is_editor_settings_open = True
-        self.is_node_creator_open = False
-        self.is_settings_open = False
 
     @staticmethod
     def _create_dir_if_needed(path: Path | str) -> Path:

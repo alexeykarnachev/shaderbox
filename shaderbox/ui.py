@@ -10,7 +10,6 @@ from platformdirs import user_data_dir
 
 from shaderbox.app import App
 from shaderbox.hotkeys import process_hotkeys
-from shaderbox.popups.editor_settings import draw_editor_settings
 from shaderbox.popups.node_creator import draw_node_creator
 from shaderbox.popups.settings import draw_settings
 from shaderbox.tabs import code as code_tab
@@ -167,7 +166,6 @@ def update_and_draw(app: App) -> None:
         # Popups and notifications
         draw_node_creator(app)
         draw_settings(app)
-        draw_editor_settings(app)
 
         imgui.push_font(app.font_18, _FONT_18_SIZE)
         app.notifications.update_and_draw()

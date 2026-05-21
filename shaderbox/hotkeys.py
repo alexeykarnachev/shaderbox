@@ -17,21 +17,27 @@ def process_hotkeys(app: App) -> None:
         app.delete_current_node()
     if io.key_ctrl and imgui.is_key_pressed(imgui.Key.n):
         app.open_node_creator()
+    if io.key_ctrl and imgui.is_key_pressed(imgui.Key.q):
+        glfw.set_window_should_close(app.window, True)
 
     if io.key_alt and imgui.is_key_pressed(imgui.Key.s):
         app.open_settings()
 
     if imgui.is_key_pressed(imgui.Key.escape, repeat=False):
-        if not app.any_popup_open():
-            glfw.set_window_should_close(app.window, True)
-        was_editor_settings_open = app.is_editor_settings_open
+        # ESC returns the app to its default state: close any popup, drop editor
+        # focus. Never quits the app.
+        # Settings holds the editor options — push them when it closes (apply-on-close
+        # avoids the modal-open FPE, conventions.md ## Known quirks).
+        was_settings_open = app.is_settings_open
         app.is_node_creator_open = False
         app.is_settings_open = False
-        app.is_editor_settings_open = False
-        if was_editor_settings_open:
+        app.editor_focused = False
+        if was_settings_open:
             app.apply_editor_settings()
 
-    if not imgui.is_any_item_active():
+    # Arrow nav is suppressed while the code editor has keyboard focus (set in
+    # tabs/code.py after render), so arrows move the editor cursor, not the node.
+    if not app.editor_focused:
         if not app.any_popup_open():
             if imgui.is_key_pressed(imgui.Key.left_arrow, repeat=True):
                 app.select_next_current_node(-1)
