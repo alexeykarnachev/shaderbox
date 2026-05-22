@@ -27,24 +27,20 @@ feature; brief points at the superseder).
 
 **As of 2026-05-22.**
 
-- **Done through feature 007; v0.2.1 shipped to itch.** All on `master`, pushed (commits + tags
-  `v0.2.0`, `v0.2.1` on origin; 0.2.1 = a `run.bat` errorlevel patch). Feature 007 =
-  release-pipeline hardening: `make release VERSION=x.y.z`
-  (semver bump + tag; policy in `conventions.md`), `build.sh` gated on `make check` + `make smoke`
-  + clean tree (`--allow-dirty`), both platforms ship `.zip`, GitHub Actions CI, `BUILDING.md`,
-  bundle-UX rewrite (`scripts/README.md` + launchers). The full ship flow is `BUILDING.md`; the
-  itch store page is synced from `ai_docs/itch/page.yaml` via `dev_flow.md ### Sync the itch.io
-  page` (done this session: ModelBox claim killed, copy/tags actualized; fetch-back-audited clean).
-- **`master` is ahead of the `v0.2.1` tag** by dev-ergonomics work: `SHADERBOX_DATA_DIR` data-dir
-  override + `make run` / `make run-bundle` (fresh first-run bundle check). Not yet shipped; rides
-  the next release. No user-facing behavior change (default dir unchanged when the var is unset).
+- **Done through feature 007; v0.2.2 shipped to itch** (both `linux` + `windows` channels live at
+  0.2.2, builds processed). Tags `v0.2.0`…`v0.2.2` on origin; `master` is at the `release: v0.2.2`
+  commit, fully pushed — no unshipped work outstanding. v0.2.2 = the `SHADERBOX_DATA_DIR` data-dir
+  override + `make run`/`make run-bundle` ergonomics, plus an editor-focus fix (editor starts
+  unfocused / arrow-nav no longer steals into the caret on node switch; `tabs/code.py` reads imgui's
+  real focus, see `conventions.md ## Known quirks`).
 - **Two open follow-ups (non-blocking, no users yet so neither gates anything):**
-  1. **The shipped build was NOT runtime-verified on Windows** — built + CI-installed on Linux,
-     never run on a real Windows box (0.2.1's `run.bat` errorlevel fix is itself Windows-unverified).
-     Verify the *published* build per `BUILDING.md` when convenient.
+  1. **No build has been runtime-verified on Windows** — built + CI-installed on Linux, never run on
+     a real Windows box. Verify the *published* build per `BUILDING.md` when convenient.
   2. **Screenshots are stale** — the live page's images predate gruvbox (005) + the inline editor
      (006). Re-shoot in-app + upload by hand (binary, not in `page.yaml`).
-- **`todo.md` deferrals fire on their own triggers** — do NOT speculatively pick them up.
+- **`todo.md` deferrals fire on their own triggers** — do NOT speculatively pick them up. Two are
+  editor-upstream-bound (gruvbox palette write-path, col-0 caret clip) — both wait on a small
+  imgui-bundle `imgui_color_text_edit` binding/C++ change, not on us.
 - **No open BLOCKERs.** Live DEFERRAL-class workaround: the `imgui_color_text_edit` render() FPE
   (editor hidden behind modals, `todo.md`).
 

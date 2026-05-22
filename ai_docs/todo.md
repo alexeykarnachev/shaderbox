@@ -47,15 +47,29 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
 - Reproduces only in the full app (bisected via headless `update_and_draw` cycles), on the
   latest imgui-bundle (1.92.801). Surfaced building the editor-options popup (feature 006).
 
+## [DEFERRAL] inline editor caret invisible at column 0
+- **Trigger:** first user complaint that the cursor "disappears" at line start, OR when you next
+  patch the imgui-bundle `imgui_color_text_edit` binding for anything else (same upstream territory
+  as the palette write-path) — fix the caret clip in the same pass.
+- The goossens `TextEditor` draws the caret at `x = textStart + col*glyph - 1`; at column 0 that
+  lands ~1px left of the text region and the editor's internal text clip culls it. Confirmed this
+  session by framebuffer capture across a full blink cycle: caret visible 50/99 frames at col 5,
+  0/99 frames at col 0 (not low-contrast — genuinely not drawn). NOT fixable from Python: window
+  padding doesn't move the editor's internal clip, and there's no margin/caret-width API. Needs an
+  upstream C++ change to `renderCursors()` (or a bound caret-margin setting).
+
 ## [DEFERRAL] gruvbox palette match for the inline editor
-- **Trigger:** when imgui-bundle exposes a writable `imgui_color_text_edit.TextEditor.Palette`
-  (per-slot setter or list-based constructor), OR if the built-in dark palette's mismatch with
+- **Trigger:** when you decide custom editor colors are worth a small upstream PR — the C++
+  `TextEditor::Palette` is a mutable `std::array<ImU32>` but litgen binds only `.get()`; the write
+  path is a ~3-line binding addition (a `set(Color, ImU32)` mirroring `get()` on the goossens
+  `Palette`, then regenerate). Land it in `pthom/ImGuiColorTextEdit` (or the bundle's litgen config)
+  and it flows into imgui-bundle on the next bump. OR: if the built-in dark palette's mismatch with
   the rest of the gruvbox UI visibly annoys in daily use.
-- Feature 006 ships the inline editor with the built-in `TextEditor.get_dark_palette()` because
-  the Palette has no Python write path in imgui-bundle 1.92.801 (spike-confirmed: `.get()` only,
-  `set_palette` rejects `list[int]`). The `COLOR.SYN_*` tokens in `theme.py` + the
-  `Color`→`SYN_*` mapping table in `ai_docs/features/006_inline_editor.md` (Decision 5) document
-  the intended mapping for when this becomes possible.
+- The Palette has no Python write path in imgui-bundle 1.92.801 (spike-confirmed: `.get()` only,
+  `set_palette`/`set_default_palette` accept only an opaque `Palette`, no per-slot setter/list ctor).
+  Feature 006 ships the built-in `TextEditor.get_dark_palette()`. The `COLOR.SYN_*` tokens in
+  `theme.py` + the `Color`→`SYN_*` mapping table in `ai_docs/features/006_inline_editor.md`
+  (Decision 5) document the intended mapping for when the write path lands.
 
 ## [DEFERRAL] split `ui.py` / `app.py` further
 - **Trigger:** when editing `app.py` feels painful (search-and-replace across the file misses

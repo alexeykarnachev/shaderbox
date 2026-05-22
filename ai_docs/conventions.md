@@ -121,6 +121,14 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
 - **A live moderngl context must exist before constructing `Image` / `Video` / `Font` / `Canvas` /
   `Node`** — they call `moderngl.get_context()` lazily. In the app,
   `glfw.make_context_current(window)` handles it.
+- **`imgui_color_text_edit.TextEditor.render()` auto-grabs imgui keyboard focus on a child window's
+  first frame** — so a never-yet-rendered editor (app open, or just-switched node) steals focus and
+  the caret goes live without a click. The editor exposes no `is_focused()` getter. Track focus by
+  reading `imgui.is_window_focused(FocusedFlags_.child_windows)` *after* `render()` (`tabs/code.py`),
+  not a hand-maintained click flag. To defocus (Esc, arrow-nav, startup), set
+  `app.editor_defocus_requested` and consume it with `set_window_focus(None)` AFTER `render()` —
+  clearing before render is undone by the editor's own first-render grab. `hotkeys.py` gates arrow
+  node-nav on `app.editor_focused`.
 - **The sanctioned `# type: ignore` allowlist (upstream stub gaps only).** The no-suppression rule
   has exactly these exceptions — all are missing/wrong annotations in third-party stubs, never our
   own type errors. New markers outside this list are a design smell; fix the design, don't add to
