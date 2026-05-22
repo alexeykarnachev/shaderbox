@@ -23,3 +23,6 @@ ai_docs/_*.md
 handoff/
 handoff_flat/
 shaderbox-design-handoff-*.tar.gz
+
+# Playwright MCP browser-session artifacts
+.playwright-mcp/

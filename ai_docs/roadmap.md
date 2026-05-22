@@ -25,26 +25,32 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-**As of 2026-05-21.**
+**As of 2026-05-22.**
 
-- **Done through feature 006**, all on `master`, pushed (`master == origin/master`).
-- **A release-hardening + cross-OS + UX batch landed this session** (`3cdec97`..`7095150`),
-  prepping the next itch.io build: bundled ffmpeg (no system-PATH dep), launcher `cd`-to-dir +
-  fail-loud, crash-log file + glfw-init checks, corrupt project/state/media tolerance,
-  `opencv-python`→`headless`, first-run starter-node seed, maximized window, ESC-unfocus, Ctrl+Q
-  quit, editor options merged into Settings, arrow-nav gated on editor focus. `build.sh` gained a
-  clean-bundle verify gate.
-- **Next: ship the next version to itch.** Verified on Linux (`make check`+`smoke`, bundle clean);
-  **Windows verification deferred to manual testing on a real Windows box** (a QEMU VM was tried +
-  torn down — virtio-gpu gives no real GL for a Windows guest).
+- **Done through feature 007**, all on `master`. **This session's feature-007 work is committed
+  locally but NOT yet pushed** — `git push` when ready.
+- **Feature 007 (release-pipeline hardening) landed this session:** `make release VERSION=x.y.z`
+  (semver bump + commit + tag; policy in `conventions.md`), `build.sh` now gated on `make check` +
+  `make smoke` + a clean tree (`--allow-dirty` overrides), both platforms ship `.zip`, a GitHub
+  Actions CI (Ubuntu `make check` hard, Windows `uv sync` hard + headless-smoke soft), and
+  `BUILDING.md`. Plus bundle-UX edits: rewritten `scripts/README.md` (first-run expectations,
+  SmartScreen, Linux prereqs, hotkey cheat-sheet) + tightened launchers.
+- **Next: ship to itch.** Three pre-ship to-dos, none blocking each other:
+  1. **Apply the itch page copy** — `ai_docs/itch_page_copy.md` is paste-ready (drops the false
+     ModelBox claim, adds the inline editor / stickers, new tags). Edit on the itch web UI; butler
+     won't touch page text. **Re-shoot screenshots** (current ones predate gruvbox + the editor).
+  2. **Verify on Windows** — point a Windows coding-agent at the repo per `BUILDING.md` (the
+     maintainer has a Windows box). CI's Windows-smoke is soft (`todo.md` deferral).
+  3. `make release VERSION=…` → `./build.sh` → `./upload-itch.sh`.
 - **`todo.md` deferrals fire on their own triggers** — do NOT speculatively pick them up.
-- **No open BLOCKERs.** One DEFERRAL-class workaround is live (the `imgui_color_text_edit` render()
-  FPE — editor hidden behind modals, `todo.md`).
+- **No open BLOCKERs.** Live DEFERRAL-class workaround: the `imgui_color_text_edit` render() FPE
+  (editor hidden behind modals, `todo.md`).
 
 ## Features
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 007 | release_pipeline_hardening | done | `make release VERSION=` (semver bump + tag), `build.sh` gated on check+smoke + clean tree (`--allow-dirty`), `.zip` both platforms, Windows+Ubuntu CI, `BUILDING.md`. Spec: `ai_docs/features/007_release_pipeline_hardening.md`. |
 | 006 | inline_glsl_editor | done | Syntax-highlighted inline GLSL editor in the main window's left split; Ctrl+S saves + hot-reloads; visual-options popup; replaced the external-editor mechanism. Spec: `ai_docs/features/006_inline_editor.md`. |
 | 005 | ui_redesign_foundation | partial | Gruvbox theme + full color/size/spacing token sweep through `theme.py`. The wide-screen layout half was reverted to the feature-004 shape; only the theme survived. Spec: `ai_docs/features/005_ui_redesign_foundation.md`. |
 | 004 | imgui_bundle_migration | done | Full pyimgui → imgui-bundle migration; adopted the `imgui_ctx` context-manager idiom + `portable_file_dialogs`; stripped the 8 imgui `# type: ignore` markers. Spec: `ai_docs/features/004_imgui_bundle_migration.md`. |

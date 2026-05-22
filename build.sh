@@ -15,6 +15,20 @@ echo "================================================"
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
 
+# --allow-dirty skips the clean-tree guard; the test gate always runs.
+ALLOW_DIRTY=0
+[ "${1:-}" = "--allow-dirty" ] && ALLOW_DIRTY=1
+
+if [ "$ALLOW_DIRTY" -eq 0 ] && [ -n "$(git status --porcelain)" ]; then
+    echo "✗ working tree is dirty — commit, stash, or pass --allow-dirty:"
+    git status --short
+    exit 1
+fi
+
+# Gate: never bundle code that fails lint/typecheck or the headless smoke test.
+make check
+make smoke
+
 rm -rf dist
 mkdir -p dist
 
@@ -23,8 +37,8 @@ ROOT_FILES=(pyproject.toml uv.lock .python-version)
 [ -f LICENSE ] && ROOT_FILES+=(LICENSE)
 
 # Forbidden patterns — if any match in a staged tree, the build aborts.
-FORBIDDEN_NAMES=(CLAUDE.md Makefile .pre-commit-config.yaml itch-config)
-FORBIDDEN_PATHS=(ai_docs .claude __pycache__ .git .venv .ruff_cache .mypy_cache)
+FORBIDDEN_NAMES=(CLAUDE.md Makefile .pre-commit-config.yaml itch-config BUILDING.md)
+FORBIDDEN_PATHS=(ai_docs .claude .github __pycache__ .git .venv .ruff_cache .mypy_cache)
 
 stage_common() {
     # $1 = staging dir. Copies the allowlisted payload, stripping bytecode.
@@ -79,12 +93,13 @@ build_platform windows run.bat
 build_platform linux run.sh
 
 # Archive. Build-dir basenames stay stable (shaderbox-build-*) so the extracted
-# top-level folder matches what the install guide expects.
-( cd /tmp && zip -rq shaderbox-windows.zip shaderbox-build-windows/ && mv shaderbox-windows.zip "$ROOT/dist/" )
+# top-level folder matches what the install guide expects. zip APPENDS to an
+# existing archive, so rm any stale /tmp zip from an interrupted prior run first.
+( cd /tmp && rm -f shaderbox-windows.zip && zip -rq shaderbox-windows.zip shaderbox-build-windows/ && mv shaderbox-windows.zip "$ROOT/dist/" )
 echo "✓ Windows distribution created: dist/shaderbox-windows.zip"
 
-( cd /tmp && tar -czf shaderbox-linux.tar.gz shaderbox-build-linux/ && mv shaderbox-linux.tar.gz "$ROOT/dist/" )
-echo "✓ Linux distribution created: dist/shaderbox-linux.tar.gz"
+( cd /tmp && rm -f shaderbox-linux.zip && zip -rq shaderbox-linux.zip shaderbox-build-linux/ && mv shaderbox-linux.zip "$ROOT/dist/" )
+echo "✓ Linux distribution created: dist/shaderbox-linux.zip"
 
 rm -rf /tmp/shaderbox-build-windows /tmp/shaderbox-build-linux
 

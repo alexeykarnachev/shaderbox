@@ -1,4 +1,5 @@
-.PHONY: check smoke
+.PHONY: check smoke release
+.ONESHELL:
 
 # Lint + format + typecheck. Run before declaring anything done.
 # Delegates to pre-commit (ruff fix, ruff format, pyright) — the single source of
@@ -14,3 +15,18 @@ check:
 # tabs/ / hotkeys.py before declaring done.
 smoke:
 	uv run python scripts/smoke.py
+
+# Cut a release: bump pyproject version, commit, tag. Does NOT build or push
+# (./build.sh then ./upload-itch.sh stay separate). Semver bump policy lives in
+# conventions.md ## Design decisions. Usage: make release VERSION=x.y.z
+release:
+	@set -e
+	if [ -z "$(VERSION)" ]; then echo "usage: make release VERSION=x.y.z"; exit 1; fi
+	echo "$(VERSION)" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$$' || { echo "VERSION must be semver core x.y.z"; exit 1; }
+	test -z "$$(git status --porcelain)" || { echo "working tree dirty; commit or stash first"; exit 1; }
+	git rev-parse -q --verify "refs/tags/v$(VERSION)" >/dev/null && { echo "tag v$(VERSION) already exists"; exit 1; } || true
+	sed -i 's/^version = ".*"/version = "$(VERSION)"/' pyproject.toml
+	$(MAKE) check || { echo "check failed; rolling back version edit"; git checkout -- pyproject.toml; exit 1; }
+	git commit -aqm "release: v$(VERSION)"
+	git tag "v$(VERSION)"
+	echo "tagged v$(VERSION). next: ./build.sh && ./upload-itch.sh"

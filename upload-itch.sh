@@ -82,7 +82,7 @@ check_butler_auth() {
 
 # Check if distribution files exist
 check_distributions() {
-    if [ ! -f "dist/shaderbox-windows.zip" ] || [ ! -f "dist/shaderbox-linux.tar.gz" ]; then
+    if [ ! -f "dist/shaderbox-windows.zip" ] || [ ! -f "dist/shaderbox-linux.zip" ]; then
         print_error "Distribution files not found!"
         echo
         echo "Please run ./build.sh first to create distribution files."
@@ -146,7 +146,7 @@ main() {
     print_status "Project: $ITCH_USER/$ITCH_GAME"
     print_status "Version: $VERSION"
     print_status "Windows file: dist/shaderbox-windows.zip"
-    print_status "Linux file: dist/shaderbox-linux.tar.gz"
+    print_status "Linux file: dist/shaderbox-linux.zip"
     echo
 
     # Confirm upload
@@ -165,7 +165,7 @@ main() {
     upload_to_itch "dist/shaderbox-windows.zip" "$WINDOWS_CHANNEL" "$VERSION"
 
     # Upload Linux version
-    upload_to_itch "dist/shaderbox-linux.tar.gz" "$LINUX_CHANNEL" "$VERSION"
+    upload_to_itch "dist/shaderbox-linux.zip" "$LINUX_CHANNEL" "$VERSION"
 
     echo
     print_status "All uploads completed successfully!"
@@ -209,7 +209,7 @@ if [ "$1" = "--dry-run" ]; then
 
     echo "Would upload:"
     echo "  dist/shaderbox-windows.zip -> $ITCH_USER/$ITCH_GAME:$WINDOWS_CHANNEL (v$VERSION)"
-    echo "  dist/shaderbox-linux.tar.gz -> $ITCH_USER/$ITCH_GAME:$LINUX_CHANNEL (v$VERSION)"
+    echo "  dist/shaderbox-linux.zip -> $ITCH_USER/$ITCH_GAME:$LINUX_CHANNEL (v$VERSION)"
     echo
     exit 0
 fi

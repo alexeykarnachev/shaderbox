@@ -101,6 +101,24 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   insufficient. Both rejected from feature 004 scope to keep blast radius bounded; both
   available with no new dependency since `imgui-bundle` already bundles them.
 
+## [DEFERRAL] headless smoke may not run on Windows CI
+- **Trigger:** next time you touch `.github/workflows/ci.yml`, OR the first time the
+  `windows-smoke` job's smoke step actually fails to run headless (GL-context absence on the
+  GitHub Windows runner).
+- The `windows-smoke` job's `uv run python scripts/smoke.py` step is `continue-on-error: true`
+  on purpose — glfw needs a real GL context the runner may lack. `uv sync` in the same job is the
+  hard gate (a dep that won't install on Windows reds the job). Runtime on Windows is verified by
+  the maintainer's manual test (`BUILDING.md`), not CI. If a software-GL path (Mesa/llvmpipe on
+  the runner) ever makes headless smoke reliable on Windows, drop the `continue-on-error`.
+
+## [DEFERRAL] code-sign the Windows launcher (SmartScreen)
+- **Trigger:** first user report that SmartScreen blocks them despite the bundled README's
+  "More info → Run anyway" note, OR a paid (non name-your-own-price) release.
+- The Windows `run.bat` is unsigned, so first-run trips SmartScreen ("Windows protected your
+  PC"). Current mitigation is the bundled `scripts/README.md` note telling users to click
+  "More info → Run anyway". A code-signing cert removes the warning but costs money/effort —
+  deferred until the warning is shown to actually cost a user.
+
 ## [DEFERRAL] in-app replay mechanism (debug)
 - **Trigger:** next time you hit a multi-step bug that's painful to reproduce manually, or when
   you want to share a repro with future-you.

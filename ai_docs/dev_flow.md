@@ -200,10 +200,14 @@ texture binding errors. Doesn't catch visual bugs. Run after any refactor in `ui
 `~/.local/share/shaderbox/project_dir` pointer is handled inside the script.
 
 ### Build / ship to itch.io
-`./build.sh` → `dist/shaderbox-{windows.zip,linux.tar.gz}` → `./upload-itch.sh` (needs `butler` + an
-`itch-config` file). Maintainer-triggered, not the agent's. The bundle is a **source distribution**
-(ships `shaderbox/` + `uv.lock`; the user's machine runs `uv sync` + `uv run` via `run.sh`/`run.bat`
-on first launch) — not a frozen binary.
+`make release VERSION=x.y.z` (bumps `pyproject.toml`, commits, tags — semver policy in
+`conventions.md ## Design decisions`; does NOT build/push) → `./build.sh` → `dist/shaderbox-{windows,
+linux}.zip` → `./upload-itch.sh` (needs `butler` + an `itch-config` file). `build.sh` is **gated**:
+it runs `make check` + `make smoke` and refuses a dirty tree (`--allow-dirty` overrides the
+dirty-tree guard, not the test gate). Maintainer-triggered, not the agent's. The bundle is a
+**source distribution** (ships `shaderbox/` + `uv.lock`; the user's machine runs `uv sync` + `uv run`
+via `run.sh`/`run.bat` on first launch) — not a frozen binary. Windows-build/verify notes:
+`BUILDING.md` (repo root, not bundled).
 
 **Clean-bundle invariant.** The bundle is an explicit allowlist (`shaderbox/` package +
 `pyproject.toml` / `uv.lock` / `.python-version` / `LICENSE` + the launcher + `scripts/README.md`).
