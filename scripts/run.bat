@@ -13,13 +13,15 @@ if %errorlevel% neq 0 (
     echo.
 
     powershell -Command "irm https://astral.sh/uv/install.ps1 | iex"
-    if %errorlevel% neq 0 goto :uv_install_failed
+    REM `if errorlevel 1` re-reads the live errorlevel; `%errorlevel%` inside a parenthesized
+    REM block expands at parse time to the stale pre-block value.
+    if errorlevel 1 goto :uv_install_failed
 
     REM Installer puts uv in %USERPROFILE%\.local\bin
     set "PATH=%USERPROFILE%\.local\bin;%PATH%"
 
     where uv >nul 2>&1
-    if %errorlevel% neq 0 goto :uv_path_failed
+    if errorlevel 1 goto :uv_path_failed
 
     echo uv installed successfully!
     echo.
@@ -31,7 +33,7 @@ if not exist ".venv" (
     echo Needs internet + ~1 GB free disk. Happens once; may take a few minutes -- please wait...
     echo.
     uv sync
-    if %errorlevel% neq 0 goto :sync_failed
+    if errorlevel 1 goto :sync_failed
 
     echo Dependencies installed successfully!
     echo.
