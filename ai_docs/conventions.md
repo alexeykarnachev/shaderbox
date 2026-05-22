@@ -70,6 +70,11 @@ belong in `## Known quirks`. If a bullet doesn't constrain code you haven't writ
   affinity — render-thread methods may touch moderngl; worker-thread methods (`prepare`, `export`)
   MUST NOT, they see only `RenderedArtifact` (a pure value type). Each exporter owns its own panel
   UI. Revisit when a third concrete exporter lands.
+- **All on-disk state roots at `app.py::app_data_dir()`** — projects, the active-project pointer,
+  logs. Never call `platformdirs.user_data_dir(...)` directly (that path silently ignores the
+  override); go through `app_data_dir()`, which honors `SHADERBOX_DATA_DIR` (cross-platform; used by
+  `make run-bundle` for a throwaway fresh-install run). Revisit if a state root needs to diverge from
+  this single base.
 - **Release versioning is manual semver, bumped only via `make release VERSION=x.y.z`.** Bump
   rule: **major** = breaks users' existing projects / saved state (e.g. a non-round-trip app_state
   migration); **minor** = a backward-compatible feature; **patch** = fixes / other non-breaking

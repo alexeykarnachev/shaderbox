@@ -1,3 +1,4 @@
+import os
 import platform
 import shutil
 import subprocess
@@ -33,6 +34,17 @@ from shaderbox.ui_utils import pfd_block, select_next_value
 # The procedural starter shader seeded into an empty project on first run (no
 # external media to load, unlike the Image/Video templates).
 _STARTER_TEMPLATE_ID = "53724dbd-8efb-4c09-8c7d-28d626a066e7"  # "UV Mango"
+
+
+def app_data_dir() -> Path:
+    # Root for all on-disk state (projects, the active-project pointer, logs).
+    # SHADERBOX_DATA_DIR overrides the platformdirs default (cross-platform; used
+    # by `make run-bundle` for a throwaway fresh-install run). Resolved here, not
+    # via XDG_DATA_HOME, so it works the same on every OS.
+    override: str = os.environ.get("SHADERBOX_DATA_DIR", "")
+    if override:
+        return Path(override)
+    return Path(user_data_dir("shaderbox"))
 
 
 class App:
@@ -132,7 +144,7 @@ class App:
 
     @property
     def app_dir(self) -> Path:
-        return Path(user_data_dir("shaderbox"))
+        return app_data_dir()
 
     @property
     def project_dir_file_path(self) -> Path:

@@ -1,14 +1,12 @@
 import time
-from pathlib import Path
 
 import glfw
 import moderngl
 import numpy as np
 from imgui_bundle import imgui, imgui_ctx
 from loguru import logger
-from platformdirs import user_data_dir
 
-from shaderbox.app import App
+from shaderbox.app import App, app_data_dir
 from shaderbox.hotkeys import process_hotkeys
 from shaderbox.popups.node_creator import draw_node_creator
 from shaderbox.popups.settings import draw_settings
@@ -303,7 +301,7 @@ def _draw_node_settings(app: App) -> None:
 
 
 def main() -> None:
-    log_dir = Path(user_data_dir("shaderbox")) / "logs"
+    log_dir = app_data_dir() / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     logger.add(log_dir / "shaderbox_{time}.log", rotation="5 MB", retention=5)
 
