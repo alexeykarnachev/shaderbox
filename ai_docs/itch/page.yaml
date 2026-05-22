@@ -1,0 +1,53 @@
+# Source of truth for the itch.io page (https://where-is-your-keyboard.itch.io/shaderbox).
+# The itch page has no write API, so an agent-driven Playwright session diffs this file
+# against the live page and edits only the changed fields (assisted save — never auto-submit).
+#
+# Only fields we actually author + re-edit live here. Set-once settings (classification,
+# pricing, kind, release status, visibility, custom noun, community) are omitted on purpose
+# — they never diff. Install instructions are omitted too: the bundled scripts/README.md is
+# the canonical install home (the itch field would just duplicate it). Uploads are butler's
+# job (upload-itch.sh); screenshots/cover are binary and uploaded by hand.
+#
+# Edit page (logged in): https://itch.io/game/edit/3722606
+
+title: ShaderBox
+
+tagline: Write a GLSL shader, get an instant control panel.
+
+# itch description body. Rendered as rich text; light markdown is fine.
+description: |
+  ShaderBox is a real-time GLSL fragment-shader playground. Write a shader in the
+  built-in editor; ShaderBox reads its uniforms and auto-builds the sliders, color
+  pickers, and inputs to drive them - no boilerplate UI code. It hot-reloads as you
+  type. Export the result to an image, a video, or a ready-to-upload Telegram sticker set.
+
+  Features:
+  - Built-in syntax-highlighted GLSL editor - edit in-window, hit Ctrl+S to save and
+    hot-reload instantly. External files also hot-reload on change.
+  - Automatic UI from your uniforms - ShaderBox introspects the active uniforms and
+    generates the matching controls: floats, vectors, colors, textures, arrays, and text.
+  - Image & video texture inputs - drop in media and sample it straight from your shader.
+  - Built-in text rendering - a freetype glyph-atlas shader for drawing text in your scene.
+  - Export anywhere - render to PNG images, MP4/WebM video, or publish directly to a
+    Telegram sticker set.
+
+  Grab the build below (Windows / Linux) and run the included launcher; see the bundled
+  README for first-run notes.
+
+# Max 10, ordered by discovery value. Empty on the live page today — first sync adds them.
+tags:
+  - shader
+  - glsl
+  - opengl
+  - creative-tool
+  - graphics
+  - generative
+  - live-coding
+  - procedural-generation
+  - python
+  - gamedev
+
+# Declared to mirror the live page; does not diff (set-once). Live state: Yes / Code.
+ai_disclosure:
+  contains_ai: true
+  kinds: [code]
