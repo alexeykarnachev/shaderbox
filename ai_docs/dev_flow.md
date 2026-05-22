@@ -200,14 +200,15 @@ texture binding errors. Doesn't catch visual bugs. Run after any refactor in `ui
 `~/.local/share/shaderbox/project_dir` pointer is handled inside the script.
 
 ### Build / ship to itch.io
-`make release VERSION=x.y.z` (bumps `pyproject.toml`, commits, tags — semver policy in
-`conventions.md ## Design decisions`; does NOT build/push) → `./build.sh` → `dist/shaderbox-{windows,
-linux}.zip` → `./upload-itch.sh` (needs `butler` + an `itch-config` file). `build.sh` is **gated**:
-it runs `make check` + `make smoke` and refuses a dirty tree (`--allow-dirty` overrides the
-dirty-tree guard, not the test gate). Maintainer-triggered, not the agent's. The bundle is a
-**source distribution** (ships `shaderbox/` + `uv.lock`; the user's machine runs `uv sync` + `uv run`
-via `run.sh`/`run.bat` on first launch) — not a frozen binary. Windows-build/verify notes:
-`BUILDING.md` (repo root, not bundled).
+**The runnable command sequence is `BUILDING.md` (repo root, not bundled)** — release → build →
+upload → page-sync, plus the Windows-verify checklist. This section holds only the *model* a fresh
+agent needs. Maintainer-triggered, not the agent's. The flow: `make release` bumps + tags (semver
+policy in `conventions.md ## Design decisions`; does NOT build/push) → `build.sh` is **gated** (runs
+`make check` + `make smoke`, refuses a dirty tree; `--allow-dirty` overrides the dirty-tree guard,
+not the test gate) → `upload-itch.sh` pushes the channels → sync the store page (`### Sync the
+itch.io page` below, done LAST so the page describes what's downloadable). The bundle is a **source
+distribution** (ships `shaderbox/` + `uv.lock`; the user's machine runs `uv sync` + `uv run` via
+`run.sh`/`run.bat` on first launch) — not a frozen binary.
 
 **Clean-bundle invariant.** The bundle is an explicit allowlist (`shaderbox/` package +
 `pyproject.toml` / `uv.lock` / `.python-version` / `LICENSE` + the launcher + `scripts/README.md`).
@@ -217,6 +218,34 @@ bytecode and runs a verification gate that **aborts the build** if any forbidden
 the staged tree — so this is asserted, not assumed. When you add a file the app needs at runtime,
 add it to the `build.sh` allowlist (`ROOT_FILES` or under `shaderbox/`); when you add a new dev
 artifact, confirm it matches a `FORBIDDEN_*` pattern or the gate won't catch a future leak.
+
+### Sync the itch.io page
+**Source of truth:** `ai_docs/itch/page.yaml` (title / tagline / description / tags + the declared
+AI-disclosure mirror). The repo `README.md` is GitHub-only; the store page is NOT a copy of it.
+itch has **no write API** (server-side API is read-only; butler pushes builds only) — so the page is
+edited by an **agent-driven Playwright session**, not a script. Done last in the ship flow (after
+`upload-itch.sh`), so the page describes what's already downloadable.
+
+Procedure (the agent runs it; the maintainer can't headless it):
+1. Open `https://itch.io/game/edit/3722606` (login persists in the Playwright profile).
+2. Diff `page.yaml` against the live fields; edit **only** what changed.
+3. **Stop before Save** — show the staged form, the maintainer reviews, then Save (assisted, never
+   auto-submit: publishing is outward-facing + hard to reverse).
+4. Verify on the public page (`…/shaderbox`), not the editor.
+
+Footguns (each cost a real failure this session):
+- **Description must be written into the backing `<textarea name="game[description]">`, NOT the
+  visible `.redactor-in` contenteditable** — the redactor does not sync editable→textarea on a
+  scripted edit, so Save silently submits the OLD body. Use the HTML view or set the textarea value
+  directly, then Save.
+- **Tags are a Selectize widget** with a `create` (slugify) function — add via the instance API
+  (`addOption`+`addItem` / `createItem`), not simulated typing (keystroke filtering scrambles input,
+  e.g. `glsl`→`sllg`). Custom tags are allowed but get less discovery than canonical itch tags.
+- **Snapshot refs go stale** after any edit that re-renders — re-snapshot or use stable selectors.
+- Screenshots / cover are binary — uploaded by hand, never from `page.yaml`.
+- **Never hand-edit the live page outside `page.yaml`** — the next sync diffs from `page.yaml` and
+  silently reverts a manual tweak. `page.yaml` is the only authoring surface; that's what makes the
+  single-source-of-truth claim hold.
 
 ---
 

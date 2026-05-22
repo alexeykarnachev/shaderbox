@@ -8,14 +8,18 @@ frozen binary. This file is never shipped in the bundle.
 
 ```
 make release VERSION=x.y.z   # bumps pyproject.toml, commits, tags v<x.y.z>
+git push && git push --tags  # commits + tag (plain `git push` does NOT push tags)
 ./build.sh                   # gated: runs make check + make smoke, refuses a dirty tree
-./upload-itch.sh             # butler push to the windows/linux channels (needs itch-config + butler login)
+yes | ./upload-itch.sh       # butler push to windows/linux channels (needs itch-config + butler login)
 ```
+Then sync the store page (`ai_docs/dev_flow.md ### Sync the itch.io page` — agent-driven Playwright,
+done last so the page describes what's downloadable).
 
 `make release` does NOT build or push — those stay separate so a tag can be cut without an
 immediate upload. Semver bump policy is in `ai_docs/conventions.md ## Design decisions`.
 
 `build.sh --allow-dirty` skips the clean-tree guard (the check/smoke gate still runs).
+`upload-itch.sh` has an interactive y/N confirm — `yes |` pipes past it for an unattended run.
 
 ## Building on / for Windows
 

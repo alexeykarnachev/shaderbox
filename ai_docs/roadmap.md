@@ -27,21 +27,18 @@ feature; brief points at the superseder).
 
 **As of 2026-05-22.**
 
-- **Done through feature 007**, all on `master`. **This session's feature-007 work is committed
-  locally but NOT yet pushed** — `git push` when ready.
-- **Feature 007 (release-pipeline hardening) landed this session:** `make release VERSION=x.y.z`
-  (semver bump + commit + tag; policy in `conventions.md`), `build.sh` now gated on `make check` +
-  `make smoke` + a clean tree (`--allow-dirty` overrides), both platforms ship `.zip`, a GitHub
-  Actions CI (Ubuntu `make check` hard, Windows `uv sync` hard + headless-smoke soft), and
-  `BUILDING.md`. Plus bundle-UX edits: rewritten `scripts/README.md` (first-run expectations,
-  SmartScreen, Linux prereqs, hotkey cheat-sheet) + tightened launchers.
-- **Next: ship to itch.** Three pre-ship to-dos, none blocking each other:
-  1. **Apply the itch page copy** — `ai_docs/itch_page_copy.md` is paste-ready (drops the false
-     ModelBox claim, adds the inline editor / stickers, new tags). Edit on the itch web UI; butler
-     won't touch page text. **Re-shoot screenshots** (current ones predate gruvbox + the editor).
-  2. **Verify on Windows** — point a Windows coding-agent at the repo per `BUILDING.md` (the
-     maintainer has a Windows box). CI's Windows-smoke is soft (`todo.md` deferral).
-  3. `make release VERSION=…` → `./build.sh` → `./upload-itch.sh`.
+- **Done through feature 007; v0.2.0 shipped to itch.** All on `master`, pushed (commit + tag
+  `v0.2.0` on origin). Feature 007 = release-pipeline hardening: `make release VERSION=x.y.z`
+  (semver bump + tag; policy in `conventions.md`), `build.sh` gated on `make check` + `make smoke`
+  + clean tree (`--allow-dirty`), both platforms ship `.zip`, GitHub Actions CI, `BUILDING.md`,
+  bundle-UX rewrite (`scripts/README.md` + launchers). The full ship flow is `BUILDING.md`; the
+  itch store page is synced from `ai_docs/itch/page.yaml` via `dev_flow.md ### Sync the itch.io
+  page` (done this session: ModelBox claim killed, copy/tags actualized; fetch-back-audited clean).
+- **Two open follow-ups (non-blocking, no users yet so neither gates anything):**
+  1. **The shipped 0.2.0 build was NOT runtime-verified on Windows** — built+CI-installed on Linux,
+     never run on a real Windows box. Verify the *published* build per `BUILDING.md` when convenient.
+  2. **Screenshots are stale** — the live page's images predate gruvbox (005) + the inline editor
+     (006). Re-shoot in-app + upload by hand (binary, not in `page.yaml`).
 - **`todo.md` deferrals fire on their own triggers** — do NOT speculatively pick them up.
 - **No open BLOCKERs.** Live DEFERRAL-class workaround: the `imgui_color_text_edit` render() FPE
   (editor hidden behind modals, `todo.md`).

@@ -1,14 +1,11 @@
 # Source of truth for the itch.io page (https://where-is-your-keyboard.itch.io/shaderbox).
-# The itch page has no write API, so an agent-driven Playwright session diffs this file
-# against the live page and edits only the changed fields (assisted save — never auto-submit).
+# How this file is synced to the live page (Playwright, footguns, ordering):
+# ai_docs/dev_flow.md ### Sync the itch.io page.
 #
 # Only fields we actually author + re-edit live here. Set-once settings (classification,
 # pricing, kind, release status, visibility, custom noun, community) are omitted on purpose
 # — they never diff. Install instructions are omitted too: the bundled scripts/README.md is
-# the canonical install home (the itch field would just duplicate it). Uploads are butler's
-# job (upload-itch.sh); screenshots/cover are binary and uploaded by hand.
-#
-# Edit page (logged in): https://itch.io/game/edit/3722606
+# the canonical install home. Uploads are butler's job; screenshots/cover are uploaded by hand.
 
 title: ShaderBox
 
