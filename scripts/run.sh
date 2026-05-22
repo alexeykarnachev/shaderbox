@@ -17,8 +17,10 @@ fail() {
 }
 
 # ShaderBox needs system OpenGL + GLFW libs (the pip glfw wheel does not bundle them).
-if ! ldconfig -p 2>/dev/null | grep -q "libGL.so"; then
-    echo "WARNING: system OpenGL library (libGL) not found."
+libs="$(ldconfig -p 2>/dev/null || true)"
+if ! grep -q "libGL.so" <<<"$libs" || ! grep -q "libglfw" <<<"$libs"; then
+    echo "WARNING: system OpenGL / GLFW libraries (libGL / libglfw) not found."
+    echo "  If launch fails with a GL error, install them:"
     echo "  Debian/Ubuntu: sudo apt install libgl1 libglfw3"
     echo "  Fedora:        sudo dnf install mesa-libGL glfw"
     echo "  Arch:          sudo pacman -S libglvnd glfw"
@@ -44,8 +46,8 @@ fi
 
 # Check if dependencies are installed
 if [ ! -d ".venv" ]; then
-    echo "First run: downloading Python dependencies (several hundred MB)."
-    echo "This happens once and may take a few minutes — please wait..."
+    echo "First run: downloading Python dependencies (~500 MB, incl. a Python runtime)."
+    echo "Needs internet + ~1 GB free disk. Happens once; may take a few minutes — please wait..."
     echo
     uv sync || fail "Dependency install failed. See the messages above; check your internet connection and disk space."
 

@@ -27,8 +27,8 @@ if %errorlevel% neq 0 (
 
 REM Check if dependencies are installed
 if not exist ".venv" (
-    echo First run: downloading Python dependencies ^(several hundred MB^).
-    echo This happens once and may take a few minutes -- please wait...
+    echo First run: downloading Python dependencies ^(~500 MB, incl. a Python runtime^).
+    echo Needs internet + ~1 GB free disk. Happens once; may take a few minutes -- please wait...
     echo.
     uv sync
     if %errorlevel% neq 0 goto :sync_failed
