@@ -47,12 +47,6 @@ def draw(app: App) -> None:
     )
     hovering = imgui.is_mouse_hovering_rect(editor_pos, editor_max)
 
-    # The editor exposes no is-focused getter, so track click-to-focus ourselves:
-    # a left-click inside its rect focuses it, a click anywhere else unfocuses.
-    # hotkeys.py reads app.editor_focused to suppress arrow nav while typing.
-    if imgui.is_mouse_clicked(0):
-        app.editor_focused = hovering
-
     # Consume the Ctrl+scroll wheel BEFORE render() so the editor doesn't also scroll on it
     io = imgui.get_io()
     if hovering and io.key_ctrl and io.mouse_wheel != 0.0:
@@ -61,6 +55,19 @@ def draw(app: App) -> None:
         io.mouse_wheel = 0.0
 
     editor.render("##glsl_editor", size=editor_size)
+
+    # The editor exposes no is-focused getter, so read imgui's real focus state for
+    # this pane (the editor renders its own focusable child window). hotkeys.py reads
+    # app.editor_focused to suppress arrow nav while the caret is active.
+    app.editor_focused = imgui.is_window_focused(imgui.FocusedFlags_.child_windows)
+
+    # Esc / arrow-nav request defocus (hotkeys.py, app.select_next_current_node).
+    # A freshly-rendered editor auto-grabs focus, so the focus must be cleared AFTER
+    # render — clearing before is undone by the editor's own first-render focus grab.
+    if app.editor_defocus_requested:
+        imgui.set_window_focus(None)
+        app.editor_defocus_requested = False
+        app.editor_focused = False
 
     # glfw cursor driven directly — editor isn't a hoverable imgui item and imgui cursors are no-op here (conventions.md ## Known quirks)
     glfw.set_cursor(app.window, app.ibeam_cursor if hovering else None)

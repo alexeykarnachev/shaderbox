@@ -31,7 +31,7 @@ def process_hotkeys(app: App) -> None:
         was_settings_open = app.is_settings_open
         app.is_node_creator_open = False
         app.is_settings_open = False
-        app.editor_focused = False
+        app.editor_defocus_requested = True
         if was_settings_open:
             app.apply_editor_settings()
 

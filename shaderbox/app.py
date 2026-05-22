@@ -114,6 +114,9 @@ class App:
         self.is_node_creator_open: bool = False
         self.is_settings_open: bool = False
         self.editor_focused: bool = False
+        # Start in navigation mode: defocus the editor on its first render so the
+        # caret isn't active and arrows navigate nodes (the editor auto-grabs focus).
+        self.editor_defocus_requested: bool = True
         self.global_fps = 0.0
 
         self.editors: dict[str, text_edit.TextEditor] = {}
@@ -415,6 +418,11 @@ class App:
                 step=step,
             )
         )
+        # Arrow-nav is a navigation-mode action; the freshly-switched node's editor
+        # would auto-grab focus on its first render, so defocus it (keeps arrows
+        # navigating instead of jumping into the caret).
+        if not self.editor_focused:
+            self.editor_defocus_requested = True
 
     def select_next_template(self, step: int = +1) -> None:
         self.app_state.selected_node_template_id = select_next_value(
