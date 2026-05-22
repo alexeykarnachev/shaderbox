@@ -5,14 +5,14 @@
 run:
 	uv run python ./shaderbox/ui.py
 
-# Verify the BUILT bundle the way a NEW user would: unzip dist/ + run the launcher
-# with a throwaway data dir, so it's a true fresh first-run (starter node seeded, no
-# existing projects). Needs ./build.sh first. SHADERBOX_DATA_DIR redirects the app's
+# Verify the BUILT bundle the way a NEW user would: build fresh, unzip, run the
+# launcher with a throwaway data dir — a true fresh first-run (starter node seeded,
+# no existing projects). Rebuilds via --allow-dirty so it tests CURRENT source (incl.
+# uncommitted work), never a stale dist/. SHADERBOX_DATA_DIR redirects the app's
 # project/state/log store away from the real one, so this never touches your projects.
-# The only local way to exercise the launcher + clean-bundle install + first-run.
 run-bundle:
 	@set -e
-	test -f dist/shaderbox-linux.zip || { echo "no dist/shaderbox-linux.zip - run ./build.sh first"; exit 1; }
+	./build.sh --allow-dirty
 	rm -rf /tmp/shaderbox-run-bundle /tmp/shaderbox-run-bundle-data
 	unzip -q dist/shaderbox-linux.zip -d /tmp/shaderbox-run-bundle
 	cd /tmp/shaderbox-run-bundle/shaderbox-build-linux && SHADERBOX_DATA_DIR=/tmp/shaderbox-run-bundle-data ./run.sh
