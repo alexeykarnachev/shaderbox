@@ -178,10 +178,16 @@ roadmap-banner touch (if even that) + the cold-context glance is enough; for a f
   Exporter render-output scratch files live in `<project>/exporter_scratch/` (cleaned per export).
 
 ### Run the app
-`uv run python ./shaderbox/ui.py`. State lives in `~/.local/share/shaderbox/` + the active project's
-files. The repo's `projects/dev/` is the maintainer's dev project (tracked, intentional). `imgui.ini`
-in the repo root is layout cruft (gitignored). **Can't be exercised unconfigured:** the Telegram
-share tab needs a bot token / user id / sticker-set name in app settings.
+- **Dev / personal:** `make run` (= `uv run python ./shaderbox/ui.py`).
+- **Verify the built bundle as a NEW user:** `make run-bundle` — rebuilds (`--allow-dirty`, so it
+  tests current source incl. uncommitted work), unzips, runs the launcher with a throwaway
+  `SHADERBOX_DATA_DIR`, so it's a true fresh first-run that never touches your real projects.
+
+State lives in `app_data_dir()` (default `~/.local/share/shaderbox/`, overridable via
+`SHADERBOX_DATA_DIR` — see `conventions.md ## Design decisions`) + the active project's files. The
+repo's `projects/dev/` is the maintainer's dev project (tracked, intentional). `imgui.ini` in the
+repo root is layout cruft (gitignored). **Can't be exercised unconfigured:** the Telegram share tab
+needs a bot token / user id / sticker-set name in app settings.
 
 ### `make check`
 The single canonical lint/typecheck command — delegates to `uv run pre-commit run --all-files`:

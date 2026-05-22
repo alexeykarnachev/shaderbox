@@ -35,9 +35,9 @@ feature; brief points at the superseder).
   bundle-UX rewrite (`scripts/README.md` + launchers). The full ship flow is `BUILDING.md`; the
   itch store page is synced from `ai_docs/itch/page.yaml` via `dev_flow.md ### Sync the itch.io
   page` (done this session: ModelBox claim killed, copy/tags actualized; fetch-back-audited clean).
-- **`master` is ahead of the `v0.2.1` tag** by a dev-ergonomics commit: `SHADERBOX_DATA_DIR`
-  data-dir override + `make run` / `make run-bundle` (fresh first-run bundle check). Not yet shipped;
-  rides the next release. No user-facing behavior change (default dir unchanged when the var is unset).
+- **`master` is ahead of the `v0.2.1` tag** by dev-ergonomics work: `SHADERBOX_DATA_DIR` data-dir
+  override + `make run` / `make run-bundle` (fresh first-run bundle check). Not yet shipped; rides
+  the next release. No user-facing behavior change (default dir unchanged when the var is unset).
 - **Two open follow-ups (non-blocking, no users yet so neither gates anything):**
   1. **The shipped build was NOT runtime-verified on Windows** — built + CI-installed on Linux,
      never run on a real Windows box (0.2.1's `run.bat` errorlevel fix is itself Windows-unverified).
