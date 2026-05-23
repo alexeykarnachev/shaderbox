@@ -4,6 +4,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from shaderbox.integrations import IntegrationsStore
 from shaderbox.ui_models import UINode
 
 
@@ -51,7 +52,9 @@ class Exporter(ABC):
 
     Thread affinity:
       - render thread only:  exporter_id, display_name, auth_state,
-                             begin_auth, rebind, set_media_dir, status,
+                             is_available, unavailable_reason, begin_auth,
+                             rebind, set_media_dir, set_integrations,
+                             set_default_pack, current_default_pack, status,
                              current_settings, draw_config_ui,
                              draw_target_panel, update, release.
       - worker thread only:  prepare, export.
@@ -61,6 +64,16 @@ class Exporter(ABC):
     may; `RenderedArtifact` is GL-free precisely so it can cross the
     thread boundary as a value.
     """
+
+    # Default-available; disabled stubs (YouTube/X) override to False. NOT
+    # abstract — most exporters are simply available.
+    @property
+    def is_available(self) -> bool:
+        return True
+
+    @property
+    def unavailable_reason(self) -> str:
+        return ""
 
     @property
     @abstractmethod
@@ -84,6 +97,15 @@ class Exporter(ABC):
     def set_media_dir(self, media_dir: Path) -> None: ...
 
     @abstractmethod
+    def set_integrations(self, store: IntegrationsStore) -> None: ...
+
+    @abstractmethod
+    def set_default_pack(self, set_name: str) -> None: ...
+
+    @abstractmethod
+    def current_default_pack(self) -> str: ...
+
+    @abstractmethod
     def status(self) -> ExporterStatus: ...
 
     @abstractmethod
@@ -94,7 +116,10 @@ class Exporter(ABC):
 
     @abstractmethod
     def draw_target_panel(
-        self, artifact: RenderedArtifact | None, current_node: UINode | None
+        self,
+        artifact: RenderedArtifact | None,
+        current_node: UINode | None,
+        pending_emoji: str,
     ) -> None: ...
 
     @abstractmethod

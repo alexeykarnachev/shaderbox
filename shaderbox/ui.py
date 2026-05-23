@@ -6,8 +6,10 @@ import numpy as np
 from imgui_bundle import imgui, imgui_ctx
 from loguru import logger
 
-from shaderbox.app import App, app_data_dir
+from shaderbox.app import App
 from shaderbox.hotkeys import process_hotkeys
+from shaderbox.paths import app_data_dir
+from shaderbox.popups.emoji_picker import draw_emoji_picker
 from shaderbox.popups.node_creator import draw_node_creator
 from shaderbox.popups.settings import draw_settings
 from shaderbox.tabs import code as code_tab
@@ -164,6 +166,7 @@ def update_and_draw(app: App) -> None:
         # Popups and notifications
         draw_node_creator(app)
         draw_settings(app)
+        draw_emoji_picker(app)
 
         imgui.push_font(app.font_18, _FONT_18_SIZE)
         app.notifications.update_and_draw()

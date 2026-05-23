@@ -40,38 +40,31 @@ def _draw_inner(app: App) -> None:
     registry = app.exporter_registry
     current_node = app.ui_nodes.get(app.current_node_id)
 
-    ids: list[str] = registry.ids()
-    if not ids:
-        imgui.text("No exporters registered.")
+    available_ids: list[str] = registry.available_ids()
+    if not available_ids:
+        imgui.text("No exporters available.")
         return
 
-    display_names: list[str] = []
-    for eid in ids:
-        exporter = registry.get(eid)
-        assert exporter is not None, f"registry.ids() returned unknown id {eid}"
-        display_names.append(exporter.display_name)
-
-    current_idx: int = ids.index(registry.active_id) if registry.active_id in ids else 0
-    changed, new_idx = imgui.combo("Exporter", current_idx, display_names)
-    if changed and new_idx != current_idx:
-        registry.set_active(ids[new_idx])
+    if len(available_ids) > 1:
+        names: list[str] = [registry.get(eid).display_name for eid in available_ids]  # type: ignore
+        current_idx: int = (
+            available_ids.index(registry.active_id)
+            if registry.active_id in available_ids
+            else 0
+        )
+        changed, new_idx = imgui.combo("Exporter", current_idx, names)
+        if changed and new_idx != current_idx:
+            registry.set_active(available_ids[new_idx])
 
     exporter = registry.get_active()
     if exporter is None:
         imgui.text("No active exporter.")
         return
 
-    imgui.spacing()
-    imgui.separator()
-    imgui.spacing()
-
-    imgui.text_colored(COLOR.STATE_INFO, f"Configuration for {exporter.display_name}")
     imgui.text_colored(
-        COLOR.STATE_WARN,
-        "These settings are stored in the project's app_state.json.",
+        COLOR.STATE_INFO,
+        f"{exporter.display_name} — configure credentials in Settings.",
     )
-    exporter.draw_config_ui()
-
     imgui.spacing()
     imgui.separator()
     imgui.spacing()
@@ -86,15 +79,22 @@ def _draw_inner(app: App) -> None:
         size=imgui.ImVec2(left_width, available_height),
         child_flags=imgui.ChildFlags_.borders,
     ):
-        _draw_render_panel(state, current_node)
+        _draw_render_panel(app, state, current_node)
 
     imgui.same_line()
     with imgui_ctx.begin_child("share_right", child_flags=imgui.ChildFlags_.borders):
-        exporter.draw_target_panel(state.current_artifact, current_node)
+        exporter.draw_target_panel(
+            state.current_artifact, current_node, state.pending_emoji
+        )
 
 
-def _draw_render_panel(state: TabState, current_node: UINode | None) -> None:
+def _draw_render_panel(app: App, state: TabState, current_node: UINode | None) -> None:
     imgui.text("Render output for export:")
+
+    imgui.text(f"Emoji: {state.pending_emoji}")
+    imgui.same_line()
+    if imgui.button("Change emoji"):
+        app.open_emoji_picker()
 
     is_video: bool = imgui.checkbox("Video (.webm)", state.media_details.is_video)[1]
     if is_video != state.media_details.is_video:

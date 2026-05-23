@@ -1,7 +1,7 @@
 from imgui_bundle import imgui, imgui_ctx
 
 from shaderbox.app import App
-from shaderbox.theme import SIZE
+from shaderbox.theme import COLOR, SIZE
 
 _LABEL = "Settings##popup"
 
@@ -53,6 +53,22 @@ def _draw_body(app: App) -> bool:
     settings.line_spacing = imgui.drag_float(
         "Line spacing", settings.line_spacing, v_min=1.0, v_max=2.0, v_speed=0.01
     )[1]
+
+    imgui.spacing()
+    imgui.separator_text("Integrations")
+    imgui.spacing()
+
+    for exporter in app.exporter_registry.all():
+        if exporter.is_available:
+            if imgui.tree_node_ex(
+                exporter.display_name, imgui.TreeNodeFlags_.default_open
+            ):
+                exporter.draw_config_ui()
+                imgui.tree_pop()
+        else:
+            imgui.text_colored(
+                COLOR.FG_DIM, f"{exporter.display_name} — {exporter.unavailable_reason}"
+            )
 
     imgui.spacing()
     imgui.separator()

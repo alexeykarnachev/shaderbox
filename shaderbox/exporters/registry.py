@@ -1,6 +1,7 @@
 from typing import Any
 
 from shaderbox.exporters.base import Exporter
+from shaderbox.integrations import IntegrationsStore
 
 
 class ExporterRegistry:
@@ -10,11 +11,13 @@ class ExporterRegistry:
 
     def register(self, exporter: Exporter) -> None:
         self._exporters[exporter.exporter_id] = exporter
-        if not self.active_id:
+        # Only an available exporter may become the default active target.
+        if not self.active_id and exporter.is_available:
             self.active_id = exporter.exporter_id
 
     def set_active(self, exporter_id: str) -> None:
-        if exporter_id in self._exporters:
+        exporter = self._exporters.get(exporter_id)
+        if exporter is not None and exporter.is_available:
             self.active_id = exporter_id
 
     def get_active(self) -> Exporter | None:
@@ -23,8 +26,18 @@ class ExporterRegistry:
     def ids(self) -> list[str]:
         return list(self._exporters.keys())
 
+    def available_ids(self) -> list[str]:
+        return [eid for eid, e in self._exporters.items() if e.is_available]
+
+    def all(self) -> list[Exporter]:
+        return list(self._exporters.values())
+
     def get(self, exporter_id: str) -> Exporter | None:
         return self._exporters.get(exporter_id)
+
+    def set_integrations(self, store: IntegrationsStore) -> None:
+        for exporter in self._exporters.values():
+            exporter.set_integrations(store)
 
     def rebind(self, exporter_settings: dict[str, dict[str, Any]]) -> None:
         for exporter_id, exporter in self._exporters.items():

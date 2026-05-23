@@ -24,9 +24,14 @@ N_FRAMES: int = 200
 
 
 def _check_invariants(app: App, frame_idx: int) -> None:
-    assert not (
-        app.is_node_creator_open and app.is_settings_open
-    ), f"frame {frame_idx}: both popups open (mutex broken)"
+    n_open: int = sum(
+        [
+            app.is_node_creator_open,
+            app.is_settings_open,
+            app.is_emoji_picker_open,
+        ]
+    )
+    assert n_open <= 1, f"frame {frame_idx}: {n_open} popups open (mutex broken)"
     assert app.current_node_id == "" or app.current_node_id in app.ui_nodes, (
         f"frame {frame_idx}: current_node_id={app.current_node_id!r} not in "
         f"ui_nodes={list(app.ui_nodes.keys())}"

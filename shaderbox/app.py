@@ -1,4 +1,3 @@
-import os
 import platform
 import shutil
 import subprocess
@@ -12,13 +11,15 @@ from imgui_bundle import imgui_color_text_edit as text_edit
 from imgui_bundle import portable_file_dialogs as pfd
 from imgui_bundle.python_backends.glfw_backend import GlfwRenderer
 from loguru import logger
-from platformdirs import user_data_dir
 
 from shaderbox.constants import RESOURCES_DIR
 from shaderbox.core import Canvas
 from shaderbox.exporters.registry import ExporterRegistry
+from shaderbox.exporters.stubs import XExporterStub, YouTubeExporterStub
 from shaderbox.exporters.telegram import TelegramExporter
+from shaderbox.integrations import IntegrationsStore, PackEntry
 from shaderbox.notifications import Notifications
+from shaderbox.paths import app_data_dir
 from shaderbox.tabs import share_state
 from shaderbox.theme import COLOR, apply_theme
 from shaderbox.ui_models import (
@@ -34,17 +35,6 @@ from shaderbox.ui_utils import pfd_block, select_next_value
 # The procedural starter shader seeded into an empty project on first run (no
 # external media to load, unlike the Image/Video templates).
 _STARTER_TEMPLATE_ID = "53724dbd-8efb-4c09-8c7d-28d626a066e7"  # "UV Mango"
-
-
-def app_data_dir() -> Path:
-    # Root for all on-disk state (projects, the active-project pointer, logs).
-    # SHADERBOX_DATA_DIR overrides the platformdirs default (cross-platform; used
-    # by `make run-bundle` for a throwaway fresh-install run). Resolved here, not
-    # via XDG_DATA_HOME, so it works the same on every OS.
-    override: str = os.environ.get("SHADERBOX_DATA_DIR", "")
-    if override:
-        return Path(override)
-    return Path(user_data_dir("shaderbox"))
 
 
 class App:
@@ -101,19 +91,25 @@ class App:
         self.font_12 = self.get_font(12)
         self.font_14 = self.get_font(14)
         self.font_18 = self.get_font(18)
+        self.font_emoji = self.get_emoji_font(24)
 
         self.preview_canvas: Canvas
 
         self.ui_nodes: dict[str, UINode] = {}
         self.ui_node_templates: dict[str, UINode] = {}
         self.app_state = UIAppState()
+        self.integrations_store = IntegrationsStore()
 
         self.exporter_registry = ExporterRegistry()
         self.exporter_registry.register(TelegramExporter())
+        self.exporter_registry.register(YouTubeExporterStub())
+        self.exporter_registry.register(XExporterStub())
         self.share_tab_state: share_state.TabState | None = None
 
         self.is_node_creator_open: bool = False
         self.is_settings_open: bool = False
+        self.is_emoji_picker_open: bool = False
+        self.emoji_picker_query: str = ""
         self.editor_focused: bool = False
         # Start in navigation mode: defocus the editor on its first render so the
         # caret isn't active and arrows navigate nodes (the editor auto-grabs focus).
@@ -126,15 +122,26 @@ class App:
         self._init(project_dir, seed_starter=is_first_launch)
 
     def any_popup_open(self) -> bool:
-        return self.is_node_creator_open or self.is_settings_open
+        return (
+            self.is_node_creator_open
+            or self.is_settings_open
+            or self.is_emoji_picker_open
+        )
 
     def open_node_creator(self) -> None:
         self.is_node_creator_open = True
         self.is_settings_open = False
+        self.is_emoji_picker_open = False
 
     def open_settings(self) -> None:
         self.is_settings_open = True
         self.is_node_creator_open = False
+        self.is_emoji_picker_open = False
+
+    def open_emoji_picker(self) -> None:
+        self.is_emoji_picker_open = True
+        self.is_node_creator_open = False
+        self.is_settings_open = False
 
     @staticmethod
     def _create_dir_if_needed(path: Path | str) -> Path:
@@ -229,12 +236,19 @@ class App:
             self.app_state = UIAppState.load_and_migrate(self.app_state_file_path)
 
         # ----------------------------------------------------------------
-        # Wire exporter registry to project state
+        # Wire exporter registry to project state. ORDER IS LOAD-BEARING (009
+        # Decision 9): load global creds, lift legacy per-project creds into them
+        # and persist, set_integrations, THEN rebind (which reads the store).
+        self.integrations_store = IntegrationsStore.load()
+        self._lift_telegram_creds()
+
         scratch_dir = self._create_dir_if_needed(self.project_dir / "exporter_scratch")
         if self.share_tab_state is None:
             self.share_tab_state = share_state.make_state(scratch_dir=scratch_dir)
         else:
             self.share_tab_state.scratch_dir = scratch_dir
+
+        self.exporter_registry.set_integrations(self.integrations_store)
         for eid in self.exporter_registry.ids():
             exporter = self.exporter_registry.get(eid)
             if exporter is not None:
@@ -243,10 +257,42 @@ class App:
         if self.app_state.active_exporter_id:
             self.exporter_registry.set_active(self.app_state.active_exporter_id)
 
+        telegram = self.exporter_registry.get("telegram")
+        if telegram is not None:
+            telegram.set_default_pack(self.app_state.telegram_default_pack)
+
+    def _lift_telegram_creds(self) -> None:
+        # One-shot: move legacy per-project Telegram creds into the global store.
+        # Idempotent — guarded on the global token being empty.
+        if self.integrations_store.telegram.bot_token:
+            return
+        legacy: dict[str, Any] = self.app_state.exporter_settings.get("telegram", {})
+        token: str = legacy.get("bot_token", "")
+        if not token:
+            return
+        tg = self.integrations_store.telegram
+        tg.bot_token = token
+        tg.user_id = legacy.get("user_id", "")
+        old_set: str = legacy.get("sticker_set_name", "")
+        if old_set:
+            tg.packs.append(PackEntry(title=old_set, set_name=old_set))
+            self.app_state.telegram_default_pack = old_set
+        self.integrations_store.save()
+
     def get_font(self, size: int) -> Any:
         fonts = imgui.get_io().fonts
         return fonts.add_font_from_file_ttf(
             str(RESOURCES_DIR / "fonts" / "Anonymous_Pro" / "AnonymousPro-Regular.ttf"),
+            size_pixels=size,
+        )
+
+    def get_emoji_font(self, size: int) -> Any:
+        # Monochrome glyphs only — this imgui-bundle build can't rasterize color
+        # emoji (conventions.md ## Known quirks). Added at atlas-build time, never
+        # lazily mid-frame.
+        fonts = imgui.get_io().fonts
+        return fonts.add_font_from_file_ttf(
+            str(RESOURCES_DIR / "fonts" / "NotoEmoji" / "NotoEmoji-Regular.ttf"),
             size_pixels=size,
         )
 
@@ -361,6 +407,11 @@ class App:
                 self.app_state.exporter_settings[eid] = exporter.current_settings()
         self.app_state.active_exporter_id = self.exporter_registry.active_id
 
+        telegram = self.exporter_registry.get("telegram")
+        if telegram is not None:
+            self.app_state.telegram_default_pack = telegram.current_default_pack()
+
+        self.integrations_store.save()
         self.app_state.save(self.app_state_file_path)
 
     def release(self) -> None:

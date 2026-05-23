@@ -12,6 +12,7 @@ class TabState:
         default_factory=lambda: MediaDetails(is_video=True)
     )
     current_artifact: RenderedArtifact | None = None
+    pending_emoji: str = "🎨"
 
 
 def make_state(scratch_dir: Path) -> TabState:

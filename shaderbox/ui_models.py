@@ -176,6 +176,7 @@ class UIAppState(BaseModel):
 
     exporter_settings: dict[str, dict[str, Any]] = {}
     active_exporter_id: str = "telegram"
+    telegram_default_pack: str = ""
 
     global_target_fps: int = 60
 
@@ -193,12 +194,18 @@ class UIAppState(BaseModel):
     def load_and_migrate(cls, file_path: str | Path) -> Self:
         """Load app state with one-shot key migrations.
 
-        Four migration generations, all idempotent:
+        Five migration generations, all idempotent:
           1. tg_* keys → share_provider_configs.telegram.* (legacy)
           2. share_provider_configs → exporter_settings;
              active_share_provider → active_exporter_id (feature 001)
           3. drop modelbox_url, media_model_idx (feature 003)
           4. drop text_editor_cmd (feature 006 — external editor removed)
+          5. Telegram creds (bot_token/user_id) lift to the global
+             integrations.json + telegram_default_pack seeded from the old
+             sticker_set_name — done in App._lift_telegram_creds (it writes the
+             global file, which is not app_state's job), not here. The stale
+             per-project exporter_settings.telegram keys are then emptied on the
+             next save by TelegramExporter.current_settings() returning {}.
         """
         try:
             with Path(file_path).open("r") as f:

@@ -22,20 +22,31 @@ from shaderbox.exporters.base import (
     ExportProgress,
     RenderedArtifact,
 )
+from shaderbox.integrations import IntegrationsStore, PackEntry, TelegramIntegration
 from shaderbox.media import Image, Video
-from shaderbox.theme import COLOR, SIZE
+from shaderbox.telegram_util import derive_set_name
+from shaderbox.theme import COLOR
 from shaderbox.ui_models import UINode
 
 _QUEUE_MAXSIZE = 128
 _DRAIN_TIMEOUT_SEC = 5.0
 _FFMPEG_TIMEOUT_SEC = 60
-_PREVIEW_THUMB_HEIGHT = SIZE.TG_THUMB_H
-_PREVIEW_CANVAS_WIDTH = SIZE.PREVIEW_W
-_GRID_COLUMNS = SIZE.TG_GRID_COLS
+_PREVIEW_THUMB_HEIGHT = 90
+_PREVIEW_CANVAS_WIDTH = 200
+_GRID_COLUMNS = 4
 _TG_VIDEO_MAX_BYTES = 256 * 1024
 _TG_VIDEO_MAX_DIM = 512
 _TG_VIDEO_MAX_DURATION_SEC = 3.0
 _TG_VIDEO_MAX_FPS = 30
+_DEFAULT_PACK_TITLE = "ShaderBox"
+# Telegram errors that mean "the linked user can't be acted on" — re-link guidance.
+_USER_PROBLEM_MARKERS = (
+    "USER_IS_BOT",
+    "PEER_ID_INVALID",
+    "user not found",
+    "bot was blocked",
+    "USER_ID_INVALID",
+)
 
 T = TypeVar("T")
 
@@ -45,6 +56,9 @@ class _Job:
     kind: str
     artifact: RenderedArtifact | None = None
     target_sticker_file_id: str | None = None
+    pack_set_name: str = ""
+    pack_title: str = ""
+    emoji: str = "🎨"
 
 
 @dataclass
@@ -64,11 +78,20 @@ class _AuthEvent:
 
 
 @dataclass
+class _LinkEvent:
+    user_id: str
+    user_username: str
+    bot_username: str
+    message: str = ""
+
+
+@dataclass
 class _StickerListEvent:
     slots: list[_StickerSlot]
 
 
 _AUTH_SENTINEL = "__auth__"
+_LINK_SENTINEL = "__link__"
 _STOP_SENTINEL = "__stop__"
 
 
@@ -82,16 +105,19 @@ class _RenderState:
     auth_message: str = ""
     last_progress: ExportProgress | None = None
     in_flight: bool = False
+    active_pack_set_name: str = ""
+    new_pack_title: str = ""
+    import_pack_name: str = ""
 
 
 class TelegramExporter(Exporter):
     def __init__(self) -> None:
-        self._settings: dict[str, Any] = {}
+        self._store = IntegrationsStore()
         self._render_state = _RenderState()
 
         self._job_queue: queue.Queue[_Job | str] = queue.Queue(maxsize=_QUEUE_MAXSIZE)
         self._progress_queue: queue.Queue[
-            ExportProgress | _AuthEvent | _StickerListEvent
+            ExportProgress | _AuthEvent | _LinkEvent | _StickerListEvent
         ] = queue.Queue(maxsize=_QUEUE_MAXSIZE)
 
         self._worker: threading.Thread | None = None
@@ -111,6 +137,10 @@ class TelegramExporter(Exporter):
     def auth_state(self) -> AuthState:
         return self._render_state.auth_state
 
+    @property
+    def _tg(self) -> TelegramIntegration:
+        return self._store.telegram
+
     def status(self) -> ExporterStatus:
         return ExporterStatus(
             auth_state=self._render_state.auth_state,
@@ -119,8 +149,11 @@ class TelegramExporter(Exporter):
             in_flight=self._render_state.in_flight,
         )
 
+    def set_integrations(self, store: IntegrationsStore) -> None:
+        self._store = store
+
     def rebind(self, settings: dict[str, Any]) -> None:
-        self._settings = dict(settings)
+        _ = settings
         self._render_state.auth_state = AuthState.UNCONFIGURED
         self._render_state.auth_message = ""
         self._release_sticker_slots()
@@ -130,43 +163,68 @@ class TelegramExporter(Exporter):
     def set_media_dir(self, media_dir: Path) -> None:
         self._render_state.media_dir = media_dir
 
+    def set_default_pack(self, set_name: str) -> None:
+        self._render_state.active_pack_set_name = set_name
+        if set_name and self._tg.find_pack(set_name) is None:
+            # Orphan pointer: the API can't enumerate packs, so this is the only
+            # evidence the pack exists — re-add it (title falls back to set_name).
+            self._tg.packs.append(PackEntry(title=set_name, set_name=set_name))
+
+    def current_default_pack(self) -> str:
+        return self._render_state.active_pack_set_name
+
     def begin_auth(self) -> None:
-        if not self._is_configured():
+        if not self._tg.bot_token:
             self._render_state.auth_state = AuthState.ERROR
-            self._render_state.auth_message = (
-                "Configure bot_token, user_id, and sticker_set_name first"
-            )
+            self._render_state.auth_message = "Enter a bot token first."
             return
         self._ensure_worker()
-        self._enqueue(_Job(kind=_AUTH_SENTINEL))
+        self._enqueue(_Job(kind=_LINK_SENTINEL))
 
     def current_settings(self) -> dict[str, Any]:
-        return dict(self._settings)
+        # Telegram persists nothing per-project; creds live in the global store.
+        return {}
 
+    # ---------------------------------------------------------------- Settings UI
     def draw_config_ui(self) -> None:
-        bot_token: str = self._settings.get("bot_token", "")
-        user_id: str = self._settings.get("user_id", "")
-        sticker_set_name: str = self._settings.get("sticker_set_name", "")
+        imgui.text_colored(
+            COLOR.FG_DIM, "1. Message @BotFather -> /newbot (pick a name,"
+        )
+        imgui.text_colored(COLOR.FG_DIM, "   then a username ending in 'bot').")
+        imgui.text_colored(COLOR.FG_DIM, "2. Paste the token it gives you below.")
+        imgui.text_colored(
+            COLOR.FG_DIM, "3. Open YOUR new bot in Telegram, press Start."
+        )
+        imgui.text_colored(COLOR.FG_DIM, "4. Click Connect.")
+        imgui.spacing()
 
         _, bot_token = imgui.input_text(
-            "Bot token", bot_token, flags=imgui.InputTextFlags_.password
+            "Bot token", self._tg.bot_token, flags=imgui.InputTextFlags_.password
         )
-        _, user_id = imgui.input_text(
-            "User ID", user_id, flags=imgui.InputTextFlags_.chars_decimal
-        )
-        _, sticker_set_name = imgui.input_text(
-            "Sticker set name",
-            sticker_set_name,
-            flags=imgui.InputTextFlags_.chars_no_blank,
-        )
+        self._tg.bot_token = bot_token
 
-        self._settings["bot_token"] = bot_token
-        self._settings["user_id"] = user_id
-        self._settings["sticker_set_name"] = sticker_set_name
-
-        if imgui.button("Authenticate"):
+        if imgui.button("Connect"):
             self.begin_auth()
 
+        state: AuthState = self._render_state.auth_state
+        color: tuple[float, float, float, float] = {
+            AuthState.AUTHED: COLOR.STATE_OK,
+            AuthState.ERROR: COLOR.STATE_ERROR,
+            AuthState.UNCONFIGURED: COLOR.STATE_WARN,
+        }[state]
+        if state == AuthState.AUTHED:
+            who = (
+                f"@{self._tg.user_username}"
+                if self._tg.user_username
+                else (f"id {self._tg.user_id}")
+            )
+            imgui.text_colored(color, f"Connected as {who}")
+        else:
+            imgui.text_colored(color, f"Status: {state.value}")
+        if self._render_state.auth_message:
+            imgui.text_colored(color, self._render_state.auth_message)
+
+    # ------------------------------------------------------------- render thread
     def update(self, current_node: UINode | None) -> None:
         while True:
             try:
@@ -195,78 +253,138 @@ class TelegramExporter(Exporter):
         self,
         artifact: RenderedArtifact | None,
         current_node: UINode | None,
+        pending_emoji: str,
     ) -> None:
         _ = current_node
-
         if self._render_state.preview_canvas is None:
             self._render_state.preview_canvas = Canvas()
 
-        state: AuthState = self._render_state.auth_state
-        color: tuple[float, float, float, float] = {
-            AuthState.AUTHED: COLOR.STATE_OK,
-            AuthState.ERROR: COLOR.STATE_ERROR,
-            AuthState.UNCONFIGURED: COLOR.STATE_WARN,
-        }[state]
-        imgui.text_colored(color, f"Auth: {state.value}")
-        if self._render_state.auth_message:
-            imgui.text_colored(color, self._render_state.auth_message)
-
-        if state != AuthState.AUTHED:
+        if self._render_state.auth_state != AuthState.AUTHED or not self._tg.user_id:
             imgui.text_colored(
-                COLOR.STATE_WARN, "Authenticate to load existing stickers."
+                COLOR.STATE_WARN,
+                "Connect your Telegram account in Settings first.",
             )
             return
 
-        if imgui.button("Refresh stickers"):
-            self._enqueue(_Job(kind="refresh"))
+        self._draw_pack_controls()
+        if not self._render_state.active_pack_set_name:
+            imgui.text_colored(COLOR.STATE_WARN, "Create or select a pack above.")
+            return
 
         imgui.spacing()
         imgui.separator()
         imgui.spacing()
 
+        if imgui.button("Refresh stickers"):
+            self._enqueue(
+                _Job(
+                    kind="refresh",
+                    pack_set_name=self._render_state.active_pack_set_name,
+                )
+            )
+
+        self._draw_sticker_grid(artifact, pending_emoji)
+        self._draw_progress(artifact, pending_emoji)
+
+    def _draw_pack_controls(self) -> None:
+        packs: list[PackEntry] = self._tg.packs
+        labels: list[str] = [p.title for p in packs]
+        active: str = self._render_state.active_pack_set_name
+        current_idx: int = next(
+            (i for i, p in enumerate(packs) if p.set_name == active), -1
+        )
+        if packs:
+            changed, new_idx = imgui.combo("Pack", current_idx, labels)
+            if changed and 0 <= new_idx < len(packs):
+                self._render_state.active_pack_set_name = packs[new_idx].set_name
+        else:
+            imgui.text_colored(COLOR.FG_DIM, "No packs yet.")
+
+        _, self._render_state.new_pack_title = imgui.input_text(
+            "New pack title", self._render_state.new_pack_title
+        )
+        imgui.same_line()
+        if imgui.button("+ New pack"):
+            self._create_pack(self._render_state.new_pack_title or _DEFAULT_PACK_TITLE)
+            self._render_state.new_pack_title = ""
+
+        if imgui.tree_node("Add existing pack"):
+            _, self._render_state.import_pack_name = imgui.input_text(
+                "Set name", self._render_state.import_pack_name
+            )
+            if imgui.button("Import") and self._render_state.import_pack_name:
+                self._import_pack(self._render_state.import_pack_name.strip())
+                self._render_state.import_pack_name = ""
+            imgui.tree_pop()
+
+    def _create_pack(self, title: str) -> None:
+        set_name: str = derive_set_name(title, self._tg.bot_username)
+        existing: PackEntry | None = self._tg.find_pack(set_name)
+        if existing is not None:
+            self._render_state.active_pack_set_name = set_name
+            self._render_state.auth_message = "Pack already exists; selected it."
+            return
+        self._tg.packs.append(PackEntry(title=title, set_name=set_name))
+        self._render_state.active_pack_set_name = set_name
+
+    def _import_pack(self, set_name: str) -> None:
+        if self._tg.find_pack(set_name) is None:
+            self._tg.packs.append(PackEntry(title=set_name, set_name=set_name))
+        self._render_state.active_pack_set_name = set_name
+
+    def _draw_sticker_grid(
+        self, artifact: RenderedArtifact | None, pending_emoji: str
+    ) -> None:
+        imgui.spacing()
         n_slots: int = len(self._render_state.sticker_slots)
         if n_slots == 0:
-            imgui.text_colored(COLOR.FG_DIM, "No stickers in set.")
-        else:
-            imgui.text(f"{n_slots} sticker(s) in set:")
-            for idx, slot in enumerate(self._render_state.sticker_slots):
-                self._draw_sticker_button(idx, slot)
-                if (idx + 1) % _GRID_COLUMNS != 0:
-                    imgui.same_line()
+            imgui.text_colored(COLOR.FG_DIM, "No stickers in this pack yet.")
+            return
 
-            imgui.new_line()
+        imgui.text(f"{n_slots} sticker(s):")
+        for idx, slot in enumerate(self._render_state.sticker_slots):
+            self._draw_sticker_button(idx, slot)
+            if (idx + 1) % _GRID_COLUMNS != 0:
+                imgui.same_line()
+        imgui.new_line()
 
-            selected_slot: _StickerSlot = self._render_state.sticker_slots[
-                self._render_state.selected_index
-            ]
-            preview: Canvas | None = self._render_state.preview_canvas
-            if preview is not None:
-                tex = preview.texture
-                imgui.image(
-                    imgui.ImTextureRef(tex.glo),
-                    image_size=(tex.size[0], tex.size[1]),
-                    uv0=(0, 1),
-                    uv1=(1, 0),
+        selected_slot: _StickerSlot = self._render_state.sticker_slots[
+            self._render_state.selected_index
+        ]
+        preview: Canvas | None = self._render_state.preview_canvas
+        if preview is not None:
+            tex = preview.texture
+            imgui.image(
+                imgui.ImTextureRef(tex.glo),
+                image_size=(tex.size[0], tex.size[1]),
+                uv0=(0, 1),
+                uv1=(1, 0),
+            )
+
+        if artifact is not None and not self._render_state.in_flight:
+            if imgui.button("Replace selected"):
+                self._enqueue(
+                    _Job(
+                        kind="replace",
+                        artifact=artifact,
+                        target_sticker_file_id=selected_slot.file_id,
+                        pack_set_name=self._render_state.active_pack_set_name,
+                        emoji=pending_emoji,
+                    )
+                )
+            imgui.same_line()
+            if imgui.button("Delete selected"):
+                self._enqueue(
+                    _Job(
+                        kind="delete",
+                        target_sticker_file_id=selected_slot.file_id,
+                        pack_set_name=self._render_state.active_pack_set_name,
+                    )
                 )
 
-            if artifact is not None and not self._render_state.in_flight:
-                if imgui.button("Replace selected"):
-                    self._enqueue(
-                        _Job(
-                            kind="replace",
-                            artifact=artifact,
-                            target_sticker_file_id=selected_slot.file_id,
-                        )
-                    )
-                imgui.same_line()
-                if imgui.button("Delete selected"):
-                    self._enqueue(
-                        _Job(
-                            kind="delete",
-                            target_sticker_file_id=selected_slot.file_id,
-                        )
-                    )
-
+    def _draw_progress(
+        self, artifact: RenderedArtifact | None, pending_emoji: str
+    ) -> None:
         imgui.spacing()
         imgui.separator()
         imgui.spacing()
@@ -278,8 +396,20 @@ class TelegramExporter(Exporter):
             if prog is not None:
                 imgui.text(f"{prog.message} ({prog.fraction * 100:.0f}%)")
         else:
+            pack: PackEntry | None = self._tg.find_pack(
+                self._render_state.active_pack_set_name
+            )
+            title: str = pack.title if pack is not None else _DEFAULT_PACK_TITLE
             if imgui.button("Add as new sticker"):
-                self._enqueue(_Job(kind="add", artifact=artifact))
+                self._enqueue(
+                    _Job(
+                        kind="add",
+                        artifact=artifact,
+                        pack_set_name=self._render_state.active_pack_set_name,
+                        pack_title=title,
+                        emoji=pending_emoji,
+                    )
+                )
 
         if (
             self._render_state.last_progress is not None
@@ -290,9 +420,8 @@ class TelegramExporter(Exporter):
                 COLOR.STATE_ERROR if terminal.is_error else COLOR.STATE_OK
             )
             imgui.text_colored(terminal_color, terminal.message)
-            if terminal.url:
-                imgui.text(terminal.url)
 
+    # -------------------------------------------------------------- worker thread
     def prepare(
         self, artifact: RenderedArtifact, settings: dict[str, Any]
     ) -> RenderedArtifact:
@@ -300,18 +429,9 @@ class TelegramExporter(Exporter):
         if not artifact.is_video:
             raise ExporterValueError("Telegram stickers must be video (.webm).")
 
-        if artifact.duration > _TG_VIDEO_MAX_DURATION_SEC:
-            logger.warning(
-                f"Artifact duration {artifact.duration:.2f}s exceeds Telegram's "
-                f"{_TG_VIDEO_MAX_DURATION_SEC}s cap; clipping."
-            )
-
         out_path: Path = artifact.path.with_name(f"{artifact.path.stem}.prepared.webm")
         w, h = artifact.size
-        if w >= h:
-            scale: str = f"{_TG_VIDEO_MAX_DIM}:-2"
-        else:
-            scale = f"-2:{_TG_VIDEO_MAX_DIM}"
+        scale: str = f"{_TG_VIDEO_MAX_DIM}:-2" if w >= h else f"-2:{_TG_VIDEO_MAX_DIM}"
 
         cmd: list[str] = [
             imageio_ffmpeg.get_ffmpeg_exe(),
@@ -363,24 +483,8 @@ class TelegramExporter(Exporter):
         )
 
     def export(self, artifact: RenderedArtifact, settings: dict[str, Any]) -> None:
-        self._run_async(self._do_export(artifact, settings))
-
-    async def _do_export(
-        self, artifact: RenderedArtifact, settings: dict[str, Any]
-    ) -> None:
-        async def op(bot: tg.Bot) -> None:
-            input_sticker = tg.InputSticker(
-                sticker=artifact.path.read_bytes(),
-                emoji_list=["🎨"],
-                format=tg.constants.StickerFormat.VIDEO,
-            )
-            await bot.add_sticker_to_set(
-                user_id=int(settings["user_id"]),
-                name=settings["sticker_set_name"],
-                sticker=input_sticker,
-            )
-
-        await self._with_bot(settings["bot_token"], op)
+        _ = settings
+        raise ExporterError("export() is dispatched per job kind via _handle_*")
 
     def release(self) -> None:
         with self._worker_lock:
@@ -416,11 +520,6 @@ class TelegramExporter(Exporter):
             if slot.video is not None:
                 slot.video.release()
                 slot.video = None
-
-    def _is_configured(self) -> bool:
-        return all(
-            self._settings.get(k) for k in ("bot_token", "user_id", "sticker_set_name")
-        )
 
     def _ensure_worker(self) -> None:
         with self._worker_lock:
@@ -469,31 +568,38 @@ class TelegramExporter(Exporter):
         finally:
             self._current_async_task = None
 
-    async def _with_bot(self, token: str, op: Callable[[tg.Bot], Awaitable[T]]) -> T:
-        bot = tg.Bot(token=token)
+    async def _with_bot(self, op: Callable[[tg.Bot], Awaitable[T]]) -> T:
+        bot = tg.Bot(token=self._tg.bot_token)
         try:
             await bot.initialize()
             try:
                 return await op(bot)
             except tg.error.TelegramError as e:
-                raise ExporterError(f"Telegram API error: {e}") from e
+                raise ExporterError(self._map_tg_error(e)) from e
         finally:
             await bot.shutdown()
 
+    @staticmethod
+    def _map_tg_error(e: tg.error.TelegramError) -> str:
+        text: str = str(e)
+        if any(marker in text for marker in _USER_PROBLEM_MARKERS):
+            return "Open your bot, press Start, and Connect again."
+        return f"Telegram API error: {text}"
+
     def _handle_job(self, job: _Job) -> None:
         try:
-            if job.kind == _AUTH_SENTINEL:
-                self._handle_auth()
+            if job.kind == _LINK_SENTINEL or job.kind == _AUTH_SENTINEL:
+                self._handle_link()
             elif job.kind == "refresh":
-                self._handle_refresh()
+                self._handle_refresh(job.pack_set_name)
             elif job.kind == "add":
                 if job.artifact is None:
                     raise ExporterError("Add job missing artifact")
-                self._handle_add(job.artifact)
+                self._handle_add(job)
             elif job.kind == "replace":
                 if job.artifact is None or job.target_sticker_file_id is None:
                     raise ExporterError("Replace job missing artifact or target")
-                self._handle_replace(job.artifact, job.target_sticker_file_id)
+                self._handle_replace(job)
             elif job.kind == "delete":
                 if job.target_sticker_file_id is None:
                     raise ExporterError("Delete job missing target")
@@ -526,31 +632,48 @@ class TelegramExporter(Exporter):
                 )
             )
 
-    def _handle_auth(self) -> None:
+    def _handle_link(self) -> None:
         try:
-            self._run_async(self._do_auth_check())
-            self._push_event(_AuthEvent(state=AuthState.AUTHED))
-            self._handle_refresh()
+            user_id, user_username, bot_username = self._run_async(self._do_link())
         except (tg.error.TelegramError, ExporterError) as e:
             self._push_event(_AuthEvent(state=AuthState.ERROR, message=str(e)))
+            return
+        if not user_id:
+            self._push_event(
+                _AuthEvent(
+                    state=AuthState.ERROR,
+                    message="No message received — open the bot, press Start, then Connect.",
+                )
+            )
+            return
+        self._push_event(
+            _LinkEvent(
+                user_id=user_id, user_username=user_username, bot_username=bot_username
+            )
+        )
 
-    async def _do_auth_check(self) -> None:
-        async def op(bot: tg.Bot) -> None:
-            await bot.get_me()
+    async def _do_link(self) -> tuple[str, str, str]:
+        async def op(bot: tg.Bot) -> tuple[str, str, str]:
+            me = await bot.get_me()
+            bot_username: str = me.username or ""
+            updates = await bot.get_updates(offset=-1, limit=1)
+            for update in updates:
+                user = update.effective_user
+                if user is not None and not user.is_bot:
+                    return (str(user.id), user.username or "", bot_username)
+            return ("", "", bot_username)
 
-        await self._with_bot(self._settings["bot_token"], op)
+        return await self._with_bot(op)
 
-    def _handle_refresh(self) -> None:
-        slots: list[_StickerSlot] = self._run_async(self._do_refresh())
+    def _handle_refresh(self, pack_set_name: str) -> None:
+        slots: list[_StickerSlot] = self._run_async(self._do_refresh(pack_set_name))
         self._push_event(_StickerListEvent(slots=slots))
 
-    async def _do_refresh(self) -> list[_StickerSlot]:
+    async def _do_refresh(self, pack_set_name: str) -> list[_StickerSlot]:
         async def op(bot: tg.Bot) -> list[_StickerSlot]:
             slots: list[_StickerSlot] = []
             try:
-                sticker_set = await bot.get_sticker_set(
-                    name=self._settings["sticker_set_name"]
-                )
+                sticker_set = await bot.get_sticker_set(name=pack_set_name)
             except tg.error.TelegramError as e:
                 if "Stickerset_invalid" in str(e):
                     return []
@@ -577,67 +700,113 @@ class TelegramExporter(Exporter):
                 )
             return slots
 
-        return await self._with_bot(self._settings["bot_token"], op)
+        return await self._with_bot(op)
 
-    def _handle_add(self, artifact: RenderedArtifact) -> None:
+    def _handle_add(self, job: _Job) -> None:
+        assert job.artifact is not None
         self._push_progress(
             ExportProgress(message="Preparing (ffmpeg)...", fraction=0.1)
         )
         try:
-            prepared: RenderedArtifact = self.prepare(artifact, self._settings)
+            prepared: RenderedArtifact = self.prepare(job.artifact, {})
         except (ExporterError, ExporterValueError):
-            self._cleanup_paths(artifact.path)
+            self._cleanup_paths(job.artifact.path)
             raise
         try:
             self._push_progress(ExportProgress(message="Uploading...", fraction=0.5))
-            self.export(prepared, self._settings)
+            self._run_async(
+                self._do_add(prepared, job.pack_set_name, job.pack_title, job.emoji)
+            )
             self._push_progress(
                 ExportProgress(message="Sticker added", fraction=1.0, is_terminal=True)
             )
-            self._handle_refresh()
+            self._handle_refresh(job.pack_set_name)
         finally:
-            self._cleanup_paths(artifact.path, prepared.path)
+            self._cleanup_paths(job.artifact.path, prepared.path)
 
-    def _handle_replace(self, artifact: RenderedArtifact, target_file_id: str) -> None:
-        self._push_progress(
-            ExportProgress(message="Preparing (ffmpeg)...", fraction=0.1)
-        )
-        try:
-            prepared: RenderedArtifact = self.prepare(artifact, self._settings)
-        except (ExporterError, ExporterValueError):
-            self._cleanup_paths(artifact.path)
-            raise
-        try:
-            self._push_progress(ExportProgress(message="Replacing...", fraction=0.5))
-            self._run_async(self._do_replace(prepared, target_file_id))
-            self._push_progress(
-                ExportProgress(
-                    message="Sticker replaced",
-                    fraction=1.0,
-                    is_terminal=True,
-                )
-            )
-            self._handle_refresh()
-        finally:
-            self._cleanup_paths(artifact.path, prepared.path)
-
-    async def _do_replace(
-        self, artifact: RenderedArtifact, target_file_id: str
+    async def _do_add(
+        self,
+        artifact: RenderedArtifact,
+        pack_set_name: str,
+        pack_title: str,
+        emoji: str,
     ) -> None:
         async def op(bot: tg.Bot) -> None:
             input_sticker = tg.InputSticker(
                 sticker=artifact.path.read_bytes(),
-                emoji_list=["🎨"],
+                emoji_list=[emoji],
+                format=tg.constants.StickerFormat.VIDEO,
+            )
+            user_id = int(self._tg.user_id)
+            try:
+                await bot.get_sticker_set(name=pack_set_name)
+                set_exists = True
+            except tg.error.TelegramError as e:
+                if "Stickerset_invalid" in str(e):
+                    set_exists = False
+                else:
+                    raise
+            if set_exists:
+                await bot.add_sticker_to_set(
+                    user_id=user_id, name=pack_set_name, sticker=input_sticker
+                )
+            else:
+                await bot.create_new_sticker_set(
+                    user_id=user_id,
+                    name=pack_set_name,
+                    title=pack_title,
+                    stickers=[input_sticker],
+                )
+
+        await self._with_bot(op)
+
+    def _handle_replace(self, job: _Job) -> None:
+        assert job.artifact is not None and job.target_sticker_file_id is not None
+        self._push_progress(
+            ExportProgress(message="Preparing (ffmpeg)...", fraction=0.1)
+        )
+        try:
+            prepared: RenderedArtifact = self.prepare(job.artifact, {})
+        except (ExporterError, ExporterValueError):
+            self._cleanup_paths(job.artifact.path)
+            raise
+        try:
+            self._push_progress(ExportProgress(message="Replacing...", fraction=0.5))
+            self._run_async(
+                self._do_replace(
+                    prepared, job.pack_set_name, job.target_sticker_file_id, job.emoji
+                )
+            )
+            self._push_progress(
+                ExportProgress(
+                    message="Sticker replaced", fraction=1.0, is_terminal=True
+                )
+            )
+            self._handle_refresh(job.pack_set_name)
+        finally:
+            self._cleanup_paths(job.artifact.path, prepared.path)
+
+    async def _do_replace(
+        self,
+        artifact: RenderedArtifact,
+        pack_set_name: str,
+        target_file_id: str,
+        emoji: str,
+    ) -> None:
+        async def op(bot: tg.Bot) -> None:
+            input_sticker = tg.InputSticker(
+                sticker=artifact.path.read_bytes(),
+                emoji_list=[emoji],
                 format=tg.constants.StickerFormat.VIDEO,
             )
             await bot.replace_sticker_in_set(
-                user_id=int(self._settings["user_id"]),
-                name=self._settings["sticker_set_name"],
+                user_id=int(self._tg.user_id),
+                name=pack_set_name,
                 old_sticker=target_file_id,
                 sticker=input_sticker,
             )
 
-        await self._with_bot(self._settings["bot_token"], op)
+        await self._with_bot(op)
 
     def _handle_delete(self, target_file_id: str) -> None:
         self._push_progress(ExportProgress(message="Deleting...", fraction=0.5))
@@ -645,13 +814,13 @@ class TelegramExporter(Exporter):
         self._push_progress(
             ExportProgress(message="Sticker deleted", fraction=1.0, is_terminal=True)
         )
-        self._handle_refresh()
+        self._handle_refresh(self._render_state.active_pack_set_name)
 
     async def _do_delete(self, target_file_id: str) -> None:
         async def op(bot: tg.Bot) -> None:
             await bot.delete_sticker_from_set(target_file_id)
 
-        await self._with_bot(self._settings["bot_token"], op)
+        await self._with_bot(op)
 
     def _cleanup_paths(self, *paths: Path) -> None:
         for path in paths:
@@ -671,14 +840,22 @@ class TelegramExporter(Exporter):
             except (queue.Empty, queue.Full):
                 pass
 
-    def _push_event(self, event: _AuthEvent | _StickerListEvent) -> None:
+    def _push_event(self, event: _AuthEvent | _LinkEvent | _StickerListEvent) -> None:
         try:
             self._progress_queue.put_nowait(event)
         except queue.Full:
             logger.warning("TelegramExporter progress queue full; event dropped")
 
-    def _apply_event(self, ev: ExportProgress | _AuthEvent | _StickerListEvent) -> None:
-        if isinstance(ev, _AuthEvent):
+    def _apply_event(
+        self, ev: ExportProgress | _AuthEvent | _LinkEvent | _StickerListEvent
+    ) -> None:
+        if isinstance(ev, _LinkEvent):
+            self._tg.user_id = ev.user_id
+            self._tg.user_username = ev.user_username
+            self._tg.bot_username = ev.bot_username
+            self._render_state.auth_state = AuthState.AUTHED
+            self._render_state.auth_message = ""
+        elif isinstance(ev, _AuthEvent):
             self._render_state.auth_state = ev.state
             self._render_state.auth_message = ev.message
         elif isinstance(ev, _StickerListEvent):
