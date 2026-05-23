@@ -187,16 +187,34 @@ roadmap-banner touch (if even that) + the cold-context glance is enough; for a f
   Exporter render-output scratch files live in `<project>/exporter_scratch/` (cleaned per export).
 
 ### Run the app
-- **Dev / personal:** `make run` (= `uv run python ./shaderbox/ui.py`).
+- **Dev / personal:** `make run` (= `uv run python ./shaderbox/ui.py`). For an agent smoke-launch,
+  use `timeout 12 uv run python ./shaderbox/ui.py` (exits 124 on the timeout = ran clean). Run it as
+  its **own** command — don't prefix `pkill ... ;`: a no-match `pkill` exits non-zero and aborts the
+  chain (the harness reports it as exit 144). If you must kill a prior run, do it in a separate call
+  and ignore its exit code.
 - **Verify the built bundle as a NEW user:** `make run-bundle` — rebuilds (`--allow-dirty`, so it
   tests current source incl. uncommitted work), unzips, runs the launcher with a throwaway
   `SHADERBOX_DATA_DIR`, so it's a true fresh first-run that never touches your real projects.
 
 State lives in `app_data_dir()` (default `~/.local/share/shaderbox/`, overridable via
 `SHADERBOX_DATA_DIR` — see `conventions.md ## Design decisions`) + the active project's files. The
-repo's `projects/dev/` is the maintainer's dev project (tracked, intentional). `imgui.ini` in the
-repo root is layout cruft (gitignored). **Can't be exercised unconfigured:** the Telegram share tab
-needs a bot token / user id / sticker-set name in app settings.
+repo's `projects/dev/` is the maintainer's dev sandbox (**tracked, NOT gitignored** — verify with
+`git check-ignore` before assuming, don't infer from a status snapshot). It's where features get
+tested, so its `app_state.json` / `nodes/*/node.json` drift between runs is **expected, not
+suspicious** — the maintainer may be editing in the running app in parallel. Don't investigate the
+drift; just `git add` + commit it alongside source when a change wants persisting, or leave it. A new
+throwaway test node under `projects/dev/nodes/<uuid>/` is fine to leave uncommitted.
+`imgui.ini` in the repo root is layout cruft (gitignored). **Can't be exercised unconfigured:** the
+Telegram share tab needs a bot token / user id / sticker-set name in app settings.
+
+**No screenshot-driven loop.** This is a glfw window, not a headless browser — there is no reliable
+way to screenshot it from the agent: with no window manager on the dev display the freshly-mapped
+window stays buried behind the terminal, and capturing it would mean stealing the full screen, which
+disrupts the maintainer. So **don't** spin on `import -window root` / window-raise tricks. Verify
+behavior the way that actually works: `make smoke` (headless invariant check) + a focused headless
+introspection script (e.g. construct a `Node`, call `render()` once to compile the program lazily,
+then assert on `get_active_uniforms()`), and **hand visual confirmation to the maintainer** with a
+one-line "run `make run` and check X". State the limitation once and move on.
 
 ### `make check`
 The single canonical lint/typecheck command — delegates to `uv run pre-commit run --all-files`:

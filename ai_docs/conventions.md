@@ -94,6 +94,14 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
 
 ## Known quirks (library / SDK footguns + the workaround)
 
+- **An exception thrown inside a per-frame draw fn surfaces as a misleading
+  `IM_ASSERT( Size > 0 )` crash, NOT at the real fault site.** `ui.py::_draw_app_panel` (and
+  siblings) wrap their body in `try/except` + a notification, but the throw happens *between*
+  `begin_child` and its `end_child`, so the imgui child/window stack is left unbalanced and the
+  *next* `end_child`/`end` asserts (`imgui.h` `Size > 0`). When you see that assert, **don't chase
+  child sizing** — it's a downstream symptom; find the draw fn that threw (often interaction-
+  triggered, e.g. a widget that asserts `isinstance(value, ...)` after a mode toggle changed which
+  branch renders). The fault is the exception, not the geometry.
 - **imgui-bundle's C++-backed submodules ship only `.pyi` stubs** (`portable_file_dialogs`,
   `imgui_color_text_edit`) — pyright emits a `reportMissingModuleSource` warning at the import
   line. The warning is harmless (no `.py` source to find). Warnings don't fail `make check`;
