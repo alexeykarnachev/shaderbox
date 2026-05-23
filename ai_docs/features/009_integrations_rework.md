@@ -1,6 +1,6 @@
 # 009 — Integrations rework (Telegram UX collapse + Settings→Integrations + emoji picker)
 
-Status: **implemented + post-impl review converged (2026-05-23); awaiting maintainer manual verification**
+Status: **implemented + manually verified live + post-impl reviews converged (2026-05-23); basic flow works, UI-optimization refactor is the next wave**
 Shape: high-blast-radius feature flow (`ai_docs/dev_flow.md ## Feature flow`) — touches global
 Settings, the exporter contract, app_state migration, a new picker module + vendored resource, and
 the Telegram exporter internals.
@@ -182,7 +182,11 @@ ceiling, see Decision 7); the chosen emoji uploads in full color.
    close-only rule is editor-specific and unchanged.
 
 9. **Migration: one-shot lift of per-project Telegram creds → global store; gen 5. Strict ordering
-   in `App._init`.** `UIAppState.load_and_migrate` cannot write the global file, so the lift runs in
+   in `App._init`.** **SUPERSEDED 2026-05-23** — `_lift_telegram_creds` was removed entirely (user:
+   no backward-compat; the lifted-but-not-validated `user_id` caused a "stale state looks connected"
+   bug). Creds now come only from a real Connect; `load_and_migrate` stays at gen 4. The decision is
+   kept below for the review trail; ignore the lift mechanics.
+   `UIAppState.load_and_migrate` cannot write the global file, so the lift runs in
    `App._init`, and the **order is load-bearing** (R1 finding 3):
    ```
    load_and_migrate(app_state)          # app.py:229 — reads project json
@@ -511,3 +515,43 @@ all fixes landed: PASS.
 No false positives this round (both reviewers source-grounded; the one downgrade — a blocking
 confirm-identity modal — was rejected pre-impl as friction for a personal bot). Convergence: PASS,
 ready for manual verification. `make check` + `make smoke` green.
+
+### Live manual-verification debugging arc (2026-05-23)
+
+Maintainer ran the real round-trip (bot `@ShaderBox_bot`, account `@kaktebyazvaly`); a series of
+UX/correctness bugs surfaced and were fixed + live-verified against the real bot. Each landed as its
+own commit on `dev`:
+- Emoji rendered as "?" → drawn in the emoji font (`share.py` pushes `app.font_emoji`).
+- Buttons clipped off-panel → full-width vertical layout in `draw_config_ui` + `_draw_pack_controls`
+  + `_draw_progress`.
+- Invalid pack names (`asdfsadf` with no `_by_<bot>` suffix) → root cause was acting before a real
+  Connect; `_is_connected()` now requires `bot_username` (only a successful `get_me` sets it).
+- **Dropped the credential migration entirely** (user: "no backward-compat") — no legacy lift; creds
+  come only from a real Connect. Killed the "stale state looks connected" failure mode.
+- Stuck "Working… 0%" → `in_flight` set by the background refresh that never cleared it; now only
+  `add/replace/delete/delete_pack` jobs gate `in_flight`.
+- Re-Connect every launch → connection (token + user_id + bot_username) persists to
+  `integrations.json` the instant Connect succeeds; `rebind` restores AUTHED from it with no network
+  call. Packs persist on create/delete too.
+- Empty grid after restart → `set_default_pack` enqueues a refresh on launch.
+- Bot DMs the pack link after each add (`_notify_user` via `send_message`; the user pressed Start so
+  the bot may DM them). Link also shown copyable in-panel.
+- Delete a sticker (no render needed — was wrongly gated behind an artifact) + delete a whole pack
+  (armed confirm → `delete_sticker_set`). Dropped the dead per-frame preview canvas.
+
+### Post-impl review wave 2 (2026-05-23) — 2 reviewers + convergence — PASS
+
+Run against the full post-debugging state (everything above). R1 (correctness/threading), R2
+(Telegram API/UX-flow). `make check` green, no convention violations, no corruption/crash/threading
+bugs. Findings fixed inline + convergence-verified PASS:
+- MEDIUM — stale/revoked token showed green "Connected" while emitting a raw error → `_with_bot`
+  catches `InvalidToken`/`Forbidden` (around `initialize()` too) and flips `auth_state` to ERROR.
+- MEDIUM — `_select_pack` rendered the previous pack's slots (wrong-pack Delete/Replace target for a
+  frame) → `_clear_grid()` (slots + selected_index + last_progress) runs before the refresh; all
+  pack-change paths route through it.
+- LOW — `set_default_pack` orphan re-add now `save()`s; `_delete_pack` refreshes the newly-active
+  pack; `Stickerset_invalid` match is case-insensitive (PTB capitalize() coupling).
+Both reviewers' "selected_index out of range" / "GL off worker thread" / "in_flight stuck" concerns
+were checked and found already-correct (drain-before-draw + n_slots==0 guard; render-thread-only GL;
+terminal events on every path). `_current_async_task` unlocked-write + wrong-user `getUpdates`
+capture noted as accepted low-risk for a single-user tool.
