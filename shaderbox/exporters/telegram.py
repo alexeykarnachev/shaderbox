@@ -537,11 +537,16 @@ class TelegramExporter(Exporter):
             )
             self._worker.start()
 
+    # Only upload ops gate the UI's "Add as new sticker" button; refresh/link are
+    # background fetches whose results aren't terminal ExportProgress events.
+    _UPLOAD_KINDS = frozenset({"add", "replace", "delete"})
+
     def _enqueue(self, job: _Job) -> None:
         self._ensure_worker()
         try:
             self._job_queue.put_nowait(job)
-            self._render_state.in_flight = True
+            if job.kind in self._UPLOAD_KINDS:
+                self._render_state.in_flight = True
         except queue.Full:
             logger.error("TelegramExporter job queue full; dropping job")
 
