@@ -145,6 +145,25 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   smoke test in `scripts/smoke.py` is the right tool for actual regression testing). Probably
   worth a small feature spec before building (touches imgui boundary, adds UI surface).
 
+## [DEFERRAL] Telegram import-existing-pack is a bare stub
+- **Trigger:** first user report of wanting to target a sticker pack ShaderBox did NOT create (a
+  pack made by hand in @Stickers or another tool), OR the first time the bare "Add existing pack"
+  input causes confusion (no validation, accepts any string).
+- Feature 009 ships only a minimal import path: `tabs`-side "Add existing pack" expander →
+  `TelegramExporter._import_pack(set_name)` appends `PackEntry(title=set_name, set_name=set_name)`
+  with no validation, no live `get_sticker_set` check, no title resolution. Flesh out when a real
+  use surfaces: validate the `_by_<botusername>` suffix against the linked bot, fetch the real
+  title, surface a "pack not found / not yours" error.
+
+## [DEFERRAL] color emoji rendering in the picker (monochrome-only ceiling)
+- **Trigger:** a future `imgui-bundle` bump — re-run a color-emoji spike (load `NotoColorEmoji.ttf`
+  with the FreeType `LoadColor` path, render a row of faces in the glfw backend). If color glyphs
+  render instead of blank, swap the picker's font + bump `conventions.md ## Known quirks`.
+- Feature 009's emoji picker is monochrome (`NotoEmoji-Regular.ttf`) because this imgui-bundle
+  build (1.92.801) renders NotoColorEmoji as blank glyphs even with `LoadColor` + the bundled
+  plutosvg (spike-confirmed 2026-05-23). The chosen emoji still uploads to Telegram in full color —
+  only the in-app picker preview is monochrome. See `conventions.md ## Known quirks`.
+
 ## [DEFERRAL] `UINodeState` drops a node on an invalid known-key VALUE
 - **Trigger:** next time you narrow a `UINodeState` Literal (e.g. add/remove a `UniformSortKey` /
   `UIUniformInputType` member) OR a user reports a node vanishing from the grid after an upgrade.

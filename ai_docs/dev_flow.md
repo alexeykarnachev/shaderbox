@@ -163,8 +163,13 @@ roadmap-banner touch (if even that) + the cold-context glance is enough; for a f
 - **`media.py`** — `Image` / `Video` (`MediaWithTexture` ABC), ffmpeg temporal smoothing.
 - **`exporters/`** — `Exporter` ABC + `RenderedArtifact` value type (`base.py`), `ExporterRegistry`
   (`registry.py`), `TelegramExporter` (`telegram.py` — own worker thread + asyncio loop + sticker
-  panel UI). Adding a new exporter: subclass `Exporter`, register in `App.__init__`. The
-  thread-affinity contract (worker thread MUST NOT touch moderngl) is enforced by design.
+  panel UI; reads creds from the global `IntegrationsStore`), `stubs.py` (disabled YouTube/X rows,
+  `is_available -> False`). Adding a new exporter: subclass `Exporter`, register in `App.__init__`.
+  The thread-affinity contract (worker thread MUST NOT touch moderngl) is enforced by design.
+- **`integrations.py`** — global `IntegrationsStore` (bot token / linked user / pack list) at
+  `app_data_dir()/integrations.json`. **`paths.py`** — `app_data_dir()` (leaf, no `App` import).
+  **`telegram_util.py`** — `derive_set_name(title, bot_username)` (pure). **`emoji_data.py`** —
+  parses the vendored `resources/emoji/emoji-test.txt` into ordered groups for the picker.
 - **`tabs/`** — `draw(app: App)`-shaped UI modules (imgui calls only) + optional
   `update(app: App)` (pre-imgui GL work). Modules: `code.py` (the inline GLSL editor — drawn in
   the main window's LEFT split, not the node-settings tab bar), `node.py`, `render.py`,
@@ -173,10 +178,11 @@ roadmap-banner touch (if even that) + the cold-context glance is enough; for a f
 - **`widgets/`** — stateless imgui-drawing functions taking `app: App`. Shape per widget fits its
   job (no shared contract). Modules: `details.py`, `media_ops.py`, `node_grid.py`, `uniform.py`.
 - **`popups/`** — popup `draw(app: App)` free functions. Open/closed state lives on `App` as
-  `is_node_creator_open` / `is_settings_open` (helpers `app.open_node_creator()` /
-  `app.open_settings()` enforce mutual exclusion). Modules: `node_creator.py`, `settings.py`
-  (global target FPS + the inline editor's visual options — whitespace / line-numbers / brackets /
-  font-size / tab-size / line-spacing, applied via `app.apply_editor_settings()` on popup close).
+  `is_node_creator_open` / `is_settings_open` / `is_emoji_picker_open` (helpers `app.open_*()`
+  enforce mutual exclusion; `scripts/smoke.py` asserts ≤1 open). Modules: `node_creator.py`,
+  `settings.py` (global target FPS + the inline editor's visual options, applied via
+  `app.apply_editor_settings()` on popup close + the **Integrations** section drawing each
+  exporter's credential block), `emoji_picker.py` (monochrome glyph grid in Unicode/Telegram order).
 - **`fonts.py`** — freetype → GL atlas. **`ui_utils.py`** / **`constants.py`** / **`notifications.py`** — helpers.
 - **`scripts/smoke.py`** — headless smoke test (see `## Recipes > make smoke`). Not part of
   `shaderbox/` proper; one-off script that imports `App` + `update_and_draw` and runs frames in

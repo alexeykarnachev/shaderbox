@@ -73,14 +73,25 @@ belong in the feature spec (`ai_docs/features/NNN_*.md`). This file is not a cha
   (worker thread + own asyncio loop), never `run_until_complete` inside the imgui frame. Revisit if
   a new async-required dep doesn't fit the worker-thread + own-loop pattern.
 - **Exporters: own thread, own panel, GL-free artifacts.** The `Exporter` ABC enforces thread
-  affinity — render-thread methods may touch moderngl; worker-thread methods (`prepare`, `export`)
-  MUST NOT, they see only `RenderedArtifact` (a pure value type). Each exporter owns its own panel
-  UI. Revisit when a third concrete exporter lands.
-- **All on-disk state roots at `app.py::app_data_dir()`** — projects, the active-project pointer,
-  logs. Never call `platformdirs.user_data_dir(...)` directly (that path silently ignores the
-  override); go through `app_data_dir()`, which honors `SHADERBOX_DATA_DIR` (cross-platform; used by
-  `make run-bundle` for a throwaway fresh-install run). Revisit if a state root needs to diverge from
-  this single base.
+  affinity — render-thread methods may touch moderngl; worker-thread methods (`prepare`, `export`,
+  the `_do_*`/`_handle_*` job handlers) MUST NOT, they see only `RenderedArtifact` (a pure value
+  type). Each exporter owns its own panel UI. A disabled/stub exporter overrides `is_available ->
+  False` + `unavailable_reason` (registry won't auto-activate it; UI gates on it). Revisit when a
+  third *concrete* exporter lands.
+- **Integration credentials are GLOBAL, not per-project; everything else per-project stays.**
+  Telegram bot token / linked user / pack list live in `integrations.json` (one `IntegrationsStore`
+  rooted at `app_data_dir()`), injected into exporters via `registry.set_integrations(store)`. An
+  exporter whose creds are global returns `current_settings() -> {}` so the per-project
+  `exporter_settings` stays non-authoritative (this is what lets a one-shot migration strip the old
+  per-project copy). The per-project pointer that remains (e.g. `telegram_default_pack`) lives on
+  `UIAppState`. Revisit if an integration brings genuinely per-project credentials.
+- **All on-disk state roots at `paths.py::app_data_dir()`** — projects, the active-project pointer,
+  logs, `integrations.json`. Never call `platformdirs.user_data_dir(...)` directly (that path
+  silently ignores the override); go through `app_data_dir()`, which honors `SHADERBOX_DATA_DIR`
+  (cross-platform; used by `make run-bundle` for a throwaway fresh-install run). It lives in its own
+  leaf `paths.py` (not `app.py`) so credential/store modules can root files without importing `App`
+  (the no-`TYPE_CHECKING` rule would otherwise force a cycle). Revisit if a state root needs to
+  diverge from this single base.
 - **Release versioning is manual semver, bumped only via `make release VERSION=x.y.z`.** Bump
   rule: **major** = breaks users' existing projects / saved state (e.g. a non-round-trip app_state
   migration); **minor** = a backward-compatible feature; **patch** = fixes / other non-breaking
@@ -111,7 +122,15 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   text is first drawn.
 - **`imgui.push_font` now requires `(font, size_base_unscaled)`** — pass the rasterized size
   (the one used in `add_font_from_file_ttf(size_pixels=...)`). Never pass `imgui.get_font_size()`
-  — that's the *post-scaling* value and would scale twice.
+  — that's the *post-scaling* value and would scale twice. For an `ImFont` you hold, the rasterized
+  size is `font.legacy_size`.
+- **This imgui-bundle build renders MONOCHROME emoji only** (1.92.801). `NotoColorEmoji.ttf` loaded
+  with the FreeType `LoadColor` flag rasterizes to *blank* glyphs in the glfw backend, even though
+  the binary ships plutosvg (spike-confirmed 2026-05-23). The bundled `NotoEmoji-Regular.ttf`
+  (vendored to `resources/fonts/NotoEmoji/`) renders fine as line-art — that's the emoji-picker font
+  (`App.get_emoji_font`). A chosen emoji still uploads to Telegram in full color (it's stored as the
+  real Unicode codepoint); only the in-app preview is monochrome. Don't re-attempt color without
+  re-running the spike (tracked in `todo.md`).
 - **`imgui.image(...)` lost `tint_col` / `border_col` since 1.91.9**. For tint, switch to
   `imgui.image_with_bg(...)`. For border, push the `ImageBorderSize` style var (or live without).
 - **`pfd.open_file` / `save_file` / `select_folder` are non-blocking class handles, not blocking

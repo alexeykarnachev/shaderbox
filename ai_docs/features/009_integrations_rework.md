@@ -1,6 +1,6 @@
 # 009 — Integrations rework (Telegram UX collapse + Settings→Integrations + emoji picker)
 
-Status: **plan-locked + pre-impl review converged (2026-05-23); ready to implement**
+Status: **implemented + post-impl review converged (2026-05-23); awaiting maintainer manual verification**
 Shape: high-blast-radius feature flow (`ai_docs/dev_flow.md ## Feature flow`) — touches global
 Settings, the exporter contract, app_state migration, a new picker module + vendored resource, and
 the Telegram exporter internals.
@@ -488,6 +488,26 @@ Verified all 7 round-1 blockers genuinely RESOLVED (not reworded), traced agains
 closed: (1) Decision 12b dangling-pointer re-add now pins `title=set_name`; (2) verification step 2
 now names `user_username`/`bot_username` (was ambiguous `username`). Verdict: PASS. Ready to implement.
 
-### Post-impl review
+### Post-impl review (2026-05-23) — 2 reviewers + convergence round
 
-*(pending implementation)*
+R1 (spec-fidelity, anchored to the 17 decisions): PASS — every decision COVERED with an implementing
+file:symbol. R2 (correctness/conventions): FAIL with real bugs. Round-2 convergence reviewer verified
+all fixes landed: PASS.
+
+**R2 blockers/bugs fixed (commit `6479b34`):**
+- **CRITICAL — `in_flight` stuck True after Connect** bricked all sticker buttons (`begin_auth` →
+  `_enqueue` set it True; link/auth events never cleared it). Fixed: `_apply_event` clears `in_flight`
+  on `_LinkEvent` + `_AuthEvent`. Live-verified against the real bot (no-message error path + the flag
+  clears).
+- **HIGH — illegal `# type: ignore`** in `share.py` (suppressed a real `Optional` access, outside the
+  sanctioned allowlist). Fixed: bind `[e for e in registry.all() if e.is_available]` (non-Optional).
+- **HIGH — `make check` failed** on the vendored `emoji-test.txt` (trailing-whitespace hook would
+  corrupt the canonical Unicode file). Fixed: excluded it in `.pre-commit-config.yaml`.
+- **MEDIUM — delete-refresh cross-thread read** of `active_pack_set_name`. Fixed: `_handle_delete`
+  takes `pack_set_name` from the job.
+- **LOW — success-then-refresh-error toast**, dead `_AUTH_SENTINEL`, missing annotations. Fixed
+  (`_safe_refresh` swallows post-success refresh errors; sentinel removed; annotations added).
+
+No false positives this round (both reviewers source-grounded; the one downgrade — a blocking
+confirm-identity modal — was rejected pre-impl as friction for a personal bot). Convergence: PASS,
+ready for manual verification. `make check` + `make smoke` green.
