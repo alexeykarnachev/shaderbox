@@ -2,7 +2,7 @@ import glfw
 from imgui_bundle import imgui
 
 from shaderbox.app import App
-from shaderbox.theme import COLOR, SIZE, SPACE
+from shaderbox.theme import COLOR, EDITOR_UNFOCUSED_ALPHA, SIZE, SPACE
 
 
 def draw(app: App) -> None:
@@ -54,7 +54,16 @@ def draw(app: App) -> None:
         settings.font_size = max(8, min(48, new_size))
         io.mouse_wheel = 0.0
 
+    # Dim the whole pane while the editor lacks focus. app.editor_focused is last
+    # frame's value (computed below, after render) — a one-frame lag on transitions.
+    dim = not app.editor_focused
+    if dim:
+        imgui.push_style_var(imgui.StyleVar_.alpha, EDITOR_UNFOCUSED_ALPHA)
+
     editor.render("##glsl_editor", size=editor_size)
+
+    if dim:
+        imgui.pop_style_var()
 
     # The editor exposes no is-focused getter, so read imgui's real focus state for
     # this pane (the editor renders its own focusable child window). hotkeys.py reads

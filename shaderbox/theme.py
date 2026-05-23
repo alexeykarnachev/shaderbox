@@ -189,6 +189,11 @@ class SPACE:
     XL: int = 24
 
 
+# Whole-pane alpha for the code editor when it lacks keyboard focus; style.Alpha
+# reaches the editor's glyph draws.
+EDITOR_UNFOCUSED_ALPHA: float = 0.6
+
+
 # ============================================================================
 # apply_theme
 # ============================================================================
