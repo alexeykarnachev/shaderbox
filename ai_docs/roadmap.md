@@ -36,9 +36,17 @@ feature; brief points at the superseder).
   no backward-compat). YouTube/X disabled stubs. Verified end-to-end against `@ShaderBox_bot`;
   `make check` + `make smoke` green; 2 pre-impl + 2 post-impl review waves converged PASS. Full
   debugging arc + review history → the 009 spec.
-- **NEXT ACTION: UI/UX optimization refactor of the integrations surface** (the user's stated next
-  wave) — the share/Settings panels work but were built minimally; tighten the layout/UX. No spec
-  yet; starts from the next user session.
+- **NEXT ACTION: UI/UX refinement of the whole recently-built surface** (the user's stated next
+  wave). Scope = the integrations UI built in 009 + likely the broader app UI: the **Settings →
+  Integrations** Telegram block (`popups/settings.py` + `TelegramExporter.draw_config_ui`) and the
+  **share tab** operational panel (`tabs/share.py` + `TelegramExporter.draw_target_panel` /
+  `_draw_pack_controls` / `_draw_sticker_grid` / `_draw_progress`). These were built MINIMALLY to get
+  the flow working (full-width vertical stacks, terse labels); now make them feel good. **Critical
+  constraint (see `[[no-screenshot-driven-dev]]` memory): the agent CANNOT see the glfw window on
+  this box** — every layout/visual change must be handed to the user to eyeball via screenshot; the
+  009 layout bugs (clipped buttons, "?" emoji) came from building blind, so propose → user
+  screenshots → iterate. No spec yet; agree scope with the user first, then likely a feature spec
+  since it's UI-wide.
 - **Branch model:** develop on `dev`, ship from `master` (`dev_flow.md ## Branch model`). `dev` is
   ahead of `master` with 009 (not yet promoted/shipped — user is iterating).
 - **Token hygiene:** the dev bot token lives only in `~/.local/share/shaderbox/integrations.json`
