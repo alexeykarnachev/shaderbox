@@ -106,7 +106,6 @@ class _RenderState:
     in_flight: bool = False
     active_pack_set_name: str = ""
     new_pack_title: str = ""
-    import_pack_name: str = ""
 
 
 class TelegramExporter(Exporter):
@@ -186,40 +185,45 @@ class TelegramExporter(Exporter):
 
     # ---------------------------------------------------------------- Settings UI
     def draw_config_ui(self) -> None:
+        full_width: float = imgui.get_content_region_avail().x
+
         imgui.text_colored(
-            COLOR.FG_DIM, "1. Message @BotFather -> /newbot (pick a name,"
+            COLOR.FG_DIM, "1. In Telegram, message @BotFather -> /newbot"
         )
-        imgui.text_colored(COLOR.FG_DIM, "   then a username ending in 'bot').")
+        imgui.text_colored(
+            COLOR.FG_DIM, "   (a display name, then a username ending 'bot')."
+        )
         imgui.text_colored(COLOR.FG_DIM, "2. Paste the token it gives you below.")
-        imgui.text_colored(
-            COLOR.FG_DIM, "3. Open YOUR new bot in Telegram, press Start."
-        )
+        imgui.text_colored(COLOR.FG_DIM, "3. Open YOUR new bot, press Start.")
         imgui.text_colored(COLOR.FG_DIM, "4. Click Connect.")
         imgui.spacing()
 
+        imgui.text("Bot token:")
+        imgui.set_next_item_width(full_width)
         _, bot_token = imgui.input_text(
-            "Bot token", self._tg.bot_token, flags=imgui.InputTextFlags_.password
+            "##bot_token", self._tg.bot_token, flags=imgui.InputTextFlags_.password
         )
         self._tg.bot_token = bot_token
 
-        if imgui.button("Connect"):
+        if imgui.button("Connect", size=(full_width, 0)):
             self.begin_auth()
 
         state: AuthState = self._render_state.auth_state
-        color: tuple[float, float, float, float] = {
-            AuthState.AUTHED: COLOR.STATE_OK,
-            AuthState.ERROR: COLOR.STATE_ERROR,
-            AuthState.UNCONFIGURED: COLOR.STATE_WARN,
-        }[state]
-        if state == AuthState.AUTHED:
-            who = (
+        connected: bool = self._is_connected()
+        color: tuple[float, float, float, float] = (
+            COLOR.STATE_OK
+            if connected
+            else (COLOR.STATE_ERROR if state == AuthState.ERROR else COLOR.STATE_WARN)
+        )
+        if connected:
+            who: str = (
                 f"@{self._tg.user_username}"
                 if self._tg.user_username
-                else (f"id {self._tg.user_id}")
+                else f"id {self._tg.user_id}"
             )
             imgui.text_colored(color, f"Connected as {who}")
         else:
-            imgui.text_colored(color, f"Status: {state.value}")
+            imgui.text_colored(color, "Not connected.")
         if self._render_state.auth_message:
             imgui.text_colored(color, self._render_state.auth_message)
 
@@ -258,78 +262,74 @@ class TelegramExporter(Exporter):
         if self._render_state.preview_canvas is None:
             self._render_state.preview_canvas = Canvas()
 
-        if self._render_state.auth_state != AuthState.AUTHED or not self._tg.user_id:
+        if not self._is_connected():
+            imgui.text_colored(COLOR.STATE_WARN, "Not connected to Telegram.")
             imgui.text_colored(
-                COLOR.STATE_WARN,
-                "Connect your Telegram account in Settings first.",
+                COLOR.FG_DIM, "Open Settings (top bar) -> Integrations -> Telegram,"
             )
+            imgui.text_colored(COLOR.FG_DIM, "paste your bot token and click Connect.")
             return
 
         self._draw_pack_controls()
         if not self._render_state.active_pack_set_name:
-            imgui.text_colored(COLOR.STATE_WARN, "Create or select a pack above.")
             return
 
         imgui.spacing()
         imgui.separator()
         imgui.spacing()
 
-        if imgui.button("Refresh stickers"):
-            self._enqueue(
-                _Job(
-                    kind="refresh",
-                    pack_set_name=self._render_state.active_pack_set_name,
-                )
-            )
-
         self._draw_sticker_grid(artifact, pending_emoji)
         self._draw_progress(artifact, pending_emoji)
 
+    def _is_connected(self) -> bool:
+        # bot_username is the unambiguous "a real Connect happened" signal — it is
+        # only ever set by a successful link (get_me), unlike user_id which a legacy
+        # migration could half-populate.
+        return (
+            self._render_state.auth_state == AuthState.AUTHED
+            and bool(self._tg.user_id)
+            and bool(self._tg.bot_username)
+        )
+
     def _draw_pack_controls(self) -> None:
         packs: list[PackEntry] = self._tg.packs
-        labels: list[str] = [p.title for p in packs]
-        active: str = self._render_state.active_pack_set_name
-        current_idx: int = next(
-            (i for i, p in enumerate(packs) if p.set_name == active), -1
-        )
-        if packs:
-            changed, new_idx = imgui.combo("Pack", current_idx, labels)
-            if changed and 0 <= new_idx < len(packs):
-                self._render_state.active_pack_set_name = packs[new_idx].set_name
-        else:
-            imgui.text_colored(COLOR.FG_DIM, "No packs yet.")
+        full_width: float = imgui.get_content_region_avail().x
 
+        imgui.text("Sticker pack:")
+        if packs:
+            labels: list[str] = [p.title for p in packs]
+            active: str = self._render_state.active_pack_set_name
+            current_idx: int = next(
+                (i for i, p in enumerate(packs) if p.set_name == active), 0
+            )
+            imgui.set_next_item_width(full_width)
+            changed, new_idx = imgui.combo("##pack", current_idx, labels)
+            if changed and 0 <= new_idx < len(packs):
+                self._select_pack(packs[new_idx].set_name)
+        else:
+            imgui.text_colored(COLOR.FG_DIM, "No packs yet — create one below.")
+
+        imgui.spacing()
+        imgui.text_colored(COLOR.FG_DIM, "New pack name:")
+        imgui.set_next_item_width(full_width)
         _, self._render_state.new_pack_title = imgui.input_text(
-            "New pack title", self._render_state.new_pack_title
+            "##new_pack", self._render_state.new_pack_title
         )
-        imgui.same_line()
-        if imgui.button("+ New pack"):
+        if imgui.button("Create pack", size=(full_width, 0)):
             self._create_pack(self._render_state.new_pack_title or _DEFAULT_PACK_TITLE)
             self._render_state.new_pack_title = ""
 
-        if imgui.tree_node("Add existing pack"):
-            _, self._render_state.import_pack_name = imgui.input_text(
-                "Set name", self._render_state.import_pack_name
-            )
-            if imgui.button("Import") and self._render_state.import_pack_name:
-                self._import_pack(self._render_state.import_pack_name.strip())
-                self._render_state.import_pack_name = ""
-            imgui.tree_pop()
+    def _select_pack(self, set_name: str) -> None:
+        self._render_state.active_pack_set_name = set_name
+        self._enqueue(_Job(kind="refresh", pack_set_name=set_name))
 
     def _create_pack(self, title: str) -> None:
         set_name: str = derive_set_name(title, self._tg.bot_username)
-        existing: PackEntry | None = self._tg.find_pack(set_name)
-        if existing is not None:
-            self._render_state.active_pack_set_name = set_name
-            self._render_state.auth_message = "Pack already exists; selected it."
+        if self._tg.find_pack(set_name) is not None:
+            self._select_pack(set_name)
             return
         self._tg.packs.append(PackEntry(title=title, set_name=set_name))
-        self._render_state.active_pack_set_name = set_name
-
-    def _import_pack(self, set_name: str) -> None:
-        if self._tg.find_pack(set_name) is None:
-            self._tg.packs.append(PackEntry(title=set_name, set_name=set_name))
-        self._render_state.active_pack_set_name = set_name
+        self._select_pack(set_name)
 
     def _draw_sticker_grid(
         self, artifact: RenderedArtifact | None, pending_emoji: str
@@ -388,18 +388,24 @@ class TelegramExporter(Exporter):
         imgui.separator()
         imgui.spacing()
 
+        full_width: float = imgui.get_content_region_avail().x
+
         if artifact is None:
-            imgui.text_colored(COLOR.STATE_WARN, "Render an artifact first.")
+            imgui.text_colored(
+                COLOR.STATE_WARN, "Render a video on the left first, then add it here."
+            )
         elif self._render_state.in_flight:
             prog: ExportProgress | None = self._render_state.last_progress
-            if prog is not None:
-                imgui.text(f"{prog.message} ({prog.fraction * 100:.0f}%)")
+            msg: str = prog.message if prog is not None else "Working..."
+            frac: float = prog.fraction if prog is not None else 0.0
+            imgui.text(msg)
+            imgui.progress_bar(frac, size_arg=(full_width, 0.0))
         else:
             pack: PackEntry | None = self._tg.find_pack(
                 self._render_state.active_pack_set_name
             )
             title: str = pack.title if pack is not None else _DEFAULT_PACK_TITLE
-            if imgui.button("Add as new sticker"):
+            if imgui.button("Add as new sticker", size=(full_width, 0)):
                 self._enqueue(
                     _Job(
                         kind="add",

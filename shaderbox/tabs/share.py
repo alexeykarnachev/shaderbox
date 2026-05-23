@@ -90,7 +90,11 @@ def _draw_inner(app: App) -> None:
 def _draw_render_panel(app: App, state: TabState, current_node: UINode | None) -> None:
     imgui.text("Render output for export:")
 
-    imgui.text(f"Emoji: {state.pending_emoji}")
+    imgui.text("Emoji:")
+    imgui.same_line()
+    imgui.push_font(app.font_emoji, app.font_emoji.legacy_size)
+    imgui.text(state.pending_emoji)
+    imgui.pop_font()
     imgui.same_line()
     if imgui.button("Change emoji"):
         app.open_emoji_picker()

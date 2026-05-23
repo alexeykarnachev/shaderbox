@@ -17,7 +17,7 @@ from shaderbox.core import Canvas
 from shaderbox.exporters.registry import ExporterRegistry
 from shaderbox.exporters.stubs import XExporterStub, YouTubeExporterStub
 from shaderbox.exporters.telegram import TelegramExporter
-from shaderbox.integrations import IntegrationsStore, PackEntry
+from shaderbox.integrations import IntegrationsStore
 from shaderbox.notifications import Notifications
 from shaderbox.paths import app_data_dir
 from shaderbox.tabs import share_state
@@ -236,11 +236,9 @@ class App:
             self.app_state = UIAppState.load_and_migrate(self.app_state_file_path)
 
         # ----------------------------------------------------------------
-        # Wire exporter registry to project state. ORDER IS LOAD-BEARING (009
-        # Decision 9): load global creds, lift legacy per-project creds into them
-        # and persist, set_integrations, THEN rebind (which reads the store).
+        # Wire exporter registry to project state: load global creds, set_integrations,
+        # THEN rebind (which reads the store).
         self.integrations_store = IntegrationsStore.load()
-        self._lift_telegram_creds()
 
         scratch_dir = self._create_dir_if_needed(self.project_dir / "exporter_scratch")
         if self.share_tab_state is None:
@@ -260,24 +258,6 @@ class App:
         telegram = self.exporter_registry.get("telegram")
         if telegram is not None:
             telegram.set_default_pack(self.app_state.telegram_default_pack)
-
-    def _lift_telegram_creds(self) -> None:
-        # One-shot: move legacy per-project Telegram creds into the global store.
-        # Idempotent — guarded on the global token being empty.
-        if self.integrations_store.telegram.bot_token:
-            return
-        legacy: dict[str, Any] = self.app_state.exporter_settings.get("telegram", {})
-        token: str = legacy.get("bot_token", "")
-        if not token:
-            return
-        tg = self.integrations_store.telegram
-        tg.bot_token = token
-        tg.user_id = legacy.get("user_id", "")
-        old_set: str = legacy.get("sticker_set_name", "")
-        if old_set:
-            tg.packs.append(PackEntry(title=old_set, set_name=old_set))
-            self.app_state.telegram_default_pack = old_set
-        self.integrations_store.save()
 
     def get_font(self, size: int) -> Any:
         fonts = imgui.get_io().fonts
