@@ -38,7 +38,7 @@ def load_emoji_groups() -> list[EmojiGroup]:
                 if name not in _SKIP_GROUPS:
                     groups.append(current)
                 continue
-            if not line or line.startswith("#"):
+            if line.startswith("#"):
                 continue
             if "; fully-qualified" not in line:
                 continue

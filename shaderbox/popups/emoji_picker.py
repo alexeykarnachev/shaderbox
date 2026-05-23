@@ -1,7 +1,7 @@
 from imgui_bundle import imgui, imgui_ctx
 
 from shaderbox.app import App
-from shaderbox.emoji_data import EmojiGroup, load_emoji_groups
+from shaderbox.emoji_data import EmojiEntry, EmojiGroup, load_emoji_groups
 
 _LABEL = "Emoji##picker"
 _GRID_COLS = 12
@@ -39,7 +39,7 @@ def _draw_body(app: App) -> bool:
     with imgui_ctx.begin_child("emoji_scroll", child_flags=imgui.ChildFlags_.borders):
         imgui.push_font(app.font_emoji, app.font_emoji.legacy_size)
         for group in groups:
-            matches = [
+            matches: list[EmojiEntry] = [
                 e for e in group.entries if not query or query in e.name.lower()
             ]
             if not matches:
@@ -48,8 +48,10 @@ def _draw_body(app: App) -> bool:
             imgui.separator_text(group.name)
             imgui.push_font(app.font_emoji, app.font_emoji.legacy_size)
             for col, entry in enumerate(matches):
-                if imgui.button(f"{entry.char}##{group.name}_{col}_{entry.name}",
-                                size=(_CELL, _CELL)):
+                if imgui.button(
+                    f"{entry.char}##{group.name}_{col}_{entry.name}",
+                    size=(_CELL, _CELL),
+                ):
                     _pick(app, entry.char)
                     keep_open = False
                 if imgui.is_item_hovered():

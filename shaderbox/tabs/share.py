@@ -5,7 +5,7 @@ from imgui_bundle import imgui, imgui_ctx
 from loguru import logger
 
 from shaderbox.app import App
-from shaderbox.exporters.base import RenderedArtifact
+from shaderbox.exporters.base import Exporter, RenderedArtifact
 from shaderbox.media import MediaDetails
 from shaderbox.tabs.share_state import TabState
 from shaderbox.theme import COLOR, SIZE
@@ -40,21 +40,20 @@ def _draw_inner(app: App) -> None:
     registry = app.exporter_registry
     current_node = app.ui_nodes.get(app.current_node_id)
 
-    available_ids: list[str] = registry.available_ids()
-    if not available_ids:
+    available: list[Exporter] = [e for e in registry.all() if e.is_available]
+    if not available:
         imgui.text("No exporters available.")
         return
 
-    if len(available_ids) > 1:
-        names: list[str] = [registry.get(eid).display_name for eid in available_ids]  # type: ignore
+    if len(available) > 1:
+        names: list[str] = [e.display_name for e in available]
+        ids: list[str] = [e.exporter_id for e in available]
         current_idx: int = (
-            available_ids.index(registry.active_id)
-            if registry.active_id in available_ids
-            else 0
+            ids.index(registry.active_id) if registry.active_id in ids else 0
         )
         changed, new_idx = imgui.combo("Exporter", current_idx, names)
         if changed and new_idx != current_idx:
-            registry.set_active(available_ids[new_idx])
+            registry.set_active(ids[new_idx])
 
     exporter = registry.get_active()
     if exporter is None:

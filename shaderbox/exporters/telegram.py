@@ -90,7 +90,6 @@ class _StickerListEvent:
     slots: list[_StickerSlot]
 
 
-_AUTH_SENTINEL = "__auth__"
 _LINK_SENTINEL = "__link__"
 _STOP_SENTINEL = "__stop__"
 
@@ -588,7 +587,7 @@ class TelegramExporter(Exporter):
 
     def _handle_job(self, job: _Job) -> None:
         try:
-            if job.kind == _LINK_SENTINEL or job.kind == _AUTH_SENTINEL:
+            if job.kind == _LINK_SENTINEL:
                 self._handle_link()
             elif job.kind == "refresh":
                 self._handle_refresh(job.pack_set_name)
@@ -603,7 +602,7 @@ class TelegramExporter(Exporter):
             elif job.kind == "delete":
                 if job.target_sticker_file_id is None:
                     raise ExporterError("Delete job missing target")
-                self._handle_delete(job.target_sticker_file_id)
+                self._handle_delete(job.target_sticker_file_id, job.pack_set_name)
             else:
                 logger.error(f"Unknown TelegramExporter job kind: {job.kind}")
         except asyncio.CancelledError:
@@ -717,10 +716,10 @@ class TelegramExporter(Exporter):
             self._run_async(
                 self._do_add(prepared, job.pack_set_name, job.pack_title, job.emoji)
             )
+            self._safe_refresh(job.pack_set_name)
             self._push_progress(
                 ExportProgress(message="Sticker added", fraction=1.0, is_terminal=True)
             )
-            self._handle_refresh(job.pack_set_name)
         finally:
             self._cleanup_paths(job.artifact.path, prepared.path)
 
@@ -777,12 +776,12 @@ class TelegramExporter(Exporter):
                     prepared, job.pack_set_name, job.target_sticker_file_id, job.emoji
                 )
             )
+            self._safe_refresh(job.pack_set_name)
             self._push_progress(
                 ExportProgress(
                     message="Sticker replaced", fraction=1.0, is_terminal=True
                 )
             )
-            self._handle_refresh(job.pack_set_name)
         finally:
             self._cleanup_paths(job.artifact.path, prepared.path)
 
@@ -808,13 +807,21 @@ class TelegramExporter(Exporter):
 
         await self._with_bot(op)
 
-    def _handle_delete(self, target_file_id: str) -> None:
+    def _handle_delete(self, target_file_id: str, pack_set_name: str) -> None:
         self._push_progress(ExportProgress(message="Deleting...", fraction=0.5))
         self._run_async(self._do_delete(target_file_id))
+        self._safe_refresh(pack_set_name)
         self._push_progress(
             ExportProgress(message="Sticker deleted", fraction=1.0, is_terminal=True)
         )
-        self._handle_refresh(self._render_state.active_pack_set_name)
+
+    def _safe_refresh(self, pack_set_name: str) -> None:
+        # The mutating op already succeeded; a refresh failure must not surface as
+        # a terminal error overwriting the success.
+        try:
+            self._handle_refresh(pack_set_name)
+        except Exception as e:
+            logger.warning(f"Sticker refresh after op failed: {e}")
 
     async def _do_delete(self, target_file_id: str) -> None:
         async def op(bot: tg.Bot) -> None:
@@ -855,9 +862,11 @@ class TelegramExporter(Exporter):
             self._tg.bot_username = ev.bot_username
             self._render_state.auth_state = AuthState.AUTHED
             self._render_state.auth_message = ""
+            self._render_state.in_flight = False
         elif isinstance(ev, _AuthEvent):
             self._render_state.auth_state = ev.state
             self._render_state.auth_message = ev.message
+            self._render_state.in_flight = False
         elif isinstance(ev, _StickerListEvent):
             self._release_sticker_slots()
             self._render_state.sticker_slots = ev.slots

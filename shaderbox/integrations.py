@@ -51,12 +51,16 @@ class IntegrationsStore(BaseModel):
             with path.open("r") as f:
                 data = json.load(f)
         except (OSError, json.JSONDecodeError) as e:
-            logger.error(f"Unreadable integrations.json ({e}); falling back to defaults")
+            logger.error(
+                f"Unreadable integrations.json ({e}); falling back to defaults"
+            )
             return cls()
         try:
             return cls(**data)
         except ValidationError as e:
-            logger.error(f"Incompatible integrations.json ({e}); falling back to defaults")
+            logger.error(
+                f"Incompatible integrations.json ({e}); falling back to defaults"
+            )
             return cls()
 
     def save(self) -> None:
