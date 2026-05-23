@@ -174,6 +174,7 @@ class TelegramExporter(Exporter):
             # Orphan pointer: the API can't enumerate packs, so this is the only
             # evidence the pack exists — re-add it (title falls back to set_name).
             self._tg.packs.append(PackEntry(title=set_name, set_name=set_name))
+            self._store.save()
         # Restored on launch: pull the pack's current stickers so the grid isn't
         # stale-empty until the user manually re-selects.
         if set_name and self._is_connected():
@@ -332,15 +333,25 @@ class TelegramExporter(Exporter):
         # Remove locally now (render-side state); the worker deletes on Telegram.
         self._tg.packs = [p for p in self._tg.packs if p.set_name != set_name]
         self._store.save()
-        self._render_state.active_pack_set_name = (
-            self._tg.packs[0].set_name if self._tg.packs else ""
-        )
-        self._release_sticker_slots()
-        self._render_state.sticker_slots = []
+        new_active: str = self._tg.packs[0].set_name if self._tg.packs else ""
+        if new_active:
+            self._select_pack(new_active)
+        else:
+            self._render_state.active_pack_set_name = ""
+            self._clear_grid()
 
     def _select_pack(self, set_name: str) -> None:
         self._render_state.active_pack_set_name = set_name
+        # Clear the previous pack's stickers immediately so the grid never renders
+        # the old pack's slots (with a stale selected_index) under the new pack.
+        self._clear_grid()
         self._enqueue(_Job(kind="refresh", pack_set_name=set_name))
+
+    def _clear_grid(self) -> None:
+        self._release_sticker_slots()
+        self._render_state.sticker_slots = []
+        self._render_state.selected_index = 0
+        self._render_state.last_progress = None
 
     def _create_pack(self, title: str) -> None:
         set_name: str = derive_set_name(title, self._tg.bot_username)
@@ -600,10 +611,20 @@ class TelegramExporter(Exporter):
         bot = tg.Bot(token=self._tg.bot_token)
         try:
             await bot.initialize()
-            try:
-                return await op(bot)
-            except tg.error.TelegramError as e:
-                raise ExporterError(self._map_tg_error(e)) from e
+            return await op(bot)
+        except (tg.error.InvalidToken, tg.error.Forbidden) as e:
+            # The persisted connection is no longer valid (token revoked / bot
+            # blocked) → reflect it in the Settings panel instead of leaving a
+            # green "Connected" lie. initialize() itself can raise InvalidToken.
+            self._push_event(
+                _AuthEvent(
+                    state=AuthState.ERROR,
+                    message="Connection invalid — re-Connect in Settings.",
+                )
+            )
+            raise ExporterError(self._map_tg_error(e)) from e
+        except tg.error.TelegramError as e:
+            raise ExporterError(self._map_tg_error(e)) from e
         finally:
             await bot.shutdown()
 
@@ -705,7 +726,7 @@ class TelegramExporter(Exporter):
             try:
                 sticker_set = await bot.get_sticker_set(name=pack_set_name)
             except tg.error.TelegramError as e:
-                if "Stickerset_invalid" in str(e):
+                if "stickerset_invalid" in str(e).lower():
                     return []
                 raise
 
@@ -777,7 +798,7 @@ class TelegramExporter(Exporter):
                 await bot.get_sticker_set(name=pack_set_name)
                 set_exists = True
             except tg.error.TelegramError as e:
-                if "Stickerset_invalid" in str(e):
+                if "stickerset_invalid" in str(e).lower():
                     set_exists = False
                 else:
                     raise
