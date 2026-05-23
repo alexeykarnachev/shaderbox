@@ -758,11 +758,7 @@ class TelegramExporter(Exporter):
         self._push_progress(
             ExportProgress(message="Preparing (ffmpeg)...", fraction=0.1)
         )
-        try:
-            prepared: RenderedArtifact = self.prepare(job.artifact, {})
-        except (ExporterError, ExporterValueError):
-            self._cleanup_paths(job.artifact.path)
-            raise
+        prepared: RenderedArtifact = self.prepare(job.artifact, {})
         try:
             self._push_progress(ExportProgress(message="Uploading...", fraction=0.5))
             self._run_async(
@@ -778,7 +774,9 @@ class TelegramExporter(Exporter):
                 )
             )
         finally:
-            self._cleanup_paths(job.artifact.path, prepared.path)
+            # Only the prepared (re-encoded) file is ours to delete; the input
+            # artifact belongs to the share tab, which owns its lifecycle.
+            self._cleanup_paths(prepared.path)
 
     async def _do_add(
         self,
@@ -818,7 +816,12 @@ class TelegramExporter(Exporter):
         await self._with_bot(op)
 
     async def _notify_user(
-        self, bot: tg.Bot, user_id: int, pack_set_name: str, pack_title: str
+        self,
+        bot: tg.Bot,
+        user_id: int,
+        pack_set_name: str,
+        pack_title: str,
+        verb: str = "Added a sticker to",
     ) -> None:
         # The user pressed Start, so the bot may DM them the pack link (one tap to
         # open it). Notification failure must not fail the upload (the sticker is
@@ -827,21 +830,17 @@ class TelegramExporter(Exporter):
         try:
             await bot.send_message(
                 chat_id=user_id,
-                text=f'Added a sticker to "{pack_title}".\nOpen the pack: {link}',
+                text=f'{verb} "{pack_title}".\nOpen the pack: {link}',
             )
         except tg.error.TelegramError as e:
-            logger.warning(f"Could not DM the user the new sticker: {e}")
+            logger.warning(f"Could not DM the user: {e}")
 
     def _handle_replace(self, job: _Job) -> None:
         assert job.artifact is not None and job.target_sticker_file_id is not None
         self._push_progress(
             ExportProgress(message="Preparing (ffmpeg)...", fraction=0.1)
         )
-        try:
-            prepared: RenderedArtifact = self.prepare(job.artifact, {})
-        except (ExporterError, ExporterValueError):
-            self._cleanup_paths(job.artifact.path)
-            raise
+        prepared: RenderedArtifact = self.prepare(job.artifact, {})
         try:
             self._push_progress(ExportProgress(message="Replacing...", fraction=0.5))
             self._run_async(
@@ -852,11 +851,14 @@ class TelegramExporter(Exporter):
             self._safe_refresh(job.pack_set_name)
             self._push_progress(
                 ExportProgress(
-                    message="Sticker replaced", fraction=1.0, is_terminal=True
+                    message="Sticker replaced — sent to your Telegram.",
+                    fraction=1.0,
+                    is_terminal=True,
+                    url=f"https://t.me/addstickers/{job.pack_set_name}",
                 )
             )
         finally:
-            self._cleanup_paths(job.artifact.path, prepared.path)
+            self._cleanup_paths(prepared.path)
 
     async def _do_replace(
         self,
@@ -876,6 +878,15 @@ class TelegramExporter(Exporter):
                 name=pack_set_name,
                 old_sticker=target_file_id,
                 sticker=input_sticker,
+            )
+            pack = self._tg.find_pack(pack_set_name)
+            title = pack.title if pack is not None else pack_set_name
+            await self._notify_user(
+                bot,
+                int(self._tg.user_id),
+                pack_set_name,
+                title,
+                verb="Replaced a sticker in",
             )
 
         await self._with_bot(op)

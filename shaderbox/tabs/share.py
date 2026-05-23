@@ -80,11 +80,15 @@ def _draw_inner(app: App) -> None:
     ):
         _draw_render_panel(app, state, current_node)
 
+    # Pass the artifact only if its file still exists — a prior export/render may
+    # have consumed it; acting on a missing path ffmpeg-fails.
+    artifact: RenderedArtifact | None = state.current_artifact
+    if artifact is not None and not artifact.path.exists():
+        artifact = None
+
     imgui.same_line()
     with imgui_ctx.begin_child("share_right", child_flags=imgui.ChildFlags_.borders):
-        exporter.draw_target_panel(
-            state.current_artifact, current_node, state.pending_emoji
-        )
+        exporter.draw_target_panel(artifact, current_node, state.pending_emoji)
 
 
 def _draw_render_panel(app: App, state: TabState, current_node: UINode | None) -> None:
