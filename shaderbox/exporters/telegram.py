@@ -12,7 +12,6 @@ import telegram as tg
 from imgui_bundle import imgui
 from loguru import logger
 
-from shaderbox.core import Canvas
 from shaderbox.exporters.base import (
     AuthState,
     Exporter,
@@ -32,7 +31,6 @@ _QUEUE_MAXSIZE = 128
 _DRAIN_TIMEOUT_SEC = 5.0
 _FFMPEG_TIMEOUT_SEC = 60
 _PREVIEW_THUMB_HEIGHT = 90
-_PREVIEW_CANVAS_WIDTH = 200
 _GRID_COLUMNS = 4
 _TG_VIDEO_MAX_BYTES = 256 * 1024
 _TG_VIDEO_MAX_DIM = 512
@@ -99,13 +97,13 @@ class _RenderState:
     media_dir: Path | None = None
     sticker_slots: list[_StickerSlot] = field(default_factory=list)
     selected_index: int = 0
-    preview_canvas: Canvas | None = None
     auth_state: AuthState = AuthState.UNCONFIGURED
     auth_message: str = ""
     last_progress: ExportProgress | None = None
     in_flight: bool = False
     active_pack_set_name: str = ""
     new_pack_title: str = ""
+    pack_delete_armed: bool = False
 
 
 class TelegramExporter(Exporter):
@@ -242,28 +240,13 @@ class TelegramExporter(Exporter):
 
     # ------------------------------------------------------------- render thread
     def update(self, current_node: UINode | None) -> None:
+        _ = current_node
         while True:
             try:
                 ev = self._progress_queue.get_nowait()
             except queue.Empty:
                 break
             self._apply_event(ev)
-
-        if (
-            current_node is not None
-            and self._render_state.preview_canvas is not None
-            and self._render_state.sticker_slots
-            and 0
-            <= self._render_state.selected_index
-            < len(self._render_state.sticker_slots)
-        ):
-            self._render_state.preview_canvas.set_size(
-                _adjust_size(
-                    current_node.node.canvas.texture.size,
-                    width=_PREVIEW_CANVAS_WIDTH,
-                )
-            )
-            current_node.node.render(canvas=self._render_state.preview_canvas)
 
     def draw_target_panel(
         self,
@@ -272,9 +255,6 @@ class TelegramExporter(Exporter):
         pending_emoji: str,
     ) -> None:
         _ = current_node
-        if self._render_state.preview_canvas is None:
-            self._render_state.preview_canvas = Canvas()
-
         if not self._is_connected():
             imgui.text_colored(COLOR.STATE_WARN, "Not connected to Telegram.")
             imgui.text_colored(
@@ -330,6 +310,34 @@ class TelegramExporter(Exporter):
             self._create_pack(self._render_state.new_pack_title or _DEFAULT_PACK_TITLE)
             self._render_state.new_pack_title = ""
 
+        active: str = self._render_state.active_pack_set_name
+        if active and not self._render_state.in_flight:
+            imgui.spacing()
+            if not self._render_state.pack_delete_armed:
+                if imgui.button("Delete this pack", size=(full_width, 0)):
+                    self._render_state.pack_delete_armed = True
+            else:
+                imgui.text_colored(
+                    COLOR.STATE_ERROR, "Delete the whole pack from Telegram?"
+                )
+                if imgui.button("Yes, delete", size=(full_width / 2 - 4, 0)):
+                    self._delete_pack(active)
+                    self._render_state.pack_delete_armed = False
+                imgui.same_line()
+                if imgui.button("Cancel", size=(full_width / 2 - 4, 0)):
+                    self._render_state.pack_delete_armed = False
+
+    def _delete_pack(self, set_name: str) -> None:
+        self._enqueue(_Job(kind="delete_pack", pack_set_name=set_name))
+        # Remove locally now (render-side state); the worker deletes on Telegram.
+        self._tg.packs = [p for p in self._tg.packs if p.set_name != set_name]
+        self._store.save()
+        self._render_state.active_pack_set_name = (
+            self._tg.packs[0].set_name if self._tg.packs else ""
+        )
+        self._release_sticker_slots()
+        self._render_state.sticker_slots = []
+
     def _select_pack(self, set_name: str) -> None:
         self._render_state.active_pack_set_name = set_name
         self._enqueue(_Job(kind="refresh", pack_set_name=set_name))
@@ -352,7 +360,7 @@ class TelegramExporter(Exporter):
             imgui.text_colored(COLOR.FG_DIM, "No stickers in this pack yet.")
             return
 
-        imgui.text(f"{n_slots} sticker(s):")
+        imgui.text(f"{n_slots} sticker(s) — click one to select:")
         for idx, slot in enumerate(self._render_state.sticker_slots):
             self._draw_sticker_button(idx, slot)
             if (idx + 1) % _GRID_COLUMNS != 0:
@@ -362,18 +370,23 @@ class TelegramExporter(Exporter):
         selected_slot: _StickerSlot = self._render_state.sticker_slots[
             self._render_state.selected_index
         ]
-        preview: Canvas | None = self._render_state.preview_canvas
-        if preview is not None:
-            tex = preview.texture
-            imgui.image(
-                imgui.ImTextureRef(tex.glo),
-                image_size=(tex.size[0], tex.size[1]),
-                uv0=(0, 1),
-                uv1=(1, 0),
-            )
 
-        if artifact is not None and not self._render_state.in_flight:
-            if imgui.button("Replace selected"):
+        if self._render_state.in_flight:
+            return
+
+        # Delete needs no artifact; Replace swaps the selected sticker for the
+        # freshly-rendered one (so it requires a rendered artifact).
+        if imgui.button("Delete selected"):
+            self._enqueue(
+                _Job(
+                    kind="delete",
+                    target_sticker_file_id=selected_slot.file_id,
+                    pack_set_name=self._render_state.active_pack_set_name,
+                )
+            )
+        if artifact is not None:
+            imgui.same_line()
+            if imgui.button("Replace selected with render"):
                 self._enqueue(
                     _Job(
                         kind="replace",
@@ -381,15 +394,6 @@ class TelegramExporter(Exporter):
                         target_sticker_file_id=selected_slot.file_id,
                         pack_set_name=self._render_state.active_pack_set_name,
                         emoji=pending_emoji,
-                    )
-                )
-            imgui.same_line()
-            if imgui.button("Delete selected"):
-                self._enqueue(
-                    _Job(
-                        kind="delete",
-                        target_sticker_file_id=selected_slot.file_id,
-                        pack_set_name=self._render_state.active_pack_set_name,
                     )
                 )
 
@@ -528,9 +532,6 @@ class TelegramExporter(Exporter):
                 self._worker_loop = None
                 self._current_async_task = None
 
-        if self._render_state.preview_canvas is not None:
-            self._render_state.preview_canvas.release()
-            self._render_state.preview_canvas = None
         self._release_sticker_slots()
         self._render_state.sticker_slots = []
 
@@ -556,7 +557,7 @@ class TelegramExporter(Exporter):
 
     # Only upload ops gate the UI's "Add as new sticker" button; refresh/link are
     # background fetches whose results aren't terminal ExportProgress events.
-    _UPLOAD_KINDS = frozenset({"add", "replace", "delete"})
+    _UPLOAD_KINDS = frozenset({"add", "replace", "delete", "delete_pack"})
 
     def _enqueue(self, job: _Job) -> None:
         self._ensure_worker()
@@ -631,6 +632,8 @@ class TelegramExporter(Exporter):
                 if job.target_sticker_file_id is None:
                     raise ExporterError("Delete job missing target")
                 self._handle_delete(job.target_sticker_file_id, job.pack_set_name)
+            elif job.kind == "delete_pack":
+                self._handle_delete_pack(job.pack_set_name)
             else:
                 logger.error(f"Unknown TelegramExporter job kind: {job.kind}")
         except asyncio.CancelledError:
@@ -883,6 +886,19 @@ class TelegramExporter(Exporter):
 
         await self._with_bot(op)
 
+    def _handle_delete_pack(self, pack_set_name: str) -> None:
+        self._push_progress(ExportProgress(message="Deleting pack...", fraction=0.5))
+        self._run_async(self._do_delete_pack(pack_set_name))
+        self._push_progress(
+            ExportProgress(message="Pack deleted", fraction=1.0, is_terminal=True)
+        )
+
+    async def _do_delete_pack(self, pack_set_name: str) -> None:
+        async def op(bot: tg.Bot) -> None:
+            await bot.delete_sticker_set(name=pack_set_name)
+
+        await self._with_bot(op)
+
     def _cleanup_paths(self, *paths: Path) -> None:
         for path in paths:
             try:
@@ -975,14 +991,3 @@ class TelegramExporter(Exporter):
             if slot.image is None:
                 slot.image = Image(slot.local_file_path)
             return slot.image
-
-
-def _adjust_size(
-    size: tuple[int, int], width: int | None = None, height: int | None = None
-) -> tuple[int, int]:
-    w, h = size
-    if width is not None:
-        return (width, max(1, h * width // max(w, 1)))
-    if height is not None:
-        return (max(1, w * height // max(h, 1)), height)
-    return size
