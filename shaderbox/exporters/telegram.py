@@ -176,6 +176,10 @@ class TelegramExporter(Exporter):
             # Orphan pointer: the API can't enumerate packs, so this is the only
             # evidence the pack exists — re-add it (title falls back to set_name).
             self._tg.packs.append(PackEntry(title=set_name, set_name=set_name))
+        # Restored on launch: pull the pack's current stickers so the grid isn't
+        # stale-empty until the user manually re-selects.
+        if set_name and self._is_connected():
+            self._enqueue(_Job(kind="refresh", pack_set_name=set_name))
 
     def current_default_pack(self) -> str:
         return self._render_state.active_pack_set_name
