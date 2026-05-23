@@ -25,14 +25,15 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-**As of 2026-05-22.**
+**As of 2026-05-23.**
 
-- **Done through feature 007; v0.2.2 shipped to itch** (both `linux` + `windows` channels live at
-  0.2.2, builds processed). Tags `v0.2.0`…`v0.2.2` on origin; `master` is at the `release: v0.2.2`
-  commit, fully pushed — no unshipped work outstanding. v0.2.2 = the `SHADERBOX_DATA_DIR` data-dir
-  override + `make run`/`make run-bundle` ergonomics, plus an editor-focus fix (editor starts
-  unfocused / arrow-nav no longer steals into the caret on node switch; `tabs/code.py` reads imgui's
-  real focus, see `conventions.md ## Known quirks`).
+- **New branch model in effect:** develop on `dev`, ship from `master` (`dev_flow.md ## Branch
+  model`). `master` is the shipped line, still at `v0.2.2` (both itch channels live). `dev` is **3
+  commits ahead, unshipped**: editor dims when unfocused (`tabs/code.py` + `EDITOR_UNFOCUSED_ALPHA`),
+  the branch-model docs, and the conventions-doc consolidation (back to a single `conventions.md`).
+- **Next action: keep accumulating on `dev` until ship-ready**, then run the ship flow (eyeball
+  `git diff master..dev`, pick the semver bump, merge to `master`, `make release`). Nothing forces a
+  ship — `dev` may sit ahead indefinitely.
 - **Two open follow-ups (non-blocking, no users yet so neither gates anything):**
   1. **No build has been runtime-verified on Windows** — built + CI-installed on Linux, never run on
      a real Windows box. Verify the *published* build per `BUILDING.md` when convenient.
@@ -40,7 +41,8 @@ feature; brief points at the superseder).
      (006). Re-shoot in-app + upload by hand (binary, not in `page.yaml`).
 - **`todo.md` deferrals fire on their own triggers** — do NOT speculatively pick them up. Two are
   editor-upstream-bound (gruvbox palette write-path, col-0 caret clip) — both wait on a small
-  imgui-bundle `imgui_color_text_edit` binding/C++ change, not on us.
+  imgui-bundle `imgui_color_text_edit` binding/C++ change, not on us (both researched 2026-05-23:
+  confirmed binding-gap, not our bug).
 - **No open BLOCKERs.** Live DEFERRAL-class workaround: the `imgui_color_text_edit` render() FPE
   (editor hidden behind modals, `todo.md`).
 
@@ -55,6 +57,7 @@ feature; brief points at the superseder).
 | 003 | modelbox_removal | done | Wiped all ModelBox integration (HTTP client, settings UI, app-state fields, `requests` dep); app_state migration gen 3. Spec: `ai_docs/features/003_modelbox_removal.md`. |
 | 002 | ui_widgets_extraction | done | Three-layer split: `app.py` (state) / `ui.py` (orchestrator) / `widgets`+`popups`+`tabs` (pure draw fns); `ui.py` 1508 → 294. Spec: `ai_docs/features/002_ui_widgets_extraction.md`. |
 | 001 | exporter_refactor | done | `exporters/` subpkg — `Exporter` ABC + `RenderedArtifact` value type + registry; Telegram ported to own worker thread + asyncio loop + sticker UI. Spec: `ai_docs/features/001_exporter_refactor.md`. |
+| — | editor_unfocused_dim | done | Code editor dims (`style.Alpha`) when it lacks keyboard focus; `EDITOR_UNFOCUSED_ALPHA` token in `theme.py`. Spec: commit `225076a`. |
 | — | hotkeys_extraction | done | Pulled the hotkey block out of `ui.py` into `hotkeys.py::process_hotkeys(app)`. Spec: commit `c7d6359`. |
 | — | smoke_test | done | `scripts/smoke.py` + `make smoke`: 200 headless frames of `update_and_draw`, asserts popup-mutex + `current_node_id` invariants. Spec: commit `92f221a`. |
 | — | pyright_blocking | done | Dropped `\|\| true` from the pyright pre-commit hook — typecheck now blocks on failure; repo at 0 errors. Spec: commit `d1fdf65`. |
