@@ -152,11 +152,20 @@ class TelegramExporter(Exporter):
 
     def rebind(self, settings: dict[str, Any]) -> None:
         _ = settings
-        self._render_state.auth_state = AuthState.UNCONFIGURED
+        # Restore the connected state from the persisted store — no network call.
+        # A stale token surfaces as an error at the next API call, not here.
+        self._render_state.auth_state = (
+            AuthState.AUTHED
+            if self._has_persisted_identity()
+            else AuthState.UNCONFIGURED
+        )
         self._render_state.auth_message = ""
         self._release_sticker_slots()
         self._render_state.sticker_slots = []
         self._render_state.selected_index = 0
+
+    def _has_persisted_identity(self) -> bool:
+        return bool(self._tg.bot_token and self._tg.user_id and self._tg.bot_username)
 
     def set_media_dir(self, media_dir: Path) -> None:
         self._render_state.media_dir = media_dir
@@ -283,12 +292,10 @@ class TelegramExporter(Exporter):
 
     def _is_connected(self) -> bool:
         # bot_username is the unambiguous "a real Connect happened" signal — it is
-        # only ever set by a successful link (get_me), unlike user_id which a legacy
-        # migration could half-populate.
+        # only ever set by a successful link (get_me).
         return (
             self._render_state.auth_state == AuthState.AUTHED
-            and bool(self._tg.user_id)
-            and bool(self._tg.bot_username)
+            and self._has_persisted_identity()
         )
 
     def _draw_pack_controls(self) -> None:
@@ -329,6 +336,7 @@ class TelegramExporter(Exporter):
             self._select_pack(set_name)
             return
         self._tg.packs.append(PackEntry(title=title, set_name=set_name))
+        self._store.save()
         self._select_pack(set_name)
 
     def _draw_sticker_grid(
@@ -905,6 +913,7 @@ class TelegramExporter(Exporter):
             self._render_state.auth_state = AuthState.AUTHED
             self._render_state.auth_message = ""
             self._render_state.in_flight = False
+            self._store.save()  # persist identity now, not just on Ctrl+S
         elif isinstance(ev, _AuthEvent):
             self._render_state.auth_state = ev.state
             self._render_state.auth_message = ev.message
