@@ -1,6 +1,6 @@
 ---
 name: sanitize
-description: "Closing-out sweep after any noticeable work — walk todo.md + conventions.md, audit the code against the conventions, fix stale doc refs, update the roadmap banner + rows, run the cold-context check, end with a sweep-report table. Triggers: 'sanitize', 'cleanup', 'wrap up', 'close out', 'before you finish', 'update roadmap', 'tidy the docs', 'санитайз', 'почисти', 'обнови roadmap', 'перед тем как закончить'."
+description: "Closing-out sweep after any noticeable work — walk todo.md + conventions.md, audit the code against them, fix stale doc refs, update the roadmap banner + rows, run the cold-context check, end with a sweep-report table. Triggers: 'sanitize', 'cleanup', 'wrap up', 'close out', 'before you finish', 'update roadmap', 'tidy the docs', 'санитайз', 'почисти', 'обнови roadmap', 'перед тем как закончить'."
 user_invocable: true
 ---
 
@@ -28,8 +28,9 @@ concrete trigger (format + good-trigger test in the `todo.md` header).
 Each section: stale line refs, outdated "after feature N" notes, superseded rules? Each bullet still
 match landed code? **Noise audit (mandatory):** every `## Design decisions` bullet must constrain
 *future unwritten code*, not narrate a one-off implementation choice — narrators get deleted or moved
-to a code comment; SDK/library footguns go to `## Known quirks`, not `## Design decisions`. The file
-grows only when a new rule would have prevented a real mistake.
+to a code comment; SDK/library footguns go to `## Known quirks`, not `## Design decisions`; pure
+code/editing rules belong in `## Code rules`. The file grows only when a new rule would have
+prevented a real mistake.
 
 ## 3. Convention audit — reasoning, not grep
 

@@ -44,8 +44,8 @@ step where they're needed. `conventions.md` is auto-loaded below.
   paper over a real type error in your own code. (Historical note: pyimgui's stub gaps used to need
   scoped suppressions; imgui-bundle's stubs are complete, so that exception is retired — see
   `conventions.md ## Known quirks` for the residual library-stub footguns that remain.)
-- **Code conventions** (full list → `conventions.md`): full type annotations on params/vars; minimal
-  comments (only non-obvious logic); imports at module top only.
+- **Code conventions** (full list → `conventions.md`): full type annotations on params/vars;
+  minimal comments (only non-obvious logic); imports at module top only.
 - **Library docs + source are the source of truth.** For any non-trivial library API use, verify
   against the official docs and grep the library's source (in `.venv/lib/python*/site-packages/<lib>`
   or upstream repo via WebFetch) — never guess from training data, never invent signatures. Adopt
@@ -107,8 +107,8 @@ re-deriving rules), **cold-reloadable** (picks up "what's next?" in a few reads)
 ## Skills
 
 - `/sanitize` — the closing-out sweep (run before "done": walk `todo.md` + `conventions.md`, audit
-  the code against the conventions, fix stale refs/docs, update the `roadmap.md` banner + rows,
-  cold-context check). Ends with a mandatory sweep-report table.
+  the code against them, fix stale refs/docs, update the `roadmap.md` banner + rows, cold-context
+  check). Ends with a mandatory sweep-report table.
 
 ## Reply language
 

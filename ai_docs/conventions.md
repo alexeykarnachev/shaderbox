@@ -1,13 +1,20 @@
 # Conventions
 
-Code rules + design decisions + known quirks. Auto-loaded via `@ai_docs/conventions.md` at the bottom
-of `CLAUDE.md`. Re-read end-to-end from disk before: spec drafting, spec validation, implementation,
-code review, the sanitization sweep.
+Auto-loaded via `@ai_docs/conventions.md` at the bottom of `CLAUDE.md`. Re-read end-to-end from disk
+before: spec drafting, spec validation, implementation, code review, the sanitization sweep.
 
-This file holds **generic, future-constraining rules** — how code, architecture, and design must be
-shaped. It is NOT a feature changelog: per-feature mechanics, instance lists, and the story of how a
-decision was reached belong in the feature spec (`ai_docs/features/NNN_*.md`); library/SDK footguns
-belong in `## Known quirks`. If a bullet doesn't constrain code you haven't written yet, it's noise.
+Everything here is a **generic, future-constraining rule** — if a bullet doesn't constrain code you
+haven't written yet, it's noise. Three sections, three buckets; put each rule in exactly one:
+
+- **`## Code rules`** — how source + editable files (Python, md/yaml/json/toml) must be *written*:
+  formatting, typing, imports, comments, tooling. Mechanical, language-level.
+- **`## Design decisions`** — how the *architecture* is shaped ("we decided X; revisit if Y"): module
+  boundaries, ownership, the patterns that span files. Each carries a revisit trigger.
+- **`## Known quirks`** — library / SDK footguns and their workaround: where an upstream API bites and
+  what to do instead.
+
+NOT here: per-feature mechanics, instance lists, and the story of how a decision was reached — those
+belong in the feature spec (`ai_docs/features/NNN_*.md`). This file is not a changelog.
 
 ## Code rules
 
@@ -31,7 +38,6 @@ belong in `## Known quirks`. If a bullet doesn't constrain code you haven't writ
 - Type checker: **pyright** (not mypy), basic mode, via `make check` — blocks on failure.
   Repo is at 0 errors; keep it that way.
 - `uv` for everything (`uv run`, `uv add`, `uv add --group dev`) — never bare `python` / `pip`.
-- Commit messages: short, concise, single-line, ASCII; no footers / co-authored-by.
 - Never use "from __future__ import annotations" - this is a noise.
 
 ## Design decisions (we decided X; revisit if Y)
