@@ -165,8 +165,13 @@ class SIZE:
     BTN_MD_W: int = 120
     BTN_SM_H: int = 19
 
-    CHIP_W: int = 52
+    CHIP_W: int = 64
     CHIP_ROUNDING: int = 8
+
+    SORT_COMBO_W: int = 150
+    TAB_MIN_W: int = 72
+    NAME_INPUT_W: int = 180
+    RES_COMBO_W: int = 200
 
     THUMB_SM: int = 90
     THUMB_MD: int = 110
@@ -286,6 +291,8 @@ def apply_theme(
     style.frame_border_size = 0.0
     style.popup_border_size = 1.0
     style.tab_border_size = 0.0
+    style.tab_bar_overline_size = 3.0
+    style.tab_min_width_base = float(SIZE.TAB_MIN_W)
 
     style.window_title_align = imgui.ImVec2(0.0, 0.5)
     style.button_text_align = imgui.ImVec2(0.5, 0.5)
@@ -386,12 +393,12 @@ def _set_colors(
 
     # tabs (Dear ImGui 1.91+ names)
     style.set_color_(col.tab, _P["bg_1"])
-    style.set_color_(col.tab_hovered, _P["bg_2"])
-    style.set_color_(col.tab_selected, _P["bg_0"])
+    style.set_color_(col.tab_hovered, fade(accent_primary, 0.32))
+    style.set_color_(col.tab_selected, fade(accent_primary, 0.32))
     style.set_color_(col.tab_selected_overline, accent_primary)
     style.set_color_(col.tab_dimmed, _P["bg_0h"])
-    style.set_color_(col.tab_dimmed_selected, _P["bg_1"])
-    style.set_color_(col.tab_dimmed_selected_overline, _P["bg_2"])
+    style.set_color_(col.tab_dimmed_selected, fade(accent_primary, 0.20))
+    style.set_color_(col.tab_dimmed_selected_overline, accent_primary)
 
     # docking (unused today, harmless)
     style.set_color_(col.docking_preview, fade(accent_primary, 0.40))

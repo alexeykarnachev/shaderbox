@@ -144,3 +144,15 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   replay mode). Not a test framework — for manual debugging / shareable repros (the headless
   smoke test in `scripts/smoke.py` is the right tool for actual regression testing). Probably
   worth a small feature spec before building (touches imgui boundary, adds UI surface).
+
+## [DEFERRAL] `UINodeState` drops a node on an invalid known-key VALUE
+- **Trigger:** next time you narrow a `UINodeState` Literal (e.g. add/remove a `UniformSortKey` /
+  `UIUniformInputType` member) OR a user reports a node vanishing from the grid after an upgrade.
+- `load_node_from_dir` filters *unknown keys* but a *known key with an out-of-Literal value* (a
+  stale `uniform_sort_key`, or a bad `input_type` inside `ui_uniforms`) raises `ValidationError`,
+  which `load_nodes_from_dir`'s `except` swallows → the whole node is silently skipped/lost.
+  `UIUniform.snap_input_type()` (called each frame in `tabs/node.py`) covers the in-app
+  `input_type` case, but only AFTER load — a value bad enough to fail pydantic construction never
+  reaches it. `UINodeState` has no `model_config`/value-level fallback (unlike `UIAppState`'s
+  deliberate `extra="forbid"` + `load_and_migrate`). If robustness parity is wanted, add a
+  validator that resets out-of-range values to defaults instead of raising.

@@ -46,7 +46,6 @@
                 "input_type": "auto"
             }
         },
-        "resolution_idx": 3,
         "video_to_video_smoothing_window": 5,
         "video_to_video_smoothing_sigma": 1.0
     }

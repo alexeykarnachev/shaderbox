@@ -17,7 +17,7 @@ from shaderbox.constants import (
 from shaderbox.core import UniformValue
 from shaderbox.media import Image, MediaWithTexture, Video
 from shaderbox.theme import COLOR, SIZE
-from shaderbox.ui_models import UIUniform, UIUniformInputType
+from shaderbox.ui_models import UIUniform
 from shaderbox.ui_utils import (
     get_resolution_str,
     pfd_block,
@@ -28,17 +28,10 @@ from shaderbox.ui_utils import (
 from shaderbox.widgets.media_ops import draw_video_filters
 
 
-def _draw_input_type_selector(ui_uniform: UIUniform) -> None:
-    modes: tuple[UIUniformInputType, ...]
-    if ui_uniform.input_type in ("drag", "color") and ui_uniform.dimension in (3, 4):
-        modes = ("drag", "color")
-    elif (
-        ui_uniform.input_type in ("array", "text")
-        and ui_uniform.gl_type == GL_UNSIGNED_INT
-    ):
-        modes = ("array", "text")
-    else:
-        return
+def draw_input_type_selector(ui_uniform: UIUniform) -> None:
+    """The single seam for input-shape selection — swap cycle<->dropdown here alone."""
+    valid = ui_uniform.valid_input_types()
+    locked = len(valid) == 1
 
     imgui.push_style_var(imgui.StyleVar_.frame_rounding, SIZE.CHIP_ROUNDING)
     imgui.push_style_color(imgui.Col_.button, COLOR.CHIP_BG)
@@ -46,10 +39,16 @@ def _draw_input_type_selector(ui_uniform: UIUniform) -> None:
     imgui.push_style_color(imgui.Col_.button_active, COLOR.CHIP_BG_HOVER)
     imgui.push_style_color(imgui.Col_.text, COLOR.CHIP_FG)
 
+    if locked:
+        imgui.begin_disabled()
+
     label = f"{ui_uniform.input_type}##input_type_{ui_uniform.name}"
-    if imgui.button(label, size=(SIZE.CHIP_W, 0.0)):
-        current_idx = modes.index(ui_uniform.input_type)
-        ui_uniform.input_type = modes[(current_idx + 1) % len(modes)]
+    if imgui.button(label, size=(SIZE.CHIP_W, 0.0)) and not locked:
+        current_idx = valid.index(ui_uniform.input_type)
+        ui_uniform.input_type = valid[(current_idx + 1) % len(valid)]
+
+    if locked:
+        imgui.end_disabled()
 
     imgui.pop_style_color(4)
     imgui.pop_style_var()
@@ -63,17 +62,16 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
     current_value: UniformValue = ui_node.node.uniform_values[ui_uniform.name]
     new_value = None
 
-    _draw_input_type_selector(ui_uniform)
+    draw_input_type_selector(ui_uniform)
 
     if ui_uniform.input_type == "auto":
-        if ui_uniform.dimension == 1:
+        if isinstance(current_value, float | int):
             imgui.text(f"{ui_uniform.name}: {current_value:.3f}")
+        elif isinstance(current_value, Iterable):
+            value_str = ", ".join(f"{v:.3f}" for v in current_value)
+            imgui.text(f"{ui_uniform.name}: [{value_str}]")
         else:
-            if isinstance(current_value, Iterable):
-                value_str = ", ".join(f"{v:.3f}" for v in current_value)
-                imgui.text(f"{ui_uniform.name}: [{value_str}]")
-            else:
-                imgui.text(f"{ui_uniform.name}: {current_value}")
+            imgui.text(f"{ui_uniform.name}: {current_value}")
 
     elif ui_uniform.input_type == "buffer":
         assert isinstance(current_value, moderngl.Buffer)
@@ -165,10 +163,13 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
     elif ui_uniform.input_type == "drag":
         change_speed = 0.01
         if ui_uniform.dimension == 1:
-            assert isinstance(current_value, float)
-            new_value = imgui.drag_float(
-                ui_uniform.name, current_value, v_speed=change_speed
-            )[1]
+            assert isinstance(current_value, float | int)
+            if isinstance(current_value, int) and not isinstance(current_value, bool):
+                new_value = imgui.drag_int(ui_uniform.name, current_value)[1]
+            else:
+                new_value = imgui.drag_float(
+                    ui_uniform.name, current_value, v_speed=change_speed
+                )[1]
         else:
             assert isinstance(current_value, Sequence)
             fn = getattr(imgui, f"drag_float{ui_uniform.dimension}")

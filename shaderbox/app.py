@@ -98,6 +98,7 @@ class App:
 
         self.notifications = Notifications()
 
+        self.font_12 = self.get_font(12)
         self.font_14 = self.get_font(14)
         self.font_18 = self.get_font(18)
 

@@ -27,29 +27,23 @@ feature; brief points at the superseder).
 
 **As of 2026-05-23.**
 
-- **New branch model in effect:** develop on `dev`, ship from `master` (`dev_flow.md ## Branch
-  model`). `master` is the shipped line, still at `v0.2.2` (both itch channels live). `dev` is **3
-  commits ahead, unshipped**: editor dims when unfocused (`tabs/code.py` + `EDITOR_UNFOCUSED_ALPHA`),
-  the branch-model docs, and the conventions-doc consolidation (back to a single `conventions.md`).
-- **Next action: keep accumulating on `dev` until ship-ready**, then run the ship flow (eyeball
-  `git diff master..dev`, pick the semver bump, merge to `master`, `make release`). Nothing forces a
-  ship — `dev` may sit ahead indefinitely.
-- **Two open follow-ups (non-blocking, no users yet so neither gates anything):**
-  1. **No build has been runtime-verified on Windows** — built + CI-installed on Linux, never run on
-     a real Windows box. Verify the *published* build per `BUILDING.md` when convenient.
-  2. **Screenshots are stale** — the live page's images predate gruvbox (005) + the inline editor
-     (006). Re-shoot in-app + upload by hand (binary, not in `page.yaml`).
-- **`todo.md` deferrals fire on their own triggers** — do NOT speculatively pick them up. Two are
-  editor-upstream-bound (gruvbox palette write-path, col-0 caret clip) — both wait on a small
-  imgui-bundle `imgui_color_text_edit` binding/C++ change, not on us (both researched 2026-05-23:
-  confirmed binding-gap, not our bug).
-- **No open BLOCKERs.** Live DEFERRAL-class workaround: the `imgui_color_text_edit` render() FPE
-  (editor hidden behind modals, `todo.md`).
+- **Just shipped feature 008 (uniform input shapes):** every uniform row leads with a changeable
+  input-shape pill (click-to-cycle, disabled when single-shape); the old right-hand settings pane is
+  gone; per-node uniform sort (code/name/type + asc/desc); engine uniforms collapsed into one dim
+  readout row; node-tab header compacted; accent tab styling. Full story + the review-round fixes →
+  the 008 spec.
+- **Branch model:** develop on `dev`, ship from `master` (`dev_flow.md ## Branch model`).
+- **Next action: nothing pending** — `dev` is the working line; resume from the next user request.
+- **Two non-blocking follow-ups (no users yet):** (1) no build runtime-verified on Windows — verify
+  the published build per `BUILDING.md` when convenient; (2) live-page screenshots are stale
+  (predate gruvbox 005 + inline editor 006) — re-shoot + upload by hand.
+- **No open BLOCKERs.** `todo.md` deferrals fire on their own triggers — don't pick up speculatively.
 
 ## Features
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 008 | uniform_input_shapes | done | Every uniform row leads with a changeable input-shape pill (click-to-cycle, disabled when one shape); removed the separate settings pane; per-node uniform sort (code/name/type + dir); engine uniforms collapsed to one dim readout row; node-tab header compaction; accent tab styling. Spec: `ai_docs/features/008_uniform_input_shapes.md`. |
 | 007 | release_pipeline_hardening | done | `make release VERSION=` (semver bump + tag), `build.sh` gated on check+smoke + clean tree (`--allow-dirty`), `.zip` both platforms, Windows+Ubuntu CI, `BUILDING.md`. Spec: `ai_docs/features/007_release_pipeline_hardening.md`. |
 | 006 | inline_glsl_editor | done | Syntax-highlighted inline GLSL editor in the main window's left split; Ctrl+S saves + hot-reloads; visual-options popup; replaced the external-editor mechanism. Spec: `ai_docs/features/006_inline_editor.md`. |
 | 005 | ui_redesign_foundation | partial | Gruvbox theme + full color/size/spacing token sweep through `theme.py`. The wide-screen layout half was reverted to the feature-004 shape; only the theme survived. Spec: `ai_docs/features/005_ui_redesign_foundation.md`. |

@@ -1,53 +1,52 @@
+from collections.abc import Iterable
 from uuid import uuid4
 
-import pyperclip
 from imgui_bundle import imgui, imgui_ctx
 from OpenGL.GL import GL_SAMPLER_2D
 
 from shaderbox.app import App
-from shaderbox.theme import COLOR, SIZE
-from shaderbox.ui_models import UIUniform, load_node_from_dir
+from shaderbox.theme import COLOR, SIZE, SPACE
+from shaderbox.ui_models import (
+    UIUniform,
+    UniformSortKey,
+    load_node_from_dir,
+    sort_uniform_hashes,
+)
 from shaderbox.ui_utils import get_resolution_str, get_uniform_hash
 from shaderbox.widgets.uniform import draw_ui_uniform
+
+_FONT_12_SIZE = 12.0
+
+
+def _format_auto_value(value: object) -> str:
+    if isinstance(value, float | int):
+        return f"{value:.3f}"
+    if isinstance(value, Iterable):
+        return "[" + ", ".join(f"{v:.3f}" for v in value) + "]"
+    return str(value)
+
+
+def _section_break() -> None:
+    imgui.spacing()
+    imgui.separator()
+    imgui.spacing()
+
+
+def _draw_auto_row(app: App, uniforms: list[UIUniform]) -> None:
+    ui_node = app.ui_nodes[app.current_node_id]
+    parts = [
+        f"{u.name}: {_format_auto_value(ui_node.node.uniform_values.get(u.name))}"
+        for u in uniforms
+    ]
+    imgui.push_font(app.font_12, _FONT_12_SIZE)
+    imgui.text_colored(COLOR.FG_DIM, "   ".join(parts))
+    imgui.pop_font()
 
 
 def draw(app: App) -> None:
     if not (ui_node := app.ui_nodes.get(app.current_node_id)):
         return
 
-    full_file_path = app.nodes_dir / ui_node.id / "shader.frag.glsl"
-    local_file_path = full_file_path.relative_to(app.project_dir)
-
-    imgui.push_style_color(imgui.Col_.text, COLOR.FG_DIM)
-    if imgui.selectable(str(local_file_path), False)[0]:
-        try:
-            pyperclip.copy(str(full_file_path))
-            app.notifications.push("Copied to clipboard!")
-        except pyperclip.PyperclipException:
-            app.notifications.push(
-                "No clipboard backend (install xclip or xsel)", COLOR.STATE_ERROR[:3]
-            )
-    imgui.pop_style_color()
-
-    imgui.spacing()
-    ui_node.ui_state.ui_name = imgui.input_text("Name", ui_node.ui_state.ui_name)[1]
-    imgui.spacing()
-
-    if imgui.button("Open dir", size=(SIZE.BTN_SM_W, 0)):
-        app.open_current_node_dir()
-
-    imgui.same_line()
-    if imgui.button("Save as template"):
-        dir = app.save_ui_node(
-            ui_node,
-            root_dir=app.node_templates_dir,
-            dir_name=str(uuid4()),
-        )
-        app.ui_node_templates[dir.name] = load_node_from_dir(dir)
-        app.notifications.push("New template created")
-
-    imgui.new_line()
-    imgui.separator()
     imgui.spacing()
 
     standard_resolutions = [
@@ -59,6 +58,8 @@ def draw(app: App) -> None:
         (3440, 1440),
     ]
 
+    current_size = tuple(ui_node.node.canvas.texture.size)
+
     uniform_resolutions = []
     matching_uniforms = []
     uniform_sizes = set()
@@ -67,66 +68,97 @@ def draw(app: App) -> None:
             value = ui_node.node.uniform_values[uniform.name]
 
             w, h = value.texture.size
-            if (w, h) == ui_node.node.canvas.texture.size:
+            if (w, h) == current_size:
                 matching_uniforms.append(uniform.name)
             else:
                 uniform_resolutions.append((w, h, uniform.name))
                 uniform_sizes.add((w, h))
 
-    resolution_items = []
-
+    current_name = ", ".join(matching_uniforms) if matching_uniforms else None
+    resolution_items = [get_resolution_str(current_name, *current_size)]
     for w, h, name in uniform_resolutions:
         resolution_items.append(get_resolution_str(name, w, h))
-
     for w, h in standard_resolutions:
-        if (w, h) != ui_node.node.canvas.texture.size and (
-            w,
-            h,
-        ) not in uniform_sizes:
+        if (w, h) != current_size and (w, h) not in uniform_sizes:
             resolution_items.append(get_resolution_str(None, w, h))
 
-    imgui.text(
-        "Current resolution: "
-        + get_resolution_str(None, *ui_node.node.canvas.texture.size)
-    )
-
-    imgui.spacing()
-
-    if matching_uniforms:
-        imgui.same_line()
-        imgui.text_colored(COLOR.FG_DIM, "(" + ", ".join(matching_uniforms) + ")")
-
     node_ui_state = app.current_node_ui_state_or_default
-    node_ui_state.resolution_idx = imgui.combo(
-        "##resolution_idx", node_ui_state.resolution_idx, resolution_items
+
+    imgui.set_next_item_width(SIZE.NAME_INPUT_W)
+    ui_node.ui_state.ui_name = imgui.input_text_with_hint(
+        "##node_name", "node name", ui_node.ui_state.ui_name
     )[1]
 
     imgui.same_line()
-    if imgui.button("Apply##resolution"):
-        resolution_str = resolution_items[node_ui_state.resolution_idx]
-        w, h = map(
-            int,
-            resolution_str.split(" | ")[0].split("x"),
-        )
+    imgui.set_next_item_width(SIZE.RES_COMBO_W)
+    new_res_idx = imgui.combo("##resolution", 0, resolution_items)[1]
+    if new_res_idx != 0:
+        resolution_str = resolution_items[new_res_idx]
+        w, h = map(int, resolution_str.split(" | ")[0].split("x"))
         ui_node.node.canvas.set_size((w, h))
         app.notifications.push(f"Canvas resolution changed: {resolution_str}")
 
-    imgui.new_line()
-    imgui.separator()
-    imgui.spacing()
+    imgui.same_line()
+    if imgui.button("...##node_actions"):
+        imgui.open_popup("node_actions_popup")
+    with imgui_ctx.begin_popup("node_actions_popup") as popup:
+        if popup and imgui.selectable("Save as template", False)[0]:
+            dir = app.save_ui_node(
+                ui_node,
+                root_dir=app.node_templates_dir,
+                dir_name=str(uuid4()),
+            )
+            app.ui_node_templates[dir.name] = load_node_from_dir(dir)
+            app.notifications.push("New template created")
+
+    _section_break()
 
     ui_uniforms = node_ui_state.ui_uniforms
 
     active_uniform_hashes = []
+    auto_hashes = []
     for uniform in ui_node.node.get_active_uniforms():
-        active_uniform_hashes.append(get_uniform_hash(uniform))
         hash = get_uniform_hash(uniform)
         if hash not in ui_uniforms:
             ui_uniforms[hash] = UIUniform.from_uniform(uniform)
+        ui_uniforms[hash].snap_input_type()
+        if ui_uniforms[hash].input_type == "auto":
+            auto_hashes.append(hash)
+        else:
+            active_uniform_hashes.append(hash)
+
+    sort_keys: list[UniformSortKey] = ["code", "name", "type"]
+    imgui.set_next_item_width(SIZE.SORT_COMBO_W)
+    if imgui.begin_combo(
+        "##uniform_sort_key", f"Sort by: {node_ui_state.uniform_sort_key}"
+    ):
+        for key in sort_keys:
+            if imgui.selectable(key, key == node_ui_state.uniform_sort_key)[0]:
+                node_ui_state.uniform_sort_key = key
+        imgui.end_combo()
+
+    imgui.same_line()
+    arrow = "v" if node_ui_state.uniform_sort_desc else "^"
+    if imgui.button(f"{arrow}##uniform_sort_dir", size=(SIZE.BTN_SM_H, 0)):
+        node_ui_state.uniform_sort_desc = not node_ui_state.uniform_sort_desc
+
+    if auto_hashes:
+        imgui.same_line(spacing=float(SPACE.XL))
+        _draw_auto_row(app, [ui_uniforms[h] for h in auto_hashes])
+
+    _section_break()
+
+    sorted_hashes = sort_uniform_hashes(
+        active_uniform_hashes,
+        ui_uniforms,
+        node_ui_state.uniform_sort_key,
+        node_ui_state.uniform_sort_desc,
+    )
 
     with imgui_ctx.begin_child("ui_uniforms"):
         imgui.push_style_color(imgui.Col_.separator, COLOR.BG_FRAME)
-        for hash in active_uniform_hashes:
+
+        for hash in sorted_hashes:
             draw_ui_uniform(app, ui_uniforms[hash])
             imgui.spacing()
             imgui.separator()

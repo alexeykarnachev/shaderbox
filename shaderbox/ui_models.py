@@ -7,7 +7,7 @@ from uuid import uuid4
 import moderngl
 from imgui_bundle import imgui, imgui_ctx
 from loguru import logger
-from OpenGL.GL import GL_SAMPLER_2D
+from OpenGL.GL import GL_SAMPLER_2D, GL_UNSIGNED_INT
 from pydantic import BaseModel, ValidationError, model_validator
 
 from shaderbox.core import Node
@@ -46,6 +46,18 @@ UIUniformInputType = Literal[
     "texture", "buffer", "array", "color", "text", "drag", "auto"
 ]
 
+UniformSortKey = Literal["code", "name", "type"]
+
+_TYPE_SORT_ORDER: dict[UIUniformInputType, int] = {
+    "auto": 0,
+    "drag": 1,
+    "color": 2,
+    "text": 3,
+    "array": 4,
+    "buffer": 5,
+    "texture": 6,
+}
+
 
 class UIUniform(BaseModel):
     name: str
@@ -75,29 +87,63 @@ class UIUniform(BaseModel):
                 array_length=uniform.array_length,
             ).reset_input_type()
 
-    def reset_input_type(self) -> Self:
+    def valid_input_types(self) -> tuple[UIUniformInputType, ...]:
         if self.is_ubo:
-            self.input_type = "buffer"
-        elif self.name in ("u_time", "u_aspect", "u_resolution"):
-            self.input_type = "auto"
-        elif self.gl_type == GL_SAMPLER_2D:
-            self.input_type = "texture"
-        elif self.array_length > 1 and self.name.endswith("text"):
-            self.input_type = "text"
-        elif self.array_length > 1:
-            self.input_type = "array"
-        elif (
-            self.array_length == 1
-            and self.dimension in (3, 4)
-            and self.name.endswith("color")
-        ):
+            return ("buffer",)
+        if self.name in ("u_time", "u_aspect", "u_resolution"):
+            return ("auto",)
+        if self.gl_type == GL_SAMPLER_2D:
+            return ("texture",)
+        if self.array_length > 1:
+            if self.gl_type == GL_UNSIGNED_INT:
+                return ("array", "text")
+            return ("array",)
+        if self.array_length == 1 and self.dimension in (3, 4):
+            return ("drag", "color")
+        if self.array_length == 1 and self.dimension in (1, 2):
+            return ("drag",)
+        return ("auto",)
+
+    def reset_input_type(self) -> Self:
+        valid = self.valid_input_types()
+        if "color" in valid and self.name.endswith("color"):
             self.input_type = "color"
-        elif self.array_length == 1 and self.dimension in (1, 2, 3, 4):
-            self.input_type = "drag"
+        elif "text" in valid and self.name.endswith("text"):
+            self.input_type = "text"
         else:
-            self.input_type = "auto"
+            self.input_type = valid[0]
 
         return self
+
+    def snap_input_type(self) -> Self:
+        if self.input_type not in self.valid_input_types():
+            self.reset_input_type()
+        return self
+
+
+def sort_uniform_hashes(
+    declaration_order: list[int],
+    ui_uniforms: dict[int, UIUniform],
+    key: UniformSortKey,
+    desc: bool,
+) -> list[int]:
+    """Single seam for uniform-row ordering. `declaration_order` is the GLSL order."""
+    if key == "code":
+        ordered = list(declaration_order)
+    elif key == "name":
+        ordered = sorted(declaration_order, key=lambda h: ui_uniforms[h].name)
+    else:
+        ordered = sorted(
+            declaration_order,
+            key=lambda h: (
+                _TYPE_SORT_ORDER[ui_uniforms[h].input_type],
+                ui_uniforms[h].name,
+            ),
+        )
+
+    if desc:
+        ordered.reverse()
+    return ordered
 
 
 class UINodeState(BaseModel):
@@ -106,7 +152,8 @@ class UINodeState(BaseModel):
     render_media_details: MediaDetails = MediaDetails()
     ui_uniforms: dict[int, UIUniform] = {}
 
-    resolution_idx: int = 0
+    uniform_sort_key: UniformSortKey = "code"
+    uniform_sort_desc: bool = False
 
     video_to_video_smoothing_window: int = 5
     video_to_video_smoothing_sigma: float = 1.0

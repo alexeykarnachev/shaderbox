@@ -1,4 +1,5 @@
 import glfw
+import pyperclip
 from imgui_bundle import imgui
 
 from shaderbox.app import App
@@ -16,7 +17,15 @@ def draw(app: App) -> None:
     local_file_path = full_file_path.relative_to(app.project_dir)
 
     imgui.push_style_color(imgui.Col_.text, COLOR.FG_DIM)
-    imgui.text(str(local_file_path))
+    path_str = str(local_file_path)
+    if imgui.selectable(path_str, False, size=(imgui.calc_text_size(path_str).x, 0))[0]:
+        try:
+            pyperclip.copy(str(full_file_path))
+            app.notifications.push("Copied to clipboard!")
+        except pyperclip.PyperclipException:
+            app.notifications.push(
+                "No clipboard backend (install xclip or xsel)", COLOR.STATE_ERROR[:3]
+            )
     imgui.pop_style_color()
 
     if app.is_current_editor_dirty():

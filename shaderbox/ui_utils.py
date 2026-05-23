@@ -69,10 +69,9 @@ def get_resolution_str(name: str | None, w: int, h: int) -> str:
     g = math.gcd(w, h)
     w_ratio, h_ratio = w // g, h // g
     aspect = f"{w_ratio}:{h_ratio}"
-    parts = [f"{w}x{h}"]
+    parts = [f"{w}x{h}", aspect]
     if name:
         parts.append(name)
-    parts.append(aspect)
     return " | ".join(parts)
 
 
