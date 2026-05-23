@@ -12,6 +12,8 @@ wheels/
 trash/
 exporter_scratch/
 tg_state.json
+# Per-project downloaded sticker thumbnails (regenerable cache, file_id-named)
+projects/*/media/
 
 itch-config
 

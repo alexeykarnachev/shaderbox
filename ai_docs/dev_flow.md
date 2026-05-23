@@ -204,14 +204,18 @@ roadmap-banner touch (if even that) + the cold-context glance is enough; for a f
 
 State lives in `app_data_dir()` (default `~/.local/share/shaderbox/`, overridable via
 `SHADERBOX_DATA_DIR` — see `conventions.md ## Design decisions`) + the active project's files. The
-repo's `projects/dev/` is the maintainer's dev sandbox (**tracked, NOT gitignored** — verify with
-`git check-ignore` before assuming, don't infer from a status snapshot). It's where features get
-tested, so its `app_state.json` / `nodes/*/node.json` drift between runs is **expected, not
-suspicious** — the maintainer may be editing in the running app in parallel. Don't investigate the
-drift; just `git add` + commit it alongside source when a change wants persisting, or leave it. A new
-throwaway test node under `projects/dev/nodes/<uuid>/` is fine to leave uncommitted.
-`imgui.ini` in the repo root is layout cruft (gitignored). **Can't be exercised unconfigured:** the
-Telegram share tab needs a bot token / user id / sticker-set name in app settings.
+repo's `projects/dev/` is the maintainer's dev sandbox (**tracked** — `scripts/smoke.py` needs it as
+a fixture). It's where features get tested, so its `app_state.json` / `nodes/*/node.json` drift
+between runs every time the app runs. **The rule is binary: the working tree must never sit with
+unstaged `projects/dev/` changes.** Either it's gitignored or it's committed — no "leave it
+uncommitted, it's fine" middle state (that just re-surfaces as staging noise next time). So:
+**always `git add projects/dev && commit` the config/node drift in the same wave as your work**
+(it's an authorized sandbox-sync, no review needed — a `chore: sync dev sandbox` commit is fine).
+The sticker-thumbnail cache `projects/*/media/` (Telegram `file_id`-named `.webm`/`.webp`) is
+**gitignored** — it's regenerable download cache, not fixture data; never commit it.
+`imgui.ini` in the repo root is layout cruft (gitignored). Telegram credentials live in the global
+`integrations.json` under `app_data_dir()` (outside the repo, never committed) — populated by a real
+Connect, not committable fixture state.
 
 **No screenshot-driven loop.** This is a glfw window, not a headless browser — there is no reliable
 way to screenshot it from the agent: with no window manager on the dev display the freshly-mapped
