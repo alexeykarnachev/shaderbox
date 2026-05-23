@@ -113,6 +113,10 @@ class _ColorBag:
     FG_DIM: tuple[float, float, float, float] = _P["gray"]
     FG_TITLE: tuple[float, float, float, float] = _P["fg_0"]
 
+    CHIP_BG: tuple[float, float, float, float] = _P["bg_3"]
+    CHIP_BG_HOVER: tuple[float, float, float, float] = _P["bg_4"]
+    CHIP_FG: tuple[float, float, float, float] = _P["fg_3"]
+
     # accents — overwritten by apply_theme()
     ACCENT_PRIMARY: tuple[float, float, float, float] = _P["yellow_b"]
     ACCENT_ACTIVE: tuple[float, float, float, float] = _P["orange_b"]
@@ -160,6 +164,8 @@ class SIZE:
     BTN_SM_W: int = 80
     BTN_MD_W: int = 120
     BTN_SM_H: int = 19
+
+    CHIP_ROUNDING: int = 8
 
     THUMB_SM: int = 90
     THUMB_MD: int = 110

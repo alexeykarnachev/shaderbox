@@ -8,10 +8,7 @@ from shaderbox.app import App
 from shaderbox.theme import COLOR, SIZE
 from shaderbox.ui_models import UIUniform, load_node_from_dir
 from shaderbox.ui_utils import get_resolution_str, get_uniform_hash
-from shaderbox.widgets.uniform import (
-    draw_selected_ui_uniform_settings,
-    draw_ui_uniform,
-)
+from shaderbox.widgets.uniform import draw_ui_uniform
 
 
 def draw(app: App) -> None:
@@ -127,20 +124,10 @@ def draw(app: App) -> None:
         if hash not in ui_uniforms:
             ui_uniforms[hash] = UIUniform.from_uniform(uniform)
 
-    with imgui_ctx.begin_child(
-        "ui_uniforms",
-        size=imgui.ImVec2(imgui.get_content_region_avail().x // 2, 0),
-    ):
+    with imgui_ctx.begin_child("ui_uniforms"):
         imgui.push_style_color(imgui.Col_.separator, COLOR.BG_FRAME)
         for hash in active_uniform_hashes:
             draw_ui_uniform(app, ui_uniforms[hash])
             imgui.spacing()
             imgui.separator()
         imgui.pop_style_color()
-
-    if node_ui_state.selected_uniform_name:
-        imgui.same_line()
-        with imgui_ctx.begin_child(
-            "selected_uniform_settings", child_flags=imgui.ChildFlags_.borders
-        ):
-            draw_selected_ui_uniform_settings(app)

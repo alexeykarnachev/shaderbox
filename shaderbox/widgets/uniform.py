@@ -17,10 +17,9 @@ from shaderbox.constants import (
 from shaderbox.core import UniformValue
 from shaderbox.media import Image, MediaWithTexture, Video
 from shaderbox.theme import COLOR, SIZE
-from shaderbox.ui_models import UIUniform
+from shaderbox.ui_models import UIUniform, UIUniformInputType
 from shaderbox.ui_utils import (
     get_resolution_str,
-    get_uniform_hash,
     pfd_block,
     str_to_unicode,
     try_to_release,
@@ -29,87 +28,35 @@ from shaderbox.ui_utils import (
 from shaderbox.widgets.media_ops import draw_video_filters
 
 
-def draw_selected_ui_uniform_settings(app: App) -> None:
-    ui_node = app.ui_nodes.get(app.current_node_id)
-
-    if (
-        not ui_node
-        or not ui_node.node.program
-        or not ui_node.ui_state.selected_uniform_name
-        or ui_node.ui_state.selected_uniform_name not in ui_node.node.program
-    ):
-        return
-
-    uniform = ui_node.node.program[ui_node.ui_state.selected_uniform_name]
-    if not isinstance(uniform, moderngl.Uniform | moderngl.UniformBlock):
-        return
-
-    ui_uniform = ui_node.ui_state.ui_uniforms[get_uniform_hash(uniform)]
-    imgui.text(f"{ui_uniform.name} - {ui_uniform.input_type}")
-    imgui.separator()
-    imgui.spacing()
-
-    current_value = ui_node.node.uniform_values.get(uniform.name)
-
-    if ui_uniform.input_type == "texture":
-        assert isinstance(current_value, MediaWithTexture)
-
-        imgui.text(get_resolution_str(ui_uniform.name, *current_value.texture.size))
-
-        avail = imgui.get_content_region_avail()
-        max_image_width = avail.x
-        max_image_height = 0.5 * avail.y
-        image_aspect = np.divide(*current_value.texture.size)
-        image_width = min(max_image_width, max_image_height * image_aspect)
-        image_height = min(max_image_height, max_image_width / image_aspect)
-
-        imgui.image(
-            imgui.ImTextureRef(current_value.texture.glo),
-            image_size=(image_width, image_height),
-            uv0=(0, 1),
-            uv1=(1, 0),
-        )
-
-        imgui.new_line()
-        imgui.separator()
-        imgui.spacing()
-
-        new_value = current_value
-        if isinstance(new_value, Video):
-            new_value = draw_video_filters(app, new_value)
-
-        if current_value != new_value:
-            try_to_release(current_value)
-            ui_node.node.uniform_values[ui_uniform.name] = new_value
-
-    elif ui_uniform.input_type in ("drag", "color"):
-        current_idx = 0 if ui_uniform.input_type == "drag" else 1
-        new_idx = imgui.combo(
-            "Input type##ui_uniform", current_idx, items=["drag", "color"]
-        )[1]
-
-        ui_uniform.input_type = "drag" if new_idx == 0 else "color"
-
+def _draw_input_type_selector(ui_uniform: UIUniform) -> None:
+    modes: tuple[UIUniformInputType, ...]
+    if ui_uniform.input_type in ("drag", "color") and ui_uniform.dimension in (3, 4):
+        modes = ("drag", "color")
     elif (
         ui_uniform.input_type in ("array", "text")
         and ui_uniform.gl_type == GL_UNSIGNED_INT
     ):
-        current_idx = 0 if ui_uniform.input_type == "array" else 1
-        new_idx = imgui.combo(
-            "Input type##ui_uniform", current_idx, items=["array", "text"]
-        )[1]
+        modes = ("array", "text")
+    else:
+        return
 
-        ui_uniform.input_type = "array" if new_idx == 0 else "text"
+    pad_x = imgui.get_style().frame_padding.x
+    chip_w = max(imgui.calc_text_size(m).x for m in modes) + 2 * pad_x
 
-    elif ui_uniform.input_type == "text":
-        assert isinstance(current_value, list)
-        text = unicode_to_str(current_value)
-        imgui.text_colored(COLOR.FG_DIM, text)
-        imgui.text(f"Length: {len(text)}")
+    imgui.push_style_var(imgui.StyleVar_.frame_rounding, SIZE.CHIP_ROUNDING)
+    imgui.push_style_color(imgui.Col_.button, COLOR.CHIP_BG)
+    imgui.push_style_color(imgui.Col_.button_hovered, COLOR.CHIP_BG_HOVER)
+    imgui.push_style_color(imgui.Col_.button_active, COLOR.CHIP_BG_HOVER)
+    imgui.push_style_color(imgui.Col_.text, COLOR.CHIP_FG)
 
-    elif ui_uniform.input_type == "buffer":
-        assert isinstance(uniform, moderngl.UniformBlock)
-        imgui.text(f"Size: {uniform.size} B")
+    label = f"{ui_uniform.input_type}##input_type_{ui_uniform.name}"
+    if imgui.button(label, size=(chip_w, 0.0)):
+        current_idx = modes.index(ui_uniform.input_type)
+        ui_uniform.input_type = modes[(current_idx + 1) % len(modes)]
+
+    imgui.pop_style_color(4)
+    imgui.pop_style_var()
+    imgui.same_line()
 
 
 def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
@@ -118,6 +65,8 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
 
     current_value: UniformValue = ui_node.node.uniform_values[ui_uniform.name]
     new_value = None
+
+    _draw_input_type_selector(ui_uniform)
 
     if ui_uniform.input_type == "auto":
         if ui_uniform.dimension == 1:
@@ -137,7 +86,7 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
             current_value.write(data)
 
         imgui.same_line()
-        imgui.text(ui_uniform.name)
+        imgui.text(f"{ui_uniform.name}  ({current_value.size} B)")
 
     elif ui_uniform.input_type == "array":
         assert isinstance(current_value, Sequence)
@@ -159,45 +108,30 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
         text = unicode_to_str([int(c) for c in current_value])
         is_changed, text = imgui.input_text(ui_uniform.name, text)
 
+        imgui.same_line()
+        imgui.text(f"({len(text)})")
+
         if is_changed:
             new_value = str_to_unicode(text, ui_uniform.array_length)
 
     elif ui_uniform.input_type == "texture":
         assert isinstance(current_value, MediaWithTexture)
 
-        n_styles = 0
-        if ui_node.ui_state.selected_uniform_name == ui_uniform.name:
-            highlight: tuple[float, float, float, float] = COLOR.ACCENT_PRIMARY
-            imgui.push_style_color(imgui.Col_.button, highlight)
-            imgui.push_style_color(imgui.Col_.button_hovered, highlight)
-            imgui.push_style_color(imgui.Col_.button_active, highlight)
-            n_styles += 3
-
-        button_texture_id = 0
         image_height = SIZE.THUMB_SM
-        image_width = SIZE.THUMB_SM
+        image_width = int(
+            image_height
+            * current_value.texture.width
+            / max(current_value.texture.height, 1)
+        )
 
-        if current_value is not None:
-            image_width = int(
-                image_height
-                * current_value.texture.width
-                / max(current_value.texture.height, 1)
-            )
+        imgui.text(get_resolution_str(ui_uniform.name, *current_value.texture.size))
 
-            imgui.text(ui_uniform.name)
-
-            button_texture_id = current_value.texture.glo
-
-        if imgui.image_button(
-            f"##image_button_{ui_uniform.name}",
-            imgui.ImTextureRef(button_texture_id),
+        imgui.image(
+            imgui.ImTextureRef(current_value.texture.glo),
             image_size=(image_width, image_height),
             uv0=(0, 1),
             uv1=(1, 0),
-        ):
-            ui_node.ui_state.selected_uniform_name = ui_uniform.name
-
-        imgui.pop_style_color(n_styles)
+        )
 
         imgui.same_line()
         if imgui.button(f"Load##{ui_uniform.name}"):
@@ -219,34 +153,30 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
 
             if media_cls:
                 new_value = media_cls(file_path)
-                ui_node.ui_state.selected_uniform_name = ui_uniform.name
+
+        if isinstance(current_value, Video):
+            video_value = draw_video_filters(app, current_value)
+            if video_value is not current_value:
+                new_value = video_value
 
     elif ui_uniform.input_type == "color":
         assert isinstance(current_value, Sequence)
 
-        imgui.text(ui_uniform.name)
         fn = getattr(imgui, f"color_edit{ui_uniform.dimension}")
-        new_value = fn(f"##{ui_uniform.name}", list(current_value))[1]
+        new_value = fn(ui_uniform.name, list(current_value))[1]
 
     elif ui_uniform.input_type == "drag":
-        imgui.text(ui_uniform.name)
-
         change_speed = 0.01
         if ui_uniform.dimension == 1:
             assert isinstance(current_value, float)
             new_value = imgui.drag_float(
-                f"##{ui_uniform.name}", current_value, v_speed=change_speed
+                ui_uniform.name, current_value, v_speed=change_speed
             )[1]
         else:
             assert isinstance(current_value, Sequence)
             fn = getattr(imgui, f"drag_float{ui_uniform.dimension}")
-            new_value = fn(f"##{ui_uniform.name}", list(current_value), change_speed)[1]
+            new_value = fn(ui_uniform.name, list(current_value), change_speed)[1]
 
     if new_value is not None:
         try_to_release(current_value)
         ui_node.node.uniform_values[ui_uniform.name] = new_value
-
-    if ui_uniform.input_type != "auto" and (
-        imgui.is_item_clicked() or imgui.is_item_active()
-    ):
-        ui_node.ui_state.selected_uniform_name = ui_uniform.name

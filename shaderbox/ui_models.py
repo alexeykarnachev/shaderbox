@@ -99,12 +99,6 @@ class UIUniform(BaseModel):
 
         return self
 
-    def get_ui_height(self) -> float:
-        if self.input_type == "drag":
-            return 5 + imgui.get_text_line_height_with_spacing()
-        else:
-            return imgui.get_text_line_height_with_spacing()
-
 
 class UINodeState(BaseModel):
     ui_name: str = ""
@@ -113,7 +107,6 @@ class UINodeState(BaseModel):
     ui_uniforms: dict[int, UIUniform] = {}
 
     resolution_idx: int = 0
-    selected_uniform_name: str = ""
 
     video_to_video_smoothing_window: int = 5
     video_to_video_smoothing_sigma: float = 1.0

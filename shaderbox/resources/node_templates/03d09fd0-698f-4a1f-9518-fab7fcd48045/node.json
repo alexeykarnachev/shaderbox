@@ -85,7 +85,6 @@
             }
         },
         "resolution_idx": 0,
-        "selected_uniform_name": "u_color",
         "video_to_video_smoothing_window": 5,
         "video_to_video_smoothing_sigma": 1.0
     }
