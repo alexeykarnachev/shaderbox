@@ -1,6 +1,6 @@
 [project]
 name = "shaderbox"
-version = "0.2.2"
+version = "0.3.0"
 authors = [
     { name = "Alexey Karnachev", email = "alekseykarnachev@gmail.com" }
 ]
