@@ -799,16 +799,11 @@ class TelegramExporter(Exporter):
     async def _notify_user(
         self, bot: tg.Bot, user_id: int, pack_set_name: str, pack_title: str
     ) -> None:
-        # The user pressed Start, so the bot may DM them: deliver the just-added
-        # sticker + the pack link so the pack is one tap away. Notification failure
-        # must not fail the upload (the sticker is already in the set).
+        # The user pressed Start, so the bot may DM them the pack link (one tap to
+        # open it). Notification failure must not fail the upload (the sticker is
+        # already in the set).
         link: str = f"https://t.me/addstickers/{pack_set_name}"
         try:
-            sticker_set = await bot.get_sticker_set(name=pack_set_name)
-            if sticker_set.stickers:
-                await bot.send_sticker(
-                    chat_id=user_id, sticker=sticker_set.stickers[-1].file_id
-                )
             await bot.send_message(
                 chat_id=user_id,
                 text=f'Added a sticker to "{pack_title}".\nOpen the pack: {link}',
