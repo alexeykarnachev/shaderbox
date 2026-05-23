@@ -425,6 +425,11 @@ class TelegramExporter(Exporter):
                 COLOR.STATE_ERROR if terminal.is_error else COLOR.STATE_OK
             )
             imgui.text_colored(terminal_color, terminal.message)
+            if terminal.url:
+                imgui.set_next_item_width(imgui.get_content_region_avail().x)
+                imgui.input_text(
+                    "##pack_link", terminal.url, flags=imgui.InputTextFlags_.read_only
+                )
 
     # -------------------------------------------------------------- worker thread
     def prepare(
@@ -729,7 +734,12 @@ class TelegramExporter(Exporter):
             )
             self._safe_refresh(job.pack_set_name)
             self._push_progress(
-                ExportProgress(message="Sticker added", fraction=1.0, is_terminal=True)
+                ExportProgress(
+                    message="Sticker added — sent to your Telegram.",
+                    fraction=1.0,
+                    is_terminal=True,
+                    url=f"https://t.me/addstickers/{job.pack_set_name}",
+                )
             )
         finally:
             self._cleanup_paths(job.artifact.path, prepared.path)
@@ -767,8 +777,29 @@ class TelegramExporter(Exporter):
                     title=pack_title,
                     stickers=[input_sticker],
                 )
+            await self._notify_user(bot, user_id, pack_set_name, pack_title)
 
         await self._with_bot(op)
+
+    async def _notify_user(
+        self, bot: tg.Bot, user_id: int, pack_set_name: str, pack_title: str
+    ) -> None:
+        # The user pressed Start, so the bot may DM them: deliver the just-added
+        # sticker + the pack link so the pack is one tap away. Notification failure
+        # must not fail the upload (the sticker is already in the set).
+        link: str = f"https://t.me/addstickers/{pack_set_name}"
+        try:
+            sticker_set = await bot.get_sticker_set(name=pack_set_name)
+            if sticker_set.stickers:
+                await bot.send_sticker(
+                    chat_id=user_id, sticker=sticker_set.stickers[-1].file_id
+                )
+            await bot.send_message(
+                chat_id=user_id,
+                text=f'Added a sticker to "{pack_title}".\nOpen the pack: {link}',
+            )
+        except tg.error.TelegramError as e:
+            logger.warning(f"Could not DM the user the new sticker: {e}")
 
     def _handle_replace(self, job: _Job) -> None:
         assert job.artifact is not None and job.target_sticker_file_id is not None
