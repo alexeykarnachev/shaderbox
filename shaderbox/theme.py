@@ -165,6 +165,7 @@ class SIZE:
     BTN_MD_W: int = 120
     BTN_SM_H: int = 19
 
+    CHIP_W: int = 52
     CHIP_ROUNDING: int = 8
 
     THUMB_SM: int = 90

@@ -40,9 +40,6 @@ def _draw_input_type_selector(ui_uniform: UIUniform) -> None:
     else:
         return
 
-    pad_x = imgui.get_style().frame_padding.x
-    chip_w = max(imgui.calc_text_size(m).x for m in modes) + 2 * pad_x
-
     imgui.push_style_var(imgui.StyleVar_.frame_rounding, SIZE.CHIP_ROUNDING)
     imgui.push_style_color(imgui.Col_.button, COLOR.CHIP_BG)
     imgui.push_style_color(imgui.Col_.button_hovered, COLOR.CHIP_BG_HOVER)
@@ -50,7 +47,7 @@ def _draw_input_type_selector(ui_uniform: UIUniform) -> None:
     imgui.push_style_color(imgui.Col_.text, COLOR.CHIP_FG)
 
     label = f"{ui_uniform.input_type}##input_type_{ui_uniform.name}"
-    if imgui.button(label, size=(chip_w, 0.0)):
+    if imgui.button(label, size=(SIZE.CHIP_W, 0.0)):
         current_idx = modes.index(ui_uniform.input_type)
         ui_uniform.input_type = modes[(current_idx + 1) % len(modes)]
 
@@ -104,7 +101,7 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
             imgui.text(f"{ui_uniform.name}[{ui_uniform.array_length}]: [{value_str}]")
 
     elif ui_uniform.input_type == "text":
-        assert isinstance(current_value, list)
+        assert isinstance(current_value, Sequence)
         text = unicode_to_str([int(c) for c in current_value])
         is_changed, text = imgui.input_text(ui_uniform.name, text)
 

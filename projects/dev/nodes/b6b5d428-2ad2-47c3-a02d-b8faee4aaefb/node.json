@@ -92,11 +92,10 @@
                 "gl_type": 35665,
                 "dimension": 3,
                 "array_length": 1,
-                "input_type": "color"
+                "input_type": "drag"
             }
         },
         "resolution_idx": 3,
-        "selected_uniform_name": "u_box_size",
         "video_to_video_smoothing_window": 5,
         "video_to_video_smoothing_sigma": 1.0
     }

@@ -1,0 +1,194 @@
+{
+    "canvas_size": [
+        1080,
+        1080
+    ],
+    "uniforms": {
+        "u_color": [
+            1.0,
+            0.20000000298023224,
+            0.10000000149011612
+        ],
+        "u_drag_float": 0.5,
+        "u_drag_vec2": [
+            0.5,
+            0.5
+        ],
+        "u_drag_vec3": [
+            0.5,
+            0.5,
+            0.5
+        ],
+        "u_drag_vec4": [
+            0.5,
+            0.5,
+            0.5,
+            1.0
+        ],
+        "u_floats": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+        ],
+        "u_label_text": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+        ],
+        "u_texture": {
+            "file_path": "media/u_texture.png",
+            "size": [
+                960,
+                1280
+            ],
+            "components": 4
+        },
+        "u_tint_color": [
+            0.10000000149011612,
+            0.4000000059604645,
+            1.0,
+            1.0
+        ],
+        "u_uints": [
+            0,
+            0,
+            0,
+            0
+        ],
+        "u_params": {
+            "base64": "GjYRP0IPPj+GveQ+KvuqPqusnz2x0Tk/ghGwPvSaPD8="
+        }
+    },
+    "ui_state": {
+        "ui_name": "Input Types Test",
+        "render_media_details": {
+            "is_video": true,
+            "file_details": {
+                "path": "",
+                "size": 0
+            },
+            "resolution_details": {
+                "width": 0,
+                "height": 0
+            },
+            "quality": 0,
+            "fps": 30,
+            "duration": 1.0
+        },
+        "ui_uniforms": {
+            "178490649872072500124933657403313984376": {
+                "name": "u_color",
+                "is_ubo": false,
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "color"
+            },
+            "329798194143631220327534545583947153962": {
+                "name": "u_drag_float",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "74673751668795025966606998948295776785": {
+                "name": "u_drag_vec2",
+                "is_ubo": false,
+                "gl_type": 35664,
+                "dimension": 2,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "168500325764191676165897358921656372014": {
+                "name": "u_drag_vec3",
+                "is_ubo": false,
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "285643410724874162666703992827740438681": {
+                "name": "u_drag_vec4",
+                "is_ubo": false,
+                "gl_type": 35666,
+                "dimension": 4,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "2845535364421050758265084824090673625": {
+                "name": "u_floats",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 4,
+                "input_type": "array"
+            },
+            "278747263331124100943918015458942321356": {
+                "name": "u_label_text",
+                "is_ubo": false,
+                "gl_type": 5125,
+                "dimension": 1,
+                "array_length": 16,
+                "input_type": "text"
+            },
+            "117940574765557142845063809876492298421": {
+                "name": "u_texture",
+                "is_ubo": false,
+                "gl_type": 35678,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "texture"
+            },
+            "37154164850612245702881750831795076973": {
+                "name": "u_time",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "auto"
+            },
+            "337489167977627087066283458725077541107": {
+                "name": "u_tint_color",
+                "is_ubo": false,
+                "gl_type": 35666,
+                "dimension": 4,
+                "array_length": 1,
+                "input_type": "color"
+            },
+            "300214187712230848761502131642403876008": {
+                "name": "u_uints",
+                "is_ubo": false,
+                "gl_type": 5125,
+                "dimension": 1,
+                "array_length": 4,
+                "input_type": "array"
+            },
+            "313568833842518267513772332421459818344": {
+                "name": "u_params",
+                "is_ubo": true,
+                "gl_type": -1,
+                "dimension": -1,
+                "array_length": -1,
+                "input_type": "buffer"
+            }
+        },
+        "resolution_idx": 0,
+        "video_to_video_smoothing_window": 5,
+        "video_to_video_smoothing_sigma": 1.0
+    }
+}
