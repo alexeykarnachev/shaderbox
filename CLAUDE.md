@@ -30,10 +30,10 @@ step where they're needed. `conventions.md` is auto-loaded below.
 
 - **Commits.** Commit/push when the user asks for it — including standing instructions ("commit and
   push automatically this session"); a once-given instruction stands until revoked. **Commit messages
-  must be short, concise, single-line, ASCII** — no footers, no co-authored-by. **Work on the current
-  branch** — don't create per-feature branches (a feature is a sequence of commits, not a branch);
-  branch only if the user explicitly asks. (This overrides the generic "branch before committing on
-  the default branch" agent default.)
+  must be short, concise, single-line, ASCII** — no footers, no co-authored-by.
+- **Commit on `dev`, never directly on `master`** — no per-feature branches; branch off `dev` only
+  if the user explicitly asks. (Overrides the generic "branch before committing on the default
+  branch" agent default.) The why + the dev→master ship promotion live in `dev_flow.md ## Branch model`.
 - **`uv`, not `python`/`pip`:** `uv sync`, `uv add <pkg>`, `uv add --group dev <pkg>` (this repo uses
   `[dependency-groups] dev`), `uv run …`.
 - **Run `make check` before declaring anything done** — ruff fix+format → pyright (delegates to

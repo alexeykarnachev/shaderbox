@@ -10,6 +10,15 @@ what's next) + `ai_docs/todo.md` (landmines/triggers) → this file.
 
 ---
 
+## Branch model
+
+Develop on `dev`, ship from `master`. All freestyle work accumulates as commits on `dev` (no
+per-feature branches); `master` is the line actually released to itch and only advances at ship time.
+So `dev` can sit many commits ahead with no version bump — the bump happens once, when `dev` is
+ship-ready (`## Build / ship to itch.io`).
+
+---
+
 ## Three kinds of work — pick the shape
 
 | Trigger | Shape |
@@ -208,8 +217,10 @@ texture binding errors. Doesn't catch visual bugs. Run after any refactor in `ui
 ### Build / ship to itch.io
 **The runnable command sequence is `BUILDING.md` (repo root, not bundled)** — release → build →
 upload → page-sync, plus the Windows-verify checklist. This section holds only the *model* a fresh
-agent needs. Maintainer-triggered, not the agent's. The flow: `make release` bumps + tags (semver
-policy in `conventions.md ## Design decisions`; does NOT build/push) → `build.sh` is **gated** (runs
+agent needs. Maintainer-triggered, not the agent's. Start by promoting `dev` → `master`: eyeball
+`git diff master..dev` for everything since the last ship, pick the semver bump from it (rule:
+`conventions.md ## Design decisions`), merge to `master`, run the release there. Then: `make release`
+bumps + tags (does NOT build/push) → `build.sh` is **gated** (runs
 `make check` + `make smoke`, refuses a dirty tree; `--allow-dirty` overrides the dirty-tree guard,
 not the test gate) → `upload-itch.sh` pushes the channels → sync the store page (`### Sync the
 itch.io page` below, done LAST so the page describes what's downloadable). The bundle is a **source

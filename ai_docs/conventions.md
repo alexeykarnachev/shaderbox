@@ -78,8 +78,9 @@ belong in `## Known quirks`. If a bullet doesn't constrain code you haven't writ
 - **Release versioning is manual semver, bumped only via `make release VERSION=x.y.z`.** Bump
   rule: **major** = breaks users' existing projects / saved state (e.g. a non-round-trip app_state
   migration); **minor** = a backward-compatible feature; **patch** = fixes / other non-breaking
-  changes. The version lives in `pyproject.toml`; not auto-derived from git. Revisit if manual bumps
-  are repeatedly forgotten before a release (then consider `git describe`-derived versions).
+  changes. The version lives in `pyproject.toml`; not auto-derived from git. Bumped once at ship
+  time, not per-commit (ship flow: `dev_flow.md`). Revisit if manual bumps are repeatedly forgotten
+  before a release (then consider `git describe`-derived versions).
 
 *(Each bullet is a generic constraint on future code + a revisit trigger — NOT a feature changelog.
 The `/sanitize` noise audit deletes bullets that narrate a one-off implementation choice; per-feature
