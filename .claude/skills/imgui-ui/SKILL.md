@@ -183,20 +183,19 @@ Rules to avoid it:
 The only project-coupled facts, consolidated here:
 
 - **Modules:** tokens in `shaderbox/theme.py` (`COLOR` / `SIZE` / `SPACE` bags + `apply_theme` +
-  `fade`); primitives in `shaderbox/ui_primitives.py` (`primary_button` / `button` / `ghost_button` /
-  `danger_button`, `caption_text`, `small_caption`, `close_cross_button`, `duration_slider`,
-  `draw_copyable_text`);
-  non-UI helpers in `shaderbox/util.py`. Theme is gruvbox-dark, accent-swappable at runtime.
+  `fade`); primitives in `shaderbox/ui_primitives.py` (button tiers + shared draw helpers — read the
+  file for the set); non-UI helpers in `shaderbox/util.py`. Theme is gruvbox-dark, accent-swappable at runtime.
 - **Three-layer UI:** `app.py` (state/lifecycle, no drawing) / `ui.py` (frame-loop orchestrator) /
   `widgets`+`popups`+`tabs` (pure `draw(app)` free fns). Forced by the no-`TYPE_CHECKING` rule (a draw
   fn annotating `app: App` while `App` imports it would cycle). Full rules: `ai_docs/conventions.md`.
 - **Exporters own their panel; talk via `RenderControl`.** A sharing exporter (telegram) draws its own
   operations panel and receives a `RenderControl` dataclass (callbacks + state) from the share tab —
   it must not import `App`. Worker-thread vs render-thread affinity is enforced in `exporters/base.py`.
-- **imgui-bundle build caveats** (also in `conventions.md ## Known quirks`): **monochrome emoji only**
-  (color emoji rasterizes blank — `NotoEmoji-Regular.ttf`, `app.font_emoji`); the glfw backend does
-  **not** sync the OS mouse cursor (`set_mouse_cursor` is a no-op — drive `glfw.set_cursor` yourself);
-  `image(...)` lost `tint_col`/`border_col`; the code editor auto-grabs focus on first render.
+- **imgui-bundle build caveats** — this build bites in several places: monochrome emoji only; the
+  glfw backend doesn't sync the OS mouse cursor; `image(...)` lost `tint_col`/`border_col`; the code
+  editor auto-grabs focus on first render; `push_font` wants the rasterized size (`font.legacy_size`).
+  Each has a workaround — the canonical home (with the version string, font filenames, and the exact
+  fix) is `conventions.md ## Known quirks`; check there before working around one yourself.
 - **Can't screenshot the app on the dev box** (no WM on the display) — §0 applies hard here; hand
   visual checks to the maintainer. Verify everything else headlessly (`make smoke`, or a standalone
   GL+imgui driver). `make check` (ruff + pyright, 0 errors) gates every change; `×` and other

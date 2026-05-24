@@ -56,12 +56,9 @@ If the work spans multiple logical units, prefer separate commits; one is fine f
 
 ### 4. Auto-pick the semver bump
 Read `git diff master..dev` (everything since the last ship) and pick the bump yourself — the
-developer does not supply a VERSION. Decision rule (canonical statement: `conventions.md ## Design
-decisions` "Release versioning"):
-- **major** — breaks users' existing projects / saved state (e.g. a non-round-trip app_state migration).
-- **minor** — adds a backward-compatible feature.
-- **patch** — fixes / refactors / docs / other non-breaking changes.
-Pick the **highest** tier any unshipped change triggers. State the chosen version + the one-line reason
+developer does not supply a VERSION. Apply the major/minor/patch decision rule from its canonical
+home (`conventions.md ## Design decisions` "Release versioning") and pick the **highest** tier any
+unshipped change triggers. State the chosen version + the one-line reason
 in your status before running the release. Current version is in `pyproject.toml`; last tag is
 `git tag --sort=-v:refname | head -1`.
 

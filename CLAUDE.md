@@ -18,7 +18,8 @@ For ANY work, follow this chain in order. Don't read sideways, don't pre-read au
 4. **`ai_docs/dev_flow.md`** — the single source of truth for HOW work happens.
 
 Quick routing (full version + the feature flow → `dev_flow.md`):
-- **small / mechanical change** → just do it + `make check`
+- **small / mechanical change** → just do it + `make check` (+ `make smoke` if it touched
+  `ui.py` / `app.py` / `widgets/` / `popups/` / `tabs/` / `hotkeys.py` — not in `make check`)
 - **feature** (new module, real behavior change, refactor with blast radius) → the feature flow
 - **research / brainstorm** → deliver a chat report (+ `ai_docs/<topic>.md` if worth keeping); don't
   half-start an implementation
@@ -34,6 +35,9 @@ step where they're needed. `conventions.md` is auto-loaded below.
 - **Commit on `dev`, never directly on `master`** — no per-feature branches; branch off `dev` only
   if the user explicitly asks. (Overrides the generic "branch before committing on the default
   branch" agent default.) The why + the dev→master ship promotion live in `dev_flow.md ## Branch model`.
+- **Never leave `projects/dev/` unstaged** — the dev sandbox's node/`app_state.json` drift gets
+  `git add projects/dev && commit`ed in the same wave (authorized, no review), never `checkout`-ed
+  away or excluded; it's stripped from the shipped bundle by `build.sh`. (Full rule: `dev_flow.md`.)
 - **`uv`, not `python`/`pip`:** `uv sync`, `uv add <pkg>`, `uv add --group dev <pkg>` (this repo uses
   `[dependency-groups] dev`), `uv run …`.
 - **Run `make check` before declaring anything done** — ruff fix+format → pyright (delegates to
@@ -57,7 +61,7 @@ step where they're needed. `conventions.md` is auto-loaded below.
 
 - **Sessions are disposable; knowledge is durable.** If a decision lives only in this chat it's lost
   on `/clear` — file it (roadmap row/banner / todo deferral / `conventions.md ## Design decisions` /
-  commit message). The cold-context resumability check (`/sanitize` step 6) gates suggesting `/clear`:
+  commit message). The cold-context resumability check (`/sanitize`'s cold-context step) gates suggesting `/clear`:
   simulate a fresh agent asking "what's next?", walk the chain, confirm it lands on the same
   next-action with the same blockers in a few reads — if not, the missing context IS the bug; write
   it to a file, not the chat.

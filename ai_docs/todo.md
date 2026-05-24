@@ -97,14 +97,8 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   something, or a method's blast radius is unclear because too many siblings share state), OR
   when a 4th tab module needs cross-cutting `App` operations not currently on its public API.
   NOT a default next-step — a 2026-05-15 parallel-agent assessment of `project.py` extraction
-  concluded the current 373-line `app.py` is coherent state on a single entity and the
-  extraction would be premature abstraction (same shape as feature 002's reversed AppContext).
-- Progress: 1778 (single ui.py) → 1508 (feature 001, `tabs/share.py`) → after feature 002:
-  `app.py` 373 + `ui.py` 294 + `tabs/{node,render,share,share_state}.py` 398 +
-  `widgets/*.py` 547 + `popups/*.py` 166 → after `hotkeys.py` extraction: `ui.py` 255 +
-  `hotkeys.py` 45 → after feature 003 (ModelBox removal): `app.py` 354 +
-  `widgets/*.py` 497 + `popups/*.py` 134 → after feature 004 (imgui-bundle migration):
-  `app.py` 351 + `ui.py` 251 + `widgets/*.py` 503 + `popups/*.py` 135.
+  concluded the current `app.py` is coherent state on a single entity and the extraction would be
+  premature abstraction (same shape as feature 002's reversed AppContext).
 - Candidate shapes (if the trigger ever fires): `ProjectPaths` frozen dataclass (extract the 9
   `@property` paths into a value type, `app.paths.nodes_dir` etc.) OR `shaderbox/project.py`
   free functions taking `app: App` (`save` / `open_project` / `delete_current_node` /
@@ -176,15 +170,15 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   smoke test in `scripts/smoke.py` is the right tool for actual regression testing). Probably
   worth a small feature spec before building (touches imgui boundary, adds UI surface).
 
-## [DEFERRAL] Telegram import-existing-pack is a bare stub
+## [DEFERRAL] Telegram has no import-existing-pack path
 - **Trigger:** first user report of wanting to target a sticker pack ShaderBox did NOT create (a
-  pack made by hand in @Stickers or another tool), OR the first time the bare "Add existing pack"
-  input causes confusion (no validation, accepts any string).
-- Feature 009 ships only a minimal import path: `tabs`-side "Add existing pack" expander →
-  `TelegramExporter._import_pack(set_name)` appends `PackEntry(title=set_name, set_name=set_name)`
-  with no validation, no live `get_sticker_set` check, no title resolution. Flesh out when a real
-  use surfaces: validate the `_by_<botusername>` suffix against the linked bot, fetch the real
-  title, surface a "pack not found / not yours" error.
+  pack made by hand in @Stickers or another tool).
+- The Telegram exporter only operates on packs it created/selected itself
+  (`_create_pack` / `_select_pack` / `_delete_pack` / `set_default_pack` in
+  `exporters/telegram.py`); there is no UI or method to add a pre-existing external pack. When a real
+  use surfaces, build it as a small feature: validate the `_by_<botusername>` suffix against the
+  linked bot, fetch the real title via `get_sticker_set`, surface a "pack not found / not yours"
+  error, then append the `PackEntry`.
 
 ## [DEFERRAL] color emoji rendering in the picker (monochrome-only ceiling)
 - **Trigger:** a future `imgui-bundle` bump — re-run a color-emoji spike (load `NotoColorEmoji.ttf`

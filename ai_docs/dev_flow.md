@@ -146,8 +146,7 @@ roadmap-banner touch (if even that) + the cold-context glance is enough; for a f
 - **`core.py`** — `Canvas`, `Node`: GL program lifecycle, uniform introspection + binding,
   render-to-texture, image/video export. Needs a live GL context.
 - **`app.py`** — `App` class: state holder + lifecycle (project, GL context, node management,
-  popup-state booleans). ~370 lines. No UI drawing. Imported by `ui.py`, `widgets/`, `popups/`,
-  `tabs/`.
+  popup-state booleans). No UI drawing. Imported by `ui.py`, `widgets/`, `popups/`, `tabs/`.
 - **`ui.py`** — thin entrypoint + orchestrator. Contains `run(app)`, `update_and_draw(app)`
   (the imgui frame loop: render gates + the main-window left/right split — LEFT = code editor
   via `code_tab.draw`, RIGHT = `_draw_app_panel`), `_draw_splitter(app, ...)` (draggable
@@ -187,7 +186,7 @@ roadmap-banner touch (if even that) + the cold-context glance is enough; for a f
   `app.apply_editor_settings()` on popup close + the **Integrations** section drawing each
   exporter's credential block), `emoji_picker.py` (monochrome glyph grid in Unicode/Telegram order).
 - **`fonts.py`** — freetype → GL atlas. **`ui_primitives.py`** (imgui+theme draw helpers: button
-  tiers, `caption_text`, `close_cross_button`, `duration_slider`, `draw_copyable_text`) / **`util.py`**
+  tiers + shared draw primitives — read the file for the set) / **`util.py`**
   (non-UI helpers: `adjust_size`, `select_next_value`, `get_uniform_hash`, `pfd_block`, …) /
   **`constants.py`** / **`notifications.py`** — helpers.
 - **`scripts/smoke.py`** — headless smoke test (see `## Recipes > make smoke`). Not part of
@@ -360,7 +359,7 @@ Why the docs are shaped this way. Short list, kept honest:
   mattered. Seconds to re-read, hours to undo a wrong decision built on a misremembered rule.
 - **Sessions are disposable; knowledge is durable.** If a decision only lives in this conversation,
   it's lost on `/clear` — push it into a file (roadmap row/banner, todo deferral, `conventions.md ##
-  Design decisions`, a commit message). The cold-context check (`/sanitize` step 6) is the gate.
+  Design decisions`, a commit message). The cold-context check (`/sanitize`'s cold-context step) is the gate.
 - **Docs are living.** User drops a fact that makes a doc stale → update the right file in the same
   wave, don't keep it in chat. Small → do it now and mention it; substantial → confirm first.
 - **Don't trust, verify.** Before "done": run `make check`, check `git status`, read the diff,
