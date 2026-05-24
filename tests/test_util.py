@@ -35,7 +35,11 @@ def test_unicode_empty_round_trip() -> None:
 
 def test_resolution_str_format_parses_back() -> None:
     # tabs/node.py reconstructs (w, h) via label.split(" ")[0].split("x").
-    for name, w, h in [(None, 960, 1280), ("u_texture", 1920, 1080), (None, 1080, 1080)]:
+    for name, w, h in [
+        (None, 960, 1280),
+        ("u_texture", 1920, 1080),
+        (None, 1080, 1080),
+    ]:
         label = get_resolution_str(name, w, h)
         pw, ph = map(int, label.split(" ")[0].split("x"))
         assert (pw, ph) == (w, h)
