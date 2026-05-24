@@ -17,7 +17,7 @@ from shaderbox.tabs import node as node_tab
 from shaderbox.tabs import render as render_tab
 from shaderbox.tabs import share as share_tab
 from shaderbox.theme import COLOR, SIZE, SPACE
-from shaderbox.ui_utils import adjust_size
+from shaderbox.util import adjust_size
 from shaderbox.widgets.node_grid import draw_node_preview_grid
 
 _FONT_14_SIZE = 14.0

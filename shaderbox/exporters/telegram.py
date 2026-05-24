@@ -19,6 +19,7 @@ from shaderbox.exporters.base import (
     ExporterStatus,
     ExporterValueError,
     ExportProgress,
+    OutletUiDeps,
     RenderControl,
     RenderedArtifact,
 )
@@ -26,9 +27,9 @@ from shaderbox.integrations import IntegrationsStore, PackEntry, TelegramIntegra
 from shaderbox.media import Image, Video
 from shaderbox.render_preset import FitPolicy, RenderPreset, ResolutionPolicy
 from shaderbox.telegram_util import derive_set_name
-from shaderbox.theme import COLOR, SIZE, SPACE
+from shaderbox.theme import COLOR, SIZE, SPACE, fade
 from shaderbox.ui_models import UINode
-from shaderbox.ui_utils import (
+from shaderbox.ui_primitives import (
     button,
     close_cross_button,
     danger_button,
@@ -43,11 +44,16 @@ _DRAIN_TIMEOUT_SEC = 5.0
 _FFMPEG_TIMEOUT_SEC = 60
 _PREVIEW_THUMB_HEIGHT = 110
 _GRID_COLUMNS = 4
+_STICKER_PREVIEW_W = 160
+_STICKER_PREVIEW_H = 213
+_CAROUSEL_ARROW_W = 18
+_PACK_COMBO_W = 280
 _TG_VIDEO_MAX_BYTES = 256 * 1024
 _TG_VIDEO_MAX_DIM = 512
 _TG_VIDEO_MAX_DURATION_SEC = 3.0
 _TG_VIDEO_MAX_FPS = 30
 _DEFAULT_PACK_TITLE = "ShaderBox"
+_DEFAULT_NEW_STICKER_EMOJI = "🎨"
 # Telegram errors that mean "the linked user can't be acted on" — re-link guidance.
 _USER_PROBLEM_MARKERS = (
     "USER_IS_BOT",
@@ -68,13 +74,31 @@ def _map_tg_error(e: tg.error.TelegramError) -> str:
 
 
 @dataclass
+class EmojiControl:
+    """Telegram-owned emoji affordances, delivered via `RenderControl.extras`.
+
+    The share tab builds these (it owns `App`'s emoji font + picker); the
+    generic render contract never names emoji.
+    """
+
+    emoji: str
+    set_emoji: Callable[[str], None]
+    open_emoji_picker: Callable[[Callable[[str], None]], None]
+    # Draws `char` as a clickable emoji-font glyph button of the given side; -> clicked.
+    emoji_button: Callable[[str, float], bool]
+
+
+_EMOJI_EXTRA_KEY = "telegram_emoji"
+
+
+@dataclass
 class _Job:
     kind: str
     artifact: RenderedArtifact | None = None
     target_sticker_file_id: str | None = None
     pack_set_name: str = ""
     pack_title: str = ""
-    emoji: str = "🎨"
+    emoji: str = _DEFAULT_NEW_STICKER_EMOJI
 
 
 @dataclass
@@ -228,6 +252,40 @@ class TelegramExporter(Exporter):
             fit=FitPolicy.RENDER_AT_TARGET,
         )
 
+    def build_render_extras(self, deps: OutletUiDeps) -> dict[str, Any]:
+        scratch: dict[str, Any] = deps.outlet_extra_state
+        scratch.setdefault("pending_emoji", _DEFAULT_NEW_STICKER_EMOJI)
+
+        def set_emoji(char: str) -> None:
+            scratch["pending_emoji"] = char
+
+        def emoji_button(char: str, side: float) -> bool:
+            clicked: bool = imgui.button("##emoji_btn", size=(side, side))
+            if imgui.is_item_hovered():
+                imgui.set_tooltip("Click to change emoji")
+            rmin = imgui.get_item_rect_min()
+            rmax = imgui.get_item_rect_max()
+            font = deps.glyph_font
+            size_px: float = font.legacy_size
+            imgui.push_font(font, size_px)
+            glyph = imgui.calc_text_size(char)
+            imgui.pop_font()
+            pos = (
+                (rmin.x + rmax.x) / 2 - glyph.x / 2,
+                (rmin.y + rmax.y) / 2 - glyph.y / 2,
+            )
+            col = imgui.color_convert_float4_to_u32(COLOR.FG_PRIMARY)
+            imgui.get_window_draw_list().add_text(font, size_px, pos, col, char)
+            return clicked
+
+        control = EmojiControl(
+            emoji=scratch["pending_emoji"],
+            set_emoji=set_emoji,
+            open_emoji_picker=deps.open_glyph_picker,
+            emoji_button=emoji_button,
+        )
+        return {_EMOJI_EXTRA_KEY: control}
+
     # ---------------------------------------------------------------- Settings UI
     def draw_config_ui(self) -> None:
         full_width: float = imgui.get_content_region_avail().x
@@ -311,7 +369,7 @@ class TelegramExporter(Exporter):
     def _draw_pack_row(self) -> None:
         packs: list[PackEntry] = self._tg.packs
         active: str = self._render_state.active_pack_set_name
-        combo_w: float = float(SIZE.PACK_COMBO_W)
+        combo_w: float = float(_PACK_COMBO_W)
         label_w: float = float(SIZE.LABEL_W)
 
         imgui.align_text_to_frame_padding()
@@ -375,8 +433,8 @@ class TelegramExporter(Exporter):
             )
 
     def _draw_delete_confirm(self, prompt: str, on_yes: "Callable[[], None]") -> None:
-        imgui.push_style_color(imgui.Col_.child_bg, COLOR.STATE_ERROR[:3] + (0.08,))
-        imgui.push_style_color(imgui.Col_.border, COLOR.STATE_ERROR[:3] + (0.4,))
+        imgui.push_style_color(imgui.Col_.child_bg, fade(COLOR.STATE_ERROR, 0.08))
+        imgui.push_style_color(imgui.Col_.border, fade(COLOR.STATE_ERROR, 0.4))
         with imgui_ctx.begin_child(
             "##del_confirm",
             size=imgui.ImVec2(0, 0),
@@ -434,11 +492,11 @@ class TelegramExporter(Exporter):
         if artifact is not None and not artifact.path.exists():
             artifact = None
 
-        box_w: float = float(SIZE.STICKER_PREVIEW_W)
-        box_h: float = float(SIZE.STICKER_PREVIEW_H)
+        box_w: float = float(_STICKER_PREVIEW_W)
+        box_h: float = float(_STICKER_PREVIEW_H)
         top = imgui.get_cursor_screen_pos()
 
-        self._draw_preview_box(rc, artifact, box_w, box_h)
+        self._draw_preview_box(rc, box_w, box_h)
         imgui.same_line()
         controls_x: float = imgui.get_cursor_screen_pos().x
         with imgui_ctx.begin_group():
@@ -451,14 +509,20 @@ class TelegramExporter(Exporter):
             imgui.set_cursor_screen_pos((controls_x, top.y + box_h - cell))
             self._draw_sticker_grid_full(rc)
 
+    def _emoji(self, rc: RenderControl) -> EmojiControl:
+        extras = rc.extras or {}
+        emoji = extras.get(_EMOJI_EXTRA_KEY)
+        if not isinstance(emoji, EmojiControl):
+            raise ExporterError("Telegram outlet missing its EmojiControl extra")
+        return emoji
+
     def _draw_preview_box(
         self,
         rc: RenderControl,
-        artifact: RenderedArtifact | None,
         box_w: float,
         box_h: float,
     ) -> None:
-        _ = artifact
+        emoji: EmojiControl = self._emoji(rc)
         imgui.push_style_color(imgui.Col_.child_bg, COLOR.BG_SURFACE)
         with imgui_ctx.begin_child(
             "sticker_preview",
@@ -473,8 +537,8 @@ class TelegramExporter(Exporter):
 
             # Emoji overlay, top-left (same affordance as the carousel cells).
             imgui.set_cursor_screen_pos((origin.x, origin.y))
-            if rc.emoji_button(rc.emoji, float(SIZE.ROW_HEIGHT)):
-                rc.open_emoji_picker(rc.set_emoji)
+            if emoji.emoji_button(emoji.emoji, float(SIZE.ROW_HEIGHT)):
+                emoji.open_emoji_picker(emoji.set_emoji)
         imgui.pop_style_color(1)
 
     def _draw_sticker_controls(
@@ -556,7 +620,7 @@ class TelegramExporter(Exporter):
                     artifact=artifact,
                     pack_set_name=active,
                     pack_title=title,
-                    emoji=rc.emoji,
+                    emoji=self._emoji(rc).emoji,
                 )
             )
         if not enabled:
@@ -572,7 +636,7 @@ class TelegramExporter(Exporter):
         slots = self._render_state.sticker_slots
         cols: int = _GRID_COLUMNS
         cell: float = float(_PREVIEW_THUMB_HEIGHT)
-        arrow_w: float = float(SIZE.CAROUSEL_ARROW_W)
+        arrow_w: float = float(_CAROUSEL_ARROW_W)
 
         max_offset: int = max(0, len(slots) - cols)
         offset: int = max(0, min(self._render_state.carousel_offset, max_offset))
@@ -659,15 +723,16 @@ class TelegramExporter(Exporter):
             self._draw_cell_delete_confirm(slot, origin, avail)
             return
 
+        emoji: EmojiControl = self._emoji(rc)
         x_side: float = float(SIZE.ROW_HEIGHT)
 
         # Emoji (top-left): clicking opens the picker → set_sticker_emoji_list job.
         cur_emoji: str = slot.raw_sticker.emoji or "" if slot.raw_sticker else ""
         imgui.set_cursor_screen_pos((origin.x, origin.y))
-        if rc.emoji_button(cur_emoji, x_side):
+        if emoji.emoji_button(cur_emoji, x_side):
             file_id: str = slot.file_id
             pack: str = self._render_state.active_pack_set_name
-            rc.open_emoji_picker(
+            emoji.open_emoji_picker(
                 lambda e: self._enqueue(
                     _Job(
                         kind="set_emoji",
@@ -693,7 +758,7 @@ class TelegramExporter(Exporter):
         dl.add_rect_filled(
             (origin.x, origin.y),
             (origin.x + avail.x, origin.y + avail.y),
-            imgui.color_convert_float4_to_u32(COLOR.STATE_ERROR[:3] + (0.45,)),
+            imgui.color_convert_float4_to_u32(fade(COLOR.STATE_ERROR, 0.45)),
         )
         prompt: str = "Delete?"
         pw = imgui.calc_text_size(prompt)
@@ -834,9 +899,9 @@ class TelegramExporter(Exporter):
             )
             self._worker.start()
 
-    # Only upload ops gate the UI's "Add as new sticker" button; refresh/link are
-    # background fetches whose results aren't terminal ExportProgress events.
-    _UPLOAD_KINDS = frozenset({"add", "replace", "delete", "delete_pack", "set_emoji"})
+    # Mutating ops drive the in-flight gate; refresh/link are background fetches
+    # whose results aren't terminal ExportProgress events.
+    _UPLOAD_KINDS = frozenset({"add", "delete", "delete_pack", "set_emoji"})
 
     def _enqueue(self, job: _Job) -> None:
         self._ensure_worker()
@@ -906,10 +971,6 @@ class TelegramExporter(Exporter):
                 if job.artifact is None:
                     raise ExporterError("Add job missing artifact")
                 self._handle_add(job)
-            elif job.kind == "replace":
-                if job.artifact is None or job.target_sticker_file_id is None:
-                    raise ExporterError("Replace job missing artifact or target")
-                self._handle_replace(job)
             elif job.kind == "delete":
                 if job.target_sticker_file_id is None:
                     raise ExporterError("Delete job missing target")
@@ -1088,7 +1149,6 @@ class TelegramExporter(Exporter):
         user_id: int,
         pack_set_name: str,
         pack_title: str,
-        verb: str = "Added a sticker to",
     ) -> None:
         # The user pressed Start, so the bot may DM them the pack link (one tap to
         # open it). Notification failure must not fail the upload (the sticker is
@@ -1097,66 +1157,10 @@ class TelegramExporter(Exporter):
         try:
             await bot.send_message(
                 chat_id=user_id,
-                text=f'{verb} "{pack_title}".\nOpen the pack: {link}',
+                text=f'Added a sticker to "{pack_title}".\nOpen the pack: {link}',
             )
         except tg.error.TelegramError as e:
             logger.warning(f"Could not DM the user: {e}")
-
-    def _handle_replace(self, job: _Job) -> None:
-        assert job.artifact is not None and job.target_sticker_file_id is not None
-        self._push_progress(
-            ExportProgress(message="Preparing (ffmpeg)...", fraction=0.1)
-        )
-        prepared: RenderedArtifact = self.prepare(job.artifact, {})
-        try:
-            self._push_progress(ExportProgress(message="Replacing...", fraction=0.5))
-            self._run_async(
-                self._do_replace(
-                    prepared, job.pack_set_name, job.target_sticker_file_id, job.emoji
-                )
-            )
-            self._safe_refresh(job.pack_set_name)
-            self._push_progress(
-                ExportProgress(
-                    message="Sticker replaced — sent to your Telegram.",
-                    fraction=1.0,
-                    is_terminal=True,
-                    url=f"https://t.me/addstickers/{job.pack_set_name}",
-                )
-            )
-        finally:
-            self._cleanup_paths(prepared.path)
-
-    async def _do_replace(
-        self,
-        artifact: RenderedArtifact,
-        pack_set_name: str,
-        target_file_id: str,
-        emoji: str,
-    ) -> None:
-        async def op(bot: tg.Bot) -> None:
-            input_sticker = tg.InputSticker(
-                sticker=artifact.path.read_bytes(),
-                emoji_list=[emoji],
-                format=tg.constants.StickerFormat.VIDEO,
-            )
-            await bot.replace_sticker_in_set(
-                user_id=int(self._tg.user_id),
-                name=pack_set_name,
-                old_sticker=target_file_id,
-                sticker=input_sticker,
-            )
-            pack = self._tg.find_pack(pack_set_name)
-            title = pack.title if pack is not None else pack_set_name
-            await self._notify_user(
-                bot,
-                int(self._tg.user_id),
-                pack_set_name,
-                title,
-                verb="Replaced a sticker in",
-            )
-
-        await self._with_bot(op)
 
     def _handle_delete(self, target_file_id: str, pack_set_name: str) -> None:
         self._push_progress(ExportProgress(message="Deleting...", fraction=0.5))

@@ -1,4 +1,4 @@
-.PHONY: run run-bundle check smoke release
+.PHONY: run run-bundle check test smoke release
 .ONESHELL:
 
 # Run the app from source (the dev / personal-use path).
@@ -23,6 +23,12 @@ run-bundle:
 # block on failure.
 check:
 	uv run pre-commit run --all-files
+
+# Unit tests. Pure logic (resolve_dims) + GL-backed render glue (render_for,
+# render_media) against a headless standalone moderngl context; the GL module
+# skips if no GL driver is available rather than failing.
+test:
+	uv run pytest tests/ -q
 
 # Headless smoke test — runs ~200 frames of update_and_draw against projects/dev/
 # in an invisible glfw window. Catches import errors, callback dispatch failures,

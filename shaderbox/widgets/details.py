@@ -10,7 +10,7 @@ from shaderbox.app import App
 from shaderbox.constants import IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
 from shaderbox.media import FileDetails, MediaDetails, ResolutionDetails
 from shaderbox.theme import COLOR
-from shaderbox.ui_utils import adjust_size, pfd_block
+from shaderbox.util import adjust_size, pfd_block
 
 
 def draw_file_details(

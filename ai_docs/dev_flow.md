@@ -186,7 +186,10 @@ roadmap-banner touch (if even that) + the cold-context glance is enough; for a f
   `settings.py` (global target FPS + the inline editor's visual options, applied via
   `app.apply_editor_settings()` on popup close + the **Integrations** section drawing each
   exporter's credential block), `emoji_picker.py` (monochrome glyph grid in Unicode/Telegram order).
-- **`fonts.py`** — freetype → GL atlas. **`ui_utils.py`** / **`constants.py`** / **`notifications.py`** — helpers.
+- **`fonts.py`** — freetype → GL atlas. **`ui_primitives.py`** (imgui+theme draw helpers: button
+  tiers, `caption_text`, `close_cross_button`, `duration_slider`, `draw_copyable_text`) / **`util.py`**
+  (non-UI helpers: `adjust_size`, `select_next_value`, `get_uniform_hash`, `pfd_block`, …) /
+  **`constants.py`** / **`notifications.py`** — helpers.
 - **`scripts/smoke.py`** — headless smoke test (see `## Recipes > make smoke`). Not part of
   `shaderbox/` proper; one-off script that imports `App` + `update_and_draw` and runs frames in
   an invisible glfw window.

@@ -31,7 +31,7 @@ from shaderbox.ui_models import (
     load_node_from_dir,
     load_nodes_from_dir,
 )
-from shaderbox.ui_utils import pfd_block, select_next_value
+from shaderbox.util import pfd_block, select_next_value
 
 # The procedural starter shader seeded into an empty project on first run (no
 # external media to load, unlike the Image/Video templates).
@@ -248,6 +248,7 @@ class App:
         if self.share_tab_state is None:
             self.share_tab_state = share_state.make_state(scratch_dir=scratch_dir)
         else:
+            self.share_tab_state.release()
             self.share_tab_state.scratch_dir = scratch_dir
 
         self.exporter_registry.set_integrations(self.integrations_store)
@@ -260,7 +261,7 @@ class App:
             self.exporter_registry.set_active(self.app_state.active_exporter_id)
 
         telegram = self.exporter_registry.get("telegram")
-        if telegram is not None:
+        if isinstance(telegram, TelegramExporter):
             telegram.set_default_pack(self.app_state.telegram_default_pack)
 
     def get_font(self, size: int) -> Any:
@@ -392,7 +393,7 @@ class App:
         self.app_state.active_exporter_id = self.exporter_registry.active_id
 
         telegram = self.exporter_registry.get("telegram")
-        if telegram is not None:
+        if isinstance(telegram, TelegramExporter):
             self.app_state.telegram_default_pack = telegram.current_default_pack()
 
         self.integrations_store.save()
@@ -400,6 +401,9 @@ class App:
 
     def release(self) -> None:
         self.exporter_registry.release()
+
+        if self.share_tab_state is not None:
+            self.share_tab_state.release()
 
         for node in self.ui_nodes.values():
             node.node.release()

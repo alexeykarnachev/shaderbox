@@ -158,14 +158,15 @@ Rules to avoid it:
 ## 6. Architecture / encapsulation (so the system stays reusable)
 
 - **A UI sub-library lives in its own modules:** a `theme` (colour/size/spacing token bags — no
-  hardcoded hex or magic px anywhere else) and a `ui_utils` (the button tiers + shared primitives:
-  copyable text, a labelled slider, an overlay close-✕, a caption text). Everything visual flows
+  hardcoded hex or magic px anywhere else) and a `ui_primitives` (the button tiers + shared draw
+  primitives: copyable text, a labelled slider, an overlay close-✕, a caption text). Non-UI helpers
+  live separately (a `util` module), never mixed in with the draw primitives. Everything visual flows
   through these. A token used by exactly one panel still belongs in the token bag, not inline.
 - **Don't repeat a widget.** A draw block appearing twice (a copyable path, a styled button) is
-  extracted to a `ui_utils` free function and called from both. Two copies drift.
+  extracted to a `ui_primitives` free function and called from both. Two copies drift.
 - **No `@staticmethod` for stateless helpers** — make them module-level free functions. A method that
   doesn't use `self` isn't a method.
-- **Layering, strict:** generic UI primitives (theme/ui_utils) know nothing about any feature; a
+- **Layering, strict:** generic UI primitives (theme/ui_primitives) know nothing about any feature; a
   feature-area module (e.g. a "sharing" abstraction) knows nothing about a specific implementation
   (e.g. "telegram"); the high-level app orchestrator knows nothing about either's internals. A
   feature panel should own its own draw code and receive what it needs via a small value/callback
@@ -181,10 +182,10 @@ Rules to avoid it:
 
 The only project-coupled facts, consolidated here:
 
-- **Modules:** tokens in `shaderbox/theme.py` (`COLOR` / `SIZE` / `SPACE` bags + `apply_theme`);
-  primitives in `shaderbox/ui_utils.py` (`primary_button` / `button` / `ghost_button` /
-  `danger_button`, `caption_text`, `close_cross_button`, `duration_slider`, `draw_copyable_text`).
-  Theme is gruvbox-dark, accent-swappable at runtime.
+- **Modules:** tokens in `shaderbox/theme.py` (`COLOR` / `SIZE` / `SPACE` bags + `apply_theme` +
+  `fade`); primitives in `shaderbox/ui_primitives.py` (`primary_button` / `button` / `ghost_button` /
+  `danger_button`, `caption_text`, `close_cross_button`, `duration_slider`, `draw_copyable_text`);
+  non-UI helpers in `shaderbox/util.py`. Theme is gruvbox-dark, accent-swappable at runtime.
 - **Three-layer UI:** `app.py` (state/lifecycle, no drawing) / `ui.py` (frame-loop orchestrator) /
   `widgets`+`popups`+`tabs` (pure `draw(app)` free fns). Forced by the no-`TYPE_CHECKING` rule (a draw
   fn annotating `app: App` while `App` imports it would cycle). Full rules: `ai_docs/conventions.md`.

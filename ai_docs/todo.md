@@ -135,6 +135,16 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   the maintainer's manual test (`BUILDING.md`), not CI. If a software-GL path (Mesa/llvmpipe on
   the runner) ever makes headless smoke reliable on Windows, drop the `continue-on-error`.
 
+## [DEFERRAL] pre-commit ruff hook is pinned older than the resolved ruff
+- **Trigger:** next time you bump `ruff` in `pyproject.toml`, OR the first time `make check`
+  passes but `uv run ruff check .` fails (a lint the pinned hook is too old to emit). Bump the
+  `.pre-commit-config.yaml` ruff `rev` to match in the same pass.
+- `.pre-commit-config.yaml` pins `astral-sh/ruff-pre-commit` at `rev: v0.3.4`, but the project dep
+  resolves a much newer ruff (0.11.x). So `make check` (→ pre-commit) lints with stale ruff and can
+  green code a current ruff would flag (feature 011 hit this: new `# noqa: BLE001` markers were inert
+  + would `RUF100`/`SIM105` under 0.11.x). Bumping the rev may surface new lints repo-wide — its own
+  bounded change, not to be done mid-feature.
+
 ## [DEFERRAL] code-sign the Windows launcher (SmartScreen)
 - **Trigger:** first user report that SmartScreen blocks them despite the bundled README's
   "More info → Run anyway" note, OR a paid (non name-your-own-price) release.

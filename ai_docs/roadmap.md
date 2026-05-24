@@ -27,31 +27,26 @@ feature; brief points at the superseder).
 
 **As of 2026-05-24.**
 
-- **Feature 010 (outlet render rework + share-tab UI polish) — DONE; UI iterated to maintainer
-  approval.** Shared low-level renderer driven by a GL-free `RenderPreset` (renders natively at the
-  outlet's target size; `render_preset.py` + `core.py::render_media(details, preset)`); per-outlet
-  concise share UI. The Telegram share panel was redesigned through many screenshot rounds into:
-  pack row + copyable pack link, a new-sticker block (preview with emoji overlay top-left, Duration
-  slider, Render + Add-to-pack), a single-row sticker **carousel** (`[<] x4 [>]`) with per-cell
-  emoji-change + delete-confirm overlays. Status now via the notifications toast, not in-panel.
-  Spec: `ai_docs/features/010_outlet_render_rework.md`. `make check` + `make smoke` green.
-- **The 010 session produced two durable artifacts (this is the polished, understandable state):**
-  (1) a **4-tier button system + UI primitives** in `ui_utils.py` (`primary_button` / `button` /
-  `ghost_button` / `danger_button`, `caption_text`, `close_cross_button`, `duration_slider`,
-  `draw_copyable_text`) flowing through `theme.py` tokens; (2) the **`imgui-ui` skill**
-  (`.claude/skills/imgui-ui/`) — generic imgui rules (button tiers, jitter-free overlays, the
-  SetCursorPos assert, font/emoji caveats, the no-screenshot loop). **Invoke `/imgui-ui` before any
-  UI work.**
-- **NEXT ACTION: Feature 011 (UI library consolidation + share-stack de-leak) — spec'd, NOT
-  implemented.** A 5-agent review swarm triaged the post-010 state into DO-NOW (de-leak Telegram
-  tokens from generic `SIZE`; delete dead tokens + the unreachable `replace` job path; fix the
-  preview/artifact GL leak on project switch; de-leak the `RenderControl`/ABC seam; split
-  `ui_utils.py` + land the promised `resolve_dims`/`render_for` tests) vs DEFER-with-trigger
-  (GridCell/Widget/RenderPreset-FIXED_* extraction — premature at N=1). **The fragile carousel/grid
-  draw code is explicitly out of scope** (it's where 010's bugs lived). Full triage + risk ranking:
-  `ai_docs/features/011_ui_library_consolidation.md`.
+- **Feature 011 (UI library consolidation + share-stack de-leak) — DONE (refactor, no behaviour
+  change).** All six decisions landed: (C) `TabState.release()` fixes the preview/artifact GL leak
+  on project switch; (B) dead `SIZE` tokens + `_FONT_DIR` + the unreachable Telegram `replace` job
+  path deleted; (A) Telegram tokens moved out of generic `theme.SIZE` into telegram-local constants;
+  (E) `ui_utils.py` split into `ui_primitives.py` (imgui+theme draws) + `util.py` (non-UI helpers),
+  `fade()` exported from `theme.py`, plus a new `tests/` suite (`resolve_dims` + GL-backed
+  `render_for`/`render_media`, run via `make test`); (D) the generic exporter seam de-leaked —
+  `RenderControl` is pure render plumbing, per-exporter UI extras ride in an opaque `.extras` bag
+  built via `Exporter.build_render_extras(OutletUiDeps)`, and the pack methods left the ABC (concrete
+  on Telegram, reached via `isinstance`); (F) `duration_slider` parametrized. Fragile carousel/grid
+  draw code untouched (Decision 1). `make check` + `make test` (15) + `make smoke` green; connected
+  Telegram panel headless-driven clean. Spec: `ai_docs/features/011_ui_library_consolidation.md`.
+- **Invoke `/imgui-ui` before any UI work** — it carries the button tiers, jitter-free overlays,
+  SetCursorPos assert, font/emoji caveats, no-screenshot loop.
+- **NEXT ACTION: none queued.** No `pending` feature row. Candidate next waves all sit in `todo.md`
+  as trigger-gated deferrals (the deferred-N=2 extractions in the 011 spec's DEFER table; the
+  sticker loop-offset; the inline-editor upstream items) — none is a default next-step; pick up only
+  when its trigger fires.
 - **Branch model:** develop on `dev`, ship from `master` (`dev_flow.md ## Branch model`). `dev` is
-  ahead of `master` with 009+010 (not yet promoted/shipped — user is iterating).
+  ahead of `master` with 009+010+011 (not yet promoted/shipped — user is iterating).
 - **Token hygiene:** the dev bot token lives only in `~/.local/share/shaderbox/integrations.json`
   (outside the repo, never committed); maintainer rotates it post-iteration.
 - **Two non-blocking follow-ups (no users yet):** (1) no build runtime-verified on Windows — verify
@@ -62,7 +57,7 @@ feature; brief points at the superseder).
 
 | # | Name | Status | Brief |
 |---|---|---|---|
-| 011 | ui_library_consolidation | pending | Post-010 cleanup (NOT impl): de-leak Telegram tokens from generic `SIZE`; delete dead tokens + unreachable `replace` path; fix preview-GL leak on project switch; de-leak the `RenderControl`/ABC seam; split `ui_utils.py` + land `resolve_dims`/`render_for` tests. Fragile carousel/grid draw code out of scope; GridCell/Widget/RenderPreset-FIXED_* extraction deferred to N=2. 5-agent swarm triage. Spec: `ai_docs/features/011_ui_library_consolidation.md`. |
+| 011 | ui_library_consolidation | done | Post-010 refactor (no behaviour change): de-leaked Telegram tokens out of generic `SIZE`; deleted dead tokens + the unreachable `replace` path; fixed the preview-GL leak on project switch (`TabState.release`); de-leaked the exporter seam (`RenderControl` pure plumbing + `.extras`/`build_render_extras`, pack methods off the ABC); split `ui_utils.py` → `ui_primitives.py`+`util.py`; landed a `tests/` suite (`make test`). Fragile carousel/grid draw code out of scope; GridCell/Widget/RenderPreset-FIXED_* extraction deferred to N=2. Spec: `ai_docs/features/011_ui_library_consolidation.md`. |
 | 010 | outlet_render_rework | done | Shared GL-free `RenderPreset` drives `render_media` to render natively at the outlet's target size; per-outlet concise share UI. Telegram panel redesigned (many screenshot rounds): pack row + copyable link, new-sticker block (emoji overlay, Duration, Render + Add), single-row carousel with per-cell emoji-change + delete-confirm; status via notifications. Produced the 4-tier button system + UI primitives + the `imgui-ui` skill. Spec: `ai_docs/features/010_outlet_render_rework.md`. |
 | 009 | integrations_rework | done | Telegram UX collapse: token+Connect (getUpdates user_id capture) in Settings→Integrations; derived+auto-created sticker-set names; share-tab pack create/select/delete + sticker delete; monochrome emoji picker (Unicode order; color impossible in this build); bot DMs pack link on add; connection+packs persist to global `integrations.json` (connect once); no legacy migration; YouTube/X stubs. Live-verified end-to-end; 2 pre+2 post review waves PASS. UI-optimization is a separate next wave. Spec: `ai_docs/features/009_integrations_rework.md`. |
 | 008 | uniform_input_shapes | done | Every uniform row leads with a changeable input-shape pill (click-to-cycle, disabled when one shape); removed the separate settings pane; per-node uniform sort (code/name/type + dir); engine uniforms collapsed to one dim readout row; node-tab header compaction; accent tab styling. Spec: `ai_docs/features/008_uniform_input_shapes.md`. |

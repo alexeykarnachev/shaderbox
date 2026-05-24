@@ -2,7 +2,12 @@ from imgui_bundle import imgui, imgui_ctx
 from loguru import logger
 
 from shaderbox.app import App
-from shaderbox.exporters.base import Exporter, RenderControl, RenderedArtifact
+from shaderbox.exporters.base import (
+    Exporter,
+    OutletUiDeps,
+    RenderControl,
+    RenderedArtifact,
+)
 from shaderbox.render_preset import RenderPreset
 from shaderbox.tabs.share_state import OutletRenderState, TabState, render_for
 from shaderbox.theme import COLOR, SPACE
@@ -117,40 +122,20 @@ def _draw_outlet(
     def _set_duration(value: float) -> None:
         outlet.duration = value
 
-    def _set_emoji(char: str) -> None:
-        outlet.pending_emoji = char
-
-    def _emoji_button(char: str, side: float) -> bool:
-        clicked: bool = imgui.button("##emoji_btn", size=(side, side))
-        if imgui.is_item_hovered():
-            imgui.set_tooltip("Click to change emoji")
-        rmin = imgui.get_item_rect_min()
-        rmax = imgui.get_item_rect_max()
-        font = app.font_emoji
-        size_px: float = font.legacy_size
-        imgui.push_font(font, size_px)
-        glyph = imgui.calc_text_size(char)
-        imgui.pop_font()
-        pos = (
-            (rmin.x + rmax.x) / 2 - glyph.x / 2,
-            (rmin.y + rmax.y) / 2 - glyph.y / 2,
-        )
-        col = imgui.color_convert_float4_to_u32(COLOR.FG_PRIMARY)
-        imgui.get_window_draw_list().add_text(font, size_px, pos, col, char)
-        return clicked
-
+    deps = OutletUiDeps(
+        glyph_font=app.font_emoji,
+        open_glyph_picker=app.open_emoji_picker,
+        outlet_extra_state=outlet.extra_state,
+    )
     control = RenderControl(
-        emoji=outlet.pending_emoji,
         duration=outlet.duration,
         artifact=artifact,
         artifact_is_fresh=outlet.artifact_is_fresh,
         set_duration=_set_duration,
-        open_emoji_picker=app.open_emoji_picker,
         render=_do_render,
-        emoji_button=_emoji_button,
-        set_emoji=_set_emoji,
         preview_texture_glo=glo,
         preview_size=size,
+        extras=exporter.build_render_extras(deps),
     )
     exporter.draw_target_panel(current_node, control)
 

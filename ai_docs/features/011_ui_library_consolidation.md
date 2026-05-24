@@ -1,6 +1,9 @@
 # 011 — UI library consolidation + share-stack de-leak
 
-Status: **spec / plan-locked (2026-05-24); NOT implemented — pre-implementation triage only.**
+Status: **DONE (2026-05-24).** All decisions A–F landed (refactor, no behaviour change); Decision 1
+fragile-draw exclusion respected. `make check` + `make test` + `make smoke` green; connected Telegram
+panel headless-driven clean. Decision D shipped via an `extras`/`build_render_extras` seam (see
+Decision D note below) rather than the spec's literal isinstance-for-everything sketch.
 Shape: refactor (no behaviour change) — moves/renames/deletes + one leak fix + tests. Touches the UI
 primitive sub-library (`theme.py`, `ui_utils.py`), the exporter seam (`exporters/base.py`), the
 Telegram exporter, and the share-tab state. **The fragile imgui draw code (carousel/grid/cell

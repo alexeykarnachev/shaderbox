@@ -3,7 +3,7 @@ from imgui_bundle import imgui
 
 from shaderbox.app import App
 from shaderbox.theme import COLOR, EDITOR_UNFOCUSED_ALPHA, SIZE, SPACE
-from shaderbox.ui_utils import draw_copyable_text
+from shaderbox.ui_primitives import draw_copyable_text
 
 
 def draw(app: App) -> None:

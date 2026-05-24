@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 from loguru import logger
@@ -20,11 +21,13 @@ class OutletRenderState:
     """
 
     duration: float = 3.0
-    pending_emoji: str = "🎨"
     current_artifact: RenderedArtifact | None = None
     artifact_is_fresh: bool = False
     preview: MediaWithTexture | None = None
     notified_progress: ExportProgress | None = None  # last terminal event surfaced
+    # Free-form per-exporter UI scratch (e.g. Telegram's pending new-sticker
+    # emoji). The outlet stays exporter-agnostic; only the owning exporter reads it.
+    extra_state: dict[str, Any] = field(default_factory=dict)
 
     def set_artifact(self, artifact: RenderedArtifact | None) -> None:
         self._release_preview()
@@ -54,6 +57,11 @@ class TabState:
         if exporter_id not in self.outlets:
             self.outlets[exporter_id] = OutletRenderState()
         return self.outlets[exporter_id]
+
+    def release(self) -> None:
+        for outlet in self.outlets.values():
+            outlet.set_artifact(None)
+        self.outlets.clear()
 
 
 def make_state(scratch_dir: Path) -> TabState:

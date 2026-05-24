@@ -17,7 +17,6 @@ Every color / size / spacing value comes from ``ai_docs/design/tokens.json`` —
 keep the two in sync.
 """
 
-from pathlib import Path
 from typing import Literal
 
 from imgui_bundle import imgui
@@ -156,13 +155,8 @@ COLOR = _ColorBag()
 
 class SIZE:
     ROW_HEIGHT: int = 22
-    ROW_COMPACT: int = 19
-
-    TOPBAR: int = 32
-    STATUSBAR: int = 24
 
     BTN_SM_W: int = 80
-    BTN_MD_W: int = 120
     BTN_SM_H: int = 19
 
     CHIP_W: int = 64
@@ -174,30 +168,15 @@ class SIZE:
     RES_COMBO_W: int = 200
 
     LABEL_W: int = 64
-    EMOJI_BTN: int = 28
-    STICKER_PREVIEW_W: int = 160
-    STICKER_PREVIEW_H: int = 213
-    CAROUSEL_ARROW_W: int = 18
-    PACK_COMBO_W: int = 280
 
     THUMB_SM: int = 90
-    THUMB_MD: int = 110
     THUMB_LG: int = 150
 
     PREVIEW_W: int = 200
     PANEL_CTRL_MINH: int = 600
-    PANEL_RIGHT_W: int = 720
-    RENDER_MAX_H: int = 360
-    RENDER_MIN_H: int = 220
 
     SCROLLBAR_W: int = 12
     GRAB_MIN: int = 10
-    GUTTER_W: int = 48
-
-    TG_THUMB_H: int = 90
-    TG_GRID_COLS: int = 4
-
-    NODE_CREATOR_COLS: int = 3
 
 
 class SPACE:
@@ -206,6 +185,13 @@ class SPACE:
     MD: int = 8
     LG: int = 16
     XL: int = 24
+
+
+def fade(
+    color: tuple[float, float, float, float], a: float
+) -> tuple[float, float, float, float]:
+    """Same RGB, new alpha — for translucent washes off a solid token."""
+    return (color[0], color[1], color[2], a)
 
 
 # Whole-pane alpha for the code editor when it lacks keyboard focus; style.Alpha
@@ -334,11 +320,6 @@ def _set_colors(
     """
     col = imgui.Col_
 
-    def fade(
-        cl: tuple[float, float, float, float], a: float
-    ) -> tuple[float, float, float, float]:
-        return (cl[0], cl[1], cl[2], a)
-
     # text
     style.set_color_(col.text, COLOR.FG_PRIMARY)
     style.set_color_(col.text_disabled, COLOR.FG_DIM)
@@ -419,10 +400,3 @@ def _set_colors(
 
     # modal veil
     style.set_color_(col.modal_window_dim_bg, (0.0, 0.0, 0.0, 0.55))
-
-
-# ============================================================================
-# Project paths (for future feature 009 — Tweaks panel persistence)
-# ============================================================================
-
-_FONT_DIR: Path = Path(__file__).parent / "resources" / "fonts"

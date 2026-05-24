@@ -37,14 +37,15 @@ belong in the feature spec (`ai_docs/features/NNN_*.md`). This file is not a cha
 - Never use `if TYPE_CHECKING:` to work-around circular imports. Circular imports is a sign of a bad design.
 - **No `@staticmethod`.** A method that doesn't use `self` isn't a method — make it a module-level
   free function. A stateless helper used by one class lives as a private `_name()` function in that
-  module; a helper reused across modules goes in `ui_utils.py` (or the relevant leaf). Same bar for
-  `@classmethod` unless it's a genuine alternate constructor (`cls(...)`).
+  module; an imgui+theme draw helper reused across modules goes in `ui_primitives.py`, a non-UI
+  helper in `util.py` (or the relevant leaf). Same bar for `@classmethod` unless it's a genuine
+  alternate constructor (`cls(...)`).
 - **Don't repeat a UI widget.** A draw block that appears in two places (a copyable path, a styled
-  button, the duration slider, an overlay close-✕) is extracted to a free function in `ui_utils.py`
-  and called from both — never copy-pasted. Shared primitives today: `primary_button` / `button` /
-  `ghost_button` / `danger_button`, `caption_text`, `close_cross_button`, `duration_slider`,
-  `draw_copyable_text`.
-- **Button tiers — pick by role, not by look.** Four tiers, all in `ui_utils.py`:
+  button, the duration slider, an overlay close-✕) is extracted to a free function in
+  `ui_primitives.py` and called from both — never copy-pasted. Shared primitives today:
+  `primary_button` / `button` / `ghost_button` / `danger_button`, `caption_text`,
+  `close_cross_button`, `duration_slider`, `draw_copyable_text`.
+- **Button tiers — pick by role, not by look.** Four tiers, all in `ui_primitives.py`:
   `primary_button` = the ONE call-to-action of a section (filled accent); `button` = an ordinary
   action (filled neutral grey); `ghost_button` = low-emphasis / secondary (text only); `danger_button`
   = destructive (text only, red — the confirm-row chrome carries the weight, never a filled-red fill).
@@ -100,6 +101,14 @@ belong in the feature spec (`ai_docs/features/NNN_*.md`). This file is not a cha
   type). Each exporter owns its own panel UI. A disabled/stub exporter overrides `is_available ->
   False` + `unavailable_reason` (registry won't auto-activate it; UI gates on it). Revisit when a
   third *concrete* exporter lands.
+- **The generic exporter seam carries NO exporter-domain vocabulary.** `RenderControl` is pure render
+  plumbing; `exporters/base.py`, `registry.py`, `tabs/share.py`, `popups/emoji_picker.py` name no
+  Telegram/sticker/pack/emoji concept. A per-exporter UI need (e.g. Telegram's emoji affordances)
+  flows through the opaque `RenderControl.extras` bag, built by the exporter's `build_render_extras`
+  from generic `OutletUiDeps` — never as a named field on the contract, never via `isinstance` in the
+  share-draw loop. Exporter-only methods (e.g. Telegram's `set_default_pack`) stay concrete on the
+  exporter and are reached via `isinstance` at the one `app.py` call site, not hoisted to the ABC.
+  Revisit if a capability is genuinely shared by ≥2 concrete exporters (then promote it to the ABC).
 - **Integration credentials are GLOBAL, not per-project; everything else per-project stays.**
   Telegram bot token / linked user / pack list live in `integrations.json` (one `IntegrationsStore`
   rooted at `app_data_dir()`), injected into exporters via `registry.set_integrations(store)`. An
@@ -156,7 +165,7 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
 - **`imgui.image(...)` lost `tint_col` / `border_col` since 1.91.9**. For tint, switch to
   `imgui.image_with_bg(...)`. For border, push the `ImageBorderSize` style var (or live without).
 - **`pfd.open_file` / `save_file` / `select_folder` are non-blocking class handles, not blocking
-  functions.** Use the `pfd_block(dialog)` helper in `ui_utils.py` to spin until `.ready(20)` —
+  functions.** Use the `pfd_block(dialog)` helper in `util.py` to spin until `.ready(20)` —
   that mirrors crossfiledialog's synchronous shape at the call site.
 - **imgui-bundle's Python glfw backend (`python_backends/glfw_backend.py`) does NOT sync imgui's
   mouse cursor to the OS** — it never sets `BackendFlags_.has_mouse_cursors` and never calls
@@ -188,7 +197,7 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   has exactly these exceptions — all are missing/wrong annotations in third-party stubs, never our
   own type errors. New markers outside this list are a design smell; fix the design, don't add to
   the list. Re-audit when bumping `moderngl` / `freetype-py` / `pydantic`.
-  - `moderngl.Uniform.gl_type` — not in moderngl's stub (3 sites: `ui_models.py`, `ui_utils.py`,
+  - `moderngl.Uniform.gl_type` — not in moderngl's stub (3 sites: `ui_models.py`, `util.py`,
     `tabs/node.py`).
   - `freetype.load_char(...)` — `freetype-py` ships no stubs (2 sites in `fonts.py`).
   - `@model_validator(mode="after")` on a method returning `Self` — pydantic's decorator stub

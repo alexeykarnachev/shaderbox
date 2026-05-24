@@ -12,7 +12,7 @@ from shaderbox.ui_models import (
     load_node_from_dir,
     sort_uniform_hashes,
 )
-from shaderbox.ui_utils import get_resolution_str, get_uniform_hash
+from shaderbox.util import get_resolution_str, get_uniform_hash
 from shaderbox.widgets.uniform import draw_ui_uniform
 
 _FONT_12_SIZE = 12.0

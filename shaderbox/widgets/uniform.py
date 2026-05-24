@@ -18,7 +18,7 @@ from shaderbox.core import UniformValue
 from shaderbox.media import Image, MediaWithTexture, Video
 from shaderbox.theme import COLOR, SIZE
 from shaderbox.ui_models import UIUniform
-from shaderbox.ui_utils import (
+from shaderbox.util import (
     get_resolution_str,
     pfd_block,
     str_to_unicode,

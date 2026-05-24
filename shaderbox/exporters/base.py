@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -16,23 +16,37 @@ class RenderControl:
 
     Lets each exporter own its full concise render+operations panel without
     importing `App`: the share tab supplies the mutable per-outlet state and
-    the action callbacks.
+    the action callbacks. Pure render plumbing — knows nothing of any
+    exporter's domain concepts. Per-exporter extras (e.g. glyph-overlay
+    affordances) ride in `extras`, an opaque bag only the owning exporter
+    interprets.
     """
 
-    emoji: str
     duration: float
     artifact: "RenderedArtifact | None"
     artifact_is_fresh: bool
     set_duration: Callable[[float], None]
-    # Open the emoji picker; the picked emoji is delivered to `on_pick`.
-    open_emoji_picker: Callable[[Callable[[str], None]], None]
     render: Callable[[], None]
-    # Draws `char` as a clickable emoji-font glyph button of the given side; -> clicked.
-    emoji_button: Callable[[str, float], bool]
-    # Set `emoji` as the new-sticker emoji (the picker target for the New-sticker tile).
-    set_emoji: Callable[[str], None]
     preview_texture_glo: int | None = None
     preview_size: tuple[int, int] = (0, 0)
+    extras: "Mapping[str, Any] | None" = None
+
+
+@dataclass
+class OutletUiDeps:
+    """Generic app-level UI capabilities an exporter may need to build its
+    per-panel extras, handed over without exposing `App`.
+
+    `glyph_font` is an `imgui.ImFont` for symbol/glyph overlays; kept as `Any`
+    so this generic module doesn't depend on imgui types. `open_glyph_picker`
+    opens the symbol picker, delivering the chosen glyph to the given callback.
+    `outlet_extra_state` is a free-form per-outlet scratch dict the exporter
+    reads/writes for its own UI state — the generic outlet doesn't name it.
+    """
+
+    glyph_font: Any
+    open_glyph_picker: Callable[[Callable[[str], None]], None]
+    outlet_extra_state: dict[str, Any]
 
 
 class AuthState(Enum):
@@ -80,10 +94,10 @@ class Exporter(ABC):
     Thread affinity:
       - render thread only:  exporter_id, display_name, auth_state,
                              is_available, unavailable_reason, begin_auth,
-                             rebind, set_media_dir, set_integrations,
-                             set_default_pack, current_default_pack, status,
+                             rebind, set_media_dir, set_integrations, status,
                              current_settings, draw_config_ui,
-                             draw_target_panel, update, release.
+                             build_render_extras, draw_target_panel, update,
+                             release.
       - worker thread only:  prepare, export.
 
     Worker-thread methods MUST NOT construct or access `moderngl.*` (no
@@ -108,6 +122,13 @@ class Exporter(ABC):
     def render_preset(self) -> RenderPreset:
         return RenderPreset()
 
+    # Per-exporter UI extras carried in `RenderControl.extras`, built from
+    # generic app capabilities. Default: no extras. An exporter that needs
+    # app-level affordances (e.g. a glyph font + picker) overrides this.
+    def build_render_extras(self, deps: "OutletUiDeps") -> "Mapping[str, Any] | None":
+        _ = deps
+        return None
+
     @property
     @abstractmethod
     def exporter_id(self) -> str: ...
@@ -131,12 +152,6 @@ class Exporter(ABC):
 
     @abstractmethod
     def set_integrations(self, store: IntegrationsStore) -> None: ...
-
-    @abstractmethod
-    def set_default_pack(self, set_name: str) -> None: ...
-
-    @abstractmethod
-    def current_default_pack(self) -> str: ...
 
     @abstractmethod
     def status(self) -> ExporterStatus: ...

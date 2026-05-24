@@ -35,9 +35,7 @@ def _align(value: int, alignment: int = VIDEO_RESOLUTION_ALIGNMENT) -> int:
     return max(alignment, (value + alignment - 1) // alignment * alignment)
 
 
-def resolve_dims(
-    preset: RenderPreset, source_size: tuple[int, int]
-) -> tuple[int, int]:
+def resolve_dims(preset: RenderPreset, source_size: tuple[int, int]) -> tuple[int, int]:
     src_w, src_h = source_size
     policy: ResolutionPolicy = preset.resolution_policy
 
