@@ -113,6 +113,10 @@ re-deriving rules), **cold-reloadable** (picks up "what's next?" in a few reads)
   popup/layout, theming, refactoring draw code) and when reacting to a UI problem. Carries the
   hard-won imgui rules (button tiers, jitter-free overlays, the SetCursorPos assert, font/emoji
   caveats, the no-screenshot loop). Keeps the deep guidance out of the always-loaded context.
+- `/ship` — the release-to-itch.io procedure (sanitize → commit/push `dev` → promote to `master` →
+  auto-pick semver → `make release` → gated build → butler upload → page sync → land clean on `dev`).
+  The single canonical home for the ship flow; `BUILDING.md` + `dev_flow.md` point here. **Run ONLY
+  when the developer explicitly asks to ship/release/publish** — it tags, pushes, and publishes.
 
 ## Reply language
 

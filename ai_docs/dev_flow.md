@@ -249,17 +249,13 @@ texture binding errors. Doesn't catch visual bugs. Run after any refactor in `ui
 `~/.local/share/shaderbox/project_dir` pointer is handled inside the script.
 
 ### Build / ship to itch.io
-**The runnable command sequence is `BUILDING.md` (repo root, not bundled)** — release → build →
-upload → page-sync, plus the Windows-verify checklist. This section holds only the *model* a fresh
-agent needs. Maintainer-triggered, not the agent's. Start by promoting `dev` → `master`: eyeball
-`git diff master..dev` for everything since the last ship, pick the semver bump from it (rule:
-`conventions.md ## Design decisions`), merge to `master`, run the release there. Then: `make release`
-bumps + tags (does NOT build/push) → `build.sh` is **gated** (runs
-`make check` + `make smoke`, refuses a dirty tree; `--allow-dirty` overrides the dirty-tree guard,
-not the test gate) → `upload-itch.sh` pushes the channels → sync the store page (`### Sync the
-itch.io page` below, done LAST so the page describes what's downloadable). The bundle is a **source
-distribution** (ships `shaderbox/` + `uv.lock`; the user's machine runs `uv sync` + `uv run` via
-`run.sh`/`run.bat` on first launch) — not a frozen binary.
+**The full ship procedure is the `/ship` skill** (`.claude/skills/ship/SKILL.md`) — the canonical home
+for the flow (sanitize → commit/push `dev` → promote to `master` → auto-pick semver → `make release` →
+gated `build.sh` → butler upload → page sync → land clean on `dev`). Maintainer-triggered; the agent
+never runs it unprompted. The Windows runtime-verify checklist lives in `BUILDING.md`. This section
+holds only the two *facts* that constrain code (not procedure): the bundle shape and the clean-bundle
+invariant. The bundle is a **source distribution** (ships `shaderbox/` + `uv.lock`; the user's machine
+runs `uv sync` + `uv run` via `run.sh`/`run.bat` on first launch) — not a frozen binary.
 
 **Clean-bundle invariant.** The bundle is an explicit allowlist (`shaderbox/` package +
 `pyproject.toml` / `uv.lock` / `.python-version` / `LICENSE` + the launcher + `scripts/README.md`).

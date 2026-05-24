@@ -6,20 +6,16 @@ frozen binary. This file is never shipped in the bundle.
 
 ## Cut a release
 
-```
-make release VERSION=x.y.z   # bumps pyproject.toml, commits, tags v<x.y.z>
-git push && git push --tags  # commits + tag (plain `git push` does NOT push tags)
-./build.sh                   # gated: runs make check + make smoke, refuses a dirty tree
-yes | ./upload-itch.sh       # butler push to windows/linux channels (needs itch-config + butler login)
-```
-Then sync the store page (`ai_docs/dev_flow.md ### Sync the itch.io page` — agent-driven Playwright,
-done last so the page describes what's downloadable).
+The full release procedure (sanitize → commit/push `dev` → promote to `master` → auto-pick the semver
+bump → `make release` → gated `build.sh` → butler upload → page sync → land clean on `dev`) is the
+**`/ship` skill** (`.claude/skills/ship/SKILL.md`) — the single canonical home for the flow. Invoke it
+with "ship" / "release" / "publish" / `/ship`.
 
-`make release` does NOT build or push — those stay separate so a tag can be cut without an
-immediate upload. Semver bump policy is in `ai_docs/conventions.md ## Design decisions`.
-
-`build.sh --allow-dirty` skips the clean-tree guard (the check/smoke gate still runs).
-`upload-itch.sh` has an interactive y/N confirm — `yes |` pipes past it for an unattended run.
+The individual tools it drives: `make release VERSION=x.y.z` (bumps `pyproject.toml`, commits, tags —
+does NOT build/push), `./build.sh` (gated: `make check` + `make smoke`, refuses a dirty tree;
+`--allow-dirty` skips only the dirty-tree guard), `yes | ./upload-itch.sh` (butler push to both
+channels; needs `itch-config` + `butler login`). Semver bump policy: `ai_docs/conventions.md ##
+Design decisions`.
 
 ## Building on / for Windows
 
