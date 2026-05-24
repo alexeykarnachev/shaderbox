@@ -161,6 +161,9 @@ roadmap-banner touch (if even that) + the cold-context glance is enough; for a f
 - **`ui_models.py`** — pydantic-ish `UINode` / `UINodeState` / `UIUniform` / `UIAppState` + node
   (de)serialization.
 - **`media.py`** — `Image` / `Video` (`MediaWithTexture` ABC), ffmpeg temporal smoothing.
+- **`render_preset.py`** — GL-free `RenderPreset` (an outlet's render constraints: size/aspect/fps/
+  duration/container/byte-cap/fit) + `resolve_dims`. Drives `core.py::render_media(details, preset)`
+  to render natively at the target size. Feature 010.
 - **`exporters/`** — `Exporter` ABC + `RenderedArtifact` value type (`base.py`), `ExporterRegistry`
   (`registry.py`), `TelegramExporter` (`telegram.py` — own worker thread + asyncio loop + sticker
   panel UI; reads creds from the global `IntegrationsStore`), `stubs.py` (disabled YouTube/X rows,

@@ -1,25 +1,38 @@
-from pathlib import Path
-from uuid import uuid4
-
 from imgui_bundle import imgui, imgui_ctx
 from loguru import logger
 
 from shaderbox.app import App
-from shaderbox.exporters.base import Exporter, RenderedArtifact
-from shaderbox.media import MediaDetails
-from shaderbox.tabs.share_state import TabState
-from shaderbox.theme import COLOR, SIZE
+from shaderbox.exporters.base import Exporter, RenderControl, RenderedArtifact
+from shaderbox.render_preset import RenderPreset
+from shaderbox.tabs.share_state import OutletRenderState, TabState, render_for
+from shaderbox.theme import COLOR, SPACE
 from shaderbox.ui_models import UINode
 
 
 def update(app: App) -> None:
     if app.share_tab_state is None:
         return
-    exporter = app.exporter_registry.get_active()
-    if exporter is None:
-        return
     current_node = app.ui_nodes.get(app.current_node_id)
-    exporter.update(current_node)
+    for exporter in app.exporter_registry.all():
+        if not exporter.is_available:
+            continue
+        exporter.update(current_node)
+        _surface_terminal_progress(app, exporter)
+
+
+def _surface_terminal_progress(app: App, exporter: Exporter) -> None:
+    assert app.share_tab_state is not None
+    outlet = app.share_tab_state.outlet(exporter.exporter_id)
+    progress = exporter.status().last_progress
+    if (
+        progress is None
+        or not progress.is_terminal
+        or progress is outlet.notified_progress
+    ):
+        return
+    outlet.notified_progress = progress
+    color = COLOR.STATE_ERROR if progress.is_error else COLOR.STATE_OK
+    app.notifications.push(progress.message, color[:3])
 
 
 def draw(app: App) -> None:
@@ -45,137 +58,120 @@ def _draw_inner(app: App) -> None:
         imgui.text("No exporters available.")
         return
 
-    if len(available) > 1:
-        names: list[str] = [e.display_name for e in available]
-        ids: list[str] = [e.exporter_id for e in available]
-        current_idx: int = (
-            ids.index(registry.active_id) if registry.active_id in ids else 0
-        )
-        changed, new_idx = imgui.combo("Exporter", current_idx, names)
-        if changed and new_idx != current_idx:
-            registry.set_active(ids[new_idx])
+    imgui.dummy(imgui.ImVec2(0, SPACE.SM))  # breathing room below the tab bar
 
-    exporter = registry.get_active()
-    if exporter is None:
-        imgui.text("No active exporter.")
+    # Single outlet: no accordion (collapsing a list of one only adds a divider).
+    if len(available) == 1:
+        exporter = available[0]
+        registry.set_active(exporter.exporter_id)
+        with imgui_ctx.push_id(exporter.exporter_id):
+            _draw_outlet(
+                app, state, state.outlet(exporter.exporter_id), exporter, current_node
+            )
         return
 
-    imgui.text_colored(
-        COLOR.STATE_INFO,
-        f"{exporter.display_name} — configure credentials in Settings.",
-    )
-    imgui.spacing()
-    imgui.separator()
-    imgui.spacing()
+    # Accordion: one outlet open at a time, mirroring the one-popup-open invariant.
+    for exporter in available:
+        outlet: OutletRenderState = state.outlet(exporter.exporter_id)
+        is_open: bool = registry.active_id == exporter.exporter_id
 
-    avail = imgui.get_content_region_avail()
-    available_width = avail.x
-    available_height = avail.y
-    left_width: float = 0.4 * available_width
+        imgui.set_next_item_open(is_open)
+        header_open: bool = imgui.collapsing_header(
+            f"{exporter.display_name}##outlet_{exporter.exporter_id}"
+        )
+        if header_open and not is_open:
+            registry.set_active(exporter.exporter_id)
+            is_open = True
+        if not header_open:
+            continue
 
-    with imgui_ctx.begin_child(
-        "share_left",
-        size=imgui.ImVec2(left_width, available_height),
-        child_flags=imgui.ChildFlags_.borders,
-    ):
-        _draw_render_panel(app, state, current_node)
+        with imgui_ctx.push_id(exporter.exporter_id):
+            _draw_outlet(app, state, outlet, exporter, current_node)
 
-    # Pass the artifact only if its file still exists — a prior export/render may
-    # have consumed it; acting on a missing path ffmpeg-fails.
-    artifact: RenderedArtifact | None = state.current_artifact
+
+def _draw_outlet(
+    app: App,
+    state: TabState,
+    outlet: OutletRenderState,
+    exporter: Exporter,
+    current_node: UINode | None,
+) -> None:
+    preset: RenderPreset = exporter.render_preset()
+
+    artifact: RenderedArtifact | None = outlet.current_artifact
     if artifact is not None and not artifact.path.exists():
+        outlet.set_artifact(None)
         artifact = None
 
-    imgui.same_line()
-    with imgui_ctx.begin_child("share_right", child_flags=imgui.ChildFlags_.borders):
-        exporter.draw_target_panel(artifact, current_node, state.pending_emoji)
+    preview = outlet.preview_media()
+    glo: int | None = None
+    size: tuple[int, int] = (0, 0)
+    if preview is not None:
+        preview.update(imgui.get_time())
+        glo = preview.texture.glo
+        size = preview.texture.size
 
+    def _do_render() -> None:
+        _render(outlet, preset, current_node, state)
 
-def _draw_render_panel(app: App, state: TabState, current_node: UINode | None) -> None:
-    imgui.text("Render output for export:")
+    def _set_duration(value: float) -> None:
+        outlet.duration = value
 
-    imgui.text("Emoji:")
-    imgui.same_line()
-    imgui.push_font(app.font_emoji, app.font_emoji.legacy_size)
-    imgui.text(state.pending_emoji)
-    imgui.pop_font()
-    imgui.same_line()
-    if imgui.button("Change emoji"):
-        app.open_emoji_picker()
+    def _set_emoji(char: str) -> None:
+        outlet.pending_emoji = char
 
-    is_video: bool = imgui.checkbox("Video (.webm)", state.media_details.is_video)[1]
-    if is_video != state.media_details.is_video:
-        state.media_details.is_video = is_video
-
-    state.media_details.fps = imgui.drag_int(
-        "FPS", state.media_details.fps, v_min=10, v_max=60
-    )[1]
-    state.media_details.duration = imgui.drag_float(
-        "Duration (s)",
-        state.media_details.duration,
-        v_speed=0.1,
-        v_min=0.1,
-        v_max=10.0,
-    )[1]
-
-    if current_node is None:
-        imgui.text_colored(COLOR.STATE_WARN, "Select a node to render.")
-        return
-
-    canvas_size: tuple[int, int] = current_node.node.canvas.texture.size
-    state.media_details.resolution_details.width = canvas_size[0]
-    state.media_details.resolution_details.height = canvas_size[1]
-
-    if imgui.button("Render", size=(SIZE.BTN_MD_W, 0)):
-        _render_into_state(state, current_node)
-
-    artifact: RenderedArtifact | None = state.current_artifact
-    if artifact is not None:
-        imgui.spacing()
-        imgui.text(f"Artifact: {artifact.path.name}")
-        imgui.text(f"  size={artifact.size[0]}x{artifact.size[1]}")
-        imgui.text(f"  duration={artifact.duration:.2f}s")
-        if artifact.path.exists():
-            imgui.text(f"  bytes={artifact.path.stat().st_size}")
-        else:
-            imgui.text("  (file missing)")
-
-
-def _render_into_state(state: TabState, current_node: UINode) -> None:
-    is_video: bool = state.media_details.is_video
-    artifact_path: Path = _make_artifact_path(state.scratch_dir, is_video)
-    state.media_details.file_details.path = str(artifact_path)
-    try:
-        rendered_details: MediaDetails = current_node.node.render_media(
-            state.media_details
+    def _emoji_button(char: str, side: float) -> bool:
+        clicked: bool = imgui.button("##emoji_btn", size=(side, side))
+        if imgui.is_item_hovered():
+            imgui.set_tooltip("Click to change emoji")
+        rmin = imgui.get_item_rect_min()
+        rmax = imgui.get_item_rect_max()
+        font = app.font_emoji
+        size_px: float = font.legacy_size
+        imgui.push_font(font, size_px)
+        glyph = imgui.calc_text_size(char)
+        imgui.pop_font()
+        pos = (
+            (rmin.x + rmax.x) / 2 - glyph.x / 2,
+            (rmin.y + rmax.y) / 2 - glyph.y / 2,
         )
-    except Exception as e:
-        logger.error(f"Failed to render artifact: {e}")
-        if artifact_path.exists():
-            try:
-                artifact_path.unlink()
-            except OSError as cleanup_err:
-                logger.warning(f"Failed to cleanup partial render: {cleanup_err}")
-        return
+        col = imgui.color_convert_float4_to_u32(COLOR.FG_PRIMARY)
+        imgui.get_window_draw_list().add_text(font, size_px, pos, col, char)
+        return clicked
 
-    new_artifact = RenderedArtifact(
-        path=artifact_path,
-        is_video=is_video,
-        duration=rendered_details.duration,
-        size=(
-            rendered_details.resolution_details.width,
-            rendered_details.resolution_details.height,
-        ),
+    control = RenderControl(
+        emoji=outlet.pending_emoji,
+        duration=outlet.duration,
+        artifact=artifact,
+        artifact_is_fresh=outlet.artifact_is_fresh,
+        set_duration=_set_duration,
+        open_emoji_picker=app.open_emoji_picker,
+        render=_do_render,
+        emoji_button=_emoji_button,
+        set_emoji=_set_emoji,
+        preview_texture_glo=glo,
+        preview_size=size,
     )
-    if state.current_artifact is not None and state.current_artifact.path.exists():
+    exporter.draw_target_panel(current_node, control)
+
+
+def _render(
+    outlet: OutletRenderState,
+    preset: RenderPreset,
+    current_node: UINode | None,
+    state: TabState,
+) -> None:
+    if current_node is None:
+        return
+    new_artifact: RenderedArtifact | None = render_for(
+        current_node.node, preset, outlet.duration, state.scratch_dir
+    )
+    if new_artifact is None:
+        return
+    prev: RenderedArtifact | None = outlet.current_artifact
+    outlet.set_artifact(new_artifact)
+    if prev is not None and prev.path.exists():
         try:
-            state.current_artifact.path.unlink()
+            prev.path.unlink()
         except OSError as e:
             logger.warning(f"Failed to cleanup previous artifact: {e}")
-    state.current_artifact = new_artifact
-
-
-def _make_artifact_path(scratch_dir: Path, is_video: bool) -> Path:
-    scratch_dir.mkdir(parents=True, exist_ok=True)
-    ext: str = ".webm" if is_video else ".png"
-    return scratch_dir / f"{uuid4()}{ext}"

@@ -173,6 +173,13 @@ class SIZE:
     NAME_INPUT_W: int = 180
     RES_COMBO_W: int = 200
 
+    LABEL_W: int = 64
+    EMOJI_BTN: int = 28
+    STICKER_PREVIEW_W: int = 160
+    STICKER_PREVIEW_H: int = 213
+    CAROUSEL_ARROW_W: int = 18
+    PACK_COMBO_W: int = 280
+
     THUMB_SM: int = 90
     THUMB_MD: int = 110
     THUMB_LG: int = 150

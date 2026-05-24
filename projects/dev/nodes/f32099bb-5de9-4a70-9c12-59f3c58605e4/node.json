@@ -76,8 +76,8 @@
                 "input_type": "texture"
             }
         },
-        "resolution_idx": 0,
-        "selected_uniform_name": "u_color",
+        "uniform_sort_key": "code",
+        "uniform_sort_desc": false,
         "video_to_video_smoothing_window": 5,
         "video_to_video_smoothing_sigma": 1.0
     }

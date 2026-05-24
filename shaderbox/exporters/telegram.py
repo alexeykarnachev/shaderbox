@@ -9,7 +9,7 @@ from typing import Any, TypeVar
 
 import imageio_ffmpeg
 import telegram as tg
-from imgui_bundle import imgui
+from imgui_bundle import imgui, imgui_ctx
 from loguru import logger
 
 from shaderbox.exporters.base import (
@@ -19,18 +19,29 @@ from shaderbox.exporters.base import (
     ExporterStatus,
     ExporterValueError,
     ExportProgress,
+    RenderControl,
     RenderedArtifact,
 )
 from shaderbox.integrations import IntegrationsStore, PackEntry, TelegramIntegration
 from shaderbox.media import Image, Video
+from shaderbox.render_preset import FitPolicy, RenderPreset, ResolutionPolicy
 from shaderbox.telegram_util import derive_set_name
-from shaderbox.theme import COLOR
+from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_models import UINode
+from shaderbox.ui_utils import (
+    button,
+    close_cross_button,
+    danger_button,
+    draw_copyable_text,
+    duration_slider,
+    ghost_button,
+    primary_button,
+)
 
 _QUEUE_MAXSIZE = 128
 _DRAIN_TIMEOUT_SEC = 5.0
 _FFMPEG_TIMEOUT_SEC = 60
-_PREVIEW_THUMB_HEIGHT = 90
+_PREVIEW_THUMB_HEIGHT = 110
 _GRID_COLUMNS = 4
 _TG_VIDEO_MAX_BYTES = 256 * 1024
 _TG_VIDEO_MAX_DIM = 512
@@ -47,6 +58,13 @@ _USER_PROBLEM_MARKERS = (
 )
 
 T = TypeVar("T")
+
+
+def _map_tg_error(e: tg.error.TelegramError) -> str:
+    text: str = str(e)
+    if any(marker in text for marker in _USER_PROBLEM_MARKERS):
+        return "Open your bot, press Start, and Connect again."
+    return f"Telegram API error: {text}"
 
 
 @dataclass
@@ -104,6 +122,9 @@ class _RenderState:
     active_pack_set_name: str = ""
     new_pack_title: str = ""
     pack_delete_armed: bool = False
+    pack_create_armed: bool = False
+    sticker_delete_armed: str = ""  # file_id of the sticker pending delete-confirm
+    carousel_offset: int = 0  # index of the first sticker shown in the grid row
 
 
 class TelegramExporter(Exporter):
@@ -195,6 +216,18 @@ class TelegramExporter(Exporter):
         # Telegram persists nothing per-project; creds live in the global store.
         return {}
 
+    def render_preset(self) -> RenderPreset:
+        return RenderPreset(
+            is_video=True,
+            container=".webm",
+            fps=_TG_VIDEO_MAX_FPS,
+            duration_max=_TG_VIDEO_MAX_DURATION_SEC,
+            resolution_policy=ResolutionPolicy.LONGEST_EDGE,
+            longest_edge=_TG_VIDEO_MAX_DIM,
+            max_bytes=_TG_VIDEO_MAX_BYTES,
+            fit=FitPolicy.RENDER_AT_TARGET,
+        )
+
     # ---------------------------------------------------------------- Settings UI
     def draw_config_ui(self) -> None:
         full_width: float = imgui.get_content_region_avail().x
@@ -251,9 +284,8 @@ class TelegramExporter(Exporter):
 
     def draw_target_panel(
         self,
-        artifact: RenderedArtifact | None,
         current_node: UINode | None,
-        pending_emoji: str,
+        render_control: RenderControl,
     ) -> None:
         _ = current_node
         if not self._is_connected():
@@ -264,16 +296,9 @@ class TelegramExporter(Exporter):
             imgui.text_colored(COLOR.FG_DIM, "paste your bot token and click Connect.")
             return
 
-        self._draw_pack_controls()
-        if not self._render_state.active_pack_set_name:
-            return
-
-        imgui.spacing()
-        imgui.separator()
-        imgui.spacing()
-
-        self._draw_sticker_grid(artifact, pending_emoji)
-        self._draw_progress(artifact, pending_emoji)
+        self._draw_pack_row()
+        imgui.dummy(imgui.ImVec2(0, SPACE.SM))
+        self._draw_sticker_section(render_control, current_node is not None)
 
     def _is_connected(self) -> bool:
         # bot_username is the unambiguous "a real Connect happened" signal — it is
@@ -283,50 +308,90 @@ class TelegramExporter(Exporter):
             and self._has_persisted_identity()
         )
 
-    def _draw_pack_controls(self) -> None:
+    def _draw_pack_row(self) -> None:
         packs: list[PackEntry] = self._tg.packs
-        full_width: float = imgui.get_content_region_avail().x
+        active: str = self._render_state.active_pack_set_name
+        combo_w: float = float(SIZE.PACK_COMBO_W)
+        label_w: float = float(SIZE.LABEL_W)
 
-        imgui.text("Sticker pack:")
+        imgui.align_text_to_frame_padding()
+        imgui.text_colored(COLOR.FG_DIM, "Pack")
+        imgui.same_line(label_w)
         if packs:
             labels: list[str] = [p.title for p in packs]
-            active: str = self._render_state.active_pack_set_name
             current_idx: int = next(
                 (i for i, p in enumerate(packs) if p.set_name == active), 0
             )
-            imgui.set_next_item_width(full_width)
+            imgui.set_next_item_width(combo_w)
             changed, new_idx = imgui.combo("##pack", current_idx, labels)
             if changed and 0 <= new_idx < len(packs):
                 self._select_pack(packs[new_idx].set_name)
-        else:
-            imgui.text_colored(COLOR.FG_DIM, "No packs yet — create one below.")
-
-        imgui.spacing()
-        imgui.text_colored(COLOR.FG_DIM, "New pack name:")
-        imgui.set_next_item_width(full_width)
-        _, self._render_state.new_pack_title = imgui.input_text(
-            "##new_pack", self._render_state.new_pack_title
-        )
-        if imgui.button("Create pack", size=(full_width, 0)):
-            self._create_pack(self._render_state.new_pack_title or _DEFAULT_PACK_TITLE)
-            self._render_state.new_pack_title = ""
-
-        active: str = self._render_state.active_pack_set_name
-        if active and not self._render_state.in_flight:
-            imgui.spacing()
-            if not self._render_state.pack_delete_armed:
-                if imgui.button("Delete this pack", size=(full_width, 0)):
-                    self._render_state.pack_delete_armed = True
-            else:
-                imgui.text_colored(
-                    COLOR.STATE_ERROR, "Delete the whole pack from Telegram?"
-                )
-                if imgui.button("Yes, delete", size=(full_width / 2 - 4, 0)):
-                    self._delete_pack(active)
-                    self._render_state.pack_delete_armed = False
+            if active:
                 imgui.same_line()
-                if imgui.button("Cancel", size=(full_width / 2 - 4, 0)):
-                    self._render_state.pack_delete_armed = False
+                draw_copyable_text(
+                    f"t.me/addstickers/{active}",
+                    copy_value=f"https://t.me/addstickers/{active}",
+                    color=COLOR.STATE_INFO,
+                )
+        else:
+            imgui.set_next_item_width(combo_w)
+            imgui.text_colored(COLOR.FG_DIM, "no packs yet")
+
+        # Management ghosts indent to the control column (narrow); they sit under
+        # the combo, not beside it, until the panel is wide enough to matter.
+        imgui.dummy(imgui.ImVec2(label_w - imgui.get_style().item_spacing.x, 0))
+        imgui.same_line()
+        if ghost_button("New pack"):
+            self._render_state.pack_create_armed = (
+                not self._render_state.pack_create_armed
+            )
+            self._render_state.pack_delete_armed = False
+        if active and not self._render_state.in_flight:
+            imgui.same_line()
+            if danger_button("Delete pack"):
+                self._render_state.pack_delete_armed = (
+                    not self._render_state.pack_delete_armed
+                )
+                self._render_state.pack_create_armed = False
+
+        if self._render_state.pack_create_armed:
+            imgui.same_line(label_w)
+            imgui.set_next_item_width(combo_w)
+            _, self._render_state.new_pack_title = imgui.input_text(
+                "##new_pack", self._render_state.new_pack_title
+            )
+            imgui.same_line()
+            if primary_button("Create"):
+                self._create_pack(
+                    self._render_state.new_pack_title or _DEFAULT_PACK_TITLE
+                )
+                self._render_state.new_pack_title = ""
+                self._render_state.pack_create_armed = False
+
+        if self._render_state.pack_delete_armed and active:
+            self._draw_delete_confirm(
+                "Delete whole pack from Telegram?",
+                lambda: self._delete_pack(active),
+            )
+
+    def _draw_delete_confirm(self, prompt: str, on_yes: "Callable[[], None]") -> None:
+        imgui.push_style_color(imgui.Col_.child_bg, COLOR.STATE_ERROR[:3] + (0.08,))
+        imgui.push_style_color(imgui.Col_.border, COLOR.STATE_ERROR[:3] + (0.4,))
+        with imgui_ctx.begin_child(
+            "##del_confirm",
+            size=imgui.ImVec2(0, 0),
+            child_flags=imgui.ChildFlags_.borders | imgui.ChildFlags_.auto_resize_y,
+        ):
+            imgui.align_text_to_frame_padding()
+            imgui.text_colored(COLOR.STATE_ERROR, prompt)
+            imgui.same_line()
+            if danger_button("Delete"):
+                self._render_state.pack_delete_armed = False
+                on_yes()
+            imgui.same_line()
+            if ghost_button("Cancel"):
+                self._render_state.pack_delete_armed = False
+        imgui.pop_style_color(2)
 
     def _delete_pack(self, set_name: str) -> None:
         self._enqueue(_Job(kind="delete_pack", pack_set_name=set_name))
@@ -351,6 +416,8 @@ class TelegramExporter(Exporter):
         self._release_sticker_slots()
         self._render_state.sticker_slots = []
         self._render_state.selected_index = 0
+        self._render_state.sticker_delete_armed = ""
+        self._render_state.carousel_offset = 0
         self._render_state.last_progress = None
 
     def _create_pack(self, title: str) -> None:
@@ -362,101 +429,302 @@ class TelegramExporter(Exporter):
         self._store.save()
         self._select_pack(set_name)
 
-    def _draw_sticker_grid(
-        self, artifact: RenderedArtifact | None, pending_emoji: str
+    def _draw_sticker_section(self, rc: RenderControl, has_node: bool) -> None:
+        artifact: RenderedArtifact | None = rc.artifact
+        if artifact is not None and not artifact.path.exists():
+            artifact = None
+
+        box_w: float = float(SIZE.STICKER_PREVIEW_W)
+        box_h: float = float(SIZE.STICKER_PREVIEW_H)
+        top = imgui.get_cursor_screen_pos()
+
+        self._draw_preview_box(rc, artifact, box_w, box_h)
+        imgui.same_line()
+        controls_x: float = imgui.get_cursor_screen_pos().x
+        with imgui_ctx.begin_group():
+            self._draw_sticker_controls(rc, artifact, has_node)
+
+        # Carousel anchored so its bottom edge lines up with the preview's bottom —
+        # a fixed Y, so the inflight progress bar in the controls can't shift it.
+        if self._render_state.active_pack_set_name:
+            cell: float = float(_PREVIEW_THUMB_HEIGHT)
+            imgui.set_cursor_screen_pos((controls_x, top.y + box_h - cell))
+            self._draw_sticker_grid_full(rc)
+
+    def _draw_preview_box(
+        self,
+        rc: RenderControl,
+        artifact: RenderedArtifact | None,
+        box_w: float,
+        box_h: float,
     ) -> None:
-        imgui.spacing()
-        n_slots: int = len(self._render_state.sticker_slots)
-        if n_slots == 0:
-            imgui.text_colored(COLOR.FG_DIM, "No stickers in this pack yet.")
+        _ = artifact
+        imgui.push_style_color(imgui.Col_.child_bg, COLOR.BG_SURFACE)
+        with imgui_ctx.begin_child(
+            "sticker_preview",
+            size=imgui.ImVec2(box_w, box_h),
+            child_flags=imgui.ChildFlags_.borders,
+            window_flags=imgui.WindowFlags_.no_scrollbar,
+        ):
+            origin = imgui.get_cursor_screen_pos()
+            if rc.preview_texture_glo is not None:
+                avail = imgui.get_content_region_avail()
+                self._draw_preview(rc, avail.x, avail.y)
+
+            # Emoji overlay, top-left (same affordance as the carousel cells).
+            imgui.set_cursor_screen_pos((origin.x, origin.y))
+            if rc.emoji_button(rc.emoji, float(SIZE.ROW_HEIGHT)):
+                rc.open_emoji_picker(rc.set_emoji)
+        imgui.pop_style_color(1)
+
+    def _draw_sticker_controls(
+        self,
+        rc: RenderControl,
+        artifact: RenderedArtifact | None,
+        has_node: bool,
+    ) -> None:
+        new_dur: float = duration_slider(
+            "Duration",
+            rc.duration,
+            _TG_VIDEO_MAX_DURATION_SEC,
+            float(SIZE.NAME_INPUT_W),
+        )
+        if new_dur != rc.duration:
+            rc.set_duration(new_dur)
+
+        imgui.dummy(imgui.ImVec2(0, SPACE.XS))
+        row_w: float = float(SIZE.LABEL_W) + SPACE.MD + float(SIZE.NAME_INPUT_W)
+        if not has_node:
+            imgui.text_colored(COLOR.STATE_WARN, "Select a node to render.")
             return
 
-        imgui.text(f"{n_slots} sticker(s) — click one to select:")
-        for idx, slot in enumerate(self._render_state.sticker_slots):
-            self._draw_sticker_button(idx, slot)
-            if (idx + 1) % _GRID_COLUMNS != 0:
-                imgui.same_line()
+        # Render (ordinary) + Add to pack (CTA) on one row; Add's right edge
+        # aligns with the Duration slider's right edge.
+        render_w: float = imgui.calc_text_size("Render").x + 2 * SPACE.MD
+        add_w: float = row_w - render_w - imgui.get_style().item_spacing.x
+        if button("Render", width=render_w):
+            rc.render()
+        imgui.same_line()
+        self._draw_add_button(rc, artifact, add_w)
+
+        # One slot under the row: the progress bar while uploading, else the
+        # render's stats (dim). They never stack — there isn't room.
+        if self._render_state.in_flight:
+            self._draw_inflight(row_w)
+        elif artifact is not None:
+            try:
+                size_kb: int = artifact.path.stat().st_size // 1024
+                imgui.text_colored(
+                    COLOR.FG_DIM,
+                    f"{artifact.size[0]}x{artifact.size[1]} · "
+                    f"{artifact.duration:.1f}s · {size_kb} KB",
+                )
+            except OSError:
+                pass
+
+    def _draw_preview(self, rc: RenderControl, fit_w: float, fit_h: float) -> None:
+        w, h = rc.preview_size
+        if w <= 0 or h <= 0:
+            return
+        scale: float = min(fit_w / w, fit_h / h)
+        dw, dh = w * scale, h * scale
+        origin = imgui.get_cursor_pos()
+        imgui.set_cursor_pos((origin.x + (fit_w - dw) / 2, origin.y + (fit_h - dh) / 2))
+        assert rc.preview_texture_glo is not None
+        imgui.image(
+            imgui.ImTextureRef(rc.preview_texture_glo),
+            image_size=(dw, dh),
+            uv0=(0, 1),
+            uv1=(1, 0),
+        )
+
+    def _draw_add_button(
+        self, rc: RenderControl, artifact: RenderedArtifact | None, width: float
+    ) -> None:
+        active: str = self._render_state.active_pack_set_name
+        enabled: bool = (
+            artifact is not None and bool(active) and not self._render_state.in_flight
+        )
+        if not enabled:
+            imgui.begin_disabled()
+        if primary_button("Add to pack", width=width) and artifact is not None:
+            pack: PackEntry | None = self._tg.find_pack(active)
+            title: str = pack.title if pack is not None else _DEFAULT_PACK_TITLE
+            self._enqueue(
+                _Job(
+                    kind="add",
+                    artifact=artifact,
+                    pack_set_name=active,
+                    pack_title=title,
+                    emoji=rc.emoji,
+                )
+            )
+        if not enabled:
+            imgui.end_disabled()
+
+    def _draw_sticker_grid_full(self, rc: RenderControl) -> None:
+        """A carousel row: [<] [cell x4] [>]. The arrows scroll a 4-wide window
+        into the pack; they're always shown, disabled when there's nowhere to go.
+
+        Each cell is its own child window so the corner overlays' absolute cursor
+        moves stay inside the child (avoids imgui's SetCursorPos assert + jitter).
+        """
+        slots = self._render_state.sticker_slots
+        cols: int = _GRID_COLUMNS
+        cell: float = float(_PREVIEW_THUMB_HEIGHT)
+        arrow_w: float = float(SIZE.CAROUSEL_ARROW_W)
+
+        max_offset: int = max(0, len(slots) - cols)
+        offset: int = max(0, min(self._render_state.carousel_offset, max_offset))
+        self._render_state.carousel_offset = offset
+
+        self._draw_carousel_arrow("<", offset > 0, cell, arrow_w, delta=-1)
+        imgui.same_line()
+        for col in range(cols):
+            i: int = offset + col
+            slot: _StickerSlot | None = slots[i] if i < len(slots) else None
+            self._draw_grid_cell(rc, i, slot, cell)
+            imgui.same_line()
+        self._draw_carousel_arrow(">", offset < max_offset, cell, arrow_w, delta=1)
         imgui.new_line()
 
-        selected_slot: _StickerSlot = self._render_state.sticker_slots[
-            self._render_state.selected_index
-        ]
+    def _draw_carousel_arrow(
+        self, glyph: str, enabled: bool, height: float, width: float, delta: int
+    ) -> None:
+        if not enabled:
+            imgui.begin_disabled()
+        if imgui.button(f"{glyph}##carousel_{delta}", size=(width, height)):
+            self._render_state.carousel_offset += delta
+        if not enabled:
+            imgui.end_disabled()
 
-        if self._render_state.in_flight:
+    def _draw_grid_cell(
+        self, rc: RenderControl, idx: int, slot: "_StickerSlot | None", cell: float
+    ) -> None:
+        imgui.push_style_color(imgui.Col_.child_bg, COLOR.BG_SURFACE)
+        with imgui_ctx.begin_child(
+            f"##cell_{idx}",
+            size=imgui.ImVec2(cell, cell),
+            child_flags=imgui.ChildFlags_.borders,
+            window_flags=imgui.WindowFlags_.no_scrollbar,
+        ):
+            if slot is not None:
+                self._draw_cell_contents(rc, idx, slot)
+        imgui.pop_style_color(1)
+
+    def _draw_cell_contents(
+        self, rc: RenderControl, idx: int, slot: _StickerSlot
+    ) -> None:
+        origin = imgui.get_cursor_screen_pos()
+        dl = imgui.get_window_draw_list()
+        avail = imgui.get_content_region_avail()
+        is_selected: bool = idx == self._render_state.selected_index
+
+        thumbnail: Image | Video | None = self._lazy_thumbnail(slot)
+        if thumbnail is not None:
+            thumbnail.update(imgui.get_time())  # animate video stickers
+            tex = thumbnail.texture
+            tw, th = tex.size
+            scale: float = min(avail.x / tw, avail.y / th)
+            dw, dh = tw * scale, th * scale
+            ix: float = origin.x + (avail.x - dw) / 2
+            iy: float = origin.y + (avail.y - dh) / 2
+            dl.add_image(
+                imgui.ImTextureRef(tex.glo),
+                (ix, iy),
+                (ix + dw, iy + dh),
+                (0, 1),
+                (1, 0),
+            )
+
+        # Whole-cell click target. allow_overlap lets the corner buttons win.
+        imgui.set_next_item_allow_overlap()
+        if imgui.invisible_button(f"##sticker_{idx}", size=(avail.x, avail.y)):
+            self._render_state.selected_index = idx
+
+        if is_selected:
+            dl.add_rect(
+                (origin.x, origin.y),
+                (origin.x + avail.x, origin.y + avail.y),
+                imgui.color_convert_float4_to_u32(COLOR.ACCENT_PRIMARY),
+                thickness=2.0,
+            )
+            if not self._render_state.in_flight:
+                self._draw_cell_overlays(rc, idx, slot, origin, avail)
+
+    def _draw_cell_overlays(
+        self, rc: RenderControl, idx: int, slot: _StickerSlot, origin: Any, avail: Any
+    ) -> None:
+        if self._render_state.sticker_delete_armed == slot.file_id:
+            self._draw_cell_delete_confirm(slot, origin, avail)
             return
 
-        # Delete needs no artifact; Replace swaps the selected sticker for the
-        # freshly-rendered one (so it requires a rendered artifact).
-        if imgui.button("Delete selected"):
+        x_side: float = float(SIZE.ROW_HEIGHT)
+
+        # Emoji (top-left): clicking opens the picker → set_sticker_emoji_list job.
+        cur_emoji: str = slot.raw_sticker.emoji or "" if slot.raw_sticker else ""
+        imgui.set_cursor_screen_pos((origin.x, origin.y))
+        if rc.emoji_button(cur_emoji, x_side):
+            file_id: str = slot.file_id
+            pack: str = self._render_state.active_pack_set_name
+            rc.open_emoji_picker(
+                lambda e: self._enqueue(
+                    _Job(
+                        kind="set_emoji",
+                        target_sticker_file_id=file_id,
+                        pack_set_name=pack,
+                        emoji=e,
+                    )
+                )
+            )
+
+        # Delete ✕ (top-right) — arms an in-cell confirm rather than deleting.
+        imgui.set_cursor_screen_pos((origin.x + avail.x - x_side, origin.y))
+        if close_cross_button(f"del_{idx}", x_side):
+            self._render_state.sticker_delete_armed = slot.file_id
+        if imgui.is_item_hovered():
+            imgui.set_tooltip("Delete this sticker")
+
+    def _draw_cell_delete_confirm(
+        self, slot: _StickerSlot, origin: Any, avail: Any
+    ) -> None:
+        """`Delete?` + [Yes][No] drawn over the cell, dimming the thumbnail."""
+        dl = imgui.get_window_draw_list()
+        dl.add_rect_filled(
+            (origin.x, origin.y),
+            (origin.x + avail.x, origin.y + avail.y),
+            imgui.color_convert_float4_to_u32(COLOR.STATE_ERROR[:3] + (0.45,)),
+        )
+        prompt: str = "Delete?"
+        pw = imgui.calc_text_size(prompt)
+        imgui.set_cursor_screen_pos(
+            (origin.x + (avail.x - pw.x) / 2, origin.y + avail.y * 0.28)
+        )
+        imgui.text_colored(COLOR.FG_TITLE, prompt)
+
+        # Neutral filled buttons read clearly on the red wash (red text would not).
+        btn_w: float = (avail.x - 3 * SPACE.SM) / 2
+        row_y: float = origin.y + avail.y * 0.55
+        imgui.set_cursor_screen_pos((origin.x + SPACE.SM, row_y))
+        if button("Yes", width=btn_w):
+            self._render_state.sticker_delete_armed = ""
             self._enqueue(
                 _Job(
                     kind="delete",
-                    target_sticker_file_id=selected_slot.file_id,
+                    target_sticker_file_id=slot.file_id,
                     pack_set_name=self._render_state.active_pack_set_name,
                 )
             )
-        if artifact is not None:
-            imgui.same_line()
-            if imgui.button("Replace selected with render"):
-                self._enqueue(
-                    _Job(
-                        kind="replace",
-                        artifact=artifact,
-                        target_sticker_file_id=selected_slot.file_id,
-                        pack_set_name=self._render_state.active_pack_set_name,
-                        emoji=pending_emoji,
-                    )
-                )
+        imgui.set_cursor_screen_pos((origin.x + SPACE.SM + btn_w + SPACE.SM, row_y))
+        if button("No", width=btn_w):
+            self._render_state.sticker_delete_armed = ""
 
-    def _draw_progress(
-        self, artifact: RenderedArtifact | None, pending_emoji: str
-    ) -> None:
-        imgui.spacing()
-        imgui.separator()
-        imgui.spacing()
-
-        full_width: float = imgui.get_content_region_avail().x
-
-        if artifact is None:
-            imgui.text_colored(
-                COLOR.STATE_WARN, "Render a video on the left first, then add it here."
-            )
-        elif self._render_state.in_flight:
-            prog: ExportProgress | None = self._render_state.last_progress
-            msg: str = prog.message if prog is not None else "Working..."
-            frac: float = prog.fraction if prog is not None else 0.0
-            imgui.text(msg)
-            imgui.progress_bar(frac, size_arg=(full_width, 0.0))
-        else:
-            pack: PackEntry | None = self._tg.find_pack(
-                self._render_state.active_pack_set_name
-            )
-            title: str = pack.title if pack is not None else _DEFAULT_PACK_TITLE
-            if imgui.button("Add as new sticker", size=(full_width, 0)):
-                self._enqueue(
-                    _Job(
-                        kind="add",
-                        artifact=artifact,
-                        pack_set_name=self._render_state.active_pack_set_name,
-                        pack_title=title,
-                        emoji=pending_emoji,
-                    )
-                )
-
-        if (
-            self._render_state.last_progress is not None
-            and not self._render_state.in_flight
-        ):
-            terminal: ExportProgress = self._render_state.last_progress
-            terminal_color: tuple[float, float, float, float] = (
-                COLOR.STATE_ERROR if terminal.is_error else COLOR.STATE_OK
-            )
-            imgui.text_colored(terminal_color, terminal.message)
-            if terminal.url:
-                imgui.set_next_item_width(imgui.get_content_region_avail().x)
-                imgui.input_text(
-                    "##pack_link", terminal.url, flags=imgui.InputTextFlags_.read_only
-                )
+    def _draw_inflight(self, full_width: float) -> None:
+        prog: ExportProgress | None = self._render_state.last_progress
+        msg: str = prog.message if prog is not None else "Working..."
+        frac: float = prog.fraction if prog is not None else 0.0
+        imgui.text(msg)
+        imgui.progress_bar(frac, size_arg=(full_width, 0.0))
 
     # -------------------------------------------------------------- worker thread
     def prepare(
@@ -568,7 +836,7 @@ class TelegramExporter(Exporter):
 
     # Only upload ops gate the UI's "Add as new sticker" button; refresh/link are
     # background fetches whose results aren't terminal ExportProgress events.
-    _UPLOAD_KINDS = frozenset({"add", "replace", "delete", "delete_pack"})
+    _UPLOAD_KINDS = frozenset({"add", "replace", "delete", "delete_pack", "set_emoji"})
 
     def _enqueue(self, job: _Job) -> None:
         self._ensure_worker()
@@ -622,18 +890,11 @@ class TelegramExporter(Exporter):
                     message="Connection invalid — re-Connect in Settings.",
                 )
             )
-            raise ExporterError(self._map_tg_error(e)) from e
+            raise ExporterError(_map_tg_error(e)) from e
         except tg.error.TelegramError as e:
-            raise ExporterError(self._map_tg_error(e)) from e
+            raise ExporterError(_map_tg_error(e)) from e
         finally:
             await bot.shutdown()
-
-    @staticmethod
-    def _map_tg_error(e: tg.error.TelegramError) -> str:
-        text: str = str(e)
-        if any(marker in text for marker in _USER_PROBLEM_MARKERS):
-            return "Open your bot, press Start, and Connect again."
-        return f"Telegram API error: {text}"
 
     def _handle_job(self, job: _Job) -> None:
         try:
@@ -653,6 +914,12 @@ class TelegramExporter(Exporter):
                 if job.target_sticker_file_id is None:
                     raise ExporterError("Delete job missing target")
                 self._handle_delete(job.target_sticker_file_id, job.pack_set_name)
+            elif job.kind == "set_emoji":
+                if job.target_sticker_file_id is None:
+                    raise ExporterError("Set-emoji job missing target")
+                self._handle_set_emoji(
+                    job.target_sticker_file_id, job.emoji, job.pack_set_name
+                )
             elif job.kind == "delete_pack":
                 self._handle_delete_pack(job.pack_set_name)
             else:
@@ -913,6 +1180,22 @@ class TelegramExporter(Exporter):
 
         await self._with_bot(op)
 
+    def _handle_set_emoji(
+        self, target_file_id: str, emoji: str, pack_set_name: str
+    ) -> None:
+        self._push_progress(ExportProgress(message="Updating emoji...", fraction=0.5))
+        self._run_async(self._do_set_emoji(target_file_id, emoji))
+        self._safe_refresh(pack_set_name)
+        self._push_progress(
+            ExportProgress(message="Emoji updated", fraction=1.0, is_terminal=True)
+        )
+
+    async def _do_set_emoji(self, target_file_id: str, emoji: str) -> None:
+        async def op(bot: tg.Bot) -> None:
+            await bot.set_sticker_emoji_list(target_file_id, [emoji])
+
+        await self._with_bot(op)
+
     def _handle_delete_pack(self, pack_set_name: str) -> None:
         self._push_progress(ExportProgress(message="Deleting pack...", fraction=0.5))
         self._run_async(self._do_delete_pack(pack_set_name))
@@ -969,43 +1252,11 @@ class TelegramExporter(Exporter):
             self._release_sticker_slots()
             self._render_state.sticker_slots = ev.slots
             self._render_state.selected_index = 0
+            self._render_state.sticker_delete_armed = ""
         else:
             self._render_state.last_progress = ev
             if ev.is_terminal:
                 self._render_state.in_flight = False
-
-    def _draw_sticker_button(self, idx: int, slot: _StickerSlot) -> None:
-        thumbnail: Image | Video | None = self._lazy_thumbnail(slot)
-        is_selected: bool = idx == self._render_state.selected_index
-
-        n_styles: int = 0
-        if is_selected:
-            highlight: tuple[float, float, float, float] = COLOR.ACCENT_PRIMARY
-            imgui.push_style_color(imgui.Col_.button, highlight)
-            imgui.push_style_color(imgui.Col_.button_hovered, highlight)
-            imgui.push_style_color(imgui.Col_.button_active, highlight)
-            n_styles += 3
-
-        if thumbnail is not None:
-            tex = thumbnail.texture
-            h: int = _PREVIEW_THUMB_HEIGHT
-            w: int = h * tex.size[0] // max(tex.size[1], 1)
-            if imgui.image_button(
-                f"##sticker_{idx}",
-                imgui.ImTextureRef(tex.glo),
-                image_size=(w, h),
-                uv0=(0, 1),
-                uv1=(1, 0),
-            ):
-                self._render_state.selected_index = idx
-        else:
-            if imgui.button(
-                f"#{idx}", size=(_PREVIEW_THUMB_HEIGHT, _PREVIEW_THUMB_HEIGHT)
-            ):
-                self._render_state.selected_index = idx
-
-        if n_styles:
-            imgui.pop_style_color(n_styles)
 
     def _lazy_thumbnail(self, slot: _StickerSlot) -> Image | Video | None:
         if slot.local_file_path is None or not slot.local_file_path.exists():

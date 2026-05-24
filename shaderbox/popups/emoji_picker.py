@@ -67,5 +67,11 @@ def _draw_body(app: App) -> bool:
 
 
 def _pick(app: App, char: str) -> None:
-    if app.share_tab_state is not None:
-        app.share_tab_state.pending_emoji = char
+    if app.emoji_pick_target is not None:
+        app.emoji_pick_target(char)
+        return
+    if app.share_tab_state is None:
+        return
+    active_id: str = app.exporter_registry.active_id
+    if active_id:
+        app.share_tab_state.outlet(active_id).pending_emoji = char

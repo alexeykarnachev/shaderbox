@@ -109,6 +109,10 @@ re-deriving rules), **cold-reloadable** (picks up "what's next?" in a few reads)
 - `/sanitize` — the closing-out sweep (run before "done": walk `todo.md` + `conventions.md`, audit
   the code against them, fix stale refs/docs, update the `roadmap.md` banner + rows, cold-context
   check). Ends with a mandatory sweep-report table.
+- `/imgui-ui` — read at the START of ANY UI work (building/editing/moving a button/panel/widget/tab/
+  popup/layout, theming, refactoring draw code) and when reacting to a UI problem. Carries the
+  hard-won imgui rules (button tiers, jitter-free overlays, the SetCursorPos assert, font/emoji
+  caveats, the no-screenshot loop). Keeps the deep guidance out of the always-loaded context.
 
 ## Reply language
 

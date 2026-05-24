@@ -2,6 +2,7 @@ import platform
 import shutil
 import subprocess
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -110,6 +111,8 @@ class App:
         self.is_settings_open: bool = False
         self.is_emoji_picker_open: bool = False
         self.emoji_picker_query: str = ""
+        # Where a picked emoji is delivered (set by whoever opens the picker).
+        self.emoji_pick_target: Callable[[str], None] | None = None
         self.editor_focused: bool = False
         # Start in navigation mode: defocus the editor on its first render so the
         # caret isn't active and arrows navigate nodes (the editor auto-grabs focus).
@@ -138,8 +141,9 @@ class App:
         self.is_node_creator_open = False
         self.is_emoji_picker_open = False
 
-    def open_emoji_picker(self) -> None:
+    def open_emoji_picker(self, target: Callable[[str], None] | None = None) -> None:
         self.is_emoji_picker_open = True
+        self.emoji_pick_target = target
         self.is_node_creator_open = False
         self.is_settings_open = False
 

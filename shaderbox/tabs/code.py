@@ -1,9 +1,9 @@
 import glfw
-import pyperclip
 from imgui_bundle import imgui
 
 from shaderbox.app import App
 from shaderbox.theme import COLOR, EDITOR_UNFOCUSED_ALPHA, SIZE, SPACE
+from shaderbox.ui_utils import draw_copyable_text
 
 
 def draw(app: App) -> None:
@@ -16,17 +16,8 @@ def draw(app: App) -> None:
     full_file_path = app.nodes_dir / ui_node.id / "shader.frag.glsl"
     local_file_path = full_file_path.relative_to(app.project_dir)
 
-    imgui.push_style_color(imgui.Col_.text, COLOR.FG_DIM)
-    path_str = str(local_file_path)
-    if imgui.selectable(path_str, False, size=(imgui.calc_text_size(path_str).x, 0))[0]:
-        try:
-            pyperclip.copy(str(full_file_path))
-            app.notifications.push("Copied to clipboard!")
-        except pyperclip.PyperclipException:
-            app.notifications.push(
-                "No clipboard backend (install xclip or xsel)", COLOR.STATE_ERROR[:3]
-            )
-    imgui.pop_style_color()
+    if draw_copyable_text(str(local_file_path), copy_value=str(full_file_path)):
+        app.notifications.push("Copied to clipboard!")
 
     if app.is_current_editor_dirty():
         imgui.same_line()

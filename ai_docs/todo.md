@@ -28,6 +28,16 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
 
 ---
 
+## [DEFERRAL] sticker render is always t=0..N (no loop-offset / "which 3s")
+- **Trigger:** first time a shader's interesting motion isn't at the start (a user wants a 3s
+  window other than the first), OR when you next touch the render path in `tabs/share_state.py`
+  (`render_for`) / `core.py` (`_render_video`).
+- A shader loops infinitely but `_render_video` always renders frames `i/fps` for `i in
+  range(n_frames)` — start time is hardcoded 0. Telegram stickers cap at 3s, so a shader whose
+  best window is at t=4s is uncapturable. Fix: carry a `start_t` on `RenderPreset` (or a
+  loop-offset control on the sticker section) and pass it into the render loop. Deferred in
+  feature 010 (Out of scope); the share UI has no offset control today.
+
 ## [DEFERRAL] imgui_color_text_edit render() FPE — editor hidden behind modals
 - **Trigger:** if imgui-bundle fixes the upstream glyph-metric div-by-zero (or you upgrade and
   the crash no longer reproduces), the two guards below become unnecessary — let the editor render

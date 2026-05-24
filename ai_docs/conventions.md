@@ -35,6 +35,28 @@ belong in the feature spec (`ai_docs/features/NNN_*.md`). This file is not a cha
   circular-import hack — a collision means the design is wrong. The sanctioned type-suppression
   allowlist (upstream library-stub gaps only) is in `## Known quirks`.
 - Never use `if TYPE_CHECKING:` to work-around circular imports. Circular imports is a sign of a bad design.
+- **No `@staticmethod`.** A method that doesn't use `self` isn't a method — make it a module-level
+  free function. A stateless helper used by one class lives as a private `_name()` function in that
+  module; a helper reused across modules goes in `ui_utils.py` (or the relevant leaf). Same bar for
+  `@classmethod` unless it's a genuine alternate constructor (`cls(...)`).
+- **Don't repeat a UI widget.** A draw block that appears in two places (a copyable path, a styled
+  button, the duration slider, an overlay close-✕) is extracted to a free function in `ui_utils.py`
+  and called from both — never copy-pasted. Shared primitives today: `primary_button` / `button` /
+  `ghost_button` / `danger_button`, `caption_text`, `close_cross_button`, `duration_slider`,
+  `draw_copyable_text`.
+- **Button tiers — pick by role, not by look.** Four tiers, all in `ui_utils.py`:
+  `primary_button` = the ONE call-to-action of a section (filled accent); `button` = an ordinary
+  action (filled neutral grey); `ghost_button` = low-emphasis / secondary (text only); `danger_button`
+  = destructive (text only, red — the confirm-row chrome carries the weight, never a filled-red fill).
+  Never hand-roll `push_style_color(Col_.button, …)` at a call site; if a needed tier is missing, add
+  it to the system.
+- **Jitter-free overlays/grids.** A selection highlight must be a *colour* change, never a *size*
+  change (a thicker border is drawn **inset**, not straddling the cell edge). For a grid cell that
+  carries an overlay control (a delete-✕ pinned in a corner), wrap **each cell in its own
+  `begin_child(cell, cell)`** and do the overlay's `set_cursor_screen_pos` *inside* that child — a
+  child has its own content region, so the absolute move can't extend the parent (no jitter) and
+  can't trip the SetCursorPos assert (next quirk). Do NOT absolutely-position items directly in the
+  panel window and then move the cursor backward.
 - Type checker: **pyright** (not mypy), basic mode, via `make check` — blocks on failure.
   Repo is at 0 errors; keep it that way.
 - `uv` for everything (`uv run`, `uv add`, `uv add --group dev`) — never bare `python` / `pip`.
@@ -147,6 +169,13 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
 - **A live moderngl context must exist before constructing `Image` / `Video` / `Font` / `Canvas` /
   `Node`** — they call `moderngl.get_context()` lazily. In the app,
   `glfw.make_context_current(window)` handles it.
+- **`set_cursor_screen_pos()` to a position past submitted items asserts** ("Code uses SetCursorPos
+  to extend window/parent boundaries. Please submit an item e.g. Dummy() afterwards"). It surfaces as
+  the swallowed `Error in node settings: …` line, then the unbalanced stack throws the downstream
+  `IM_ASSERT(Size>0)` at `end_child` (same symptom-vs-cause trap as the per-frame-exception crash). To
+  position items absolutely (overlay buttons, grids), either submit an item that covers the moved-to
+  position, or — preferred — confine the absolute moves to a per-element `begin_child` so they can't
+  touch the parent's bounds. See `## Code rules` "Jitter-free overlays/grids".
 - **`imgui_color_text_edit.TextEditor.render()` auto-grabs imgui keyboard focus on a child window's
   first frame** — so a never-yet-rendered editor (app open, or just-switched node) steals focus and
   the caret goes live without a click. The editor exposes no `is_focused()` getter. Track focus by

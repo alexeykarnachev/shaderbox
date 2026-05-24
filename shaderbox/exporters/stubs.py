@@ -5,6 +5,7 @@ from shaderbox.exporters.base import (
     AuthState,
     Exporter,
     ExporterStatus,
+    RenderControl,
     RenderedArtifact,
 )
 from shaderbox.integrations import IntegrationsStore
@@ -47,9 +48,8 @@ class _StubExporter(Exporter):
     def draw_config_ui(self) -> None: ...
     def draw_target_panel(
         self,
-        artifact: RenderedArtifact | None,
         current_node: UINode | None,
-        pending_emoji: str,
+        render_control: RenderControl,
     ) -> None: ...
     def update(self, current_node: UINode | None) -> None: ...
 

@@ -1,11 +1,38 @@
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Any
 
 from shaderbox.integrations import IntegrationsStore
+from shaderbox.render_preset import RenderPreset
 from shaderbox.ui_models import UINode
+
+
+@dataclass
+class RenderControl:
+    """The render-step hooks an outlet panel draws into its own UI.
+
+    Lets each exporter own its full concise render+operations panel without
+    importing `App`: the share tab supplies the mutable per-outlet state and
+    the action callbacks.
+    """
+
+    emoji: str
+    duration: float
+    artifact: "RenderedArtifact | None"
+    artifact_is_fresh: bool
+    set_duration: Callable[[float], None]
+    # Open the emoji picker; the picked emoji is delivered to `on_pick`.
+    open_emoji_picker: Callable[[Callable[[str], None]], None]
+    render: Callable[[], None]
+    # Draws `char` as a clickable emoji-font glyph button of the given side; -> clicked.
+    emoji_button: Callable[[str, float], bool]
+    # Set `emoji` as the new-sticker emoji (the picker target for the New-sticker tile).
+    set_emoji: Callable[[str], None]
+    preview_texture_glo: int | None = None
+    preview_size: tuple[int, int] = (0, 0)
 
 
 class AuthState(Enum):
@@ -75,6 +102,12 @@ class Exporter(ABC):
     def unavailable_reason(self) -> str:
         return ""
 
+    # The render contract this outlet imposes (size/aspect/duration/fps/format/
+    # byte caps). Drives the outlet's concise render controls AND prepare()'s
+    # verification. Default is an unconstrained file export (the Render tab).
+    def render_preset(self) -> RenderPreset:
+        return RenderPreset()
+
     @property
     @abstractmethod
     def exporter_id(self) -> str: ...
@@ -117,9 +150,8 @@ class Exporter(ABC):
     @abstractmethod
     def draw_target_panel(
         self,
-        artifact: RenderedArtifact | None,
         current_node: UINode | None,
-        pending_emoji: str,
+        render_control: RenderControl,
     ) -> None: ...
 
     @abstractmethod

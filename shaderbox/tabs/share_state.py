@@ -1,19 +1,106 @@
 from dataclasses import dataclass, field
 from pathlib import Path
+from uuid import uuid4
 
-from shaderbox.exporters.base import RenderedArtifact
-from shaderbox.media import MediaDetails
+from loguru import logger
+
+from shaderbox.constants import DEFAULT_FPS
+from shaderbox.core import Node
+from shaderbox.exporters.base import ExportProgress, RenderedArtifact
+from shaderbox.media import Image, MediaDetails, MediaWithTexture, Video
+from shaderbox.render_preset import RenderPreset
+
+
+@dataclass
+class OutletRenderState:
+    """Per-outlet render config + its last rendered artifact.
+
+    Each outlet renders with its own preset-bounded params, so the artifact
+    can't be shared across outlets (different size/duration caps).
+    """
+
+    duration: float = 3.0
+    pending_emoji: str = "🎨"
+    current_artifact: RenderedArtifact | None = None
+    artifact_is_fresh: bool = False
+    preview: MediaWithTexture | None = None
+    notified_progress: ExportProgress | None = None  # last terminal event surfaced
+
+    def set_artifact(self, artifact: RenderedArtifact | None) -> None:
+        self._release_preview()
+        self.current_artifact = artifact
+        self.artifact_is_fresh = artifact is not None
+
+    def preview_media(self) -> MediaWithTexture | None:
+        art: RenderedArtifact | None = self.current_artifact
+        if art is None or not art.path.exists():
+            return None
+        if self.preview is None:
+            self.preview = Video(art.path) if art.is_video else Image(art.path)
+        return self.preview
+
+    def _release_preview(self) -> None:
+        if self.preview is not None:
+            self.preview.release()
+            self.preview = None
 
 
 @dataclass
 class TabState:
     scratch_dir: Path
-    media_details: MediaDetails = field(
-        default_factory=lambda: MediaDetails(is_video=True)
-    )
-    current_artifact: RenderedArtifact | None = None
-    pending_emoji: str = "🎨"
+    outlets: dict[str, OutletRenderState] = field(default_factory=dict)
+
+    def outlet(self, exporter_id: str) -> OutletRenderState:
+        if exporter_id not in self.outlets:
+            self.outlets[exporter_id] = OutletRenderState()
+        return self.outlets[exporter_id]
 
 
 def make_state(scratch_dir: Path) -> TabState:
     return TabState(scratch_dir=scratch_dir)
+
+
+def render_for(
+    node: Node, preset: RenderPreset, duration: float, scratch_dir: Path
+) -> RenderedArtifact | None:
+    """Render the node into a scratch artifact bounded by the outlet preset.
+
+    Owns the scratch-path minting, the render try/except, and the artifact
+    value construction — the glue every outlet would otherwise re-write.
+    """
+    is_video: bool = preset.is_video if preset.is_video is not None else True
+    ext: str = (preset.container or (".webm" if is_video else ".png")).lstrip(".")
+    if not is_video:
+        ext = "png"
+
+    scratch_dir.mkdir(parents=True, exist_ok=True)
+    artifact_path: Path = scratch_dir / f"{uuid4()}.{ext}"
+
+    capped_duration: float = duration
+    if preset.duration_max is not None:
+        capped_duration = min(capped_duration, preset.duration_max)
+
+    details = MediaDetails(
+        is_video=is_video,
+        fps=preset.fps if preset.fps is not None else DEFAULT_FPS,
+        duration=capped_duration,
+    )
+    details.file_details.path = str(artifact_path)
+
+    try:
+        rendered: MediaDetails = node.render_media(details, preset)
+    except Exception as e:
+        logger.error(f"Failed to render artifact: {e}")
+        if artifact_path.exists():
+            try:
+                artifact_path.unlink()
+            except OSError as cleanup_err:
+                logger.warning(f"Failed to cleanup partial render: {cleanup_err}")
+        return None
+
+    return RenderedArtifact(
+        path=artifact_path,
+        is_video=is_video,
+        duration=rendered.duration,
+        size=(rendered.resolution_details.width, rendered.resolution_details.height),
+    )

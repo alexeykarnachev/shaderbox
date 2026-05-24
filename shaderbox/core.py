@@ -27,6 +27,7 @@ from shaderbox.constants import (
     WEBM_CRF_VALUES,
 )
 from shaderbox.media import Image, MediaDetails, MediaWithTexture, Video, texture_to_pil
+from shaderbox.render_preset import FitPolicy, RenderPreset, resolve_dims
 
 
 class Canvas:
@@ -292,15 +293,19 @@ class Node:
                 logger.info(f"Video uniform '{uniform.name}' restarted")
 
     def _render_image(
-        self, details: MediaDetails, u_time: float | None = 0.0
+        self, details: MediaDetails, canvas: "Canvas", u_time: float | None = 0.0
     ) -> MediaDetails:
         file_path = Path(details.file_details.path)
-        self.render(u_time=u_time)
+        self.render(u_time=u_time, canvas=canvas)
 
-        pil_image = texture_to_pil(self.canvas.texture)
-        pil_image = pil_image.resize(
-            (details.resolution_details.width, details.resolution_details.height)
-        )
+        pil_image = texture_to_pil(canvas.texture)
+        if canvas.texture.size != (
+            details.resolution_details.width,
+            details.resolution_details.height,
+        ):
+            pil_image = pil_image.resize(
+                (details.resolution_details.width, details.resolution_details.height)
+            )
 
         pil_image.save(file_path)
         logger.info(f"Image saved: {file_path}")
@@ -311,7 +316,7 @@ class Node:
 
         return rendered_details
 
-    def _render_video(self, details: MediaDetails) -> MediaDetails:
+    def _render_video(self, details: MediaDetails, canvas: "Canvas") -> MediaDetails:
         file_path = Path(details.file_details.path)
         extension = file_path.suffix
         width = details.resolution_details.width
@@ -321,6 +326,13 @@ class Node:
         alignment = VIDEO_RESOLUTION_ALIGNMENT
         width = (width + alignment - 1) // alignment * alignment
         height = (height + alignment - 1) // alignment * alignment
+
+        # Canvas already at the requested size → let ffmpeg copy 1:1, no -s rescale.
+        scale_params: list[str] = (
+            []
+            if canvas.texture.size == (width, height)
+            else ["-s", f"{width}x{height}"]
+        )
 
         if extension == ".mp4":
             codec = "libx264"
@@ -365,17 +377,17 @@ class Node:
             ffmpeg_params=ffmpeg_params,
             pixelformat=pixelformat,
             input_params=["-pixel_format", "bgra"],
-            output_params=["-s", f"{width}x{height}"],
+            output_params=scale_params,
         )
 
         self.restart_video_uniforms()
         n_frames = int(details.duration * details.fps)
         for i in range(n_frames):
-            self.render(i / details.fps)
+            self.render(i / details.fps, canvas=canvas)
 
-            texture_data = self.canvas.texture.read()
+            texture_data = canvas.texture.read()
             frame = np.frombuffer(texture_data, dtype=np.uint8).reshape(
-                self.canvas.texture.height, self.canvas.texture.width, 4
+                canvas.texture.height, canvas.texture.width, 4
             )
             frame = np.flipud(frame)
             writer.append_data(frame)
@@ -390,8 +402,28 @@ class Node:
 
         return rendered_details
 
-    def render_media(self, details: MediaDetails) -> MediaDetails:
+    def render_media(
+        self, details: MediaDetails, preset: RenderPreset | None = None
+    ) -> MediaDetails:
+        if preset is None or preset.fit is FitPolicy.SCALE_DISTORT:
+            canvas = self.canvas
+            return self._render_media_into(details, canvas)
+
+        target_w, target_h = resolve_dims(preset, self.canvas.texture.size)
+        details = details.model_copy(deep=True)
+        details.resolution_details.width = target_w
+        details.resolution_details.height = target_h
+
+        target = Canvas(gl=self._gl, size=(target_w, target_h))
+        try:
+            return self._render_media_into(details, target)
+        finally:
+            target.release()
+
+    def _render_media_into(
+        self, details: MediaDetails, canvas: "Canvas"
+    ) -> MediaDetails:
         if details.is_video:
-            return self._render_video(details)
+            return self._render_video(details, canvas)
         else:
-            return self._render_image(details)
+            return self._render_image(details, canvas)
