@@ -27,7 +27,7 @@ feature; brief points at the superseder).
 
 **As of 2026-05-24.**
 
-- **Node-tab UI polish — DONE (small wave on top of 0.4.0, one crash fixed).** Uniform rows flipped
+- **Node-tab UI polish — DONE, shipped in `v0.4.1` (small wave, one crash fixed).** Uniform rows flipped
   to a left label-column layout (chip -> dim name column -> width-capped control; names no longer ride
   the imgui widget label on the ragged right edge); per-row separator cascade replaced with calm gaps;
   header is now a two-line label/control grid (`Node name` / `Resolution (matching-uniform)`), the
@@ -45,9 +45,9 @@ feature; brief points at the superseder).
   as trigger-gated deferrals (the deferred-N=2 extractions in the 011 spec's DEFER table; the
   sticker loop-offset; the resolution-combo round-trip parse; the inline-editor upstream items) —
   none is a default next-step; pick up only when its trigger fires.
-- **Shipped: `v0.4.0`** (009+010+011) — tagged on `master`, both itch channels (linux+windows)
-  pushed via butler and live at 0.4.0. The node-tab polish above is committed on `dev`, not yet
-  shipped.
+- **Shipped: `v0.4.1`** (patch — node-tab polish + text-cap crash fix) — tagged on `master`, both
+  itch channels (linux+windows) pushed via butler and live at 0.4.1. `dev` == `master` == `v0.4.1`;
+  tree clean.
 - **Branch model:** develop on `dev`, ship from `master` (`dev_flow.md ## Branch model`).
 - **Token hygiene:** the dev bot token lives only in `~/.local/share/shaderbox/integrations.json`
   (outside the repo, never committed); maintainer rotates it post-iteration.
