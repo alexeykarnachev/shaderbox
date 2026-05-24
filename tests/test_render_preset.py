@@ -67,7 +67,9 @@ def test_fixed_aspect_portrait() -> None:
 
 
 def test_fixed_aspect_requires_params() -> None:
-    preset = RenderPreset(resolution_policy=ResolutionPolicy.FIXED_ASPECT, aspect=(1, 1))
+    preset = RenderPreset(
+        resolution_policy=ResolutionPolicy.FIXED_ASPECT, aspect=(1, 1)
+    )
     with pytest.raises(ValueError):
         resolve_dims(preset, (256, 256))
 
@@ -80,8 +82,6 @@ def test_fixed_dims_passthrough_with_alignment() -> None:
 
 
 def test_fixed_dims_requires_params() -> None:
-    preset = RenderPreset(
-        resolution_policy=ResolutionPolicy.FIXED_DIMS, target_w=200
-    )
+    preset = RenderPreset(resolution_policy=ResolutionPolicy.FIXED_DIMS, target_w=200)
     with pytest.raises(ValueError):
         resolve_dims(preset, (256, 256))
