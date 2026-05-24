@@ -46,8 +46,11 @@ feature; brief points at the superseder).
   sticker loop-offset; the resolution-combo round-trip parse; the inline-editor upstream items) —
   none is a default next-step; pick up only when its trigger fires.
 - **Shipped: `v0.4.1`** (patch — node-tab polish + text-cap crash fix) — tagged on `master`, both
-  itch channels (linux+windows) pushed via butler and live at 0.4.1. `dev` == `master` == `v0.4.1`;
-  tree clean.
+  itch channels (linux+windows) pushed via butler and live at 0.4.1.
+- **`dev` is ahead of `master`** by a docs-only harness cleanup (post-ship, not yet released):
+  decoupled the docs from code specifics — deleted a line-count ledger + the enumerated `ui_primitives`
+  roster (docs now point at the file, not copy its contents), turned restated rules into pointers,
+  sealed the `projects/dev/` sandbox-commit rule into always-loaded `CLAUDE.md ## Hard rules`. Tree clean.
 - **Branch model:** develop on `dev`, ship from `master` (`dev_flow.md ## Branch model`).
 - **Token hygiene:** the dev bot token lives only in `~/.local/share/shaderbox/integrations.json`
   (outside the repo, never committed); maintainer rotates it post-iteration.
