@@ -5,17 +5,16 @@ from imgui_bundle import imgui, imgui_ctx
 from OpenGL.GL import GL_SAMPLER_2D
 
 from shaderbox.app import App
-from shaderbox.theme import COLOR, SIZE, SPACE
+from shaderbox.theme import SIZE, SPACE
 from shaderbox.ui_models import (
     UIUniform,
     UniformSortKey,
     load_node_from_dir,
     sort_uniform_hashes,
 )
+from shaderbox.ui_primitives import button, ghost_button, small_caption
 from shaderbox.util import get_resolution_str, get_uniform_hash
 from shaderbox.widgets.uniform import draw_ui_uniform
-
-_FONT_12_SIZE = 12.0
 
 
 def _format_auto_value(value: object) -> str:
@@ -38,9 +37,7 @@ def _draw_auto_row(app: App, uniforms: list[UIUniform]) -> None:
         f"{u.name}: {_format_auto_value(ui_node.node.uniform_values.get(u.name))}"
         for u in uniforms
     ]
-    imgui.push_font(app.font_12, _FONT_12_SIZE)
-    imgui.text_colored(COLOR.FG_DIM, "   ".join(parts))
-    imgui.pop_font()
+    small_caption(app.font_12, "   ".join(parts))
 
 
 def draw(app: App) -> None:
@@ -75,7 +72,7 @@ def draw(app: App) -> None:
                 uniform_sizes.add((w, h))
 
     current_name = ", ".join(matching_uniforms) if matching_uniforms else None
-    resolution_items = [get_resolution_str(current_name, *current_size)]
+    resolution_items = [get_resolution_str(None, *current_size)]
     for w, h, name in uniform_resolutions:
         resolution_items.append(get_resolution_str(name, w, h))
     for w, h in standard_resolutions:
@@ -84,22 +81,31 @@ def draw(app: App) -> None:
 
     node_ui_state = app.current_node_ui_state_or_default
 
+    combo_offset = SIZE.NAME_INPUT_W + SPACE.XL
+    resolution_label = "Resolution"
+    if current_name:
+        resolution_label += f" ({current_name})"
+
+    small_caption(app.font_12, "Node name")
+    imgui.same_line(combo_offset)
+    small_caption(app.font_12, resolution_label)
+
     imgui.set_next_item_width(SIZE.NAME_INPUT_W)
     ui_node.ui_state.ui_name = imgui.input_text_with_hint(
         "##node_name", "node name", ui_node.ui_state.ui_name
     )[1]
 
-    imgui.same_line()
+    imgui.same_line(combo_offset)
     imgui.set_next_item_width(SIZE.RES_COMBO_W)
     new_res_idx = imgui.combo("##resolution", 0, resolution_items)[1]
     if new_res_idx != 0:
         resolution_str = resolution_items[new_res_idx]
-        w, h = map(int, resolution_str.split(" | ")[0].split("x"))
+        w, h = map(int, resolution_str.split(" ")[0].split("x"))
         ui_node.node.canvas.set_size((w, h))
         app.notifications.push(f"Canvas resolution changed: {resolution_str}")
 
     imgui.same_line()
-    if imgui.button("...##node_actions"):
+    if ghost_button("...##node_actions"):
         imgui.open_popup("node_actions_popup")
     with imgui_ctx.begin_popup("node_actions_popup") as popup:
         if popup and imgui.selectable("Save as template", False)[0]:
@@ -139,14 +145,14 @@ def draw(app: App) -> None:
 
     imgui.same_line()
     arrow = "v" if node_ui_state.uniform_sort_desc else "^"
-    if imgui.button(f"{arrow}##uniform_sort_dir", size=(SIZE.BTN_SM_H, 0)):
+    if button(f"{arrow}##uniform_sort_dir", width=SIZE.BTN_SM_H):
         node_ui_state.uniform_sort_desc = not node_ui_state.uniform_sort_desc
 
     if auto_hashes:
         imgui.same_line(spacing=float(SPACE.XL))
         _draw_auto_row(app, [ui_uniforms[h] for h in auto_hashes])
 
-    _section_break()
+    imgui.dummy((0, SPACE.MD))
 
     sorted_hashes = sort_uniform_hashes(
         active_uniform_hashes,
@@ -156,10 +162,6 @@ def draw(app: App) -> None:
     )
 
     with imgui_ctx.begin_child("ui_uniforms"):
-        imgui.push_style_color(imgui.Col_.separator, COLOR.BG_FRAME)
-
         for hash in sorted_hashes:
             draw_ui_uniform(app, ui_uniforms[hash])
-            imgui.spacing()
-            imgui.separator()
-        imgui.pop_style_color()
+            imgui.dummy((0, SPACE.SM))

@@ -43,7 +43,7 @@ belong in the feature spec (`ai_docs/features/NNN_*.md`). This file is not a cha
 - **Don't repeat a UI widget.** A draw block that appears in two places (a copyable path, a styled
   button, the duration slider, an overlay close-✕) is extracted to a free function in
   `ui_primitives.py` and called from both — never copy-pasted. Shared primitives today:
-  `primary_button` / `button` / `ghost_button` / `danger_button`, `caption_text`,
+  `primary_button` / `button` / `ghost_button` / `danger_button`, `caption_text`, `small_caption`,
   `close_cross_button`, `duration_slider`, `draw_copyable_text`.
 - **Button tiers — pick by role, not by look.** Four tiers, all in `ui_primitives.py`:
   `primary_button` = the ONE call-to-action of a section (filled accent); `button` = an ordinary

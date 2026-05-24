@@ -57,6 +57,17 @@ def caption_text(
     imgui.text_colored(color or COLOR.FG_DIM, text)
 
 
+def small_caption(font: imgui.ImFont, text: str) -> None:
+    """Dim caption in a smaller font (column labels, inline readouts).
+
+    `font.legacy_size` is the rasterized size push_font wants (conventions.md
+    ## Known quirks).
+    """
+    imgui.push_font(font, font.legacy_size)
+    imgui.text_colored(COLOR.FG_DIM, text)
+    imgui.pop_font()
+
+
 def close_cross_button(id_: str, side: float) -> bool:
     """A red square with a crisp drawn ✕ — overlay close/delete affordance.
 

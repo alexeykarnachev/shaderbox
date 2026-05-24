@@ -184,7 +184,8 @@ The only project-coupled facts, consolidated here:
 
 - **Modules:** tokens in `shaderbox/theme.py` (`COLOR` / `SIZE` / `SPACE` bags + `apply_theme` +
   `fade`); primitives in `shaderbox/ui_primitives.py` (`primary_button` / `button` / `ghost_button` /
-  `danger_button`, `caption_text`, `close_cross_button`, `duration_slider`, `draw_copyable_text`);
+  `danger_button`, `caption_text`, `small_caption`, `close_cross_button`, `duration_slider`,
+  `draw_copyable_text`);
   non-UI helpers in `shaderbox/util.py`. Theme is gruvbox-dark, accent-swappable at runtime.
 - **Three-layer UI:** `app.py` (state/lifecycle, no drawing) / `ui.py` (frame-loop orchestrator) /
   `widgets`+`popups`+`tabs` (pure `draw(app)` free fns). Forced by the no-`TYPE_CHECKING` rule (a draw

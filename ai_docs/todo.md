@@ -28,6 +28,17 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
 
 ---
 
+## [DEFERRAL] resolution combo parses (w,h) back out of its display label
+- **Trigger:** next time you change `util.get_resolution_str`'s format string (anything before
+  the `WxH` token, or the `x`/space layout), OR the first time the canvas resolution silently
+  fails to change on combo select.
+- `tabs/node.py` reconstructs `(w, h)` from the selected combo item via
+  `resolution_str.split(" ")[0].split("x")` — it re-parses the human display label produced by
+  `get_resolution_str`. Safe today (the `WxH` token is always first, the `(ratio)` / `- name`
+  suffix can't corrupt it) and pinned by `tests/test_util.py::test_resolution_str_format_parses_back`,
+  but format and parser must agree forever. Cleaner fix when touched: carry a parallel `(w, h)`
+  list indexed by the combo index instead of round-tripping the string.
+
 ## [DEFERRAL] sticker render is always t=0..N (no loop-offset / "which 3s")
 - **Trigger:** first time a shader's interesting motion isn't at the start (a user wants a 3s
   window other than the first), OR when you next touch the render path in `tabs/share_state.py`

@@ -68,11 +68,10 @@ def select_next_value(
 def get_resolution_str(name: str | None, w: int, h: int) -> str:
     g = math.gcd(w, h)
     w_ratio, h_ratio = w // g, h // g
-    aspect = f"{w_ratio}:{h_ratio}"
-    parts = [f"{w}x{h}", aspect]
+    label = f"{w}x{h} ({w_ratio}:{h_ratio})"
     if name:
-        parts.append(name)
-    return " | ".join(parts)
+        label += f" - {name}"
+    return label
 
 
 def get_uniform_hash(u: moderngl.Uniform | moderngl.UniformBlock) -> int:
@@ -86,22 +85,14 @@ def get_uniform_hash(u: moderngl.Uniform | moderngl.UniformBlock) -> int:
 
 
 def unicode_to_str(char_inds: list[int]) -> str:
-    eos_idx = char_inds.index(0)
-    chars = []
-    for i in range(0, eos_idx):
-        chars.append(chr(char_inds[i]))
-    text = "".join(chars)
-
-    return text
+    eos_idx = char_inds.index(0) if 0 in char_inds else len(char_inds)
+    return "".join(chr(char_inds[i]) for i in range(eos_idx))
 
 
-def str_to_unicode(text: str, max_n_chars: int) -> list[int]:
-    if len(text) >= max_n_chars:
-        text = text[:max_n_chars]
+def str_to_unicode(text: str, array_length: int) -> list[int]:
+    text = text[:array_length]
     char_inds = [ord(c) for c in text]
-    pad_len = max_n_chars - len(char_inds)
-    char_inds += [0] * pad_len
-
+    char_inds += [0] * (array_length - len(char_inds))
     return char_inds
 
 

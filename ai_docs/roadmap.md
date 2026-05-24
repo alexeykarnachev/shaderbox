@@ -27,26 +27,27 @@ feature; brief points at the superseder).
 
 **As of 2026-05-24.**
 
-- **Feature 011 (UI library consolidation + share-stack de-leak) — DONE (refactor, no behaviour
-  change).** All six decisions landed: (C) `TabState.release()` fixes the preview/artifact GL leak
-  on project switch; (B) dead `SIZE` tokens + `_FONT_DIR` + the unreachable Telegram `replace` job
-  path deleted; (A) Telegram tokens moved out of generic `theme.SIZE` into telegram-local constants;
-  (E) `ui_utils.py` split into `ui_primitives.py` (imgui+theme draws) + `util.py` (non-UI helpers),
-  `fade()` exported from `theme.py`, plus a new `tests/` suite (`resolve_dims` + GL-backed
-  `render_for`/`render_media`, run via `make test`); (D) the generic exporter seam de-leaked —
-  `RenderControl` is pure render plumbing, per-exporter UI extras ride in an opaque `.extras` bag
-  built via `Exporter.build_render_extras(OutletUiDeps)`, and the pack methods left the ABC (concrete
-  on Telegram, reached via `isinstance`); (F) `duration_slider` parametrized. Fragile carousel/grid
-  draw code untouched (Decision 1). `make check` + `make test` (15) + `make smoke` green; connected
-  Telegram panel headless-driven clean. Spec: `ai_docs/features/011_ui_library_consolidation.md`.
+- **Node-tab UI polish — DONE (small wave on top of 0.4.0, one crash fixed).** Uniform rows flipped
+  to a left label-column layout (chip -> dim name column -> width-capped control; names no longer ride
+  the imgui widget label on the ragged right edge); per-row separator cascade replaced with calm gaps;
+  header is now a two-line label/control grid (`Node name` / `Resolution (matching-uniform)`), the
+  matching-uniform name moved under the resolution combo with reserved space (no jitter); resolution
+  string de-pipe'd to `WxH (ratio) - name`. **Crash fix:** a text uniform filled to exactly
+  `array_length` left no null terminator -> `unicode_to_str`'s `.index(0)` raised; now the full array
+  is usable and the decoder tolerates a missing terminator (text/array rows show `used/cap`). Refactor:
+  dirty-sketch tokens -> `theme.SIZE.UNIFORM_*`; the small-dim-caption pattern -> `small_caption` in
+  `ui_primitives.py` (App-free, `font.legacy_size`). 3-reviewer convergence loop (2 rounds -> all PASS).
+  No standalone spec (small wave); story in the commit. `make check` + `make test` (21) + `make smoke`
+  green.
 - **Invoke `/imgui-ui` before any UI work** — it carries the button tiers, jitter-free overlays,
   SetCursorPos assert, font/emoji caveats, no-screenshot loop.
 - **NEXT ACTION: none queued.** No `pending` feature row. Candidate next waves all sit in `todo.md`
   as trigger-gated deferrals (the deferred-N=2 extractions in the 011 spec's DEFER table; the
-  sticker loop-offset; the inline-editor upstream items) — none is a default next-step; pick up only
-  when its trigger fires.
+  sticker loop-offset; the resolution-combo round-trip parse; the inline-editor upstream items) —
+  none is a default next-step; pick up only when its trigger fires.
 - **Shipped: `v0.4.0`** (009+010+011) — tagged on `master`, both itch channels (linux+windows)
-  pushed via butler and live at 0.4.0. `dev` == `master` == `v0.4.0`; tree clean.
+  pushed via butler and live at 0.4.0. The node-tab polish above is committed on `dev`, not yet
+  shipped.
 - **Branch model:** develop on `dev`, ship from `master` (`dev_flow.md ## Branch model`).
 - **Token hygiene:** the dev bot token lives only in `~/.local/share/shaderbox/integrations.json`
   (outside the repo, never committed); maintainer rotates it post-iteration.

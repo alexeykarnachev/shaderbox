@@ -169,6 +169,9 @@ class SIZE:
 
     LABEL_W: int = 64
 
+    UNIFORM_NAME_W: int = 140
+    UNIFORM_CTRL_W: int = 320
+
     THUMB_SM: int = 90
     THUMB_LG: int = 150
 
