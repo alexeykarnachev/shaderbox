@@ -45,12 +45,15 @@ feature; brief points at the superseder).
   as trigger-gated deferrals (the deferred-N=2 extractions in the 011 spec's DEFER table; the
   sticker loop-offset; the inline-editor upstream items) — none is a default next-step; pick up only
   when its trigger fires.
-- **Branch model:** develop on `dev`, ship from `master` (`dev_flow.md ## Branch model`). `dev` is
-  ahead of `master` with 009+010+011 (not yet promoted/shipped — user is iterating).
+- **Shipped: `v0.4.0`** (009+010+011) — tagged on `master`, both itch channels (linux+windows)
+  pushed via butler and live at 0.4.0. `dev` == `master` == `v0.4.0`; tree clean.
+- **Branch model:** develop on `dev`, ship from `master` (`dev_flow.md ## Branch model`).
 - **Token hygiene:** the dev bot token lives only in `~/.local/share/shaderbox/integrations.json`
   (outside the repo, never committed); maintainer rotates it post-iteration.
-- **Two non-blocking follow-ups (no users yet):** (1) no build runtime-verified on Windows — verify
-  per `BUILDING.md`; (2) live-page screenshots stale (predate 005/006).
+- **Three non-blocking follow-ups (no users yet):** (1) no build runtime-verified on Windows — verify
+  per `BUILDING.md`; (2) live-page screenshots stale (predate 005/006); (3) itch **store page** not
+  synced this ship — `page.yaml` unchanged, but the page-sync (Playwright, review-gated) was skipped;
+  run `dev_flow.md ### Sync the itch.io page` if the page needs refreshing.
 - **No open BLOCKERs.** `todo.md` deferrals fire on their own triggers — don't pick up speculatively.
 
 ## Features
