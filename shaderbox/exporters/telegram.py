@@ -7,10 +7,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, TypeVar
 
+import httpx
 import imageio_ffmpeg
 import telegram as tg
 from imgui_bundle import imgui, imgui_ctx
 from loguru import logger
+from telegram.request import HTTPXRequest
 
 from shaderbox.exporters.base import (
     AuthState,
@@ -64,6 +66,14 @@ _USER_PROBLEM_MARKERS = (
 )
 
 T = TypeVar("T")
+
+
+def _ipv4_request() -> HTTPXRequest:
+    # Bind egress to IPv4. Telegram's AAAA resolves, but ptb's default HTTP/2
+    # client picks the v6 address with no v4 fallback; on an IPv6-incapable
+    # tunnel that fails the TLS handshake every time (EndOfStream).
+    transport = httpx.AsyncHTTPTransport(local_address="0.0.0.0")
+    return HTTPXRequest(httpx_kwargs={"transport": transport})
 
 
 def _map_tg_error(e: tg.error.TelegramError) -> str:
@@ -941,7 +951,7 @@ class TelegramExporter(Exporter):
             self._current_async_task = None
 
     async def _with_bot(self, op: Callable[[tg.Bot], Awaitable[T]]) -> T:
-        bot = tg.Bot(token=self._tg.bot_token)
+        bot = tg.Bot(token=self._tg.bot_token, request=_ipv4_request())
         try:
             await bot.initialize()
             return await op(bot)
@@ -957,6 +967,13 @@ class TelegramExporter(Exporter):
             )
             raise ExporterError(_map_tg_error(e)) from e
         except tg.error.TelegramError as e:
+            # No exception= traceback: loguru's annotated frames would write the
+            # bot token (Bot repr + request URL) to the log in cleartext. The
+            # cause's type+message is enough to diagnose (e.g. httpx.ConnectError).
+            cause: str = (
+                f"{type(e.__cause__).__name__}: {e.__cause__}" if e.__cause__ else ""
+            )
+            logger.error(f"Telegram API call failed: {e!r} (cause: {cause})")
             raise ExporterError(_map_tg_error(e)) from e
         finally:
             await bot.shutdown()
