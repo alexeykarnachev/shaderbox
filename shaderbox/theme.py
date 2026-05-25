@@ -168,6 +168,8 @@ class SIZE:
     RES_COMBO_W: int = 200
 
     LABEL_W: int = 64
+    RENDER_CTRL_W: int = 200
+    RENDER_PREVIEW_W: int = 200
 
     UNIFORM_NAME_W: int = 140
     UNIFORM_CTRL_W: int = 320

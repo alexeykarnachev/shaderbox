@@ -92,7 +92,29 @@ def close_cross_button(id_: str, side: float) -> bool:
     return clicked
 
 
-def duration_slider(
+def row_label(
+    font: imgui.ImFont, label: str, label_w: float = float(SIZE.LABEL_W)
+) -> None:
+    """Draw a small-font dim label column and leave the cursor on the same line at
+    the control column. Caller draws its widget(s) next."""
+    imgui.align_text_to_frame_padding()
+    small_caption(font, label)
+    imgui.same_line(label_w + SPACE.MD)
+
+
+def label_row(
+    font: imgui.ImFont,
+    label: str,
+    item_width: float,
+    label_w: float = float(SIZE.LABEL_W),
+) -> None:
+    """A `row_label` plus `set_next_item_width` for the caller's single widget,
+    drawn immediately after. The caller passes a `##`-only id."""
+    row_label(font, label, label_w)
+    imgui.set_next_item_width(item_width)
+
+
+def duration_drag(
     label: str,
     value: float,
     v_max: float,
@@ -101,12 +123,17 @@ def duration_slider(
     fmt: str = "%.1f s",
     label_w: float = float(SIZE.LABEL_W),
 ) -> float:
-    """A labelled numeric slider (label column + slider). Returns the new value."""
+    """A labelled numeric drag (full-size caption label + drag). Double-click to
+    type an exact value. Returns the new value.
+
+    Distinct from `label_row` (which takes a small-caption font): this is used by
+    the exporter panels, which have no `App` handle to reach `font_12`.
+    """
     imgui.align_text_to_frame_padding()
     caption_text(label)
     imgui.same_line(label_w + SPACE.MD)
     imgui.set_next_item_width(width)
-    return imgui.slider_float(f"##{label}", value, v_min, v_max, fmt)[1]
+    return imgui.drag_float(f"##{label}", value, 0.1, v_min, v_max, fmt)[1]
 
 
 def draw_copyable_text(

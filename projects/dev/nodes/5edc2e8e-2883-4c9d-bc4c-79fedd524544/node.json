@@ -78,15 +78,15 @@
         "render_media_details": {
             "is_video": true,
             "file_details": {
-                "path": "",
-                "size": 0
+                "path": "/home/akarnachev/src/shaderbox/tmp.mp4",
+                "size": 165388
             },
             "resolution_details": {
-                "width": 960,
-                "height": 1280
+                "width": 384,
+                "height": 512
             },
             "quality": 0,
-            "fps": 30,
+            "fps": 10,
             "duration": 1.0
         },
         "ui_uniforms": {

@@ -36,7 +36,7 @@ from shaderbox.ui_primitives import (
     close_cross_button,
     danger_button,
     draw_copyable_text,
-    duration_slider,
+    duration_drag,
     ghost_button,
     primary_button,
 )
@@ -557,7 +557,7 @@ class TelegramExporter(Exporter):
         artifact: RenderedArtifact | None,
         has_node: bool,
     ) -> None:
-        new_dur: float = duration_slider(
+        new_dur: float = duration_drag(
             "Duration",
             rc.duration,
             _TG_VIDEO_MAX_DURATION_SEC,
@@ -573,7 +573,7 @@ class TelegramExporter(Exporter):
             return
 
         # Render (ordinary) + Add to pack (CTA) on one row; Add's right edge
-        # aligns with the Duration slider's right edge.
+        # aligns with the Duration drag's right edge.
         render_w: float = imgui.calc_text_size("Render").x + 2 * SPACE.MD
         add_w: float = row_w - render_w - imgui.get_style().item_spacing.x
         if button("Render", width=render_w):

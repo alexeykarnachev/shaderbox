@@ -27,23 +27,27 @@ feature; brief points at the superseder).
 
 **As of 2026-05-25.**
 
-- **Telegram connection fix — DONE, on `dev` (unreleased).** Telegram uploads were failing with
-  `httpx.ConnectError` (notification shown, nothing logged). Root cause: python-telegram-bot's default
-  HTTP/2 client picks Telegram's IPv6 address with no IPv4 fallback; on an IPv6-incapable VPN tunnel
-  the TLS handshake dies every time. Fix: `_with_bot` builds the bot with an IPv4-bound `HTTPXRequest`
-  (`local_address="0.0.0.0"`) — `exporters/telegram.py::_ipv4_request`. Same wave: `Notifications.push`
-  now mirrors to loguru (error-colored -> `logger.error`, else `info`), so on-screen notifications also
-  hit the log; and the bot-token-in-logs leak is masked (`_with_bot` logs the cause without loguru's
-  variable dump). `make check` + `make smoke` green. Story in commit `0ba11ff`. (Sibling fix outside
-  this repo: the VPN's Hysteria2 server now forces IPv4 egress — see `~/src/haskich_vpn`.)
+- **Render-tab UI refresh — DONE, on `dev` (unreleased).** Brought the Render sub-tab up to the
+  Node/Share visual standard: small-font label-column rows (new `ui_primitives.label_row`/`row_label`),
+  ghost-style resolution presets, a `primary_button` Render (disabled until a file is chosen), and a
+  preview drawn LEFT of the controls — its box height measured from the controls group so the Render
+  button's bottom aligns with the preview-box bottom for any aspect (letterboxed, centered). All
+  numeric sliders → drags (double-click to type): `duration_slider` primitive renamed `duration_drag`
+  (`drag_float`), FPS/Duration in `widgets/details.py` flipped to drags. 2 review rounds → PASS;
+  alignment verified headlessly (0.00px, both file states). `make check` + `make smoke` green.
+- **Telegram connection fix — DONE, on `dev` (unreleased).** Uploads failed with `httpx.ConnectError`
+  on an IPv6-incapable VPN tunnel — ptb's default HTTP/2 client picks Telegram's IPv6 with no IPv4
+  fallback. Fix: IPv4-bound `HTTPXRequest` (`exporters/telegram.py::_ipv4_request`). Same wave:
+  `Notifications.push` mirrors to loguru; bot-token log leak masked. Commit `0ba11ff`. (Sibling fix
+  outside this repo: the VPN's Hysteria2 server forces IPv4 egress — `~/src/haskich_vpn`.)
 - **Invoke `/imgui-ui` before any UI work** — button tiers, jitter-free overlays, SetCursorPos assert,
   font/emoji caveats, no-screenshot loop.
-- **NEXT ACTION: none queued.** No `pending` feature row. Candidate next waves all sit in `todo.md` as
-  trigger-gated deferrals (011 spec's N=2 extractions; sticker loop-offset; resolution-combo round-trip
-  parse; inline-editor upstream items) — none a default next-step; pick up only when its trigger fires.
+- **NEXT ACTION: ship the unreleased `dev` wave.** No `pending` feature row. Candidate next waves all
+  sit in `todo.md` as trigger-gated deferrals — none a default next-step; pick up only when its
+  trigger fires.
 - **Shipped: `v0.4.1`** (node-tab polish + text-cap crash fix) — `master`, both itch channels live.
-- **`dev` is ahead of `master`** by two unreleased commits: the docs-only harness cleanup, and the
-  Telegram fix above. Tree clean.
+- **`dev` is ahead of `master`** by the docs-only harness cleanup, the Telegram fix, and the render-tab
+  refresh — all unreleased. Tree clean.
 - **Branch model:** develop on `dev`, ship from `master` (`dev_flow.md ## Branch model`).
 - **Token hygiene:** the dev bot token lives only in `~/.local/share/shaderbox/integrations.json`
   (outside the repo, never committed); maintainer rotates it post-iteration.
@@ -69,6 +73,7 @@ feature; brief points at the superseder).
 | 002 | ui_widgets_extraction | done | Three-layer split: `app.py` (state) / `ui.py` (orchestrator) / `widgets`+`popups`+`tabs` (pure draw fns); `ui.py` 1508 → 294. Spec: `ai_docs/features/002_ui_widgets_extraction.md`. |
 | 001 | exporter_refactor | done | `exporters/` subpkg — `Exporter` ABC + `RenderedArtifact` value type + registry; Telegram ported to own worker thread + asyncio loop + sticker UI. Spec: `ai_docs/features/001_exporter_refactor.md`. |
 | — | telegram_ipv4_fix | done | Telegram uploads failed with `httpx.ConnectError` on an IPv6-incapable VPN tunnel — ptb's default HTTP/2 client picks Telegram's IPv6 with no IPv4 fallback. Fixed by binding the bot to IPv4 (`_ipv4_request`, `local_address="0.0.0.0"`). Same wave: `Notifications.push` mirrors to loguru; bot-token log leak masked. Spec: commit `0ba11ff`. |
+| — | render_tab_refresh | done | Render sub-tab brought to the Node/Share standard: small-font label-column rows (`ui_primitives.label_row`/`row_label`), ghost-style resolution presets, `primary_button` Render (disabled until a file is chosen), preview drawn left of the controls with its box height measured from the controls group so the Render button's bottom aligns with the preview-box bottom (letterboxed, any aspect). All numeric sliders -> drags: `duration_slider` -> `duration_drag` (`drag_float`); FPS/Duration flipped to drags. Spec: commit `93f3c61`. |
 | — | node_tab_polish | done | Node-tab uniform rows flipped to a left label-column layout (chip / dim name / capped control); two-line header grid (matching-uniform name under the resolution combo, jitter-free); separator cascade → calm gaps; resolution string de-pipe'd to `WxH (ratio) - name`. Fixed a text-uniform crash (full `char[N]` left no null terminator → `unicode_to_str` raised); `used/cap` shown on text/array rows. `small_caption` primitive + `theme.SIZE.UNIFORM_*` tokens. Spec: commit `62a6644`. |
 | — | editor_unfocused_dim | done | Code editor dims (`style.Alpha`) when it lacks keyboard focus; `EDITOR_UNFOCUSED_ALPHA` token in `theme.py`. Spec: commit `225076a`. |
 | — | hotkeys_extraction | done | Pulled the hotkey block out of `ui.py` into `hotkeys.py::process_hotkeys(app)`. Spec: commit `c7d6359`. |
