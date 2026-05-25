@@ -27,27 +27,17 @@ feature; brief points at the superseder).
 
 **As of 2026-05-25.**
 
-- **Render-tab UI refresh — DONE, on `dev` (unreleased).** Brought the Render sub-tab up to the
-  Node/Share visual standard: small-font label-column rows (new `ui_primitives.label_row`/`row_label`),
-  ghost-style resolution presets, a `primary_button` Render (disabled until a file is chosen), and a
-  preview drawn LEFT of the controls — its box height measured from the controls group so the Render
-  button's bottom aligns with the preview-box bottom for any aspect (letterboxed, centered). All
-  numeric sliders → drags (double-click to type): `duration_slider` primitive renamed `duration_drag`
-  (`drag_float`), FPS/Duration in `widgets/details.py` flipped to drags. 2 review rounds → PASS;
-  alignment verified headlessly (0.00px, both file states). `make check` + `make smoke` green.
-- **Telegram connection fix — DONE, on `dev` (unreleased).** Uploads failed with `httpx.ConnectError`
-  on an IPv6-incapable VPN tunnel — ptb's default HTTP/2 client picks Telegram's IPv6 with no IPv4
-  fallback. Fix: IPv4-bound `HTTPXRequest` (`exporters/telegram.py::_ipv4_request`). Same wave:
-  `Notifications.push` mirrors to loguru; bot-token log leak masked. Commit `0ba11ff`. (Sibling fix
-  outside this repo: the VPN's Hysteria2 server forces IPv4 egress — `~/src/haskich_vpn`.)
+- **Shipped: `v0.4.2`** (Telegram IPv4 connection fix + Render-tab UI refresh) — `master`, both itch
+  channels live, tag pushed. The render-tab refresh brought the Render sub-tab to the Node/Share
+  standard (label-column rows via `ui_primitives.label_row`/`row_label`, ghost presets, `primary_button`
+  Render, preview left of controls bottom-aligned with the Render button) and converted all numeric
+  sliders → drags (`duration_slider` → `duration_drag`). The Telegram fix binds the bot to IPv4
+  (`exporters/telegram.py::_ipv4_request`) for IPv6-incapable tunnels.
 - **Invoke `/imgui-ui` before any UI work** — button tiers, jitter-free overlays, SetCursorPos assert,
   font/emoji caveats, no-screenshot loop.
-- **NEXT ACTION: ship the unreleased `dev` wave.** No `pending` feature row. Candidate next waves all
-  sit in `todo.md` as trigger-gated deferrals — none a default next-step; pick up only when its
-  trigger fires.
-- **Shipped: `v0.4.1`** (node-tab polish + text-cap crash fix) — `master`, both itch channels live.
-- **`dev` is ahead of `master`** by the docs-only harness cleanup, the Telegram fix, and the render-tab
-  refresh — all unreleased. Tree clean.
+- **NEXT ACTION: none queued.** No `pending` feature row. Candidate next waves all sit in `todo.md` as
+  trigger-gated deferrals — none a default next-step; pick up only when its trigger fires.
+- **`dev` == `master`** at `v0.4.2`. Tree clean.
 - **Branch model:** develop on `dev`, ship from `master` (`dev_flow.md ## Branch model`).
 - **Token hygiene:** the dev bot token lives only in `~/.local/share/shaderbox/integrations.json`
   (outside the repo, never committed); maintainer rotates it post-iteration.
