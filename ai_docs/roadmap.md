@@ -25,32 +25,25 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-**As of 2026-05-24.**
+**As of 2026-05-25.**
 
-- **Node-tab UI polish — DONE, shipped in `v0.4.1` (small wave, one crash fixed).** Uniform rows flipped
-  to a left label-column layout (chip -> dim name column -> width-capped control; names no longer ride
-  the imgui widget label on the ragged right edge); per-row separator cascade replaced with calm gaps;
-  header is now a two-line label/control grid (`Node name` / `Resolution (matching-uniform)`), the
-  matching-uniform name moved under the resolution combo with reserved space (no jitter); resolution
-  string de-pipe'd to `WxH (ratio) - name`. **Crash fix:** a text uniform filled to exactly
-  `array_length` left no null terminator -> `unicode_to_str`'s `.index(0)` raised; now the full array
-  is usable and the decoder tolerates a missing terminator (text/array rows show `used/cap`). Refactor:
-  dirty-sketch tokens -> `theme.SIZE.UNIFORM_*`; the small-dim-caption pattern -> `small_caption` in
-  `ui_primitives.py` (App-free, `font.legacy_size`). 3-reviewer convergence loop (2 rounds -> all PASS).
-  No standalone spec (small wave); story in the commit. `make check` + `make test` (21) + `make smoke`
-  green.
-- **Invoke `/imgui-ui` before any UI work** — it carries the button tiers, jitter-free overlays,
-  SetCursorPos assert, font/emoji caveats, no-screenshot loop.
-- **NEXT ACTION: none queued.** No `pending` feature row. Candidate next waves all sit in `todo.md`
-  as trigger-gated deferrals (the deferred-N=2 extractions in the 011 spec's DEFER table; the
-  sticker loop-offset; the resolution-combo round-trip parse; the inline-editor upstream items) —
-  none is a default next-step; pick up only when its trigger fires.
-- **Shipped: `v0.4.1`** (patch — node-tab polish + text-cap crash fix) — tagged on `master`, both
-  itch channels (linux+windows) pushed via butler and live at 0.4.1.
-- **`dev` is ahead of `master`** by a docs-only harness cleanup (post-ship, not yet released):
-  decoupled the docs from code specifics — deleted a line-count ledger + the enumerated `ui_primitives`
-  roster (docs now point at the file, not copy its contents), turned restated rules into pointers,
-  sealed the `projects/dev/` sandbox-commit rule into always-loaded `CLAUDE.md ## Hard rules`. Tree clean.
+- **Telegram connection fix — DONE, on `dev` (unreleased).** Telegram uploads were failing with
+  `httpx.ConnectError` (notification shown, nothing logged). Root cause: python-telegram-bot's default
+  HTTP/2 client picks Telegram's IPv6 address with no IPv4 fallback; on an IPv6-incapable VPN tunnel
+  the TLS handshake dies every time. Fix: `_with_bot` builds the bot with an IPv4-bound `HTTPXRequest`
+  (`local_address="0.0.0.0"`) — `exporters/telegram.py::_ipv4_request`. Same wave: `Notifications.push`
+  now mirrors to loguru (error-colored -> `logger.error`, else `info`), so on-screen notifications also
+  hit the log; and the bot-token-in-logs leak is masked (`_with_bot` logs the cause without loguru's
+  variable dump). `make check` + `make smoke` green. Story in commit `0ba11ff`. (Sibling fix outside
+  this repo: the VPN's Hysteria2 server now forces IPv4 egress — see `~/src/haskich_vpn`.)
+- **Invoke `/imgui-ui` before any UI work** — button tiers, jitter-free overlays, SetCursorPos assert,
+  font/emoji caveats, no-screenshot loop.
+- **NEXT ACTION: none queued.** No `pending` feature row. Candidate next waves all sit in `todo.md` as
+  trigger-gated deferrals (011 spec's N=2 extractions; sticker loop-offset; resolution-combo round-trip
+  parse; inline-editor upstream items) — none a default next-step; pick up only when its trigger fires.
+- **Shipped: `v0.4.1`** (node-tab polish + text-cap crash fix) — `master`, both itch channels live.
+- **`dev` is ahead of `master`** by two unreleased commits: the docs-only harness cleanup, and the
+  Telegram fix above. Tree clean.
 - **Branch model:** develop on `dev`, ship from `master` (`dev_flow.md ## Branch model`).
 - **Token hygiene:** the dev bot token lives only in `~/.local/share/shaderbox/integrations.json`
   (outside the repo, never committed); maintainer rotates it post-iteration.
@@ -75,6 +68,7 @@ feature; brief points at the superseder).
 | 003 | modelbox_removal | done | Wiped all ModelBox integration (HTTP client, settings UI, app-state fields, `requests` dep); app_state migration gen 3. Spec: `ai_docs/features/003_modelbox_removal.md`. |
 | 002 | ui_widgets_extraction | done | Three-layer split: `app.py` (state) / `ui.py` (orchestrator) / `widgets`+`popups`+`tabs` (pure draw fns); `ui.py` 1508 → 294. Spec: `ai_docs/features/002_ui_widgets_extraction.md`. |
 | 001 | exporter_refactor | done | `exporters/` subpkg — `Exporter` ABC + `RenderedArtifact` value type + registry; Telegram ported to own worker thread + asyncio loop + sticker UI. Spec: `ai_docs/features/001_exporter_refactor.md`. |
+| — | telegram_ipv4_fix | done | Telegram uploads failed with `httpx.ConnectError` on an IPv6-incapable VPN tunnel — ptb's default HTTP/2 client picks Telegram's IPv6 with no IPv4 fallback. Fixed by binding the bot to IPv4 (`_ipv4_request`, `local_address="0.0.0.0"`). Same wave: `Notifications.push` mirrors to loguru; bot-token log leak masked. Spec: commit `0ba11ff`. |
 | — | node_tab_polish | done | Node-tab uniform rows flipped to a left label-column layout (chip / dim name / capped control); two-line header grid (matching-uniform name under the resolution combo, jitter-free); separator cascade → calm gaps; resolution string de-pipe'd to `WxH (ratio) - name`. Fixed a text-uniform crash (full `char[N]` left no null terminator → `unicode_to_str` raised); `used/cap` shown on text/array rows. `small_caption` primitive + `theme.SIZE.UNIFORM_*` tokens. Spec: commit `62a6644`. |
 | — | editor_unfocused_dim | done | Code editor dims (`style.Alpha`) when it lacks keyboard focus; `EDITOR_UNFOCUSED_ALPHA` token in `theme.py`. Spec: commit `225076a`. |
 | — | hotkeys_extraction | done | Pulled the hotkey block out of `ui.py` into `hotkeys.py::process_hotkeys(app)`. Spec: commit `c7d6359`. |
