@@ -110,6 +110,7 @@ class App:
         self.emoji_picker_query: str = ""
         # Where a picked emoji is delivered (set by whoever opens the picker).
         self.emoji_pick_target: Callable[[str], None] | None = None
+        self.node_delete_armed: str = ""  # node id pending delete-confirm
         self.editor_focused: bool = False
         # Start in navigation mode: defocus the editor on its first render so the
         # caret isn't active and arrows navigate nodes (the editor auto-grabs focus).
@@ -206,6 +207,9 @@ class App:
 
     def set_current_node_id(self, id: str = "") -> None:
         self.app_state.current_node_id = id
+
+    def set_node_delete_armed(self, id: str = "") -> None:
+        self.node_delete_armed = id
 
     def _init(self, project_dir: Path, seed_starter: bool = False) -> None:
         self.release()
@@ -425,14 +429,15 @@ class App:
             self._init(project_dir)
 
     def delete_current_node(self) -> None:
-        node_id = self.current_node_id
+        self.delete_node(self.current_node_id)
 
-        if not node_id:
+    def delete_node(self, node_id: str) -> None:
+        if not node_id or node_id not in self.ui_nodes:
             return
 
         new_node_id = select_next_value(
             values=list(self.ui_nodes.keys()),
-            current_value=self.current_node_id,
+            current_value=node_id,
             default_value="",
         )
 
@@ -442,7 +447,10 @@ class App:
         self.ui_nodes.pop(node_id).node.release()
         self.editors.pop(node_id, None)
         self.editor_saved_undo.pop(node_id, None)
-        self.set_current_node_id(new_node_id)
+        if node_id == self.node_delete_armed:
+            self.node_delete_armed = ""
+        if node_id == self.current_node_id or not self.current_node_id:
+            self.set_current_node_id(new_node_id)
         shutil.move(self.nodes_dir / node_id, self.trash_dir / node_id)
 
         logger.info(f"Node deleted: {node_id}")

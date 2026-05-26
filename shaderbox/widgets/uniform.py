@@ -18,7 +18,7 @@ from shaderbox.core import UniformValue
 from shaderbox.media import Image, MediaWithTexture, Video
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_models import UIUniform
-from shaderbox.ui_primitives import button, caption_text
+from shaderbox.ui_primitives import button, caption_text, chip_button
 from shaderbox.util import (
     get_resolution_str,
     pfd_block,
@@ -50,25 +50,10 @@ def draw_input_type_selector(ui_uniform: UIUniform) -> None:
     valid = ui_uniform.valid_input_types()
     locked = len(valid) == 1
 
-    imgui.push_style_var(imgui.StyleVar_.frame_rounding, SIZE.CHIP_ROUNDING)
-    imgui.push_style_color(imgui.Col_.button, COLOR.CHIP_BG)
-    imgui.push_style_color(imgui.Col_.button_hovered, COLOR.CHIP_BG_HOVER)
-    imgui.push_style_color(imgui.Col_.button_active, COLOR.CHIP_BG_HOVER)
-    imgui.push_style_color(imgui.Col_.text, COLOR.CHIP_FG)
-
-    if locked:
-        imgui.begin_disabled()
-
     label = f"{ui_uniform.input_type}##input_type_{ui_uniform.name}"
-    if imgui.button(label, size=(SIZE.CHIP_W, 0.0)) and not locked:
+    if chip_button(label, width=SIZE.CHIP_W, disabled=locked):
         current_idx = valid.index(ui_uniform.input_type)
         ui_uniform.input_type = valid[(current_idx + 1) % len(valid)]
-
-    if locked:
-        imgui.end_disabled()
-
-    imgui.pop_style_color(4)
-    imgui.pop_style_var()
 
 
 def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:

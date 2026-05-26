@@ -1,3 +1,6 @@
+from collections.abc import Callable
+from dataclasses import dataclass
+
 import pyperclip
 from imgui_bundle import imgui, imgui_ctx
 from loguru import logger
@@ -5,6 +8,22 @@ from loguru import logger
 from shaderbox.theme import COLOR, OVERLAY_ALPHA, SIZE, SPACE, fade
 
 _TRANSPARENT: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
+
+
+def _ellipsize(text: str, max_width: float) -> str:
+    if imgui.calc_text_size(text).x <= max_width:
+        return text
+    ellipsis = "..."
+    lo, hi = 0, len(text)
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        if imgui.calc_text_size(text[:mid] + ellipsis).x <= max_width:
+            lo = mid
+        else:
+            hi = mid - 1
+    if lo > 0:
+        return text[:lo] + ellipsis
+    return ellipsis if imgui.calc_text_size(ellipsis).x <= max_width else ""
 
 
 # ---------------------------------------------------------------------------
@@ -48,6 +67,54 @@ def danger_button(label: str, width: float = 0.0) -> bool:
     clicked: bool = imgui.button(label, size=(width, 0.0))
     imgui.pop_style_color(4)
     return clicked
+
+
+def chip_button(
+    label: str,
+    width: float = 0.0,
+    height: float = 0.0,
+    disabled: bool = False,
+    faded: bool = False,
+) -> bool:
+    """A rounded pill (input-type selector, the FPS overlay). `faded` makes the
+    base semi-transparent for overlays drawn over the render image."""
+    base = fade(COLOR.CHIP_BG, OVERLAY_ALPHA) if faded else COLOR.CHIP_BG
+    imgui.push_style_var(imgui.StyleVar_.frame_rounding, float(SIZE.CHIP_ROUNDING))
+    imgui.push_style_color(imgui.Col_.button, base)
+    imgui.push_style_color(imgui.Col_.button_hovered, COLOR.CHIP_BG_HOVER)
+    imgui.push_style_color(imgui.Col_.button_active, COLOR.CHIP_BG_HOVER)
+    imgui.push_style_color(imgui.Col_.text, COLOR.CHIP_FG)
+    if disabled:
+        imgui.begin_disabled()
+    clicked: bool = imgui.button(label, size=(width, height))
+    if disabled:
+        imgui.end_disabled()
+    imgui.pop_style_color(4)
+    imgui.pop_style_var()
+    return clicked
+
+
+def centered_image(
+    texture_glo: int, size: tuple[int, int], box_w: float, box_h: float
+) -> None:
+    """Letterbox a texture centered in a `box_w x box_h` cell (preview panels).
+
+    Fits the texture into the box preserving aspect, then offsets the cursor to
+    center it. Uses normal-flow `imgui.image` (cursor-positioned), distinct from
+    `preview_cell`'s draw-list path."""
+    w, h = size
+    if w <= 0 or h <= 0:
+        return
+    scale: float = min(box_w / w, box_h / h)
+    dw, dh = w * scale, h * scale
+    origin = imgui.get_cursor_pos()
+    imgui.set_cursor_pos((origin.x + (box_w - dw) / 2, origin.y + (box_h - dh) / 2))
+    imgui.image(
+        imgui.ImTextureRef(texture_glo),
+        image_size=(dw, dh),
+        uv0=(0, 1),
+        uv1=(1, 0),
+    )
 
 
 def caption_text(
@@ -103,6 +170,138 @@ def close_cross_button(id_: str, side: float) -> bool:
     dl.add_line(a, b, col, 1.5)
     dl.add_line(c, d, col, 1.5)
     return clicked
+
+
+def cell_delete_confirm(origin: imgui.ImVec2, avail: imgui.ImVec2) -> bool | None:
+    """`Delete?` + [Yes][No] drawn over a grid cell, dimming its content.
+
+    Positions absolutely within the caller's cell child. Returns True on Yes,
+    False on No, None while still armed. Caller owns the armed state.
+    """
+    dl = imgui.get_window_draw_list()
+    dl.add_rect_filled(
+        (origin.x, origin.y),
+        (origin.x + avail.x, origin.y + avail.y),
+        imgui.color_convert_float4_to_u32(fade(COLOR.STATE_ERROR, 0.45)),
+    )
+    prompt = "Delete?"
+    pw = imgui.calc_text_size(prompt)
+    imgui.set_cursor_screen_pos(
+        (origin.x + (avail.x - pw.x) / 2, origin.y + avail.y * 0.28)
+    )
+    imgui.text_colored(COLOR.FG_TITLE, prompt)
+
+    # Neutral filled buttons read clearly on the red wash (red text would not).
+    btn_w: float = (avail.x - 3 * SPACE.SM) / 2
+    row_y: float = origin.y + avail.y * 0.55
+    imgui.set_cursor_screen_pos((origin.x + SPACE.SM, row_y))
+    if button("Yes", width=btn_w):
+        return True
+    imgui.set_cursor_screen_pos((origin.x + SPACE.SM + btn_w + SPACE.SM, row_y))
+    if button("No", width=btn_w):
+        return False
+    return None
+
+
+@dataclass
+class PreviewCellResult:
+    clicked: bool = False  # whole-cell click target hit
+    delete_armed: bool = False  # the delete-✕ was pressed this frame
+    delete_confirmed: bool = False  # `Yes` on the in-cell confirm wash
+    delete_cancelled: bool = False  # `No` on the in-cell confirm wash
+
+
+def preview_cell(
+    id_: str,
+    cell_w: float,
+    texture_glo: int | None,
+    texture_size: tuple[int, int],
+    selected: bool,
+    armed: bool,
+    border_color: tuple[float, float, float, float] | None = None,
+    bg_color: tuple[float, float, float, float] | None = None,
+    footer: str = "",
+    overlay: Callable[[float], None] | None = None,
+) -> PreviewCellResult:
+    """A bordered preview tile: a `cell_w`-wide square image + whole-cell click
+    target + selection border + a top-right delete-✕ arming an in-cell `Delete?` wash.
+
+    The cell is `cell_w` wide and grows below the image by exactly one text line when
+    `footer` is set; the caller sizes only the width. `overlay` draws an extra top-LEFT
+    control (e.g. an emoji button), receiving the standard overlay-button side; it's
+    shown alongside the delete-✕ only while `selected` and not `armed`. The whole
+    tile is its own child window so the overlays' absolute cursor moves can't perturb
+    the parent (no jitter / SetCursorPos assert).
+    """
+    footer_h: float = imgui.get_text_line_height_with_spacing() if footer else 0.0
+    cell_h: float = cell_w + footer_h
+    result = PreviewCellResult()
+    n_styles = 0
+    if border_color is not None:
+        imgui.push_style_color(imgui.Col_.border, border_color)
+        n_styles += 1
+    if bg_color is not None:
+        imgui.push_style_color(imgui.Col_.child_bg, bg_color)
+        n_styles += 1
+    with imgui_ctx.begin_child(
+        f"##preview_cell_{id_}",
+        size=imgui.ImVec2(cell_w, cell_h),
+        child_flags=imgui.ChildFlags_.borders,
+        window_flags=imgui.WindowFlags_.no_scrollbar
+        | imgui.WindowFlags_.no_scroll_with_mouse,
+    ):
+        imgui.pop_style_color(n_styles)
+        origin = imgui.get_cursor_screen_pos()
+        avail = imgui.get_content_region_avail()
+        dl = imgui.get_window_draw_list()
+        img_h: float = avail.y - footer_h  # footer occupies the last line
+
+        if texture_glo is not None and min(texture_size) > 0:
+            tw, th = texture_size
+            scale: float = min(avail.x / tw, img_h / th)
+            dw, dh = tw * scale, th * scale
+            ix: float = origin.x + (avail.x - dw) / 2
+            iy: float = origin.y + (img_h - dh) / 2
+            dl.add_image(
+                imgui.ImTextureRef(texture_glo),
+                (ix, iy),
+                (ix + dw, iy + dh),
+                (0, 1),
+                (1, 0),
+            )
+
+        imgui.set_next_item_allow_overlap()
+        if imgui.invisible_button(f"##cell_{id_}", size=(avail.x, img_h)):
+            result.clicked = True
+
+        if footer:
+            label: str = _ellipsize(footer, avail.x)
+            fw = imgui.calc_text_size(label)
+            fy: float = origin.y + img_h
+            imgui.set_cursor_screen_pos((origin.x + (avail.x - fw.x) / 2, fy))
+            imgui.text(label)
+
+        if selected and armed:
+            choice: bool | None = cell_delete_confirm(
+                origin, imgui.ImVec2(avail.x, img_h)
+            )
+            if choice is True:
+                result.delete_confirmed = True
+            elif choice is False:
+                result.delete_cancelled = True
+        elif selected:
+            x_side: float = float(SIZE.ROW_HEIGHT)
+            if overlay is not None:
+                imgui.set_next_item_allow_overlap()
+                imgui.set_cursor_screen_pos((origin.x, origin.y))
+                overlay(x_side)
+            imgui.set_cursor_screen_pos((origin.x + avail.x - x_side, origin.y))
+            imgui.set_next_item_allow_overlap()
+            if close_cross_button(f"del_{id_}", x_side):
+                result.delete_armed = True
+            if imgui.is_item_hovered():
+                imgui.set_tooltip("Delete")
+    return result
 
 
 def row_label(
@@ -174,14 +373,7 @@ def fps_overlay(
     pill_y = anchor_y + inset
 
     imgui.set_cursor_screen_pos((pill_x, pill_y))
-    imgui.push_style_color(imgui.Col_.button, fade(COLOR.CHIP_BG, OVERLAY_ALPHA))
-    imgui.push_style_color(imgui.Col_.button_hovered, COLOR.CHIP_BG_HOVER)
-    imgui.push_style_color(imgui.Col_.button_active, COLOR.CHIP_BG_HOVER)
-    imgui.push_style_color(imgui.Col_.text, COLOR.CHIP_FG)
-    imgui.push_style_var(imgui.StyleVar_.frame_rounding, float(SIZE.CHIP_ROUNDING))
-    clicked: bool = imgui.button(label, size=(pill_w, pill_h))
-    imgui.pop_style_var()
-    imgui.pop_style_color(4)
+    clicked: bool = chip_button(label, pill_w, pill_h, faded=True)
 
     if is_open:
         panel_w = float(SIZE.FPS_PANEL_W)

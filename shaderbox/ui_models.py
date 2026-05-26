@@ -5,7 +5,6 @@ from typing import Any, Literal, Self
 from uuid import uuid4
 
 import moderngl
-from imgui_bundle import imgui, imgui_ctx
 from loguru import logger
 from OpenGL.GL import GL_SAMPLER_2D, GL_UNSIGNED_INT
 from pydantic import BaseModel, ValidationError, model_validator
@@ -13,6 +12,7 @@ from pydantic import BaseModel, ValidationError, model_validator
 from shaderbox.core import Node
 from shaderbox.media import MediaDetails, MediaWithTexture
 from shaderbox.theme import COLOR
+from shaderbox.ui_primitives import PreviewCellResult, preview_cell
 
 
 class UIMessage(BaseModel):
@@ -347,49 +347,19 @@ class UINode(BaseModel):
         self,
         border_color: tuple[float, float, float, float] | None,
         size: float,
-    ) -> bool:
-        n_styles = 0
-        if border_color is not None:
-            imgui.push_style_color(imgui.Col_.border, border_color)
-            n_styles += 1
-
-        text = self.ui_state.ui_name
-        text_size = imgui.calc_text_size(text)
-
-        label = f"node_preview_{id(self)}"
-        is_clicked = False
-        with imgui_ctx.begin_child(
-            label,
-            size=imgui.ImVec2(size, size + text_size.y),
-            child_flags=imgui.ChildFlags_.borders,
-            window_flags=imgui.WindowFlags_.no_scrollbar
-            | imgui.WindowFlags_.no_scroll_with_mouse,
-        ):
-            imgui.pop_style_color(n_styles)
-
-            if imgui.invisible_button(f"{label}##button", (size, size)):
-                is_clicked = True
-
-            s = (size - 10) / max(self.node.canvas.texture.size)
-            image_width = self.node.canvas.texture.size[0] * s
-            image_height = self.node.canvas.texture.size[1] * s
-
-            imgui.set_cursor_pos_x((size - image_width) / 2 - 1)
-            imgui.set_cursor_pos_y((size - image_height) / 2 - 1)
-
-            imgui.image(
-                imgui.ImTextureRef(self.node.canvas.texture.glo),
-                image_size=(image_width, image_height),
-                uv0=(0, 1),
-                uv1=(1, 0),
-            )
-
-            imgui.set_cursor_pos_x((size - text_size.x) / 2)
-            imgui.set_cursor_pos_y(size - text_size.y / 2)
-
-            imgui.text(text)
-
-        return is_clicked
+        selected: bool = False,
+        armed: bool = False,
+    ) -> PreviewCellResult:
+        return preview_cell(
+            id_=f"node_{id(self)}",
+            cell_w=size,
+            texture_glo=self.node.canvas.texture.glo,
+            texture_size=self.node.canvas.texture.size,
+            selected=selected,
+            armed=armed,
+            border_color=border_color,
+            footer=self.ui_state.ui_name,
+        )
 
 
 def load_node_from_dir(node_dir: Path) -> UINode:

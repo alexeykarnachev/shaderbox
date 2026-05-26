@@ -50,8 +50,20 @@ def draw_node_preview_grid(app: App, width: float, height: float) -> None:
                 else:
                     border_color = COLOR.ACCENT_PRIMARY
 
-            if ui_node.draw_preview_button(border_color, preview_size):
+            result = ui_node.draw_preview_button(
+                border_color,
+                preview_size,
+                selected=id == app.current_node_id,
+                armed=app.node_delete_armed == id,
+            )
+            if result.clicked:
                 app.set_current_node_id(id)
+            if result.delete_armed:
+                app.set_node_delete_armed(id)
+            elif result.delete_confirmed:
+                app.delete_node(id)
+            elif result.delete_cancelled:
+                app.set_node_delete_armed("")
 
             if (i + 1) % n_cols != 0:
                 imgui.same_line()

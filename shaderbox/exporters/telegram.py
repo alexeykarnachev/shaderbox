@@ -34,11 +34,12 @@ from shaderbox.ui_models import UINode
 from shaderbox.ui_primitives import (
     button,
     caption_text,
-    close_cross_button,
+    centered_image,
     danger_button,
     draw_copyable_text,
     duration_drag,
     ghost_button,
+    preview_cell,
     primary_button,
     wrapped_caption,
 )
@@ -559,7 +560,9 @@ class TelegramExporter(Exporter):
             origin = imgui.get_cursor_screen_pos()
             if rc.preview_texture_glo is not None:
                 avail = imgui.get_content_region_avail()
-                self._draw_preview(rc, avail.x, avail.y)
+                centered_image(
+                    rc.preview_texture_glo, rc.preview_size, avail.x, avail.y
+                )
 
             # Emoji overlay, top-left (same affordance as the carousel cells).
             imgui.set_cursor_screen_pos((origin.x, origin.y))
@@ -611,22 +614,6 @@ class TelegramExporter(Exporter):
                 )
             except OSError:
                 pass
-
-    def _draw_preview(self, rc: RenderControl, fit_w: float, fit_h: float) -> None:
-        w, h = rc.preview_size
-        if w <= 0 or h <= 0:
-            return
-        scale: float = min(fit_w / w, fit_h / h)
-        dw, dh = w * scale, h * scale
-        origin = imgui.get_cursor_pos()
-        imgui.set_cursor_pos((origin.x + (fit_w - dw) / 2, origin.y + (fit_h - dh) / 2))
-        assert rc.preview_texture_glo is not None
-        imgui.image(
-            imgui.ImTextureRef(rc.preview_texture_glo),
-            image_size=(dw, dh),
-            uv0=(0, 1),
-            uv1=(1, 0),
-        )
 
     def _draw_add_button(
         self, rc: RenderControl, artifact: RenderedArtifact | None, width: float
@@ -691,113 +678,45 @@ class TelegramExporter(Exporter):
     def _draw_grid_cell(
         self, rc: RenderControl, idx: int, slot: "_StickerSlot | None", cell: float
     ) -> None:
-        imgui.push_style_color(imgui.Col_.child_bg, COLOR.BG_SURFACE)
-        with imgui_ctx.begin_child(
-            f"##cell_{idx}",
-            size=imgui.ImVec2(cell, cell),
-            child_flags=imgui.ChildFlags_.borders,
-            window_flags=imgui.WindowFlags_.no_scrollbar,
-        ):
-            if slot is not None:
-                self._draw_cell_contents(rc, idx, slot)
-        imgui.pop_style_color(1)
+        if slot is None:
+            preview_cell(
+                id_=f"sticker_{idx}",
+                cell_w=cell,
+                texture_glo=None,
+                texture_size=(0, 0),
+                selected=False,
+                armed=False,
+                bg_color=COLOR.BG_SURFACE,
+            )
+            return
 
-    def _draw_cell_contents(
-        self, rc: RenderControl, idx: int, slot: _StickerSlot
-    ) -> None:
-        origin = imgui.get_cursor_screen_pos()
-        dl = imgui.get_window_draw_list()
-        avail = imgui.get_content_region_avail()
-        is_selected: bool = idx == self._render_state.selected_index
-
+        glo: int | None = None
+        size: tuple[int, int] = (0, 0)
         thumbnail: Image | Video | None = self._lazy_thumbnail(slot)
         if thumbnail is not None:
             thumbnail.update(imgui.get_time())  # animate video stickers
-            tex = thumbnail.texture
-            tw, th = tex.size
-            scale: float = min(avail.x / tw, avail.y / th)
-            dw, dh = tw * scale, th * scale
-            ix: float = origin.x + (avail.x - dw) / 2
-            iy: float = origin.y + (avail.y - dh) / 2
-            dl.add_image(
-                imgui.ImTextureRef(tex.glo),
-                (ix, iy),
-                (ix + dw, iy + dh),
-                (0, 1),
-                (1, 0),
-            )
+            glo = thumbnail.texture.glo
+            size = thumbnail.texture.size
 
-        # Whole-cell click target. allow_overlap lets the corner buttons win.
-        imgui.set_next_item_allow_overlap()
-        if imgui.invisible_button(f"##sticker_{idx}", size=(avail.x, avail.y)):
+        result = preview_cell(
+            id_=f"sticker_{idx}",
+            cell_w=cell,
+            texture_glo=glo,
+            texture_size=size,
+            selected=idx == self._render_state.selected_index
+            and not self._render_state.in_flight,
+            armed=self._render_state.sticker_delete_armed == slot.file_id,
+            border_color=COLOR.ACCENT_PRIMARY
+            if idx == self._render_state.selected_index
+            else None,
+            bg_color=COLOR.BG_SURFACE,
+            overlay=lambda side: self._draw_sticker_emoji(rc, slot, side),
+        )
+        if result.clicked:
             self._render_state.selected_index = idx
-
-        if is_selected:
-            dl.add_rect(
-                (origin.x, origin.y),
-                (origin.x + avail.x, origin.y + avail.y),
-                imgui.color_convert_float4_to_u32(COLOR.ACCENT_PRIMARY),
-                thickness=2.0,
-            )
-            if not self._render_state.in_flight:
-                self._draw_cell_overlays(rc, idx, slot, origin, avail)
-
-    def _draw_cell_overlays(
-        self, rc: RenderControl, idx: int, slot: _StickerSlot, origin: Any, avail: Any
-    ) -> None:
-        if self._render_state.sticker_delete_armed == slot.file_id:
-            self._draw_cell_delete_confirm(slot, origin, avail)
-            return
-
-        emoji: EmojiControl = self._emoji(rc)
-        x_side: float = float(SIZE.ROW_HEIGHT)
-
-        # Emoji (top-left): clicking opens the picker → set_sticker_emoji_list job.
-        cur_emoji: str = slot.raw_sticker.emoji or "" if slot.raw_sticker else ""
-        imgui.set_cursor_screen_pos((origin.x, origin.y))
-        if emoji.emoji_button(cur_emoji, x_side):
-            file_id: str = slot.file_id
-            pack: str = self._render_state.active_pack_set_name
-            emoji.open_emoji_picker(
-                lambda e: self._enqueue(
-                    _Job(
-                        kind="set_emoji",
-                        target_sticker_file_id=file_id,
-                        pack_set_name=pack,
-                        emoji=e,
-                    )
-                )
-            )
-
-        # Delete ✕ (top-right) — arms an in-cell confirm rather than deleting.
-        imgui.set_cursor_screen_pos((origin.x + avail.x - x_side, origin.y))
-        if close_cross_button(f"del_{idx}", x_side):
+        if result.delete_armed:
             self._render_state.sticker_delete_armed = slot.file_id
-        if imgui.is_item_hovered():
-            imgui.set_tooltip("Delete this sticker")
-
-    def _draw_cell_delete_confirm(
-        self, slot: _StickerSlot, origin: Any, avail: Any
-    ) -> None:
-        """`Delete?` + [Yes][No] drawn over the cell, dimming the thumbnail."""
-        dl = imgui.get_window_draw_list()
-        dl.add_rect_filled(
-            (origin.x, origin.y),
-            (origin.x + avail.x, origin.y + avail.y),
-            imgui.color_convert_float4_to_u32(fade(COLOR.STATE_ERROR, 0.45)),
-        )
-        prompt: str = "Delete?"
-        pw = imgui.calc_text_size(prompt)
-        imgui.set_cursor_screen_pos(
-            (origin.x + (avail.x - pw.x) / 2, origin.y + avail.y * 0.28)
-        )
-        imgui.text_colored(COLOR.FG_TITLE, prompt)
-
-        # Neutral filled buttons read clearly on the red wash (red text would not).
-        btn_w: float = (avail.x - 3 * SPACE.SM) / 2
-        row_y: float = origin.y + avail.y * 0.55
-        imgui.set_cursor_screen_pos((origin.x + SPACE.SM, row_y))
-        if button("Yes", width=btn_w):
+        elif result.delete_confirmed:
             self._render_state.sticker_delete_armed = ""
             self._enqueue(
                 _Job(
@@ -806,9 +725,28 @@ class TelegramExporter(Exporter):
                     pack_set_name=self._render_state.active_pack_set_name,
                 )
             )
-        imgui.set_cursor_screen_pos((origin.x + SPACE.SM + btn_w + SPACE.SM, row_y))
-        if button("No", width=btn_w):
+        elif result.delete_cancelled:
             self._render_state.sticker_delete_armed = ""
+
+    def _draw_sticker_emoji(
+        self, rc: RenderControl, slot: _StickerSlot, side: float
+    ) -> None:
+        emoji: EmojiControl = self._emoji(rc)
+        cur_emoji: str = slot.raw_sticker.emoji or "" if slot.raw_sticker else ""
+        if not emoji.emoji_button(cur_emoji, side):
+            return
+        file_id: str = slot.file_id
+        pack: str = self._render_state.active_pack_set_name
+        emoji.open_emoji_picker(
+            lambda e: self._enqueue(
+                _Job(
+                    kind="set_emoji",
+                    target_sticker_file_id=file_id,
+                    pack_set_name=pack,
+                    emoji=e,
+                )
+            )
+        )
 
     def _draw_inflight(self, full_width: float) -> None:
         prog: ExportProgress | None = self._render_state.last_progress

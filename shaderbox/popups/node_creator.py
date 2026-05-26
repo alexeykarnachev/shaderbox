@@ -37,7 +37,7 @@ def _draw_body(app: App) -> bool:
         else:
             border_color = None
 
-        if ui_node_template.draw_preview_button(border_color, preview_size):
+        if ui_node_template.draw_preview_button(border_color, preview_size).clicked:
             app.app_state.selected_node_template_id = ui_node_template.id
             app.app_state.new_node_name = ui_node_template.ui_state.ui_name
 
