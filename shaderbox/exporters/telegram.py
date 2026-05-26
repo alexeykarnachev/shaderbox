@@ -33,12 +33,14 @@ from shaderbox.theme import COLOR, SIZE, SPACE, fade
 from shaderbox.ui_models import UINode
 from shaderbox.ui_primitives import (
     button,
+    caption_text,
     close_cross_button,
     danger_button,
     draw_copyable_text,
     duration_drag,
     ghost_button,
     primary_button,
+    wrapped_caption,
 )
 
 _QUEUE_MAXSIZE = 128
@@ -99,6 +101,7 @@ class EmojiControl:
 
 
 _EMOJI_EXTRA_KEY = "telegram_emoji"
+_OPEN_SETTINGS_KEY = "open_settings"
 
 
 @dataclass
@@ -246,6 +249,15 @@ class TelegramExporter(Exporter):
         self._ensure_worker()
         self._enqueue(_Job(kind=_LINK_SENTINEL))
 
+    def disconnect(self) -> None:
+        self._tg.bot_token = ""
+        self._tg.user_id = ""
+        self._tg.user_username = ""
+        self._tg.bot_username = ""
+        self._store.save()
+        self._render_state.auth_state = AuthState.UNCONFIGURED
+        self._render_state.auth_message = ""
+
     def current_settings(self) -> dict[str, Any]:
         # Telegram persists nothing per-project; creds live in the global store.
         return {}
@@ -294,32 +306,34 @@ class TelegramExporter(Exporter):
             open_emoji_picker=deps.open_glyph_picker,
             emoji_button=emoji_button,
         )
-        return {_EMOJI_EXTRA_KEY: control}
+        return {
+            _EMOJI_EXTRA_KEY: control,
+            _OPEN_SETTINGS_KEY: deps.open_settings,
+        }
 
     # ---------------------------------------------------------------- Settings UI
     def draw_config_ui(self) -> None:
         full_width: float = imgui.get_content_region_avail().x
 
-        imgui.text_colored(
-            COLOR.FG_DIM, "1. In Telegram, message @BotFather -> /newbot"
+        wrapped_caption(
+            "Create a bot with @BotFather (/newbot), press Start in it, "
+            "then paste its token and Connect."
         )
-        imgui.text_colored(
-            COLOR.FG_DIM, "   (a display name, then a username ending 'bot')."
-        )
-        imgui.text_colored(COLOR.FG_DIM, "2. Paste the token it gives you below.")
-        imgui.text_colored(COLOR.FG_DIM, "3. Open YOUR new bot, press Start.")
-        imgui.text_colored(COLOR.FG_DIM, "4. Click Connect.")
-        imgui.spacing()
+        imgui.dummy(imgui.ImVec2(0, SPACE.SM))
 
-        imgui.text("Bot token:")
+        caption_text("Bot token")
         imgui.set_next_item_width(full_width)
         _, bot_token = imgui.input_text(
             "##bot_token", self._tg.bot_token, flags=imgui.InputTextFlags_.password
         )
         self._tg.bot_token = bot_token
 
-        if imgui.button("Connect", size=(full_width, 0)):
+        if primary_button("Connect"):
             self.begin_auth()
+        if self._tg.bot_token:
+            imgui.same_line()
+            if danger_button("Clear token"):
+                self.disconnect()
 
         state: AuthState = self._render_state.auth_state
         connected: bool = self._is_connected()
@@ -358,10 +372,12 @@ class TelegramExporter(Exporter):
         _ = current_node
         if not self._is_connected():
             imgui.text_colored(COLOR.STATE_WARN, "Not connected to Telegram.")
-            imgui.text_colored(
-                COLOR.FG_DIM, "Open Settings (top bar) -> Integrations -> Telegram,"
-            )
-            imgui.text_colored(COLOR.FG_DIM, "paste your bot token and click Connect.")
+            caption_text("Connect a bot in Settings to share stickers.")
+            imgui.dummy(imgui.ImVec2(0, SPACE.SM))
+            extras = render_control.extras or {}
+            open_settings = extras.get(_OPEN_SETTINGS_KEY)
+            if open_settings is not None and primary_button("Set up token"):
+                open_settings()
             return
 
         self._draw_pack_row()
@@ -951,7 +967,14 @@ class TelegramExporter(Exporter):
             self._current_async_task = None
 
     async def _with_bot(self, op: Callable[[tg.Bot], Awaitable[T]]) -> T:
-        bot = tg.Bot(token=self._tg.bot_token, request=_ipv4_request())
+        # Both pools need the IPv4 bind: get_updates() uses get_updates_request,
+        # a separate pool that otherwise dials the dead AAAA (conventions.md
+        # ## Known quirks / vpn-stack Gotcha #4).
+        bot = tg.Bot(
+            token=self._tg.bot_token,
+            request=_ipv4_request(),
+            get_updates_request=_ipv4_request(),
+        )
         try:
             await bot.initialize()
             return await op(bot)

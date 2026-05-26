@@ -192,6 +192,13 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   `app.editor_defocus_requested` and consume it with `set_window_focus(None)` AFTER `render()` —
   clearing before render is undone by the editor's own first-render grab. `hotkeys.py` gates arrow
   node-nav on `app.editor_focused`.
+- **python-telegram-bot's `Bot` has TWO request pools; both need the IPv4 bind.** On an
+  IPv6-incapable network (AAAA resolves but the route is dead — the dev box, see vpn-stack Gotcha #4),
+  ptb dials the v6 address and the TLS handshake fails (`ConnectError(EndOfStream())`, surfaced as a
+  bare `httpx.ConnectError: `). `_ipv4_request()` (`local_address="0.0.0.0"`) forces v4 — but `Bot`
+  takes it via BOTH `request=` (regular calls) AND `get_updates_request=` (the separate long-poll pool
+  `get_updates()` uses). Pass it to both, or `get_updates()` silently dials v6 and the link flow fails
+  at the user-id capture step while `get_me()` succeeds (`exporters/telegram.py::_with_bot`).
 - **The sanctioned `# type: ignore` allowlist (upstream stub gaps only).** The no-suppression rule
   has exactly these exceptions — all are missing/wrong annotations in third-party stubs, never our
   own type errors. New markers outside this list are a design smell; fix the design, don't add to

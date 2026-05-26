@@ -16,7 +16,6 @@ from loguru import logger
 from shaderbox.constants import RESOURCES_DIR
 from shaderbox.core import Canvas
 from shaderbox.exporters.registry import ExporterRegistry
-from shaderbox.exporters.stubs import XExporterStub, YouTubeExporterStub
 from shaderbox.exporters.telegram import TelegramExporter
 from shaderbox.integrations import IntegrationsStore
 from shaderbox.notifications import Notifications
@@ -103,8 +102,6 @@ class App:
 
         self.exporter_registry = ExporterRegistry()
         self.exporter_registry.register(TelegramExporter())
-        self.exporter_registry.register(YouTubeExporterStub())
-        self.exporter_registry.register(XExporterStub())
         self.share_tab_state: share_state.TabState | None = None
 
         self.is_node_creator_open: bool = False

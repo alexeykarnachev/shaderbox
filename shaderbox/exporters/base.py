@@ -40,12 +40,15 @@ class OutletUiDeps:
     `glyph_font` is an `imgui.ImFont` for symbol/glyph overlays; kept as `Any`
     so this generic module doesn't depend on imgui types. `open_glyph_picker`
     opens the symbol picker, delivering the chosen glyph to the given callback.
-    `outlet_extra_state` is a free-form per-outlet scratch dict the exporter
-    reads/writes for its own UI state — the generic outlet doesn't name it.
+    `open_settings` opens the app's settings popup (for a panel that needs to
+    send the user to configure credentials). `outlet_extra_state` is a free-form
+    per-outlet scratch dict the exporter reads/writes for its own UI state — the
+    generic outlet doesn't name it.
     """
 
     glyph_font: Any
     open_glyph_picker: Callable[[Callable[[str], None]], None]
+    open_settings: Callable[[], None]
     outlet_extra_state: dict[str, Any]
 
 
@@ -106,8 +109,8 @@ class Exporter(ABC):
     thread boundary as a value.
     """
 
-    # Default-available; disabled stubs (YouTube/X) override to False. NOT
-    # abstract — most exporters are simply available.
+    # Default-available; a not-yet-usable exporter overrides to False (the UI
+    # gates on it). NOT abstract — most exporters are simply available.
     @property
     def is_available(self) -> bool:
         return True

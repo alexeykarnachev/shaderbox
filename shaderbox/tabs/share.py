@@ -125,6 +125,7 @@ def _draw_outlet(
     deps = OutletUiDeps(
         glyph_font=app.font_emoji,
         open_glyph_picker=app.open_emoji_picker,
+        open_settings=app.open_settings,
         outlet_extra_state=outlet.extra_state,
     )
     control = RenderControl(

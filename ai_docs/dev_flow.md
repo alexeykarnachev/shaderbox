@@ -165,9 +165,9 @@ roadmap-banner touch (if even that) + the cold-context glance is enough; for a f
   to render natively at the target size. Feature 010.
 - **`exporters/`** — `Exporter` ABC + `RenderedArtifact` value type (`base.py`), `ExporterRegistry`
   (`registry.py`), `TelegramExporter` (`telegram.py` — own worker thread + asyncio loop + sticker
-  panel UI; reads creds from the global `IntegrationsStore`), `stubs.py` (disabled YouTube/X rows,
-  `is_available -> False`). Adding a new exporter: subclass `Exporter`, register in `App.__init__`.
-  The thread-affinity contract (worker thread MUST NOT touch moderngl) is enforced by design.
+  panel UI; reads creds from the global `IntegrationsStore`). A not-yet-usable exporter overrides
+  `is_available -> False` (the UI gates on it). Adding a new exporter: subclass `Exporter`, register
+  in `App.__init__`. The thread-affinity contract (worker thread MUST NOT touch moderngl) is enforced by design.
 - **`integrations.py`** — global `IntegrationsStore` (bot token / linked user / pack list) at
   `app_data_dir()/integrations.json`. **`paths.py`** — `app_data_dir()` (leaf, no `App` import).
   **`telegram_util.py`** — `derive_set_name(title, bot_username)` (pure). **`emoji_data.py`** —

@@ -200,3 +200,14 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   reaches it. `UINodeState` has no `model_config`/value-level fallback (unlike `UIAppState`'s
   deliberate `extra="forbid"` + `load_and_migrate`). If robustness parity is wanted, add a
   validator that resets out-of-range values to defaults instead of raising.
+
+## [DEFERRAL] Telegram egress is pinned to IPv4 (breaks a genuinely IPv6-only client)
+- **Trigger:** first user report of "can't connect to Telegram" on a network confirmed IPv6-only
+  (no IPv4 at all — rare on desktop), OR next time you touch `exporters/telegram.py::_ipv4_request`.
+- `_ipv4_request()` binds the httpx transport to `local_address="0.0.0.0"`, forcing v4 egress (both
+  `request` and `get_updates_request` pools). This is a deliberate trade: it fixes the common
+  dead-/absent-v6 case (any non-v6 VPN/tunnel — the maintainer's box, see vpn-stack Gotcha #4 +
+  `conventions.md ## Known quirks`), but a host with no IPv4 can't connect at all. Acceptable for an
+  itch.io desktop tool (dual-stack/v4-only dominate). Robust fix when the trade actually bites:
+  replace the v4 pin with a Happy-Eyeballs resolver (try both families, use whichever connects) — not
+  native in httpx 0.28, needs a custom transport/resolver, so not worth it pre-report.
