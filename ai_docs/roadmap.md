@@ -27,18 +27,20 @@ feature; brief points at the superseder).
 
 **As of 2026-05-26.**
 
-- **Shipped: `v0.5.0`** (top-bar refinement) — `master`, both itch channels live, tag pushed. The
-  old inline button row became a proper main menu bar (`ui.py::_draw_menu_bar`: File → New node /
-  Open project / Quit, Edit → Settings), and the FPS readout moved off the bar into a clickable chip
-  pinned top-right of the render image (`ui_primitives.fps_overlay`) that unfolds a stats panel
-  (`OVERLAY_ALPHA` translucent, `auto_resize_y`, screen-anchored so opening doesn't shift the pill).
-  Also fixed the editor I-beam showing through an open menu (`is_window_hovered` respects
-  popup-blocking; `tabs/code.py`).
+- **Shipped: `v0.6.0`** (settings-modal refinement + Telegram UX/connect) — `master`, both itch
+  channels live, tag pushed. Settings modal redrawn to the label-column standard (`popups/settings.py`:
+  General/Editor/Integrations zones, `label_row` drags, `ghost_button` Close, `wrapped_caption` for
+  wrapping hints); Telegram config got a `danger_button` "Clear token" (`disconnect()`) and the share
+  panel's not-connected state a "Set up token" button → Settings (via the generic `OutletUiDeps.
+  open_settings` seam). Dropped the YouTube/X stub exporters. **Connect fix:** ptb's `Bot` has two
+  request pools — `get_updates_request` also needs the IPv4 bind, else the link flow dials the dead
+  AAAA and fails after `get_me()` succeeds (`conventions.md ## Known quirks`; trade recorded in `todo.md`).
+- **v0.5.0** (prior ship): main menu bar + clickable FPS overlay on the render image.
 - **Invoke `/imgui-ui` before any UI work** — button tiers, jitter-free overlays, SetCursorPos assert,
-  font/emoji caveats, the `is_mouse_hovering_rect`-ignores-popups trap, no-screenshot loop.
+  font/emoji caveats, the `is_mouse_hovering_rect`-ignores-popups + text-never-wraps traps, no-screenshot loop.
 - **NEXT ACTION: none queued.** No `pending` feature row. Candidate next waves all sit in `todo.md` as
   trigger-gated deferrals — none a default next-step; pick up only when its trigger fires.
-- **`dev` == `master`** at `v0.5.0`. Tree clean.
+- **`dev` == `master`** at `v0.6.0`. Tree clean.
 - **Branch model:** develop on `dev`, ship from `master` (`dev_flow.md ## Branch model`).
 - **Token hygiene:** the dev bot token lives only in `~/.local/share/shaderbox/integrations.json`
   (outside the repo, never committed); maintainer rotates it post-iteration.
