@@ -25,19 +25,20 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-**As of 2026-05-25.**
+**As of 2026-05-26.**
 
-- **Shipped: `v0.4.2`** (Telegram IPv4 connection fix + Render-tab UI refresh) — `master`, both itch
-  channels live, tag pushed. The render-tab refresh brought the Render sub-tab to the Node/Share
-  standard (label-column rows via `ui_primitives.label_row`/`row_label`, ghost presets, `primary_button`
-  Render, preview left of controls bottom-aligned with the Render button) and converted all numeric
-  sliders → drags (`duration_slider` → `duration_drag`). The Telegram fix binds the bot to IPv4
-  (`exporters/telegram.py::_ipv4_request`) for IPv6-incapable tunnels.
+- **Shipped: `v0.5.0`** (top-bar refinement) — `master`, both itch channels live, tag pushed. The
+  old inline button row became a proper main menu bar (`ui.py::_draw_menu_bar`: File → New node /
+  Open project / Quit, Edit → Settings), and the FPS readout moved off the bar into a clickable chip
+  pinned top-right of the render image (`ui_primitives.fps_overlay`) that unfolds a stats panel
+  (`OVERLAY_ALPHA` translucent, `auto_resize_y`, screen-anchored so opening doesn't shift the pill).
+  Also fixed the editor I-beam showing through an open menu (`is_window_hovered` respects
+  popup-blocking; `tabs/code.py`).
 - **Invoke `/imgui-ui` before any UI work** — button tiers, jitter-free overlays, SetCursorPos assert,
-  font/emoji caveats, no-screenshot loop.
+  font/emoji caveats, the `is_mouse_hovering_rect`-ignores-popups trap, no-screenshot loop.
 - **NEXT ACTION: none queued.** No `pending` feature row. Candidate next waves all sit in `todo.md` as
   trigger-gated deferrals — none a default next-step; pick up only when its trigger fires.
-- **`dev` == `master`** at `v0.4.2`. Tree clean.
+- **`dev` == `master`** at `v0.5.0`. Tree clean.
 - **Branch model:** develop on `dev`, ship from `master` (`dev_flow.md ## Branch model`).
 - **Token hygiene:** the dev bot token lives only in `~/.local/share/shaderbox/integrations.json`
   (outside the repo, never committed); maintainer rotates it post-iteration.
