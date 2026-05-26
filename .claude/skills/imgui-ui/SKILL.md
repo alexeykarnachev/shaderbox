@@ -110,6 +110,10 @@ durable fix:
 - **A crisp ✕ / icon:** don't rely on a font glyph centered by button text-align (single chars sit
   off-center). Draw it with the draw list — two `add_line` calls for an ✕ — perfectly centered, no
   font dependency.
+- **`is_mouse_hovering_rect` ignores window ordering and popup-blocking** (its own doc says so) — so a
+  region's hover gate built on it stays "hovered" even when a menu dropdown / popup is open *on top* of
+  it. Symptom: a custom cursor (or hover highlight) keyed to that rect fires through an open menu. Fix:
+  AND it with `imgui.is_window_hovered(HoveredFlags_.child_windows)`, which *does* respect popup-blocking.
 
 ---
 

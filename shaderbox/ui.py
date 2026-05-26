@@ -17,6 +17,7 @@ from shaderbox.tabs import node as node_tab
 from shaderbox.tabs import render as render_tab
 from shaderbox.tabs import share as share_tab
 from shaderbox.theme import COLOR, SIZE, SPACE
+from shaderbox.ui_primitives import fps_overlay
 from shaderbox.util import adjust_size
 from shaderbox.widgets.node_grid import draw_node_preview_grid
 
@@ -31,6 +32,7 @@ _MAIN_WINDOW_FLAGS = (
     | imgui.WindowFlags_.no_title_bar
     | imgui.WindowFlags_.no_scrollbar
     | imgui.WindowFlags_.no_scroll_with_mouse
+    | imgui.WindowFlags_.menu_bar
 )
 
 
@@ -123,15 +125,7 @@ def update_and_draw(app: App) -> None:
     with imgui_ctx.begin("ShaderBox - UI", flags=_MAIN_WINDOW_FLAGS):
         # ------------------------------------------------------------
         # Main menu bar
-        if imgui.button("Open project"):
-            app.open_project()
-
-        imgui.same_line()
-        if imgui.button("Settings"):
-            app.open_settings()
-
-        imgui.same_line()
-        imgui.text(f"Global FPS: {round(app.global_fps)}")
+        _draw_menu_bar(app)
 
         # ------------------------------------------------------------
         # Left editor / right app split
@@ -190,6 +184,24 @@ def update_and_draw(app: App) -> None:
     glfw.swap_buffers(app.window)
 
     app.frame_idx += 1
+
+
+def _draw_menu_bar(app: App) -> None:
+    with imgui_ctx.begin_menu_bar() as bar:
+        if not bar:
+            return
+        with imgui_ctx.begin_menu("File") as file_menu:
+            if file_menu:
+                if imgui.menu_item("New node", "Ctrl+N", False)[0]:
+                    app.open_node_creator()
+                if imgui.menu_item("Open project...", "Ctrl+O", False)[0]:
+                    app.open_project()
+                imgui.separator()
+                if imgui.menu_item("Quit", "Ctrl+Q", False)[0]:
+                    glfw.set_window_should_close(app.window, True)
+        with imgui_ctx.begin_menu("Edit") as edit_menu:
+            if edit_menu and imgui.menu_item("Settings...", "Alt+S", False)[0]:
+                app.open_settings()
 
 
 def _draw_splitter(app: App, total_width: float, height: float) -> None:
@@ -257,6 +269,15 @@ def _draw_app_panel(app: App) -> None:
             (text_x, text_y),
             imgui.color_convert_float4_to_u32(COLOR.STATE_WARN),
             message,
+        )
+
+    if app.current_node_id in app.ui_nodes:
+        app.fps_details_open = fps_overlay(
+            anchor_x=cursor_pos.x + image_width,
+            anchor_y=cursor_pos.y,
+            fps=round(app.global_fps),
+            target_fps=app.app_state.global_target_fps,
+            is_open=app.fps_details_open,
         )
 
     imgui.set_cursor_screen_pos(

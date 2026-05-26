@@ -180,6 +180,8 @@ class SIZE:
     PREVIEW_W: int = 200
     PANEL_CTRL_MINH: int = 600
 
+    FPS_PANEL_W: int = 160
+
     SCROLLBAR_W: int = 12
     GRAB_MIN: int = 10
 
@@ -202,6 +204,9 @@ def fade(
 # Whole-pane alpha for the code editor when it lacks keyboard focus; style.Alpha
 # reaches the editor's glyph draws.
 EDITOR_UNFOCUSED_ALPHA: float = 0.6
+
+# Fill alpha for chrome floating over the render image (the FPS overlay).
+OVERLAY_ALPHA: float = 0.7
 
 
 # ============================================================================

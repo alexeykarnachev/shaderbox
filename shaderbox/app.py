@@ -118,6 +118,7 @@ class App:
         # caret isn't active and arrows navigate nodes (the editor auto-grabs focus).
         self.editor_defocus_requested: bool = True
         self.global_fps = 0.0
+        self.fps_details_open: bool = False
 
         self.editors: dict[str, text_edit.TextEditor] = {}
         self.editor_saved_undo: dict[str, int] = {}

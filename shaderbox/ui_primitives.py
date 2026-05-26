@@ -1,8 +1,8 @@
 import pyperclip
-from imgui_bundle import imgui
+from imgui_bundle import imgui, imgui_ctx
 from loguru import logger
 
-from shaderbox.theme import COLOR, SIZE, SPACE
+from shaderbox.theme import COLOR, OVERLAY_ALPHA, SIZE, SPACE, fade
 
 _TRANSPARENT: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
 
@@ -134,6 +134,57 @@ def duration_drag(
     imgui.same_line(label_w + SPACE.MD)
     imgui.set_next_item_width(width)
     return imgui.drag_float(f"##{label}", value, 0.1, v_min, v_max, fmt)[1]
+
+
+def fps_overlay(
+    anchor_x: float,
+    anchor_y: float,
+    fps: int,
+    target_fps: int,
+    is_open: bool,
+) -> bool:
+    """A clickable FPS chip pinned to the top-right of a region, optionally
+    unfolding a stats panel beneath it.
+
+    `anchor_x` / `anchor_y` are the top-RIGHT screen corner of the region the
+    overlay hugs (the pill's right edge sits `inset` left of `anchor_x`). Returns
+    the new open state (toggled on a pill click). The pill is anchored in screen
+    space independent of the detail panel, so opening it never shifts the pill.
+    """
+    label = f"{fps} FPS"
+    pad: float = float(SPACE.MD)
+    pill_w = imgui.calc_text_size(label).x + 2.0 * pad
+    pill_h = imgui.get_frame_height()
+    inset: float = float(SPACE.MD)
+
+    pill_x = anchor_x - pill_w - inset
+    pill_y = anchor_y + inset
+
+    imgui.set_cursor_screen_pos((pill_x, pill_y))
+    imgui.push_style_color(imgui.Col_.button, fade(COLOR.CHIP_BG, OVERLAY_ALPHA))
+    imgui.push_style_color(imgui.Col_.button_hovered, COLOR.CHIP_BG_HOVER)
+    imgui.push_style_color(imgui.Col_.button_active, COLOR.CHIP_BG_HOVER)
+    imgui.push_style_color(imgui.Col_.text, COLOR.CHIP_FG)
+    imgui.push_style_var(imgui.StyleVar_.frame_rounding, float(SIZE.CHIP_ROUNDING))
+    clicked: bool = imgui.button(label, size=(pill_w, pill_h))
+    imgui.pop_style_var()
+    imgui.pop_style_color(4)
+
+    if is_open:
+        panel_w = float(SIZE.FPS_PANEL_W)
+        imgui.set_cursor_screen_pos((anchor_x - panel_w - inset, pill_y + pill_h))
+        imgui.push_style_color(imgui.Col_.child_bg, fade(COLOR.BG_POPUP, OVERLAY_ALPHA))
+        with imgui_ctx.begin_child(
+            "fps_details",
+            size=imgui.ImVec2(panel_w, 0.0),
+            child_flags=imgui.ChildFlags_.borders | imgui.ChildFlags_.auto_resize_y,
+            window_flags=imgui.WindowFlags_.no_scrollbar,
+        ):
+            caption_text(f"Current: {fps} FPS")
+            caption_text(f"Target:  {target_fps} FPS")
+        imgui.pop_style_color(1)
+
+    return not is_open if clicked else is_open
 
 
 def draw_copyable_text(

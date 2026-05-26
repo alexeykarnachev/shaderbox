@@ -78,7 +78,11 @@ def draw(app: App) -> None:
         app.editor_defocus_requested = False
         app.editor_focused = False
 
-    # glfw cursor driven directly — editor isn't a hoverable imgui item and imgui cursors are no-op here (conventions.md ## Known quirks)
-    glfw.set_cursor(app.window, app.ibeam_cursor if hovering else None)
+    # glfw cursor driven directly — editor isn't a hoverable imgui item and imgui cursors are no-op here (conventions.md ## Known quirks).
+    # is_window_hovered respects popup-blocking (is_mouse_hovering_rect doesn't), so a menu over the editor keeps the arrow.
+    cursor_over_editor = hovering and imgui.is_window_hovered(
+        imgui.HoveredFlags_.child_windows
+    )
+    glfw.set_cursor(app.window, app.ibeam_cursor if cursor_over_editor else None)
 
     imgui.pop_font()
