@@ -181,6 +181,9 @@ class SIZE:
     PANEL_CTRL_MINH: int = 600
 
     FPS_PANEL_W: int = 160
+    SETTINGS_W: int = 420
+    SETTINGS_LABEL_W: int = 92
+    SETTINGS_CTRL_W: int = 120
 
     SCROLLBAR_W: int = 12
     GRAB_MIN: int = 10

@@ -57,6 +57,19 @@ def caption_text(
     imgui.text_colored(color or COLOR.FG_DIM, text)
 
 
+def wrapped_caption(
+    text: str, color: tuple[float, float, float, float] | None = None
+) -> None:
+    """A `caption_text` that wraps at the window's right edge (multi-line hints).
+
+    `imgui.text_colored` never wraps; push a wrap position at x=0 (= the content
+    region's right edge) so a long instruction line folds instead of clipping.
+    """
+    imgui.push_text_wrap_pos(0.0)
+    imgui.text_colored(color or COLOR.FG_DIM, text)
+    imgui.pop_text_wrap_pos()
+
+
 def small_caption(font: imgui.ImFont, text: str) -> None:
     """Dim caption in a smaller font (column labels, inline readouts).
 

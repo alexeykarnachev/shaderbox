@@ -144,6 +144,13 @@ Rules to avoid it:
 
 ## 5. Fonts, glyphs, previews
 
+- **`imgui.text` / `text_colored` never wrap** — a long instruction sentence in a fixed-width
+  container (a modal with `set_next_window_size`, a tree-node column) is **clipped at the right edge**,
+  not folded, and (without the `horizontal_scrollbar` flag) shows no scrollbar — it just vanishes
+  mid-word. Wrap it: `push_text_wrap_pos(0.0)` (0.0 = wrap at the content-region right edge) around the
+  text, then `pop_text_wrap_pos()`. Standardize as a `wrapped_caption`-style primitive so call sites
+  don't re-push. Measure long labels against fixed label-column widths too — a label wider than the
+  column overlaps its control (see §2 label-control row).
 - **No icon font unless you loaded one.** Don't design with ⚙/🗑/✏ as affordances. Use text.
 - **Mixed fonts in one `imgui.button` label aren't possible** — a button label is one font. To show a
   glyph from a different font (an emoji) *as* a button, draw an empty/invisible button, then render
