@@ -31,8 +31,8 @@ float get_dist_to_line(vec2 p, vec2 a, vec2 b) {
 
 const float CW = 0.5;
 const float CH = 1.0;
-const float DOTS_THICKNESS = 0.05;
 
+// Glyph anchor points on a 7-segment-style cell (CW x CH half-extents).
 const vec2 A = vec2(-CW, -CH);
 const vec2 B = vec2(-CW, -0.5 * CH);
 const vec2 C = vec2(-CW, 0.0);
@@ -48,13 +48,6 @@ const vec2 M = vec2(0.0, -CH);
 const vec2 N = vec2(0.0, -0.5 * CH);
 const vec2 O = vec2(0.0, 0.0);
 const vec2 P = vec2(0.0, 0.5 * CH);
-const vec2 Q = vec2(-0.5 * CW, 1.3 * CH);
-const vec2 R = vec2(0.0, 1.3 * CH);
-const vec2 S = vec2(0.5 * CW, 1.3 * CH);
-const vec2 T = vec2(-1.3 * CW, -CH);
-const vec2 U = vec2(1.3 * CW, -CH);
-const vec2 V = vec2(-1.3 * CW, CH);
-const vec2 W = vec2(1.3 * CW, CH);
 
 float seg0(vec2 p) { return get_dist_to_line(p, A, B); }
 float seg1(vec2 p) { return get_dist_to_line(p, B, C); }
@@ -69,13 +62,9 @@ float seg9(vec2 p) { return get_dist_to_line(p, K, L); }
 float seg10(vec2 p) { return get_dist_to_line(p, M, L); }
 float seg11(vec2 p) { return get_dist_to_line(p, A, M); }
 float seg12(vec2 p) { return get_dist_to_line(p, M, N); }
-float seg13(vec2 p) { return get_dist_to_line(p, B, N); }
 float seg14(vec2 p) { return get_dist_to_line(p, N, O); }
-float seg15(vec2 p) { return get_dist_to_line(p, N, K); }
 float seg16(vec2 p) { return get_dist_to_line(p, O, P); }
-float seg17(vec2 p) { return get_dist_to_line(p, D, P); }
 float seg18(vec2 p) { return get_dist_to_line(p, P, F); }
-float seg19(vec2 p) { return get_dist_to_line(p, P, H); }
 float seg20(vec2 p) { return get_dist_to_line(p, A, O); }
 float seg21(vec2 p) { return get_dist_to_line(p, E, O); }
 float seg22(vec2 p) { return get_dist_to_line(p, O, G); }
@@ -100,11 +89,6 @@ float quarter_ellipse_dist(vec2 p, vec2 c, float x_cond, float y_cond,
 float seg26(vec2 p) {
     return quarter_ellipse_dist(p, vec2(0.0, -0.5 * CH), 1.0, 1.0,
                                 vec2(-CW, -0.5 * CH), vec2(0.0, -CH));
-}
-
-float seg27(vec2 p) {
-    return quarter_ellipse_dist(p, vec2(0.0, -0.5 * CH), 1.0, 0.0,
-                                vec2(0.0, 0.0), vec2(-CW, -0.5 * CH));
 }
 
 float seg28(vec2 p) {
@@ -136,15 +120,6 @@ float seg33(vec2 p) {
     return quarter_ellipse_dist(p, vec2(0.0, 0.5 * CH), 0.0, 1.0,
                                 vec2(0.0, 0.0), vec2(CW, 0.5 * CH));
 }
-
-float seg34(vec2 p) { return max(distance(p, Q) - DOTS_THICKNESS, 0.0); }
-float seg35(vec2 p) { return max(distance(p, R) - DOTS_THICKNESS, 0.0); }
-float seg36(vec2 p) { return max(distance(p, S) - DOTS_THICKNESS, 0.0); }
-
-float seg37(vec2 p) { return get_dist_to_line(p, T, A); }
-float seg38(vec2 p) { return get_dist_to_line(p, L, U); }
-float seg39(vec2 p) { return get_dist_to_line(p, V, E); }
-float seg40(vec2 p) { return get_dist_to_line(p, G, W); }
 
 float get_dist_to_latin_A(vec2 p) {
     float d = seg0(p);
@@ -461,46 +436,50 @@ float get_dist_to_dash(vec2 p) {
     return d;
 }
 
-float get_dist_to_all_segments(vec2 p) {
-    float d = seg0(p);
-    d = min(d, seg1(p));
-    d = min(d, seg2(p));
-    d = min(d, seg3(p));
-    d = min(d, seg4(p));
-    d = min(d, seg5(p));
-    d = min(d, seg6(p));
-    d = min(d, seg7(p));
-    d = min(d, seg8(p));
-    d = min(d, seg9(p));
-    d = min(d, seg10(p));
-    d = min(d, seg11(p));
-    d = min(d, seg12(p));
-    d = min(d, seg13(p));
-    d = min(d, seg14(p));
-    d = min(d, seg15(p));
-    d = min(d, seg16(p));
-    d = min(d, seg17(p));
-    d = min(d, seg18(p));
-    d = min(d, seg19(p));
-    d = min(d, seg20(p));
-    d = min(d, seg21(p));
-    d = min(d, seg22(p));
-    d = min(d, seg23(p));
-    d = min(d, seg24(p));
-    d = min(d, seg25(p));
-    d = min(d, seg26(p));
-    d = min(d, seg27(p));
-    d = min(d, seg28(p));
-    d = min(d, seg29(p));
-    d = min(d, seg30(p));
+// Punctuation. A "dot" is a filled disc of radius DOT_R; strokes reuse
+// get_dist_to_line. Marks sit near the baseline (y = -CH).
+const float DOT_R = 0.12;
+
+float dot_dist(vec2 p, vec2 c) { return distance(p, c) - DOT_R; }
+
+float get_dist_to_period(vec2 p) {
+    return dot_dist(p, vec2(0.0, -CH + DOT_R));
+}
+
+float get_dist_to_comma(vec2 p) {
+    vec2 head = vec2(0.0, -0.5 * CH);
+    float d = dot_dist(p, head);
+    // A short tail curling down-left below the baseline.
+    d = min(d, get_dist_to_line(p, head, vec2(-0.25 * CW, -CH)));
+    return d;
+}
+
+float get_dist_to_semicolon(vec2 p) {
+    float d = dot_dist(p, vec2(0.0, 0.0)); // upper dot
+    d = min(d, get_dist_to_comma(p));      // lower comma
+    return d;
+}
+
+float get_dist_to_ampersand(vec2 p) {
+    // Approximation on the segment lattice: a loop in the upper cell plus a
+    // diagonal kicking out to the lower right.
+    float d = seg30(p);
     d = min(d, seg31(p));
     d = min(d, seg32(p));
     d = min(d, seg33(p));
-
+    d = min(d, seg2(p));
+    d = min(d, seg20(p)); // A -> O diagonal
+    d = min(d, seg25(p)); // O -> J
     return d;
 }
 
 float get_dist_to_latin_char(vec2 p, uint char_unicode_idx) {
+    // This is an all-caps display face: fold lowercase a-z (97-122) onto the
+    // uppercase glyphs A-Z (65-90).
+    if (char_unicode_idx >= 97u && char_unicode_idx <= 122u) {
+        char_unicode_idx -= 32u;
+    }
+
     switch (char_unicode_idx) {
     case 65: // A
         return get_dist_to_latin_A(p);
@@ -556,8 +535,16 @@ float get_dist_to_latin_char(vec2 p, uint char_unicode_idx) {
         return get_dist_to_latin_Z(p);
     // -------------------------------------------------------------------
     // Punctuation
+    case 38: // &
+        return get_dist_to_ampersand(p);
+    case 44: // ,
+        return get_dist_to_comma(p);
     case 45: // -
         return get_dist_to_dash(p);
+    case 46: // .
+        return get_dist_to_period(p);
+    case 59: // ;
+        return get_dist_to_semicolon(p);
     default:
         return MAX_DIST;
     }
@@ -568,148 +555,60 @@ float get_line(float dist, float width, float smoothness) {
     return 1.0 - smoothstep(0.0, smoothness, dist - width);
 }
 
-// Description : Array and textureless GLSL 2D/3D/4D simplex
-//               noise functions.
-//      Author : Ian McEwan, Ashima Arts.
-//  Maintainer : stegu
-//     Lastmod : 20110822 (ijm)
-//     License : Copyright (C) 2011 Ashima Arts. All rights reserved.
-//               Distributed under the MIT License. See LICENSE file.
-//               https://github.com/ashima/webgl-noise
-//               https://github.com/stegu/webgl-noise
-
-vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
-
-float mod289(float x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
-
-vec4 permute(vec4 x) { return mod289(((x * 34.0) + 10.0) * x); }
-
-float permute(float x) { return mod289(((x * 34.0) + 10.0) * x); }
-
-vec4 taylorInvSqrt(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
-
-float taylorInvSqrt(float r) { return 1.79284291400159 - 0.85373472095314 * r; }
-
-vec4 grad4(float j, vec4 ip) {
-    const vec4 ones = vec4(1.0, 1.0, 1.0, -1.0);
-    vec4 p, s;
-
-    p.xyz = floor(fract(vec3(j) * ip.xyz) * 7.0) * ip.z - 1.0;
-    p.w = 1.5 - dot(abs(p.xyz), ones.xyz);
-    s = vec4(lessThan(p, vec4(0.0)));
-    p.xyz = p.xyz + (s.xyz * 2.0 - 1.0) * s.www;
-
-    return p;
+// Cheap hash-based value noise: bilinearly interpolated white noise. Returns
+// roughly [-1, 1]; used only for a subtle thickness wobble along the strokes.
+float hash(vec2 p) {
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
 }
 
-// (sqrt(5) - 1)/4 = F4, used once below
-#define F4 0.309016994374947451
+float value_noise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f); // smoothstep weights
 
-float snoise(vec4 v) {
-    const vec4 C = vec4(0.138196601125011,   // (5 - sqrt(5))/20  G4
-                        0.276393202250021,   // 2 * G4
-                        0.414589803375032,   // 3 * G4
-                        -0.447213595499958); // -1 + 4 * G4
+    float a = hash(i);
+    float b = hash(i + vec2(1.0, 0.0));
+    float c = hash(i + vec2(0.0, 1.0));
+    float d = hash(i + vec2(1.0, 1.0));
 
-    // First corner
-    vec4 i = floor(v + dot(v, vec4(F4)));
-    vec4 x0 = v - i + dot(i, C.xxxx);
-
-    // Other corners
-
-    // Rank sorting originally contributed by Bill Licea-Kane, AMD (formerly
-    // ATI)
-    vec4 i0;
-    vec3 isX = step(x0.yzw, x0.xxx);
-    vec3 isYZ = step(x0.zww, x0.yyz);
-    //  i0.x = dot( isX, vec3( 1.0 ) );
-    i0.x = isX.x + isX.y + isX.z;
-    i0.yzw = 1.0 - isX;
-    //  i0.y += dot( isYZ.xy, vec2( 1.0 ) );
-    i0.y += isYZ.x + isYZ.y;
-    i0.zw += 1.0 - isYZ.xy;
-    i0.z += isYZ.z;
-    i0.w += 1.0 - isYZ.z;
-
-    // i0 now contains the unique values 0,1,2,3 in each channel
-    vec4 i3 = clamp(i0, 0.0, 1.0);
-    vec4 i2 = clamp(i0 - 1.0, 0.0, 1.0);
-    vec4 i1 = clamp(i0 - 2.0, 0.0, 1.0);
-
-    //  x0 = x0 - 0.0 + 0.0 * C.xxxx
-    //  x1 = x0 - i1  + 1.0 * C.xxxx
-    //  x2 = x0 - i2  + 2.0 * C.xxxx
-    //  x3 = x0 - i3  + 3.0 * C.xxxx
-    //  x4 = x0 - 1.0 + 4.0 * C.xxxx
-    vec4 x1 = x0 - i1 + C.xxxx;
-    vec4 x2 = x0 - i2 + C.yyyy;
-    vec4 x3 = x0 - i3 + C.zzzz;
-    vec4 x4 = x0 + C.wwww;
-
-    // Permutations
-    i = mod289(i);
-    float j0 = permute(permute(permute(permute(i.w) + i.z) + i.y) + i.x);
-    vec4 j1 =
-        permute(permute(permute(permute(i.w + vec4(i1.w, i2.w, i3.w, 1.0)) +
-                                i.z + vec4(i1.z, i2.z, i3.z, 1.0)) +
-                        i.y + vec4(i1.y, i2.y, i3.y, 1.0)) +
-                i.x + vec4(i1.x, i2.x, i3.x, 1.0));
-
-    // Gradients: 7x7x6 points over a cube, mapped onto a 4-cross polytope
-    // 7*7*6 = 294, which is close to the ring size 17*17 = 289.
-    vec4 ip = vec4(1.0 / 294.0, 1.0 / 49.0, 1.0 / 7.0, 0.0);
-
-    vec4 p0 = grad4(j0, ip);
-    vec4 p1 = grad4(j1.x, ip);
-    vec4 p2 = grad4(j1.y, ip);
-    vec4 p3 = grad4(j1.z, ip);
-    vec4 p4 = grad4(j1.w, ip);
-
-    // Normalise gradients
-    vec4 norm =
-        taylorInvSqrt(vec4(dot(p0, p0), dot(p1, p1), dot(p2, p2), dot(p3, p3)));
-    p0 *= norm.x;
-    p1 *= norm.y;
-    p2 *= norm.z;
-    p3 *= norm.w;
-    p4 *= taylorInvSqrt(dot(p4, p4));
-
-    // Mix contributions from the five corners
-    vec3 m0 = max(0.57 - vec3(dot(x0, x0), dot(x1, x1), dot(x2, x2)), 0.0);
-    vec2 m1 = max(0.57 - vec2(dot(x3, x3), dot(x4, x4)), 0.0);
-    m0 = m0 * m0;
-    m1 = m1 * m1;
-    return 60.1 * (dot(m0 * m0, vec3(dot(p0, x0), dot(p1, x1), dot(p2, x2))) +
-                   dot(m1 * m1, vec2(dot(p3, x3), dot(p4, x4))));
+    float n = mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+    return 2.0 * n - 1.0;
 }
 
 void main() {
     vec2 uv = (vs_uv - u_offset) * vec2(u_aspect, 1.0) * u_zoomout;
 
     float dist = MAX_DIST;
-    float y = u_zoomout;
 
-    uint char_idx = 0;
+    float col = 0.0; // advancing x position, reset on newline
+    float row = 0.0; // line index, grows downward
 
     for (uint i = 0; i < MAX_TEXT_LEN; ++i) {
         uint char_unicode_idx = u_text[i];
 
-        if (char_unicode_idx == 0) {
+        if (char_unicode_idx == 0u) { // end of string
             break;
         }
 
-        vec2 char_pos = vec2(float(i) * (1.0 + u_text_spacing.x), y);
+        if (char_unicode_idx == 10u) { // '\n' -> carriage return + line feed
+            col = 0.0;
+            row += 1.0;
+            continue;
+        }
+
+        // Lines stack downward: y starts at u_zoomout and each row drops by one
+        // glyph height (in uv units, = u_char_scale * CH) plus the vertical spacing.
+        float line_step = u_char_scale * CH + u_text_spacing.y;
+        vec2 char_pos = vec2(col * (1.0 + u_text_spacing.x),
+                             u_zoomout - row * line_step);
 
         vec2 p = 2.0 * (uv - char_pos) / u_char_scale;
-        float char_dist = get_dist_to_latin_char(p, char_unicode_idx);
+        dist = min(dist, get_dist_to_latin_char(p, char_unicode_idx));
 
-        if (char_dist < dist) {
-            dist = char_dist;
-            char_idx = i;
-        }
+        col += 1.0;
     }
 
-    float text_thickness = u_text_thickness + 0.1 * snoise(vec4(128.0 * vs_uv.x, 32.0 * vs_uv.y, 0.0, 0.0));
+    float text_thickness = u_text_thickness + 0.1 * value_noise(vec2(128.0 * vs_uv.x, 32.0 * vs_uv.y));
     float line = get_line(dist, text_thickness, u_text_smoothness);
     vec3 color = u_color * line;
 

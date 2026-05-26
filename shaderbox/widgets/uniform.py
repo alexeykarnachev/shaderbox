@@ -110,7 +110,9 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
         assert isinstance(current_value, Sequence)
         cap = ui_uniform.array_length
         text = unicode_to_str([int(c) for c in current_value])
-        is_changed, text = imgui.input_text(hidden, text)
+        is_changed, text = imgui.input_text_multiline(
+            hidden, text, size=(SIZE.UNIFORM_CTRL_W, SIZE.UNIFORM_TEXT_H)
+        )
         text = text[:cap]
 
         imgui.same_line()

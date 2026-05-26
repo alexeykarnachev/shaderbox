@@ -33,8 +33,23 @@ from shaderbox.ui_models import (
 from shaderbox.util import pfd_block, select_next_value
 
 # The procedural starter shader seeded into an empty project on first run (no
-# external media to load, unlike the Image/Video templates).
+# external media to load, unlike the Media Input template).
 _STARTER_TEMPLATE_ID = "53724dbd-8efb-4c09-8c7d-28d626a066e7"  # "UV Mango"
+
+# Authored display order for the node-creator template grid. Filesystem ctime
+# (load_nodes_from_dir's default) is not preserved through git/zip/bundle, so the
+# shipped order would otherwise be arbitrary. Templates not listed sort last.
+_TEMPLATE_ORDER = [
+    "53724dbd-8efb-4c09-8c7d-28d626a066e7",  # UV Mango
+    "73ea2431-13f6-41e4-b923-04d846b678b0",  # Media Input
+    "f90f5ff9-29c6-4bcf-aee7-090f20542353",  # Text Rendering
+]
+
+
+def _order_templates(templates: dict[str, UINode]) -> dict[str, UINode]:
+    rank = {tid: i for i, tid in enumerate(_TEMPLATE_ORDER)}
+    ordered_ids = sorted(templates, key=lambda tid: rank.get(tid, len(rank)))
+    return {tid: templates[tid] for tid in ordered_ids}
 
 
 class App:
@@ -228,7 +243,9 @@ class App:
         # ----------------------------------------------------------------
         # Load nodes
         self.ui_nodes = load_nodes_from_dir(self.nodes_dir)
-        self.ui_node_templates = load_nodes_from_dir(self.node_templates_dir)
+        self.ui_node_templates = _order_templates(
+            load_nodes_from_dir(self.node_templates_dir)
+        )
 
         # First launch only: seed a starter node into the empty default project so
         # the user lands on a live, editable shader. NOT on open_project (which would

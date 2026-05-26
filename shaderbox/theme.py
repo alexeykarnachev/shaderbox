@@ -173,6 +173,7 @@ class SIZE:
 
     UNIFORM_NAME_W: int = 140
     UNIFORM_CTRL_W: int = 320
+    UNIFORM_TEXT_H: int = 72  # multiline text-uniform box (~3 rows)
 
     THUMB_SM: int = 90
     THUMB_LG: int = 150
