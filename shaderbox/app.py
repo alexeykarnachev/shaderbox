@@ -468,7 +468,10 @@ class App:
             self.node_delete_armed = ""
         if node_id == self.current_node_id or not self.current_node_id:
             self.set_current_node_id(new_node_id)
-        shutil.move(self.nodes_dir / node_id, self.trash_dir / node_id)
+        dest = self.trash_dir / node_id
+        if dest.exists():  # a prior node with this id was already trashed
+            dest = self.trash_dir / f"{node_id}_{int(time.time() * 1000)}"
+        shutil.move(self.nodes_dir / node_id, dest)
 
         logger.info(f"Node deleted: {node_id}")
 
