@@ -42,7 +42,11 @@ def draw_node_preview_grid(app: App, width: float, height: float) -> None:
         preview_size = SIZE.THUMB_LG
         n_cols = int(imgui.get_content_region_avail().x // (preview_size + SPACE.SM))
         n_cols = max(1, n_cols)
-        for i, (id, ui_node) in enumerate(app.ui_nodes.items()):
+        # Snapshot: the delete-confirm fires app.delete_node, which mutates
+        # app.ui_nodes; deferring the pop until after the loop avoids mutating
+        # the dict mid-iteration.
+        id_to_delete: str | None = None
+        for i, (id, ui_node) in enumerate(list(app.ui_nodes.items())):
             border_color: tuple[float, float, float, float] | None = None
             if id == app.current_node_id:
                 if ui_node.node.shader_error:
@@ -61,7 +65,7 @@ def draw_node_preview_grid(app: App, width: float, height: float) -> None:
             if result.delete_armed:
                 app.set_node_delete_armed(id)
             elif result.delete_confirmed:
-                app.delete_node(id)
+                id_to_delete = id
             elif result.delete_cancelled:
                 app.set_node_delete_armed("")
 
@@ -69,3 +73,6 @@ def draw_node_preview_grid(app: App, width: float, height: float) -> None:
                 imgui.same_line()
             else:
                 imgui.spacing()
+
+    if id_to_delete is not None:
+        app.delete_node(id_to_delete)
