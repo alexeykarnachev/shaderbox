@@ -25,36 +25,41 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-**As of 2026-05-26.**
+**As of 2026-05-27.**
 
-- **Shipped: `v0.6.0`** (settings-modal refinement + Telegram UX/connect) — `master`, both itch
-  channels live, tag pushed. Settings modal redrawn to the label-column standard (`popups/settings.py`:
-  General/Editor/Integrations zones, `label_row` drags, `ghost_button` Close, `wrapped_caption` for
-  wrapping hints); Telegram config got a `danger_button` "Clear token" (`disconnect()`) and the share
-  panel's not-connected state a "Set up token" button → Settings (via the generic `OutletUiDeps.
-  open_settings` seam). Dropped the YouTube/X stub exporters. **Connect fix:** ptb's `Bot` has two
-  request pools — `get_updates_request` also needs the IPv4 bind, else the link flow dials the dead
-  AAAA and fails after `get_me()` succeeds (`conventions.md ## Known quirks`; trade recorded in `todo.md`).
-- **v0.5.0** (prior ship): main menu bar + clickable FPS overlay on the render image.
+- **Shipped: `v0.7.0`** (template polish + grid-cell consolidation + crash fixes) — `master`, both
+  itch channels live, tag pushed. Merged the grid-cell + sticker-cell draw code into one `preview_cell`
+  primitive (+ `chip_button`, `centered_image`, `_ellipsize` in `ui_primitives.py`). Templates:
+  authored display order (`app.py::_TEMPLATE_ORDER`/`_order_templates`; ctime isn't bundle-stable),
+  merged Image+Video into one split-screen **Media Input**, and the vector text shader gained
+  lowercase (folded to caps), punctuation (`. , ; & -`), newline layout, and a homegrown value-noise
+  (dropped the vendored Ashima simplex). Video temporal-smoothing controls restyled to a compact
+  slider block beside the thumbnail (`widgets/media_ops.py`). **Crash fixes:** node-grid delete
+  mid-iteration (snapshot + deferred `delete_node`); trash-dir collision when an id is deleted twice
+  (timestamp-suffixed dest). Refreshed screenshots → `docs/screenshots/` (README updated).
+- **v0.6.0** (prior ship): settings-modal refinement + Telegram UX/connect (two-pool IPv4 fix).
 - **Invoke `/imgui-ui` before any UI work** — button tiers, jitter-free overlays, SetCursorPos assert,
   font/emoji caveats, the `is_mouse_hovering_rect`-ignores-popups + text-never-wraps traps, no-screenshot loop.
 - **NEXT ACTION: none queued.** No `pending` feature row. Candidate next waves all sit in `todo.md` as
-  trigger-gated deferrals — none a default next-step; pick up only when its trigger fires.
-- **`dev` == `master`** at `v0.6.0`. Tree clean.
+  trigger-gated deferrals — none a default next-step; pick up only when its trigger fires. The
+  brand-logo text-volume experiment lives in the dev sandbox node (unshipped, postponed).
+- **`dev` == `master`** at `v0.7.0`. Tree clean.
 - **Branch model:** develop on `dev`, ship from `master` (`dev_flow.md ## Branch model`).
 - **Token hygiene:** the dev bot token lives only in `~/.local/share/shaderbox/integrations.json`
   (outside the repo, never committed); maintainer rotates it post-iteration.
-- **Three non-blocking follow-ups (no users yet):** (1) no build runtime-verified on Windows — verify
-  per `BUILDING.md`; (2) live-page screenshots stale (predate 005/006); (3) itch **store page** not
-  synced this ship — `page.yaml` unchanged, but the page-sync (Playwright, review-gated) was skipped;
-  run `dev_flow.md ### Sync the itch.io page` if the page needs refreshing.
+- **Two non-blocking follow-ups (no users yet):** (1) no build runtime-verified on Windows — verify
+  per `BUILDING.md`; (2) itch **store page** body copy unchanged this ship (`page.yaml` untouched);
+  the page screenshots + the published devlog get refreshed via Playwright post-ship.
 - **No open BLOCKERs.** `todo.md` deferrals fire on their own triggers — don't pick up speculatively.
 
 ## Features
 
 | # | Name | Status | Brief |
 |---|---|---|---|
-| 011 | ui_library_consolidation | done | Post-010 refactor (no behaviour change): de-leaked Telegram tokens out of generic `SIZE`; deleted dead tokens + the unreachable `replace` path; fixed the preview-GL leak on project switch (`TabState.release`); de-leaked the exporter seam (`RenderControl` pure plumbing + `.extras`/`build_render_extras`, pack methods off the ABC); split `ui_utils.py` → `ui_primitives.py`+`util.py`; landed a `tests/` suite (`make test`). Fragile carousel/grid draw code out of scope; GridCell/Widget/RenderPreset-FIXED_* extraction deferred to N=2. Spec: `ai_docs/features/011_ui_library_consolidation.md`. |
+| — | template_polish | done | Authored template order (`_TEMPLATE_ORDER`); merged Image+Video into one split-screen Media Input; text shader gained lowercase (folded to caps) + punctuation (`. , ; & -`) + newline layout + homegrown value-noise (dropped vendored Ashima simplex); compact video-smoothing slider block beside the thumbnail. Spec: commit `6b474f5` + `f44cf82`. |
+| — | preview_cell_consolidation | done | Merged node-grid + sticker-carousel cell draw into one `preview_cell` primitive (+ `chip_button`, `centered_image`, `_ellipsize`); closed 011's deferred GridCell-at-N=2. Spec: commit `44b97d0`. |
+| — | node_delete_crash_fixes | done | Two delete-path crashes: node-grid mid-iteration mutation (snapshot + deferred `delete_node`); trash-dir collision on deleting the same id twice (timestamp-suffixed dest). Spec: commit `1ab5d56` + `a386713`. |
+| 011 | ui_library_consolidation | done | Post-010 refactor (no behaviour change): de-leaked Telegram tokens out of generic `SIZE`; deleted dead tokens + the unreachable `replace` path; fixed the preview-GL leak on project switch (`TabState.release`); de-leaked the exporter seam (`RenderControl` pure plumbing + `.extras`/`build_render_extras`, pack methods off the ABC); split `ui_utils.py` → `ui_primitives.py`+`util.py`; landed a `tests/` suite (`make test`). The N=2 GridCell extraction it deferred landed as `preview_cell` (row above). Spec: `ai_docs/features/011_ui_library_consolidation.md`. |
 | 010 | outlet_render_rework | done | Shared GL-free `RenderPreset` drives `render_media` to render natively at the outlet's target size; per-outlet concise share UI. Telegram panel redesigned (many screenshot rounds): pack row + copyable link, new-sticker block (emoji overlay, Duration, Render + Add), single-row carousel with per-cell emoji-change + delete-confirm; status via notifications. Produced the 4-tier button system + UI primitives + the `imgui-ui` skill. Spec: `ai_docs/features/010_outlet_render_rework.md`. |
 | 009 | integrations_rework | done | Telegram UX collapse: token+Connect (getUpdates user_id capture) in Settings→Integrations; derived+auto-created sticker-set names; share-tab pack create/select/delete + sticker delete; monochrome emoji picker (Unicode order; color impossible in this build); bot DMs pack link on add; connection+packs persist to global `integrations.json` (connect once); no legacy migration. Live-verified end-to-end; 2 pre+2 post review waves PASS. UI-optimization is a separate next wave. Spec: `ai_docs/features/009_integrations_rework.md`. |
 | 008 | uniform_input_shapes | done | Every uniform row leads with a changeable input-shape pill (click-to-cycle, disabled when one shape); removed the separate settings pane; per-node uniform sort (code/name/type + dir); engine uniforms collapsed to one dim readout row; node-tab header compaction; accent tab styling. Spec: `ai_docs/features/008_uniform_input_shapes.md`. |
