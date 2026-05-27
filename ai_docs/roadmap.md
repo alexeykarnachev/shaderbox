@@ -47,9 +47,10 @@ feature; brief points at the superseder).
 - **Branch model:** develop on `dev`, ship from `master` (`dev_flow.md ## Branch model`).
 - **Token hygiene:** the dev bot token lives only in `~/.local/share/shaderbox/integrations.json`
   (outside the repo, never committed); maintainer rotates it post-iteration.
-- **Two non-blocking follow-ups (no users yet):** (1) no build runtime-verified on Windows — verify
-  per `BUILDING.md`; (2) itch **store page** body copy unchanged this ship (`page.yaml` untouched);
-  the page screenshots + the published devlog get refreshed via Playwright post-ship.
+- **itch published this ship:** the "What's new" devlog (`docs/screenshots/` images, hero in body +
+  cover) + the 3 refreshed page screenshots (hero / uniforms / telegram) are live; `page.yaml` body
+  copy unchanged. One non-blocking follow-up (no users yet): no build runtime-verified on Windows —
+  verify per `BUILDING.md`.
 - **No open BLOCKERs.** `todo.md` deferrals fire on their own triggers — don't pick up speculatively.
 
 ## Features
