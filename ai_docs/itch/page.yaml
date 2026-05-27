@@ -16,7 +16,8 @@ description: |
   ShaderBox is a real-time GLSL fragment-shader playground. Write a shader in the
   built-in editor; ShaderBox reads its uniforms and auto-builds the sliders, color
   pickers, and inputs to drive them - no boilerplate UI code. It hot-reloads as you
-  type. Export the result to an image, a video, or a ready-to-upload Telegram sticker set.
+  type. Export the result to an image, a video, a Telegram sticker set, or straight to
+  your YouTube channel.
 
   Features:
   - Built-in syntax-highlighted GLSL editor - edit in-window, hit Ctrl+S to save and
@@ -25,8 +26,8 @@ description: |
     generates the matching controls: floats, vectors, colors, textures, arrays, and text.
   - Image & video texture inputs - drop in media and sample it straight from your shader.
   - Built-in text rendering - a freetype glyph-atlas shader for drawing text in your scene.
-  - Export anywhere - render to PNG images, MP4/WebM video, or publish directly to a
-    Telegram sticker set.
+  - Export anywhere - render to PNG images, MP4/WebM video, publish a Telegram sticker
+    set, or upload to YouTube as a video or a Short (you connect your own account).
 
   Grab the build below (Windows / Linux) and run the included launcher; see the bundled
   README for first-run notes.
