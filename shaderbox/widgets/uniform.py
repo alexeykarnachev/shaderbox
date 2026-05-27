@@ -163,6 +163,7 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
         )
 
         if isinstance(current_value, Video):
+            imgui.same_line(spacing=float(SPACE.LG))
             video_value = draw_video_filters(app, current_value)
             if video_value is not current_value:
                 new_value = video_value

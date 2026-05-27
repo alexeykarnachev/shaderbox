@@ -1,0 +1,76 @@
+{
+    "canvas_size": [
+        1280,
+        1280
+    ],
+    "uniforms": {
+        "u_color": [
+            1.0,
+            1.0,
+            1.0
+        ],
+        "u_image": {
+            "file_path": "media/u_image.png",
+            "size": [
+                960,
+                1280
+            ],
+            "components": 4
+        },
+        "u_video": {
+            "file_path": "media/u_video.mp4",
+            "size": [
+                384,
+                384
+            ],
+            "components": 4
+        }
+    },
+    "ui_state": {
+        "ui_name": "Media Input",
+        "render_media_details": {
+            "is_video": true,
+            "file_details": {
+                "path": "",
+                "size": 0
+            },
+            "resolution_details": {
+                "width": 1280,
+                "height": 1280
+            },
+            "quality": 0,
+            "fps": 30,
+            "duration": 1.0
+        },
+        "ui_uniforms": {
+            "178490649872072500124933657403313984376": {
+                "name": "u_color",
+                "is_ubo": false,
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "color"
+            },
+            "298626367673662534095187619679730017816": {
+                "name": "u_image",
+                "is_ubo": false,
+                "gl_type": 35678,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "texture"
+            },
+            "153146117399062861966997351148076474387": {
+                "name": "u_video",
+                "is_ubo": false,
+                "gl_type": 35678,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "texture"
+            }
+        },
+        "uniform_sort_key": "type",
+        "uniform_sort_desc": false,
+        "video_to_video_smoothing_window": 230,
+        "video_to_video_smoothing_sigma": 1.7000000476837158
+    }
+}

@@ -1,7 +1,7 @@
 {
-    "current_node_id": "d254ccc9-2360-49c9-bad7-9432627a3dac",
-    "selected_node_template_id": "f90f5ff9-29c6-4bcf-aee7-090f20542353",
-    "new_node_name": "Text Rendering",
+    "current_node_id": "660b3120-82be-4575-abb6-1f0d8970a9dc",
+    "selected_node_template_id": "73ea2431-13f6-41e4-b923-04d846b678b0",
+    "new_node_name": "Media Input",
     "is_render_all_nodes": true,
     "exporter_settings": {
         "telegram": {},
