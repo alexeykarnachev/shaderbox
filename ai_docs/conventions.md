@@ -92,8 +92,10 @@ belong in the feature spec (`ai_docs/features/NNN_*.md`). This file is not a cha
   per-instance footguns (palette, FPE-while-modal, cursor, font sizing) live in `## Known quirks`.
   Revisit if multi-file-per-node editing lands.
 - **No `async` except where python-telegram-bot forces it** — and that runs off the render thread
-  (worker thread + own asyncio loop), never `run_until_complete` inside the imgui frame. Revisit if
-  a new async-required dep doesn't fit the worker-thread + own-loop pattern.
+  (worker thread + own asyncio loop), never `run_until_complete` inside the imgui frame. A *synchronous*
+  network client (YouTube's Google libs) uses the same worker-thread pattern but WITHOUT the asyncio
+  loop — `_worker_main` calls the blocking client directly. Revisit if a new async-required dep doesn't
+  fit the worker-thread + own-loop pattern.
 - **Exporters: own thread, own panel, GL-free artifacts.** The `Exporter` ABC enforces thread
   affinity — render-thread methods may touch moderngl; worker-thread methods (`prepare`, `export`,
   the `_do_*`/`_handle_*` job handlers) MUST NOT, they see only `RenderedArtifact` (a pure value
@@ -108,6 +110,17 @@ belong in the feature spec (`ai_docs/features/NNN_*.md`). This file is not a cha
   share-draw loop. Exporter-only methods (e.g. Telegram's `set_default_pack`) stay concrete on the
   exporter and are reached via `isinstance` at the one `app.py` call site, not hoisted to the ABC.
   Revisit if a capability is genuinely shared by ≥2 concrete exporters (then promote it to the ABC).
+- **Exporter share-panels are built from shared `ui_primitives`, not ad-hoc imgui.** The panel chrome
+  every exporter repeats — the fixed preview box (`preview_box`, one shared `SIZE.SHARE_PREVIEW_*`
+  size so all outlets match + can't jitter), the labelled fields (`labeled_text_input` /
+  `labeled_multiline_input` / `labeled_drag_float` / `labeled_combo`, caption-on-top), the
+  reserved fixed-height progress/result row (`status_slot`), the not-connected CTA
+  (`unconnected_gate`), the connected status line (`connection_status`), the first-run steps
+  (`setup_steps`) — lives in `ui_primitives.py`, generic. A new exporter composes these; it does NOT
+  re-roll `caption_text + set_next_item_width + imgui.xxx` inline. Layout rule for the panel:
+  preview-left fixed + taller than the controls column, controls stack top-down beside it — no
+  vertical-alignment math (that fight cost a full session). Revisit if a panel needs a layout these
+  primitives can't express (then add a primitive, don't inline).
 - **Integration credentials are GLOBAL, not per-project; everything else per-project stays.**
   Telegram bot token / linked user / pack list live in `integrations.json` (one `IntegrationsStore`
   rooted at `app_data_dir()`), injected into exporters via `registry.set_integrations(store)`. An
@@ -198,7 +211,10 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   bare `httpx.ConnectError: `). `_ipv4_request()` (`local_address="0.0.0.0"`) forces v4 — but `Bot`
   takes it via BOTH `request=` (regular calls) AND `get_updates_request=` (the separate long-poll pool
   `get_updates()` uses). Pass it to both, or `get_updates()` silently dials v6 and the link flow fails
-  at the user-id capture step while `get_me()` succeeds (`exporters/telegram.py::_with_bot`).
+  at the user-id capture step while `get_me()` succeeds (`exporters/telegram.py::_with_bot`). Also:
+  ptb's default `HTTPXRequest` timeouts are **5s** (read/connect/write), which a VPN/tunnel routinely
+  exceeds → `ReadTimeout`/`TimedOut`. `_ipv4_request()` passes generous explicit timeouts (30s + 120s
+  `media_write_timeout` for the upload).
 - **The sanctioned `# type: ignore` allowlist (upstream stub gaps only).** The no-suppression rule
   has exactly these exceptions — all are missing/wrong annotations in third-party stubs, never our
   own type errors. New markers outside this list are a design smell; fix the design, don't add to

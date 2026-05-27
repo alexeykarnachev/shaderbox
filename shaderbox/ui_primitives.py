@@ -1,4 +1,6 @@
-from collections.abc import Callable
+import webbrowser
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 
 import pyperclip
@@ -75,15 +77,24 @@ def chip_button(
     height: float = 0.0,
     disabled: bool = False,
     faded: bool = False,
+    active: bool = False,
 ) -> bool:
-    """A rounded pill (input-type selector, the FPS overlay). `faded` makes the
-    base semi-transparent for overlays drawn over the render image."""
-    base = fade(COLOR.CHIP_BG, OVERLAY_ALPHA) if faded else COLOR.CHIP_BG
+    """A rounded pill (input-type selector, the FPS overlay, a binary mode toggle).
+    `faded` makes the base semi-transparent for overlays drawn over the render
+    image. `active` fills it with the accent (a selected mode in a chip group)."""
+    if active:
+        base = COLOR.ACCENT_PRIMARY
+        hover = COLOR.ACCENT_ACTIVE
+        text = COLOR.BG_APP
+    else:
+        base = fade(COLOR.CHIP_BG, OVERLAY_ALPHA) if faded else COLOR.CHIP_BG
+        hover = COLOR.CHIP_BG_HOVER
+        text = COLOR.CHIP_FG
     imgui.push_style_var(imgui.StyleVar_.frame_rounding, float(SIZE.CHIP_ROUNDING))
     imgui.push_style_color(imgui.Col_.button, base)
-    imgui.push_style_color(imgui.Col_.button_hovered, COLOR.CHIP_BG_HOVER)
-    imgui.push_style_color(imgui.Col_.button_active, COLOR.CHIP_BG_HOVER)
-    imgui.push_style_color(imgui.Col_.text, COLOR.CHIP_FG)
+    imgui.push_style_color(imgui.Col_.button_hovered, hover)
+    imgui.push_style_color(imgui.Col_.button_active, hover)
+    imgui.push_style_color(imgui.Col_.text, text)
     if disabled:
         imgui.begin_disabled()
     clicked: bool = imgui.button(label, size=(width, height))
@@ -117,11 +128,128 @@ def centered_image(
     )
 
 
+def preview_box(
+    id_: str,
+    texture_glo: int | None,
+    texture_size: tuple[int, int],
+    box_w: float,
+    box_h: float,
+    overlay: Callable[[imgui.ImVec2], None] | None = None,
+) -> None:
+    """A bordered, surface-bg, letterboxed preview tile shared by exporter share
+    panels (so every exporter's preview is byte-identical). Fixed size — never
+    measured — so it can't jitter. `overlay` (optional) draws one affordance at the
+    box's top-left, receiving the box origin (Telegram's emoji button); it carries
+    no exporter vocabulary."""
+    imgui.push_style_color(imgui.Col_.child_bg, COLOR.BG_SURFACE)
+    with imgui_ctx.begin_child(
+        id_,
+        size=imgui.ImVec2(box_w, box_h),
+        child_flags=imgui.ChildFlags_.borders,
+        window_flags=imgui.WindowFlags_.no_scrollbar,
+    ):
+        origin = imgui.get_cursor_screen_pos()
+        if texture_glo is not None:
+            avail = imgui.get_content_region_avail()
+            centered_image(texture_glo, texture_size, avail.x, avail.y)
+        if overlay is not None:
+            imgui.set_cursor_screen_pos((origin.x, origin.y))
+            overlay(origin)
+    imgui.pop_style_color(1)
+
+
+@contextmanager
+def status_slot(id_: str, width: float) -> Iterator[None]:
+    """A fixed-height (one frame-height) borderless child the caller draws the
+    export status into — a progress bar, a result link, a hint, or nothing. Because
+    it's a fixed-size child, whatever branch is drawn occupies the SAME height, so
+    the surrounding column never changes height between idle/uploading/uploaded
+    (no jitter, nothing below it shifts). Use as `with status_slot(id, w):`.
+
+    Zero WindowPadding: an 18px-tall child with the default 8px padding leaves ~2px
+    of usable content — the status content must fill the frame, not be squeezed."""
+    with (
+        imgui_ctx.push_style_var(imgui.StyleVar_.window_padding, imgui.ImVec2(0, 0)),
+        imgui_ctx.begin_child(
+            id_,
+            size=imgui.ImVec2(width, imgui.get_frame_height()),
+            window_flags=imgui.WindowFlags_.no_scrollbar
+            | imgui.WindowFlags_.no_scroll_with_mouse,
+        ),
+    ):
+        yield
+
+
 def caption_text(
     text: str, color: tuple[float, float, float, float] | None = None
 ) -> None:
     """Small, dim, secondary annotation (artifact stats, hints)."""
     imgui.text_colored(color or COLOR.FG_DIM, text)
+
+
+# ---------------------------------------------------------------------------
+# Labelled fields — a dim caption on its own line above the control, used by the
+# exporter panels. One primitive per control type instead of the ad-hoc
+# caption_text + set_next_item_width + imgui.xxx trio repeated at every call site.
+# ---------------------------------------------------------------------------
+
+
+def labeled_text_input(
+    label: str, value: str, width: float, password: bool = False
+) -> str:
+    """Caption above a single-line text input. Returns the new value."""
+    caption_text(label)
+    imgui.set_next_item_width(width)
+    flags = imgui.InputTextFlags_.password if password else imgui.InputTextFlags_.none
+    return imgui.input_text(f"##{label}", value, flags=flags)[1]
+
+
+def labeled_multiline_input(label: str, value: str, width: float, height: float) -> str:
+    """Caption above a multi-line text input. Returns the new value."""
+    caption_text(label)
+    return imgui.input_text_multiline(
+        f"##{label}", value, size=imgui.ImVec2(width, height)
+    )[1]
+
+
+def labeled_drag_float(
+    label: str,
+    value: float,
+    v_min: float,
+    v_max: float,
+    width: float,
+    fmt: str = "%.1f s",
+    v_speed: float = 0.1,
+) -> float:
+    """Caption above a numeric drag (double-click to type). Returns the new value."""
+    caption_text(label)
+    imgui.set_next_item_width(width)
+    return imgui.drag_float(f"##{label}", value, v_speed, v_min, v_max, fmt)[1]
+
+
+def labeled_combo(
+    label: str, current_idx: int, items: list[str], width: float
+) -> tuple[bool, int]:
+    """Caption above a combo. Returns (changed, new_index)."""
+    caption_text(label)
+    imgui.set_next_item_width(width)
+    return imgui.combo(f"##{label}", current_idx, items)
+
+
+def unconnected_gate(
+    not_connected_msg: str,
+    hint: str,
+    action_label: str,
+    on_action: Callable[[], None] | None,
+) -> None:
+    """The shared 'not connected to <service>' panel state: a warning, a hint, and a
+    primary button that opens Settings. Drawn by an exporter's draw_target_panel when
+    its credentials aren't set up yet; the caller returns after."""
+    imgui.text_colored(COLOR.STATE_WARN, not_connected_msg)
+    caption_text(hint)
+    imgui.dummy(imgui.ImVec2(0, SPACE.SM))
+    if on_action is not None and primary_button(action_label):
+        on_action()
 
 
 def wrapped_caption(
@@ -135,6 +263,53 @@ def wrapped_caption(
     imgui.push_text_wrap_pos(0.0)
     imgui.text_colored(color or COLOR.FG_DIM, text)
     imgui.pop_text_wrap_pos()
+
+
+def setup_steps(steps: list[str | tuple[str, str]]) -> None:
+    """A first-run setup checklist for an integration's config UI.
+
+    Each item is either a plain step (`"1. Do the thing"`, ghost/dim wrapped text)
+    or a `(step_text, copyable_url)` tuple — the step then a click-to-copy link.
+    Shared by every integration so their setup blocks read identically; callers
+    gate it on "credential not set yet". Numbering is the caller's (in the strings)."""
+    for item in steps:
+        if isinstance(item, tuple):
+            text, url = item
+            wrapped_caption(text)
+            draw_link(url)
+        else:
+            wrapped_caption(item)
+
+
+def connection_status(
+    connected: bool,
+    is_error: bool,
+    message: str,
+    who: str = "",
+    on_disconnect: Callable[[], None] | None = None,
+) -> None:
+    """The shared 'Connected as … / Not connected.' status line for integrations.
+
+    One color rule for every exporter: OK when connected, ERROR on an error state,
+    else WARN. `who` labels the connected identity; `message` is an optional extra
+    line (auth error / hint) in the same color. When connected and `on_disconnect`
+    is given, a `Disconnect` danger button sits on the same line as the status."""
+    color: tuple[float, float, float, float] = (
+        COLOR.STATE_OK
+        if connected
+        else (COLOR.STATE_ERROR if is_error else COLOR.STATE_WARN)
+    )
+    if connected:
+        imgui.align_text_to_frame_padding()
+        imgui.text_colored(color, f"Connected as {who}" if who else "Connected.")
+        if on_disconnect is not None:
+            imgui.same_line()
+            if danger_button("Disconnect"):
+                on_disconnect()
+    else:
+        imgui.text_colored(color, "Not connected.")
+    if message:
+        imgui.text_colored(color, message)
 
 
 def small_caption(font: imgui.ImFont, text: str) -> None:
@@ -326,28 +501,6 @@ def label_row(
     imgui.set_next_item_width(item_width)
 
 
-def duration_drag(
-    label: str,
-    value: float,
-    v_max: float,
-    width: float,
-    v_min: float = 0.5,
-    fmt: str = "%.1f s",
-    label_w: float = float(SIZE.LABEL_W),
-) -> float:
-    """A labelled numeric drag (full-size caption label + drag). Double-click to
-    type an exact value. Returns the new value.
-
-    Distinct from `label_row` (which takes a small-caption font): this is used by
-    the exporter panels, which have no `App` handle to reach `font_12`.
-    """
-    imgui.align_text_to_frame_padding()
-    caption_text(label)
-    imgui.same_line(label_w + SPACE.MD)
-    imgui.set_next_item_width(width)
-    return imgui.drag_float(f"##{label}", value, 0.1, v_min, v_max, fmt)[1]
-
-
 def fps_overlay(
     anchor_x: float,
     anchor_y: float,
@@ -417,3 +570,34 @@ def draw_copyable_text(
     except pyperclip.PyperclipException:
         logger.warning("No clipboard backend (install xclip or xsel)")
         return False
+
+
+def draw_link(
+    label: str,
+    url: str | None = None,
+    color: tuple[float, float, float, float] | None = None,
+) -> None:
+    """A clickable URL: opens it in the browser AND copies it to the clipboard on
+    click (the setup-step links, the share links). `url` defaults to `label`.
+
+    Distinct from `draw_copyable_text` (copy-only — used for file paths, where a
+    browser-open is meaningless)."""
+    target: str = url if url is not None else label
+    imgui.push_style_color(imgui.Col_.text, color or COLOR.STATE_INFO)
+    clicked: bool = imgui.selectable(
+        label, False, size=(imgui.calc_text_size(label).x, 0)
+    )[0]
+    imgui.pop_style_color(1)
+    if imgui.is_item_hovered():
+        imgui.set_tooltip("Click to open + copy")
+    if not clicked:
+        return
+    try:
+        pyperclip.copy(target)
+    except pyperclip.PyperclipException:
+        logger.warning("No clipboard backend (install xclip or xsel)")
+    open_target: str = target if "://" in target else f"https://{target}"
+    try:
+        webbrowser.open(open_target)
+    except Exception as e:
+        logger.warning(f"Could not open browser: {e}")

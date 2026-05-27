@@ -27,36 +27,34 @@ feature; brief points at the superseder).
 
 **As of 2026-05-27.**
 
-- **Shipped: `v0.7.0`** (template polish + grid-cell consolidation + crash fixes) — `master`, both
-  itch channels live, tag pushed. Merged the grid-cell + sticker-cell draw code into one `preview_cell`
-  primitive (+ `chip_button`, `centered_image`, `_ellipsize` in `ui_primitives.py`). Templates:
-  authored display order (`app.py::_TEMPLATE_ORDER`/`_order_templates`; ctime isn't bundle-stable),
-  merged Image+Video into one split-screen **Media Input**, and the vector text shader gained
-  lowercase (folded to caps), punctuation (`. , ; & -`), newline layout, and a homegrown value-noise
-  (dropped the vendored Ashima simplex). Video temporal-smoothing controls restyled to a compact
-  slider block beside the thumbnail (`widgets/media_ops.py`). **Crash fixes:** node-grid delete
-  mid-iteration (snapshot + deferred `delete_node`); trash-dir collision when an id is deleted twice
-  (timestamp-suffixed dest). Refreshed screenshots → `docs/screenshots/` (README updated).
-- **v0.6.0** (prior ship): settings-modal refinement + Telegram UX/connect (two-pool IPv4 fix).
+- **Shipped: `v0.8.0`** (feature 012 — YouTube upload exporter) — `master`, both itch channels live,
+  tag pushed. The second concrete exporter: bring-your-own-OAuth (paste your own
+  `client_secret.json`, Connect once), **private-only** uploads of long-form + Shorts (in-panel
+  shape toggle), copyable Studio deep-link. Sync worker thread (no asyncio, unlike Telegram). New
+  deps: `google-api-python-client`, `google-auth-oauthlib`. Same wave: Telegram `HTTPXRequest`
+  timeouts raised (5s→30s, 120s media — tunnels were timing out); notifications moved to bottom-right
+  (were hidden under the tab bar); the share-panel UI factored into shared `ui_primitives`
+  (`preview_box`, `status_slot`, `labeled_*`, `unconnected_gate`, `connection_status`, `setup_steps`)
+  + one `SIZE.SHARE_PREVIEW_*` so Telegram/YouTube panels match and can't jitter.
+- **v0.7.0** (prior ship): template polish + `preview_cell` consolidation + delete-path crash fixes.
 - **Invoke `/imgui-ui` before any UI work** — button tiers, jitter-free overlays, SetCursorPos assert,
   font/emoji caveats, the `is_mouse_hovering_rect`-ignores-popups + text-never-wraps traps, no-screenshot loop.
-- **NEXT ACTION: none queued.** No `pending` feature row. Candidate next waves all sit in `todo.md` as
-  trigger-gated deferrals — none a default next-step; pick up only when its trigger fires. The
-  brand-logo text-volume experiment lives in the dev sandbox node (unshipped, postponed).
-- **`dev` == `master`** at `v0.7.0`. Tree clean.
+  Share-panels compose `ui_primitives` (preview-left fixed/taller + controls stacked top-down; no
+  vertical-alignment math) — `conventions.md ## Design decisions`.
+- **NEXT ACTION: none queued.** No `pending` feature row. Candidates sit in `todo.md` as trigger-gated
+  deferrals — pick up only when a trigger fires.
+- **`dev` == `master`** at `v0.8.0`. Tree clean.
 - **Branch model:** develop on `dev`, ship from `master` (`dev_flow.md ## Branch model`).
-- **Token hygiene:** the dev bot token lives only in `~/.local/share/shaderbox/integrations.json`
-  (outside the repo, never committed); maintainer rotates it post-iteration.
-- **itch published this ship:** the "What's new" devlog (`docs/screenshots/` images, hero in body +
-  cover) + the 3 refreshed page screenshots (hero / uniforms / telegram) are live; `page.yaml` body
-  copy unchanged. One non-blocking follow-up (no users yet): no build runtime-verified on Windows —
-  verify per `BUILDING.md`.
+- **Token hygiene:** the dev bot token + YouTube creds live only in
+  `~/.local/share/shaderbox/integrations.json` (outside the repo, never committed; cleartext — see
+  `todo.md` deferral); maintainer rotates post-iteration.
 - **No open BLOCKERs.** `todo.md` deferrals fire on their own triggers — don't pick up speculatively.
 
 ## Features
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 012 | youtube_export | done | Second concrete exporter: YouTube upload (long-form + Shorts) via user-owned OAuth (bring-your-own client_secret, Connect once); private-only uploads + copyable Studio edit-link; in-panel shape toggle + title/description/tags/category; sync worker thread. Same wave: share-panel UI factored into shared `ui_primitives` + `SIZE.SHARE_PREVIEW_*`; Telegram timeouts raised; notifications moved bottom-right. Spec: `ai_docs/features/012_youtube_export.md`. |
 | — | template_polish | done | Authored template order (`_TEMPLATE_ORDER`); merged Image+Video into one split-screen Media Input; text shader gained lowercase (folded to caps) + punctuation (`. , ; & -`) + newline layout + homegrown value-noise (dropped vendored Ashima simplex); compact video-smoothing slider block beside the thumbnail. Spec: commit `6b474f5` + `f44cf82`. |
 | — | preview_cell_consolidation | done | Merged node-grid + sticker-carousel cell draw into one `preview_cell` primitive (+ `chip_button`, `centered_image`, `_ellipsize`); closed 011's deferred GridCell-at-N=2. Spec: commit `44b97d0`. |
 | — | node_delete_crash_fixes | done | Two delete-path crashes: node-grid mid-iteration mutation (snapshot + deferred `delete_node`); trash-dir collision on deleting the same id twice (timestamp-suffixed dest). Spec: commit `1ab5d56` + `a386713`. |

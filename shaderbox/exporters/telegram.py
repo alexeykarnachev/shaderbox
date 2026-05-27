@@ -34,14 +34,18 @@ from shaderbox.ui_models import UINode
 from shaderbox.ui_primitives import (
     button,
     caption_text,
-    centered_image,
+    connection_status,
     danger_button,
-    draw_copyable_text,
-    duration_drag,
+    draw_link,
     ghost_button,
+    labeled_drag_float,
+    labeled_text_input,
+    preview_box,
     preview_cell,
     primary_button,
-    wrapped_caption,
+    setup_steps,
+    status_slot,
+    unconnected_gate,
 )
 
 _QUEUE_MAXSIZE = 128
@@ -49,10 +53,8 @@ _DRAIN_TIMEOUT_SEC = 5.0
 _FFMPEG_TIMEOUT_SEC = 60
 _PREVIEW_THUMB_HEIGHT = 110
 _GRID_COLUMNS = 4
-_STICKER_PREVIEW_W = 160
-_STICKER_PREVIEW_H = 213
 _CAROUSEL_ARROW_W = 18
-_PACK_COMBO_W = 280
+_PACK_COMBO_W = 220
 _TG_VIDEO_MAX_BYTES = 256 * 1024
 _TG_VIDEO_MAX_DIM = 512
 _TG_VIDEO_MAX_DURATION_SEC = 3.0
@@ -75,8 +77,17 @@ def _ipv4_request() -> HTTPXRequest:
     # Bind egress to IPv4. Telegram's AAAA resolves, but ptb's default HTTP/2
     # client picks the v6 address with no v4 fallback; on an IPv6-incapable
     # tunnel that fails the TLS handshake every time (EndOfStream).
+    # Generous timeouts: ptb defaults are 5s read/connect, which a VPN/tunnel
+    # routinely exceeds (ReadTimeout -> TimedOut); the sticker upload also needs a
+    # long write window.
     transport = httpx.AsyncHTTPTransport(local_address="0.0.0.0")
-    return HTTPXRequest(httpx_kwargs={"transport": transport})
+    return HTTPXRequest(
+        httpx_kwargs={"transport": transport},
+        connect_timeout=30.0,
+        read_timeout=30.0,
+        write_timeout=30.0,
+        media_write_timeout=120.0,
+    )
 
 
 def _map_tg_error(e: tg.error.TelegramError) -> str:
@@ -316,44 +327,48 @@ class TelegramExporter(Exporter):
     def draw_config_ui(self) -> None:
         full_width: float = imgui.get_content_region_avail().x
 
-        wrapped_caption(
-            "Create a bot with @BotFather (/newbot), press Start in it, "
-            "then paste its token and Connect."
-        )
-        imgui.dummy(imgui.ImVec2(0, SPACE.SM))
-
-        caption_text("Bot token")
-        imgui.set_next_item_width(full_width)
-        _, bot_token = imgui.input_text(
-            "##bot_token", self._tg.bot_token, flags=imgui.InputTextFlags_.password
-        )
-        self._tg.bot_token = bot_token
-
-        if primary_button("Connect"):
-            self.begin_auth()
-        if self._tg.bot_token:
-            imgui.same_line()
-            if danger_button("Clear token"):
-                self.disconnect()
-
-        state: AuthState = self._render_state.auth_state
+        have_token: bool = bool(self._tg.bot_token)
         connected: bool = self._is_connected()
-        color: tuple[float, float, float, float] = (
-            COLOR.STATE_OK
-            if connected
-            else (COLOR.STATE_ERROR if state == AuthState.ERROR else COLOR.STATE_WARN)
-        )
-        if connected:
-            who: str = (
-                f"@{self._tg.user_username}"
-                if self._tg.user_username
-                else f"id {self._tg.user_id}"
+
+        # Setup steps show until actually connected — a pasted-but-not-connected
+        # token is just text, the user still needs the instructions. Ghost/dim
+        # wrapped text via the shared primitive (parity with YouTube).
+        if not connected:
+            setup_steps(
+                [
+                    "1. In Telegram, open @BotFather and send /newbot.",
+                    "2. Follow the prompts to name your bot; copy the token it gives.",
+                    "3. Open your new bot and press Start.",
+                    "4. Paste the token below and click Connect.",
+                ]
             )
-            imgui.text_colored(color, f"Connected as {who}")
-        else:
-            imgui.text_colored(color, "Not connected.")
-        if self._render_state.auth_message:
-            imgui.text_colored(color, self._render_state.auth_message)
+            imgui.dummy(imgui.ImVec2(0, SPACE.SM))
+
+        # Token field + Connect only while not connected; once connected just the
+        # status + Disconnect (parity with YouTube — re-link is Disconnect -> Connect).
+        if not connected:
+            self._tg.bot_token = labeled_text_input(
+                "Bot token", self._tg.bot_token, full_width, password=True
+            )
+            if primary_button("Connect"):
+                self.begin_auth()
+            if have_token:
+                imgui.same_line()
+                if danger_button("Clear token"):
+                    self.disconnect()
+
+        who: str = (
+            f"@{self._tg.user_username}"
+            if self._tg.user_username
+            else f"id {self._tg.user_id}"
+        )
+        connection_status(
+            connected=connected,
+            is_error=self._render_state.auth_state == AuthState.ERROR,
+            message=self._render_state.auth_message,
+            who=who,
+            on_disconnect=self.disconnect if connected else None,
+        )
 
     # ------------------------------------------------------------- render thread
     def update(self, current_node: UINode | None) -> None:
@@ -372,17 +387,15 @@ class TelegramExporter(Exporter):
     ) -> None:
         _ = current_node
         if not self._is_connected():
-            imgui.text_colored(COLOR.STATE_WARN, "Not connected to Telegram.")
-            caption_text("Connect a bot in Settings to share stickers.")
-            imgui.dummy(imgui.ImVec2(0, SPACE.SM))
             extras = render_control.extras or {}
-            open_settings = extras.get(_OPEN_SETTINGS_KEY)
-            if open_settings is not None and primary_button("Set up token"):
-                open_settings()
+            unconnected_gate(
+                "Not connected to Telegram.",
+                "Connect a bot in Settings to share stickers.",
+                "Set up token",
+                extras.get(_OPEN_SETTINGS_KEY),
+            )
             return
 
-        self._draw_pack_row()
-        imgui.dummy(imgui.ImVec2(0, SPACE.SM))
         self._draw_sticker_section(render_control, current_node is not None)
 
     def _is_connected(self) -> bool:
@@ -397,11 +410,8 @@ class TelegramExporter(Exporter):
         packs: list[PackEntry] = self._tg.packs
         active: str = self._render_state.active_pack_set_name
         combo_w: float = float(_PACK_COMBO_W)
-        label_w: float = float(SIZE.LABEL_W)
 
-        imgui.align_text_to_frame_padding()
-        imgui.text_colored(COLOR.FG_DIM, "Pack")
-        imgui.same_line(label_w)
+        caption_text("Pack")
         if packs:
             labels: list[str] = [p.title for p in packs]
             current_idx: int = next(
@@ -413,19 +423,15 @@ class TelegramExporter(Exporter):
                 self._select_pack(packs[new_idx].set_name)
             if active:
                 imgui.same_line()
-                draw_copyable_text(
+                draw_link(
                     f"t.me/addstickers/{active}",
-                    copy_value=f"https://t.me/addstickers/{active}",
-                    color=COLOR.STATE_INFO,
+                    url=f"https://t.me/addstickers/{active}",
                 )
         else:
             imgui.set_next_item_width(combo_w)
             imgui.text_colored(COLOR.FG_DIM, "no packs yet")
 
-        # Management ghosts indent to the control column (narrow); they sit under
-        # the combo, not beside it, until the panel is wide enough to matter.
-        imgui.dummy(imgui.ImVec2(label_w - imgui.get_style().item_spacing.x, 0))
-        imgui.same_line()
+        # Management ghosts sit on their own row under the combo.
         if ghost_button("New pack"):
             self._render_state.pack_create_armed = (
                 not self._render_state.pack_create_armed
@@ -440,7 +446,6 @@ class TelegramExporter(Exporter):
                 self._render_state.pack_create_armed = False
 
         if self._render_state.pack_create_armed:
-            imgui.same_line(label_w)
             imgui.set_next_item_width(combo_w)
             _, self._render_state.new_pack_title = imgui.input_text(
                 "##new_pack", self._render_state.new_pack_title
@@ -519,22 +524,28 @@ class TelegramExporter(Exporter):
         if artifact is not None and not artifact.path.exists():
             artifact = None
 
-        box_w: float = float(_STICKER_PREVIEW_W)
-        box_h: float = float(_STICKER_PREVIEW_H)
-        top = imgui.get_cursor_screen_pos()
+        emoji: EmojiControl = self._emoji(rc)
 
-        self._draw_preview_box(rc, box_w, box_h)
+        def _overlay(_origin: imgui.ImVec2) -> None:
+            if emoji.emoji_button(emoji.emoji, float(SIZE.ROW_HEIGHT)):
+                emoji.open_emoji_picker(emoji.set_emoji)
+
+        # Preview on the left (the shared fixed size — always taller than the
+        # controls, no alignment math); controls + carousel stack top-down on the right.
+        preview_box(
+            "sticker_preview",
+            rc.preview_texture_glo,
+            rc.preview_size,
+            float(SIZE.SHARE_PREVIEW_W),
+            float(SIZE.SHARE_PREVIEW_H),
+            overlay=_overlay,
+        )
         imgui.same_line()
-        controls_x: float = imgui.get_cursor_screen_pos().x
         with imgui_ctx.begin_group():
             self._draw_sticker_controls(rc, artifact, has_node)
-
-        # Carousel anchored so its bottom edge lines up with the preview's bottom —
-        # a fixed Y, so the inflight progress bar in the controls can't shift it.
-        if self._render_state.active_pack_set_name:
-            cell: float = float(_PREVIEW_THUMB_HEIGHT)
-            imgui.set_cursor_screen_pos((controls_x, top.y + box_h - cell))
-            self._draw_sticker_grid_full(rc)
+            if self._render_state.active_pack_set_name:
+                imgui.dummy(imgui.ImVec2(0, SPACE.SM))
+                self._draw_sticker_grid_full(rc)
 
     def _emoji(self, rc: RenderControl) -> EmojiControl:
         extras = rc.extras or {}
@@ -543,42 +554,21 @@ class TelegramExporter(Exporter):
             raise ExporterError("Telegram outlet missing its EmojiControl extra")
         return emoji
 
-    def _draw_preview_box(
-        self,
-        rc: RenderControl,
-        box_w: float,
-        box_h: float,
-    ) -> None:
-        emoji: EmojiControl = self._emoji(rc)
-        imgui.push_style_color(imgui.Col_.child_bg, COLOR.BG_SURFACE)
-        with imgui_ctx.begin_child(
-            "sticker_preview",
-            size=imgui.ImVec2(box_w, box_h),
-            child_flags=imgui.ChildFlags_.borders,
-            window_flags=imgui.WindowFlags_.no_scrollbar,
-        ):
-            origin = imgui.get_cursor_screen_pos()
-            if rc.preview_texture_glo is not None:
-                avail = imgui.get_content_region_avail()
-                centered_image(
-                    rc.preview_texture_glo, rc.preview_size, avail.x, avail.y
-                )
-
-            # Emoji overlay, top-left (same affordance as the carousel cells).
-            imgui.set_cursor_screen_pos((origin.x, origin.y))
-            if emoji.emoji_button(emoji.emoji, float(SIZE.ROW_HEIGHT)):
-                emoji.open_emoji_picker(emoji.set_emoji)
-        imgui.pop_style_color(1)
-
     def _draw_sticker_controls(
         self,
         rc: RenderControl,
         artifact: RenderedArtifact | None,
         has_node: bool,
     ) -> None:
-        new_dur: float = duration_drag(
+        # Pack selector + management live here on the right (beside the preview),
+        # so the preview can be large. Then duration + Render/Add below.
+        self._draw_pack_row()
+        imgui.dummy(imgui.ImVec2(0, SPACE.SM))
+
+        new_dur: float = labeled_drag_float(
             "Duration",
             rc.duration,
+            0.5,
             _TG_VIDEO_MAX_DURATION_SEC,
             float(SIZE.NAME_INPUT_W),
         )
@@ -600,20 +590,11 @@ class TelegramExporter(Exporter):
         imgui.same_line()
         self._draw_add_button(rc, artifact, add_w)
 
-        # One slot under the row: the progress bar while uploading, else the
-        # render's stats (dim). They never stack — there isn't room.
-        if self._render_state.in_flight:
-            self._draw_inflight(row_w)
-        elif artifact is not None:
-            try:
-                size_kb: int = artifact.path.stat().st_size // 1024
-                imgui.text_colored(
-                    COLOR.FG_DIM,
-                    f"{artifact.size[0]}x{artifact.size[1]} · "
-                    f"{artifact.duration:.1f}s · {size_kb} KB",
-                )
-            except OSError:
-                pass
+        # Constant-height status slot (one text line + one bar line) so the controls
+        # never grow when uploading — otherwise the absolutely-positioned carousel
+        # below would be overlapped. While uploading: message + progress bar; else:
+        # render stats + an empty bar-height spacer (space reserved, no jitter).
+        self._draw_status_slot(rc, artifact, row_w)
 
     def _draw_add_button(
         self, rc: RenderControl, artifact: RenderedArtifact | None, width: float
@@ -748,12 +729,31 @@ class TelegramExporter(Exporter):
             )
         )
 
-    def _draw_inflight(self, full_width: float) -> None:
-        prog: ExportProgress | None = self._render_state.last_progress
-        msg: str = prog.message if prog is not None else "Working..."
-        frac: float = prog.fraction if prog is not None else 0.0
-        imgui.text(msg)
-        imgui.progress_bar(frac, size_arg=(full_width, 0.0))
+    def _draw_status_slot(
+        self, rc: RenderControl, artifact: "RenderedArtifact | None", full_width: float
+    ) -> None:
+        _ = rc
+        # Fixed-height status slot (shared primitive): progress bar w/ overlay while
+        # uploading, else the render stats, else empty — same height always, so the
+        # carousel below never shifts.
+        with status_slot("tg_status", full_width):
+            if self._render_state.in_flight:
+                prog: ExportProgress | None = self._render_state.last_progress
+                imgui.progress_bar(
+                    prog.fraction if prog is not None else 0.0,
+                    size_arg=(full_width, 0.0),
+                    overlay=prog.message if prog is not None else "Working...",
+                )
+            elif artifact is not None:
+                try:
+                    size_kb: int = artifact.path.stat().st_size // 1024
+                    imgui.text_colored(
+                        COLOR.FG_DIM,
+                        f"{artifact.size[0]}x{artifact.size[1]} · "
+                        f"{artifact.duration:.1f}s · {size_kb} KB",
+                    )
+                except OSError:
+                    pass
 
     # -------------------------------------------------------------- worker thread
     def prepare(

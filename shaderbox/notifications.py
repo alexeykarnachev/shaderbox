@@ -48,16 +48,19 @@ class Notifications:
             return
 
         # ----------------------------------------------------------------
-        # Draw
+        # Draw — toasts rise from the BOTTOM-right of the window. The top is
+        # occupied by the tab bar / menu chrome, where notifications were drawn
+        # behind it and barely visible; the bottom is clear.
         pad = float(SPACE.MD)
         gap = float(SPACE.SM)
 
         window_size = imgui.get_window_size()
-        current_y = pad
+        line_h = imgui.get_text_line_height_with_spacing()
+        current_y = window_size.y - pad - line_h
 
         for notification in self._stack:
             text_size = imgui.calc_text_size(notification.text)
             x = window_size.x - text_size.x - pad
             imgui.set_cursor_pos((x, current_y))
             imgui.text_colored((*notification.color, 1.0), notification.text)
-            current_y += text_size.y + gap
+            current_y -= text_size.y + gap

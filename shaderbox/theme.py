@@ -183,6 +183,13 @@ class SIZE:
     PREVIEW_W: int = 200
     PANEL_CTRL_MINH: int = 600
 
+    # Shared share-panel preview box — every exporter's preview is this exact size
+    # (one source of truth so all outlets match; fixed so it can't jitter). Height is
+    # set generously so the preview is always taller than any outlet's control column
+    # (no bottom-alignment math — controls just stack top-down beside it).
+    SHARE_PREVIEW_W: int = 200
+    SHARE_PREVIEW_H: int = 310
+
     FPS_PANEL_W: int = 160
     SETTINGS_W: int = 420
     SETTINGS_LABEL_W: int = 92

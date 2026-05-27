@@ -1,4 +1,5 @@
 import json
+import threading
 from pathlib import Path
 from typing import Self
 
@@ -8,6 +9,10 @@ from pydantic import BaseModel, ValidationError
 from shaderbox.paths import app_data_dir
 
 _STORE_FILE = "integrations.json"
+# Serializes save() across the render thread (Ctrl+S, disconnect) and exporter
+# worker threads (token write on connect/refresh) — two interleaved json.dump
+# writes would corrupt the file.
+_SAVE_LOCK = threading.Lock()
 
 
 class PackEntry(BaseModel):
@@ -33,8 +38,19 @@ class TelegramIntegration(BaseModel):
         return None
 
 
+class YouTubeIntegration(BaseModel):
+    client_id: str = ""
+    client_secret: str = ""
+    token_json: str = ""  # creds.to_json() — carries the refresh_token
+    channel_title: str = ""  # whoami display (youtube.readonly)
+    channel_id: str = ""  # the unambiguous "a real Connect happened" signal
+
+    model_config = {"extra": "forbid"}
+
+
 class IntegrationsStore(BaseModel):
     telegram: TelegramIntegration = TelegramIntegration()
+    youtube: YouTubeIntegration = YouTubeIntegration()
 
     model_config = {"extra": "forbid"}
 
@@ -65,6 +81,7 @@ class IntegrationsStore(BaseModel):
 
     def save(self) -> None:
         path: Path = self.file_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("w") as f:
-            json.dump(self.model_dump(), f, indent=4)
+        with _SAVE_LOCK:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("w") as f:
+                json.dump(self.model_dump(), f, indent=4)

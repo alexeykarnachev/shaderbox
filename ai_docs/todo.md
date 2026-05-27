@@ -211,3 +211,23 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   itch.io desktop tool (dual-stack/v4-only dominate). Robust fix when the trade actually bites:
   replace the v4 pin with a Happy-Eyeballs resolver (try both families, use whichever connects) — not
   native in httpx 0.28, needs a custom transport/resolver, so not worth it pre-report.
+
+## [DEFERRAL] YouTube egress is NOT IPv4-pinned (unlike Telegram)
+- **Trigger:** a user reports a hanging YouTube Connect/Upload on a network where AAAA resolves but
+  the v6 route is dead (any non-v6 VPN/tunnel — vpn-stack Gotcha #4), OR next time you touch
+  `exporters/youtube.py`'s `build()`/`run_local_server` egress.
+- The Google client (`google-api-python-client` → `httplib2`/`requests`) makes its own outbound
+  connections with no IPv4 bind, unlike `exporters/telegram.py::_ipv4_request`. Verified working
+  end-to-end through the full app on the maintainer's box (v0.8.0 ship), so the common dead-v6 case
+  apparently resolved fine here — but the Google libs don't expose httpx's clean `local_address` knob,
+  so there's no pin. If a user stalls, force v4 via a custom transport (requests adapter /
+  `source_address`, or a custom `httplib2.Http`).
+
+## [DEFERRAL] integration credentials stored cleartext in integrations.json (Telegram + YouTube)
+- **Trigger:** a security-hardening pass on stored secrets, OR the first user report of a leaked
+  `integrations.json` (shared machine / synced dir). Do both integrations in the same pass.
+- `integrations.json` holds the Telegram `bot_token` and the YouTube `client_secret` + `token_json`
+  (the long-lived OAuth refresh token) in cleartext at `app_data_dir()`. Acceptable posture for a
+  single-user desktop tool (matches the original feature-001 decision), but the YouTube refresh token
+  is channel-scoped and long-lived — worth a keyring/OS-secret-store migration if secrets ever warrant
+  it. One `IntegrationsStore` already centralizes all of it, so the migration has a single seam.

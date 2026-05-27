@@ -75,18 +75,23 @@ def _draw_inner(app: App) -> None:
             )
         return
 
-    # Accordion: one outlet open at a time, mirroring the one-popup-open invariant.
+    # Accordion: at most one outlet open at a time. The active header is left FREE
+    # to toggle (so clicking it actually closes it); only the *non-active* headers
+    # are force-collapsed each frame. Forcing the active one open every frame would
+    # re-open it the instant the user clicks to close (blink + never shuts).
     for exporter in available:
         outlet: OutletRenderState = state.outlet(exporter.exporter_id)
-        is_open: bool = registry.active_id == exporter.exporter_id
+        is_active: bool = registry.active_id == exporter.exporter_id
 
-        imgui.set_next_item_open(is_open)
+        if not is_active:
+            imgui.set_next_item_open(False, imgui.Cond_.always)
         header_open: bool = imgui.collapsing_header(
             f"{exporter.display_name}##outlet_{exporter.exporter_id}"
         )
-        if header_open and not is_open:
-            registry.set_active(exporter.exporter_id)
-            is_open = True
+        if header_open and not is_active:
+            registry.active_id = exporter.exporter_id  # opened a new one
+        elif not header_open and is_active:
+            registry.active_id = ""  # closed the active one
         if not header_open:
             continue
 

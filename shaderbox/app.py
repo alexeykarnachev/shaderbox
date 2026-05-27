@@ -17,6 +17,7 @@ from shaderbox.constants import RESOURCES_DIR
 from shaderbox.core import Canvas
 from shaderbox.exporters.registry import ExporterRegistry
 from shaderbox.exporters.telegram import TelegramExporter
+from shaderbox.exporters.youtube import YouTubeExporter
 from shaderbox.integrations import IntegrationsStore
 from shaderbox.notifications import Notifications
 from shaderbox.paths import app_data_dir
@@ -93,6 +94,11 @@ class App:
         glfw.make_context_current(window)
 
         imgui.create_context()
+        # Persist window sizes/positions (the Settings modal, etc.) under the app
+        # data dir, not the launch CWD — the default writes a stray imgui.ini there.
+        ini_path: Path = app_data_dir() / "imgui.ini"
+        ini_path.parent.mkdir(parents=True, exist_ok=True)
+        imgui.get_io().set_ini_filename(str(ini_path))
         apply_theme(imgui.get_style())
         self.window = window
         self.imgui_renderer = GlfwRenderer(window)
@@ -117,6 +123,7 @@ class App:
 
         self.exporter_registry = ExporterRegistry()
         self.exporter_registry.register(TelegramExporter())
+        self.exporter_registry.register(YouTubeExporter())
         self.share_tab_state: share_state.TabState | None = None
 
         self.is_node_creator_open: bool = False

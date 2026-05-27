@@ -23,6 +23,8 @@ dependencies = [
     "pyopengl>=3.1.10",
     "imageio-ffmpeg>=0.6.0",
     "opencv-python-headless>=4.11.0.86",
+    "google-api-python-client>=2.196.0",
+    "google-auth-oauthlib>=1.4.0",
 ]
 
 [build-system]
