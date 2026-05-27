@@ -135,7 +135,10 @@ def test_upload_happy_emits_studio_url(tmp_path: Path) -> None:
             _Job(kind="upload", artifact=_video(tmp_path), title="t", is_short=True)
         )
 
-    assert exp._render_state.last_studio_url == "https://studio.youtube.com/video/VID42/edit"
+    assert (
+        exp._render_state.last_studio_url
+        == "https://studio.youtube.com/video/VID42/edit"
+    )
     events = _drain(exp)
     terminal = [e for e in events if getattr(e, "is_terminal", False)]
     assert terminal and terminal[-1].url.endswith("/VID42/edit")
@@ -305,9 +308,7 @@ def test_ingest_client_secret_valid_and_invalid(tmp_path: Path) -> None:
     store = IntegrationsStore()
     exp = YouTubeExporter()
     exp.set_integrations(store)
-    good = json.dumps(
-        {"installed": {"client_id": "abc", "client_secret": "xyz"}}
-    )
+    good = json.dumps({"installed": {"client_id": "abc", "client_secret": "xyz"}})
     with patch.object(IntegrationsStore, "file_path", return_value=tmp_path / "i.json"):
         exp._ingest_client_secret(good)
     assert store.youtube.client_id == "abc"
