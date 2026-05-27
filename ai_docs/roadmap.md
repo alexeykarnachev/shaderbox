@@ -27,33 +27,38 @@ feature; brief points at the superseder).
 
 **As of 2026-05-27.**
 
-- **Shipped: `v0.8.0`** (feature 012 — YouTube upload exporter) — `master`, both itch channels live,
-  tag pushed. The second concrete exporter: bring-your-own-OAuth (paste your own
-  `client_secret.json`, Connect once), **private-only** uploads of long-form + Shorts (in-panel
-  shape toggle), copyable Studio deep-link. Sync worker thread (no asyncio, unlike Telegram). New
-  deps: `google-api-python-client`, `google-auth-oauthlib`. Same wave: Telegram `HTTPXRequest`
-  timeouts raised (5s→30s, 120s media — tunnels were timing out); notifications moved to bottom-right
-  (were hidden under the tab bar); the share-panel UI factored into shared `ui_primitives`
-  (`preview_box`, `status_slot`, `labeled_*`, `unconnected_gate`, `connection_status`, `setup_steps`)
-  + one `SIZE.SHARE_PREVIEW_*` so Telegram/YouTube panels match and can't jitter.
-- **v0.7.0** (prior ship): template polish + `preview_cell` consolidation + delete-path crash fixes.
+- **Landed on `dev` (unshipped): feature 013 — authoring feedback loop.** Tighter
+  write→compile→fix loop, on explicit save only (live-reload was considered + rejected). Layer 1:
+  GLSL compile errors are parsed (`util.parse_shader_errors`, NVIDIA + Mesa formats, 1→0 line shift,
+  raw fallback) into a themed click-to-jump strip at the bottom of the editor pane + native gutter
+  markers (`add_marker`); the last-good render now stays **bright** (no more dim+over-image red text).
+  F8 cycles to the next error; a "compiled" cue confirms a clean save.
+  Layer 2: a bidirectional uniform↔code bridge — click a uniform name → jump to its declaration
+  (`find_uniform_declaration_line` + new `ui_primitives.clickable_label`); hover a uniform name →
+  accent gutter mark on the declaration line; hover a uniform in code → live-value tooltip (passive
+  `set_tooltip`) + its panel row tints accent. Three transient `App` fields (`editor_jump_request` /
+  `editor_hover_line` / `code_hovered_uniform`) mirror `editor_defocus_requested`. `format_auto_value`
+  moved `tabs/node.py`→`util.py`.
+- **Shipped: `v0.8.0`** (feature 012 — YouTube upload exporter): bring-your-own-OAuth, private-only
+  long-form + Shorts, sync worker thread. Same wave: share-panel UI → shared `ui_primitives`.
 - **Invoke `/imgui-ui` before any UI work** — button tiers, jitter-free overlays, SetCursorPos assert,
-  font/emoji caveats, the `is_mouse_hovering_rect`-ignores-popups + text-never-wraps traps, no-screenshot loop.
-  Share-panels compose `ui_primitives` (preview-left fixed/taller + controls stacked top-down; no
-  vertical-alignment math) — `conventions.md ## Design decisions`.
-- **NEXT ACTION: none queued.** No `pending` feature row. Candidates sit in `todo.md` as trigger-gated
-  deferrals — pick up only when a trigger fires.
-- **`dev` == `master`** at `v0.8.0`. Tree clean.
+  font/emoji caveats, no-screenshot loop. The inline editor binding (`imgui_color_text_edit`) is the
+  `pthom` fork — far richer than its old reputation (markers, cursor, hover/context callbacks, find);
+  the palette is still write-locked (`conventions.md ## Known quirks`).
+- **NEXT ACTION: manual-verify 013 in the app** (run `make run`; the 11-step list in the spec — error
+  strip/markers/jump/hover, bright-on-error, popup-guard, node-switch), then ship when ready. No other
+  `pending` feature row; remaining candidates are `todo.md` trigger-gated deferrals.
+- **`dev` ahead of `master`** by feature 013 (still `v0.8.0`; bump at ship). Tree: commit the wave.
 - **Branch model:** develop on `dev`, ship from `master` (`dev_flow.md ## Branch model`).
-- **Token hygiene:** the dev bot token + YouTube creds live only in
-  `~/.local/share/shaderbox/integrations.json` (outside the repo, never committed; cleartext — see
-  `todo.md` deferral); maintainer rotates post-iteration.
-- **No open BLOCKERs.** `todo.md` deferrals fire on their own triggers — don't pick up speculatively.
+- **Token hygiene:** dev bot token + YouTube creds live only in `integrations.json` (outside the repo,
+  cleartext — `todo.md` deferral); maintainer rotates post-iteration.
+- **No open BLOCKERs.**
 
 ## Features
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 013 | authoring_feedback_loop | done | Tighter write→compile→fix loop. Layer 1: raw GLSL driver errors parsed (`parse_shader_errors`, NVIDIA+Mesa) into a themed click-to-jump strip at the editor-pane bottom + translucent gutter markers + F8 next-error + a "compiled" cue; the last-good render stays bright (no dim/overlay). Layer 2: bidirectional uniform↔code bridge — click a name → jump to declaration; hover a name → accent gutter mark; hover a uniform in code → live-value tooltip + panel-row tint (`find_uniform_declaration_line` + `clickable_label` + three transient `App` fields). On explicit save only — no live-reload. Spec: `ai_docs/features/013_authoring_feedback_loop.md`. |
 | 012 | youtube_export | done | Second concrete exporter: YouTube upload (long-form + Shorts) via user-owned OAuth (bring-your-own client_secret, Connect once); private-only uploads + copyable Studio edit-link; in-panel shape toggle + title/description/tags/category; sync worker thread. Same wave: share-panel UI factored into shared `ui_primitives` + `SIZE.SHARE_PREVIEW_*`; Telegram timeouts raised; notifications moved bottom-right. Spec: `ai_docs/features/012_youtube_export.md`. |
 | — | template_polish | done | Authored template order (`_TEMPLATE_ORDER`); merged Image+Video into one split-screen Media Input; text shader gained lowercase (folded to caps) + punctuation (`. , ; & -`) + newline layout + homegrown value-noise (dropped vendored Ashima simplex); compact video-smoothing slider block beside the thumbnail. Spec: commit `6b474f5` + `f44cf82`. |
 | — | preview_cell_consolidation | done | Merged node-grid + sticker-carousel cell draw into one `preview_cell` primitive (+ `chip_button`, `centered_image`, `_ellipsize`); closed 011's deferred GridCell-at-N=2. Spec: commit `44b97d0`. |

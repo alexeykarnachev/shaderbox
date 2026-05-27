@@ -2,12 +2,27 @@ import glfw
 from imgui_bundle import imgui
 
 from shaderbox.app import App
+from shaderbox.util import next_error_line, parse_shader_errors
+
+
+def _jump_to_next_error(app: App) -> None:
+    ui_node = app.ui_nodes.get(app.current_node_id)
+    if ui_node is None or not ui_node.node.shader_error:
+        return
+    errors = parse_shader_errors(ui_node.node.shader_error)
+    caret = app.get_editor(app.current_node_id).get_current_cursor_position().line
+    line = next_error_line(errors, caret)
+    if line is not None:
+        app.editor_jump_request = (line, 0)
 
 
 def process_hotkeys(app: App) -> None:
     glfw.poll_events()
     app.imgui_renderer.process_inputs()
     io = imgui.get_io()
+
+    if imgui.is_key_pressed(imgui.Key.f8, repeat=False) and not app.any_popup_open():
+        _jump_to_next_error(app)
 
     if io.key_ctrl and imgui.is_key_pressed(imgui.Key.o):
         app.open_project()

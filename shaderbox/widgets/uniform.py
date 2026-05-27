@@ -16,10 +16,11 @@ from shaderbox.constants import (
 )
 from shaderbox.core import UniformValue
 from shaderbox.media import Image, MediaWithTexture, Video
-from shaderbox.theme import COLOR, SIZE, SPACE
+from shaderbox.theme import SIZE, SPACE
 from shaderbox.ui_models import UIUniform
-from shaderbox.ui_primitives import button, caption_text, chip_button
+from shaderbox.ui_primitives import button, caption_text, chip_button, clickable_label
 from shaderbox.util import (
+    find_uniform_declaration_line,
     get_resolution_str,
     pfd_block,
     str_to_unicode,
@@ -32,15 +33,29 @@ _NAME_X = SIZE.CHIP_W + SPACE.MD
 _CTRL_X = _NAME_X + SIZE.UNIFORM_NAME_W + SPACE.MD
 
 
-def _begin_ctrl(name: str) -> None:
-    """Lay out a uniform row: chip (already drawn) -> dim name column -> control.
+def _begin_ctrl(app: App, name: str) -> None:
+    """Lay out a uniform row: chip (already drawn) -> clickable name -> control.
 
     Call after the chip; positions the cursor at the control column and sets
-    the next item's width. The control's own imgui label must be hidden (##).
+    the next item's width. Clicking the name jumps the editor caret to the
+    uniform's declaration. The control's own imgui label must be hidden (##).
     """
     imgui.same_line(_NAME_X)
-    imgui.align_text_to_frame_padding()
-    imgui.text_colored(COLOR.FG_DIM, name)
+    clicked = clickable_label(
+        name,
+        SIZE.UNIFORM_NAME_W,
+        id_=f"uname_{name}",
+        tooltip="Jump to declaration",
+        highlight=(name == app.code_hovered_uniform),
+    )
+    if clicked or imgui.is_item_hovered():
+        editor = app.get_editor(app.current_node_id)
+        line = find_uniform_declaration_line(editor.get_text(), name)
+        if line is not None:
+            if clicked:
+                app.editor_jump_request = (line, 0)
+            else:
+                app.editor_hover_line = line
     imgui.same_line(_CTRL_X)
     imgui.set_next_item_width(SIZE.UNIFORM_CTRL_W)
 
@@ -66,7 +81,7 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
     hidden = f"##{name}"
 
     draw_input_type_selector(ui_uniform)
-    _begin_ctrl(name)
+    _begin_ctrl(app, name)
 
     if ui_uniform.input_type == "auto":
         if isinstance(current_value, float | int):

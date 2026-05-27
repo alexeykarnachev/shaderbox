@@ -236,24 +236,15 @@ def _draw_app_panel(app: App) -> None:
         image_width = min(max_image_width, max_image_height * image_aspect)
         image_height = min(max_image_height, max_image_width / image_aspect)
 
-        has_error = ui_node.node.shader_error != ""
+        # On compile failure the last-good program stays bound, so the render is a
+        # live reference — kept bright; the error surfaces in the editor pane strip.
         imgui.image_with_bg(
             imgui.ImTextureRef(ui_node.node.canvas.texture.glo),
             image_size=(image_width, image_height),
             uv0=(0, 1),
             uv1=(1, 0),
-            tint_col=(0.2, 0.2, 0.2, 1.0) if has_error else (1.0, 1.0, 1.0, 1.0),
+            tint_col=(1.0, 1.0, 1.0, 1.0),
         )
-
-        if has_error:
-            draw_list = imgui.get_window_draw_list()
-            text_x = cursor_pos.x + float(SPACE.MD)
-            text_y = cursor_pos.y + float(SPACE.MD)
-            draw_list.add_text(
-                (text_x, text_y),
-                imgui.color_convert_float4_to_u32(COLOR.STATE_ERROR),
-                ui_node.node.shader_error,
-            )
     else:
         avail = imgui.get_content_region_avail()
         image_width = avail.x

@@ -1,4 +1,3 @@
-from collections.abc import Iterable
 from uuid import uuid4
 
 from imgui_bundle import imgui, imgui_ctx
@@ -13,16 +12,8 @@ from shaderbox.ui_models import (
     sort_uniform_hashes,
 )
 from shaderbox.ui_primitives import button, ghost_button, small_caption
-from shaderbox.util import get_resolution_str, get_uniform_hash
+from shaderbox.util import format_auto_value, get_resolution_str, get_uniform_hash
 from shaderbox.widgets.uniform import draw_ui_uniform
-
-
-def _format_auto_value(value: object) -> str:
-    if isinstance(value, float | int):
-        return f"{value:.3f}"
-    if isinstance(value, Iterable):
-        return "[" + ", ".join(f"{v:.3f}" for v in value) + "]"
-    return str(value)
 
 
 def _section_break() -> None:
@@ -34,7 +25,7 @@ def _section_break() -> None:
 def _draw_auto_row(app: App, uniforms: list[UIUniform]) -> None:
     ui_node = app.ui_nodes[app.current_node_id]
     parts = [
-        f"{u.name}: {_format_auto_value(ui_node.node.uniform_values.get(u.name))}"
+        f"{u.name}: {format_auto_value(ui_node.node.uniform_values.get(u.name))}"
         for u in uniforms
     ]
     small_caption(app.font_12, "   ".join(parts))

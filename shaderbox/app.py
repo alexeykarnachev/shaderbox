@@ -137,6 +137,14 @@ class App:
         # Start in navigation mode: defocus the editor on its first render so the
         # caret isn't active and arrows navigate nodes (the editor auto-grabs focus).
         self.editor_defocus_requested: bool = True
+        # (line, index) for tabs/code.py to move the caret to next render; cleared on consume.
+        self.editor_jump_request: tuple[int, int] | None = None
+        # Transient: declaration line to mark in the gutter while a uniform control is
+        # hovered. Re-set every frame by widgets/uniform.py (None when nothing hovered).
+        self.editor_hover_line: int | None = None
+        # Transient: uniform name hovered in the code editor this frame, so its panel
+        # row highlights. Set by tabs/code.py (drawn before the panel), "" when none.
+        self.code_hovered_uniform: str = ""
         self.global_fps = 0.0
         self.fps_details_open: bool = False
 

@@ -106,19 +106,6 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   value domain, lifecycle is an action domain. `App` is the state-holder; widgets/popups/tabs/
   hotkeys take `app: App` directly (no `AppContext` wrapper).
 
-## [DEFERRAL] inline shader-error display (replace raw add_text overlay)
-- **Trigger:** when the next person works in the render-area drawing code in `ui.py`
-  (the `has_error` branch), OR first time a shader error is hard to read against the
-  dimmed image.
-- Today shader-compile errors render as raw red `add_text` overlaid top-left on the
-  dimmed render image (`ui.py`, `_draw_render_image`-equivalent / the `has_error`
-  block). Now that the inline editor has landed (feature 006), promote this to a
-  proper error surface that parses GLSL error output (`ERROR: 0:55:` or `0(55) :
-  error:`) for `(line, col, message)` and can jump the editor cursor. NOTE: the
-  designer's prototype `.error-panel` is one reference, but the prototype layout was
-  reverted — design the error surface to fit the CURRENT layout (image-top, control-
-  panel-below), not the prototype's.
-
 ## [DEFERRAL] adopt `hello_imgui.apply_theme()` + `imgui-knobs` during UI/UX refactor
 - **Trigger:** when starting the planned UI/UX refactor with custom themes — i.e. the moment a
   concrete theme design starts taking shape (not before; adopting now is premature scaffolding

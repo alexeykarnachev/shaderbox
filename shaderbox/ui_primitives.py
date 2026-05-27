@@ -601,3 +601,33 @@ def draw_link(
         webbrowser.open(open_target)
     except Exception as e:
         logger.warning(f"Could not open browser: {e}")
+
+
+def clickable_label(
+    label: str,
+    width: float,
+    *,
+    id_: str | None = None,
+    tooltip: str | None = None,
+    highlight: bool = False,
+) -> bool:
+    """A fixed-width clickable text cell (used for the uniform name -> jump-to-code).
+
+    Sized so a following `same_line(x)` column stays put; the hover affordance is a
+    colour change only (jitter-free). `highlight` paints the same translucent accent
+    wash the editor gutter uses (a code-side hover lighting up the row). Returns True
+    on click.
+    """
+    imgui.align_text_to_frame_padding()
+    text = _ellipsize(label, width)
+    imgui.push_style_color(imgui.Col_.text, COLOR.FG_DIM)
+    imgui.push_style_color(imgui.Col_.header, fade(COLOR.ACCENT_PRIMARY, 0.15))
+    imgui.push_style_color(imgui.Col_.header_hovered, fade(COLOR.ACCENT_PRIMARY, 0.18))
+    imgui.push_style_color(imgui.Col_.header_active, fade(COLOR.ACCENT_PRIMARY, 0.28))
+    clicked: bool = imgui.selectable(
+        f"{text}##{id_ or label}", highlight, size=(width, 0)
+    )[0]
+    imgui.pop_style_color(4)
+    if tooltip and imgui.is_item_hovered():
+        imgui.set_tooltip(tooltip)
+    return clicked

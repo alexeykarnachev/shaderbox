@@ -1,6 +1,8 @@
 import hashlib
 import math
-from collections.abc import Sequence
+import re
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
 from typing import Any, TypeVar
 
 import moderngl
@@ -107,3 +109,58 @@ def pfd_block(dialog: Any) -> Any:
     while not dialog.ready(20):
         pass
     return dialog.result()
+
+
+def format_auto_value(value: object) -> str:
+    if isinstance(value, float | int):
+        return f"{value:.3f}"
+    if isinstance(value, Iterable):
+        return "[" + ", ".join(f"{v:.3f}" for v in value) + "]"
+    return str(value)
+
+
+@dataclass(frozen=True)
+class ShaderError:
+    line: int  # 0-based editor line; -1 when the driver string couldn't be parsed
+    message: str
+
+
+# NVIDIA `0(LINE) : error CXXXX: msg`; Mesa/Intel/AMD `ERROR: 0:LINE: msg`.
+# The driver line maps 1:1 to the editor line because core.py compiles fs_source
+# verbatim (no prepended #version/header); we shift 1-based -> 0-based DocPos here.
+_NVIDIA_ERROR_RE = re.compile(r"^\s*\d+\((\d+)\)\s*:\s*(.+)$")
+_MESA_ERROR_RE = re.compile(r"^\s*(?:ERROR|WARNING):\s*\d+:(\d+):\s*(.+)$")
+
+
+def parse_shader_errors(raw: str) -> list[ShaderError]:
+    errors: list[ShaderError] = []
+    for raw_line in raw.splitlines():
+        match = _NVIDIA_ERROR_RE.match(raw_line) or _MESA_ERROR_RE.match(raw_line)
+        if match:
+            errors.append(ShaderError(int(match.group(1)) - 1, match.group(2).strip()))
+
+    if not errors:
+        return [ShaderError(-1, raw.strip())]
+    return errors
+
+
+def next_error_line(errors: list[ShaderError], after_line: int) -> int | None:
+    # Markable lines (line >= 0), sorted; the first strictly after `after_line`,
+    # wrapping to the first. None when there are no markable errors.
+    lines = sorted({e.line for e in errors if e.line >= 0})
+    if not lines:
+        return None
+    for line in lines:
+        if line > after_line:
+            return line
+    return lines[0]
+
+
+def find_uniform_declaration_line(source: str, name: str) -> int | None:
+    # The name must be the declared identifier (immediately before `[`/`=`/`;`),
+    # not merely mentioned on a `uniform` line (a comment / another's initializer).
+    pattern = re.compile(rf"^\s*uniform\b[^=;]*\b{re.escape(name)}\s*(?:\[|=|;)")
+    for i, line in enumerate(source.splitlines()):
+        if pattern.match(line.split("//")[0]):
+            return i
+    return None
