@@ -28,6 +28,36 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
 
 ---
 
+## [DEFERRAL] library file management UI (delete / rename / move)
+- **Trigger:** next session. The shader-library feature (015) ships with the
+  picker able to CREATE new lib files (`+ New library file`) but no in-app
+  delete / rename / move-between-subdirs / reveal-in-file-manager. Today the
+  user has to drop into the file system (`<app_data_dir>/lib/`) to clean up.
+- Scope when picked up:
+  - **Delete** with armed-confirm (pattern: `node_delete_armed` in `app.py`);
+    file goes to `<lib_root>/.trash/<name>` rather than `unlink` so a misclick
+    is recoverable. The mtime watcher already rebuilds the index on lib-root
+    changes, so dependent nodes pick up the missing function as a normal
+    "undeclared identifier" driver error — no special invalidation path needed.
+  - **Rename** with collision check (new name can't exist as a file). An open
+    `EditorSession` on the file must follow the rename: update the session's
+    `source.path`, re-key `editor_sessions` dict. The mtime watcher's
+    `compile_unit.sources` walk needs to handle a path that no longer exists
+    (today it just `continue`s; double-check that's still right).
+  - **Move into / out of subdir** is the same as rename (just `Path.rename`
+    across dirs); the resolver doesn't care about file structure since lookups
+    are by function name, not path.
+  - **Reveal in file manager** as an always-available escape hatch (uses the
+    same `xdg-open` / `explorer` / `open` pattern as `App.open_current_node_dir`).
+  - UI shape: probably a "Manage files" expander in the picker (per-file rows
+    with rename / delete / reveal actions), plus a quick "Reveal in file
+    manager" link in the per-function preview-pane caption. Decide during
+    implementation.
+- Touchpoints: `popups/lib_picker.py` (UI), `app.py` (rename plumbing on
+  `editor_sessions` re-key, the trash dir helper), `paths.py` (maybe a
+  `lib_trash_dir()` helper next to `lib_root()`).
+
+
 ## [DEFERRAL] cross-file uniform declaration jump (lib files)
 - **Trigger:** first user complaint that clicking a uniform name in the panel doesn't jump
   anywhere when the uniform happens to be declared in a lib file (not the node's own shader),
