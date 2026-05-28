@@ -1,7 +1,8 @@
 # Conventions
 
-Auto-loaded via `@ai_docs/conventions.md` at the bottom of `CLAUDE.md`. Re-read end-to-end from disk
-before: spec drafting, spec validation, implementation, code review, the sanitization sweep.
+NOT auto-loaded — re-read end-to-end from disk before: spec drafting, spec validation,
+implementation, code review, the sanitization sweep. (`CLAUDE.md` inlines only the handful of
+code rules that fire on every edit; this file is the full home.)
 
 Everything here is a **generic, future-constraining rule** — if a bullet doesn't constrain code you
 haven't written yet, it's noise. Three sections, three buckets; put each rule in exactly one:
@@ -40,23 +41,10 @@ belong in the feature spec (`ai_docs/features/NNN_*.md`). This file is not a cha
   module; an imgui+theme draw helper reused across modules goes in `ui_primitives.py`, a non-UI
   helper in `util.py` (or the relevant leaf). Same bar for `@classmethod` unless it's a genuine
   alternate constructor (`cls(...)`).
-- **Don't repeat a UI widget.** A draw block that appears in two places (a copyable path, a styled
-  button, the duration slider, an overlay close-✕) is extracted to a free function in
-  `ui_primitives.py` and called from both — never copy-pasted. The current set is whatever
-  `ui_primitives.py` defines — read the file; don't maintain a roster here.
-- **Button tiers — pick by role, not by look.** Four tiers, all in `ui_primitives.py`:
-  `primary_button` = the ONE call-to-action of a section (filled accent); `button` = an ordinary
-  action (filled neutral grey); `ghost_button` = low-emphasis / secondary (text only); `danger_button`
-  = destructive (text only, red — the confirm-row chrome carries the weight, never a filled-red fill).
-  Never hand-roll `push_style_color(Col_.button, …)` at a call site; if a needed tier is missing, add
-  it to the system.
-- **Jitter-free overlays/grids.** A selection highlight must be a *colour* change, never a *size*
-  change (a thicker border is drawn **inset**, not straddling the cell edge). For a grid cell that
-  carries an overlay control (a delete-✕ pinned in a corner), wrap **each cell in its own
-  `begin_child(cell, cell)`** and do the overlay's `set_cursor_screen_pos` *inside* that child — a
-  child has its own content region, so the absolute move can't extend the parent (no jitter) and
-  can't trip the SetCursorPos assert (next quirk). Do NOT absolutely-position items directly in the
-  panel window and then move the cursor backward.
+- **UI authoring rules live in the `/imgui-ui` skill, not here.** Button tiers, jitter-free
+  overlays, "don't repeat a widget", the SetCursorPos assert, modal chrome, context menus,
+  imgui-bundle quirks — all in `.claude/skills/imgui-ui/SKILL.md`. Read it at the start of any
+  UI work. This file holds only project-architecture rules (module shapes, ownership, threading).
 - Type checker: **pyright** (not mypy), basic mode, via `make check` — blocks on failure.
   Repo is at 0 errors; keep it that way.
 - `uv` for everything (`uv run`, `uv add`, `uv add --group dev`) — never bare `python` / `pip`.
@@ -76,22 +64,30 @@ belong in the feature spec (`ai_docs/features/NNN_*.md`). This file is not a cha
   its dataclass to keep `app.py` import-cycle-free. Revisit when a 4th tab module exists.
 - **`widgets/*.py`: free functions taking `app: App`, no wrapper, no protocol.** Widgets are an
   organizational convention, not a polymorphic contract — no `Widget` ABC, no shared return shape;
-  each gets the shape that fits its job. (An `AppContext` wrapper was tried and reverted — passing
-  `app` gave every claimed benefit.) Revisit if a polymorphic `list[Widget]` dispatcher materializes.
-- **Popup modal size: always `Cond_.first_use_ever`, never `Cond_.appearing`.** `set_next_window_size(..., Cond_.first_use_ever)` seeds the size once; subsequent reopens read the user's manual resize from `imgui.ini` (persisted to `app_data_dir() / "imgui.ini"`). `Cond_.appearing` clobbers the saved size on every reopen — the user's drag-resize visibly resets every time. Applies to every `begin_popup_modal` / `begin_popup` in `popups/*.py`. Revisit if a popup genuinely needs to force a fixed size.
+  each gets the shape that fits its job. Revisit if a polymorphic `list[Widget]` dispatcher materializes.
 - **`popups/*.py`: free `draw(app: App)` functions; open/closed state lives on `App` as booleans.**
   Each `app.open_*()` helper sets its own flag True and clears ALL siblings — the "at most one popup
   open" invariant; keep it when adding a popup. `app.any_popup_open()` is the render-gate question.
   No popup classes. Revisit if a popup grows internal state that doesn't belong on `App`.
-- **All UI colors / sizes / spacing flow through `theme.py`'s `COLOR` / `SIZE` / `SPACE` bags** — no
-  hardcoded hex or magic pixel values in code. `apply_theme(style, …)` writes the theme into the
-  imgui style at boot and is re-callable at runtime. Revisit if a 4th token bag emerges (e.g.
-  animation timing) — extend `theme.py`, don't carve a parallel module.
 - **Inline editor state lives on `App`; disk is the source of truth.** One `TextEditor` per node
   (+ a parallel dirty-baseline dict), created lazily; `app.save()` flushes the dirty editor before
   writing the file; the mtime watcher re-syncs from disk on external change (disk wins). Editor
   per-instance footguns (palette, FPE-while-modal, cursor, font sizing) live in `## Known quirks`.
   Revisit if multi-file-per-node editing lands.
+- **`InlineInput` dataclass for mutually-exclusive inline editors.** A picker / panel hosting
+  multiple inline text-input affordances (rename / new-file / new-dir) uses one `InlineInput`
+  instance per kind on `App` — `target: Path | None`, `buf: str`, `needs_focus: bool` with
+  `open()` / `close()` / `is_open`. A single `reset_*_inline_state()` method enforces the mutex:
+  every `begin_*` opener calls it first, then sets only its own fields. `needs_focus` is the
+  one-shot the input's first draw consumes via `set_keyboard_focus_here(0)`. Revisit if a
+  second multi-inline-input surface lands (promote `InlineInput` to `ui_primitives.py`).
+- **One shared row primitive per row-KIND, not per-kind special-case rows.** A list/grid whose
+  items come in kinds (regular uniforms vs engine/`auto` uniforms) draws every kind through ONE
+  row helper (`uniform_name_label`) with style overrides, never a separate hand-rolled row per
+  kind. A per-kind special-case row silently excludes that kind from cross-cutting features —
+  feature 008 special-cased engine uniforms into a dim caption row, which left them out of the
+  code↔panel hover/jump bridge until it was generalized. Revisit if a kind genuinely needs to
+  opt OUT of a shared behavior (then gate the behavior, don't fork the row).
 - **No `async` except where python-telegram-bot forces it** — and that runs off the render thread
   (worker thread + own asyncio loop), never `run_until_complete` inside the imgui frame. A *synchronous*
   network client (YouTube's Google libs) uses the same worker-thread pattern but WITHOUT the asyncio
@@ -120,15 +116,15 @@ belong in the feature spec (`ai_docs/features/NNN_*.md`). This file is not a cha
   (`setup_steps`) — lives in `ui_primitives.py`, generic. A new exporter composes these; it does NOT
   re-roll `caption_text + set_next_item_width + imgui.xxx` inline. Layout rule for the panel:
   preview-left fixed + taller than the controls column, controls stack top-down beside it — no
-  vertical-alignment math (that fight cost a full session). Revisit if a panel needs a layout these
-  primitives can't express (then add a primitive, don't inline).
+  vertical-alignment math. Revisit if a panel needs a layout these primitives can't express (then
+  add a primitive, don't inline).
 - **Integration credentials are GLOBAL, not per-project; everything else per-project stays.**
   Telegram bot token / linked user / pack list live in `integrations.json` (one `IntegrationsStore`
   rooted at `app_data_dir()`), injected into exporters via `registry.set_integrations(store)`. An
   exporter whose creds are global returns `current_settings() -> {}` so the per-project
-  `exporter_settings` stays non-authoritative (this is what lets a one-shot migration strip the old
-  per-project copy). The per-project pointer that remains (e.g. `telegram_default_pack`) lives on
-  `UIAppState`. Revisit if an integration brings genuinely per-project credentials.
+  `exporter_settings` stays non-authoritative. The per-project pointer that remains (e.g.
+  `telegram_default_pack`) lives on `UIAppState`. Revisit if an integration brings genuinely
+  per-project credentials.
 - **All on-disk state roots at `paths.py::app_data_dir()`** — projects, the active-project pointer,
   logs, `integrations.json`. Never call `platformdirs.user_data_dir(...)` directly (that path
   silently ignores the override); go through `app_data_dir()`, which honors `SHADERBOX_DATA_DIR`
@@ -156,63 +152,14 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   `_MESA_ERROR_RE`) capture the file-id too. If you ever see a driver emitting `0:LINE` for a
   spliced library function's body, you forgot to emit `#line N <lib_file_id>` before that splice
   (`shaderbox/lib_index.py::resolve_usage`).
-- **imgui-bundle's C++-backed submodules ship only `.pyi` stubs** (`portable_file_dialogs`,
-  `imgui_color_text_edit`) — pyright emits a `reportMissingModuleSource` warning at the import
-  line. The warning is harmless (no `.py` source to find). Warnings don't fail `make check`;
-  ignore them. Don't suppress with `# pyright: ignore` — that hides genuine resolve failures
-  elsewhere.
-- **`imgui_color_text_edit.TextEditor.Palette` is read-only from Python** — only `.get(color)
-  -> ImU32`; no per-slot setter, no list-based constructor, and `set_palette()` accepts only a
-  `Palette` object (unbuildable with custom colors). Use a built-in (`get_dark_palette()` /
-  `get_light_palette()`); a custom gruvbox palette is impossible until imgui-bundle exposes a
-  write path (feature 006; tracked in `todo.md`).
-- **Dear ImGui 1.92 dropped pre-baked glyph ranges + `refresh_font_texture()`** in favor of
-  dynamic on-demand glyph loading (`BackendFlags_.renderer_has_textures`, set automatically by
-  imgui-bundle's `BaseOpenGLRenderer.__init__`). `add_font_from_file_ttf(path, size_pixels=N)`
-  is enough — no `glyph_ranges=` kwarg, no manual texture refresh. Cyrillic glyphs load when
-  text is first drawn.
-- **`imgui.push_font` now requires `(font, size_base_unscaled)`** — pass the rasterized size
-  (the one used in `add_font_from_file_ttf(size_pixels=...)`). Never pass `imgui.get_font_size()`
-  — that's the *post-scaling* value and would scale twice. For an `ImFont` you hold, the rasterized
-  size is `font.legacy_size`.
-- **This imgui-bundle build renders MONOCHROME emoji only** (1.92.801). `NotoColorEmoji.ttf` loaded
-  with the FreeType `LoadColor` flag rasterizes to *blank* glyphs in the glfw backend, even though
-  the binary ships plutosvg (spike-confirmed 2026-05-23). The bundled `NotoEmoji-Regular.ttf`
-  (vendored to `resources/fonts/NotoEmoji/`) renders fine as line-art — that's the emoji-picker font
-  (`App.get_emoji_font`). A chosen emoji still uploads to Telegram in full color (it's stored as the
-  real Unicode codepoint); only the in-app preview is monochrome. Don't re-attempt color without
-  re-running the spike (tracked in `todo.md`).
-- **`imgui.image(...)` lost `tint_col` / `border_col` since 1.91.9**. For tint, switch to
-  `imgui.image_with_bg(...)`. For border, push the `ImageBorderSize` style var (or live without).
-- **`pfd.open_file` / `save_file` / `select_folder` are non-blocking class handles, not blocking
-  functions.** Use the `pfd_block(dialog)` helper in `util.py` to spin until `.ready(20)` —
-  that mirrors crossfiledialog's synchronous shape at the call site.
-- **imgui-bundle's Python glfw backend (`python_backends/glfw_backend.py`) does NOT sync imgui's
-  mouse cursor to the OS** — it never sets `BackendFlags_.has_mouse_cursors` and never calls
-  `glfwSetCursor`. So `imgui.set_mouse_cursor(...)` is a silent no-op at the OS level. To change
-  the actual cursor, create glfw cursors (`glfw.create_standard_cursor(...)`, stored on `App`:
-  `app.ibeam_cursor`, `app.resize_ew_cursor`) and call `glfw.set_cursor(window, cursor_or_None)`
-  yourself. Used by the Code editor (I-beam on hover, `tabs/code.py`) and the split divider
-  (resize-EW on hover/drag, `ui.py::_draw_splitter`); restore with `glfw.set_cursor(window,
-  None)`. NEVER use `imgui.set_mouse_cursor` for these — it does nothing in this backend.
+- **imgui / imgui-bundle quirks live in the `/imgui-ui` skill §8.** That includes: TextEditor
+  palette read-only, monochrome emoji, dynamic glyph loading, `push_font` rasterized-size,
+  `image()` lost `tint_col`, glfw cursor sync gap, pfd non-blocking handles, TextEditor
+  first-render focus grab, the `.pyi`-only stub pyright warning, the SetCursorPos assert.
+  Non-UI library quirks (telegram, moderngl, GLSL `#line`) stay below.
 - **A live moderngl context must exist before constructing `Image` / `Video` / `Font` / `Canvas` /
   `Node`** — they call `moderngl.get_context()` lazily. In the app,
   `glfw.make_context_current(window)` handles it.
-- **`set_cursor_screen_pos()` to a position past submitted items asserts** ("Code uses SetCursorPos
-  to extend window/parent boundaries. Please submit an item e.g. Dummy() afterwards"). It surfaces as
-  the swallowed `Error in node settings: …` line, then the unbalanced stack throws the downstream
-  `IM_ASSERT(Size>0)` at `end_child` (same symptom-vs-cause trap as the per-frame-exception crash). To
-  position items absolutely (overlay buttons, grids), either submit an item that covers the moved-to
-  position, or — preferred — confine the absolute moves to a per-element `begin_child` so they can't
-  touch the parent's bounds. See `## Code rules` "Jitter-free overlays/grids".
-- **`imgui_color_text_edit.TextEditor.render()` auto-grabs imgui keyboard focus on a child window's
-  first frame** — so a never-yet-rendered editor (app open, or just-switched node) steals focus and
-  the caret goes live without a click. The editor exposes no `is_focused()` getter. Track focus by
-  reading `imgui.is_window_focused(FocusedFlags_.child_windows)` *after* `render()` (`tabs/code.py`),
-  not a hand-maintained click flag. To defocus (Esc, arrow-nav, startup), set
-  `app.editor_defocus_requested` and consume it with `set_window_focus(None)` AFTER `render()` —
-  clearing before render is undone by the editor's own first-render grab. `hotkeys.py` gates arrow
-  node-nav on `app.editor_focused`.
 - **python-telegram-bot's `Bot` has TWO request pools; both need the IPv4 bind.** On an
   IPv6-incapable network (AAAA resolves but the route is dead — the dev box, see vpn-stack Gotcha #4),
   ptb dials the v6 address and the TLS handshake fails (`ConnectError(EndOfStream())`, surfaced as a
@@ -227,8 +174,7 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   has exactly these exceptions — all are missing/wrong annotations in third-party stubs, never our
   own type errors. New markers outside this list are a design smell; fix the design, don't add to
   the list. Re-audit when bumping `moderngl` / `freetype-py` / `pydantic`.
-  - `moderngl.Uniform.gl_type` — not in moderngl's stub (3 sites: `ui_models.py`, `util.py`,
-    `tabs/node.py`).
-  - `freetype.load_char(...)` — `freetype-py` ships no stubs (2 sites in `fonts.py`).
+  - `moderngl.Uniform.gl_type` — not in moderngl's stub.
+  - `freetype.load_char(...)` — `freetype-py` ships no stubs.
   - `@model_validator(mode="after")` on a method returning `Self` — pydantic's decorator stub
-    mistypes the wrapped method (`ui_models.py`).
+    mistypes the wrapped method.

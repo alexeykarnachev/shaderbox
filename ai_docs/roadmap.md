@@ -27,45 +27,28 @@ feature; brief points at the superseder).
 
 **As of 2026-05-28.**
 
-- **On `dev` (unshipped): features 014 + 015** — the shader library landed.
-- **014 — CompileUnit refactor.** Pure shape refactor (zero behavior change): `ShaderSource`,
-  `CompileUnit`, `SourceMap` (file_id → path), `EditorSession` path-keyed, `JumpRequest` /
-  `HoverMark`. Per-frame `parse_shader_errors()` calls collapsed into one compile-time parse
-  cached on `node.compile_unit.errors`. Sets up 015's seams.
-- **015 — shader library (auto-resolve).** No `#include` syntax: the user writes
-  `SB_perlin_noise_3(...)` directly and it just works. Host-side scan of the user's text for
-  `SB_\\w+` identifiers, transitive-close over a per-boot `LibIndex` of the lib functions
-  (`<app_data_dir>/lib/**.glsl`), topo-sorted preamble inserted after `#version`/`#extension`,
-  `#line N <id>` markers route driver errors back to the right lib file. `Ctrl+P` opens the lib
-  picker (fuzzy search + body preview + insert-at-caret + open-file). Lib files edit in their
-  own path-keyed `EditorSession`; the code pane swaps between node-shader and lib-file modes
-  via `App._explicit_editor_path` (a full tab-bar lands later when the UX pressure shows up).
-  Mtime watcher fans out lib edits to every dependent node (active recompiles immediately;
-  dormant lazily on next render).
-- **Shipped: `v0.9.0`** (feature 013 — authoring feedback loop). Click-to-jump error strip +
-  gutter markers + F8 + "compiled" cue + uniform↔code bridge.
-- **Invoke `/imgui-ui` before any UI work** — button tiers, jitter-free overlays, SetCursorPos
-  assert, font/emoji caveats, no-screenshot loop.
-- **NEXT ACTION: maintainer manual sanity** on 015 in the running app (live picker, insert,
-  save lib, error remap into lib file). After that — ship as minor (no breaking schema).
-- **Branch model:** develop on `dev`, ship from `master` (`dev_flow.md ## Branch model`).
+- **On `dev` (unshipped): features 014 + 015 + 016** — shader library + lib file management UI.
+- **Shipped: `v0.9.0`** (feature 013 — authoring feedback loop).
+- **NEXT ACTION:** maintainer live-app sanity on 016 (the 19-step verification list in the
+  spec). After that — ship as minor; 014+15+16 only add optional state.
 - **No open BLOCKERs.**
 
 ## Features
 
 | # | Name | Status | Brief |
 |---|---|---|---|
-| 015 | shader_library | done | Auto-resolve GLSL helper library (no `#include` syntax). User writes `SB_perlin_noise_3(...)`; host scans for `SB_\w+` identifiers, transitive-closes via a `LibIndex` of `<app_data_dir>/lib/**.glsl`, topo-sorted preamble + `#line N <id>` markers, errors remap to the right lib file. `Ctrl+P` picker (fuzzy search + body preview + insert / open-file). Lib files edit in their own `EditorSession`; code pane swaps via `App._explicit_editor_path`. Mtime fan-out via existing `compile_unit.sources` loop + a lib-root sweep. Spec: `ai_docs/features/015_shader_include_library.md`. |
-| 014 | compile_unit_refactor | done | Pure shape refactor (zero behavior change) to prepare for feature 015. Introduces `ShaderSource` (path+text+mtime), `CompileUnit` (sources + flattened + source_map + error_raw + errors), `SourceMap` (identity today, populated by the future include resolver), `EditorSession` (path-keyed, replacing the `node_id`-keyed parallel dicts), and `JumpRequest` / `HoverMark` typed replacements for the transient editor-request tuples. `Node.shader_error` gone; errors parsed once at compile time. Spec: `ai_docs/features/014_compile_unit_refactor.md`. |
-| 013 | authoring_feedback_loop | done | Tighter write→compile→fix loop. Layer 1: raw GLSL driver errors parsed (`parse_shader_errors`, NVIDIA+Mesa) into a themed click-to-jump strip at the editor-pane bottom + translucent gutter markers + F8 next-error + a "compiled" cue; the last-good render stays bright (no dim/overlay). Layer 2: bidirectional uniform↔code bridge — click a name → jump to declaration; hover a name → accent gutter mark; hover a uniform in code → live-value tooltip + panel-row tint (`find_uniform_declaration_line` + `clickable_label` + three transient `App` fields). On explicit save only — no live-reload. Spec: `ai_docs/features/013_authoring_feedback_loop.md`. |
-| 012 | youtube_export | done | Second concrete exporter: YouTube upload (long-form + Shorts) via user-owned OAuth (bring-your-own client_secret, Connect once); private-only uploads + copyable Studio edit-link; in-panel shape toggle + title/description/tags/category; sync worker thread. Same wave: share-panel UI factored into shared `ui_primitives` + `SIZE.SHARE_PREVIEW_*`; Telegram timeouts raised; notifications moved bottom-right. Spec: `ai_docs/features/012_youtube_export.md`. |
-| — | template_polish | done | Authored template order (`_TEMPLATE_ORDER`); merged Image+Video into one split-screen Media Input; text shader gained lowercase (folded to caps) + punctuation (`. , ; & -`) + newline layout + homegrown value-noise (dropped vendored Ashima simplex); compact video-smoothing slider block beside the thumbnail. Spec: commit `6b474f5` + `f44cf82`. |
-| — | preview_cell_consolidation | done | Merged node-grid + sticker-carousel cell draw into one `preview_cell` primitive (+ `chip_button`, `centered_image`, `_ellipsize`); closed 011's deferred GridCell-at-N=2. Spec: commit `44b97d0`. |
-| — | node_delete_crash_fixes | done | Two delete-path crashes: node-grid mid-iteration mutation (snapshot + deferred `delete_node`); trash-dir collision on deleting the same id twice (timestamp-suffixed dest). Spec: commit `1ab5d56` + `a386713`. |
-| 011 | ui_library_consolidation | done | Post-010 refactor (no behaviour change): de-leaked Telegram tokens out of generic `SIZE`; deleted dead tokens + the unreachable `replace` path; fixed the preview-GL leak on project switch (`TabState.release`); de-leaked the exporter seam (`RenderControl` pure plumbing + `.extras`/`build_render_extras`, pack methods off the ABC); split `ui_utils.py` → `ui_primitives.py`+`util.py`; landed a `tests/` suite (`make test`). The N=2 GridCell extraction it deferred landed as `preview_cell` (row above). Spec: `ai_docs/features/011_ui_library_consolidation.md`. |
-| 010 | outlet_render_rework | done | Shared GL-free `RenderPreset` drives `render_media` to render natively at the outlet's target size; per-outlet concise share UI. Telegram panel redesigned (many screenshot rounds): pack row + copyable link, new-sticker block (emoji overlay, Duration, Render + Add), single-row carousel with per-cell emoji-change + delete-confirm; status via notifications. Produced the 4-tier button system + UI primitives + the `imgui-ui` skill. Spec: `ai_docs/features/010_outlet_render_rework.md`. |
-| 009 | integrations_rework | done | Telegram UX collapse: token+Connect (getUpdates user_id capture) in Settings→Integrations; derived+auto-created sticker-set names; share-tab pack create/select/delete + sticker delete; monochrome emoji picker (Unicode order; color impossible in this build); bot DMs pack link on add; connection+packs persist to global `integrations.json` (connect once); no legacy migration. Live-verified end-to-end; 2 pre+2 post review waves PASS. UI-optimization is a separate next wave. Spec: `ai_docs/features/009_integrations_rework.md`. |
-| 008 | uniform_input_shapes | done | Every uniform row leads with a changeable input-shape pill (click-to-cycle, disabled when one shape); removed the separate settings pane; per-node uniform sort (code/name/type + dir); engine uniforms collapsed to one dim readout row; node-tab header compaction; accent tab styling. Spec: `ai_docs/features/008_uniform_input_shapes.md`. |
+| 016 | lib_file_management | done | Unified tree+preview lib picker with right-click context menus for create / rename / delete (armed-confirm, file or recursive subdir) / reveal; `.trash/` filter shared by `LibIndex.build` and the mtime watcher; `Library` menu in the main menu bar. Spec: `ai_docs/features/016_lib_file_management.md`. |
+| 015 | shader_library | done | Auto-resolved GLSL helper library — type `SB_perlin_noise_3(...)`, host splices declarations + topo-sorted preamble; `Ctrl+P` picker with fuzzy search + body preview. Spec: `ai_docs/features/015_shader_include_library.md`. |
+| 014 | compile_unit_refactor | done | Pure-shape refactor introducing `CompileUnit` + `EditorSession` to prepare for #include support. Spec: `ai_docs/features/014_compile_unit_refactor.md`. |
+| 013 | authoring_feedback_loop | done | Tighter write→compile→fix loop with click-to-jump error strip + bidirectional uniform↔code bridge. Spec: `ai_docs/features/013_authoring_feedback_loop.md`. |
+| 012 | youtube_export | done | Second concrete exporter: YouTube upload (long-form + Shorts) via user-owned OAuth. Spec: `ai_docs/features/012_youtube_export.md`. |
+| — | template_polish | done | Authored template order + merged Image/Video into Media Input + text-shader polish. Spec: commit `6b474f5` + `f44cf82`. |
+| — | preview_cell_consolidation | done | Unified node-grid + sticker-carousel cell draw into `preview_cell` primitive. Spec: commit `44b97d0`. |
+| — | node_delete_crash_fixes | done | Two delete-path crashes fixed (mid-iteration mutation + trash-dir collision). Spec: commit `1ab5d56` + `a386713`. |
+| 011 | ui_library_consolidation | done | Post-010 refactor: de-leaked Telegram tokens, exporter seam cleanup, `ui_utils.py` split, `tests/` suite landed. Spec: `ai_docs/features/011_ui_library_consolidation.md`. |
+| 010 | outlet_render_rework | done | Shared `RenderPreset` drives native-size rendering; Telegram panel redesigned; 4-tier button system + `imgui-ui` skill produced. Spec: `ai_docs/features/010_outlet_render_rework.md`. |
+| 009 | integrations_rework | done | Telegram UX collapse: token+Connect in Settings, derived sticker-set names, share-tab pack CRUD, monochrome emoji picker. Spec: `ai_docs/features/009_integrations_rework.md`. |
+| 008 | uniform_input_shapes | done | Per-uniform input-shape pill + per-node uniform sort + engine-uniform collapse + accent tab styling. Spec: `ai_docs/features/008_uniform_input_shapes.md`. |
 | 007 | release_pipeline_hardening | done | `make release VERSION=` (semver bump + tag), `build.sh` gated on check+smoke + clean tree (`--allow-dirty`), `.zip` both platforms, Windows+Ubuntu CI, `BUILDING.md`. Spec: `ai_docs/features/007_release_pipeline_hardening.md`. |
 | 006 | inline_glsl_editor | done | Syntax-highlighted inline GLSL editor in the main window's left split; Ctrl+S saves + hot-reloads; visual-options popup; replaced the external-editor mechanism. Spec: `ai_docs/features/006_inline_editor.md`. |
 | 005 | ui_redesign_foundation | partial | Gruvbox theme + full color/size/spacing token sweep through `theme.py`. The wide-screen layout half was reverted to the feature-004 shape; only the theme survived. Spec: `ai_docs/features/005_ui_redesign_foundation.md`. |
@@ -73,9 +56,9 @@ feature; brief points at the superseder).
 | 003 | modelbox_removal | done | Wiped all ModelBox integration (HTTP client, settings UI, app-state fields, `requests` dep); app_state migration gen 3. Spec: `ai_docs/features/003_modelbox_removal.md`. |
 | 002 | ui_widgets_extraction | done | Three-layer split: `app.py` (state) / `ui.py` (orchestrator) / `widgets`+`popups`+`tabs` (pure draw fns); `ui.py` 1508 → 294. Spec: `ai_docs/features/002_ui_widgets_extraction.md`. |
 | 001 | exporter_refactor | done | `exporters/` subpkg — `Exporter` ABC + `RenderedArtifact` value type + registry; Telegram ported to own worker thread + asyncio loop + sticker UI. Spec: `ai_docs/features/001_exporter_refactor.md`. |
-| — | telegram_ipv4_fix | done | Telegram uploads failed with `httpx.ConnectError` on an IPv6-incapable VPN tunnel — ptb's default HTTP/2 client picks Telegram's IPv6 with no IPv4 fallback. Fixed by binding the bot to IPv4 (`_ipv4_request`, `local_address="0.0.0.0"`). Same wave: `Notifications.push` mirrors to loguru; bot-token log leak masked. Spec: commit `0ba11ff`. |
-| — | render_tab_refresh | done | Render sub-tab brought to the Node/Share standard: small-font label-column rows (`ui_primitives.label_row`/`row_label`), ghost-style resolution presets, `primary_button` Render (disabled until a file is chosen), preview drawn left of the controls with its box height measured from the controls group so the Render button's bottom aligns with the preview-box bottom (letterboxed, any aspect). All numeric sliders -> drags: `duration_slider` -> `duration_drag` (`drag_float`); FPS/Duration flipped to drags. Spec: commit `a716d24`. |
-| — | node_tab_polish | done | Node-tab uniform rows flipped to a left label-column layout (chip / dim name / capped control); two-line header grid (matching-uniform name under the resolution combo, jitter-free); separator cascade → calm gaps; resolution string de-pipe'd to `WxH (ratio) - name`. Fixed a text-uniform crash (full `char[N]` left no null terminator → `unicode_to_str` raised); `used/cap` shown on text/array rows. `small_caption` primitive + `theme.SIZE.UNIFORM_*` tokens. Spec: commit `62a6644`. |
+| — | telegram_ipv4_fix | done | Bound the Telegram bot to IPv4 to fix uploads on IPv6-dead networks. Spec: commit `0ba11ff`. |
+| — | render_tab_refresh | done | Render sub-tab brought to the Node/Share standard (label-column rows, ghost presets, drags-not-sliders). Spec: commit `a716d24`. |
+| — | node_tab_polish | done | Node-tab uniform layout polished + text-uniform crash fix. Spec: commit `62a6644`. |
 | — | editor_unfocused_dim | done | Code editor dims (`style.Alpha`) when it lacks keyboard focus; `EDITOR_UNFOCUSED_ALPHA` token in `theme.py`. Spec: commit `225076a`. |
 | — | hotkeys_extraction | done | Pulled the hotkey block out of `ui.py` into `hotkeys.py::process_hotkeys(app)`. Spec: commit `c7d6359`. |
 | — | smoke_test | done | `scripts/smoke.py` + `make smoke`: 200 headless frames of `update_and_draw`, asserts popup-mutex + `current_node_id` invariants. Spec: commit `92f221a`. |

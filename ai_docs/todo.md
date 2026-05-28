@@ -28,36 +28,6 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
 
 ---
 
-## [DEFERRAL] library file management UI (delete / rename / move)
-- **Trigger:** next session. The shader-library feature (015) ships with the
-  picker able to CREATE new lib files (`+ New library file`) but no in-app
-  delete / rename / move-between-subdirs / reveal-in-file-manager. Today the
-  user has to drop into the file system (`<app_data_dir>/lib/`) to clean up.
-- Scope when picked up:
-  - **Delete** with armed-confirm (pattern: `node_delete_armed` in `app.py`);
-    file goes to `<lib_root>/.trash/<name>` rather than `unlink` so a misclick
-    is recoverable. The mtime watcher already rebuilds the index on lib-root
-    changes, so dependent nodes pick up the missing function as a normal
-    "undeclared identifier" driver error — no special invalidation path needed.
-  - **Rename** with collision check (new name can't exist as a file). An open
-    `EditorSession` on the file must follow the rename: update the session's
-    `source.path`, re-key `editor_sessions` dict. The mtime watcher's
-    `compile_unit.sources` walk needs to handle a path that no longer exists
-    (today it just `continue`s; double-check that's still right).
-  - **Move into / out of subdir** is the same as rename (just `Path.rename`
-    across dirs); the resolver doesn't care about file structure since lookups
-    are by function name, not path.
-  - **Reveal in file manager** as an always-available escape hatch (uses the
-    same `xdg-open` / `explorer` / `open` pattern as `App.open_current_node_dir`).
-  - UI shape: probably a "Manage files" expander in the picker (per-file rows
-    with rename / delete / reveal actions), plus a quick "Reveal in file
-    manager" link in the per-function preview-pane caption. Decide during
-    implementation.
-- Touchpoints: `popups/lib_picker.py` (UI), `app.py` (rename plumbing on
-  `editor_sessions` re-key, the trash dir helper), `paths.py` (maybe a
-  `lib_trash_dir()` helper next to `lib_root()`).
-
-
 ## [DEFERRAL] cross-file uniform declaration jump (lib files)
 - **Trigger:** first user complaint that clicking a uniform name in the panel doesn't jump
   anywhere when the uniform happens to be declared in a lib file (not the node's own shader),
@@ -82,22 +52,16 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
 
 ## [DEFERRAL] export-from-selection (select function in editor → push to library)
 - **Trigger:** when copy-pasting a function from a node shader into a hand-edited lib file
-  becomes routine. Today the only way to add a function to the library is `Ctrl+P` → "New
-  library file" → write/paste the function manually.
-- The wanted UX (raised during 015 design): the user selects a function in their node shader,
-  presses a hotkey or menu action; the helper auto-prefixes the name with `SB_`, prompts for a
-  target lib file (existing or new), copies the function body, and removes it from the node
-  shader (optionally also auto-inserts a call site referencing the new name). Small enough to
-  be its own feature; spec when triggered.
+  becomes routine.
+- Today the only way to add a function is `Ctrl+P` → "New library file" → paste manually.
+  Spec when triggered.
 
 ## [DEFERRAL] multi-file editor — tab bar / file tree / split
 - **Trigger:** when "back to node" + Ctrl+P feels insufficient — i.e., the user keeps 3+ lib
   files open in rotation and wants to switch between them without re-opening via the picker.
-- Today the code pane shows ONE file at a time: either the current node's shader (default) or
-  a lib file (when `App._explicit_editor_path` is set, via `open_lib_file` from the picker). A
-  small "< back to node" link in the header is the only way back. The intended next step (spec
-  decision 8): a tab bar above the editor — pinned node-shader tab + N closable lib tabs.
-  Switching nodes pivots the pinned tab; lib tabs persist. Built when the trigger fires.
+- Today the code pane shows ONE file at a time (the node's shader or one lib file). Design
+  shape (pinned node-shader tab + closable lib tabs) is in `015_shader_include_library.md`
+  decision 8.
 
 ## [DEFERRAL] resolution combo parses (w,h) back out of its display label
 - **Trigger:** next time you change `util.get_resolution_str`'s format string (anything before
@@ -164,18 +128,11 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   (Decision 5) document the intended mapping for when the write path lands.
 
 ## [DEFERRAL] split `ui.py` / `app.py` further
-- **Trigger:** when editing `app.py` feels painful (search-and-replace across the file misses
-  something, or a method's blast radius is unclear because too many siblings share state), OR
-  when a 4th tab module needs cross-cutting `App` operations not currently on its public API.
-  NOT a default next-step — a 2026-05-15 parallel-agent assessment of `project.py` extraction
-  concluded the current `app.py` is coherent state on a single entity and the extraction would be
-  premature abstraction (same shape as feature 002's reversed AppContext).
-- Candidate shapes (if the trigger ever fires): `ProjectPaths` frozen dataclass (extract the 9
-  `@property` paths into a value type, `app.paths.nodes_dir` etc.) OR `shaderbox/project.py`
-  free functions taking `app: App` (`save` / `open_project` / `delete_current_node` /
-  `create_node_from_selected_template` / `select_next_*`). The two are orthogonal — paths are a
-  value domain, lifecycle is an action domain. `App` is the state-holder; widgets/popups/tabs/
-  hotkeys take `app: App` directly (no `AppContext` wrapper).
+- **Trigger:** when editing `app.py` feels painful (lost search-and-replace, unclear blast
+  radius), OR when a 4th tab module needs cross-cutting `App` operations not on its public API.
+- NOT a default next-step — a 2026-05-15 parallel-agent assessment concluded extraction would
+  be premature abstraction (same shape as feature 002's reversed AppContext). Spec when
+  triggered.
 
 ## [DEFERRAL] adopt `hello_imgui.apply_theme()` + `imgui-knobs` during UI/UX refactor
 - **Trigger:** when starting the planned UI/UX refactor with custom themes — i.e. the moment a
@@ -217,16 +174,10 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   deferred until the warning is shown to actually cost a user.
 
 ## [DEFERRAL] in-app replay mechanism (debug)
-- **Trigger:** next time you hit a multi-step bug that's painful to reproduce manually, or when
-  you want to share a repro with future-you.
-- Add a "Debug → Replays" UI surface that lists JSON files from `replays/`, plays them back by
-  injecting synthetic actions into the existing hotkey/button code paths. DSL (rough): list of
-  `{frame, action: hotkey|click|assert, ...}` dicts. Intercept points: imgui io-state setting
-  for hotkeys (reuse `shaderbox/hotkeys.py::process_hotkeys` as-is),
-  thin `replay_aware_button(label)` wrapper for clicks (or globally wrap `imgui.button` in
-  replay mode). Not a test framework — for manual debugging / shareable repros (the headless
-  smoke test in `scripts/smoke.py` is the right tool for actual regression testing). Probably
-  worth a small feature spec before building (touches imgui boundary, adds UI surface).
+- **Trigger:** next time you hit a multi-step bug painful to reproduce manually, or want to
+  share a repro with future-you.
+- Manual-debug / shareable-repro tool (not a test framework — `scripts/smoke.py` covers
+  regression). Spec before building; touches imgui boundary + adds UI surface.
 
 ## [DEFERRAL] Telegram has no import-existing-pack path
 - **Trigger:** first user report of wanting to target a sticker pack ShaderBox did NOT create (a
@@ -241,11 +192,11 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
 ## [DEFERRAL] color emoji rendering in the picker (monochrome-only ceiling)
 - **Trigger:** a future `imgui-bundle` bump — re-run a color-emoji spike (load `NotoColorEmoji.ttf`
   with the FreeType `LoadColor` path, render a row of faces in the glfw backend). If color glyphs
-  render instead of blank, swap the picker's font + bump `conventions.md ## Known quirks`.
+  render instead of blank, swap the picker's font + bump the `/imgui-ui` skill §8.
 - Feature 009's emoji picker is monochrome (`NotoEmoji-Regular.ttf`) because this imgui-bundle
   build (1.92.801) renders NotoColorEmoji as blank glyphs even with `LoadColor` + the bundled
   plutosvg (spike-confirmed 2026-05-23). The chosen emoji still uploads to Telegram in full color —
-  only the in-app picker preview is monochrome. See `conventions.md ## Known quirks`.
+  only the in-app picker preview is monochrome. See `/imgui-ui` skill §8.
 
 ## [DEFERRAL] `UINodeState` drops a node on an invalid known-key VALUE
 - **Trigger:** next time you narrow a `UINodeState` Literal (e.g. add/remove a `UniformSortKey` /

@@ -49,7 +49,7 @@ the size inline and the user corrects.
   symbol from an upstream module that already imports the new module), the convention's
   no-`TYPE_CHECKING` rule will force a structural split — anticipate it in the spec
   ("module X holds the type; module Y holds the orchestration"), don't discover it at
-  impl time. Feature 002 surfaced this — see its post-impl reversal trail.
+  impl time. (Worked example: feature 002's spec.)
 
 The non-mid sizes are judged per situation: the agent proposes "this looks tiny — 1 reviewer, no
 manual check" or "this is high-blast-radius — 2 pre + 3 post + a spec-fidelity pass", and the user
@@ -102,6 +102,16 @@ corrects.
    know the full surface, reads every changed file end-to-end, and states which it skipped and why (a
    finding list without a coverage statement = under-read). Findings → triage → fix inline / file as
    `todo.md` deferral with a trigger / promote new design decisions to `conventions.md ## Design decisions`.
+   The "2-3" is a FLOOR for a mid feature, not a ceiling — for high-blast-radius diffs, finalize
+   sweeps, or a docs-harness audit, escalate to a larger parallel **swarm run as a convergence
+   loop** (spawn all reviewers in one message; triage real-vs-false-positive; re-spawn the same
+   reviewers against the patched state; repeat until every reviewer returns PASS). The mechanics
+   + the late-round-fabricated-gaps warning are the canonical home of the `/review-agent-loop`
+   skill (global) — don't restate them here. One hard-won rule worth repeating: at least one
+   reviewer must anchor to an artifact you did NOT author (a sibling file, the running app, the
+   user's verbatim message) — an all-self-authored swarm ratifies its own contradictions (a
+   docs-audit swarm this project ran missed a spec whose Resolution block contradicted its own
+   Decisions, precisely because no reviewer cross-checked the two).
 
 7. **Manual check** (when user-visible — most ShaderBox features). Run the app
    (`uv run python ./shaderbox/ui.py`), exercise the change, screenshot if useful. A real UX gap
@@ -119,7 +129,7 @@ corrects.
 
 ## Mid-flight escalation
 
-Three rules (the one whose absence produces the worst outcome — an agent quietly turning a small fix
+Four rules (the one whose absence produces the worst outcome — an agent quietly turning a small fix
 into a refactor):
 
 1. **Scope grew** → halt, propose to the user, don't quietly grow. Say exactly what's bigger and ask
@@ -128,6 +138,11 @@ into a refactor):
    spec to satisfy the letter of conventions while violating the spirit.
 3. **A blocking open question** → robust default (see step 5), or escalate the trade-off if the
    robust path is hugely out of scope.
+4. **A locked UI/visual decision proves wrong once rendered** → a rebuild is allowed without a full
+   re-lock (you genuinely can't judge a layout on paper), BUT record the reversal in the spec's
+   Review-history AND surface it to the user in the same wave — don't bury it as a fait accompli in
+   the Design-decisions, and don't leave the old decision's Resolution/notes contradicting the new
+   shape (that's how a spec ends up self-contradicting).
 
 ---
 
@@ -169,7 +184,8 @@ roadmap-banner touch (if even that) + the cold-context glance is enough; for a f
   `is_available -> False` (the UI gates on it). Adding a new exporter: subclass `Exporter`, register
   in `App.__init__`. The thread-affinity contract (worker thread MUST NOT touch moderngl) is enforced by design.
 - **`integrations.py`** — global `IntegrationsStore` (bot token / linked user / pack list) at
-  `app_data_dir()/integrations.json`. **`paths.py`** — `app_data_dir()` (leaf, no `App` import).
+  `app_data_dir()/integrations.json`. **`paths.py`** — `app_data_dir()`, `lib_root()`,
+  `lib_trash_dir()` (leaf, no `App` import).
   **`telegram_util.py`** — `derive_set_name(title, bot_username)` (pure). **`emoji_data.py`** —
   parses the vendored `resources/emoji/emoji-test.txt` into ordered groups for the picker.
 - **`tabs/`** — `draw(app: App)`-shaped UI modules (imgui calls only) + optional
@@ -180,14 +196,17 @@ roadmap-banner touch (if even that) + the cold-context glance is enough; for a f
 - **`widgets/`** — stateless imgui-drawing functions taking `app: App`. Shape per widget fits its
   job (no shared contract). Modules: `details.py`, `media_ops.py`, `node_grid.py`, `uniform.py`.
 - **`popups/`** — popup `draw(app: App)` free functions. Open/closed state lives on `App` as
-  `is_node_creator_open` / `is_settings_open` / `is_emoji_picker_open` (helpers `app.open_*()`
-  enforce mutual exclusion; `scripts/smoke.py` asserts ≤1 open). Modules: `node_creator.py`,
-  `settings.py` (global target FPS + the inline editor's visual options, applied via
-  `app.apply_editor_settings()` on popup close + the **Integrations** section drawing each
-  exporter's credential block), `emoji_picker.py` (monochrome glyph grid in Unicode/Telegram order).
+  `is_node_creator_open` / `is_settings_open` / `is_emoji_picker_open` / `is_lib_picker_open`
+  (helpers `app.open_*()` enforce mutual exclusion; `scripts/smoke.py` asserts ≤1 open).
+  Modules: `node_creator.py`, `settings.py` (global target FPS + the inline editor's visual
+  options, applied via `app.apply_editor_settings()` on popup close + the **Integrations**
+  section drawing each exporter's credential block), `emoji_picker.py` (monochrome glyph grid
+  in Unicode/Telegram order), `lib_picker.py` (unified tree+preview lib browser with
+  right-click context menus for file/dir/function actions).
 - **`fonts.py`** — freetype → GL atlas. **`ui_primitives.py`** (imgui+theme draw helpers: button
-  tiers + shared draw primitives — read the file for the set) / **`util.py`**
-  (non-UI helpers: `adjust_size`, `select_next_value`, `get_uniform_hash`, `pfd_block`, …) /
+  tiers + shared draw primitives — read the file for the set; includes `context_menu_style()` +
+  `pill_button` used by the lib picker) / **`util.py`** (non-UI helpers: `adjust_size`,
+  `select_next_value`, `get_uniform_hash`, `pfd_block`, `open_in_file_manager`, …) /
   **`constants.py`** / **`notifications.py`** — helpers.
 - **`scripts/smoke.py`** — headless smoke test (see `## Recipes > make smoke`). Not part of
   `shaderbox/` proper; one-off script that imports `App` + `update_and_draw` and runs frames in
@@ -297,8 +316,8 @@ Footguns (each cost a real failure this session):
 
 ## Documentation discipline
 
-The headline list lives in `CLAUDE.md ## Documentation discipline` (always-loaded); the rationale +
-banned-pattern detail lives here (read at the moment you author a doc). These rules keep the docs
+This section is the canonical home for documentation discipline (read it at the moment you author
+or edit a doc; `CLAUDE.md`'s "Code rules" only points here). These rules keep the docs
 **robust** (failures loud), **smooth** (no re-deriving rules), **cold-reloadable** (a fresh agent
 finds "what's next?" in a few reads), **unbiased** (resists sympathetic reading). **The leftovers
 train the next entry** — agents pattern-match on what's already in a file far harder than on a rule
@@ -370,3 +389,7 @@ Why the docs are shaped this way. Short list, kept honest:
 - **Robust defaults on blocking open questions.** No shim, no "we'll fix it later" — default to the
   robust answer; only shortcut if the robust path is hugely out of scope, and then surface the
   trade-off so the user can choose.
+- **Audit before "done" on big sweeps.** A substantial refactor, a docs-harness sweep, a
+  multi-file feature → don't self-certify with one read. Spawn an adversarial review swarm anchored
+  to a checklist (`/review-agent-loop`), converge, THEN declare done. A sympathetic single pass is
+  how a "done" stamp lands on incomplete work.

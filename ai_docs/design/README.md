@@ -1,14 +1,20 @@
 # shaderbox · design deliverables · v1
 
+> **STATUS: ARCHIVED.** This is the feature-005 design pass. Only the **gruvbox theme** survived
+> into the app (`shaderbox/theme.py`); the wide-screen **layout** half was reverted (roadmap row
+> 005 = `partial`). Treat this folder as a point-in-time visual-rationale snapshot, NOT a live
+> backlog — the `SPEC.md` 8-PR adoption plan and the layout intent are shelved. The live theme
+> source of truth is `shaderbox/theme.py`, which has since diverged from `tokens.json` below.
+
 Everything in this folder is what the design pass produced. Read in this order:
 
-1. **`prototype.html`** (in this folder) — canonical visual + interaction source-of-truth. Open it in a browser; toggle the Tweaks panel (⚙ top-right) to preview accent / density / rounding / editor-side variants and the compile-error demo state. Every pixel value and color in here is intentional — grep CSS variables for the exact tokens.
+1. **`prototype.html`** (in this folder) — the visual rationale for the surviving gruvbox skin. Open it in a browser; toggle the Tweaks panel (⚙ top-right) to preview accent / density / rounding variants.
 
-2. **[`SPEC.md`](./SPEC.md)** — the bridge document. Per-panel layout intent + imgui call sequences + the new custom-draw effects + a suggested 8-PR adoption sequence.
+2. **[`SPEC.md`](./SPEC.md)** — the original bridge document (per-panel layout intent + an 8-PR adoption plan). Shelved; kept for rationale.
 
-3. **[`tokens.json`](./tokens.json)** — machine-readable token surface (colors, sizes, spacing, rounding, fonts). Source-of-truth for both `theme.py` and `prototype.html` — keep them in sync.
+3. **[`tokens.json`](./tokens.json)** — the design pass's token surface. **Archived snapshot, NOT synced** — `shaderbox/theme.py`'s palette ramp has diverged from it. Don't treat it as authoritative.
 
-4. **[`theme.py`](./theme.py)** — drop-in Python for `imgui-bundle 1.92.x`. Exposes `apply_theme()`, `COLOR`, `SIZE`, `SPACE` and `load_fonts()`. Re-callable at runtime to swap accent / density / rounding from a Tweaks panel.
+4. **`shaderbox/theme.py`** (in the package, not this folder) — the live, drop-in theme: `apply_theme()`, `COLOR`, `SIZE`, `SPACE`. Re-callable at runtime to swap accent / density / rounding.
 
 ## Quick-start (literal Day-1 integration)
 
