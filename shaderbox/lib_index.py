@@ -256,7 +256,9 @@ def _extract_functions(source: ShaderSource) -> list[LibFunction]:
         # GLSL keywords + common type names. We don't need a perfect filter; the
         # transitive close at compile time intersects with the lib index, which
         # is the real filter.
-        body_idents = set(_IDENT_RE.findall("\n".join(stripped_lines[i : body_end + 1])))
+        body_idents = set(
+            _IDENT_RE.findall("\n".join(stripped_lines[i : body_end + 1]))
+        )
         body_idents.discard(name)
         # Doc-comment block: contiguous `///` lines immediately above.
         doc = _extract_doc(raw_lines, i)

@@ -102,7 +102,10 @@ def draw(app: App) -> None:
         if imgui.button("< back to node", size=(SIZE.BTN_SM_W * 1.5, 0)):
             app.show_node_editor()
     else:
-        # Header for node mode: full path + dirty/compiled status + Open dir.
+        # Header for node mode: full path + dirty/compiled status + Open dir +
+        # optional "back to lib" shortcut to return to the most recently viewed
+        # lib file (useful when iterating on a function in a lib + testing it
+        # in a node).
         full_file_path = ui_node.node.source.path
         local_file_path = full_file_path.relative_to(app.project_dir)
         if draw_copyable_text(str(local_file_path), copy_value=str(full_file_path)):
@@ -116,6 +119,12 @@ def draw(app: App) -> None:
         imgui.same_line(spacing=float(SPACE.LG))
         if imgui.button("Open dir", size=(SIZE.BTN_SM_W, 0)):
             app.open_current_node_dir()
+        if app.last_lib_path is not None and app.last_lib_path.exists():
+            imgui.same_line()
+            if imgui.button(
+                f"back to {app.last_lib_path.name} >", size=(SIZE.BTN_SM_W * 1.8, 0)
+            ):
+                app.open_lib_file(app.last_lib_path)
 
     imgui.spacing()
 

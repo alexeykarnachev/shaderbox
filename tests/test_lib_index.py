@@ -186,9 +186,7 @@ def test_no_usage_passes_through_unchanged(tmp_path: Path) -> None:
 
 def test_single_function_used(tmp_path: Path) -> None:
     lib = tmp_path / "lib"
-    idx = _make_lib(
-        lib, {"hash.glsl": "float SB_hash(vec2 p) { return 0.5; }\n"}
-    )
+    idx = _make_lib(lib, {"hash.glsl": "float SB_hash(vec2 p) { return 0.5; }\n"})
     root = _write(
         tmp_path / "root.glsl",
         "#version 460 core\nvoid main() { float h = SB_hash(vec2(0.0)); }\n",
@@ -271,10 +269,12 @@ def test_preamble_inserted_after_version_directive(tmp_path: Path) -> None:
     # `#version` must be the first non-blank line.
     assert lines[0].startswith("#version")
     # The preamble (`#line ...` + lib body) follows; `void main` comes after.
-    version_idx = next(i for i, l in enumerate(lines) if l.startswith("#version"))
-    extension_idx = next(i for i, l in enumerate(lines) if l.startswith("#extension"))
-    sb_x_idx = next(i for i, l in enumerate(lines) if "SB_x()" in l and "return" in l)
-    main_idx = next(i for i, l in enumerate(lines) if "void main()" in l)
+    version_idx = next(i for i, ln in enumerate(lines) if ln.startswith("#version"))
+    extension_idx = next(i for i, ln in enumerate(lines) if ln.startswith("#extension"))
+    sb_x_idx = next(
+        i for i, ln in enumerate(lines) if "SB_x()" in ln and "return" in ln
+    )
+    main_idx = next(i for i, ln in enumerate(lines) if "void main()" in ln)
     assert version_idx < extension_idx < sb_x_idx < main_idx
 
 
@@ -284,8 +284,7 @@ def test_resolve_error_on_lib_cycle(tmp_path: Path) -> None:
         lib,
         {
             "loop.glsl": (
-                "float SB_a() { return SB_b(); }\n"
-                "float SB_b() { return SB_a(); }\n"
+                "float SB_a() { return SB_b(); }\n" "float SB_b() { return SB_a(); }\n"
             )
         },
     )
@@ -325,9 +324,7 @@ def test_line_markers_thread_through_source_map(tmp_path: Path) -> None:
 
 def test_subdirectory_function_resolves(tmp_path: Path) -> None:
     lib = tmp_path / "lib"
-    idx = _make_lib(
-        lib, {"noise/perlin.glsl": "float SB_perlin() { return 0.0; }\n"}
-    )
+    idx = _make_lib(lib, {"noise/perlin.glsl": "float SB_perlin() { return 0.0; }\n"})
     root = _write(tmp_path / "root.glsl", "void main() { SB_perlin(); }\n")
     flattened, sources, _smap, errors = resolve_usage(root, idx)
     assert errors == []

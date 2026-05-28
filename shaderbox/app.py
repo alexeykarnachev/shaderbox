@@ -20,8 +20,10 @@ from shaderbox.exporters.registry import ExporterRegistry
 from shaderbox.exporters.telegram import TelegramExporter
 from shaderbox.exporters.youtube import YouTubeExporter
 from shaderbox.integrations import IntegrationsStore
+from shaderbox.lib_favorites import LibFavoritesStore
 from shaderbox.lib_index import LibIndex
 from shaderbox.lib_index import set_active as set_active_lib_index
+from shaderbox.lib_tags import LibTagsStore
 from shaderbox.notifications import Notifications
 from shaderbox.paths import app_data_dir, lib_root
 from shaderbox.shader_source import ShaderSource
@@ -128,6 +130,9 @@ class App:
         ini_path: Path = app_data_dir() / "imgui.ini"
         ini_path.parent.mkdir(parents=True, exist_ok=True)
         imgui.get_io().set_ini_filename(str(ini_path))
+        # Steady caret, no blink — applies to imgui input fields and (if honored
+        # by the binding) the TextEditor widget too.
+        imgui.get_io().config_input_text_cursor_blink = False
         apply_theme(imgui.get_style())
         self.window = window
         self.imgui_renderer = GlfwRenderer(window)
@@ -161,6 +166,20 @@ class App:
         self.is_lib_picker_open: bool = False
         self.emoji_picker_query: str = ""
         self.lib_picker_query: str = ""
+        # 0..N-1 = highlighted row in the picker list. Arrow up/down wraps
+        # through the list; the search input stays keyboard-focused, so there's
+        # no "input is the selection" state.
+        self.lib_picker_selected_idx: int = 0
+        # One-shot: set on open, consumed on the first draw frame to focus the
+        # search field + reset selection.
+        self.lib_picker_just_opened: bool = False
+        # Filter modes: only-favorites toggle + disabled tags. Tags are enabled
+        # by default; the user clicks a pill to DISABLE it. A function passes if
+        # it has at least one still-enabled tag, OR it has no tags at all.
+        self.lib_picker_favs_only: bool = False
+        self.lib_picker_disabled_tags: set[str] = set()
+        # Inline "add tag" buffer in the preview pane's tag editor.
+        self.lib_picker_new_tag_buf: str = ""
         # Where a picked emoji is delivered (set by whoever opens the picker).
         self.emoji_pick_target: Callable[[str], None] | None = None
         self.node_delete_armed: str = ""  # node id pending delete-confirm
@@ -186,10 +205,18 @@ class App:
         # When non-None, the editor pane shows this file instead of the current
         # node's shader. Set by `open_lib_file` / cleared by `show_node_editor`.
         self._explicit_editor_path: Path | None = None
+        # The most recently viewed lib file (kept so the code pane can offer a
+        # "back to lib" shortcut while showing the node shader). Set by
+        # `open_lib_file`; never cleared by `show_node_editor`.
+        self.last_lib_path: Path | None = None
 
         # The currently-active library index. Populated by rebuild_lib_index()
         # (called from _init below + the mtime watcher on lib changes).
         self.lib_index: LibIndex = LibIndex.empty()
+        # Cross-project favorites (function names the user has starred).
+        self.lib_favorites: LibFavoritesStore = LibFavoritesStore.load()
+        # Cross-project tags (function_name -> set of tag strings).
+        self.lib_tags: LibTagsStore = LibTagsStore.load()
 
         self._init(project_dir, seed_starter=is_first_launch)
 
@@ -223,6 +250,8 @@ class App:
     def open_lib_picker(self) -> None:
         self.is_lib_picker_open = True
         self.lib_picker_query = ""
+        self.lib_picker_selected_idx = 0
+        self.lib_picker_just_opened = True
         self.is_node_creator_open = False
         self.is_settings_open = False
         self.is_emoji_picker_open = False
@@ -391,6 +420,8 @@ class App:
         # If the session already existed, its `source` may be stale (a previous
         # mtime sync would have refreshed it; either way it's safe to leave).
         self._explicit_editor_path = source.path
+        # Remember the lib for the "back to lib" shortcut in node-editor mode.
+        self.last_lib_path = source.path
         return session
 
     def show_node_editor(self) -> None:

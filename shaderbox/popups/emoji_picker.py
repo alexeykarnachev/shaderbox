@@ -17,7 +17,11 @@ def draw_emoji_picker(app: App) -> None:
     if not imgui.is_popup_open(_LABEL):
         imgui.open_popup(_LABEL)
 
-    imgui.set_next_window_size(imgui.ImVec2(_POPUP_W, _POPUP_H), imgui.Cond_.appearing)
+    # `first_use_ever` (not `appearing`): seed once, then imgui.ini persists the
+    # user's manual resize across re-opens. `appearing` would clobber it.
+    imgui.set_next_window_size(
+        imgui.ImVec2(_POPUP_W, _POPUP_H), imgui.Cond_.first_use_ever
+    )
     with imgui_ctx.begin_popup_modal(_LABEL) as popup:
         if not popup.visible:
             return

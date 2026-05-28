@@ -78,6 +78,7 @@ belong in the feature spec (`ai_docs/features/NNN_*.md`). This file is not a cha
   organizational convention, not a polymorphic contract — no `Widget` ABC, no shared return shape;
   each gets the shape that fits its job. (An `AppContext` wrapper was tried and reverted — passing
   `app` gave every claimed benefit.) Revisit if a polymorphic `list[Widget]` dispatcher materializes.
+- **Popup modal size: always `Cond_.first_use_ever`, never `Cond_.appearing`.** `set_next_window_size(..., Cond_.first_use_ever)` seeds the size once; subsequent reopens read the user's manual resize from `imgui.ini` (persisted to `app_data_dir() / "imgui.ini"`). `Cond_.appearing` clobbers the saved size on every reopen — the user's drag-resize visibly resets every time. Applies to every `begin_popup_modal` / `begin_popup` in `popups/*.py`. Revisit if a popup genuinely needs to force a fixed size.
 - **`popups/*.py`: free `draw(app: App)` functions; open/closed state lives on `App` as booleans.**
   Each `app.open_*()` helper sets its own flag True and clears ALL siblings — the "at most one popup
   open" invariant; keep it when adding a popup. `app.any_popup_open()` is the render-gate question.
