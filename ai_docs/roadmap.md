@@ -27,10 +27,13 @@ feature; brief points at the superseder).
 
 **As of 2026-05-28.**
 
-- **On `dev` (unshipped): features 014 + 015 + 016** — shader library + lib file management UI.
-- **Shipped: `v0.9.0`** (feature 013 — authoring feedback loop).
-- **NEXT ACTION:** maintainer live-app sanity on 016 (the 19-step verification list in the
-  spec). After that — ship as minor; 014+15+16 only add optional state.
+- **Shipped: `v0.10.0`** (features 014 + 015 + 016 — shader library + lib file management UI).
+  `dev` == `master`, nothing unshipped.
+- The shader library: write `SB_*` helpers in `<app_data_dir>/lib/`, call them by name, `Ctrl+P`
+  to browse/insert; manage lib files (tree + right-click context menus) from the picker.
+- **NEXT ACTION:** none queued — pick the next feature from `todo.md` triggers or a fresh ask.
+- **itch store page (`page.yaml`) not yet updated for the shader library** — flagged at ship
+  time; do a `## Sync the itch.io page` pass when convenient.
 - **No open BLOCKERs.**
 
 ## Features
