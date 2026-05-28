@@ -9,6 +9,7 @@ from loguru import logger
 
 from shaderbox.app import App
 from shaderbox.hotkeys import process_hotkeys
+from shaderbox.lib_index import is_lib_path
 from shaderbox.paths import app_data_dir, lib_root
 from shaderbox.popups.emoji_picker import draw_emoji_picker
 from shaderbox.popups.lib_picker import draw_lib_picker
@@ -112,9 +113,14 @@ def _reload_if_changed(app: App, name: str, ui_node: UINode) -> None:
 def _maybe_rebuild_lib_index(app: App) -> bool:
     # Detect lib-root changes: file added, removed, or mtime bumped. If anything
     # changed, rebuild the index. Cheap: one glob + N stats per frame.
+    # `is_lib_path` keeps `.trash/` (and any future dot-dir) out — must match
+    # the filter LibIndex.build applies, or current vs cached would diverge
+    # every frame on trashed files and loop rebuilds forever.
     root = lib_root()
     current: dict[str, float] = {}
     for path in root.glob("**/*.glsl"):
+        if not is_lib_path(path, root):
+            continue
         try:
             current[str(path)] = path.lstat().st_mtime
         except OSError:
@@ -274,6 +280,9 @@ def _draw_menu_bar(app: App) -> None:
         with imgui_ctx.begin_menu("Edit") as edit_menu:
             if edit_menu and imgui.menu_item("Settings...", "Alt+S", False)[0]:
                 app.open_settings()
+        with imgui_ctx.begin_menu("Library") as lib_menu:
+            if lib_menu and imgui.menu_item("Browse...", "Ctrl+P", False)[0]:
+                app.open_lib_picker()
 
 
 def _draw_splitter(app: App, total_width: float, height: float) -> None:

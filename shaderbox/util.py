@@ -1,6 +1,8 @@
 import hashlib
 import math
+import platform
 import re
+import subprocess
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -110,6 +112,19 @@ def pfd_block(dialog: Any) -> Any:
     while not dialog.ready(20):
         pass
     return dialog.result()
+
+
+def open_in_file_manager(path: Path) -> None:
+    # `xdg-open <file>` opens the file in its default app, not the OS file
+    # manager — so we open the parent dir when `path` is a file.
+    target = path if path.is_dir() else path.parent
+    system = platform.system()
+    if system == "Windows":
+        subprocess.Popen(["explorer", str(target)], start_new_session=True)
+    elif system == "Darwin":
+        subprocess.Popen(["open", str(target)], start_new_session=True)
+    else:
+        subprocess.Popen(["xdg-open", str(target)], start_new_session=True)
 
 
 def format_auto_value(value: object) -> str:

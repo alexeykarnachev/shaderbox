@@ -1,27 +1,26 @@
-from imgui_bundle import imgui, imgui_ctx
+from imgui_bundle import imgui
 
 from shaderbox.app import App
 from shaderbox.theme import COLOR, SIZE, SPACE
+from shaderbox.ui_primitives import ghost_button, modal_window, primary_button
 
 _LABEL = "New node##popup"
+_POPUP_W = 490.0
+_POPUP_H = 530.0
 
 
 def draw_node_creator(app: App) -> None:
     if not app.is_node_creator_open:
         return
-
-    if not imgui.is_popup_open(_LABEL):
-        imgui.open_popup(_LABEL)
-
-    with imgui_ctx.begin_popup_modal(_LABEL) as popup:
-        if popup.visible and not _draw_body(app):
+    with modal_window(_LABEL, (_POPUP_W, _POPUP_H)) as visible:
+        if not visible:
+            return
+        if not _draw_body(app):
             app.is_node_creator_open = False
             imgui.close_current_popup()
 
 
 def _draw_body(app: App) -> bool:
-    imgui.text("Select template:")
-
     is_template_selected = False
 
     preview_size = SIZE.THUMB_LG
@@ -46,14 +45,22 @@ def _draw_body(app: App) -> bool:
         else:
             imgui.spacing()
 
-    imgui.new_line()
+    imgui.dummy((0.0, float(SPACE.MD)))
 
-    is_keep_opened: bool = True
-    if imgui.button("Create", size=(SIZE.BTN_SM_W, 0)) and is_template_selected:
+    # Enter on a selected template commits (matching the picker's Enter→Insert);
+    # the modal's own Esc auto-closes via imgui.
+    enter_create = is_template_selected and imgui.is_key_pressed(
+        imgui.Key.enter, repeat=False
+    )
+
+    keep_open = True
+    imgui.begin_disabled(not is_template_selected)
+    create_clicked = primary_button("Create")
+    imgui.end_disabled()
+    if (create_clicked or enter_create) and is_template_selected:
         app.create_node_from_selected_template()
-        is_keep_opened = False
-
+        keep_open = False
     imgui.same_line()
-    is_keep_opened &= not imgui.button("Cancel", size=(SIZE.BTN_SM_W, 0))
-
-    return is_keep_opened
+    if ghost_button("Cancel"):
+        keep_open = False
+    return keep_open

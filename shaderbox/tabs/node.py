@@ -4,7 +4,7 @@ from imgui_bundle import imgui, imgui_ctx
 from OpenGL.GL import GL_SAMPLER_2D
 
 from shaderbox.app import App
-from shaderbox.theme import SIZE, SPACE
+from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_models import (
     UIUniform,
     UniformSortKey,
@@ -13,7 +13,7 @@ from shaderbox.ui_models import (
 )
 from shaderbox.ui_primitives import button, ghost_button, small_caption
 from shaderbox.util import format_auto_value, get_resolution_str, get_uniform_hash
-from shaderbox.widgets.uniform import draw_ui_uniform
+from shaderbox.widgets.uniform import draw_ui_uniform, uniform_name_label
 
 
 def _section_break() -> None:
@@ -23,12 +23,23 @@ def _section_break() -> None:
 
 
 def _draw_auto_row(app: App, uniforms: list[UIUniform]) -> None:
+    # Engine-driven uniforms (u_time / u_aspect / u_resolution): one inline row,
+    # each name a blue clickable label that participates in the same code↔panel
+    # hover + jump-to-declaration bridge as regular uniforms. Value renders dim
+    # next to the name (read-only — the engine sets it every frame).
     ui_node = app.ui_nodes[app.current_node_id]
-    parts = [
-        f"{u.name}: {format_auto_value(ui_node.node.uniform_values.get(u.name))}"
-        for u in uniforms
-    ]
-    small_caption(app.font_12, "   ".join(parts))
+    imgui.push_font(app.font_12, app.font_12.legacy_size)
+    for i, u in enumerate(uniforms):
+        if i > 0:
+            imgui.same_line(spacing=float(SPACE.LG))
+        name_w = imgui.calc_text_size(u.name).x
+        uniform_name_label(
+            app, u.name, name_w, text_color=COLOR.STATE_INFO, accent=COLOR.STATE_INFO
+        )
+        imgui.same_line(spacing=float(SPACE.MD))
+        value = ui_node.node.uniform_values.get(u.name)
+        imgui.text_colored(COLOR.FG_DIM, format_auto_value(value))
+    imgui.pop_font()
 
 
 def draw(app: App) -> None:

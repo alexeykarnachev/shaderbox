@@ -13,8 +13,10 @@ After creating the imgui context and BEFORE the first frame::
 At runtime (Tweaks panel callbacks, future feature 009), call ``apply_theme(...)``
 again with new args to re-skin. The function is idempotent.
 
-Every color / size / spacing value comes from ``ai_docs/design/tokens.json`` —
-keep the two in sync.
+This module is the live source of truth for the theme. (It originated from the
+feature-005 design pass; the palette ramp has since diverged from that pass's
+``ai_docs/design/tokens.json`` — that file is an archived snapshot, not a synced
+source.)
 """
 
 from typing import Literal
@@ -132,6 +134,11 @@ class _ColorBag:
     STATE_ERROR: tuple[float, float, float, float] = _P["red_b"]
     STATE_INFO: tuple[float, float, float, float] = _P["blue_b"]
 
+    # picker-specific roles
+    TAG: tuple[float, float, float, float] = _P["blue_b"]
+    FAVS: tuple[float, float, float, float] = _P["yellow_b"]
+    RESET_PILL: tuple[float, float, float, float] = _P["purple_n"]
+
     # syntax (for imgui_color_text_edit palette wiring; feature 006)
     SYN_KEYWORD: tuple[float, float, float, float] = _P["red_b"]
     SYN_TYPE: tuple[float, float, float, float] = _P["yellow_b"]
@@ -191,7 +198,8 @@ class SIZE:
     SHARE_PREVIEW_H: int = 310
 
     FPS_PANEL_W: int = 160
-    SETTINGS_W: int = 420
+    SETTINGS_W: int = 780
+    SETTINGS_H: int = 484
     SETTINGS_LABEL_W: int = 92
     SETTINGS_CTRL_W: int = 120
 

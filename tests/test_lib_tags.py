@@ -30,9 +30,7 @@ def test_add_and_query(monkeypatch: Any, tmp_path: Path) -> None:
     assert not store.has_tag("SB_hash", "nope")
 
 
-def test_remove_drops_function_when_empty(
-    monkeypatch: Any, tmp_path: Path
-) -> None:
+def test_remove_drops_function_when_empty(monkeypatch: Any, tmp_path: Path) -> None:
     _isolate_app_data(monkeypatch, tmp_path)
     store = LibTagsStore()
     store.add("SB_x", "a")
@@ -81,9 +79,7 @@ def test_persistence_roundtrip(monkeypatch: Any, tmp_path: Path) -> None:
     assert reloaded.tags_for("SB_b") == frozenset({"color"})
 
 
-def test_unreadable_json_returns_empty(
-    monkeypatch: Any, tmp_path: Path
-) -> None:
+def test_unreadable_json_returns_empty(monkeypatch: Any, tmp_path: Path) -> None:
     _isolate_app_data(monkeypatch, tmp_path)
     (tmp_path / "lib_tags.json").write_text("not valid json {")
     store = LibTagsStore.load()

@@ -82,6 +82,8 @@ class LibIndex:
         if not lib_root.exists():
             return cls(functions=functions, sources=sources)
         for path in sorted(lib_root.glob("**/*.glsl")):
+            if not is_lib_path(path, lib_root):
+                continue
             try:
                 source = ShaderSource.load(path)
             except OSError:
@@ -94,6 +96,18 @@ class LibIndex:
                 if fn.name not in functions:
                     functions[fn.name] = fn
         return cls(functions=functions, sources=sources)
+
+
+def is_lib_path(path: Path, lib_root: Path) -> bool:
+    # Exclude any path under a dot-prefixed dir (e.g. `.trash/`). `Path.glob`
+    # walks into dot-dirs by default; both the LibIndex build and the mtime
+    # watcher's independent glob walk MUST apply this same filter or the
+    # current/cached dict comparison loops rebuilds forever on trashed files.
+    try:
+        rel = path.relative_to(lib_root)
+    except ValueError:
+        return False
+    return not any(part.startswith(".") for part in rel.parts)
 
 
 _ACTIVE_INDEX: LibIndex = LibIndex.empty()

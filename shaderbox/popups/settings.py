@@ -1,8 +1,8 @@
-from imgui_bundle import imgui, imgui_ctx
+from imgui_bundle import imgui
 
 from shaderbox.app import App
 from shaderbox.theme import COLOR, SIZE, SPACE
-from shaderbox.ui_primitives import ghost_button, label_row
+from shaderbox.ui_primitives import ghost_button, label_row, modal_window
 
 _LABEL = "Settings##popup"
 
@@ -10,18 +10,12 @@ _LABEL = "Settings##popup"
 def draw_settings(app: App) -> None:
     if not app.is_settings_open:
         return
-
-    if not imgui.is_popup_open(_LABEL):
-        imgui.open_popup(_LABEL)
-
-    # first_use_ever (not appearing): seed the size once, then let the user resize
-    # and imgui's .ini persist it — appearing would clobber the saved size on every
-    # reopen (and on return from a native file dialog), which read as a blink/reset.
-    imgui.set_next_window_size(
-        (float(SIZE.SETTINGS_W), 0.0), imgui.Cond_.first_use_ever
-    )
-    with imgui_ctx.begin_popup_modal(_LABEL) as popup:
-        if popup.visible and not _draw_body(app):
+    with modal_window(
+        _LABEL, (float(SIZE.SETTINGS_W), float(SIZE.SETTINGS_H))
+    ) as visible:
+        if not visible:
+            return
+        if not _draw_body(app):
             # Editor settings apply on close only — set_*() while the modal is open
             # FPE-crashes the editor (conventions.md ## Known quirks).
             app.apply_editor_settings()

@@ -33,20 +33,27 @@ _NAME_X = SIZE.CHIP_W + SPACE.MD
 _CTRL_X = _NAME_X + SIZE.UNIFORM_NAME_W + SPACE.MD
 
 
-def _begin_ctrl(app: App, name: str) -> None:
-    """Lay out a uniform row: chip (already drawn) -> clickable name -> control.
-
-    Call after the chip; positions the cursor at the control column and sets
-    the next item's width. Clicking the name jumps the editor caret to the
-    uniform's declaration. The control's own imgui label must be hidden (##).
+def uniform_name_label(
+    app: App,
+    name: str,
+    width: float,
+    *,
+    text_color: tuple[float, float, float, float] | None = None,
+    accent: tuple[float, float, float, float] | None = None,
+) -> None:
+    """Clickable uniform-name cell — jump-to-declaration on click, code↔panel
+    hover bridge on hover. Used by both regular and engine (`auto`) uniform
+    rows; the `text_color` + `accent` overrides let the auto row pick blue
+    while regular rows stay on the default accent.
     """
-    imgui.same_line(_NAME_X)
     clicked = clickable_label(
         name,
-        SIZE.UNIFORM_NAME_W,
+        width,
         id_=f"uname_{name}",
         tooltip="Jump to declaration",
         highlight=(name == app.code_hovered_uniform),
+        text_color=text_color,
+        accent=accent,
     )
     if clicked or imgui.is_item_hovered():
         session = app.get_current_session()
@@ -58,6 +65,17 @@ def _begin_ctrl(app: App, name: str) -> None:
                 app.editor_jump_request = JumpRequest(session.source.path, line, 0)
             else:
                 app.editor_hover_line = HoverMark(session.source.path, line)
+
+
+def _begin_ctrl(app: App, name: str) -> None:
+    """Lay out a uniform row: chip (already drawn) -> clickable name -> control.
+
+    Call after the chip; positions the cursor at the control column and sets
+    the next item's width. Clicking the name jumps the editor caret to the
+    uniform's declaration. The control's own imgui label must be hidden (##).
+    """
+    imgui.same_line(_NAME_X)
+    uniform_name_label(app, name, SIZE.UNIFORM_NAME_W)
     imgui.same_line(_CTRL_X)
     imgui.set_next_item_width(SIZE.UNIFORM_CTRL_W)
 

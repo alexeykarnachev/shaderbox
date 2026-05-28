@@ -201,6 +201,9 @@ def draw(app: App) -> None:
     # this pane (the editor renders its own focusable child window). hotkeys.py reads
     # app.editor_focused to suppress arrow nav while the caret is active.
     app.editor_focused = imgui.is_window_focused(imgui.FocusedFlags_.child_windows)
+    if app.editor_focused:
+        # Sticky bit: stays True across popups/menus until an explicit defocus.
+        app.editor_was_ever_focused = True
 
     # Esc / arrow-nav request defocus (hotkeys.py, app.select_next_current_node).
     # A freshly-rendered editor auto-grabs focus, so the focus must be cleared AFTER
@@ -209,6 +212,7 @@ def draw(app: App) -> None:
         imgui.set_window_focus(None)
         app.editor_defocus_requested = False
         app.editor_focused = False
+        app.editor_was_ever_focused = False
 
     # glfw cursor driven directly — editor isn't a hoverable imgui item and imgui cursors are no-op here (conventions.md ## Known quirks).
     # is_window_hovered respects popup-blocking (is_mouse_hovering_rect doesn't), so a menu over the editor keeps the arrow.

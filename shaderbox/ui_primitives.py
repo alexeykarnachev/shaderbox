@@ -71,6 +71,27 @@ def danger_button(label: str, width: float = 0.0) -> bool:
     return clicked
 
 
+def pill_button(
+    label: str,
+    *,
+    color: tuple[float, float, float, float],
+    active: bool,
+    text_color: tuple[float, float, float, float] = COLOR.BG_APP,
+    inactive_alpha: float = 0.4,
+) -> bool:
+    """A small filled pill whose ACCENT color is the role (a tag, a favs toggle,
+    a reset action). `active` fills it solid; otherwise a faded variant signals
+    "available but off". For multi-state filter pills with custom roles — when
+    `chip_button`'s fixed CHIP_BG / ACCENT_PRIMARY palette doesn't fit the
+    semantic (e.g. blue for tags, yellow for favs, pink for reset)."""
+    fill = color if active else fade(color, inactive_alpha)
+    imgui.push_style_color(imgui.Col_.button, fill)
+    imgui.push_style_color(imgui.Col_.text, text_color)
+    clicked: bool = imgui.small_button(label)
+    imgui.pop_style_color(2)
+    return clicked
+
+
 def chip_button(
     label: str,
     width: float = 0.0,
@@ -156,6 +177,59 @@ def preview_box(
             imgui.set_cursor_screen_pos((origin.x, origin.y))
             overlay(origin)
     imgui.pop_style_color(1)
+
+
+@contextmanager
+def modal_window(label: str, size: tuple[float, float]) -> Iterator[bool]:
+    """Boilerplate-free modal-popup wrapper. Caller owns the `is_X_open` flag
+    on `App` (kept off this primitive to allow per-modal cleanup like
+    `settings.apply_editor_settings` on close); this owns the imgui dance:
+    open by label, seed size once (per `conventions.md ## Design decisions`
+    "Popup modal size" — always `Cond_.first_use_ever`), enter the popup
+    scope, yield visibility. Use as:
+
+        if not app.is_X_open:
+            return
+        with modal_window(LABEL, (W, H)) as visible:
+            if not visible:
+                return
+            if not _draw_body(app):
+                app.is_X_open = False
+                imgui.close_current_popup()
+    """
+    if not imgui.is_popup_open(label):
+        imgui.open_popup(label)
+    imgui.set_next_window_size(imgui.ImVec2(*size), imgui.Cond_.first_use_ever)
+    with imgui_ctx.begin_popup_modal(label) as popup:
+        yield popup.visible
+
+
+@contextmanager
+def context_menu_style() -> Iterator[None]:
+    """Style overrides to make a right-click context menu visually distinct
+    from the modal/popup it lives over — both use `popup_bg` by default, so
+    they otherwise blend. Use as a `with` wrapper AROUND a
+    `begin_popup_context_item` block:
+
+        with context_menu_style():
+            if imgui.begin_popup_context_item(...):
+                ...
+                imgui.end_popup()
+
+    The wrapper pushes the styles before begin_popup_context_item (so they
+    apply when imgui materializes the popup window) and pops on exit
+    regardless of whether the popup opened that frame.
+    """
+    imgui.push_style_color(imgui.Col_.popup_bg, COLOR.BG_FRAME)
+    imgui.push_style_color(imgui.Col_.border, fade(COLOR.ACCENT_PRIMARY, 0.6))
+    imgui.push_style_color(imgui.Col_.header_hovered, fade(COLOR.ACCENT_PRIMARY, 0.6))
+    imgui.push_style_color(imgui.Col_.header_active, COLOR.ACCENT_PRIMARY)
+    imgui.push_style_var(imgui.StyleVar_.popup_border_size, 2.0)
+    try:
+        yield
+    finally:
+        imgui.pop_style_var(1)
+        imgui.pop_style_color(4)
 
 
 @contextmanager
@@ -549,6 +623,7 @@ def draw_copyable_text(
     label: str,
     copy_value: str | None = None,
     color: tuple[float, float, float, float] | None = None,
+    tooltip: str = "Click to copy",
 ) -> bool:
     """Click-to-copy text (the editor file-path / a share link share this).
 
@@ -561,7 +636,7 @@ def draw_copyable_text(
     )[0]
     imgui.pop_style_color(1)
     if imgui.is_item_hovered():
-        imgui.set_tooltip("Click to copy")
+        imgui.set_tooltip(tooltip)
     if not clicked:
         return False
     try:
@@ -610,20 +685,26 @@ def clickable_label(
     id_: str | None = None,
     tooltip: str | None = None,
     highlight: bool = False,
+    text_color: tuple[float, float, float, float] | None = None,
+    accent: tuple[float, float, float, float] | None = None,
 ) -> bool:
     """A fixed-width clickable text cell (used for the uniform name -> jump-to-code).
 
     Sized so a following `same_line(x)` column stays put; the hover affordance is a
     colour change only (jitter-free). `highlight` paints the same translucent accent
-    wash the editor gutter uses (a code-side hover lighting up the row). Returns True
-    on click.
+    wash the editor gutter uses (a code-side hover lighting up the row). `text_color`
+    overrides the label text colour (default: dim foreground); `accent` overrides the
+    hover/active wash (default: ACCENT_PRIMARY) so auto-uniforms can swap to blue.
+    Returns True on click.
     """
     imgui.align_text_to_frame_padding()
     text = _ellipsize(label, width)
-    imgui.push_style_color(imgui.Col_.text, COLOR.FG_DIM)
-    imgui.push_style_color(imgui.Col_.header, fade(COLOR.ACCENT_PRIMARY, 0.15))
-    imgui.push_style_color(imgui.Col_.header_hovered, fade(COLOR.ACCENT_PRIMARY, 0.18))
-    imgui.push_style_color(imgui.Col_.header_active, fade(COLOR.ACCENT_PRIMARY, 0.28))
+    fg = text_color or COLOR.FG_DIM
+    base = accent or COLOR.ACCENT_PRIMARY
+    imgui.push_style_color(imgui.Col_.text, fg)
+    imgui.push_style_color(imgui.Col_.header, fade(base, 0.15))
+    imgui.push_style_color(imgui.Col_.header_hovered, fade(base, 0.18))
+    imgui.push_style_color(imgui.Col_.header_active, fade(base, 0.28))
     clicked: bool = imgui.selectable(
         f"{text}##{id_ or label}", highlight, size=(width, 0)
     )[0]

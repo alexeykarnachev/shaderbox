@@ -29,15 +29,10 @@ def process_hotkeys(app: App) -> None:
 
     if io.key_ctrl and imgui.is_key_pressed(imgui.Key.o):
         app.open_project()
-    # Ctrl+P opens the lib picker ONLY when the code editor has keyboard focus.
-    # Otherwise an "Insert at caret" action would land at the previously-active
-    # editor's last caret position (often 0,0 from a fresh open), corrupting it.
-    if (
-        io.key_ctrl
-        and imgui.is_key_pressed(imgui.Key.p)
-        and app.editor_focused
-        and not app.any_popup_open()
-    ):
+    # Ctrl+P opens the lib picker — always available. The picker itself
+    # disables "Insert at caret" when no editor session is active, so opening
+    # without focus is safe.
+    if io.key_ctrl and imgui.is_key_pressed(imgui.Key.p) and not app.any_popup_open():
         app.open_lib_picker()
     if io.key_ctrl and imgui.is_key_pressed(imgui.Key.s):
         app.save()

@@ -21,3 +21,11 @@ def lib_root() -> Path:
     path = app_data_dir() / "lib"
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def lib_trash_dir() -> Path:
+    # Soft-delete destination for lib files removed via the picker. Leading dot
+    # so LibIndex.build's glob skips it (see lib_index.is_lib_path).
+    path = lib_root() / ".trash"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
