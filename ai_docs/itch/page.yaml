@@ -24,6 +24,10 @@ description: |
     hot-reload instantly. External files also hot-reload on change.
   - Automatic UI from your uniforms - ShaderBox introspects the active uniforms and
     generates the matching controls: floats, vectors, colors, textures, arrays, and text.
+  - Reusable shader library - build a personal collection of helper functions (noise,
+    SDFs, palettes...) once, then call them by name from any shader and they just work,
+    no include boilerplate. Press Ctrl+P to fuzzy-search, preview, and insert them, or
+    manage your library files right from the picker.
   - Image & video texture inputs - drop in media and sample it straight from your shader.
   - Built-in text rendering - a freetype glyph-atlas shader for drawing text in your scene.
   - Export anywhere - render to PNG images, MP4/WebM video, publish a Telegram sticker

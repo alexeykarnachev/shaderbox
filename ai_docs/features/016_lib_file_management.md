@@ -202,54 +202,8 @@ new `.trash/` subdir and explicit session/state plumbing.
 
 ## Manual verification
 
-(Maintainer runs in the live app after impl — no headless coverage possible for the UI surface.)
-
-1. **Open via Ctrl+P (editor focused).** Picker opens with the first function leaf selected
-   and the search input focused. Insert at caret is enabled.
-2. **Open via menu (`Library → Browse...`).** Picker opens; Insert is enabled as long as a
-   node is selected or a lib file is currently displayed.
-3. **Click into the node grid (no node selected), Ctrl+P.** Insert is disabled with a tooltip:
-   "Select a node or open a lib file first — nowhere to insert into".
-4. **Right-click the `/` root → New file here.** Inline "New file:" input opens directly under
-   the root row. Type `foo`, press Enter → `foo.glsl` lands at lib_root, the picker stays open,
-   and the file is opened in the editor.
-5. **Right-click a COLLAPSED subdir → New file here.** The subdir auto-expands and the input
-   draws inside it. Without the auto-expand the input would be invisible.
-6. **Right-click a directory → New subdirectory.** Inline "New dir:" input. Type `complex`,
-   press Enter → `complex/` is created with `placeholder.glsl` containing a real
-   `SB_complex_placeholder` stub; the new dir + function are visible in the tree on the next
-   frame.
-7. **Right-click a file → Rename.** Inline input prefilled with the relative path. Type a new
-   name, press Enter → file renames on disk; if a session was open on it, the editor still
-   shows the correct content under the new identity. Click the small `x` cancel button or
-   press Esc to abort.
-8. **Rename (path traversal blocked).** Type `../foo.glsl` → toast rejects; input stays open.
-9. **Rename (subdir).** Type `subdir/foo.glsl` → file moves into the subdir (created on
-   demand); function still resolvable from dependents.
-10. **Right-click a file → Delete.** Menu item flips red; file row tints red in the tree.
-    Right-click again → "Confirm delete". Click → file goes to `.trash/`; dependents show
-    "undeclared identifier" on next compile. Clicking a function leaf (or another file's menu)
-    while armed disarms.
-11. **Right-click a non-root directory → Delete directory (recursive).** Armed-confirm; on
-    confirm, every file under the subtree (`.glsl` + siblings) lands in `.trash/` with the
-    numeric-suffix collision rule. The dir shell is removed. A symlinked dir is refused
-    (toast: "Delete refused: symlinked or outside lib_root").
-12. **Right-click the `/` root.** No Delete item (root is not deletable).
-13. **Right-click a function leaf → Insert at caret.** Picker closes; function name lands at
-    the editor caret. Repeat with no editor target → the menu item is greyed out.
-14. **Right-click function → Open file at declaration.** Picker closes; editor pane shows the
-    lib file with the caret at the function's line.
-15. **Right-click function → Copy name.** Name in clipboard.
-16. **Right-click function → Favorite.** Star turns yellow on the leaf and in the function
-    list under "Favs" filter.
-17. **Favs / tag pills** above the tree: Favs (yellow) toggles favs-only; Reset (pink) appears
-    when any tag is disabled, clears the disabled set; tag pills (blue) toggle one at a time,
-    Ctrl+click isolates.
-18. **Click the clickable path** in the preview header (gray text under the function name)
-    → absolute OS path copied to clipboard; tooltip reads "Click to copy file path".
-19. **Per-frame log regression check.** After any delete, the loguru line "Lib index: N
-    functions" must appear ONCE (not every frame) — confirms the `.trash/` filter is in both
-    `LibIndex.build` and `_maybe_rebuild_lib_index`.
+Verified live in the app and shipped in v0.10.0. (The original drafted a 19-step
+right-click-flow checklist; git history has it if a regression pass is ever wanted.)
 
 ## Open questions for the user
 
