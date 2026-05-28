@@ -27,8 +27,11 @@ from shaderbox.constants import (
     WEBM_CPU_USED_VALUES,
     WEBM_CRF_VALUES,
 )
+from shaderbox.lib_index import active as active_lib_index
+from shaderbox.lib_index import resolve_usage
 from shaderbox.media import Image, MediaDetails, MediaWithTexture, Video, texture_to_pil
 from shaderbox.render_preset import FitPolicy, RenderPreset, resolve_dims
+from shaderbox.shader_source import ShaderSource
 from shaderbox.util import ShaderError, SourceMap, parse_shader_errors
 
 # A node's shader is its sibling `shader.frag.glsl`; only ShaderSource.load_node
@@ -36,27 +39,12 @@ from shaderbox.util import ShaderError, SourceMap, parse_shader_errors
 _NODE_SHADER_BASENAME = "shader.frag.glsl"
 
 
-@dataclass(frozen=True)
-class ShaderSource:
-    path: Path
-    text: str
-    mtime: float
-
-    @classmethod
-    def load(cls, path: Path) -> "ShaderSource":
-        return cls(
-            path=path,
-            text=path.read_text(encoding="utf-8"),
-            mtime=path.lstat().st_mtime if path.exists() else 0.0,
-        )
-
-
 @dataclass
 class CompileUnit:
-    # The flattened source handed to the driver, plus the source map that lets us
-    # remap driver-emitted line numbers back to (path, line). With one source today
-    # `flattened == sources[0].text` and `source_map` is identity; both shapes
-    # generalize once the include resolver lands.
+    # The flattened text handed to the driver + the source map for remapping
+    # driver-emitted line numbers back to (path, line). `sources` lists every
+    # file contributing to `flattened` (root + each lib file whose function was
+    # auto-resolved into the preamble).
     sources: list[ShaderSource]
     flattened: str
     source_map: SourceMap
@@ -201,8 +189,12 @@ class Node:
     def release_program(self, new_fs_source: str = "") -> None:
         # Path is the stable identity of a node's source; only text + mtime change.
         self.source = replace(self.source, text=new_fs_source, mtime=self.source.mtime)
-        # Drop any cached compile-failure diagnostics so the next compile starts
-        # from a clean slate; the unit is rebuilt by the next render's compile().
+        self.invalidate()
+
+    def invalidate(self) -> None:
+        # Drop the cached GL program + compile unit without touching `self.source`.
+        # Used when an included lib file changes — next compile re-reads it via the
+        # resolver. The unit is rebuilt by the next render's compile().
         self.compile_unit = CompileUnit.empty(self.source)
         if self.program:
             self.program.release()
@@ -235,7 +227,27 @@ class Node:
         # the previous valid `self.program` is preserved — the rendered preview
         # stays bright while the editor's error strip surfaces the diagnostics
         # (feature-013 invariant).
-        unit = CompileUnit.empty(self.source)
+        flattened, sources, source_map, resolve_errors = resolve_usage(
+            self.source, active_lib_index()
+        )
+        unit = CompileUnit(
+            sources=sources,
+            flattened=flattened,
+            source_map=source_map,
+        )
+        # Resolver-domain failures surface as synthetic ShaderErrors so the same
+        # error-strip + click-to-jump path handles them.
+        for re_err in resolve_errors:
+            unit.errors.append(ShaderError(re_err.path, re_err.line, re_err.message))
+        # If the resolver failed, don't bother the driver — its output would just
+        # be confusing on top of our clearer message.
+        if resolve_errors:
+            unit.error_raw = "\n".join(e.message for e in resolve_errors)
+            if unit.error_raw != self.compile_unit.error_raw:
+                logger.error(f"Failed to resolve includes: {unit.error_raw}")
+            self.compile_unit = unit
+            return
+
         try:
             program = self._gl.program(
                 vertex_shader=self.vs_source,

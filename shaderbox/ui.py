@@ -9,8 +9,9 @@ from loguru import logger
 
 from shaderbox.app import App
 from shaderbox.hotkeys import process_hotkeys
-from shaderbox.paths import app_data_dir
+from shaderbox.paths import app_data_dir, lib_root
 from shaderbox.popups.emoji_picker import draw_emoji_picker
+from shaderbox.popups.lib_picker import draw_lib_picker
 from shaderbox.popups.node_creator import draw_node_creator
 from shaderbox.popups.settings import draw_settings
 from shaderbox.tabs import code as code_tab
@@ -18,6 +19,7 @@ from shaderbox.tabs import node as node_tab
 from shaderbox.tabs import render as render_tab
 from shaderbox.tabs import share as share_tab
 from shaderbox.theme import COLOR, SIZE, SPACE
+from shaderbox.ui_models import UINode
 from shaderbox.ui_primitives import fps_overlay
 from shaderbox.util import adjust_size
 from shaderbox.widgets.node_grid import draw_node_preview_grid
@@ -57,27 +59,95 @@ def run(app: App) -> None:
     app.release()
 
 
-def update_and_draw(app: App) -> None:
-    # ----------------------------------------------------------------
-    # Check for shader file changes and reload nodes
-    for name in list(app.ui_nodes.keys()):
-        ui_node = app.ui_nodes[name]
-        fs_file_path = ui_node.node.source.path
+def _reload_if_changed(app: App, name: str, ui_node: UINode) -> None:
+    # Walk every source the last compile depended on (root + included libs).
+    # sources[0] is the root by construction (resolve_includes seeds it first);
+    # sources[1:] are lib files in first-seen order. Each kind has a different
+    # reload action — see comments inline.
+    for i, src in enumerate(ui_node.node.compile_unit.sources):
+        path = src.path
+        if not path.exists():
+            continue
+        disk_mtime = path.lstat().st_mtime
+        if disk_mtime == src.mtime:
+            continue
 
-        if not fs_file_path.exists():
-            return
-
-        fs_file_mtime = fs_file_path.lstat().st_mtime
-        if fs_file_mtime != ui_node.node.source.mtime:
-            logger.info(f"Reloading node {name} due to shader file change")
+        if i == 0:
+            # Root reload: read text, replace, re-sync the open editor session.
+            logger.info(f"Reloading node {name} (root shader changed)")
             try:
-                new_source = fs_file_path.read_text()
-                ui_node.node.release_program(new_source)
-                ui_node.node.source = replace(ui_node.node.source, mtime=fs_file_mtime)
-                app.sync_editor_from_disk(name, new_source)
+                new_text = path.read_text()
+                ui_node.node.release_program(new_text)
+                ui_node.node.source = replace(ui_node.node.source, mtime=disk_mtime)
+                app.sync_editor_from_disk(name, new_text)
             except Exception as e:
                 logger.error(f"Failed to reload node {name}: {e}")
-                ui_node.node.source = replace(ui_node.node.source, mtime=fs_file_mtime)
+                ui_node.node.source = replace(ui_node.node.source, mtime=disk_mtime)
+            # `sources` was rebuilt by release_program() via CompileUnit.empty;
+            # don't keep iterating the stale list.
+            return
+
+        # Lib reload: bump the cached mtime so we don't re-fire next frame, then
+        # invalidate the node so the next render's compile re-resolves the
+        # include from disk. If a session is open on this lib file AND its text
+        # diverges from disk, re-sync it (external edit); if the texts already
+        # match, the user just saved in-app — don't clobber their undo history.
+        logger.info(f"Reloading node {name} (lib changed: {path.name})")
+        ui_node.node.compile_unit.sources[i] = replace(src, mtime=disk_mtime)
+        ui_node.node.invalidate()
+        session = app.editor_sessions.get(path)
+        if session is not None:
+            try:
+                new_text = path.read_text()
+                if session.editor.get_text() != new_text:
+                    session.editor.set_text(new_text)
+                    session.saved_undo = session.editor.get_undo_index()
+                session.source = replace(
+                    session.source, text=new_text, mtime=disk_mtime
+                )
+            except Exception as e:
+                logger.error(f"Failed to sync lib editor for {path}: {e}")
+
+
+def _maybe_rebuild_lib_index(app: App) -> bool:
+    # Detect lib-root changes: file added, removed, or mtime bumped. If anything
+    # changed, rebuild the index. Cheap: one glob + N stats per frame.
+    root = lib_root()
+    current: dict[str, float] = {}
+    for path in root.glob("**/*.glsl"):
+        try:
+            current[str(path)] = path.lstat().st_mtime
+        except OSError:
+            continue
+    cached = {str(p): s.mtime for p, s in app.lib_index.sources.items()}
+    if current == cached:
+        return False
+    app.rebuild_lib_index()
+    # Any node whose last compile pulled in a lib file might now need a fresh
+    # compile (the function it referenced may have changed body or disappeared).
+    # We invalidate every node that has lib files in its sources; the next render
+    # of each will recompile with the new index.
+    for ui_node in app.ui_nodes.values():
+        if len(ui_node.node.compile_unit.sources) > 1:
+            ui_node.node.invalidate()
+    return True
+
+
+def update_and_draw(app: App) -> None:
+    # ----------------------------------------------------------------
+    # Rebuild the lib index if any lib file changed (added / removed / edited).
+    # Walks lib_root each frame; for small libs the cost is microseconds. If the
+    # index changed we invalidate every node that depended on a lib file so its
+    # next render recompiles against the fresh index.
+    _maybe_rebuild_lib_index(app)
+
+    # ----------------------------------------------------------------
+    # Check for per-node shader file changes (root + every prepended lib file).
+    for name in list(app.ui_nodes.keys()):
+        ui_node = app.ui_nodes[name]
+        if not ui_node.node.source.path.exists():
+            return
+        _reload_if_changed(app, name, ui_node)
 
     # ----------------------------------------------------------------
     # Render previews
@@ -162,6 +232,7 @@ def update_and_draw(app: App) -> None:
         draw_node_creator(app)
         draw_settings(app)
         draw_emoji_picker(app)
+        draw_lib_picker(app)
 
         imgui.push_font(app.font_18, _FONT_18_SIZE)
         app.notifications.update_and_draw()

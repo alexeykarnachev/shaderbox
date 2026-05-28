@@ -12,3 +12,12 @@ def app_data_dir() -> Path:
     if override:
         return Path(override)
     return Path(user_data_dir("shaderbox"))
+
+
+def lib_root() -> Path:
+    # Cross-project GLSL library — every node's `#include "name"` resolves
+    # against this dir. Same posture as integrations.json (cross-project, lives
+    # at app_data_dir()).
+    path = app_data_dir() / "lib"
+    path.mkdir(parents=True, exist_ok=True)
+    return path

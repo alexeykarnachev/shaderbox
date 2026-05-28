@@ -27,38 +27,35 @@ feature; brief points at the superseder).
 
 **As of 2026-05-28.**
 
-- **In progress: feature 014 — CompileUnit refactor** (on `dev`, not shipped). Pure shape refactor,
-  zero behavior change: introduces `ShaderSource` (path+text+mtime), `CompileUnit` (sources +
-  flattened + source_map + error_raw + errors), `SourceMap` (identity today; populated by the future
-  include resolver), `EditorSession` (path-keyed instead of node-id-keyed), and `JumpRequest` /
-  `HoverMark` typed replacements for the transient editor request tuples. `Node.shader_error` and
-  the per-frame `parse_shader_errors()` calls are gone — errors are parsed once at compile time and
-  consumed via `node.compile_unit.errors`. Sets up feature 015 (shader include library — cross-project
-  `<app_data_dir>/lib/**.glsl`, host-side `#include` resolver, `#line` injection, multi-file editor).
-- **Shipped: `v0.9.0`** (feature 013 — authoring feedback loop). GLSL compile errors parsed
-  (`util.parse_shader_errors`, NVIDIA + Mesa, 1→0 shift, raw fallback) into a themed click-to-jump
-  strip + translucent gutter markers; last-good render stays bright; F8 cycles errors; "compiled" cue
-  on clean save. Bidirectional uniform↔code bridge.
-- **v0.8.0** (prior ship): feature 012 — YouTube upload exporter (bring-your-own-OAuth, private-only
-  long-form + Shorts, sync worker thread); share-panel UI → shared `ui_primitives`.
-- **Invoke `/imgui-ui` before any UI work** — button tiers, jitter-free overlays, SetCursorPos assert,
-  font/emoji caveats, no-screenshot loop. The inline editor binding (`imgui_color_text_edit`) is the
-  `pthom` fork — far richer than its old reputation (markers, cursor, hover/context callbacks, find);
-  the palette is still write-locked (`conventions.md ## Known quirks`).
-- **NEXT ACTION: feature 015 — shader include library** (spec not yet written; lands on top of
-  014's seams). Cross-project lib dir, `#include` resolver with `#line` remap, multi-file editor UI
-  (shape TBD — picker / tabs / split, to be explored experimentally on the now-robust backend).
-- **`dev` is ahead of `master` by one refactor commit** (`v0.9.0` is the last shipped tag).
+- **On `dev` (unshipped): features 014 + 015** — the shader library landed.
+- **014 — CompileUnit refactor.** Pure shape refactor (zero behavior change): `ShaderSource`,
+  `CompileUnit`, `SourceMap` (file_id → path), `EditorSession` path-keyed, `JumpRequest` /
+  `HoverMark`. Per-frame `parse_shader_errors()` calls collapsed into one compile-time parse
+  cached on `node.compile_unit.errors`. Sets up 015's seams.
+- **015 — shader library (auto-resolve).** No `#include` syntax: the user writes
+  `SB_perlin_noise_3(...)` directly and it just works. Host-side scan of the user's text for
+  `SB_\\w+` identifiers, transitive-close over a per-boot `LibIndex` of the lib functions
+  (`<app_data_dir>/lib/**.glsl`), topo-sorted preamble inserted after `#version`/`#extension`,
+  `#line N <id>` markers route driver errors back to the right lib file. `Ctrl+P` opens the lib
+  picker (fuzzy search + body preview + insert-at-caret + open-file). Lib files edit in their
+  own path-keyed `EditorSession`; the code pane swaps between node-shader and lib-file modes
+  via `App._explicit_editor_path` (a full tab-bar lands later when the UX pressure shows up).
+  Mtime watcher fans out lib edits to every dependent node (active recompiles immediately;
+  dormant lazily on next render).
+- **Shipped: `v0.9.0`** (feature 013 — authoring feedback loop). Click-to-jump error strip +
+  gutter markers + F8 + "compiled" cue + uniform↔code bridge.
+- **Invoke `/imgui-ui` before any UI work** — button tiers, jitter-free overlays, SetCursorPos
+  assert, font/emoji caveats, no-screenshot loop.
+- **NEXT ACTION: maintainer manual sanity** on 015 in the running app (live picker, insert,
+  save lib, error remap into lib file). After that — ship as minor (no breaking schema).
 - **Branch model:** develop on `dev`, ship from `master` (`dev_flow.md ## Branch model`).
-- **Token hygiene:** dev bot token + YouTube creds live only in `integrations.json` (outside the repo,
-  cleartext — `todo.md` deferral); maintainer rotates post-iteration.
 - **No open BLOCKERs.**
 
 ## Features
 
 | # | Name | Status | Brief |
 |---|---|---|---|
-| 015 | shader_include_library | pending | Cross-project GLSL utility library: host-side `#include "path"` resolver against `<app_data_dir>/lib/**.glsl`, `#line` injection + id→path source map so driver-emitted line numbers remap back to the right file, mtime-watcher fan-out over the include graph, multi-file editor UI (picker / tabs / split — to be explored on the 014 backend). Spec: not yet drafted. |
+| 015 | shader_library | done | Auto-resolve GLSL helper library (no `#include` syntax). User writes `SB_perlin_noise_3(...)`; host scans for `SB_\w+` identifiers, transitive-closes via a `LibIndex` of `<app_data_dir>/lib/**.glsl`, topo-sorted preamble + `#line N <id>` markers, errors remap to the right lib file. `Ctrl+P` picker (fuzzy search + body preview + insert / open-file). Lib files edit in their own `EditorSession`; code pane swaps via `App._explicit_editor_path`. Mtime fan-out via existing `compile_unit.sources` loop + a lib-root sweep. Spec: `ai_docs/features/015_shader_include_library.md`. |
 | 014 | compile_unit_refactor | done | Pure shape refactor (zero behavior change) to prepare for feature 015. Introduces `ShaderSource` (path+text+mtime), `CompileUnit` (sources + flattened + source_map + error_raw + errors), `SourceMap` (identity today, populated by the future include resolver), `EditorSession` (path-keyed, replacing the `node_id`-keyed parallel dicts), and `JumpRequest` / `HoverMark` typed replacements for the transient editor-request tuples. `Node.shader_error` gone; errors parsed once at compile time. Spec: `ai_docs/features/014_compile_unit_refactor.md`. |
 | 013 | authoring_feedback_loop | done | Tighter write→compile→fix loop. Layer 1: raw GLSL driver errors parsed (`parse_shader_errors`, NVIDIA+Mesa) into a themed click-to-jump strip at the editor-pane bottom + translucent gutter markers + F8 next-error + a "compiled" cue; the last-good render stays bright (no dim/overlay). Layer 2: bidirectional uniform↔code bridge — click a name → jump to declaration; hover a name → accent gutter mark; hover a uniform in code → live-value tooltip + panel-row tint (`find_uniform_declaration_line` + `clickable_label` + three transient `App` fields). On explicit save only — no live-reload. Spec: `ai_docs/features/013_authoring_feedback_loop.md`. |
 | 012 | youtube_export | done | Second concrete exporter: YouTube upload (long-form + Shorts) via user-owned OAuth (bring-your-own client_secret, Connect once); private-only uploads + copyable Studio edit-link; in-panel shape toggle + title/description/tags/category; sync worker thread. Same wave: share-panel UI factored into shared `ui_primitives` + `SIZE.SHARE_PREVIEW_*`; Telegram timeouts raised; notifications moved bottom-right. Spec: `ai_docs/features/012_youtube_export.md`. |

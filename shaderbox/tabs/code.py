@@ -84,22 +84,38 @@ def draw(app: App) -> None:
         imgui.text_colored(COLOR.FG_DIM, "No node selected")
         return
 
-    full_file_path = ui_node.node.source.path
-    local_file_path = full_file_path.relative_to(app.project_dir)
+    # Decide which file the editor is showing — the node's shader OR (when the
+    # user opened a lib file from the picker) a lib file. Lib mode draws a
+    # different header chrome but the editor body is identical.
+    current_path = app.current_editor_path
+    if current_path is None:
+        glfw.set_cursor(app.window, None)
+        app.editor_focused = False
+        imgui.text_colored(COLOR.FG_DIM, "No file open")
+        return
+    is_lib = current_path != ui_node.node.source.path
 
-    if draw_copyable_text(str(local_file_path), copy_value=str(full_file_path)):
-        app.notifications.push("Copied to clipboard!")
-
-    if app.is_current_editor_dirty():
-        imgui.same_line()
-        imgui.text_colored(COLOR.STATE_WARN, "(unsaved)")
-    elif not ui_node.node.compile_unit.error_raw:
-        imgui.same_line()
-        imgui.text_colored(COLOR.STATE_OK, "compiled")
-
-    imgui.same_line(spacing=float(SPACE.LG))
-    if imgui.button("Open dir", size=(SIZE.BTN_SM_W, 0)):
-        app.open_current_node_dir()
+    if is_lib:
+        # Header for lib mode: file path + a "back to node" link.
+        imgui.text_colored(COLOR.FG_DIM, str(current_path.name))
+        imgui.same_line(spacing=float(SPACE.LG))
+        if imgui.button("< back to node", size=(SIZE.BTN_SM_W * 1.5, 0)):
+            app.show_node_editor()
+    else:
+        # Header for node mode: full path + dirty/compiled status + Open dir.
+        full_file_path = ui_node.node.source.path
+        local_file_path = full_file_path.relative_to(app.project_dir)
+        if draw_copyable_text(str(local_file_path), copy_value=str(full_file_path)):
+            app.notifications.push("Copied to clipboard!")
+        if app.is_current_editor_dirty():
+            imgui.same_line()
+            imgui.text_colored(COLOR.STATE_WARN, "(unsaved)")
+        elif not ui_node.node.compile_unit.error_raw:
+            imgui.same_line()
+            imgui.text_colored(COLOR.STATE_OK, "compiled")
+        imgui.same_line(spacing=float(SPACE.LG))
+        if imgui.button("Open dir", size=(SIZE.BTN_SM_W, 0)):
+            app.open_current_node_dir()
 
     imgui.spacing()
 
@@ -110,10 +126,20 @@ def draw(app: App) -> None:
         app.editor_focused = False
         return
 
-    current_path = ui_node.node.source.path
-    editor = app.get_session(ui_node.node.source).editor
+    session = app.editor_sessions.get(current_path)
+    if session is None:
+        # Lazy-load the lib session if it doesn't exist yet (e.g. _explicit set
+        # but session not yet created via open_lib_file — defensive).
+        session = (
+            app.open_lib_file(current_path)
+            if is_lib
+            else app.get_session(ui_node.node.source)
+        )
+    editor = session.editor
     settings = app.app_state.editor_settings
 
+    # Error markers come from the active NODE's compile unit; we filter by path
+    # so errors that target the active editor file (root OR a lib) are shown.
     errors = ui_node.node.compile_unit.errors
     _apply_markers(editor, errors, app.editor_hover_line, current_path)
     app.editor_hover_line = None

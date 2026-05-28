@@ -28,6 +28,47 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
 
 ---
 
+## [DEFERRAL] cross-file uniform declaration jump (lib files)
+- **Trigger:** first user complaint that clicking a uniform name in the panel doesn't jump
+  anywhere when the uniform happens to be declared in a lib file (not the node's own shader),
+  OR when a real workflow puts uniform declarations in lib files often enough to feel friction.
+- `util.find_uniform_declaration_line` searches only the active session's editor text
+  (`widgets/uniform.py::_begin_ctrl`). A uniform declared in a lib file is discovered via the
+  driver's introspection (so it appears in the panel) but click-to-jump silently no-ops.
+  Honest fix: walk `node.compile_unit.sources` in order, search each, and open the matching
+  session via `App.open_lib_file(path)` before issuing the `JumpRequest`. Out of scope in 015
+  (the spec calls this out: "lib = pure functions only" is the cognitive-clarity guarantee — if
+  this defaults to false in practice, revisit the guarantee too).
+
+## [DEFERRAL] lib-author macro indirection for function dispatch
+- **Trigger:** first time a lib author writes `#define HASH SB_hash3` (or similar) inside a lib
+  file as a way to dispatch through the SB_-prefixed function, and finds their wrapper isn't
+  pulled in transitively.
+- `lib_index._extract_functions` regex-extracts `calls = set of identifiers in body`. If a lib
+  function calls `HASH(x)` and `HASH` is a macro elsewhere expanding to `SB_hash3`, the regex
+  sees `HASH` (no match in the index) and won't pull `SB_hash3` into the preamble. Convention
+  (15.5 in the spec): lib files don't use `#define` for function dispatch — call the function
+  directly. Document in `conventions.md ## Design decisions` if this becomes a real footgun.
+
+## [DEFERRAL] export-from-selection (select function in editor → push to library)
+- **Trigger:** when copy-pasting a function from a node shader into a hand-edited lib file
+  becomes routine. Today the only way to add a function to the library is `Ctrl+P` → "New
+  library file" → write/paste the function manually.
+- The wanted UX (raised during 015 design): the user selects a function in their node shader,
+  presses a hotkey or menu action; the helper auto-prefixes the name with `SB_`, prompts for a
+  target lib file (existing or new), copies the function body, and removes it from the node
+  shader (optionally also auto-inserts a call site referencing the new name). Small enough to
+  be its own feature; spec when triggered.
+
+## [DEFERRAL] multi-file editor — tab bar / file tree / split
+- **Trigger:** when "back to node" + Ctrl+P feels insufficient — i.e., the user keeps 3+ lib
+  files open in rotation and wants to switch between them without re-opening via the picker.
+- Today the code pane shows ONE file at a time: either the current node's shader (default) or
+  a lib file (when `App._explicit_editor_path` is set, via `open_lib_file` from the picker). A
+  small "< back to node" link in the header is the only way back. The intended next step (spec
+  decision 8): a tab bar above the editor — pinned node-shader tab + N closable lib tabs.
+  Switching nodes pivots the pinned tab; lib tabs persist. Built when the trigger fires.
+
 ## [DEFERRAL] resolution combo parses (w,h) back out of its display label
 - **Trigger:** next time you change `util.get_resolution_str`'s format string (anything before
   the `WxH` token, or the `x`/space layout), OR the first time the canvas resolution silently

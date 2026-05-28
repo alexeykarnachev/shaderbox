@@ -15,13 +15,16 @@ from imgui_bundle.python_backends.glfw_backend import GlfwRenderer
 from loguru import logger
 
 from shaderbox.constants import RESOURCES_DIR
-from shaderbox.core import Canvas, ShaderSource
+from shaderbox.core import Canvas
 from shaderbox.exporters.registry import ExporterRegistry
 from shaderbox.exporters.telegram import TelegramExporter
 from shaderbox.exporters.youtube import YouTubeExporter
 from shaderbox.integrations import IntegrationsStore
+from shaderbox.lib_index import LibIndex
+from shaderbox.lib_index import set_active as set_active_lib_index
 from shaderbox.notifications import Notifications
-from shaderbox.paths import app_data_dir
+from shaderbox.paths import app_data_dir, lib_root
+from shaderbox.shader_source import ShaderSource
 from shaderbox.tabs import share_state
 from shaderbox.theme import COLOR, apply_theme
 from shaderbox.ui_models import (
@@ -155,7 +158,9 @@ class App:
         self.is_node_creator_open: bool = False
         self.is_settings_open: bool = False
         self.is_emoji_picker_open: bool = False
+        self.is_lib_picker_open: bool = False
         self.emoji_picker_query: str = ""
+        self.lib_picker_query: str = ""
         # Where a picked emoji is delivered (set by whoever opens the picker).
         self.emoji_pick_target: Callable[[str], None] | None = None
         self.node_delete_armed: str = ""  # node id pending delete-confirm
@@ -176,9 +181,15 @@ class App:
         self.global_fps = 0.0
         self.fps_details_open: bool = False
 
-        # Path-keyed editor sessions: one TextEditor per opened file. A node shader
-        # path is the only key today; lib files become additional keys later.
+        # Path-keyed editor sessions: one TextEditor per opened file.
         self.editor_sessions: dict[Path, EditorSession] = {}
+        # When non-None, the editor pane shows this file instead of the current
+        # node's shader. Set by `open_lib_file` / cleared by `show_node_editor`.
+        self._explicit_editor_path: Path | None = None
+
+        # The currently-active library index. Populated by rebuild_lib_index()
+        # (called from _init below + the mtime watcher on lib changes).
+        self.lib_index: LibIndex = LibIndex.empty()
 
         self._init(project_dir, seed_starter=is_first_launch)
 
@@ -187,23 +198,34 @@ class App:
             self.is_node_creator_open
             or self.is_settings_open
             or self.is_emoji_picker_open
+            or self.is_lib_picker_open
         )
 
     def open_node_creator(self) -> None:
         self.is_node_creator_open = True
         self.is_settings_open = False
         self.is_emoji_picker_open = False
+        self.is_lib_picker_open = False
 
     def open_settings(self) -> None:
         self.is_settings_open = True
         self.is_node_creator_open = False
         self.is_emoji_picker_open = False
+        self.is_lib_picker_open = False
 
     def open_emoji_picker(self, target: Callable[[str], None] | None = None) -> None:
         self.is_emoji_picker_open = True
         self.emoji_pick_target = target
         self.is_node_creator_open = False
         self.is_settings_open = False
+        self.is_lib_picker_open = False
+
+    def open_lib_picker(self) -> None:
+        self.is_lib_picker_open = True
+        self.lib_picker_query = ""
+        self.is_node_creator_open = False
+        self.is_settings_open = False
+        self.is_emoji_picker_open = False
 
     @staticmethod
     def _create_dir_if_needed(path: Path | str) -> Path:
@@ -285,6 +307,12 @@ class App:
         logger.info(f"Project loaded: {self.project_dir}")
 
         # ----------------------------------------------------------------
+        # Build the lib index before loading nodes — every node's first compile
+        # (warm-up in load_from_dir → render → compile → resolve_usage) reads
+        # the active index.
+        self.rebuild_lib_index()
+
+        # ----------------------------------------------------------------
         # Load nodes
         self.ui_nodes = load_nodes_from_dir(self.nodes_dir)
         self.ui_node_templates = _order_templates(
@@ -346,10 +374,29 @@ class App:
 
     @property
     def current_editor_path(self) -> Path | None:
+        # An explicit override (set by `open_lib_file` when a lib tab is active)
+        # wins; otherwise fall back to the current node's shader path.
+        if self._explicit_editor_path is not None:
+            return self._explicit_editor_path
         node_id = self.current_node_id
         if not node_id or node_id not in self.ui_nodes:
             return None
         return self.ui_nodes[node_id].node.source.path
+
+    def open_lib_file(self, path: Path) -> EditorSession:
+        # Lazy-create or focus a session on a lib file path; switch the editor
+        # to show it. The picker (popup) and the tab bar both use this.
+        source = ShaderSource.load(path)
+        session = self.get_session(source)
+        # If the session already existed, its `source` may be stale (a previous
+        # mtime sync would have refreshed it; either way it's safe to leave).
+        self._explicit_editor_path = source.path
+        return session
+
+    def show_node_editor(self) -> None:
+        # Drop the lib-file override so the editor falls back to the current
+        # node's shader. Called from the tab bar / node-switch path.
+        self._explicit_editor_path = None
 
     def get_session(self, source: ShaderSource) -> EditorSession:
         # Lazy-create a session bound to this source's path. The path is the
@@ -387,6 +434,15 @@ class App:
         for session in self.editor_sessions.values():
             self._apply_editor_settings_to(session.editor)
 
+    def rebuild_lib_index(self) -> None:
+        # Walk lib_root, extract every top-level function, publish via the
+        # module-level accessor that Node.compile() reads. Cheap (a sorted glob
+        # + ~150 lines/sec regex parse); called once at boot and again whenever
+        # the watcher detects a lib file change.
+        self.lib_index = LibIndex.build(lib_root())
+        set_active_lib_index(self.lib_index)
+        logger.info(f"Lib index: {len(self.lib_index.functions)} functions")
+
     def is_current_editor_dirty(self) -> bool:
         session = self.get_current_session_if_exists()
         if session is None:
@@ -407,9 +463,22 @@ class App:
             return
         node_id = self.current_node_id
         node = self.ui_nodes[node_id].node
-        node.release_program(session.editor.get_text())
-        # Re-render to bind a valid program — a freed program left GL-current crashes the imgui renderer's restore (GLError 1281)
-        node.render()
+        text = session.editor.get_text()
+        if session.source.path == node.source.path:
+            # Saving the node's own shader: replace its source, drop the program;
+            # the next render's compile() picks up the new text + re-resolves.
+            node.release_program(text)
+            # Re-render to bind a valid program — a freed program left GL-current crashes the imgui renderer's restore (GLError 1281)
+            node.render()
+        else:
+            # Saving a lib file: write it to disk. The mtime watcher will detect
+            # the change next frame, rebuild the lib index, and invalidate every
+            # node that depends on it.
+            try:
+                session.source.path.write_text(text, encoding="utf-8")
+            except OSError as e:
+                logger.error(f"Failed to write lib file {session.source.path}: {e}")
+                return
         session.saved_undo = session.editor.get_undo_index()
 
     def sync_editor_from_disk(self, node_id: str, source: str) -> None:

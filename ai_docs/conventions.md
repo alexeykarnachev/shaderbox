@@ -148,6 +148,13 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
 
 ## Known quirks (library / SDK footguns + the workaround)
 
+- **GLSL `#line N M` accepts INTEGERS ONLY for the file-id (`M`).** Outside the
+  `GL_ARB_shading_language_include` extension (unreliable across drivers), no GL driver accepts
+  `#line N "filename"`. The host emits `#line N <integer_id>` and keeps an `id -> Path` table
+  itself (`util.SourceMap.file_id_to_path`); the error-parse regexes (`_NVIDIA_ERROR_RE`,
+  `_MESA_ERROR_RE`) capture the file-id too. If you ever see a driver emitting `0:LINE` for a
+  spliced library function's body, you forgot to emit `#line N <lib_file_id>` before that splice
+  (`shaderbox/lib_index.py::resolve_usage`).
 - **imgui-bundle's C++-backed submodules ship only `.pyi` stubs** (`portable_file_dialogs`,
   `imgui_color_text_edit`) — pyright emits a `reportMissingModuleSource` warning at the import
   line. The warning is harmless (no `.py` source to find). Warnings don't fail `make check`;

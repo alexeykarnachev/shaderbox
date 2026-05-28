@@ -29,6 +29,8 @@ def process_hotkeys(app: App) -> None:
 
     if io.key_ctrl and imgui.is_key_pressed(imgui.Key.o):
         app.open_project()
+    if io.key_ctrl and imgui.is_key_pressed(imgui.Key.p):
+        app.open_lib_picker()
     if io.key_ctrl and imgui.is_key_pressed(imgui.Key.s):
         app.save()
     if io.key_ctrl and imgui.is_key_pressed(imgui.Key.d):
