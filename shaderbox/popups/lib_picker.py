@@ -338,7 +338,9 @@ def _draw_tree_children(
             imgui.TreeNodeFlags_.default_open | imgui.TreeNodeFlags_.span_avail_width
         )
         node_id = f"{subname}##dirnode_{'/'.join(child)}"
-        is_armed = app.lib_dir_delete_armed == Path(*child)
+        # Armed state is stored as the ABSOLUTE path (the context menu arms with
+        # `lib_root() / dir_rel`); compare like-for-like or the red tint never shows.
+        is_armed = app.lib_dir_delete_armed == root / Path(*child)
         # Force-open if a new-file / new-dir input is targeted at this dir or
         # any descendant — otherwise the inline input would render inside an
         # invisible collapsed branch.
