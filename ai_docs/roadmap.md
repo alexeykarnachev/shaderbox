@@ -25,26 +25,30 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-**As of 2026-05-27.**
+**As of 2026-05-28.**
 
-- **Shipped: `v0.9.0`** (feature 013 — authoring feedback loop) — `master`, both itch channels live,
-  tag pushed. Tighter write→compile→fix loop, on explicit save only (live-reload rejected). Layer 1:
-  GLSL compile errors parsed (`util.parse_shader_errors`, NVIDIA + Mesa, 1→0 shift, raw fallback) into
-  a themed click-to-jump strip + translucent gutter markers; last-good render stays **bright**; F8
-  cycles to the next error; a "compiled" cue confirms a clean save. Layer 2: bidirectional uniform↔code
-  bridge — click a name → jump to declaration (`find_uniform_declaration_line` + `clickable_label`);
-  hover a name → accent gutter wash; hover a uniform in code → live-value tooltip + the panel row gets
-  the same accent wash. Three transient `App` fields (`editor_jump_request` / `editor_hover_line` /
-  `code_hovered_uniform`) mirror `editor_defocus_requested`. `format_auto_value` moved to `util.py`.
+- **In progress: feature 014 — CompileUnit refactor** (on `dev`, not shipped). Pure shape refactor,
+  zero behavior change: introduces `ShaderSource` (path+text+mtime), `CompileUnit` (sources +
+  flattened + source_map + error_raw + errors), `SourceMap` (identity today; populated by the future
+  include resolver), `EditorSession` (path-keyed instead of node-id-keyed), and `JumpRequest` /
+  `HoverMark` typed replacements for the transient editor request tuples. `Node.shader_error` and
+  the per-frame `parse_shader_errors()` calls are gone — errors are parsed once at compile time and
+  consumed via `node.compile_unit.errors`. Sets up feature 015 (shader include library — cross-project
+  `<app_data_dir>/lib/**.glsl`, host-side `#include` resolver, `#line` injection, multi-file editor).
+- **Shipped: `v0.9.0`** (feature 013 — authoring feedback loop). GLSL compile errors parsed
+  (`util.parse_shader_errors`, NVIDIA + Mesa, 1→0 shift, raw fallback) into a themed click-to-jump
+  strip + translucent gutter markers; last-good render stays bright; F8 cycles errors; "compiled" cue
+  on clean save. Bidirectional uniform↔code bridge.
 - **v0.8.0** (prior ship): feature 012 — YouTube upload exporter (bring-your-own-OAuth, private-only
   long-form + Shorts, sync worker thread); share-panel UI → shared `ui_primitives`.
 - **Invoke `/imgui-ui` before any UI work** — button tiers, jitter-free overlays, SetCursorPos assert,
   font/emoji caveats, no-screenshot loop. The inline editor binding (`imgui_color_text_edit`) is the
   `pthom` fork — far richer than its old reputation (markers, cursor, hover/context callbacks, find);
   the palette is still write-locked (`conventions.md ## Known quirks`).
-- **NEXT ACTION: none queued.** No `pending` feature row. Remaining candidates sit in `todo.md` as
-  trigger-gated deferrals — pick up only when a trigger fires.
-- **`dev` == `master`** at `v0.9.0`. Tree clean.
+- **NEXT ACTION: feature 015 — shader include library** (spec not yet written; lands on top of
+  014's seams). Cross-project lib dir, `#include` resolver with `#line` remap, multi-file editor UI
+  (shape TBD — picker / tabs / split, to be explored experimentally on the now-robust backend).
+- **`dev` is ahead of `master` by one refactor commit** (`v0.9.0` is the last shipped tag).
 - **Branch model:** develop on `dev`, ship from `master` (`dev_flow.md ## Branch model`).
 - **Token hygiene:** dev bot token + YouTube creds live only in `integrations.json` (outside the repo,
   cleartext — `todo.md` deferral); maintainer rotates post-iteration.
@@ -54,6 +58,8 @@ feature; brief points at the superseder).
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 015 | shader_include_library | pending | Cross-project GLSL utility library: host-side `#include "path"` resolver against `<app_data_dir>/lib/**.glsl`, `#line` injection + id→path source map so driver-emitted line numbers remap back to the right file, mtime-watcher fan-out over the include graph, multi-file editor UI (picker / tabs / split — to be explored on the 014 backend). Spec: not yet drafted. |
+| 014 | compile_unit_refactor | done | Pure shape refactor (zero behavior change) to prepare for feature 015. Introduces `ShaderSource` (path+text+mtime), `CompileUnit` (sources + flattened + source_map + error_raw + errors), `SourceMap` (identity today, populated by the future include resolver), `EditorSession` (path-keyed, replacing the `node_id`-keyed parallel dicts), and `JumpRequest` / `HoverMark` typed replacements for the transient editor-request tuples. `Node.shader_error` gone; errors parsed once at compile time. Spec: `ai_docs/features/014_compile_unit_refactor.md`. |
 | 013 | authoring_feedback_loop | done | Tighter write→compile→fix loop. Layer 1: raw GLSL driver errors parsed (`parse_shader_errors`, NVIDIA+Mesa) into a themed click-to-jump strip at the editor-pane bottom + translucent gutter markers + F8 next-error + a "compiled" cue; the last-good render stays bright (no dim/overlay). Layer 2: bidirectional uniform↔code bridge — click a name → jump to declaration; hover a name → accent gutter mark; hover a uniform in code → live-value tooltip + panel-row tint (`find_uniform_declaration_line` + `clickable_label` + three transient `App` fields). On explicit save only — no live-reload. Spec: `ai_docs/features/013_authoring_feedback_loop.md`. |
 | 012 | youtube_export | done | Second concrete exporter: YouTube upload (long-form + Shorts) via user-owned OAuth (bring-your-own client_secret, Connect once); private-only uploads + copyable Studio edit-link; in-panel shape toggle + title/description/tags/category; sync worker thread. Same wave: share-panel UI factored into shared `ui_primitives` + `SIZE.SHARE_PREVIEW_*`; Telegram timeouts raised; notifications moved bottom-right. Spec: `ai_docs/features/012_youtube_export.md`. |
 | — | template_polish | done | Authored template order (`_TEMPLATE_ORDER`); merged Image+Video into one split-screen Media Input; text shader gained lowercase (folded to caps) + punctuation (`. , ; & -`) + newline layout + homegrown value-noise (dropped vendored Ashima simplex); compact video-smoothing slider block beside the thumbnail. Spec: commit `6b474f5` + `f44cf82`. |

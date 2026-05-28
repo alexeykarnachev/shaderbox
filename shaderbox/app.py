@@ -3,6 +3,7 @@ import shutil
 import subprocess
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -14,7 +15,7 @@ from imgui_bundle.python_backends.glfw_backend import GlfwRenderer
 from loguru import logger
 
 from shaderbox.constants import RESOURCES_DIR
-from shaderbox.core import Canvas
+from shaderbox.core import Canvas, ShaderSource
 from shaderbox.exporters.registry import ExporterRegistry
 from shaderbox.exporters.telegram import TelegramExporter
 from shaderbox.exporters.youtube import YouTubeExporter
@@ -32,6 +33,31 @@ from shaderbox.ui_models import (
     load_nodes_from_dir,
 )
 from shaderbox.util import pfd_block, select_next_value
+
+
+@dataclass(frozen=True)
+class JumpRequest:
+    path: Path
+    line: int
+    column: int
+
+
+@dataclass(frozen=True)
+class HoverMark:
+    path: Path
+    line: int
+
+
+@dataclass
+class EditorSession:
+    # A live TextEditor instance bound to a specific on-disk file. `source` is
+    # the snapshot used to seed the editor; the editor's current text may diverge
+    # from `source.text` until the next flush. `saved_undo` is the editor's
+    # undo-index at last save — anything beyond that is unsaved.
+    editor: text_edit.TextEditor
+    source: ShaderSource
+    saved_undo: int
+
 
 # The procedural starter shader seeded into an empty project on first run (no
 # external media to load, unlike the Media Input template).
@@ -137,19 +163,22 @@ class App:
         # Start in navigation mode: defocus the editor on its first render so the
         # caret isn't active and arrows navigate nodes (the editor auto-grabs focus).
         self.editor_defocus_requested: bool = True
-        # (line, index) for tabs/code.py to move the caret to next render; cleared on consume.
-        self.editor_jump_request: tuple[int, int] | None = None
+        # Path-tagged jump request for tabs/code.py to honor next render — the consumer
+        # gates on `path == current_editor_path` so an error in a non-active file
+        # doesn't move the active editor's caret. Cleared on consume.
+        self.editor_jump_request: JumpRequest | None = None
         # Transient: declaration line to mark in the gutter while a uniform control is
         # hovered. Re-set every frame by widgets/uniform.py (None when nothing hovered).
-        self.editor_hover_line: int | None = None
+        self.editor_hover_line: HoverMark | None = None
         # Transient: uniform name hovered in the code editor this frame, so its panel
         # row highlights. Set by tabs/code.py (drawn before the panel), "" when none.
         self.code_hovered_uniform: str = ""
         self.global_fps = 0.0
         self.fps_details_open: bool = False
 
-        self.editors: dict[str, text_edit.TextEditor] = {}
-        self.editor_saved_undo: dict[str, int] = {}
+        # Path-keyed editor sessions: one TextEditor per opened file. A node shader
+        # path is the only key today; lib files become additional keys later.
+        self.editor_sessions: dict[Path, EditorSession] = {}
 
         self._init(project_dir, seed_starter=is_first_launch)
 
@@ -315,17 +344,34 @@ class App:
             size_pixels=size,
         )
 
-    def get_editor(self, node_id: str) -> text_edit.TextEditor:
-        editor = self.editors.get(node_id)
-        if editor is None:
+    @property
+    def current_editor_path(self) -> Path | None:
+        node_id = self.current_node_id
+        if not node_id or node_id not in self.ui_nodes:
+            return None
+        return self.ui_nodes[node_id].node.source.path
+
+    def get_session(self, source: ShaderSource) -> EditorSession:
+        # Lazy-create a session bound to this source's path. The path is the
+        # stable identity; `source.text` is used as the initial buffer text.
+        session = self.editor_sessions.get(source.path)
+        if session is None:
             editor = text_edit.TextEditor()
             editor.set_language(text_edit.TextEditor.Language.glsl())
             editor.set_palette(text_edit.TextEditor.get_dark_palette())
-            editor.set_text(self.ui_nodes[node_id].node.fs_source)
-            self.editors[node_id] = editor
-            self.editor_saved_undo[node_id] = editor.get_undo_index()
+            editor.set_text(source.text)
+            session = EditorSession(
+                editor=editor, source=source, saved_undo=editor.get_undo_index()
+            )
+            self.editor_sessions[source.path] = session
             self._apply_editor_settings_to(editor)
-        return editor
+        return session
+
+    def get_current_session(self) -> EditorSession | None:
+        node_id = self.current_node_id
+        if not node_id or node_id not in self.ui_nodes:
+            return None
+        return self.get_session(self.ui_nodes[node_id].node.source)
 
     def _apply_editor_settings_to(self, editor: text_edit.TextEditor) -> None:
         settings: EditorSettings = self.app_state.editor_settings
@@ -338,37 +384,45 @@ class App:
         editor.set_line_spacing(settings.line_spacing)
 
     def apply_editor_settings(self) -> None:
-        for editor in self.editors.values():
-            self._apply_editor_settings_to(editor)
+        for session in self.editor_sessions.values():
+            self._apply_editor_settings_to(session.editor)
 
     def is_current_editor_dirty(self) -> bool:
-        node_id = self.current_node_id
-        editor = self.editors.get(node_id)
-        if editor is None:
+        session = self.get_current_session_if_exists()
+        if session is None:
             return False
-        return editor.get_undo_index() != self.editor_saved_undo.get(node_id, 0)
+        return session.editor.get_undo_index() != session.saved_undo
+
+    def get_current_session_if_exists(self) -> EditorSession | None:
+        # Non-creating variant — for callers that read state but mustn't spawn
+        # a session as a side effect (e.g. the dirty-check during render).
+        path = self.current_editor_path
+        if path is None:
+            return None
+        return self.editor_sessions.get(path)
 
     def flush_current_editor(self) -> None:
+        session = self.get_current_session_if_exists()
+        if session is None or not self.is_current_editor_dirty():
+            return
         node_id = self.current_node_id
-        if not node_id:
-            return
-
-        editor = self.editors.get(node_id)
-        if editor is None or not self.is_current_editor_dirty():
-            return
-
         node = self.ui_nodes[node_id].node
-        node.release_program(editor.get_text())
+        node.release_program(session.editor.get_text())
         # Re-render to bind a valid program — a freed program left GL-current crashes the imgui renderer's restore (GLError 1281)
         node.render()
-        self.editor_saved_undo[node_id] = editor.get_undo_index()
+        session.saved_undo = session.editor.get_undo_index()
 
     def sync_editor_from_disk(self, node_id: str, source: str) -> None:
-        editor = self.editors.get(node_id)
-        if editor is None:
+        # Called by the mtime watcher. The node's source.path is still the same
+        # (only the text/mtime change), so we look the session up by that path.
+        if node_id not in self.ui_nodes:
             return
-        editor.set_text(source)
-        self.editor_saved_undo[node_id] = editor.get_undo_index()
+        path = self.ui_nodes[node_id].node.source.path
+        session = self.editor_sessions.get(path)
+        if session is None:
+            return
+        session.editor.set_text(source)
+        session.saved_undo = session.editor.get_undo_index()
 
     def open_current_node_dir(self) -> None:
         if not self.current_node_id:
@@ -476,9 +530,9 @@ class App:
         if new_node_id == node_id:
             new_node_id = ""
 
+        path = self.ui_nodes[node_id].node.source.path
         self.ui_nodes.pop(node_id).node.release()
-        self.editors.pop(node_id, None)
-        self.editor_saved_undo.pop(node_id, None)
+        self.editor_sessions.pop(path, None)
         if node_id == self.node_delete_armed:
             self.node_delete_armed = ""
         if node_id == self.current_node_id or not self.current_node_id:

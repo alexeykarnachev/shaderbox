@@ -1,5 +1,6 @@
 import base64
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Literal, Self
 from uuid import uuid4
@@ -9,7 +10,7 @@ from loguru import logger
 from OpenGL.GL import GL_SAMPLER_2D, GL_UNSIGNED_INT
 from pydantic import BaseModel, ValidationError, model_validator
 
-from shaderbox.core import Node
+from shaderbox.core import _NODE_SHADER_BASENAME, Node
 from shaderbox.media import MediaDetails, MediaWithTexture
 from shaderbox.theme import COLOR
 from shaderbox.ui_primitives import PreviewCellResult, preview_cell
@@ -258,7 +259,6 @@ class UINode(BaseModel):
     node: Node
     id: str = ""
 
-    mtime: float = 0
     ui_state: UINodeState = UINodeState()
 
     model_config = {"arbitrary_types_allowed": True}
@@ -283,10 +283,14 @@ class UINode(BaseModel):
             "ui_state": self.ui_state.model_dump(),
         }
 
-        fs_file_path = dir / "shader.frag.glsl"
+        fs_file_path = dir / _NODE_SHADER_BASENAME
         with fs_file_path.open("w") as f:
-            f.write(self.node.fs_source)
-        self.mtime = fs_file_path.lstat().st_mtime
+            f.write(self.node.source.text)
+        # Rebind the source to its (possibly new) on-disk location + fresh mtime,
+        # so the mtime watcher and any subsequent load read consistent state.
+        self.node.source = replace(
+            self.node.source, path=fs_file_path, mtime=fs_file_path.lstat().st_mtime
+        )
 
         # ----------------------------------------------------------------
         # Save uniforms
@@ -363,7 +367,7 @@ class UINode(BaseModel):
 
 
 def load_node_from_dir(node_dir: Path) -> UINode:
-    node, mtime, meta = Node.load_from_dir(node_dir)
+    node, meta = Node.load_from_dir(node_dir)
     dir_name = node_dir.name
 
     ui_state_dict = meta.get("ui_state", {})
@@ -382,7 +386,6 @@ def load_node_from_dir(node_dir: Path) -> UINode:
     return UINode(
         id=dir_name,
         node=node,
-        mtime=mtime,
         ui_state=ui_state,
     )
 

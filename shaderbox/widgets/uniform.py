@@ -8,7 +8,7 @@ from imgui_bundle import imgui
 from imgui_bundle import portable_file_dialogs as pfd
 from OpenGL.GL import GL_FLOAT, GL_UNSIGNED_INT
 
-from shaderbox.app import App
+from shaderbox.app import App, HoverMark, JumpRequest
 from shaderbox.constants import (
     IMAGE_EXTENSIONS,
     MEDIA_EXTENSIONS,
@@ -49,13 +49,15 @@ def _begin_ctrl(app: App, name: str) -> None:
         highlight=(name == app.code_hovered_uniform),
     )
     if clicked or imgui.is_item_hovered():
-        editor = app.get_editor(app.current_node_id)
-        line = find_uniform_declaration_line(editor.get_text(), name)
+        session = app.get_current_session()
+        if session is None:
+            return
+        line = find_uniform_declaration_line(session.editor.get_text(), name)
         if line is not None:
             if clicked:
-                app.editor_jump_request = (line, 0)
+                app.editor_jump_request = JumpRequest(session.source.path, line, 0)
             else:
-                app.editor_hover_line = line
+                app.editor_hover_line = HoverMark(session.source.path, line)
     imgui.same_line(_CTRL_X)
     imgui.set_next_item_width(SIZE.UNIFORM_CTRL_W)
 

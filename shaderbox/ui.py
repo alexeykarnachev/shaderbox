@@ -1,4 +1,5 @@
 import time
+from dataclasses import replace
 
 import glfw
 import moderngl
@@ -60,23 +61,23 @@ def update_and_draw(app: App) -> None:
     # ----------------------------------------------------------------
     # Check for shader file changes and reload nodes
     for name in list(app.ui_nodes.keys()):
-        fs_file_path = app.nodes_dir / name / "shader.frag.glsl"
+        ui_node = app.ui_nodes[name]
+        fs_file_path = ui_node.node.source.path
 
         if not fs_file_path.exists():
             return
 
         fs_file_mtime = fs_file_path.lstat().st_mtime
-        if fs_file_mtime != app.ui_nodes[name].mtime:
+        if fs_file_mtime != ui_node.node.source.mtime:
             logger.info(f"Reloading node {name} due to shader file change")
             try:
-                ui_node = app.ui_nodes[name]
                 new_source = fs_file_path.read_text()
                 ui_node.node.release_program(new_source)
-                ui_node.mtime = fs_file_mtime
+                ui_node.node.source = replace(ui_node.node.source, mtime=fs_file_mtime)
                 app.sync_editor_from_disk(name, new_source)
             except Exception as e:
                 logger.error(f"Failed to reload node {name}: {e}")
-                app.ui_nodes[name].mtime = fs_file_mtime
+                ui_node.node.source = replace(ui_node.node.source, mtime=fs_file_mtime)
 
     # ----------------------------------------------------------------
     # Render previews

@@ -1,6 +1,7 @@
 import base64
 import json
 from collections.abc import Sequence
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +29,47 @@ from shaderbox.constants import (
 )
 from shaderbox.media import Image, MediaDetails, MediaWithTexture, Video, texture_to_pil
 from shaderbox.render_preset import FitPolicy, RenderPreset, resolve_dims
+from shaderbox.util import ShaderError, SourceMap, parse_shader_errors
+
+# A node's shader is its sibling `shader.frag.glsl`; only ShaderSource.load_node
+# and the per-node disk save know this name.
+_NODE_SHADER_BASENAME = "shader.frag.glsl"
+
+
+@dataclass(frozen=True)
+class ShaderSource:
+    path: Path
+    text: str
+    mtime: float
+
+    @classmethod
+    def load(cls, path: Path) -> "ShaderSource":
+        return cls(
+            path=path,
+            text=path.read_text(encoding="utf-8"),
+            mtime=path.lstat().st_mtime if path.exists() else 0.0,
+        )
+
+
+@dataclass
+class CompileUnit:
+    # The flattened source handed to the driver, plus the source map that lets us
+    # remap driver-emitted line numbers back to (path, line). With one source today
+    # `flattened == sources[0].text` and `source_map` is identity; both shapes
+    # generalize once the include resolver lands.
+    sources: list[ShaderSource]
+    flattened: str
+    source_map: SourceMap
+    error_raw: str = ""
+    errors: list[ShaderError] = field(default_factory=list)
+
+    @classmethod
+    def empty(cls, source: ShaderSource) -> "CompileUnit":
+        return cls(
+            sources=[source],
+            flattened=source.text,
+            source_map=SourceMap.identity(source.path),
+        )
 
 
 class Canvas:
@@ -79,21 +121,21 @@ class Node:
     def __init__(
         self,
         gl: moderngl.Context | None = None,
-        fs_source: str | None = None,
+        source: ShaderSource | None = None,
         canvas_size: tuple[int, int] | None = None,
     ) -> None:
         self._gl = gl or moderngl.get_context()
         self.vs_source: str = self._DEFAULT_VS_FILE_PATH.read_text(encoding="utf-8")
-        self.fs_source: str = (
-            fs_source
-            if fs_source
-            else self._DEFAULT_FS_FILE_PATH.read_text(encoding="utf-8")
+        self.source: ShaderSource = (
+            source
+            if source is not None
+            else ShaderSource.load(self._DEFAULT_FS_FILE_PATH)
         )
 
         self.canvas = Canvas(size=canvas_size, gl=self._gl)
 
         self.uniform_values: dict[str, Any] = {}
-        self.shader_error: str = ""
+        self.compile_unit: CompileUnit = CompileUnit.empty(self.source)
         self.program: moderngl.Program | None = None
         self.vbo: moderngl.Buffer | None = None
         self.vao: moderngl.VertexArray | None = None
@@ -103,17 +145,14 @@ class Node:
         cls,
         node_dir: Path | str,
         gl: moderngl.Context | None = None,
-    ) -> tuple["Node", float, dict[str, Any]]:
+    ) -> tuple["Node", dict[str, Any]]:
         node_dir = Path(node_dir)
         with (node_dir / "node.json").open() as f:
             metadata = json.load(f)
 
-        fs_file_path = node_dir / "shader.frag.glsl"
-        mtime = fs_file_path.lstat().st_mtime if fs_file_path.exists() else 0.0
-
         node = Node(
             gl=gl,
-            fs_source=fs_file_path.read_text(encoding="utf-8"),
+            source=ShaderSource.load(node_dir / _NODE_SHADER_BASENAME),
             canvas_size=metadata.get("canvas_size"),
         )
 
@@ -157,10 +196,14 @@ class Node:
             node.uniform_values[uniform_name] = value
 
         node.render()  # Warm-up the node
-        return node, mtime, metadata
+        return node, metadata
 
     def release_program(self, new_fs_source: str = "") -> None:
-        self.fs_source = new_fs_source
+        # Path is the stable identity of a node's source; only text + mtime change.
+        self.source = replace(self.source, text=new_fs_source, mtime=self.source.mtime)
+        # Drop any cached compile-failure diagnostics so the next compile starts
+        # from a clean slate; the unit is rebuilt by the next render's compile().
+        self.compile_unit = CompileUnit.empty(self.source)
         if self.program:
             self.program.release()
         if self.vbo:
@@ -187,33 +230,44 @@ class Node:
 
         return uniforms
 
+    def compile(self) -> None:
+        # Rebuild the compile unit and (on success) the GL program. On failure
+        # the previous valid `self.program` is preserved — the rendered preview
+        # stays bright while the editor's error strip surfaces the diagnostics
+        # (feature-013 invariant).
+        unit = CompileUnit.empty(self.source)
+        try:
+            program = self._gl.program(
+                vertex_shader=self.vs_source,
+                fragment_shader=unit.flattened,
+            )
+        except Exception as e:
+            err = str(e)
+            if err != self.compile_unit.error_raw:
+                logger.error(f"Failed to compile shader: {e}")
+            unit.error_raw = err
+            unit.errors = parse_shader_errors(err, unit.source_map)
+            self.compile_unit = unit
+            return
+
+        self.compile_unit = unit
+
+        if self.program:
+            self.program.release()
+        if self.vbo:
+            self.vbo.release()
+        if self.vao:
+            self.vao.release()
+
+        self.program = program
+        self.vbo = self._gl.buffer(np.array(FULLSCREEN_QUAD_VERTICES, dtype="f4"))
+        self.vao = self._gl.vertex_array(program, [(self.vbo, "2f", "a_pos")])
+
     def render(self, u_time: float | None = None, canvas: Canvas | None = None) -> None:
         canvas = canvas or self.canvas
 
         if not self.program or not self.vbo or not self.vao:
-            try:
-                program = self._gl.program(
-                    vertex_shader=self.vs_source,
-                    fragment_shader=self.fs_source,
-                )
-            except Exception as e:
-                err = str(e)
-                if err != self.shader_error:
-                    logger.error(f"Failed to compile shader: {e}")
-                    self.shader_error = err
-                return
-
-            self.shader_error = ""
-            if self.program:
-                self.program.release()
-            if self.vbo:
-                self.vbo.release()
-            if self.vao:
-                self.vao.release()
-
-            self.program = program
-            self.vbo = self._gl.buffer(np.array(FULLSCREEN_QUAD_VERTICES, dtype="f4"))
-            self.vao = self._gl.vertex_array(program, [(self.vbo, "2f", "a_pos")])
+            self.compile()
 
         if not self.program or not self.vao:
             return

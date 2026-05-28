@@ -3,6 +3,7 @@ import math
 import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, TypeVar
 
 import moderngl
@@ -121,26 +122,60 @@ def format_auto_value(value: object) -> str:
 
 @dataclass(frozen=True)
 class ShaderError:
-    line: int  # 0-based editor line; -1 when the driver string couldn't be parsed
+    # `path` identifies which source file the error belongs to (the root today; an
+    # included file once 015 lands). `line` is 0-based editor line; -1 when the raw
+    # driver string didn't match either error regex (fallback row, not clickable).
+    path: Path
+    line: int
     message: str
 
 
+@dataclass(frozen=True)
+class SourceMap:
+    # (driver_line, source_path, source_line) — all 1-based. The future include
+    # resolver populates this from `#line` directives it injects during flatten;
+    # today there's a single source so the mapping is the identity.
+    entries: tuple[tuple[int, Path, int], ...]
+    root_path: Path
+
+    @classmethod
+    def identity(cls, root_path: Path) -> "SourceMap":
+        return cls(entries=(), root_path=root_path)
+
+    def resolve(self, driver_line: int) -> tuple[Path, int]:
+        # Identity map (no entries): driver line == source line, root file.
+        if not self.entries:
+            return (self.root_path, driver_line)
+        # Walk entries (sorted ascending by driver_line); the matching span is the
+        # last entry whose driver_line <= the queried line.
+        match = self.entries[0]
+        for entry in self.entries:
+            if entry[0] <= driver_line:
+                match = entry
+            else:
+                break
+        span_driver, span_path, span_source = match
+        return (span_path, span_source + (driver_line - span_driver))
+
+
 # NVIDIA `0(LINE) : error CXXXX: msg`; Mesa/Intel/AMD `ERROR: 0:LINE: msg`.
-# The driver line maps 1:1 to the editor line because core.py compiles fs_source
-# verbatim (no prepended #version/header); we shift 1-based -> 0-based DocPos here.
+# Driver lines are 1-based; we resolve via SourceMap (identity today) then shift
+# 1-based -> 0-based DocPos.
 _NVIDIA_ERROR_RE = re.compile(r"^\s*\d+\((\d+)\)\s*:\s*(.+)$")
 _MESA_ERROR_RE = re.compile(r"^\s*(?:ERROR|WARNING):\s*\d+:(\d+):\s*(.+)$")
 
 
-def parse_shader_errors(raw: str) -> list[ShaderError]:
+def parse_shader_errors(raw: str, source_map: SourceMap) -> list[ShaderError]:
     errors: list[ShaderError] = []
     for raw_line in raw.splitlines():
         match = _NVIDIA_ERROR_RE.match(raw_line) or _MESA_ERROR_RE.match(raw_line)
         if match:
-            errors.append(ShaderError(int(match.group(1)) - 1, match.group(2).strip()))
+            driver_line = int(match.group(1))
+            path, source_line = source_map.resolve(driver_line)
+            errors.append(ShaderError(path, source_line - 1, match.group(2).strip()))
 
     if not errors:
-        return [ShaderError(-1, raw.strip())]
+        return [ShaderError(source_map.root_path, -1, raw.strip())]
     return errors
 
 
@@ -157,9 +192,14 @@ def next_error_line(errors: list[ShaderError], after_line: int) -> int | None:
 
 
 def find_uniform_declaration_line(source: str, name: str) -> int | None:
-    # The name must be the declared identifier (immediately before `[`/`=`/`;`),
+    # The name must be the declared identifier (immediately before `[`/`=`/`;`/`{`),
     # not merely mentioned on a `uniform` line (a comment / another's initializer).
-    pattern = re.compile(rf"^\s*uniform\b[^=;]*\b{re.escape(name)}\s*(?:\[|=|;)")
+    # `{` covers UBO blocks (`layout(std140) uniform u_params { ... }`) where the
+    # name is the block-type, terminated by `{`, and the line may carry an optional
+    # `layout(...)` prefix before `uniform`.
+    pattern = re.compile(
+        rf"^\s*(?:layout\s*\([^)]*\)\s*)?uniform\b[^=;{{]*\b{re.escape(name)}\s*(?:\[|=|;|\{{)"
+    )
     for i, line in enumerate(source.splitlines()):
         if pattern.match(line.split("//")[0]):
             return i

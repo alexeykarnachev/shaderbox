@@ -5,8 +5,11 @@ trailing zero must decode without raising). The resolution tests pin the display
 format that tabs/node.py parses back to (w, h).
 """
 
+from pathlib import Path
+
 from shaderbox.util import (
     ShaderError,
+    SourceMap,
     find_uniform_declaration_line,
     format_auto_value,
     get_resolution_str,
@@ -15,6 +18,9 @@ from shaderbox.util import (
     str_to_unicode,
     unicode_to_str,
 )
+
+_ROOT = Path("/tmp/test.frag.glsl")
+_MAP = SourceMap.identity(_ROOT)
 
 
 def test_unicode_round_trip_partial_fill() -> None:
@@ -61,17 +67,19 @@ def test_resolution_str_name_suffix() -> None:
 
 def test_parse_shader_errors_nvidia_format() -> None:
     raw = "0(5) : error C0000: syntax error, unexpected identifier"
-    errors = parse_shader_errors(raw)
+    errors = parse_shader_errors(raw, _MAP)
     assert len(errors) == 1
     # Driver line is 1-based; editor DocPos is 0-based -> 5 becomes 4.
     assert errors[0].line == 4
+    assert errors[0].path == _ROOT
     assert "syntax error" in errors[0].message
 
 
 def test_parse_shader_errors_mesa_format() -> None:
-    errors = parse_shader_errors("ERROR: 0:20: 'foo' : undeclared identifier")
+    errors = parse_shader_errors("ERROR: 0:20: 'foo' : undeclared identifier", _MAP)
     assert len(errors) == 1
     assert errors[0].line == 19
+    assert errors[0].path == _ROOT
     assert "undeclared identifier" in errors[0].message
 
 
@@ -83,15 +91,16 @@ def test_parse_shader_errors_multi_line_picks_only_error_lines() -> None:
         "0(5) : error C0000: missing ';'\n"
         "0(8) : error C1101: undefined variable 'x'\n"
     )
-    errors = parse_shader_errors(raw)
+    errors = parse_shader_errors(raw, _MAP)
     assert [e.line for e in errors] == [4, 7]
 
 
 def test_parse_shader_errors_unparseable_falls_back_to_raw() -> None:
     raw = "something the regexes don't recognise"
-    errors = parse_shader_errors(raw)
+    errors = parse_shader_errors(raw, _MAP)
     assert len(errors) == 1
     assert errors[0].line == -1
+    assert errors[0].path == _ROOT
     assert errors[0].message == raw
 
 
@@ -132,6 +141,24 @@ def test_find_uniform_declaration_line_ignores_name_in_comment() -> None:
     assert find_uniform_declaration_line(source, "u_target") == 1
 
 
+def test_find_uniform_declaration_line_ubo_block() -> None:
+    # UBO block: name follows `uniform` and is terminated by `{`. The line carries
+    # an optional `layout(...)` prefix.
+    source = (
+        "layout(std140) uniform u_params {\n"
+        "    vec4 a;\n"
+        "    vec4 b;\n"
+        "} params;\n"
+    )
+    assert find_uniform_declaration_line(source, "u_params") == 0
+
+
+def test_find_uniform_declaration_line_ubo_block_no_layout_prefix() -> None:
+    # Bare `uniform Block { ... }` is also valid GLSL and must match.
+    source = "uniform u_params {\n    vec4 a;\n};\n"
+    assert find_uniform_declaration_line(source, "u_params") == 0
+
+
 def test_format_auto_value_scalar_and_vector() -> None:
     assert format_auto_value(0.5) == "0.500"
     assert format_auto_value(2) == "2.000"
@@ -144,7 +171,11 @@ def test_format_auto_value_non_numeric_falls_back_to_str() -> None:
 
 
 def test_next_error_line_after_and_wrap() -> None:
-    errors = [ShaderError(4, "a"), ShaderError(7, "b"), ShaderError(9, "c")]
+    errors = [
+        ShaderError(_ROOT, 4, "a"),
+        ShaderError(_ROOT, 7, "b"),
+        ShaderError(_ROOT, 9, "c"),
+    ]
     assert next_error_line(errors, 0) == 4
     assert next_error_line(errors, 4) == 7  # strictly after
     assert next_error_line(errors, 9) == 4  # wraps to the first
@@ -152,7 +183,11 @@ def test_next_error_line_after_and_wrap() -> None:
 
 
 def test_next_error_line_skips_unparseable_and_dedups() -> None:
-    errors = [ShaderError(-1, "raw"), ShaderError(5, "a"), ShaderError(5, "dup")]
+    errors = [
+        ShaderError(_ROOT, -1, "raw"),
+        ShaderError(_ROOT, 5, "a"),
+        ShaderError(_ROOT, 5, "dup"),
+    ]
     assert next_error_line(errors, 0) == 5
-    assert next_error_line([ShaderError(-1, "raw")], 0) is None
+    assert next_error_line([ShaderError(_ROOT, -1, "raw")], 0) is None
     assert next_error_line([], 0) is None

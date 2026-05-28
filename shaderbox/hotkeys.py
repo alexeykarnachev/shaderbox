@@ -1,19 +1,22 @@
 import glfw
 from imgui_bundle import imgui
 
-from shaderbox.app import App
-from shaderbox.util import next_error_line, parse_shader_errors
+from shaderbox.app import App, JumpRequest
+from shaderbox.util import next_error_line
 
 
 def _jump_to_next_error(app: App) -> None:
-    ui_node = app.ui_nodes.get(app.current_node_id)
-    if ui_node is None or not ui_node.node.shader_error:
+    session = app.get_current_session()
+    if session is None:
         return
-    errors = parse_shader_errors(ui_node.node.shader_error)
-    caret = app.get_editor(app.current_node_id).get_current_cursor_position().line
+    ui_node = app.ui_nodes[app.current_node_id]
+    errors = ui_node.node.compile_unit.errors
+    if not errors:
+        return
+    caret = session.editor.get_current_cursor_position().line
     line = next_error_line(errors, caret)
     if line is not None:
-        app.editor_jump_request = (line, 0)
+        app.editor_jump_request = JumpRequest(session.source.path, line, 0)
 
 
 def process_hotkeys(app: App) -> None:

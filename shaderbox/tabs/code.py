@@ -1,43 +1,58 @@
+from pathlib import Path
+
 import glfw
 from imgui_bundle import imgui
 from imgui_bundle import imgui_color_text_edit as text_edit
 
-from shaderbox.app import App
+from shaderbox.app import App, HoverMark, JumpRequest
 from shaderbox.theme import COLOR, EDITOR_UNFOCUSED_ALPHA, SIZE, SPACE, fade
 from shaderbox.ui_primitives import draw_copyable_text
-from shaderbox.util import ShaderError, format_auto_value, parse_shader_errors
+from shaderbox.util import ShaderError, format_auto_value
 
 _MAX_ERROR_ROWS = 3
 
 
 def _apply_markers(
-    editor: text_edit.TextEditor, errors: list[ShaderError], hover_line: int | None
+    editor: text_edit.TextEditor,
+    errors: list[ShaderError],
+    hover: HoverMark | None,
+    current_path: Path,
 ) -> None:
     editor.clear_markers()
     # The marker colours are line fills, so use translucent washes — an opaque fill
-    # hides the glyphs underneath.
+    # hides the glyphs underneath. Only errors whose `path` matches the currently
+    # open editor file mark its gutter; cross-file errors will surface in their own
+    # editor's gutter once multi-file editing lands (today there's only one file).
     err_color = imgui.color_convert_float4_to_u32(fade(COLOR.STATE_ERROR, 0.35))
     for err in errors:
-        if err.line >= 0:
+        if err.line >= 0 and err.path == current_path:
             editor.add_marker(err.line, err_color, err_color, err.message, err.message)
-    if hover_line is not None:
+    if hover is not None and hover.path == current_path:
         accent = imgui.color_convert_float4_to_u32(fade(COLOR.ACCENT_PRIMARY, 0.15))
-        editor.add_marker(hover_line, accent, accent, "", "")
+        editor.add_marker(hover.line, accent, accent, "", "")
 
 
-def _consume_jump(app: App, editor: text_edit.TextEditor) -> bool:
-    if app.editor_jump_request is None:
+def _consume_jump(app: App, editor: text_edit.TextEditor, current_path: Path) -> bool:
+    req = app.editor_jump_request
+    if req is None:
         return False
-    line, index = app.editor_jump_request
+    # A request for a different file is left intact for a future consumer (or
+    # cleared once the right session opens). Today we have exactly one editor
+    # so any non-matching request is stale; clear it to avoid stuck state.
+    if req.path != current_path:
+        app.editor_jump_request = None
+        return False
     app.editor_jump_request = None
-    editor.set_cursor(text_edit.TextEditor.DocPos(line, index))
-    editor.select_line(line)
-    editor.scroll_to_line(line, text_edit.TextEditor.Scroll.align_middle)
+    editor.set_cursor(text_edit.TextEditor.DocPos(req.line, req.column))
+    editor.select_line(req.line)
+    editor.scroll_to_line(req.line, text_edit.TextEditor.Scroll.align_middle)
     editor.set_focus()
     return True
 
 
-def _draw_error_strip(app: App, errors: list[ShaderError], height: float) -> None:
+def _draw_error_strip(
+    app: App, errors: list[ShaderError], height: float, current_path: Path
+) -> None:
     imgui.push_style_color(imgui.Col_.child_bg, COLOR.BG_SURFACE)
     if imgui.begin_child("##shader_errors", size=(0.0, height)):
         n = len(errors)
@@ -53,7 +68,7 @@ def _draw_error_strip(app: App, errors: list[ShaderError], height: float) -> Non
             clicked = imgui.selectable(f"{label}##err{i}", False)[0]
             imgui.pop_style_color(1)
             if clicked and err.line >= 0:
-                app.editor_jump_request = (err.line, 0)
+                app.editor_jump_request = JumpRequest(err.path, err.line, 0)
         extra = n - _MAX_ERROR_ROWS
         if extra > 0:
             imgui.text_colored(COLOR.FG_DIM, f"+{extra} more")
@@ -69,7 +84,7 @@ def draw(app: App) -> None:
         imgui.text_colored(COLOR.FG_DIM, "No node selected")
         return
 
-    full_file_path = app.nodes_dir / ui_node.id / "shader.frag.glsl"
+    full_file_path = ui_node.node.source.path
     local_file_path = full_file_path.relative_to(app.project_dir)
 
     if draw_copyable_text(str(local_file_path), copy_value=str(full_file_path)):
@@ -78,7 +93,7 @@ def draw(app: App) -> None:
     if app.is_current_editor_dirty():
         imgui.same_line()
         imgui.text_colored(COLOR.STATE_WARN, "(unsaved)")
-    elif not ui_node.node.shader_error:
+    elif not ui_node.node.compile_unit.error_raw:
         imgui.same_line()
         imgui.text_colored(COLOR.STATE_OK, "compiled")
 
@@ -95,15 +110,12 @@ def draw(app: App) -> None:
         app.editor_focused = False
         return
 
-    editor = app.get_editor(ui_node.id)
+    current_path = ui_node.node.source.path
+    editor = app.get_session(ui_node.node.source).editor
     settings = app.app_state.editor_settings
 
-    errors = (
-        parse_shader_errors(ui_node.node.shader_error)
-        if ui_node.node.shader_error
-        else []
-    )
-    _apply_markers(editor, errors, app.editor_hover_line)
+    errors = ui_node.node.compile_unit.errors
+    _apply_markers(editor, errors, app.editor_hover_line, current_path)
     app.editor_hover_line = None
     strip_height = 0.0
     if errors:
@@ -137,7 +149,7 @@ def draw(app: App) -> None:
 
     # set_cursor/select_line/scroll latch a request the upcoming render() executes;
     # a jump also focuses the editor so the highlighted line shows un-dimmed.
-    jumped = _consume_jump(app, editor)
+    jumped = _consume_jump(app, editor, current_path)
 
     # Dim the whole pane while the editor lacks focus. app.editor_focused is last
     # frame's value (computed below, after render) — a one-frame lag on transitions.
@@ -184,5 +196,5 @@ def draw(app: App) -> None:
 
     if errors:
         imgui.push_font(app.font_12, app.font_12.legacy_size)
-        _draw_error_strip(app, errors, strip_height)
+        _draw_error_strip(app, errors, strip_height, current_path)
         imgui.pop_font()

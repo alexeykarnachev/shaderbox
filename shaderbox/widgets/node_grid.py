@@ -49,7 +49,7 @@ def draw_node_preview_grid(app: App, width: float, height: float) -> None:
         for i, (id, ui_node) in enumerate(list(app.ui_nodes.items())):
             border_color: tuple[float, float, float, float] | None = None
             if id == app.current_node_id:
-                if ui_node.node.shader_error:
+                if ui_node.node.compile_unit.error_raw:
                     border_color = COLOR.STATE_ERROR
                 else:
                     border_color = COLOR.ACCENT_PRIMARY
