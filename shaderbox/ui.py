@@ -245,7 +245,9 @@ def update_and_draw(app: App) -> None:
                 and not app.focus_move_in_flight()
             ):
                 app.active_region = ActiveRegion.EDITOR
-            if app.active_region == ActiveRegion.EDITOR:
+            # Not while a modal is open: the outline is on the foreground draw list
+            # (immune to window clip) so it would render OVER the popup.
+            if app.active_region == ActiveRegion.EDITOR and not app.any_popup_open():
                 active_region_outline()
             code_tab.draw(app)
 
@@ -476,7 +478,7 @@ def _draw_node_settings(app: App) -> None:
             and not app.focus_move_in_flight()
         ):
             app.active_region = ActiveRegion.PANEL
-        if app.active_region == ActiveRegion.PANEL:
+        if app.active_region == ActiveRegion.PANEL and not app.any_popup_open():
             active_region_outline()
         with imgui_ctx.begin_tab_bar("node_settings_tabs") as bar:
             if bar:

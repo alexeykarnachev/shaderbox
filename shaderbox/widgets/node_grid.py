@@ -54,7 +54,7 @@ def draw_node_preview_grid(app: App, width: float, height: float) -> None:
             and not app.focus_move_in_flight()
         ):
             app.active_region = ActiveRegion.GRID
-        if app.active_region == ActiveRegion.GRID:
+        if app.active_region == ActiveRegion.GRID and not app.any_popup_open():
             active_region_outline()
         if imgui.button("New node"):
             app.open_node_creator()
