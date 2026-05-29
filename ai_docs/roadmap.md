@@ -31,9 +31,8 @@ feature; brief points at the superseder).
   `dev` == `master`, nothing unshipped.
 - The shader library: write `SB_*` helpers in `<app_data_dir>/lib/`, call them by name, `Ctrl+P`
   to browse/insert; manage lib files (tree + right-click context menus) from the picker.
+- itch store page + GitHub README both synced to the shipped feature set.
 - **NEXT ACTION:** none queued — pick the next feature from `todo.md` triggers or a fresh ask.
-- **itch store page (`page.yaml`) not yet updated for the shader library** — flagged at ship
-  time; do a `## Sync the itch.io page` pass when convenient.
 - **No open BLOCKERs.**
 
 ## Features
