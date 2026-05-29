@@ -14,18 +14,18 @@ def app_data_dir() -> Path:
     return Path(user_data_dir("shaderbox"))
 
 
-def lib_root() -> Path:
+def shader_lib_root() -> Path:
     # Cross-project GLSL library — every node's `#include "name"` resolves
     # against this dir. Same posture as integrations.json (cross-project, lives
     # at app_data_dir()).
-    path = app_data_dir() / "lib"
+    path = app_data_dir() / "shader_lib"
     path.mkdir(parents=True, exist_ok=True)
     return path
 
 
-def lib_trash_dir() -> Path:
-    # Soft-delete destination for lib files removed via the picker. Leading dot
-    # so LibIndex.build's glob skips it (see lib_index.is_lib_path).
-    path = lib_root() / ".trash"
+def shader_lib_trash_dir() -> Path:
+    # Soft-delete destination for shader-lib files removed via the picker. Leading
+    # dot so ShaderLibIndex.build's glob skips it (see index.is_shader_lib_path).
+    path = shader_lib_root() / ".trash"
     path.mkdir(parents=True, exist_ok=True)
     return path

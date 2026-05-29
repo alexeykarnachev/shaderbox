@@ -3,7 +3,7 @@
 Active-index accessor:
 
 - `set_active(index)` / `active()` — module-level mutable state for the currently
-  loaded LibIndex. `App` owns the rebuild lifecycle (mtime fan-out triggers
+  loaded ShaderLibIndex. `App` owns the rebuild lifecycle (mtime fan-out triggers
   `set_active` with a fresh index). `Node.compile()` reads `active()` at compile
   time. Single-process, GUI app, no concurrency concern.
 
@@ -13,7 +13,7 @@ with this index, and prepends ONLY the matching functions (plus transitive deps)
 to the source handed to the driver. Lib functions feel like built-ins.
 
 Two artifacts:
-- `LibIndex` — a snapshot of every top-level GLSL function in `<lib_root>/**.glsl`,
+- `ShaderLibIndex` — a snapshot of every top-level GLSL function in `<shader_lib_root>/**.glsl`,
   with its body + signature + callees + optional `///` docstring. Rebuilt when any
   lib file's mtime changes.
 - `resolve_usage(root, index)` — the per-compile usage pruner. Returns the
@@ -53,7 +53,7 @@ _USER_FN_DEF_RE = re.compile(
 
 
 @dataclass(frozen=True)
-class LibFunction:
+class ShaderLibFunction:
     name: str
     signature: str  # full declaration line, e.g. "float SB_hash(vec2 p)"
     body: str  # full function text: signature + braced body
@@ -64,25 +64,25 @@ class LibFunction:
 
 
 @dataclass(frozen=True)
-class LibIndex:
-    functions: dict[str, LibFunction]
+class ShaderLibIndex:
+    functions: dict[str, ShaderLibFunction]
     sources: dict[Path, ShaderSource]
 
     @classmethod
-    def empty(cls) -> "LibIndex":
+    def empty(cls) -> "ShaderLibIndex":
         return cls(functions={}, sources={})
 
     @classmethod
-    def build(cls, lib_root: Path) -> "LibIndex":
-        # Walk every .glsl under lib_root and extract top-level function defs.
+    def build(cls, shader_lib_root: Path) -> "ShaderLibIndex":
+        # Walk every .glsl under shader_lib_root and extract top-level function defs.
         # Files that fail to read are silently skipped — the user authoring a
         # half-finished file shouldn't break compile of every other shader.
-        functions: dict[str, LibFunction] = {}
+        functions: dict[str, ShaderLibFunction] = {}
         sources: dict[Path, ShaderSource] = {}
-        if not lib_root.exists():
+        if not shader_lib_root.exists():
             return cls(functions=functions, sources=sources)
-        for path in sorted(lib_root.glob("**/*.glsl")):
-            if not is_lib_path(path, lib_root):
+        for path in sorted(shader_lib_root.glob("**/*.glsl")):
+            if not is_shader_lib_path(path, shader_lib_root):
                 continue
             try:
                 source = ShaderSource.load(path)
@@ -98,27 +98,27 @@ class LibIndex:
         return cls(functions=functions, sources=sources)
 
 
-def is_lib_path(path: Path, lib_root: Path) -> bool:
+def is_shader_lib_path(path: Path, shader_lib_root: Path) -> bool:
     # Exclude any path under a dot-prefixed dir (e.g. `.trash/`). `Path.glob`
-    # walks into dot-dirs by default; both the LibIndex build and the mtime
+    # walks into dot-dirs by default; both the ShaderLibIndex build and the mtime
     # watcher's independent glob walk MUST apply this same filter or the
     # current/cached dict comparison loops rebuilds forever on trashed files.
     try:
-        rel = path.relative_to(lib_root)
+        rel = path.relative_to(shader_lib_root)
     except ValueError:
         return False
     return not any(part.startswith(".") for part in rel.parts)
 
 
-_ACTIVE_INDEX: LibIndex = LibIndex.empty()
+_ACTIVE_INDEX: ShaderLibIndex = ShaderLibIndex.empty()
 
 
-def set_active(index: LibIndex) -> None:
+def set_active(index: ShaderLibIndex) -> None:
     global _ACTIVE_INDEX
     _ACTIVE_INDEX = index
 
 
-def active() -> LibIndex:
+def active() -> ShaderLibIndex:
     return _ACTIVE_INDEX
 
 
@@ -139,7 +139,7 @@ class _ResolveState:
 
 
 def resolve_usage(
-    root: ShaderSource, index: LibIndex
+    root: ShaderSource, index: ShaderLibIndex
 ) -> tuple[str, list[ShaderSource], SourceMap, list[ResolveError]]:
     """Prepend lib functions used by `root` to its source.
 
@@ -243,13 +243,13 @@ def _split_root_header(text: str) -> tuple[int, list[str], list[str]]:
     return header_end, lines[:header_end], lines[header_end:]
 
 
-def _extract_functions(source: ShaderSource) -> list[LibFunction]:
+def _extract_functions(source: ShaderSource) -> list[ShaderLibFunction]:
     # Find every top-level function definition. Brace-match the body manually
     # because regex can't handle nested braces.
     stripped = _strip_comments(source.text)
     raw_lines = source.text.splitlines()
     stripped_lines = stripped.splitlines()
-    functions: list[LibFunction] = []
+    functions: list[ShaderLibFunction] = []
     i = 0
     while i < len(stripped_lines):
         line = stripped_lines[i]
@@ -277,7 +277,7 @@ def _extract_functions(source: ShaderSource) -> list[LibFunction]:
         # Doc-comment block: contiguous `///` lines immediately above.
         doc = _extract_doc(raw_lines, i)
         functions.append(
-            LibFunction(
+            ShaderLibFunction(
                 name=name,
                 signature=signature,
                 body=body,
@@ -323,7 +323,7 @@ def _extract_doc(lines: list[str], sig_line: int) -> str:
     return "\n".join(doc_lines).strip()
 
 
-def _collect_used_lib_names(root: ShaderSource, index: LibIndex) -> set[str]:
+def _collect_used_lib_names(root: ShaderSource, index: ShaderLibIndex) -> set[str]:
     # Tokens the user actually references, minus tokens they themselves define.
     stripped = _strip_comments(root.text)
     referenced = set(_SB_IDENT_RE.findall(stripped))
@@ -332,7 +332,7 @@ def _collect_used_lib_names(root: ShaderSource, index: LibIndex) -> set[str]:
 
 
 def _topo_sort(
-    roots: set[str], index: LibIndex, errors: list[ResolveError]
+    roots: set[str], index: ShaderLibIndex, errors: list[ResolveError]
 ) -> list[str]:
     # Iterative DFS post-order over the call graph rooted at `roots`. Functions
     # are emitted in dependency order (callees before callers).

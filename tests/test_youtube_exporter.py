@@ -16,8 +16,8 @@ from shaderbox.exporters.base import (
     ExporterValueError,
     RenderedArtifact,
 )
+from shaderbox.exporters.integrations import IntegrationsStore
 from shaderbox.exporters.youtube import YouTubeExporter, _AuthEvent, _ConnectEvent, _Job
-from shaderbox.integrations import IntegrationsStore
 
 
 def _video(tmp_path: Path, size: tuple[int, int] = (608, 1088)) -> RenderedArtifact:

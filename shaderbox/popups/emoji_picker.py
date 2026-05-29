@@ -1,7 +1,7 @@
 from imgui_bundle import imgui, imgui_ctx
 
 from shaderbox.app import App
-from shaderbox.emoji_data import EmojiEntry, EmojiGroup, load_emoji_groups
+from shaderbox.popups.emoji_data import EmojiEntry, EmojiGroup, load_emoji_groups
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_primitives import ghost_button, modal_window
 

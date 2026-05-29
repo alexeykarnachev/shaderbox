@@ -5,7 +5,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from shaderbox.integrations import IntegrationsStore
+from shaderbox.exporters.integrations import IntegrationsStore
 from shaderbox.render_preset import RenderPreset
 from shaderbox.ui_models import UINode
 

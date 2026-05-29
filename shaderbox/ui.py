@@ -9,12 +9,12 @@ from loguru import logger
 
 from shaderbox.app import App
 from shaderbox.hotkeys import process_hotkeys
-from shaderbox.lib_index import is_lib_path
-from shaderbox.paths import app_data_dir, lib_root
+from shaderbox.paths import app_data_dir, shader_lib_root
 from shaderbox.popups.emoji_picker import draw_emoji_picker
 from shaderbox.popups.lib_picker import draw_lib_picker
 from shaderbox.popups.node_creator import draw_node_creator
 from shaderbox.popups.settings import draw_settings
+from shaderbox.shader_lib.index import is_shader_lib_path
 from shaderbox.tabs import code as code_tab
 from shaderbox.tabs import node as node_tab
 from shaderbox.tabs import render as render_tab
@@ -113,22 +113,22 @@ def _reload_if_changed(app: App, name: str, ui_node: UINode) -> None:
 def _maybe_rebuild_lib_index(app: App) -> bool:
     # Detect lib-root changes: file added, removed, or mtime bumped. If anything
     # changed, rebuild the index. Cheap: one glob + N stats per frame.
-    # `is_lib_path` keeps `.trash/` (and any future dot-dir) out — must match
-    # the filter LibIndex.build applies, or current vs cached would diverge
+    # `is_shader_lib_path` keeps `.trash/` (and any future dot-dir) out — must match
+    # the filter ShaderLibIndex.build applies, or current vs cached would diverge
     # every frame on trashed files and loop rebuilds forever.
-    root = lib_root()
+    root = shader_lib_root()
     current: dict[str, float] = {}
     for path in root.glob("**/*.glsl"):
-        if not is_lib_path(path, root):
+        if not is_shader_lib_path(path, root):
             continue
         try:
             current[str(path)] = path.lstat().st_mtime
         except OSError:
             continue
-    cached = {str(p): s.mtime for p, s in app.lib_index.sources.items()}
+    cached = {str(p): s.mtime for p, s in app.shader_lib_index.sources.items()}
     if current == cached:
         return False
-    app.rebuild_lib_index()
+    app.rebuild_shader_lib_index()
     # Any node whose last compile pulled in a lib file might now need a fresh
     # compile (the function it referenced may have changed body or disappeared).
     # We invalidate every node that has lib files in its sources; the next render
@@ -142,7 +142,7 @@ def _maybe_rebuild_lib_index(app: App) -> bool:
 def update_and_draw(app: App) -> None:
     # ----------------------------------------------------------------
     # Rebuild the lib index if any lib file changed (added / removed / edited).
-    # Walks lib_root each frame; for small libs the cost is microseconds. If the
+    # Walks shader_lib_root each frame; for small libs the cost is microseconds. If the
     # index changed we invalidate every node that depended on a lib file so its
     # next render recompiles against the fresh index.
     _maybe_rebuild_lib_index(app)
@@ -280,9 +280,9 @@ def _draw_menu_bar(app: App) -> None:
         with imgui_ctx.begin_menu("Edit") as edit_menu:
             if edit_menu and imgui.menu_item("Settings...", "Alt+S", False)[0]:
                 app.open_settings()
-        with imgui_ctx.begin_menu("Library") as lib_menu:
+        with imgui_ctx.begin_menu("Shader Library") as lib_menu:
             if lib_menu and imgui.menu_item("Browse...", "Ctrl+P", False)[0]:
-                app.open_lib_picker()
+                app.open_shader_lib_picker()
 
 
 def _draw_splitter(app: App, total_width: float, height: float) -> None:

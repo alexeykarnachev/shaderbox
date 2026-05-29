@@ -119,12 +119,13 @@ def draw(app: App) -> None:
         imgui.same_line(spacing=float(SPACE.LG))
         if imgui.button("Open dir", size=(SIZE.BTN_SM_W, 0)):
             app.open_current_node_dir()
-        if app.last_lib_path is not None and app.last_lib_path.exists():
+        if app.last_shader_lib_path is not None and app.last_shader_lib_path.exists():
             imgui.same_line()
             if imgui.button(
-                f"back to {app.last_lib_path.name} >", size=(SIZE.BTN_SM_W * 1.8, 0)
+                f"back to {app.last_shader_lib_path.name} >",
+                size=(SIZE.BTN_SM_W * 1.8, 0),
             ):
-                app.open_lib_file(app.last_lib_path)
+                app.open_shader_lib_file(app.last_shader_lib_path)
 
     imgui.spacing()
 
@@ -138,9 +139,9 @@ def draw(app: App) -> None:
     session = app.editor_sessions.get(current_path)
     if session is None:
         # Lazy-load the lib session if it doesn't exist yet (e.g. _explicit set
-        # but session not yet created via open_lib_file — defensive).
+        # but session not yet created via open_shader_lib_file — defensive).
         session = (
-            app.open_lib_file(current_path)
+            app.open_shader_lib_file(current_path)
             if is_lib
             else app.get_session(ui_node.node.source)
         )

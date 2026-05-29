@@ -1,8 +1,9 @@
 """Cross-project favorites for library functions.
 
-A flat set of function names the user has starred in the lib picker. Persisted
-to `<app_data_dir>/lib_favorites.json` (same posture as the lib itself + the
-integrations store — cross-project, lives outside any user project).
+A flat set of function names the user has starred in the shader-library picker.
+Persisted to `<app_data_dir>/shader_lib_favorites.json` (same posture as the
+shader library itself + the integrations store — cross-project, lives outside
+any user project).
 """
 
 import json
@@ -13,11 +14,11 @@ from loguru import logger
 
 from shaderbox.paths import app_data_dir
 
-_STORE_FILE = "lib_favorites.json"
+_STORE_FILE = "shader_lib_favorites.json"
 
 
 @dataclass
-class LibFavoritesStore:
+class ShaderLibFavoritesStore:
     favorites: set[str] = field(default_factory=set)
 
     @property

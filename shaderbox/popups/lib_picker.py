@@ -1,4 +1,4 @@
-"""Library picker (Ctrl+P).
+"""Shader-library picker (Ctrl+P).
 
 Unified tree-on-the-left + preview-on-the-right modal:
   - Left column = `/` root + nested dirs + files + function leaves, all
@@ -20,8 +20,8 @@ from imgui_bundle import imgui, imgui_ctx
 from loguru import logger
 
 from shaderbox.app import App, InlineInput, JumpRequest
-from shaderbox.lib_index import LibFunction
-from shaderbox.paths import lib_root
+from shaderbox.paths import shader_lib_root
+from shaderbox.shader_lib.index import ShaderLibFunction
 from shaderbox.theme import COLOR, SIZE, SPACE, fade
 from shaderbox.ui_primitives import (
     _ellipsize,
@@ -33,7 +33,7 @@ from shaderbox.ui_primitives import (
     primary_button,
 )
 
-_LABEL = "Library##picker"
+_LABEL = "Shader Library##picker"
 _POPUP_W = 1420.0
 _POPUP_H = 1130.0
 _TREE_FRAC = 0.40
@@ -41,25 +41,27 @@ _TREE_W_MIN = 280.0
 
 
 def draw_lib_picker(app: App) -> None:
-    if not app.is_lib_picker_open:
+    if not app.is_shader_lib_picker_open:
         return
     with modal_window(_LABEL, (_POPUP_W, _POPUP_H)) as visible:
         if not visible:
             return
         if not _draw_body(app):
-            app.is_lib_picker_open = False
+            app.is_shader_lib_picker_open = False
             imgui.close_current_popup()
 
 
 def _draw_body(app: App) -> bool:
     keep_open: bool = True
-    root = lib_root()
+    root = shader_lib_root()
 
     # imgui owns the "is this the first frame the modal is visible?" signal —
     # we use it for auto-select-first-leaf, search-input autofocus, and
     # suppression of the leaf autoscroll on the first frame.
     just_opened = imgui.is_window_appearing()
-    app.lib_picker_just_opened = just_opened  # widgets called from sub-draws read this
+    app.shader_lib_picker_just_opened = (
+        just_opened  # widgets called from sub-draws read this
+    )
 
     # Build the visible-leaves list once per frame: this drives the preview
     # pane, the arrow-key nav, and the auto-select-first-on-open.
@@ -67,23 +69,23 @@ def _draw_body(app: App) -> bool:
     tree = _build_tree(candidates, root)
     visible_leaves = _flatten_visible_leaves(tree, ())
 
-    rename_active = app.lib_file_rename.target is not None
-    new_file_active = app.lib_file_new.target is not None
-    new_dir_active = app.lib_dir_new.target is not None
+    rename_active = app.shader_lib_file_rename.target is not None
+    new_file_active = app.shader_lib_file_new.target is not None
+    new_dir_active = app.shader_lib_dir_new.target is not None
     input_owns_keys = rename_active or new_file_active or new_dir_active
 
     if not input_owns_keys:
         _handle_arrow_nav(app, visible_leaves)
 
-    if just_opened and not app.lib_picker_selected_function and visible_leaves:
-        app.lib_picker_selected_function = visible_leaves[0].name
+    if just_opened and not app.shader_lib_picker_selected_function and visible_leaves:
+        app.shader_lib_picker_selected_function = visible_leaves[0].name
 
     # The add-tag input also captures Enter (via `enter_returns_true`). When it
     # had focus last frame, suppress the outer Enter → Insert + close — otherwise
     # committing a tag would also close the picker. The flag is reset here and
     # re-set during the tag-editor draw if the input is focused this frame.
-    tag_input_was_focused = app.lib_picker_tag_input_focused
-    app.lib_picker_tag_input_focused = False
+    tag_input_was_focused = app.shader_lib_picker_tag_input_focused
+    app.shader_lib_picker_tag_input_focused = False
     pressed_enter = (
         not input_owns_keys
         and not tag_input_was_focused
@@ -91,7 +93,7 @@ def _draw_body(app: App) -> bool:
     )
 
     # ---------- Top bar: search first, then filter pills, then tag bar ----------
-    _draw_search_row(app, len(visible_leaves), len(app.lib_index.functions))
+    _draw_search_row(app, len(visible_leaves), len(app.shader_lib_index.functions))
     _draw_favs_and_reset_row(app)
     _draw_tag_bar(app)
 
@@ -159,24 +161,26 @@ def _draw_favs_and_reset_row(app: App) -> None:
     # Yellow Favs pill (active=solid, inactive=faded). Pink Reset appears
     # right after when any tag is disabled.
     if pill_button(
-        "Favs##favs_toggle", color=COLOR.FAVS, active=app.lib_picker_favs_only
+        "Favs##favs_toggle", color=COLOR.FAVS, active=app.shader_lib_picker_favs_only
     ):
-        app.lib_picker_favs_only = not app.lib_picker_favs_only
-    if app.lib_picker_disabled_tags:
+        app.shader_lib_picker_favs_only = not app.shader_lib_picker_favs_only
+    if app.shader_lib_picker_disabled_tags:
         imgui.same_line()
         if pill_button("Reset##reset_pill", color=COLOR.RESET_PILL, active=True):
-            app.lib_picker_disabled_tags.clear()
+            app.shader_lib_picker_disabled_tags.clear()
 
 
 def _draw_search_row(app: App, visible_count: int, total: int) -> None:
-    if app.lib_picker_just_opened:
+    if app.shader_lib_picker_just_opened:
         imgui.set_keyboard_focus_here(0)
     imgui.set_next_item_width(imgui.get_content_region_avail().x - 200.0)
-    _, app.lib_picker_query = imgui.input_text("##q", app.lib_picker_query)
+    _, app.shader_lib_picker_query = imgui.input_text(
+        "##q", app.shader_lib_picker_query
+    )
     imgui.same_line()
     imgui.text_colored(COLOR.FG_DIM, f"{visible_count} / {total}")
     # Live tag-prefix feedback (`#noi` → "matching: #noise").
-    tag_prefixes, _ = _parse_query_tags(app.lib_picker_query.strip().lower())
+    tag_prefixes, _ = _parse_query_tags(app.shader_lib_picker_query.strip().lower())
     if tag_prefixes:
         matched = _resolve_tag_prefix_matches(app, tag_prefixes)
         imgui.same_line()
@@ -191,8 +195,8 @@ def _draw_search_row(app: App, visible_count: int, total: int) -> None:
 def _draw_tag_bar(app: App) -> None:
     # Blue pills (active = blue fill, disabled = dim). Wraps onto multiple rows.
     # Tag bar shows every tag in the lib; #prefix in the search bar narrows it.
-    tag_prefixes, _ = _parse_query_tags(app.lib_picker_query.strip().lower())
-    all_tags_set = app.lib_tags.all_tags()
+    tag_prefixes, _ = _parse_query_tags(app.shader_lib_picker_query.strip().lower())
+    all_tags_set = app.shader_lib_tags.all_tags()
     if tag_prefixes:
         bar_tags = sorted(
             t for t in all_tags_set if any(t.startswith(p) for p in tag_prefixes)
@@ -220,7 +224,7 @@ def _draw_tag_bar(app: App) -> None:
                 cursor_x = w
         else:
             cursor_x = w
-        is_enabled = tag not in app.lib_picker_disabled_tags
+        is_enabled = tag not in app.shader_lib_picker_disabled_tags
         if is_enabled:
             clicked = pill_button(
                 full_label_id, color=COLOR.TAG, active=False, inactive_alpha=0.7
@@ -237,13 +241,13 @@ def _draw_tag_bar(app: App) -> None:
             if imgui.get_io().key_ctrl:
                 # Isolate ACROSS the WHOLE lib (not just visible) — `#prefix`
                 # may have narrowed the bar, but isolate means "only this tag".
-                app.lib_picker_disabled_tags = {
-                    t for t in app.lib_tags.all_tags() if t != tag
+                app.shader_lib_picker_disabled_tags = {
+                    t for t in app.shader_lib_tags.all_tags() if t != tag
                 }
             elif is_enabled:
-                app.lib_picker_disabled_tags.add(tag)
+                app.shader_lib_picker_disabled_tags.add(tag)
             else:
-                app.lib_picker_disabled_tags.discard(tag)
+                app.shader_lib_picker_disabled_tags.discard(tag)
 
 
 # ----------------------------------------------------------------------------
@@ -258,18 +262,18 @@ class _TreeNode:
     # Functions PER FILE — populated only for files that pass the filter.
     # Empty list = file has no visible functions (still drawn if the file
     # itself matched, e.g. via filename search later).
-    functions_by_file: dict[Path, list[LibFunction]] = field(default_factory=dict)
+    functions_by_file: dict[Path, list[ShaderLibFunction]] = field(default_factory=dict)
 
 
 def _build_tree(
-    visible: list[LibFunction], root: Path
+    visible: list[ShaderLibFunction], root: Path
 ) -> dict[tuple[str, ...], _TreeNode]:
     # Build the dir tree keyed by tuple-of-parts. Only files containing at
     # least one VISIBLE function appear in the tree (so search/favs/tags filter
     # the tree naturally). The visible functions for each file are also stored
     # so the leaf walker can emit them in deterministic order.
     tree: dict[tuple[str, ...], _TreeNode] = {(): _TreeNode()}
-    by_file: dict[Path, list[LibFunction]] = {}
+    by_file: dict[Path, list[ShaderLibFunction]] = {}
     for fn in visible:
         by_file.setdefault(fn.file, []).append(fn)
 
@@ -288,10 +292,10 @@ def _build_tree(
 
 def _flatten_visible_leaves(
     tree: dict[tuple[str, ...], _TreeNode], dir_rel: tuple[str, ...]
-) -> list[LibFunction]:
+) -> list[ShaderLibFunction]:
     # Emit leaves in the SAME order the draw walks them — files-before-subdirs,
     # alphabetical at each level. Arrow-nav relies on this for natural up/down.
-    out: list[LibFunction] = []
+    out: list[ShaderLibFunction] = []
     node = tree.get(dir_rel)
     if node is None:
         return out
@@ -339,8 +343,8 @@ def _draw_tree_children(
         )
         node_id = f"{subname}##dirnode_{'/'.join(child)}"
         # Armed state is stored as the ABSOLUTE path (the context menu arms with
-        # `lib_root() / dir_rel`); compare like-for-like or the red tint never shows.
-        is_armed = app.lib_dir_delete_armed == root / Path(*child)
+        # `shader_lib_root() / dir_rel`); compare like-for-like or the red tint never shows.
+        is_armed = app.shader_lib_dir_delete_armed == root / Path(*child)
         # Force-open if a new-file / new-dir input is targeted at this dir or
         # any descendant — otherwise the inline input would render inside an
         # invisible collapsed branch.
@@ -374,8 +378,8 @@ def _dir_contains_pending_input(app: App, dir_rel: tuple[str, ...]) -> bool:
             return False
         return True
 
-    return _is_descendant(app.lib_file_new.target) or _is_descendant(
-        app.lib_dir_new.target
+    return _is_descendant(app.shader_lib_file_new.target) or _is_descendant(
+        app.shader_lib_dir_new.target
     )
 
 
@@ -387,16 +391,18 @@ def _draw_dir_context_menu(app: App, dir_rel: tuple[str, ...], is_root: bool) ->
         if imgui.begin_popup_context_item(popup_id):
             dir_path_rel = Path(*dir_rel) if dir_rel else Path()
             if imgui.menu_item_simple("New file here"):
-                app.begin_lib_file_new_in(dir_path_rel)
+                app.begin_shader_lib_file_new_in(dir_path_rel)
             if imgui.menu_item_simple("New subdirectory"):
-                app.begin_lib_dir_new_in(dir_path_rel)
+                app.begin_shader_lib_dir_new_in(dir_path_rel)
             if imgui.menu_item_simple("Reveal in file manager"):
-                abs_path = lib_root() / dir_path_rel if dir_rel else lib_root()
-                app.reveal_lib_file_in_manager(abs_path)
+                abs_path = (
+                    shader_lib_root() / dir_path_rel if dir_rel else shader_lib_root()
+                )
+                app.reveal_shader_lib_file_in_manager(abs_path)
             if not is_root:
                 imgui.separator()
-                abs_path = lib_root() / dir_path_rel
-                is_armed = app.lib_dir_delete_armed == abs_path
+                abs_path = shader_lib_root() / dir_path_rel
+                is_armed = app.shader_lib_dir_delete_armed == abs_path
                 label = (
                     "Confirm delete (recursive)"
                     if is_armed
@@ -407,9 +413,9 @@ def _draw_dir_context_menu(app: App, dir_rel: tuple[str, ...], is_root: bool) ->
                 imgui.pop_style_color(1)
                 if clicked:
                     if is_armed:
-                        app.delete_lib_dir(abs_path)
+                        app.delete_shader_lib_dir(abs_path)
                     else:
-                        app.arm_lib_dir_delete(abs_path)
+                        app.arm_shader_lib_dir_delete(abs_path)
             imgui.end_popup()
 
 
@@ -417,21 +423,21 @@ def _draw_dir_new_inputs_for(app: App, dir_rel: tuple[str, ...]) -> None:
     # Both "New file:" and "New dir:" inline inputs share the same chrome —
     # one helper, two configs.
     _draw_inline_new_input(
-        state=app.lib_file_new,
+        state=app.shader_lib_file_new,
         label="New file:",
         id_prefix="new_file_in",
         dir_rel=dir_rel,
-        commit=app.commit_lib_file_new,
-        cancel=app.cancel_lib_file_new,
-        on_create=app.open_lib_file,
+        commit=app.commit_shader_lib_file_new,
+        cancel=app.cancel_shader_lib_file_new,
+        on_create=app.open_shader_lib_file,
     )
     _draw_inline_new_input(
-        state=app.lib_dir_new,
+        state=app.shader_lib_dir_new,
         label="New dir:",
         id_prefix="new_dir_in",
         dir_rel=dir_rel,
-        commit=app.commit_lib_dir_new,
-        cancel=app.cancel_lib_dir_new,
+        commit=app.commit_shader_lib_dir_new,
+        cancel=app.cancel_shader_lib_dir_new,
         on_create=None,
     )
 
@@ -474,15 +480,15 @@ def _draw_inline_new_input(
     imgui.unindent(float(SPACE.MD))
 
 
-def _draw_file_node(app: App, path: Path, fns: list[LibFunction]) -> bool:
+def _draw_file_node(app: App, path: Path, fns: list[ShaderLibFunction]) -> bool:
     # File becomes a tree_node_ex (collapsible) with its functions as children.
     # Returns True iff a child function's "Open at decl" closed the picker.
-    is_renaming = app.lib_file_rename.target == path
+    is_renaming = app.shader_lib_file_rename.target == path
     if is_renaming:
         _draw_file_rename_input(app, path)
         return False
 
-    is_armed = app.lib_file_delete_armed == path
+    is_armed = app.shader_lib_file_delete_armed == path
     if is_armed:
         imgui.push_style_color(imgui.Col_.text, COLOR.STATE_ERROR)
     flags = imgui.TreeNodeFlags_.default_open | imgui.TreeNodeFlags_.span_avail_width
@@ -503,20 +509,20 @@ def _draw_file_context_menu(app: App, path: Path) -> None:
     with context_menu_style():
         if imgui.begin_popup_context_item(f"##filectx_{path}"):
             if imgui.menu_item_simple("Rename"):
-                app.begin_lib_file_rename(path)
+                app.begin_shader_lib_file_rename(path)
             if imgui.menu_item_simple("Reveal in file manager"):
-                app.reveal_lib_file_in_manager(path)
+                app.reveal_shader_lib_file_in_manager(path)
             imgui.separator()
-            is_armed = app.lib_file_delete_armed == path
+            is_armed = app.shader_lib_file_delete_armed == path
             label = "Confirm delete" if is_armed else "Delete"
             imgui.push_style_color(imgui.Col_.text, COLOR.STATE_ERROR)
             clicked = imgui.menu_item_simple(label)
             imgui.pop_style_color(1)
             if clicked:
                 if is_armed:
-                    app.delete_lib_file(path)
+                    app.delete_shader_lib_file(path)
                 else:
-                    app.arm_lib_file_delete(path)
+                    app.arm_shader_lib_file_delete(path)
             imgui.end_popup()
 
 
@@ -525,46 +531,50 @@ def _draw_file_rename_input(app: App, path: Path) -> None:
     # Reserve room on the right for the cancel `x` button.
     cancel_w = imgui.calc_text_size("x").x + float(SPACE.MD) * 2.0
     imgui.set_next_item_width(imgui.get_content_region_avail().x - cancel_w)
-    if app.lib_file_rename.needs_focus:
+    if app.shader_lib_file_rename.needs_focus:
         imgui.set_keyboard_focus_here(0)
-        app.lib_file_rename.needs_focus = False
-    changed, app.lib_file_rename.buf = imgui.input_text(
+        app.shader_lib_file_rename.needs_focus = False
+    changed, app.shader_lib_file_rename.buf = imgui.input_text(
         f"##ren_in_{path}",
-        app.lib_file_rename.buf,
+        app.shader_lib_file_rename.buf,
         flags=imgui.InputTextFlags_.enter_returns_true,
     )
     input_focused = imgui.is_item_focused()
     if input_focused and imgui.is_key_pressed(imgui.Key.escape, repeat=False):
-        app.cancel_lib_file_rename()
+        app.cancel_shader_lib_file_rename()
     if changed:
-        app.rename_lib_file(path, app.lib_file_rename.buf)
+        app.rename_shader_lib_file(path, app.shader_lib_file_rename.buf)
     imgui.same_line()
     if ghost_button(f"x##cancel_ren_{path}"):
-        app.cancel_lib_file_rename()
+        app.cancel_shader_lib_file_rename()
     imgui.unindent(float(SPACE.MD))
 
 
-def _draw_function_leaf(app: App, fn: LibFunction) -> bool:
+def _draw_function_leaf(app: App, fn: ShaderLibFunction) -> bool:
     # Function leaf: favs star + selectable. Right-click → context menu
     # (Insert / Open at decl / Copy / Toggle favorite). Returns True if the
     # "Open at decl" action fired and the picker should close.
-    is_selected = app.lib_picker_selected_function == fn.name
-    is_fav = app.lib_favorites.is_favorite(fn.name)
+    is_selected = app.shader_lib_picker_selected_function == fn.name
+    is_fav = app.shader_lib_favorites.is_favorite(fn.name)
     star_label = ("*" if is_fav else "o") + f"##fav_{fn.name}"
     imgui.push_style_color(imgui.Col_.text, COLOR.FAVS if is_fav else COLOR.FG_DIM)
     if imgui.small_button(star_label):
-        app.lib_favorites.toggle(fn.name)
+        app.shader_lib_favorites.toggle(fn.name)
     imgui.pop_style_color(1)
     imgui.same_line()
     label = f"{fn.name}##leaf_{fn.name}"
     if imgui.selectable(label, is_selected)[0]:
-        app.lib_picker_selected_function = fn.name
+        app.shader_lib_picker_selected_function = fn.name
         # Clicking a function disarms any pending file/dir delete — moving on
         # to inserting/exploring is a clear "I'm not deleting" signal.
-        app.arm_lib_file_delete(None)
-        app.arm_lib_dir_delete(None)
+        app.arm_shader_lib_file_delete(None)
+        app.arm_shader_lib_dir_delete(None)
     close_picker = _draw_function_context_menu(app, fn)
-    if is_selected and not app.lib_picker_just_opened and not imgui.is_item_visible():
+    if (
+        is_selected
+        and not app.shader_lib_picker_just_opened
+        and not imgui.is_item_visible()
+    ):
         imgui.set_scroll_here_y(0.5)
     if fn.doc:
         imgui.same_line()
@@ -577,7 +587,7 @@ def _draw_function_leaf(app: App, fn: LibFunction) -> bool:
     return close_picker
 
 
-def _draw_function_context_menu(app: App, fn: LibFunction) -> bool:
+def _draw_function_context_menu(app: App, fn: ShaderLibFunction) -> bool:
     close_picker = False
     has_editor = app.editor_was_ever_focused and app.current_editor_path is not None
     with context_menu_style():
@@ -590,9 +600,9 @@ def _draw_function_context_menu(app: App, fn: LibFunction) -> bool:
                 close_picker = True
             if imgui.menu_item_simple("Copy name"):
                 _copy_to_clipboard(fn.name)
-            is_fav = app.lib_favorites.is_favorite(fn.name)
+            is_fav = app.shader_lib_favorites.is_favorite(fn.name)
             if imgui.menu_item_simple("Unfavorite" if is_fav else "Favorite"):
-                app.lib_favorites.toggle(fn.name)
+                app.shader_lib_favorites.toggle(fn.name)
             imgui.end_popup()
     return close_picker
 
@@ -609,7 +619,7 @@ def _copy_to_clipboard(text: str) -> None:
 # ----------------------------------------------------------------------------
 
 
-def _draw_preview(app: App, selected: LibFunction | None, root: Path) -> None:
+def _draw_preview(app: App, selected: ShaderLibFunction | None, root: Path) -> None:
     if selected is None:
         imgui.text_colored(COLOR.FG_DIM, "(no function selected)")
         return
@@ -648,10 +658,10 @@ def _draw_preview(app: App, selected: LibFunction | None, root: Path) -> None:
     imgui.pop_style_color(1)
 
 
-def _draw_function_tag_editor(app: App, fn: LibFunction) -> None:
+def _draw_function_tag_editor(app: App, fn: ShaderLibFunction) -> None:
     # Blue pills (active tag fill) with an `x` on the right to remove. Add-tag
     # input + suggestions row below.
-    current_tags = sorted(app.lib_tags.tags_for(fn.name))
+    current_tags = sorted(app.shader_lib_tags.tags_for(fn.name))
     for tag in current_tags:
         if pill_button(
             f"#{tag} x##rmtag_{fn.name}_{tag}",
@@ -659,24 +669,24 @@ def _draw_function_tag_editor(app: App, fn: LibFunction) -> None:
             active=False,
             inactive_alpha=0.5,
         ):
-            app.lib_tags.remove(fn.name, tag)
+            app.shader_lib_tags.remove(fn.name, tag)
         imgui.same_line()
 
     imgui.set_next_item_width(140.0)
-    changed, app.lib_picker_new_tag_buf = imgui.input_text(
+    changed, app.shader_lib_picker_new_tag_buf = imgui.input_text(
         f"##newtag_{fn.name}",
-        app.lib_picker_new_tag_buf,
+        app.shader_lib_picker_new_tag_buf,
         flags=imgui.InputTextFlags_.enter_returns_true,
     )
     # Update the "input owns Enter" flag immediately so the outer Enter check
     # on the NEXT frame skips Insert+close when the user is still typing here.
-    app.lib_picker_tag_input_focused = imgui.is_item_focused()
+    app.shader_lib_picker_tag_input_focused = imgui.is_item_focused()
     imgui.same_line()
     add_pressed = ghost_button(f"+ Add##addtag_{fn.name}")
-    buf = app.lib_picker_new_tag_buf.strip().lstrip("#").lower()
+    buf = app.shader_lib_picker_new_tag_buf.strip().lstrip("#").lower()
     if (changed or add_pressed) and buf:
-        app.lib_tags.add(fn.name, buf)
-        app.lib_picker_new_tag_buf = ""
+        app.shader_lib_tags.add(fn.name, buf)
+        app.shader_lib_picker_new_tag_buf = ""
         return
 
     if buf:
@@ -693,13 +703,13 @@ def _draw_function_tag_editor(app: App, fn: LibFunction) -> None:
                     inactive_alpha=0.2,
                     text_color=COLOR.FG_PRIMARY,
                 ):
-                    app.lib_tags.add(fn.name, s)
-                    app.lib_picker_new_tag_buf = ""
+                    app.shader_lib_tags.add(fn.name, s)
+                    app.shader_lib_picker_new_tag_buf = ""
             imgui.pop_font()
 
 
 def _autocomplete_tags(app: App, buf: str, exclude: set[str]) -> list[str]:
-    all_tags = app.lib_tags.all_tags() - exclude
+    all_tags = app.shader_lib_tags.all_tags() - exclude
 
     def rank(tag: str) -> tuple[int, str]:
         if tag.startswith(buf):
@@ -718,9 +728,9 @@ def _autocomplete_tags(app: App, buf: str, exclude: set[str]) -> list[str]:
 # ----------------------------------------------------------------------------
 
 
-def _handle_arrow_nav(app: App, visible: list[LibFunction]) -> None:
+def _handle_arrow_nav(app: App, visible: list[ShaderLibFunction]) -> None:
     if not visible:
-        app.lib_picker_selected_function = ""
+        app.shader_lib_picker_selected_function = ""
         return
     down = imgui.is_key_pressed(imgui.Key.down_arrow, repeat=True)
     up = imgui.is_key_pressed(imgui.Key.up_arrow, repeat=True)
@@ -728,37 +738,39 @@ def _handle_arrow_nav(app: App, visible: list[LibFunction]) -> None:
         # Clamp: if the current selection is no longer visible (filter change),
         # fall back to the first visible leaf.
         names = [fn.name for fn in visible]
-        if app.lib_picker_selected_function not in names:
-            app.lib_picker_selected_function = visible[0].name
+        if app.shader_lib_picker_selected_function not in names:
+            app.shader_lib_picker_selected_function = visible[0].name
         return
     names = [fn.name for fn in visible]
     try:
-        idx = names.index(app.lib_picker_selected_function)
+        idx = names.index(app.shader_lib_picker_selected_function)
     except ValueError:
         idx = 0
     step = 1 if down else -1
-    app.lib_picker_selected_function = names[(idx + step) % len(names)]
+    app.shader_lib_picker_selected_function = names[(idx + step) % len(names)]
 
 
-def _selected_function(app: App, candidates: list[LibFunction]) -> LibFunction | None:
-    if not app.lib_picker_selected_function:
+def _selected_function(
+    app: App, candidates: list[ShaderLibFunction]
+) -> ShaderLibFunction | None:
+    if not app.shader_lib_picker_selected_function:
         return None
     for fn in candidates:
-        if fn.name == app.lib_picker_selected_function:
+        if fn.name == app.shader_lib_picker_selected_function:
             return fn
     # The selected function is hidden by current filters. Fall back to None so
     # the preview shows "(no selection)" rather than a stale function.
     return None
 
 
-def _filter_functions(app: App) -> list[LibFunction]:
-    raw_query: str = app.lib_picker_query.strip().lower()
+def _filter_functions(app: App) -> list[ShaderLibFunction]:
+    raw_query: str = app.shader_lib_picker_query.strip().lower()
     tag_prefixes, text_query = _parse_query_tags(raw_query)
-    disabled = app.lib_picker_disabled_tags
+    disabled = app.shader_lib_picker_disabled_tags
 
-    def passes(fn: LibFunction) -> bool:
+    def passes(fn: ShaderLibFunction) -> bool:
         # Fetch tags ONCE per function; three filters share the result.
-        fn_tags = app.lib_tags.tags_for(fn.name)
+        fn_tags = app.shader_lib_tags.tags_for(fn.name)
         # tag-bar: untagged always visible; otherwise at least one enabled tag.
         if fn_tags and not (fn_tags - disabled):
             return False
@@ -778,10 +790,14 @@ def _filter_functions(app: App) -> list[LibFunction]:
         return True
 
     candidates = [
-        fn for fn in app.lib_index.functions.values() if fn.name.startswith("SB_")
+        fn
+        for fn in app.shader_lib_index.functions.values()
+        if fn.name.startswith("SB_")
     ]
-    if app.lib_picker_favs_only:
-        candidates = [fn for fn in candidates if app.lib_favorites.is_favorite(fn.name)]
+    if app.shader_lib_picker_favs_only:
+        candidates = [
+            fn for fn in candidates if app.shader_lib_favorites.is_favorite(fn.name)
+        ]
     return [fn for fn in candidates if passes(fn)]
 
 
@@ -799,14 +815,14 @@ def _parse_query_tags(query: str) -> tuple[list[str], str]:
 def _resolve_tag_prefix_matches(app: App, prefixes: list[str]) -> list[str]:
     if not prefixes:
         return []
-    all_tags = app.lib_tags.all_tags()
+    all_tags = app.shader_lib_tags.all_tags()
     matched: set[str] = set()
     for p in prefixes:
         matched.update(t for t in all_tags if t.startswith(p))
     return sorted(matched)
 
 
-def _insert_name(app: App, fn: LibFunction) -> None:
+def _insert_name(app: App, fn: ShaderLibFunction) -> None:
     session = app.get_current_session_if_exists()
     if session is None:
         logger.warning("No editor session active; can't insert lib name")
@@ -814,8 +830,8 @@ def _insert_name(app: App, fn: LibFunction) -> None:
     session.editor.replace_text_in_current_cursor(fn.name)
 
 
-def _open_at_decl(app: App, fn: LibFunction) -> None:
+def _open_at_decl(app: App, fn: ShaderLibFunction) -> None:
     # Retained for hotkeys / callers that may invoke "Open function file"
     # directly (e.g. a future shortcut).
-    app.open_lib_file(fn.file)
+    app.open_shader_lib_file(fn.file)
     app.editor_jump_request = JumpRequest(fn.file, fn.line_in_file, 0)

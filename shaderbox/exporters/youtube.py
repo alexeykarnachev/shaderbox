@@ -27,7 +27,21 @@ from shaderbox.exporters.base import (
     RenderControl,
     RenderedArtifact,
 )
-from shaderbox.integrations import IntegrationsStore, YouTubeIntegration
+from shaderbox.exporters.integrations import IntegrationsStore, YouTubeIntegration
+from shaderbox.exporters.youtube_util import (
+    CATEGORY_CHOICES,
+    DEFAULT_CATEGORY_ID,
+    DEFAULT_FPS,
+    SHORT_ASPECT,
+    SHORT_LONGEST_EDGE,
+    SHORT_MAX_DURATION_SEC,
+    YOUTUBE_SCOPES,
+    build_client_config,
+    build_insert_body,
+    parse_client_secret_json,
+    parse_tags,
+    studio_edit_url,
+)
 from shaderbox.render_preset import (
     FitPolicy,
     RenderPreset,
@@ -55,20 +69,6 @@ from shaderbox.ui_primitives import (
     unconnected_gate,
 )
 from shaderbox.util import pfd_block
-from shaderbox.youtube_util import (
-    CATEGORY_CHOICES,
-    DEFAULT_CATEGORY_ID,
-    DEFAULT_FPS,
-    SHORT_ASPECT,
-    SHORT_LONGEST_EDGE,
-    SHORT_MAX_DURATION_SEC,
-    YOUTUBE_SCOPES,
-    build_client_config,
-    build_insert_body,
-    parse_client_secret_json,
-    parse_tags,
-    studio_edit_url,
-)
 
 _QUEUE_MAXSIZE = 64
 _DRAIN_TIMEOUT_SEC = 5.0

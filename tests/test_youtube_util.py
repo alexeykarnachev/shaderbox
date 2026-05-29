@@ -5,7 +5,7 @@ import json
 import pytest
 
 from shaderbox.exporters.base import ExporterValueError
-from shaderbox.youtube_util import (
+from shaderbox.exporters.youtube_util import (
     DEFAULT_CATEGORY_ID,
     SHORTS_TAG,
     build_client_config,

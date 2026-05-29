@@ -25,10 +25,14 @@ from shaderbox.exporters.base import (
     RenderControl,
     RenderedArtifact,
 )
-from shaderbox.integrations import IntegrationsStore, PackEntry, TelegramIntegration
+from shaderbox.exporters.integrations import (
+    IntegrationsStore,
+    PackEntry,
+    TelegramIntegration,
+)
+from shaderbox.exporters.telegram_util import derive_set_name
 from shaderbox.media import Image, Video
 from shaderbox.render_preset import FitPolicy, RenderPreset, ResolutionPolicy
-from shaderbox.telegram_util import derive_set_name
 from shaderbox.theme import COLOR, SIZE, SPACE, fade
 from shaderbox.ui_models import UINode
 from shaderbox.ui_primitives import (

@@ -1,12 +1,12 @@
 """Cross-project tags for library functions.
 
-A `function_name -> set[tag]` map persisted to `<app_data_dir>/lib_tags.json`
-(same posture as `lib_favorites.json` and `integrations.json` — cross-project
+A `function_name -> set[tag]` map persisted to `<app_data_dir>/shader_lib_tags.json`
+(same posture as `shader_lib_favorites.json` and `integrations.json` — cross-project
 metadata that lives outside any user project).
 
-Tags are metadata, not intrinsic to the function. `LibFunction` carries the
+Tags are metadata, not intrinsic to the function. `ShaderLibFunction` carries the
 function's source-derived fields (signature/body/doc/calls); a separate store
-carries the user-applied categorization. Lookups go `app.lib_tags.tags_for(name)`.
+carries the user-applied categorization. Lookups go `app.shader_lib_tags.tags_for(name)`.
 """
 
 import json
@@ -17,11 +17,11 @@ from loguru import logger
 
 from shaderbox.paths import app_data_dir
 
-_STORE_FILE = "lib_tags.json"
+_STORE_FILE = "shader_lib_tags.json"
 
 
 @dataclass
-class LibTagsStore:
+class ShaderLibTagsStore:
     tags: dict[str, set[str]] = field(default_factory=dict)
 
     def tags_for(self, name: str) -> frozenset[str]:

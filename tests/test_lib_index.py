@@ -1,16 +1,16 @@
 """Unit tests for the auto-resolve library — no GL.
 
 Two layers under test:
-- `LibIndex.build` extracts function defs, sigs, bodies, callees, docstrings.
+- `ShaderLibIndex.build` extracts function defs, sigs, bodies, callees, docstrings.
 - `resolve_usage` prunes the lib to the transitive set the user actually
   references, emits a topo-sorted preamble + `#line` markers + SourceMap.
 """
 
 from pathlib import Path
 
-from shaderbox.lib_index import (
-    LibFunction,
-    LibIndex,
+from shaderbox.shader_lib.index import (
+    ShaderLibFunction,
+    ShaderLibIndex,
     resolve_usage,
 )
 from shaderbox.shader_source import ShaderSource
@@ -22,15 +22,15 @@ def _write(path: Path, text: str) -> ShaderSource:
     return ShaderSource.load(path)
 
 
-def _make_lib(lib: Path, files: dict[str, str]) -> LibIndex:
+def _make_lib(lib: Path, files: dict[str, str]) -> ShaderLibIndex:
     for name, text in files.items():
         (lib / name).parent.mkdir(parents=True, exist_ok=True)
         (lib / name).write_text(text, encoding="utf-8")
-    return LibIndex.build(lib)
+    return ShaderLibIndex.build(lib)
 
 
 # ----------------------------------------------------------------------------
-# LibIndex.build — function extraction
+# ShaderLibIndex.build — function extraction
 # ----------------------------------------------------------------------------
 
 
@@ -38,7 +38,7 @@ def test_extracts_single_function(tmp_path: Path) -> None:
     lib = tmp_path / "lib"
     idx = _make_lib(lib, {"hash.glsl": "float SB_hash(vec2 p) {\n    return 0.5;\n}\n"})
     assert set(idx.functions) == {"SB_hash"}
-    fn: LibFunction = idx.functions["SB_hash"]
+    fn: ShaderLibFunction = idx.functions["SB_hash"]
     assert fn.name == "SB_hash"
     assert "vec2 p" in fn.signature
     assert "return 0.5;" in fn.body
@@ -158,12 +158,12 @@ def test_subdirectory_indexed(tmp_path: Path) -> None:
 def test_empty_lib_root_returns_empty_index(tmp_path: Path) -> None:
     lib = tmp_path / "lib"
     lib.mkdir()
-    idx = LibIndex.build(lib)
+    idx = ShaderLibIndex.build(lib)
     assert idx.functions == {}
 
 
 def test_missing_lib_root_returns_empty_index(tmp_path: Path) -> None:
-    idx = LibIndex.build(tmp_path / "nonexistent")
+    idx = ShaderLibIndex.build(tmp_path / "nonexistent")
     assert idx.functions == {}
 
 

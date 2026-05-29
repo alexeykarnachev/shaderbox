@@ -33,7 +33,7 @@ def process_hotkeys(app: App) -> None:
     # disables "Insert at caret" when no editor session is active, so opening
     # without focus is safe.
     if io.key_ctrl and imgui.is_key_pressed(imgui.Key.p) and not app.any_popup_open():
-        app.open_lib_picker()
+        app.open_shader_lib_picker()
     if io.key_ctrl and imgui.is_key_pressed(imgui.Key.s):
         app.save()
     if io.key_ctrl and imgui.is_key_pressed(imgui.Key.d):
