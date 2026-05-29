@@ -69,27 +69,19 @@ K = imgui.Key
 # a callback held on App. Each chord lives in exactly ONE scope so a single press
 # never dispatches twice.
 COMMAND_SPECS: list[CommandSpec] = [
-    CommandSpec(
-        CommandId.OPEN_PROJECT, "Open project", _chord(K.o, K.mod_ctrl)
-    ),
+    CommandSpec(CommandId.OPEN_PROJECT, "Open project", _chord(K.o, K.mod_ctrl)),
     CommandSpec(CommandId.SAVE, "Save", _chord(K.s, K.mod_ctrl)),
     CommandSpec(CommandId.NEW_NODE, "New node", _chord(K.n, K.mod_ctrl)),
     CommandSpec(CommandId.DELETE_NODE, "Delete node", _chord(K.d, K.mod_ctrl)),
-    CommandSpec(
-        CommandId.OPEN_SETTINGS, "Settings", _chord(K.s, K.mod_alt)
-    ),
-    CommandSpec(
-        CommandId.OPEN_LIB_PICKER, "Shader library", _chord(K.p, K.mod_ctrl)
-    ),
+    CommandSpec(CommandId.OPEN_SETTINGS, "Settings", _chord(K.s, K.mod_alt)),
+    CommandSpec(CommandId.OPEN_LIB_PICKER, "Shader library", _chord(K.p, K.mod_ctrl)),
     CommandSpec(
         CommandId.OPEN_PALETTE,
         "Command palette",
         _chord(K.p, K.mod_ctrl, K.mod_shift),
     ),
     CommandSpec(CommandId.QUIT, "Quit", _chord(K.q, K.mod_ctrl)),
-    CommandSpec(
-        CommandId.JUMP_NEXT_ERROR, "Jump to next error", _chord(K.f8)
-    ),
+    CommandSpec(CommandId.JUMP_NEXT_ERROR, "Jump to next error", _chord(K.f8)),
     CommandSpec(
         CommandId.NODE_PREV,
         "Previous node",
@@ -188,7 +180,9 @@ _BINDABLE_KEYS: list[imgui.Key] = [
 
 # Function keys are the only keys safe to bind without a modifier (they don't
 # collide with typing into the editor). Everything else needs a mod.
-_STANDALONE_KEYS: frozenset[int] = frozenset(int(getattr(K, f"f{n}")) for n in range(1, 13))
+_STANDALONE_KEYS: frozenset[int] = frozenset(
+    int(getattr(K, f"f{n}")) for n in range(1, 13)
+)
 _MOD_MASK: int = int(K.mod_ctrl) | int(K.mod_shift) | int(K.mod_alt) | int(K.mod_super)
 
 
