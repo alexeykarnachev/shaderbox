@@ -8,10 +8,17 @@ from typing import Any
 import glfw
 from imgui_bundle import imgui
 from imgui_bundle import imgui_color_text_edit as text_edit
+from imgui_bundle import imgui_command_palette as imcmd
 from imgui_bundle import portable_file_dialogs as pfd
 from imgui_bundle.python_backends.glfw_backend import GlfwRenderer
 from loguru import logger
 
+from shaderbox.commands import (
+    COMMAND_SPECS,
+    SPEC_BY_ID,
+    CommandId,
+    chord_to_str,
+)
 from shaderbox.constants import RESOURCES_DIR
 from shaderbox.core import Canvas
 from shaderbox.editor_types import EditorSession, HoverMark, InlineInput, JumpRequest
@@ -21,6 +28,7 @@ from shaderbox.exporters.telegram import TelegramExporter
 from shaderbox.exporters.youtube import YouTubeExporter
 from shaderbox.notifications import Notifications
 from shaderbox.paths import app_data_dir, shader_lib_root
+from shaderbox.shader_errors import next_error_line
 from shaderbox.shader_lib import ShaderLibIndex
 from shaderbox.shader_lib import set_active as set_active_lib_index
 from shaderbox.shader_lib.favorites import ShaderLibFavoritesStore
@@ -139,6 +147,22 @@ class App:
         self.is_settings_open: bool = False
         self.is_emoji_picker_open: bool = False
         self.is_shader_lib_picker_open: bool = False
+        # Command palette (feature 018): a transient floating search box, NOT one
+        # of the modal popups above — excluded from the popup mutex on purpose.
+        self.is_palette_open: bool = False
+        self.palette_ctx = imcmd.ContextWrapper()
+        # CommandId -> callback (closes over self); effective_bindings is the
+        # spec defaults with the project's rebindings merged over them.
+        self.command_callbacks: dict[CommandId, Callable[[], None]] = {}
+        self.effective_bindings: dict[CommandId, int] = {}
+        # Snapshot of template ids for the palette's two-step "New node" prompt
+        # (initial_callback fills it; subsequent_callback indexes it).
+        self._palette_template_ids: list[str] = []
+        # Palette command names currently registered (so a rebind can remove +
+        # re-add them with refreshed chord labels).
+        self._palette_command_names: list[str] = []
+        # CommandId currently capturing a new chord in the rebinder (None = idle).
+        self.rebinding_command: CommandId | None = None
         self.emoji_picker_query: str = ""
         # Where a picked emoji is delivered (set by whoever opens the picker).
         self.emoji_pick_target: Callable[[str], None] | None = None
@@ -205,6 +229,110 @@ class App:
         )
 
         self._init(project_dir, seed_starter=is_first_launch)
+
+        self._build_command_callbacks()
+        self._register_palette_commands()
+
+    def _build_command_callbacks(self) -> None:
+        self.command_callbacks = {
+            CommandId.OPEN_PROJECT: self.open_project,
+            CommandId.SAVE: self.save,
+            CommandId.NEW_NODE: self.open_node_creator,
+            CommandId.DELETE_NODE: self.delete_current_node,
+            CommandId.OPEN_SETTINGS: self.open_settings,
+            CommandId.OPEN_LIB_PICKER: self.open_shader_lib_picker,
+            CommandId.OPEN_PALETTE: self.open_palette,
+            CommandId.QUIT: self.request_quit,
+            CommandId.JUMP_NEXT_ERROR: self.jump_to_next_error,
+            CommandId.NODE_PREV: lambda: self.select_next_current_node(-1),
+            CommandId.NODE_NEXT: lambda: self.select_next_current_node(+1),
+            CommandId.TOGGLE_CHEATSHEET: self.toggle_cheatsheet,
+        }
+
+    def _register_palette_commands(self) -> None:
+        # One entry per palette-eligible command; the name carries the chord so the
+        # palette reads as the same list as the cheatsheet. The initial_callback
+        # runs the SAME verb the chord dispatch uses. "New node" is a two-step
+        # command: initial prompts for a template, subsequent creates the picked one.
+        # Re-registerable: a rebind re-runs this so the shown chords stay live.
+        for name in self._palette_command_names:
+            imcmd.remove_command(name)
+        self._palette_command_names = []
+        palette_specs = [spec for spec in COMMAND_SPECS if spec.in_palette]
+        # Pad labels to a common width so the chord column lines up (the palette
+        # renders names in a fixed-width font).
+        label_w = max(len(spec.label) for spec in palette_specs)
+        for spec in palette_specs:
+            chord = self.effective_bindings.get(spec.id, 0)
+            name = (
+                f"{spec.label.ljust(label_w)}   {chord_to_str(chord)}"
+                if chord
+                else spec.label
+            )
+            cmd = imcmd.Command()
+            cmd.name = name
+            if spec.id == CommandId.NEW_NODE:
+                cmd.initial_callback = self._palette_new_node_initial
+                cmd.subsequent_callback = self._palette_new_node_subsequent
+            else:
+                cmd.initial_callback = self.command_callbacks[spec.id]
+            imcmd.add_command(cmd)
+            self._palette_command_names.append(name)
+
+    def _palette_new_node_initial(self) -> None:
+        self._palette_template_ids = list(self.ui_node_templates.keys())
+        labels = [
+            self.ui_node_templates[tid].ui_state.ui_name
+            for tid in self._palette_template_ids
+        ]
+        imcmd.prompt(labels)
+
+    def _palette_new_node_subsequent(self, selected: int) -> None:
+        if 0 <= selected < len(self._palette_template_ids):
+            self.app_state.selected_node_template_id = self._palette_template_ids[
+                selected
+            ]
+            self.create_node_from_selected_template()
+
+    def open_palette(self) -> None:
+        self.is_palette_open = True
+
+    def request_quit(self) -> None:
+        glfw.set_window_should_close(self.window, True)
+
+    def jump_to_next_error(self) -> None:
+        session = self.get_current_session_if_exists()
+        if session is None or self.current_node_id not in self.ui_nodes:
+            return
+        errors = self.ui_nodes[self.current_node_id].node.compile_unit.errors
+        if not errors:
+            return
+        caret = session.editor.get_current_cursor_position().line
+        line = next_error_line(errors, caret)
+        if line is not None:
+            self.editor_jump_request = JumpRequest(session.source.path, line, 0)
+
+    def toggle_cheatsheet(self) -> None:
+        self.app_state.show_cheatsheet = not self.app_state.show_cheatsheet
+
+    def rebind_command(self, command_id: CommandId, chord: int) -> None:
+        # Maintain key_bindings as a diff-only dict: store only chords that differ
+        # from the spec default; reset-to-default drops the key. Re-merge so the
+        # change takes effect this frame, not after restart.
+        default = SPEC_BY_ID[command_id].default_chord
+        if chord == default:
+            self.app_state.key_bindings.pop(command_id.value, None)
+        else:
+            self.app_state.key_bindings[command_id.value] = chord
+        self._merge_effective_bindings()
+        # Refresh the palette entries so their shown chords match the new binding.
+        self._register_palette_commands()
+
+    def _merge_effective_bindings(self) -> None:
+        self.effective_bindings = {
+            spec.id: self.app_state.key_bindings.get(spec.id.value, spec.default_chord)
+            for spec in COMMAND_SPECS
+        }
 
     def any_popup_open(self) -> bool:
         return (
@@ -436,6 +564,9 @@ class App:
         # Load ui state
         if self.app_state_file_path.exists():
             self.app_state = UIAppState.load_and_migrate(self.app_state_file_path)
+        # Merge the project's key rebindings over the spec defaults (app_state was
+        # just replaced, so the effective map must be recomputed per project).
+        self._merge_effective_bindings()
 
         # ----------------------------------------------------------------
         # Wire exporter registry to project state: load global creds, set_integrations,

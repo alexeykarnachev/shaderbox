@@ -183,6 +183,12 @@ class UIAppState(BaseModel):
     editor_split_fraction: float = 0.5
     editor_settings: EditorSettings = EditorSettings()
 
+    # Keyboard rebindings (feature 018): CommandId value -> chord int. Holds ONLY
+    # bindings that differ from the spec default, so "absent = default" stays
+    # meaningful across saves and a future default change can reach old states.
+    key_bindings: dict[str, int] = {}
+    show_cheatsheet: bool = True
+
     model_config = {"extra": "forbid"}
 
     def save(self, file_path: str | Path) -> None:
@@ -200,6 +206,9 @@ class UIAppState(BaseModel):
              active_share_provider → active_exporter_id (feature 001)
           3. drop modelbox_url, media_model_idx (feature 003)
           4. drop text_editor_cmd (feature 006 — external editor removed)
+
+        key_bindings / show_cheatsheet (feature 018) are additive optional fields
+        — an old state lacking them gets the pydantic defaults; no transform.
 
         Telegram credentials live in the global integrations.json (feature 009),
         populated only by a real Connect — no migration from the old per-project

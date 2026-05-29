@@ -27,24 +27,26 @@ feature; brief points at the superseder).
 
 **As of 2026-05-29.**
 
-- **Shipped: `v0.10.1`** (feature 017 — a structural refactoring wave, domain-separation, no
-  behavior change + a focus bugfix on library insert). `dev` == `master`, nothing unshipped.
-- 017 landed: `lib_*` → `shader_lib/` package + total rename (incl. the on-disk
-  `<app_data_dir>/shader_lib/` dir); `shader_lib` split into index/resolver/parser; `lib_picker` →
-  package (tree/preview/search/filtering); `util.py` split (shader-error domain → `shader_errors.py`);
-  editor types → `editor_types.py`; `ui_models` de-tangled from the UI layer; `integrations`+`*_util`
-  moved under `exporters/`; `emoji_data`→`popups/`; App's shader-lib-file CRUD → `ShaderLibFileManager`
-  (`shader_lib/file_ops.py`, agent-callable). `ui/`+`render/` mega-packages were considered and
-  rejected (aesthetic churn).
-- **NEXT ACTION:** none queued — pick the next feature from `todo.md` triggers or a fresh ask. The
-  built-in coding-copilot agent is filed as a `todo.md` deferral (017 made the structure expandable
-  to it; the gaps are listed there).
+- **Shipped: `v0.10.1`** (feature 017 — structural refactoring wave). `dev` is now AHEAD of `master`
+  with feature 018 landed but UNSHIPPED.
+- **018 keyboard_control landed (dev, unshipped)** — the command layer: a central command registry
+  (`commands.py`, imgui-only leaf) drives rebindable chord shortcuts, an always-on opt-out cheatsheet
+  overlay (`widgets/cheatsheet.py`), and an `imgui_command_palette` (Ctrl+Shift+P). Dispatch split:
+  `process_hotkeys` (pre-frame) + `dispatch_commands` (in-frame, since `imgui.shortcut()` asserts
+  outside a frame). Rebindings persist on `UIAppState.key_bindings` (diff-from-default). Passed make
+  check + smoke + a 3-agent post-impl review (PASS, no bugs). **Needs the maintainer's hand-check**
+  (keyboard/visual — not headlessly verifiable): chords fire, palette select→callback, cheatsheet
+  visuals, live rebind. See `018_keyboard_control.md ## Manual verification`.
+- **NEXT ACTION:** maintainer manual-verifies 018 in `make run`, then either ship or start the next
+  feature. Two teed-up: the **keyboard focus/navigation layer** (nav widget-traversal + region/tab
+  cycling — split out of 018) and the **built-in coding-copilot agent** — both `todo.md` deferrals.
 - **No open BLOCKERs.**
 
 ## Features
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 018 | keyboard_control | done | The command layer: a central `commands.py` registry drives rebindable chord shortcuts + an opt-out cheatsheet overlay + an `imgui_command_palette` (Ctrl+Shift+P); dispatch split pre-frame/in-frame; rebindings persist diff-from-default on `UIAppState`. The focus/navigation layer (nav widget-traversal + tab-cycling) was split out to a `todo.md` deferral. Spec: `ai_docs/features/018_keyboard_control.md`. |
 | 017 | structure_reorg | done | Domain-separation refactoring wave (no behavior change): `lib_*`→`shader_lib/` package + total rename, shader_lib split into index/resolver/parser, `lib_picker`→package, `util.py`→`shader_errors.py`+`editor_types.py`, `ui_models` de-tangled from UI, exporters/ tidy, App shader-lib CRUD→`ShaderLibFileManager`. `ui/`+`render/` packages rejected. Spec: `ai_docs/features/017_structure_reorg.md`. |
 | 016 | lib_file_management | done | Unified tree+preview lib picker with right-click context menus for create / rename / delete (armed-confirm, file or recursive subdir) / reveal; `.trash/` filter shared by `LibIndex.build` and the mtime watcher; `Library` menu in the main menu bar. Spec: `ai_docs/features/016_lib_file_management.md`. |
 | 015 | shader_library | done | Auto-resolved GLSL helper library — type `SB_perlin_noise_3(...)`, host splices declarations + topo-sorted preamble; `Ctrl+P` picker with fuzzy search + body preview. Spec: `ai_docs/features/015_shader_include_library.md`. |

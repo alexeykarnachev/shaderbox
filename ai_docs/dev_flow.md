@@ -171,8 +171,16 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   RIGHT = `_draw_app_panel`), `_draw_splitter`, `_draw_app_panel`, `_draw_node_settings`
   (Node/Render/Share tab-bar dispatcher), the **Shader Library** menu, `main()`. No tab bodies /
   widget logic / hotkey dispatch — those live in `tabs/`, `widgets/`, `popups/`, `hotkeys.py`.
-- **`hotkeys.py`** — `process_hotkeys(app: App)`: glfw poll + imgui input + all keyboard shortcut
-  dispatch (Ctrl+O/S/D/N/P, Alt+S, Esc, arrows, Enter). Called from `update_and_draw` once per frame.
+- **`commands.py`** — leaf (imports `imgui` only, never `App`): the command registry that drives all
+  keyboard control (feature 018). `CommandId`/`CommandScope` StrEnums, the frozen `CommandSpec` + the
+  `COMMAND_SPECS` default table, `chord_to_str` (display), `route_flag`/`popup_suppresses`/
+  `capture_chord`/`chord_needs_modifier`. The id->callback wiring lives on `App` (closes over self),
+  not here, so this stays cycle-free.
+- **`hotkeys.py`** — two halves of keyboard handling: `process_hotkeys(app)` (PRE-`new_frame`: glfw
+  poll + imgui `process_inputs` only) and `dispatch_commands(app)` (IN-frame, top of the main-window
+  block: registry-driven `imgui.shortcut()` dispatch reading `app.effective_bindings`, the bespoke ESC
+  handler, and the node-creator arrow/Enter nav). The split exists because `imgui.shortcut()` asserts
+  outside an active frame.
 - **`editor_types.py`** — leaf dataclasses shared between `app.py` and its collaborators:
   `EditorSession` (one `TextEditor` bound to a path), `InlineInput` (mutually-exclusive inline
   text input), `JumpRequest`, `HoverMark`. (Extracted so `ShaderLibFileManager` + the UI modules
@@ -210,7 +218,9 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   cycle-free (app.py imports `share_state`, NOT `share`).
 - **`widgets/`** — stateless imgui-drawing functions taking `app: App`. No shared contract.
   `details.py`, `media_ops.py`, `node_grid.py` (incl. `draw_node_preview_button`, the free preview
-  helper both the node grid and the node-creator template grid call), `uniform.py`.
+  helper both the node grid and the node-creator template grid call), `uniform.py`,
+  `cheatsheet.py` (the floating bottom-right keyboard-cheatsheet overlay — own top-level window,
+  scope-filtered rows, opt-out via `UIAppState.show_cheatsheet`).
 - **`popups/`** — popup `draw(app: App)` free functions. Open/closed state on `App` as
   `is_node_creator_open` / `is_settings_open` / `is_emoji_picker_open` / `is_shader_lib_picker_open`
   (helpers `app.open_*()` enforce mutual exclusion; `scripts/smoke.py` asserts ≤1 open).

@@ -46,20 +46,6 @@ def draw_node_preview_grid(app: App, width: float, height: float) -> None:
                     "If checked, renders all nodes, otherwise, renders only the selected one."
                 )
 
-        imgui.same_line()
-        imgui.set_cursor_pos_x(width - 14)
-        imgui.text_colored(COLOR.FG_DIM, "?")
-        if imgui.is_item_hovered():
-            with imgui_ctx.begin_tooltip():
-                imgui.text("CREATE new node         CTRL+N")
-                imgui.text("SAVE current node       CTRL+S")
-                imgui.text("DELETE current node     CTRL+D")
-                imgui.text("OPEN project            CTRL+O")
-                imgui.text("SETTINGS                 ALT+S")
-                imgui.text("PREVIOUS / NEXT node    <-  ->")
-                imgui.text("UNFOCUS / close popup      ESC")
-                imgui.text("QUIT                    CTRL+Q")
-
         preview_size = SIZE.THUMB_LG
         n_cols = int(imgui.get_content_region_avail().x // (preview_size + SPACE.SM))
         n_cols = max(1, n_cols)

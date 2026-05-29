@@ -712,3 +712,25 @@ def clickable_label(
     if tooltip and imgui.is_item_hovered():
         imgui.set_tooltip(tooltip)
     return clicked
+
+
+def chord_row(
+    label: str, chord_str: str, label_w: float, *, highlight: bool = False
+) -> None:
+    """One ``label    [chord]`` row — the action name (dim, left) and its keychord
+    as a pill, the pill's left edge at `label_w`. Shared by the cheatsheet overlay
+    and the rebinder rows so the two never drift. `highlight` paints the pill text
+    in the accent (the rebinder's "press a key..." capture state)."""
+    imgui.align_text_to_frame_padding()
+    imgui.text_colored(COLOR.FG_SECONDARY, label)
+    imgui.same_line(label_w)
+    text = COLOR.ACCENT_PRIMARY if highlight else COLOR.CHIP_FG
+    pill_w = imgui.calc_text_size(chord_str).x + 2.0 * float(SPACE.MD)
+    imgui.push_style_var(imgui.StyleVar_.frame_rounding, float(SIZE.CHIP_ROUNDING))
+    imgui.push_style_color(imgui.Col_.button, COLOR.CHIP_BG)
+    imgui.push_style_color(imgui.Col_.button_hovered, COLOR.CHIP_BG)
+    imgui.push_style_color(imgui.Col_.button_active, COLOR.CHIP_BG)
+    imgui.push_style_color(imgui.Col_.text, text)
+    imgui.button(f"{chord_str}##chord_{label}", size=(pill_w, 0.0))
+    imgui.pop_style_color(4)
+    imgui.pop_style_var(1)

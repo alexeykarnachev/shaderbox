@@ -1,8 +1,17 @@
 from imgui_bundle import imgui
 
 from shaderbox.app import App
+from shaderbox.commands import (
+    COMMAND_SPECS,
+    SPEC_BY_ID,
+    CommandId,
+    CommandScope,
+    capture_chord,
+    chord_needs_modifier,
+    chord_to_str,
+)
 from shaderbox.theme import COLOR, SIZE, SPACE
-from shaderbox.ui_primitives import ghost_button, label_row, modal_window
+from shaderbox.ui_primitives import chord_row, ghost_button, label_row, modal_window
 
 _LABEL = "Settings##popup"
 
@@ -31,6 +40,9 @@ def _draw_body(app: App) -> bool:
     label_row(app.font_12, "Target FPS", ctrl_w, label_w)
     app.app_state.global_target_fps = imgui.drag_int(
         "##global_target_fps", app.app_state.global_target_fps, v_min=30, v_max=240
+    )[1]
+    app.app_state.show_cheatsheet = imgui.checkbox(
+        "Show keyboard cheatsheet", app.app_state.show_cheatsheet
     )[1]
 
     imgui.dummy((0.0, SPACE.MD))
@@ -77,9 +89,69 @@ def _draw_body(app: App) -> bool:
             )
 
     imgui.dummy((0.0, SPACE.MD))
+    imgui.separator_text("Keyboard")
+    _draw_keybindings(app)
+
+    imgui.dummy((0.0, SPACE.MD))
 
     is_keep_opened: bool = True
     if ghost_button("Close", width=float(SIZE.BTN_SM_W)):
         is_keep_opened = False
 
     return is_keep_opened
+
+
+def _chord_in_use(
+    app: App, chord: int, scope: CommandScope, exclude: CommandId
+) -> bool:
+    return any(
+        spec.id != exclude
+        and spec.scope == scope
+        and app.effective_bindings.get(spec.id, 0) == chord
+        for spec in COMMAND_SPECS
+    )
+
+
+def _draw_keybindings(app: App) -> None:
+    # One row per command (the same set the cheatsheet shows): name + current
+    # chord + a Rebind button that arms one-frame capture. While armed, the next
+    # pressed chord commits (unless it duplicates another command in the same
+    # scope or lacks a modifier), Esc cancels. Fixed-key commands (arrow nav) show
+    # their chord with the Rebind button disabled.
+    if app.rebinding_command is not None:
+        chord = capture_chord()
+        if imgui.is_key_pressed(imgui.Key.escape, repeat=False):
+            app.rebinding_command = None
+        elif chord is not None:
+            command_id = app.rebinding_command
+            scope = SPEC_BY_ID[command_id].scope
+            if chord_needs_modifier(chord):
+                app.notifications.push(
+                    f"{chord_to_str(chord)} needs a modifier (Ctrl/Shift/Alt)",
+                    COLOR.STATE_WARN[:3],
+                )
+            elif _chord_in_use(app, chord, scope, command_id):
+                app.notifications.push(
+                    f"{chord_to_str(chord)} is already bound in this scope",
+                    COLOR.STATE_WARN[:3],
+                )
+            else:
+                app.rebind_command(command_id, chord)
+            app.rebinding_command = None
+
+    label_w = float(SIZE.SETTINGS_W) * 0.4
+    for spec in COMMAND_SPECS:
+        capturing = app.rebinding_command == spec.id
+        chord_str = (
+            "press a key..."
+            if capturing
+            else chord_to_str(app.effective_bindings.get(spec.id, 0))
+        )
+        chord_row(spec.label, chord_str, label_w, highlight=capturing)
+        imgui.same_line(label_w + float(SIZE.UNIFORM_CTRL_W) * 0.5)
+        if not spec.rebindable:
+            imgui.begin_disabled()
+        if ghost_button(f"Rebind##{spec.id.value}", width=float(SIZE.BTN_SM_W)):
+            app.rebinding_command = spec.id
+        if not spec.rebindable:
+            imgui.end_disabled()

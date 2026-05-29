@@ -5,10 +5,12 @@ import glfw
 import moderngl
 import numpy as np
 from imgui_bundle import imgui, imgui_ctx
+from imgui_bundle import imgui_command_palette as imcmd
 from loguru import logger
 
 from shaderbox.app import App
-from shaderbox.hotkeys import process_hotkeys
+from shaderbox.commands import CommandId, chord_to_str
+from shaderbox.hotkeys import dispatch_commands, process_hotkeys
 from shaderbox.paths import app_data_dir, shader_lib_root
 from shaderbox.popups.emoji_picker import draw_emoji_picker
 from shaderbox.popups.lib_picker import draw_lib_picker
@@ -23,6 +25,7 @@ from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_models import UINode
 from shaderbox.ui_primitives import fps_overlay
 from shaderbox.util import adjust_size
+from shaderbox.widgets import cheatsheet
 from shaderbox.widgets.node_grid import draw_node_preview_grid
 
 _FONT_14_SIZE = 14.0
@@ -201,6 +204,12 @@ def update_and_draw(app: App) -> None:
     imgui.set_next_window_pos((0, 0))
     with imgui_ctx.begin("ShaderBox - UI", flags=_MAIN_WINDOW_FLAGS):
         # ------------------------------------------------------------
+        # Keyboard command dispatch — in-frame (imgui.shortcut() asserts outside
+        # a frame), at the top of the block so ESC's editor-defocus is consumed
+        # by code_tab.draw the same frame.
+        dispatch_commands(app)
+
+        # ------------------------------------------------------------
         # Main menu bar
         _draw_menu_bar(app)
 
@@ -240,10 +249,21 @@ def update_and_draw(app: App) -> None:
         draw_emoji_picker(app)
         draw_lib_picker(app)
 
+        if app.is_palette_open:
+            app.is_palette_open = imcmd.command_palette_window(
+                "CommandPalette", app.is_palette_open
+            )
+
         imgui.push_font(app.font_18, _FONT_18_SIZE)
         app.notifications.update_and_draw()
         imgui.pop_font()
 
+    imgui.pop_font()
+
+    # The cheatsheet is its OWN top-level window — drawn after the full-screen
+    # main window closes so it isn't obscured by it.
+    imgui.push_font(app.font_14, _FONT_14_SIZE)
+    cheatsheet.draw(app)
     imgui.pop_font()
 
     # ----------------------------------------------------------------
@@ -264,24 +284,42 @@ def update_and_draw(app: App) -> None:
     app.frame_idx += 1
 
 
+def _hint(app: App, command_id: CommandId) -> str:
+    return chord_to_str(app.effective_bindings[command_id])
+
+
 def _draw_menu_bar(app: App) -> None:
     with imgui_ctx.begin_menu_bar() as bar:
         if not bar:
             return
         with imgui_ctx.begin_menu("File") as file_menu:
             if file_menu:
-                if imgui.menu_item("New node", "Ctrl+N", False)[0]:
+                if imgui.menu_item("New node", _hint(app, CommandId.NEW_NODE), False)[
+                    0
+                ]:
                     app.open_node_creator()
-                if imgui.menu_item("Open project...", "Ctrl+O", False)[0]:
+                if imgui.menu_item(
+                    "Open project...", _hint(app, CommandId.OPEN_PROJECT), False
+                )[0]:
                     app.open_project()
                 imgui.separator()
-                if imgui.menu_item("Quit", "Ctrl+Q", False)[0]:
+                if imgui.menu_item("Quit", _hint(app, CommandId.QUIT), False)[0]:
                     glfw.set_window_should_close(app.window, True)
         with imgui_ctx.begin_menu("Edit") as edit_menu:
-            if edit_menu and imgui.menu_item("Settings...", "Alt+S", False)[0]:
+            if (
+                edit_menu
+                and imgui.menu_item(
+                    "Settings...", _hint(app, CommandId.OPEN_SETTINGS), False
+                )[0]
+            ):
                 app.open_settings()
-        with imgui_ctx.begin_menu("Shader Library") as lib_menu:
-            if lib_menu and imgui.menu_item("Browse...", "Ctrl+P", False)[0]:
+        with imgui_ctx.begin_menu("Library") as lib_menu:
+            if (
+                lib_menu
+                and imgui.menu_item(
+                    "Browse...", _hint(app, CommandId.OPEN_LIB_PICKER), False
+                )[0]
+            ):
                 app.open_shader_lib_picker()
 
 
@@ -331,7 +369,10 @@ def _draw_app_panel(app: App) -> None:
         image_width = avail.x
         image_height = max(avail.y - control_panel_min_height, 400)
 
-        message = "To create a new node, press Ctrl+N"
+        message = (
+            f"To create a new node, press "
+            f"{chord_to_str(app.effective_bindings[CommandId.NEW_NODE])}"
+        )
         text_size = imgui.calc_text_size(message)
         text_x = cursor_pos.x + (image_width - text_size.x) / 2
         text_y = cursor_pos.y + (image_height - text_size.y) / 2

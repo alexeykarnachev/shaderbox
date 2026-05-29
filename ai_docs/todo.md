@@ -28,6 +28,27 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
 
 ---
 
+## [DEFERRAL] keyboard focus/navigation layer (nav + region/tab cycling)
+- **Trigger:** when feature 018 (the command layer — rebindable chords + cheatsheet + palette) is
+  landed AND the user wants mouse-less *widget* interaction: cycling through uniform controls / other
+  widgets on a tab, or switching the editor↔panel region or the Node/Render/Share tabs by keyboard.
+- Split out of feature 018 (pre-impl review): this is the focus/navigation axis, distinct from 018's
+  named-command dispatch. Two coupled pieces that belong together:
+  (a) **`io.config_flags |= imgui.ConfigFlags_.nav_enable_keyboard`** — app-wide Tab/Shift+Tab + arrow
+  widget traversal + Space/Enter activation + keyboard slider editing. One line, but the blast radius
+  is every standard widget: the node-preview grid (`widgets/node_grid.py`), the lib-picker tree
+  (`popups/lib_picker/`), the emoji grid (`popups/emoji_picker.py`), every `input_text` (inline
+  rename/new-file, share-tab fields, Settings credential fields). Must verify each surface for a nav
+  regression, and reconcile with the editor caret (the `TextEditor` owns arrows when focused) + the
+  node left/right-arrow cycling 018 ships (arrow contest).
+  (b) **region/tab cycling** — editor↔panel and Node/Render/Share. The tab bar
+  (`ui.py::_draw_node_settings`) is imgui-implicit today (no `App`/`UIAppState` field); cycling needs
+  a new `active_node_tab` field + driving the tab via `TabItemFlags_.set_selected` for one frame.
+  *(Both APIs prototyped headlessly during 018 research: `nav_enable_keyboard` is settable +
+  `io.nav_active` goes True; `TabItemFlags_.set_selected` exists with the claimed capability — so this
+  feature starts from confirmed APIs.)* Spec when triggered; needs its own manual-verification wave
+  (nav is un-headless-able — hand visual checks to the maintainer per `dev_flow.md ### Run the app`).
+
 ## [DEFERRAL] cross-file uniform declaration jump (lib files)
 - **Trigger:** first user complaint that clicking a uniform name in the panel doesn't jump
   anywhere when the uniform happens to be declared in a lib file (not the node's own shader),
@@ -270,6 +291,8 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   `widgets/uniform.py`'s draw loop, mutating `UIUniform` through the imgui drag widget; a tool needs
   a headless verb. (b) `App.create_node_from_selected_template` reads
   `app_state.selected_node_template_id` (grid selection), not a `template_id` arg — a tool wants
-  `create_node(template_id)`. (c) the agent layer must reach the verbs WITHOUT importing imgui —
-  confirm the verb-holding modules (`app.py`, `shader_lib/file_ops.py`, a future node-ops module)
-  stay imgui-free. The seam to attach to is the existing `App.<verb>()` surface, not a new path.
+  `create_node(template_id)`. (c) the agent's tool functions must reach the mutation verbs WITHOUT
+  the agent layer itself importing imgui. Note `app.py` is NOT imgui-free (it holds the editor's
+  `TextEditor` — always has), so "reach the verbs" means *calling* `App.<verb>()` / a future
+  headless node-ops module / `shader_lib/file_ops.py` (the latter two ARE imgui-free), not importing
+  the whole `App`. The seam to attach to is the existing `App.<verb>()` surface, not a new path.

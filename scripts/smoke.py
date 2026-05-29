@@ -29,6 +29,7 @@ def _check_invariants(app: App, frame_idx: int) -> None:
             app.is_node_creator_open,
             app.is_settings_open,
             app.is_emoji_picker_open,
+            app.is_shader_lib_picker_open,
         ]
     )
     assert n_open <= 1, f"frame {frame_idx}: {n_open} popups open (mutex broken)"
@@ -36,6 +37,9 @@ def _check_invariants(app: App, frame_idx: int) -> None:
         f"frame {frame_idx}: current_node_id={app.current_node_id!r} not in "
         f"ui_nodes={list(app.ui_nodes.keys())}"
     )
+    # Feature 018: the registry must be populated + dispatched every frame (the
+    # cheatsheet overlay draws here too, exercising its no-assert path headlessly).
+    assert app.effective_bindings, f"frame {frame_idx}: effective_bindings empty"
 
 
 def main() -> int:

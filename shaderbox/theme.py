@@ -206,6 +206,10 @@ class SIZE:
     SCROLLBAR_W: int = 12
     GRAB_MIN: int = 10
 
+    # Keyboard cheatsheet floating overlay (feature 018).
+    CHEATSHEET_W: int = 230
+    CHEATSHEET_MARGIN: int = 12  # gap from the window's bottom-right corner
+
 
 class SPACE:
     XS: int = 2
@@ -228,6 +232,9 @@ EDITOR_UNFOCUSED_ALPHA: float = 0.6
 
 # Fill alpha for chrome floating over the render image (the FPS overlay).
 OVERLAY_ALPHA: float = 0.7
+
+# The keyboard cheatsheet floats top-right over live content — kept faint.
+CHEATSHEET_ALPHA: float = 0.45
 
 
 # ============================================================================
