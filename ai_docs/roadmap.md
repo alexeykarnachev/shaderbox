@@ -27,9 +27,8 @@ feature; brief points at the superseder).
 
 **As of 2026-05-29.**
 
-- **Shipped: `v0.10.0`** (last release). **Unshipped on `dev`:** feature 017 — a structural
-  refactoring wave (domain-separation, no behavior change). `dev` is ahead of `master`; next ship
-  picks it up.
+- **Shipped: `v0.10.1`** (feature 017 — a structural refactoring wave, domain-separation, no
+  behavior change + a focus bugfix on library insert). `dev` == `master`, nothing unshipped.
 - 017 landed: `lib_*` → `shader_lib/` package + total rename (incl. the on-disk
   `<app_data_dir>/shader_lib/` dir); `shader_lib` split into index/resolver/parser; `lib_picker` →
   package (tree/preview/search/filtering); `util.py` split (shader-error domain → `shader_errors.py`);
