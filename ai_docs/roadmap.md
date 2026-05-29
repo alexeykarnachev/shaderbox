@@ -27,20 +27,20 @@ feature; brief points at the superseder).
 
 **As of 2026-05-29.**
 
-- **019 (keyboard navigation) is done + manually verified on `dev`, unshipped.** Last shipped build is
-  `v0.11.0` (feature 018); `dev` is ahead by 019 + the nav/color polish + the theme invariant.
-- 019: app-wide `nav_enable_keyboard` + a two-level focus model — `Ctrl+`` ` `` cycles 3 regions
+- **Shipped: `v0.12.0`** (feature 019 — the keyboard navigation layer + the nav/color polish wave).
+  Live on itch.io (both channels); `dev` == `master`, nothing unshipped.
+- 019 landed: app-wide `nav_enable_keyboard` + a two-level focus model — `Ctrl+`` ` `` cycles 3 regions
   (editor / node-grid / settings-panel, region-confined via `no_nav_inputs`; active region shown by an
   accent outline driven off live focus), `Ctrl+1/2/3` jump the inner Node/Render/Share tab. The polish
   wave folded in: a selection-vs-accent color split (`COLOR.SELECT` = fixed purple) + an import-time
   theme-portability invariant; Ctrl+Tab suppressed (`no_nav_focus`); Esc swallowed at the glfw layer
-  unless it has a job (no more hierarchy-climbing); `nav_flattened` so uniforms nav directly; launch
-  lands on the grid. Full story + the maintainer-verification outcomes: `019` spec Review history.
-- **NEXT ACTION:** none queued. 019 is ship-ready — a `/ship` would cut `v0.12.0` (minor; backward-
-  compatible feature). Otherwise pick the teed-up **built-in coding-copilot agent** (`todo.md
-  [DEFERRAL]`; the 018 registry's id->callback surface is agent-friendly), or a fresh ask.
+  unless it has a job; `nav_flattened` so uniforms nav directly; launch lands on the grid. Full story:
+  `ai_docs/features/019_keyboard_navigation.md`.
+- **NEXT ACTION:** none queued — pick from `todo.md` triggers or a fresh ask. The teed-up next feature
+  is the **built-in coding-copilot agent** (`todo.md [DEFERRAL]`; the 018 registry's id->callback
+  surface is agent-friendly).
 - **No open BLOCKERs.** Two cosmetic nav tails parked in `todo.md` (nav-cursor resets to cell 0 after
-  Enter; 2D grid arrow adjacency) — both trigger-gated, neither blocks ship.
+  Enter; 2D grid arrow adjacency) — both trigger-gated.
 
 ## Features
 
