@@ -1,4 +1,5 @@
 import time
+from collections.abc import Callable
 from dataclasses import replace
 
 import glfw
@@ -9,7 +10,7 @@ from imgui_bundle import imgui_command_palette as imcmd
 from loguru import logger
 
 from shaderbox.app import App
-from shaderbox.commands import CommandId, chord_to_str
+from shaderbox.commands import ActiveRegion, CommandId, NodeTab, chord_to_str
 from shaderbox.hotkeys import dispatch_commands, process_hotkeys
 from shaderbox.paths import app_data_dir, shader_lib_root
 from shaderbox.popups.emoji_picker import draw_emoji_picker
@@ -23,7 +24,7 @@ from shaderbox.tabs import render as render_tab
 from shaderbox.tabs import share as share_tab
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_models import UINode
-from shaderbox.ui_primitives import fps_overlay
+from shaderbox.ui_primitives import active_region_outline, fps_overlay
 from shaderbox.util import adjust_size
 from shaderbox.widgets import cheatsheet
 from shaderbox.widgets.node_grid import draw_node_preview_grid
@@ -40,6 +41,10 @@ _MAIN_WINDOW_FLAGS = (
     | imgui.WindowFlags_.no_scrollbar
     | imgui.WindowFlags_.no_scroll_with_mouse
     | imgui.WindowFlags_.menu_bar
+    # Skip the sole top-level window in imgui's built-in Ctrl+Tab window-cycle (which
+    # is on regardless of nav_enable_keyboard) — otherwise Ctrl+Tab pops a 1-item
+    # window switcher and highlights the whole window (a 2nd outline over ours).
+    | imgui.WindowFlags_.no_nav_focus
 )
 
 
@@ -225,8 +230,23 @@ def update_and_draw(app: App) -> None:
         )
 
         with imgui_ctx.begin_child(
-            "code_editor", size=imgui.ImVec2(editor_width, split_region.y)
+            "code_editor",
+            size=imgui.ImVec2(editor_width, split_region.y),
+            child_flags=imgui.ChildFlags_.borders,
+            window_flags=imgui.WindowFlags_.no_nav_inputs,
         ):
+            # active_region is corrected from LIVE focus (so a mouse click that moves
+            # focus updates it) — but NOT while a chord move is in flight (focus still
+            # reads as the old region for a frame; correcting then would revert the
+            # chord target + break cycling). The outline follows active_region directly
+            # so it shows the chord's target immediately.
+            if (
+                imgui.is_window_focused(imgui.FocusedFlags_.child_windows)
+                and not app.focus_move_in_flight()
+            ):
+                app.active_region = ActiveRegion.EDITOR
+            if app.active_region == ActiveRegion.EDITOR:
+                active_region_outline()
             code_tab.draw(app)
 
         imgui.same_line(spacing=0.0)
@@ -418,23 +438,64 @@ def _draw_app_panel(app: App) -> None:
             )
 
 
+_NODE_TABS: list[tuple[str, NodeTab, Callable[[App], None]]] = [
+    ("Node", NodeTab.NODE, node_tab.draw),
+    ("Render", NodeTab.RENDER, render_tab.draw),
+    ("Share", NodeTab.SHARE, share_tab.draw),
+]
+
+
 def _draw_node_settings(app: App) -> None:
-    with (
-        imgui_ctx.begin_child("node_settings", child_flags=imgui.ChildFlags_.borders),
-        imgui_ctx.begin_tab_bar("node_settings_tabs") as bar,
+    panel_active = app.active_region == ActiveRegion.PANEL
+    # Each region consumes (reads + clears) its OWN region_focus_pending — clearing
+    # it here unconditionally would eat a request the GRID set after it already drew
+    # this frame (e.g. select_node re-latching grid focus), so the grid never sees it.
+    focus_panel = app.region_focus_pending and panel_active
+    if focus_panel:
+        app.region_focus_pending = False
+    # Capture the jump target NOW — the loop rewrites active_node_tab from the
+    # visible tab, which would otherwise clobber the target before set_selected
+    # reads it (set_selected only takes effect next frame).
+    tab_select_target = app.active_node_tab if app.node_tab_select_pending else None
+    app.node_tab_select_pending = False
+
+    if focus_panel:
+        imgui.set_next_window_focus()
+    panel_flags = (
+        imgui.WindowFlags_.none if panel_active else imgui.WindowFlags_.no_nav_inputs
+    )
+    with imgui_ctx.begin_child(
+        "node_settings",
+        child_flags=imgui.ChildFlags_.borders,
+        window_flags=panel_flags,
     ):
-        if bar:
-            with imgui_ctx.begin_tab_item("Node") as tab:
-                if tab:
-                    node_tab.draw(app)
-
-            with imgui_ctx.begin_tab_item("Render") as tab:
-                if tab:
-                    render_tab.draw(app)
-
-            with imgui_ctx.begin_tab_item("Share") as tab:
-                if tab:
-                    share_tab.draw(app)
+        # active_region corrected from live focus (mouse clicks) except during a chord
+        # move; outline follows active_region. See the editor pane.
+        if (
+            imgui.is_window_focused(imgui.FocusedFlags_.child_windows)
+            and not app.focus_move_in_flight()
+        ):
+            app.active_region = ActiveRegion.PANEL
+        if app.active_region == ActiveRegion.PANEL:
+            active_region_outline()
+        with imgui_ctx.begin_tab_bar("node_settings_tabs") as bar:
+            if bar:
+                visible_tab = app.active_node_tab
+                for label, tab_id, draw_tab in _NODE_TABS:
+                    # set_selected drives the tab on the next frame after a Ctrl+digit
+                    # jump; imgui then remembers the selection.
+                    flags = (
+                        imgui.TabItemFlags_.set_selected
+                        if tab_select_target == tab_id
+                        else imgui.TabItemFlags_.none
+                    )
+                    with imgui_ctx.begin_tab_item(label, flags=flags) as tab:
+                        if tab:
+                            visible_tab = tab_id
+                            draw_tab(app)
+                # The visible tab IS the selected one — commit after the loop so the
+                # mid-loop write can't clobber the jump target read above.
+                app.active_node_tab = visible_tab
 
 
 def main() -> None:

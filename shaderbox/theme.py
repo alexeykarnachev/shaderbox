@@ -101,6 +101,9 @@ _ACCENTS: dict[
 
 
 class _ColorBag:
+    # fully transparent fill (e.g. an invisible selectable carrying its own visual)
+    TRANSPARENT: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
+
     # neutrals
     BG_APP: tuple[float, float, float, float] = _P["bg_0"]
     BG_SURFACE: tuple[float, float, float, float] = _P["bg_0h"]
@@ -127,6 +130,12 @@ class _ColorBag:
         47 / 255,
         0.18,
     )
+
+    # selection / context cue — FIXED (never written by apply_theme). The swappable
+    # accent is the active-region/tab cue; selection must stay a distinct hue from it
+    # under EVERY accent preset, so it can't be the accent. purple_b is used by no
+    # accent preset and no state color.
+    SELECT: tuple[float, float, float, float] = _P["purple_b"]
 
     # state semantics
     STATE_OK: tuple[float, float, float, float] = _P["aqua_b"]

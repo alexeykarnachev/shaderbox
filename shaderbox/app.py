@@ -16,7 +16,9 @@ from loguru import logger
 from shaderbox.commands import (
     COMMAND_SPECS,
     SPEC_BY_ID,
+    ActiveRegion,
     CommandId,
+    NodeTab,
     chord_to_str,
 )
 from shaderbox.constants import RESOURCES_DIR
@@ -65,6 +67,14 @@ def _order_templates(templates: dict[str, UINode]) -> dict[str, UINode]:
     rank = {tid: i for i, tid in enumerate(_TEMPLATE_ORDER)}
     ordered_ids = sorted(templates, key=lambda tid: rank.get(tid, len(rank)))
     return {tid: templates[tid] for tid in ordered_ids}
+
+
+# Region-cycle order for the keyboard-nav command (feature 019).
+_REGION_CYCLE: tuple[ActiveRegion, ...] = (
+    ActiveRegion.EDITOR,
+    ActiveRegion.GRID,
+    ActiveRegion.PANEL,
+)
 
 
 class App:
@@ -116,9 +126,27 @@ class App:
         # Steady caret, no blink — applies to imgui input fields and (if honored
         # by the binding) the TextEditor widget too.
         imgui.get_io().config_input_text_cursor_blink = False
+        # App-wide keyboard navigation: Tab/arrows traverse widgets, Space/Enter
+        # activate, arrows drive sliders (feature 019). Confined per-region via
+        # no_nav_inputs in ui.py.
+        imgui.get_io().config_flags |= imgui.ConfigFlags_.nav_enable_keyboard
+        # Esc must NOT clear the nav highlight: by default Esc steps the nav cursor out
+        # one window-containment level per press, highlighting each enclosing window
+        # (cell -> grid -> control_panel -> main window) — reads as "the border climbs
+        # the hierarchy". Keep the highlight pinned in place instead; region/widget
+        # changes are driven by our chords, not Esc.
+        imgui.get_io().config_nav_escape_clear_focus_item = False
         apply_theme(imgui.get_style())
         self.window = window
         self.imgui_renderer = GlfwRenderer(window)
+        # Swallow Esc at the source unless it has an app job. imgui's keyboard-nav
+        # cancel (NavUpdateCancelRequest) steps focus out to the parent window on Esc,
+        # climbing the child-window hierarchy with a highlight (no clean off-switch in
+        # this binding — upstream imgui #8059). We install our own glfw key callback
+        # in front of the renderer's: when Esc has no job (no popup open, editor not
+        # focused), drop it so neither imgui-nav nor our handler sees it; otherwise
+        # delegate so popup-close / editor-defocus + the in-frame _handle_escape work.
+        self._install_escape_filter()
 
         # glfw cursors driven directly — imgui cursors are no-op in this backend (conventions.md ## Known quirks)
         self.ibeam_cursor = glfw.create_standard_cursor(glfw.IBEAM_CURSOR)
@@ -163,6 +191,18 @@ class App:
         self._palette_command_names: list[str] = []
         # CommandId currently capturing a new chord in the rebinder (None = idle).
         self.rebinding_command: CommandId | None = None
+        # Keyboard-nav focus model (feature 019): which of the three regions owns
+        # nav, which settings tab is active. Transient (reset each launch). Start on
+        # the node grid (the editor auto-grabs focus on first render but is defocused
+        # below; we latch the grid so launch lands on a sensible nav region).
+        self.active_region: ActiveRegion = ActiveRegion.GRID
+        self.active_node_tab: NodeTab = NodeTab.NODE
+        # One-shots: a region-switch / tab-jump requested this frame. The owning
+        # draw fn latches focus (set_next_window_focus) / drives the tab
+        # (set_selected) then the flag is cleared. Start pending so the grid grabs
+        # focus on the first frame.
+        self.region_focus_pending: bool = True
+        self.node_tab_select_pending: bool = False
         self.emoji_picker_query: str = ""
         # Where a picked emoji is delivered (set by whoever opens the picker).
         self.emoji_pick_target: Callable[[str], None] | None = None
@@ -233,6 +273,23 @@ class App:
         self._build_command_callbacks()
         self._register_palette_commands()
 
+    def _install_escape_filter(self) -> None:
+        renderer_cb = self.imgui_renderer.keyboard_callback
+
+        def key_callback(
+            window: Any, key: int, scancode: int, action: int, mods: int
+        ) -> None:
+            if key == glfw.KEY_ESCAPE and not self.escape_has_job():
+                return  # swallow: no popup/editor to dismiss, leave nav untouched
+            renderer_cb(window, key, scancode, action, mods)
+
+        glfw.set_key_callback(self.window, key_callback)
+
+    def escape_has_job(self) -> bool:
+        # Esc is meaningful only to dismiss a popup/palette or drop the editor caret.
+        # Otherwise it's swallowed before imgui sees it (see _install_escape_filter).
+        return self.any_popup_open() or self.is_palette_open or self.editor_focused
+
     def _build_command_callbacks(self) -> None:
         self.command_callbacks = {
             CommandId.OPEN_PROJECT: self.open_project,
@@ -244,9 +301,11 @@ class App:
             CommandId.OPEN_PALETTE: self.open_palette,
             CommandId.QUIT: self.request_quit,
             CommandId.JUMP_NEXT_ERROR: self.jump_to_next_error,
-            CommandId.NODE_PREV: lambda: self.select_next_current_node(-1),
-            CommandId.NODE_NEXT: lambda: self.select_next_current_node(+1),
             CommandId.TOGGLE_CHEATSHEET: self.toggle_cheatsheet,
+            CommandId.CYCLE_REGION: self.cycle_region,
+            CommandId.FOCUS_TAB_NODE: lambda: self.focus_node_tab(NodeTab.NODE),
+            CommandId.FOCUS_TAB_RENDER: lambda: self.focus_node_tab(NodeTab.RENDER),
+            CommandId.FOCUS_TAB_SHARE: lambda: self.focus_node_tab(NodeTab.SHARE),
         }
 
     def _register_palette_commands(self) -> None:
@@ -314,6 +373,47 @@ class App:
 
     def toggle_cheatsheet(self) -> None:
         self.app_state.show_cheatsheet = not self.app_state.show_cheatsheet
+
+    def cycle_region(self) -> None:
+        idx = _REGION_CYCLE.index(self.active_region)
+        self._set_region(_REGION_CYCLE[(idx + 1) % len(_REGION_CYCLE)])
+
+    def focus_node_tab(self, tab: NodeTab) -> None:
+        self.active_node_tab = tab
+        self.node_tab_select_pending = True
+        self._set_region(ActiveRegion.PANEL)
+
+    def focus_move_in_flight(self) -> bool:
+        # A chord-driven region focus move hasn't landed yet (the set_next_window_focus
+        # latch / editor set_focus takes effect a frame later). While in flight, the
+        # live-focus derive of active_region must NOT run — focus still reads as the
+        # OLD region for a frame, which would revert the chord's target and break
+        # cycling. Mouse-click focus changes have no pending flag, so the derive
+        # corrects active_region for those.
+        return self.region_focus_pending or self.editor_focus_requested
+
+    def _set_region(self, region: ActiveRegion) -> None:
+        # Editor uses its own focus machinery (the TextEditor owns an inner window);
+        # the other regions latch via set_next_window_focus in their draw fn.
+        leaving_editor = (
+            self.active_region == ActiveRegion.EDITOR and region != ActiveRegion.EDITOR
+        )
+        self.active_region = region
+        if region == ActiveRegion.EDITOR:
+            self.editor_focus_requested = True
+        else:
+            self.region_focus_pending = True
+            if leaving_editor:
+                self.editor_defocus_requested = True
+
+    def select_node(self, node_id: str) -> None:
+        # Picking a node from the grid switches the current node. If the grid owns
+        # keyboard focus, keep it there: the new node's editor auto-grabs focus on its
+        # first render (TextEditor.render() quirk), so defocus it and re-latch the grid.
+        self.set_current_node_id(node_id)
+        if self.active_region == ActiveRegion.GRID:
+            self.editor_defocus_requested = True
+            self.region_focus_pending = True
 
     def rebind_command(self, command_id: CommandId, chord: int) -> None:
         # Maintain key_bindings as a diff-only dict: store only chords that differ
@@ -942,29 +1042,6 @@ class App:
         shutil.move(self.nodes_dir / node_id, dest)
 
         logger.info(f"Node deleted: {node_id}")
-
-    def select_next_current_node(self, step: int = +1) -> None:
-        self.set_current_node_id(
-            select_next_value(
-                values=list(self.ui_nodes.keys()),
-                current_value=self.current_node_id,
-                default_value="",
-                step=step,
-            )
-        )
-        # Arrow-nav is a navigation-mode action; the freshly-switched node's editor
-        # would auto-grab focus on its first render, so defocus it (keeps arrows
-        # navigating instead of jumping into the caret).
-        if not self.editor_focused:
-            self.editor_defocus_requested = True
-
-    def select_next_template(self, step: int = +1) -> None:
-        self.app_state.selected_node_template_id = select_next_value(
-            values=list(self.ui_node_templates.keys()),
-            current_value=self.app_state.selected_node_template_id,
-            default_value="",
-            step=step,
-        )
 
     def _seed_starter_node(self) -> None:
         template_dir = self.node_templates_dir / _STARTER_TEMPLATE_ID

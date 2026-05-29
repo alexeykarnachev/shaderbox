@@ -217,7 +217,7 @@ def draw(app: App) -> None:
         # Sticky bit: stays True across popups/menus until an explicit defocus.
         app.editor_was_ever_focused = True
 
-    # Esc / arrow-nav request defocus (hotkeys.py, app.select_next_current_node).
+    # Esc / region-cycle-out request defocus (hotkeys.py, app._set_region).
     # A freshly-rendered editor auto-grabs focus, so the focus must be cleared AFTER
     # render — clearing before is undone by the editor's own first-render focus grab.
     if app.editor_defocus_requested:

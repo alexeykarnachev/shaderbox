@@ -23,7 +23,6 @@ def dispatch_commands(app: App) -> None:
     # child draws, so ESC's defocus request is consumed the same frame.
     _dispatch_registry(app)
     _handle_escape(app)
-    _handle_node_creator_nav(app)
 
 
 def _dispatch_registry(app: App) -> None:
@@ -35,8 +34,6 @@ def _dispatch_registry(app: App) -> None:
         if spec.scope == CommandScope.EDITOR and not app.editor_focused:
             continue
         if popup_suppresses(spec.scope) and popup_open:
-            continue
-        if spec.editor_blocks and app.editor_focused:
             continue
         flags = route_flag(spec.scope)
         if spec.repeat:
@@ -52,9 +49,14 @@ def _handle_escape(app: App) -> None:
     # settings draw) — don't also close the modal.
     if app.rebinding_command is not None:
         return
-    # ESC returns the app to its default state: close any popup, drop editor
-    # focus. Never quits. Settings holds the editor options — push them on close
-    # (apply-on-close avoids the modal-open FPE, conventions.md ## Known quirks).
+    # Esc with no job (no popup/editor) is swallowed at the glfw layer before imgui
+    # sees it (App._install_escape_filter), so this in-frame handler shouldn't even
+    # receive it then — but gate defensively on the same condition.
+    if not app.escape_has_job():
+        return
+    # ESC returns the app to its default state: close any popup, drop editor focus.
+    # Never quits. Settings holds the editor options — push them on close (apply-on-
+    # close avoids the modal-open FPE, conventions.md ## Known quirks).
     was_settings_open = app.is_settings_open
     app.is_node_creator_open = False
     app.is_settings_open = False
@@ -62,17 +64,3 @@ def _handle_escape(app: App) -> None:
     app.editor_defocus_requested = True
     if was_settings_open:
         app.apply_editor_settings()
-
-
-def _handle_node_creator_nav(app: App) -> None:
-    # Popup-internal nav: arrows pick a template, Enter creates it. Not registry
-    # commands (popup-scoped, fixed keys, not rebindable).
-    if not app.is_node_creator_open:
-        return
-    if imgui.is_key_pressed(imgui.Key.left_arrow, repeat=True):
-        app.select_next_template(-1)
-    if imgui.is_key_pressed(imgui.Key.right_arrow, repeat=True):
-        app.select_next_template(+1)
-    if imgui.is_key_pressed(imgui.Key.enter, repeat=False):
-        app.create_node_from_selected_template()
-        app.is_node_creator_open = False

@@ -24,9 +24,26 @@ class CommandId(StrEnum):
     OPEN_PALETTE = auto()
     QUIT = auto()
     JUMP_NEXT_ERROR = auto()
-    NODE_PREV = auto()
-    NODE_NEXT = auto()
     TOGGLE_CHEATSHEET = auto()
+    CYCLE_REGION = auto()
+    FOCUS_TAB_NODE = auto()
+    FOCUS_TAB_RENDER = auto()
+    FOCUS_TAB_SHARE = auto()
+
+
+class ActiveRegion(StrEnum):
+    # The three keyboard-nav focus regions; the region-cycle command moves between
+    # them and nav (nav_enable_keyboard) operates within the focused one (feature 019).
+    EDITOR = auto()
+    GRID = auto()
+    PANEL = auto()
+
+
+class NodeTab(StrEnum):
+    # The settings-panel inner tabs; FOCUS_TAB_* jump to one directly.
+    NODE = auto()
+    RENDER = auto()
+    SHARE = auto()
 
 
 class CommandScope(StrEnum):
@@ -51,9 +68,6 @@ class CommandSpec:
     in_palette: bool = True
     # Excluded from the rebinder UI (e.g. arrow nav with a fixed key).
     rebindable: bool = True
-    # Suppressed while the code editor is focused (so the key drives the caret,
-    # not the command) — used by arrow node-nav.
-    editor_blocks: bool = False
 
 
 def _chord(key: imgui.Key, *mods: imgui.Key) -> int:
@@ -83,28 +97,18 @@ COMMAND_SPECS: list[CommandSpec] = [
     CommandSpec(CommandId.QUIT, "Quit", _chord(K.q, K.mod_ctrl)),
     CommandSpec(CommandId.JUMP_NEXT_ERROR, "Jump to next error", _chord(K.f8)),
     CommandSpec(
-        CommandId.NODE_PREV,
-        "Previous node",
-        _chord(K.left_arrow),
-        repeat=True,
-        in_palette=False,
-        rebindable=False,
-        editor_blocks=True,
-    ),
-    CommandSpec(
-        CommandId.NODE_NEXT,
-        "Next node",
-        _chord(K.right_arrow),
-        repeat=True,
-        in_palette=False,
-        rebindable=False,
-        editor_blocks=True,
-    ),
-    CommandSpec(
         CommandId.TOGGLE_CHEATSHEET,
         "Toggle keyboard cheatsheet",
         _chord(K.slash, K.mod_ctrl),
     ),
+    # Region cycle: Ctrl+` (grave), NOT Ctrl+Tab — imgui reserves Ctrl+Tab for its
+    # built-in window-cycle whenever nav is enabled (feature 019).
+    CommandSpec(
+        CommandId.CYCLE_REGION, "Cycle region", _chord(K.grave_accent, K.mod_ctrl)
+    ),
+    CommandSpec(CommandId.FOCUS_TAB_NODE, "Node tab", _chord(K._1, K.mod_ctrl)),
+    CommandSpec(CommandId.FOCUS_TAB_RENDER, "Render tab", _chord(K._2, K.mod_ctrl)),
+    CommandSpec(CommandId.FOCUS_TAB_SHARE, "Share tab", _chord(K._3, K.mod_ctrl)),
 ]
 
 SPEC_BY_ID: dict[CommandId, CommandSpec] = {spec.id: spec for spec in COMMAND_SPECS}
@@ -120,6 +124,7 @@ _MOD_LABELS: list[tuple[imgui.Key, str]] = [
 # get_key_name returns verbose words for punctuation/arrows; map to symbols.
 _KEY_LABEL_OVERRIDES: dict[str, str] = {
     "Slash": "/",
+    "GraveAccent": "`",
     "LeftArrow": "Left",
     "RightArrow": "Right",
     "UpArrow": "Up",

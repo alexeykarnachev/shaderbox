@@ -9,7 +9,26 @@ from loguru import logger
 
 from shaderbox.theme import COLOR, OVERLAY_ALPHA, SIZE, SPACE, fade
 
-_TRANSPARENT: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
+_REGION_OUTLINE_THICKNESS: float = 2.0
+
+
+def active_region_outline() -> None:
+    """Stroke the swappable accent around the CURRENT child window (the keyboard-nav
+    active-region cue). Call from INSIDE the region's `begin_child` (first line of its
+    body) — it reads the child's own `get_window_pos()`/`get_window_size()`, the
+    reliable full rect (`get_item_rect_*` after `end_child` can report a collapsed
+    rect, which drew a stub box). Drawn on the FOREGROUND draw list so the per-child
+    clip can't cut edges. Selection borders use the fixed `COLOR.SELECT`, never this."""
+    pos = imgui.get_window_pos()
+    size = imgui.get_window_size()
+    inset = _REGION_OUTLINE_THICKNESS
+    imgui.get_foreground_draw_list().add_rect(
+        (pos.x + inset, pos.y + inset),
+        (pos.x + size.x - inset, pos.y + size.y - inset),
+        imgui.color_convert_float4_to_u32(COLOR.ACCENT_PRIMARY),
+        rounding=imgui.get_style().child_rounding,
+        thickness=_REGION_OUTLINE_THICKNESS,
+    )
 
 
 def _ellipsize(text: str, max_width: float) -> str:
@@ -52,7 +71,7 @@ def button(label: str, width: float = 0.0) -> bool:
 
 
 def ghost_button(label: str, width: float = 0.0) -> bool:
-    imgui.push_style_color(imgui.Col_.button, _TRANSPARENT)
+    imgui.push_style_color(imgui.Col_.button, COLOR.TRANSPARENT)
     imgui.push_style_color(imgui.Col_.button_hovered, COLOR.BG_FRAME)
     imgui.push_style_color(imgui.Col_.button_active, COLOR.BORDER)
     imgui.push_style_color(imgui.Col_.text, COLOR.FG_SECONDARY)
@@ -62,7 +81,7 @@ def ghost_button(label: str, width: float = 0.0) -> bool:
 
 
 def danger_button(label: str, width: float = 0.0) -> bool:
-    imgui.push_style_color(imgui.Col_.button, _TRANSPARENT)
+    imgui.push_style_color(imgui.Col_.button, COLOR.TRANSPARENT)
     imgui.push_style_color(imgui.Col_.button_hovered, COLOR.BG_FRAME)
     imgui.push_style_color(imgui.Col_.button_active, COLOR.BORDER)
     imgui.push_style_color(imgui.Col_.text, COLOR.STATE_ERROR)
@@ -221,9 +240,9 @@ def context_menu_style() -> Iterator[None]:
     regardless of whether the popup opened that frame.
     """
     imgui.push_style_color(imgui.Col_.popup_bg, COLOR.BG_FRAME)
-    imgui.push_style_color(imgui.Col_.border, fade(COLOR.ACCENT_PRIMARY, 0.6))
-    imgui.push_style_color(imgui.Col_.header_hovered, fade(COLOR.ACCENT_PRIMARY, 0.6))
-    imgui.push_style_color(imgui.Col_.header_active, COLOR.ACCENT_PRIMARY)
+    imgui.push_style_color(imgui.Col_.border, fade(COLOR.SELECT, 0.6))
+    imgui.push_style_color(imgui.Col_.header_hovered, fade(COLOR.SELECT, 0.6))
+    imgui.push_style_color(imgui.Col_.header_active, COLOR.SELECT)
     imgui.push_style_var(imgui.StyleVar_.popup_border_size, 2.0)
     try:
         yield
@@ -471,6 +490,7 @@ def preview_cell(
     bg_color: tuple[float, float, float, float] | None = None,
     footer: str = "",
     overlay: Callable[[float], None] | None = None,
+    nav_flatten: bool = False,
 ) -> PreviewCellResult:
     """A bordered preview tile: a `cell_w`-wide square image + whole-cell click
     target + selection border + a top-right delete-✕ arming an in-cell `Delete?` wash.
@@ -481,6 +501,11 @@ def preview_cell(
     shown alongside the delete-✕ only while `selected` and not `armed`. The whole
     tile is its own child window so the overlays' absolute cursor moves can't perturb
     the parent (no jitter / SetCursorPos assert).
+
+    `nav_flatten` lets keyboard-nav cross the per-tile child border so a grid of cells
+    traverses as one ring; the click target is a `selectable` (a nav stop, unlike an
+    `invisible_button`) drawn with a transparent fill so the image/border carries the
+    visual.
     """
     footer_h: float = imgui.get_text_line_height_with_spacing() if footer else 0.0
     cell_h: float = cell_w + footer_h
@@ -492,10 +517,13 @@ def preview_cell(
     if bg_color is not None:
         imgui.push_style_color(imgui.Col_.child_bg, bg_color)
         n_styles += 1
+    child_flags = imgui.ChildFlags_.borders
+    if nav_flatten:
+        child_flags |= imgui.ChildFlags_.nav_flattened
     with imgui_ctx.begin_child(
         f"##preview_cell_{id_}",
         size=imgui.ImVec2(cell_w, cell_h),
-        child_flags=imgui.ChildFlags_.borders,
+        child_flags=child_flags,
         window_flags=imgui.WindowFlags_.no_scrollbar
         | imgui.WindowFlags_.no_scroll_with_mouse,
     ):
@@ -519,9 +547,20 @@ def preview_cell(
                 (1, 0),
             )
 
-        imgui.set_next_item_allow_overlap()
-        if imgui.invisible_button(f"##cell_{id_}", size=(avail.x, img_h)):
+        # selectable (not invisible_button) so keyboard-nav can land on the cell;
+        # transparent fill so the image/border carries the visual, allow_overlap so
+        # the delete-x / overlay buttons drawn on top still win the click.
+        imgui.push_style_color(imgui.Col_.header, COLOR.TRANSPARENT)
+        imgui.push_style_color(imgui.Col_.header_hovered, COLOR.TRANSPARENT)
+        imgui.push_style_color(imgui.Col_.header_active, COLOR.TRANSPARENT)
+        if imgui.selectable(
+            f"##cell_{id_}",
+            False,
+            flags=imgui.SelectableFlags_.allow_overlap,
+            size=imgui.ImVec2(avail.x, img_h),
+        )[0]:
             result.clicked = True
+        imgui.pop_style_color(3)
 
         if footer:
             label: str = _ellipsize(footer, avail.x)

@@ -424,6 +424,20 @@ Library footguns specific to the imgui-bundle Python build (currently
   `reportMissingModuleSource` warning at the import line. Harmless. Don't
   suppress with `# pyright: ignore` — that hides genuine resolve failures
   elsewhere.
+- **`set_window_focus(name)` — the by-name string overload — SEGFAULTS**
+  (hard crash, exit 139), regardless of where it's called. The no-arg
+  `set_next_window_focus()` (called before the target `begin`/`begin_child`)
+  works and is the documented-preferred form; `set_window_focus(None)` (defocus)
+  also works. To programmatically focus a window/region, use
+  `set_next_window_focus()` before it — and it correctly targets a *grandchild*
+  `begin_child`, not just a top-level window (spike-confirmed). Never pass a name string.
+- **An `invisible_button` is NOT a keyboard-nav stop** — with `nav_enable_keyboard`
+  on, nav never lands on it, so Space/Enter can't activate it (you can't reach it
+  without the mouse). A `selectable` (or a real `button`) IS a nav stop. For a
+  whole-cell click target that must be keyboard-reachable, use a `selectable` with
+  `SelectableFlags_.allow_overlap` + transparent `Col_.header*` (so the image/border
+  carries the visual); overlay buttons drawn on top still win the click. (ShaderBox
+  `ui_primitives.preview_cell`.)
 
 ---
 

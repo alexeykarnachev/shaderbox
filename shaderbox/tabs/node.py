@@ -163,7 +163,12 @@ def draw(app: App) -> None:
         node_ui_state.uniform_sort_desc,
     )
 
-    with imgui_ctx.begin_child("ui_uniforms"):
+    # nav_flattened: keyboard-nav crosses into this scroll child as if its uniform
+    # widgets were direct siblings — Tab/arrows reach the sliders without an
+    # Enter-to-descend / Esc-to-ascend window boundary (feature 019).
+    with imgui_ctx.begin_child(
+        "ui_uniforms", child_flags=imgui.ChildFlags_.nav_flattened
+    ):
         for hash in sorted_hashes:
             draw_ui_uniform(app, ui_uniforms[hash])
             imgui.dummy((0, SPACE.SM))

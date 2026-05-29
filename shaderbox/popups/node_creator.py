@@ -30,15 +30,13 @@ def _draw_body(app: App) -> bool:
 
     for i, ui_node_template in enumerate(app.ui_node_templates.values()):
         if ui_node_template.id == app.app_state.selected_node_template_id:
-            border_color: tuple[float, float, float, float] | None = (
-                COLOR.ACCENT_PRIMARY
-            )
+            border_color: tuple[float, float, float, float] | None = COLOR.SELECT
             is_template_selected = True
         else:
             border_color = None
 
         if draw_node_preview_button(
-            ui_node_template, border_color, preview_size
+            ui_node_template, border_color, preview_size, nav_flatten=True
         ).clicked:
             app.app_state.selected_node_template_id = ui_node_template.id
             app.app_state.new_node_name = ui_node_template.ui_state.ui_name

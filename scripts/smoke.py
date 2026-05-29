@@ -11,10 +11,12 @@ import sys
 from pathlib import Path
 
 import glfw
+from imgui_bundle import imgui
 from loguru import logger
 from platformdirs import user_data_dir
 
 from shaderbox.app import App
+from shaderbox.commands import ActiveRegion, NodeTab
 from shaderbox.ui import update_and_draw
 
 REPO_ROOT: Path = Path(__file__).resolve().parent.parent
@@ -40,6 +42,13 @@ def _check_invariants(app: App, frame_idx: int) -> None:
     # Feature 018: the registry must be populated + dispatched every frame (the
     # cheatsheet overlay draws here too, exercising its no-assert path headlessly).
     assert app.effective_bindings, f"frame {frame_idx}: effective_bindings empty"
+    # Feature 019: nav focus model stays in valid enum states.
+    assert (
+        app.active_region in ActiveRegion
+    ), f"frame {frame_idx}: bad active_region={app.active_region!r}"
+    assert (
+        app.active_node_tab in NodeTab
+    ), f"frame {frame_idx}: bad active_node_tab={app.active_node_tab!r}"
 
 
 def main() -> int:
@@ -56,9 +65,20 @@ def main() -> int:
 
     try:
         app = App(project_dir=DEV_PROJECT_DIR)
+        # Feature 019: nav_enable_keyboard is set in __init__, before any frame —
+        # check it here (get_io() reads are frame-context-sensitive mid-loop).
+        assert (
+            imgui.get_io().config_flags & imgui.ConfigFlags_.nav_enable_keyboard
+        ), "nav_enable_keyboard not set"
         for frame_idx in range(N_FRAMES):
             update_and_draw(app)
             _check_invariants(app, frame_idx)
+            # Exercise the region-cycle + tab-jump wiring (a callback throw surfaces
+            # via the except below); nav *behavior* is un-headless-able.
+            if frame_idx == 50:
+                app.cycle_region()
+            if frame_idx == 60:
+                app.focus_node_tab(NodeTab.RENDER)
         app.release()
         logger.info(f"smoke: OK ({N_FRAMES} frames, {len(app.ui_nodes)} nodes)")
         return 0

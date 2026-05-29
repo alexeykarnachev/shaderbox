@@ -28,26 +28,44 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
 
 ---
 
-## [DEFERRAL] keyboard focus/navigation layer (nav + region/tab cycling)
-- **Trigger:** when feature 018 (the command layer — rebindable chords + cheatsheet + palette) is
-  landed AND the user wants mouse-less *widget* interaction: cycling through uniform controls / other
-  widgets on a tab, or switching the editor↔panel region or the Node/Render/Share tabs by keyboard.
-- Split out of feature 018 (pre-impl review): this is the focus/navigation axis, distinct from 018's
-  named-command dispatch. Two coupled pieces that belong together:
-  (a) **`io.config_flags |= imgui.ConfigFlags_.nav_enable_keyboard`** — app-wide Tab/Shift+Tab + arrow
-  widget traversal + Space/Enter activation + keyboard slider editing. One line, but the blast radius
-  is every standard widget: the node-preview grid (`widgets/node_grid.py`), the lib-picker tree
-  (`popups/lib_picker/`), the emoji grid (`popups/emoji_picker.py`), every `input_text` (inline
-  rename/new-file, share-tab fields, Settings credential fields). Must verify each surface for a nav
-  regression, and reconcile with the editor caret (the `TextEditor` owns arrows when focused) + the
-  node left/right-arrow cycling 018 ships (arrow contest).
-  (b) **region/tab cycling** — editor↔panel and Node/Render/Share. The tab bar
-  (`ui.py::_draw_node_settings`) is imgui-implicit today (no `App`/`UIAppState` field); cycling needs
-  a new `active_node_tab` field + driving the tab via `TabItemFlags_.set_selected` for one frame.
-  *(Both APIs prototyped headlessly during 018 research: `nav_enable_keyboard` is settable +
-  `io.nav_active` goes True; `TabItemFlags_.set_selected` exists with the claimed capability — so this
-  feature starts from confirmed APIs.)* Spec when triggered; needs its own manual-verification wave
-  (nav is un-headless-able — hand visual checks to the maintainer per `dev_flow.md ### Run the app`).
+## [DEFERRAL] node-grid nav-cursor resets to cell 0 after Enter-selecting a node
+- **Trigger:** maintainer finds the nav highlight jumping to the first cell ("New node") after
+  picking a node with Enter annoying enough to want it fixed (it's cosmetic — focus stays in the grid,
+  arrows still work, the node IS selected; only the visible nav-cursor position is wrong).
+- Cause: `App.select_node` sets `region_focus_pending` so the grid re-grabs window focus (needed —
+  the new node's editor auto-grabs focus on its first render, `TextEditor.render()` quirk; without
+  the re-grab arrows die). But `set_next_window_focus()` resets imgui's nav cursor to the window's
+  default item (cell 0). **Already tried + failed:** `set_item_default_focus()` on the selected
+  cell's `selectable` inside `preview_cell` (didn't move the cursor — likely because the cell is
+  wrapped in its own `begin_child` + `nav_flattened`, so "default item of the window" isn't the inner
+  selectable). Next things to try: `set_keyboard_focus_here()` targeting the selected cell instead of
+  a window re-focus; or `io.nav_id`/`set_nav_cursor` style direct nav-id targeting if the binding
+  exposes it; or restructure the cell so the selectable is a direct child of the grid window (no
+  per-tile `begin_child`) so default-focus lands. UN-HEADLESS-ABLE (nav-cursor position isn't
+  readable from a headless run — every attempt needs a maintainer `make run` check).
+
+## [DEFERRAL] node-grid 2D arrow adjacency (feature 019 follow-on)
+- **Trigger:** maintainer reports arrow-nav across the node grid skips or misorders cells badly
+  enough to be unusable (the cells are hand-wrapped `selectable`s in per-tile child windows —
+  imgui's directional nav over that layout isn't reliably row/column-spatial).
+- Honest fix is a real columns/clipper grid layout. Also parked: persisting the focused region across
+  restart (transient by design today). See `ai_docs/features/019_keyboard_navigation.md` Out-of-scope.
+  (The active-region visual cue — the accent outline + editor border — LANDED in the color/nav polish
+  wave; no longer deferred.)
+
+## [BLOCKER] keyboard-nav manual-verification wave is unrun (feature 019)
+- **Trigger:** fires NOW — 019 landed all headlessly-verifiable wiring (`make check`/`make smoke`
+  green, tab-jump confirmed in-app), but nav *behavior* is un-headless-able and the 13-item manual
+  wave in `ai_docs/features/019_keyboard_navigation.md ## Manual verification` is in the maintainer's
+  hands. Until walked on `make run`, the feature is code-complete but unverified.
+- The load-bearing unknowns the wave decides: (1) **region confinement (C1)** — does Tab stay inside
+  the focused region (clean `no_nav_inputs` model shipped) or escape across borders? If it leaks, the
+  locked fallback is to drop the per-region `no_nav_inputs` on GRID/PANEL (keep the always-on
+  `code_editor` one) → nav becomes one flat Tab chain, region-cycle chord merely seeds focus — surface
+  to the user before adopting, record in the 019 Review history. (2) **node-by-keyboard select** — does
+  nav land on a grid thumbnail + Space/Enter select it (the make-or-break). (3) combos/sliders/text-
+  field Tab-exit/editor-boundary/rebinder-Tab per the wave's items. Resolve by walking the wave; delete
+  this entry once done (record the C1 outcome in the spec).
 
 ## [DEFERRAL] cross-file uniform declaration jump (lib files)
 - **Trigger:** first user complaint that clicking a uniform name in the panel doesn't jump

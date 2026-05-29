@@ -27,23 +27,27 @@ feature; brief points at the superseder).
 
 **As of 2026-05-29.**
 
-- **Shipped: `v0.11.0`** (feature 018 — the keyboard command layer). `dev` == `master`, nothing
-  unshipped.
-- 018 landed: a central `commands.py` registry (imgui-only leaf) drives rebindable chord shortcuts,
-  an opt-out top-right cheatsheet overlay (`widgets/cheatsheet.py`, foreground draw list,
-  Ctrl+/ toggles), and an `imgui_command_palette` (Ctrl+Shift+P). Dispatch split `process_hotkeys`
-  (pre-frame) + `dispatch_commands` (in-frame). Every keybindings surface (cheatsheet / palette /
-  Settings rebinder / menu hints) reads the one registry + `effective_bindings`; rebindings persist
-  diff-from-default on `UIAppState.key_bindings`.
-- **NEXT ACTION:** none queued — pick from `todo.md` triggers or a fresh ask. Two teed-up deferrals:
-  the **keyboard focus/navigation layer** (nav widget-traversal + region/tab cycling — split out of
-  018) and the **built-in coding-copilot agent** (the registry's id->callback surface is agent-friendly).
-- **No open BLOCKERs.**
+- **019 (keyboard navigation) is code-complete on `dev`, NOT yet manually verified.** Last shipped
+  build is `v0.11.0` (feature 018); 019 is committed-pending-verify, unshipped.
+- 019 landed: app-wide `nav_enable_keyboard` (Tab/arrows traverse widgets, Space/Enter activate,
+  arrows drive sliders) + a two-level focus model — `Ctrl+`` ` `` cycles 3 regions (editor / node-grid
+  / settings-panel), `Ctrl+1/2/3` jump the inner Node/Render/Share tab. Per-region nav confinement via
+  `no_nav_inputs`; editor pane is a permanent focus-stop; grid/template cells switched to nav-reachable
+  `selectable`s. The 018 bare-arrow node-prev/next was removed (subsumed by nav-in-grid). All
+  headlessly-verifiable wiring is green (`make check`/`make smoke`; tab-jump confirmed in-app).
+- **NEXT ACTION (BLOCKER):** walk the 13-item manual-verification wave in
+  `ai_docs/features/019_keyboard_navigation.md ## Manual verification` on `make run` — nav *behavior*
+  is un-headless-able. It decides the C1 region-confinement clean-vs-fallback (see
+  `todo.md [BLOCKER]`), the make-or-break node-by-keyboard-select, and slider/combo/editor-boundary
+  feel. Then ship (`v0.12.0`, minor) or fix what the wave surfaces.
+- After 019 verifies + ships, the teed-up next feature is the **built-in coding-copilot agent**
+  (`todo.md [DEFERRAL]`; the 018 registry's id->callback surface is agent-friendly).
 
 ## Features
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 019 | keyboard_navigation | partial | The focus/nav layer (018's deferred half): app-wide `nav_enable_keyboard` + a two-level focus model — `Ctrl+`` ` `` cycles 3 regions (editor/grid/panel), `Ctrl+1/2/3` jump the inner Node/Render/Share tab; per-region `no_nav_inputs` confinement; editor is a permanent focus-stop; grid cells switched to nav-reachable `selectable`s; 018 bare-arrow node-prev/next removed. Code-complete + headless-green; the un-headless-able manual-verification wave (incl. the C1 confinement clean-vs-fallback) is pending the maintainer. Spec: `ai_docs/features/019_keyboard_navigation.md`. |
 | 018 | keyboard_control | done | The command layer: a central `commands.py` registry drives rebindable chord shortcuts + an opt-out cheatsheet overlay + an `imgui_command_palette` (Ctrl+Shift+P); dispatch split pre-frame/in-frame; rebindings persist diff-from-default on `UIAppState`. The focus/navigation layer (nav widget-traversal + tab-cycling) was split out to a `todo.md` deferral. Spec: `ai_docs/features/018_keyboard_control.md`. |
 | 017 | structure_reorg | done | Domain-separation refactoring wave (no behavior change): `lib_*`→`shader_lib/` package + total rename, shader_lib split into index/resolver/parser, `lib_picker`→package, `util.py`→`shader_errors.py`+`editor_types.py`, `ui_models` de-tangled from UI, exporters/ tidy, App shader-lib CRUD→`ShaderLibFileManager`. `ui/`+`render/` packages rejected. Spec: `ai_docs/features/017_structure_reorg.md`. |
 | 016 | lib_file_management | done | Unified tree+preview lib picker with right-click context menus for create / rename / delete (armed-confirm, file or recursive subdir) / reveal; `.trash/` filter shared by `LibIndex.build` and the mtime watcher; `Library` menu in the main menu bar. Spec: `ai_docs/features/016_lib_file_management.md`. |

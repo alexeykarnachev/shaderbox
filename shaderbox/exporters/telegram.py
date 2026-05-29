@@ -691,7 +691,7 @@ class TelegramExporter(Exporter):
             selected=idx == self._render_state.selected_index
             and not self._render_state.in_flight,
             armed=self._render_state.sticker_delete_armed == slot.file_id,
-            border_color=COLOR.ACCENT_PRIMARY
+            border_color=COLOR.SELECT
             if idx == self._render_state.selected_index
             else None,
             bg_color=COLOR.BG_SURFACE,

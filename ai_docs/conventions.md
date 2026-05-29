@@ -62,6 +62,15 @@ belong in the feature spec (`ai_docs/features/NNN_*.md`). This file is not a cha
   only; `update()` runs *before* imgui draws, for GL/canvas/mtime work outside the frame body. Tab
   state goes on `App` directly; a state-only sibling module (e.g. `tabs/share_state.py`) may hold
   its dataclass to keep `app.py` import-cycle-free. Revisit when a 4th tab module exists.
+- **App-wide keyboard nav is region-confined (`nav_enable_keyboard` ON).** imgui nav is scoped to the
+  one focused region via `WindowFlags_.no_nav_inputs` on the *inactive* region `begin_child`s; a
+  caret-owning pane (the code editor) carries it *permanently* (it's a focus stop, not a nav surface).
+  So a new top-level focusable region MUST flag itself `no_nav_inputs` when not the active region, and
+  a new caret/text-edit pane MUST carry it always — else nav leaks across borders or fights the caret.
+  Region focus moves via `set_next_window_focus()` before the target `begin_child` (the
+  `set_window_focus(name)` overload segfaults — `/imgui-ui` skill §8). Mechanics + the
+  clean-vs-flat-chain fallback: `ai_docs/features/019_keyboard_navigation.md`. Revisit if a region is
+  added/removed or the confinement model changes.
 - **`widgets/*.py`: free functions taking `app: App`, no wrapper, no protocol.** Widgets are an
   organizational convention, not a polymorphic contract — no `Widget` ABC, no shared return shape;
   each gets the shape that fits its job. Revisit if a polymorphic `list[Widget]` dispatcher materializes.
