@@ -11,6 +11,6 @@ void main() {
     vec3 image_color = texture(u_image, vs_uv).rgb;
     vec3 color = image_color * u_color;
     color = pow(color, vec3(1.2));
-
+	color *= SB_hash31(color.xyz);
     fs_color = vec4(color, 1.0);
 }
