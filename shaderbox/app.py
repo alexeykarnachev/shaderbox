@@ -156,6 +156,10 @@ class App:
         # Start in navigation mode: defocus the editor on its first render so the
         # caret isn't active and arrows navigate nodes (the editor auto-grabs focus).
         self.editor_defocus_requested: bool = True
+        # One-shot focus request (mirror of defocus): after a lib-function insert,
+        # the picker closes and the editor must re-grab focus with the caret left
+        # where the insert ended. tabs/code.py honors + clears it on the next render.
+        self.editor_focus_requested: bool = False
         # Path-tagged jump request for tabs/code.py to honor next render — the consumer
         # gates on `path == current_editor_path` so an error in a non-active file
         # doesn't move the active editor's caret. Cleared on consume.

@@ -93,7 +93,11 @@ def insert_name(app: App, fn: ShaderLibFunction) -> None:
     if session is None:
         logger.warning("No editor session active; can't insert lib name")
         return
+    # Inserts at the caret; the editor leaves the cursor right after the text.
     session.editor.replace_text_in_current_cursor(fn.name)
+    # The picker closes this frame (editor not drawn behind the modal), so request
+    # the editor to re-grab focus on the next render — caret stays where insert ended.
+    app.editor_focus_requested = True
 
 
 def open_at_decl(app: App, fn: ShaderLibFunction) -> None:

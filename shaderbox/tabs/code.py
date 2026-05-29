@@ -189,9 +189,18 @@ def draw(app: App) -> None:
     # a jump also focuses the editor so the highlighted line shows un-dimmed.
     jumped = _consume_jump(app, editor, current_path)
 
+    # One-shot focus request (e.g. after a lib-function insert): re-grab focus
+    # before render so the caret is live where the insert ended. set_focus latches
+    # for the upcoming render(), like the jump path.
+    focus_requested = app.editor_focus_requested
+    if focus_requested:
+        editor.set_focus()
+        app.editor_focus_requested = False
+        app.editor_was_ever_focused = True
+
     # Dim the whole pane while the editor lacks focus. app.editor_focused is last
     # frame's value (computed below, after render) — a one-frame lag on transitions.
-    dim = not app.editor_focused and not jumped
+    dim = not app.editor_focused and not jumped and not focus_requested
     if dim:
         imgui.push_style_var(imgui.StyleVar_.alpha, EDITOR_UNFOCUSED_ALPHA)
 
