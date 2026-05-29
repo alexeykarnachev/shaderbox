@@ -27,27 +27,26 @@ feature; brief points at the superseder).
 
 **As of 2026-05-29.**
 
-- **019 (keyboard navigation) is code-complete on `dev`, NOT yet manually verified.** Last shipped
-  build is `v0.11.0` (feature 018); 019 is committed-pending-verify, unshipped.
-- 019 landed: app-wide `nav_enable_keyboard` (Tab/arrows traverse widgets, Space/Enter activate,
-  arrows drive sliders) + a two-level focus model — `Ctrl+`` ` `` cycles 3 regions (editor / node-grid
-  / settings-panel), `Ctrl+1/2/3` jump the inner Node/Render/Share tab. Per-region nav confinement via
-  `no_nav_inputs`; editor pane is a permanent focus-stop; grid/template cells switched to nav-reachable
-  `selectable`s. The 018 bare-arrow node-prev/next was removed (subsumed by nav-in-grid). All
-  headlessly-verifiable wiring is green (`make check`/`make smoke`; tab-jump confirmed in-app).
-- **NEXT ACTION (BLOCKER):** walk the 13-item manual-verification wave in
-  `ai_docs/features/019_keyboard_navigation.md ## Manual verification` on `make run` — nav *behavior*
-  is un-headless-able. It decides the C1 region-confinement clean-vs-fallback (see
-  `todo.md [BLOCKER]`), the make-or-break node-by-keyboard-select, and slider/combo/editor-boundary
-  feel. Then ship (`v0.12.0`, minor) or fix what the wave surfaces.
-- After 019 verifies + ships, the teed-up next feature is the **built-in coding-copilot agent**
-  (`todo.md [DEFERRAL]`; the 018 registry's id->callback surface is agent-friendly).
+- **019 (keyboard navigation) is done + manually verified on `dev`, unshipped.** Last shipped build is
+  `v0.11.0` (feature 018); `dev` is ahead by 019 + the nav/color polish + the theme invariant.
+- 019: app-wide `nav_enable_keyboard` + a two-level focus model — `Ctrl+`` ` `` cycles 3 regions
+  (editor / node-grid / settings-panel, region-confined via `no_nav_inputs`; active region shown by an
+  accent outline driven off live focus), `Ctrl+1/2/3` jump the inner Node/Render/Share tab. The polish
+  wave folded in: a selection-vs-accent color split (`COLOR.SELECT` = fixed purple) + an import-time
+  theme-portability invariant; Ctrl+Tab suppressed (`no_nav_focus`); Esc swallowed at the glfw layer
+  unless it has a job (no more hierarchy-climbing); `nav_flattened` so uniforms nav directly; launch
+  lands on the grid. Full story + the maintainer-verification outcomes: `019` spec Review history.
+- **NEXT ACTION:** none queued. 019 is ship-ready — a `/ship` would cut `v0.12.0` (minor; backward-
+  compatible feature). Otherwise pick the teed-up **built-in coding-copilot agent** (`todo.md
+  [DEFERRAL]`; the 018 registry's id->callback surface is agent-friendly), or a fresh ask.
+- **No open BLOCKERs.** Two cosmetic nav tails parked in `todo.md` (nav-cursor resets to cell 0 after
+  Enter; 2D grid arrow adjacency) — both trigger-gated, neither blocks ship.
 
 ## Features
 
 | # | Name | Status | Brief |
 |---|---|---|---|
-| 019 | keyboard_navigation | partial | The focus/nav layer (018's deferred half): app-wide `nav_enable_keyboard` + a two-level focus model — `Ctrl+`` ` `` cycles 3 regions (editor/grid/panel), `Ctrl+1/2/3` jump the inner Node/Render/Share tab; per-region `no_nav_inputs` confinement; editor is a permanent focus-stop; grid cells switched to nav-reachable `selectable`s; 018 bare-arrow node-prev/next removed. Code-complete + headless-green; the un-headless-able manual-verification wave (incl. the C1 confinement clean-vs-fallback) is pending the maintainer. Spec: `ai_docs/features/019_keyboard_navigation.md`. |
+| 019 | keyboard_navigation | done | The focus/nav layer (018's deferred half): app-wide `nav_enable_keyboard` + a two-level focus model — `Ctrl+`` ` `` cycles 3 regions (editor/grid/panel, region-confined via `no_nav_inputs`, active region shown by a live-focus accent outline), `Ctrl+1/2/3` jump the inner Node/Render/Share tab; editor is a permanent focus-stop; grid cells are nav-reachable `selectable`s; 018 bare-arrow node-prev/next removed. The polish wave added a selection-vs-accent color split (fixed `COLOR.SELECT`) + a theme-portability invariant, Ctrl+Tab suppression, glfw-layer Esc swallowing, `nav_flattened` uniforms. Maintainer-verified. Spec: `ai_docs/features/019_keyboard_navigation.md`. |
 | 018 | keyboard_control | done | The command layer: a central `commands.py` registry drives rebindable chord shortcuts + an opt-out cheatsheet overlay + an `imgui_command_palette` (Ctrl+Shift+P); dispatch split pre-frame/in-frame; rebindings persist diff-from-default on `UIAppState`. The focus/navigation layer (nav widget-traversal + tab-cycling) was split out to a `todo.md` deferral. Spec: `ai_docs/features/018_keyboard_control.md`. |
 | 017 | structure_reorg | done | Domain-separation refactoring wave (no behavior change): `lib_*`→`shader_lib/` package + total rename, shader_lib split into index/resolver/parser, `lib_picker`→package, `util.py`→`shader_errors.py`+`editor_types.py`, `ui_models` de-tangled from UI, exporters/ tidy, App shader-lib CRUD→`ShaderLibFileManager`. `ui/`+`render/` packages rejected. Spec: `ai_docs/features/017_structure_reorg.md`. |
 | 016 | lib_file_management | done | Unified tree+preview lib picker with right-click context menus for create / rename / delete (armed-confirm, file or recursive subdir) / reveal; `.trash/` filter shared by `LibIndex.build` and the mtime watcher; `Library` menu in the main menu bar. Spec: `ai_docs/features/016_lib_file_management.md`. |

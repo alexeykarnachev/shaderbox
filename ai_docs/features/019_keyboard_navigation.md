@@ -424,3 +424,28 @@ mentions for the why-not-this-chord rationale only. Two clearing-order / focus-m
 round-2 reviewers raised were traced and found NON-issues (the `region_focus_pending` clear is
 unconditional in the last-drawn panel fn, and `no_nav_inputs` doesn't block the editor's direct
 `set_focus()`) — recorded as verified-sound, no change. **Converged — ready for plan-lock.**
+
+**Post-implementation maintainer verification + polish wave (manual, on `make run`).** The 13-item
+manual wave was walked live; nav behaves. Outcomes + the fixes the wave surfaced (all landed):
+- **C1 (region confinement) — the CLEAN model shipped.** Per-region `no_nav_inputs` holds; Tab stays
+  inside the focused region. The flat-chain fallback was NOT needed.
+- **Active-region cue redesigned mid-wave** (the locked outline-on-`begin_child` proved un-workable):
+  a `Col_.border` push bled into child cells; `get_item_rect` after `end_child` returned a collapsed
+  rect (drew a stub box). Final shape: `ui_primitives.active_region_outline()` reads the child's own
+  `get_window_pos/size` from INSIDE the child, strokes on the FOREGROUND draw list (unclipped), and
+  the outline + `active_region` follow LIVE `is_window_focused` (gated by `App.focus_move_in_flight()`
+  so a chord cycle's optimistic target isn't reverted by lagging focus). The `code_editor` child gained
+  `ChildFlags_.borders` (it had none) — which also gave it the content-padding band the outline needs.
+- **Color scheme:** active-region/tab = swappable `ACCENT_PRIMARY`; selection (node/template/sticker
+  border) + context-menu chrome = fixed `COLOR.SELECT` (`purple_b`, the only accent-free hue). A
+  theme-portability invariant now asserts this at import (`theme.py`).
+- **Ctrl+Tab collision (predicted in pre-review):** confirmed live — imgui's built-in window-cycle
+  fired. Fixed with `WindowFlags_.no_nav_focus` on the main window (skips it from Ctrl+Tab).
+- **Esc:** imgui nav's Esc climbs the window hierarchy (no clean off-switch — upstream #8059). Swallowed
+  at the glfw key-callback layer (`App._install_escape_filter`) unless Esc has a job (popup/editor).
+- **Uniforms sub-window:** `ChildFlags_.nav_flattened` on `tabs/node.py`'s `ui_uniforms` child so nav
+  reaches the sliders directly (no Enter-to-descend / Esc-to-escape boundary).
+- **`select_node` keeps grid focus** after Enter (defocus the auto-grabbing editor + re-latch grid).
+- **Launch lands on the node grid** (`active_region` defaults GRID + focus latch on frame 1).
+- Two cosmetic tails deferred (`todo.md`): nav-cursor resets to cell 0 after Enter; 2D grid arrow
+  adjacency. **019 verified + done.**

@@ -71,6 +71,16 @@ belong in the feature spec (`ai_docs/features/NNN_*.md`). This file is not a cha
   `set_window_focus(name)` overload segfaults — `/imgui-ui` skill §8). Mechanics + the
   clean-vs-flat-chain fallback: `ai_docs/features/019_keyboard_navigation.md`. Revisit if a region is
   added/removed or the confinement model changes.
+- **Color roles are SWAPPABLE accent vs FIXED semantic; fixed hues must not collide with any accent
+  preset.** `theme.py`: `_P` (palette, the only home for literal colors) → `_ACCENTS` (presets; the one
+  user-chosen "active/interactive" hue, rewritten by `apply_theme`) → `_ColorBag` role tokens (each
+  maps to a `_P` entry, never a literal). A role is swappable (`ACCENT_*`) or fixed (`SELECT` /
+  `STATE_*` / `TAG` / ...). The fixed role whose cue shares spatial context with the accent — `SELECT`
+  (its outline nests inside the accent's region outline) — MUST use a hue no accent preset and no state
+  color uses, or the two cues merge under some accent. Enforced by an import-time assertion in
+  `theme.py`. A new theme supplies its own `_P` + `_ACCENTS` + role mapping; the assertion validates
+  the `SELECT` choice. Revisit if a new fixed role gains accent-adjacent *outline* context (add it to
+  the assertion).
 - **`widgets/*.py`: free functions taking `app: App`, no wrapper, no protocol.** Widgets are an
   organizational convention, not a polymorphic contract — no `Widget` ABC, no shared return shape;
   each gets the shape that fits its job. Revisit if a polymorphic `list[Widget]` dispatcher materializes.

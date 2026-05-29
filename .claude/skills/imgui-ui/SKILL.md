@@ -22,11 +22,18 @@ If the running app can't be screenshotted by the agent (no window manager on the
 box), **you are designing blind** and every visual call must go to a human. That loop is slow and
 fails repeatedly. Defenses, in order of leverage:
 
-1. **Verify headlessly.** Most "does it crash / does the data flow" questions don't need eyes. Drive
-   the panel in a standalone GL+imgui context for a few frames (create a hidden glfw window, an imgui
-   context, a backend, feed a fake state object, run `new_frame → draw → render` 3× inside a
-   `begin/begin_child`). This catches the SetCursorPos assert, stack imbalance, missing-attr, and
-   None-deref bugs before the human ever looks. Reserve screenshots for genuine *aesthetic* calls.
+1. **Verify headlessly — but know what headless CANNOT tell you.** Most "does it crash / does the data
+   flow" questions don't need eyes. Drive the panel in a standalone GL+imgui context for a few frames
+   (create a hidden glfw window, an imgui context, a backend, feed a fake state object, run
+   `new_frame → draw → render` 3× inside a `begin/begin_child`). This catches the SetCursorPos assert,
+   stack imbalance, missing-attr, and None-deref bugs before the human ever looks. **BUT focus / nav /
+   layout-geometry state reads DIFFERENTLY headless than in the real (maximized, mouse-driven, settled)
+   window** — `is_window_focused`, `io.nav_active`, the nav-cursor position, and `get_item_rect_*`
+   after `end_child` can all report values headless that don't match the live app. A headless "PASS" on
+   any of those is NOT verification — it lulls you into shipping a regression. For focus/nav/where-the-
+   outline-lands, headless confirms only "no crash + the flag is set"; the actual behavior is a
+   maintainer `make run` check. Don't iterate on focus/nav by trusting headless booleans. Reserve
+   screenshots for genuine *aesthetic* calls.
 2. **Anchor to a written spec, not taste.** For a non-trivial layout, get a numeric spec first
    (wireframe + token references + per-state coverage). "Center at x = label_w + 8" is implementable
    blind; "make it look nice" is not. A designer-style spec pass up front beats five reactive rounds.

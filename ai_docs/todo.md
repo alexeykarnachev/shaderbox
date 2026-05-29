@@ -53,20 +53,6 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   (The active-region visual cue — the accent outline + editor border — LANDED in the color/nav polish
   wave; no longer deferred.)
 
-## [BLOCKER] keyboard-nav manual-verification wave is unrun (feature 019)
-- **Trigger:** fires NOW — 019 landed all headlessly-verifiable wiring (`make check`/`make smoke`
-  green, tab-jump confirmed in-app), but nav *behavior* is un-headless-able and the 13-item manual
-  wave in `ai_docs/features/019_keyboard_navigation.md ## Manual verification` is in the maintainer's
-  hands. Until walked on `make run`, the feature is code-complete but unverified.
-- The load-bearing unknowns the wave decides: (1) **region confinement (C1)** — does Tab stay inside
-  the focused region (clean `no_nav_inputs` model shipped) or escape across borders? If it leaks, the
-  locked fallback is to drop the per-region `no_nav_inputs` on GRID/PANEL (keep the always-on
-  `code_editor` one) → nav becomes one flat Tab chain, region-cycle chord merely seeds focus — surface
-  to the user before adopting, record in the 019 Review history. (2) **node-by-keyboard select** — does
-  nav land on a grid thumbnail + Space/Enter select it (the make-or-break). (3) combos/sliders/text-
-  field Tab-exit/editor-boundary/rebinder-Tab per the wave's items. Resolve by walking the wave; delete
-  this entry once done (record the C1 outcome in the spec).
-
 ## [DEFERRAL] cross-file uniform declaration jump (lib files)
 - **Trigger:** first user complaint that clicking a uniform name in the panel doesn't jump
   anywhere when the uniform happens to be declared in a lib file (not the node's own shader),
