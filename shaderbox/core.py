@@ -29,10 +29,10 @@ from shaderbox.constants import (
 )
 from shaderbox.media import Image, MediaDetails, MediaWithTexture, Video, texture_to_pil
 from shaderbox.render_preset import FitPolicy, RenderPreset, resolve_dims
+from shaderbox.shader_errors import ShaderError, SourceMap, parse_shader_errors
 from shaderbox.shader_lib.index import active as active_lib_index
 from shaderbox.shader_lib.index import resolve_usage
 from shaderbox.shader_source import ShaderSource
-from shaderbox.util import ShaderError, SourceMap, parse_shader_errors
 
 # A node's shader is its sibling `shader.frag.glsl`; only ShaderSource.load_node
 # and the per-node disk save know this name.

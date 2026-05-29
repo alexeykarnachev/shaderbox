@@ -4,10 +4,12 @@ import glfw
 from imgui_bundle import imgui
 from imgui_bundle import imgui_color_text_edit as text_edit
 
-from shaderbox.app import App, HoverMark, JumpRequest
+from shaderbox.app import App
+from shaderbox.editor_types import HoverMark, JumpRequest
+from shaderbox.shader_errors import ShaderError
 from shaderbox.theme import COLOR, EDITOR_UNFOCUSED_ALPHA, SIZE, SPACE, fade
 from shaderbox.ui_primitives import draw_copyable_text
-from shaderbox.util import ShaderError, format_auto_value
+from shaderbox.util import format_auto_value
 
 _MAX_ERROR_ROWS = 3
 

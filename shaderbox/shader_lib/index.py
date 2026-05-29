@@ -26,8 +26,8 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from shaderbox.shader_errors import SourceMap
 from shaderbox.shader_source import ShaderSource
-from shaderbox.util import SourceMap
 
 # Top-level function signature: `<type> <name>(<args>)` followed by `{`. The type
 # permits a trailing `[]` (rare in lib code but cheap to allow). Captures: 1=type,

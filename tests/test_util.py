@@ -7,14 +7,16 @@ format that tabs/node.py parses back to (w, h).
 
 from pathlib import Path
 
-from shaderbox.util import (
+from shaderbox.shader_errors import (
     ShaderError,
     SourceMap,
     find_uniform_declaration_line,
-    format_auto_value,
-    get_resolution_str,
     next_error_line,
     parse_shader_errors,
+)
+from shaderbox.util import (
+    format_auto_value,
+    get_resolution_str,
     str_to_unicode,
     unicode_to_str,
 )

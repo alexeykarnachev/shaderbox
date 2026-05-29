@@ -8,19 +8,20 @@ from imgui_bundle import imgui
 from imgui_bundle import portable_file_dialogs as pfd
 from OpenGL.GL import GL_FLOAT, GL_UNSIGNED_INT
 
-from shaderbox.app import App, HoverMark, JumpRequest
+from shaderbox.app import App
 from shaderbox.constants import (
     IMAGE_EXTENSIONS,
     MEDIA_EXTENSIONS,
     VIDEO_EXTENSIONS,
 )
 from shaderbox.core import UniformValue
+from shaderbox.editor_types import HoverMark, JumpRequest
 from shaderbox.media import Image, MediaWithTexture, Video
+from shaderbox.shader_errors import find_uniform_declaration_line
 from shaderbox.theme import SIZE, SPACE
 from shaderbox.ui_models import UIUniform
 from shaderbox.ui_primitives import button, caption_text, chip_button, clickable_label
 from shaderbox.util import (
-    find_uniform_declaration_line,
     get_resolution_str,
     pfd_block,
     str_to_unicode,

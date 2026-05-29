@@ -19,7 +19,8 @@ import pyperclip
 from imgui_bundle import imgui, imgui_ctx
 from loguru import logger
 
-from shaderbox.app import App, InlineInput, JumpRequest
+from shaderbox.app import App
+from shaderbox.editor_types import InlineInput, JumpRequest
 from shaderbox.paths import shader_lib_root
 from shaderbox.shader_lib.index import ShaderLibFunction
 from shaderbox.theme import COLOR, SIZE, SPACE, fade

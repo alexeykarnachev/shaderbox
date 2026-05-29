@@ -1,8 +1,9 @@
 import glfw
 from imgui_bundle import imgui
 
-from shaderbox.app import App, JumpRequest
-from shaderbox.util import next_error_line
+from shaderbox.app import App
+from shaderbox.editor_types import JumpRequest
+from shaderbox.shader_errors import next_error_line
 
 
 def _jump_to_next_error(app: App) -> None:
