@@ -2,6 +2,27 @@ from imgui_bundle import imgui, imgui_ctx
 
 from shaderbox.app import App
 from shaderbox.theme import COLOR, SIZE, SPACE
+from shaderbox.ui_models import UINode
+from shaderbox.ui_primitives import PreviewCellResult, preview_cell
+
+
+def draw_node_preview_button(
+    ui_node: UINode,
+    border_color: tuple[float, float, float, float] | None,
+    size: float,
+    selected: bool = False,
+    armed: bool = False,
+) -> PreviewCellResult:
+    return preview_cell(
+        id_=f"node_{id(ui_node)}",
+        cell_w=size,
+        texture_glo=ui_node.node.canvas.texture.glo,
+        texture_size=ui_node.node.canvas.texture.size,
+        selected=selected,
+        armed=armed,
+        border_color=border_color,
+        footer=ui_node.ui_state.ui_name,
+    )
 
 
 def draw_node_preview_grid(app: App, width: float, height: float) -> None:
@@ -54,7 +75,8 @@ def draw_node_preview_grid(app: App, width: float, height: float) -> None:
                 else:
                     border_color = COLOR.ACCENT_PRIMARY
 
-            result = ui_node.draw_preview_button(
+            result = draw_node_preview_button(
+                ui_node,
                 border_color,
                 preview_size,
                 selected=id == app.current_node_id,

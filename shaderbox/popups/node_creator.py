@@ -3,6 +3,7 @@ from imgui_bundle import imgui
 from shaderbox.app import App
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_primitives import ghost_button, modal_window, primary_button
+from shaderbox.widgets.node_grid import draw_node_preview_button
 
 _LABEL = "New node##popup"
 _POPUP_W = 490.0
@@ -36,7 +37,9 @@ def _draw_body(app: App) -> bool:
         else:
             border_color = None
 
-        if ui_node_template.draw_preview_button(border_color, preview_size).clicked:
+        if draw_node_preview_button(
+            ui_node_template, border_color, preview_size
+        ).clicked:
             app.app_state.selected_node_template_id = ui_node_template.id
             app.app_state.new_node_name = ui_node_template.ui_state.ui_name
 

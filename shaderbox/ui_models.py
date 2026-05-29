@@ -13,7 +13,6 @@ from pydantic import BaseModel, ValidationError, model_validator
 from shaderbox.core import _NODE_SHADER_BASENAME, Node
 from shaderbox.media import MediaDetails, MediaWithTexture
 from shaderbox.theme import COLOR
-from shaderbox.ui_primitives import PreviewCellResult, preview_cell
 
 
 class UIMessage(BaseModel):
@@ -346,24 +345,6 @@ class UINode(BaseModel):
             json.dump(meta, f, indent=4)
 
         return dir
-
-    def draw_preview_button(
-        self,
-        border_color: tuple[float, float, float, float] | None,
-        size: float,
-        selected: bool = False,
-        armed: bool = False,
-    ) -> PreviewCellResult:
-        return preview_cell(
-            id_=f"node_{id(self)}",
-            cell_w=size,
-            texture_glo=self.node.canvas.texture.glo,
-            texture_size=self.node.canvas.texture.size,
-            selected=selected,
-            armed=armed,
-            border_color=border_color,
-            footer=self.ui_state.ui_name,
-        )
 
 
 def load_node_from_dir(node_dir: Path) -> UINode:
