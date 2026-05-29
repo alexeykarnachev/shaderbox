@@ -38,13 +38,8 @@ layout(std140) uniform u_params {
 
 void main() {
     vec2 uv = vs_uv;
-
-	
     vec3 tex = texture(u_texture, uv).rgb;
-    
-	
     float arr_sum = 0.0;
-    
     
     for (int i = 0; i < ARR_LEN; ++i) {
         arr_sum += u_floats[i] + float(u_uints[i]);
