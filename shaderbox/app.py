@@ -21,9 +21,9 @@ from shaderbox.exporters.telegram import TelegramExporter
 from shaderbox.exporters.youtube import YouTubeExporter
 from shaderbox.notifications import Notifications
 from shaderbox.paths import app_data_dir, shader_lib_root, shader_lib_trash_dir
+from shaderbox.shader_lib import ShaderLibIndex
+from shaderbox.shader_lib import set_active as set_active_lib_index
 from shaderbox.shader_lib.favorites import ShaderLibFavoritesStore
-from shaderbox.shader_lib.index import ShaderLibIndex
-from shaderbox.shader_lib.index import set_active as set_active_lib_index
 from shaderbox.shader_lib.tags import ShaderLibTagsStore
 from shaderbox.shader_source import ShaderSource
 from shaderbox.tabs import share_state

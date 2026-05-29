@@ -8,7 +8,7 @@ Two layers under test:
 
 from pathlib import Path
 
-from shaderbox.shader_lib.index import (
+from shaderbox.shader_lib import (
     ShaderLibFunction,
     ShaderLibIndex,
     resolve_usage,

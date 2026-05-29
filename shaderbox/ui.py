@@ -14,7 +14,7 @@ from shaderbox.popups.emoji_picker import draw_emoji_picker
 from shaderbox.popups.lib_picker import draw_lib_picker
 from shaderbox.popups.node_creator import draw_node_creator
 from shaderbox.popups.settings import draw_settings
-from shaderbox.shader_lib.index import is_shader_lib_path
+from shaderbox.shader_lib import is_shader_lib_path
 from shaderbox.tabs import code as code_tab
 from shaderbox.tabs import node as node_tab
 from shaderbox.tabs import render as render_tab

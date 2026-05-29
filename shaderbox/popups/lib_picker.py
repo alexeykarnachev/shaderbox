@@ -22,7 +22,7 @@ from loguru import logger
 from shaderbox.app import App
 from shaderbox.editor_types import InlineInput, JumpRequest
 from shaderbox.paths import shader_lib_root
-from shaderbox.shader_lib.index import ShaderLibFunction
+from shaderbox.shader_lib import ShaderLibFunction
 from shaderbox.theme import COLOR, SIZE, SPACE, fade
 from shaderbox.ui_primitives import (
     _ellipsize,
