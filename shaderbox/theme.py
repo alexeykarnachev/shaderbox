@@ -17,6 +17,21 @@ This module is the live source of truth for the theme. (It originated from the
 feature-005 design pass; the palette ramp has since diverged from that pass's
 ``ai_docs/design/tokens.json`` — that file is an archived snapshot, not a synced
 source.)
+
+Color framework (portable to a future non-gruvbox theme):
+  - ``_P`` — the raw palette (named hues). The ONLY place literal colors live.
+  - ``_ACCENTS`` — accent presets drawn from ``_P``; the user picks one. This is the
+    single SWAPPABLE hue ("active / interactive / call-to-action"); ``apply_theme``
+    rewrites ``COLOR.ACCENT_*`` from it.
+  - ``_ColorBag`` (``COLOR``) — role tokens. Every role maps to a ``_P`` entry, never
+    a literal. Roles are either swappable (``ACCENT_*``) or FIXED (everything else:
+    ``SELECT`` / ``STATE_*`` / ``TAG`` / ...). The one fixed role that shares spatial
+    context with the accent — ``SELECT`` (its outline nests inside the accent's) —
+    must use a hue no accent preset and no state color uses; enforced by the
+    import-time invariant below. (State colors are status text, so they may overlap
+    an accent hue.)
+  Adding a theme = supply a new ``_P`` + ``_ACCENTS`` + role mapping; the invariant
+  check tells you at import whether the SELECT assignment is valid.
 """
 
 from typing import Literal
@@ -162,6 +177,49 @@ class _ColorBag:
 
 
 COLOR = _ColorBag()
+
+
+# ----------------------------------------------------------------------------
+# Theme-portability invariant (enforced at import).
+#
+# The color framework has TWO kinds of role: the SWAPPABLE accent (ACCENT_*, the
+# one "active / interactive" hue, chosen per `_ACCENTS` preset and rewritten by
+# `apply_theme`), and FIXED semantic hues (SELECT / STATE_* / TAG / FAVS / ...)
+# that must read distinctly no matter which accent is picked. The whole scheme —
+# and its portability to a future non-gruvbox palette — rests on one rule:
+#
+#   a FIXED hue may not equal ANY accent preset's primary, nor another fixed hue
+#   it shares spatial context with.
+#
+# Break it (e.g. set SELECT to a hue some accent preset also uses) and the
+# selection cue silently merges with the active-region cue the moment that accent
+# is chosen — exactly the clash this framework exists to prevent. A new theme just
+# supplies its own `_P` + `_ACCENTS` + role mapping; this check is what tells the
+# author, at import, whether their assignment is valid. Keep it; extend the
+# `_fixed` list when a new fixed cross-context role is added.
+# ----------------------------------------------------------------------------
+_accent_primaries: set[tuple[float, float, float, float]] = {
+    primary for primary, _active, _alpha in _ACCENTS.values()
+}
+# SELECT is the one fixed role that shares SPATIAL context with the swappable accent
+# — a selected-tile border can sit INSIDE an accent-outlined region, and the
+# context-menu chrome floats over accent-bearing UI. So it must be distinct from
+# every accent primary AND from every state hue (a selected-but-errored tile must
+# still read 'error', not 'selected'). State colors are status TEXT in their own
+# rows (not outlines nesting under the accent), so they MAY share a hue with an
+# accent preset — that's a tolerable text/accent overlap, not the nested-outline
+# clash. If a future fixed role gains accent-adjacent OUTLINE context, add it here.
+assert COLOR.SELECT not in _accent_primaries, (
+    f"theme invariant: SELECT={COLOR.SELECT} collides with an accent preset's "
+    f"primary — pick a hue no accent uses, or the selection outline merges with the "
+    f"active-region accent outline when that accent is selected."
+)
+assert COLOR.SELECT not in {
+    COLOR.STATE_OK,
+    COLOR.STATE_WARN,
+    COLOR.STATE_ERROR,
+    COLOR.STATE_INFO,
+}, "theme invariant: SELECT must differ from every STATE_* hue."
 
 
 # ============================================================================
