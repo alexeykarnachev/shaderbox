@@ -27,19 +27,17 @@ feature; brief points at the superseder).
 
 **As of 2026-05-29.**
 
-- **Shipped: `v0.10.1`** (feature 017 — structural refactoring wave). `dev` is now AHEAD of `master`
-  with feature 018 landed but UNSHIPPED.
-- **018 keyboard_control landed (dev, unshipped)** — the command layer: a central command registry
-  (`commands.py`, imgui-only leaf) drives rebindable chord shortcuts, an always-on opt-out cheatsheet
-  overlay (`widgets/cheatsheet.py`), and an `imgui_command_palette` (Ctrl+Shift+P). Dispatch split:
-  `process_hotkeys` (pre-frame) + `dispatch_commands` (in-frame, since `imgui.shortcut()` asserts
-  outside a frame). Rebindings persist on `UIAppState.key_bindings` (diff-from-default). Passed make
-  check + smoke + a 3-agent post-impl review (PASS, no bugs). **Needs the maintainer's hand-check**
-  (keyboard/visual — not headlessly verifiable): chords fire, palette select→callback, cheatsheet
-  visuals, live rebind. See `018_keyboard_control.md ## Manual verification`.
-- **NEXT ACTION:** maintainer manual-verifies 018 in `make run`, then either ship or start the next
-  feature. Two teed-up: the **keyboard focus/navigation layer** (nav widget-traversal + region/tab
-  cycling — split out of 018) and the **built-in coding-copilot agent** — both `todo.md` deferrals.
+- **Shipped: `v0.11.0`** (feature 018 — the keyboard command layer). `dev` == `master`, nothing
+  unshipped.
+- 018 landed: a central `commands.py` registry (imgui-only leaf) drives rebindable chord shortcuts,
+  an opt-out top-right cheatsheet overlay (`widgets/cheatsheet.py`, foreground draw list,
+  Ctrl+/ toggles), and an `imgui_command_palette` (Ctrl+Shift+P). Dispatch split `process_hotkeys`
+  (pre-frame) + `dispatch_commands` (in-frame). Every keybindings surface (cheatsheet / palette /
+  Settings rebinder / menu hints) reads the one registry + `effective_bindings`; rebindings persist
+  diff-from-default on `UIAppState.key_bindings`.
+- **NEXT ACTION:** none queued — pick from `todo.md` triggers or a fresh ask. Two teed-up deferrals:
+  the **keyboard focus/navigation layer** (nav widget-traversal + region/tab cycling — split out of
+  018) and the **built-in coding-copilot agent** (the registry's id->callback surface is agent-friendly).
 - **No open BLOCKERs.**
 
 ## Features
