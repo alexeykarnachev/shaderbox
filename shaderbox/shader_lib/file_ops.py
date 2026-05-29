@@ -157,7 +157,9 @@ class ShaderLibFileManager:
             )
         except OSError as e:
             logger.error(f"Failed to create lib file {target}: {e}")
-            self._notifications.push(f"Create failed: {e!s}", color=COLOR.STATE_ERROR[:3])
+            self._notifications.push(
+                f"Create failed: {e!s}", color=COLOR.STATE_ERROR[:3]
+            )
             return None
         logger.info(f"Created new lib file: {target}")
         self._rebuild_index()
@@ -187,7 +189,9 @@ class ShaderLibFileManager:
             )
         except OSError as e:
             logger.error(f"Failed to create lib dir {target}: {e}")
-            self._notifications.push(f"Create failed: {e!s}", color=COLOR.STATE_ERROR[:3])
+            self._notifications.push(
+                f"Create failed: {e!s}", color=COLOR.STATE_ERROR[:3]
+            )
             return None
         logger.info(f"Created new lib dir: {target}")
         self._rebuild_index()
@@ -210,7 +214,9 @@ class ShaderLibFileManager:
             shutil.move(str(path), str(dest))
         except OSError as e:
             logger.error(f"Failed to delete lib file {path}: {e}")
-            self._notifications.push(f"Delete failed: {e!s}", color=COLOR.STATE_ERROR[:3])
+            self._notifications.push(
+                f"Delete failed: {e!s}", color=COLOR.STATE_ERROR[:3]
+            )
             return
         logger.info(f"Trashed lib file: {path} -> {dest}")
         self._on_paths_removed([path])
@@ -294,7 +300,9 @@ class ShaderLibFileManager:
             old.rename(target)
         except OSError as e:
             logger.error(f"Failed to rename lib file {old} -> {target}: {e}")
-            self._notifications.push(f"Rename failed: {e!s}", color=COLOR.STATE_ERROR[:3])
+            self._notifications.push(
+                f"Rename failed: {e!s}", color=COLOR.STATE_ERROR[:3]
+            )
             return None
         logger.info(f"Renamed lib file: {old} -> {target}")
         self._on_path_renamed(old, target)

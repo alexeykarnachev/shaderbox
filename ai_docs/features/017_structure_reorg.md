@@ -376,3 +376,23 @@ PASS. The factual premises (round 1 fact-checker, 40/40) and acyclicity (round 1
 unaffected by the round-2 patch. No further round warranted — a round 3 would be manufacturing
 findings against a spec the swarm now agrees is sound. Spec is implementation-ready pending
 maintainer plan-lock sign-off.
+
+**Implementation (autonomous run).** Landed in 7 commits matching the impl order (1a pure `git mv`,
+1b rename, 2 shader_errors+editor_types, 3 index/resolver/parser, 4 lib_picker package, 5 ui_models
+de-tangle, 6 ShaderLibFileManager, + this docs/sanitize commit). Each gated on `make check` +
+`make smoke` (98 pytest + 200-frame headless). Notable impl decisions vs the spec:
+- **Decision 10 (ShaderLibFileManager) — partial extraction, as the spec's gate anticipated.** The
+  editor-session machinery (`get_session`, `open_shader_lib_file`, `show_node_editor`,
+  `_explicit_editor_path`, `editor_was_ever_focused`) is genuinely shared between node-shader and
+  lib-file editing, so it stayed on `App`; only the cohesive file-CRUD + inline-input/filter state
+  moved to the manager. Editor-session cleanup on delete/rename flows back via two injected callbacks
+  (`on_paths_removed` / `on_path_renamed`). `file_ops.py` imports no `App` (cycle-free, verified). To
+  keep the picker's `app.shader_lib_*` access stable, `App` exposes delegating properties. Net
+  `app.py` 1103 → 862 L.
+- **Agent-seam (Decision 16) validated headlessly:** drove `ShaderLibFileManager`'s explicit-args
+  verbs (create/rename/delete file+dir, path-traversal reject) with NO `App` and NO GL context — the
+  exact shape a future agent tool needs.
+- `lib_picker` package keeps the name `lib_picker` (it's the picker widget; only the user-facing
+  label became "Shader Library"). The 5 submodules' cross-module helpers were promoted from `_`-private
+  to public (e.g. `parse_query_tags`, `insert_name`) since they're now package API.
+- Pre-existing `@staticmethod App._create_dir_if_needed` left as-is (out of scope; its own cleanup).

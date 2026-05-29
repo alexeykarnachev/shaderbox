@@ -32,11 +32,11 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
 - **Trigger:** first user complaint that clicking a uniform name in the panel doesn't jump
   anywhere when the uniform happens to be declared in a lib file (not the node's own shader),
   OR when a real workflow puts uniform declarations in lib files often enough to feel friction.
-- `util.find_uniform_declaration_line` searches only the active session's editor text
+- `shader_errors.find_uniform_declaration_line` searches only the active session's editor text
   (`widgets/uniform.py::_begin_ctrl`). A uniform declared in a lib file is discovered via the
   driver's introspection (so it appears in the panel) but click-to-jump silently no-ops.
   Honest fix: walk `node.compile_unit.sources` in order, search each, and open the matching
-  session via `App.open_lib_file(path)` before issuing the `JumpRequest`. Out of scope in 015
+  session via `App.open_shader_lib_file(path)` before issuing the `JumpRequest`. Out of scope in 015
   (the spec calls this out: "lib = pure functions only" is the cognitive-clarity guarantee — if
   this defaults to false in practice, revisit the guarantee too).
 
@@ -44,7 +44,8 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
 - **Trigger:** first time a lib author writes `#define HASH SB_hash3` (or similar) inside a lib
   file as a way to dispatch through the SB_-prefixed function, and finds their wrapper isn't
   pulled in transitively.
-- `lib_index._extract_functions` regex-extracts `calls = set of identifiers in body`. If a lib
+- `shader_lib.parser`'s `_extract_functions` (in `shader_lib/index.py`, via the parser regexes)
+  builds `calls = set of identifiers in body`. If a lib
   function calls `HASH(x)` and `HASH` is a macro elsewhere expanding to `SB_hash3`, the regex
   sees `HASH` (no match in the index) and won't pull `SB_hash3` into the preamble. Convention
   (15.5 in the spec): lib files don't use `#define` for function dispatch — call the function
@@ -240,3 +241,35 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   single-user desktop tool (matches the original feature-001 decision), but the YouTube refresh token
   is channel-scoped and long-lived — worth a keyring/OS-secret-store migration if secrets ever warrant
   it. One `IntegrationsStore` already centralizes all of it, so the migration has a single seam.
+
+## [DEFERRAL] decompose exporters/telegram.py (1253 L) + youtube.py (752 L)
+- **Trigger:** a third concrete exporter lands (the shared worker/panel patterns become worth
+  hoisting into per-exporter subpackages), OR the first time a localized telegram/youtube fix has to
+  touch >300 lines to land. Deferred from feature 017 — the riskiest split (shared mutable state:
+  `_render_state`, the job/progress queues, `_worker` lifecycle cross every seam).
+- Target shape (from the 017 audit): `exporters/telegram/` + `exporters/youtube/` subpackages —
+  `exporter.py` (class + auth/connect) / `worker.py` (thread + async ops / job handlers) /
+  `panel.py` (the share-panel UI) / `models.py` (internal dataclasses) / `util.py` (the existing
+  `telegram_util.py` / `youtube_util.py` move IN at that point). Until then the two `*_util.py`
+  helpers sit flat under `exporters/`.
+
+## [DEFERRAL] split ui_primitives.py (714 L)
+- **Trigger:** when it crosses ~900 L, OR a clearly separable cluster (e.g. the exporter panel
+  chrome — `preview_box` / `status_slot` / `unconnected_gate` / `setup_steps`) gets reused outside
+  the exporter context. Rated KEEP in feature 017 (button tiers + draw helpers + `preview_cell` +
+  labeled fields all serve one role: the shared imgui+theme primitive set).
+
+## [DEFERRAL] built-in coding-copilot agent + its tool-layer
+- **Trigger:** when this feature is specced (a chat-widget agent that manipulates the app: create
+  shaders/nodes, set uniforms, manage shader-lib files, its tools wrapping the app's mutation verbs).
+  Feature 017 ensured the structure is *expandable* to it (the mutation verbs are reachable via the
+  `App.<verb>()` surface + `ShaderLibFileManager`'s explicit-args methods, no imgui needed), but
+  built none of it.
+- Known gaps the tool-layer must close (from the 017 audit, so the future spec doesn't re-derive):
+  (a) **no `set_uniform_value(node_id, name, value)` verb** — uniform mutation happens inline in
+  `widgets/uniform.py`'s draw loop, mutating `UIUniform` through the imgui drag widget; a tool needs
+  a headless verb. (b) `App.create_node_from_selected_template` reads
+  `app_state.selected_node_template_id` (grid selection), not a `template_id` arg — a tool wants
+  `create_node(template_id)`. (c) the agent layer must reach the verbs WITHOUT importing imgui —
+  confirm the verb-holding modules (`app.py`, `shader_lib/file_ops.py`, a future node-ops module)
+  stay imgui-free. The seam to attach to is the existing `App.<verb>()` surface, not a new path.

@@ -25,20 +25,28 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-**As of 2026-05-28.**
+**As of 2026-05-29.**
 
-- **Shipped: `v0.10.0`** (features 014 + 015 + 016 — shader library + lib file management UI).
-  `dev` == `master`, nothing unshipped.
-- The shader library: write `SB_*` helpers in `<app_data_dir>/lib/`, call them by name, `Ctrl+P`
-  to browse/insert; manage lib files (tree + right-click context menus) from the picker.
-- itch store page + GitHub README both synced to the shipped feature set.
-- **NEXT ACTION:** none queued — pick the next feature from `todo.md` triggers or a fresh ask.
+- **Shipped: `v0.10.0`** (last release). **Unshipped on `dev`:** feature 017 — a structural
+  refactoring wave (domain-separation, no behavior change). `dev` is ahead of `master`; next ship
+  picks it up.
+- 017 landed: `lib_*` → `shader_lib/` package + total rename (incl. the on-disk
+  `<app_data_dir>/shader_lib/` dir); `shader_lib` split into index/resolver/parser; `lib_picker` →
+  package (tree/preview/search/filtering); `util.py` split (shader-error domain → `shader_errors.py`);
+  editor types → `editor_types.py`; `ui_models` de-tangled from the UI layer; `integrations`+`*_util`
+  moved under `exporters/`; `emoji_data`→`popups/`; App's shader-lib-file CRUD → `ShaderLibFileManager`
+  (`shader_lib/file_ops.py`, agent-callable). `ui/`+`render/` mega-packages were considered and
+  rejected (aesthetic churn).
+- **NEXT ACTION:** none queued — pick the next feature from `todo.md` triggers or a fresh ask. The
+  built-in coding-copilot agent is filed as a `todo.md` deferral (017 made the structure expandable
+  to it; the gaps are listed there).
 - **No open BLOCKERs.**
 
 ## Features
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 017 | structure_reorg | done | Domain-separation refactoring wave (no behavior change): `lib_*`→`shader_lib/` package + total rename, shader_lib split into index/resolver/parser, `lib_picker`→package, `util.py`→`shader_errors.py`+`editor_types.py`, `ui_models` de-tangled from UI, exporters/ tidy, App shader-lib CRUD→`ShaderLibFileManager`. `ui/`+`render/` packages rejected. Spec: `ai_docs/features/017_structure_reorg.md`. |
 | 016 | lib_file_management | done | Unified tree+preview lib picker with right-click context menus for create / rename / delete (armed-confirm, file or recursive subdir) / reveal; `.trash/` filter shared by `LibIndex.build` and the mtime watcher; `Library` menu in the main menu bar. Spec: `ai_docs/features/016_lib_file_management.md`. |
 | 015 | shader_library | done | Auto-resolved GLSL helper library — type `SB_perlin_noise_3(...)`, host splices declarations + topo-sorted preamble; `Ctrl+P` picker with fuzzy search + body preview. Spec: `ai_docs/features/015_shader_include_library.md`. |
 | 014 | compile_unit_refactor | done | Pure-shape refactor introducing `CompileUnit` + `EditorSession` to prepare for #include support. Spec: `ai_docs/features/014_compile_unit_refactor.md`. |

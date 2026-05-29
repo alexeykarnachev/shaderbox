@@ -76,11 +76,13 @@ belong in the feature spec (`ai_docs/features/NNN_*.md`). This file is not a cha
   Revisit if multi-file-per-node editing lands.
 - **`InlineInput` dataclass for mutually-exclusive inline editors.** A picker / panel hosting
   multiple inline text-input affordances (rename / new-file / new-dir) uses one `InlineInput`
-  instance per kind on `App` — `target: Path | None`, `buf: str`, `needs_focus: bool` with
-  `open()` / `close()` / `is_open`. A single `reset_*_inline_state()` method enforces the mutex:
-  every `begin_*` opener calls it first, then sets only its own fields. `needs_focus` is the
-  one-shot the input's first draw consumes via `set_keyboard_focus_here(0)`. Revisit if a
-  second multi-inline-input surface lands (promote `InlineInput` to `ui_primitives.py`).
+  instance per kind — `target: Path | None`, `buf: str`, `needs_focus: bool` with
+  `open()` / `close()` / `is_open` (defined in `editor_types.py`). A single `reset_inline_state()`
+  method enforces the mutex: every `begin_*` opener calls it first, then sets only its own fields.
+  `needs_focus` is the one-shot the input's first draw consumes via `set_keyboard_focus_here(0)`.
+  The shader-lib instances live on `ShaderLibFileManager` (`shader_lib/file_ops.py`), surfaced to
+  the picker via `App.shader_lib_*` delegating properties. Revisit if a second multi-inline-input
+  surface lands (promote `InlineInput` to `ui_primitives.py`).
 - **One shared row primitive per row-KIND, not per-kind special-case rows.** A list/grid whose
   items come in kinds (regular uniforms vs engine/`auto` uniforms) draws every kind through ONE
   row helper (`uniform_name_label`) with style overrides, never a separate hand-rolled row per
@@ -148,10 +150,10 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
 - **GLSL `#line N M` accepts INTEGERS ONLY for the file-id (`M`).** Outside the
   `GL_ARB_shading_language_include` extension (unreliable across drivers), no GL driver accepts
   `#line N "filename"`. The host emits `#line N <integer_id>` and keeps an `id -> Path` table
-  itself (`util.SourceMap.file_id_to_path`); the error-parse regexes (`_NVIDIA_ERROR_RE`,
+  itself (`shader_errors.SourceMap.file_id_to_path`); the error-parse regexes (`_NVIDIA_ERROR_RE`,
   `_MESA_ERROR_RE`) capture the file-id too. If you ever see a driver emitting `0:LINE` for a
   spliced library function's body, you forgot to emit `#line N <lib_file_id>` before that splice
-  (`shaderbox/lib_index.py::resolve_usage`).
+  (`shaderbox/shader_lib/resolver.py::resolve_usage`).
 - **imgui / imgui-bundle quirks live in the `/imgui-ui` skill §8.** That includes: TextEditor
   palette read-only, monochrome emoji, dynamic glyph loading, `push_font` rasterized-size,
   `image()` lost `tint_col`, glfw cursor sync gap, pfd non-blocking handles, TextEditor

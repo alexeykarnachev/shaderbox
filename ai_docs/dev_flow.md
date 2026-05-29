@@ -156,58 +156,72 @@ roadmap-banner touch (if even that) + the cold-context glance is enough; for a f
 ## Recipes
 
 ### Module map
-(Flat `shaderbox/` package + two subpackages — this is the orientation `arch.md` would have been:)
+(`shaderbox/` package + subpackages `exporters/`, `shader_lib/`, `tabs/`, `widgets/`, `popups/` —
+this is the orientation `arch.md` would have been. Reshaped by feature 017.)
 
 - **`core.py`** — `Canvas`, `Node`: GL program lifecycle, uniform introspection + binding,
-  render-to-texture, image/video export. Needs a live GL context.
+  render-to-texture, image/video export. Needs a live GL context. Imports `shader_lib` (compile-time
+  `#include` resolution) + `shader_errors`.
 - **`app.py`** — `App` class: state holder + lifecycle (project, GL context, node management,
-  popup-state booleans). No UI drawing. Imported by `ui.py`, `widgets/`, `popups/`, `tabs/`.
-- **`ui.py`** — thin entrypoint + orchestrator. Contains `run(app)`, `update_and_draw(app)`
-  (the imgui frame loop: render gates + the main-window left/right split — LEFT = code editor
-  via `code_tab.draw`, RIGHT = `_draw_app_panel`), `_draw_splitter(app, ...)` (draggable
-  divider, writes `app_state.editor_split_fraction`), `_draw_app_panel(app)` (render image +
-  control panel), `_draw_node_settings(app)` (Node/Render/Share tab-bar dispatcher), and
-  `main()`. No tab bodies, no widget logic, no hotkey dispatch — those live in `tabs/`,
-  `widgets/`, `popups/`, `hotkeys.py`.
-- **`hotkeys.py`** — `process_hotkeys(app: App)`: glfw poll + imgui input processing + all
-  keyboard shortcut dispatch (Ctrl+O/S/D/N, Alt+S, Esc, arrows, Enter). Called from
-  `update_and_draw` once per frame.
-- **`ui_models.py`** — pydantic-ish `UINode` / `UINodeState` / `UIUniform` / `UIAppState` + node
-  (de)serialization.
+  popup-state booleans, editor sessions). No UI drawing. Imported by `ui.py`, `widgets/`, `popups/`,
+  `tabs/`. Holds `self.shader_lib_files: ShaderLibFileManager` + delegates the shader-lib-file CRUD
+  to it (exposes `shader_lib_*` properties the picker reads).
+- **`ui.py`** — thin entrypoint + orchestrator. `run(app)`, `update_and_draw(app)` (the imgui frame
+  loop: render gates + the main-window left/right split — LEFT = code editor via `code_tab.draw`,
+  RIGHT = `_draw_app_panel`), `_draw_splitter`, `_draw_app_panel`, `_draw_node_settings`
+  (Node/Render/Share tab-bar dispatcher), the **Shader Library** menu, `main()`. No tab bodies /
+  widget logic / hotkey dispatch — those live in `tabs/`, `widgets/`, `popups/`, `hotkeys.py`.
+- **`hotkeys.py`** — `process_hotkeys(app: App)`: glfw poll + imgui input + all keyboard shortcut
+  dispatch (Ctrl+O/S/D/N/P, Alt+S, Esc, arrows, Enter). Called from `update_and_draw` once per frame.
+- **`editor_types.py`** — leaf dataclasses shared between `app.py` and its collaborators:
+  `EditorSession` (one `TextEditor` bound to a path), `InlineInput` (mutually-exclusive inline
+  text input), `JumpRequest`, `HoverMark`. (Extracted so `ShaderLibFileManager` + the UI modules
+  import them without cycling through `app.py`.)
+- **`ui_models.py`** — pydantic `UINode` / `UINodeState` / `UIUniform` / `UIAppState` + node
+  (de)serialization. Pure data — does NOT import the UI layer (the preview-button draw helper lives
+  in `widgets/node_grid.py`).
+- **`shader_errors.py`** — leaf: `ShaderError`, `SourceMap`, `parse_shader_errors`,
+  `next_error_line`, `find_uniform_declaration_line` (shader-compilation error domain; `core.py` and
+  the shader-lib resolver import their error types from here, not from `util.py`).
 - **`media.py`** — `Image` / `Video` (`MediaWithTexture` ABC), ffmpeg temporal smoothing.
 - **`render_preset.py`** — GL-free `RenderPreset` (an outlet's render constraints: size/aspect/fps/
-  duration/container/byte-cap/fit) + `resolve_dims`. Drives `core.py::render_media(details, preset)`
-  to render natively at the target size. Feature 010.
+  duration/container/byte-cap/fit) + `resolve_dims`. Drives `core.py::render_media`. Feature 010.
+- **`shader_lib/`** — the auto-resolved GLSL helper library (features 015/016/017). Import the public
+  surface from the package (`from shaderbox.shader_lib import …`). `index.py` = `ShaderLibIndex` /
+  `ShaderLibFunction` types + `build` + the module-level active-index singleton (`active`/`set_active`)
+  + `is_shader_lib_path` + `_extract_functions`. `resolver.py` = `resolve_usage` + `ResolveError` (the
+  per-compile usage pruner — splices used `SB_*` functions into a `#line`-marked preamble).
+  `parser.py` = pure regex/brace text machinery (leaf, no index types). `favorites.py`
+  (`ShaderLibFavoritesStore`) / `tags.py` (`ShaderLibTagsStore`) — cross-project JSON stores at
+  `app_data_dir()`. `file_ops.py` (`ShaderLibFileManager`) — picker inline-input/filter state +
+  file/dir CRUD (create/rename/delete-to-trash); explicit-args verbs (no `App` import — editor-session
+  cleanup flows back via injected callbacks). NONE of `shader_lib/` imports `app.py`.
 - **`exporters/`** — `Exporter` ABC + `RenderedArtifact` value type (`base.py`), `ExporterRegistry`
   (`registry.py`), `TelegramExporter` (`telegram.py` — own worker thread + asyncio loop + sticker
-  panel UI; reads creds from the global `IntegrationsStore`). A not-yet-usable exporter overrides
-  `is_available -> False` (the UI gates on it). Adding a new exporter: subclass `Exporter`, register
-  in `App.__init__`. The thread-affinity contract (worker thread MUST NOT touch moderngl) is enforced by design.
-- **`integrations.py`** — global `IntegrationsStore` (bot token / linked user / pack list) at
-  `app_data_dir()/integrations.json`. **`paths.py`** — `app_data_dir()`, `lib_root()`,
-  `lib_trash_dir()` (leaf, no `App` import).
-  **`telegram_util.py`** — `derive_set_name(title, bot_username)` (pure). **`emoji_data.py`** —
-  parses the vendored `resources/emoji/emoji-test.txt` into ordered groups for the picker.
-- **`tabs/`** — `draw(app: App)`-shaped UI modules (imgui calls only) + optional
-  `update(app: App)` (pre-imgui GL work). Modules: `code.py` (the inline GLSL editor — drawn in
-  the main window's LEFT split, not the node-settings tab bar), `node.py`, `render.py`,
-  `share.py`. `share_state.py` holds the share-tab dataclass (`TabState`) separately to keep
-  `app.py` free of cyclic imports (app.py imports `share_state`, NOT `share`).
-- **`widgets/`** — stateless imgui-drawing functions taking `app: App`. Shape per widget fits its
-  job (no shared contract). Modules: `details.py`, `media_ops.py`, `node_grid.py`, `uniform.py`.
-- **`popups/`** — popup `draw(app: App)` free functions. Open/closed state lives on `App` as
-  `is_node_creator_open` / `is_settings_open` / `is_emoji_picker_open` / `is_lib_picker_open`
+  panel UI) + `YouTubeExporter` (`youtube.py` — worker thread, no asyncio). `integrations.py` =
+  global `IntegrationsStore` (Telegram bot token / linked user / pack list + YouTube creds) at
+  `app_data_dir()/integrations.json`. `telegram_util.py` (`derive_set_name`, pure) + `youtube_util.py`
+  (metadata builders + constants) — exporter-specific helpers. Adding an exporter: subclass `Exporter`,
+  register in `App.__init__`. Worker thread MUST NOT touch moderngl (thread-affinity contract).
+- **`paths.py`** — `app_data_dir()`, `shader_lib_root()`, `shader_lib_trash_dir()` (leaf, no `App`).
+- **`tabs/`** — `draw(app: App)` UI modules + optional `update(app: App)` (pre-imgui GL work).
+  `code.py` (inline GLSL editor — main-window LEFT split), `node.py`, `render.py`, `share.py`.
+  `share_state.py` holds the share-tab dataclass (`TabState`) separately to keep `app.py`
+  cycle-free (app.py imports `share_state`, NOT `share`).
+- **`widgets/`** — stateless imgui-drawing functions taking `app: App`. No shared contract.
+  `details.py`, `media_ops.py`, `node_grid.py` (incl. `draw_node_preview_button`, the free preview
+  helper both the node grid and the node-creator template grid call), `uniform.py`.
+- **`popups/`** — popup `draw(app: App)` free functions. Open/closed state on `App` as
+  `is_node_creator_open` / `is_settings_open` / `is_emoji_picker_open` / `is_shader_lib_picker_open`
   (helpers `app.open_*()` enforce mutual exclusion; `scripts/smoke.py` asserts ≤1 open).
-  Modules: `node_creator.py`, `settings.py` (global target FPS + the inline editor's visual
-  options, applied via `app.apply_editor_settings()` on popup close + the **Integrations**
-  section drawing each exporter's credential block), `emoji_picker.py` (monochrome glyph grid
-  in Unicode/Telegram order), `lib_picker.py` (unified tree+preview lib browser with
-  right-click context menus for file/dir/function actions).
+  `node_creator.py`, `settings.py` (global target FPS + inline-editor visual options + the
+  **Integrations** credential blocks), `emoji_data.py` + `emoji_picker.py` (monochrome glyph grid),
+  `lib_picker/` (package: `__init__` entry+orchestrator, `tree`, `preview`, `search`, `filtering` —
+  the tree+preview shader-library browser with right-click file/dir/function context menus).
 - **`fonts.py`** — freetype → GL atlas. **`ui_primitives.py`** (imgui+theme draw helpers: button
-  tiers + shared draw primitives — read the file for the set; includes `context_menu_style()` +
-  `pill_button` used by the lib picker) / **`util.py`** (non-UI helpers: `adjust_size`,
-  `select_next_value`, `get_uniform_hash`, `pfd_block`, `open_in_file_manager`, …) /
-  **`constants.py`** / **`notifications.py`** — helpers.
+  tiers + shared draw primitives — `context_menu_style()`, `pill_button`, `preview_cell`, …) /
+  **`util.py`** (non-UI helpers: `adjust_size`, `select_next_value`, `get_uniform_hash`, `pfd_block`,
+  `open_in_file_manager`, `format_auto_value`, …) / **`constants.py`** / **`notifications.py`**.
 - **`scripts/smoke.py`** — headless smoke test (see `## Recipes > make smoke`). Not part of
   `shaderbox/` proper; one-off script that imports `App` + `update_and_draw` and runs frames in
   an invisible glfw window.
