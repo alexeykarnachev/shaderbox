@@ -43,7 +43,8 @@ _MAIN_WINDOW_FLAGS = (
     | imgui.WindowFlags_.menu_bar
     # Skip the sole top-level window in imgui's built-in Ctrl+Tab window-cycle (which
     # is on regardless of nav_enable_keyboard) — otherwise Ctrl+Tab pops a 1-item
-    # window switcher and highlights the whole window (a 2nd outline over ours).
+    # window switcher and highlights the whole window (a 2nd outline over ours). This
+    # also frees Ctrl+Tab for our CYCLE_REGION command (commands.py).
     | imgui.WindowFlags_.no_nav_focus
 )
 
@@ -228,6 +229,23 @@ def update_and_draw(app: App) -> None:
                 split_region.x * app.app_state.editor_split_fraction,
             ),
         )
+
+        # Same-frame splitter-drag test (computed BEFORE the editor draws): the
+        # splitter sits at x = editor's right edge, width _SPLITTER_W. Latch on the
+        # press over that rect, hold while the button is down. code.py reads
+        # app.splitter_dragging to neutralize the editor's mouse during the drag.
+        io = imgui.get_io()
+        split_origin = imgui.get_cursor_screen_pos()
+        on_splitter = (
+            split_origin.x + editor_width
+            <= io.mouse_pos.x
+            <= split_origin.x + editor_width + _SPLITTER_W
+        )
+        if imgui.is_mouse_clicked(imgui.MouseButton_.left):
+            app._splitter_press_on_splitter = on_splitter
+        if not imgui.is_mouse_down(imgui.MouseButton_.left):
+            app._splitter_press_on_splitter = False
+        app.splitter_dragging = app._splitter_press_on_splitter
 
         with imgui_ctx.begin_child(
             "code_editor",

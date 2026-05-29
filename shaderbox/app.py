@@ -236,6 +236,15 @@ class App:
         self.code_hovered_uniform: str = ""
         self.global_fps = 0.0
         self.fps_details_open: bool = False
+        # The editor↔panel splitter drag. `splitter_dragging` is computed SAME-FRAME
+        # in update_and_draw (before the editor draws) so tabs/code.py can neutralize
+        # the editor's mouse for its render — the TextEditor reads io.mouse_down
+        # directly (bypassing imgui's disabled/active-id), so the drag sweep would
+        # otherwise select text. `_press_on_splitter` latches on the press frame and
+        # holds until release, covering the whole drag even as the cursor sweeps off
+        # the splitter onto the editor.
+        self.splitter_dragging: bool = False
+        self._splitter_press_on_splitter: bool = False
 
         # Path-keyed editor sessions: one TextEditor per opened file.
         self.editor_sessions: dict[Path, EditorSession] = {}

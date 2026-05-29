@@ -8,8 +8,8 @@ from shaderbox.ui_primitives import ghost_button, modal_window
 _LABEL = "Emoji##picker"
 _GRID_COLS = 12
 _CELL = 34.0
-_POPUP_W = 520.0
-_POPUP_H = 480.0
+_POPUP_W = 600.0
+_POPUP_H = 560.0
 
 
 def draw_emoji_picker(app: App) -> None:

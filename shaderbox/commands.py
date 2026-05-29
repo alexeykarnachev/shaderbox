@@ -101,11 +101,9 @@ COMMAND_SPECS: list[CommandSpec] = [
         "Toggle keyboard cheatsheet",
         _chord(K.slash, K.mod_ctrl),
     ),
-    # Region cycle: Ctrl+` (grave), NOT Ctrl+Tab — imgui reserves Ctrl+Tab for its
-    # built-in window-cycle whenever nav is enabled (feature 019).
-    CommandSpec(
-        CommandId.CYCLE_REGION, "Cycle region", _chord(K.grave_accent, K.mod_ctrl)
-    ),
+    # Region cycle: Ctrl+Tab. imgui's built-in Ctrl+Tab window-cycle is suppressed by
+    # WindowFlags_.no_nav_focus on the main window (ui.py), freeing the chord for us.
+    CommandSpec(CommandId.CYCLE_REGION, "Cycle region", _chord(K.tab, K.mod_ctrl)),
     CommandSpec(CommandId.FOCUS_TAB_NODE, "Node tab", _chord(K._1, K.mod_ctrl)),
     CommandSpec(CommandId.FOCUS_TAB_RENDER, "Render tab", _chord(K._2, K.mod_ctrl)),
     CommandSpec(CommandId.FOCUS_TAB_SHARE, "Share tab", _chord(K._3, K.mod_ctrl)),

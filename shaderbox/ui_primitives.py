@@ -219,6 +219,12 @@ def modal_window(label: str, size: tuple[float, float]) -> Iterator[bool]:
     if not imgui.is_popup_open(label):
         imgui.open_popup(label)
     imgui.set_next_window_size(imgui.ImVec2(*size), imgui.Cond_.first_use_ever)
+    # Center on the viewport (pivot at the window's own center). first_use_ever, like
+    # the size, so it centers on first open but a user drag still persists via imgui.ini.
+    center = imgui.get_main_viewport().get_center()
+    imgui.set_next_window_pos(
+        center, imgui.Cond_.first_use_ever, imgui.ImVec2(0.5, 0.5)
+    )
     with imgui_ctx.begin_popup_modal(label) as popup:
         yield popup.visible
 

@@ -27,15 +27,16 @@ feature; brief points at the superseder).
 
 **As of 2026-05-29.**
 
-- **Shipped: `v0.12.0`** (feature 019 — the keyboard navigation layer + the nav/color polish wave).
-  Live on itch.io (both channels); `dev` == `master`, nothing unshipped.
-- 019 landed: app-wide `nav_enable_keyboard` + a two-level focus model — `Ctrl+`` ` `` cycles 3 regions
+- **Shipped: `v0.12.1`** (feature 019 — the keyboard navigation layer + nav/color polish, plus a
+  patch wave of post-ship fixes). Live on itch.io (both channels); `dev` == `master`, nothing unshipped.
+- 019 landed: app-wide `nav_enable_keyboard` + a two-level focus model — `Ctrl+Tab` cycles 3 regions
   (editor / node-grid / settings-panel, region-confined via `no_nav_inputs`; active region shown by an
-  accent outline driven off live focus), `Ctrl+1/2/3` jump the inner Node/Render/Share tab. The polish
-  wave folded in: a selection-vs-accent color split (`COLOR.SELECT` = fixed purple) + an import-time
-  theme-portability invariant; Ctrl+Tab suppressed (`no_nav_focus`); Esc swallowed at the glfw layer
-  unless it has a job; `nav_flattened` so uniforms nav directly; launch lands on the grid. Full story:
-  `ai_docs/features/019_keyboard_navigation.md`.
+  accent outline driven off live focus), `Ctrl+1/2/3` jump the inner Node/Render/Share tab; a
+  selection-vs-accent color split (`COLOR.SELECT` = fixed purple) + theme-portability invariant; Esc
+  swallowed at the glfw layer unless it has a job; `nav_flattened` uniforms; launch lands on the grid.
+  v0.12.1 patch fixes: active-region outline no longer leaks over modals; region-cycle moved to
+  `Ctrl+Tab` (freed by `no_nav_focus`); modals center + emoji picker enlarged; splitter drag no longer
+  selects editor text. Full story: `ai_docs/features/019_keyboard_navigation.md`.
 - **NEXT ACTION:** none queued — pick from `todo.md` triggers or a fresh ask. The teed-up next feature
   is the **built-in coding-copilot agent** (`todo.md [DEFERRAL]`; the 018 registry's id->callback
   surface is agent-friendly).

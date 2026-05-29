@@ -449,3 +449,14 @@ manual wave was walked live; nav behaves. Outcomes + the fixes the wave surfaced
 - **Launch lands on the node grid** (`active_region` defaults GRID + focus latch on frame 1).
 - Two cosmetic tails deferred (`todo.md`): nav-cursor resets to cell 0 after Enter; 2D grid arrow
   adjacency. **019 verified + done.**
+
+**Post-`v0.12.0` follow-ups (patch wave):**
+- **Outline leaked over modals** (it's on the foreground draw list → no modal occlusion). Fixed: the
+  3 outline call sites gate on `not app.any_popup_open()`.
+- **Region-cycle chord moved `Ctrl+`` ` `` → `Ctrl+Tab`.** Originally `Ctrl+Tab` was avoided because
+  imgui's built-in window-cycle owns it — but `WindowFlags_.no_nav_focus` (added for the modal-popup
+  fix) suppresses that cycle, freeing the chord. Spike-confirmed `imgui.shortcut(Ctrl+Tab,
+  route_global)` now fires. The earlier `Ctrl+`` ` `` design-decision/Review-history text above is the
+  historical record (the constraint that forced it has since been removed); the live default is
+  `Ctrl+Tab`. Rebindable regardless.
+- **Modals now center** (`modal_window` sets viewport-center pos); emoji picker enlarged.
