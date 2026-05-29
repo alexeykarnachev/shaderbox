@@ -20,10 +20,11 @@ from shaderbox.exporters.registry import ExporterRegistry
 from shaderbox.exporters.telegram import TelegramExporter
 from shaderbox.exporters.youtube import YouTubeExporter
 from shaderbox.notifications import Notifications
-from shaderbox.paths import app_data_dir, shader_lib_root, shader_lib_trash_dir
+from shaderbox.paths import app_data_dir, shader_lib_root
 from shaderbox.shader_lib import ShaderLibIndex
 from shaderbox.shader_lib import set_active as set_active_lib_index
 from shaderbox.shader_lib.favorites import ShaderLibFavoritesStore
+from shaderbox.shader_lib.file_ops import ShaderLibFileManager
 from shaderbox.shader_lib.tags import ShaderLibTagsStore
 from shaderbox.shader_source import ShaderSource
 from shaderbox.tabs import share_state
@@ -139,39 +140,6 @@ class App:
         self.is_emoji_picker_open: bool = False
         self.is_shader_lib_picker_open: bool = False
         self.emoji_picker_query: str = ""
-        self.shader_lib_picker_query: str = ""
-        # Currently-selected function in the picker tree, by NAME (not index —
-        # the visible-leaves list reshuffles as filters change). Empty = no
-        # selection (the preview pane shows a placeholder).
-        self.shader_lib_picker_selected_function: str = ""
-        # Cache of imgui's `is_window_appearing()` derived once per frame in
-        # `_draw_body`; sub-draws inside child windows read it (their own
-        # is_window_appearing would return the CHILD's appearing state, not
-        # the picker's).
-        self.shader_lib_picker_just_opened: bool = False
-        # Filter modes: only-favorites toggle + disabled tags. Tags are enabled
-        # by default; the user clicks a pill to DISABLE it. A function passes if
-        # it has at least one still-enabled tag, OR it has no tags at all.
-        self.shader_lib_picker_favs_only: bool = False
-        self.shader_lib_picker_disabled_tags: set[str] = set()
-        # Inline "add tag" buffer in the preview pane's tag editor.
-        self.shader_lib_picker_new_tag_buf: str = ""
-        # True while the add-tag input is focused this frame. Gates the outer
-        # Enter → Insert-at-caret + close — otherwise pressing Enter to commit a
-        # tag also closes the picker.
-        self.shader_lib_picker_tag_input_focused: bool = False
-        # Three mutually-exclusive inline inputs the picker can host (only one
-        # is_open at a time; `reset_shader_lib_inline_state` enforces). The rename
-        # input's `target` is the file being renamed; new-file/new-dir's
-        # `target` is the parent directory the new entry lands in.
-        self.shader_lib_file_rename = InlineInput()
-        self.shader_lib_file_new = InlineInput()
-        self.shader_lib_dir_new = InlineInput()
-        # `node_delete_armed`-style: a single lib file/dir path armed for
-        # delete confirm at a time. Set by the context menu; second click
-        # confirms. Root dir is never armed.
-        self.shader_lib_file_delete_armed: Path | None = None
-        self.shader_lib_dir_delete_armed: Path | None = None
         # Where a picked emoji is delivered (set by whoever opens the picker).
         self.emoji_pick_target: Callable[[str], None] | None = None
         self.node_delete_armed: str = ""  # node id pending delete-confirm
@@ -220,6 +188,17 @@ class App:
         )
         # Cross-project tags (function_name -> set of tag strings).
         self.shader_lib_tags: ShaderLibTagsStore = ShaderLibTagsStore.load()
+
+        # Shader-library file CRUD + picker inline-input/filter state. Owns the
+        # file operations; editor-session cleanup flows back via the two
+        # callbacks (App's editor domain).
+        self.shader_lib_files = ShaderLibFileManager(
+            notifications=self.notifications,
+            rebuild_index=self.rebuild_shader_lib_index,
+            index_getter=lambda: self.shader_lib_index,
+            on_paths_removed=self._on_shader_lib_paths_removed,
+            on_path_renamed=self._on_shader_lib_path_renamed,
+        )
 
         self._init(project_dir, seed_starter=is_first_launch)
 
@@ -272,6 +251,89 @@ class App:
             logger.info(f"Directory created: {path}")
 
         return path
+
+    # ----------------------------------------------------------------
+    # Shader-library picker state — delegated to self.shader_lib_files so the
+    # picker UI keeps its `app.shader_lib_*` access while the state lives on the
+    # manager. Mutable objects (inline inputs, disabled_tags) are accessed in
+    # place; scalars get read/write delegation.
+    # ----------------------------------------------------------------
+
+    @property
+    def shader_lib_picker_query(self) -> str:
+        return self.shader_lib_files.picker_query
+
+    @shader_lib_picker_query.setter
+    def shader_lib_picker_query(self, value: str) -> None:
+        self.shader_lib_files.picker_query = value
+
+    @property
+    def shader_lib_picker_selected_function(self) -> str:
+        return self.shader_lib_files.picker_selected_function
+
+    @shader_lib_picker_selected_function.setter
+    def shader_lib_picker_selected_function(self, value: str) -> None:
+        self.shader_lib_files.picker_selected_function = value
+
+    @property
+    def shader_lib_picker_just_opened(self) -> bool:
+        return self.shader_lib_files.picker_just_opened
+
+    @shader_lib_picker_just_opened.setter
+    def shader_lib_picker_just_opened(self, value: bool) -> None:
+        self.shader_lib_files.picker_just_opened = value
+
+    @property
+    def shader_lib_picker_favs_only(self) -> bool:
+        return self.shader_lib_files.picker_favs_only
+
+    @shader_lib_picker_favs_only.setter
+    def shader_lib_picker_favs_only(self, value: bool) -> None:
+        self.shader_lib_files.picker_favs_only = value
+
+    @property
+    def shader_lib_picker_disabled_tags(self) -> set[str]:
+        return self.shader_lib_files.picker_disabled_tags
+
+    @shader_lib_picker_disabled_tags.setter
+    def shader_lib_picker_disabled_tags(self, value: set[str]) -> None:
+        self.shader_lib_files.picker_disabled_tags = value
+
+    @property
+    def shader_lib_picker_new_tag_buf(self) -> str:
+        return self.shader_lib_files.picker_new_tag_buf
+
+    @shader_lib_picker_new_tag_buf.setter
+    def shader_lib_picker_new_tag_buf(self, value: str) -> None:
+        self.shader_lib_files.picker_new_tag_buf = value
+
+    @property
+    def shader_lib_picker_tag_input_focused(self) -> bool:
+        return self.shader_lib_files.picker_tag_input_focused
+
+    @shader_lib_picker_tag_input_focused.setter
+    def shader_lib_picker_tag_input_focused(self, value: bool) -> None:
+        self.shader_lib_files.picker_tag_input_focused = value
+
+    @property
+    def shader_lib_file_rename(self) -> InlineInput:
+        return self.shader_lib_files.file_rename
+
+    @property
+    def shader_lib_file_new(self) -> InlineInput:
+        return self.shader_lib_files.file_new
+
+    @property
+    def shader_lib_dir_new(self) -> InlineInput:
+        return self.shader_lib_files.dir_new
+
+    @property
+    def shader_lib_file_delete_armed(self) -> Path | None:
+        return self.shader_lib_files.file_delete_armed
+
+    @property
+    def shader_lib_dir_delete_armed(self) -> Path | None:
+        return self.shader_lib_files.dir_delete_armed
 
     @property
     def app_dir(self) -> Path:
@@ -559,344 +621,85 @@ class App:
             )
             logger.error(f"Failed to open directory {node_dir}: {e}")
 
-    def reset_shader_lib_inline_state(self) -> None:
-        # Single source of mutual-exclusion: every `begin_*` / `arm_*` opener
-        # calls this first to clear ALL sibling inline-input + armed state. The
-        # opener then sets only its own fields. Also called by `open_shader_lib_picker`
-        # so a previous picker session can't leak stale inline inputs.
-        self.shader_lib_file_rename.close()
-        self.shader_lib_file_new.close()
-        self.shader_lib_dir_new.close()
-        self.shader_lib_file_delete_armed = None
-        self.shader_lib_dir_delete_armed = None
+    # ----------------------------------------------------------------
+    # Shader-library file CRUD — delegated to self.shader_lib_files. The picker
+    # UI calls these `app.*` wrappers; the logic + state live on the manager.
+    # The two callbacks below are App's editor-session cleanup (the manager's
+    # one reach back into the editor domain).
+    # ----------------------------------------------------------------
 
-    def arm_shader_lib_file_delete(self, path: Path | None) -> None:
-        # Disarm-by-passing-None is the cancel; otherwise replace mutex state.
-        if path is None:
-            self.shader_lib_file_delete_armed = None
-            return
-        self.reset_shader_lib_inline_state()
-        self.shader_lib_file_delete_armed = path
-
-    def arm_shader_lib_dir_delete(self, path: Path | None) -> None:
-        if path is None:
-            self.shader_lib_dir_delete_armed = None
-            return
-        self.reset_shader_lib_inline_state()
-        self.shader_lib_dir_delete_armed = path
-
-    def begin_shader_lib_file_rename(self, path: Path) -> None:
-        # Pre-fill the buffer with the current relative path so the user can
-        # edit, not retype.
-        try:
-            rel = path.relative_to(shader_lib_root())
-        except ValueError:
-            rel = Path(path.name)
-        self.reset_shader_lib_inline_state()
-        self.shader_lib_file_rename.open(path, buf=str(rel))
-
-    def cancel_shader_lib_file_rename(self) -> None:
-        self.shader_lib_file_rename.close()
-
-    def begin_shader_lib_file_new_in(self, dir_rel: Path) -> None:
-        # Open the inline new-file input under the given subdir (Path("") for
-        # the lib root). `target` is the parent dir; `buf` is the new filename.
-        self.reset_shader_lib_inline_state()
-        self.shader_lib_file_new.open(dir_rel)
-
-    def cancel_shader_lib_file_new(self) -> None:
-        self.shader_lib_file_new.close()
-
-    def begin_shader_lib_dir_new_in(self, parent_rel: Path) -> None:
-        self.reset_shader_lib_inline_state()
-        self.shader_lib_dir_new.open(parent_rel)
-
-    def cancel_shader_lib_dir_new(self) -> None:
-        self.shader_lib_dir_new.close()
-
-    def _validate_shader_lib_target(
-        self,
-        rel_path: str,
-        *,
-        kind: str,
-        suffix: str | None = None,
-        allow_existing: Path | None = None,
-    ) -> Path | None:
-        # Centralized validation for new-file / new-dir / rename: strip, append
-        # `suffix` (e.g. ".glsl") if missing, resolve under shader_lib_root, reject
-        # path traversal, reject collisions (unless the target equals
-        # `allow_existing` — used by rename's self-rename short-circuit, which
-        # the caller treats as "no-op").
-        cleaned = rel_path.strip()
-        if not cleaned:
-            return None
-        if suffix and not cleaned.endswith(suffix):
-            cleaned += suffix
-        root = shader_lib_root().resolve()
-        target = (root / cleaned).resolve()
-        try:
-            target.relative_to(root)
-        except ValueError:
-            logger.warning(f"Lib {kind} rejected (outside shader_lib_root): {cleaned}")
-            self.notifications.push(
-                f"{kind.capitalize()} rejected: path escapes shader_lib_root",
-                color=COLOR.STATE_ERROR[:3],
-            )
-            return None
-        if allow_existing is not None and target == allow_existing.resolve():
-            # Caller distinguishes "self-rename no-op" from "real validation
-            # failure" by passing allow_existing; returning the target lets it.
-            return target
-        if target.exists():
-            logger.warning(f"Lib {kind} rejected (target exists): {target}")
-            self.notifications.push(
-                f"{kind.capitalize()} rejected: target exists",
-                color=COLOR.STATE_ERROR[:3],
-            )
-            return None
-        return target
-
-    def commit_shader_lib_dir_new(self) -> Path | None:
-        # Create `<shader_lib_root>/<parent_rel>/<buf>` as a real directory + a starter
-        # `placeholder.glsl` inside (so the dir survives the ShaderLibIndex.build glob,
-        # which only walks `.glsl`). Returns the new dir on success.
-        parent_rel = self.shader_lib_dir_new.target
-        if parent_rel is None:
-            return None
-        name = self.shader_lib_dir_new.buf.strip().strip("/")
-        if not name:
-            return None
-        target = self._validate_shader_lib_target(
-            str(parent_rel / name), kind="new-dir"
-        )
-        if target is None:
-            return None
-        # Emit a real SB_ stub (not a commented-out one) so the file shows up
-        # as a function leaf the user can immediately rename/edit — an empty
-        # placeholder file would render as an un-expandable leaf and look like
-        # a bug.
-        starter = target / "placeholder.glsl"
-        sanitized_name = "".join(c if c.isalnum() else "_" for c in target.name)
-        stub_fn_name = f"SB_{sanitized_name}_placeholder"
-        try:
-            target.mkdir(parents=True, exist_ok=False)
-            starter.write_text(
-                f"/// rename me — placeholder stub for the {target.name}/ subdir\n"
-                f"float {stub_fn_name}(float x) {{\n"
-                "    return x;\n"
-                "}\n",
-                encoding="utf-8",
-            )
-        except OSError as e:
-            logger.error(f"Failed to create lib dir {target}: {e}")
-            self.notifications.push(
-                f"Create failed: {e!s}", color=COLOR.STATE_ERROR[:3]
-            )
-            return None
-        logger.info(f"Created new lib dir: {target}")
-        self.rebuild_shader_lib_index()
-        self.cancel_shader_lib_dir_new()
-        return target
-
-    def delete_shader_lib_dir(self, path: Path) -> None:
-        # Recursive move of an entire subdir into .trash/. EVERY file under the
-        # dir (`.glsl` and sibling artifacts) lands in `.trash/<basename>` with
-        # the numeric-suffix collision rule — nothing is silently rmtree'd. The
-        # now-empty dir shell is then removed. Refuses symlinked dirs so a
-        # `lib/external -> /other/repo/` link can't be used to trash files
-        # outside shader_lib_root. Always clears armed state on any exit.
-        self.shader_lib_dir_delete_armed = None
-        if not path.exists() or not path.is_dir():
-            logger.warning(f"Lib dir no longer exists or not a dir: {path}")
-            return
-        root = shader_lib_root().resolve()
-        resolved = path.resolve()
-        if resolved == root:
-            logger.warning("Refusing to delete the shader_lib_root itself.")
-            return
-        if path.is_symlink() or not resolved.is_relative_to(root):
-            logger.warning(f"Refusing to delete symlinked/escaping lib dir: {path}")
-            self.notifications.push(
-                "Delete refused: symlinked or outside shader_lib_root",
-                color=COLOR.STATE_ERROR[:3],
-            )
-            return
-        trash = shader_lib_trash_dir()
-        moved_files: list[Path] = []
-        try:
-            # Walk EVERY file (glsl + non-glsl) so the user's `notes.md` next to
-            # their shader isn't silently destroyed by the rmtree below. Skip
-            # symlinks to avoid following an escape route mid-walk.
-            for f in sorted(path.rglob("*")):
-                if not f.is_file() or f.is_symlink():
-                    continue
-                if not f.resolve().is_relative_to(root):
-                    # Defensive: a file at this point should never resolve
-                    # outside root (we refused symlinked dirs above) — log and
-                    # skip rather than move out-of-tree data.
-                    logger.warning(f"Skipping out-of-root file during dir delete: {f}")
-                    continue
-                dest = trash / f.name
-                i = 1
-                while dest.exists():
-                    dest = trash / f"{f.stem}_{i}{f.suffix}"
-                    i += 1
-                shutil.move(str(f), str(dest))
-                moved_files.append(f)
-            shutil.rmtree(path)
-        except OSError as e:
-            logger.error(f"Failed to delete lib dir {path}: {e}")
-            self.notifications.push(
-                f"Delete dir failed: {e!s}", color=COLOR.STATE_ERROR[:3]
-            )
-            return
-        logger.info(f"Trashed lib dir {path} ({len(moved_files)} files)")
-        # Drop selections / sessions pointing inside the deleted subtree.
-        for moved in moved_files:
-            self.editor_sessions.pop(moved, None)
-            if self._explicit_editor_path == moved:
+    def _on_shader_lib_paths_removed(self, paths: list[Path]) -> None:
+        # Drop editor sessions + selections pointing at trashed lib paths.
+        for path in paths:
+            self.editor_sessions.pop(path, None)
+            if self._explicit_editor_path == path:
                 self.show_node_editor()
-            if self.last_shader_lib_path == moved:
+            if self.last_shader_lib_path == path:
                 self.last_shader_lib_path = None
             if (
                 self.editor_jump_request is not None
-                and self.editor_jump_request.path == moved
+                and self.editor_jump_request.path == path
             ):
                 self.editor_jump_request = None
-        deleted_fn_names = {
-            fn.name
-            for fn in self.shader_lib_index.functions.values()
-            if any(fn.file == m for m in moved_files)
-        }
-        if self.shader_lib_picker_selected_function in deleted_fn_names:
-            self.shader_lib_picker_selected_function = ""
-        self.notifications.push(
-            f"Deleted {path.name}/ ({len(moved_files)} files) - recoverable in .trash/"
-        )
 
-    def commit_shader_lib_file_new(self) -> Path | None:
-        # Create the new file at `<shader_lib_root>/<dir_rel>/<buf>(.glsl)`. Returns
-        # the new path on success, None on failure.
-        dir_rel = self.shader_lib_file_new.target
-        if dir_rel is None or not self.shader_lib_file_new.buf.strip():
-            return None
-        target = self._validate_shader_lib_target(
-            str(dir_rel / self.shader_lib_file_new.buf.strip()),
-            kind="new-file",
-            suffix=".glsl",
-        )
-        if target is None:
-            return None
-        try:
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(
-                "/// new SB_* function — write a doc here\n"
-                "// float SB_my_function(float x) {\n"
-                "//     return x;\n"
-                "// }\n",
-                encoding="utf-8",
-            )
-        except OSError as e:
-            logger.error(f"Failed to create lib file {target}: {e}")
-            self.notifications.push(
-                f"Create failed: {e!s}", color=COLOR.STATE_ERROR[:3]
-            )
-            return None
-        logger.info(f"Created new lib file: {target}")
-        self.rebuild_shader_lib_index()
-        self.cancel_shader_lib_file_new()
-        return target
-
-    def delete_shader_lib_file(self, path: Path) -> None:
-        # Move into `.trash/` (basename + numeric suffix on collision). The
-        # mtime watcher rebuilds the index next frame. Armed state is cleared
-        # on every exit path so the row's red tint can't stick on a failed
-        # attempt.
-        self.shader_lib_file_delete_armed = None
-        if not path.exists():
-            logger.warning(f"Lib file no longer exists: {path}")
-            return
-        trash = shader_lib_trash_dir()
-        dest = trash / path.name
-        i = 1
-        while dest.exists():
-            dest = trash / f"{path.stem}_{i}{path.suffix}"
-            i += 1
-        try:
-            shutil.move(str(path), str(dest))
-        except OSError as e:
-            logger.error(f"Failed to delete lib file {path}: {e}")
-            self.notifications.push(
-                f"Delete failed: {e!s}", color=COLOR.STATE_ERROR[:3]
-            )
-            return
-        logger.info(f"Trashed lib file: {path} -> {dest}")
-        if self._explicit_editor_path == path:
-            self.show_node_editor()
-        self.editor_sessions.pop(path, None)
-        if self.last_shader_lib_path == path:
-            self.last_shader_lib_path = None
-        if (
-            self.editor_jump_request is not None
-            and self.editor_jump_request.path == path
-        ):
-            self.editor_jump_request = None
-        # If the picker had a function from the deleted file selected, clear
-        # the selection — the next-frame re-walk will pick a fresh leaf.
-        deleted_fn_names = {
-            fn.name
-            for fn in self.shader_lib_index.functions.values()
-            if fn.file == path
-        }
-        if self.shader_lib_picker_selected_function in deleted_fn_names:
-            self.shader_lib_picker_selected_function = ""
-        msg = f"Deleted {path.name}"
-        if dest.name != path.name:
-            msg += f" (as {dest.name})"
-        msg += " - recoverable in .trash/"
-        self.notifications.push(msg)
-
-    def rename_shader_lib_file(self, old: Path, new_rel: str) -> Path | None:
-        # Returns the new resolved path on success, None on rejection or no-op.
-        target = self._validate_shader_lib_target(
-            new_rel, kind="rename", suffix=".glsl", allow_existing=old
-        )
-        if target is None:
-            return None
-        if target == old.resolve():
-            # Self-rename — silent no-op, close the input.
-            self.cancel_shader_lib_file_rename()
-            return None
-        try:
-            target.parent.mkdir(parents=True, exist_ok=True)
-            old.rename(target)
-        except OSError as e:
-            logger.error(f"Failed to rename lib file {old} -> {target}: {e}")
-            self.notifications.push(
-                f"Rename failed: {e!s}", color=COLOR.STATE_ERROR[:3]
-            )
-            return None
-        logger.info(f"Renamed lib file: {old} -> {target}")
-        # Re-key the open EditorSession (if any) so future writes/saves target
-        # the new path. The editor's text is untouched.
+    def _on_shader_lib_path_renamed(self, old: Path, new: Path) -> None:
+        # Re-key the open EditorSession (if any) so future writes target the new
+        # path; the editor's text is untouched.
         session = self.editor_sessions.pop(old, None)
         if session is not None:
-            session.source = replace(session.source, path=target)
-            self.editor_sessions[target] = session
+            session.source = replace(session.source, path=new)
+            self.editor_sessions[new] = session
         if self._explicit_editor_path == old:
-            self._explicit_editor_path = target
+            self._explicit_editor_path = new
         if self.last_shader_lib_path == old:
-            self.last_shader_lib_path = target
+            self.last_shader_lib_path = new
         if (
             self.editor_jump_request is not None
             and self.editor_jump_request.path == old
         ):
-            self.editor_jump_request = replace(self.editor_jump_request, path=target)
-        # Function names don't change on rename, so shader_lib_picker_selected_function
-        # remains valid; the next frame's tree walk re-discovers the function
-        # at its new file path.
-        self.cancel_shader_lib_file_rename()
-        return target
+            self.editor_jump_request = replace(self.editor_jump_request, path=new)
+
+    def reset_shader_lib_inline_state(self) -> None:
+        self.shader_lib_files.reset_inline_state()
+
+    def arm_shader_lib_file_delete(self, path: Path | None) -> None:
+        self.shader_lib_files.arm_file_delete(path)
+
+    def arm_shader_lib_dir_delete(self, path: Path | None) -> None:
+        self.shader_lib_files.arm_dir_delete(path)
+
+    def begin_shader_lib_file_rename(self, path: Path) -> None:
+        self.shader_lib_files.begin_file_rename(path)
+
+    def cancel_shader_lib_file_rename(self) -> None:
+        self.shader_lib_files.cancel_file_rename()
+
+    def begin_shader_lib_file_new_in(self, dir_rel: Path) -> None:
+        self.shader_lib_files.begin_file_new_in(dir_rel)
+
+    def cancel_shader_lib_file_new(self) -> None:
+        self.shader_lib_files.cancel_file_new()
+
+    def begin_shader_lib_dir_new_in(self, parent_rel: Path) -> None:
+        self.shader_lib_files.begin_dir_new_in(parent_rel)
+
+    def cancel_shader_lib_dir_new(self) -> None:
+        self.shader_lib_files.cancel_dir_new()
+
+    def commit_shader_lib_dir_new(self) -> Path | None:
+        return self.shader_lib_files.commit_dir_new()
+
+    def commit_shader_lib_file_new(self) -> Path | None:
+        return self.shader_lib_files.commit_file_new()
+
+    def delete_shader_lib_dir(self, path: Path) -> None:
+        self.shader_lib_files.delete_dir(path)
+
+    def delete_shader_lib_file(self, path: Path) -> None:
+        self.shader_lib_files.delete_file(path)
+
+    def rename_shader_lib_file(self, old: Path, new_rel: str) -> Path | None:
+        return self.shader_lib_files.rename_file(old, new_rel)
 
     def reveal_shader_lib_file_in_manager(self, path: Path) -> None:
         if not path.exists():
