@@ -302,20 +302,35 @@ class CopilotIntegration(BaseModel):
 
 ## 6. Commands / nav / UI placement (the seams to the existing app)
 
-- **`commands.py`**: add `NodeTab.COPILOT` to the `NodeTab` StrEnum + a `FOCUS_TAB_COPILOT` `CommandId`
-  (natural chord `Ctrl+4`, extending `Ctrl+1/2/3`). The cheatsheet picks it up automatically (it
-  iterates `COMMAND_SPECS`). (`05 §7`.)
-- **`ui.py`**: add `("Copilot", NodeTab.COPILOT, copilot_tab.draw)` to `_NODE_TABS` (`ui.py:461`). The
-  `begin_tab_item` loop + `set_selected` jump machinery generalize with no change. The copilot is a tab
-  WITHIN the existing PANEL region — NOT a 4th `ActiveRegion` (Ctrl+Tab still cycles EDITOR→GRID→PANEL;
-  `Ctrl+4` jumps to the Copilot tab + focuses the panel via the existing `focus_node_tab` path). (`05 §1, §7`.)
-- **`tabs/copilot.py`**: `draw(app)` reads `app.copilot.state` (Seam E) and renders it via
-  `ui_primitives` + `theme` (the all-UI-through-primitives rule). The UI is dumb; it renders the
-  transcript, the input box, the in-flight/stop state, the **pending-action gate** (Seam E's
-  pending-action entry → a confirm affordance that blocks until answered, answer pushed back through
-  the request queue). The chat-widget *primitive* (wrapped transcript rows) is built WITH the tab.
-  **The MVP-vs-gold UI detail is a later brainstorm** (`05`) — the skeleton fixes only that it's a
-  4th tab reading `state`.
+> **⚠️ REVERSED (maintainer decision, post-review): NO Copilot tab.** The chat is a **floating
+> top-level window** (drawn like the cheatsheet, after the main window closes), NOT a 4th tab in the
+> settings panel. Rationale: the chat should occupy only a corner/strip (not stretch a full panel
+> column), be movable/resizable, and float on top — which a tab can't do. This supersedes report `05`'s
+> "4th tab" recommendation (and the diagram/package-list mentions of `tabs/copilot.py` above). The
+> floating-window facts (it's a real interactive `imgui.begin`, NOT the cheatsheet's non-interactive
+> draw-list; needs `no_nav_focus` to stay out of imgui's Ctrl+Tab window-switcher; the input uses the
+> one-shot `set_keyboard_focus_here`; `set_window_focus(name)` segfaults so focus via
+> `set_next_window_focus()`) are the `/imgui-ui` skill §8 rules.
+
+The landed shape (commit on `dev`):
+
+- **`commands.py`**: a `TOGGLE_COPILOT` `CommandId` (chord `Ctrl+J`) — NOT a `FOCUS_TAB_*`/`NodeTab`
+  entry. The cheatsheet picks it up automatically (iterates `COMMAND_SPECS`).
+- **`widgets/copilot_chat.py`**: a floating `imgui.begin("Copilot", flags=no_nav_focus)` window, drawn
+  from `update_and_draw` after the main window closes (beside `cheatsheet.draw`). Reads `app`'s
+  open/layout/focus state + `app.copilot.state`. Three layout presets cycled by a top-bar button:
+  CORNER (bottom-right box) / BOTTOM_STRIP (full-width) / FREE (user-moved, imgui.ini-persisted). The
+  transcript / input / streaming / pending-action UI is the capability wave; this is the window shell.
+- **Launcher**: a small `ghost_button("Copilot")` pinned to the editor child's top-right (`ui.py`
+  `_draw_copilot_launcher`, `set_next_item_allow_overlap`), shown only while the chat is closed; click
+  → `toggle_copilot`.
+- **Focus model**: `Ctrl+J` = toggle open + focus (closed→open+focus; open&focused→close;
+  open&unfocused→focus); opening focuses the chat input + defocuses the editor caret
+  (`editor_defocus_requested`). Esc defocuses the chat back to the editor (stays open) — wired via
+  `escape_has_job()` + `_handle_escape` + a `copilot_defocus_requested` one-shot. The chat is NOT a
+  region — `Ctrl+Tab` still cycles EDITOR→GRID→PANEL unchanged.
+- **Egress**: automatic (default dual-stack; transparent v4 fallback is an impl detail) — NO user
+  setting. (The earlier `ipv4_only` field was removed — egress must not bother the user.)
 
 ---
 

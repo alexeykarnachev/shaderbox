@@ -1,5 +1,13 @@
 # 020 Copilot Agent — chat UI/UX (placement, rendering, interaction model)
 
+> ## ⚠️ PLACEMENT REVERSED — the chat is a FLOATING WINDOW, not a 4th tab.
+> This report recommended a 4th `Copilot` tab in the right-panel tab bar. The maintainer reversed
+> that (post-review): the chat is a **floating top-level `imgui.begin` window** (corner/strip presets
+> + free mode, movable, launched by an in-editor top-right button + `Ctrl+J`), NOT a tab. See
+> `10_skeleton_plan.md §6` for the landed shape. The rest of this report (message rendering, wrapped
+> text, streaming, tool-call transparency, the not-configured gate, the safety UX) stays valid — only
+> the **placement** section (§0/§1's "4th tab") is superseded.
+>
 > One of the swarm's idea reports (see `00_grounding.md`). Angle: **the chat panel's UI/UX** —
 > where it lives in the existing LEFT-editor / RIGHT-panel split, how a scrollable transcript
 > renders in immediate-mode imgui, how streaming + tool-calls + errors draw, the input box, the

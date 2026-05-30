@@ -62,5 +62,8 @@ def _handle_escape(app: App) -> None:
     app.is_settings_open = False
     app.is_palette_open = False
     app.editor_defocus_requested = True
+    # Esc defocuses the chat (back to the editor/grid) but leaves it open.
+    if app.copilot_focused:
+        app.copilot_defocus_requested = True
     if was_settings_open:
         app.apply_editor_settings()

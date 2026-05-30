@@ -19,15 +19,14 @@ from shaderbox.popups.node_creator import draw_node_creator
 from shaderbox.popups.settings import draw_settings
 from shaderbox.shader_lib import is_shader_lib_path
 from shaderbox.tabs import code as code_tab
-from shaderbox.tabs import copilot as copilot_tab
 from shaderbox.tabs import node as node_tab
 from shaderbox.tabs import render as render_tab
 from shaderbox.tabs import share as share_tab
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_models import UINode
-from shaderbox.ui_primitives import active_region_outline, fps_overlay
+from shaderbox.ui_primitives import active_region_outline, fps_overlay, ghost_button
 from shaderbox.util import adjust_size
-from shaderbox.widgets import cheatsheet
+from shaderbox.widgets import cheatsheet, copilot_chat
 from shaderbox.widgets.node_grid import draw_node_preview_grid
 
 _FONT_14_SIZE = 14.0
@@ -281,6 +280,7 @@ def update_and_draw(app: App) -> None:
             # (immune to window clip) so it would render OVER the popup.
             if app.active_region == ActiveRegion.EDITOR and not app.any_popup_open():
                 active_region_outline()
+            _draw_copilot_launcher(app)
             code_tab.draw(app)
 
         imgui.same_line(spacing=0.0)
@@ -314,10 +314,11 @@ def update_and_draw(app: App) -> None:
 
     imgui.pop_font()
 
-    # The cheatsheet is its OWN top-level window — drawn after the full-screen
-    # main window closes so it isn't obscured by it.
+    # The cheatsheet + the copilot chat are their OWN top-level windows — drawn after
+    # the full-screen main window closes so they aren't obscured by it.
     imgui.push_font(app.font_14, _FONT_14_SIZE)
     cheatsheet.draw(app)
+    copilot_chat.draw(app)
     imgui.pop_font()
 
     # ----------------------------------------------------------------
@@ -375,6 +376,23 @@ def _draw_menu_bar(app: App) -> None:
                 )[0]
             ):
                 app.open_shader_lib_picker()
+
+
+def _draw_copilot_launcher(app: App) -> None:
+    # A small launcher pinned to the editor's top-right corner; click opens + focuses
+    # the chat (toggle_copilot from the closed state). Hidden while the chat is open
+    # (the chat carries its own Close). allow_overlap so the button wins clicks over the
+    # editor beneath it. Drawn before code_tab.draw so it sits visually on top.
+    if app.is_copilot_open:
+        return
+    avail = imgui.get_content_region_avail()
+    start = imgui.get_cursor_pos()
+    btn_w = float(SIZE.COPILOT_LAUNCHER_W)
+    imgui.set_cursor_pos((start.x + avail.x - btn_w - float(SPACE.SM), start.y))
+    imgui.set_next_item_allow_overlap()
+    if ghost_button("Copilot", width=btn_w):
+        app.toggle_copilot()
+    imgui.set_cursor_pos(start)
 
 
 def _draw_splitter(app: App, total_width: float, height: float) -> None:
@@ -476,7 +494,6 @@ _NODE_TABS: list[tuple[str, NodeTab, Callable[[App], None]]] = [
     ("Node", NodeTab.NODE, node_tab.draw),
     ("Render", NodeTab.RENDER, render_tab.draw),
     ("Share", NodeTab.SHARE, share_tab.draw),
-    ("Copilot", NodeTab.COPILOT, copilot_tab.draw),
 ]
 
 

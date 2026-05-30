@@ -6,7 +6,9 @@ from shaderbox.copilot.llm.api import LLMMessage
 # the context-snapshot rendering are the later capability brainstorm (§0 #8) — this is
 # the scaffold seam (the assembly fn + its inputs).
 
-_SYSTEM_PROMPT = "You are ShaderBox's in-app coding copilot."  # placeholder — filled later
+_SYSTEM_PROMPT = (
+    "You are ShaderBox's in-app coding copilot."  # placeholder — filled later
+)
 
 
 def build_messages(

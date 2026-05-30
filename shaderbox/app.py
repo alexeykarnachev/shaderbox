@@ -29,6 +29,7 @@ from shaderbox.copilot.capabilities import (
 )
 from shaderbox.copilot.llm.openrouter import OpenRouterLLMClient
 from shaderbox.copilot.session import CopilotSession
+from shaderbox.copilot.state import CopilotLayout
 from shaderbox.core import Canvas
 from shaderbox.editor_types import EditorSession, HoverMark, InlineInput, JumpRequest
 from shaderbox.exporters.integrations import IntegrationsStore
@@ -187,9 +188,16 @@ class App:
             client=OpenRouterLLMClient(
                 get_api_key=lambda: self.integrations_store.copilot.openrouter_key,
                 get_model=lambda: self.integrations_store.copilot.model,
-                ipv4_only=self.integrations_store.copilot.ipv4_only,
             ),
         )
+        # Copilot chat is a floating window (NOT a tab/region). open/layout/focus state
+        # lives here; the widget reads it. copilot_focus_pending is the one-shot the
+        # chat input consumes via set_keyboard_focus_here on the next draw.
+        self.is_copilot_open: bool = False
+        self.copilot_layout: CopilotLayout = CopilotLayout.CORNER
+        self.copilot_focus_pending: bool = False
+        self.copilot_focused: bool = False
+        self.copilot_defocus_requested: bool = False
 
         self.is_node_creator_open: bool = False
         self.is_settings_open: bool = False
@@ -315,9 +323,15 @@ class App:
         glfw.set_key_callback(self.window, key_callback)
 
     def escape_has_job(self) -> bool:
-        # Esc is meaningful only to dismiss a popup/palette or drop the editor caret.
-        # Otherwise it's swallowed before imgui sees it (see _install_escape_filter).
-        return self.any_popup_open() or self.is_palette_open or self.editor_focused
+        # Esc is meaningful only to dismiss a popup/palette, drop the editor caret, or
+        # defocus the chat. Otherwise it's swallowed before imgui sees it (see
+        # _install_escape_filter).
+        return (
+            self.any_popup_open()
+            or self.is_palette_open
+            or self.editor_focused
+            or self.copilot_focused
+        )
 
     def _build_command_callbacks(self) -> None:
         self.command_callbacks = {
@@ -335,7 +349,7 @@ class App:
             CommandId.FOCUS_TAB_NODE: lambda: self.focus_node_tab(NodeTab.NODE),
             CommandId.FOCUS_TAB_RENDER: lambda: self.focus_node_tab(NodeTab.RENDER),
             CommandId.FOCUS_TAB_SHARE: lambda: self.focus_node_tab(NodeTab.SHARE),
-            CommandId.FOCUS_TAB_COPILOT: lambda: self.focus_node_tab(NodeTab.COPILOT),
+            CommandId.TOGGLE_COPILOT: self.toggle_copilot,
         }
 
     def _build_copilot_capabilities(self) -> CopilotCapabilities:
@@ -452,6 +466,21 @@ class App:
 
     def toggle_cheatsheet(self) -> None:
         self.app_state.show_cheatsheet = not self.app_state.show_cheatsheet
+
+    def toggle_copilot(self) -> None:
+        # Ctrl+J: closed -> open + focus; open & focused -> close; open & unfocused ->
+        # focus it. Opening/focusing also drops the editor caret so the chat owns keys.
+        if not self.is_copilot_open:
+            self.is_copilot_open = True
+            self.focus_copilot()
+        elif self.copilot_focused:
+            self.is_copilot_open = False
+        else:
+            self.focus_copilot()
+
+    def focus_copilot(self) -> None:
+        self.copilot_focus_pending = True
+        self.editor_defocus_requested = True
 
     def cycle_region(self) -> None:
         idx = _REGION_CYCLE.index(self.active_region)

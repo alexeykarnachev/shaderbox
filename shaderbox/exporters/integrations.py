@@ -51,9 +51,6 @@ class YouTubeIntegration(BaseModel):
 class CopilotIntegration(BaseModel):
     openrouter_key: str = ""
     model: str = ""  # OpenRouter "provider/model-id"; default chosen in a later wave
-    ipv4_only: bool = (
-        False  # opt-in egress pin for a dead-IPv6 box (default dual-stack)
-    )
 
     model_config = {"extra": "forbid"}
 

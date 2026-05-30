@@ -277,6 +277,13 @@ class SIZE:
     CHEATSHEET_W: int = 230
     CHEATSHEET_MARGIN: int = 12  # gap from the window's bottom-right corner
 
+    # Copilot chat floating window (feature 020): corner-preset box + bottom-strip height.
+    COPILOT_W: int = 420
+    COPILOT_H: int = 480
+    COPILOT_STRIP_H: int = 260
+    COPILOT_MARGIN: int = 16
+    COPILOT_LAUNCHER_W: int = 96  # the in-editor "Copilot" launcher button
+
 
 class SPACE:
     XS: int = 2

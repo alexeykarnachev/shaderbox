@@ -20,7 +20,9 @@ class LLMToolSpec:
 class LLMToolCall:
     id: str  # echo back on the matching role="tool" result message
     name: str
-    arguments: str  # raw JSON string — caller parses (may be malformed / double-escaped)
+    arguments: (
+        str  # raw JSON string — caller parses (may be malformed / double-escaped)
+    )
 
 
 @dataclass(frozen=True)

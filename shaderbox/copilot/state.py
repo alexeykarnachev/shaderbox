@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from enum import StrEnum, auto
 from typing import Literal
 
 from shaderbox.copilot.llm.api import LLMUsage
@@ -9,6 +10,13 @@ from shaderbox.copilot.llm.api import LLMUsage
 # rollup is bridged in via events, not a shared field.
 
 MessageRole = Literal["user", "assistant", "tool_status", "error", "pending_action"]
+
+
+class CopilotLayout(StrEnum):
+    # The chat floating-window placement presets, cycled by a top-bar button.
+    CORNER = auto()  # bottom-right fixed box
+    BOTTOM_STRIP = auto()  # full-width strip along the bottom
+    FREE = auto()  # user-moved/resized; position persisted via imgui.ini
 
 
 @dataclass

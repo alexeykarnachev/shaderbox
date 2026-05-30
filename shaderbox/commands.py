@@ -29,7 +29,7 @@ class CommandId(StrEnum):
     FOCUS_TAB_NODE = auto()
     FOCUS_TAB_RENDER = auto()
     FOCUS_TAB_SHARE = auto()
-    FOCUS_TAB_COPILOT = auto()
+    TOGGLE_COPILOT = auto()
 
 
 class ActiveRegion(StrEnum):
@@ -45,7 +45,6 @@ class NodeTab(StrEnum):
     NODE = auto()
     RENDER = auto()
     SHARE = auto()
-    COPILOT = auto()
 
 
 class CommandScope(StrEnum):
@@ -109,7 +108,7 @@ COMMAND_SPECS: list[CommandSpec] = [
     CommandSpec(CommandId.FOCUS_TAB_NODE, "Node tab", _chord(K._1, K.mod_ctrl)),
     CommandSpec(CommandId.FOCUS_TAB_RENDER, "Render tab", _chord(K._2, K.mod_ctrl)),
     CommandSpec(CommandId.FOCUS_TAB_SHARE, "Share tab", _chord(K._3, K.mod_ctrl)),
-    CommandSpec(CommandId.FOCUS_TAB_COPILOT, "Copilot tab", _chord(K._4, K.mod_ctrl)),
+    CommandSpec(CommandId.TOGGLE_COPILOT, "Toggle copilot", _chord(K.j, K.mod_ctrl)),
 ]
 
 SPEC_BY_ID: dict[CommandId, CommandSpec] = {spec.id: spec for spec in COMMAND_SPECS}
