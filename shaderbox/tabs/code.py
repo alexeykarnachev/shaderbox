@@ -204,12 +204,12 @@ def draw(app: App) -> None:
     if dim:
         imgui.push_style_var(imgui.StyleVar_.alpha, EDITOR_UNFOCUSED_ALPHA)
 
-    # Neutralize the editor's mouse so a splitter drag (sweep selects text) or a click on
-    # the in-editor copilot launcher doesn't reach the editor. The TextEditor reads
-    # io.mouse_down[0] directly for selection (bypassing imgui's disabled/active-id, so
-    # begin_disabled does nothing) — force it False for this render only, restore right
-    # after (well before the splitter itself draws + reads the real button state).
-    if app.splitter_dragging or app.launcher_hot:
+    # While the editor↔panel splitter is dragged, neutralize the editor's mouse so the
+    # drag sweep doesn't select text. The TextEditor reads io.mouse_down[0] directly
+    # for selection (bypassing imgui's disabled/active-id, so begin_disabled does
+    # nothing) — force it False for this render only, restore right after (well before
+    # the splitter itself draws + reads the real button state).
+    if app.splitter_dragging:
         prev_down = bool(io.mouse_down[0])
         io.mouse_down[0] = False
         editor.render("##glsl_editor", size=editor_size)

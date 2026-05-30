@@ -34,6 +34,7 @@ _FONT_18_SIZE = 18.0
 _EDITOR_MIN_W = 320.0
 _APP_PANEL_MIN_W = 360.0
 _SPLITTER_W = 6.0
+_COPILOT_BAR_H = 34.0
 _MAIN_WINDOW_FLAGS = (
     imgui.WindowFlags_.no_collapse
     | imgui.WindowFlags_.always_auto_resize
@@ -260,43 +261,46 @@ def update_and_draw(app: App) -> None:
             app._splitter_press_on_splitter = False
         app.splitter_dragging = app._splitter_press_on_splitter
 
-        with imgui_ctx.begin_child(
-            "code_editor",
-            size=imgui.ImVec2(editor_width, split_region.y),
-            child_flags=imgui.ChildFlags_.borders,
-            window_flags=imgui.WindowFlags_.no_nav_inputs,
-        ):
-            # Capture the editor child's screen rect so the launcher + the chat window
-            # anchor to the coding area (not the whole glfw window). get_window_pos/size
-            # inside the child give its real screen rect (correct in the live window).
-            ed_pos = imgui.get_window_pos()
-            ed_size = imgui.get_window_size()
-            app.editor_rect = (ed_pos.x, ed_pos.y, ed_size.x, ed_size.y)
-            # Launcher hit-test BEFORE the editor renders, so code.py can neutralize the
-            # editor's direct-mouse read this frame (the editor bypasses imgui hit-test).
-            _update_launcher_hot(app)
-            # active_region is corrected from LIVE focus (so a mouse click that moves
-            # focus updates it) — but NOT while a chord move is in flight (focus still
-            # reads as the old region for a frame; correcting then would revert the
-            # chord target + break cycling), and NOT while the chat owns focus (the chat
-            # is a separate top-level window; the editor must yield to it).
-            if (
-                imgui.is_window_focused(imgui.FocusedFlags_.child_windows)
-                and not app.focus_move_in_flight()
-                and not app.copilot_focused
+        # The editor column = a code-editor child (top) + a fixed copilot bar (bottom),
+        # stacked in one group so the splitter to their right spans the full height. The
+        # bar OWNS the launcher button (always visible, always clickable — a reserved
+        # region, never overlapped by the floating chat, which anchors above it).
+        editor_height = split_region.y - _COPILOT_BAR_H
+        with imgui_ctx.begin_group():
+            with imgui_ctx.begin_child(
+                "code_editor",
+                size=imgui.ImVec2(editor_width, editor_height),
+                child_flags=imgui.ChildFlags_.borders,
+                window_flags=imgui.WindowFlags_.no_nav_inputs,
             ):
-                app.active_region = ActiveRegion.EDITOR
-            # Not while a modal is open: the outline is on the foreground draw list
-            # (immune to window clip) so it would render OVER the popup.
-            if (
-                app.active_region == ActiveRegion.EDITOR
-                and not app.any_popup_open()
-                and not app.copilot_focused
-            ):
-                active_region_outline()
-            code_tab.draw(app)
-            # Launcher drawn LAST so it sits visually on top of the editor.
-            _draw_copilot_launcher(app)
+                # Capture the editor child's screen rect so the chat window anchors to the
+                # coding area (above the bar), not the whole glfw window. get_window_pos/
+                # size inside the child give its real screen rect (correct live).
+                ed_pos = imgui.get_window_pos()
+                ed_size = imgui.get_window_size()
+                app.editor_rect = (ed_pos.x, ed_pos.y, ed_size.x, ed_size.y)
+                # active_region is corrected from LIVE focus (so a mouse click that moves
+                # focus updates it) — but NOT while a chord move is in flight (focus still
+                # reads as the old region for a frame; correcting then would revert the
+                # chord target + break cycling), and NOT while the chat owns focus (the
+                # chat is a separate top-level window; the editor must yield to it).
+                if (
+                    imgui.is_window_focused(imgui.FocusedFlags_.child_windows)
+                    and not app.focus_move_in_flight()
+                    and not app.copilot_focused
+                ):
+                    app.active_region = ActiveRegion.EDITOR
+                # Not while a modal is open: the outline is on the foreground draw list
+                # (immune to window clip) so it would render OVER the popup.
+                if (
+                    app.active_region == ActiveRegion.EDITOR
+                    and not app.any_popup_open()
+                    and not app.copilot_focused
+                ):
+                    active_region_outline()
+                code_tab.draw(app)
+
+            _draw_copilot_bar(app, editor_width)
 
         imgui.same_line(spacing=0.0)
         _draw_splitter(app, split_region.x, split_region.y)
@@ -393,41 +397,19 @@ def _draw_menu_bar(app: App) -> None:
                 app.open_shader_lib_picker()
 
 
-_LAUNCHER_H = 26.0
-
-
-def _launcher_screen_rect(app: App) -> tuple[float, float, float, float]:
-    # Bottom-right of the editor child rect (x, y, w, h), in screen coords.
-    ex, ey, ew, eh = app.editor_rect
-    btn_w = float(SIZE.COPILOT_LAUNCHER_W)
-    pad = float(SPACE.SM)
-    return (
-        ex + ew - btn_w - pad,
-        ey + eh - _LAUNCHER_H - pad,
-        btn_w,
-        _LAUNCHER_H,
-    )
-
-
-def _update_launcher_hot(app: App) -> None:
-    # Set launcher_hot while the mouse is over the launcher rect, so code.py neutralizes
-    # the editor's direct io.mouse_down read (the click can't bleed into the editor).
-    lx, ly, lw, lh = _launcher_screen_rect(app)
-    mp = imgui.get_io().mouse_pos
-    app.launcher_hot = (lx <= mp.x <= lx + lw) and (ly <= mp.y <= ly + lh)
-
-
-def _draw_copilot_launcher(app: App) -> None:
-    # A small launcher pinned to the editor's BOTTOM-right corner. Always visible (even
-    # when the chat is open) so it's a guaranteed escape hatch back to the chat — never
-    # a state where neither launcher nor chat is reachable. Click toggles the chat. Drawn
-    # last (on top); the editor's mouse is neutralized while hovered (code.py), so the
-    # click can't reach the editor beneath.
-    lx, ly, lw, lh = _launcher_screen_rect(app)
-    imgui.set_cursor_screen_pos((lx, ly))
-    label = "Copilot" if not app.is_copilot_open else "Copilot *"
-    if ghost_button(label, width=lw):
-        app.toggle_copilot()
+def _draw_copilot_bar(app: App, width: float) -> None:
+    # A fixed bar at the bottom of the editor column holding the Copilot launcher. The
+    # bar is its OWN region (sibling of the editor child, not an overlay), so the button
+    # is always visible + clickable and the floating chat anchors ABOVE it without ever
+    # covering it. The button toggles the chat (Ctrl+J equivalent).
+    with imgui_ctx.begin_child(
+        "copilot_bar",
+        size=imgui.ImVec2(width, _COPILOT_BAR_H),
+        window_flags=imgui.WindowFlags_.no_nav_inputs,
+    ):
+        label = "Copilot" if not app.is_copilot_open else "Hide Copilot"
+        if ghost_button(label):
+            app.toggle_copilot()
 
 
 def _draw_splitter(app: App, total_width: float, height: float) -> None:

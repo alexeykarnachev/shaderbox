@@ -282,7 +282,6 @@ class SIZE:
     COPILOT_H: int = 480
     COPILOT_STRIP_H: int = 260
     COPILOT_MARGIN: int = 16
-    COPILOT_LAUNCHER_W: int = 96  # the in-editor "Copilot" launcher button
 
 
 class SPACE:
