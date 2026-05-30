@@ -3,7 +3,12 @@ from imgui_bundle import imgui, imgui_ctx
 from shaderbox.app import App
 from shaderbox.copilot.state import CopilotLayout
 from shaderbox.theme import SIZE
-from shaderbox.ui_primitives import caption_text, ghost_button, unconnected_gate
+from shaderbox.ui_primitives import (
+    active_region_outline,
+    caption_text,
+    ghost_button,
+    unconnected_gate,
+)
 
 # The copilot chat — a floating top-level window (NOT a tab/region). Drawn from
 # update_and_draw after the main window closes, like the cheatsheet, so it floats on
@@ -62,6 +67,12 @@ def draw(app: App) -> None:
             return
 
         app.copilot_focused = imgui.is_window_focused(imgui.FocusedFlags_.child_windows)
+        # Clear the focus-pending one-shot only once the focus actually TOOK. A bar-button
+        # click races the chat's set_next_window_focus (the click focuses the bar/main
+        # window the same frame), so a single attempt can lose; re-asserting each frame
+        # until copilot_focused makes it robust (settles in 1-2 frames).
+        if app.copilot_focus_pending and app.copilot_focused:
+            app.copilot_focus_pending = False
         # Mouse over the chat -> neutralize the editor's direct-mouse read (code.py) so a
         # drag inside the chat can't select editor text beneath it.
         app.copilot_hovered = imgui.is_window_hovered(imgui.HoveredFlags_.child_windows)
@@ -78,6 +89,13 @@ def draw(app: App) -> None:
             app.copilot_defocus_requested = False
             app.copilot_focused = False
 
+        # The accent outline when the chat owns focus — the same active-region cue the
+        # editor/grid/panel use, so "focused" reads consistently across the app. Not
+        # while a modal is open (the outline is on the foreground draw list, immune to
+        # window clip, so it would render over the popup).
+        if app.copilot_focused and not app.any_popup_open():
+            active_region_outline()
+
         _draw_top_bar(app)
 
         if not app.integrations_store.copilot.openrouter_key:
@@ -89,8 +107,6 @@ def draw(app: App) -> None:
             )
         else:
             caption_text("Copilot chat — coming in a later wave.")
-
-    app.copilot_focus_pending = False
 
 
 def _draw_top_bar(app: App) -> None:
