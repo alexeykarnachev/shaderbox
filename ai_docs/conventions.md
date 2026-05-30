@@ -32,6 +32,13 @@ belong in the feature spec (`ai_docs/features/NNN_*.md`). This file is not a cha
 - **Stale counts rot faster than stale prose** — they look authoritative. When you change a number
   the code reflects (uniform-type count, line counts, "N tabs"), update every doc that quotes it in
   the same commit, or drop the count from the doc.
+- **No raw line numbers OR file-length counts in docs** (`todo.md`, specs, conventions, comments).
+  Both rot on every edit and force a pointless re-sync: a `file.py:NN` citation is wrong the moment
+  code shifts, and a "`foo.py` (800 L)" length is wrong the moment anyone touches the file. Cite the
+  **symbol** instead of a line (`App.save`, `widgets/uniform.py::draw_ui_uniform` — greppable, survives
+  edits); for size triggers, describe the condition qualitatively ("when it grows a clearly separable
+  cluster" / "when editing it feels painful"), not a line count. If a number truly must appear, it's a
+  smell — prefer the symbol/condition. (Generic restatement: `dev_flow.md ## Cite by section name`.)
 - Don't sidestep a convention with `# noqa` / `# pyright: ignore` / `# type: ignore` / inline import /
   circular-import hack — a collision means the design is wrong. The sanctioned type-suppression
   allowlist (upstream library-stub gaps only) is in `## Known quirks`.

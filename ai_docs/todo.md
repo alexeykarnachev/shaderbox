@@ -37,13 +37,12 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   `push_font` hits are unrelated imgui UI fonts). The shipped Text Rendering template (`f90f5ff9`) is a
   pure **SDF 7-segment glyph synth** driven by `uniform uint u_text[64]` (codepoints) — NO atlas, NO
   sampler. So `fonts.py` is an abandoned approach the SDF template superseded, yet the docs still
-  advertise the dead path as the live feature: `CLAUDE.md:5-6`, `README.md:19`, `ai_docs/itch/page.yaml:32`
-  ("Built-in text rendering - a freetype glyph-atlas shader"), and `ai_docs/features/004_imgui_bundle_migration.md:319`
-  ("freetype glyph-atlas for the in-shader text-rendering shader"). Honest fix when triggered: either
-  delete the dead `fonts.py` glyph-atlas + correct all four doc surfaces to "SDF segment glyphs", OR
-  confirm there's a real plan to wire the atlas (then the docs are aspirational, not stale). Re-check the
-  itch store-page LIVE copy too (page.yaml is the source of truth, but a prior sync may have pushed the
-  wrong line — `dev_flow.md ## Sync the itch.io page`).
+  advertise the dead path as the live feature — grep `freetype glyph-atlas` across `CLAUDE.md`,
+  `README.md`, `ai_docs/itch/page.yaml`, and `ai_docs/features/004_imgui_bundle_migration.md`. Honest
+  fix when triggered: either delete the dead `fonts.py` glyph-atlas + correct all four doc surfaces to
+  "SDF segment glyphs", OR confirm there's a real plan to wire the atlas (then the docs are aspirational,
+  not stale). Re-check the itch store-page LIVE copy too (page.yaml is the source of truth, but a prior
+  sync may have pushed the wrong line — `dev_flow.md ## Sync the itch.io page`).
 
 ## [DEFERRAL] node-grid nav-cursor resets to cell 0 after Enter-selecting a node
 - **Trigger:** maintainer finds the nav highlight jumping to the first cell ("New node") after
@@ -275,19 +274,20 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   so there's no pin. If a user stalls, force v4 via a custom transport (requests adapter /
   `source_address`, or a custom `httplib2.Http`).
 
-## [DEFERRAL] integration credentials stored cleartext in integrations.json (Telegram + YouTube)
+## [DEFERRAL] integration credentials stored cleartext in integrations.json (Telegram + YouTube + Copilot)
 - **Trigger:** a security-hardening pass on stored secrets, OR the first user report of a leaked
-  `integrations.json` (shared machine / synced dir). Do both integrations in the same pass.
-- `integrations.json` holds the Telegram `bot_token` and the YouTube `client_secret` + `token_json`
-  (the long-lived OAuth refresh token) in cleartext at `app_data_dir()`. Acceptable posture for a
-  single-user desktop tool (matches the original feature-001 decision), but the YouTube refresh token
-  is channel-scoped and long-lived — worth a keyring/OS-secret-store migration if secrets ever warrant
-  it. One `IntegrationsStore` already centralizes all of it, so the migration has a single seam.
+  `integrations.json` (shared machine / synced dir). Do all three integrations in the same pass.
+- `integrations.json` holds the Telegram `bot_token`, the YouTube `client_secret` + `token_json`
+  (the long-lived OAuth refresh token), and the Copilot `openrouter_key` in cleartext at
+  `app_data_dir()`. Acceptable posture for a single-user desktop tool (matches the original feature-001
+  decision), but the YouTube refresh token is channel-scoped + long-lived and the OpenRouter key bills
+  real money — worth a keyring/OS-secret-store migration if secrets ever warrant it. One
+  `IntegrationsStore` centralizes all of it, so the migration has a single seam.
 
-## [DEFERRAL] decompose exporters/telegram.py (1253 L) + youtube.py (752 L)
+## [DEFERRAL] decompose exporters/telegram.py + youtube.py (both large, monolithic)
 - **Trigger:** a third concrete exporter lands (the shared worker/panel patterns become worth
   hoisting into per-exporter subpackages), OR the first time a localized telegram/youtube fix has to
-  touch >300 lines to land. Deferred from feature 017 — the riskiest split (shared mutable state:
+  wade through most of the file to land. Deferred from feature 017 — the riskiest split (shared mutable state:
   `_render_state`, the job/progress queues, `_worker` lifecycle cross every seam).
 - Target shape (from the 017 audit): `exporters/telegram/` + `exporters/youtube/` subpackages —
   `exporter.py` (class + auth/connect) / `worker.py` (thread + async ops / job handlers) /
@@ -295,25 +295,8 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   `telegram_util.py` / `youtube_util.py` move IN at that point). Until then the two `*_util.py`
   helpers sit flat under `exporters/`.
 
-## [DEFERRAL] split ui_primitives.py (714 L)
-- **Trigger:** when it crosses ~900 L, OR a clearly separable cluster (e.g. the exporter panel
-  chrome — `preview_box` / `status_slot` / `unconnected_gate` / `setup_steps`) gets reused outside
-  the exporter context. Rated KEEP in feature 017 (button tiers + draw helpers + `preview_cell` +
-  labeled fields all serve one role: the shared imgui+theme primitive set).
-
-## [DEFERRAL] built-in coding-copilot agent + its tool-layer
-- **Trigger:** when this feature is specced (a chat-widget agent that manipulates the app: create
-  shaders/nodes, set uniforms, manage shader-lib files, its tools wrapping the app's mutation verbs).
-  Feature 017 ensured the structure is *expandable* to it (the mutation verbs are reachable via the
-  `App.<verb>()` surface + `ShaderLibFileManager`'s explicit-args methods, no imgui needed), but
-  built none of it.
-- Known gaps the tool-layer must close (from the 017 audit, so the future spec doesn't re-derive):
-  (a) **no `set_uniform_value(node_id, name, value)` verb** — uniform mutation happens inline in
-  `widgets/uniform.py`'s draw loop, mutating `UIUniform` through the imgui drag widget; a tool needs
-  a headless verb. (b) `App.create_node_from_selected_template` reads
-  `app_state.selected_node_template_id` (grid selection), not a `template_id` arg — a tool wants
-  `create_node(template_id)`. (c) the agent's tool functions must reach the mutation verbs WITHOUT
-  the agent layer itself importing imgui. Note `app.py` is NOT imgui-free (it holds the editor's
-  `TextEditor` — always has), so "reach the verbs" means *calling* `App.<verb>()` / a future
-  headless node-ops module / `shader_lib/file_ops.py` (the latter two ARE imgui-free), not importing
-  the whole `App`. The seam to attach to is the existing `App.<verb>()` surface, not a new path.
+## [DEFERRAL] split ui_primitives.py (growing)
+- **Trigger:** when it grows a clearly separable cluster (e.g. the exporter panel chrome —
+  `preview_box` / `status_slot` / `unconnected_gate` / `setup_steps`) that gets reused outside the
+  exporter context, OR when editing it feels unwieldy. Rated KEEP in feature 017 (button tiers + draw
+  helpers + `preview_cell` + labeled fields all serve one role: the shared imgui+theme primitive set).

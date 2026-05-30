@@ -67,30 +67,20 @@ def draw(app: App) -> None:
             return
 
         app.copilot_focused = imgui.is_window_focused(imgui.FocusedFlags_.child_windows)
-        # Clear the focus-pending one-shot only once the focus actually TOOK. A bar-button
-        # click races the chat's set_next_window_focus (the click focuses the bar/main
-        # window the same frame), so a single attempt can lose; re-asserting each frame
-        # until copilot_focused makes it robust (settles in 1-2 frames).
+        # Re-assert the focus request each frame until it lands — a bar-button click
+        # focuses the bar the same frame and races set_next_window_focus, so one attempt
+        # can lose (settles in 1-2 frames).
         if app.copilot_focus_pending and app.copilot_focused:
             app.copilot_focus_pending = False
-        # Neutralize the editor's direct-mouse read (code.py) while the mouse is over the
-        # chat OR while the chat is being dragged/resized — a resize grabs the window
-        # border and the drag moves the cursor OUTSIDE the window, so is_window_hovered
-        # alone misses it (the editor would then select text under the moving cursor).
-        # "focused + left button held" covers the move/resize drag (it keeps the chat
-        # focused); a plain editor click leaves the chat unfocused, so the editor still
-        # selects normally.
+        # Neutralize the editor's direct io.mouse_down read (code.py) while the mouse is
+        # over the chat OR dragging/resizing it — a resize moves the cursor outside the
+        # window, which is_window_hovered alone misses. The editor doesn't need an
+        # explicit defocus: focusing the chat makes it the NavWindow, so the editor's own
+        # is_window_focused reads False and it yields the caret.
         hovered = imgui.is_window_hovered(imgui.HoveredFlags_.child_windows)
         dragging = app.copilot_focused and imgui.is_mouse_down(imgui.MouseButton_.left)
         app.copilot_hovered = hovered or dragging
-        # No explicit editor-defocus here: when the chat becomes the focused top-level
-        # window imgui makes IT the NavWindow, so the editor's own is_window_focused
-        # reads False and it yields the caret on its own (the editor only re-grabs focus
-        # on an explicit one-shot, never unconditionally). Arming editor_defocus_requested
-        # per-frame would be fatal — code.py consumes it via set_window_focus(None), which
-        # clears the GLOBAL NavWindow and would steal the chat's own focus. The region
-        # outlines are suppressed while copilot_focused (ui.py / node_grid.py) so none lies.
-        # Esc-defocus (the one place we DO programmatically drop the chat's focus):
+        # Esc requests a programmatic defocus (set_window_focus(None)).
         if app.copilot_defocus_requested:
             imgui.set_window_focus(None)
             app.copilot_defocus_requested = False

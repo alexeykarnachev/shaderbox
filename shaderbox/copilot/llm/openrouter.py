@@ -14,8 +14,7 @@ _OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 class OpenRouterLLMClient(LLMClient):
     """OpenRouter via the `openai` SDK. Key + model are read LIVE through getters (NOT
-    captured) so a project switch that reloads IntegrationsStore is seen — see the 7b
-    lifecycle pin in skeleton 10 §4.
+    captured) so a project switch that reloads IntegrationsStore is seen.
 
     Egress is automatic (default dual-stack). A transparent IPv4 fallback for a
     dead-IPv6 route is an impl detail handled inside the client — never a user setting.

@@ -11,7 +11,7 @@ from shaderbox.copilot.state import ChatState
 from shaderbox.copilot.tools.registry import build_registry
 
 # The package composition root. App owns ONE of these (constructed before the first
-# _init, per the 7a lifecycle pin) and drives it: bridge.drain() + pump_events() per
+# _init, which calls release()) and drives it: bridge.drain() + pump_events() per
 # frame, enqueue_turn() on send, release() at shutdown. The worker thread is spawned
 # lazily on the first turn (don't start a thread for a user who never opens the chat).
 
@@ -55,9 +55,9 @@ class CopilotSession:
 
     def release(self) -> None:
         # MAIN THREAD, at shutdown — called at the TOP of App.release(), before the node
-        # release, so a queued GL op never runs against half-released nodes (7c pin).
-        # Safe when no worker was ever spawned (7a): cancel_all on an empty queue +
-        # join on a None thread are both no-ops.
+        # release, so a queued GL op never runs against half-released nodes. Safe when no
+        # worker was ever spawned: cancel_all on an empty queue + join on a None thread
+        # are both no-ops.
         self._cancel.set()
         self.bridge.cancel_all()
         if self._worker is not None and self._worker.is_alive():

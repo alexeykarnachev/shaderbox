@@ -48,8 +48,25 @@ Findings → fix inline OR file as a `todo.md` deferral with a trigger.
 For docs the work touched (or that describe the changed code): markdown links + `@file` refs resolve;
 nothing points at renamed/deleted files or skills. Sweep: `grep -rn` for the names of anything
 renamed/deleted across `CLAUDE.md` + `ai_docs/` + `.claude/`. The module map in
-`dev_flow.md ## Recipes` matches the actual module layout. Numbers too — a stale count looks
-authoritative (a doc says "5 uniform types"; you added one → "6", or drop the count).
+`dev_flow.md ## Recipes` matches the actual module layout.
+
+## 4.5. Drift-prone artifact sweep (this work + a quick scan of the docs it touched)
+
+Did the work introduce — or leave nearby — a **fragile artifact that rots on the next edit and forces
+a pointless re-sync**? Hunt the whole class in `todo.md` / specs / `conventions.md` / `roadmap.md`
+banner / code comments:
+- **Raw line numbers** — `file.py:NN`, "line 47", a line range. Replace with the **symbol**
+  (`App.save`, `mod.py::fn` — greppable, survives edits). (Banned by `conventions.md ## Code rules`.)
+- **File-length / live counts** — "`foo.py` (800 L)", "crosses ~900 L", "5 uniform types", "N tabs".
+  These are wrong the moment anyone touches the thing. Drop the number, or express a size/count
+  *trigger* as a qualitative condition ("when it grows a separable cluster", "when editing feels
+  unwieldy"). A current count that must update every edit is the smell.
+- **"as of" / per-turn state** that wasn't refreshed (the banner date vs `git log -1`).
+
+**EXEMPT — frozen historical evidence does NOT drift, leave it:** a completed refactor's before/after
+(`ui.py 1508 → 294`), "refactored X → Y", "feature N replaced Z", a dated decision record. These
+describe a past event that can't change, so the number is permanent, not live. The test: *will this
+number/ref be wrong after an unrelated edit next week?* Yes → fix it. No (it's history) → keep it.
 
 ## 5. `ai_docs/roadmap.md` — update the banner + rows
 
@@ -83,6 +100,7 @@ SANITIZE:
 | 2. conventions.md walk | <bullets confirmed; noise-audit findings or "walked, no drift"> |
 | 3. convention audit    | <invariants checked + findings, incl. comment-noise> |
 | 4. stale refs/docs     | <"clean" / fixed: ...> |
+| 4.5 drift-prone arts   | <line-nums/counts found+fixed, or "none"; frozen-history left as-is> |
 | 5. roadmap             | <banner rewritten? row added/flipped? / "no significant work"> |
 | 6. cold-context        | <ok / patched: ...> |
 | 7. tooling             | <nothing this session / suggested: ... / applied: ...> |

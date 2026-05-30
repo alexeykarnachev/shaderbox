@@ -25,24 +25,25 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-**As of 2026-05-29.**
+**As of 2026-05-30.**
 
-- **Shipped: `v0.12.1`** (feature 019). Live on itch.io (both channels); `dev` == `master`, nothing
-  unshipped.
-- **In flight: feature 020 — the built-in coding-copilot agent. SCAFFOLD LANDED (skeleton + seams);
-  capabilities deferred.** Research (7-agent swarm, 2-round review-converged) + the module skeleton +
-  the maintainer's decisions are in `ai_docs/features/020_copilot_agent/` (read `99_synthesis.md §0`
-  for the locked decisions, `10_skeleton_plan.md` for the structure). The `shaderbox/copilot/` package
-  now exists: the five seams (capabilities / `LLMClient` Protocol / worker→main `CopilotBridge` /
-  worker↔UI queues / chat `state`) + `App`/`ui.py`/`commands.py` wiring (the chat is a floating window,
-  not a tab — launched by an in-editor button + `Ctrl+J`,
-  `CopilotIntegration` in `IntegrationsStore`, `openai` dep for OpenRouter). All seam bodies that need an
-  LLM/tool catalog are `NotImplementedError` stubs marked for the next wave. `make check` + `make smoke`
-  green (200 frames; the bridge cancel-on-shutdown verified). Provider = **OpenRouter** (not Anthropic).
-- **NEXT ACTION:** the capability wave — fill the seams: the OpenRouter `stream()` body (report 09 §3),
-  the agent loop (`agent.py`), the tool catalog + the GL-touching capability closures, the prompt
-  content, the chat UI. Plus the standalone editor auto-flush hook (report 08). Brainstorm the tool
-  catalog first (deferred from this wave per `§0 #8`).
+- **Shipped: `v0.12.1`** (feature 019). Live on itch.io (both channels); `dev` == `master`,
+  unshipped commits on `dev` (the 020 scaffold + chat-UI wave).
+- **In flight: feature 020 — the built-in coding-copilot agent. SCAFFOLD + CHAT UI DONE; LLM
+  capabilities are the next wave.** Research (7-agent swarm, review-converged) + the module skeleton +
+  the maintainer's locked decisions are in `ai_docs/features/020_copilot_agent/` (read `99_synthesis.md
+  §0` for the decisions, `10_skeleton_plan.md` for the structure). Landed: the `shaderbox/copilot/`
+  package mirroring `exporters/` — the five seams (`capabilities` / `LLMClient` Protocol / worker→main
+  `CopilotBridge` / worker↔UI queues / chat `state`) + `App`/`ui.py` wiring; a floating chat window
+  with corner/strip/free layouts, launched from the editor bottom bar (a `toggle_button` + `Ctrl+J`),
+  two-axis open/focused state with the accent outline, no click-bleed/resize-select; `CopilotIntegration`
+  (OpenRouter key+model) in `IntegrationsStore`; active-tab + chat open/layout persisted. Every
+  LLM/tool/prompt body is a `NotImplementedError` stub for the next wave. Provider = **OpenRouter**.
+- **NEXT ACTION:** the capability wave — first BRAINSTORM the tool catalog (deferred per `§0 #8`), then
+  fill the seams: the OpenRouter `stream()` body, the agent loop (`agent.py`), the tools + their
+  GL-touching capability closures (incl. the still-stubbed `set_uniform_value` / `create_node` /
+  `edit_shader_source` verbs), the prompt content, the chat transcript UI. Also pending: the standalone
+  editor auto-flush hook (research report 08).
 - **No open BLOCKERs.** Two cosmetic nav tails parked in `todo.md` (nav-cursor resets to cell 0 after
   Enter; 2D grid arrow adjacency) — both trigger-gated.
 
