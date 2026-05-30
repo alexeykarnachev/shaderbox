@@ -48,13 +48,18 @@ def draw_node_preview_grid(app: App, width: float, height: float) -> None:
         window_flags=grid_flags,
     ):
         # active_region corrected from live focus (mouse clicks) except during a chord
-        # move; outline follows active_region. See the editor pane in ui.py.
+        # move, and except while the chat owns focus. See the editor pane in ui.py.
         if (
             imgui.is_window_focused(imgui.FocusedFlags_.child_windows)
             and not app.focus_move_in_flight()
+            and not app.copilot_focused
         ):
             app.active_region = ActiveRegion.GRID
-        if app.active_region == ActiveRegion.GRID and not app.any_popup_open():
+        if (
+            app.active_region == ActiveRegion.GRID
+            and not app.any_popup_open()
+            and not app.copilot_focused
+        ):
             active_region_outline()
         if imgui.button("New node"):
             app.open_node_creator()

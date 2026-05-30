@@ -198,6 +198,14 @@ class App:
         self.copilot_focus_pending: bool = False
         self.copilot_focused: bool = False
         self.copilot_defocus_requested: bool = False
+        # The editor child's screen rect (pos + size), captured inside the child each
+        # frame so the launcher + the chat window can anchor to the CODING AREA (not the
+        # whole glfw window). (x, y, w, h).
+        self.editor_rect: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
+        # Set when the mouse is over the in-editor launcher button: code.py neutralizes
+        # the editor's direct io.mouse_down read so the click can't bleed through to the
+        # editor (the TextEditor bypasses imgui hit-testing — same trick as the splitter).
+        self.launcher_hot: bool = False
 
         self.is_node_creator_open: bool = False
         self.is_settings_open: bool = False
