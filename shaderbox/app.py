@@ -126,11 +126,12 @@ class App:
         glfw.make_context_current(window)
 
         imgui.create_context()
-        # Persist window sizes/positions (the Settings modal, etc.) under the app
-        # data dir, not the launch CWD — the default writes a stray imgui.ini there.
-        ini_path: Path = app_data_dir() / "imgui.ini"
-        ini_path.parent.mkdir(parents=True, exist_ok=True)
-        imgui.get_io().set_ini_filename(str(ini_path))
+        # Persist window sizes/positions (the Settings modal, the FREE-mode copilot chat,
+        # etc.) under the app data dir, not the launch CWD — the default writes a stray
+        # imgui.ini there.
+        self._imgui_ini_path: Path = app_data_dir() / "imgui.ini"
+        self._imgui_ini_path.parent.mkdir(parents=True, exist_ok=True)
+        imgui.get_io().set_ini_filename(str(self._imgui_ini_path))
         # Steady caret, no blink — applies to imgui input fields and (if honored
         # by the binding) the TextEditor widget too.
         imgui.get_io().config_input_text_cursor_blink = False
@@ -1136,6 +1137,13 @@ class App:
 
         self.integrations_store.save()
         self.app_state.save(self.app_state_file_path)
+
+    def save_imgui_ini(self) -> None:
+        # Force-flush imgui's own layout file (FREE-mode chat size/pos, window positions,
+        # the settings-modal size). imgui otherwise only autosaves on a 5s timer when its
+        # settings go dirty — so a resize-then-quick-quit would be lost. Called at
+        # shutdown so the last layout always persists.
+        imgui.save_ini_settings_to_disk(str(self._imgui_ini_path))
 
     def release(self) -> None:
         # Copilot first: cancel_all() + join() before the node release below, so a

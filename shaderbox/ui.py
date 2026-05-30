@@ -72,6 +72,7 @@ def run(app: App) -> None:
             app.global_fps = 0.95 * app.global_fps + 0.05 * fps
 
     app.save()
+    app.save_imgui_ini()
     app.release()
 
 
