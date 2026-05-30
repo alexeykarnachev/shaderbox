@@ -10,6 +10,8 @@ from loguru import logger
 from OpenGL.GL import GL_SAMPLER_2D, GL_UNSIGNED_INT
 from pydantic import BaseModel, ValidationError, model_validator
 
+from shaderbox.commands import NodeTab
+from shaderbox.copilot.state import CopilotLayout
 from shaderbox.core import _NODE_SHADER_BASENAME, Node
 from shaderbox.media import MediaDetails, MediaWithTexture
 from shaderbox.theme import COLOR
@@ -182,6 +184,13 @@ class UIAppState(BaseModel):
 
     editor_split_fraction: float = 0.5
     editor_settings: EditorSettings = EditorSettings()
+
+    # Persisted UI layout prefs (the App holds the live copies; synced at load/save).
+    # NOT active_region / copilot_focused — those are transient-by-design (focus on
+    # launch is a separate UX decision; see todo.md feature-019 deferral).
+    active_node_tab: NodeTab = NodeTab.NODE
+    is_copilot_open: bool = False
+    copilot_layout: CopilotLayout = CopilotLayout.CORNER
 
     # Keyboard rebindings (feature 018): CommandId value -> chord int. Holds ONLY
     # bindings that differ from the spec default, so "absent = default" stays

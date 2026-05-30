@@ -799,6 +799,14 @@ class App:
         # Merge the project's key rebindings over the spec defaults (app_state was
         # just replaced, so the effective map must be recomputed per project).
         self._merge_effective_bindings()
+        # Restore the persisted layout prefs into the live working attrs (the App holds
+        # the live copies; save() mirrors them back). active_region stays transient.
+        self.active_node_tab = self.app_state.active_node_tab
+        self.is_copilot_open = self.app_state.is_copilot_open
+        self.copilot_layout = self.app_state.copilot_layout
+        # Drive imgui's tab bar to the restored tab on the first frame — set_selected
+        # only fires while this one-shot is set (else imgui defaults to the first tab).
+        self.node_tab_select_pending = True
 
         # ----------------------------------------------------------------
         # Wire exporter registry to project state: load global creds, set_integrations,
@@ -1120,6 +1128,11 @@ class App:
         telegram = self.exporter_registry.get("telegram")
         if isinstance(telegram, TelegramExporter):
             self.app_state.telegram_default_pack = telegram.current_default_pack()
+
+        # Mirror the live layout prefs back into app_state before writing.
+        self.app_state.active_node_tab = self.active_node_tab
+        self.app_state.is_copilot_open = self.is_copilot_open
+        self.app_state.copilot_layout = self.copilot_layout
 
         self.integrations_store.save()
         self.app_state.save(self.app_state_file_path)
