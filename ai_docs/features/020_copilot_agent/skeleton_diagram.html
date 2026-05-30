@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>020 Copilot — module skeleton</title>
+<style>
+  :root{
+    --bg:#1d2021; --panel:#282828; --panel2:#32302f; --line:#504945;
+    --fg:#ebdbb2; --dim:#a89984; --faint:#7c6f64;
+    --leaf:#83a598;     /* blue — leaf seams */
+    --logic:#b8bb26;    /* green — pure logic */
+    --root:#fabd2f;     /* yellow — composition roots */
+    --impl:#d3869b;     /* purple — provider impl / external */
+    --app:#fe8019;      /* orange — existing app, touched */
+    --ui:#8ec07c;       /* aqua — UI layer */
+    --later:#665c54;    /* the "filled later" wash */
+    --gl:#cc241d;       /* red — GL / main-thread only */
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font:13px/1.45 "SF Mono",ui-monospace,"Cascadia Code",Menlo,Consolas,monospace;padding:24px 28px 60px}
+  h1{font-size:18px;margin:0 0 2px;color:var(--root)}
+  h2{font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);
+     margin:30px 0 12px;border-bottom:1px solid var(--line);padding-bottom:5px;font-weight:600}
+  .sub{color:var(--faint);margin:0 0 6px;font-size:12px}
+  .wrap{max-width:1120px;margin:0 auto}
+  .legend{display:flex;flex-wrap:wrap;gap:8px 18px;margin:14px 0 4px;font-size:11.5px;color:var(--dim)}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .sw{width:11px;height:11px;border-radius:2px;display:inline-block}
+  .later-note{font-size:11px;color:var(--faint)}
+
+  /* thread columns */
+  .threads{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start}
+  .thread{border:1px solid var(--line);border-radius:8px;background:var(--panel);padding:14px 14px 16px}
+  .thread h3{margin:0 0 3px;font-size:13px}
+  .thread .tag{font-size:11px;color:var(--faint);margin-bottom:12px}
+  .main h3{color:var(--gl)} .worker h3{color:var(--leaf)}
+
+  .box{border:1px solid var(--line);border-radius:6px;background:var(--panel2);
+    padding:8px 10px;margin:7px 0;position:relative}
+  .box .nm{font-weight:600}
+  .box .ds{color:var(--dim);font-size:11.5px;margin-top:2px}
+  .box.leaf{border-left:3px solid var(--leaf)}
+  .box.logic{border-left:3px solid var(--logic)}
+  .box.root{border-left:3px solid var(--root)}
+  .box.impl{border-left:3px solid var(--impl)}
+  .box.app{border-left:3px solid var(--app)}
+  .box.ui{border-left:3px solid var(--ui)}
+  .box.gl{border-left:3px solid var(--gl)}
+  .box .pill{position:absolute;top:7px;right:8px;font-size:9.5px;letter-spacing:.04em;
+    padding:1px 6px;border-radius:9px;text-transform:uppercase;font-weight:600}
+  .pill.scaffold{background:#3c3836;color:var(--leaf);border:1px solid var(--leaf)}
+  .pill.later{background:transparent;color:var(--faint);border:1px solid var(--later)}
+  .box.dimmed{opacity:.62}
+  .grp{margin:4px 0 2px;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}
+
+  /* DAG */
+  .dag{border:1px solid var(--line);border-radius:8px;background:var(--panel);padding:16px 18px;margin-top:6px}
+  .tier{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin:0 0 6px}
+  .node{border:1px solid var(--line);border-radius:6px;padding:6px 11px;background:var(--panel2);font-size:12px}
+  .node small{color:var(--faint);font-size:10px;display:block}
+  .node.leaf{border-color:var(--leaf);color:var(--leaf)}
+  .node.logic{border-color:var(--logic);color:var(--logic)}
+  .node.root{border-color:var(--root);color:var(--root)}
+  .node.impl{border-color:var(--impl);color:var(--impl)}
+  .arrow{text-align:center;color:var(--faint);font-size:16px;margin:1px 0 4px}
+  .tierlabel{text-align:center;color:var(--faint);font-size:10.5px;letter-spacing:.06em;margin:10px 0 6px;text-transform:uppercase}
+  .rule{color:var(--dim);font-size:11.5px;margin:4px 0 0;padding-left:16px;text-indent:-12px}
+
+  /* seams table */
+  table{border-collapse:collapse;width:100%;margin-top:4px;font-size:12px}
+  th,td{border:1px solid var(--line);padding:7px 9px;text-align:left;vertical-align:top}
+  th{background:var(--panel2);color:var(--dim);font-weight:600;letter-spacing:.03em}
+  td .s{color:var(--leaf);font-weight:600}
+  td code{color:var(--root);font-size:11.5px}
+
+  .flow{border:1px dashed var(--line);border-radius:8px;padding:13px 16px;margin-top:6px;background:var(--panel);
+    color:var(--dim);font-size:12px}
+  .flow b{color:var(--fg)}
+  .flow .ar{color:var(--leaf)}
+  .foot{color:var(--faint);font-size:11px;margin-top:26px;border-top:1px solid var(--line);padding-top:12px}
+  code{background:#3c3836;padding:1px 4px;border-radius:3px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>020 Copilot — module skeleton &amp; seams</h1>
+  <p class="sub">Visual estimate of the structure to scaffold. <b>This wave = scaffold + wire the seams; NO capabilities.</b>
+     Boxes marked <span style="color:var(--leaf)">SCAFFOLD</span> get a real (possibly stub) shape now;
+     <span style="color:var(--faint)">LATER</span> boxes are created empty/stubbed and filled in the capability waves.</p>
+
+  <div class="legend">
+    <span><i class="sw" style="background:var(--leaf)"></i>leaf seam (no copilot/app import)</span>
+    <span><i class="sw" style="background:var(--logic)"></i>pure logic</span>
+    <span><i class="sw" style="background:var(--impl)"></i>provider impl / external</span>
+    <span><i class="sw" style="background:var(--root)"></i>composition root</span>
+    <span><i class="sw" style="background:var(--app)"></i>existing app (touched)</span>
+    <span><i class="sw" style="background:var(--ui)"></i>UI layer</span>
+    <span><i class="sw" style="background:var(--gl)"></i>GL / main-thread only</span>
+  </div>
+
+  <!-- ============================ THREADS ============================ -->
+  <h2>Two threads, one package</h2>
+  <p class="sub">The copilot is its own package mirroring <code>exporters/</code>. <code>App</code> owns a handle + drains per frame.
+     GL lives on the main thread; the worker never touches moderngl/imgui — it reaches GL only through the bridge.</p>
+
+  <div class="threads">
+
+    <!-- MAIN -->
+    <div class="thread main">
+      <h3>▣ MAIN THREAD</h3>
+      <div class="tag">GL + imgui + the glfw frame loop</div>
+
+      <div class="grp">app.py (App) — existing, +wiring only</div>
+      <div class="box app"><span class="pill scaffold">scaffold</span>
+        <div class="nm">App.__init__</div>
+        <div class="ds">owns <code>self.copilot</code> (the session); builds <code>CopilotCapabilities</code> via
+          <code>_build_copilot_capabilities()</code> (parallel to <code>_build_command_callbacks</code>); owns the bridge.</div></div>
+      <div class="box app"><span class="pill scaffold">scaffold</span>
+        <div class="nm">_build_copilot_capabilities()</div>
+        <div class="ds">GL-free callables → adapter methods on App; GL-touching → <code>bridge.run_on_main(…)</code>.
+          App supplies the GL closures; tool layer never sees App/moderngl.</div></div>
+      <div class="box app"><span class="pill scaffold">scaffold</span>
+        <div class="nm">App.release / _init</div>
+        <div class="ds"><code>copilot.release()</code> (cancel_all → join). project switch resets the conversation.</div></div>
+
+      <div class="grp">ui.py::update_and_draw — +2 calls</div>
+      <div class="box gl"><span class="pill scaffold">scaffold</span>
+        <div class="nm">bridge.drain()</div>
+        <div class="ds">EARLY (pre-render): run queued GL ops, set their events. Wrapped in try/except (can't crash the frame).</div></div>
+      <div class="box gl"><span class="pill scaffold">scaffold</span>
+        <div class="nm">copilot.pump_events()</div>
+        <div class="ds">drain the worker→UI event queue into <code>state</code>. No GL.</div></div>
+
+      <div class="grp">UI layer</div>
+      <div class="box ui"><span class="pill scaffold">scaffold</span>
+        <div class="nm">tabs/copilot.py · draw(app)</div>
+        <div class="ds">the 4th tab. Reads <code>app.copilot.state</code> and renders it (dumb). Transcript + input +
+          in-flight/stop + pending-action gate. <span class="later-note">(real widget polish = later)</span></div></div>
+      <div class="box app dimmed"><span class="pill later">later</span>
+        <div class="nm">commands.py · NodeTab.COPILOT + FOCUS_TAB_COPILOT (Ctrl+4)</div>
+        <div class="ds">a tab in the PANEL region, not a 4th nav region. Cheatsheet picks it up automatically.</div></div>
+
+      <div class="grp">editor auto-flush (separate near-term change, report 08)</div>
+      <div class="box app"><span class="pill scaffold">scaffold</span>
+        <div class="nm">focus-falling-edge → flush_session(path)</div>
+        <div class="ds">generalized hook around <code>tabs/code.py:226</code>. Ships independently; hands the copilot a
+          clean editor (dissolves the dirty-edit clobber for the common case).</div></div>
+    </div>
+
+    <!-- WORKER -->
+    <div class="thread worker">
+      <h3>▤ WORKER THREAD</h3>
+      <div class="tag">no moderngl, no imgui — the copilot/ package</div>
+
+      <div class="grp">composition roots</div>
+      <div class="box root"><span class="pill scaffold">scaffold</span>
+        <div class="nm">session.py — package root / lifecycle</div>
+        <div class="ds">owns the worker Thread, the 2 queues, the bridge, the LLMClient, the chat state.
+          start/stop/release; enqueue a turn; pump_events. App talks to THIS.</div></div>
+      <div class="box root"><span class="pill scaffold">scaffold</span>
+        <div class="nm">agent.py — the loop / LLM-layer root</div>
+        <div class="ds">stream → tool_calls → execute → repeat. Usage rollup, max-iter + budget guards,
+          arg parse/repair, the pending-action pause. <span class="later-note">(loop body stubbed until tools exist)</span></div></div>
+
+      <div class="grp">pure logic</div>
+      <div class="box logic dimmed"><span class="pill later">later</span>
+        <div class="nm">prompt.py</div>
+        <div class="ds">(system text, context, history) → list[LLMMessage]. Knows nothing of tools/client.
+          <span class="later-note">scaffold the fn; content = later.</span></div></div>
+      <div class="box logic dimmed"><span class="pill later">later</span>
+        <div class="nm">context.py</div>
+        <div class="ds">per-turn app-state snapshot from GL-free reads via capabilities.
+          <span class="later-note">scaffold the type; fields = later.</span></div></div>
+
+      <div class="grp">tools/ (sub-package)</div>
+      <div class="box logic"><span class="pill scaffold">scaffold</span>
+        <div class="nm">tools/registry.py</div>
+        <div class="ds">ToolDefinition + ToolRegistry + execute() (validate→dispatch→generic-catch).
+          <code>build_registry(caps)</code>. The <b>shape</b> now, empty catalog.</div></div>
+      <div class="box logic dimmed"><span class="pill later">later</span>
+        <div class="nm">tools/&lt;domain&gt;.py …</div>
+        <div class="ds">the actual tool catalog. <span class="later-note">the capability brainstorm — not this wave.</span></div></div>
+
+      <div class="grp">llm/ (sub-package)</div>
+      <div class="box leaf"><span class="pill scaffold">scaffold</span>
+        <div class="nm">llm/api.py — SEAM B</div>
+        <div class="ds">frozen dataclasses (LLMMessage, LLMToolSpec[parameters], LLMToolCall[raw args],
+          LLMUsage[cost], stream-event union) + the LLMClient Protocol + typed errors. pydantic+stdlib only.</div></div>
+      <div class="box impl"><span class="pill scaffold">scaffold</span>
+        <div class="nm">llm/openrouter.py — the impl</div>
+        <div class="ds">openai-SDK→OpenRouter. Wire translate, stream-event accumulation, usage extraction,
+          IPv4-pin <i>opt-in</i> (default dual-stack). Reads key+model from IntegrationsStore.</div></div>
+    </div>
+  </div>
+
+  <!-- shared leaves spanning both -->
+  <h2>Shared leaf seams (imported by both threads' code; depend on nothing in copilot)</h2>
+  <div class="threads" style="grid-template-columns:repeat(4,1fr)">
+    <div class="box leaf"><span class="pill scaffold">scaffold</span>
+      <div class="nm">capabilities.py · SEAM A</div>
+      <div class="ds">frozen dataclass of bound callables App implements. GL-free half + GL-touching half.
+        <b>The only app surface tools see.</b> No imgui/App import → breaks the cycle.</div></div>
+    <div class="box leaf"><span class="pill scaffold">scaffold</span>
+      <div class="nm">bridge.py · SEAM C</div>
+      <div class="ds">MainThreadOp + CopilotBridge. <code>run_on_main(fn)</code> blocks the worker; <code>drain()</code>
+        runs on main; <code>cancel_all()</code> = deadlock-breaker. stdlib only.</div></div>
+    <div class="box leaf"><span class="pill scaffold">scaffold</span>
+      <div class="nm">state.py · SEAM E</div>
+      <div class="ds">transcript model + render-state the UI reads (messages, streaming buffer,
+        TurnUsage/SessionUsage, in-flight, pending-action). Plain dataclasses.</div></div>
+    <div class="box leaf"><span class="pill scaffold">scaffold</span>
+      <div class="nm">config.py · errors.py</div>
+      <div class="ds">frozen CopilotConfig (max-iter, budget, timeouts) + typed copilot errors. Constants/leaf.</div></div>
+  </div>
+
+  <!-- ============================ DAG ============================ -->
+  <h2>Import DAG — strict, acyclic, leaf-first</h2>
+  <p class="sub">No <code>if TYPE_CHECKING</code> (a cycle is a design bug). Leaves are the shared vocabulary; nothing imports sideways.</p>
+  <div class="dag">
+    <div class="tierlabel">leaves — import nothing from copilot / app / imgui / moderngl</div>
+    <div class="tier">
+      <div class="node leaf">capabilities<small>SEAM A</small></div>
+      <div class="node leaf">bridge<small>SEAM C</small></div>
+      <div class="node leaf">errors</div>
+      <div class="node leaf">config</div>
+      <div class="node leaf">llm/api<small>SEAM B</small></div>
+    </div>
+    <div class="arrow">▲ imported by ▲</div>
+    <div class="tierlabel">mid — depend only on leaves, never on each other</div>
+    <div class="tier">
+      <div class="node logic">state<small>SEAM E</small></div>
+      <div class="node logic">context</div>
+      <div class="node logic">prompt</div>
+      <div class="node logic">tools/registry</div>
+      <div class="node impl">llm/openrouter</div>
+    </div>
+    <div class="arrow">▲</div>
+    <div class="tierlabel">roots</div>
+    <div class="tier">
+      <div class="node root">agent<small>loop / LLM-layer root</small></div>
+    </div>
+    <div class="arrow">▲</div>
+    <div class="tier">
+      <div class="node root">session<small>package root — App talks to this</small></div>
+    </div>
+    <div class="arrow">▲</div>
+    <div class="tier">
+      <div class="node impl" style="border-color:var(--app);color:var(--app)">app.py (App)<small>outer root: owns session, builds capabilities, drains per frame</small></div>
+    </div>
+
+    <p class="rule">• <b>capabilities</b> imports nothing → App implements it → edge is <code>app → copilot</code>, never reverse (the cycle-break).</p>
+    <p class="rule">• <b>llm/api</b> imports no SDK → the <code>openai</code> SDK stays inside <code>openrouter.py</code>; the seam is provider-neutral &amp; fake-able for tests.</p>
+    <p class="rule">• <b>prompt ⊥ tools ⊥ openrouter ⊥ context ⊥ state</b> — share only leaves; agent is the only module that knows several.</p>
+    <p class="rule">• <b>tools imports capabilities, never App</b> — else <code>app → copilot → app</code> would cycle.</p>
+  </div>
+
+  <!-- ============================ SEAMS ============================ -->
+  <h2>The five seams</h2>
+  <table>
+    <tr><th>Seam</th><th>Module</th><th>Boundary it draws</th><th>Shape</th></tr>
+    <tr><td><span class="s">A</span></td><td><code>capabilities.py</code></td>
+      <td>App ↔ tool layer</td>
+      <td>frozen dataclass of bound callables (GL-free + GL-touching halves). Built by App; imported by tools. The cycle-break.</td></tr>
+    <tr><td><span class="s">B</span></td><td><code>llm/api.py</code></td>
+      <td>agent ↔ LLM provider</td>
+      <td>sync <code>LLMClient</code> Protocol (<code>stream</code> / <code>complete_text</code> / <code>complete_structured</code>) + neutral dataclasses. SDK hidden in the impl.</td></tr>
+    <tr><td><span class="s">C</span></td><td><code>bridge.py</code></td>
+      <td>worker → main (GL)</td>
+      <td><code>run_on_main(fn)</code> blocks the worker; <code>drain()</code> on main runs it; <code>cancel_all()</code> on teardown. The one new mechanism.</td></tr>
+    <tr><td><span class="s">D</span></td><td>2× <code>queue.Queue</code> (in <code>session.py</code>)</td>
+      <td>worker ↔ UI (async)</td>
+      <td>request queue (UI→worker, blocking drain) + event queue (worker→UI, non-blocking pump per frame). Exporter pattern.</td></tr>
+    <tr><td><span class="s">E</span></td><td><code>state.py</code></td>
+      <td>UI ↔ everything else</td>
+      <td>plain-dataclass transcript + render-state. UI reads it (dumb); <code>pump_events</code> mutates it. Keeps imgui off the worker.</td></tr>
+  </table>
+
+  <!-- ============================ FLOWS ============================ -->
+  <h2>The two cross-thread flows (what the seams carry)</h2>
+  <div class="flow">
+    <b>GL op (Seam C):</b> worker tool needs GL
+    <span class="ar">→</span> <code>bridge.run_on_main(fn)</code> (worker blocks)
+    <span class="ar">→</span> main-thread <code>drain()</code> runs <code>fn</code> with live GL, sets event
+    <span class="ar">→</span> worker unblocks with the result. Teardown: <code>cancel_all()</code> before <code>join()</code> releases any blocked worker.
+  </div>
+  <div class="flow">
+    <b>Turn + streaming + action-required (Seams D/E):</b> UI enqueues a user turn (request queue)
+    <span class="ar">→</span> worker runs <code>agent</code> loop, pushes events (token deltas, tool-status, <b>pending-action</b>) to the event queue
+    <span class="ar">→</span> main-thread <code>pump_events()</code> folds them into <code>state</code>
+    <span class="ar">→</span> the tab draws <code>state</code>. On a <b>pending-action</b>: the loop blocks on the request queue until the UI enqueues the user's answer — same two-queue seam, no new mechanism.
+  </div>
+
+  <div class="foot">
+    Source: <code>10_skeleton_plan.md</code> (+ reports 01/02/05/08/09, synthesis §0). This wave scaffolds the
+    <span style="color:var(--leaf)">SCAFFOLD</span> boxes + all five seams + the App/ui.py wiring; the
+    <span style="color:var(--faint)">LATER</span> boxes are created as stubs and filled in the capability waves.
+    Nothing here is novel — it mirrors <code>exporters/</code> (own package + worker + queues, App holds a handle) and the
+    <code>commands.py</code> leaf-callable trick (the cycle-break).
+  </div>
+
+</div>
+</body>
+</html>

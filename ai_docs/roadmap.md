@@ -27,19 +27,20 @@ feature; brief points at the superseder).
 
 **As of 2026-05-29.**
 
-- **Shipped: `v0.12.1`** (feature 019 — the keyboard navigation layer + nav/color polish, plus a
-  patch wave of post-ship fixes). Live on itch.io (both channels); `dev` == `master`, nothing unshipped.
-- 019 landed: app-wide `nav_enable_keyboard` + a two-level focus model — `Ctrl+Tab` cycles 3 regions
-  (editor / node-grid / settings-panel, region-confined via `no_nav_inputs`; active region shown by an
-  accent outline driven off live focus), `Ctrl+1/2/3` jump the inner Node/Render/Share tab; a
-  selection-vs-accent color split (`COLOR.SELECT` = fixed purple) + theme-portability invariant; Esc
-  swallowed at the glfw layer unless it has a job; `nav_flattened` uniforms; launch lands on the grid.
-  v0.12.1 patch fixes: active-region outline no longer leaks over modals; region-cycle moved to
-  `Ctrl+Tab` (freed by `no_nav_focus`); modals center + emoji picker enlarged; splitter drag no longer
-  selects editor text. Full story: `ai_docs/features/019_keyboard_navigation.md`.
-- **NEXT ACTION:** none queued — pick from `todo.md` triggers or a fresh ask. The teed-up next feature
-  is the **built-in coding-copilot agent** (`todo.md [DEFERRAL]`; the 018 registry's id->callback
-  surface is agent-friendly).
+- **Shipped: `v0.12.1`** (feature 019). Live on itch.io (both channels); `dev` == `master`, nothing
+  unshipped.
+- **In flight: feature 020 — the built-in coding-copilot agent. RESEARCH PHASE DONE; awaiting scope
+  sign-off, NOT yet specced/built.** A deep audit + 7-agent research swarm landed in
+  `ai_docs/features/020_copilot_agent/` (read `99_synthesis.md` first, then `README.md` for the order).
+  Conclusions: build it *phased*; the architecture reuses the exporters' worker-thread contract (the
+  one new piece is a synchronous worker→main `MainThreadBridge` for GL ops); refactor-prep is tiny
+  (one doc — done — + one ~15-line `App.set_uniform_value`/`create_node(template_id)` extraction);
+  **app.py does NOT need splitting**; the differentiator is the in-process compile-feedback loop. LLM =
+  Anthropic SDK behind an `ILLMClient` seam; chat = a 4th `Copilot` tab; key in `IntegrationsStore`.
+- **NEXT ACTION:** maintainer answers the 9 open questions in `99_synthesis.md §7` (headline: is
+  shipping read-only "explain my shader" (Phase 2) a real checkpoint?), then draft the locked spec
+  `020_copilot_agent.md` from the synthesis + plan-lock. Optional pre-feature: the green
+  uniform-setter prep commit (`99_synthesis.md §3`).
 - **No open BLOCKERs.** Two cosmetic nav tails parked in `todo.md` (nav-cursor resets to cell 0 after
   Enter; 2D grid arrow adjacency) — both trigger-gated.
 
@@ -47,6 +48,7 @@ feature; brief points at the superseder).
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 020 | copilot_agent | pending | In-app coding-copilot agent (LLM chat that edits shaders / sets uniforms / manages the lib via tools). Research phase done — deep audit + 7-agent swarm in `ai_docs/features/020_copilot_agent/` (read `99_synthesis.md`); awaiting scope sign-off + a locked spec. Consensus: phased build reusing the exporters' worker-thread contract + a new synchronous `MainThreadBridge` for GL ops; tiny refactor-prep (a uniform-setter extraction); Anthropic SDK behind an `ILLMClient` seam; a 4th `Copilot` tab; the in-process compile-feedback loop is the differentiator. Spec: `ai_docs/features/020_copilot_agent/` (research; locked spec pending). |
 | 019 | keyboard_navigation | done | The focus/nav layer (018's deferred half): app-wide `nav_enable_keyboard` + a two-level focus model — `Ctrl+`` ` `` cycles 3 regions (editor/grid/panel, region-confined via `no_nav_inputs`, active region shown by a live-focus accent outline), `Ctrl+1/2/3` jump the inner Node/Render/Share tab; editor is a permanent focus-stop; grid cells are nav-reachable `selectable`s; 018 bare-arrow node-prev/next removed. The polish wave added a selection-vs-accent color split (fixed `COLOR.SELECT`) + a theme-portability invariant, Ctrl+Tab suppression, glfw-layer Esc swallowing, `nav_flattened` uniforms. Maintainer-verified. Spec: `ai_docs/features/019_keyboard_navigation.md`. |
 | 018 | keyboard_control | done | The command layer: a central `commands.py` registry drives rebindable chord shortcuts + an opt-out cheatsheet overlay + an `imgui_command_palette` (Ctrl+Shift+P); dispatch split pre-frame/in-frame; rebindings persist diff-from-default on `UIAppState`. The focus/navigation layer (nav widget-traversal + tab-cycling) was split out to a `todo.md` deferral. Spec: `ai_docs/features/018_keyboard_control.md`. |
 | 017 | structure_reorg | done | Domain-separation refactoring wave (no behavior change): `lib_*`→`shader_lib/` package + total rename, shader_lib split into index/resolver/parser, `lib_picker`→package, `util.py`→`shader_errors.py`+`editor_types.py`, `ui_models` de-tangled from UI, exporters/ tidy, App shader-lib CRUD→`ShaderLibFileManager`. `ui/`+`render/` packages rejected. Spec: `ai_docs/features/017_structure_reorg.md`. |
