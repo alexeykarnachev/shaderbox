@@ -78,36 +78,28 @@ def _draw_error_strip(
     imgui.pop_style_color(1)
 
 
-def draw(app: App) -> None:
-    app.code_hovered_uniform = ""
+def draw_chrome(app: App) -> None:
+    # The editor's status chrome — file path (copyable) + dirty/compiled state + Open
+    # dir + back-to-node / back-to-lib links. Lives in the copilot bar (ui.py) so it
+    # shares the row with the Copilot CTA, not stacked above the editor body.
     if not (ui_node := app.ui_nodes.get(app.current_node_id)):
-        glfw.set_cursor(app.window, None)
-        app.editor_focused = False
         imgui.text_colored(COLOR.FG_DIM, "No node selected")
         return
-
-    # Decide which file the editor is showing — the node's shader OR (when the
-    # user opened a lib file from the picker) a lib file. Lib mode draws a
-    # different header chrome but the editor body is identical.
     current_path = app.current_editor_path
     if current_path is None:
-        glfw.set_cursor(app.window, None)
-        app.editor_focused = False
         imgui.text_colored(COLOR.FG_DIM, "No file open")
         return
     is_lib = current_path != ui_node.node.source.path
 
     if is_lib:
-        # Header for lib mode: file path + a "back to node" link.
+        # Lib mode: file name + a "back to node" link.
         imgui.text_colored(COLOR.FG_DIM, str(current_path.name))
         imgui.same_line(spacing=float(SPACE.LG))
         if imgui.button("< back to node", size=(SIZE.BTN_SM_W * 1.5, 0)):
             app.show_node_editor()
     else:
-        # Header for node mode: full path + dirty/compiled status + Open dir +
-        # optional "back to lib" shortcut to return to the most recently viewed
-        # lib file (useful when iterating on a function in a lib + testing it
-        # in a node).
+        # Node mode: full path + dirty/compiled status + Open dir + optional "back to
+        # lib" shortcut to the most recently viewed lib file.
         full_file_path = ui_node.node.source.path
         local_file_path = full_file_path.relative_to(app.project_dir)
         if draw_copyable_text(str(local_file_path), copy_value=str(full_file_path)):
@@ -129,7 +121,23 @@ def draw(app: App) -> None:
             ):
                 app.open_shader_lib_file(app.last_shader_lib_path)
 
-    imgui.spacing()
+
+def draw(app: App) -> None:
+    app.code_hovered_uniform = ""
+    if not (ui_node := app.ui_nodes.get(app.current_node_id)):
+        glfw.set_cursor(app.window, None)
+        app.editor_focused = False
+        return
+
+    # Decide which file the editor is showing — the node's shader OR (when the
+    # user opened a lib file from the picker) a lib file. The status chrome moved to
+    # the copilot bar (draw_chrome); the editor body is identical for both.
+    current_path = app.current_editor_path
+    if current_path is None:
+        glfw.set_cursor(app.window, None)
+        app.editor_focused = False
+        return
+    is_lib = current_path != ui_node.node.source.path
 
     # The editor's render() FPEs while a popup is open (conventions.md ## Known quirks),
     # so it's simply not drawn then — it reappears when the popup closes.

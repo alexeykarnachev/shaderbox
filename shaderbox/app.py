@@ -472,14 +472,25 @@ class App:
         self.app_state.show_cheatsheet = not self.app_state.show_cheatsheet
 
     def toggle_copilot(self) -> None:
-        # Ctrl+J: closed -> open + focus; open & focused -> close; open & unfocused ->
-        # focus it. Opening/focusing also drops the editor caret so the chat owns keys.
+        # Ctrl+J (keyboard): closed -> open + focus; open & focused -> close; open &
+        # unfocused -> focus it. The focus-aware branch only works from the keyboard,
+        # where focus is still in the chat. (The BAR BUTTON uses toggle_copilot_open
+        # instead — a click moves focus to the bar, so copilot_focused already reads
+        # False here and this would wrongly re-open. See toggle_copilot_open.)
         if not self.is_copilot_open:
             self.is_copilot_open = True
             self.focus_copilot()
         elif self.copilot_focused:
             self.is_copilot_open = False
         else:
+            self.focus_copilot()
+
+    def toggle_copilot_open(self) -> None:
+        # The bar button: a plain open/close toggle on is_copilot_open. NOT focus-aware
+        # (a click on the button already moved focus off the chat, so the focus-aware
+        # toggle_copilot would blink it back open).
+        self.is_copilot_open = not self.is_copilot_open
+        if self.is_copilot_open:
             self.focus_copilot()
 
     def focus_copilot(self) -> None:

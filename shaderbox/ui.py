@@ -24,7 +24,7 @@ from shaderbox.tabs import render as render_tab
 from shaderbox.tabs import share as share_tab
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_models import UINode
-from shaderbox.ui_primitives import active_region_outline, fps_overlay, ghost_button
+from shaderbox.ui_primitives import active_region_outline, fps_overlay, primary_button
 from shaderbox.util import adjust_size
 from shaderbox.widgets import cheatsheet, copilot_chat
 from shaderbox.widgets.node_grid import draw_node_preview_grid
@@ -398,18 +398,23 @@ def _draw_menu_bar(app: App) -> None:
 
 
 def _draw_copilot_bar(app: App, width: float) -> None:
-    # A fixed bar at the bottom of the editor column holding the Copilot launcher. The
-    # bar is its OWN region (sibling of the editor child, not an overlay), so the button
-    # is always visible + clickable and the floating chat anchors ABOVE it without ever
-    # covering it. The button toggles the chat (Ctrl+J equivalent).
+    # A fixed bar at the bottom of the editor column. It holds the editor's status chrome
+    # (file path, dirty/compiled state, Open dir, back links — code_tab.draw_chrome) on
+    # the left and the Copilot CTA on the right. The bar is its OWN region (sibling of the
+    # editor child, not an overlay), so the button is always visible + clickable and the
+    # floating chat anchors ABOVE it without ever covering it.
     with imgui_ctx.begin_child(
         "copilot_bar",
         size=imgui.ImVec2(width, _COPILOT_BAR_H),
         window_flags=imgui.WindowFlags_.no_nav_inputs,
     ):
+        code_tab.draw_chrome(app)
+        # Right-align the Copilot CTA on the same row.
         label = "Copilot" if not app.is_copilot_open else "Hide Copilot"
-        if ghost_button(label):
-            app.toggle_copilot()
+        btn_w = imgui.calc_text_size(label).x + 2.0 * float(SPACE.MD)
+        imgui.same_line(width - btn_w - float(SPACE.MD))
+        if primary_button(label):
+            app.toggle_copilot_open()
 
 
 def _draw_splitter(app: App, total_width: float, height: float) -> None:
