@@ -48,10 +48,12 @@ def _ellipsize(text: str, max_width: float) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Button system — four tiers. Pick by the action's role, never by how it looks:
+# Button system — pick by the action's role, never by how it looks:
 #   primary_button — the ONE call-to-action of a section (filled accent).
 #   button         — an ordinary action (filled neutral grey, the imgui default).
 #   ghost_button   — low-emphasis / secondary (text only, transparent).
+#   toggle_button  — a stateful on/off control: filled accent when active, bordered
+#                    ghost when off (same label both states).
 #   danger_button  — destructive (text only, red); confirm chrome carries the weight.
 # ---------------------------------------------------------------------------
 
@@ -77,6 +79,23 @@ def ghost_button(label: str, width: float = 0.0) -> bool:
     imgui.push_style_color(imgui.Col_.text, COLOR.FG_SECONDARY)
     clicked: bool = imgui.button(label, size=(width, 0.0))
     imgui.pop_style_color(4)
+    return clicked
+
+
+def toggle_button(label: str, active: bool, width: float = 0.0) -> bool:
+    """A stateful on/off button: filled accent when `active` (like `primary_button`),
+    a bordered ghost when off. Same label both states — the style carries the state."""
+    if active:
+        return primary_button(label, width)
+    imgui.push_style_color(imgui.Col_.button, COLOR.TRANSPARENT)
+    imgui.push_style_color(imgui.Col_.button_hovered, COLOR.BG_FRAME)
+    imgui.push_style_color(imgui.Col_.button_active, COLOR.BORDER)
+    imgui.push_style_color(imgui.Col_.text, COLOR.FG_SECONDARY)
+    imgui.push_style_color(imgui.Col_.border, COLOR.BORDER)
+    imgui.push_style_var(imgui.StyleVar_.frame_border_size, 1.0)
+    clicked: bool = imgui.button(label, size=(width, 0.0))
+    imgui.pop_style_var()
+    imgui.pop_style_color(5)
     return clicked
 
 

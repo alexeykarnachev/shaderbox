@@ -73,9 +73,16 @@ def draw(app: App) -> None:
         # until copilot_focused makes it robust (settles in 1-2 frames).
         if app.copilot_focus_pending and app.copilot_focused:
             app.copilot_focus_pending = False
-        # Mouse over the chat -> neutralize the editor's direct-mouse read (code.py) so a
-        # drag inside the chat can't select editor text beneath it.
-        app.copilot_hovered = imgui.is_window_hovered(imgui.HoveredFlags_.child_windows)
+        # Neutralize the editor's direct-mouse read (code.py) while the mouse is over the
+        # chat OR while the chat is being dragged/resized — a resize grabs the window
+        # border and the drag moves the cursor OUTSIDE the window, so is_window_hovered
+        # alone misses it (the editor would then select text under the moving cursor).
+        # "focused + left button held" covers the move/resize drag (it keeps the chat
+        # focused); a plain editor click leaves the chat unfocused, so the editor still
+        # selects normally.
+        hovered = imgui.is_window_hovered(imgui.HoveredFlags_.child_windows)
+        dragging = app.copilot_focused and imgui.is_mouse_down(imgui.MouseButton_.left)
+        app.copilot_hovered = hovered or dragging
         # No explicit editor-defocus here: when the chat becomes the focused top-level
         # window imgui makes IT the NavWindow, so the editor's own is_window_focused
         # reads False and it yields the caret on its own (the editor only re-grabs focus

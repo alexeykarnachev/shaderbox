@@ -52,13 +52,14 @@ shouting equally. Mature button guidance (Carbon, etc.): in a layout with >3 act
 primary is filled; the rest are low-emphasis. Encode this as a **named tier set in one utils module**
 and forbid hand-rolling `push_style_color(Col_.button, …)` at call sites.
 
-Four tiers, chosen by the action's *role*:
+Tiers, chosen by the action's *role*:
 
 | Tier | Look | When |
 |---|---|---|
 | `primary_button` | filled accent, contrasting text | the ONE call-to-action of a section (e.g. "Add", "Create") |
 | `button` | filled neutral grey (imgui default) | an ordinary, repeatable action (e.g. "Render") |
 | `ghost_button` | transparent fill, secondary-colour text | low-emphasis / secondary ("New", "Cancel", "Re-render") |
+| `toggle_button(label, active)` | filled accent when `active`, bordered ghost when off | a stateful on/off control — SAME label both states, the style carries the state (don't switch the label, e.g. not "Copilot"/"Hide Copilot") |
 | `danger_button` | transparent fill, error-colour text | destructive ("Delete") — prominence comes from a confirm step, NOT a filled-red fill |
 
 Each is a 3-line wrapper: push 3-4 `Col_` slots, call `imgui.button(label, size=(width, 0.0))`, pop.

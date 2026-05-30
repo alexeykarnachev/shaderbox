@@ -499,8 +499,12 @@ class App:
             self.focus_copilot()
 
     def focus_copilot(self) -> None:
+        # Only arm the chat's focus latch. Do NOT set editor_defocus_requested: the editor
+        # yields on its own when the chat becomes the focused window (its is_window_focused
+        # reads False; the TextEditor auto-grab is first-render-only). editor_defocus_requested
+        # is consumed by code.py via set_window_focus(None) — a GLOBAL NavWindow clear that
+        # fires a frame later and would steal the chat's just-acquired focus (the blink).
         self.copilot_focus_pending = True
-        self.editor_defocus_requested = True
 
     def cycle_region(self) -> None:
         idx = _REGION_CYCLE.index(self.active_region)

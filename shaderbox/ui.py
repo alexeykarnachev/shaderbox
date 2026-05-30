@@ -24,7 +24,7 @@ from shaderbox.tabs import render as render_tab
 from shaderbox.tabs import share as share_tab
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_models import UINode
-from shaderbox.ui_primitives import active_region_outline, fps_overlay, primary_button
+from shaderbox.ui_primitives import active_region_outline, fps_overlay, toggle_button
 from shaderbox.util import adjust_size
 from shaderbox.widgets import cheatsheet, copilot_chat
 from shaderbox.widgets.node_grid import draw_node_preview_grid
@@ -414,11 +414,12 @@ def _draw_copilot_bar(app: App, width: float) -> None:
         window_flags=imgui.WindowFlags_.no_nav_inputs,
     ):
         code_tab.draw_chrome(app)
-        # Right-align the Copilot CTA on the same row.
-        label = "Copilot" if not app.is_copilot_open else "Hide Copilot"
+        # Right-align the Copilot toggle on the same row — same label both states; the
+        # style carries the state (filled accent when open, bordered ghost when closed).
+        label = "Copilot"
         btn_w = imgui.calc_text_size(label).x + 2.0 * float(SPACE.MD)
         imgui.same_line(width - btn_w - float(SPACE.MD))
-        if primary_button(label):
+        if toggle_button(label, active=app.is_copilot_open):
             app.toggle_copilot_open()
 
 
