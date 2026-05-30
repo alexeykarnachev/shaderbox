@@ -155,7 +155,7 @@ and it falls out of machinery that already exists.
 
 **Error-string rendering for the LLM.** Build a compact, line-anchored block, one error per line:
 ```
-shader.frag.glsl:20  syntax error, unexpected '}' 
+shader.frag.glsl:20  syntax error, unexpected '}'
 shader.frag.glsl:23  'u_colour' : undeclared identifier
 lib/noise.glsl:41    'p' : redefinition
 ```

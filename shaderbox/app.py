@@ -22,6 +22,13 @@ from shaderbox.commands import (
     chord_to_str,
 )
 from shaderbox.constants import RESOURCES_DIR
+from shaderbox.copilot.capabilities import (
+    CompileErrorInfo,
+    CopilotCapabilities,
+    NodeSummary,
+)
+from shaderbox.copilot.llm.openrouter import OpenRouterLLMClient
+from shaderbox.copilot.session import CopilotSession
 from shaderbox.core import Canvas
 from shaderbox.editor_types import EditorSession, HoverMark, InlineInput, JumpRequest
 from shaderbox.exporters.integrations import IntegrationsStore
@@ -171,6 +178,19 @@ class App:
         self.exporter_registry.register(YouTubeExporter())
         self.share_tab_state: share_state.TabState | None = None
 
+        # Copilot (feature 020). Constructed BEFORE the _init below (which calls
+        # release()) so release() never hits a missing attr. The client reads the key/
+        # model LIVE through getters — _init reassigns integrations_store, so capturing
+        # it here would go stale.
+        self.copilot = CopilotSession(
+            caps=self._build_copilot_capabilities(),
+            client=OpenRouterLLMClient(
+                get_api_key=lambda: self.integrations_store.copilot.openrouter_key,
+                get_model=lambda: self.integrations_store.copilot.model,
+                ipv4_only=self.integrations_store.copilot.ipv4_only,
+            ),
+        )
+
         self.is_node_creator_open: bool = False
         self.is_settings_open: bool = False
         self.is_emoji_picker_open: bool = False
@@ -315,7 +335,57 @@ class App:
             CommandId.FOCUS_TAB_NODE: lambda: self.focus_node_tab(NodeTab.NODE),
             CommandId.FOCUS_TAB_RENDER: lambda: self.focus_node_tab(NodeTab.RENDER),
             CommandId.FOCUS_TAB_SHARE: lambda: self.focus_node_tab(NodeTab.SHARE),
+            CommandId.FOCUS_TAB_COPILOT: lambda: self.focus_node_tab(NodeTab.COPILOT),
         }
+
+    def _build_copilot_capabilities(self) -> CopilotCapabilities:
+        # Seam A: bound adapter callables over App's verbs (parallel to
+        # _build_command_callbacks). GL-free reads are direct; GL-touching verbs go
+        # through self.copilot.bridge.run_on_main (added with the tool catalog wave).
+        return CopilotCapabilities(
+            list_nodes=self._copilot_list_nodes,
+            get_node_summary=self._copilot_node_summary,
+            get_shader_source=self._copilot_shader_source,
+            get_compile_errors=self._copilot_compile_errors,
+            current_node_id=lambda: self.current_node_id,
+            edit_shader_source=self._copilot_edit_shader_source,
+        )
+
+    def _copilot_list_nodes(self) -> list[NodeSummary]:
+        return [self._node_summary(nid) for nid in self.ui_nodes]
+
+    def _copilot_node_summary(self, node_id: str) -> NodeSummary | None:
+        if node_id not in self.ui_nodes:
+            return None
+        return self._node_summary(node_id)
+
+    def _node_summary(self, node_id: str) -> NodeSummary:
+        ui_node = self.ui_nodes[node_id]
+        names = [u.name for u in ui_node.node.get_active_uniforms()]
+        return NodeSummary(
+            node_id=node_id,
+            name=ui_node.ui_state.ui_name,
+            uniform_names=names,
+            has_errors=bool(ui_node.node.compile_unit.errors),
+        )
+
+    def _copilot_shader_source(self, node_id: str) -> str | None:
+        if node_id not in self.ui_nodes:
+            return None
+        return self.ui_nodes[node_id].node.source.text
+
+    def _copilot_compile_errors(self, node_id: str) -> list[CompileErrorInfo]:
+        if node_id not in self.ui_nodes:
+            return []
+        return [
+            CompileErrorInfo(path=str(e.path), line=e.line, message=e.message)
+            for e in self.ui_nodes[node_id].node.compile_unit.errors
+        ]
+
+    def _copilot_edit_shader_source(self, node_id: str, text: str) -> bool:
+        # Scaffold seam — the real shader-edit verb (write file + dirty guard +
+        # hot-reload readback) lands with the tool catalog wave.
+        raise NotImplementedError("edit_shader_source lands in the tool-catalog wave")
 
     def _register_palette_commands(self) -> None:
         # One entry per palette-eligible command; the name carries the chord so the
@@ -702,6 +772,12 @@ class App:
         if isinstance(telegram, TelegramExporter):
             telegram.set_default_pack(self.app_state.telegram_default_pack)
 
+        # Drop the chat transcript on project switch. The client reads the (reloaded)
+        # integrations_store live, so no re-wire is needed. Guarded for the first _init,
+        # which runs during __init__ right after copilot is constructed.
+        if hasattr(self, "copilot"):
+            self.copilot.reset_conversation()
+
     def get_font(self, size: int) -> Any:
         fonts = imgui.get_io().fonts
         return fonts.add_font_from_file_ttf(
@@ -996,6 +1072,13 @@ class App:
         self.app_state.save(self.app_state_file_path)
 
     def release(self) -> None:
+        # Copilot first: cancel_all() + join() before the node release below, so a
+        # queued GL op can't run against half-released nodes. Guarded like
+        # preview_canvas — _init calls release() and self.copilot is set just before
+        # the first _init, but the guard keeps the contract robust to reordering.
+        if hasattr(self, "copilot"):
+            self.copilot.release()
+
         self.exporter_registry.release()
 
         if self.share_tab_state is not None:

@@ -25,6 +25,7 @@ dependencies = [
     "opencv-python-headless>=4.11.0.86",
     "google-api-python-client>=2.196.0",
     "google-auth-oauthlib>=1.4.0",
+    "openai>=2.38.0",
 ]
 
 [build-system]

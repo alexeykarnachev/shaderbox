@@ -526,7 +526,7 @@ server scaffolding. Ruthless partition:
   `role:"tool"` result append, the `finish_reason=="tool_calls"` branch, max-iter guard, old-result
   compression (`_compress_old_tool_results`).
 - **`_unescape_double_escaped_strings` + `_parse_arguments`** (`agent.py:128-157,372-381`) — the
-  Grok-via-OpenRouter double-escape repair. Directly relevant (GLSL source args). 
+  Grok-via-OpenRouter double-escape repair. Directly relevant (GLSL source args).
 - **The streaming tool-call accumulation** (ovelia `llm.py:261-303`) and the **IPv4-pin mechanism**
   (ovelia `llm.py:143-148`) — but default dual-stack (§6.1), not hard-pinned.
 - **Constructor injection of the client** (ovelia `llm.py:129`) — for headless loop tests.

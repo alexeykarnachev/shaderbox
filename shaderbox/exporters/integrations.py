@@ -48,9 +48,20 @@ class YouTubeIntegration(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class CopilotIntegration(BaseModel):
+    openrouter_key: str = ""
+    model: str = ""  # OpenRouter "provider/model-id"; default chosen in a later wave
+    ipv4_only: bool = (
+        False  # opt-in egress pin for a dead-IPv6 box (default dual-stack)
+    )
+
+    model_config = {"extra": "forbid"}
+
+
 class IntegrationsStore(BaseModel):
     telegram: TelegramIntegration = TelegramIntegration()
     youtube: YouTubeIntegration = YouTubeIntegration()
+    copilot: CopilotIntegration = CopilotIntegration()
 
     model_config = {"extra": "forbid"}
 

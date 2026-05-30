@@ -19,6 +19,7 @@ from shaderbox.popups.node_creator import draw_node_creator
 from shaderbox.popups.settings import draw_settings
 from shaderbox.shader_lib import is_shader_lib_path
 from shaderbox.tabs import code as code_tab
+from shaderbox.tabs import copilot as copilot_tab
 from shaderbox.tabs import node as node_tab
 from shaderbox.tabs import render as render_tab
 from shaderbox.tabs import share as share_tab
@@ -157,6 +158,15 @@ def update_and_draw(app: App) -> None:
     _maybe_rebuild_lib_index(app)
 
     # ----------------------------------------------------------------
+    # Run any GL ops the copilot worker is blocked on (the worker->main bridge), EARLY
+    # so a freshly recompiled node renders this same frame. Each op is isolated inside
+    # drain(); the wrapper is belt-and-suspenders for the frame loop.
+    try:
+        app.copilot.drain_bridge()
+    except Exception as e:
+        logger.exception(f"Error draining copilot bridge: {e}")
+
+    # ----------------------------------------------------------------
     # Check for per-node shader file changes (root + every prepended lib file).
     for name in list(app.ui_nodes.keys()):
         ui_node = app.ui_nodes[name]
@@ -179,6 +189,10 @@ def update_and_draw(app: App) -> None:
             share_tab.update(app)
         except Exception as e:
             logger.exception(f"Error in share-tab update: {e}")
+
+    # ----------------------------------------------------------------
+    # Drain copilot worker events into the chat render-state (no GL; single-writer).
+    app.copilot.pump_events()
 
     # ----------------------------------------------------------------
     # Render nodes
@@ -462,6 +476,7 @@ _NODE_TABS: list[tuple[str, NodeTab, Callable[[App], None]]] = [
     ("Node", NodeTab.NODE, node_tab.draw),
     ("Render", NodeTab.RENDER, render_tab.draw),
     ("Share", NodeTab.SHARE, share_tab.draw),
+    ("Copilot", NodeTab.COPILOT, copilot_tab.draw),
 ]
 
 
