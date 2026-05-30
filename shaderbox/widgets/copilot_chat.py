@@ -47,6 +47,7 @@ def _apply_layout(app: App) -> None:
 def draw(app: App) -> None:
     if not app.is_copilot_open:
         app.copilot_focused = False
+        app.copilot_hovered = False
         return
 
     if app.copilot_focus_pending:
@@ -56,10 +57,14 @@ def draw(app: App) -> None:
     with imgui_ctx.begin("Copilot", flags=_WINDOW_FLAGS) as window:
         if not window.expanded:
             app.copilot_focused = False
+            app.copilot_hovered = False
             app.copilot_focus_pending = False
             return
 
         app.copilot_focused = imgui.is_window_focused(imgui.FocusedFlags_.child_windows)
+        # Mouse over the chat -> neutralize the editor's direct-mouse read (code.py) so a
+        # drag inside the chat can't select editor text beneath it.
+        app.copilot_hovered = imgui.is_window_hovered(imgui.HoveredFlags_.child_windows)
         # No explicit editor-defocus here: when the chat becomes the focused top-level
         # window imgui makes IT the NavWindow, so the editor's own is_window_focused
         # reads False and it yields the caret on its own (the editor only re-grabs focus

@@ -47,6 +47,11 @@ _MAIN_WINDOW_FLAGS = (
     # window switcher and highlights the whole window (a 2nd outline over ours). This
     # also frees Ctrl+Tab for our CYCLE_REGION command (commands.py).
     | imgui.WindowFlags_.no_nav_focus
+    # Don't raise the full-screen main window above the floating copilot chat when the
+    # editor/panel is clicked — else focusing a region would z-order the main window
+    # over an open-but-unfocused chat and bury it (the chat must stay visible while open,
+    # independent of focus). The chat is submitted after this window so it stays on top.
+    | imgui.WindowFlags_.no_bring_to_front_on_focus
 )
 
 

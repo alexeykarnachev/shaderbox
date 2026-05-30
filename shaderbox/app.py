@@ -198,6 +198,11 @@ class App:
         self.copilot_focus_pending: bool = False
         self.copilot_focused: bool = False
         self.copilot_defocus_requested: bool = False
+        # True while the mouse is over the open chat window. code.py neutralizes the
+        # editor's direct io.mouse_down read so a drag inside the chat doesn't select
+        # editor text beneath it (the TextEditor bypasses imgui hit-testing). One-frame
+        # lag (chat draws after the editor) is harmless — hover precedes a press.
+        self.copilot_hovered: bool = False
         # The editor child's screen rect (pos + size), captured inside the child each
         # frame so the floating chat window anchors to the CODING AREA above the copilot
         # bar (not the whole glfw window). (x, y, w, h).

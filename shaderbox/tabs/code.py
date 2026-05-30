@@ -212,12 +212,12 @@ def draw(app: App) -> None:
     if dim:
         imgui.push_style_var(imgui.StyleVar_.alpha, EDITOR_UNFOCUSED_ALPHA)
 
-    # While the editor↔panel splitter is dragged, neutralize the editor's mouse so the
-    # drag sweep doesn't select text. The TextEditor reads io.mouse_down[0] directly
-    # for selection (bypassing imgui's disabled/active-id, so begin_disabled does
-    # nothing) — force it False for this render only, restore right after (well before
-    # the splitter itself draws + reads the real button state).
-    if app.splitter_dragging:
+    # Neutralize the editor's mouse so it doesn't select text under (a) a splitter drag
+    # sweep or (b) the floating copilot chat the mouse is over. The TextEditor reads
+    # io.mouse_down[0] directly (bypassing imgui's disabled/active-id + window hit-test,
+    # so begin_disabled / window z-order do nothing) — force it False for this render
+    # only, restore right after (well before the splitter itself reads the button state).
+    if app.splitter_dragging or app.copilot_hovered:
         prev_down = bool(io.mouse_down[0])
         io.mouse_down[0] = False
         editor.render("##glsl_editor", size=editor_size)
