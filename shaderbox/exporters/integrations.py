@@ -50,7 +50,7 @@ class YouTubeIntegration(BaseModel):
 
 class CopilotIntegration(BaseModel):
     openrouter_key: str = ""
-    model: str = ""  # OpenRouter "provider/model-id"; default chosen in a later wave
+    model: str = "deepseek/deepseek-v4-flash"  # OpenRouter "provider/model-id"
 
     model_config = {"extra": "forbid"}
 
