@@ -19,8 +19,6 @@ from shaderbox.ui_primitives import (
     modal_window,
 )
 
-_OPENROUTER_MODEL_HINT = "e.g. anthropic/claude-haiku-4.5"
-
 _LABEL = "Settings##popup"
 
 
@@ -122,9 +120,7 @@ def _draw_copilot_config(app: App) -> None:
     new_key = labeled_text_input(
         "OpenRouter key", cfg.openrouter_key, full_width, password=True
     )
-    new_model = labeled_text_input(
-        "Model", cfg.model, full_width, hint=_OPENROUTER_MODEL_HINT
-    )
+    new_model = labeled_text_input("Model", cfg.model, full_width)
     if new_key != cfg.openrouter_key or new_model != cfg.model:
         cfg.openrouter_key = new_key
         cfg.model = new_model
