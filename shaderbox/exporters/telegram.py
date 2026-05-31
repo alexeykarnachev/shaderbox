@@ -201,7 +201,7 @@ class TelegramExporter(Exporter):
 
     @property
     def display_name(self) -> str:
-        return "Telegram Stickers"
+        return "Telegram"
 
     @property
     def auth_state(self) -> AuthState:

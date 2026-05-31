@@ -84,9 +84,7 @@ def _draw_body(app: App) -> bool:
 
     for exporter in app.exporter_registry.all():
         if exporter.is_available:
-            if imgui.tree_node_ex(
-                exporter.display_name, imgui.TreeNodeFlags_.default_open
-            ):
+            if imgui.tree_node(exporter.display_name):
                 exporter.draw_config_ui()
                 imgui.tree_pop()
         else:
@@ -94,7 +92,7 @@ def _draw_body(app: App) -> bool:
                 COLOR.FG_DIM, f"{exporter.display_name} — {exporter.unavailable_reason}"
             )
 
-    if imgui.tree_node_ex("Copilot", imgui.TreeNodeFlags_.default_open):
+    if imgui.tree_node("Copilot"):
         _draw_copilot_config(app)
         imgui.tree_pop()
 
@@ -115,12 +113,12 @@ def _draw_copilot_config(app: App) -> None:
     # The OpenRouter key + model for the in-app copilot (feature 020). Edit-on-change +
     # save, matching the exporter credential blocks. The client reads both live via
     # getters, so a key/model entered here is seen on the next turn.
-    full_width = float(SIZE.SETTINGS_CTRL_W)
+    field_w = float(SIZE.SETTINGS_CTRL_W) * 2.0
     cfg = app.integrations_store.copilot
     new_key = labeled_text_input(
-        "OpenRouter key", cfg.openrouter_key, full_width, password=True
+        "OpenRouter key", cfg.openrouter_key, field_w, password=True
     )
-    new_model = labeled_text_input("Model", cfg.model, full_width)
+    new_model = labeled_text_input("Model", cfg.model, field_w)
     if new_key != cfg.openrouter_key or new_model != cfg.model:
         cfg.openrouter_key = new_key
         cfg.model = new_model
