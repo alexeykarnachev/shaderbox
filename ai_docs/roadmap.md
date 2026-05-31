@@ -39,14 +39,20 @@ feature; brief points at the superseder).
   two-axis open/focused state with the accent outline, no click-bleed/resize-select; `CopilotIntegration`
   (OpenRouter key+model) in `IntegrationsStore`; active-tab + chat open/layout persisted. Every
   LLM/tool/prompt body is a `NotImplementedError` stub for the next wave. Provider = **OpenRouter**.
-- **NEXT ACTION: IMPLEMENT the capability wave per the now-converged spec** —
-  `ai_docs/features/020_copilot_agent/11_capability_wave_spec.md` (review-converged 2 rounds; the
-  maintainer↔Claude decisions are distilled in `_DECISIONS_LOG.md`). Build order = spec §15: type stubs
-  → OpenRouter `stream()` → agent loop → prompt + Layer-1 map + how-to docs → edit/uniform tools +
-  compile-feedback round-trip → interactive-widget family (gate/credential/progress) → node+lib CRUD +
-  render (resolve R3 render-threading first) → publish (lazy) → per-project persistence + docs
-  anti-drift. NOTE: the standalone editor auto-flush hook (report 08 / `§0 #1`) is DISSOLVED by the
-  turn-start editor-lock (spec §11/§E) — no longer a separate task.
+- **NEXT ACTION: BUILD Slice 1** — the edit/compile-feedback vertical, fully specified in
+  `ai_docs/features/020_copilot_agent/11_capability_wave_spec.md §16` (the buildable contract: 3 tools —
+  `get_current_shader` / `edit_shader` / `get_compile_errors`, current-node-only, no gate; the verified
+  compile round-trip; failure-mode strings; worked trace; a fake-`LLMClient` test plan). It exercises
+  the whole spine (OpenRouter stream → agent loop → prompt → native tool-calls → bridge recompile
+  round-trip → editor lock → status) with the minimum surface. **Approach = slice-by-slice: build &
+  touch Slice 1 BEFORE speccing Slice 2** (the maintainer's explicit instruction — condition the design
+  on running code, don't spec breadth ahead of practice). Slice 1's build order is spec §15 steps 0–4.
+- **Spec is sealed + review-converged** (2 review rounds + 1 polish round). Whole-wave decisions: §15
+  build order; `_DECISIONS_LOG.md` for the distilled maintainer↔Claude decisions (A–K + R3/H5 +
+  B1a/B1b). Settled this session: R3 (render = blocking bridge op + "Rendering…" modal + 60s timeout,
+  §5); source placement (via `get_current_shader` tool, not a context block, for cache health, §6/B1a).
+  The standalone editor auto-flush hook (report 08 / `§0 #1`) is DISSOLVED by the turn-start editor-lock
+  (§11/§E) — no longer a task.
 - **No open BLOCKERs.** Two cosmetic nav tails parked in `todo.md` (nav-cursor resets to cell 0 after
   Enter; 2D grid arrow adjacency) — both trigger-gated.
 
