@@ -34,6 +34,12 @@ class CopilotBridge:
         self._ops: queue.Queue[MainThreadOp] = queue.Queue(maxsize=64)
         self._shutdown: threading.Event = threading.Event()
 
+    def reopen(self) -> None:
+        # MAIN THREAD, at the start of a turn. Clears a `_shutdown` latched by a prior
+        # reusable cancel_all() (a project switch / Stop) so a reused bridge serves
+        # again. A real shutdown (release(), reusable=False) is NOT cleared here.
+        self._shutdown.clear()
+
     def run_on_main(self, fn: Callable[[], Any]) -> Any:
         # Called ON THE WORKER THREAD. Enqueue + block until the main thread runs it.
         if self._shutdown.is_set():
@@ -63,10 +69,12 @@ class CopilotBridge:
             finally:
                 op.done.set()
 
-    def cancel_all(self) -> None:
-        # Called from release() on the main thread, BEFORE worker.join(). Releases
-        # any worker blocked in run_on_main so the join can't deadlock.
-        self._shutdown.set()
+    def cancel_all(self, *, reusable: bool = False) -> None:
+        # Release any worker blocked in run_on_main so a join can't deadlock. `reusable`
+        # (project switch / Stop) leaves the bridge able to serve again after a reopen();
+        # the default (release() at shutdown) latches it shut permanently.
+        if not reusable:
+            self._shutdown.set()
         while True:
             try:
                 op = self._ops.get_nowait()
