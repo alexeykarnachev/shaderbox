@@ -207,9 +207,7 @@ class CopilotSession:
         self._cancel.set()
         self.bridge.cancel_all()
         self.gate.cancel_all()
-        self._turn_queue.put(
-            _SHUTDOWN
-        )  # unblock the worker's get() so join can return  # unblock the worker's get() so join can return
+        self._turn_queue.put(_SHUTDOWN)  # unblock worker.get() so join can return
         if self._worker is not None and self._worker.is_alive():
             self._worker.join(timeout=COPILOT_CONFIG.worker_join_timeout_s)
             if self._worker.is_alive():
