@@ -1,0 +1,181 @@
+"""The copilot agent loop against a fake LLM client — no GL, no live tokens.
+
+Reproduces the §16.5 worked trace (read shader -> edit breaks compile -> read the
+source-mapped error -> fix -> clean) and asserts the loop calls the tools in order,
+feeds results back, and terminates on the clean compile with the final text.
+"""
+
+import threading
+from collections.abc import Iterator
+
+from shaderbox.copilot.agent import (
+    AgentTextDelta,
+    AgentToolCard,
+    AgentTurnDone,
+    run_turn,
+)
+from shaderbox.copilot.capabilities import (
+    CompileErrorInfo,
+    CopilotCapabilities,
+    CurrentShaderView,
+    EditResult,
+)
+from shaderbox.copilot.config import COPILOT_CONFIG
+from shaderbox.copilot.context import CopilotContext
+from shaderbox.copilot.gate import GateChannel
+from shaderbox.copilot.llm.api import (
+    LLMDone,
+    LLMMessage,
+    LLMStreamEvent,
+    LLMTextDelta,
+    LLMToolCallCompleted,
+    LLMToolCallStarted,
+    LLMToolSpec,
+    LLMUsage,
+)
+from shaderbox.copilot.tools.registry import build_registry
+
+
+def _tool_call(call_id: str, name: str, args: str) -> list[LLMStreamEvent]:
+    return [
+        LLMToolCallStarted(index=0, id=call_id, name=name),
+        LLMToolCallCompleted(index=0, id=call_id, name=name, arguments=args),
+        LLMDone(finish_reason="tool_calls", usage=LLMUsage()),
+    ]
+
+
+class _FakeClient:
+    # One scripted event-list per stream() call.
+    def __init__(self, scripts: list[list[LLMStreamEvent]]) -> None:
+        self._scripts = scripts
+        self._i = 0
+
+    def stream(
+        self,
+        messages: list[LLMMessage],
+        *,
+        tools: list[LLMToolSpec] | None = None,
+        max_tokens: int,
+    ) -> Iterator[LLMStreamEvent]:
+        _ = (messages, tools, max_tokens)
+        script = self._scripts[self._i]
+        self._i += 1
+        return iter(script)
+
+
+def _fake_caps(edit_errors: list[list[CompileErrorInfo]]) -> CopilotCapabilities:
+    # Models the App: apply_shader_edit matches old_str against the LIVE source, replaces,
+    # and (on a real match) advances the source — so a second edit sees the first's result.
+    state = {"text": "vec3 p = u_pos;", "n": 0}
+
+    def apply_edit(old_str: str, new_str: str, replace_all: bool) -> EditResult:
+        matches = state["text"].count(old_str)
+        if matches == 0 or (matches > 1 and not replace_all):
+            return EditResult(matches=matches, errors=[])
+        state["text"] = state["text"].replace(old_str, new_str)
+        errors = edit_errors[state["n"]]
+        state["n"] += 1
+        return EditResult(matches=matches, errors=errors)
+
+    def view() -> CurrentShaderView:
+        return CurrentShaderView(
+            text=state["text"],
+            listing=f"1  {state['text']}",
+            uniforms=["u_pos vec3 = (0.0, 0.0, 0.0)"],
+            errors=[],
+        )
+
+    return CopilotCapabilities(
+        list_nodes=lambda: [],
+        get_node_summary=lambda _nid: None,
+        get_shader_source=lambda _nid: None,
+        get_compile_errors=lambda _nid: [],
+        current_node_id=lambda: "node-1",
+        get_current_shader_view=view,
+        apply_shader_edit=apply_edit,
+        get_compile_errors_current=lambda: [],
+    )
+
+
+def test_edit_compile_feedback_self_correction() -> None:
+    scripts: list[list[LLMStreamEvent]] = [
+        _tool_call("c1", "get_current_shader", "{}"),
+        _tool_call(
+            "c2",
+            "edit_shader",
+            '{"old_str": "vec3 p = u_pos;", '
+            '"new_str": "vec3 p = u_pos + vec3(sin(u_time), 0.0, 0.0);"}',
+        ),
+        _tool_call(
+            "c3",
+            "edit_shader",
+            '{"old_str": "vec3 p = u_pos + vec3(sin(u_time), 0.0, 0.0);", '
+            '"new_str": "vec3 p = u_pos;"}',
+        ),
+        [LLMTextDelta("Added a sine wobble and declared u_time."), LLMDone("stop")],
+    ]
+    caps = _fake_caps(
+        edit_errors=[
+            [CompileErrorInfo(path="node.frag.glsl", line=14, message="'u_time' : undeclared")],
+            [],
+        ]
+    )
+    registry = build_registry(caps)
+
+    events = list(
+        run_turn(
+            _FakeClient(scripts),
+            registry,
+            COPILOT_CONFIG,
+            CopilotContext(current_node_id="node-1"),
+            history=[],
+            user_text="animate the position uniform",
+            gate=GateChannel(),
+            cancel=threading.Event(),
+        )
+    )
+
+    cards = [e for e in events if isinstance(e, AgentToolCard)]
+    assert [c.name for c in cards] == [
+        "get_current_shader",
+        "edit_shader",
+        "edit_shader",
+    ]
+    # First edit applied + compiled WITH errors (ok=True — the tool succeeded); second clean.
+    assert cards[1].ok
+    assert cards[1].payload == {
+        "errors": [
+            {"path": "node.frag.glsl", "line": 14, "message": "'u_time' : undeclared"}
+        ]
+    }
+    assert cards[2].payload == {"errors": []}
+
+    text = "".join(e.text for e in events if isinstance(e, AgentTextDelta))
+    assert "u_time" in text
+    assert isinstance(events[-1], AgentTurnDone)
+
+
+def test_edit_not_found_is_a_tool_error() -> None:
+    scripts: list[list[LLMStreamEvent]] = [
+        _tool_call("c1", "edit_shader", '{"old_str": "not present", "new_str": "x"}'),
+        [LLMTextDelta("I could not find that text."), LLMDone("stop")],
+    ]
+    caps = _fake_caps(edit_errors=[])
+    registry = build_registry(caps)
+
+    events = list(
+        run_turn(
+            _FakeClient(scripts),
+            registry,
+            COPILOT_CONFIG,
+            CopilotContext(current_node_id="node-1"),
+            history=[],
+            user_text="change the thing",
+            gate=GateChannel(),
+            cancel=threading.Event(),
+        )
+    )
+    cards = [e for e in events if isinstance(e, AgentToolCard)]
+    assert len(cards) == 1
+    assert cards[0].name == "edit_shader"
+    assert cards[0].ok is False

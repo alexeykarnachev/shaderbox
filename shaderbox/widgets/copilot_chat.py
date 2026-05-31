@@ -1,12 +1,13 @@
 from imgui_bundle import imgui, imgui_ctx
 
 from shaderbox.app import App
-from shaderbox.copilot.state import CopilotLayout
-from shaderbox.theme import SIZE
+from shaderbox.copilot.state import CopilotLayout, MessageRole
+from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_primitives import (
     active_region_outline,
     caption_text,
     ghost_button,
+    primary_button,
     unconnected_gate,
 )
 
@@ -103,7 +104,60 @@ def draw(app: App) -> None:
                 on_action=app.open_settings,
             )
         else:
-            caption_text("Copilot chat — coming in a later wave.")
+            _draw_transcript(app)
+
+
+def _draw_transcript(app: App) -> None:
+    state = app.copilot.state
+    input_h = imgui.get_frame_height_with_spacing() + float(SPACE.SM)
+    avail = imgui.get_content_region_avail()
+    if imgui.begin_child("##copilot_history", size=(0.0, avail.y - input_h)):
+        for msg in state.messages:
+            _draw_message(msg.role, msg.text)
+        if state.streaming_text:
+            _draw_message("assistant", state.streaming_text)
+        if state.in_flight and not state.streaming_text:
+            caption_text("thinking…")
+        if state.in_flight:
+            imgui.set_scroll_here_y(1.0)
+    imgui.end_child()
+
+    in_flight = state.in_flight
+    if app.copilot_focus_pending:
+        imgui.set_keyboard_focus_here()
+    imgui.set_next_item_width(-1.0 if in_flight else _send_button_offset())
+    submitted, app.copilot_input = imgui.input_text(
+        "##copilot_input",
+        app.copilot_input,
+        flags=imgui.InputTextFlags_.enter_returns_true,
+    )
+    if not in_flight:
+        imgui.same_line()
+        if (primary_button("Send") or submitted) and app.copilot_input.strip():
+            app.copilot_send(app.copilot_input)
+            app.copilot_input = ""
+            imgui.set_keyboard_focus_here(-1)
+    else:
+        imgui.same_line()
+        if ghost_button("Stop"):
+            app.copilot.cancel_turn()
+
+
+def _draw_message(role: MessageRole, text: str) -> None:
+    if role == "user":
+        imgui.text_colored(COLOR.ACCENT_PRIMARY, "you")
+        imgui.text_wrapped(text)
+    elif role == "assistant":
+        imgui.text_wrapped(text)
+    elif role == "tool_status":
+        caption_text(text)
+    elif role == "error":
+        imgui.text_colored(COLOR.STATE_ERROR, text)
+    imgui.separator()
+
+
+def _send_button_offset() -> float:
+    return -(float(SIZE.BTN_SM_W) + float(SPACE.SM))
 
 
 def _draw_top_bar(app: App) -> None:

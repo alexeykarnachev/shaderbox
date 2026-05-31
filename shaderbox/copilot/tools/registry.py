@@ -1,32 +1,13 @@
-from collections.abc import Callable
-from dataclasses import dataclass
 from typing import Any
 
 from loguru import logger
-from pydantic import BaseModel, ValidationError
+from pydantic import ValidationError
 
 from shaderbox.copilot.capabilities import CopilotCapabilities
+from shaderbox.copilot.config import CopilotConfig
 from shaderbox.copilot.llm.api import LLMToolSpec
-
-# (ok, message_for_llm, payload_for_ui). Sync — handlers run on the worker thread.
-ToolHandler = Callable[[dict[str, Any]], tuple[bool, str, dict[str, Any] | None]]
-
-
-@dataclass(frozen=True)
-class ToolDefinition:
-    name: str
-    description: str
-    args_model: type[BaseModel]  # pydantic — schema + validation from one definition
-    handler: ToolHandler
-    mutating: bool  # gates the "what I did" note + the UI confirm
-    needs_gl: bool  # True => the handler's capability marshals to the main thread
-
-    def spec(self) -> LLMToolSpec:
-        return LLMToolSpec(
-            name=self.name,
-            description=self.description,
-            parameters=self.args_model.model_json_schema(),
-        )
+from shaderbox.copilot.tools.base import GatePolicy, ToolDefinition
+from shaderbox.copilot.tools.shader import shader_tools
 
 
 def _validation_message(exc: ValidationError) -> str:
@@ -38,13 +19,43 @@ class ToolRegistry:
     def __init__(self, definitions: list[ToolDefinition]) -> None:
         self._by_name: dict[str, ToolDefinition] = {d.name: d for d in definitions}
 
-    def specs(self) -> list[LLMToolSpec]:
-        return [d.spec() for d in self._by_name.values()]
+    def eager_specs(self) -> list[LLMToolSpec]:
+        # The turn-start tools= set: eager-core only. Lazy long-tail loads via
+        # search_tools/list_tools (§4) — a later slice.
+        return [d.spec() for d in self._by_name.values() if d.eager]
+
+    def specs_for(self, names: list[str]) -> list[LLMToolSpec]:
+        return [self._by_name[n].spec() for n in names if n in self._by_name]
 
     def describe(self) -> str:
         # Single source of truth for the system-prompt capability block + a future
         # user-facing "what the copilot can do" surface.
         return "\n".join(f"- {d.name}: {d.description}" for d in self._by_name.values())
+
+    def is_mutating(self, name: str) -> bool:
+        tool = self._by_name.get(name)
+        return tool is not None and tool.mutating
+
+    def requires_gate(
+        self, name: str, args: dict[str, Any], config: CopilotConfig
+    ) -> bool:
+        tool = self._by_name.get(name)
+        if tool is None:
+            return False
+        if tool.gate_policy is GatePolicy.ALWAYS:
+            return True
+        if tool.gate_policy is GatePolicy.BULK:
+            counts = [len(v) for v in args.values() if isinstance(v, list)]
+            return bool(counts) and max(counts) > config.bulk_gate_threshold
+        return False
+
+    def status_for(self, name: str, args: dict[str, Any] | None) -> str:
+        # Per-tool human phrase for the status pill (§8/§G). Falls back to the bare
+        # name. The catalog is small enough in slice 1 that the bare name reads fine;
+        # richer templates land as the catalog grows.
+        _ = args
+        tool = self._by_name.get(name)
+        return tool.name if tool is not None else name
 
     def execute(
         self, name: str, raw_args: dict[str, Any]
@@ -61,13 +72,12 @@ class ToolRegistry:
         except Exception:
             # Generic message only — never leak exception internals into LLM context.
             logger.exception(f"copilot tool failed: {name}")
-            return False, f"error: tool '{name}' failed", None
+            return False, f"error: {name} failed", None
 
 
 def build_registry(caps: CopilotCapabilities) -> ToolRegistry:
-    # The tool CATALOG is the later capability brainstorm (§0 #8). This wave ships the
-    # registry machinery with an empty catalog; tool groups register here as they land,
-    # each as a closure over `caps`.
-    _ = caps
-    definitions: list[ToolDefinition] = []
+    # The catalog grows slice by slice; each tool group is a local addition here. Slice 1
+    # is the edit/compile-feedback vertical: three eager, non-destructive, current-node
+    # tools (spec §16).
+    definitions: list[ToolDefinition] = [*shader_tools(caps)]
     return ToolRegistry(definitions)

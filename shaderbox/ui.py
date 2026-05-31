@@ -199,6 +199,8 @@ def update_and_draw(app: App) -> None:
     # ----------------------------------------------------------------
     # Drain copilot worker events into the chat render-state (no GL; single-writer).
     app.copilot.pump_events()
+    # The editor lock follows the turn: set on send, lifted when the turn ends (§11).
+    app.copilot_turn_active = app.copilot.state.in_flight
 
     # ----------------------------------------------------------------
     # Render nodes

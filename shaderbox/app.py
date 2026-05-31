@@ -6,12 +6,14 @@ from pathlib import Path
 from typing import Any
 
 import glfw
+import moderngl
 from imgui_bundle import imgui
 from imgui_bundle import imgui_color_text_edit as text_edit
 from imgui_bundle import imgui_command_palette as imcmd
 from imgui_bundle import portable_file_dialogs as pfd
 from imgui_bundle.python_backends.glfw_backend import GlfwRenderer
 from loguru import logger
+from OpenGL.GL import GL_UNSIGNED_INT
 
 from shaderbox.commands import (
     COMMAND_SPECS,
@@ -25,6 +27,8 @@ from shaderbox.constants import RESOURCES_DIR
 from shaderbox.copilot.capabilities import (
     CompileErrorInfo,
     CopilotCapabilities,
+    CurrentShaderView,
+    EditResult,
     NodeSummary,
 )
 from shaderbox.copilot.llm.openrouter import OpenRouterLLMClient
@@ -38,7 +42,7 @@ from shaderbox.exporters.telegram import TelegramExporter
 from shaderbox.exporters.youtube import YouTubeExporter
 from shaderbox.notifications import Notifications
 from shaderbox.paths import app_data_dir, shader_lib_root
-from shaderbox.shader_errors import next_error_line
+from shaderbox.shader_errors import ShaderError, next_error_line
 from shaderbox.shader_lib import ShaderLibIndex
 from shaderbox.shader_lib import set_active as set_active_lib_index
 from shaderbox.shader_lib.favorites import ShaderLibFavoritesStore
@@ -75,6 +79,48 @@ def _order_templates(templates: dict[str, UINode]) -> dict[str, UINode]:
     rank = {tid: i for i, tid in enumerate(_TEMPLATE_ORDER)}
     ordered_ids = sorted(templates, key=lambda tid: rank.get(tid, len(rank)))
     return {tid: templates[tid] for tid in ordered_ids}
+
+
+def _to_error_infos(errors: list[ShaderError]) -> list[CompileErrorInfo]:
+    # ShaderError.line is 0-based (-1 = unparsed fallback row); the agent reads a cat -n
+    # listing, so report 1-based. The fallback row has no real line — report it as 0.
+    return [
+        CompileErrorInfo(
+            path=str(e.path), line=e.line + 1 if e.line >= 0 else 0, message=e.message
+        )
+        for e in errors
+    ]
+
+
+def _number_lines(text: str) -> str:
+    # cat -n style. The prefixes orient the agent but are NOT part of the text it edits
+    # against (it matches on content) — spec §16.2.
+    lines = text.split("\n")
+    width = len(str(len(lines)))
+    return "\n".join(f"{i:>{width}}  {line}" for i, line in enumerate(lines, start=1))
+
+
+def _uniform_type_label(u: moderngl.Uniform | moderngl.UniformBlock) -> str:
+    if isinstance(u, moderngl.UniformBlock):
+        return "block"
+    # moderngl stub gap: Uniform.gl_type (conventions.md sanctioned allowlist).
+    base = "uint" if u.gl_type == GL_UNSIGNED_INT else "float"  # type: ignore
+    scalar = base if u.dimension == 1 else f"vec{u.dimension}"
+    return f"{scalar}[{u.array_length}]" if u.array_length > 1 else scalar
+
+
+def _format_uniforms(
+    uniforms: list[moderngl.Uniform | moderngl.UniformBlock],
+) -> list[str]:
+    # "name type = value" rows for the agent's orientation. Blocks have no scalar value.
+    rows: list[str] = []
+    for u in uniforms:
+        label = _uniform_type_label(u)
+        if isinstance(u, moderngl.UniformBlock):
+            rows.append(f"{u.name} {label}")
+        else:
+            rows.append(f"{u.name} {label} = {u.value}")
+    return rows
 
 
 # Region-cycle order for the keyboard-nav command (feature 019).
@@ -204,6 +250,10 @@ class App:
         # editor text beneath it (the TextEditor bypasses imgui hit-testing). One-frame
         # lag (chat draws after the editor) is harmless — hover precedes a press.
         self.copilot_hovered: bool = False
+        # True while a copilot turn runs — locks the editor read-only (§11). Set in
+        # copilot_send, reconciled to session.state.in_flight each frame in ui.py.
+        self.copilot_turn_active: bool = False
+        self.copilot_input: str = ""
         # The editor child's screen rect (pos + size), captured inside the child each
         # frame so the floating chat window anchors to the CODING AREA above the copilot
         # bar (not the whole glfw window). (x, y, w, h).
@@ -372,7 +422,9 @@ class App:
             get_shader_source=self._copilot_shader_source,
             get_compile_errors=self._copilot_compile_errors,
             current_node_id=lambda: self.current_node_id,
-            edit_shader_source=self._copilot_edit_shader_source,
+            get_current_shader_view=self._copilot_current_shader_view,
+            apply_shader_edit=self._copilot_apply_shader_edit,
+            get_compile_errors_current=self._copilot_compile_errors_current,
         )
 
     def _copilot_list_nodes(self) -> list[NodeSummary]:
@@ -401,15 +453,67 @@ class App:
     def _copilot_compile_errors(self, node_id: str) -> list[CompileErrorInfo]:
         if node_id not in self.ui_nodes:
             return []
-        return [
-            CompileErrorInfo(path=str(e.path), line=e.line, message=e.message)
-            for e in self.ui_nodes[node_id].node.compile_unit.errors
-        ]
+        return _to_error_infos(self.ui_nodes[node_id].node.compile_unit.errors)
 
-    def _copilot_edit_shader_source(self, node_id: str, text: str) -> bool:
-        # Scaffold seam — the real shader-edit verb (write file + dirty guard +
-        # hot-reload readback) lands with the tool catalog wave.
-        raise NotImplementedError("edit_shader_source lands in the tool-catalog wave")
+    # ---- slice 1: edit / compile-feedback (current node only, spec §16.3) ----
+
+    def _copilot_current_shader_view(self) -> CurrentShaderView | None:
+        # Worker calls this via the bridge: ensure a fresh compile, then read source +
+        # uniforms + errors. needs_gl (it forces compile()).
+        def _on_main() -> CurrentShaderView | None:
+            node_id = self.current_node_id
+            if node_id not in self.ui_nodes:
+                return None
+            node = self.ui_nodes[node_id].node
+            if node.program is None:
+                node.compile()
+            text = node.source.text
+            return CurrentShaderView(
+                text=text,
+                listing=_number_lines(text),
+                uniforms=_format_uniforms(node.get_active_uniforms()),
+                errors=_to_error_infos(node.compile_unit.errors),
+            )
+
+        return self.copilot.bridge.run_on_main(_on_main)
+
+    def _copilot_apply_shader_edit(
+        self, old_str: str, new_str: str, replace_all: bool
+    ) -> EditResult:
+        # Match + replace against the node's AUTHORITATIVE source, recompile, persist,
+        # refresh the read-only editor — ONE bridge round-trip (spec §16.3). Matching here
+        # (not on the worker against a re-read copy) gives a single source of truth and no
+        # staleness window. A 0/ambiguous match mutates nothing. The failed-compile
+        # early-return in Node.compile() keeps the old program live (feature-013), so a
+        # broken edit never blanks the user's preview.
+        def _on_main() -> EditResult:
+            node = self.ui_nodes[self.current_node_id].node
+            src = node.source.text
+            matches = src.count(old_str)
+            if matches == 0 or (matches > 1 and not replace_all):
+                return EditResult(matches=matches, errors=[])
+            new_text = src.replace(old_str, new_str)
+            node.release_program(new_text)
+            node.compile()
+            node.source.path.write_text(new_text, encoding="utf-8")
+            self.sync_editor_from_disk(self.current_node_id, new_text)
+            return EditResult(
+                matches=matches, errors=_to_error_infos(node.compile_unit.errors)
+            )
+
+        return self.copilot.bridge.run_on_main(_on_main)
+
+    def _copilot_compile_errors_current(self) -> list[CompileErrorInfo]:
+        def _on_main() -> list[CompileErrorInfo]:
+            node_id = self.current_node_id
+            if node_id not in self.ui_nodes:
+                return []
+            node = self.ui_nodes[node_id].node
+            if node.program is None:
+                node.compile()
+            return _to_error_infos(node.compile_unit.errors)
+
+        return self.copilot.bridge.run_on_main(_on_main)
 
     def _register_palette_commands(self) -> None:
         # One entry per palette-eligible command; the name carries the chord so the
@@ -506,6 +610,15 @@ class App:
         # is consumed by code.py via set_window_focus(None) — a GLOBAL NavWindow clear that
         # fires a frame later and would steal the chat's just-acquired focus (the blink).
         self.copilot_focus_pending = True
+
+    def copilot_send(self, text: str) -> None:
+        # MAIN THREAD. Flush + lock the editor (§11) BEFORE the worker reads source, so
+        # its first get_current_shader sees disk-consistent state.
+        if not text.strip() or self.copilot.state.in_flight:
+            return
+        self.flush_current_editor()
+        self.copilot_turn_active = True
+        self.copilot.enqueue_turn(text)
 
     def cycle_region(self) -> None:
         idx = _REGION_CYCLE.index(self.active_region)
