@@ -204,7 +204,6 @@ class CopilotSession:
         # worker was ever spawned: the sentinel + cancel_all + join on a None thread are
         # all no-ops.
         self._released = True
-        self._released = True
         self._cancel.set()
         self.bridge.cancel_all()
         self.gate.cancel_all()
