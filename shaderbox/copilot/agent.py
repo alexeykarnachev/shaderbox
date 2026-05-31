@@ -28,6 +28,12 @@ _NULL_TRACE = NULL_TRACE
 # limit trips (spec §2; faithful to cc-server AgentLoop.run). The GateChannel param is
 # present but never triggered in slice 1 (all three tools are non-destructive).
 
+_MODEL_INCOMPATIBLE_MSG = (
+    "The selected model isn't compatible with tool calling — after using a tool it "
+    "produced neither a native tool call nor a text reply. Pick a different model in "
+    "Settings -> Integrations -> Copilot."
+)
+
 
 @dataclass(frozen=True)
 class AgentTextDelta:
@@ -247,39 +253,20 @@ def run_turn(
         if done is None or done.finish_reason != "tool_calls" or not builders:
             if done is None:
                 logger.warning("copilot stream ended with no LLMDone event")
-            # Some models (deepseek-v4-flash, observed) return an EMPTY completion when
-            # tools are present in the call right after a tool result. Retry the same
-            # conversation once with tools omitted to extract the final text answer.
-            if not text_buf and total_tool_calls > 0 and specs:
-                logger.info("copilot: empty reply after tool use; retry without tools")
-                tr.event("empty_reply_retry", iteration=iteration)
-                tr.event(
-                    "llm_request",
-                    iteration=iteration,
-                    messages=messages,
-                    tools=[],
-                    max_tokens=config.max_tokens_per_turn,
-                    note="retry_without_tools",
+            # A turn that ends after a tool ran with NEITHER a native tool call NOR text
+            # is a model that can't continue a tool-call conversation. A compatible model
+            # always does one or the other; the absence of both is the proof — no need to
+            # sniff what garbage it emitted. Reject, don't work around (maintainer rule).
+            if not text_buf and total_tool_calls > 0:
+                logger.warning(
+                    f"copilot: empty reply after {total_tool_calls} tool call(s) — "
+                    "model is not tool-call compatible"
                 )
-                retry_done: LLMDone | None = None
-                for ev in client.stream(  # type: ignore[attr-defined]
-                    messages, tools=None, max_tokens=config.max_tokens_per_turn
-                ):
-                    if isinstance(ev, LLMTextDelta):
-                        text_buf += ev.text
-                        yield AgentTextDelta(ev.text)
-                    elif isinstance(ev, LLMDone):
-                        usage.add(ev.usage)
-                        retry_done = ev
                 tr.event(
-                    "llm_response",
-                    iteration=iteration,
-                    finish_reason=(retry_done.finish_reason if retry_done else "none"),
-                    text=text_buf,
-                    tool_calls=[],
-                    usage=(retry_done.usage if retry_done else None),
-                    note="retry_without_tools",
+                    "model_incompatible", iteration=iteration, reason="empty_after_tool"
                 )
+                yield AgentError(_MODEL_INCOMPATIBLE_MSG)
+                return
             logger.info(
                 f"copilot turn done | iterations={iteration + 1} "
                 f"tool_calls={total_tool_calls} reply={len(text_buf)}ch "
