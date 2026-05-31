@@ -25,7 +25,7 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-**As of 2026-05-30.**
+**As of 2026-05-31.**
 
 - **Shipped: `v0.12.1`** (feature 019). Live on itch.io (both channels); `dev` == `master`,
   unshipped commits on `dev` (the 020 scaffold + chat-UI wave).
@@ -39,11 +39,14 @@ feature; brief points at the superseder).
   two-axis open/focused state with the accent outline, no click-bleed/resize-select; `CopilotIntegration`
   (OpenRouter key+model) in `IntegrationsStore`; active-tab + chat open/layout persisted. Every
   LLM/tool/prompt body is a `NotImplementedError` stub for the next wave. Provider = **OpenRouter**.
-- **NEXT ACTION:** the capability wave — first BRAINSTORM the tool catalog (deferred per `§0 #8`), then
-  fill the seams: the OpenRouter `stream()` body, the agent loop (`agent.py`), the tools + their
-  GL-touching capability closures (incl. the still-stubbed `set_uniform_value` / `create_node` /
-  `edit_shader_source` verbs), the prompt content, the chat transcript UI. Also pending: the standalone
-  editor auto-flush hook (research report 08).
+- **NEXT ACTION: IMPLEMENT the capability wave per the now-converged spec** —
+  `ai_docs/features/020_copilot_agent/11_capability_wave_spec.md` (review-converged 2 rounds; the
+  maintainer↔Claude decisions are distilled in `_DECISIONS_LOG.md`). Build order = spec §15: type stubs
+  → OpenRouter `stream()` → agent loop → prompt + Layer-1 map + how-to docs → edit/uniform tools +
+  compile-feedback round-trip → interactive-widget family (gate/credential/progress) → node+lib CRUD +
+  render (resolve R3 render-threading first) → publish (lazy) → per-project persistence + docs
+  anti-drift. NOTE: the standalone editor auto-flush hook (report 08 / `§0 #1`) is DISSOLVED by the
+  turn-start editor-lock (spec §11/§E) — no longer a separate task.
 - **No open BLOCKERs.** Two cosmetic nav tails parked in `todo.md` (nav-cursor resets to cell 0 after
   Enter; 2D grid arrow adjacency) — both trigger-gated.
 
