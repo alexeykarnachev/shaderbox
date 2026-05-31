@@ -247,6 +247,39 @@ def run_turn(
         if done is None or done.finish_reason != "tool_calls" or not builders:
             if done is None:
                 logger.warning("copilot stream ended with no LLMDone event")
+            # Some models (deepseek-v4-flash, observed) return an EMPTY completion when
+            # tools are present in the call right after a tool result. Retry the same
+            # conversation once with tools omitted to extract the final text answer.
+            if not text_buf and total_tool_calls > 0 and specs:
+                logger.info("copilot: empty reply after tool use; retry without tools")
+                tr.event("empty_reply_retry", iteration=iteration)
+                tr.event(
+                    "llm_request",
+                    iteration=iteration,
+                    messages=messages,
+                    tools=[],
+                    max_tokens=config.max_tokens_per_turn,
+                    note="retry_without_tools",
+                )
+                retry_done: LLMDone | None = None
+                for ev in client.stream(  # type: ignore[attr-defined]
+                    messages, tools=None, max_tokens=config.max_tokens_per_turn
+                ):
+                    if isinstance(ev, LLMTextDelta):
+                        text_buf += ev.text
+                        yield AgentTextDelta(ev.text)
+                    elif isinstance(ev, LLMDone):
+                        usage.add(ev.usage)
+                        retry_done = ev
+                tr.event(
+                    "llm_response",
+                    iteration=iteration,
+                    finish_reason=(retry_done.finish_reason if retry_done else "none"),
+                    text=text_buf,
+                    tool_calls=[],
+                    usage=(retry_done.usage if retry_done else None),
+                    note="retry_without_tools",
+                )
             logger.info(
                 f"copilot turn done | iterations={iteration + 1} "
                 f"tool_calls={total_tool_calls} reply={len(text_buf)}ch "
