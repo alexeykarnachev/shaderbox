@@ -11,7 +11,15 @@ from shaderbox.commands import (
     chord_to_str,
 )
 from shaderbox.theme import COLOR, SIZE, SPACE
-from shaderbox.ui_primitives import chord_row, ghost_button, label_row, modal_window
+from shaderbox.ui_primitives import (
+    chord_row,
+    ghost_button,
+    label_row,
+    labeled_text_input,
+    modal_window,
+)
+
+_OPENROUTER_MODEL_HINT = "e.g. anthropic/claude-haiku-4.5"
 
 _LABEL = "Settings##popup"
 
@@ -88,6 +96,10 @@ def _draw_body(app: App) -> bool:
                 COLOR.FG_DIM, f"{exporter.display_name} — {exporter.unavailable_reason}"
             )
 
+    if imgui.tree_node_ex("Copilot", imgui.TreeNodeFlags_.default_open):
+        _draw_copilot_config(app)
+        imgui.tree_pop()
+
     imgui.dummy((0.0, SPACE.MD))
     imgui.separator_text("Keyboard")
     _draw_keybindings(app)
@@ -99,6 +111,24 @@ def _draw_body(app: App) -> bool:
         is_keep_opened = False
 
     return is_keep_opened
+
+
+def _draw_copilot_config(app: App) -> None:
+    # The OpenRouter key + model for the in-app copilot (feature 020). Edit-on-change +
+    # save, matching the exporter credential blocks. The client reads both live via
+    # getters, so a key/model entered here is seen on the next turn.
+    full_width = float(SIZE.SETTINGS_CTRL_W)
+    cfg = app.integrations_store.copilot
+    new_key = labeled_text_input(
+        "OpenRouter key", cfg.openrouter_key, full_width, password=True
+    )
+    new_model = labeled_text_input(
+        "Model", cfg.model, full_width, hint=_OPENROUTER_MODEL_HINT
+    )
+    if new_key != cfg.openrouter_key or new_model != cfg.model:
+        cfg.openrouter_key = new_key
+        cfg.model = new_model
+        app.integrations_store.save()
 
 
 def _chord_in_use(
