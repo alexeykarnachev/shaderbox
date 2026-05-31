@@ -21,7 +21,7 @@ Quick routing (full version → `dev_flow.md`):
 
 ## Hard rules
 
-- **Commits.** Per global `## Commits`, plus: ASCII-only subject; commit/push only when asked (standing instructions stand until revoked).
+- **Commits.** Per global `## Commits`, plus: ASCII-only subject; commit/push only when asked (standing instructions stand until revoked). No review-status tags in the message (no `UNREVIEWED`, `WIP`, etc.) — review state is tracked out-of-band, not in git history.
 - **Commit on `dev`, never `master`** — no per-feature branches. The dev→master ship promotion lives in `dev_flow.md ## Branch model`.
 - **Never leave `projects/dev/` unstaged** — sandbox drift gets `git add projects/dev && commit`ed in the same wave; never `checkout`-ed away. Stripped from shipped bundle by `build.sh`. (Full rule: `dev_flow.md`.)
 - **`uv`, not `python`/`pip`** — `uv sync`, `uv add <pkg>`, `uv add --group dev <pkg>`, `uv run …`.
