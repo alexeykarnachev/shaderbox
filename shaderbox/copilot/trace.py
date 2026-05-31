@@ -2,6 +2,7 @@ import json
 import threading
 from dataclasses import asdict, is_dataclass
 from datetime import datetime
+from io import TextIOWrapper
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +16,10 @@ from shaderbox.paths import app_data_dir
 # (.jsonl). This is the 100%-observability surface for debugging the agent; the concise
 # `copilot ...` lines in the normal log stay for at-a-glance flow. One TraceLog per
 # CopilotSession; appends across turns; flushed per event so a crash loses nothing.
+#
+# The file is opened LAZILY on the first event() and re-opened if it was closed: the App
+# lifecycle calls release() (-> close()) at the top of every _init, which would otherwise
+# null the handle the session opened in __init__ and silently drop the whole transcript.
 
 
 def _jsonable(value: Any) -> Any:
@@ -33,18 +38,22 @@ class TraceLog:
     def __init__(self, path: Path) -> None:
         self._path = path
         self._lock = threading.Lock()  # the worker thread writes; serialize appends
-        self._fh = None
+        self._fh: TextIOWrapper | None = None
+
+    def _ensure_open(self) -> TextIOWrapper | None:
+        # Caller holds the lock. Open (append) on first use / after a close().
+        if self._fh is not None:
+            return self._fh
         try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            self._fh = path.open("a", encoding="utf-8", buffering=1)  # line-buffered
-            logger.info(f"copilot trace -> {path}")
+            self._path.parent.mkdir(parents=True, exist_ok=True)
+            self._fh = self._path.open("a", encoding="utf-8", buffering=1)
+            logger.info(f"copilot trace -> {self._path}")
         except OSError as e:
-            # Tracing must never break a turn; degrade to a no-op writer.
-            logger.warning(f"copilot trace disabled (cannot open {path}): {e}")
+            logger.warning(f"copilot trace disabled (cannot open {self._path}): {e}")
+            self._fh = None
+        return self._fh
 
     def event(self, kind: str, **fields: Any) -> None:
-        if self._fh is None:
-            return
         record = {
             "ts": datetime.now().isoformat(timespec="milliseconds"),
             "kind": kind,
@@ -52,8 +61,11 @@ class TraceLog:
         }
         line = json.dumps(record, ensure_ascii=False, default=str)
         with self._lock:
+            fh = self._ensure_open()
+            if fh is None:
+                return
             try:
-                self._fh.write(line + "\n")
+                fh.write(line + "\n")
             except OSError as e:
                 logger.warning(f"copilot trace write failed: {e}")
 
@@ -70,11 +82,13 @@ def new_trace_log(stamp: str) -> TraceLog:
 
 
 class _NullTraceLog(TraceLog):
-    # The agent loop's default when no trace sink is supplied (tests). event() no-ops.
+    # The agent loop's default when no trace sink is supplied (tests). event() no-ops
+    # (its path can never be opened).
     def __init__(self) -> None:
-        self._fh = None
-        self._lock = threading.Lock()
-        self._path = Path()
+        super().__init__(Path())
+
+    def _ensure_open(self) -> TextIOWrapper | None:
+        return None
 
 
 NULL_TRACE = _NullTraceLog()
