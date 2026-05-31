@@ -1,5 +1,6 @@
 import queue
 import threading
+from datetime import datetime
 
 from loguru import logger
 
@@ -23,6 +24,12 @@ from shaderbox.copilot.llm.api import LLMMessage
 from shaderbox.copilot.llm.openrouter import OpenRouterLLMClient
 from shaderbox.copilot.state import ChatState, Message
 from shaderbox.copilot.tools.registry import build_registry
+from shaderbox.copilot.trace import new_trace_log
+
+
+def _trace_stamp() -> str:
+    return datetime.now().strftime("%Y-%m-%d_%H-%M-%S_%f")
+
 
 # The package composition root. App owns ONE of these (constructed before the first
 # _init, which calls release()) and drives it: bridge.drain() + pump_events() per
@@ -55,6 +62,9 @@ class CopilotSession:
         self._released = (
             False  # True only after release() — gates the shutdown sentinel
         )
+        # Full-transcript sink (prompts / responses / tool calls, in full) — a dedicated
+        # file, separate from the regular log stream (trace.py). Lazily opened.
+        self.trace = new_trace_log(_trace_stamp())
 
     # ---- main thread: enqueue + drain ----
 
@@ -163,6 +173,7 @@ class CopilotSession:
                 user_text,
                 self.gate,
                 self._cancel,
+                self.trace,
             ):
                 if isinstance(ev, AgentTextDelta):
                     assistant_text += ev.text
@@ -216,3 +227,4 @@ class CopilotSession:
             self._worker.join(timeout=COPILOT_CONFIG.worker_join_timeout_s)
             if self._worker.is_alive():
                 logger.warning("Copilot worker did not exit in time; abandoning")
+        self.trace.close()

@@ -19,6 +19,9 @@ from shaderbox.copilot.llm.api import (
 )
 from shaderbox.copilot.prompt import build_messages
 from shaderbox.copilot.tools.registry import ToolRegistry
+from shaderbox.copilot.trace import NULL_TRACE, TraceLog
+
+_NULL_TRACE = NULL_TRACE
 
 # The agent loop: own a growing conversation, stream one assistant turn, execute any
 # tool calls, append the results, re-stream until the model stops calling tools or a
@@ -167,10 +170,13 @@ def run_turn(
     user_text: str,
     gate: GateChannel,
     cancel: threading.Event,
+    trace: TraceLog | None = None,
 ) -> Iterator[AgentEvent]:
     # `client` is an llm.api.LLMClient — kept as `object` here so this module imports no
-    # provider impl. The duck-typed `.stream(...)` is the only call.
+    # provider impl. The duck-typed `.stream(...)` is the only call. `trace` is the
+    # full-transcript sink (None in tests) — it records everything, in full (trace.py).
     _ = gate  # present for the seam; slice-1 tools never trigger requires_gate (§16.1)
+    tr = trace if trace is not None else _NULL_TRACE
     messages = build_messages(context, history, user_text)
     specs = registry.eager_specs()
     usage = _UsageRollup()
@@ -180,6 +186,7 @@ def run_turn(
         f"copilot turn start | user={user_text[:80]!r} "
         f"history_msgs={len(history)} eager_tools={[s.name for s in specs]}"
     )
+    tr.event("turn_start", user_text=user_text, history=history, eager_tools=specs)
 
     for iteration in range(config.max_iterations):
         if cancel.is_set():
@@ -190,6 +197,13 @@ def run_turn(
         text_buf = ""
         builders: dict[int, _ToolCallBuilder] = {}
         done: LLMDone | None = None
+        tr.event(
+            "llm_request",
+            iteration=iteration,
+            messages=messages,
+            tools=specs,
+            max_tokens=config.max_tokens_per_turn,
+        )
         for ev in client.stream(  # type: ignore[attr-defined]
             messages, tools=specs, max_tokens=config.max_tokens_per_turn
         ):
@@ -218,6 +232,17 @@ def run_turn(
             f"copilot iter {iteration} | finish={fr} {tokens} "
             f"text={len(text_buf)}ch tool_calls={[b.name for b in builders.values()]}"
         )
+        tr.event(
+            "llm_response",
+            iteration=iteration,
+            finish_reason=fr,
+            text=text_buf,
+            tool_calls=[
+                {"id": b.id, "name": b.name, "arguments": b.arguments}
+                for b in builders.values()
+            ],
+            usage=u,
+        )
 
         if done is None or done.finish_reason != "tool_calls" or not builders:
             if done is None:
@@ -226,6 +251,13 @@ def run_turn(
                 f"copilot turn done | iterations={iteration + 1} "
                 f"tool_calls={total_tool_calls} reply={len(text_buf)}ch "
                 f"total_in={usage.input_tokens} cost=${usage.value().cost_usd:.6f}"
+            )
+            tr.event(
+                "turn_done",
+                iterations=iteration + 1,
+                tool_calls=total_tool_calls,
+                reply=text_buf,
+                usage=usage.value(),
             )
             yield AgentTurnDone(ran.executed_actions_note(registry), usage.value())
             return
@@ -251,6 +283,15 @@ def run_turn(
                 f"copilot tool #{total_tool_calls} {tc.name}({args}) "
                 f"-> ok={ok} | {msg[:120]!r}"
             )
+            tr.event(
+                "tool_call",
+                n=total_tool_calls,
+                name=tc.name,
+                args=args,
+                ok=ok,
+                result=msg,
+                payload=payload,
+            )
             ran.record(tc.name, ok, msg)
             yield AgentToolCard(tc.name, ok, payload)
             messages.append(_tool_message(tc.id, msg))
@@ -259,5 +300,12 @@ def run_turn(
         f"copilot turn hit max_iterations={config.max_iterations} | "
         f"tool_calls={total_tool_calls} total_in={usage.input_tokens} "
         f"cost=${usage.value().cost_usd:.6f}"
+    )
+    tr.event(
+        "turn_done",
+        cutoff="max_iterations",
+        iterations=config.max_iterations,
+        tool_calls=total_tool_calls,
+        usage=usage.value(),
     )
     yield AgentTurnDone(ran.executed_actions_note(registry), usage.value())
