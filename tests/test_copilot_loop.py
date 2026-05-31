@@ -183,3 +183,37 @@ def test_edit_not_found_is_a_tool_error() -> None:
     assert len(cards) == 1
     assert cards[0].name == "edit_shader"
     assert cards[0].ok is False
+
+
+def test_stale_shutdown_sentinel_does_not_strand_turn() -> None:
+    # Regression: a reused CopilotSession could hold a leftover _SHUTDOWN sentinel in
+    # its turn queue (from a prior release()); the worker would dequeue it and exit
+    # before processing the real turn, leaving in_flight=True forever ("thinking…").
+    import time
+
+    from shaderbox.copilot.llm.api import LLMDone, LLMTextDelta, LLMUsage
+    from shaderbox.copilot.session import _SHUTDOWN, CopilotSession
+
+    class _PlainClient:
+        def stream(
+            self,
+            messages: list[LLMMessage],
+            *,
+            tools: list[LLMToolSpec] | None = None,
+            max_tokens: int,
+        ) -> Iterator[LLMStreamEvent]:
+            _ = (messages, tools, max_tokens)
+            return iter([LLMTextDelta("hi back"), LLMDone("stop", LLMUsage())])
+
+    sess = CopilotSession(_fake_caps(edit_errors=[]), _PlainClient())  # type: ignore[arg-type]
+    sess._turn_queue.put(_SHUTDOWN)  # simulate the stale sentinel
+    sess.enqueue_turn("hey")
+    for _ in range(100):
+        sess.pump_events()
+        if not sess.state.in_flight:
+            break
+        time.sleep(0.02)
+    sess.release()
+
+    assert not sess.state.in_flight, "turn stranded by a stale shutdown sentinel"
+    assert any(m.role == "assistant" for m in sess.state.messages)

@@ -52,6 +52,9 @@ class CopilotSession:
         self._events: queue.Queue[AgentEvent] = queue.Queue()
         self._worker: threading.Thread | None = None
         self._cancel = threading.Event()
+        self._released = (
+            False  # True only after release() — gates the shutdown sentinel
+        )
 
     # ---- main thread: enqueue + drain ----
 
@@ -131,8 +134,14 @@ class CopilotSession:
         while True:
             item = self._turn_queue.get()
             if item is _SHUTDOWN:
-                logger.info("copilot worker thread exiting (shutdown)")
-                return
+                if self._released:
+                    logger.info("copilot worker thread exiting (shutdown)")
+                    return
+                # A stale sentinel from a prior release() on this REUSED session — the
+                # app is still live (not released), so this worker must keep serving.
+                # Swallow it instead of dying, or the next turn is stranded.
+                logger.info("copilot worker: ignoring stale shutdown sentinel")
+                continue
             assert isinstance(item, str)
             self._cancel.clear()  # a fresh turn starts uncancelled
             self._run_one_turn(item)
@@ -178,6 +187,13 @@ class CopilotSession:
         # session serves the next project, so the gate must NOT latch shut.
         self._cancel.set()
         self.gate.cancel_all(reusable=True)
+        # Drain any queued turns / a stale shutdown sentinel left by a prior release()
+        # on this reused session, so nothing strands the next turn.
+        while True:
+            try:
+                self._turn_queue.get_nowait()
+            except queue.Empty:
+                break
         self.state = ChatState()
         self.history = []
         self._cancel = threading.Event()
@@ -187,10 +203,14 @@ class CopilotSession:
         # release, so a queued GL op never runs against half-released nodes. Safe when no
         # worker was ever spawned: the sentinel + cancel_all + join on a None thread are
         # all no-ops.
+        self._released = True
+        self._released = True
         self._cancel.set()
         self.bridge.cancel_all()
         self.gate.cancel_all()
-        self._turn_queue.put(_SHUTDOWN)  # unblock the worker's get() so join can return
+        self._turn_queue.put(
+            _SHUTDOWN
+        )  # unblock the worker's get() so join can return  # unblock the worker's get() so join can return
         if self._worker is not None and self._worker.is_alive():
             self._worker.join(timeout=COPILOT_CONFIG.worker_join_timeout_s)
             if self._worker.is_alive():
