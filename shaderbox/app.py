@@ -614,8 +614,12 @@ class App:
     def copilot_send(self, text: str) -> None:
         # MAIN THREAD. Flush + lock the editor (§11) BEFORE the worker reads source, so
         # its first get_current_shader sees disk-consistent state.
-        if not text.strip() or self.copilot.state.in_flight:
+        if not text.strip():
             return
+        if self.copilot.state.in_flight:
+            logger.warning("copilot_send ignored: a turn is already in flight")
+            return
+        logger.info(f"copilot_send: enqueuing {text[:60]!r}")
         self.flush_current_editor()
         self.copilot_turn_active = True
         self.copilot.enqueue_turn(text)

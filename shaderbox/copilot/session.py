@@ -63,6 +63,7 @@ class CopilotSession:
         self.state.in_flight = True
         self._ensure_worker()
         self._turn_queue.put(user_text)
+        logger.info("copilot enqueue_turn: queued + worker ensured")
 
     def cancel_turn(self) -> None:
         # MAIN THREAD (Stop button). The loop checks cancel.is_set() between steps; the
@@ -126,9 +127,11 @@ class CopilotSession:
         self._worker.start()
 
     def _run_worker(self) -> None:
+        logger.info("copilot worker thread started")
         while True:
             item = self._turn_queue.get()
             if item is _SHUTDOWN:
+                logger.info("copilot worker thread exiting (shutdown)")
                 return
             assert isinstance(item, str)
             self._cancel.clear()  # a fresh turn starts uncancelled
