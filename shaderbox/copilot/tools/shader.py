@@ -20,7 +20,8 @@ class _EditArgs(BaseModel):
     old_str: str = Field(description="exact substring of the current source to replace")
     new_str: str = Field(description="the replacement text")
     replace_all: bool = Field(
-        default=False, description="replace every occurrence (resolves a non-unique old_str)"
+        default=False,
+        description="replace every occurrence (resolves a non-unique old_str)",
     )
     model_config = {"extra": "forbid"}
 
@@ -66,16 +67,16 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             else "(none)"
         )
         errors = _format_errors(view.errors) if view.errors else "none"
-        msg = (
-            f"{view.listing}\n\nuniforms:\n{uniforms}\n\nerrors:\n{errors}"
-        )
+        msg = f"{view.listing}\n\nuniforms:\n{uniforms}\n\nerrors:\n{errors}"
         return True, msg, {"errors": [e.__dict__ for e in view.errors]}
 
     def edit_shader(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
         # The match + replace + recompile run against the node's CURRENT source on the
         # main thread (caps.apply_shader_edit, §16.3) — no source re-read here, so a unique
         # source-of-truth and no staleness window. `matches` decides the §16.4 string.
-        result = caps.apply_shader_edit(args["old_str"], args["new_str"], args["replace_all"])
+        result = caps.apply_shader_edit(
+            args["old_str"], args["new_str"], args["replace_all"]
+        )
         if result.matches == 0:
             return (
                 False,
@@ -101,7 +102,11 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
     def get_compile_errors(_args: dict[str, Any]) -> tuple[bool, str, dict | None]:
         errors = caps.get_compile_errors_current()
         if errors:
-            return True, _format_errors(errors), {"errors": [e.__dict__ for e in errors]}
+            return (
+                True,
+                _format_errors(errors),
+                {"errors": [e.__dict__ for e in errors]},
+            )
         return True, "none — compiles clean", {"errors": []}
 
     return [

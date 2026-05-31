@@ -116,7 +116,11 @@ def test_edit_compile_feedback_self_correction() -> None:
     ]
     caps = _fake_caps(
         edit_errors=[
-            [CompileErrorInfo(path="node.frag.glsl", line=14, message="'u_time' : undeclared")],
+            [
+                CompileErrorInfo(
+                    path="node.frag.glsl", line=14, message="'u_time' : undeclared"
+                )
+            ],
             [],
         ]
     )
