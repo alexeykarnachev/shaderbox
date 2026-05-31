@@ -3,6 +3,8 @@ import threading
 from collections.abc import Iterator
 from dataclasses import dataclass
 
+from loguru import logger
+
 from shaderbox.copilot.config import CopilotConfig
 from shaderbox.copilot.context import CopilotContext
 from shaderbox.copilot.gate import GateChannel
@@ -173,9 +175,15 @@ def run_turn(
     specs = registry.eager_specs()
     usage = _UsageRollup()
     ran = _RunLog()
+    total_tool_calls = 0
+    logger.info(
+        f"copilot turn start | user={user_text[:80]!r} "
+        f"history_msgs={len(history)} eager_tools={[s.name for s in specs]}"
+    )
 
-    for _iteration in range(config.max_iterations):
+    for iteration in range(config.max_iterations):
         if cancel.is_set():
+            logger.info(f"copilot turn cancelled at iteration {iteration}")
             yield AgentCancelled()
             return
 
@@ -199,7 +207,26 @@ def run_turn(
                     usage.add(ev.usage)
                     done = ev
 
+        fr = done.finish_reason if done else "no-done-event"
+        u = done.usage if done else None
+        tokens = (
+            f"in={u.input_tokens} out={u.output_tokens} cost=${u.cost_usd:.6f}"
+            if u
+            else "in=? out=? cost=?"
+        )
+        logger.info(
+            f"copilot iter {iteration} | finish={fr} {tokens} "
+            f"text={len(text_buf)}ch tool_calls={[b.name for b in builders.values()]}"
+        )
+
         if done is None or done.finish_reason != "tool_calls" or not builders:
+            if done is None:
+                logger.warning("copilot stream ended with no LLMDone event")
+            logger.info(
+                f"copilot turn done | iterations={iteration + 1} "
+                f"tool_calls={total_tool_calls} reply={len(text_buf)}ch "
+                f"total_in={usage.input_tokens} cost=${usage.value().cost_usd:.6f}"
+            )
             yield AgentTurnDone(ran.executed_actions_note(registry), usage.value())
             return
 
@@ -208,15 +235,29 @@ def run_turn(
         for tc in calls:
             args = _parse_args(tc.arguments)
             if args is None:
+                logger.warning(
+                    f"copilot tool {tc.name} | bad args JSON: {tc.arguments[:120]!r}"
+                )
                 messages.append(_tool_message(tc.id, "error: invalid arguments JSON"))
                 continue
             yield AgentStatus(registry.status_for(tc.name, args))
             if cancel.is_set():
+                logger.info(f"copilot turn cancelled before tool {tc.name}")
                 yield AgentCancelled()
                 return
             ok, msg, payload = registry.execute(tc.name, args)
+            total_tool_calls += 1
+            logger.info(
+                f"copilot tool #{total_tool_calls} {tc.name}({args}) "
+                f"-> ok={ok} | {msg[:120]!r}"
+            )
             ran.record(tc.name, ok, msg)
             yield AgentToolCard(tc.name, ok, payload)
             messages.append(_tool_message(tc.id, msg))
 
+    logger.warning(
+        f"copilot turn hit max_iterations={config.max_iterations} | "
+        f"tool_calls={total_tool_calls} total_in={usage.input_tokens} "
+        f"cost=${usage.value().cost_usd:.6f}"
+    )
     yield AgentTurnDone(ran.executed_actions_note(registry), usage.value())

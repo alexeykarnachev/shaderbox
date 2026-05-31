@@ -17,6 +17,7 @@ from shaderbox.copilot.bridge import CopilotBridge
 from shaderbox.copilot.capabilities import CopilotCapabilities
 from shaderbox.copilot.config import COPILOT_CONFIG
 from shaderbox.copilot.context import build_context
+from shaderbox.copilot.errors import CopilotConfigError
 from shaderbox.copilot.gate import GateChannel
 from shaderbox.copilot.llm.api import LLMMessage
 from shaderbox.copilot.llm.openrouter import OpenRouterLLMClient
@@ -150,9 +151,13 @@ class CopilotSession:
                 if isinstance(ev, AgentTextDelta):
                     assistant_text += ev.text
                 self._events.put(ev)
+        except CopilotConfigError as e:
+            logger.warning(f"Copilot turn aborted: {e}")
+            self._events.put(AgentError(str(e)))
+            return
         except Exception:
             logger.exception("Copilot turn failed")
-            self._events.put(AgentError("copilot turn failed"))
+            self._events.put(AgentError("copilot turn failed (see logs)"))
             return
         # Commit the turn to history (worker is the sole owner) so the next turn carries
         # context. The current shader source is NOT stored here — it is re-fetched live

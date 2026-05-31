@@ -8,3 +8,7 @@ class CopilotCancelled(CopilotError):
 
 class CopilotToolError(CopilotError):
     """A tool could not run (bad args, a failed main-thread op, a timeout)."""
+
+
+class CopilotConfigError(CopilotError):
+    """A turn can't start because the copilot isn't configured (no key / model)."""

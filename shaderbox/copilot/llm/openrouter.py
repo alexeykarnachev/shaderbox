@@ -5,6 +5,7 @@ from loguru import logger
 from openai import OpenAI
 from openai.types.chat import ChatCompletionChunk
 
+from shaderbox.copilot.errors import CopilotConfigError
 from shaderbox.copilot.llm.api import (
     LLMClient,
     LLMDone,
@@ -86,6 +87,12 @@ class OpenRouterLLMClient(LLMClient):
         tools: list[LLMToolSpec] | None = None,
         max_tokens: int,
     ) -> Iterator[LLMStreamEvent]:
+        if not self._get_api_key():
+            raise CopilotConfigError("no OpenRouter key set (Settings -> Integrations)")
+        if not self._get_model():
+            raise CopilotConfigError(
+                "no OpenRouter model set (Settings -> Integrations)"
+            )
         try:
             yield from self._stream_impl(messages, tools, max_tokens)
         except Exception as exc:
@@ -98,8 +105,9 @@ class OpenRouterLLMClient(LLMClient):
         tools: list[LLMToolSpec] | None,
         max_tokens: int,
     ) -> Iterator[LLMStreamEvent]:
+        model = self._get_model()
         kwargs: dict[str, Any] = {
-            "model": self._get_model(),
+            "model": model,
             "messages": [_to_wire_message(m) for m in messages],
             "stream": True,
             "stream_options": {"include_usage": True},
@@ -108,6 +116,10 @@ class OpenRouterLLMClient(LLMClient):
         }
         if tools:
             kwargs["tools"] = [_tool_to_wire(t) for t in tools]
+        logger.info(
+            f"copilot LLM request | model={model} msgs={len(messages)} "
+            f"tools={len(tools) if tools else 0} max_tokens={max_tokens}"
+        )
 
         builders: dict[int, dict[str, str]] = {}
         started: set[int] = set()
