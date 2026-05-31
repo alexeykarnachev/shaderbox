@@ -19,8 +19,24 @@
 
 ## B. Context strategy
 - B1. The current shader source is ALWAYS in the agent's context, in full. Accepted token cost;
-  it is the core value. It is a PROMPT-LEVEL entity (re-rendered fresh each turn from live state),
+  it is the core value. It is a PROMPT-LEVEL entity (always FRESH, never accumulating stale copies),
   NOT a history entity — history never accumulates old shader versions.
+  - B1a. (refined 2026-05-31) PLACEMENT = via the `get_current_shader()` TOOL, NOT an always-present
+    system/context block. Reason = prompt-CACHE health, verified against Claude Code (`cli.js` uses
+    `cache_control`/`ephemeral` + a "File has been modified since read → re-read" freshness guard;
+    files come via the Read tool, not a context block). During active dev the source CHANGES every
+    turn; a volatile block in the cache-warm FRONT of the prompt (the old "always in context" idea)
+    busts the prefix cache for everything after it every turn — the worst case. Via-tool puts the
+    volatile source AFTER the stable prefix (identity/rules/tool-specs/lib-catalogue), so the
+    expensive prefix stays cached; you pay full price only for the fresh source bytes the turn it's
+    fetched. So via-tool is USUALLY CHEAPER than always-in-context, not more expensive.
+  - B1b. FRESHNESS rule (our simplification of CC's "modified since read"): the editor is LOCKED for
+    the whole turn (decision E) and there is exactly ONE current node, so the source can change ONLY
+    between turns. => at prompt-assembly, STRIP prior `get_current_shader` results out of history
+    (replace with a short `[shader source from turn N — re-fetch with get_current_shader]` marker, the
+    cc-server `_compress_old_tool_results` move). The agent re-fetches fresh each turn (read-before-edit
+    discipline); history never carries a stale or duplicated source. Consequence: the system prompt
+    instructs "read the shader with get_current_shader before editing it."
 - B2. The library is the token-relief valve: the agent sees lib functions as SIGNATURE + DESCRIPTION,
   NOT bodies (bodies pulled in only when the agent greps/reads explicitly). => good lib descriptions
   + signatures matter. GROUNDED: `ShaderLibFunction` already carries `signature`, `doc` (`///` block),
@@ -101,6 +117,16 @@
   `.trash/` or a `renders/`-style dir) and ALWAYS tells the user the path. Never silently /tmp.
 - H4. Image-vs-video is the agent's inference from the in-context source (does it use `u_time`?).
   No decision-tool needed — just `render_image` + `render_video` tools; the agent picks.
+- H5. (R3, decided 2026-05-31) Render = ONE blocking `bridge.run_on_main` op; the UI FREEZES for the
+  encode, EXACTLY like clicking render in the Share tab today (shipped behavior — `share_tab.update`
+  main-thread `for i in range(n_frames)` ffmpeg loop). NO chunking (a `core.py` refactor we declined),
+  NO worker-thread render (GL is main-thread-only). Mitigations: (a) a global "Rendering '<node>'…
+  please wait" modal via the existing `ui_primitives.modal_window`, painted ONE FRAME BEFORE the freeze
+  via a two-phase commit (fast bridge op sets `app.copilot_render_status` → frame draws modal → next
+  frame runs the encode → clears it); (b) `render_op_timeout_s = 60.0` (new `CopilotConfig` field) via a
+  `bridge.run_on_main(fn, timeout=…)` overload — the 5s default would trip on any real encode. H2's
+  within-render progress bar is DROPPED (a frozen frame loop can't paint it); the BATCH bar (node N of
+  M, driven by the loop between calls) survives.
 
 ## I. History / cost / loop limits
 - I1. History does NOT accumulate shader versions (= B1). The real history bloat is TOOL RESULTS;
