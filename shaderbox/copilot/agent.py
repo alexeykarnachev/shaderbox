@@ -328,10 +328,11 @@ def run_turn(
             yield AgentToolCard(tc.name, ok, payload)
             messages.append(_tool_message(tc.id, msg))
 
-            # §I2 self-correction cap: a model stuck on an edit (the substring keeps not
-            # matching) would otherwise retry to the max_iterations ceiling. Count
-            # CONSECUTIVE failed edits; any success or other tool resets it.
-            if tc.name == "edit_shader" and not ok:
+            # §I2 self-correction cap: a model stuck on an edit (an old_str that keeps not
+            # matching, a line range that keeps not resolving) would otherwise retry to the
+            # max_iterations ceiling. Count CONSECUTIVE failed MUTATING tools; any success or
+            # non-mutating tool resets it.
+            if registry.is_mutating(tc.name) and not ok:
                 consecutive_failed_edits += 1
             else:
                 consecutive_failed_edits = 0
@@ -348,9 +349,9 @@ def run_turn(
                 )
                 note = (
                     f"I couldn't apply that edit after {consecutive_failed_edits} tries "
-                    "— my old_str kept not matching the shader source exactly. I've "
-                    "stopped to avoid looping. Tell me to try again, or describe the "
-                    "change differently."
+                    "— the edit kept not applying to the shader source. I've stopped to "
+                    "avoid looping. Tell me to try again, or describe the change "
+                    "differently."
                 )
                 yield AgentError(note)
                 return

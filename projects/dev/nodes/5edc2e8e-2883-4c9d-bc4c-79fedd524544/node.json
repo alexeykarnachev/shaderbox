@@ -19,6 +19,7 @@
             0.5,
             0.5
         ],
+        "u_enable": 3.0,
         "u_texture": {
             "file_path": "media/u_texture.png",
             "size": [
@@ -157,6 +158,14 @@
                 "dimension": 1,
                 "array_length": 1,
                 "input_type": "auto"
+            },
+            "237162727127008603155640257607220894146": {
+                "name": "u_enable",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
             }
         },
         "uniform_sort_key": "type",

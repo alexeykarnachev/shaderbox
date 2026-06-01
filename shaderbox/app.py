@@ -31,11 +31,12 @@ from shaderbox.copilot.capabilities import (
     EditResult,
     NodeSummary,
 )
+from shaderbox.copilot.config import COPILOT_CONFIG
 from shaderbox.copilot.glsl_lex import token_match
 from shaderbox.copilot.llm.openrouter import OpenRouterLLMClient
 from shaderbox.copilot.session import CopilotSession
 from shaderbox.copilot.state import CopilotLayout
-from shaderbox.core import Canvas
+from shaderbox.core import Canvas, Node
 from shaderbox.editor_types import EditorSession, HoverMark, InlineInput, JumpRequest
 from shaderbox.exporters.integrations import IntegrationsStore
 from shaderbox.exporters.registry import ExporterRegistry
@@ -99,6 +100,39 @@ def _number_lines(text: str) -> str:
     lines = text.split("\n")
     width = len(str(len(lines)))
     return "\n".join(f"{i:>{width}}  {line}" for i, line in enumerate(lines, start=1))
+
+
+def _line_of_offset(text: str, offset: int) -> int:
+    # 1-based line number containing byte `offset` (split-on-newline model, L1).
+    return text.count("\n", 0, offset) + 1
+
+
+def _changed_excerpt(new_text: str, line_range: tuple[int, int], context: int) -> str:
+    # A line-numbered window of new_text around the 1-based inclusive `line_range`, with
+    # `context` lines of padding each side — the copilot's "what changed" apply-feedback
+    # (feature 020 · 14). Same split-on-newline line model as _number_lines (L1).
+    lines = new_text.split("\n")
+    width = len(str(len(lines)))
+    lo = max(1, line_range[0] - context)
+    hi = min(len(lines), line_range[1] + context)
+    return "\n".join(f"{i:>{width}}  {lines[i - 1]}" for i in range(lo, hi + 1))
+
+
+def _edit_result(
+    matches: int,
+    errors: list[CompileErrorInfo],
+    new_text: str,
+    changed: tuple[int, int] | None,
+) -> EditResult:
+    # Wrap a successful copilot apply with the "what changed" excerpt (feature 020 · 14).
+    excerpt = (
+        _changed_excerpt(new_text, changed, COPILOT_CONFIG.edit_feedback_context)
+        if changed is not None
+        else ""
+    )
+    return EditResult(
+        matches=matches, errors=errors, changed_excerpt=excerpt, changed_range=changed
+    )
 
 
 def _ws_normalize(text: str) -> tuple[str, list[int]]:
@@ -487,6 +521,7 @@ class App:
             current_node_id=lambda: self.current_node_id,
             get_current_shader_view=self._copilot_current_shader_view,
             apply_shader_edit=self._copilot_apply_shader_edit,
+            apply_line_edit=self._copilot_apply_line_edit,
             get_compile_errors_current=self._copilot_compile_errors_current,
         )
 
@@ -560,13 +595,65 @@ class App:
             if len(spans) > 1 and not replace_all:
                 return EditResult(matches=len(spans), errors=[])
             new_text = _splice(src, spans, new_str)
-            node.release_program(new_text)
-            node.compile()
-            node.source.path.write_text(new_text, encoding="utf-8")
-            self.sync_editor_from_disk(self.current_node_id, new_text)
-            return EditResult(
-                matches=len(spans), errors=_to_error_infos(node.compile_unit.errors)
-            )
+            # Single span -> a meaningful changed range for the apply-feedback; a multi-span
+            # replace_all has no single honest range, so leave it None (§14 D5).
+            changed: tuple[int, int] | None = None
+            if len(spans) == 1:
+                start_off = spans[0][0]
+                # The inserted bytes occupy [start_off, start_off+len(new_str)); the last
+                # changed line holds its last byte. -1 keeps a trailing "\n" in new_str from
+                # bleeding the range onto the (unchanged) next line. Empty new_str (a delete)
+                # collapses to the seam line.
+                end_off = start_off + max(len(new_str) - 1, 0)
+                changed = (
+                    _line_of_offset(new_text, start_off),
+                    _line_of_offset(new_text, end_off),
+                )
+            errors = self._copilot_persist_shader(node, new_text)
+            return _edit_result(len(spans), errors, new_text, changed)
+
+        return self.copilot.bridge.run_on_main(_on_main)
+
+    def _copilot_persist_shader(
+        self, node: Node, new_text: str
+    ) -> list[CompileErrorInfo]:
+        # Swap in the new source, recompile, persist to disk, refresh the read-only editor —
+        # the shared main-thread tail of every copilot edit (§16.3 / §14 L4). release_program
+        # is what actually adopts new_text; compile()'s failed-compile early-return keeps the
+        # old program live (feature-013) so a broken edit never blanks the preview.
+        node.release_program(new_text)
+        node.compile()
+        node.source.path.write_text(new_text, encoding="utf-8")
+        self.sync_editor_from_disk(self.current_node_id, new_text)
+        return _to_error_infos(node.compile_unit.errors)
+
+    def _copilot_apply_line_edit(
+        self, start_line: int, end_line: int, new_text: str
+    ) -> EditResult:
+        # Replace the 1-based inclusive line range [start_line, end_line] with new_text over
+        # the split("\n") line list (§14 L2 — byte-exact by construction), recompile + persist.
+        # end_line == start_line - 1 is the one legal empty selection (a pure insert at
+        # start_line); any other start > end, or an out-of-range bound, fails loud and mutates
+        # nothing (matches==0 carries the error string for the tool layer).
+        def _on_main() -> EditResult:
+            node = self.ui_nodes[self.current_node_id].node
+            lines = node.source.text.split("\n")
+            n = len(lines)
+            is_insert = end_line == start_line - 1
+            if (
+                start_line < 1
+                or end_line > n
+                or (start_line > end_line and not is_insert)
+            ):
+                return EditResult(matches=0, errors=[], hint="")
+            repl = new_text.split("\n") if new_text != "" else []
+            new_lines = lines[: start_line - 1] + repl + lines[end_line:]
+            new_full = "\n".join(new_lines)
+            changed: tuple[int, int] | None = None
+            if repl:
+                changed = (start_line, start_line + len(repl) - 1)
+            errors = self._copilot_persist_shader(node, new_full)
+            return _edit_result(1, errors, new_full, changed)
 
         return self.copilot.bridge.run_on_main(_on_main)
 

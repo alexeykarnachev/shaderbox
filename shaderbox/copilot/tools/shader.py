@@ -2,7 +2,11 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from shaderbox.copilot.capabilities import CompileErrorInfo, CopilotCapabilities
+from shaderbox.copilot.capabilities import (
+    CompileErrorInfo,
+    CopilotCapabilities,
+    EditResult,
+)
 from shaderbox.copilot.tools.base import GatePolicy, ToolDefinition
 
 # Slice 1 — the edit / compile-feedback vertical (spec §16). Three eager, current-node
@@ -23,6 +27,24 @@ class _EditArgs(BaseModel):
         default=False,
         description="replace every occurrence (resolves a non-unique old_str)",
     )
+    model_config = {"extra": "forbid"}
+
+
+class _ReplaceLinesArgs(BaseModel):
+    start_line: int = Field(description="first line to replace (1-based, inclusive)")
+    end_line: int = Field(description="last line to replace (1-based, inclusive)")
+    new_text: str = Field(
+        description="replacement text (no trailing newline needed); empty string deletes "
+        "the range"
+    )
+    model_config = {"extra": "forbid"}
+
+
+class _InsertAfterArgs(BaseModel):
+    line: int = Field(
+        description="insert after this 1-based line; 0 inserts at the top of the file"
+    )
+    new_text: str = Field(description="text to insert (no trailing newline needed)")
     model_config = {"extra": "forbid"}
 
 
@@ -49,9 +71,48 @@ _GET_COMPILE_ERRORS_DESC = (
     "render error)."
 )
 
+_REPLACE_LINES_DESC = (
+    "Replace an inclusive range of lines [start_line, end_line] (1-based, the line numbers "
+    "shown by get_current_shader) with new_text, then recompile. ALWAYS call "
+    "get_current_shader first — the line numbers must be current. new_text is inserted "
+    "verbatim, so include the exact indentation you want (it does not have to match the old "
+    "lines). An empty new_text deletes the range. To insert without replacing, use "
+    "insert_after instead. After the edit I recompile and return any compile errors plus a "
+    "snippet of the changed region; if there are none, it compiled clean."
+)
+
+_INSERT_AFTER_DESC = (
+    "Insert new_text as new line(s) AFTER the given 1-based line (the numbers shown by "
+    "get_current_shader); pass 0 to insert at the very top, or the last line number to "
+    "append at the end. ALWAYS call get_current_shader first. new_text is inserted verbatim "
+    "— include the indentation you want. Existing lines shift down; nothing is replaced. "
+    "After the edit I recompile and return any compile errors plus a snippet of the changed "
+    "region; if there are none, it compiled clean."
+)
+
+_OUT_OF_RANGE = (
+    "error: line number out of range — re-read with get_current_shader and use a line "
+    "number it shows"
+)
+
 
 def _format_errors(errors: list[CompileErrorInfo]) -> str:
     return "\n".join(f"{e.path}:{e.line}: {e.message}" for e in errors)
+
+
+def _applied_result(result: EditResult) -> tuple[bool, str, dict]:
+    # The shared success/compile-error message for any applied edit (edit_shader /
+    # replace_lines / insert_after). Appends the "what changed" excerpt when present, or a
+    # region count for a multi-span replace_all (no single excerpt — §14 D5).
+    if result.errors:
+        head = "compiled with errors:\n" + _format_errors(result.errors)
+    else:
+        head = "ok — compiled clean"
+    if result.changed_excerpt:
+        head += f"\nchanged lines:\n{result.changed_excerpt}"
+    elif result.matches > 1:
+        head += f" ({result.matches} regions changed)"
+    return True, head, {"errors": [e.__dict__ for e in result.errors]}
 
 
 def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
@@ -97,13 +158,28 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
                 "surrounding context to make it unique, or set replace_all=true",
                 None,
             )
-        if result.errors:
+        return _applied_result(result)
+
+    def replace_lines(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
+        start, end = args["start_line"], args["end_line"]
+        if start > end:
             return (
-                True,
-                "compiled with errors:\n" + _format_errors(result.errors),
-                {"errors": [e.__dict__ for e in result.errors]},
+                False,
+                f"error: start_line ({start}) is after end_line ({end}) — to insert "
+                "without replacing, use insert_after",
+                None,
             )
-        return True, "ok — compiled clean", {"errors": []}
+        result = caps.apply_line_edit(start, end, args["new_text"])
+        if result.matches == 0:
+            return False, _OUT_OF_RANGE, None
+        return _applied_result(result)
+
+    def insert_after(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
+        line = args["line"]
+        result = caps.apply_line_edit(line + 1, line, args["new_text"])
+        if result.matches == 0:
+            return False, _OUT_OF_RANGE, None
+        return _applied_result(result)
 
     def get_compile_errors(_args: dict[str, Any]) -> tuple[bool, str, dict | None]:
         errors = caps.get_compile_errors_current()
@@ -132,6 +208,28 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             description=_EDIT_SHADER_DESC,
             args_model=_EditArgs,
             handler=edit_shader,
+            mutating=True,
+            needs_gl=True,
+            category="shader",
+            eager=True,
+            gate_policy=GatePolicy.NONE,
+        ),
+        ToolDefinition(
+            name="replace_lines",
+            description=_REPLACE_LINES_DESC,
+            args_model=_ReplaceLinesArgs,
+            handler=replace_lines,
+            mutating=True,
+            needs_gl=True,
+            category="shader",
+            eager=True,
+            gate_policy=GatePolicy.NONE,
+        ),
+        ToolDefinition(
+            name="insert_after",
+            description=_INSERT_AFTER_DESC,
+            args_model=_InsertAfterArgs,
+            handler=insert_after,
             mutating=True,
             needs_gl=True,
             category="shader",

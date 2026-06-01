@@ -10,6 +10,8 @@ class CopilotConfig:
     max_tokens_per_turn: int = 8_000
     # Soft per-edit compile-fix retry budget, distinct from max_iterations (§I2).
     max_edit_retries: int = 3
+    # Context lines on each side of a changed region in the edit apply-feedback excerpt.
+    edit_feedback_context: int = 2
     # A list-arg above this count trips a BULK-policy gate (§2.3 / §F4).
     bulk_gate_threshold: int = 5
     # Worker join() timeout at shutdown; a blocking network read may outlive it

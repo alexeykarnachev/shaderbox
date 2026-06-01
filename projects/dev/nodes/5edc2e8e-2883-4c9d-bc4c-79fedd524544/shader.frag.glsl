@@ -15,6 +15,7 @@ uniform float u_drag_float = 0.5;
 uniform vec2 u_drag_vec2 = vec2(0.5, 0.5);
 uniform vec3 u_drag_vec3 = vec3(0.5, 0.5, 0.5);
 uniform vec4 u_drag_vec4 = vec4(0.5, 0.5, 0.5, 1.0);
+uniform float u_enable = 1.0;
 
 // color (vec3 / vec4, name ends "color")
 uniform vec3 u_color = vec3(1.0, 0.2, 0.1);
@@ -53,8 +54,10 @@ void main(){
     vec2 p=uv*3.-u_drag_vec2;
     float t=u_time*(.3+u_drag_float*.3);
     p+=vec2(sin(t*.7),cos(t*.5))*u_drag_vec3.xy*.4;
-    float w=fbm(p+fbm(p*1.4+t*.2)*.8);
-    vec3 col=mix(u_color,u_tint_color.rgb,w);
+      float w=fbm(p+fbm(p*1.4+t*.2)*.8);
+  vec3 col;
+  if (u_enable > 0.5) {
+    col=mix(u_color,u_tint_color.rgb,w);
     col=mix(col,vec3(.9),smoothstep(.55,.75,w));
     col+= .07*hash(uv*300.);
 
@@ -71,6 +74,9 @@ void main(){
     // 3. pulsing ring highlight
     float ring = abs(fract(length(p) * 1.8 - t * 1.5) - .5) * 2.;
     col += .15 * smoothstep(.3, .0, ring) * u_drag_float;
+  } else {
+    col = vec3(0.0);
+  }
 
-    fs_color = vec4(col, 1.);
+  fs_color = vec4(col, 1.);
 }

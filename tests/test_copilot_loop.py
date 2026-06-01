@@ -87,6 +87,20 @@ def _fake_caps(edit_errors: list[list[CompileErrorInfo]]) -> CopilotCapabilities
         state["n"] += 1
         return EditResult(matches=len(spans), errors=errors)
 
+    def apply_line(start_line: int, end_line: int, new_text: str) -> EditResult:
+        # Faithful to App: split-on-newline list edit (§14 L2). matches==0 is the
+        # out-of-range fail-soft signal the tool layer turns into the range error.
+        lines = state["text"].split("\n")
+        n = len(lines)
+        is_insert = end_line == start_line - 1
+        if start_line < 1 or end_line > n or (start_line > end_line and not is_insert):
+            return EditResult(matches=0, errors=[])
+        repl = new_text.split("\n") if new_text != "" else []
+        state["text"] = "\n".join(lines[: start_line - 1] + repl + lines[end_line:])
+        errors = edit_errors[state["n"]]
+        state["n"] += 1
+        return EditResult(matches=1, errors=errors)
+
     def view() -> CurrentShaderView:
         return CurrentShaderView(
             text=state["text"],
@@ -103,6 +117,7 @@ def _fake_caps(edit_errors: list[list[CompileErrorInfo]]) -> CopilotCapabilities
         current_node_id=lambda: "node-1",
         get_current_shader_view=view,
         apply_shader_edit=apply_edit,
+        apply_line_edit=apply_line,
         get_compile_errors_current=lambda: [],
     )
 

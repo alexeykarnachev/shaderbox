@@ -52,6 +52,11 @@ class EditResult:
     # ignoring whitespace — the model copies this instead of re-guessing. "" when there
     # is no unique whitespace-only near-match (feature 020 · 12).
     hint: str = ""
+    # Apply-feedback (feature 020 · 14): the post-edit "what changed" excerpt (line-numbered
+    # context around the changed region) + its 1-based line range in the NEW source. Set on a
+    # single-region apply; both empty/None on a non-apply OR a multi-span replace_all.
+    changed_excerpt: str = ""
+    changed_range: tuple[int, int] | None = None
 
 
 @dataclass(frozen=True)
@@ -77,5 +82,9 @@ class CopilotCapabilities:
     # refresh the editor — all on the main thread (§16.3). Returns the match count + the
     # post-compile 1-based errors. (old_str, new_str, replace_all).
     apply_shader_edit: Callable[[str, str, bool], EditResult]
+    # Replace the 1-based inclusive line range [start, end] of the current shader with
+    # new_text, recompile + persist + refresh (feature 020 · 14). An empty selection
+    # (end == start - 1) is a pure insert at position `start`. Same main-thread round-trip.
+    apply_line_edit: Callable[[int, int, str], EditResult]
     # Force a compile if stale, return the current 1-based errors.
     get_compile_errors_current: Callable[[], list[CompileErrorInfo]]
