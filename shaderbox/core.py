@@ -341,7 +341,7 @@ class Node:
                 try:
                     self.program[uniform.name] = value_for_program
                 except Exception as e:
-                    logger.warning(
+                    logger.debug(
                         f"Failed to set uniform '{uniform.name}' with value {value} ({e}). "
                         f"Cached value will be cleared"
                     )
@@ -356,7 +356,7 @@ class Node:
             video = self.uniform_values.get(uniform.name)
             if isinstance(video, Video):
                 video.restart()
-                logger.info(f"Video uniform '{uniform.name}' restarted")
+                logger.debug(f"Video uniform '{uniform.name}' restarted")
 
     def _render_image(
         self, details: MediaDetails, canvas: "Canvas", u_time: float | None = 0.0

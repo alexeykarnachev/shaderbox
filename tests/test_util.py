@@ -146,12 +146,7 @@ def test_find_uniform_declaration_line_ignores_name_in_comment() -> None:
 def test_find_uniform_declaration_line_ubo_block() -> None:
     # UBO block: name follows `uniform` and is terminated by `{`. The line carries
     # an optional `layout(...)` prefix.
-    source = (
-        "layout(std140) uniform u_params {\n"
-        "    vec4 a;\n"
-        "    vec4 b;\n"
-        "} params;\n"
-    )
+    source = "layout(std140) uniform u_params {\n    vec4 a;\n    vec4 b;\n} params;\n"
     assert find_uniform_declaration_line(source, "u_params") == 0
 
 

@@ -19,36 +19,6 @@
             0.5,
             0.5
         ],
-        "u_drag_vec4": [
-            0.5,
-            0.5,
-            0.5,
-            1.0
-        ],
-        "u_floats": [
-            0.0,
-            0.0,
-            0.0,
-            0.0
-        ],
-        "u_label_text": [
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0
-        ],
         "u_texture": {
             "file_path": "media/u_texture.png",
             "size": [
@@ -62,12 +32,6 @@
             0.4000000059604645,
             1.0,
             1.0
-        ],
-        "u_uints": [
-            0,
-            0,
-            0,
-            0
         ],
         "u_params": {
             "base64": "dEXyPtMsaj9uNYw+dXZPP2DcED4pTys/RyA1P2JOLz8="
@@ -185,6 +149,14 @@
                 "dimension": -1,
                 "array_length": -1,
                 "input_type": "buffer"
+            },
+            "260085533400259490348506664942395818974": {
+                "name": "u_aspect",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "auto"
             }
         },
         "uniform_sort_key": "type",

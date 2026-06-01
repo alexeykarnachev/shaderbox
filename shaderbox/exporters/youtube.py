@@ -549,7 +549,7 @@ class YouTubeExporter(Exporter):
             if job.kind in _BUSY_KINDS:
                 self._render_state.in_flight = True
         except queue.Full:
-            logger.error("YouTubeExporter job queue full; dropping job")
+            logger.warning("YouTubeExporter job queue full; dropping job")
 
     def _ensure_worker(self) -> None:
         with self._worker_lock:
@@ -749,4 +749,4 @@ class YouTubeExporter(Exporter):
         try:
             self._progress_queue.put_nowait(event)
         except queue.Full:
-            logger.warning("YouTubeExporter progress queue full; event dropped")
+            logger.debug("YouTubeExporter progress queue full; event dropped")

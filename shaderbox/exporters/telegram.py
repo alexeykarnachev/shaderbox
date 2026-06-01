@@ -878,7 +878,7 @@ class TelegramExporter(Exporter):
             if job.kind in self._UPLOAD_KINDS:
                 self._render_state.in_flight = True
         except queue.Full:
-            logger.error("TelegramExporter job queue full; dropping job")
+            logger.warning("TelegramExporter job queue full; dropping job")
 
     def _worker_main(self) -> None:
         loop: asyncio.AbstractEventLoop = asyncio.new_event_loop()
@@ -1217,7 +1217,7 @@ class TelegramExporter(Exporter):
         try:
             self._progress_queue.put_nowait(event)
         except queue.Full:
-            logger.warning("TelegramExporter progress queue full; event dropped")
+            logger.debug("TelegramExporter progress queue full; event dropped")
 
     def _apply_event(
         self, ev: ExportProgress | _AuthEvent | _LinkEvent | _StickerListEvent

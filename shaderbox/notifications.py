@@ -28,9 +28,9 @@ class Notifications:
         ttl: float = 5.0,
     ) -> None:
         if color == _ERROR_COLOR:
-            logger.error(f"[notification] {text}")
+            logger.debug(f"[notification] {text}")
         else:
-            logger.info(f"[notification] {text}")
+            logger.debug(f"[notification] {text}")
         self._stack.appendleft(_Notification(text, color, ttl))
 
     def update_and_draw(self) -> None:

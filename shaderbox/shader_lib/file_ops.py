@@ -261,7 +261,7 @@ class ShaderLibFileManager:
                 if not f.resolve().is_relative_to(root):
                     # Defensive: a file here should never resolve outside root (we
                     # refused symlinked dirs above) — log and skip.
-                    logger.warning(f"Skipping out-of-root file during dir delete: {f}")
+                    logger.debug(f"Skipping out-of-root file during dir delete: {f}")
                     continue
                 dest = trash / f.name
                 i = 1

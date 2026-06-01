@@ -28,19 +28,20 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
 
 ---
 
-## [BLOCKER] copilot default model is not tool-call compatible
-- **Trigger:** the NEXT copilot session — i.e. before doing any more copilot work, OR the first time a
-  user reports the copilot "reads the shader then says nothing / outputs garbage like `<｜DSML｜...`".
-- The default `deepseek/deepseek-v4-flash` (`exporters/integrations.py` `CopilotIntegration.model`)
-  CANNOT continue a native tool-call conversation: after a tool result it returns an EMPTY completion,
-  and on edit turns it leaks raw tool-call markup (`<｜DSML｜tool_calls>…`) as plain text. Confirmed in
-  the live app + the trace log this session (`agent.py` rejects it via `_MODEL_INCOMPATIBLE_MSG` — a
-  turn that ends after a tool ran with NEITHER a native tool call NOR text is the proof; no markup
-  string-sniffing, no workaround — maintainer rule: reject the model, don't fit the design to it).
-  **Resolve:** pick a genuinely tool-call-compatible OpenRouter model, set it as the default, and verify
-  a real read→edit turn EXECUTES the edit (the agent calls `edit_shader` natively + recompiles), not
-  just talks. The trace file (`app_data_dir()/copilot_traces/`) shows exactly what the model emits —
-  use it to validate. Slice 2 must NOT be specced until a compatible model is locked (build-then-spec).
+## [DEFERRAL] copilot trace can bleed into the prior project's file on a mid-turn project switch
+- **Trigger:** feature 022 (it must quiesce the worker at project switch to save conversation state) —
+  fold this fix into that quiesced window. OR a maintainer notices a copilot transcript containing a
+  turn that belongs to a different project.
+- `session.reset_conversation` (main thread) closes the old `TraceLog` and opens a new one without
+  JOINING the worker — it only sets `_cancel` + `gate.cancel_all`. A worker still inside `run_turn`
+  holds the old `TraceLog` via its local `tr`; its next `tr.event` runs `_ensure_open`, which keys only
+  on `self._fh is None` and so cannot tell "never opened" from "closed" — it re-opens the just-closed
+  old file (append) and writes the in-flight turn's tail into the PREVIOUS project's transcript. The
+  lock makes this safe (no crash, no write to a closed handle), but events bleed across projects. Same
+  un-joined-worker window also commits the aborted turn to the orphaned old `history` (pre-existing).
+  Honest fix: quiesce/join the worker before swapping the trace (022 needs the same quiesce point for
+  conversation save), OR give `close()` a permanent-closed flag that `_ensure_open` respects (then the
+  `_init`/release reopen path needs its own re-arm). Out of scope for 021 (logging format/leveling).
 
 ## [DEFERRAL] docs describe a "freetype glyph-atlas text-rendering shader" that no shipped shader uses
 - **Trigger:** before the copilot's system prompt describes the text-rendering capability (it must

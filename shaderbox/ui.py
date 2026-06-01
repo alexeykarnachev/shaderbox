@@ -12,7 +12,8 @@ from loguru import logger
 from shaderbox.app import App
 from shaderbox.commands import ActiveRegion, CommandId, NodeTab, chord_to_str
 from shaderbox.hotkeys import dispatch_commands, process_hotkeys
-from shaderbox.paths import app_data_dir, shader_lib_root
+from shaderbox.logging_setup import configure_logging
+from shaderbox.paths import log_dir, shader_lib_root
 from shaderbox.popups.emoji_picker import draw_emoji_picker
 from shaderbox.popups.lib_picker import draw_lib_picker
 from shaderbox.popups.node_creator import draw_node_creator
@@ -91,7 +92,7 @@ def _reload_if_changed(app: App, name: str, ui_node: UINode) -> None:
 
         if i == 0:
             # Root reload: read text, replace, re-sync the open editor session.
-            logger.info(f"Reloading node {name} (root shader changed)")
+            logger.debug(f"Reloading node {name} (root shader changed)")
             try:
                 new_text = path.read_text()
                 ui_node.node.release_program(new_text)
@@ -109,7 +110,7 @@ def _reload_if_changed(app: App, name: str, ui_node: UINode) -> None:
         # include from disk. If a session is open on this lib file AND its text
         # diverges from disk, re-sync it (external edit); if the texts already
         # match, the user just saved in-app — don't clobber their undo history.
-        logger.info(f"Reloading node {name} (lib changed: {path.name})")
+        logger.debug(f"Reloading node {name} (lib changed: {path.name})")
         ui_node.node.compile_unit.sources[i] = replace(src, mtime=disk_mtime)
         ui_node.node.invalidate()
         session = app.editor_sessions.get(path)
@@ -588,16 +589,14 @@ def _draw_node_settings(app: App) -> None:
 
 
 def main() -> None:
-    log_dir = app_data_dir() / "logs"
-    log_dir.mkdir(parents=True, exist_ok=True)
-    logger.add(log_dir / "shaderbox_{time}.log", rotation="5 MB", retention=5)
+    configure_logging()
 
     try:
         app = App()
         run(app)
     except Exception:
         logger.exception("ShaderBox crashed")
-        logger.error(f"A crash log was written to {log_dir}")
+        logger.error(f"A crash log was written to {log_dir()}")
         raise
 
 

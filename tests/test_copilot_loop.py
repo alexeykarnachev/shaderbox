@@ -9,6 +9,7 @@ import threading
 from collections.abc import Iterator
 
 from shaderbox.copilot.agent import (
+    AgentError,
     AgentTextDelta,
     AgentToolCard,
     AgentTurnDone,
@@ -185,6 +186,67 @@ def test_edit_not_found_is_a_tool_error() -> None:
     assert cards[0].ok is False
 
 
+def test_repeated_failed_edits_stop_at_retry_cap() -> None:
+    # §I2 self-correction cap (feature 020 · 12 B/C): a model that keeps sending an
+    # old_str that never matches must STOP at max_edit_retries, not loop to
+    # max_iterations, and the turn must end with an AgentError the user sees.
+    fail_edit = _tool_call(
+        "cx", "edit_shader", '{"old_str": "never present", "new_str": "x"}'
+    )
+    # Far more failing edits than the cap — if the cap weren't enforced the loop would
+    # run to max_iterations and exhaust this list (then IndexError on the fake client).
+    scripts: list[list[LLMStreamEvent]] = [fail_edit] * (
+        COPILOT_CONFIG.max_iterations + 5
+    )
+    caps = _fake_caps(edit_errors=[])
+    registry = build_registry(caps)
+
+    events = list(
+        run_turn(
+            _FakeClient(scripts),
+            registry,
+            COPILOT_CONFIG,
+            CopilotContext(current_node_id="node-1"),
+            history=[],
+            user_text="do the thing",
+            gate=GateChannel(),
+            cancel=threading.Event(),
+        )
+    )
+
+    failed_cards = [e for e in events if isinstance(e, AgentToolCard) and not e.ok]
+    # Exactly the retry budget of failed edits, then it gives up.
+    assert len(failed_cards) == COPILOT_CONFIG.max_edit_retries
+    assert isinstance(events[-1], AgentError)
+    assert "couldn't apply" in events[-1].message
+    # Did NOT run to the hard ceiling.
+    assert len(failed_cards) < COPILOT_CONFIG.max_iterations
+
+
+def test_max_iterations_cutoff_surfaces_as_error() -> None:
+    # A non-edit tool that keeps getting called (read loop) must hit max_iterations and
+    # surface an AgentError so the chat shows why it stopped (feature 020 · 12 C).
+    read = _tool_call("cr", "get_current_shader", "{}")
+    scripts: list[list[LLMStreamEvent]] = [read] * (COPILOT_CONFIG.max_iterations + 5)
+    caps = _fake_caps(edit_errors=[])
+    registry = build_registry(caps)
+
+    events = list(
+        run_turn(
+            _FakeClient(scripts),
+            registry,
+            COPILOT_CONFIG,
+            CopilotContext(current_node_id="node-1"),
+            history=[],
+            user_text="read forever",
+            gate=GateChannel(),
+            cancel=threading.Event(),
+        )
+    )
+    assert isinstance(events[-1], AgentError)
+    assert "stopped after" in events[-1].message.lower()
+
+
 def test_stale_shutdown_sentinel_does_not_strand_turn() -> None:
     # Regression: a reused CopilotSession could hold a leftover _SHUTDOWN sentinel in
     # its turn queue (from a prior release()); the worker would dequeue it and exit
@@ -205,7 +267,11 @@ def test_stale_shutdown_sentinel_does_not_strand_turn() -> None:
             _ = (messages, tools, max_tokens)
             return iter([LLMTextDelta("hi back"), LLMDone("stop", LLMUsage())])
 
-    sess = CopilotSession(_fake_caps(edit_errors=[]), _PlainClient())  # type: ignore[arg-type]
+    sess = CopilotSession(
+        _fake_caps(edit_errors=[]),  # type: ignore[arg-type]
+        _PlainClient(),  # type: ignore[arg-type]
+        get_project_slug=lambda: "test",
+    )
     sess._turn_queue.put(_SHUTDOWN)  # simulate the stale sentinel
     sess.enqueue_turn("hey")
     for _ in range(100):

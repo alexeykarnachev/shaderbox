@@ -227,7 +227,7 @@ class UIAppState(BaseModel):
             with Path(file_path).open("r") as f:
                 data = json.load(f)
         except (OSError, json.JSONDecodeError) as e:
-            logger.error(f"Unreadable app_state ({e}); falling back to defaults")
+            logger.warning(f"Unreadable app_state ({e}); falling back to defaults")
             return cls()
 
         if any(key.startswith("tg_") for key in data):
@@ -268,7 +268,7 @@ class UIAppState(BaseModel):
         try:
             return cls(**data)
         except ValidationError as e:
-            logger.error(f"Incompatible app_state ({e}); falling back to defaults")
+            logger.warning(f"Incompatible app_state ({e}); falling back to defaults")
             return cls()
 
 

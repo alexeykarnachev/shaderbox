@@ -284,7 +284,7 @@ def test_resolve_error_on_lib_cycle(tmp_path: Path) -> None:
         lib,
         {
             "loop.glsl": (
-                "float SB_a() { return SB_b(); }\n" "float SB_b() { return SB_a(); }\n"
+                "float SB_a() { return SB_b(); }\nfloat SB_b() { return SB_a(); }\n"
             )
         },
     )

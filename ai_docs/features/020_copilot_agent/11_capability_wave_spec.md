@@ -184,9 +184,10 @@ emit AgentTurnDone(ran.executed_actions_note())   # max-iterations cutoff, §I4
   capital `Error:`; keep ShaderBox's.)
 - **`LLMDone` carries `finish_reason`** (`llm/api.py` — `"stop" | "tool_calls" | "length" | …`); the
   loop reads it off the captured `done` event (U6).
-- **Self-correction cap (§I2):** a soft per-edit retry budget (`config.max_edit_retries`, ~3) distinct
-  from `max_iterations`. After N failed compile-fix attempts on the same edit, the agent stops and
-  surfaces the error rather than looping to the hard ceiling.
+- **Self-correction cap (§I2) — BUILT in `12_edit_robustness.md`:** a soft per-edit retry budget
+  (`config.max_edit_retries`, 3) distinct from `max_iterations`. After N consecutive failed edits the
+  agent stops and surfaces an `AgentError` rather than looping to the hard ceiling. (Also there: the
+  whitespace near-miss hint on a 0-match, and surfacing the `max_iterations` cutoff to the chat.)
 - **The three loop limits live on `CopilotConfig` as constants — NOT user-tuned, NOT on `UIAppState`**
   (§I3; avoids the app-state migration discipline). `bulk_gate_threshold` + `max_edit_retries` join
   them there.

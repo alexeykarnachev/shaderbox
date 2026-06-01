@@ -167,6 +167,26 @@ belong in the feature spec (`ai_docs/features/NNN_*.md`). This file is not a cha
   time, not per-commit (ship flow: `dev_flow.md`). Revisit if manual bumps are repeatedly forgotten
   before a release (then consider `git describe`-derived versions).
 
+- **On-disk artifacts split by lifetime: durable-portable → the project dir; disposable-local →
+  `app_data_dir()`.** A project dir (`app_state.json` + `nodes/` + `media/` + `trash/`) is a
+  self-contained relocatable unit — it can live anywhere and travels with the user. So state that is
+  durable, read back by the app, and conceptually part of the project goes INSIDE the project dir
+  (e.g. the copilot conversation — feature 022 — lands at `project_dir/copilot/`). Machine-local
+  disposable output goes in `app_data_dir()`: the app log (`logs/`, app-global — the watcher/exporters/
+  startup log before any project) and the copilot trace (`copilot_traces/`, large debug ephemera, never
+  read back, retention-capped). The test: would the user expect it to travel when they copy the project
+  folder? Yes → project dir. No → `app_data_dir()`. Revisit if an artifact is genuinely both (then it
+  needs an explicit copy/export path, not a default location).
+- **Logging is configured ONCE at startup, never per-module.** `logging_setup.configure_logging()` (one
+  call in `ui.py::main` + `scripts/smoke.py`) owns all loguru sinks: a terse INFO+ console + a rotated
+  DEBUG+ file that is a strict SUPERSET of the console. Call sites only do `from loguru import logger;
+  logger.X(...)` — no module calls `logger.add`/`.remove`/sets handlers (loguru is a process-global
+  singleton, so centralizing the sinks is enough; a `get_logger()` gatekeeper would be ceremony that
+  fights its design). Level discipline: high-level user events (node saved, export done, project loaded,
+  copilot turn start/done, tool called) = INFO (console); lifecycle/diagnostic detail (worker/watcher/
+  queue/bootstrap/per-frame) = DEBUG (file-only); WARNING/ERROR file-only except an app-level crash.
+  Revisit if a module genuinely needs its own format/sink (none does today). Spec: `021_logging_refactor.md`.
+
 *(Each bullet is a generic constraint on future code + a revisit trigger — NOT a feature changelog.
 The `/sanitize` noise audit deletes bullets that narrate a one-off implementation choice; per-feature
 mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*

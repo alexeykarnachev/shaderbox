@@ -36,28 +36,41 @@ layout(std140) uniform u_params {
     vec4 b;
 } params;
 
-void main() {
-    vec2 uv = vs_uv;
-    vec3 tex = texture(u_texture, uv).rgb;
-    float arr_sum = 0.0;
-    
-    for (int i = 0; i < ARR_LEN; ++i) {
-        arr_sum += u_floats[i] + float(u_uints[i]);
-    }
+float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+float noise(vec2 p){
+    vec2 i=floor(p),f=fract(p);
+    float a=hash(i),b=hash(i+vec2(1,0)),c=hash(i+vec2(0,1)),d=hash(i+vec2(1));
+    vec2 u=f*f*(3.-2.*f);
+    return mix(mix(a,b,u.x),mix(c,d,u.x),u.y);
+}
+float fbm(vec2 p){
+    float v=0.,a=.5;
+    for(int i=0;i<5;++i){v+=a*noise(p);p*=2.;a*=.5;}
+    return v;
+}
+void main(){
+    vec2 uv=vs_uv; uv.x*=u_aspect;
+    vec2 p=uv*3.-u_drag_vec2;
+    float t=u_time*(.3+u_drag_float*.3);
+    p+=vec2(sin(t*.7),cos(t*.5))*u_drag_vec3.xy*.4;
+    float w=fbm(p+fbm(p*1.4+t*.2)*.8);
+    vec3 col=mix(u_color,u_tint_color.rgb,w);
+    col=mix(col,vec3(.9),smoothstep(.55,.75,w));
+    col+= .07*hash(uv*300.);
 
-    float text_sum = 0.0;
-    for (int i = 0; i < TEXT_LEN; ++i) {
-        text_sum += float(u_label_text[i]);
-    }
+    // extra effects
+    // 1. vignette
+    float vig = smoothstep(1.1, .3, length(uv));
+    col *= vig;
 
-    vec3 col = tex;
-    col += u_color * 0.0001;
-    col += u_tint_color.rgb * 0.0001;
-    col += vec3(u_drag_float, u_drag_vec2.x, u_drag_vec3.y) * 0.0001;
-    col += u_drag_vec4.rgb * 0.0001;
-    col += vec3(arr_sum + text_sum) * 0.0001;
-    col += (params.a.rgb + params.b.rgb) * 0.0001;
-    col *= (0.5 + 0.5 * sin(u_time)) * u_aspect / u_aspect;
+    // 2. subtle RGB shift (chromatic aberration)
+    float shift = .008 * fbm(p * 2. + t * .4);
+    col.r = mix(col.r, texture(u_texture, vs_uv + vec2(shift)).r, .3);
+    col.b = mix(col.b, texture(u_texture, vs_uv - vec2(shift)).b, .3);
 
-    fs_color = vec4(col, 1.0);
+    // 3. pulsing ring highlight
+    float ring = abs(fract(length(p) * 1.8 - t * 1.5) - .5) * 2.;
+    col += .15 * smoothstep(.3, .0, ring) * u_drag_float;
+
+    fs_color = vec4(col, 1.);
 }

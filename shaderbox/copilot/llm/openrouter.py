@@ -116,7 +116,7 @@ class OpenRouterLLMClient(LLMClient):
         }
         if tools:
             kwargs["tools"] = [_tool_to_wire(t) for t in tools]
-        logger.info(
+        logger.debug(
             f"copilot LLM request | model={model} msgs={len(messages)} "
             f"tools={len(tools) if tools else 0} max_tokens={max_tokens}"
         )

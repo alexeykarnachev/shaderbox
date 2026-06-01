@@ -78,12 +78,18 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             args["old_str"], args["new_str"], args["replace_all"]
         )
         if result.matches == 0:
-            return (
-                False,
+            base = (
                 "error: old_str not found in the shader — re-read with "
-                "get_current_shader and copy an exact substring",
-                None,
+                "get_current_shader and copy an exact substring"
             )
+            if result.hint:
+                # A unique region matches ignoring whitespace — the model's old_str only
+                # differs in indentation/spacing. Hand it the exact bytes to copy.
+                base += (
+                    "\nThe closest region differs only in whitespace. Copy this EXACTLY "
+                    f"as old_str:\n{result.hint}"
+                )
+            return False, base, None
         if result.matches > 1 and not args["replace_all"]:
             return (
                 False,

@@ -29,3 +29,19 @@ def shader_lib_trash_dir() -> Path:
     path = shader_lib_root() / ".trash"
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def log_dir() -> Path:
+    # App-global, machine-local log files (rotated). Not per-project — the file
+    # watcher, exporters, and startup all log before/across any project.
+    path = app_data_dir() / "logs"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def copilot_trace_dir() -> Path:
+    # Per-session full-fidelity copilot transcripts (debug ephemera, retention-capped).
+    # Central, NOT in the project dir — large, disposable, never read back by the app.
+    path = app_data_dir() / "copilot_traces"
+    path.mkdir(parents=True, exist_ok=True)
+    return path

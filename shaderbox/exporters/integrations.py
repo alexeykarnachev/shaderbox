@@ -50,7 +50,7 @@ class YouTubeIntegration(BaseModel):
 
 class CopilotIntegration(BaseModel):
     openrouter_key: str = ""
-    model: str = "deepseek/deepseek-v4-flash"  # OpenRouter "provider/model-id"
+    model: str = "x-ai/grok-4-fast"  # OpenRouter "provider/model-id"
 
     model_config = {"extra": "forbid"}
 
@@ -75,14 +75,14 @@ class IntegrationsStore(BaseModel):
             with path.open("r") as f:
                 data = json.load(f)
         except (OSError, json.JSONDecodeError) as e:
-            logger.error(
+            logger.warning(
                 f"Unreadable integrations.json ({e}); falling back to defaults"
             )
             return cls()
         try:
             return cls(**data)
         except ValidationError as e:
-            logger.error(
+            logger.warning(
                 f"Incompatible integrations.json ({e}); falling back to defaults"
             )
             return cls()

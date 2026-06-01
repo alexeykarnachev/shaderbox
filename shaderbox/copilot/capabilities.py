@@ -48,6 +48,10 @@ class EditResult:
     # never re-reads the source — `matches` tells it which §16.4 string to return.
     matches: int  # occurrences of old_str found (0 = not found, >1 = ambiguous)
     errors: list[CompileErrorInfo]  # 1-based; only meaningful when the edit applied
+    # On a 0-match, the exact source bytes of the unique region that matches old_str
+    # ignoring whitespace — the model copies this instead of re-guessing. "" when there
+    # is no unique whitespace-only near-match (feature 020 · 12).
+    hint: str = ""
 
 
 @dataclass(frozen=True)

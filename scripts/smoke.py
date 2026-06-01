@@ -17,6 +17,7 @@ from platformdirs import user_data_dir
 
 from shaderbox.app import App
 from shaderbox.commands import ActiveRegion, NodeTab
+from shaderbox.logging_setup import configure_logging
 from shaderbox.ui import update_and_draw
 
 REPO_ROOT: Path = Path(__file__).resolve().parent.parent
@@ -52,6 +53,7 @@ def _check_invariants(app: App, frame_idx: int) -> None:
 
 
 def main() -> int:
+    configure_logging()
     if not DEV_PROJECT_DIR.exists():
         logger.error(f"Fixture project not found: {DEV_PROJECT_DIR}")
         return 1

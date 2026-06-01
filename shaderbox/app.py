@@ -100,6 +100,51 @@ def _number_lines(text: str) -> str:
     return "\n".join(f"{i:>{width}}  {line}" for i, line in enumerate(lines, start=1))
 
 
+def _ws_normalize(text: str) -> tuple[str, list[int]]:
+    # Collapse every run of horizontal whitespace to a single space and drop spaces
+    # adjacent to a newline, returning the normalized text plus a parallel map from each
+    # normalized-char index to its originating index in `text`. The map lets a match in
+    # normalized space be sliced back to the EXACT original bytes (feature 020 · 12 A).
+    out: list[str] = []
+    src_index: list[int] = []
+    i = 0
+    n = len(text)
+    while i < n:
+        c = text[i]
+        if c in " \t":
+            j = i
+            while j < n and text[j] in " \t":
+                j += 1
+            # Emit a single space only when it sits between two non-newline chars; a run
+            # touching a newline collapses away (indentation / trailing space).
+            prev = out[-1] if out else "\n"
+            nxt = text[j] if j < n else "\n"
+            if prev != "\n" and nxt != "\n":
+                out.append(" ")
+                src_index.append(i)
+            i = j
+        else:
+            out.append(c)
+            src_index.append(i)
+            i += 1
+    src_index.append(n)  # sentinel: end of the last char maps past the source end
+    return "".join(out), src_index
+
+
+def _whitespace_near_match(src: str, old_str: str) -> str:
+    # When old_str doesn't match src exactly, find the UNIQUE region of src that matches
+    # it ignoring whitespace, and return that region's EXACT original bytes (so the model
+    # copies them verbatim). "" when there is no match or it's not unique.
+    norm_src, src_index = _ws_normalize(src)
+    norm_old, _ = _ws_normalize(old_str)
+    if not norm_old:
+        return ""
+    first = norm_src.find(norm_old)
+    if first == -1 or norm_src.find(norm_old, first + 1) != -1:
+        return ""  # no match, or ambiguous — no safe single hint
+    return src[src_index[first] : src_index[first + len(norm_old)]]
+
+
 def _uniform_type_label(u: moderngl.Uniform | moderngl.UniformBlock) -> str:
     if isinstance(u, moderngl.UniformBlock):
         return "block"
@@ -236,6 +281,10 @@ class App:
                 get_api_key=lambda: self.integrations_store.copilot.openrouter_key,
                 get_model=lambda: self.integrations_store.copilot.model,
             ),
+            # The trace filename carries the active project's dir name, read live. At
+            # first read (during __init__) project_dir is not yet set -> "project"; the
+            # real slug lands when _init's reset_conversation rotates the trace.
+            get_project_slug=lambda: getattr(self, "project_dir", Path("project")).name,
         )
         # Copilot chat is a floating window (NOT a tab/region). open/layout/focus state
         # lives here; the widget reads it. copilot_focus_pending is the one-shot the
@@ -490,7 +539,11 @@ class App:
             node = self.ui_nodes[self.current_node_id].node
             src = node.source.text
             matches = src.count(old_str)
-            if matches == 0 or (matches > 1 and not replace_all):
+            if matches == 0:
+                return EditResult(
+                    matches=0, errors=[], hint=_whitespace_near_match(src, old_str)
+                )
+            if matches > 1 and not replace_all:
                 return EditResult(matches=matches, errors=[])
             new_text = src.replace(old_str, new_str)
             node.release_program(new_text)
@@ -619,7 +672,8 @@ class App:
         if self.copilot.state.in_flight:
             logger.warning("copilot_send ignored: a turn is already in flight")
             return
-        logger.info(f"copilot_send: enqueuing {text[:60]!r}")
+        preview = text if len(text) <= 60 else f"{text[:60]}[...{len(text) - 60} more]"
+        logger.debug(f"copilot_send: enqueuing {preview!r}")
         self.flush_current_editor()
         self.copilot_turn_active = True
         self.copilot.enqueue_turn(text)
@@ -730,7 +784,7 @@ class App:
 
         if not path.exists():
             path.mkdir(parents=True)
-            logger.info(f"Directory created: {path}")
+            logger.debug(f"Directory created: {path}")
 
         return path
 
@@ -1051,7 +1105,7 @@ class App:
         # the watcher detects a lib file change.
         self.shader_lib_index = ShaderLibIndex.build(shader_lib_root())
         set_active_lib_index(self.shader_lib_index)
-        logger.info(f"Lib index: {len(self.shader_lib_index.functions)} functions")
+        logger.debug(f"Lib index: {len(self.shader_lib_index.functions)} functions")
 
     def is_current_editor_dirty(self) -> bool:
         session = self.get_current_session_if_exists()
@@ -1337,7 +1391,7 @@ class App:
             new_node.save(self.nodes_dir, new_node.id)
             self.ui_nodes[new_node.id] = new_node
             self.set_current_node_id(new_node.id)
-            logger.info(f"Seeded starter node {new_node.id} (first run)")
+            logger.debug(f"Seeded starter node {new_node.id} (first run)")
         except Exception as e:
             logger.error(f"Failed to seed starter node: {e}")
 

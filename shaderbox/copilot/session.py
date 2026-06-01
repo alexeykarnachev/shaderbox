@@ -1,5 +1,6 @@
 import queue
 import threading
+from collections.abc import Callable
 from datetime import datetime
 
 from loguru import logger
@@ -24,11 +25,18 @@ from shaderbox.copilot.llm.api import LLMMessage
 from shaderbox.copilot.llm.openrouter import OpenRouterLLMClient
 from shaderbox.copilot.state import ChatState, Message
 from shaderbox.copilot.tools.registry import build_registry
-from shaderbox.copilot.trace import new_trace_log
+from shaderbox.copilot.trace import TraceLog, new_trace_log
 
 
 def _trace_stamp() -> str:
     return datetime.now().strftime("%Y-%m-%d_%H-%M-%S_%f")
+
+
+def _slugify(name: str) -> str:
+    # Project-dir name -> a filesystem-safe trace-filename slug (the trace file is
+    # copilot_<slug>_<stamp>.transcript). Keep alnum/dash/underscore, collapse the rest.
+    safe = "".join(c if c.isalnum() or c in "-_" else "-" for c in name).strip("-")
+    return safe or "project"
 
 
 # The package composition root. App owns ONE of these (constructed before the first
@@ -44,9 +52,11 @@ class CopilotSession:
         self,
         caps: CopilotCapabilities,
         client: OpenRouterLLMClient,
+        get_project_slug: Callable[[], str],
     ) -> None:
         self.caps = caps
         self.client = client
+        self._get_project_slug = get_project_slug
         self.registry = build_registry(caps)
         self.bridge = CopilotBridge()
         self.gate = GateChannel()
@@ -63,8 +73,12 @@ class CopilotSession:
             False  # True only after release() — gates the shutdown sentinel
         )
         # Full-transcript sink (prompts / responses / tool calls, in full) — a dedicated
-        # file, separate from the regular log stream (trace.py). Lazily opened.
-        self.trace = new_trace_log(_trace_stamp())
+        # per-session file, separate from the regular log stream (trace.py). Lazily
+        # opened; a fresh file per project switch (reset_conversation).
+        self.trace = self._new_trace()
+
+    def _new_trace(self) -> TraceLog:
+        return new_trace_log(_slugify(self._get_project_slug()), _trace_stamp())
 
     # ---- main thread: enqueue + drain ----
 
@@ -80,7 +94,7 @@ class CopilotSession:
         self.bridge.reopen()
         self._ensure_worker()
         self._turn_queue.put(user_text)
-        logger.info("copilot enqueue_turn: queued + worker ensured")
+        logger.debug("copilot enqueue_turn: queued + worker ensured")
 
     def cancel_turn(self) -> None:
         # MAIN THREAD (Stop button). The loop checks cancel.is_set() between steps; the
@@ -144,17 +158,17 @@ class CopilotSession:
         self._worker.start()
 
     def _run_worker(self) -> None:
-        logger.info("copilot worker thread started")
+        logger.debug("copilot worker thread started")
         while True:
             item = self._turn_queue.get()
             if item is _SHUTDOWN:
                 if self._released:
-                    logger.info("copilot worker thread exiting (shutdown)")
+                    logger.debug("copilot worker thread exiting (shutdown)")
                     return
                 # A stale sentinel from a prior release() on this REUSED session — the
                 # app is still live (not released), so this worker must keep serving.
                 # Swallow it instead of dying, or the next turn is stranded.
-                logger.info("copilot worker: ignoring stale shutdown sentinel")
+                logger.debug("copilot worker: ignoring stale shutdown sentinel")
                 continue
             assert isinstance(item, str)
             self._cancel.clear()  # a fresh turn starts uncancelled
@@ -163,6 +177,7 @@ class CopilotSession:
     def _run_one_turn(self, user_text: str) -> None:
         context = build_context(self.caps)
         assistant_text = ""
+        error_text = ""
         try:
             for ev in run_turn(
                 self.client,
@@ -177,6 +192,8 @@ class CopilotSession:
             ):
                 if isinstance(ev, AgentTextDelta):
                     assistant_text += ev.text
+                elif isinstance(ev, AgentError):
+                    error_text = ev.message
                 self._events.put(ev)
         except CopilotConfigError as e:
             logger.warning(f"Copilot turn aborted: {e}")
@@ -188,10 +205,12 @@ class CopilotSession:
             return
         # Commit the turn to history (worker is the sole owner) so the next turn carries
         # context. The current shader source is NOT stored here — it is re-fetched live
-        # each turn via get_current_shader (§B1).
+        # each turn via get_current_shader (§B1). A turn that ended in an AgentError (a
+        # giveup / cutoff) carries that note as the assistant's last word, so the next
+        # turn's context shows the agent stopped instead of an empty assistant turn.
         self.history.append(LLMMessage(role="user", content=user_text))
         self.history.append(
-            LLMMessage(role="assistant", content=assistant_text or None)
+            LLMMessage(role="assistant", content=assistant_text or error_text or None)
         )
 
     # ---- lifecycle ----
@@ -212,6 +231,11 @@ class CopilotSession:
         self.state = ChatState()
         self.history = []
         self._cancel = threading.Event()
+        # A fresh transcript for the project we are switching INTO — its name carries
+        # the new project's slug, and the prior project's transcript is left closed
+        # on disk (retention prunes it later).
+        self.trace.close()
+        self.trace = self._new_trace()
 
     def release(self) -> None:
         # MAIN THREAD, at shutdown — called at the TOP of App.release(), before the node

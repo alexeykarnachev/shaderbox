@@ -21,8 +21,6 @@ from shaderbox.copilot.prompt import build_messages
 from shaderbox.copilot.tools.registry import ToolRegistry
 from shaderbox.copilot.trace import NULL_TRACE, TraceLog
 
-_NULL_TRACE = NULL_TRACE
-
 # The agent loop: own a growing conversation, stream one assistant turn, execute any
 # tool calls, append the results, re-stream until the model stops calling tools or a
 # limit trips (spec §2; faithful to cc-server AgentLoop.run). The GateChannel param is
@@ -33,6 +31,15 @@ _MODEL_INCOMPATIBLE_MSG = (
     "produced neither a native tool call nor a text reply. Pick a different model in "
     "Settings -> Integrations -> Copilot."
 )
+
+
+def _trunc(text: str, limit: int) -> str:
+    # Log-line truncation with an explicit ASCII marker so a cut value never reads as
+    # the whole thing. The full text always lives in the trace (trace.py); these caps
+    # are for the terse console/file log only.
+    return (
+        text if len(text) <= limit else f"{text[:limit]}[...{len(text) - limit} more]"
+    )
 
 
 @dataclass(frozen=True)
@@ -182,21 +189,23 @@ def run_turn(
     # provider impl. The duck-typed `.stream(...)` is the only call. `trace` is the
     # full-transcript sink (None in tests) — it records everything, in full (trace.py).
     _ = gate  # present for the seam; slice-1 tools never trigger requires_gate (§16.1)
-    tr = trace if trace is not None else _NULL_TRACE
+    tr = trace if trace is not None else NULL_TRACE
     messages = build_messages(context, history, user_text)
     specs = registry.eager_specs()
     usage = _UsageRollup()
     ran = _RunLog()
     total_tool_calls = 0
-    logger.info(
-        f"copilot turn start | user={user_text[:80]!r} "
-        f"history_msgs={len(history)} eager_tools={[s.name for s in specs]}"
+    consecutive_failed_edits = 0  # §I2 self-correction cap (reset on any other outcome)
+    logger.info(f"copilot turn start | user={_trunc(user_text, 80)!r}")
+    logger.debug(
+        f"copilot turn detail | history_msgs={len(history)} "
+        f"eager_tools={[s.name for s in specs]}"
     )
     tr.event("turn_start", user_text=user_text, history=history, eager_tools=specs)
 
     for iteration in range(config.max_iterations):
         if cancel.is_set():
-            logger.info(f"copilot turn cancelled at iteration {iteration}")
+            logger.debug(f"copilot turn cancelled at iteration {iteration}")
             yield AgentCancelled()
             return
 
@@ -234,7 +243,7 @@ def run_turn(
             if u
             else "in=? out=? cost=?"
         )
-        logger.info(
+        logger.debug(
             f"copilot iter {iteration} | finish={fr} {tokens} "
             f"text={len(text_buf)}ch tool_calls={[b.name for b in builders.values()]}"
         )
@@ -288,21 +297,24 @@ def run_turn(
             args = _parse_args(tc.arguments)
             if args is None:
                 logger.warning(
-                    f"copilot tool {tc.name} | bad args JSON: {tc.arguments[:120]!r}"
+                    f"copilot tool {tc.name} | bad args JSON: {_trunc(tc.arguments, 120)!r}"
+                )
+                tr.event(
+                    "tool_args_parse_error",
+                    name=tc.name,
+                    arguments_raw=tc.arguments,
                 )
                 messages.append(_tool_message(tc.id, "error: invalid arguments JSON"))
                 continue
             yield AgentStatus(registry.status_for(tc.name, args))
             if cancel.is_set():
-                logger.info(f"copilot turn cancelled before tool {tc.name}")
+                logger.debug(f"copilot turn cancelled before tool {tc.name}")
                 yield AgentCancelled()
                 return
             ok, msg, payload = registry.execute(tc.name, args)
             total_tool_calls += 1
-            logger.info(
-                f"copilot tool #{total_tool_calls} {tc.name}({args}) "
-                f"-> ok={ok} | {msg[:120]!r}"
-            )
+            logger.info(f"copilot tool #{total_tool_calls} {tc.name} -> ok={ok}")
+            logger.debug(f"copilot tool #{total_tool_calls} args={args} result={msg!r}")
             tr.event(
                 "tool_call",
                 n=total_tool_calls,
@@ -316,6 +328,33 @@ def run_turn(
             yield AgentToolCard(tc.name, ok, payload)
             messages.append(_tool_message(tc.id, msg))
 
+            # §I2 self-correction cap: a model stuck on an edit (the substring keeps not
+            # matching) would otherwise retry to the max_iterations ceiling. Count
+            # CONSECUTIVE failed edits; any success or other tool resets it.
+            if tc.name == "edit_shader" and not ok:
+                consecutive_failed_edits += 1
+            else:
+                consecutive_failed_edits = 0
+            if consecutive_failed_edits >= config.max_edit_retries:
+                logger.warning(
+                    f"copilot edit giveup after {consecutive_failed_edits} failed "
+                    f"edits | total_in={usage.input_tokens} "
+                    f"cost=${usage.value().cost_usd:.6f}"
+                )
+                tr.event(
+                    "edit_giveup",
+                    consecutive_failed_edits=consecutive_failed_edits,
+                    usage=usage.value(),
+                )
+                note = (
+                    f"I couldn't apply that edit after {consecutive_failed_edits} tries "
+                    "— my old_str kept not matching the shader source exactly. I've "
+                    "stopped to avoid looping. Tell me to try again, or describe the "
+                    "change differently."
+                )
+                yield AgentError(note)
+                return
+
     logger.warning(
         f"copilot turn hit max_iterations={config.max_iterations} | "
         f"tool_calls={total_tool_calls} total_in={usage.input_tokens} "
@@ -328,4 +367,8 @@ def run_turn(
         tool_calls=total_tool_calls,
         usage=usage.value(),
     )
-    yield AgentTurnDone(ran.executed_actions_note(registry), usage.value())
+    cutoff_note = (
+        f"I stopped after {config.max_iterations} steps without finishing this turn. "
+        "Ask me to continue, or rephrase what you need."
+    )
+    yield AgentError(cutoff_note)
