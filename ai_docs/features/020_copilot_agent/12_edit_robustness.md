@@ -27,8 +27,9 @@ cluster:
 - **A — Near-miss feedback in `edit_shader`.** When `old_str` doesn't match, stop returning a bare
   "not found — re-read". Detect the common case (a unique region that matches *ignoring whitespace*)
   and return the **exact source bytes** the model should have used, so the next attempt is a COPY, not
-  another guess. This is the highest-leverage fix — it addresses the root behavior (whitespace
-  fabrication) directly.
+  another guess. (Superseded as the primary whitespace fix by feature 020 · 13's token matcher, which
+  makes the whitespace-divergent edit *succeed* at the match layer instead of needing a re-copy; A's
+  hint is now the no-op fallback on a true 0-match. See `13_glsl_lexer.md` Design 4.)
 - **B — Enforce `max_edit_retries` (§I2).** Track consecutive failed `edit_shader` calls in the agent
   loop; after `config.max_edit_retries` (3), STOP attempting edits this turn and end with a final
   explanation rather than looping to `max_iterations`. Wires the dead config.

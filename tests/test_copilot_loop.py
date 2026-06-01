@@ -24,6 +24,7 @@ from shaderbox.copilot.capabilities import (
 from shaderbox.copilot.config import COPILOT_CONFIG
 from shaderbox.copilot.context import CopilotContext
 from shaderbox.copilot.gate import GateChannel
+from shaderbox.copilot.glsl_lex import token_match
 from shaderbox.copilot.llm.api import (
     LLMDone,
     LLMMessage,
@@ -65,18 +66,26 @@ class _FakeClient:
 
 
 def _fake_caps(edit_errors: list[list[CompileErrorInfo]]) -> CopilotCapabilities:
-    # Models the App: apply_shader_edit matches old_str against the LIVE source, replaces,
-    # and (on a real match) advances the source — so a second edit sees the first's result.
+    # Models the App: apply_shader_edit matches old_str against the LIVE source via the REAL
+    # token matcher (not a re-rolled str.count), replaces, and (on a real match) advances the
+    # source — so a second edit sees the first's result and the fake stays faithful to prod.
     state = {"text": "vec3 p = u_pos;", "n": 0}
 
     def apply_edit(old_str: str, new_str: str, replace_all: bool) -> EditResult:
-        matches = state["text"].count(old_str)
-        if matches == 0 or (matches > 1 and not replace_all):
-            return EditResult(matches=matches, errors=[])
-        state["text"] = state["text"].replace(old_str, new_str)
+        spans = token_match(state["text"], old_str)
+        if not spans or (len(spans) > 1 and not replace_all):
+            return EditResult(matches=len(spans), errors=[])
+        out: list[str] = []
+        cursor = 0
+        for start, end in spans:
+            out.append(state["text"][cursor:start])
+            out.append(new_str)
+            cursor = end
+        out.append(state["text"][cursor:])
+        state["text"] = "".join(out)
         errors = edit_errors[state["n"]]
         state["n"] += 1
-        return EditResult(matches=matches, errors=errors)
+        return EditResult(matches=len(spans), errors=errors)
 
     def view() -> CurrentShaderView:
         return CurrentShaderView(
@@ -158,6 +167,41 @@ def test_edit_compile_feedback_self_correction() -> None:
     text = "".join(e.text for e in events if isinstance(e, AgentTextDelta))
     assert "u_time" in text
     assert isinstance(events[-1], AgentTurnDone)
+
+
+def test_edit_applies_despite_whitespace_divergence() -> None:
+    # Feature 020 · 13: an old_str that differs from the source ONLY in inter-token
+    # whitespace (the 6-vs-4-space spiral) now token-MATCHES and applies — it does not
+    # 0-match and fall to the hint path. The seeded source is "vec3 p = u_pos;"; the
+    # model sends it with collapsed/extra spaces.
+    scripts: list[list[LLMStreamEvent]] = [
+        _tool_call(
+            "c1",
+            "edit_shader",
+            '{"old_str": "vec3   p=u_pos ;", "new_str": "vec3 p = u_pos * 2.0;"}',
+        ),
+        [LLMTextDelta("Doubled the position."), LLMDone("stop")],
+    ]
+    caps = _fake_caps(edit_errors=[[]])
+    registry = build_registry(caps)
+
+    events = list(
+        run_turn(
+            _FakeClient(scripts),
+            registry,
+            COPILOT_CONFIG,
+            CopilotContext(current_node_id="node-1"),
+            history=[],
+            user_text="double the position",
+            gate=GateChannel(),
+            cancel=threading.Event(),
+        )
+    )
+    cards = [e for e in events if isinstance(e, AgentToolCard)]
+    assert len(cards) == 1
+    assert cards[0].name == "edit_shader"
+    assert cards[0].ok  # applied + compiled clean, NOT a 0-match
+    assert cards[0].payload == {"errors": []}
 
 
 def test_edit_not_found_is_a_tool_error() -> None:

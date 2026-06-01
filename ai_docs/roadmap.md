@@ -28,29 +28,28 @@ feature; brief points at the superseder).
 **As of 2026-06-01.**
 
 - **Shipped: `v0.12.1`** (feature 019). Live on itch.io. Unshipped commits on `dev` (020 copilot wave +
-  021 logging + 020·12 edit-robustness) — `master` NOT advanced; do not ship without an explicit ask.
-- **020 copilot agent — Slice 1 DONE + VERIFIED + robustness-hardened.** The edit/compile-feedback
-  vertical works end-to-end; default model `x-ai/grok-4-fast` (the agent rejects tool-incompatible
-  models). Slice-1 self-correction completed (`12_edit_robustness.md`): `edit_shader` whitespace
-  near-miss hint, enforced `max_edit_retries=3`, giveup/`max_iterations` cutoffs surface as chat errors.
-  All maintainer-verified live (the grok session recovered from a whitespace miss instead of spiraling).
+  021 logging + 020·12 edit-robustness + 020·13 lexer) — `master` NOT advanced; do not ship without an
+  explicit ask.
+- **020 copilot agent — Slice 1 DONE + VERIFIED + robustness-hardened + the matcher widened.** The
+  edit/compile-feedback vertical works end-to-end; default model `x-ai/grok-4-fast`. Slice-1
+  self-correction (`12_edit_robustness.md`: retry cap, chat cutoffs, near-miss hint) maintainer-verified
+  live. **020·13 lexer JUST LANDED** (step 1 of the maintainer's 2-step sequence): `edit_shader` now
+  matches `old_str` by GLSL TOKEN-STREAM equality (`copilot/glsl_lex.py` — `glsl_lex` + `token_match`),
+  so a whitespace-divergent copy *succeeds* at the match layer instead of needing the slice-12 re-copy
+  hint (now the no-op fallback). Pre+post review converged; the post-impl reviewer caught a unicode-digit
+  assert-crash (fixed). 119 tests green. NEEDS the live maintainer re-run of the original spiral prompt.
+  Spec: `13_glsl_lexer.md`.
 - **021 logging refactor — DONE + maintainer-verified live.** Three streams: terse INFO+ console, rotated
   DEBUG+ file (`logs/`, strict superset), full-fidelity copilot **transcript** (`copilot_traces/
-  copilot_<slug>_<stamp>.transcript`, human/agent-readable, replaced jsonl). One-call `logging_setup.py`;
-  ~37 of 118 logger calls re-leveled. Spec: `021_logging_refactor.md`.
-- **NEXT SESSION — a 2-step sequence the maintainer set, in order:**
-  1. **GLSL whitespace-invariant matcher (the lexer).** Build a minimal ~50-line GLSL tokenizer so
-     `edit_shader` matches `old_str` against the source by TOKEN-STREAM equality (ignoring only
-     inter-token whitespace), not byte-exact — killing the 6-vs-4-space spiral at the matching layer.
-     Design + adversarial-safety already done this session (4 invariants: lex-first, maximal-munch,
-     raw-token-text, uniqueness-guard). NEEDS A SPEC then build. py2glsl has NO GLSL lexer (checked).
-  2. **Slice 2 — token-level editing tools.** On top of the lexer: line-anchored editing
-     (`replace_lines`/`insert_after`, so the model never reproduces anchor whitespace) + the
-     token-matched `edit_shader` fallback + concise "what changed" apply-feedback. Scope deliberately
-     KEPT TIGHT — no semantic-editing suite (rename/outline/add_uniform deferred until a trace shows need).
+  copilot_<slug>_<stamp>.transcript`, human/agent-readable, replaced jsonl). Spec: `021_logging_refactor.md`.
+- **NEXT — Slice 2, token-level editing tools** (step 2 of the 2-step sequence, now unblocked by the
+  lexer). On top of `glsl_lex`: line-anchored editing (`replace_lines`/`insert_after`, so the model never
+  reproduces anchor whitespace) + concise "what changed" apply-feedback. Scope deliberately KEPT TIGHT —
+  no semantic-editing suite (rename/outline/add_uniform deferred until a trace shows need). Build-then-spec
+  or spec-first per the maintainer's call.
 - **Feature 022 — copilot chat persistence (SPECCED, not started).** Conversation tied to its project +
-  restored on reopen + clear-chat button; `project_dir/copilot/conversation.json`. Independent of the
-  Slice-2 work above; sequence it whenever. Spec: `022_copilot_chat_persistence.md`.
+  restored on reopen + clear-chat button; `project_dir/copilot/conversation.json`. Independent of Slice 2;
+  sequence it whenever. Spec: `022_copilot_chat_persistence.md`.
 - **No open BLOCKERs.** Cosmetic nav tails + a deferred copilot-trace cross-project bleed (folds into
   022's worker-quiesce) parked in `todo.md`, all trigger-gated.
 
@@ -60,7 +59,7 @@ feature; brief points at the superseder).
 |---|---|---|---|
 | 022 | copilot_chat_persistence | pending | The copilot conversation tied to its project + restored on reopen (today it's memory-only, dropped on switch/exit). Persists both the UI render messages and the LLM history to `project_dir/copilot/conversation.json` (versioned, fail-soft like `app_state.json`), restores on project open, saves at turn-completion/switch/shutdown, and adds a user-facing clear-chat button that archives to `copilot/archive/`. Builds on 021's on-disk cut. Spec: `ai_docs/features/022_copilot_chat_persistence.md`. |
 | 021 | logging_refactor | done | Three-stream logging: a terse INFO+ console, a rotated DEBUG+ file (`logs/`) that is a strict superset, and a full-fidelity copilot transcript (`copilot_traces/copilot_<slug>_<stamp>.transcript` — human/agent-readable plain text replacing the old jsonl). `shaderbox/logging_setup.py` configures all loguru sinks once; `LoggingConfig` holds the internal config (console/file levels, rotation, retention, trace-retention=20); the 118-call logger survey audited 24 modules with ~37 calls shifted (lifecycle→DEBUG, user events stay INFO, fallback-config ERROR→WARNING); trace gains a transcript renderer + `tool_args_parse_error` event + mtime-pruned retention. Maintainer-verified live (console terse, transcript readable cold). Spec: `ai_docs/features/021_logging_refactor.md`. |
-| 020 | copilot_agent | in progress | In-app coding-copilot agent (free-form chat over OpenRouter; in-process compile-feedback is the differentiator). Scaffold + Slice 1 (edit/compile-feedback vertical) landed, runs, and verified end-to-end on a real read→edit turn: the `shaderbox/copilot/` package (capabilities / `LLMClient` / worker→main `CopilotBridge` / worker↔UI queues / chat `state` / `agent` loop / `prompt` / `trace`), the three current-node tools (`get_current_shader` / `edit_shader` / `get_compile_errors`), the OpenRouter stream + key/model in Settings, the editor lock, and a full per-session transcript trace. Default model `x-ai/grok-4-fast` (tool-call compatible, verified); the agent rejects tool-incompatible models. Slice-1 self-correction completed (`12_edit_robustness.md`): `edit_shader` whitespace near-miss hint (echoes exact bytes on a 0-match), enforced `max_edit_retries=3` (was dead config), and giveup/`max_iterations` cutoffs now surface as chat errors. Slice 2 unspecced (build-then-spec). Spec: `ai_docs/features/020_copilot_agent/11_capability_wave_spec.md §16` + `12_edit_robustness.md`. |
+| 020 | copilot_agent | in progress | In-app coding-copilot agent (free-form chat over OpenRouter; in-process compile-feedback is the differentiator). Scaffold + Slice 1 (edit/compile-feedback vertical) landed, runs, and verified end-to-end on a real read→edit turn: the `shaderbox/copilot/` package (capabilities / `LLMClient` / worker→main `CopilotBridge` / worker↔UI queues / chat `state` / `agent` loop / `prompt` / `trace`), the three current-node tools (`get_current_shader` / `edit_shader` / `get_compile_errors`), the OpenRouter stream + key/model in Settings, the editor lock, and a full per-session transcript trace. Default model `x-ai/grok-4-fast` (tool-call compatible, verified); the agent rejects tool-incompatible models. Slice-1 self-correction completed (`12_edit_robustness.md`): `edit_shader` whitespace near-miss hint (echoes exact bytes on a 0-match), enforced `max_edit_retries=3` (was dead config), and giveup/`max_iterations` cutoffs now surface as chat errors. The GLSL token matcher landed (`13_glsl_lexer.md`): `copilot/glsl_lex.py` (`glsl_lex` + `token_match`) replaces `edit_shader`'s byte-exact match with whitespace-invariant token-stream equality, so a whitespace-divergent `old_str` succeeds at the match layer (the slice-12 hint becomes the no-op fallback). Slice 2 (line-anchored editing tools) next, unspecced. Spec: `ai_docs/features/020_copilot_agent/11_capability_wave_spec.md §16` + `12_edit_robustness.md` + `13_glsl_lexer.md`. |
 | 019 | keyboard_navigation | done | The focus/nav layer (018's deferred half): app-wide `nav_enable_keyboard` + a two-level focus model — `Ctrl+`` ` `` cycles 3 regions (editor/grid/panel, region-confined via `no_nav_inputs`, active region shown by a live-focus accent outline), `Ctrl+1/2/3` jump the inner Node/Render/Share tab; editor is a permanent focus-stop; grid cells are nav-reachable `selectable`s; 018 bare-arrow node-prev/next removed. The polish wave added a selection-vs-accent color split (fixed `COLOR.SELECT`) + a theme-portability invariant, Ctrl+Tab suppression, glfw-layer Esc swallowing, `nav_flattened` uniforms. Maintainer-verified. Spec: `ai_docs/features/019_keyboard_navigation.md`. |
 | 018 | keyboard_control | done | The command layer: a central `commands.py` registry drives rebindable chord shortcuts + an opt-out cheatsheet overlay + an `imgui_command_palette` (Ctrl+Shift+P); dispatch split pre-frame/in-frame; rebindings persist diff-from-default on `UIAppState`. The focus/navigation layer (nav widget-traversal + tab-cycling) was split out to a `todo.md` deferral. Spec: `ai_docs/features/018_keyboard_control.md`. |
 | 017 | structure_reorg | done | Domain-separation refactoring wave (no behavior change): `lib_*`→`shader_lib/` package + total rename, shader_lib split into index/resolver/parser, `lib_picker`→package, `util.py`→`shader_errors.py`+`editor_types.py`, `ui_models` de-tangled from UI, exporters/ tidy, App shader-lib CRUD→`ShaderLibFileManager`. `ui/`+`render/` packages rejected. Spec: `ai_docs/features/017_structure_reorg.md`. |

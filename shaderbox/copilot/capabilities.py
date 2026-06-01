@@ -46,7 +46,7 @@ class EditResult:
     # The outcome of an edit_shader apply. The match + replace + recompile all happen
     # against the node's authoritative source on the main thread (§16.3), so the handler
     # never re-reads the source — `matches` tells it which §16.4 string to return.
-    matches: int  # occurrences of old_str found (0 = not found, >1 = ambiguous)
+    matches: int  # token-run matches of old_str (0 = not found, >1 = ambiguous)
     errors: list[CompileErrorInfo]  # 1-based; only meaningful when the edit applied
     # On a 0-match, the exact source bytes of the unique region that matches old_str
     # ignoring whitespace — the model copies this instead of re-guessing. "" when there

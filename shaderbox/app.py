@@ -31,6 +31,7 @@ from shaderbox.copilot.capabilities import (
     EditResult,
     NodeSummary,
 )
+from shaderbox.copilot.glsl_lex import token_match
 from shaderbox.copilot.llm.openrouter import OpenRouterLLMClient
 from shaderbox.copilot.session import CopilotSession
 from shaderbox.copilot.state import CopilotLayout
@@ -143,6 +144,19 @@ def _whitespace_near_match(src: str, old_str: str) -> str:
     if first == -1 or norm_src.find(norm_old, first + 1) != -1:
         return ""  # no match, or ambiguous — no safe single hint
     return src[src_index[first] : src_index[first + len(norm_old)]]
+
+
+def _splice(src: str, spans: list[tuple[int, int]], new_str: str) -> str:
+    # Replace each non-overlapping (start, end) span (source order, from token_match) with
+    # new_str verbatim. Cursor walk is offset-stable because the spans never overlap.
+    out: list[str] = []
+    cursor: int = 0
+    for start, end in spans:
+        out.append(src[cursor:start])
+        out.append(new_str)
+        cursor = end
+    out.append(src[cursor:])
+    return "".join(out)
 
 
 def _uniform_type_label(u: moderngl.Uniform | moderngl.UniformBlock) -> str:
@@ -538,20 +552,20 @@ class App:
         def _on_main() -> EditResult:
             node = self.ui_nodes[self.current_node_id].node
             src = node.source.text
-            matches = src.count(old_str)
-            if matches == 0:
+            spans = token_match(src, old_str)
+            if not spans:
                 return EditResult(
                     matches=0, errors=[], hint=_whitespace_near_match(src, old_str)
                 )
-            if matches > 1 and not replace_all:
-                return EditResult(matches=matches, errors=[])
-            new_text = src.replace(old_str, new_str)
+            if len(spans) > 1 and not replace_all:
+                return EditResult(matches=len(spans), errors=[])
+            new_text = _splice(src, spans, new_str)
             node.release_program(new_text)
             node.compile()
             node.source.path.write_text(new_text, encoding="utf-8")
             self.sync_editor_from_disk(self.current_node_id, new_text)
             return EditResult(
-                matches=matches, errors=_to_error_infos(node.compile_unit.errors)
+                matches=len(spans), errors=_to_error_infos(node.compile_unit.errors)
             )
 
         return self.copilot.bridge.run_on_main(_on_main)
