@@ -61,8 +61,12 @@ def draw_node_preview_grid(app: App, width: float, height: float) -> None:
             and not app.copilot_focused
         ):
             active_region_outline()
+        # Node create/switch/delete are frozen while a copilot turn runs (§15 A); disable the
+        # affordances so the freeze is visible (the verbs also hard-refuse, for non-grid paths).
+        imgui.begin_disabled(app.copilot_turn_active)
         if imgui.button("New node"):
             app.open_node_creator()
+        imgui.end_disabled()
 
         imgui.same_line()
 
@@ -83,6 +87,7 @@ def draw_node_preview_grid(app: App, width: float, height: float) -> None:
         # app.ui_nodes; deferring the pop until after the loop avoids mutating
         # the dict mid-iteration.
         id_to_delete: str | None = None
+        imgui.begin_disabled(app.copilot_turn_active)
         for i, (id, ui_node) in enumerate(list(app.ui_nodes.items())):
             border_color: tuple[float, float, float, float] | None = None
             if id == app.current_node_id:
@@ -112,6 +117,7 @@ def draw_node_preview_grid(app: App, width: float, height: float) -> None:
                 imgui.same_line()
             else:
                 imgui.spacing()
+        imgui.end_disabled()
 
     if id_to_delete is not None:
         app.delete_node(id_to_delete)

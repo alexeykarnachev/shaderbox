@@ -57,6 +57,11 @@ class EditResult:
     # single-region apply; both empty/None on a non-apply OR a multi-span replace_all.
     changed_excerpt: str = ""
     changed_range: tuple[int, int] | None = None
+    # Freshness reject (feature 020 · 15): True when the edit was refused because the source
+    # moved since the agent last read it this turn (or it never read / switched nodes).
+    # stale_reason is the App-built message naming the specific cause. matches==0 on a reject.
+    stale: bool = False
+    stale_reason: str = ""
 
 
 @dataclass(frozen=True)

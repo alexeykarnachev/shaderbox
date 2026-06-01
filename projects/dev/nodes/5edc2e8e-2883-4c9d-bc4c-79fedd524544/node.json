@@ -14,20 +14,6 @@
             0.5,
             0.5
         ],
-        "u_drag_vec3": [
-            0.5,
-            0.5,
-            0.5
-        ],
-        "u_enable": 3.0,
-        "u_texture": {
-            "file_path": "media/u_texture.png",
-            "size": [
-                960,
-                1280
-            ],
-            "components": 4
-        },
         "u_tint_color": [
             0.10000000149011612,
             0.4000000059604645,

@@ -100,6 +100,14 @@ def _format_errors(errors: list[CompileErrorInfo]) -> str:
     return "\n".join(f"{e.path}:{e.line}: {e.message}" for e in errors)
 
 
+def _stale_result(result: EditResult) -> tuple[bool, str, dict] | None:
+    # A freshness reject (feature 020 · 15): the source moved since the agent read it.
+    # payload["stale"] lets run_turn keep it OUT of the edit-retry cap (re-read, don't spiral).
+    if result.stale:
+        return False, f"error: {result.stale_reason}", {"stale": True}
+    return None
+
+
 def _applied_result(result: EditResult) -> tuple[bool, str, dict]:
     # The shared success/compile-error message for any applied edit (edit_shader /
     # replace_lines / insert_after). Appends the "what changed" excerpt when present, or a
@@ -138,6 +146,8 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
         result = caps.apply_shader_edit(
             args["old_str"], args["new_str"], args["replace_all"]
         )
+        if (stale := _stale_result(result)) is not None:
+            return stale
         if result.matches == 0:
             base = (
                 "error: old_str not found in the shader — re-read with "
@@ -170,6 +180,8 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
                 None,
             )
         result = caps.apply_line_edit(start, end, args["new_text"])
+        if (stale := _stale_result(result)) is not None:
+            return stale
         if result.matches == 0:
             return False, _OUT_OF_RANGE, None
         return _applied_result(result)
@@ -177,6 +189,8 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
     def insert_after(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
         line = args["line"]
         result = caps.apply_line_edit(line + 1, line, args["new_text"])
+        if (stale := _stale_result(result)) is not None:
+            return stale
         if result.matches == 0:
             return False, _OUT_OF_RANGE, None
         return _applied_result(result)

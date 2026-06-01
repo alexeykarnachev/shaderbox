@@ -1,3 +1,4 @@
+import hashlib
 import shutil
 import time
 from collections.abc import Callable
@@ -116,6 +117,13 @@ def _changed_excerpt(new_text: str, line_range: tuple[int, int], context: int) -
     lo = max(1, line_range[0] - context)
     hi = min(len(lines), line_range[1] + context)
     return "\n".join(f"{i:>{width}}  {lines[i - 1]}" for i in range(lo, hi + 1))
+
+
+def _shader_revision(node_id: str, text: str) -> tuple[str, bytes]:
+    # (node identity, content digest) — the freshness token (feature 020 · 15). Identity
+    # catches a mid-turn node switch; the digest catches a disk reload / cross-turn edit.
+    digest = hashlib.blake2b(text.encode("utf-8"), digest_size=16).digest()
+    return (node_id, digest)
 
 
 def _edit_result(
@@ -350,6 +358,10 @@ class App:
         # True while a copilot turn runs — locks the editor read-only (§11). Set in
         # copilot_send, reconciled to session.state.in_flight each frame in ui.py.
         self.copilot_turn_active: bool = False
+        # The (node_id, content_digest) the copilot last read via get_current_shader THIS
+        # turn (feature 020 · 15). A mutating tool whose node/source has moved since is
+        # rejected. None = not read this turn; reset on each copilot_send.
+        self._copilot_read_revision: tuple[str, bytes] | None = None
         self.copilot_input: str = ""
         # The editor child's screen rect (pos + size), captured inside the child each
         # frame so the floating chat window anchors to the CODING AREA above the copilot
@@ -566,6 +578,7 @@ class App:
             if node.program is None:
                 node.compile()
             text = node.source.text
+            self._copilot_read_revision = _shader_revision(node_id, text)
             return CurrentShaderView(
                 text=text,
                 listing=_number_lines(text),
@@ -574,6 +587,38 @@ class App:
             )
 
         return self.copilot.bridge.run_on_main(_on_main)
+
+    def _copilot_freshness_reject(self) -> EditResult | None:
+        # Reject (mutate-nothing) if the source moved since the agent last read it THIS turn
+        # (feature 020 · 15). Runs BEFORE any ui_nodes deref so a switched/deleted node yields
+        # a clean reject, not a KeyError. None = fresh, proceed.
+        nid = self.current_node_id
+        rev = self._copilot_read_revision
+        if rev is None:
+            return EditResult(
+                matches=0,
+                errors=[],
+                stale=True,
+                stale_reason="call get_current_shader before editing — you have not read "
+                "this shader this turn",
+            )
+        if nid not in self.ui_nodes or rev[0] != nid:
+            return EditResult(
+                matches=0,
+                errors=[],
+                stale=True,
+                stale_reason="the active shader changed since you read it (you switched "
+                "nodes) — call get_current_shader again",
+            )
+        if rev != _shader_revision(nid, self.ui_nodes[nid].node.source.text):
+            return EditResult(
+                matches=0,
+                errors=[],
+                stale=True,
+                stale_reason="this shader's source changed since you read it — call "
+                "get_current_shader again and re-match",
+            )
+        return None
 
     def _copilot_apply_shader_edit(
         self, old_str: str, new_str: str, replace_all: bool
@@ -585,6 +630,8 @@ class App:
         # early-return in Node.compile() keeps the old program live (feature-013), so a
         # broken edit never blanks the user's preview.
         def _on_main() -> EditResult:
+            if (reject := self._copilot_freshness_reject()) is not None:
+                return reject
             node = self.ui_nodes[self.current_node_id].node
             src = node.source.text
             spans = token_match(src, old_str)
@@ -625,6 +672,8 @@ class App:
         node.compile()
         node.source.path.write_text(new_text, encoding="utf-8")
         self.sync_editor_from_disk(self.current_node_id, new_text)
+        # Re-stamp so the agent can chain edits without an intervening read (§15 B6).
+        self._copilot_read_revision = _shader_revision(self.current_node_id, new_text)
         return _to_error_infos(node.compile_unit.errors)
 
     def _copilot_apply_line_edit(
@@ -636,6 +685,8 @@ class App:
         # start_line); any other start > end, or an out-of-range bound, fails loud and mutates
         # nothing (matches==0 carries the error string for the tool layer).
         def _on_main() -> EditResult:
+            if (reject := self._copilot_freshness_reject()) is not None:
+                return reject
             node = self.ui_nodes[self.current_node_id].node
             lines = node.source.text.split("\n")
             n = len(lines)
@@ -777,7 +828,20 @@ class App:
         logger.debug(f"copilot_send: enqueuing {preview!r}")
         self.flush_current_editor()
         self.copilot_turn_active = True
+        # Force a re-read at the start of every turn (§15 B8) — catches a source the user
+        # edited+saved while the copilot was idle.
+        self._copilot_read_revision = None
         self.copilot.enqueue_turn(text)
+
+    def _copilot_busy_blocked(self, action: str) -> bool:
+        # True (+ a notification) when an action that mutates the editor/node target must be
+        # refused because a copilot turn is in flight (§15 A). The turn owns the current node.
+        if self.copilot_turn_active:
+            self.notifications.push(
+                f"{action} is locked while the assistant is working"
+            )
+            return True
+        return False
 
     def cycle_region(self) -> None:
         idx = _REGION_CYCLE.index(self.active_region)
@@ -815,6 +879,8 @@ class App:
         # Picking a node from the grid switches the current node. If the grid owns
         # keyboard focus, keep it there: the new node's editor auto-grabs focus on its
         # first render (TextEditor.render() quirk), so defocus it and re-latch the grid.
+        if self._copilot_busy_blocked("Switching nodes"):
+            return
         self.set_current_node_id(node_id)
         if self.active_region == ActiveRegion.GRID:
             self.editor_defocus_requested = True
@@ -1383,6 +1449,8 @@ class App:
         return dir
 
     def save(self) -> None:
+        if self._copilot_busy_blocked("Saving"):
+            return
         self.flush_current_editor()
 
         if self.current_node_id:
@@ -1440,6 +1508,8 @@ class App:
             self.preview_canvas.release()
 
     def open_project(self) -> None:
+        if self._copilot_busy_blocked("Opening a project"):
+            return
         start_dir = str(
             self.project_dir.parent
             if self.project_dir
@@ -1455,6 +1525,8 @@ class App:
         self.delete_node(self.current_node_id)
 
     def delete_node(self, node_id: str) -> None:
+        if self._copilot_busy_blocked("Deleting a node"):
+            return
         if not node_id or node_id not in self.ui_nodes:
             return
 
@@ -1497,6 +1569,8 @@ class App:
             logger.error(f"Failed to seed starter node: {e}")
 
     def create_node_from_selected_template(self) -> None:
+        if self._copilot_busy_blocked("Creating a node"):
+            return
         selected_template = self.ui_node_templates[
             self.app_state.selected_node_template_id
         ]

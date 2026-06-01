@@ -212,6 +212,12 @@ def draw(app: App) -> None:
     if dim:
         imgui.push_style_var(imgui.StyleVar_.alpha, EDITOR_UNFOCUSED_ALPHA)
 
+    # Lock the editor read-only while a copilot turn runs (§15 A) — the user must not edit
+    # source the agent is reasoning about. Set every frame on the active session (it latches,
+    # but the active session can change between frames). Programmatic set_text (the agent's
+    # own edits, synced in) is unaffected by read-only.
+    editor.set_read_only_enabled(app.copilot_turn_active)
+
     # Neutralize the editor's mouse so it doesn't select text under (a) a splitter drag
     # sweep or (b) the floating copilot chat the mouse is over. The TextEditor reads
     # io.mouse_down[0] directly (bypassing imgui's disabled/active-id + window hit-test,

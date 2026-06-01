@@ -331,8 +331,11 @@ def run_turn(
             # §I2 self-correction cap: a model stuck on an edit (an old_str that keeps not
             # matching, a line range that keeps not resolving) would otherwise retry to the
             # max_iterations ceiling. Count CONSECUTIVE failed MUTATING tools; any success or
-            # non-mutating tool resets it.
-            if registry.is_mutating(tc.name) and not ok:
+            # non-mutating tool resets it. A freshness reject (payload["stale"], §15) is a
+            # benign "re-read and continue", NOT a convergence failure, so it does not count.
+            # payload is None on a malformed-args/unknown-tool result — guard the .get.
+            stale = bool((payload or {}).get("stale"))
+            if registry.is_mutating(tc.name) and not ok and not stale:
                 consecutive_failed_edits += 1
             else:
                 consecutive_failed_edits = 0
