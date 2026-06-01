@@ -37,8 +37,9 @@ feature; brief points at the superseder).
   matches `old_str` by GLSL TOKEN-STREAM equality (`copilot/glsl_lex.py` — `glsl_lex` + `token_match`),
   so a whitespace-divergent copy *succeeds* at the match layer instead of needing the slice-12 re-copy
   hint (now the no-op fallback). Pre+post review converged; the post-impl reviewer caught a unicode-digit
-  assert-crash (fixed). 119 tests green. NEEDS the live maintainer re-run of the original spiral prompt.
-  Spec: `13_glsl_lexer.md`.
+  assert-crash (fixed). 119 tests green; maintainer-verified live (a multi-line indented edit applied
+  first-try, no spiral/hint — though the model copied bytes exactly, so the whitespace-rescue path is
+  owned by the unit tests, not the live run). Spec: `13_glsl_lexer.md`.
 - **021 logging refactor — DONE + maintainer-verified live.** Three streams: terse INFO+ console, rotated
   DEBUG+ file (`logs/`, strict superset), full-fidelity copilot **transcript** (`copilot_traces/
   copilot_<slug>_<stamp>.transcript`, human/agent-readable, replaced jsonl). Spec: `021_logging_refactor.md`.
