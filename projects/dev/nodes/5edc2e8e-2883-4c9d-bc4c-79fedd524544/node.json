@@ -9,16 +9,65 @@
             0.20000000298023224,
             0.10000000149011612
         ],
-        "u_drag_float": 0.5,
         "u_drag_vec2": [
             0.5,
             0.5
         ],
+        "u_drag_vec3": [
+            0.0,
+            0.0,
+            0.0
+        ],
+        "u_drag_vec4": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+        ],
+        "u_enable": 0.0,
+        "u_floats": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+        ],
+        "u_label_text": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+        ],
+        "u_texture": {
+            "file_path": "media/u_texture.png",
+            "size": [
+                960,
+                1280
+            ],
+            "components": 4
+        },
         "u_tint_color": [
             0.10000000149011612,
             0.4000000059604645,
             1.0,
             1.0
+        ],
+        "u_uints": [
+            0,
+            0,
+            0,
+            0
         ],
         "u_params": {
             "base64": "dEXyPtMsaj9uNYw+dXZPP2DcED4pTys/RyA1P2JOLz8="

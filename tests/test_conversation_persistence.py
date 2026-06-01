@@ -52,7 +52,11 @@ def test_round_trip_messages_history_usage(tmp_path: Path) -> None:
     assert hist[1].tool_calls[0].arguments == '{"x":1}'
     assert hist[2].tool_call_id == "c1"
     usage = loaded.to_usage()
-    assert (usage.input_tokens, usage.output_tokens, usage.cost_usd) == (1200, 340, 0.0042)
+    assert (usage.input_tokens, usage.output_tokens, usage.cost_usd) == (
+        1200,
+        340,
+        0.0042,
+    )
 
 
 def test_save_creates_parent_dir(tmp_path: Path) -> None:
@@ -78,7 +82,9 @@ def test_corrupt_file_fails_soft(tmp_path: Path) -> None:
 def test_incompatible_schema_fails_soft(tmp_path: Path) -> None:
     path = tmp_path / "conversation.json"
     # Valid JSON, wrong shape (extra=forbid + bad types) -> empty, not a crash.
-    path.write_text(json.dumps({"messages": "not a list", "bogus": 1}), encoding="utf-8")
+    path.write_text(
+        json.dumps({"messages": "not a list", "bogus": 1}), encoding="utf-8"
+    )
     loaded = ConversationStore.load_and_migrate(path)
     assert loaded.to_messages() == []
 
@@ -107,7 +113,9 @@ def test_archive_moves_file_and_leaves_none(tmp_path: Path) -> None:
     ConversationStore.from_runtime(_populated_state(), []).save(path)
     archive_conversation(path, "2026-06-01_18-00-00")
     assert not path.exists()  # moved out
-    archived = tmp_path / "copilot" / "archive" / "conversation_2026-06-01_18-00-00.json"
+    archived = (
+        tmp_path / "copilot" / "archive" / "conversation_2026-06-01_18-00-00.json"
+    )
     assert archived.exists()
     # The archived content is the original conversation.
     data = json.loads(archived.read_text(encoding="utf-8"))
@@ -115,7 +123,9 @@ def test_archive_moves_file_and_leaves_none(tmp_path: Path) -> None:
 
 
 def test_archive_missing_file_is_noop(tmp_path: Path) -> None:
-    archive_conversation(tmp_path / "copilot" / "conversation.json", "stamp")  # no raise
+    archive_conversation(
+        tmp_path / "copilot" / "conversation.json", "stamp"
+    )  # no raise
     assert not (tmp_path / "copilot" / "archive").exists()
 
 
@@ -173,9 +183,8 @@ def test_session_save_then_load_restores(tmp_path: Path) -> None:
     # The session seam: save_conversation writes (state, history); load_conversation on a
     # FRESH session restores both + usage. No worker is spawned (no turn enqueued), and
     # the client is never called by save/load, so a bare stub suffices.
-    from tests.test_copilot_loop import _fake_caps
-
     from shaderbox.copilot.session import CopilotSession
+    from tests.test_copilot_loop import _fake_caps
 
     def _mk() -> CopilotSession:
         return CopilotSession(

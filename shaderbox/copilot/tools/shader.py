@@ -56,13 +56,15 @@ _GET_CURRENT_SHADER_DESC = (
 )
 
 _EDIT_SHADER_DESC = (
-    "Replace an exact substring of the current shader's source with new text, then "
-    "recompile. old_str must match the file EXACTLY, including whitespace and "
-    "indentation. If old_str appears more than once, the edit fails — provide a larger "
-    "old_str with surrounding context to make it unique, or set replace_all=true to "
-    "replace every occurrence. After the edit I recompile and return any compile errors "
-    "at the exact line they occur; if there are none, the edit compiled clean. You "
-    "cannot see the rendered image — never claim a visual result, only that it compiled."
+    "BEST FOR a SMALL, localized change to a unique snippet. For replacing a whole "
+    "block/function prefer replace_lines, and for ADDING new lines prefer insert_after — "
+    "both let you skip re-typing a large old_str. Replace an exact substring of the current "
+    "shader's source with new text, then recompile. old_str must match the file EXACTLY, "
+    "including whitespace and indentation. If old_str appears more than once, the edit fails "
+    "— provide a larger old_str with surrounding context to make it unique, or set "
+    "replace_all=true to replace every occurrence. After the edit I recompile and return any "
+    "compile errors at the exact line they occur; if there are none, the edit compiled clean. "
+    "You cannot see the rendered image — never claim a visual result, only that it compiled."
 )
 
 _GET_COMPILE_ERRORS_DESC = (
@@ -72,6 +74,8 @@ _GET_COMPILE_ERRORS_DESC = (
 )
 
 _REPLACE_LINES_DESC = (
+    "BEST FOR replacing a whole block or function — you give the line numbers, so you never "
+    "re-type the old lines (cheaper + no exact-match risk vs a large edit_shader old_str). "
     "Replace an inclusive range of lines [start_line, end_line] (1-based, the line numbers "
     "shown by get_current_shader) with new_text, then recompile. ALWAYS call "
     "get_current_shader first — the line numbers must be current. new_text is inserted "
@@ -82,6 +86,8 @@ _REPLACE_LINES_DESC = (
 )
 
 _INSERT_AFTER_DESC = (
+    "BEST FOR adding new lines (a uniform, a helper function, a statement) — you quote no "
+    "anchor text at all, just the line to insert after. "
     "Insert new_text as new line(s) AFTER the given 1-based line (the numbers shown by "
     "get_current_shader); pass 0 to insert at the very top, or the last line number to "
     "append at the end. ALWAYS call get_current_shader first. new_text is inserted verbatim "

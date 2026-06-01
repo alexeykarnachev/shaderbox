@@ -1,10 +1,34 @@
 {
   "version": 1,
-  "messages": [],
-  "history": [],
+  "messages": [
+    {
+      "role": "user",
+      "text": "hi, what do you have in your context, do you see our recent conversation?",
+      "resolved": false
+    },
+    {
+      "role": "assistant",
+      "text": "Hi! I'm a fresh instance each time \u2014 the only context I have is whatever's in this current message thread. I don't retain memory of prior conversations once this one ends.",
+      "resolved": false
+    }
+  ],
+  "history": [
+    {
+      "role": "user",
+      "content": "hi, what do you have in your context, do you see our recent conversation?",
+      "tool_call_id": null,
+      "tool_calls": null
+    },
+    {
+      "role": "assistant",
+      "content": "Hi! I'm a fresh instance each time \u2014 the only context I have is whatever's in this current message thread. I don't retain memory of prior conversations once this one ends.",
+      "tool_call_id": null,
+      "tool_calls": null
+    }
+  ],
   "usage": {
-    "input_tokens": 0,
-    "output_tokens": 0,
-    "cost_usd": 0.0
+    "input_tokens": 1667,
+    "output_tokens": 258,
+    "cost_usd": 0.00259435
   }
 }
