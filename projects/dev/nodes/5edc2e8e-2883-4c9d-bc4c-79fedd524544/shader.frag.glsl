@@ -13,6 +13,7 @@ uniform vec2  u_drag_vec2;
 uniform vec3  u_drag_vec3;
 uniform vec4  u_drag_vec4;
 uniform float u_enable;
+uniform float u_brightness;
 
 uniform vec3 u_color;
 uniform vec4 u_tint_color;
@@ -54,35 +55,21 @@ void main() {
     vec2 uv = vs_uv;
     uv.x *= u_aspect;
 
-    vec3 ro = vec3(0.0, 0.0, -3.5 + u_drag_vec2.y * 2.0);
-    vec3 rd = normalize(vec3(uv, 1.8));
+    // center-based polar coordinates
+    vec2 p = uv * 2.0 - 1.0;
+    float radius = length(p) + 0.02 * sin(u_time * 2.0 + u_drag_vec2.y * 6.28);
+    float angle  = atan(p.y, p.x);
 
-    float t = 0.0;
-    for (int i = 0; i < 64; i++) {
-        vec3 p = ro + rd * t;
-        float d = map(p);
-        if (d < 0.001 || t > 20.0) break;
-        t += d;
-    }
+    // concentric rings
+    float ring = abs(fract(radius * 6.0 + sin(u_time) * 0.5) - 0.5) * 2.0;
+    float mask = smoothstep(0.08, 0.0, ring);
 
-    vec3 col = vec3(0.02);
-    if (t < 20.0) {
-        vec3 p = ro + rd * t;
-        vec3 n = calcNormal(p);
-        vec3 light = normalize(vec3(0.6, 1.2, -0.8) + u_drag_vec3);
-        float diff = max(dot(n, light), 0.0);
-        float spec = pow(max(dot(reflect(-light, n), -rd), 0.0), 32.0);
+    vec3 ring_color = mix(u_color, u_tint_color.rgb, 0.5 + 0.5 * sin(angle * 4.0 + u_time));
+    vec3 col = ring_color * mask * 1.8;
 
-        vec3 tex = texture(u_texture, uv * 0.5 + 0.5).rgb;
-        uint seed = u_uints[0] + u_label_text[0];
-        float extra = float(seed % 7u) * 0.01;
+    col *= max(u_enable, 1.0);
+    col = clamp(col, 0.0, 1.0);
 
-                  col = u_color * diff + u_tint_color.rgb * spec + tex * 0.15;
-          col += params.b.xyz * 0.1 + extra;
-          col *= max(u_enable, 1.0);  // default visible even when drag-float is zero
-      }
-
-          col = clamp(col, 0.0, 1.0);   // tone down over-bright red blob
-      fs_color = vec4(col, 1.0);
+    fs_color = vec4(col * u_brightness, 1.0);
 }
 
