@@ -17,7 +17,6 @@ from shaderbox.copilot.gate import GateChannel
 from shaderbox.copilot.llm.api import LLMDone, LLMStreamEvent, LLMTextDelta
 from shaderbox.copilot.tools.registry import build_registry
 from shaderbox.copilot.tools.shader import _applied_result
-
 from tests.test_copilot_loop import _fake_caps, _FakeClient, _tool_call
 
 
@@ -139,7 +138,9 @@ def test_applied_result_multi_span_reports_count() -> None:
 def test_applied_result_compile_errors_included() -> None:
     err = CompileErrorInfo(path="n.frag.glsl", line=4, message="boom")
     ok, msg, payload = _applied_result(
-        EditResult(matches=1, errors=[err], changed_excerpt="4  bad", changed_range=(4, 4))
+        EditResult(
+            matches=1, errors=[err], changed_excerpt="4  bad", changed_range=(4, 4)
+        )
     )
     assert ok is True
     assert "compiled with errors" in msg and "boom" in msg
@@ -169,8 +170,11 @@ def test_replace_lines_start_after_end_errors_not_inserts() -> None:
     # reaches the capability as a spurious insert).
     events = _run(
         [
-            _tool_call("c1", "replace_lines", '{"start_line": 5, "end_line": 3, '
-            '"new_text": "x"}'),
+            _tool_call(
+                "c1",
+                "replace_lines",
+                '{"start_line": 5, "end_line": 3, ' '"new_text": "x"}',
+            ),
             [LLMTextDelta("done"), LLMDone("stop")],
         ]
     )
