@@ -2,6 +2,7 @@ import queue
 import threading
 from collections.abc import Callable
 from datetime import datetime
+from pathlib import Path
 
 from loguru import logger
 
@@ -23,6 +24,7 @@ from shaderbox.copilot.errors import CopilotConfigError
 from shaderbox.copilot.gate import GateChannel
 from shaderbox.copilot.llm.api import LLMMessage
 from shaderbox.copilot.llm.openrouter import OpenRouterLLMClient
+from shaderbox.copilot.persistence import ConversationStore
 from shaderbox.copilot.state import ChatState, Message
 from shaderbox.copilot.tools.registry import build_registry
 from shaderbox.copilot.trace import TraceLog, new_trace_log
@@ -62,13 +64,19 @@ class CopilotSession:
         self.gate = GateChannel()
         self.state = ChatState()
         # Conversation memory across turns. Owned + mutated ONLY by the worker thread
-        # (read at turn start, appended at turn end) — never by the UI. Slice 1 keeps it
-        # in memory; per-project persistence is a later slice.
+        # (read at turn start, appended at turn end) — never by the UI. Persisted
+        # per-project (feature 022) via App, which reads it at a quiescent point.
         self.history: list[LLMMessage] = []
         self._turn_queue: queue.Queue[str | object] = queue.Queue()
         self._events: queue.Queue[AgentEvent] = queue.Queue()
         self._worker: threading.Thread | None = None
         self._cancel = threading.Event()
+        # Set ONLY by reset_conversation / release (project teardown), never by the Stop
+        # button: tells a worker finishing an aborted turn to DROP its history commit so it
+        # doesn't land on the next project's freshly-reset history (feature 022). A user
+        # Stop (cancel_turn) does NOT set this, so a stopped turn's partial reply still
+        # commits to THIS conversation's context.
+        self._drop_turn = threading.Event()
         self._released = (
             False  # True only after release() — gates the shutdown sentinel
         )
@@ -172,6 +180,7 @@ class CopilotSession:
                 continue
             assert isinstance(item, str)
             self._cancel.clear()  # a fresh turn starts uncancelled
+            self._drop_turn.clear()  # ...and committable (teardown re-sets it)
             self._run_one_turn(item)
 
     def _run_one_turn(self, user_text: str) -> None:
@@ -203,6 +212,13 @@ class CopilotSession:
             logger.exception("Copilot turn failed")
             self._events.put(AgentError("copilot turn failed (see logs)"))
             return
+        # A turn aborted by project teardown (reset_conversation / release set _drop_turn)
+        # must NOT commit — run_turn returns NORMALLY on cancel, so without this the
+        # in-flight turn's tail would land on the next project's freshly-reset history
+        # (feature 022 / the trace-bleed deferral's orphaned-append half). A user Stop does
+        # NOT set _drop_turn, so its partial reply still commits to this conversation.
+        if self._drop_turn.is_set():
+            return
         # Commit the turn to history (worker is the sole owner) so the next turn carries
         # context. The current shader source is NOT stored here — it is re-fetched live
         # each turn via get_current_shader (§B1). A turn that ended in an AgentError (a
@@ -216,9 +232,17 @@ class CopilotSession:
     # ---- lifecycle ----
 
     def reset_conversation(self) -> None:
-        # Project switch: drop the transcript + history. The caps closures read live
-        # app.*, so no reconstruction is needed (skeleton 10 §4). reusable: the same
+        # Project switch / clear: drop the transcript + history. The caps closures read
+        # live app.*, so no reconstruction is needed (skeleton 10 §4). reusable: the same
         # session serves the next project, so the gate must NOT latch shut.
+        # INVARIANT (feature 022): callers gate this on `not in_flight` (open_project +
+        # the clear button both refuse while a turn runs), so the worker is idle here and
+        # no join is needed. Warn if that invariant is ever violated.
+        if self.state.in_flight:
+            logger.warning(
+                "reset_conversation called mid-turn — caller bypassed the in_flight gate"
+            )
+        self._drop_turn.set()  # a worker finishing an aborted turn must not commit it
         self._cancel.set()
         self.gate.cancel_all(reusable=True)
         # Drain any queued turns / a stale shutdown sentinel left by a prior release()
@@ -237,12 +261,33 @@ class CopilotSession:
         self.trace.close()
         self.trace = self._new_trace()
 
+    def save_conversation(self, path: Path) -> None:
+        # MAIN THREAD, at a quiescent point (not in_flight): snapshot state + history to
+        # disk (feature 022). Both arrays are consistent here — the worker is idle.
+        self.pump_events()  # drain any terminal event so the last turn's bubble + usage land
+        store = ConversationStore.from_runtime(self.state, self.history)
+        store.save(path)
+
+    def load_conversation(self, store: ConversationStore) -> None:
+        # MAIN THREAD, after reset_conversation (fresh session): restore the parsed store
+        # into state + history + usage (feature 022). Builds on reset's clean slate.
+        self.state.messages = store.to_messages()
+        self.state.usage = store.to_usage()
+        self.history = store.to_history()
+        if self.state.messages or self.history:
+            self.trace.event(
+                "conversation_loaded",
+                messages=len(self.state.messages),
+                history=len(self.history),
+            )
+
     def release(self) -> None:
         # MAIN THREAD, at shutdown — called at the TOP of App.release(), before the node
         # release, so a queued GL op never runs against half-released nodes. Safe when no
         # worker was ever spawned: the sentinel + cancel_all + join on a None thread are
         # all no-ops.
         self._released = True
+        self._drop_turn.set()  # abandon any in-flight turn's commit at teardown
         self._cancel.set()
         self.bridge.cancel_all()
         self.gate.cancel_all()

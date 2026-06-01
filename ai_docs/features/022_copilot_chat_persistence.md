@@ -99,23 +99,30 @@ Sibling to 020 (the copilot agent itself). `CopilotSession.history`'s comment al
    trace notes it (how many messages/turns restored) so a cold-read trace shows the agent didn't start
    from zero. Small, but it closes an observability gap (a restored history changes what the model sees).
 
-## Files touched
-- **New:** `shaderbox/copilot/persistence.py` — the `ConversationStore` pydantic model + `load`/`save`/
-  `migrate` + archive helper. Mirrors `app_state.py`'s discipline.
-- **`shaderbox/copilot/session.py`:** add `save_conversation(path)` + `load_conversation(store)`; call
-  save at turn-completion (`_finish_turn` / `pump_events`); `reset_conversation` unchanged (load builds
-  on it).
-- **`shaderbox/copilot/state.py`:** possibly a `to_store`/`from_store` seam if the render `Message` ↔
-  persisted shape needs mapping (keep `state.py` runtime-pure; the mapping can live in `persistence.py`).
-- **`shaderbox/app.py`:** `_init` — save outgoing + load incoming around the existing
-  `reset_conversation()` call (line ~958); add `copilot_dir` / `conversation_file_path` properties;
-  `release` saves on shutdown.
-- **`shaderbox/copilot/trace.py`:** the `conversation_loaded` event (decision 8) — coordinate with 021's
-  trace rewrite (land 021 first; 022 adds one event kind).
-- **UI (if a clear affordance is added/changed):** the chat-clear button — via `ui_primitives.py` +
-  `/imgui-ui` (decision 6).
-- **Docs:** `roadmap.md` (one row + banner), `conventions.md ## Design decisions` if the persist-both-
-  arrays rule (decision 1) is worth a guardrail.
+## Files touched (as built)
+- **New `shaderbox/copilot/persistence.py`** — `ConversationStore` pydantic model (+ `_MessageModel` /
+  `_HistoryModel` / `_ToolCallModel` / `_UsageModel` sub-models) with `from_runtime` / `to_messages` /
+  `to_history` / `to_usage` / `save` / `load_and_migrate` + `archive_conversation`. Mirrors
+  `UIAppState`'s `extra="forbid"` + fail-soft discipline; the runtime↔persisted mapping lives HERE
+  (state.py stays runtime-pure). `cast` narrows the loose on-disk `role: str` back to its Literal.
+- **`shaderbox/copilot/session.py`:** `save_conversation(path)` (pump_events → snapshot) +
+  `load_conversation(store)` (+ the `conversation_loaded` trace event, decision 8); the `_drop_turn`
+  Event (set by `reset_conversation`/`release`, cleared per turn) guarding the `history.append` so a
+  teardown-aborted turn doesn't commit while a user Stop still does; the defensive WARNING in
+  `reset_conversation`.
+- **`shaderbox/app.py`:** `copilot_dir` / `copilot_conversation_path` properties; `release()` saves the
+  outgoing conversation (top of `_init` + shutdown, guarded on `hasattr` project_dir/copilot);
+  `_init` loads the incoming conversation after `reset_conversation`; `copilot_clear_chat`
+  (archive→reset→save-empty); `_conversation_stamp`.
+- **`shaderbox/ui.py`** (`update_and_draw`): the per-turn save on the `in_flight` True→False transition
+  (the durable-unit fix — see Review history).
+- **`shaderbox/widgets/copilot_chat.py`** (`_draw_top_bar`): the `begin_disabled(in_flight)` Clear
+  button → `copilot_clear_chat`.
+- **`ai_docs/todo.md`:** the trace-bleed deferral re-scoped to the residual `_ensure_open` structural
+  weakness (orphaned-append + observable bleed both closed).
+- **Tests:** `tests/test_conversation_persistence.py` (round-trip, fail-soft, archive, session
+  save/load, the `_drop_turn`-vs-Stop distinction).
+- **Docs:** `roadmap.md` (row + banner).
 
 ## Manual verification
 - `make check` clean; `make smoke` passes.
@@ -131,6 +138,63 @@ Sibling to 020 (the copilot agent itself). `CopilotSession.history`'s comment al
   a WARNING in the log file (not a crash, not console spam).
 - **Cost counter restores:** the session usage (tokens/cost) shown in the chat reflects the restored
   total, not zero.
+
+## Pre-impl code re-validation (after 020·12–15 + 021 landed)
+A read-only sweep confirmed the spec against current code: `ChatState`/`Message` (plain dataclasses,
+roles user/assistant/tool_status/error/pending_action — JSON-safe), `CopilotSession.history:
+list[LLMMessage]` (worker-owned, persists across turns on the session, frozen dataclass — JSON-safe),
+`SessionUsage` (plain, on `state.usage`), the `_init` → `reset_conversation()` call (still after exporter
+wiring, guarded `if hasattr(self, "copilot")`), `_finish_turn`/`pump_events`/`release` (all present;
+`_finish_turn` is the single turn-end chokepoint), and `UIAppState.load_and_migrate` (pydantic
+`extra="forbid"` + try/except → defaults + WARNING) as the model to mirror. Two amendments:
+
+- **A1 — the worker is ALREADY IDLE when `reset_conversation` runs (a real join is defensive, not the
+  mechanism), but the orphaned-history append needs a real 2-line guard.** A second pre-impl review
+  corrected the original A1: 020·15's `open_project` gate (`_copilot_busy_blocked` on
+  `copilot_turn_active`) prevents a project switch while a turn is in flight, so by the time
+  `reset_conversation` runs the worker has already emitted its terminal event, `pump_events` has
+  flipped `in_flight` False, and the worker is back at `_turn_queue.get()`. So NO blocking
+  join-to-idle primitive is needed (it would also be safe — `_events` is unbounded so the worker never
+  deadlocks — but it's unnecessary and implies a freeze risk that doesn't exist). The REAL deferral fix
+  is: `_cancel.set()` does NOT stop the orphaned append — `run_turn` returns *normally* on cancel
+  (`yield AgentCancelled(); return`), so the two `self.history.append(...)` at the end of
+  `_run_one_turn` fire unconditionally. **Guard those appends on `not self._cancel.is_set()`** — that is
+  the orphaned-history half of the deferral. The trace-bleed half is closed by the worker-is-idle
+  invariant (no `run_turn` holds the old `TraceLog` when `reset_conversation` swaps it); a
+  permanent-closed flag on `TraceLog.close()` is optional residual hardening, noted not required. A
+  defensive WARNING-if-`in_flight` at the top of `reset_conversation` documents the invariant.
+- **A1-save-order — `pump_events()` THEN save THEN reset.** The terminal `AgentTurnDone`'s assistant
+  bubble + `usage` land in `state` only when `_apply_event` drains it. Save must `pump_events()` first
+  (idempotent — already drained in the UI case, but explicit so a future non-modal switch is correct),
+  read `(state, history, usage)`, then `reset_conversation` zeroes them, then load incoming.
+- **A2 — the user-facing clear button does NOT exist yet** (`copilot_chat.py::_draw_top_bar` has only
+  Layout + Close). 022 adds it there (decision 6 / Q3), via `ghost_button`. **It MUST be
+  `begin_disabled(state.in_flight)`** — otherwise clear-during-turn is the one path that bypasses the
+  020·15 protection (orphaned append, mid-turn archive of an incomplete conversation).
+
+## Review history
+- **Plan-lock implicit** (maintainer authorized proceeding; Q1–Q3 already locked). Spec pre-dates
+  020·12–15 + 021 — a read-only re-validation confirmed all 9 code dependencies (above).
+- **Pre-impl threading review (1 agent, adversarial) → FIX-THEN-SHIP; corrected the original A1.** It
+  found the mid-turn switch is UNREACHABLE through the UI (020·15's `open_project` gate), so the worker
+  is always idle when `reset_conversation` runs — no blocking join needed (the original A1 over-built
+  it). The real deferral fix is guarding the `history.append` (cancel returns normally, not via
+  exception, so the append fires today). Plus: save must `pump_events()` first; the new clear button
+  must be `begin_disabled(in_flight)`. All folded into A1 / A1-save-order / A2.
+- **Implemented**, then **post-impl review (1 agent, adversarial) → FIX-THEN-SHIP; two real findings
+  fixed:**
+  1. **[BLOCKER] the per-completed-turn save (the headline durability promise) was never wired** — only
+     switch/shutdown/clear saved, so a crash between switches lost every completed turn. FIXED: `ui.py`'s
+     per-frame copilot reconcile now saves on the `in_flight` True→False transition (the turn-complete
+     moment), so the completed turn is the durable unit as promised.
+  2. **[SHOULD-FIX] the deferral guard conflated teardown-cancel with the user Stop button** — guarding
+     the commit on `_cancel` meant a user Stop (which also sets `_cancel`) silently dropped the turn AND
+     desynced `state.messages` (bubbles kept) from `history` (turn erased). FIXED: a dedicated
+     `_drop_turn` Event, set ONLY by `reset_conversation`/`release` (teardown), never by `cancel_turn`
+     (Stop). A stopped turn now commits its partial reply to this conversation; only a project-teardown
+     abort drops it. Added a session-level unit test for the distinction (the deferral fix had no
+     coverage before). The reviewer's [NIT] (restoring an unproducible `pending_action` role) is inert
+     today — noted, not fixed. 154 tests green.
 
 ## Resolved questions
 *(all locked by the maintainer)*

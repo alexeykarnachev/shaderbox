@@ -12,7 +12,11 @@ from collections.abc import Iterator
 
 from shaderbox.app import App, _shader_revision
 from shaderbox.copilot.agent import AgentError, AgentToolCard, run_turn
-from shaderbox.copilot.capabilities import CopilotCapabilities, CurrentShaderView, EditResult
+from shaderbox.copilot.capabilities import (
+    CopilotCapabilities,
+    CurrentShaderView,
+    EditResult,
+)
 from shaderbox.copilot.config import COPILOT_CONFIG
 from shaderbox.copilot.context import CopilotContext
 from shaderbox.copilot.gate import GateChannel
@@ -24,7 +28,6 @@ from shaderbox.copilot.llm.api import (
     LLMToolSpec,
 )
 from shaderbox.copilot.tools.registry import build_registry
-
 from tests.test_copilot_loop import _FakeClient, _tool_call
 
 
@@ -38,7 +41,10 @@ class _FreshnessApp:
     # app.py::_copilot_freshness_reject + the stamp/re-stamp in the apply closures.
     def __init__(self) -> None:
         self.current_node_id: str = "node-1"
-        self.sources: dict[str, str] = {"node-1": "vec3 p = u_pos;", "node-2": "float x;"}
+        self.sources: dict[str, str] = {
+            "node-1": "vec3 p = u_pos;",
+            "node-2": "float x;",
+        }
         self._read_revision: tuple[str, str] | None = None
 
     def view(self) -> CurrentShaderView | None:
@@ -55,7 +61,9 @@ class _FreshnessApp:
         nid = self.current_node_id
         rev = self._read_revision
         if rev is None:
-            return EditResult(matches=0, errors=[], stale=True, stale_reason="read first")
+            return EditResult(
+                matches=0, errors=[], stale=True, stale_reason="read first"
+            )
         if nid not in self.sources or rev[0] != nid:
             return EditResult(
                 matches=0, errors=[], stale=True, stale_reason="you switched nodes"
@@ -314,16 +322,23 @@ def test_malformed_mutating_args_do_not_crash_cap() -> None:
     # Regression (review BLOCKER): a mutating tool with malformed args → registry.execute
     # returns payload=None → the cap predicate must null-guard (payload or {}).get(...).
     app = _FreshnessApp()
-    bad = _tool_call("b", "edit_shader", '{"old_str": 123}')  # missing new_str, wrong type
+    bad = _tool_call(
+        "b", "edit_shader", '{"old_str": 123}'
+    )  # missing new_str, wrong type
     events = _run(app, [bad, [LLMTextDelta("done"), LLMDone("stop")]])
     cards = [e for e in events if isinstance(e, AgentToolCard)]
     assert cards[0].ok is False  # validation error, did not crash the worker
-    assert not isinstance(events[-1], AgentError) or "stopped" in events[-1].message.lower()
+    assert (
+        not isinstance(events[-1], AgentError)
+        or "stopped" in events[-1].message.lower()
+    )
 
 
 # ---- the REAL app.py freshness primitives (pure, GL-free) ----
 def _node_stub(text: str) -> types.SimpleNamespace:
-    return types.SimpleNamespace(node=types.SimpleNamespace(source=types.SimpleNamespace(text=text)))
+    return types.SimpleNamespace(
+        node=types.SimpleNamespace(source=types.SimpleNamespace(text=text))
+    )
 
 
 def _app_stub(node_id: str, sources: dict[str, str], rev) -> types.SimpleNamespace:

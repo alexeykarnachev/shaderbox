@@ -164,6 +164,13 @@ def _draw_top_bar(app: App) -> None:
     if ghost_button(f"Layout: {app.copilot_layout.value}"):
         app.copilot_layout = _NEXT_LAYOUT[app.copilot_layout]
     imgui.same_line()
+    # Clear archives the conversation then resets to an empty chat (feature 022). Disabled
+    # mid-turn so it can't bypass the in_flight gate the reset relies on.
+    imgui.begin_disabled(app.copilot.state.in_flight)
+    if ghost_button("Clear"):
+        app.copilot_clear_chat()
+    imgui.end_disabled()
+    imgui.same_line()
     if ghost_button("Close"):
         app.is_copilot_open = False
     imgui.separator()

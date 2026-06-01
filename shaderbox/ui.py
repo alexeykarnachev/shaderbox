@@ -201,6 +201,11 @@ def update_and_draw(app: App) -> None:
     # Drain copilot worker events into the chat render-state (no GL; single-writer).
     app.copilot.pump_events()
     # The editor lock follows the turn: set on send, lifted when the turn ends (§11).
+    # A True->False transition means a turn just completed — persist it (feature 022: the
+    # completed turn is the durable unit, so a later crash never loses it). project_dir is
+    # always set here (the frame loop only runs after the first _init).
+    if app.copilot_turn_active and not app.copilot.state.in_flight:
+        app.copilot.save_conversation(app.copilot_conversation_path)
     app.copilot_turn_active = app.copilot.state.in_flight
 
     # ----------------------------------------------------------------

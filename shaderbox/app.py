@@ -35,6 +35,7 @@ from shaderbox.copilot.capabilities import (
 from shaderbox.copilot.config import COPILOT_CONFIG
 from shaderbox.copilot.glsl_lex import token_match
 from shaderbox.copilot.llm.openrouter import OpenRouterLLMClient
+from shaderbox.copilot.persistence import ConversationStore, archive_conversation
 from shaderbox.copilot.session import CopilotSession
 from shaderbox.copilot.state import CopilotLayout
 from shaderbox.core import Canvas, Node
@@ -117,6 +118,11 @@ def _changed_excerpt(new_text: str, line_range: tuple[int, int], context: int) -
     lo = max(1, line_range[0] - context)
     hi = min(len(lines), line_range[1] + context)
     return "\n".join(f"{i:>{width}}  {lines[i - 1]}" for i in range(lo, hi + 1))
+
+
+def _conversation_stamp() -> str:
+    # Filesystem-safe timestamp for an archived conversation filename (feature 022).
+    return time.strftime("%Y-%m-%d_%H-%M-%S")
 
 
 def _shader_revision(node_id: str, text: str) -> tuple[str, bytes]:
@@ -833,6 +839,17 @@ class App:
         self._copilot_read_revision = None
         self.copilot.enqueue_turn(text)
 
+    def copilot_clear_chat(self) -> None:
+        # Archive the current conversation (recoverable, not destroyed — Q1), then reset to
+        # a fresh empty chat + write an empty conversation.json (feature 022). Gated on
+        # not-in-flight at the UI (the clear button is disabled mid-turn), so the worker is
+        # idle here — same invariant reset_conversation relies on.
+        if self.copilot.state.in_flight:
+            return
+        archive_conversation(self.copilot_conversation_path, _conversation_stamp())
+        self.copilot.reset_conversation()
+        self.copilot.save_conversation(self.copilot_conversation_path)
+
     def _copilot_busy_blocked(self, action: str) -> bool:
         # True (+ a notification) when an action that mutates the editor/node target must be
         # refused because a copilot turn is in flight (§15 A). The turn owns the current node.
@@ -1075,6 +1092,14 @@ class App:
         return self._create_dir_if_needed(self.project_dir / "trash")
 
     @property
+    def copilot_dir(self) -> Path:
+        return self._create_dir_if_needed(self.project_dir / "copilot")
+
+    @property
+    def copilot_conversation_path(self) -> Path:
+        return self.copilot_dir / "conversation.json"
+
+    @property
     def current_node_id(self) -> str:
         return self.app_state.current_node_id
 
@@ -1172,11 +1197,15 @@ class App:
         if isinstance(telegram, TelegramExporter):
             telegram.set_default_pack(self.app_state.telegram_default_pack)
 
-        # Drop the chat transcript on project switch. The client reads the (reloaded)
-        # integrations_store live, so no re-wire is needed. Guarded for the first _init,
-        # which runs during __init__ right after copilot is constructed.
+        # Reset to a clean slate, then restore the INCOMING project's conversation
+        # (feature 022 — the outgoing one was saved in release() at the top of _init).
+        # The client reads the reloaded integrations_store live, so no re-wire is needed.
+        # Guarded for the first _init, which runs during __init__ right after copilot is
+        # constructed.
         if hasattr(self, "copilot"):
             self.copilot.reset_conversation()
+            store = ConversationStore.load_and_migrate(self.copilot_conversation_path)
+            self.copilot.load_conversation(store)
 
     def get_font(self, size: int) -> Any:
         fonts = imgui.get_io().fonts
@@ -1486,6 +1515,13 @@ class App:
         imgui.save_ini_settings_to_disk(str(self._imgui_ini_path))
 
     def release(self) -> None:
+        # Persist the OUTGOING project's conversation before the worker is torn down
+        # (feature 022). Runs at the top of _init (project switch — project_dir still the
+        # outgoing one) and at app shutdown. Guarded: skipped on the first _init (no
+        # project_dir yet) and when copilot was never constructed.
+        if hasattr(self, "copilot") and hasattr(self, "project_dir"):
+            self.copilot.save_conversation(self.copilot_conversation_path)
+
         # Copilot first: cancel_all() + join() before the node release below, so a
         # queued GL op can't run against half-released nodes. Guarded like
         # preview_canvas — _init calls release() and self.copilot is set just before

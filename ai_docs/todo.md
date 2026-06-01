@@ -28,20 +28,22 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
 
 ---
 
-## [DEFERRAL] copilot trace can bleed into the prior project's file on a mid-turn project switch
-- **Trigger:** feature 022 (it must quiesce the worker at project switch to save conversation state) —
-  fold this fix into that quiesced window. OR a maintainer notices a copilot transcript containing a
+## [DEFERRAL] TraceLog._ensure_open can't distinguish "closed" from "never opened" (structural)
+- **Trigger:** a NON-MODAL project switch lands (a "recent projects" menu / hotkey that doesn't go
+  through the blocking `pfd` folder dialog), OR `open_project`'s `_copilot_busy_blocked` gate is ever
+  removed/weakened — either re-opens the window where a worker can be mid-`run_turn` when
+  `reset_conversation` swaps the trace. ALSO: a maintainer notices a copilot transcript containing a
   turn that belongs to a different project.
-- `session.reset_conversation` (main thread) closes the old `TraceLog` and opens a new one without
-  JOINING the worker — it only sets `_cancel` + `gate.cancel_all`. A worker still inside `run_turn`
-  holds the old `TraceLog` via its local `tr`; its next `tr.event` runs `_ensure_open`, which keys only
-  on `self._fh is None` and so cannot tell "never opened" from "closed" — it re-opens the just-closed
-  old file (append) and writes the in-flight turn's tail into the PREVIOUS project's transcript. The
-  lock makes this safe (no crash, no write to a closed handle), but events bleed across projects. Same
-  un-joined-worker window also commits the aborted turn to the orphaned old `history` (pre-existing).
-  Honest fix: quiesce/join the worker before swapping the trace (022 needs the same quiesce point for
-  conversation save), OR give `close()` a permanent-closed flag that `_ensure_open` respects (then the
-  `_init`/release reopen path needs its own re-arm). Out of scope for 021 (logging format/leveling).
+- Feature 022 CLOSED the observable bug for all current UI paths: the orphaned-history half is fixed
+  (the `_cancel.is_set()` guard in `_run_one_turn` skips the commit on a cancelled turn), and the
+  trace-bleed half can't fire because 020·15's `open_project` gate + the in-flight-gated clear button
+  mean the worker is always IDLE when `reset_conversation` runs (no `run_turn` holds the old
+  `TraceLog`). What REMAINS is the structural weakness, not yet hardened: `TraceLog._ensure_open` keys
+  only on `self._fh is None`, so it cannot tell "never opened" from "closed" — if a worker ever DOES
+  run past a `close()` (the trigger above), its next `tr.event` re-opens the just-closed file (append)
+  and bleeds. Honest fix when triggered: a permanent-closed flag on `close()` that `_ensure_open`
+  respects (the `_init`/release reopen path then needs its own re-arm). Deliberately deferred — adding
+  it now is hardening a path the invariant already closes.
 
 ## [DEFERRAL] docs describe a "freetype glyph-atlas text-rendering shader" that no shipped shader uses
 - **Trigger:** before the copilot's system prompt describes the text-rendering capability (it must
