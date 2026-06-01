@@ -27,40 +27,34 @@ feature; brief points at the superseder).
 
 **As of 2026-05-31.**
 
-- **Shipped: `v0.12.1`** (feature 019). Live on itch.io (both channels); `dev` == `master`,
-  unshipped commits on `dev` (the 020 scaffold + chat-UI wave).
-- **In flight: feature 020 — the built-in coding-copilot agent. SCAFFOLD + CHAT UI DONE; LLM
-  capabilities are the next wave.** Research (7-agent swarm, review-converged) + the module skeleton +
-  the maintainer's locked decisions are in `ai_docs/features/020_copilot_agent/` (read `99_synthesis.md
-  §0` for the decisions, `10_skeleton_plan.md` for the structure). Landed: the `shaderbox/copilot/`
-  package mirroring `exporters/` — the five seams (`capabilities` / `LLMClient` Protocol / worker→main
-  `CopilotBridge` / worker↔UI queues / chat `state`) + `App`/`ui.py` wiring; a floating chat window
-  with corner/strip/free layouts, launched from the editor bottom bar (a `toggle_button` + `Ctrl+J`),
-  two-axis open/focused state with the accent outline, no click-bleed/resize-select; `CopilotIntegration`
-  (OpenRouter key+model) in `IntegrationsStore`; active-tab + chat open/layout persisted. Every
-  LLM/tool/prompt body is a `NotImplementedError` stub for the next wave. Provider = **OpenRouter**.
-- **NEXT ACTION: BUILD Slice 1** — the edit/compile-feedback vertical, fully specified in
-  `ai_docs/features/020_copilot_agent/11_capability_wave_spec.md §16` (the buildable contract: 3 tools —
-  `get_current_shader` / `edit_shader` / `get_compile_errors`, current-node-only, no gate; the verified
-  compile round-trip; failure-mode strings; worked trace; a fake-`LLMClient` test plan). It exercises
-  the whole spine (OpenRouter stream → agent loop → prompt → native tool-calls → bridge recompile
-  round-trip → editor lock → status) with the minimum surface. **Approach = slice-by-slice: build &
-  touch Slice 1 BEFORE speccing Slice 2** (the maintainer's explicit instruction — condition the design
-  on running code, don't spec breadth ahead of practice). Slice 1's build order is spec §15 steps 0–4.
-- **Spec is sealed + review-converged** (2 review rounds + 1 polish round). Whole-wave decisions: §15
-  build order; `_DECISIONS_LOG.md` for the distilled maintainer↔Claude decisions (A–K + R3/H5 +
-  B1a/B1b). Settled this session: R3 (render = blocking bridge op + "Rendering…" modal + 60s timeout,
-  §5); source placement (via `get_current_shader` tool, not a context block, for cache health, §6/B1a).
-  The standalone editor auto-flush hook (report 08 / `§0 #1`) is DISSOLVED by the turn-start editor-lock
-  (§11/§E) — no longer a task.
-- **No open BLOCKERs.** Two cosmetic nav tails parked in `todo.md` (nav-cursor resets to cell 0 after
-  Enter; 2D grid arrow adjacency) — both trigger-gated.
+- **Shipped: `v0.12.1`** (feature 019). Live on itch.io (both channels). Many unshipped commits on
+  `dev` (the whole 020 copilot wave) — `master` not yet advanced.
+- **In flight: feature 020 — the built-in coding-copilot agent. SLICE 1 (edit/compile-feedback
+  vertical) BUILT + RUNS end-to-end.** The whole spine works: OpenRouter stream → agent loop → prompt
+  → native tool-calls → bridge recompile round-trip → editor lock → status. The three slice-1 tools
+  (`get_current_shader` / `edit_shader` / `get_compile_errors`, current-node-only) land; read/explain
+  turns work in the live app (verified by the maintainer + the trace log). OpenRouter key+model entered
+  in **Settings → Integrations → Copilot**. A full-transcript trace is written per session to
+  `app_data_dir()/copilot_traces/copilot_*.jsonl` (every prompt / response / tool call / tokens / cost,
+  separate from the regular log) — `shaderbox/copilot/trace.py`.
+- **OPEN BLOCKER: model tool-call compatibility.** The default `deepseek/deepseek-v4-flash` is NOT
+  tool-call compatible — after a tool result it returns an empty completion (and on edit turns leaks raw
+  tool-call markup as text). The agent now **rejects** such a model with a clear error (no workaround —
+  maintainer rule: don't fit the design to a broken model; `agent.py` `_MODEL_INCOMPATIBLE_MSG`). A
+  short-lived retry-without-tools workaround was added then removed (it produced the markup garbage).
+  **NEXT ACTION: pick a tool-call-compatible default model** and verify a real read→edit turn executes
+  the edit (not just talks). Change the default at `exporters/integrations.py` `CopilotIntegration.model`.
+- **Spec/decisions:** `ai_docs/features/020_copilot_agent/11_capability_wave_spec.md §16` is the slice-1
+  contract; `_DECISIONS_LOG.md` for the distilled maintainer↔Claude decisions. Slice 2 is NOT yet
+  specced (the build-then-spec rule: condition Slice 2 on what Slice 1 taught — chiefly the model
+  finding above).
+- **No open BLOCKERs outside 020.** Two cosmetic nav tails parked in `todo.md`, both trigger-gated.
 
 ## Features
 
 | # | Name | Status | Brief |
 |---|---|---|---|
-| 020 | copilot_agent | in progress | In-app coding-copilot agent (free-form chat that edits shaders / sets uniforms / manages the lib via tools, over OpenRouter). Scaffold landed: the `shaderbox/copilot/` package — five seams (capabilities / `LLMClient` Protocol / worker→main `CopilotBridge` / worker↔UI queues / chat `state`) + `App`/`ui.py`/`commands.py` wiring (a floating chat window with corner/strip/free layout presets, an in-editor launcher button + `Ctrl+J` toggle, `CopilotIntegration`, `openai` dep). LLM/tool/prompt/UI bodies are stubbed for the capability wave. The in-process compile-feedback loop is the differentiator. Spec: `ai_docs/features/020_copilot_agent/` (research + `10_skeleton_plan.md`). |
+| 020 | copilot_agent | in progress | In-app coding-copilot agent (free-form chat over OpenRouter; in-process compile-feedback is the differentiator). Scaffold + Slice 1 (edit/compile-feedback vertical) landed + runs: the `shaderbox/copilot/` package (capabilities / `LLMClient` / worker→main `CopilotBridge` / worker↔UI queues / chat `state` / `agent` loop / `prompt` / `trace`), the three current-node tools (`get_current_shader` / `edit_shader` / `get_compile_errors`), the OpenRouter stream + key/model in Settings, the editor lock, and a full per-session transcript trace. Open blocker: the default model (`deepseek-v4-flash`) is tool-call-INCOMPATIBLE (empty/garbage after a tool result) — the agent now rejects such models; needs a compatible default picked. Slice 2 unspecced (build-then-spec). Spec: `ai_docs/features/020_copilot_agent/11_capability_wave_spec.md §16`. |
 | 019 | keyboard_navigation | done | The focus/nav layer (018's deferred half): app-wide `nav_enable_keyboard` + a two-level focus model — `Ctrl+`` ` `` cycles 3 regions (editor/grid/panel, region-confined via `no_nav_inputs`, active region shown by a live-focus accent outline), `Ctrl+1/2/3` jump the inner Node/Render/Share tab; editor is a permanent focus-stop; grid cells are nav-reachable `selectable`s; 018 bare-arrow node-prev/next removed. The polish wave added a selection-vs-accent color split (fixed `COLOR.SELECT`) + a theme-portability invariant, Ctrl+Tab suppression, glfw-layer Esc swallowing, `nav_flattened` uniforms. Maintainer-verified. Spec: `ai_docs/features/019_keyboard_navigation.md`. |
 | 018 | keyboard_control | done | The command layer: a central `commands.py` registry drives rebindable chord shortcuts + an opt-out cheatsheet overlay + an `imgui_command_palette` (Ctrl+Shift+P); dispatch split pre-frame/in-frame; rebindings persist diff-from-default on `UIAppState`. The focus/navigation layer (nav widget-traversal + tab-cycling) was split out to a `todo.md` deferral. Spec: `ai_docs/features/018_keyboard_control.md`. |
 | 017 | structure_reorg | done | Domain-separation refactoring wave (no behavior change): `lib_*`→`shader_lib/` package + total rename, shader_lib split into index/resolver/parser, `lib_picker`→package, `util.py`→`shader_errors.py`+`editor_types.py`, `ui_models` de-tangled from UI, exporters/ tidy, App shader-lib CRUD→`ShaderLibFileManager`. `ui/`+`render/` packages rejected. Spec: `ai_docs/features/017_structure_reorg.md`. |

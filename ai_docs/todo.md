@@ -28,6 +28,20 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
 
 ---
 
+## [BLOCKER] copilot default model is not tool-call compatible
+- **Trigger:** the NEXT copilot session — i.e. before doing any more copilot work, OR the first time a
+  user reports the copilot "reads the shader then says nothing / outputs garbage like `<｜DSML｜...`".
+- The default `deepseek/deepseek-v4-flash` (`exporters/integrations.py` `CopilotIntegration.model`)
+  CANNOT continue a native tool-call conversation: after a tool result it returns an EMPTY completion,
+  and on edit turns it leaks raw tool-call markup (`<｜DSML｜tool_calls>…`) as plain text. Confirmed in
+  the live app + the trace log this session (`agent.py` rejects it via `_MODEL_INCOMPATIBLE_MSG` — a
+  turn that ends after a tool ran with NEITHER a native tool call NOR text is the proof; no markup
+  string-sniffing, no workaround — maintainer rule: reject the model, don't fit the design to it).
+  **Resolve:** pick a genuinely tool-call-compatible OpenRouter model, set it as the default, and verify
+  a real read→edit turn EXECUTES the edit (the agent calls `edit_shader` natively + recompiles), not
+  just talks. The trace file (`app_data_dir()/copilot_traces/`) shows exactly what the model emits —
+  use it to validate. Slice 2 must NOT be specced until a compatible model is locked (build-then-spec).
+
 ## [DEFERRAL] docs describe a "freetype glyph-atlas text-rendering shader" that no shipped shader uses
 - **Trigger:** before the copilot's system prompt describes the text-rendering capability (it must
   describe what's ACTUALLY on disk), OR a maintainer pass on dead code, OR the next edit to any of the
