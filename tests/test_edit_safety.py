@@ -10,15 +10,15 @@ import threading
 import types
 from collections.abc import Iterator
 
-from shaderbox.app import App, _shader_revision
+from shaderbox.app import App, _shader_digest
 from shaderbox.copilot.agent import AgentError, AgentToolCard, run_turn
 from shaderbox.copilot.capabilities import (
     CopilotCapabilities,
-    CurrentShaderView,
     EditResult,
+    SetUniformResult,
+    ShaderView,
 )
 from shaderbox.copilot.config import COPILOT_CONFIG
-from shaderbox.copilot.context import CopilotContext
 from shaderbox.copilot.gate import GateChannel
 from shaderbox.copilot.llm.api import (
     LLMDone,
@@ -28,74 +28,74 @@ from shaderbox.copilot.llm.api import (
     LLMToolSpec,
 )
 from shaderbox.copilot.tools.registry import build_registry
-from tests.test_copilot_loop import _FakeClient, _tool_call
-
-
-def _revision(node_id: str, text: str) -> tuple[str, str]:
-    return (node_id, text)  # text itself is a fine content key for the fake
+from tests.test_copilot_loop import _fake_context, _FakeClient, _tool_call
 
 
 class _FreshnessApp:
-    # Models App's freshness guard: get_current_shader stamps (node_id, text); a mutating
-    # tool rejects unless the stamp matches the LIVE (current_node_id, source). Mirrors
-    # app.py::_copilot_freshness_reject + the stamp/re-stamp in the apply closures.
+    # Models App's PER-NODE freshness guard (feature 020·16 Decision 2): read_shader stamps
+    # _read_revision[node_id]=text; a mutating tool on a resolved target rejects unless the
+    # node's stamp matches its LIVE source. Mirrors app.py::_copilot_freshness_reject + the
+    # per-node stamp/re-stamp. The edit caps resolve target ""->current, like prod.
     def __init__(self) -> None:
         self.current_node_id: str = "node-1"
         self.sources: dict[str, str] = {
             "node-1": "vec3 p = u_pos;",
             "node-2": "float x;",
         }
-        self._read_revision: tuple[str, str] | None = None
+        self._read_revision: dict[str, str] = {}
 
-    def view(self) -> CurrentShaderView | None:
-        nid = self.current_node_id
-        if nid not in self.sources:
-            return None
-        text = self.sources[nid]
-        self._read_revision = _revision(nid, text)
-        return CurrentShaderView(
-            text=text, listing=f"1  {text}", uniforms=[], errors=[]
-        )
+    def read_shaders(self, node_ids: list[str]) -> list[ShaderView]:
+        ids = node_ids or [self.current_node_id]
+        views: list[ShaderView] = []
+        for nid in ids:
+            if nid not in self.sources:
+                continue
+            text = self.sources[nid]
+            self._read_revision[nid] = text
+            views.append(
+                ShaderView(
+                    node_id=nid, name=nid, listing=f"1  {text}", uniforms=[], errors=[]
+                )
+            )
+        return views
 
-    def _freshness_reject(self) -> EditResult | None:
-        nid = self.current_node_id
-        rev = self._read_revision
-        if rev is None:
+    def _freshness_reject(self, node_id: str) -> EditResult | None:
+        stamped = self._read_revision.get(node_id)
+        if stamped is None:
+            reason = "you switched nodes" if self._read_revision else "read first"
+            return EditResult(matches=0, errors=[], stale=True, stale_reason=reason)
+        if node_id not in self.sources:
             return EditResult(
-                matches=0, errors=[], stale=True, stale_reason="read first"
+                matches=0, errors=[], stale=True, stale_reason="no longer exists"
             )
-        if nid not in self.sources or rev[0] != nid:
-            return EditResult(
-                matches=0, errors=[], stale=True, stale_reason="you switched nodes"
-            )
-        if rev != _revision(nid, self.sources[nid]):
+        if stamped != self.sources[node_id]:
             return EditResult(
                 matches=0, errors=[], stale=True, stale_reason="source changed"
             )
         return None
 
     def apply_shader_edit(
-        self, old_str: str, new_str: str, replace_all: bool
+        self, old_str: str, new_str: str, replace_all: bool, target: str
     ) -> EditResult:
-        if (reject := self._freshness_reject()) is not None:
+        nid = target or self.current_node_id
+        if (reject := self._freshness_reject(nid)) is not None:
             return reject
-        nid = self.current_node_id
         src = self.sources[nid]
         if old_str not in src:
             return EditResult(matches=0, errors=[])
         new_text = src.replace(old_str, new_str)
         self.sources[nid] = new_text
-        self._read_revision = _revision(nid, new_text)  # re-stamp on success
+        self._read_revision[nid] = new_text  # re-stamp the TARGET on success
         return EditResult(matches=1, errors=[])
 
     def apply_line_edit(
-        self, start_line: int, end_line: int, new_text: str
+        self, start_line: int, end_line: int, new_text: str, target: str
     ) -> EditResult:
-        if (reject := self._freshness_reject()) is not None:
+        nid = target or self.current_node_id
+        if (reject := self._freshness_reject(nid)) is not None:
             return reject
-        nid = self.current_node_id
         self.sources[nid] = new_text
-        self._read_revision = _revision(nid, new_text)
+        self._read_revision[nid] = new_text
         return EditResult(matches=1, errors=[])
 
     def caps(self) -> CopilotCapabilities:
@@ -105,10 +105,15 @@ class _FreshnessApp:
             get_shader_source=lambda _nid: None,
             get_compile_errors=lambda _nid: [],
             current_node_id=lambda: self.current_node_id,
-            get_current_shader_view=self.view,
+            node_tree=lambda: [],
+            lib_catalog=lambda: [],
+            read_shaders=self.read_shaders,
+            grep=lambda _q: [],
+            read_lib=lambda _names: [],
             apply_shader_edit=self.apply_shader_edit,
             apply_line_edit=self.apply_line_edit,
-            get_compile_errors_current=lambda: [],
+            set_uniform=lambda _n, _v, _node: SetUniformResult(ok=True),
+            create_node=lambda _n, _s, _sw: "node-new",
         )
 
 
@@ -118,7 +123,7 @@ def _run(app: _FreshnessApp, scripts: list[list[LLMStreamEvent]]) -> list:
             _FakeClient(scripts),
             build_registry(app.caps()),
             COPILOT_CONFIG,
-            CopilotContext(current_node_id="node-1"),
+            _fake_context(),
             history=[],
             user_text="edit",
             gate=GateChannel(),
@@ -128,7 +133,7 @@ def _run(app: _FreshnessApp, scripts: list[list[LLMStreamEvent]]) -> list:
 
 
 def _read() -> list[LLMStreamEvent]:
-    return _tool_call("r", "get_current_shader", "{}")
+    return _tool_call("r", "read_shader", "{}")
 
 
 def _edit(old: str, new: str) -> list[LLMStreamEvent]:
@@ -184,7 +189,7 @@ def test_content_drift_then_reread_succeeds() -> None:
             _DriftClient(),
             build_registry(app.caps()),
             COPILOT_CONFIG,
-            CopilotContext(current_node_id="node-1"),
+            _fake_context(),
             history=[],
             user_text="edit",
             gate=GateChannel(),
@@ -194,9 +199,9 @@ def test_content_drift_then_reread_succeeds() -> None:
     cards = [e for e in events if isinstance(e, AgentToolCard)]
     # read, edit(stale-reject), read, edit(ok)
     assert [c.name for c in cards] == [
-        "get_current_shader",
+        "read_shader",
         "edit_shader",
-        "get_current_shader",
+        "read_shader",
         "edit_shader",
     ]
     assert cards[1].ok is False and cards[1].payload == {"stale": True}
@@ -236,7 +241,7 @@ def test_identity_drift_rejected() -> None:
             _SwitchClient(),
             build_registry(app.caps()),
             COPILOT_CONFIG,
-            CopilotContext(current_node_id="node-1"),
+            _fake_context(),
             history=[],
             user_text="edit",
             gate=GateChannel(),
@@ -299,7 +304,7 @@ def test_stale_rejects_do_not_trip_retry_cap() -> None:
             _AlwaysStaleClient(),
             build_registry(app.caps()),
             COPILOT_CONFIG,
-            CopilotContext(current_node_id="node-1"),
+            _fake_context(),
             history=[],
             user_text="edit",
             gate=GateChannel(),
@@ -334,14 +339,16 @@ def test_malformed_mutating_args_do_not_crash_cap() -> None:
     )
 
 
-# ---- the REAL app.py freshness primitives (pure, GL-free) ----
+# ---- the REAL app.py per-node freshness primitives (pure, GL-free; feature 020·16) ----
 def _node_stub(text: str) -> types.SimpleNamespace:
     return types.SimpleNamespace(
         node=types.SimpleNamespace(source=types.SimpleNamespace(text=text))
     )
 
 
-def _app_stub(node_id: str, sources: dict[str, str], rev) -> types.SimpleNamespace:
+def _app_stub(
+    node_id: str, sources: dict[str, str], rev: dict[str, bytes]
+) -> types.SimpleNamespace:
     return types.SimpleNamespace(
         current_node_id=node_id,
         ui_nodes={k: _node_stub(v) for k, v in sources.items()},
@@ -349,36 +356,40 @@ def _app_stub(node_id: str, sources: dict[str, str], rev) -> types.SimpleNamespa
     )
 
 
-def test_shader_revision_is_identity_plus_content() -> None:
-    # Same (id, text) -> equal; different text -> different; different node -> different.
-    assert _shader_revision("n", "abc") == _shader_revision("n", "abc")
-    assert _shader_revision("n", "abc") != _shader_revision("n", "abcd")
-    assert _shader_revision("n1", "abc") != _shader_revision("n2", "abc")
-    assert _shader_revision("n", "x")[0] == "n"  # identity preserved
+def test_shader_digest_is_content_only() -> None:
+    # Per-node keying (020·16 Decision 2): the digest is content-only — identity is the dict
+    # key, not part of the token. Same text -> equal; different text -> different.
+    assert _shader_digest("abc") == _shader_digest("abc")
+    assert _shader_digest("abc") != _shader_digest("abcd")
 
 
 def test_real_freshness_reject_branches() -> None:
     # Exercise the REAL App._copilot_freshness_reject (not the fake) on a minimal stand-in,
-    # so a future reorder of its branches/short-circuit is caught.
+    # keyed by the resolved TARGET node id (020·16 Decision 2/2c), so a future reorder of its
+    # branches/short-circuit is caught.
     src = "vec3 p = u_pos;"
-    fresh = _shader_revision("n1", src)
+    fresh = _shader_digest(src)
 
-    # None stamp -> read-first reject.
-    stub = _app_stub("n1", {"n1": src}, None)
-    r = App._copilot_freshness_reject(stub)  # type: ignore[arg-type]
+    # Empty dict -> never-read reject (read-first).
+    stub = _app_stub("n1", {"n1": src}, {})
+    r = App._copilot_freshness_reject(stub, "n1")  # type: ignore[arg-type]
     assert r is not None and r.stale and "before editing" in r.stale_reason
 
-    # Stamp matches live source -> fresh (None = proceed).
-    stub = _app_stub("n1", {"n1": src}, fresh)
-    assert App._copilot_freshness_reject(stub) is None  # type: ignore[arg-type]
+    # Target stamped + matches live source -> fresh (None = proceed).
+    stub = _app_stub("n1", {"n1": src}, {"n1": fresh})
+    assert App._copilot_freshness_reject(stub, "n1") is None  # type: ignore[arg-type]
 
-    # Node switched (stamp node != current) -> identity reject; must NOT KeyError even if
-    # the current node is absent.
-    stub = _app_stub("n2", {"n1": src}, fresh)
-    r = App._copilot_freshness_reject(stub)  # type: ignore[arg-type]
-    assert r is not None and r.stale and "switched" in r.stale_reason
+    # Read a DIFFERENT node, edit n1 (pin 2c) -> "switched nodes" reject; no KeyError.
+    stub = _app_stub("n1", {"n1": src}, {"n2": _shader_digest("float x;")})
+    r = App._copilot_freshness_reject(stub, "n1")  # type: ignore[arg-type]
+    assert r is not None and r.stale and "switched nodes" in r.stale_reason
+
+    # Stamped but the node was deleted -> "no longer exists".
+    stub = _app_stub("n1", {}, {"n1": fresh})
+    r = App._copilot_freshness_reject(stub, "n1")  # type: ignore[arg-type]
+    assert r is not None and r.stale and "no longer exists" in r.stale_reason
 
     # Same node, content drifted -> content reject.
-    stub = _app_stub("n1", {"n1": src + " // touched"}, fresh)
-    r = App._copilot_freshness_reject(stub)  # type: ignore[arg-type]
+    stub = _app_stub("n1", {"n1": src + " // touched"}, {"n1": fresh})
+    r = App._copilot_freshness_reject(stub, "n1")  # type: ignore[arg-type]
     assert r is not None and r.stale and "changed since you read it" in r.stale_reason

@@ -18,8 +18,9 @@ from shaderbox.copilot.agent import (
 from shaderbox.copilot.capabilities import (
     CompileErrorInfo,
     CopilotCapabilities,
-    CurrentShaderView,
     EditResult,
+    SetUniformResult,
+    ShaderView,
 )
 from shaderbox.copilot.config import COPILOT_CONFIG
 from shaderbox.copilot.context import CopilotContext
@@ -65,13 +66,26 @@ class _FakeClient:
         return iter(script)
 
 
+def _fake_context() -> CopilotContext:
+    return CopilotContext(
+        current_node_id="node-1",
+        node_tree="- shader (id: node-1)  [current]",
+        lib_catalog="(library is empty)",
+        conventions="",
+    )
+
+
 def _fake_caps(edit_errors: list[list[CompileErrorInfo]]) -> CopilotCapabilities:
     # Models the App: apply_shader_edit matches old_str against the LIVE source via the REAL
     # token matcher (not a re-rolled str.count), replaces, and (on a real match) advances the
     # source — so a second edit sees the first's result and the fake stays faithful to prod.
+    # The `target` arg is accepted and ignored (the fake models the current node only).
     state = {"text": "vec3 p = u_pos;", "n": 0}
 
-    def apply_edit(old_str: str, new_str: str, replace_all: bool) -> EditResult:
+    def apply_edit(
+        old_str: str, new_str: str, replace_all: bool, target: str
+    ) -> EditResult:
+        _ = target
         spans = token_match(state["text"], old_str)
         if not spans or (len(spans) > 1 and not replace_all):
             return EditResult(matches=len(spans), errors=[])
@@ -87,9 +101,12 @@ def _fake_caps(edit_errors: list[list[CompileErrorInfo]]) -> CopilotCapabilities
         state["n"] += 1
         return EditResult(matches=len(spans), errors=errors)
 
-    def apply_line(start_line: int, end_line: int, new_text: str) -> EditResult:
+    def apply_line(
+        start_line: int, end_line: int, new_text: str, target: str
+    ) -> EditResult:
         # Faithful to App: split-on-newline list edit (§14 L2). matches==0 is the
         # out-of-range fail-soft signal the tool layer turns into the range error.
+        _ = target
         lines = state["text"].split("\n")
         n = len(lines)
         is_insert = end_line == start_line - 1
@@ -101,13 +118,16 @@ def _fake_caps(edit_errors: list[list[CompileErrorInfo]]) -> CopilotCapabilities
         state["n"] += 1
         return EditResult(matches=1, errors=errors)
 
-    def view() -> CurrentShaderView:
-        return CurrentShaderView(
-            text=state["text"],
-            listing=f"1  {state['text']}",
-            uniforms=["u_pos vec3 = (0.0, 0.0, 0.0)"],
-            errors=[],
-        )
+    def read_shaders(node_ids: list[str]) -> list[ShaderView]:
+        return [
+            ShaderView(
+                node_id="node-1",
+                name="shader",
+                listing=f"1  {state['text']}",
+                uniforms=["u_pos vec3 = (0.0, 0.0, 0.0)"],
+                errors=[],
+            )
+        ]
 
     return CopilotCapabilities(
         list_nodes=lambda: [],
@@ -115,16 +135,21 @@ def _fake_caps(edit_errors: list[list[CompileErrorInfo]]) -> CopilotCapabilities
         get_shader_source=lambda _nid: None,
         get_compile_errors=lambda _nid: [],
         current_node_id=lambda: "node-1",
-        get_current_shader_view=view,
+        node_tree=lambda: [],
+        lib_catalog=lambda: [],
+        read_shaders=read_shaders,
+        grep=lambda _q: [],
+        read_lib=lambda _names: [],
         apply_shader_edit=apply_edit,
         apply_line_edit=apply_line,
-        get_compile_errors_current=lambda: [],
+        set_uniform=lambda _n, _v, _node: SetUniformResult(ok=True),
+        create_node=lambda _n, _s, _sw: "node-new",
     )
 
 
 def test_edit_compile_feedback_self_correction() -> None:
     scripts: list[list[LLMStreamEvent]] = [
-        _tool_call("c1", "get_current_shader", "{}"),
+        _tool_call("c1", "read_shader", "{}"),
         _tool_call(
             "c2",
             "edit_shader",
@@ -156,7 +181,7 @@ def test_edit_compile_feedback_self_correction() -> None:
             _FakeClient(scripts),
             registry,
             COPILOT_CONFIG,
-            CopilotContext(current_node_id="node-1"),
+            _fake_context(),
             history=[],
             user_text="animate the position uniform",
             gate=GateChannel(),
@@ -166,7 +191,7 @@ def test_edit_compile_feedback_self_correction() -> None:
 
     cards = [e for e in events if isinstance(e, AgentToolCard)]
     assert [c.name for c in cards] == [
-        "get_current_shader",
+        "read_shader",
         "edit_shader",
         "edit_shader",
     ]
@@ -205,7 +230,7 @@ def test_edit_applies_despite_whitespace_divergence() -> None:
             _FakeClient(scripts),
             registry,
             COPILOT_CONFIG,
-            CopilotContext(current_node_id="node-1"),
+            _fake_context(),
             history=[],
             user_text="double the position",
             gate=GateChannel(),
@@ -232,7 +257,7 @@ def test_edit_not_found_is_a_tool_error() -> None:
             _FakeClient(scripts),
             registry,
             COPILOT_CONFIG,
-            CopilotContext(current_node_id="node-1"),
+            _fake_context(),
             history=[],
             user_text="change the thing",
             gate=GateChannel(),
@@ -265,7 +290,7 @@ def test_repeated_failed_edits_stop_at_retry_cap() -> None:
             _FakeClient(scripts),
             registry,
             COPILOT_CONFIG,
-            CopilotContext(current_node_id="node-1"),
+            _fake_context(),
             history=[],
             user_text="do the thing",
             gate=GateChannel(),
@@ -285,7 +310,7 @@ def test_repeated_failed_edits_stop_at_retry_cap() -> None:
 def test_max_iterations_cutoff_surfaces_as_error() -> None:
     # A non-edit tool that keeps getting called (read loop) must hit max_iterations and
     # surface an AgentError so the chat shows why it stopped (feature 020 · 12 C).
-    read = _tool_call("cr", "get_current_shader", "{}")
+    read = _tool_call("cr", "read_shader", "{}")
     scripts: list[list[LLMStreamEvent]] = [read] * (COPILOT_CONFIG.max_iterations + 5)
     caps = _fake_caps(edit_errors=[])
     registry = build_registry(caps)
@@ -295,7 +320,7 @@ def test_max_iterations_cutoff_surfaces_as_error() -> None:
             _FakeClient(scripts),
             registry,
             COPILOT_CONFIG,
-            CopilotContext(current_node_id="node-1"),
+            _fake_context(),
             history=[],
             user_text="read forever",
             gate=GateChannel(),

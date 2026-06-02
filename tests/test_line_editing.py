@@ -12,12 +12,11 @@ from shaderbox.app import _changed_excerpt, _line_of_offset, _number_lines
 from shaderbox.copilot.agent import AgentError, AgentToolCard, run_turn
 from shaderbox.copilot.capabilities import CompileErrorInfo, EditResult
 from shaderbox.copilot.config import COPILOT_CONFIG
-from shaderbox.copilot.context import CopilotContext
 from shaderbox.copilot.gate import GateChannel
 from shaderbox.copilot.llm.api import LLMDone, LLMStreamEvent, LLMTextDelta
 from shaderbox.copilot.tools.registry import build_registry
 from shaderbox.copilot.tools.shader import _applied_result
-from tests.test_copilot_loop import _fake_caps, _FakeClient, _tool_call
+from tests.test_copilot_loop import _fake_caps, _fake_context, _FakeClient, _tool_call
 
 
 # ---- the pure line-edit model (mirrors app.py::_copilot_apply_line_edit's list edit) ----
@@ -156,7 +155,7 @@ def _run(scripts: list[list[LLMStreamEvent]]) -> list:
             _FakeClient(scripts),
             build_registry(caps),
             COPILOT_CONFIG,
-            CopilotContext(current_node_id="node-1"),
+            _fake_context(),
             history=[],
             user_text="edit it",
             gate=GateChannel(),
