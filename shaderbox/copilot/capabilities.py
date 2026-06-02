@@ -57,13 +57,36 @@ class CompileErrorInfo:
 
 
 @dataclass(frozen=True)
-class CurrentShaderView:
-    # The line-numbered listing + uniforms + errors get_current_shader returns. `text`
-    # is the RAW source (no line-number prefixes) — the substring edit_shader matches on.
-    text: str
-    listing: str  # cat -n style; line-number prefixes are display-only (§16.2)
-    uniforms: list[str]  # "name type = value" rows; [] when the shader doesn't compile
+class ShaderView:
+    # One node's full view for read_shader (feature 020·16): identity + the line-numbered
+    # listing + uniform rows (type + current value) + compile errors. read_shader returns a
+    # LIST of these (one per requested node). The read STAMPS the node's freshness so a
+    # subsequent edit on it passes the guard.
+    node_id: str
+    name: str
+    listing: str  # cat -n style
+    uniforms: list[str]  # "name type = value" rows
     errors: list[CompileErrorInfo]
+
+
+@dataclass(frozen=True)
+class GrepHit:
+    # One origin-labeled match for grep (feature 020·16). `origin` is the addressable handle
+    # the agent can hand to a read/edit tool: a node id, or a "lib:<path>" address.
+    origin: str
+    location: str  # human label, e.g. "node 'gradient'" or "lib:noise.glsl"
+    line: int  # 1-based
+    text: str  # the matched line, stripped
+
+
+@dataclass(frozen=True)
+class LibFunctionBody:
+    # One lib function's full body for read_lib (feature 020·16). None-result (missing name)
+    # is handled tool-side; this is only the found case.
+    name: str
+    signature: str
+    lib_address: str
+    body: str
 
 
 @dataclass(frozen=True)
@@ -107,13 +130,20 @@ class CopilotCapabilities:
     node_tree: Callable[[], list[NodeTreeEntry]]
     lib_catalog: Callable[[], list[LibCatalogEntry]]
 
+    # ---- cross-project reads (feature 020·16) ----
+    # read_shader marshals (force-compile + uniform read are GL) and STAMPS freshness per node;
+    # it takes the resolved node-id LIST ("" / [] -> current is resolved tool-side). grep +
+    # read_lib are GL-FREE (string reads over the parsed index / in-memory sources).
+    read_shaders: Callable[[list[str]], list[ShaderView]]
+    grep: Callable[[str], list[GrepHit]]
+    read_lib: Callable[[list[str]], list[LibFunctionBody]]
+
     # ---- mutations the worker REQUESTS but the main thread APPLIES ----
     # Implemented App-side as bridge.run_on_main(...) closures (the worker blocks for
     # the result). The tool layer calls these like any other callable — the
     # marshalling is hidden inside the App-supplied closure (Seam C stays invisible here).
+    # Current-node-only today; target-addressing lands with the write tools (020·16 Phase 3).
     #
-    # Slice 1 (edit/compile-feedback) — all current-node-only (no node_id arg):
-    get_current_shader_view: Callable[[], CurrentShaderView | None]
     # Match old_str against the node's CURRENT source, replace, recompile, persist,
     # refresh the editor — all on the main thread (§16.3). Returns the match count + the
     # post-compile 1-based errors. (old_str, new_str, replace_all).
@@ -122,5 +152,3 @@ class CopilotCapabilities:
     # new_text, recompile + persist + refresh (feature 020 · 14). An empty selection
     # (end == start - 1) is a pure insert at position `start`. Same main-thread round-trip.
     apply_line_edit: Callable[[int, int, str], EditResult]
-    # Force a compile if stale, return the current 1-based errors.
-    get_compile_errors_current: Callable[[], list[CompileErrorInfo]]

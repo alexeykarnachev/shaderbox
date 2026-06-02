@@ -14,7 +14,7 @@ from imgui_bundle import imgui_command_palette as imcmd
 from imgui_bundle import portable_file_dialogs as pfd
 from imgui_bundle.python_backends.glfw_backend import GlfwRenderer
 from loguru import logger
-from OpenGL.GL import GL_UNSIGNED_INT
+from OpenGL.GL import GL_SAMPLER_2D, GL_UNSIGNED_INT
 
 from shaderbox.commands import (
     COMMAND_SPECS,
@@ -28,11 +28,13 @@ from shaderbox.constants import RESOURCES_DIR
 from shaderbox.copilot.capabilities import (
     CompileErrorInfo,
     CopilotCapabilities,
-    CurrentShaderView,
     EditResult,
+    GrepHit,
     LibCatalogEntry,
+    LibFunctionBody,
     NodeSummary,
     NodeTreeEntry,
+    ShaderView,
 )
 from shaderbox.copilot.config import COPILOT_CONFIG
 from shaderbox.copilot.glsl_lex import token_match
@@ -213,7 +215,12 @@ def _uniform_type_label(u: moderngl.Uniform | moderngl.UniformBlock) -> str:
     if isinstance(u, moderngl.UniformBlock):
         return "block"
     # moderngl stub gap: Uniform.gl_type (conventions.md sanctioned allowlist).
-    base = "uint" if u.gl_type == GL_UNSIGNED_INT else "float"  # type: ignore
+    gl_type = u.gl_type  # type: ignore
+    # A sampler is a live Uniform (core.py:301) but is NOT a settable scalar/vector — label it
+    # honestly so the agent's type oracle and set_uniform's reject agree (020·16 Decision 6).
+    if gl_type == GL_SAMPLER_2D:
+        return "sampler2D"
+    base = "uint" if gl_type == GL_UNSIGNED_INT else "float"
     scalar = base if u.dimension == 1 else f"vec{u.dimension}"
     return f"{scalar}[{u.array_length}]" if u.array_length > 1 else scalar
 
@@ -542,10 +549,11 @@ class App:
             current_node_id=lambda: self.current_node_id,
             node_tree=self._copilot_node_tree,
             lib_catalog=self._copilot_lib_catalog,
-            get_current_shader_view=self._copilot_current_shader_view,
+            read_shaders=self._copilot_read_shaders,
+            grep=self._copilot_grep,
+            read_lib=self._copilot_read_lib,
             apply_shader_edit=self._copilot_apply_shader_edit,
             apply_line_edit=self._copilot_apply_line_edit,
-            get_compile_errors_current=self._copilot_compile_errors_current,
         )
 
     def _copilot_list_nodes(self) -> list[NodeSummary]:
@@ -611,28 +619,94 @@ class App:
             return []
         return _to_error_infos(self.ui_nodes[node_id].node.compile_unit.errors)
 
-    # ---- slice 1: edit / compile-feedback (current node only, spec §16.3) ----
+    # ---- cross-project reads (feature 020·16) ----
 
-    def _copilot_current_shader_view(self) -> CurrentShaderView | None:
-        # Worker calls this via the bridge: ensure a fresh compile, then read source +
-        # uniforms + errors. needs_gl (it forces compile()).
-        def _on_main() -> CurrentShaderView | None:
-            node_id = self.current_node_id
-            if node_id not in self.ui_nodes:
-                return None
-            node = self.ui_nodes[node_id].node
-            if node.program is None:
-                node.compile()
-            text = node.source.text
-            self._copilot_read_revision[node_id] = _shader_digest(text)
-            return CurrentShaderView(
-                text=text,
-                listing=_number_lines(text),
-                uniforms=_format_uniforms(node.get_active_uniforms()),
-                errors=_to_error_infos(node.compile_unit.errors),
-            )
+    def _copilot_read_shaders(self, node_ids: list[str]) -> list[ShaderView]:
+        # Marshalled (force-compile + uniform read are GL). For each requested node: ensure a
+        # fresh compile, read source + uniforms (type + value) + errors, and STAMP its freshness
+        # so a follow-up edit on it passes the guard (020·16 Decision 2). Unknown ids are skipped
+        # (the tool layer reports them). An empty list is resolved to current node-side.
+        def _on_main() -> list[ShaderView]:
+            views: list[ShaderView] = []
+            for node_id in node_ids:
+                if node_id not in self.ui_nodes:
+                    continue
+                ui_node = self.ui_nodes[node_id]
+                node = ui_node.node
+                if node.program is None:
+                    node.compile()
+                text = node.source.text
+                self._copilot_read_revision[node_id] = _shader_digest(text)
+                views.append(
+                    ShaderView(
+                        node_id=node_id,
+                        name=ui_node.ui_state.ui_name,
+                        listing=_number_lines(text),
+                        uniforms=_format_uniforms(node.get_active_uniforms()),
+                        errors=_to_error_infos(node.compile_unit.errors),
+                    )
+                )
+            return views
 
         return self.copilot.bridge.run_on_main(_on_main)
+
+    def _copilot_grep(self, query: str) -> list[GrepHit]:
+        # GL-FREE: substring search across every node's source + every lib file's source. Hits
+        # are origin-labeled so the agent can hand the origin to a read/edit tool (a node id, or
+        # a lib: address). Case-sensitive substring match (a comment/#define can false-positive —
+        # acceptable for rare discovery, 020·16 Out-of-scope).
+        if not query:
+            return []
+        hits: list[GrepHit] = []
+        for node_id, ui_node in self.ui_nodes.items():
+            label = f"node '{ui_node.ui_state.ui_name}'"
+            for i, line in enumerate(ui_node.node.source.text.split("\n"), start=1):
+                if query in line:
+                    hits.append(
+                        GrepHit(
+                            origin=node_id, location=label, line=i, text=line.strip()
+                        )
+                    )
+        root = shader_lib_root()
+        for path, source in self.shader_lib_index.sources.items():
+            try:
+                rel = path.relative_to(root)
+            except ValueError:
+                rel = path
+            address = f"lib:{rel.as_posix()}"
+            for i, line in enumerate(source.text.split("\n"), start=1):
+                if query in line:
+                    hits.append(
+                        GrepHit(
+                            origin=address, location=address, line=i, text=line.strip()
+                        )
+                    )
+        return hits
+
+    def _copilot_read_lib(self, names: list[str]) -> list[LibFunctionBody]:
+        # GL-FREE: the full body of each named lib function (the explicit pull; the catalogue in
+        # the prompt carries signatures only). Unknown names are skipped (tool layer reports them).
+        root = shader_lib_root()
+        bodies: list[LibFunctionBody] = []
+        for name in names:
+            fn = self.shader_lib_index.functions.get(name)
+            if fn is None:
+                continue
+            try:
+                rel = fn.file.relative_to(root)
+            except ValueError:
+                rel = fn.file
+            bodies.append(
+                LibFunctionBody(
+                    name=fn.name,
+                    signature=fn.signature,
+                    lib_address=f"lib:{rel.as_posix()}",
+                    body=fn.body,
+                )
+            )
+        return bodies
+
+    # ---- edit / compile-feedback (current node only; target-addressing is 020·16 Phase 3) ----
 
     def _copilot_freshness_reject(self, node_id: str) -> EditResult | None:
         # Reject (mutate-nothing) if the TARGET node's source moved since the agent last read
@@ -764,18 +838,6 @@ class App:
                 changed = (start_line, start_line + len(repl) - 1)
             errors = self._copilot_persist_shader(node_id, node, new_full)
             return _edit_result(1, errors, new_full, changed)
-
-        return self.copilot.bridge.run_on_main(_on_main)
-
-    def _copilot_compile_errors_current(self) -> list[CompileErrorInfo]:
-        def _on_main() -> list[CompileErrorInfo]:
-            node_id = self.current_node_id
-            if node_id not in self.ui_nodes:
-                return []
-            node = self.ui_nodes[node_id].node
-            if node.program is None:
-                node.compile()
-            return _to_error_infos(node.compile_unit.errors)
 
         return self.copilot.bridge.run_on_main(_on_main)
 
