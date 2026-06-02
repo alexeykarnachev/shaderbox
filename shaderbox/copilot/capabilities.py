@@ -70,6 +70,17 @@ class ShaderView:
 
 
 @dataclass(frozen=True)
+class SetUniformResult:
+    # The outcome of a set_uniform (feature 020·16 Decision 6). ok=False carries `error` (the
+    # name wasn't found, was a sampler/block/engine-driven, or the value's shape was wrong).
+    # On ok=True, `applied` echoes the CPU-side value written (NOT the GL uniform — that
+    # converges only after the next render); `type_label` is the uniform's type for the reply.
+    ok: bool
+    error: str = ""
+    type_label: str = ""
+
+
+@dataclass(frozen=True)
 class GrepHit:
     # One origin-labeled match for grep (feature 020·16). `origin` is the addressable handle
     # the agent can hand to a read/edit tool: a node id, or a "lib:<path>" address.
@@ -110,6 +121,9 @@ class EditResult:
     # stale_reason is the App-built message naming the specific cause. matches==0 on a reject.
     stale: bool = False
     stale_reason: str = ""
+    # Lib edit (feature 020 · 16 Decision 4): the honest "no standalone compile" note returned
+    # when the edit target was a lib: file. Empty for a node edit (which returns real errors).
+    lib_note: str = ""
 
 
 @dataclass(frozen=True)
@@ -144,11 +158,20 @@ class CopilotCapabilities:
     # marshalling is hidden inside the App-supplied closure (Seam C stays invisible here).
     # Current-node-only today; target-addressing lands with the write tools (020·16 Phase 3).
     #
-    # Match old_str against the node's CURRENT source, replace, recompile, persist,
-    # refresh the editor — all on the main thread (§16.3). Returns the match count + the
-    # post-compile 1-based errors. (old_str, new_str, replace_all).
-    apply_shader_edit: Callable[[str, str, bool], EditResult]
-    # Replace the 1-based inclusive line range [start, end] of the current shader with
-    # new_text, recompile + persist + refresh (feature 020 · 14). An empty selection
-    # (end == start - 1) is a pure insert at position `start`. Same main-thread round-trip.
-    apply_line_edit: Callable[[int, int, str], EditResult]
+    # Match old_str against the TARGET's CURRENT source, replace, recompile (node) / write
+    # (lib), persist, refresh the editor — all on the main thread (§16.3). `target` is "" =
+    # current node, a node-id, or a "lib:<path>" address (020·16). Returns the match count +
+    # the post-compile errors (node) or the honest "no standalone compile" result (lib).
+    # (old_str, new_str, replace_all, target).
+    apply_shader_edit: Callable[[str, str, bool, str], EditResult]
+    # Replace the 1-based inclusive line range [start, end] of the target with new_text,
+    # recompile/write + persist + refresh (feature 020 · 14 / 16). An empty selection
+    # (end == start - 1) is a pure insert at position `start`; for a non-existent lib: target
+    # this CREATES the file (Decision 5). (start, end, new_text, target).
+    apply_line_edit: Callable[[int, int, str, str], EditResult]
+    # Set a uniform VALUE on a node (020·16 Decision 6): (name, value, node). node "" = current.
+    # Validates up front; rejects sampler/block/engine-driven with an explicit error.
+    set_uniform: Callable[[str, object, str], "SetUniformResult"]
+    # Create a node from source ("" = compiling starter). switch_to controls the tab.
+    # (name, source, switch_to) -> new node-id (020·16 Decision 8).
+    create_node: Callable[[str, str, bool], str]

@@ -28,13 +28,21 @@ class _ReadShaderArgs(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+_TARGET_DESC = (
+    "what to edit: empty = the shader you're currently working on; a node id (from the "
+    "project map) = that node; a 'lib:<path>' address (from the library catalogue) = that "
+    "library file"
+)
+
+
 class _EditArgs(BaseModel):
-    old_str: str = Field(description="exact substring of the current source to replace")
+    old_str: str = Field(description="exact substring of the source to replace")
     new_str: str = Field(description="the replacement text")
     replace_all: bool = Field(
         default=False,
         description="replace every occurrence (resolves a non-unique old_str)",
     )
+    target: str = Field(default="", description=_TARGET_DESC)
     model_config = {"extra": "forbid"}
 
 
@@ -45,6 +53,7 @@ class _ReplaceLinesArgs(BaseModel):
         description="replacement text (no trailing newline needed); empty string deletes "
         "the range"
     )
+    target: str = Field(default="", description=_TARGET_DESC)
     model_config = {"extra": "forbid"}
 
 
@@ -53,6 +62,39 @@ class _InsertAfterArgs(BaseModel):
         description="insert after this 1-based line; 0 inserts at the top of the file"
     )
     new_text: str = Field(description="text to insert (no trailing newline needed)")
+    target: str = Field(
+        default="",
+        description=_TARGET_DESC
+        + " — a 'lib:<path>' that doesn't exist yet is CREATED here (the way to add a new "
+        "library function)",
+    )
+    model_config = {"extra": "forbid"}
+
+
+class _SetUniformArgs(BaseModel):
+    name: str = Field(description="the uniform's name (e.g. u_color)")
+    value: float | int | list[float] = Field(
+        description="a number for a scalar uniform, or a list of numbers for a vector "
+        "(e.g. [1.0, 0.0, 0.0] for a vec3 color)"
+    )
+    node: str = Field(
+        default="",
+        description="node id (from the project map); empty = the node you're working on",
+    )
+    model_config = {"extra": "forbid"}
+
+
+class _CreateNodeArgs(BaseModel):
+    name: str = Field(description="a display name for the new node")
+    source: str = Field(
+        default="",
+        description="initial GLSL source; empty = a compiling starter shader you then edit",
+    )
+    switch_to: bool = Field(
+        default=True,
+        description="switch the user's view to the new node (true), or create it in the "
+        "background and keep editing via its returned id (false)",
+    )
     model_config = {"extra": "forbid"}
 
 
@@ -111,6 +153,22 @@ _INSERT_AFTER_DESC = (
     "the changed region; if there are none, it compiled clean."
 )
 
+_SET_UNIFORM_DESC = (
+    "Change a uniform's runtime VALUE — for tweaking a number/vector the user controls live "
+    "(brightness, speed, a color), WITHOUT editing code. Read the node first so you know the "
+    "uniform's type and current value. Only scalar and vector uniforms can be set; samplers, "
+    "uniform blocks, and engine-driven uniforms (u_time, u_aspect, u_resolution) cannot. To "
+    "change the shader's LOGIC, or to add/remove a uniform, edit the SOURCE instead. The value "
+    "is in memory until the user saves the project; you cannot see the result — describe it."
+)
+
+_CREATE_NODE_DESC = (
+    "Create a new shader node. Leave source empty to get a compiling starter shader you then "
+    "edit, or pass full GLSL. By default the new node becomes the user's active node (so a "
+    "follow-up edit with no target lands on it); pass switch_to=false to create it in the "
+    "background and edit it via the node id this returns. Returns the new node's id."
+)
+
 _GREP_DESC = (
     "Find where a substring occurs across every shader node and the whole library. Returns "
     "origin-labeled file:line hits (a node id, or a lib: address). Use it to LOCATE something "
@@ -154,9 +212,13 @@ def _stale_result(result: EditResult) -> tuple[bool, str, dict] | None:
 
 def _applied_result(result: EditResult) -> tuple[bool, str, dict]:
     # The shared success/compile-error message for any applied edit (edit_shader /
-    # replace_lines / insert_after). Appends the "what changed" excerpt when present, or a
-    # region count for a multi-span replace_all (no single excerpt — §14 D5).
-    if result.errors:
+    # replace_lines / insert_after). A LIB edit returns the honest "no standalone compile"
+    # note (020·16 Decision 4) instead of a compile result; a NODE edit returns compile errors
+    # or "compiled clean". Appends the "what changed" excerpt, or a region count for a
+    # multi-span replace_all (no single excerpt — §14 D5).
+    if result.lib_note:
+        head = result.lib_note
+    elif result.errors:
         head = "compiled with errors:\n" + _format_errors(result.errors)
     else:
         head = "ok — compiled clean"
@@ -190,7 +252,7 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
 
     def edit_shader(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
         result = caps.apply_shader_edit(
-            args["old_str"], args["new_str"], args["replace_all"]
+            args["old_str"], args["new_str"], args["replace_all"], args["target"]
         )
         if (stale := _stale_result(result)) is not None:
             return stale
@@ -223,7 +285,7 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
                 "without replacing, use insert_after",
                 None,
             )
-        result = caps.apply_line_edit(start, end, args["new_text"])
+        result = caps.apply_line_edit(start, end, args["new_text"], args["target"])
         if (stale := _stale_result(result)) is not None:
             return stale
         if result.matches == 0:
@@ -232,12 +294,32 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
 
     def insert_after(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
         line = args["line"]
-        result = caps.apply_line_edit(line + 1, line, args["new_text"])
+        result = caps.apply_line_edit(line + 1, line, args["new_text"], args["target"])
         if (stale := _stale_result(result)) is not None:
             return stale
         if result.matches == 0:
             return False, _OUT_OF_RANGE, None
         return _applied_result(result)
+
+    def set_uniform(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
+        result = caps.set_uniform(args["name"], args["value"], args["node"])
+        if not result.ok:
+            return False, f"error: {result.error}", None
+        return (
+            True,
+            f"set {args['name']} ({result.type_label}) = {args['value']} — look at the "
+            "preview to confirm (not saved until you save the project)",
+            None,
+        )
+
+    def create_node(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
+        node_id = caps.create_node(args["name"], args["source"], args["switch_to"])
+        where = "now active" if args["switch_to"] else "in the background"
+        return (
+            True,
+            f"created node '{args['name']}' (id: {node_id}), {where}. Read it before editing.",
+            {"created": node_id},
+        )
 
     def grep(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
         hits = caps.grep(args["query"])
@@ -301,6 +383,28 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             description=_INSERT_AFTER_DESC,
             args_model=_InsertAfterArgs,
             handler=insert_after,
+            mutating=True,
+            needs_gl=True,
+            category="shader",
+            eager=True,
+            gate_policy=GatePolicy.NONE,
+        ),
+        ToolDefinition(
+            name="set_uniform",
+            description=_SET_UNIFORM_DESC,
+            args_model=_SetUniformArgs,
+            handler=set_uniform,
+            mutating=True,
+            needs_gl=True,
+            category="shader",
+            eager=True,
+            gate_policy=GatePolicy.NONE,
+        ),
+        ToolDefinition(
+            name="create_node",
+            description=_CREATE_NODE_DESC,
+            args_model=_CreateNodeArgs,
+            handler=create_node,
             mutating=True,
             needs_gl=True,
             category="shader",

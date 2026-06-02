@@ -165,6 +165,40 @@ class ShaderLibFileManager:
         self._rebuild_index()
         return target
 
+    def resolve_copilot_path(self, rel_path: str) -> Path | None:
+        # Resolve a copilot "lib:<rel>" address to an absolute path UNDER shader_lib_root,
+        # rejecting path traversal (feature 020·16 Decision 5 — the same guard create_file_in
+        # uses, but allowing an EXISTING file since the copilot edits existing lib files too).
+        # Returns None if the path escapes the root or is empty/non-.glsl.
+        cleaned = rel_path.strip().lstrip("/")
+        if not cleaned:
+            return None
+        if not cleaned.endswith(".glsl"):
+            cleaned += ".glsl"
+        root = shader_lib_root().resolve()
+        target = (root / cleaned).resolve()
+        try:
+            target.relative_to(root)
+        except ValueError:
+            logger.warning(f"Copilot lib path rejected (escapes root): {cleaned}")
+            return None
+        return target
+
+    def write_copilot_lib_file(self, path: Path, source: str) -> bool:
+        # Write LIVE (uncommented) source to a lib file for the copilot (feature 020·16
+        # Decision 5) — distinct from create_file_in's commented stub, which the index would
+        # see as zero functions. Creates parent dirs, writes, rebuilds the index so the new
+        # function is immediately resolvable. Returns False on an OS error.
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(source, encoding="utf-8")
+        except OSError as e:
+            logger.error(f"Copilot lib write failed for {path}: {e}")
+            return False
+        logger.info(f"Copilot wrote lib file: {path}")
+        self._rebuild_index()
+        return True
+
     def create_dir_in(self, parent_rel: Path, name: str) -> Path | None:
         # Create `<shader_lib_root>/<parent_rel>/<name>` as a real directory + a
         # starter `placeholder.glsl` inside (so the dir survives the

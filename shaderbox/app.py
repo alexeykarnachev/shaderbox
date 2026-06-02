@@ -2,7 +2,7 @@ import hashlib
 import shutil
 import time
 from collections.abc import Callable
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +34,7 @@ from shaderbox.copilot.capabilities import (
     LibFunctionBody,
     NodeSummary,
     NodeTreeEntry,
+    SetUniformResult,
     ShaderView,
 )
 from shaderbox.copilot.config import COPILOT_CONFIG
@@ -67,7 +68,12 @@ from shaderbox.ui_models import (
     load_node_from_dir,
     load_nodes_from_dir,
 )
-from shaderbox.util import open_in_file_manager, pfd_block, select_next_value
+from shaderbox.util import (
+    open_in_file_manager,
+    pfd_block,
+    select_next_value,
+    try_to_release,
+)
 
 # The procedural starter shader seeded into an empty project on first run (no
 # external media to load, unlike the Media Input template).
@@ -153,6 +159,19 @@ def _edit_result(
     )
 
 
+@dataclass
+class _CopilotEditTarget:
+    # A resolved copilot edit target (feature 020·16): either a NODE (recompiles, returns
+    # compile errors) or a LIB file (written, no standalone compile). `source` is the current
+    # text the edit matches/line-edits against ("" for a not-yet-created lib file).
+    kind: str  # "node" | "lib"
+    source: str
+    node_id: str | None = None
+    node: "Node | None" = None
+    lib_path: Path | None = None
+    lib_create: bool = False
+
+
 def _ws_normalize(text: str) -> tuple[str, list[int]]:
     # Collapse every run of horizontal whitespace to a single space and drop spaces
     # adjacent to a newline, returning the normalized text plus a parallel map from each
@@ -223,6 +242,32 @@ def _uniform_type_label(u: moderngl.Uniform | moderngl.UniformBlock) -> str:
     base = "uint" if gl_type == GL_UNSIGNED_INT else "float"
     scalar = base if u.dimension == 1 else f"vec{u.dimension}"
     return f"{scalar}[{u.array_length}]" if u.array_length > 1 else scalar
+
+
+# Engine-driven uniforms: Node.render() overwrites these every frame (core.py:319-329)
+# regardless of uniform_values, so set_uniform on them is a per-frame no-op (020·16 Decision 6).
+_ENGINE_DRIVEN_UNIFORMS: frozenset[str] = frozenset(
+    {"u_time", "u_aspect", "u_resolution"}
+)
+
+
+def _coerce_uniform_value(
+    value: object, uniform: moderngl.Uniform
+) -> float | int | tuple[float, ...] | None:
+    # Coerce a JSON-decoded value to a uniform's shape (020·16 Decision 6). Scalar -> number;
+    # vecN -> a tuple of N numbers. Returns None on a shape mismatch (the handler turns that
+    # into an explicit error — never the silent render-time pop). Bools are rejected (JSON true
+    # is not a shader number).
+    dim = uniform.dimension
+    if dim == 1:
+        if isinstance(value, bool) or not isinstance(value, int | float):
+            return None
+        return value
+    if not isinstance(value, list | tuple) or len(value) != dim:
+        return None
+    if any(isinstance(v, bool) or not isinstance(v, int | float) for v in value):
+        return None
+    return tuple(float(v) for v in value)
 
 
 def _format_uniforms(
@@ -554,6 +599,8 @@ class App:
             read_lib=self._copilot_read_lib,
             apply_shader_edit=self._copilot_apply_shader_edit,
             apply_line_edit=self._copilot_apply_line_edit,
+            set_uniform=self._copilot_set_uniform,
+            create_node=self._copilot_create_node,
         )
 
     def _copilot_list_nodes(self) -> list[NodeSummary]:
@@ -706,7 +753,90 @@ class App:
             )
         return bodies
 
-    # ---- edit / compile-feedback (current node only; target-addressing is 020·16 Phase 3) ----
+    # ---- cross-project mutations (feature 020·16) ----
+
+    def _copilot_set_uniform(
+        self, name: str, value: object, node: str
+    ) -> SetUniformResult:
+        # Set a runtime uniform VALUE on a node (020·16 Decision 6). Marshalled: validating the
+        # name against get_active_uniforms() is a GL read, and try_to_release may touch GL. The
+        # write itself mirrors widgets/uniform.py:228-230 (release old, dict-assign); the next
+        # render picks it up. Up-front validation is the ONLY feedback channel — the render-time
+        # shape-pop (core.py:343) is off-thread and the handler never sees it. Rejects samplers,
+        # blocks, and the engine-driven uniforms (which render() overwrites every frame).
+        def _on_main() -> SetUniformResult:
+            node_id = node or self.current_node_id
+            if node_id not in self.ui_nodes:
+                return SetUniformResult(
+                    ok=False,
+                    error=f"no node with id '{node_id}' — check the project map",
+                )
+            if name in _ENGINE_DRIVEN_UNIFORMS:
+                return SetUniformResult(
+                    ok=False,
+                    error=f"'{name}' is engine-driven (set every frame by ShaderBox) — it "
+                    "cannot be set; change the shader code if you need different behavior",
+                )
+            target = self.ui_nodes[node_id].node
+            uniform = next(
+                (u for u in target.get_active_uniforms() if u.name == name), None
+            )
+            if uniform is None:
+                return SetUniformResult(
+                    ok=False,
+                    error=f"node has no active uniform '{name}' — read_shader it to see its "
+                    "uniforms",
+                )
+            label = _uniform_type_label(uniform)
+            if not isinstance(uniform, moderngl.Uniform) or label.startswith("sampler"):
+                return SetUniformResult(
+                    ok=False,
+                    error=f"'{name}' is a {label} — only scalar/vector uniforms can be set "
+                    "to a value; samplers and uniform blocks are not settable",
+                )
+            coerced = _coerce_uniform_value(value, uniform)
+            if coerced is None:
+                return SetUniformResult(
+                    ok=False,
+                    error=f"value does not match {label} — provide a number for a scalar or a "
+                    f"list of {uniform.dimension} numbers for a vector",
+                )
+            try_to_release(target.uniform_values.get(name))
+            target.uniform_values[name] = coerced
+            return SetUniformResult(ok=True, type_label=label)
+
+        return self.copilot.bridge.run_on_main(_on_main)
+
+    def _copilot_create_node(self, name: str, source: str, switch_to: bool) -> str:
+        # Create a node (020·16 Decision 8). Binds the RAW create body (NOT the
+        # _copilot_busy_blocked-guarded create_node_from_selected_template, which refuses the
+        # copilot's own mid-turn call). Empty source = the compiling starter template; otherwise
+        # the starter is loaded then its source overwritten. Insert order is save->insert->
+        # set-current (mirror _seed_starter_node) so current_node_id never points at a missing
+        # key. Freshness-auto-stamps the new node so the agent can edit it without a re-read.
+        def _on_main() -> str:
+            new_node = load_node_from_dir(
+                self.node_templates_dir / _STARTER_TEMPLATE_ID
+            )
+            new_node.reset_id()
+            if name.strip():
+                new_node.ui_state.ui_name = name.strip()
+            if source.strip():
+                new_node.node.release_program(source)
+                new_node.node.source.path.write_text(source, encoding="utf-8")
+            self.save_ui_node(new_node)
+            self.ui_nodes[new_node.id] = new_node
+            if switch_to:
+                self.set_current_node_id(new_node.id)
+            self._copilot_read_revision[new_node.id] = _shader_digest(
+                new_node.node.source.text
+            )
+            logger.info(f"copilot created node {new_node.id} (switch_to={switch_to})")
+            return new_node.id
+
+        return self.copilot.bridge.run_on_main(_on_main)
+
+    # ---- edit / compile-feedback (target-addressable: node or lib: file, 020·16) ----
 
     def _copilot_freshness_reject(self, node_id: str) -> EditResult | None:
         # Reject (mutate-nothing) if the TARGET node's source moved since the agent last read
@@ -747,20 +877,19 @@ class App:
         return None
 
     def _copilot_apply_shader_edit(
-        self, old_str: str, new_str: str, replace_all: bool
+        self, old_str: str, new_str: str, replace_all: bool, target: str
     ) -> EditResult:
-        # Match + replace against the node's AUTHORITATIVE source, recompile, persist,
-        # refresh the read-only editor — ONE bridge round-trip (spec §16.3). Matching here
-        # (not on the worker against a re-read copy) gives a single source of truth and no
-        # staleness window. A 0/ambiguous match mutates nothing. The failed-compile
-        # early-return in Node.compile() keeps the old program live (feature-013), so a
-        # broken edit never blanks the user's preview.
+        # Match + replace against the TARGET's AUTHORITATIVE source, then recompile (node) or
+        # write (lib), persist, refresh the read-only editor — ONE bridge round-trip (spec
+        # §16.3 / 020·16 Decision 3). Matching here (not on the worker against a re-read copy)
+        # gives a single source of truth and no staleness window. A 0/ambiguous match mutates
+        # nothing. The failed-compile early-return in Node.compile() keeps the old program live
+        # (feature-013), so a broken node edit never blanks the user's preview.
         def _on_main() -> EditResult:
-            node_id = self.current_node_id
-            if (reject := self._copilot_freshness_reject(node_id)) is not None:
-                return reject
-            node = self.ui_nodes[node_id].node
-            src = node.source.text
+            tgt = self._copilot_resolve_target(target, allow_create=False)
+            if isinstance(tgt, EditResult):
+                return tgt  # an unresolvable / stale target rejects, mutates nothing
+            src = tgt.source
             spans = token_match(src, old_str)
             if not spans:
                 return EditResult(
@@ -774,17 +903,12 @@ class App:
             changed: tuple[int, int] | None = None
             if len(spans) == 1:
                 start_off = spans[0][0]
-                # The inserted bytes occupy [start_off, start_off+len(new_str)); the last
-                # changed line holds its last byte. -1 keeps a trailing "\n" in new_str from
-                # bleeding the range onto the (unchanged) next line. Empty new_str (a delete)
-                # collapses to the seam line.
                 end_off = start_off + max(len(new_str) - 1, 0)
                 changed = (
                     _line_of_offset(new_text, start_off),
                     _line_of_offset(new_text, end_off),
                 )
-            errors = self._copilot_persist_shader(node_id, node, new_text)
-            return _edit_result(len(spans), errors, new_text, changed)
+            return self._copilot_persist_target(tgt, new_text, len(spans), changed)
 
         return self.copilot.bridge.run_on_main(_on_main)
 
@@ -792,7 +916,7 @@ class App:
         self, node_id: str, node: Node, new_text: str
     ) -> list[CompileErrorInfo]:
         # Swap in the new source, recompile, persist to disk, refresh the read-only editor —
-        # the shared main-thread tail of every copilot edit (§16.3 / §14 L4). release_program
+        # the shared main-thread tail of every copilot NODE edit (§16.3 / §14 L4). release_program
         # is what actually adopts new_text; compile()'s failed-compile early-return keeps the
         # old program live (feature-013) so a broken edit never blanks the preview. `node_id`
         # is the edit's TARGET (020·16 Decision 2b): the editor sync + the re-stamp must key on
@@ -808,27 +932,118 @@ class App:
         self._copilot_read_revision[node_id] = _shader_digest(new_text)
         return _to_error_infos(node.compile_unit.errors)
 
+    def _copilot_resolve_target(
+        self, target: str, *, allow_create: bool
+    ) -> "_CopilotEditTarget | EditResult":
+        # Resolve an edit target to its source + identity, or an EditResult REJECT (020·16
+        # Decision 1/3). Parse rule (pin, Decision F1): a target is a LIB file IFF it starts
+        # with "lib:"; otherwise it is a node-id; an empty target is the current node. An
+        # unknown node-id is a hard error (never a silent lib fallback).
+        if target.startswith("lib:"):
+            return self._copilot_resolve_lib_target(target, allow_create=allow_create)
+        node_id = target or self.current_node_id
+        if (reject := self._copilot_freshness_reject(node_id)) is not None:
+            return reject
+        node = self.ui_nodes[node_id].node
+        return _CopilotEditTarget(
+            kind="node", node_id=node_id, node=node, source=node.source.text
+        )
+
+    def _copilot_resolve_lib_target(
+        self, target: str, *, allow_create: bool
+    ) -> "_CopilotEditTarget | EditResult":
+        # Resolve a "lib:<rel-path>" address to its file + current source. Reuses the
+        # ShaderLibFileManager path-traversal guard (020·16 Decision 5). A non-existent path is
+        # an error UNLESS allow_create (insert_after auto-creates the file, written LIVE).
+        rel = target[len("lib:") :]
+        path = self.shader_lib_files.resolve_copilot_path(rel)
+        if path is None:
+            return EditResult(
+                matches=0,
+                errors=[],
+                stale=True,
+                stale_reason=f"invalid library path '{target}' — copy a lib: address from "
+                "the library catalogue or read_lib",
+            )
+        if not path.exists():
+            if not allow_create:
+                return EditResult(
+                    matches=0,
+                    errors=[],
+                    stale=True,
+                    stale_reason=f"no library file at '{target}' — use insert_after to create "
+                    "a new library file, or copy an existing lib: address",
+                )
+            return _CopilotEditTarget(
+                kind="lib", lib_path=path, source="", lib_create=True
+            )
+        return _CopilotEditTarget(
+            kind="lib", lib_path=path, source=path.read_text(encoding="utf-8")
+        )
+
+    def _copilot_persist_target(
+        self,
+        tgt: "_CopilotEditTarget",
+        new_text: str,
+        matches: int,
+        changed: tuple[int, int] | None,
+    ) -> EditResult:
+        # Persist an applied edit and return the target-kind-aware result (020·16 Decision 3/4).
+        # A NODE recompiles and returns compile errors; a LIB file is written (created if new)
+        # and returns the honest "no standalone compile" string — a lib function only compiles
+        # when a consuming node recompiles.
+        if tgt.kind == "node":
+            assert tgt.node is not None and tgt.node_id is not None
+            errors = self._copilot_persist_shader(tgt.node_id, tgt.node, new_text)
+            return _edit_result(matches, errors, new_text, changed)
+        assert tgt.lib_path is not None
+        if not self.shader_lib_files.write_copilot_lib_file(tgt.lib_path, new_text):
+            return EditResult(
+                matches=0,
+                errors=[],
+                stale=True,
+                stale_reason="failed to write the library file",
+            )
+        excerpt = (
+            _changed_excerpt(new_text, changed, COPILOT_CONFIG.edit_feedback_context)
+            if changed
+            else ""
+        )
+        verb = "created" if tgt.lib_create else "written"
+        note = (
+            f"library file {verb}; it has no standalone compile — errors will surface when a "
+            "node that calls the function recompiles. Edit (or read) a node that uses it to "
+            "confirm it is valid."
+        )
+        return EditResult(
+            matches=matches, errors=[], changed_excerpt=excerpt, lib_note=note
+        )
+
     def _copilot_apply_line_edit(
-        self, start_line: int, end_line: int, new_text: str
+        self, start_line: int, end_line: int, new_text: str, target: str
     ) -> EditResult:
         # Replace the 1-based inclusive line range [start_line, end_line] with new_text over
-        # the split("\n") line list (§14 L2 — byte-exact by construction), recompile + persist.
-        # end_line == start_line - 1 is the one legal empty selection (a pure insert at
+        # the split("\n") line list (§14 L2 — byte-exact by construction), recompile/write +
+        # persist. end_line == start_line - 1 is the one legal empty selection (a pure insert at
         # start_line); any other start > end, or an out-of-range bound, fails loud and mutates
-        # nothing (matches==0 carries the error string for the tool layer).
+        # nothing. A lib: target that does not exist yet is CREATED here (insert path only —
+        # allow_create, 020·16 Decision 5).
         def _on_main() -> EditResult:
-            node_id = self.current_node_id
-            if (reject := self._copilot_freshness_reject(node_id)) is not None:
-                return reject
-            node = self.ui_nodes[node_id].node
-            lines = node.source.text.split("\n")
+            tgt = self._copilot_resolve_target(target, allow_create=True)
+            if isinstance(tgt, EditResult):
+                return tgt
+            lines = tgt.source.split("\n") if tgt.source else []
             n = len(lines)
             is_insert = end_line == start_line - 1
-            if (
+            # A brand-new lib file (source "") accepts the one bootstrap insert at line 1
+            # (insert_after 0); every other target uses the normal range bounds.
+            new_lib_bootstrap = tgt.lib_create and is_insert and start_line == 1
+            out_of_range = (
                 start_line < 1
                 or end_line > n
                 or (start_line > end_line and not is_insert)
-            ):
+            )
+            if out_of_range and not new_lib_bootstrap:
                 return EditResult(matches=0, errors=[], hint="")
             repl = new_text.split("\n") if new_text != "" else []
             new_lines = lines[: start_line - 1] + repl + lines[end_line:]
@@ -836,8 +1051,7 @@ class App:
             changed: tuple[int, int] | None = None
             if repl:
                 changed = (start_line, start_line + len(repl) - 1)
-            errors = self._copilot_persist_shader(node_id, node, new_full)
-            return _edit_result(1, errors, new_full, changed)
+            return self._copilot_persist_target(tgt, new_full, 1, changed)
 
         return self.copilot.bridge.run_on_main(_on_main)
 
