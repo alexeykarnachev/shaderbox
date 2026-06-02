@@ -9,6 +9,10 @@ Derived from a two-round request-driven audit (the canonical scenarios in §1 of
 + the maintainer's voice-message scenario set + a per-tool adversarial audit grounded against code on
 disk). The audit artifacts are not checked in; their conclusions are this spec.
 
+> **Note on `file.py:NN` references below:** line numbers are as-of-plan-lock provenance (what the code
+> looked like when this spec was written) — they have since shifted as the wave landed. Treat them as
+> "find the named symbol near here", not live coordinates; the symbol name is authoritative.
+
 ---
 
 ## Background — what's done, what this adds (verified, not assumed)

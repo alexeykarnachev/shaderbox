@@ -232,12 +232,17 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   tiers + shared draw primitives — `context_menu_style()`, `pill_button`, `preview_cell`, …) /
   **`util.py`** (non-UI helpers: `adjust_size`, `select_next_value`, `get_uniform_hash`, `pfd_block`,
   `open_in_file_manager`, `format_auto_value`, …) / **`constants.py`** / **`notifications.py`**.
-- **`copilot/`** — the in-app coding-copilot agent (feature 020, mid-build). Mirrors `exporters/`: its
-  own package + worker thread + queues + a worker→main GL `bridge`. `App` owns a `CopilotSession`
-  handle + drains it per frame; the chat is a floating window (`widgets/copilot_chat.py`) launched from
-  the editor bottom bar. SCAFFOLD landed (the seams: `capabilities` / `llm.api` Protocol / `bridge` /
-  queues / `state`); the LLM loop + tools + prompt are stubbed for the capability wave. Full design:
-  `ai_docs/features/020_copilot_agent/` (`10_skeleton_plan.md` for the structure).
+- **`copilot/`** — the in-app coding-copilot agent (feature 020, cross-project tool set DONE +
+  live-verified; gate-UI/`delete_node` + render/publish are future waves). Mirrors `exporters/`: its own
+  package + worker thread + queues + a worker→main GL `bridge`. `App` owns a `CopilotSession` handle +
+  drains it per frame; the chat is a floating window (`widgets/copilot_chat.py`) launched from the editor
+  bottom bar. The seams (`capabilities` Protocol / `llm.api` / `bridge` / queues / `state`), the `agent`
+  loop, the `prompt`, the `trace`, and 8 eager tools (`tools/shader.py` — read_shader / the 3 edit tools /
+  set_uniform / create_node / grep / read_lib) are all built. The node-id/edit/uniform machinery lives on
+  `App` as `_copilot_*` closures bound into `CopilotCapabilities`. `gate.py` (`GateChannel`) is the
+  one stubbed seam — its UI body is unbuilt (the gate-UI wave). Full design:
+  `ai_docs/features/020_copilot_agent/` (`16_cross_project_tools.md` is the current spec;
+  `10_skeleton_plan.md` for the original structure).
 - **`scripts/smoke.py`** — headless smoke test (see `## Recipes > make smoke`). Not part of
   `shaderbox/` proper; one-off script that imports `App` + `update_and_draw` and runs frames in
   an invisible glfw window.
