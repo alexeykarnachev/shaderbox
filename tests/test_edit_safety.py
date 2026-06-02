@@ -100,11 +100,6 @@ class _FreshnessApp:
 
     def caps(self) -> CopilotCapabilities:
         return CopilotCapabilities(
-            list_nodes=lambda: [],
-            get_node_summary=lambda _nid: None,
-            get_shader_source=lambda _nid: None,
-            get_compile_errors=lambda _nid: [],
-            current_node_id=lambda: self.current_node_id,
             node_tree=lambda: [],
             lib_catalog=lambda: [],
             read_shaders=self.read_shaders,

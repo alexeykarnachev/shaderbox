@@ -30,8 +30,7 @@ u_aspect;`); they are not auto-injected, and using an undeclared uniform fails t
 
 @dataclass(frozen=True)
 class CopilotContext:
-    current_node_id: str
-    node_tree: str  # rendered project-map block (id/name/has_errors/is_current)
+    node_tree: str  # rendered project-map block (name/id/has_errors/is_current)
     lib_catalog: str  # rendered lib-catalogue block (name/signature/doc)
     conventions: str
 
@@ -63,7 +62,6 @@ def _render_lib_catalog(entries: list[LibCatalogEntry]) -> str:
 
 def build_context(caps: CopilotCapabilities) -> CopilotContext:
     return CopilotContext(
-        current_node_id=caps.current_node_id(),
         node_tree=_render_node_tree(caps.node_tree()),
         lib_catalog=_render_lib_catalog(caps.lib_catalog()),
         conventions=_CONVENTIONS,

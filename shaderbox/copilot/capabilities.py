@@ -10,18 +10,6 @@ from dataclasses import dataclass
 # transitively imports App / imgui / moderngl. Only leaf types: primitives, and the
 # GL-free value objects defined HERE. A field typed Callable[[], moderngl.Texture]
 # would silently reintroduce the banned import.
-#
-# This is the SCAFFOLD seam: the value objects + a minimal field set that proves the
-# shape + testability. The full verb catalog is the later capability brainstorm
-# (ai_docs/features/020_copilot_agent — §0 #8), added as more fields here.
-
-
-@dataclass(frozen=True)
-class NodeSummary:
-    node_id: str
-    name: str
-    uniform_names: list[str]
-    has_errors: bool
 
 
 @dataclass(frozen=True)
@@ -128,16 +116,6 @@ class EditResult:
 
 @dataclass(frozen=True)
 class CopilotCapabilities:
-    # ---- scaffold reads (NOT consumed by any slice-1 tool) ----
-    # NOTE: list_nodes / get_node_summary read get_active_uniforms() (a GL call), so a
-    # FUTURE tool that uses them must marshal via the bridge like the slice-1 caps below —
-    # they are NOT GL-free despite the value types they return being plain data.
-    list_nodes: Callable[[], list[NodeSummary]]
-    get_node_summary: Callable[[str], NodeSummary | None]
-    get_shader_source: Callable[[str], str | None]
-    get_compile_errors: Callable[[str], list[CompileErrorInfo]]
-    current_node_id: Callable[[], str]
-
     # ---- GL-FREE context reads (feature 020·16) — safe to call on the worker thread when
     # building the per-turn prompt context (no bridge). node_tree excludes uniforms ON PURPOSE
     # (uniform names need a GL read; see NodeTreeEntry). lib_catalog reads the parsed index.

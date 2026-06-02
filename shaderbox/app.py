@@ -32,7 +32,6 @@ from shaderbox.copilot.capabilities import (
     GrepHit,
     LibCatalogEntry,
     LibFunctionBody,
-    NodeSummary,
     NodeTreeEntry,
     SetUniformResult,
     ShaderView,
@@ -593,11 +592,6 @@ class App:
         # _build_command_callbacks). GL-free reads are direct; GL-touching verbs go
         # through self.copilot.bridge.run_on_main (added with the tool catalog wave).
         return CopilotCapabilities(
-            list_nodes=self._copilot_list_nodes,
-            get_node_summary=self._copilot_node_summary,
-            get_shader_source=self._copilot_shader_source,
-            get_compile_errors=self._copilot_compile_errors,
-            current_node_id=lambda: self.current_node_id,
             node_tree=self._copilot_node_tree,
             lib_catalog=self._copilot_lib_catalog,
             read_shaders=self._copilot_read_shaders,
@@ -607,24 +601,6 @@ class App:
             apply_line_edit=self._copilot_apply_line_edit,
             set_uniform=self._copilot_set_uniform,
             create_node=self._copilot_create_node,
-        )
-
-    def _copilot_list_nodes(self) -> list[NodeSummary]:
-        return [self._node_summary(nid) for nid in self.ui_nodes]
-
-    def _copilot_node_summary(self, node_id: str) -> NodeSummary | None:
-        if node_id not in self.ui_nodes:
-            return None
-        return self._node_summary(node_id)
-
-    def _node_summary(self, node_id: str) -> NodeSummary:
-        ui_node = self.ui_nodes[node_id]
-        names = [u.name for u in ui_node.node.get_active_uniforms()]
-        return NodeSummary(
-            node_id=node_id,
-            name=ui_node.ui_state.ui_name,
-            uniform_names=names,
-            has_errors=bool(ui_node.node.compile_unit.errors),
         )
 
     def _copilot_short_ids(self) -> dict[str, str]:
@@ -686,16 +662,6 @@ class App:
                 )
             )
         return entries
-
-    def _copilot_shader_source(self, node_id: str) -> str | None:
-        if node_id not in self.ui_nodes:
-            return None
-        return self.ui_nodes[node_id].node.source.text
-
-    def _copilot_compile_errors(self, node_id: str) -> list[CompileErrorInfo]:
-        if node_id not in self.ui_nodes:
-            return []
-        return _to_error_infos(self.ui_nodes[node_id].node.compile_unit.errors)
 
     # ---- cross-project reads (feature 020·16) ----
 

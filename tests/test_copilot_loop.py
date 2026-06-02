@@ -68,7 +68,6 @@ class _FakeClient:
 
 def _fake_context() -> CopilotContext:
     return CopilotContext(
-        current_node_id="node-1",
         node_tree="- shader (id: node-1)  [current]",
         lib_catalog="(library is empty)",
         conventions="",
@@ -130,11 +129,6 @@ def _fake_caps(edit_errors: list[list[CompileErrorInfo]]) -> CopilotCapabilities
         ]
 
     return CopilotCapabilities(
-        list_nodes=lambda: [],
-        get_node_summary=lambda _nid: None,
-        get_shader_source=lambda _nid: None,
-        get_compile_errors=lambda _nid: [],
-        current_node_id=lambda: "node-1",
         node_tree=lambda: [],
         lib_catalog=lambda: [],
         read_shaders=read_shaders,
