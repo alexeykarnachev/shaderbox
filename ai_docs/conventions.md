@@ -185,7 +185,12 @@ belong in the feature spec (`ai_docs/features/NNN_*.md`). This file is not a cha
   fights its design). Level discipline: high-level user events (node saved, export done, project loaded,
   copilot turn start/done, tool called) = INFO (console); lifecycle/diagnostic detail (worker/watcher/
   queue/bootstrap/per-frame) = DEBUG (file-only); WARNING/ERROR file-only except an app-level crash.
-  Revisit if a module genuinely needs its own format/sink (none does today). Spec: `021_logging_refactor.md`.
+  New code adds `logger.X(...)` calls at these levels — it never reaches for `print`, a per-module
+  format, or its own sink. The copilot is the one exception that ADDS a stream, not reconfigures one: its
+  full-fidelity transcript is a SEPARATE sink (`copilot/trace.py` `tr.event(...)`), not a log level — a
+  terse `logger.info("copilot tool #N <name> -> ok")` line is for the console, the full args/result go to
+  the trace, never spelled out in a log line. Revisit if a module genuinely needs its own format/sink
+  (none does today). Spec: `021_logging_refactor.md`.
 
 *(Each bullet is a generic constraint on future code + a revisit trigger — NOT a feature changelog.
 The `/sanitize` noise audit deletes bullets that narrate a one-off implementation choice; per-feature
@@ -200,6 +205,13 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   `_MESA_ERROR_RE`) capture the file-id too. If you ever see a driver emitting `0:LINE` for a
   spliced library function's body, you forgot to emit `#line N <lib_file_id>` before that splice
   (`shaderbox/shader_lib/resolver.py::resolve_usage`).
+- **Both log sinks set `diagnose=False` — so an exception log NEVER dumps local variable values.**
+  loguru's default `diagnose=True` prints the full frame locals on `logger.exception(...)`, which would
+  echo the OpenRouter key / Telegram bot token / OAuth refresh token straight into the console + the
+  shipped log file. `logging_setup.configure_logging()` pins both sinks to `diagnose=False` (the
+  traceback frames stay; the variable values don't). So a log line only ever contains what you put in its
+  message string — when you log around a secret-holding call, log the OUTCOME (`ok=False`, an error class),
+  never the value. Re-verify the pin survives if you touch `logging_setup.py`.
 - **imgui / imgui-bundle quirks live in the `/imgui-ui` skill §8.** That includes: TextEditor
   palette read-only, monochrome emoji, dynamic glyph loading, `push_font` rasterized-size,
   `image()` lost `tint_col`, glfw cursor sync gap, pfd non-blocking handles, TextEditor
