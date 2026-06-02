@@ -7,11 +7,20 @@ copilot-written file, unlike create_file_in's commented stub). The marshalled GL
 """
 
 import types
+from collections.abc import Iterator
 from pathlib import Path
 
-from shaderbox.app import _coerce_uniform_value, _ENGINE_DRIVEN_UNIFORMS
+import moderngl
+import pytest
+
+from shaderbox.app import (
+    _ENGINE_DRIVEN_UNIFORMS,
+    _STARTER_TEMPLATE_ID,
+    _coerce_uniform_value,
+)
 from shaderbox.shader_lib.file_ops import ShaderLibFileManager
 from shaderbox.shader_lib.index import ShaderLibIndex
+from shaderbox.ui_models import load_node_from_dir
 
 
 def _uniform(dimension: int) -> types.SimpleNamespace:
@@ -47,7 +56,7 @@ def test_engine_driven_set_is_the_documented_set() -> None:
     # These are overwritten every frame by Node.render() regardless of uniform_values, so
     # set_uniform rejects them (020·16 Decision 6). Pin the set so a new engine uniform
     # added to core.py is consciously added here too.
-    assert _ENGINE_DRIVEN_UNIFORMS == {"u_time", "u_aspect", "u_resolution"}
+    assert {"u_time", "u_aspect", "u_resolution"} == _ENGINE_DRIVEN_UNIFORMS
 
 
 def _lib_manager(root: Path) -> ShaderLibFileManager:
@@ -83,7 +92,9 @@ def test_copilot_lib_create_writes_live_source(tmp_path: Path, monkeypatch) -> N
     mgr = _lib_manager(tmp_path)
     path = mgr.resolve_copilot_path("rotate")
     assert path is not None
-    fn_source = "/// rotate a 2D vector\nvec2 SB_rotate(vec2 p, float a) {\n    return p;\n}\n"
+    fn_source = (
+        "/// rotate a 2D vector\nvec2 SB_rotate(vec2 p, float a) {\n    return p;\n}\n"
+    )
     assert mgr.write_copilot_lib_file(path, fn_source)
 
     index = ShaderLibIndex.build(tmp_path)
@@ -98,7 +109,42 @@ def test_create_file_in_stub_yields_no_functions(tmp_path: Path, monkeypatch) ->
         "shaderbox.shader_lib.file_ops.shader_lib_root", lambda: tmp_path
     )
     mgr = _lib_manager(tmp_path)
-    created = mgr.create_file_in(Path("."), "stub")
+    created = mgr.create_file_in(Path(), "stub")
     assert created is not None
     index = ShaderLibIndex.build(tmp_path)
     assert index.functions == {}
+
+
+@pytest.fixture(scope="module")
+def gl_ctx() -> Iterator[moderngl.Context]:
+    try:
+        ctx = moderngl.create_standalone_context()
+    except Exception as e:
+        pytest.skip(f"no standalone GL context available: {e}")
+    yield ctx
+    ctx.release()
+
+
+def test_create_node_from_source_does_not_touch_starter_template(
+    gl_ctx: moderngl.Context, tmp_path: Path
+) -> None:
+    # Regression (review CRITICAL): _copilot_create_node must NOT write the agent's source
+    # through new_node.node.source.path — after load_node_from_dir that path still points at
+    # the SHARED starter template. The fix relies on UINode.save rebinding the path + writing
+    # the source to the new node's own dir. This pins the contract: the starter file is
+    # byte-unchanged, and the new dir holds the agent's source.
+    from shaderbox.constants import RESOURCES_DIR
+
+    starter = RESOURCES_DIR / "node_templates" / _STARTER_TEMPLATE_ID
+    starter_shader = starter / "shader.frag.glsl"
+    before = starter_shader.read_bytes()
+
+    agent_source = "void main() { gl_FragColor = vec4(1.0); }\n"
+    new_node = load_node_from_dir(starter)
+    new_node.reset_id()
+    new_node.node.release_program(agent_source)  # sets source.text, NOT a disk write
+    saved_dir = new_node.save(tmp_path)
+
+    assert starter_shader.read_bytes() == before, "starter template was clobbered"
+    assert (saved_dir / "shader.frag.glsl").read_text() == agent_source
+    assert new_node.node.source.path == saved_dir / "shader.frag.glsl"

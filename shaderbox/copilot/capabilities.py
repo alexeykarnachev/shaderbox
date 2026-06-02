@@ -73,8 +73,8 @@ class ShaderView:
 class SetUniformResult:
     # The outcome of a set_uniform (feature 020·16 Decision 6). ok=False carries `error` (the
     # name wasn't found, was a sampler/block/engine-driven, or the value's shape was wrong).
-    # On ok=True, `applied` echoes the CPU-side value written (NOT the GL uniform — that
-    # converges only after the next render); `type_label` is the uniform's type for the reply.
+    # On ok=True, `type_label` is the uniform's type for the reply; the value the tool echoes
+    # is the one the agent sent (the GL uniform converges only after the next render).
     ok: bool
     error: str = ""
     type_label: str = ""
@@ -156,7 +156,6 @@ class CopilotCapabilities:
     # Implemented App-side as bridge.run_on_main(...) closures (the worker blocks for
     # the result). The tool layer calls these like any other callable — the
     # marshalling is hidden inside the App-supplied closure (Seam C stays invisible here).
-    # Current-node-only today; target-addressing lands with the write tools (020·16 Phase 3).
     #
     # Match old_str against the TARGET's CURRENT source, replace, recompile (node) / write
     # (lib), persist, refresh the editor — all on the main thread (§16.3). `target` is "" =

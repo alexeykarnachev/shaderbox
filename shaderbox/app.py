@@ -235,7 +235,7 @@ def _uniform_type_label(u: moderngl.Uniform | moderngl.UniformBlock) -> str:
         return "block"
     # moderngl stub gap: Uniform.gl_type (conventions.md sanctioned allowlist).
     gl_type = u.gl_type  # type: ignore
-    # A sampler is a live Uniform (core.py:301) but is NOT a settable scalar/vector — label it
+    # A sampler is a live Uniform (Node.render binds it) but is NOT a settable scalar/vector — label it
     # honestly so the agent's type oracle and set_uniform's reject agree (020·16 Decision 6).
     if gl_type == GL_SAMPLER_2D:
         return "sampler2D"
@@ -244,8 +244,8 @@ def _uniform_type_label(u: moderngl.Uniform | moderngl.UniformBlock) -> str:
     return f"{scalar}[{u.array_length}]" if u.array_length > 1 else scalar
 
 
-# Engine-driven uniforms: Node.render() overwrites these every frame (core.py:319-329)
-# regardless of uniform_values, so set_uniform on them is a per-frame no-op (020·16 Decision 6).
+# Engine-driven uniforms: Node.render() overwrites these every frame from the engine clock /
+# canvas regardless of uniform_values, so set_uniform on them is a per-frame no-op (020·16 Decision 6).
 _ENGINE_DRIVEN_UNIFORMS: frozenset[str] = frozenset(
     {"u_time", "u_aspect", "u_resolution"}
 )
@@ -760,10 +760,10 @@ class App:
     ) -> SetUniformResult:
         # Set a runtime uniform VALUE on a node (020·16 Decision 6). Marshalled: validating the
         # name against get_active_uniforms() is a GL read, and try_to_release may touch GL. The
-        # write itself mirrors widgets/uniform.py:228-230 (release old, dict-assign); the next
-        # render picks it up. Up-front validation is the ONLY feedback channel — the render-time
-        # shape-pop (core.py:343) is off-thread and the handler never sees it. Rejects samplers,
-        # blocks, and the engine-driven uniforms (which render() overwrites every frame).
+        # write itself mirrors the UI uniform widget (release old, dict-assign); the next render
+        # picks it up. Up-front validation is the ONLY feedback channel — the render-time shape-pop
+        # in Node.render is off-thread and the handler never sees it. Rejects samplers, blocks,
+        # and the engine-driven uniforms (which render() overwrites every frame).
         def _on_main() -> SetUniformResult:
             node_id = node or self.current_node_id
             if node_id not in self.ui_nodes:
@@ -811,19 +811,24 @@ class App:
         # Create a node (020·16 Decision 8). Binds the RAW create body (NOT the
         # _copilot_busy_blocked-guarded create_node_from_selected_template, which refuses the
         # copilot's own mid-turn call). Empty source = the compiling starter template; otherwise
-        # the starter is loaded then its source overwritten. Insert order is save->insert->
+        # the starter is loaded then its source replaced. Insert order is save->insert->
         # set-current (mirror _seed_starter_node) so current_node_id never points at a missing
         # key. Freshness-auto-stamps the new node so the agent can edit it without a re-read.
         def _on_main() -> str:
-            new_node = load_node_from_dir(
-                self.node_templates_dir / _STARTER_TEMPLATE_ID
-            )
+            template_dir = self.node_templates_dir / _STARTER_TEMPLATE_ID
+            if not template_dir.is_dir():
+                # Shipped resource; missing only on a broken install. The bridge re-raises on
+                # the worker and the registry turns it into a clean tool error, not a crash.
+                raise RuntimeError("starter template is missing")
+            new_node = load_node_from_dir(template_dir)
             new_node.reset_id()
             if name.strip():
                 new_node.ui_state.ui_name = name.strip()
             if source.strip():
+                # release_program sets source.text; save_ui_node then writes it to the new
+                # node's OWN dir + rebinds source.path. Do NOT write through source.path here —
+                # it still points at the shared starter template until the save rebinds it.
                 new_node.node.release_program(source)
-                new_node.node.source.path.write_text(source, encoding="utf-8")
             self.save_ui_node(new_node)
             self.ui_nodes[new_node.id] = new_node
             if switch_to:
@@ -851,11 +856,11 @@ class App:
             if self._copilot_read_revision:
                 reason = (
                     "the shader you're editing isn't the one you read (you switched nodes) — "
-                    "call get_current_shader for this node again"
+                    "call read_shader for this node again"
                 )
             else:
                 reason = (
-                    "call get_current_shader before editing — you have not read this shader "
+                    "call read_shader before editing — you have not read this shader "
                     "this turn"
                 )
             return EditResult(matches=0, errors=[], stale=True, stale_reason=reason)
@@ -864,7 +869,7 @@ class App:
                 matches=0,
                 errors=[],
                 stale=True,
-                stale_reason="that shader no longer exists — call get_current_shader again",
+                stale_reason="that shader no longer exists — call read_shader again",
             )
         if digest != _shader_digest(self.ui_nodes[node_id].node.source.text):
             return EditResult(
@@ -872,7 +877,7 @@ class App:
                 errors=[],
                 stale=True,
                 stale_reason="this shader's source changed since you read it — call "
-                "get_current_shader again and re-match",
+                "read_shader again and re-match",
             )
         return None
 
@@ -1153,7 +1158,7 @@ class App:
 
     def copilot_send(self, text: str) -> None:
         # MAIN THREAD. Flush + lock the editor (§11) BEFORE the worker reads source, so
-        # its first get_current_shader sees disk-consistent state.
+        # its first read_shader sees disk-consistent state.
         if not text.strip():
             return
         if self.copilot.state.in_flight:
