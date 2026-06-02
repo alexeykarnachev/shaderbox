@@ -1,18 +1,66 @@
 from dataclasses import dataclass
 
-from shaderbox.copilot.capabilities import CopilotCapabilities
+from shaderbox.copilot.capabilities import (
+    CopilotCapabilities,
+    LibCatalogEntry,
+    NodeTreeEntry,
+)
 
-# Per-turn app-state snapshot, built from GL-free reads via the capability seam. The
-# ACTUAL fields (current node source, uniforms, compile errors, lib functions) are the
-# later capability/prompt brainstorm (§0 #8) — this is the scaffold shape + the
-# build-from-capabilities seam.
+# Per-turn app-state snapshot, built from GL-FREE reads via the capability seam (it runs on
+# the worker thread, no bridge — feature 020·16). The always-in-prompt blocks live here:
+# the lean node tree (the project map), the lib catalogue (what SB_* helpers exist), and the
+# code conventions the agent follows. They are RENDERED to text here so prompt.py stays a
+# pure assembler. The CURRENT SHADER SOURCE is deliberately NOT here — it enters via the
+# read_shader tool result, after the warm prefix (cache health, §B1a).
+
+# Conventions the agent (not the user) follows so the project stays grep-able + consistent.
+# Always in the prompt (never a tool — the copilot is fundamentally about writing GLSL, so a
+# "conventions" tool would be ceremony). Keep terse; this is steering, not a manual.
+_CONVENTIONS = """\
+- Library functions are prefixed `SB_` and live in the shared library; call one by name and \
+it auto-resolves (no #include).
+- Uniforms are prefixed `u_`. `u_time` / `u_aspect` / `u_resolution` are engine-driven — read \
+them, never set them.
+- Keep helper functions small and single-purpose so they factor cleanly into the library."""
 
 
 @dataclass(frozen=True)
 class CopilotContext:
     current_node_id: str
-    # node source / uniforms / compile errors / lib catalog land here in a later wave.
+    node_tree: str  # rendered project-map block (id/name/has_errors/is_current)
+    lib_catalog: str  # rendered lib-catalogue block (name/signature/doc)
+    conventions: str
+
+
+def _render_node_tree(entries: list[NodeTreeEntry]) -> str:
+    if not entries:
+        return "(no shaders yet)"
+    rows: list[str] = []
+    for e in entries:
+        marks: list[str] = []
+        if e.is_current:
+            marks.append("current")
+        if e.has_errors:
+            marks.append("HAS ERRORS")
+        suffix = f"  [{', '.join(marks)}]" if marks else ""
+        rows.append(f"- {e.name} (id: {e.node_id}){suffix}")
+    return "\n".join(rows)
+
+
+def _render_lib_catalog(entries: list[LibCatalogEntry]) -> str:
+    if not entries:
+        return "(library is empty)"
+    rows: list[str] = []
+    for e in sorted(entries, key=lambda x: x.name):
+        doc = f" — {e.doc.strip()}" if e.doc.strip() else ""
+        rows.append(f"- {e.signature}  ({e.lib_address}){doc}")
+    return "\n".join(rows)
 
 
 def build_context(caps: CopilotCapabilities) -> CopilotContext:
-    return CopilotContext(current_node_id=caps.current_node_id())
+    return CopilotContext(
+        current_node_id=caps.current_node_id(),
+        node_tree=_render_node_tree(caps.node_tree()),
+        lib_catalog=_render_lib_catalog(caps.lib_catalog()),
+        conventions=_CONVENTIONS,
+    )

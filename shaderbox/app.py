@@ -30,7 +30,9 @@ from shaderbox.copilot.capabilities import (
     CopilotCapabilities,
     CurrentShaderView,
     EditResult,
+    LibCatalogEntry,
     NodeSummary,
+    NodeTreeEntry,
 )
 from shaderbox.copilot.config import COPILOT_CONFIG
 from shaderbox.copilot.glsl_lex import token_match
@@ -537,6 +539,8 @@ class App:
             get_shader_source=self._copilot_shader_source,
             get_compile_errors=self._copilot_compile_errors,
             current_node_id=lambda: self.current_node_id,
+            node_tree=self._copilot_node_tree,
+            lib_catalog=self._copilot_lib_catalog,
             get_current_shader_view=self._copilot_current_shader_view,
             apply_shader_edit=self._copilot_apply_shader_edit,
             apply_line_edit=self._copilot_apply_line_edit,
@@ -560,6 +564,41 @@ class App:
             uniform_names=names,
             has_errors=bool(ui_node.node.compile_unit.errors),
         )
+
+    def _copilot_node_tree(self) -> list[NodeTreeEntry]:
+        # GL-FREE (feature 020·16, Decision 9): name + has_errors (cached compile_unit.errors,
+        # no GL) + is_current. NO uniforms — get_active_uniforms() is a GL read and this is
+        # called off-main when building the prompt context. Stays cache-stable (no per-frame value).
+        current = self.current_node_id
+        return [
+            NodeTreeEntry(
+                node_id=nid,
+                name=ui_node.ui_state.ui_name,
+                has_errors=bool(ui_node.node.compile_unit.errors),
+                is_current=(nid == current),
+            )
+            for nid, ui_node in self.ui_nodes.items()
+        ]
+
+    def _copilot_lib_catalog(self) -> list[LibCatalogEntry]:
+        # GL-FREE: the parsed lib index (name + signature + doc + the lib: address). No bodies
+        # (that is the read_lib pull). The address is the edit target for the function's file.
+        root = shader_lib_root()
+        entries: list[LibCatalogEntry] = []
+        for fn in self.shader_lib_index.functions.values():
+            try:
+                rel = fn.file.relative_to(root)
+            except ValueError:
+                rel = fn.file
+            entries.append(
+                LibCatalogEntry(
+                    name=fn.name,
+                    signature=fn.signature,
+                    doc=fn.doc,
+                    lib_address=f"lib:{rel.as_posix()}",
+                )
+            )
+        return entries
 
     def _copilot_shader_source(self, node_id: str) -> str | None:
         if node_id not in self.ui_nodes:

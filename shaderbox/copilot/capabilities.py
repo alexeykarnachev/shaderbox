@@ -25,6 +25,31 @@ class NodeSummary:
 
 
 @dataclass(frozen=True)
+class NodeTreeEntry:
+    # The lean, GL-FREE per-node row for the always-in-prompt project map (feature 020·16,
+    # Decision 9). NO uniform names — get_active_uniforms() is a GL read and build_context
+    # runs on the worker thread; has_errors reads the cached compile_unit.errors (GL-free)
+    # so the tree stays buildable off-main AND cache-stable (it carries no per-frame value).
+    node_id: str
+    name: str
+    has_errors: bool
+    is_current: bool
+
+
+@dataclass(frozen=True)
+class LibCatalogEntry:
+    # One lib function in the always-in-prompt catalogue (feature 020·16): the signature +
+    # doc the agent needs to know a helper EXISTS and how to call it. NO body — that is the
+    # explicit read_lib pull. The lib: address is how the agent targets the file for an edit.
+    name: str
+    signature: str
+    doc: str
+    lib_address: (
+        str  # "lib:<relative-path>" — the edit_shader target for this function's file
+    )
+
+
+@dataclass(frozen=True)
 class CompileErrorInfo:
     path: str
     line: int  # 1-based (matches the agent's cat -n orientation)
@@ -75,6 +100,12 @@ class CopilotCapabilities:
     get_shader_source: Callable[[str], str | None]
     get_compile_errors: Callable[[str], list[CompileErrorInfo]]
     current_node_id: Callable[[], str]
+
+    # ---- GL-FREE context reads (feature 020·16) — safe to call on the worker thread when
+    # building the per-turn prompt context (no bridge). node_tree excludes uniforms ON PURPOSE
+    # (uniform names need a GL read; see NodeTreeEntry). lib_catalog reads the parsed index.
+    node_tree: Callable[[], list[NodeTreeEntry]]
+    lib_catalog: Callable[[], list[LibCatalogEntry]]
 
     # ---- mutations the worker REQUESTS but the main thread APPLIES ----
     # Implemented App-side as bridge.run_on_main(...) closures (the worker blocks for
