@@ -5,7 +5,7 @@
     ],
     "uniforms": {},
     "ui_state": {
-        "ui_name": "Rainbow Hexagon",
+        "ui_name": "Raymarched Sphere",
         "render_media_details": {
             "is_video": true,
             "file_details": {
@@ -42,14 +42,6 @@
                 "is_ubo": false,
                 "gl_type": 5126,
                 "dimension": 1,
-                "array_length": 1,
-                "input_type": "auto"
-            },
-            "95105375544120391393734104492114489830": {
-                "name": "u_resolution",
-                "is_ubo": false,
-                "gl_type": 35664,
-                "dimension": 2,
                 "array_length": 1,
                 "input_type": "auto"
             }
