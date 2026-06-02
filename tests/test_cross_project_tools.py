@@ -148,3 +148,25 @@ def test_create_node_from_source_does_not_touch_starter_template(
     assert starter_shader.read_bytes() == before, "starter template was clobbered"
     assert (saved_dir / "shader.frag.glsl").read_text() == agent_source
     assert new_node.node.source.path == saved_dir / "shader.frag.glsl"
+
+
+def test_create_node_compiles_and_surfaces_errors(gl_ctx: moderngl.Context) -> None:
+    # The compile-feedback contract (the test-exposed gap): create_node compiles the new node
+    # and returns its errors, so a create-from-broken-source can't report success. Mirrors what
+    # _copilot_create_node does (release_program -> compile -> read compile_unit.errors).
+    from shaderbox.constants import RESOURCES_DIR
+
+    starter = RESOURCES_DIR / "node_templates" / _STARTER_TEMPLATE_ID
+
+    # Full broken source -> compile surfaces errors.
+    broken = load_node_from_dir(starter)
+    broken.node.release_program("void main() { this is not glsl }\n")
+    broken.node.compile()
+    assert (
+        broken.node.compile_unit.errors
+    ), "broken source should produce compile errors"
+
+    # Empty source -> the starter's own (clean) program compiles clean.
+    starter_node = load_node_from_dir(starter)
+    starter_node.node.compile()
+    assert not starter_node.node.compile_unit.errors, "starter must compile clean"

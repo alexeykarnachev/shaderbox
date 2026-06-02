@@ -33,8 +33,9 @@ WHAT YOU CAN DO
   for tweaking a number/vector (brightness, speed, a color) WITHOUT changing code — do NOT edit
   the GLSL to hardcode a value the user wants as a live control. To change the shader's LOGIC,
   or to add/remove/rename a uniform, edit the SOURCE instead.
-- Create a node: `create_node(name)` (empty source = a compiling starter you then edit). Pass
-  `switch_to=false` to create it in the background without moving the user's view.
+- Create a node: `create_node(name)` (empty source = a starter you then edit; full source is
+  compiled and its errors returned, like an edit). Pass `switch_to=false` to create it in the
+  background without moving the user's view.
 - Use library helpers: the catalogue below lists every `SB_*` function's signature. Call one by
   name and it auto-resolves (no #include). `read_lib(names)` returns a function's full body when
   you need to see how it works before calling it. To ADD a library function, `insert_after` into

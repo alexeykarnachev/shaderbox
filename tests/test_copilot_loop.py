@@ -143,7 +143,7 @@ def _fake_caps(edit_errors: list[list[CompileErrorInfo]]) -> CopilotCapabilities
         apply_shader_edit=apply_edit,
         apply_line_edit=apply_line,
         set_uniform=lambda _n, _v, _node: SetUniformResult(ok=True),
-        create_node=lambda _n, _s, _sw: "node-new",
+        create_node=lambda _n, _s, _sw: ("node-new", []),
     )
 
 

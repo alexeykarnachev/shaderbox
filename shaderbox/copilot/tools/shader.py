@@ -88,7 +88,8 @@ class _CreateNodeArgs(BaseModel):
     name: str = Field(description="a display name for the new node")
     source: str = Field(
         default="",
-        description="initial GLSL source; empty = a compiling starter shader you then edit",
+        description="initial GLSL source; empty = a ready-made starter shader you then edit, "
+        "or full GLSL following the project conventions",
     )
     switch_to: bool = Field(
         default=True,
@@ -163,10 +164,13 @@ _SET_UNIFORM_DESC = (
 )
 
 _CREATE_NODE_DESC = (
-    "Create a new shader node. Leave source empty to get a compiling starter shader you then "
-    "edit, or pass full GLSL. By default the new node becomes the user's active node (so a "
+    "Create a new shader node, then compile it and return the result — compile errors at their "
+    "exact line, or that it compiled clean (same feedback as an edit). Leave source empty for a "
+    "ready-made starter shader you then edit; or pass full GLSL (follow the project shader "
+    "conventions so it compiles). By default the new node becomes the user's active node (so a "
     "follow-up edit with no target lands on it); pass switch_to=false to create it in the "
-    "background and edit it via the node id this returns. Returns the new node's id."
+    "background and edit it via the node id this returns. Returns the new node's id and its "
+    "compile result."
 )
 
 _GREP_DESC = (
@@ -313,12 +317,22 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
         )
 
     def create_node(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
-        node_id = caps.create_node(args["name"], args["source"], args["switch_to"])
+        node_id, errors = caps.create_node(
+            args["name"], args["source"], args["switch_to"]
+        )
         where = "now active" if args["switch_to"] else "in the background"
+        # Same compile-result vocabulary as the edit tools (success stays True even with errors —
+        # the node IS created; the agent reads the errors and fixes them with an edit).
+        status = (
+            "compiled with errors:\n" + _format_errors(errors)
+            if errors
+            else "compiled clean"
+        )
         return (
             True,
-            f"created node '{args['name']}' (id: {node_id}), {where}. Read it before editing.",
-            {"created": node_id},
+            f"created node '{args['name']}' (id: {node_id}), {where} — {status}. "
+            "Read it before editing.",
+            {"created": node_id, "errors": [e.__dict__ for e in errors]},
         )
 
     def grep(args: dict[str, Any]) -> tuple[bool, str, dict | None]:

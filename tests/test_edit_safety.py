@@ -113,7 +113,7 @@ class _FreshnessApp:
             apply_shader_edit=self.apply_shader_edit,
             apply_line_edit=self.apply_line_edit,
             set_uniform=lambda _n, _v, _node: SetUniformResult(ok=True),
-            create_node=lambda _n, _s, _sw: "node-new",
+            create_node=lambda _n, _s, _sw: ("node-new", []),
         )
 
 

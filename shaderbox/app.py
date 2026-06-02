@@ -807,14 +807,18 @@ class App:
 
         return self.copilot.bridge.run_on_main(_on_main)
 
-    def _copilot_create_node(self, name: str, source: str, switch_to: bool) -> str:
+    def _copilot_create_node(
+        self, name: str, source: str, switch_to: bool
+    ) -> tuple[str, list[CompileErrorInfo]]:
         # Create a node (020·16 Decision 8). Binds the RAW create body (NOT the
         # _copilot_busy_blocked-guarded create_node_from_selected_template, which refuses the
         # copilot's own mid-turn call). Empty source = the compiling starter template; otherwise
         # the starter is loaded then its source replaced. Insert order is save->insert->
         # set-current (mirror _seed_starter_node) so current_node_id never points at a missing
         # key. Freshness-auto-stamps the new node so the agent can edit it without a re-read.
-        def _on_main() -> str:
+        # Compiles the new node and returns its errors — the same compile-feedback the edit tools
+        # give, so a create-from-broken-source can't report success on a non-compiling shader.
+        def _on_main() -> tuple[str, list[CompileErrorInfo]]:
             template_dir = self.node_templates_dir / _STARTER_TEMPLATE_ID
             if not template_dir.is_dir():
                 # Shipped resource; missing only on a broken install. The bridge re-raises on
@@ -829,6 +833,9 @@ class App:
                 # node's OWN dir + rebinds source.path. Do NOT write through source.path here —
                 # it still points at the shared starter template until the save rebinds it.
                 new_node.node.release_program(source)
+            # Compile (GL-affine, must stay on main) BEFORE save so the persisted program matches
+            # the reported errors. Empty source keeps the starter's clean program -> compiles clean.
+            new_node.node.compile()
             self.save_ui_node(new_node)
             self.ui_nodes[new_node.id] = new_node
             if switch_to:
@@ -836,8 +843,12 @@ class App:
             self._copilot_read_revision[new_node.id] = _shader_digest(
                 new_node.node.source.text
             )
-            logger.info(f"copilot created node {new_node.id} (switch_to={switch_to})")
-            return new_node.id
+            errors = _to_error_infos(new_node.node.compile_unit.errors)
+            logger.info(
+                f"copilot created node {new_node.id} (switch_to={switch_to}, "
+                f"errors={len(errors)})"
+            )
+            return new_node.id, errors
 
         return self.copilot.bridge.run_on_main(_on_main)
 

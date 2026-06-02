@@ -17,6 +17,9 @@ from shaderbox.copilot.capabilities import (
 # Always in the prompt (never a tool — the copilot is fundamentally about writing GLSL, so a
 # "conventions" tool would be ceremony). Keep terse; this is steering, not a manual.
 _CONVENTIONS = """\
+- A fragment shader starts `#version 460 core`, reads the normalized [0,1] surface coordinate \
+from `in vec2 vs_uv` (there is NO gl_FragCoord), and writes `out vec4 fs_color`. No `precision` \
+qualifier (this is desktop GL, not GLSL-ES).
 - Library functions are prefixed `SB_` and live in the shared library; call one by name and \
 it auto-resolves (no #include).
 - Uniforms are prefixed `u_`. `u_time` / `u_aspect` / `u_resolution` are engine-driven — read \

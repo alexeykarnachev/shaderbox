@@ -171,6 +171,8 @@ class CopilotCapabilities:
     # Set a uniform VALUE on a node (020·16 Decision 6): (name, value, node). node "" = current.
     # Validates up front; rejects sampler/block/engine-driven with an explicit error.
     set_uniform: Callable[[str, object, str], "SetUniformResult"]
-    # Create a node from source ("" = compiling starter). switch_to controls the tab.
-    # (name, source, switch_to) -> new node-id (020·16 Decision 8).
-    create_node: Callable[[str, str, bool], str]
+    # Create a node from source ("" = compiling starter), then COMPILE it and return its errors
+    # — the same compile-feedback every edit tool gives (the "every mutation returns its compile
+    # result" invariant). switch_to controls the tab. (name, source, switch_to) -> (new node-id,
+    # post-compile errors) (020·16 Decision 8).
+    create_node: Callable[[str, str, bool], tuple[str, list[CompileErrorInfo]]]
