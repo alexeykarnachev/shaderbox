@@ -127,11 +127,11 @@ def _conversation_stamp() -> str:
     return time.strftime("%Y-%m-%d_%H-%M-%S")
 
 
-def _shader_revision(node_id: str, text: str) -> tuple[str, bytes]:
-    # (node identity, content digest) — the freshness token (feature 020 · 15). Identity
-    # catches a mid-turn node switch; the digest catches a disk reload / cross-turn edit.
-    digest = hashlib.blake2b(text.encode("utf-8"), digest_size=16).digest()
-    return (node_id, digest)
+def _shader_digest(text: str) -> bytes:
+    # The content digest half of the freshness token (feature 020 · 15 / 16). Catches a disk
+    # reload / cross-turn edit. Node identity is now the DICT KEY (per-node freshness, 020·16
+    # Decision 2), not part of the token — a stale read on node X can't pass node Y's edit.
+    return hashlib.blake2b(text.encode("utf-8"), digest_size=16).digest()
 
 
 def _edit_result(
@@ -366,10 +366,11 @@ class App:
         # True while a copilot turn runs — locks the editor read-only (§11). Set in
         # copilot_send, reconciled to session.state.in_flight each frame in ui.py.
         self.copilot_turn_active: bool = False
-        # The (node_id, content_digest) the copilot last read via get_current_shader THIS
-        # turn (feature 020 · 15). A mutating tool whose node/source has moved since is
-        # rejected. None = not read this turn; reset on each copilot_send.
-        self._copilot_read_revision: tuple[str, bytes] | None = None
+        # Per-node content digests the copilot has read THIS turn (feature 020 · 15 / 16
+        # Decision 2): node_id -> digest of the source as last read. A mutating edit on a node
+        # whose source has moved since (or was never read) is rejected. Keyed per-node so a
+        # read on node X authorizes an edit on X but not on Y. Reset to {} on each copilot_send.
+        self._copilot_read_revision: dict[str, bytes] = {}
         self.copilot_input: str = ""
         # The editor child's screen rect (pos + size), captured inside the child each
         # frame so the floating chat window anchors to the CODING AREA above the copilot
@@ -623,7 +624,7 @@ class App:
             if node.program is None:
                 node.compile()
             text = node.source.text
-            self._copilot_read_revision = _shader_revision(node_id, text)
+            self._copilot_read_revision[node_id] = _shader_digest(text)
             return CurrentShaderView(
                 text=text,
                 listing=_number_lines(text),
@@ -633,29 +634,35 @@ class App:
 
         return self.copilot.bridge.run_on_main(_on_main)
 
-    def _copilot_freshness_reject(self) -> EditResult | None:
-        # Reject (mutate-nothing) if the source moved since the agent last read it THIS turn
-        # (feature 020 · 15). Runs BEFORE any ui_nodes deref so a switched/deleted node yields
-        # a clean reject, not a KeyError. None = fresh, proceed.
-        nid = self.current_node_id
-        rev = self._copilot_read_revision
-        if rev is None:
+    def _copilot_freshness_reject(self, node_id: str) -> EditResult | None:
+        # Reject (mutate-nothing) if the TARGET node's source moved since the agent last read
+        # it THIS turn (feature 020 · 15 / 16 Decision 2). `node_id` is the already-RESOLVED
+        # target ("" -> current is resolved by the caller, pin 2a). Runs BEFORE any ui_nodes
+        # deref so a deleted node yields a clean reject, not a KeyError. None = fresh, proceed.
+        digest = self._copilot_read_revision.get(node_id)
+        if digest is None:
+            # Either the agent never read this node this turn, or it read a DIFFERENT node and
+            # the user/agent moved to this one. The "you switched nodes" framing (pin 2c) is the
+            # right hint when the agent has read SOMETHING but not this node.
+            if self._copilot_read_revision:
+                reason = (
+                    "the shader you're editing isn't the one you read (you switched nodes) — "
+                    "call get_current_shader for this node again"
+                )
+            else:
+                reason = (
+                    "call get_current_shader before editing — you have not read this shader "
+                    "this turn"
+                )
+            return EditResult(matches=0, errors=[], stale=True, stale_reason=reason)
+        if node_id not in self.ui_nodes:
             return EditResult(
                 matches=0,
                 errors=[],
                 stale=True,
-                stale_reason="call get_current_shader before editing — you have not read "
-                "this shader this turn",
+                stale_reason="that shader no longer exists — call get_current_shader again",
             )
-        if nid not in self.ui_nodes or rev[0] != nid:
-            return EditResult(
-                matches=0,
-                errors=[],
-                stale=True,
-                stale_reason="the active shader changed since you read it (you switched "
-                "nodes) — call get_current_shader again",
-            )
-        if rev != _shader_revision(nid, self.ui_nodes[nid].node.source.text):
+        if digest != _shader_digest(self.ui_nodes[node_id].node.source.text):
             return EditResult(
                 matches=0,
                 errors=[],
@@ -675,9 +682,10 @@ class App:
         # early-return in Node.compile() keeps the old program live (feature-013), so a
         # broken edit never blanks the user's preview.
         def _on_main() -> EditResult:
-            if (reject := self._copilot_freshness_reject()) is not None:
+            node_id = self.current_node_id
+            if (reject := self._copilot_freshness_reject(node_id)) is not None:
                 return reject
-            node = self.ui_nodes[self.current_node_id].node
+            node = self.ui_nodes[node_id].node
             src = node.source.text
             spans = token_match(src, old_str)
             if not spans:
@@ -701,24 +709,29 @@ class App:
                     _line_of_offset(new_text, start_off),
                     _line_of_offset(new_text, end_off),
                 )
-            errors = self._copilot_persist_shader(node, new_text)
+            errors = self._copilot_persist_shader(node_id, node, new_text)
             return _edit_result(len(spans), errors, new_text, changed)
 
         return self.copilot.bridge.run_on_main(_on_main)
 
     def _copilot_persist_shader(
-        self, node: Node, new_text: str
+        self, node_id: str, node: Node, new_text: str
     ) -> list[CompileErrorInfo]:
         # Swap in the new source, recompile, persist to disk, refresh the read-only editor —
         # the shared main-thread tail of every copilot edit (§16.3 / §14 L4). release_program
         # is what actually adopts new_text; compile()'s failed-compile early-return keeps the
-        # old program live (feature-013) so a broken edit never blanks the preview.
+        # old program live (feature-013) so a broken edit never blanks the preview. `node_id`
+        # is the edit's TARGET (020·16 Decision 2b): the editor sync + the re-stamp must key on
+        # it, NOT self.current_node_id — else a non-current edit syncs the wrong editor session
+        # and re-stamps the wrong freshness entry. sync_editor_from_disk no-ops when the target
+        # has no open editor (the usual case for a non-current node).
         node.release_program(new_text)
         node.compile()
         node.source.path.write_text(new_text, encoding="utf-8")
-        self.sync_editor_from_disk(self.current_node_id, new_text)
-        # Re-stamp so the agent can chain edits without an intervening read (§15 B6).
-        self._copilot_read_revision = _shader_revision(self.current_node_id, new_text)
+        self.sync_editor_from_disk(node_id, new_text)
+        # Re-stamp the TARGET node so the agent can chain edits without an intervening read
+        # (§15 B6 / 020·16 Decision 2b).
+        self._copilot_read_revision[node_id] = _shader_digest(new_text)
         return _to_error_infos(node.compile_unit.errors)
 
     def _copilot_apply_line_edit(
@@ -730,9 +743,10 @@ class App:
         # start_line); any other start > end, or an out-of-range bound, fails loud and mutates
         # nothing (matches==0 carries the error string for the tool layer).
         def _on_main() -> EditResult:
-            if (reject := self._copilot_freshness_reject()) is not None:
+            node_id = self.current_node_id
+            if (reject := self._copilot_freshness_reject(node_id)) is not None:
                 return reject
-            node = self.ui_nodes[self.current_node_id].node
+            node = self.ui_nodes[node_id].node
             lines = node.source.text.split("\n")
             n = len(lines)
             is_insert = end_line == start_line - 1
@@ -748,7 +762,7 @@ class App:
             changed: tuple[int, int] | None = None
             if repl:
                 changed = (start_line, start_line + len(repl) - 1)
-            errors = self._copilot_persist_shader(node, new_full)
+            errors = self._copilot_persist_shader(node_id, node, new_full)
             return _edit_result(1, errors, new_full, changed)
 
         return self.copilot.bridge.run_on_main(_on_main)
@@ -875,7 +889,7 @@ class App:
         self.copilot_turn_active = True
         # Force a re-read at the start of every turn (§15 B8) — catches a source the user
         # edited+saved while the copilot was idle.
-        self._copilot_read_revision = None
+        self._copilot_read_revision = {}
         self.copilot.enqueue_turn(text)
 
     def copilot_clear_chat(self) -> None:
