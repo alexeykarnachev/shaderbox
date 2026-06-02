@@ -235,11 +235,9 @@ def _applied_result(result: EditResult) -> tuple[bool, str, dict]:
 
 def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
     def read_shader(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
-        # Resolve [] -> current node (020·16 Decision 1/2a) before the GL read, so the
-        # freshness stamp keys on a concrete id, never "".
+        # nodes are short ids from the project map; [] = current node (resolved App-side so the
+        # tool layer never touches a full id). The returned ShaderViews carry short ids too.
         node_ids: list[str] = list(args["nodes"])
-        if not node_ids:
-            node_ids = [caps.current_node_id()]
         views = caps.read_shaders(node_ids)
         if not views:
             return False, "error: no such node(s) — check the project map for ids", None

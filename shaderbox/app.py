@@ -79,6 +79,12 @@ from shaderbox.util import (
 # external media to load, unlike the Media Input template).
 _STARTER_TEMPLATE_ID = "53724dbd-8efb-4c09-8c7d-28d626a066e7"  # "UV Mango"
 
+# Copilot node-id shortening: the agent sees/passes a short prefix, never the 36-char UUID.
+# 4 chars is collision-free for any realistic project (16^4 = 65536 over a handful of nodes);
+# _copilot_short_ids grows the prefix only on an actual collision.
+_COPILOT_SHORT_ID_LEN = 4
+_COPILOT_FULL_ID_LEN = 36
+
 # Authored display order for the node-creator template grid. Filesystem ctime
 # (load_nodes_from_dir's default) is not preserved through git/zip/bundle, so the
 # shipped order would otherwise be arbitrary. Templates not listed sort last.
@@ -621,14 +627,39 @@ class App:
             has_errors=bool(ui_node.node.compile_unit.errors),
         )
 
+    def _copilot_short_ids(self) -> dict[str, str]:
+        # full node-id -> short display id (feature: the copilot sees/passes a short prefix, not a
+        # 36-char UUID — fewer bytes to copy = fewer mangled ids, and the user sees no ugly UUIDs).
+        # Length is the shortest prefix (>=_COPILOT_SHORT_ID_LEN) that is unique across the CURRENT
+        # nodes; on the rare prefix collision ALL ids grow together so display + resolve agree.
+        ids = list(self.ui_nodes)
+        n = _COPILOT_SHORT_ID_LEN
+        while n < _COPILOT_FULL_ID_LEN:
+            prefixes = [i[:n] for i in ids]
+            if len(set(prefixes)) == len(prefixes):
+                break
+            n += 1
+        return {i: i[:n] for i in ids}
+
+    def _copilot_resolve_node_id(self, handle: str) -> str | None:
+        # Resolve a copilot-supplied node handle (a short id, or — defensively — a full id) to the
+        # full node-id, or None if it matches no node or is ambiguous. Accepts an exact full id, an
+        # exact short id, or any unique prefix (the model may copy a few extra/fewer chars).
+        if handle in self.ui_nodes:
+            return handle
+        matches = [i for i in self.ui_nodes if i.startswith(handle)]
+        return matches[0] if len(matches) == 1 else None
+
     def _copilot_node_tree(self) -> list[NodeTreeEntry]:
         # GL-FREE (feature 020·16, Decision 9): name + has_errors (cached compile_unit.errors,
         # no GL) + is_current. NO uniforms — get_active_uniforms() is a GL read and this is
         # called off-main when building the prompt context. Stays cache-stable (no per-frame value).
+        # node_id carries the SHORT id (the only handle the copilot ever sees / passes back).
         current = self.current_node_id
+        short = self._copilot_short_ids()
         return [
             NodeTreeEntry(
-                node_id=nid,
+                node_id=short[nid],
                 name=ui_node.ui_state.ui_name,
                 has_errors=bool(ui_node.node.compile_unit.errors),
                 is_current=(nid == current),
@@ -669,14 +700,20 @@ class App:
     # ---- cross-project reads (feature 020·16) ----
 
     def _copilot_read_shaders(self, node_ids: list[str]) -> list[ShaderView]:
-        # Marshalled (force-compile + uniform read are GL). For each requested node: ensure a
-        # fresh compile, read source + uniforms (type + value) + errors, and STAMP its freshness
-        # so a follow-up edit on it passes the guard (020·16 Decision 2). Unknown ids are skipped
-        # (the tool layer reports them). An empty list is resolved to current node-side.
+        # Marshalled (force-compile + uniform read are GL). `node_ids` are copilot handles (short
+        # ids, or the resolved current id when the agent omitted them); each resolves to a full id.
+        # For each: ensure a fresh compile, read source + uniforms (type + value) + errors, and
+        # STAMP its freshness so a follow-up edit passes the guard (020·16 Decision 2). Unknown
+        # handles are skipped (the tool layer reports them). The ShaderView carries the SHORT id.
         def _on_main() -> list[ShaderView]:
+            short = self._copilot_short_ids()
+            # [] / empty -> the current node (resolved here so the tool layer never handles a
+            # full id; pin 2a — a concrete id is what gets stamped).
+            handles = node_ids or [self.current_node_id]
             views: list[ShaderView] = []
-            for node_id in node_ids:
-                if node_id not in self.ui_nodes:
+            for handle in handles:
+                node_id = self._copilot_resolve_node_id(handle)
+                if node_id is None:
                     continue
                 ui_node = self.ui_nodes[node_id]
                 node = ui_node.node
@@ -686,7 +723,7 @@ class App:
                 self._copilot_read_revision[node_id] = _shader_digest(text)
                 views.append(
                     ShaderView(
-                        node_id=node_id,
+                        node_id=short[node_id],
                         name=ui_node.ui_state.ui_name,
                         listing=_number_lines(text),
                         uniforms=_format_uniforms(node.get_active_uniforms()),
@@ -704,6 +741,7 @@ class App:
         # acceptable for rare discovery, 020·16 Out-of-scope).
         if not query:
             return []
+        short = self._copilot_short_ids()
         hits: list[GrepHit] = []
         for node_id, ui_node in self.ui_nodes.items():
             label = f"node '{ui_node.ui_state.ui_name}'"
@@ -711,7 +749,10 @@ class App:
                 if query in line:
                     hits.append(
                         GrepHit(
-                            origin=node_id, location=label, line=i, text=line.strip()
+                            origin=short[node_id],
+                            location=label,
+                            line=i,
+                            text=line.strip(),
                         )
                     )
         root = shader_lib_root()
@@ -765,11 +806,13 @@ class App:
         # in Node.render is off-thread and the handler never sees it. Rejects samplers, blocks,
         # and the engine-driven uniforms (which render() overwrites every frame).
         def _on_main() -> SetUniformResult:
-            node_id = node or self.current_node_id
-            if node_id not in self.ui_nodes:
+            node_id = (
+                self._copilot_resolve_node_id(node) if node else self.current_node_id
+            )
+            if node_id is None or node_id not in self.ui_nodes:
                 return SetUniformResult(
                     ok=False,
-                    error=f"no node with id '{node_id}' — check the project map",
+                    error=f"no node with id '{node}' — check the project map",
                 )
             if name in _ENGINE_DRIVEN_UNIFORMS:
                 return SetUniformResult(
@@ -848,7 +891,9 @@ class App:
                 f"copilot created node {new_node.id} (switch_to={switch_to}, "
                 f"errors={len(errors)})"
             )
-            return new_node.id, errors
+            # Return the SHORT id (computed after insert, so it's part of the current id set) —
+            # the agent re-uses this handle to read/edit the node it just made.
+            return self._copilot_short_ids()[new_node.id], errors
 
         return self.copilot.bridge.run_on_main(_on_main)
 
@@ -957,7 +1002,19 @@ class App:
         # unknown node-id is a hard error (never a silent lib fallback).
         if target.startswith("lib:"):
             return self._copilot_resolve_lib_target(target, allow_create=allow_create)
-        node_id = target or self.current_node_id
+        if not target:
+            node_id = self.current_node_id
+        else:
+            resolved = self._copilot_resolve_node_id(target)
+            if resolved is None:
+                return EditResult(
+                    matches=0,
+                    errors=[],
+                    stale=True,
+                    stale_reason=f"no node with id '{target}' — use an id from the project "
+                    "map",
+                )
+            node_id = resolved
         if (reject := self._copilot_freshness_reject(node_id)) is not None:
             return reject
         node = self.ui_nodes[node_id].node

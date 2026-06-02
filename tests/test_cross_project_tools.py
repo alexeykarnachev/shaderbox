@@ -170,3 +170,40 @@ def test_create_node_compiles_and_surfaces_errors(gl_ctx: moderngl.Context) -> N
     starter_node = load_node_from_dir(starter)
     starter_node.node.compile()
     assert not starter_node.node.compile_unit.errors, "starter must compile clean"
+
+
+def _id_stub(ids: list[str]) -> types.SimpleNamespace:
+    # Minimal stand-in for App's _copilot_short_ids / _copilot_resolve_node_id (pure dict logic
+    # over self.ui_nodes — no GL). dict preserves insertion order, like ui_nodes.
+    return types.SimpleNamespace(ui_nodes=dict.fromkeys(ids))
+
+
+def test_short_ids_are_4_chars_when_no_collision() -> None:
+    from shaderbox.app import App
+
+    stub = _id_stub(["abcd1111", "ef992222", "12345678"])
+    short = App._copilot_short_ids(stub)  # type: ignore[arg-type]
+    assert list(short.values()) == ["abcd", "ef99", "1234"]
+    assert all(len(s) == 4 for s in short.values())
+
+
+def test_short_ids_grow_on_collision() -> None:
+    from shaderbox.app import App
+
+    # Two ids share the first 5 chars -> ALL grow to the shortest disambiguating length (6).
+    stub = _id_stub(["abcde1xxx", "abcde2yyy", "ffff0000"])
+    short = App._copilot_short_ids(stub)  # type: ignore[arg-type]
+    assert short == {"abcde1xxx": "abcde1", "abcde2yyy": "abcde2", "ffff0000": "ffff00"}
+    assert len(set(short.values())) == 3
+
+
+def test_resolve_node_id_accepts_short_full_and_rejects_unknown_ambiguous() -> None:
+    from shaderbox.app import App
+
+    stub = _id_stub(["abcd1111", "abcd2222", "ef993333"])
+    resolve = App._copilot_resolve_node_id.__get__(stub)
+    assert resolve("ef993333") == "ef993333"  # exact full id
+    assert resolve("ef99") == "ef993333"  # unique short prefix
+    assert resolve("abcd") is None  # ambiguous prefix -> None
+    assert resolve("abcd1") == "abcd1111"  # disambiguated prefix
+    assert resolve("zzzz") is None  # no match
