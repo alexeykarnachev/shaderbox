@@ -27,33 +27,34 @@ feature; brief points at the superseder).
 
 **As of 2026-06-01.**
 
-- **Shipped: `v0.12.1`** (feature 019). Live on itch.io. A large UNSHIPPED stack sits on `dev`: the full
-  020 copilot wave (12 edit-robustness → 13 lexer → 14 line-editing → 15 edit-safety), 021 logging, and
-  022 chat-persistence — `master` NOT advanced; do not ship without an explicit ask.
-- **020 copilot agent — DONE** (Slice 1 + edit toolset + edit-safety). Edit/compile-feedback vertical
-  works end-to-end (default `x-ai/grok-4-fast`): token-stream `edit_shader` matching (13), line-anchored
-  `replace_lines`/`insert_after` + apply-feedback (14), and edit-safety (15 — editor read-only +
-  node/save/open frozen while a turn runs + a `(node_id, content_hash)` source-freshness guard rejecting
-  stale/wrong-node edits). 15's OQs were resolved with robust defaults (maintainer AFK) and stand per the
-  maintainer ("keep the decisions"): stale-rejects off the retry cap, node-switch frozen, no
-  churning-source giveup.
-- **022 copilot chat persistence — DONE.** The conversation is tied to its project + restored on reopen:
-  `copilot/persistence.py` (`ConversationStore`, versioned + fail-soft) persists messages + LLM history +
-  usage to `project_dir/copilot/conversation.json`; saved in `release()` (project-switch + shutdown),
-  loaded after `reset_conversation` in `_init`; a clear button (disabled mid-turn) archives to
-  `copilot/archive/`. Folded + re-scoped the trace-bleed `todo` deferral (orphaned append guarded on
-  `_cancel`; trace-bleed closed by the worker-is-idle invariant). Spec re-validated against current code +
-  pre-impl threading-reviewed. 153 tests green.
-- **021 logging refactor — DONE + maintainer-verified live.** Three streams (terse console, rotated DEBUG
-  file, copilot transcript). Spec: `021_logging_refactor.md`.
-- **OPEN — three live maintainer drives owed (UN-headless; unit tests own the logic):** (1) Slice 2 —
-  "add a uniform and use it", confirm the model uses the line tools + the excerpt shows; (2) edit-safety —
-  start a turn, confirm the editor is read-only + Ctrl+S/grid-click refused + unlock on turn end; (3) 022
-  — multi-turn chat, restart, confirm it restores (bubbles + agent context); clear archives + empties.
-- **NEXT — no scheduled feature.** Queued, trace-gated: a copilot semantic-editing suite (rename/outline/
-  add_uniform) — build only when a trace shows the line+substring tools struggling (`14`'s Out-of-scope).
-  Otherwise the copilot feature set is complete; the natural next move is the live drives above, then a
-  ship decision.
+- **DO NOT SHIP YET.** The copilot is NOT ship-ready (maintainer, explicit). Two things stand before any
+  ship: (1) finish the **basic full copilot tool set**, then (2) a **copilot UI/UX polish wave** (to be
+  planned after the tools). `master` stays at `v0.12.1`; a large unshipped stack sits on `dev` (020 wave
+  12→15 + 021 logging + 022 persistence) — that's intentional, keep accumulating.
+- **020 copilot agent — the SHADER-EDITING vertical is done + live-verified, but the tool set is NOT
+  complete.** Working today (default `x-ai/grok-4-fast`): `get_current_shader` / `edit_shader`
+  (token-stream match, 13) / `replace_lines` / `insert_after` (line-anchored + apply-feedback, 14) /
+  `get_compile_errors`, plus edit-safety (15 — editor read-only + node/save/open frozen mid-turn + a
+  `(node_id, content_hash)` freshness guard) and per-project chat persistence (022). All live-verified
+  this session (incl. the line tools — the prompt+desc steer landed: the model now picks
+  `insert_after`/`replace_lines` by task shape). But the agent is still trapped in the CURRENT NODE — it
+  can't see or touch other shaders, uniforms, or the lib.
+- **NEXT WAVE (the active goal) — CROSS-SHADER / FULL-PROJECT SEAMLESSNESS.** Make the whole project the
+  agent's workspace, not one node. The basic tool set to finish (maintainer-confirmed, "+ maybe more
+  decided along the way"): **`set_uniform`** (change values, not just code), **node read/CRUD**
+  (`list_nodes` / `get_node_summary` / `create_node` / `delete_node`), **lib read**
+  (`list_lib_functions` / `get_lib_function`), and **`grep`** (search across project + lib). All were
+  pre-scoped in `11_capability_wave_spec.md §3.2` (the `CopilotCapabilities` fields exist as stubs).
+  Beyond-basic / deferred for now: `write_lib_file`/`delete_lib_file`, `render_image`/`render_video`,
+  publish hooks.
+- **IMMEDIATE NEXT STEP — a library/tool review (research, no code).** Before building: a deliberate
+  review of which tools genuinely benefit the agent (usefulness, not just "the spec listed it"), framed
+  by the seamlessness goal. Output = the locked tool cut → then spec → then build per the feature flow.
+- **021 logging — DONE + verified live.** Three streams (terse console, rotated DEBUG file, copilot
+  transcript). Spec: `021_logging_refactor.md`.
+- **Queued, trace-gated (NOT now):** a semantic-editing suite (rename/outline/add_uniform) — only if a
+  trace shows the line+substring tools struggling (none does). The UI/UX polish wave is planned AFTER the
+  tool set is complete.
 - **No open BLOCKERs.** Cosmetic nav tails parked in `todo.md`, trigger-gated.
 
 ## Features
@@ -62,7 +63,7 @@ feature; brief points at the superseder).
 |---|---|---|---|
 | 022 | copilot_chat_persistence | done | The copilot conversation is tied to its project + restored on reopen (was memory-only, dropped on switch/exit). `copilot/persistence.py` (`ConversationStore`, versioned + fail-soft like `app_state.json`) persists both the UI render messages and the LLM history + usage to `project_dir/copilot/conversation.json`; `CopilotSession.save_conversation`/`load_conversation`; App saves the outgoing project's chat in `release()` (top of `_init` + shutdown) and loads the incoming one after `reset_conversation`; a `begin_disabled`-during-turn clear button archives to `copilot/archive/`. Folded the trace-bleed deferral: the orphaned-history append is guarded on `_cancel`, and the worker-is-idle invariant (020·15's `open_project` gate) closes the trace-bleed window (the residual `_ensure_open` structural weakness re-scoped in `todo.md`). Spec: `ai_docs/features/022_copilot_chat_persistence.md`. |
 | 021 | logging_refactor | done | Three-stream logging: a terse INFO+ console, a rotated DEBUG+ file (`logs/`) that is a strict superset, and a full-fidelity copilot transcript (`copilot_traces/copilot_<slug>_<stamp>.transcript` — human/agent-readable plain text replacing the old jsonl). `shaderbox/logging_setup.py` configures all loguru sinks once; `LoggingConfig` holds the internal config (console/file levels, rotation, retention, trace-retention=20); the 118-call logger survey audited 24 modules with ~37 calls shifted (lifecycle→DEBUG, user events stay INFO, fallback-config ERROR→WARNING); trace gains a transcript renderer + `tool_args_parse_error` event + mtime-pruned retention. Maintainer-verified live (console terse, transcript readable cold). Spec: `ai_docs/features/021_logging_refactor.md`. |
-| 020 | copilot_agent | in progress | In-app coding-copilot agent (free-form chat over OpenRouter; in-process compile-feedback is the differentiator). Scaffold + Slice 1 (edit/compile-feedback vertical) landed, runs, and verified end-to-end on a real read→edit turn: the `shaderbox/copilot/` package (capabilities / `LLMClient` / worker→main `CopilotBridge` / worker↔UI queues / chat `state` / `agent` loop / `prompt` / `trace`), the three current-node tools (`get_current_shader` / `edit_shader` / `get_compile_errors`), the OpenRouter stream + key/model in Settings, the editor lock, and a full per-session transcript trace. Default model `x-ai/grok-4-fast` (tool-call compatible, verified); the agent rejects tool-incompatible models. Slice-1 self-correction completed (`12_edit_robustness.md`): `edit_shader` whitespace near-miss hint (echoes exact bytes on a 0-match), enforced `max_edit_retries=3` (was dead config), and giveup/`max_iterations` cutoffs now surface as chat errors. The GLSL token matcher landed (`13_glsl_lexer.md`): `copilot/glsl_lex.py` (`glsl_lex` + `token_match`) replaces `edit_shader`'s byte-exact match with whitespace-invariant token-stream equality, so a whitespace-divergent `old_str` succeeds at the match layer (the slice-12 hint becomes the no-op fallback). Slice 2 landed (`14_slice2_line_editing.md`): two line-anchored editing tools (`replace_lines`/`insert_after`, addressed by the line numbers `get_current_shader` shows — the model quotes nothing) + a "what changed" apply-feedback excerpt on every mutating edit + the retry-cap widened to all mutating tools. Edit-safety landed (`15_edit_safety.md`): the editor is read-only + node-switch/create/delete/save/open-project are frozen while a turn runs, and a source-freshness guard rejects any edit whose `(node_id, content)` moved since the agent last read it this turn (stale-rejects don't count toward the retry cap). No semantic-editing suite (rename/outline/add_uniform deferred per trace). Spec: `ai_docs/features/020_copilot_agent/11_capability_wave_spec.md §16` + `12_edit_robustness.md` + `13_glsl_lexer.md` + `14_slice2_line_editing.md` + `15_edit_safety.md`. |
+| 020 | copilot_agent | in progress | In-app coding-copilot agent (free-form chat over OpenRouter; in-process compile-feedback is the differentiator). Scaffold + Slice 1 (edit/compile-feedback vertical) landed, runs, and verified end-to-end on a real read→edit turn: the `shaderbox/copilot/` package (capabilities / `LLMClient` / worker→main `CopilotBridge` / worker↔UI queues / chat `state` / `agent` loop / `prompt` / `trace`), the three current-node tools (`get_current_shader` / `edit_shader` / `get_compile_errors`), the OpenRouter stream + key/model in Settings, the editor lock, and a full per-session transcript trace. Default model `x-ai/grok-4-fast` (tool-call compatible, verified); the agent rejects tool-incompatible models. Slice-1 self-correction completed (`12_edit_robustness.md`): `edit_shader` whitespace near-miss hint (echoes exact bytes on a 0-match), enforced `max_edit_retries=3` (was dead config), and giveup/`max_iterations` cutoffs now surface as chat errors. The GLSL token matcher landed (`13_glsl_lexer.md`): `copilot/glsl_lex.py` (`glsl_lex` + `token_match`) replaces `edit_shader`'s byte-exact match with whitespace-invariant token-stream equality, so a whitespace-divergent `old_str` succeeds at the match layer (the slice-12 hint becomes the no-op fallback). Slice 2 landed (`14_slice2_line_editing.md`): two line-anchored editing tools (`replace_lines`/`insert_after`, addressed by the line numbers `get_current_shader` shows — the model quotes nothing) + a "what changed" apply-feedback excerpt on every mutating edit + the retry-cap widened to all mutating tools. Edit-safety landed (`15_edit_safety.md`): the editor is read-only + node-switch/create/delete/save/open-project are frozen while a turn runs, and a source-freshness guard rejects any edit whose `(node_id, content)` moved since the agent last read it this turn (stale-rejects don't count toward the retry cap). STILL IN PROGRESS: the shader-editing vertical is current-node-only — the next wave adds cross-shader / full-project tools (`set_uniform`, node read/CRUD, lib read, `grep`) for full-project seamlessness (see the Active-context banner + `11_capability_wave_spec.md §3.2`), then a UI/UX polish wave; semantic-editing (rename/outline/add_uniform) stays trace-gated. Spec: `ai_docs/features/020_copilot_agent/11_capability_wave_spec.md §16` + `12_edit_robustness.md` + `13_glsl_lexer.md` + `14_slice2_line_editing.md` + `15_edit_safety.md`. |
 | 019 | keyboard_navigation | done | The focus/nav layer (018's deferred half): app-wide `nav_enable_keyboard` + a two-level focus model — `Ctrl+`` ` `` cycles 3 regions (editor/grid/panel, region-confined via `no_nav_inputs`, active region shown by a live-focus accent outline), `Ctrl+1/2/3` jump the inner Node/Render/Share tab; editor is a permanent focus-stop; grid cells are nav-reachable `selectable`s; 018 bare-arrow node-prev/next removed. The polish wave added a selection-vs-accent color split (fixed `COLOR.SELECT`) + a theme-portability invariant, Ctrl+Tab suppression, glfw-layer Esc swallowing, `nav_flattened` uniforms. Maintainer-verified. Spec: `ai_docs/features/019_keyboard_navigation.md`. |
 | 018 | keyboard_control | done | The command layer: a central `commands.py` registry drives rebindable chord shortcuts + an opt-out cheatsheet overlay + an `imgui_command_palette` (Ctrl+Shift+P); dispatch split pre-frame/in-frame; rebindings persist diff-from-default on `UIAppState`. The focus/navigation layer (nav widget-traversal + tab-cycling) was split out to a `todo.md` deferral. Spec: `ai_docs/features/018_keyboard_control.md`. |
 | 017 | structure_reorg | done | Domain-separation refactoring wave (no behavior change): `lib_*`→`shader_lib/` package + total rename, shader_lib split into index/resolver/parser, `lib_picker`→package, `util.py`→`shader_errors.py`+`editor_types.py`, `ui_models` de-tangled from UI, exporters/ tidy, App shader-lib CRUD→`ShaderLibFileManager`. `ui/`+`render/` packages rejected. Spec: `ai_docs/features/017_structure_reorg.md`. |
