@@ -185,6 +185,10 @@ def _tool_message(tool_call_id: str, content: str) -> LLMMessage:
 
 _GATE_PROMPTS: dict[str, Callable[[dict], str]] = {
     "delete_node": lambda a: f"Delete node '{a.get('node', '')}'? It moves to the project trash (recoverable).",
+    "render_image": lambda a: "Render an image of this shader? The app pauses while it encodes.",
+    "render_video": lambda a: f"Render a {a.get('seconds', '?')}s video of this shader? The app pauses while it encodes.",
+    "publish_telegram": lambda a: "Publish this shader to your Telegram sticker pack? This uploads the sticker (external + live).",
+    "publish_youtube": lambda a: f"Publish this shader to YouTube as '{a.get('title', '')}'? The video goes live on your channel (private; external).",
 }
 
 
@@ -357,6 +361,17 @@ def run_turn(
                 logger.debug(f"copilot turn cancelled before tool {tc.name}")
                 yield AgentCancelled()
                 return
+            # Pre-gate guard (feature 020·18): a publish that can't run (no creds / no pack)
+            # returns a guided-handoff message BEFORE the gate, so the user never gets a
+            # confirm dialog for an action that would fail. Routes around execute + the gate +
+            # the retry cap (a cred miss is not a convergence failure), exactly like a decline.
+            handoff = registry.precheck(tc.name, args)
+            if handoff is not None:
+                logger.info(f"copilot tool {tc.name} | precheck handoff")
+                tr.event("tool_precheck_handoff", name=tc.name, message=handoff)
+                ran.record(tc.name, False, handoff)
+                messages.append(_tool_message(tc.id, handoff))
+                continue
             # Gate a destructive/publish tool on a user Yes/No before it runs (§7 / 020·17).
             # On decline: record + append the tool result (a declined call STILL needs a
             # matching tool message — an orphaned tool_call_id 400s the next stream) + continue

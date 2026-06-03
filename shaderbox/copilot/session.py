@@ -113,6 +113,11 @@ class CopilotSession:
         self._cancel.set()
         self.gate.cancel_all(reusable=True)
 
+    def is_cancelled(self) -> bool:
+        # ANY THREAD. Reads the CURRENT _cancel — reset_conversation REPLACES the event,
+        # so a captured reference would go stale. The publish-await polls this (feature 020·18).
+        return self._cancel.is_set()
+
     def pump_events(self) -> None:
         # MAIN THREAD, per frame. Drain worker events into self.state — the ONLY writer
         # of state (single-writer invariant, skeleton Seam-E).

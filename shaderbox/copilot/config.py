@@ -20,9 +20,13 @@ class CopilotConfig:
     # Per-op wait on a worker->main bridge round-trip (UI busy / shutting down).
     bridge_op_timeout_s: float = 5.0
     # Render ops get a longer wait — a video encode freezes the frame loop far past the
-    # 5s default (R3/§5). Used via bridge.run_on_main(fn, timeout=…) by the render tools
-    # (a later slice).
+    # 5s default (R3/§5). Used via bridge.run_on_main(fn, timeout=…) by the render tools.
     render_op_timeout_s: float = 60.0
+    # Publish-await (feature 020·18): the copilot worker polls the exporter's terminal
+    # progress through trivial bridge ops; this bounds the total wait (a never-terminal
+    # stuck upload) and the per-poll sleep between them.
+    publish_await_timeout_s: float = 300.0
+    publish_poll_interval_s: float = 0.2
 
 
 COPILOT_CONFIG = CopilotConfig()

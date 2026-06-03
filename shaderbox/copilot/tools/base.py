@@ -13,6 +13,8 @@ from shaderbox.copilot.llm.api import LLMToolSpec
 
 # (ok, message_for_llm, payload_for_ui). Sync — handlers run on the worker thread.
 ToolHandler = Callable[[dict[str, Any]], tuple[bool, str, dict[str, Any] | None]]
+# A pre-gate guard (feature 020·18): args -> a guided-handoff message, or None to proceed.
+ToolPrecheck = Callable[[dict[str, Any]], str | None]
 
 
 class GatePolicy(StrEnum):
@@ -33,6 +35,10 @@ class ToolDefinition:
     category: str  # the catalogue tree (§4); single source of truth for grouping
     eager: bool  # True => carried in eager_specs() (turn-start tools=) (§4)
     gate_policy: GatePolicy = GatePolicy.NONE
+    # A pre-gate guard (feature 020·18): returns a guided-handoff message when the call CAN'T
+    # run (a publish with no credentials / no pack), else None. The loop runs it BEFORE the
+    # gate, so a publish that can't proceed never pops a confirm. None => no precheck.
+    precheck: ToolPrecheck | None = None
 
     def spec(self) -> LLMToolSpec:
         return LLMToolSpec(

@@ -820,9 +820,24 @@ class TelegramExporter(Exporter):
             size=artifact.size,
         )
 
-    def export(self, artifact: RenderedArtifact, settings: dict[str, Any]) -> None:
-        _ = settings
-        raise ExporterError("export() is dispatched per job kind via _handle_*")
+    def is_connected(self) -> bool:
+        return self._is_connected()
+
+    def publish(self, artifact: RenderedArtifact, settings: dict[str, Any]) -> None:
+        # Enqueue an "add to pack" job (feature 020·18). `settings`: pack_set_name (the
+        # default pack), pack_title, emoji. The worker runs prepare() + the upload.
+        pack_set_name: str = str(settings.get("pack_set_name", ""))
+        pack: PackEntry | None = self._tg.find_pack(pack_set_name)
+        title: str = pack.title if pack is not None else _DEFAULT_PACK_TITLE
+        self._enqueue(
+            _Job(
+                kind="add",
+                artifact=artifact,
+                pack_set_name=pack_set_name,
+                pack_title=title,
+                emoji=str(settings.get("emoji", _DEFAULT_NEW_STICKER_EMOJI)),
+            )
+        )
 
     def release(self) -> None:
         with self._worker_lock:

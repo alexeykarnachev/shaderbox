@@ -34,10 +34,13 @@ from shaderbox.copilot.capabilities import (
     LibCatalogEntry,
     LibFunctionBody,
     NodeTreeEntry,
+    PublishResult,
+    RenderResult,
     SetUniformResult,
     ShaderView,
 )
 from shaderbox.copilot.config import COPILOT_CONFIG
+from shaderbox.copilot.errors import CopilotToolError
 from shaderbox.copilot.glsl_lex import token_match
 from shaderbox.copilot.llm.openrouter import OpenRouterLLMClient
 from shaderbox.copilot.persistence import ConversationStore, archive_conversation
@@ -45,12 +48,14 @@ from shaderbox.copilot.session import CopilotSession
 from shaderbox.copilot.state import CopilotLayout, Message
 from shaderbox.core import Canvas, Node
 from shaderbox.editor_types import EditorSession, HoverMark, InlineInput, JumpRequest
+from shaderbox.exporters.base import Exporter, ExporterStatus, ExportProgress
 from shaderbox.exporters.integrations import IntegrationsStore
 from shaderbox.exporters.registry import ExporterRegistry
 from shaderbox.exporters.telegram import TelegramExporter
 from shaderbox.exporters.youtube import YouTubeExporter
 from shaderbox.notifications import Notifications
 from shaderbox.paths import app_data_dir, shader_lib_root
+from shaderbox.render_preset import FitPolicy, RenderPreset, ResolutionPolicy
 from shaderbox.shader_errors import ShaderError, next_error_line
 from shaderbox.shader_lib import ShaderLibIndex
 from shaderbox.shader_lib import set_active as set_active_lib_index
@@ -603,6 +608,14 @@ class App:
             set_uniform=self._copilot_set_uniform,
             create_node=self._copilot_create_node,
             delete_node=self._copilot_delete_node,
+            render_image=self._copilot_render_image,
+            render_video=self._copilot_render_video,
+            publish_telegram=self._copilot_publish_telegram,
+            publish_youtube=self._copilot_publish_youtube,
+            has_current_node=self._copilot_has_current_node,
+            telegram_connected=self._copilot_telegram_connected,
+            youtube_connected=self._copilot_youtube_connected,
+            telegram_has_default_pack=self._copilot_telegram_has_default_pack,
         )
 
     def _copilot_short_ids(self) -> dict[str, str]:
@@ -900,6 +913,222 @@ class App:
             msg.recover = replace(msg.recover, done=True)
             self.notifications.push("Node is no longer in trash — can't recover")
         self.copilot.save_conversation(self.copilot_conversation_path)
+
+    # ---- render / publish (feature 020·18) ----
+
+    def _copilot_render_path(self, node: UINode, ext: str) -> Path:
+        # A non-colliding render filename: <name>_<short-id>_<n>.<ext>, n = the next free
+        # index in renders_dir (the agent may render the same node several times a turn).
+        base = "".join(
+            c if c.isalnum() or c in "-_" else "_" for c in node.ui_state.ui_name
+        )
+        short = self._copilot_short_ids().get(node.id, node.id[:4])
+        renders = self.renders_dir
+        n = 0
+        while True:
+            candidate = renders / f"{base}_{short}_{n}.{ext}"
+            if not candidate.exists():
+                return candidate
+            n += 1
+
+    def _copilot_render_image(self, node: str, width: int, height: int) -> RenderResult:
+        # Render the node's current frame to a PNG (feature 020·18). GL => marshalled via the
+        # bridge with the longer render_op_timeout_s (a heavy shader freezes the frame loop).
+        def _on_main() -> RenderResult:
+            ui_node = self._copilot_render_target(node)
+            if ui_node is None:
+                return RenderResult(ok=False, error=f"no such node '{node}'")
+            w, h = self._copilot_render_dims(ui_node, width, height)
+            preset = self._copilot_render_preset(False, None, w, h)
+            out = self._copilot_render_path(ui_node, "png")
+            art = share_state.render_to(ui_node.node, preset, 0.0, out)
+            if art is None:
+                return RenderResult(ok=False, error="render failed (see logs)")
+            return RenderResult(
+                ok=True,
+                path=str(art.path),
+                is_video=False,
+                width=art.size[0],
+                height=art.size[1],
+            )
+
+        return self.copilot.bridge.run_on_main(
+            _on_main, timeout=COPILOT_CONFIG.render_op_timeout_s
+        )
+
+    def _copilot_render_video(
+        self, node: str, seconds: float, fps: int, width: int, height: int
+    ) -> RenderResult:
+        # Render `seconds` of the node's animation (from t=0) to a WebM (feature 020·18).
+        def _on_main() -> RenderResult:
+            ui_node = self._copilot_render_target(node)
+            if ui_node is None:
+                return RenderResult(ok=False, error=f"no such node '{node}'")
+            w, h = self._copilot_render_dims(ui_node, width, height)
+            preset = self._copilot_render_preset(True, fps, w, h)
+            out = self._copilot_render_path(ui_node, "webm")
+            art = share_state.render_to(ui_node.node, preset, seconds, out)
+            if art is None:
+                return RenderResult(ok=False, error="render failed (see logs)")
+            return RenderResult(
+                ok=True,
+                path=str(art.path),
+                is_video=True,
+                width=art.size[0],
+                height=art.size[1],
+                duration=art.duration,
+            )
+
+        return self.copilot.bridge.run_on_main(
+            _on_main, timeout=COPILOT_CONFIG.render_op_timeout_s
+        )
+
+    def _copilot_render_target(self, node: str) -> UINode | None:
+        node_id = self._copilot_resolve_node_id(node) if node else self.current_node_id
+        if node_id is None or node_id not in self.ui_nodes:
+            return None
+        return self.ui_nodes[node_id]
+
+    def _copilot_render_dims(
+        self, node: UINode, width: int, height: int
+    ) -> tuple[int, int]:
+        # 0 => the node's current canvas size (read on the main thread, GL-affine).
+        cw, ch = node.node.canvas.texture.size
+        return (width or cw, height or ch)
+
+    def _copilot_render_preset(
+        self, is_video: bool, fps: int | None, w: int, h: int
+    ) -> RenderPreset:
+        # FIXED_DIMS + RENDER_AT_TARGET so the resolved (w, h) actually drives the output —
+        # the default FREE/SCALE_DISTORT renders into the node's own canvas and ignores them.
+        return RenderPreset(
+            is_video=is_video,
+            fps=fps,
+            target_w=w,
+            target_h=h,
+            container=".webm" if is_video else None,
+            resolution_policy=ResolutionPolicy.FIXED_DIMS,
+            fit=FitPolicy.RENDER_AT_TARGET,
+        )
+
+    def _copilot_publish(
+        self,
+        exporter: Exporter,
+        kind: str,
+        preset: RenderPreset,
+        settings: dict[str, Any],
+    ) -> PublishResult:
+        # Render the node with the exporter's own preset, then enqueue the upload + AWAIT its
+        # terminal progress (feature 020·18, Decision 5). Every exporter touch (render, enqueue,
+        # the await poll's update()+status()) runs on the MAIN thread via the bridge — the worker
+        # only sleeps + checks cancel between polls, so the frame loop stays responsive during the
+        # network upload and the render-thread affinity contract holds.
+        node_id = self.current_node_id
+        if node_id is None or node_id not in self.ui_nodes:
+            return PublishResult(
+                ok=False, error="no current node to publish", kind=kind
+            )
+        ui_node = self.ui_nodes[node_id]
+
+        def _render_and_enqueue() -> ExportProgress | None:
+            duration = float(settings.get("seconds", preset.duration_max or 3.0))
+            out = self._copilot_render_path(ui_node, share_state.preset_ext(preset))
+            art = share_state.render_to(ui_node.node, preset, duration, out)
+            if art is None:
+                raise CopilotToolError("render failed")
+            baseline = exporter.status().last_progress
+            exporter.publish(art, settings)
+            return baseline
+
+        try:
+            # The returned object is held HERE for the whole wait, so the terminal can never
+            # be a different object reused at the baseline's address (no id() ambiguity).
+            baseline = self.copilot.bridge.run_on_main(
+                _render_and_enqueue, timeout=COPILOT_CONFIG.render_op_timeout_s
+            )
+        except CopilotToolError:
+            return PublishResult(ok=False, error="render failed (see logs)", kind=kind)
+
+        deadline = time.monotonic() + COPILOT_CONFIG.publish_await_timeout_s
+        while time.monotonic() < deadline:
+            if self.copilot.is_cancelled():
+                return PublishResult(ok=False, error="cancelled", kind=kind)
+            time.sleep(COPILOT_CONFIG.publish_poll_interval_s)
+            try:
+                status: ExporterStatus = self.copilot.bridge.run_on_main(
+                    lambda: (exporter.update(None), exporter.status())[1]
+                )
+            except CopilotToolError:
+                # A busy main thread timed out this poll; the upload still runs — try again.
+                continue
+            prog = status.last_progress
+            if prog is not None and prog.is_terminal and prog is not baseline:
+                if prog.is_error:
+                    return PublishResult(ok=False, error=prog.message, kind=kind)
+                return PublishResult(ok=True, url=prog.url or "", kind=kind)
+        return PublishResult(
+            ok=False,
+            error="the upload is taking too long — check the Share tab for progress",
+            kind=kind,
+        )
+
+    def _copilot_publish_telegram(self, node: str, emoji: str) -> PublishResult:
+        _ = node  # publish always renders the current node (the share path's contract)
+        exporter = self.exporter_registry.get("telegram")
+        if not isinstance(exporter, TelegramExporter):
+            return PublishResult(
+                ok=False, error="Telegram exporter unavailable", kind="telegram"
+            )
+        preset = exporter.render_preset()
+        settings: dict[str, Any] = {
+            "pack_set_name": exporter.current_default_pack(),
+            "emoji": emoji,
+            "seconds": preset.duration_max or 3.0,
+        }
+        return self._copilot_publish(exporter, "telegram", preset, settings)
+
+    def _copilot_publish_youtube(
+        self, node: str, title: str, description: str, is_short: bool
+    ) -> PublishResult:
+        _ = node
+        exporter = self.exporter_registry.get("youtube")
+        if not isinstance(exporter, YouTubeExporter):
+            return PublishResult(
+                ok=False, error="YouTube exporter unavailable", kind="youtube"
+            )
+        # Drive the render shape from the tool arg so the preset (aspect/duration) and the
+        # upload's is_short flag agree; restore the user's Share-tab shape after, so a copilot
+        # publish doesn't silently flip their visible Long/Short selection.
+        prior_short: bool = exporter.current_is_short()
+        exporter.set_shape(is_short)
+        try:
+            preset = exporter.render_preset()
+            settings: dict[str, Any] = {
+                "title": title,
+                "description": description,
+                "is_short": is_short,
+                "seconds": preset.duration_max or 6.0,
+            }
+            return self._copilot_publish(exporter, "youtube", preset, settings)
+        finally:
+            exporter.set_shape(prior_short)
+
+    def _copilot_has_current_node(self) -> bool:
+        return self.current_node_id in self.ui_nodes
+
+    def _copilot_telegram_connected(self) -> bool:
+        exporter = self.exporter_registry.get("telegram")
+        return exporter is not None and exporter.is_connected()
+
+    def _copilot_youtube_connected(self) -> bool:
+        exporter = self.exporter_registry.get("youtube")
+        return exporter is not None and exporter.is_connected()
+
+    def _copilot_telegram_has_default_pack(self) -> bool:
+        exporter = self.exporter_registry.get("telegram")
+        return isinstance(exporter, TelegramExporter) and bool(
+            exporter.current_default_pack()
+        )
 
     # ---- edit / compile-feedback (target-addressable: node or lib: file, 020·16) ----
 
@@ -1496,6 +1725,12 @@ class App:
     @property
     def trash_dir(self) -> Path:
         return self._create_dir_if_needed(self.project_dir / "trash")
+
+    @property
+    def renders_dir(self) -> Path:
+        # Copilot render outputs (feature 020·18) — user artifacts the agent produced on
+        # request, so durable inside the project dir, NOT the transient exporter_scratch.
+        return self._create_dir_if_needed(self.project_dir / "renders")
 
     @property
     def copilot_dir(self) -> Path:

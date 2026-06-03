@@ -37,6 +37,8 @@ from shaderbox.copilot.capabilities import (
     LibCatalogEntry,
     LibFunctionBody,
     NodeTreeEntry,
+    PublishResult,
+    RenderResult,
     SetUniformResult,
     ShaderView,
 )
@@ -205,6 +207,18 @@ def _stub_caps() -> CopilotCapabilities:
     def _delete(_node: str) -> DeleteNodeResult:
         return DeleteNodeResult(ok=True, deleted_name="n", node_id="n", trash_name="n")
 
+    def _render_image(_n: str, _w: int, _h: int) -> RenderResult:
+        return RenderResult(ok=False, error="n/a")
+
+    def _render_video(_n: str, _s: float, _f: int, _w: int, _h: int) -> RenderResult:
+        return RenderResult(ok=False, error="n/a")
+
+    def _pub_tg(_n: str, _e: str) -> PublishResult:
+        return PublishResult(ok=False, error="n/a", kind="telegram")
+
+    def _pub_yt(_n: str, _t: str, _d: str, _s: bool) -> PublishResult:
+        return PublishResult(ok=False, error="n/a", kind="youtube")
+
     return CopilotCapabilities(
         node_tree=_no_tree,
         lib_catalog=_no_catalog,
@@ -216,6 +230,14 @@ def _stub_caps() -> CopilotCapabilities:
         set_uniform=_set,
         create_node=_create,
         delete_node=_delete,
+        render_image=_render_image,
+        render_video=_render_video,
+        publish_telegram=_pub_tg,
+        publish_youtube=_pub_yt,
+        has_current_node=lambda: True,
+        telegram_connected=lambda: False,
+        youtube_connected=lambda: False,
+        telegram_has_default_pack=lambda: False,
     )
 
 

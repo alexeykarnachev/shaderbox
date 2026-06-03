@@ -7,6 +7,7 @@ from shaderbox.copilot.capabilities import CopilotCapabilities
 from shaderbox.copilot.config import CopilotConfig
 from shaderbox.copilot.llm.api import LLMToolSpec
 from shaderbox.copilot.tools.base import GatePolicy, ToolDefinition
+from shaderbox.copilot.tools.publish import publish_tools
 from shaderbox.copilot.tools.shader import shader_tools
 
 
@@ -35,6 +36,18 @@ class ToolRegistry:
     def is_mutating(self, name: str) -> bool:
         tool = self._by_name.get(name)
         return tool is not None and tool.mutating
+
+    def requires_gate_always(self, name: str) -> bool:
+        tool = self._by_name.get(name)
+        return tool is not None and tool.gate_policy is GatePolicy.ALWAYS
+
+    def precheck(self, name: str, args: dict[str, Any]) -> str | None:
+        # Pre-gate guard (feature 020·18): a guided-handoff message when the call can't run
+        # (a publish with no creds/pack), else None. None for any tool without a precheck.
+        tool = self._by_name.get(name)
+        if tool is None or tool.precheck is None:
+            return None
+        return tool.precheck(args)
 
     def requires_gate(
         self, name: str, args: dict[str, Any], config: CopilotConfig
@@ -76,8 +89,7 @@ class ToolRegistry:
 
 
 def build_registry(caps: CopilotCapabilities) -> ToolRegistry:
-    # The catalog grows slice by slice; each tool group is a local addition here. Slice 1
-    # is the edit/compile-feedback vertical: three eager, non-destructive, current-node
-    # tools (spec §16).
-    definitions: list[ToolDefinition] = [*shader_tools(caps)]
+    # Each tool group is a local addition here: the cross-project edit/read set (shader_tools,
+    # §16) + the render/publish set (publish_tools, §18, all GatePolicy.ALWAYS).
+    definitions: list[ToolDefinition] = [*shader_tools(caps), *publish_tools(caps)]
     return ToolRegistry(definitions)

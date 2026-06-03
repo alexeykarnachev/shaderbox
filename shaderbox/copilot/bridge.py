@@ -40,13 +40,16 @@ class CopilotBridge:
         # again. A real shutdown (release(), reusable=False) is NOT cleared here.
         self._shutdown.clear()
 
-    def run_on_main(self, fn: Callable[[], Any]) -> Any:
+    def run_on_main(self, fn: Callable[[], Any], timeout: float | None = None) -> Any:
         # Called ON THE WORKER THREAD. Enqueue + block until the main thread runs it.
+        # `timeout` overrides the default for ops that legitimately freeze the frame loop
+        # longer (a video encode — render_op_timeout_s, §5).
         if self._shutdown.is_set():
             raise CopilotCancelled("copilot shutting down")
         op = MainThreadOp(fn=fn)
         self._ops.put(op)
-        if not op.done.wait(COPILOT_CONFIG.bridge_op_timeout_s):
+        wait_s = timeout if timeout is not None else COPILOT_CONFIG.bridge_op_timeout_s
+        if not op.done.wait(wait_s):
             raise CopilotToolError("main-thread op timed out")
         if op.error is not None:
             raise op.error

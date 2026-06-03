@@ -136,12 +136,39 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
 ## [DEFERRAL] sticker render is always t=0..N (no loop-offset / "which 3s")
 - **Trigger:** first time a shader's interesting motion isn't at the start (a user wants a 3s
   window other than the first), OR when you next touch the render path in `tabs/share_state.py`
-  (`render_for`) / `core.py` (`_render_video`).
+  (`render_for` / `render_to`) / `core.py` (`_render_video`).
 - A shader loops infinitely but `_render_video` always renders frames `i/fps` for `i in
   range(n_frames)` — start time is hardcoded 0. Telegram stickers cap at 3s, so a shader whose
   best window is at t=4s is uncapturable. Fix: carry a `start_t` on `RenderPreset` (or a
   loop-offset control on the sticker section) and pass it into the render loop. Deferred in
-  feature 010 (Out of scope); the share UI has no offset control today.
+  feature 010 (Out of scope); the share UI has no offset control today. The copilot `render_video`
+  (020·18) inherits this — it too renders only t=0..seconds.
+
+## [DEFERRAL] copilot render has no "Rendering…" modal — the freeze is bare
+- **Trigger:** first maintainer/user report that the copilot render freeze reads as a hang/crash
+  (the app visibly stops responding for the encode with no "rendering" cue), OR when the copilot
+  UI/UX polish wave starts.
+- A copilot `render_image`/`render_video` runs as ONE blocking bridge op holding the frame loop for
+  the encode (feature 020·18 Decision 9). `11 §5`'s R3 decision (maintainer, 2026-05-31) mandated a
+  two-phase paint-then-freeze "Rendering…" modal so the UI shows a cue before freezing — deferred to
+  the UI/UX polish wave (it needs a two-phase commit). `render_op_timeout_s=60` bounds the worst case.
+
+## [DEFERRAL] copilot tool catalogue is all-eager (no lazy search_tools/list_tools)
+- **Trigger:** `registry.eager_specs()` exceeds ~16 tools (the turn-start `tools=` block becomes a
+  non-trivial slice of the prompt-cache prefix), OR the first maintainer/log observation of the model
+  picking a wrong tool attributable to catalogue size.
+- All 13 copilot tools are eager (`11 §4` wanted publish tools lazy via `search_tools`/`list_tools` +
+  `grow_specs_from_payload`, but that mechanism is itself deferred — `16 ## Out of scope`). Building
+  the lazy path is the fix when triggered: the tools already carry `eager`/`category` for it.
+
+## [DEFERRAL] no inline CREDENTIAL gate widget — missing-cred is a guided handoff
+- **Trigger:** first maintainer/user report that leaving the chat to open Settings → Integrations to
+  connect a publish target mid-conversation is friction worth removing, OR a publish target whose
+  credential has no Settings UI to point the handoff at.
+- A copilot publish with no credentials returns a guided-handoff tool result (connect in Settings)
+  via the pre-gate `precheck` (feature 020·18 Decision 7). `GateKind.CREDENTIAL` (an inline secret
+  field in the chat card, `11 §7.2`) stays a type-only stub — building it (the chat-card text input +
+  `IntegrationsStore` write from the gate + mid-turn key pickup) is the fix when triggered.
 
 ## [DEFERRAL] imgui_color_text_edit render() FPE — editor hidden behind modals
 - **Trigger:** if imgui-bundle fixes the upstream glyph-metric div-by-zero (or you upgrade and

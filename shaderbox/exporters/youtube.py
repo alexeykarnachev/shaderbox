@@ -238,6 +238,14 @@ class YouTubeExporter(Exporter):
             self._render_state.auth_state == AuthState.AUTHED and self._has_identity()
         )
 
+    def current_is_short(self) -> bool:
+        return self._render_state.shape == "short"
+
+    def set_shape(self, is_short: bool) -> None:
+        # The copilot publish path sets the shape so render_preset() + the upload flag agree
+        # (feature 020·18) — the UI sets it via the Long/Short chips.
+        self._render_state.shape = "short" if is_short else "long"
+
     def render_preset(self) -> RenderPreset:
         if self._render_state.shape == "short":
             return RenderPreset(
@@ -717,9 +725,23 @@ class YouTubeExporter(Exporter):
             raise ExporterValueError("Rendered file is empty or missing.")
         return artifact
 
-    def export(self, artifact: RenderedArtifact, settings: dict[str, Any]) -> None:
-        _ = (artifact, settings)
-        raise ExporterError("export() is dispatched per job kind via _handle_*")
+    def is_connected(self) -> bool:
+        return self._is_connected()
+
+    def publish(self, artifact: RenderedArtifact, settings: dict[str, Any]) -> None:
+        # Enqueue an upload job (feature 020·18). `settings`: title, description, is_short.
+        # tags/category use the exporter defaults (the copilot tool surfaces the minimal set).
+        is_short: bool = bool(settings.get("is_short", False))
+        self._enqueue(
+            _Job(
+                kind="upload",
+                artifact=artifact,
+                title=str(settings.get("title", "")),
+                description=str(settings.get("description", "")),
+                category_id=DEFAULT_CATEGORY_ID,
+                is_short=is_short,
+            )
+        )
 
     def release(self) -> None:
         with self._worker_lock:

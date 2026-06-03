@@ -127,6 +127,31 @@ class EditResult:
 
 
 @dataclass(frozen=True)
+class RenderResult:
+    # The outcome of a render_image / render_video (feature 020·18). ok=False carries `error`
+    # (no such node, or the render failed). On ok=True, `path` is the file under the project
+    # renders dir + the ACTUAL rendered size (snapped to the codec alignment) + duration (video).
+    ok: bool
+    error: str = ""
+    path: str = ""
+    is_video: bool = False
+    width: int = 0
+    height: int = 0
+    duration: float = 0.0
+
+
+@dataclass(frozen=True)
+class PublishResult:
+    # The outcome of a publish_telegram / publish_youtube (feature 020·18). ok=False carries the
+    # terminal error message (or "cancelled" / "timed out"). On ok=True, `url` is the pack/Studio
+    # link the agent relays. `kind` is the target ("telegram"/"youtube") for the reply phrasing.
+    ok: bool
+    error: str = ""
+    url: str = ""
+    kind: str = ""
+
+
+@dataclass(frozen=True)
 class CopilotCapabilities:
     # ---- GL-FREE context reads (feature 020·16) — safe to call on the worker thread when
     # building the per-turn prompt context (no bridge). node_tree excludes uniforms ON PURPOSE
@@ -170,3 +195,22 @@ class CopilotCapabilities:
     # always gates it (GatePolicy.ALWAYS); the closure marshals the GL teardown via the bridge.
     # (node short-id) -> DeleteNodeResult (feature 020·17).
     delete_node: Callable[[str], "DeleteNodeResult"]
+
+    # ---- render / publish (feature 020·18; all GatePolicy.ALWAYS) ----
+    # Render a node's current frame to a PNG (render_image) / `seconds` of animation to a WebM
+    # (render_video) under the project renders dir. GL => the closure marshals via the bridge with
+    # the longer render_op_timeout_s. (node, width, height) / (node, seconds, fps, width, height);
+    # a 0 width/height means "use the node's canvas size".
+    render_image: Callable[[str, int, int], "RenderResult"]
+    render_video: Callable[[str, float, int, int, int], "RenderResult"]
+    # Render the node with the exporter's own preset, then enqueue the upload + AWAIT its terminal
+    # progress (the closure does the bridge-marshalled poll). (node, emoji) / (node, title,
+    # description, is_short) -> PublishResult (url or error).
+    publish_telegram: Callable[[str, str], "PublishResult"]
+    publish_youtube: Callable[[str, str, str, bool], "PublishResult"]
+    # GL-free precheck reads backing the pre-gate guided handoff (the tool's `precheck`): is there
+    # a current node to render, is the integration connected, and (Telegram) is a pack selected.
+    has_current_node: Callable[[], bool]
+    telegram_connected: Callable[[], bool]
+    youtube_connected: Callable[[], bool]
+    telegram_has_default_pack: Callable[[], bool]

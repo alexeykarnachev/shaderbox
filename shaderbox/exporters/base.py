@@ -98,11 +98,17 @@ class Exporter(ABC):
       - render thread only:  exporter_id, display_name, auth_state,
                              is_available, unavailable_reason, begin_auth,
                              rebind, set_media_dir, set_integrations, status,
-                             current_settings, draw_config_ui,
+                             publish, current_settings, draw_config_ui,
                              build_render_extras, draw_target_panel, update,
                              release.
-      - worker thread only:  prepare, export.
+      - any thread (GL-free scalar reads):  is_connected, render_preset.
+                             The copilot worker's pre-gate cred check reads
+                             these directly (no GL, no queue mutation — just
+                             `_render_state` field reads under the GIL).
+      - worker thread only:  prepare, and the _do_*/_handle_* job handlers.
 
+    `publish` only ENQUEUES the upload job onto the exporter's own worker (a
+    render-thread queue write); the actual upload runs later on that worker.
     Worker-thread methods MUST NOT construct or access `moderngl.*` (no
     `Image / Video / Canvas / Node / Texture`). The render-thread methods
     may; `RenderedArtifact` is GL-free precisely so it can cross the
@@ -160,6 +166,9 @@ class Exporter(ABC):
     def status(self) -> ExporterStatus: ...
 
     @abstractmethod
+    def is_connected(self) -> bool: ...
+
+    @abstractmethod
     def draw_config_ui(self) -> None: ...
 
     @abstractmethod
@@ -180,8 +189,11 @@ class Exporter(ABC):
         self, artifact: RenderedArtifact, settings: dict[str, Any]
     ) -> RenderedArtifact: ...
 
+    # Enqueue the upload job onto the exporter's own worker (a render-thread queue
+    # write; the upload runs later on that worker). `settings` carries the per-exporter
+    # job params (Telegram: pack/emoji; YouTube: title/description/is_short).
     @abstractmethod
-    def export(self, artifact: RenderedArtifact, settings: dict[str, Any]) -> None: ...
+    def publish(self, artifact: RenderedArtifact, settings: dict[str, Any]) -> None: ...
 
     @abstractmethod
     def release(self) -> None: ...
