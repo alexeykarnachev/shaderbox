@@ -288,15 +288,17 @@ def run_turn(
         if done is None or done.finish_reason != "tool_calls" or not builders:
             if done is None:
                 logger.warning("copilot stream ended with no LLMDone event")
-            # Tool-incompatible model: it produced neither a native tool call NOR text AND did
-            # not end cleanly. A clean finish_reason=="stop" is the model deliberately ending
-            # the turn — valid even with empty text (it had nothing to add after the tools).
-            # And if a tool call already executed natively this turn, the model is PROVEN
-            # tool-compatible, so this guard must never fire on it.
+            # Tool-incompatible model: empty text after a tool ran AND the stream did not end
+            # with a recognized terminal reason. A native tool call already executed this turn
+            # is itself PROOF the model is tool-compatible, so the only thing that still reads
+            # as "couldn't continue" is a torn stream (done is None) or an unknown finish_reason
+            # — `stop` / `length` / `content_filter` are all legitimate provider terminations,
+            # not an incompatibility (length is a token-budget cutoff, handled separately below).
+            fr = done.finish_reason if done is not None else ""
             incompatible = (
                 not text_buf
                 and total_tool_calls > 0
-                and (done is None or done.finish_reason != "stop")
+                and fr not in ("stop", "length", "content_filter")
             )
             if incompatible:
                 logger.warning(
@@ -307,6 +309,18 @@ def run_turn(
                     "model_incompatible", iteration=iteration, reason="empty_after_tool"
                 )
                 yield AgentError(_MODEL_INCOMPATIBLE_MSG)
+                return
+            if not text_buf and fr == "length":
+                # The model was cut off mid-reply by the per-turn token budget. Tell the user
+                # honestly (not "incompatible") so they can ask it to continue.
+                logger.warning(
+                    f"copilot turn truncated (length) after {total_tool_calls} tool call(s)"
+                )
+                tr.event("turn_truncated", iteration=iteration, reason="length")
+                yield AgentError(
+                    "I ran out of my per-reply token budget before I could summarize. "
+                    "The actions above did complete — ask me to continue or recap."
+                )
                 return
             logger.info(
                 f"copilot turn done | iterations={iteration + 1} "

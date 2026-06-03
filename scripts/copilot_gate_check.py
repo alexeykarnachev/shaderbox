@@ -275,11 +275,12 @@ class _ApproveGate(GateChannel):
         return GateResponse(approved=True, option="Yes")
 
 
-class _DeleteThenSilentStopClient:
-    # One delete, then a SILENT clean stop: finish_reason=="stop" with NO text and no tool
-    # calls (a reasoning model that ran the tool then had nothing to add). A compatible
-    # model legitimately does this — it must NOT be flagged tool-incompatible.
-    def __init__(self) -> None:
+class _DeleteThenEmptyFinishClient:
+    # One delete, then an empty (no text, no tool calls) reply ending with the given
+    # finish_reason — a reasoning model that ran the tool then emitted no visible content.
+    # A native call already executed, so this must NOT be flagged tool-incompatible.
+    def __init__(self, finish_reason: str) -> None:
+        self._finish_reason = finish_reason
         self._calls = 0
 
     def stream(
@@ -301,36 +302,55 @@ class _DeleteThenSilentStopClient:
             )
             yield LLMDone(finish_reason="tool_calls", usage=LLMUsage(output_tokens=1))
         else:
-            # No text delta — only a clean stop (e.g. the model spent its output on reasoning).
-            yield LLMDone(finish_reason="stop", usage=LLMUsage(output_tokens=57))
+            yield LLMDone(
+                finish_reason=self._finish_reason, usage=LLMUsage(output_tokens=57)
+            )
 
 
-def _check_silent_completion() -> None:
+def _run_empty_finish(finish_reason: str) -> list[AgentEvent]:
     caps = _stub_caps()
-    registry = build_registry(caps)
-    client = _DeleteThenSilentStopClient()
-    context = build_context(caps)
-    events: list[AgentEvent] = list(
+    return list(
         run_turn(
-            client,
-            registry,
+            _DeleteThenEmptyFinishClient(finish_reason),
+            build_registry(caps),
             COPILOT_CONFIG,
-            context,
+            build_context(caps),
             history=[],
             user_text="delete n1",
             gate=_ApproveGate(),
             cancel=threading.Event(),
         )
     )
-    errors = [e for e in events if isinstance(e, AgentError)]
-    dones = [e for e in events if isinstance(e, AgentTurnDone)]
-    assert not errors, (
-        "a silent clean stop after a successful tool was wrongly flagged "
-        f"incompatible: {[e.message for e in errors]}"
+
+
+def _is_incompatible_error(events: list[AgentEvent]) -> bool:
+    return any(
+        isinstance(e, AgentError) and "compatible with tool calling" in e.message
+        for e in events
     )
-    assert dones, "a silent clean stop after a tool did not end in AgentTurnDone"
+
+
+def _check_silent_completion() -> None:
+    # A clean `stop` after a successful tool ends in AgentTurnDone (no error at all).
+    stop_events = _run_empty_finish("stop")
+    assert not [e for e in stop_events if isinstance(e, AgentError)], (
+        "a silent clean stop after a successful tool was wrongly flagged: "
+        f"{[e.message for e in stop_events if isinstance(e, AgentError)]}"
+    )
+    assert [
+        e for e in stop_events if isinstance(e, AgentTurnDone)
+    ], "a silent clean stop after a tool did not end in AgentTurnDone"
+    # `length` / `content_filter` after a tool are terminal provider signals, NOT
+    # tool-incompatibility — the model proved it can call tools. length gets its own
+    # "ran out of budget" error; neither may claim the model is incompatible.
+    assert not _is_incompatible_error(
+        _run_empty_finish("length")
+    ), "a length cutoff after a tool was wrongly flagged tool-incompatible"
+    assert not _is_incompatible_error(
+        _run_empty_finish("content_filter")
+    ), "a content_filter stop after a tool was wrongly flagged tool-incompatible"
     logger.info(
-        "D ok: a silent finish_reason=stop after a tool ends cleanly, not as an error"
+        "D ok: silent stop/length/content_filter after a tool is not flagged incompatible"
     )
 
 
