@@ -3,7 +3,7 @@
 Covers the pure-logic decisions the GUI smoke can't reach (`scripts/smoke.py` never builds
 the registry or runs a turn):
 
-  H1. The registry builds: 19 eager specs (9 shader + 4 render/publish + 6 telegram), each new
+  H1. The registry builds: 20 eager specs (10 shader + 4 render/publish + 6 telegram), each new
       tool's arg schema builds, render/publish are GatePolicy.ALWAYS, set_telegram_token is
       gate_kind=CREDENTIAL.
   H2. Render-to-file (needs a live GL context, like smoke): the App render closure produces a
@@ -41,6 +41,7 @@ from shaderbox.copilot.capabilities import (
     RenderResult,
     SetUniformResult,
     ShaderView,
+    SwitchNodeResult,
     TelegramConnectResult,
     TelegramOpResult,
 )
@@ -121,6 +122,7 @@ def _stub_caps(
         set_uniform=_set,
         create_node=_create,
         delete_node=_delete,
+        switch_node=lambda _n: SwitchNodeResult(ok=False),
         render_image=_render_image,
         render_video=_render_video,
         publish_telegram=_pub_tg,
@@ -146,8 +148,8 @@ def _check_registry_builds() -> None:
     registry = build_registry(caps)
     eager = registry.eager_specs()
     assert (
-        len(eager) == 19
-    ), f"expected 19 eager tools (9 shader + 4 render/publish + 6 telegram), got {len(eager)}"
+        len(eager) == 20
+    ), f"expected 20 eager tools (10 shader + 4 render/publish + 6 telegram), got {len(eager)}"
 
     names = {s.name for s in eager}
     assert (
@@ -170,7 +172,7 @@ def _check_registry_builds() -> None:
     ), "set_telegram_token must be gate_kind=CREDENTIAL"
     assert set_token.secret_field == "telegram_bot_token", "secret_field marker missing"
     logger.info(
-        "H1 ok: 19 eager tools build; render/publish ALWAYS-gated; set_telegram_token CREDENTIAL"
+        "H1 ok: 20 eager tools build; render/publish ALWAYS-gated; set_telegram_token CREDENTIAL"
     )
 
 

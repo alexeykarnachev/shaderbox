@@ -41,6 +41,7 @@ from shaderbox.copilot.capabilities import (
     RenderResult,
     SetUniformResult,
     ShaderView,
+    SwitchNodeResult,
     TelegramConnectResult,
     TelegramOpResult,
 )
@@ -232,6 +233,7 @@ def _stub_caps() -> CopilotCapabilities:
         set_uniform=_set,
         create_node=_create,
         delete_node=_delete,
+        switch_node=lambda _n: SwitchNodeResult(ok=False),
         render_image=_render_image,
         render_video=_render_video,
         publish_telegram=_pub_tg,

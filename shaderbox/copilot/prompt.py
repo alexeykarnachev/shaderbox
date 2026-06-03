@@ -39,6 +39,10 @@ WHAT YOU CAN DO
 - Delete a node: `delete_node(node)` (the node id from the map; required). The user is shown a
   Yes/No confirmation first — if they decline you'll get "user declined", so stop and explain.
   The node moves to the project trash and the user can recover it, so it's not lost for good.
+- Switch the current shader: `switch_node(node)` makes a node the CURRENT one. The publish and
+  render tools — and edits with no target — act on the CURRENT shader, so to publish/render a node
+  that isn't current, `switch_node` to it FIRST, then publish/render. Don't tell the user to click
+  it themselves; just switch.
 - Use library helpers: the catalogue below lists every `SB_*` function's signature. Call one by
   name and it auto-resolves (no #include). `read_lib(names)` returns a function's full body when
   you need to see how it works before calling it. To ADD a library function, `insert_after` into

@@ -1,0 +1,215 @@
+{
+  "version": 3,
+  "messages": [
+    {
+      "role": "user",
+      "text": "can you create a telegram sticker from Input Types Test shader",
+      "resolved": false,
+      "recover": null,
+      "gate_kind": "confirm"
+    },
+    {
+      "role": "assistant",
+      "text": "Sure \u2014 to publish **Input Types Test** as a Telegram sticker I need it to be the current shader (the one marked `current` in the project map). Switch to it in the app and let me know, then I'll run the publish for you (you'll get a confirmation prompt first).",
+      "resolved": false,
+      "recover": null,
+      "gate_kind": "confirm"
+    },
+    {
+      "role": "user",
+      "text": "Can't you do this without this manual switching from my side?",
+      "resolved": false,
+      "recover": null,
+      "gate_kind": "confirm"
+    },
+    {
+      "role": "tool_status",
+      "text": "read_shader: ok",
+      "resolved": false,
+      "recover": null,
+      "gate_kind": "confirm"
+    },
+    {
+      "role": "assistant",
+      "text": "Telegram isn't connected in your ShaderBox settings.\n\nPlease open **Settings \u2192 Integrations \u2192 Telegram**, connect your bot, and select a sticker pack, then ask me again.",
+      "resolved": false,
+      "recover": null,
+      "gate_kind": "confirm"
+    },
+    {
+      "role": "user",
+      "text": "i connected tg, what stickerpacks do i have?",
+      "resolved": false,
+      "recover": null,
+      "gate_kind": "confirm"
+    },
+    {
+      "role": "assistant",
+      "text": "I don't have a tool that can list your connected Telegram sticker packs or query your settings.\n\nPlease open **Settings \u2192 Integrations \u2192 Telegram** (or the Share tab) \u2014 your available packs should be listed there for selection. Once one is chosen, I can help publish the sticker.",
+      "resolved": false,
+      "recover": null,
+      "gate_kind": "confirm"
+    },
+    {
+      "role": "user",
+      "text": "No, packs are not in the settings. What does your instruction say exactly?",
+      "resolved": false,
+      "recover": null,
+      "gate_kind": "confirm"
+    },
+    {
+      "role": "assistant",
+      "text": "**Exact quote from my instructions** (publish_telegram tool description):\n\n> \"Render the current shader as a Telegram sticker (3s WebM) and add it to the user's selected sticker pack. EXTERNAL + LIVE \u2014 the user confirms first. **Telegram must be connected and a pack selected (both done in Settings / the Share tab)**. Returns the pack URL.\"\n\nAnd the more detailed version:\n\n> \"These need the integration CONNECTED in Settings first \u2014 if it isn't, you'll get a message telling the user how to connect; relay it, don't retry.\"\n\nThat's why I previously told you to go to **Settings \u2192 Integrations \u2192 Telegram** (or the Share tab) and **select a sticker pack** there. Once a pack is actively selected, I can call the publish tool (you'll still get one final confirmation before it posts).",
+      "resolved": false,
+      "recover": null,
+      "gate_kind": "confirm"
+    },
+    {
+      "role": "user",
+      "text": "okay, pack is selected (pack selection is placed on the Share tab in telegram section). Create the sticker now",
+      "resolved": false,
+      "recover": null,
+      "gate_kind": "confirm"
+    },
+    {
+      "role": "assistant",
+      "text": "I can't publish from `Input Types Test` directly \u2014 the `publish_telegram` tool always renders **the shader that is currently active** in the app.\n\nPlease make **Input Types Test** the current shader (switch to it), then tell me and I'll call the publish tool for you.",
+      "resolved": false,
+      "recover": null,
+      "gate_kind": "confirm"
+    },
+    {
+      "role": "user",
+      "text": "done",
+      "resolved": false,
+      "recover": null,
+      "gate_kind": "confirm"
+    },
+    {
+      "role": "pending_action",
+      "text": "Publish this shader to your Telegram sticker pack? This uploads the sticker (external + live).\nYou chose: Yes",
+      "resolved": true,
+      "recover": null,
+      "gate_kind": "confirm"
+    },
+    {
+      "role": "tool_status",
+      "text": "publish_telegram: ok",
+      "resolved": false,
+      "recover": null,
+      "gate_kind": "confirm"
+    },
+    {
+      "role": "assistant",
+      "text": "Done \u2014 the **Input Types Test** shader was rendered as a 3-second Telegram sticker and added to your pack.\n\n**Pack link:** https://t.me/addstickers/kek_by_shaderbox_bot",
+      "resolved": false,
+      "recover": null,
+      "gate_kind": "confirm"
+    },
+    {
+      "role": "user",
+      "text": "can you now remove all stickers from this pack",
+      "resolved": false,
+      "recover": null,
+      "gate_kind": "confirm"
+    },
+    {
+      "role": "assistant",
+      "text": "No, I can't remove stickers.\n\nMy only Telegram-related tool is `publish_telegram`, which can only **add** a new sticker. There is no tool or command available to me for deleting, listing, or clearing stickers from a pack.\n\nYou\u2019ll need to manage the pack directly in Telegram (or via @stickers bot) to remove stickers.",
+      "resolved": false,
+      "recover": null,
+      "gate_kind": "confirm"
+    }
+  ],
+  "history": [
+    {
+      "role": "user",
+      "content": "can you create a telegram sticker from Input Types Test shader",
+      "tool_call_id": null,
+      "tool_calls": null
+    },
+    {
+      "role": "assistant",
+      "content": "Sure \u2014 to publish **Input Types Test** as a Telegram sticker I need it to be the current shader (the one marked `current` in the project map). Switch to it in the app and let me know, then I'll run the publish for you (you'll get a confirmation prompt first).",
+      "tool_call_id": null,
+      "tool_calls": null
+    },
+    {
+      "role": "user",
+      "content": "Can't you do this without this manual switching from my side?",
+      "tool_call_id": null,
+      "tool_calls": null
+    },
+    {
+      "role": "assistant",
+      "content": "Telegram isn't connected in your ShaderBox settings.\n\nPlease open **Settings \u2192 Integrations \u2192 Telegram**, connect your bot, and select a sticker pack, then ask me again.",
+      "tool_call_id": null,
+      "tool_calls": null
+    },
+    {
+      "role": "user",
+      "content": "i connected tg, what stickerpacks do i have?",
+      "tool_call_id": null,
+      "tool_calls": null
+    },
+    {
+      "role": "assistant",
+      "content": "I don't have a tool that can list your connected Telegram sticker packs or query your settings.\n\nPlease open **Settings \u2192 Integrations \u2192 Telegram** (or the Share tab) \u2014 your available packs should be listed there for selection. Once one is chosen, I can help publish the sticker.",
+      "tool_call_id": null,
+      "tool_calls": null
+    },
+    {
+      "role": "user",
+      "content": "No, packs are not in the settings. What does your instruction say exactly?",
+      "tool_call_id": null,
+      "tool_calls": null
+    },
+    {
+      "role": "assistant",
+      "content": "**Exact quote from my instructions** (publish_telegram tool description):\n\n> \"Render the current shader as a Telegram sticker (3s WebM) and add it to the user's selected sticker pack. EXTERNAL + LIVE \u2014 the user confirms first. **Telegram must be connected and a pack selected (both done in Settings / the Share tab)**. Returns the pack URL.\"\n\nAnd the more detailed version:\n\n> \"These need the integration CONNECTED in Settings first \u2014 if it isn't, you'll get a message telling the user how to connect; relay it, don't retry.\"\n\nThat's why I previously told you to go to **Settings \u2192 Integrations \u2192 Telegram** (or the Share tab) and **select a sticker pack** there. Once a pack is actively selected, I can call the publish tool (you'll still get one final confirmation before it posts).",
+      "tool_call_id": null,
+      "tool_calls": null
+    },
+    {
+      "role": "user",
+      "content": "okay, pack is selected (pack selection is placed on the Share tab in telegram section). Create the sticker now",
+      "tool_call_id": null,
+      "tool_calls": null
+    },
+    {
+      "role": "assistant",
+      "content": "I can't publish from `Input Types Test` directly \u2014 the `publish_telegram` tool always renders **the shader that is currently active** in the app.\n\nPlease make **Input Types Test** the current shader (switch to it), then tell me and I'll call the publish tool for you.",
+      "tool_call_id": null,
+      "tool_calls": null
+    },
+    {
+      "role": "user",
+      "content": "done",
+      "tool_call_id": null,
+      "tool_calls": null
+    },
+    {
+      "role": "assistant",
+      "content": "Done \u2014 the **Input Types Test** shader was rendered as a 3-second Telegram sticker and added to your pack.\n\n**Pack link:** https://t.me/addstickers/kek_by_shaderbox_bot",
+      "tool_call_id": null,
+      "tool_calls": null
+    },
+    {
+      "role": "user",
+      "content": "can you now remove all stickers from this pack",
+      "tool_call_id": null,
+      "tool_calls": null
+    },
+    {
+      "role": "assistant",
+      "content": "No, I can't remove stickers.\n\nMy only Telegram-related tool is `publish_telegram`, which can only **add** a new sticker. There is no tool or command available to me for deleting, listing, or clearing stickers from a pack.\n\nYou\u2019ll need to manage the pack directly in Telegram (or via @stickers bot) to remove stickers.",
+      "tool_call_id": null,
+      "tool_calls": null
+    }
+  ],
+  "usage": {
+    "input_tokens": 63793,
+    "output_tokens": 2598,
+    "cost_usd": 0.04793225
+  }
+}

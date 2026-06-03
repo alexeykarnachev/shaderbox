@@ -60,7 +60,11 @@ def telegram_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
         result = caps.set_telegram_token(secret)
         red = mask_secret(secret)
         if result.ok:
-            return True, f"token set ({red}) and linked to @{result.bot_username}.", None
+            return (
+                True,
+                f"token set ({red}) and linked to @{result.bot_username}.",
+                None,
+            )
         if result.needs_start:
             return (
                 True,
@@ -88,7 +92,11 @@ def telegram_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
         _ = args
         packs = caps.list_telegram_packs()
         if not packs:
-            return True, "no sticker packs yet — create one to get started.", {"packs": 0}
+            return (
+                True,
+                "no sticker packs yet — create one to get started.",
+                {"packs": 0},
+            )
         rows = "\n".join(
             f"- {p.title} ({p.set_name}){' [active]' if p.is_default else ''}"
             for p in packs

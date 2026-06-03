@@ -121,6 +121,13 @@ class _DeleteNodeArgs(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class _SwitchNodeArgs(BaseModel):
+    node: str = Field(
+        description="node id (from the project map) to make the current shader — REQUIRED"
+    )
+    model_config = {"extra": "forbid"}
+
+
 _READ_SHADER_DESC = (
     "Read shader nodes: returns each node's source with line numbers (for orientation — you "
     "match on text content, NOT line numbers, when editing), its uniforms (name, type, and "
@@ -200,6 +207,13 @@ _DELETE_NODE_DESC = (
     "decline you'll get 'user declined' and should stop and explain. The node moves to the project "
     "trash and the user can recover it, so reassure them it's not permanently lost. After a delete "
     "the node is gone from the project map; do not read or edit it again."
+)
+
+_SWITCH_NODE_DESC = (
+    "Make a node the CURRENT shader (the one the user is viewing). The publish and render tools, "
+    "and edits with no target, all act on the current shader — so to publish/render a DIFFERENT "
+    "node, switch to it first. Pass the node id from the project map. Non-destructive: the user's "
+    "view switches to it."
 )
 
 _OUT_OF_RANGE = "error: line number out of range — re-read with read_shader and use a line number it shows"
@@ -388,6 +402,17 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             },
         )
 
+    def switch_node(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
+        result = caps.switch_node(args["node"])
+        if not result.ok:
+            return False, f"error: {result.error}", None
+        return (
+            True,
+            f"switched the current shader to '{result.name}'. Publish/render/edits with no "
+            "target now act on it.",
+            {"switched": args["node"]},
+        )
+
     return [
         ToolDefinition(
             name="read_shader",
@@ -487,5 +512,16 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             category="shader",
             eager=True,
             gate_policy=GatePolicy.ALWAYS,
+        ),
+        ToolDefinition(
+            name="switch_node",
+            description=_SWITCH_NODE_DESC,
+            args_model=_SwitchNodeArgs,
+            handler=switch_node,
+            mutating=False,
+            needs_gl=True,
+            category="shader",
+            eager=True,
+            gate_policy=GatePolicy.NONE,
         ),
     ]

@@ -81,6 +81,15 @@ class DeleteNodeResult:
 
 
 @dataclass(frozen=True)
+class SwitchNodeResult:
+    # The outcome of a switch_node (the copilot makes a node the current one so the per-current
+    # tools — publish/render/edit-without-target — act on it). ok=False carries `error`.
+    ok: bool
+    error: str = ""
+    name: str = ""
+
+
+@dataclass(frozen=True)
 class GrepHit:
     # One origin-labeled match for grep (feature 020·16). `origin` is the addressable handle
     # the agent can hand to a read/edit tool: a node id, or a "lib:<path>" address.
@@ -222,6 +231,10 @@ class CopilotCapabilities:
     # always gates it (GatePolicy.ALWAYS); the closure marshals the GL teardown via the bridge.
     # (node short-id) -> DeleteNodeResult (feature 020·17).
     delete_node: Callable[[str], "DeleteNodeResult"]
+    # Make a node the CURRENT one so the per-current tools (publish/render/edit-without-target)
+    # act on it. Non-destructive (the user sees their view switch); stamps freshness so a
+    # follow-up edit lands. (node short-id) -> SwitchNodeResult.
+    switch_node: Callable[[str], "SwitchNodeResult"]
 
     # ---- render / publish (feature 020·18; all GatePolicy.ALWAYS) ----
     # Render a node's current frame to a PNG (render_image) / `seconds` of animation to a WebM

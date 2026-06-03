@@ -38,6 +38,7 @@ from shaderbox.copilot.capabilities import (
     RenderResult,
     SetUniformResult,
     ShaderView,
+    SwitchNodeResult,
     TelegramConnectResult,
     TelegramOpResult,
     TelegramPackInfo,
@@ -616,6 +617,7 @@ class App:
             set_uniform=self._copilot_set_uniform,
             create_node=self._copilot_create_node,
             delete_node=self._copilot_delete_node,
+            switch_node=self._copilot_switch_node,
             render_image=self._copilot_render_image,
             render_video=self._copilot_render_video,
             publish_telegram=self._copilot_publish_telegram,
@@ -911,6 +913,27 @@ class App:
             return DeleteNodeResult(
                 ok=True, deleted_name=name, node_id=node_id, trash_name=trash_name
             )
+
+        return self.copilot.bridge.run_on_main(_on_main)
+
+    def _copilot_switch_node(self, node: str) -> SwitchNodeResult:
+        # Make `node` the current one (so publish/render/edit-without-target act on it).
+        # set_current_node_id is a bare state write the frame loop reads — marshal it on the main
+        # thread. Stamp freshness for the switched node so a follow-up edit passes the §15 guard.
+        def _on_main() -> SwitchNodeResult:
+            node_id = self._copilot_resolve_node_id(node)
+            if node_id is None or node_id not in self.ui_nodes:
+                return SwitchNodeResult(
+                    ok=False,
+                    error=f"no such node '{node}' — check the project map for ids",
+                )
+            ui_node = self.ui_nodes[node_id]
+            self.set_current_node_id(node_id)
+            self._copilot_read_revision[node_id] = _shader_digest(
+                ui_node.node.source.text
+            )
+            logger.info(f"copilot switched current node to {node_id}")
+            return SwitchNodeResult(ok=True, name=ui_node.ui_state.ui_name)
 
         return self.copilot.bridge.run_on_main(_on_main)
 
