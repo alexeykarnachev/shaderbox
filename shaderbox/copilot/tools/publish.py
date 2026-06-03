@@ -17,9 +17,7 @@ from shaderbox.copilot.tools.base import GatePolicy, ToolDefinition
 # guided handoff (connect in Settings / pick a pack) BEFORE the gate when they can't run.
 
 # Dimensions snap to the codec alignment, so the result reports the ACTUAL rendered size.
-_DIM_DESC = (
-    "pixels; omit (0) to use the node's current canvas size. Snaps up to the codec alignment."
-)
+_DIM_DESC = "pixels; omit (0) to use the node's current canvas size. Snaps up to the codec alignment."
 
 
 class _RenderImageArgs(BaseModel):
@@ -50,7 +48,8 @@ class _RenderVideoArgs(BaseModel):
 
 class _PublishTelegramArgs(BaseModel):
     emoji: str = Field(
-        default="🎨", description="the emoji to associate with the sticker (one character)"
+        default="🎨",
+        description="the emoji to associate with the sticker (one character)",
     )
     model_config = {"extra": "forbid"}
 
@@ -111,20 +110,34 @@ def _publish_result_msg(r: PublishResult, target: str) -> str:
 def publish_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
     def render_image(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
         r = caps.render_image(args["node"], args["width"], args["height"])
-        return r.ok, _render_image_result_msg(r, "image"), {"path": r.path} if r.ok else None
+        return (
+            r.ok,
+            _render_image_result_msg(r, "image"),
+            {"path": r.path} if r.ok else None,
+        )
 
     def render_video(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
         r = caps.render_video(
             args["node"], args["seconds"], args["fps"], args["width"], args["height"]
         )
-        return r.ok, _render_image_result_msg(r, "video"), {"path": r.path} if r.ok else None
+        return (
+            r.ok,
+            _render_image_result_msg(r, "video"),
+            {"path": r.path} if r.ok else None,
+        )
 
     def publish_telegram(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
         r = caps.publish_telegram("", args["emoji"])
-        return r.ok, _publish_result_msg(r, "Telegram"), {"url": r.url} if r.ok else None
+        return (
+            r.ok,
+            _publish_result_msg(r, "Telegram"),
+            {"url": r.url} if r.ok else None,
+        )
 
     def publish_youtube(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
-        r = caps.publish_youtube("", args["title"], args["description"], args["is_short"])
+        r = caps.publish_youtube(
+            "", args["title"], args["description"], args["is_short"]
+        )
         return r.ok, _publish_result_msg(r, "YouTube"), {"url": r.url} if r.ok else None
 
     def telegram_precheck(args: dict[str, Any]) -> str | None:

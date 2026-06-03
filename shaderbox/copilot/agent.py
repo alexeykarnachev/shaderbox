@@ -189,19 +189,29 @@ _GATE_PROMPTS: dict[str, Callable[[dict], str]] = {
     "render_video": lambda a: f"Render a {a.get('seconds', '?')}s video of this shader? The app pauses while it encodes.",
     "publish_telegram": lambda a: "Publish this shader to your Telegram sticker pack? This uploads the sticker (external + live).",
     "publish_youtube": lambda a: f"Publish this shader to YouTube as '{a.get('title', '')}'? The video goes live on your channel (private; external).",
+    "set_telegram_token": lambda a: "Paste your Telegram bot token below (from @BotFather). It's stored locally; I never see it.",
+    "create_telegram_pack": lambda a: f"Create a new Telegram sticker pack '{a.get('title', '')}'?",
+    "select_telegram_pack": lambda a: f"Switch your active Telegram pack to '{a.get('set_name', '')}'?",
+    "delete_telegram_pack": lambda a: f"Delete the Telegram sticker pack '{a.get('set_name', '')}'? This removes it from Telegram (external + irreversible).",
 }
 
 
-def build_gate(name: str, args: dict) -> GateRequest:
-    # Engine-built confirm prompt (§7.2 / feature 020·17): the engine owns the destructive-
-    # action phrasing so it's accurate, not the model. Falls back to a generic line for any
-    # future ALWAYS-gated tool without a template.
+def build_gate(registry: ToolRegistry, name: str, args: dict) -> GateRequest:
+    # Engine-built gate request (§7.2 / feature 020·17, 020·19): the engine owns the prompt
+    # phrasing so it's accurate, not the model. A CREDENTIAL tool (gate_kind) gets a secret-input
+    # gate; everything else the CONFIRM Yes/No. Falls back to a generic line for any ALWAYS-gated
+    # tool without a template.
     template = _GATE_PROMPTS.get(name)
     prompt = (
         template(args)
         if template is not None
         else f"Run {name}? This action will change your project."
     )
+    tool = registry.definition_for(name)
+    if tool is not None and tool.gate_kind is GateKind.CREDENTIAL:
+        return GateRequest(
+            kind=GateKind.CREDENTIAL, prompt=prompt, secret_field=tool.secret_field
+        )
     return GateRequest(kind=GateKind.CONFIRM, prompt=prompt, options=["Yes", "No"])
 
 
@@ -378,8 +388,9 @@ def run_turn(
             # to the next call in the batch. The continue lands BEFORE the execute + the
             # consecutive_failed_edits logic, so a decline never reaches either: a user choice
             # is not a convergence failure and must not count toward the edit-retry cap.
+            secret = ""  # a CREDENTIAL gate's typed key, forwarded to execute OUT of args (020·19)
             if registry.requires_gate(tc.name, args, config):
-                req = build_gate(tc.name, args)
+                req = build_gate(registry, tc.name, args)
                 tr.event("gate_open", name=tc.name, prompt=req.prompt)
                 yield AgentGateOpened(req)
                 resp = gate.ask(req)
@@ -394,7 +405,8 @@ def run_turn(
                     ran.record(tc.name, False, "error: user declined")
                     messages.append(_tool_message(tc.id, "error: user declined"))
                     continue
-            ok, msg, payload = registry.execute(tc.name, args)
+                secret = resp.secret
+            ok, msg, payload = registry.execute(tc.name, args, secret)
             total_tool_calls += 1
             logger.info(f"copilot tool #{total_tool_calls} {tc.name} -> ok={ok}")
             logger.debug(f"copilot tool #{total_tool_calls} args={args} result={msg!r}")

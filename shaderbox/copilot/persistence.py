@@ -15,6 +15,7 @@ from typing import Literal, Self, cast
 from loguru import logger
 from pydantic import BaseModel, ValidationError
 
+from shaderbox.copilot.gate import GateKind
 from shaderbox.copilot.llm.api import LLMMessage, LLMToolCall
 from shaderbox.copilot.state import (
     ChatState,
@@ -24,7 +25,16 @@ from shaderbox.copilot.state import (
     SessionUsage,
 )
 
-_VERSION = 2
+_VERSION = 3
+
+
+def _gate_kind_or_confirm(value: str) -> GateKind:
+    # A future GateKind member on an older build loads as CONFIRM (the renderer falls back to
+    # Yes/No), instead of failing the whole conversation file (feature 020·19).
+    try:
+        return GateKind(value)
+    except ValueError:
+        return GateKind.CONFIRM
 
 
 class _ToolCallModel(BaseModel):
@@ -48,10 +58,13 @@ class _RecoverModel(BaseModel):
 class _MessageModel(BaseModel):
     # The UI render stream (ChatState.messages). role is validated loosely (str) so a
     # future MessageRole member loads on an older build instead of failing the whole file.
+    # gate_kind is loose-str for the same reason (feature 020·19); gate_input (the typed
+    # secret buffer) is deliberately NOT a field — it is never persisted.
     role: str
     text: str = ""
     resolved: bool = False
     recover: _RecoverModel | None = None
+    gate_kind: str = "confirm"
     model_config = {"extra": "forbid"}
 
 
@@ -90,6 +103,7 @@ class ConversationStore(BaseModel):
                     role=m.role,
                     text=m.text,
                     resolved=m.resolved,
+                    gate_kind=m.gate_kind.value,
                     recover=(
                         _RecoverModel(
                             node_id=m.recover.node_id,
@@ -135,6 +149,7 @@ class ConversationStore(BaseModel):
                 role=cast(MessageRole, m.role),
                 text=m.text,
                 resolved=m.resolved,
+                gate_kind=_gate_kind_or_confirm(m.gate_kind),
                 recover=(
                     RecoverInfo(
                         node_id=m.recover.node_id,

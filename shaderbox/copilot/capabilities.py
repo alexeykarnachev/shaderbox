@@ -152,6 +152,33 @@ class PublishResult:
 
 
 @dataclass(frozen=True)
+class TelegramConnectResult:
+    # The outcome of set_telegram_token / telegram_connect (feature 020·19). ok=True => linked;
+    # bot_username for the reply. ok=False carries `error` (link failed / timed out / no message).
+    # needs_start=True is the special "token set, now open the bot + press Start" guidance state.
+    ok: bool
+    error: str = ""
+    bot_username: str = ""
+    needs_start: bool = False
+
+
+@dataclass(frozen=True)
+class TelegramOpResult:
+    # The outcome of a pack-CRUD op (feature 020·19). ok=False carries `error`.
+    ok: bool
+    error: str = ""
+    set_name: str = ""
+
+
+@dataclass(frozen=True)
+class TelegramPackInfo:
+    # One saved pack for list_telegram_packs (feature 020·19).
+    title: str
+    set_name: str
+    is_default: bool
+
+
+@dataclass(frozen=True)
 class CopilotCapabilities:
     # ---- GL-FREE context reads (feature 020·16) — safe to call on the worker thread when
     # building the per-turn prompt context (no bridge). node_tree excludes uniforms ON PURPOSE
@@ -214,3 +241,15 @@ class CopilotCapabilities:
     telegram_connected: Callable[[], bool]
     youtube_connected: Callable[[], bool]
     telegram_has_default_pack: Callable[[], bool]
+
+    # ---- Telegram connect + pack CRUD (feature 020·19) ----
+    # set_telegram_token sets the token (the gate's secret, out-of-band) then auto-kicks the link
+    # + awaits AUTHED. telegram_connect re-runs the link (after the user starts the bot). The pack
+    # ops are render-side state writes (gated CONFIRM); delete awaits its terminal progress.
+    set_telegram_token: Callable[[str], "TelegramConnectResult"]
+    telegram_connect: Callable[[], "TelegramConnectResult"]
+    telegram_token_set: Callable[[], bool]
+    list_telegram_packs: Callable[[], list["TelegramPackInfo"]]
+    select_telegram_pack: Callable[[str], "TelegramOpResult"]
+    create_telegram_pack: Callable[[str], "TelegramOpResult"]
+    delete_telegram_pack: Callable[[str], "TelegramOpResult"]

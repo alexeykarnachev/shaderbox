@@ -1,12 +1,14 @@
 from imgui_bundle import imgui, imgui_ctx
 
 from shaderbox.app import App
+from shaderbox.copilot.gate import GateKind
 from shaderbox.copilot.state import CopilotLayout, Message
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_primitives import (
     active_region_outline,
     caption_text,
     ghost_button,
+    labeled_text_input,
     primary_button,
     unconnected_gate,
 )
@@ -160,11 +162,14 @@ def _draw_message(app: App, msg: Message, idx: int) -> None:
 def _draw_pending_action(app: App, msg: Message, idx: int) -> None:
     imgui.text_wrapped(msg.text)
     if not msg.resolved:
-        if primary_button(f"Yes##gate_yes_{idx}"):
-            app.copilot.answer_gate(approved=True)
-        imgui.same_line()
-        if ghost_button(f"No##gate_no_{idx}"):
-            app.copilot.answer_gate(approved=False)
+        if msg.gate_kind is GateKind.CREDENTIAL:
+            _draw_credential_input(app, msg, idx)
+        else:
+            if primary_button(f"Yes##gate_yes_{idx}"):
+                app.copilot.answer_gate(approved=True)
+            imgui.same_line()
+            if ghost_button(f"No##gate_no_{idx}"):
+                app.copilot.answer_gate(approved=False)
         return
     recover = msg.recover
     if recover is None:
@@ -181,6 +186,23 @@ def _draw_pending_action(app: App, msg: Message, idx: int) -> None:
     if ghost_button(f"Recover##gate_recover_{idx}"):
         app.recover_deleted_node(msg)
     imgui.end_disabled()
+
+
+def _draw_credential_input(app: App, msg: Message, idx: int) -> None:
+    # A masked secret input for a CREDENTIAL gate (feature 020·19). The typed value lives only
+    # in msg.gate_input (UI-only, never persisted); Save hands it to answer_gate_credential,
+    # which redacts the card echo. Cancel = a plain decline.
+    msg.gate_input = labeled_text_input(
+        f"##gate_secret_{idx}",
+        msg.gate_input,
+        float(SIZE.SHARE_PREVIEW_W),
+        password=True,
+    )
+    if primary_button(f"Save##gate_save_{idx}"):
+        app.copilot.answer_gate_credential(msg.gate_input)
+    imgui.same_line()
+    if ghost_button(f"Cancel##gate_cancel_{idx}"):
+        app.copilot.answer_gate(approved=False)
 
 
 def _send_button_offset() -> float:

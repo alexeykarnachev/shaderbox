@@ -9,10 +9,11 @@ from enum import StrEnum, auto
 # and sets the event, the worker unblocks. Same proven primitive as bridge.py, opposite
 # direction. See ai_docs/features/020_copilot_agent/11_capability_wave_spec.md §7.
 #
-# The CONFIRM body is wired (feature 020·17): the agent loop calls ask() before a gated
-# tool (delete_node), pump_events materializes a pending_action Message + dequeues via
-# take_pending, the chat draws Yes/No, answer() unblocks the worker. CREDENTIAL stays a
-# type-only stub (no publish tool needs it yet).
+# Both gate kinds are wired: CONFIRM (feature 020·17, Yes/No — delete_node + publish) and
+# CREDENTIAL (feature 020·19, a masked secret input — set_telegram_token). The agent loop calls
+# ask() before a gated tool; pump_events materializes a pending_action Message (stamped with the
+# gate_kind) + dequeues via take_pending; the chat draws the matching widget; answer() (CONFIRM)
+# or answer_gate_credential() (CREDENTIAL, carries the typed secret) unblocks the worker.
 
 
 class GateKind(StrEnum):
@@ -32,6 +33,9 @@ class GateRequest:
 class GateResponse:
     approved: bool = False
     option: str = ""
+    secret: str = (
+        ""  # CREDENTIAL: the typed key — out-of-band, never logged/traced/persisted
+    )
     cancelled: bool = False  # Stop / window-close / quit released the wait
 
 

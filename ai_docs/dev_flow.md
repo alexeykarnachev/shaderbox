@@ -232,20 +232,21 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   tiers + shared draw primitives — `context_menu_style()`, `pill_button`, `preview_cell`, …) /
   **`util.py`** (non-UI helpers: `adjust_size`, `select_next_value`, `get_uniform_hash`, `pfd_block`,
   `open_in_file_manager`, `format_auto_value`, …) / **`constants.py`** / **`notifications.py`**.
-- **`copilot/`** — the in-app coding-copilot agent (feature 020, cross-project tools + gate-UI +
-  render/publish waves DONE; UI/UX polish is the remaining wave). Mirrors `exporters/`: its own package +
-  worker thread + queues + a worker→main GL `bridge`. `App` owns a `CopilotSession` handle + drains it per
-  frame; the chat is a floating window (`widgets/copilot_chat.py`) launched from the editor bottom bar. The
-  seams (`capabilities` Protocol / `llm.api` / `bridge` / queues / `state`), the `agent` loop, the `prompt`,
-  the `trace`, and the eager tools (`tools/shader.py` — read_shader / the 3 edit tools / set_uniform /
-  create_node / grep / read_lib / delete_node; `tools/publish.py` — render_image / render_video /
-  publish_telegram / publish_youtube, all `GatePolicy.ALWAYS`) are built. The node-id/edit/uniform/delete +
-  render/publish machinery lives on `App` as `_copilot_*` closures bound into `CopilotCapabilities`.
-  `gate.py` (`GateChannel`) is the worker→UI blocking confirm round-trip (the bridge's mirror) — its CONFIRM
-  body is wired (used by `delete_node` + all publish tools); the CREDENTIAL kind stays a type-only stub
-  (publish uses a pre-gate guided handoff instead — `18_render_publish_tools.md`). Full design:
-  `ai_docs/features/020_copilot_agent/` (`18_render_publish_tools.md` is the current spec; `10_skeleton_plan.md`
-  for the original structure).
+- **`copilot/`** — the in-app coding-copilot agent (feature 020, cross-project + gate-UI + render/publish +
+  Telegram-connect/pack waves DONE; UI/UX polish is the remaining wave). Mirrors `exporters/`: its own
+  package + worker thread + queues + a worker→main GL `bridge`. `App` owns a `CopilotSession` handle + drains
+  it per frame; the chat is a floating window (`widgets/copilot_chat.py`) launched from the editor bottom bar.
+  The seams (`capabilities` Protocol / `llm.api` / `bridge` / queues / `state`), the `agent` loop, the
+  `prompt`, the `trace`, and the eager tools (`tools/shader.py` — read_shader / the 3 edit tools /
+  set_uniform / create_node / grep / read_lib / delete_node; `tools/publish.py` — render_image / render_video
+  / publish_telegram / publish_youtube; `tools/telegram.py` — set_telegram_token / telegram_connect + pack
+  CRUD list/select/create/delete) are built. The node-id/edit/uniform/delete + render/publish + telegram
+  machinery lives on `App` as `_copilot_*` closures bound into `CopilotCapabilities`. `gate.py`
+  (`GateChannel`) is the worker→UI blocking round-trip (the bridge's mirror) — BOTH gate kinds wired: CONFIRM
+  Yes/No (`delete_node` + publish + pack mutations) and CREDENTIAL, a masked secret input
+  (`set_telegram_token`, the token redacted to a prefix everywhere but the live store —
+  `19_credential_pack_tools.md`). Full design: `ai_docs/features/020_copilot_agent/`
+  (`19_credential_pack_tools.md` is the current spec; `10_skeleton_plan.md` for the original structure).
 - **`scripts/smoke.py`** — headless smoke test (see `## Recipes > make smoke`). Not part of
   `shaderbox/` proper; one-off script that imports `App` + `update_and_draw` and runs frames in
   an invisible glfw window.

@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum, auto
 from typing import Literal
 
+from shaderbox.copilot.gate import GateKind
 from shaderbox.copilot.llm.api import LLMUsage
 
 # Seam E: the chat render-state. THREAD-SAFETY: written ONLY by session.pump_events on
@@ -39,6 +40,11 @@ class Message:
     resolved: bool = False
     # Set on a resolved-Yes delete card: the undo affordance (feature 020·17).
     recover: RecoverInfo | None = None
+    # The gate widget to draw on a pending_action card (feature 020·19): CONFIRM = Yes/No,
+    # CREDENTIAL = a masked secret input. gate_input is the UI-only typed-secret buffer — NEVER
+    # persisted, NEVER read by session/trace (the secret leaves only via GateResponse.secret).
+    gate_kind: GateKind = GateKind.CONFIRM
+    gate_input: str = ""
 
 
 @dataclass

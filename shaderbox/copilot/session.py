@@ -27,6 +27,7 @@ from shaderbox.copilot.llm.api import LLMMessage
 from shaderbox.copilot.llm.openrouter import OpenRouterLLMClient
 from shaderbox.copilot.persistence import ConversationStore
 from shaderbox.copilot.state import ChatState, Message, RecoverInfo
+from shaderbox.copilot.tools.base import mask_secret
 from shaderbox.copilot.tools.registry import build_registry
 from shaderbox.copilot.trace import TraceLog, new_trace_log
 
@@ -136,11 +137,16 @@ class CopilotSession:
                 pass  # per-tool cards (below) carry the durable line; status is transient
             case AgentGateOpened():
                 # Dequeue the GatePending (keeps _pending in lockstep with _current) and
-                # materialize the confirm card. The UI draws Yes/No from this Message; the
-                # answer flows back via answer_gate -> gate.answer (feature 020·17 §7.1).
+                # materialize the gate card. gate_kind picks the widget (CONFIRM Yes/No vs
+                # CREDENTIAL masked input); the answer flows back via answer_gate /
+                # answer_gate_credential -> gate.answer (feature 020·17 §7.1, 020·19).
                 self.gate.take_pending()
                 self.state.messages.append(
-                    Message(role="pending_action", text=ev.request.prompt)
+                    Message(
+                        role="pending_action",
+                        text=ev.request.prompt,
+                        gate_kind=ev.request.kind,
+                    )
                 )
             case AgentToolCard():
                 verb = "ok" if ev.ok else "failed"
@@ -209,6 +215,17 @@ class CopilotSession:
         self.gate.answer(
             GateResponse(approved=approved, option="Yes" if approved else "No")
         )
+
+    def answer_gate_credential(self, secret: str) -> None:
+        # MAIN THREAD (Save on a CREDENTIAL gate, feature 020·19). The secret rides GateResponse
+        # back to the worker; the card text gets only a REDACTED echo, so the persisted card +
+        # the trace never hold the full secret.
+        card = self._open_gate_card()
+        if card is not None:
+            card.resolved = True
+            card.gate_input = ""  # drop the typed buffer immediately
+            card.text = f"{card.text}\nYou provided: {mask_secret(secret)}"
+        self.gate.answer(GateResponse(approved=True, secret=secret))
 
     def _finish_turn(self) -> None:
         self.state.in_flight = False

@@ -38,6 +38,9 @@ from shaderbox.copilot.capabilities import (
     RenderResult,
     SetUniformResult,
     ShaderView,
+    TelegramConnectResult,
+    TelegramOpResult,
+    TelegramPackInfo,
 )
 from shaderbox.copilot.config import COPILOT_CONFIG
 from shaderbox.copilot.errors import CopilotToolError
@@ -48,10 +51,15 @@ from shaderbox.copilot.session import CopilotSession
 from shaderbox.copilot.state import CopilotLayout, Message
 from shaderbox.core import Canvas, Node
 from shaderbox.editor_types import EditorSession, HoverMark, InlineInput, JumpRequest
-from shaderbox.exporters.base import Exporter, ExporterStatus, ExportProgress
+from shaderbox.exporters.base import (
+    AuthState,
+    Exporter,
+    ExporterStatus,
+    ExportProgress,
+)
 from shaderbox.exporters.integrations import IntegrationsStore
 from shaderbox.exporters.registry import ExporterRegistry
-from shaderbox.exporters.telegram import TelegramExporter
+from shaderbox.exporters.telegram import NEEDS_START_ERROR, TelegramExporter
 from shaderbox.exporters.youtube import YouTubeExporter
 from shaderbox.notifications import Notifications
 from shaderbox.paths import app_data_dir, shader_lib_root
@@ -616,6 +624,13 @@ class App:
             telegram_connected=self._copilot_telegram_connected,
             youtube_connected=self._copilot_youtube_connected,
             telegram_has_default_pack=self._copilot_telegram_has_default_pack,
+            set_telegram_token=self._copilot_set_telegram_token,
+            telegram_connect=self._copilot_telegram_connect,
+            telegram_token_set=self._copilot_telegram_token_set,
+            list_telegram_packs=self._copilot_list_telegram_packs,
+            select_telegram_pack=self._copilot_select_telegram_pack,
+            create_telegram_pack=self._copilot_create_telegram_pack,
+            delete_telegram_pack=self._copilot_delete_telegram_pack,
         )
 
     def _copilot_short_ids(self) -> dict[str, str]:
@@ -1128,6 +1143,163 @@ class App:
         exporter = self.exporter_registry.get("telegram")
         return isinstance(exporter, TelegramExporter) and bool(
             exporter.current_default_pack()
+        )
+
+    # ---- Telegram connect + pack CRUD (feature 020·19) ----
+
+    def _copilot_telegram(self) -> "TelegramExporter | None":
+        exporter = self.exporter_registry.get("telegram")
+        return exporter if isinstance(exporter, TelegramExporter) else None
+
+    def _copilot_telegram_token_set(self) -> bool:
+        tg = self._copilot_telegram()
+        return tg is not None and tg.bot_token_present()
+
+    def _copilot_set_telegram_token(self, secret: str) -> TelegramConnectResult:
+        # MARSHAL the token-set + auto-link kickoff to the main thread (the exporter is render-
+        # thread); then AWAIT auth_state leaving LINKING. The secret is set into the live store
+        # here and nowhere else.
+        def _on_main() -> None:
+            tg = self._copilot_telegram()
+            if tg is not None:
+                tg.set_token(secret)
+                tg.begin_auth()  # sets auth_state=LINKING, enqueues the link job
+
+        tg = self._copilot_telegram()
+        if tg is None:
+            return TelegramConnectResult(
+                ok=False, error="Telegram exporter unavailable"
+            )
+        self.copilot.bridge.run_on_main(_on_main)
+        return self._copilot_await_telegram_connect()
+
+    def _copilot_telegram_connect(self) -> TelegramConnectResult:
+        def _on_main() -> None:
+            tg = self._copilot_telegram()
+            if tg is not None:
+                tg.begin_auth()
+
+        tg = self._copilot_telegram()
+        if tg is None:
+            return TelegramConnectResult(
+                ok=False, error="Telegram exporter unavailable"
+            )
+        self.copilot.bridge.run_on_main(_on_main)
+        return self._copilot_await_telegram_connect()
+
+    def _copilot_await_telegram_connect(self) -> TelegramConnectResult:
+        # Poll auth_state to LEAVE the LINKING floor (begin_auth set it). Each poll pumps the
+        # exporter's typed-event queue via the bridge (update() is what transitions auth_state)
+        # — a status-only read would never see the change. cancel/teardown aware like the
+        # publish-await. A "no message received" ERROR is surfaced as needs_start (guidance).
+        tg = self._copilot_telegram()
+        if tg is None:
+            return TelegramConnectResult(
+                ok=False, error="Telegram exporter unavailable"
+            )
+        deadline = time.monotonic() + COPILOT_CONFIG.telegram_connect_timeout_s
+        while time.monotonic() < deadline:
+            if self.copilot.is_cancelled():
+                return TelegramConnectResult(ok=False, error="cancelled")
+            time.sleep(COPILOT_CONFIG.publish_poll_interval_s)
+            try:
+                status: ExporterStatus = self.copilot.bridge.run_on_main(
+                    lambda t=tg: (t.update(None), t.status())[1]
+                )
+            except CopilotToolError:
+                continue
+            if status.auth_state is AuthState.AUTHED:
+                return TelegramConnectResult(
+                    ok=True, bot_username=tg.bot_username_value()
+                )
+            if status.auth_state is AuthState.ERROR:
+                return TelegramConnectResult(
+                    ok=False,
+                    error=status.auth_message,
+                    needs_start=status.auth_message == NEEDS_START_ERROR,
+                )
+        return TelegramConnectResult(ok=False, error="link timed out — try again")
+
+    def _copilot_list_telegram_packs(self) -> list[TelegramPackInfo]:
+        tg = self._copilot_telegram()
+        if tg is None:
+            return []
+        active = tg.current_default_pack()
+        return [
+            TelegramPackInfo(
+                title=p.title, set_name=p.set_name, is_default=p.set_name == active
+            )
+            for p in tg.list_packs()
+        ]
+
+    def _copilot_select_telegram_pack(self, set_name: str) -> TelegramOpResult:
+        def _on_main() -> str | None:
+            tg = self._copilot_telegram()
+            if tg is None:
+                return None
+            if all(p.set_name != set_name for p in tg.list_packs()):
+                return ""
+            tg.select_pack(set_name)
+            return set_name
+
+        result = self.copilot.bridge.run_on_main(_on_main)
+        if result is None:
+            return TelegramOpResult(ok=False, error="Telegram exporter unavailable")
+        if result == "":
+            return TelegramOpResult(ok=False, error=f"no pack named '{set_name}'")
+        return TelegramOpResult(ok=True, set_name=result)
+
+    def _copilot_create_telegram_pack(self, title: str) -> TelegramOpResult:
+        def _on_main() -> str | None:
+            tg = self._copilot_telegram()
+            if tg is None:
+                return None
+            tg.create_pack(title)
+            return tg.current_default_pack()
+
+        result = self.copilot.bridge.run_on_main(_on_main)
+        if result is None:
+            return TelegramOpResult(ok=False, error="Telegram exporter unavailable")
+        return TelegramOpResult(ok=True, set_name=result)
+
+    def _copilot_delete_telegram_pack(self, set_name: str) -> TelegramOpResult:
+        # delete_pack drops the pack locally + enqueues the Telegram delete (which pushes a
+        # terminal ExportProgress) — await it like a publish so the agent can report the outcome.
+        def _enqueue() -> ExportProgress | None:
+            tg = self._copilot_telegram()
+            if tg is None:
+                raise CopilotToolError("Telegram exporter unavailable")
+            if all(p.set_name != set_name for p in tg.list_packs()):
+                raise CopilotToolError(f"no pack named '{set_name}'")
+            baseline = tg.status().last_progress
+            tg.delete_pack(set_name)
+            return baseline
+
+        try:
+            baseline = self.copilot.bridge.run_on_main(_enqueue)
+        except CopilotToolError as e:
+            return TelegramOpResult(ok=False, error=str(e))
+        deadline = time.monotonic() + COPILOT_CONFIG.publish_await_timeout_s
+        while time.monotonic() < deadline:
+            if self.copilot.is_cancelled():
+                return TelegramOpResult(ok=False, error="cancelled")
+            time.sleep(COPILOT_CONFIG.publish_poll_interval_s)
+            tg = self._copilot_telegram()
+            if tg is None:
+                return TelegramOpResult(ok=False, error="Telegram exporter unavailable")
+            try:
+                status = self.copilot.bridge.run_on_main(
+                    lambda t=tg: (t.update(None), t.status())[1]
+                )
+            except CopilotToolError:
+                continue
+            prog = status.last_progress
+            if prog is not None and prog.is_terminal and prog is not baseline:
+                if prog.is_error:
+                    return TelegramOpResult(ok=False, error=prog.message)
+                return TelegramOpResult(ok=True, set_name=set_name)
+        return TelegramOpResult(
+            ok=False, error="delete is taking too long — check the Share tab"
         )
 
     # ---- edit / compile-feedback (target-addressable: node or lib: file, 020·16) ----

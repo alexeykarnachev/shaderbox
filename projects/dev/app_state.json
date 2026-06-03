@@ -1,5 +1,5 @@
 {
-    "current_node_id": "c184b3a7-4e0a-464a-b7af-ff333f8085f3",
+    "current_node_id": "5edc2e8e-2883-4c9d-bc4c-79fedd524544",
     "selected_node_template_id": "73ea2431-13f6-41e4-b923-04d846b678b0",
     "new_node_name": "Media Input",
     "is_render_all_nodes": true,
@@ -20,7 +20,7 @@
         "tab_size": 4,
         "line_spacing": 1.0
     },
-    "active_node_tab": "node",
+    "active_node_tab": "share",
     "is_copilot_open": true,
     "copilot_layout": "free",
     "key_bindings": {},

@@ -27,6 +27,8 @@ class CopilotConfig:
     # stuck upload) and the per-poll sleep between them.
     publish_await_timeout_s: float = 300.0
     publish_poll_interval_s: float = 0.2
+    # Telegram connect-await (feature 020·19): bounds the poll for auth_state to leave LINKING.
+    telegram_connect_timeout_s: float = 30.0
 
 
 COPILOT_CONFIG = CopilotConfig()

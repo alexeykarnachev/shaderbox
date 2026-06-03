@@ -54,6 +54,9 @@ class OutletUiDeps:
 
 class AuthState(Enum):
     UNCONFIGURED = "unconfigured"
+    LINKING = (
+        "linking"  # a connect/link job is in flight (the copilot connect-await floor)
+    )
     AUTHED = "authed"
     ERROR = "error"
 

@@ -65,6 +65,9 @@ _TG_VIDEO_MAX_DURATION_SEC = 3.0
 _TG_VIDEO_MAX_FPS = 30
 _DEFAULT_PACK_TITLE = "ShaderBox"
 _DEFAULT_NEW_STICKER_EMOJI = "🎨"
+# The link error that means "the user hasn't messaged the bot yet" — a public constant so the
+# copilot connect-await can detect it by identity (feature 020·19), not a fragile substring match.
+NEEDS_START_ERROR = "No message received — open the bot, press Start, then Connect."
 # Telegram errors that mean "the linked user can't be acted on" — re-link guidance.
 _USER_PROBLEM_MARKERS = (
     "USER_IS_BOT",
@@ -262,8 +265,36 @@ class TelegramExporter(Exporter):
             self._render_state.auth_state = AuthState.ERROR
             self._render_state.auth_message = "Enter a bot token first."
             return
+        # LINKING is the floor the copilot connect-await waits to LEAVE (feature 020·19) — set it
+        # BEFORE enqueueing so a stale AUTHED/ERROR can't make the await return instantly.
+        self._render_state.auth_state = AuthState.LINKING
+        self._render_state.auth_message = ""
         self._ensure_worker()
         self._enqueue(_Job(kind=_LINK_SENTINEL))
+
+    def set_token(self, token: str) -> None:
+        # Public token setter for the copilot (feature 020·19) — the UI writes _tg.bot_token
+        # inline; this mirrors it + persists, so begin_auth() then sees a token.
+        self._tg.bot_token = token
+        self._store.save()
+
+    def bot_token_present(self) -> bool:
+        return bool(self._tg.bot_token)
+
+    def bot_username_value(self) -> str:
+        return self._tg.bot_username
+
+    def list_packs(self) -> list[PackEntry]:
+        return list(self._tg.packs)
+
+    def create_pack(self, title: str) -> None:
+        self._create_pack(title)
+
+    def select_pack(self, set_name: str) -> None:
+        self._select_pack(set_name)
+
+    def delete_pack(self, set_name: str) -> None:
+        self._delete_pack(set_name)
 
     def disconnect(self) -> None:
         self._tg.bot_token = ""
@@ -1016,10 +1047,7 @@ class TelegramExporter(Exporter):
             return
         if not user_id:
             self._push_event(
-                _AuthEvent(
-                    state=AuthState.ERROR,
-                    message="No message received — open the bot, press Start, then Connect.",
-                )
+                _AuthEvent(state=AuthState.ERROR, message=NEEDS_START_ERROR)
             )
             return
         self._push_event(

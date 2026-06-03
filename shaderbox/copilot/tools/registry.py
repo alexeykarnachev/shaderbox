@@ -1,14 +1,21 @@
-from typing import Any
+from typing import Any, cast
 
 from loguru import logger
 from pydantic import ValidationError
 
 from shaderbox.copilot.capabilities import CopilotCapabilities
 from shaderbox.copilot.config import CopilotConfig
+from shaderbox.copilot.gate import GateKind
 from shaderbox.copilot.llm.api import LLMToolSpec
-from shaderbox.copilot.tools.base import GatePolicy, ToolDefinition
+from shaderbox.copilot.tools.base import (
+    CredentialToolHandler,
+    GatePolicy,
+    ToolDefinition,
+    ToolHandler,
+)
 from shaderbox.copilot.tools.publish import publish_tools
 from shaderbox.copilot.tools.shader import shader_tools
+from shaderbox.copilot.tools.telegram import telegram_tools
 
 
 def _validation_message(exc: ValidationError) -> str:
@@ -41,6 +48,10 @@ class ToolRegistry:
         tool = self._by_name.get(name)
         return tool is not None and tool.gate_policy is GatePolicy.ALWAYS
 
+    def definition_for(self, name: str) -> ToolDefinition | None:
+        # The full tool definition (feature 020·19): build_gate reads gate_kind/secret_field.
+        return self._by_name.get(name)
+
     def precheck(self, name: str, args: dict[str, Any]) -> str | None:
         # Pre-gate guard (feature 020·18): a guided-handoff message when the call can't run
         # (a publish with no creds/pack), else None. None for any tool without a precheck.
@@ -71,8 +82,10 @@ class ToolRegistry:
         return tool.name if tool is not None else name
 
     def execute(
-        self, name: str, raw_args: dict[str, Any]
+        self, name: str, raw_args: dict[str, Any], secret: str = ""
     ) -> tuple[bool, str, dict[str, Any] | None]:
+        # `secret` (feature 020·19): the gate's typed key for a CREDENTIAL tool, passed to the
+        # handler as a 2nd arg — kept OUT of args (which the trace + debug log print).
         tool = self._by_name.get(name)
         if tool is None:
             return False, f"error: unknown tool '{name}'", None
@@ -81,7 +94,11 @@ class ToolRegistry:
         except ValidationError as exc:
             return False, _validation_message(exc), None
         try:
-            return tool.handler(args.model_dump())
+            if tool.gate_kind is GateKind.CREDENTIAL:
+                return cast(CredentialToolHandler, tool.handler)(
+                    args.model_dump(), secret
+                )
+            return cast(ToolHandler, tool.handler)(args.model_dump())
         except Exception:
             # Generic message only — never leak exception internals into LLM context.
             logger.exception(f"copilot tool failed: {name}")
@@ -90,6 +107,11 @@ class ToolRegistry:
 
 def build_registry(caps: CopilotCapabilities) -> ToolRegistry:
     # Each tool group is a local addition here: the cross-project edit/read set (shader_tools,
-    # §16) + the render/publish set (publish_tools, §18, all GatePolicy.ALWAYS).
-    definitions: list[ToolDefinition] = [*shader_tools(caps), *publish_tools(caps)]
+    # §16), the render/publish set (publish_tools, §18), and the Telegram connect/pack set
+    # (telegram_tools, §19, incl. the CREDENTIAL-gated set_telegram_token).
+    definitions: list[ToolDefinition] = [
+        *shader_tools(caps),
+        *publish_tools(caps),
+        *telegram_tools(caps),
+    ]
     return ToolRegistry(definitions)

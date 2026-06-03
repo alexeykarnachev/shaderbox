@@ -41,6 +41,8 @@ from shaderbox.copilot.capabilities import (
     RenderResult,
     SetUniformResult,
     ShaderView,
+    TelegramConnectResult,
+    TelegramOpResult,
 )
 from shaderbox.copilot.config import COPILOT_CONFIG
 from shaderbox.copilot.context import build_context
@@ -237,6 +239,13 @@ def _stub_caps() -> CopilotCapabilities:
         has_current_node=lambda: True,
         telegram_connected=lambda: False,
         youtube_connected=lambda: False,
+        set_telegram_token=lambda _s: TelegramConnectResult(ok=False),
+        telegram_connect=lambda: TelegramConnectResult(ok=False),
+        telegram_token_set=lambda: False,
+        list_telegram_packs=lambda: [],
+        select_telegram_pack=lambda _n: TelegramOpResult(ok=False),
+        create_telegram_pack=lambda _t: TelegramOpResult(ok=False),
+        delete_telegram_pack=lambda _n: TelegramOpResult(ok=False),
         telegram_has_default_pack=lambda: False,
     )
 

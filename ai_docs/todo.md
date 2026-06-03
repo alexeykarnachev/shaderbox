@@ -154,21 +154,13 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   the UI/UX polish wave (it needs a two-phase commit). `render_op_timeout_s=60` bounds the worst case.
 
 ## [DEFERRAL] copilot tool catalogue is all-eager (no lazy search_tools/list_tools)
-- **Trigger:** `registry.eager_specs()` exceeds ~16 tools (the turn-start `tools=` block becomes a
-  non-trivial slice of the prompt-cache prefix), OR the first maintainer/log observation of the model
-  picking a wrong tool attributable to catalogue size.
-- All 13 copilot tools are eager (`11 §4` wanted publish tools lazy via `search_tools`/`list_tools` +
-  `grow_specs_from_payload`, but that mechanism is itself deferred — `16 ## Out of scope`). Building
-  the lazy path is the fix when triggered: the tools already carry `eager`/`category` for it.
-
-## [DEFERRAL] no inline CREDENTIAL gate widget — missing-cred is a guided handoff
-- **Trigger:** first maintainer/user report that leaving the chat to open Settings → Integrations to
-  connect a publish target mid-conversation is friction worth removing, OR a publish target whose
-  credential has no Settings UI to point the handoff at.
-- A copilot publish with no credentials returns a guided-handoff tool result (connect in Settings)
-  via the pre-gate `precheck` (feature 020·18 Decision 7). `GateKind.CREDENTIAL` (an inline secret
-  field in the chat card, `11 §7.2`) stays a type-only stub — building it (the chat-card text input +
-  `IntegrationsStore` write from the gate + mid-turn key pickup) is the fix when triggered.
+- **Trigger:** the count crossed ~16 (now 19 eager tools after 020·18/19), so the soft threshold has
+  FIRED — build the lazy path when the next maintainer/log observation shows the model picking a wrong
+  tool attributable to catalogue size, OR the next tool wave would push the turn-start `tools=` block
+  large enough to measurably cost prompt-cache prefix.
+- All 19 copilot tools are eager (`11 §4` wanted publish/telegram tools lazy via `search_tools`/
+  `list_tools` + `grow_specs_from_payload`, but that mechanism is itself deferred — `16 ## Out of
+  scope`). Building the lazy path is the fix: the tools already carry `eager`/`category` for it.
 
 ## [DEFERRAL] imgui_color_text_edit render() FPE — editor hidden behind modals
 - **Trigger:** if imgui-bundle fixes the upstream glyph-metric div-by-zero (or you upgrade and
