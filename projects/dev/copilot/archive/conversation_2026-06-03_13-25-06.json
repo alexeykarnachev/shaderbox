@@ -1,0 +1,111 @@
+{
+  "version": 2,
+  "messages": [
+    {
+      "role": "user",
+      "text": "what shaders do i have at the moment?",
+      "resolved": false,
+      "recover": null
+    },
+    {
+      "role": "assistant",
+      "text": "You currently have these shader nodes:\n\n- **Media Input**\n- **Input Types Test**\n- **Raymarched Sphere** (this is the one you're currently viewing/editing)\n- **Raymarched Cube**\n- **Truchet Tiling**",
+      "resolved": false,
+      "recover": null
+    },
+    {
+      "role": "user",
+      "text": "can you remove the last 3",
+      "resolved": false,
+      "recover": null
+    },
+    {
+      "role": "pending_action",
+      "text": "Delete node 'c184'? It moves to the project trash (recoverable).\nYou chose: Yes",
+      "resolved": true,
+      "recover": {
+        "node_id": "c184b3a7-4e0a-464a-b7af-ff333f8085f3",
+        "node_name": "Raymarched Sphere",
+        "trash_name": "c184b3a7-4e0a-464a-b7af-ff333f8085f3",
+        "done": true
+      }
+    },
+    {
+      "role": "tool_status",
+      "text": "delete_node: ok",
+      "resolved": false,
+      "recover": null
+    },
+    {
+      "role": "pending_action",
+      "text": "Delete node '69c3'? It moves to the project trash (recoverable).\nYou chose: Yes",
+      "resolved": true,
+      "recover": {
+        "node_id": "69c393df-78d9-4099-8cb4-920e02e33186",
+        "node_name": "Raymarched Cube",
+        "trash_name": "69c393df-78d9-4099-8cb4-920e02e33186",
+        "done": true
+      }
+    },
+    {
+      "role": "tool_status",
+      "text": "delete_node: ok",
+      "resolved": false,
+      "recover": null
+    },
+    {
+      "role": "pending_action",
+      "text": "Delete node 'f795'? It moves to the project trash (recoverable).\nYou chose: Yes",
+      "resolved": true,
+      "recover": {
+        "node_id": "f795c44f-3c72-492e-965d-179655fde341",
+        "node_name": "Truchet Tiling",
+        "trash_name": "f795c44f-3c72-492e-965d-179655fde341",
+        "done": true
+      }
+    },
+    {
+      "role": "tool_status",
+      "text": "delete_node: ok",
+      "resolved": false,
+      "recover": null
+    },
+    {
+      "role": "error",
+      "text": "The selected model isn't compatible with tool calling \u2014 after using a tool it produced neither a native tool call nor a text reply. Pick a different model in Settings -> Integrations -> Copilot.",
+      "resolved": false,
+      "recover": null
+    }
+  ],
+  "history": [
+    {
+      "role": "user",
+      "content": "what shaders do i have at the moment?",
+      "tool_call_id": null,
+      "tool_calls": null
+    },
+    {
+      "role": "assistant",
+      "content": "You currently have these shader nodes:\n\n- **Media Input**\n- **Input Types Test**\n- **Raymarched Sphere** (this is the one you're currently viewing/editing)\n- **Raymarched Cube**\n- **Truchet Tiling**",
+      "tool_call_id": null,
+      "tool_calls": null
+    },
+    {
+      "role": "user",
+      "content": "can you remove the last 3",
+      "tool_call_id": null,
+      "tool_calls": null
+    },
+    {
+      "role": "assistant",
+      "content": "The selected model isn't compatible with tool calling \u2014 after using a tool it produced neither a native tool call nor a text reply. Pick a different model in Settings -> Integrations -> Copilot.",
+      "tool_call_id": null,
+      "tool_calls": null
+    }
+  ],
+  "usage": {
+    "input_tokens": 4865,
+    "output_tokens": 232,
+    "cost_usd": 0.00652685
+  }
+}
