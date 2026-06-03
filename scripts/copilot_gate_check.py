@@ -268,6 +268,72 @@ def _check_decline_path() -> None:
     )
 
 
+class _ApproveGate(GateChannel):
+    # ask() approves without blocking — the tool runs.
+    def ask(self, request: GateRequest) -> GateResponse:
+        _ = request
+        return GateResponse(approved=True, option="Yes")
+
+
+class _DeleteThenSilentStopClient:
+    # One delete, then a SILENT clean stop: finish_reason=="stop" with NO text and no tool
+    # calls (a reasoning model that ran the tool then had nothing to add). A compatible
+    # model legitimately does this — it must NOT be flagged tool-incompatible.
+    def __init__(self) -> None:
+        self._calls = 0
+
+    def stream(
+        self,
+        messages: list[LLMMessage],
+        *,
+        tools: list[LLMToolSpec] | None = None,
+        max_tokens: int,
+    ) -> Iterator[LLMStreamEvent]:
+        _ = (messages, tools, max_tokens)
+        self._calls += 1
+        if self._calls == 1:
+            yield LLMToolCallStarted(index=0, id="c1", name="delete_node")
+            yield LLMToolCallCompleted(
+                index=0,
+                id="c1",
+                name="delete_node",
+                arguments=json.dumps({"node": "n1"}),
+            )
+            yield LLMDone(finish_reason="tool_calls", usage=LLMUsage(output_tokens=1))
+        else:
+            # No text delta — only a clean stop (e.g. the model spent its output on reasoning).
+            yield LLMDone(finish_reason="stop", usage=LLMUsage(output_tokens=57))
+
+
+def _check_silent_completion() -> None:
+    caps = _stub_caps()
+    registry = build_registry(caps)
+    client = _DeleteThenSilentStopClient()
+    context = build_context(caps)
+    events: list[AgentEvent] = list(
+        run_turn(
+            client,
+            registry,
+            COPILOT_CONFIG,
+            context,
+            history=[],
+            user_text="delete n1",
+            gate=_ApproveGate(),
+            cancel=threading.Event(),
+        )
+    )
+    errors = [e for e in events if isinstance(e, AgentError)]
+    dones = [e for e in events if isinstance(e, AgentTurnDone)]
+    assert not errors, (
+        "a silent clean stop after a successful tool was wrongly flagged "
+        f"incompatible: {[e.message for e in errors]}"
+    )
+    assert dones, "a silent clean stop after a tool did not end in AgentTurnDone"
+    logger.info(
+        "D ok: a silent finish_reason=stop after a tool ends cleanly, not as an error"
+    )
+
+
 def _check_reopen_after_release() -> None:
     # App._init tears down the freshly constructed session via release(), which latches the
     # gate's _shutdown (non-reusable cancel_all). Without a reopen() on the next turn, every
@@ -318,6 +384,7 @@ def main() -> int:
     try:
         _check_persistence()
         _check_decline_path()
+        _check_silent_completion()
         _check_reopen_after_release()
     except AssertionError as e:
         logger.error(f"copilot_gate_check: FAIL — {e}")

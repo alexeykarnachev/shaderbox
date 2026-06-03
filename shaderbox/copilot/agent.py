@@ -288,11 +288,17 @@ def run_turn(
         if done is None or done.finish_reason != "tool_calls" or not builders:
             if done is None:
                 logger.warning("copilot stream ended with no LLMDone event")
-            # A turn that ends after a tool ran with NEITHER a native tool call NOR text
-            # is a model that can't continue a tool-call conversation. A compatible model
-            # always does one or the other; the absence of both is the proof — no need to
-            # sniff what garbage it emitted. Reject, don't work around (maintainer rule).
-            if not text_buf and total_tool_calls > 0:
+            # Tool-incompatible model: it produced neither a native tool call NOR text AND did
+            # not end cleanly. A clean finish_reason=="stop" is the model deliberately ending
+            # the turn — valid even with empty text (it had nothing to add after the tools).
+            # And if a tool call already executed natively this turn, the model is PROVEN
+            # tool-compatible, so this guard must never fire on it.
+            incompatible = (
+                not text_buf
+                and total_tool_calls > 0
+                and (done is None or done.finish_reason != "stop")
+            )
+            if incompatible:
                 logger.warning(
                     f"copilot: empty reply after {total_tool_calls} tool call(s) — "
                     "model is not tool-call compatible"
