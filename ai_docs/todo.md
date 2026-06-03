@@ -154,8 +154,8 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   the UI/UX polish wave (it needs a two-phase commit). `render_op_timeout_s=60` bounds the worst case.
 
 ## [DEFERRAL] copilot tool catalogue is all-eager (no lazy search_tools/list_tools)
-- **Trigger:** the count crossed ~16 (now 19 eager tools after 020·18/19), so the soft threshold has
-  FIRED — build the lazy path when the next maintainer/log observation shows the model picking a wrong
+- **Trigger:** the eager count has crossed the ~16 soft threshold (it kept growing through 020·18/19
+  + switch_node), so it has FIRED — build the lazy path when the next maintainer/log observation shows the model picking a wrong
   tool attributable to catalogue size, OR the next tool wave would push the turn-start `tools=` block
   large enough to measurably cost prompt-cache prefix.
 - All 19 copilot tools are eager (`11 §4` wanted publish/telegram tools lazy via `search_tools`/

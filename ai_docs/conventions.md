@@ -129,20 +129,21 @@ belong in the feature spec (`ai_docs/features/NNN_*.md`). This file is not a cha
   `cancel_turn`/`reset_conversation` use `reusable=True` (no latch), so only the release path needs the
   re-arm. A NEW such primitive must mirror this: `reopen()` + a call beside the existing two in
   `enqueue_turn`. Revisit if the latch model changes (e.g. a per-primitive ready flag replaces `_shutdown`).
-- **The "current node" is the single implicit subject; copilot action-tools operate on it, never on a
-  node argument.** The app has exactly one selected node (`App.current_node_id`); the UI shows it, the
-  editor binds to it, and the copilot's side-effecting action-tools — render, publish, and edits with no
-  explicit `target` — act on it. So a NEW copilot action-tool defaults to the current node, NOT a
-  node-id parameter: the copilot changes WHICH node is current via `switch_node` (the one tool whose job
-  is selection), then acts. The exceptions are deliberate and narrow: the multi-node *read/edit* tools
-  (`read_shader`, the edit tools, `delete_node`) take an explicit node id BECAUSE they routinely operate
-  across the project without disturbing the user's view — but anything that produces an external artifact
-  or a visible result the user should SEE (render/publish) stays current-node-only, so the user always
-  knows what it acted on. Spraying a node-id arg onto every tool is the anti-pattern: it forces symmetry
-  nobody asked for and lets a tool silently act on a node the user isn't looking at. The prompt enforces
-  the verify-current-before-publish rule (a publish of the wrong shader is irreversible). Revisit if a
-  real workflow needs background render/publish of a non-current node often enough that switching first
-  is friction — then add the node arg to those specific tools, consciously, not by default.
+- **The "current node" is a first-class subject; how a copilot tool addresses a node scales with the
+  side effect's reversibility.** The app has exactly one selected node (`App.current_node_id`); the UI
+  shows it, the editor binds to it; `switch_node` is the one tool whose job is to change it. A NEW
+  copilot tool picks its addressing by RISK, not by reflex symmetry:
+  - **Reversible / project-internal (read, edit, delete-to-trash, render-to-file)** → take an explicit
+    node id, act WITHOUT switching. `read_shader` / the edit tools / `delete_node` / `render_image` /
+    `render_video` all do this: they work across the project (or produce a local file) without
+    disturbing the user's view, and the worst case is undoable.
+  - **External + irreversible (publish_telegram / publish_youtube)** → operate on the CURRENT node
+    ONLY, no node arg. A live post of the wrong shader can't be undone, so it must be the node the user
+    is looking at: the copilot `switch_node`s first (the prompt enforces verify-current-before-publish).
+  Spraying a node-id arg onto the *publish* tools is the anti-pattern — it lets the agent silently post
+  a node the user isn't watching. Revisit the split if a real workflow needs background publish of a
+  non-current node often enough that switching first is friction — then add the arg consciously, with a
+  matching "you're publishing X, not the current Y" confirmation, not by default.
 - **Exporters: own thread, own panel, GL-free artifacts.** The `Exporter` ABC enforces thread
   affinity — render-thread methods may touch moderngl; worker-thread methods (`prepare`, `export`,
   the `_do_*`/`_handle_*` job handlers) MUST NOT, they see only `RenderedArtifact` (a pure value

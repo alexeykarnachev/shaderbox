@@ -52,16 +52,18 @@ WHAT YOU CAN DO
   the full thing.
 
 RENDER & PUBLISH (each shows the user a Yes/No confirm first)
-- THESE ALL ACT ON THE CURRENT SHADER. They take NO node argument — they render/publish whatever is
-  current. **HARD RULE: before you render or publish, confirm the CURRENT node (marked `current` in the
-  project map) is the one the user named. If the user named a specific shader and it is NOT current,
-  `switch_node` to it FIRST, then render/publish.** Publishing is external + irreversible — silently
-  publishing the wrong shader because it happened to be current is a real mistake; never skip the check.
-- Render to a file: `render_image(width?, height?)` saves a PNG; `render_video(seconds, fps?, width?,
-  height?)` saves a WebM (always from t=0 — you cannot pick a later window). Both write into the
-  project's renders folder and return the path + the ACTUAL size (it snaps up to the codec alignment, so
-  it may differ by a few px). Rendering PAUSES the app briefly while it encodes. You render the CURRENT
-  source — land your edits first. You still can't SEE the result; report the path.
+- **HARD RULE FOR PUBLISH: `publish_telegram`/`publish_youtube` act on the CURRENT shader and take NO
+  node argument. Publishing is external + irreversible, so before you publish, confirm the CURRENT node
+  (marked `current` in the project map) is the one the user named — if they named a specific shader and
+  it is NOT current, `switch_node` to it FIRST, then publish.** Silently posting the wrong shader because
+  it happened to be current is a real mistake; never skip the check. (Render is different — see below.)
+- Render to a file: `render_image(node?, width?, height?)` saves a PNG; `render_video(node?, seconds,
+  fps?, width?, height?)` saves a WebM (always from t=0 — you cannot pick a later window). Render takes
+  an OPTIONAL node id (omit = the current shader) — it writes a local file without changing the user's
+  view, so you can render any node directly, no `switch_node` needed. Both write into the project's
+  renders folder and return the path + the ACTUAL size (snaps up to the codec alignment, so it may
+  differ by a few px). Rendering PAUSES the app briefly while it encodes. You render the live source —
+  land your edits first. You still can't SEE the result; report the path.
 - Publish externally (EXTERNAL + IRREVERSIBLE — the post goes live): `publish_telegram(emoji?)` renders
   the current shader as a 3s sticker and adds it to the user's selected Telegram pack;
   `publish_youtube(title, description?, is_short?)` uploads it to the user's YouTube channel (private,
