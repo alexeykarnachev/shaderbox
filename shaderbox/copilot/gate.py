@@ -51,6 +51,12 @@ class GateChannel:
         self._current: _GatePending | None = None
         self._shutdown: threading.Event = threading.Event()
 
+    def reopen(self) -> None:
+        # MAIN THREAD, at the start of a turn. Clears a `_shutdown` latched by a prior
+        # non-reusable cancel_all() (release(), incl. App._init's teardown of the freshly
+        # constructed session) so a reused channel serves again — the mirror of bridge.reopen.
+        self._shutdown.clear()
+
     def ask(self, request: GateRequest) -> GateResponse:
         # ON THE WORKER THREAD. Enqueue + block until the UI answers or cancel fires.
         if self._shutdown.is_set():

@@ -97,10 +97,11 @@ class CopilotSession:
         self.state.messages.append(Message(role="user", text=user_text))
         self.state.streaming_text = ""
         self.state.in_flight = True
-        # Clear a `_shutdown` the bridge may have latched from the first _init's release()
-        # (App._init tears down prior state before reuse) — else every GL tool this turn
-        # raises "copilot shutting down".
+        # Clear a `_shutdown` the bridge + gate may have latched from the first _init's
+        # release() (App._init tears down prior state before reuse) — else every GL tool
+        # raises "copilot shutting down" and every gate.ask() returns cancelled immediately.
         self.bridge.reopen()
+        self.gate.reopen()
         self._ensure_worker()
         self._turn_queue.put(user_text)
         logger.debug("copilot enqueue_turn: queued + worker ensured")

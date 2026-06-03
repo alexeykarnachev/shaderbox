@@ -42,7 +42,7 @@ from shaderbox.copilot.capabilities import (
 )
 from shaderbox.copilot.config import COPILOT_CONFIG
 from shaderbox.copilot.context import build_context
-from shaderbox.copilot.gate import GateChannel, GateRequest, GateResponse
+from shaderbox.copilot.gate import GateChannel, GateKind, GateRequest, GateResponse
 from shaderbox.copilot.llm.api import (
     LLMDone,
     LLMMessage,
@@ -56,7 +56,6 @@ from shaderbox.copilot.llm.api import (
 from shaderbox.copilot.persistence import ConversationStore
 from shaderbox.copilot.state import ChatState, Message, RecoverInfo, SessionUsage
 from shaderbox.copilot.tools.registry import build_registry
-
 
 # ---- A. persistence round-trip ----------------------------------------------------------
 
@@ -221,7 +220,9 @@ def _stub_caps() -> CopilotCapabilities:
 
 
 def _check_decline_path() -> None:
-    n = COPILOT_CONFIG.max_edit_retries + 1  # one MORE than the cap, to prove it's not tripped
+    n = (
+        COPILOT_CONFIG.max_edit_retries + 1
+    )  # one MORE than the cap, to prove it's not tripped
     caps = _stub_caps()
     registry = build_registry(caps)
     client = _DeleteThenStopClient(n_deletes=n)
@@ -244,7 +245,9 @@ def _check_decline_path() -> None:
 
     errors = [e for e in events if isinstance(e, AgentError)]
     dones = [e for e in events if isinstance(e, AgentTurnDone)]
-    assert not errors, f"a declined delete tripped a giveup/cutoff: {[e.message for e in errors]}"
+    assert (
+        not errors
+    ), f"a declined delete tripped a giveup/cutoff: {[e.message for e in errors]}"
     assert dones, "turn did not end in AgentTurnDone (the model's comment)"
     logger.info(f"B1 ok: {n} declined deletes end in AgentTurnDone, no giveup")
 
@@ -265,10 +268,57 @@ def _check_decline_path() -> None:
     )
 
 
+def _check_reopen_after_release() -> None:
+    # App._init tears down the freshly constructed session via release(), which latches the
+    # gate's _shutdown (non-reusable cancel_all). Without a reopen() on the next turn, every
+    # ask() short-circuits to cancelled — the confirm card resolves instantly with no buttons.
+    # This drives the real ask() across a worker/main split (a direct run_turn test misses it).
+    gate = GateChannel()
+    gate.cancel_all()  # the latching teardown release() does
+
+    answered: list[GateResponse] = []
+
+    def _worker() -> None:
+        answered.append(gate.ask(GateRequest(kind=GateKind.CONFIRM, prompt="ok?")))
+
+    # Without reopen: ask returns cancelled immediately (no block).
+    t = threading.Thread(target=_worker)
+    t.start()
+    t.join(timeout=2.0)
+    assert not t.is_alive(), "ask() blocked despite a latched shutdown"
+    assert answered and answered[0].cancelled, "latched gate should return cancelled"
+
+    # After reopen: ask blocks until answered (the real turn path). Poll a BOUNDED number of
+    # times for the pending request — if reopen didn't take, ask short-circuits and never
+    # enqueues, so the bounded loop expires and the assert fails cleanly (never hangs).
+    gate.reopen()
+    answered.clear()
+    t = threading.Thread(target=_worker)
+    t.start()
+    pending = None
+    tick = threading.Event()
+    for _ in range(200):  # ~2s at 10ms
+        pending = gate.take_pending()
+        if pending is not None:
+            break
+        tick.wait(0.01)
+    assert pending is not None, "reopen did not re-arm the gate — ask() short-circuited"
+    gate.answer(GateResponse(approved=True, option="Yes"))
+    t.join(timeout=2.0)
+    assert not t.is_alive(), "ask() never unblocked after reopen + answer"
+    assert (
+        answered and answered[0].approved and not answered[0].cancelled
+    ), "after reopen, an answered gate must return approved, not cancelled"
+    logger.info(
+        "C ok: a released gate, reopened, blocks + answers (not instant-cancel)"
+    )
+
+
 def main() -> int:
     try:
         _check_persistence()
         _check_decline_path()
+        _check_reopen_after_release()
     except AssertionError as e:
         logger.error(f"copilot_gate_check: FAIL — {e}")
         return 1
