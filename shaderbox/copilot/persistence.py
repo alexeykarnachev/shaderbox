@@ -16,9 +16,15 @@ from loguru import logger
 from pydantic import BaseModel, ValidationError
 
 from shaderbox.copilot.llm.api import LLMMessage, LLMToolCall
-from shaderbox.copilot.state import ChatState, Message, MessageRole, SessionUsage
+from shaderbox.copilot.state import (
+    ChatState,
+    Message,
+    MessageRole,
+    RecoverInfo,
+    SessionUsage,
+)
 
-_VERSION = 1
+_VERSION = 2
 
 
 class _ToolCallModel(BaseModel):
@@ -28,12 +34,24 @@ class _ToolCallModel(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class _RecoverModel(BaseModel):
+    # The persisted Recover affordance on a resolved-Yes delete card (feature 020·17). Stores
+    # the trash dir-NAME (NOT an absolute path — the project dir is relocatable; re-anchored
+    # via App.trash_dir at click time).
+    node_id: str
+    node_name: str = ""
+    trash_name: str
+    done: bool = False
+    model_config = {"extra": "forbid"}
+
+
 class _MessageModel(BaseModel):
     # The UI render stream (ChatState.messages). role is validated loosely (str) so a
     # future MessageRole member loads on an older build instead of failing the whole file.
     role: str
     text: str = ""
     resolved: bool = False
+    recover: _RecoverModel | None = None
     model_config = {"extra": "forbid"}
 
 
@@ -68,7 +86,21 @@ class ConversationStore(BaseModel):
         return cls(
             version=_VERSION,
             messages=[
-                _MessageModel(role=m.role, text=m.text, resolved=m.resolved)
+                _MessageModel(
+                    role=m.role,
+                    text=m.text,
+                    resolved=m.resolved,
+                    recover=(
+                        _RecoverModel(
+                            node_id=m.recover.node_id,
+                            node_name=m.recover.node_name,
+                            trash_name=m.recover.trash_name,
+                            done=m.recover.done,
+                        )
+                        if m.recover is not None
+                        else None
+                    ),
+                )
                 for m in state.messages
             ],
             history=[
@@ -99,7 +131,21 @@ class ConversationStore(BaseModel):
         # older build); cast back to the Literal — the renderer treats an unknown role as
         # plain text anyway, so the value is safe regardless.
         return [
-            Message(role=cast(MessageRole, m.role), text=m.text, resolved=m.resolved)
+            Message(
+                role=cast(MessageRole, m.role),
+                text=m.text,
+                resolved=m.resolved,
+                recover=(
+                    RecoverInfo(
+                        node_id=m.recover.node_id,
+                        node_name=m.recover.node_name,
+                        trash_name=m.recover.trash_name,
+                        done=m.recover.done,
+                    )
+                    if m.recover is not None
+                    else None
+                ),
+            )
             for m in self.messages
         ]
 

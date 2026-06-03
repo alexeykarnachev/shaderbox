@@ -1,13 +1,13 @@
 import json
 import threading
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 
 from loguru import logger
 
 from shaderbox.copilot.config import CopilotConfig
 from shaderbox.copilot.context import CopilotContext
-from shaderbox.copilot.gate import GateChannel
+from shaderbox.copilot.gate import GateChannel, GateKind, GateRequest
 from shaderbox.copilot.llm.api import (
     LLMDone,
     LLMMessage,
@@ -23,8 +23,9 @@ from shaderbox.copilot.trace import NULL_TRACE, TraceLog
 
 # The agent loop: own a growing conversation, stream one assistant turn, execute any
 # tool calls, append the results, re-stream until the model stops calling tools or a
-# limit trips (spec §2; faithful to cc-server AgentLoop.run). The GateChannel param is
-# present but never triggered in slice 1 (all three tools are non-destructive).
+# limit trips (spec §2; faithful to cc-server AgentLoop.run). A tool whose gate_policy
+# trips requires_gate blocks on the GateChannel for a user Yes/No before it runs (§7 /
+# feature 020·17).
 
 _MODEL_INCOMPATIBLE_MSG = (
     "The selected model isn't compatible with tool calling — after using a tool it "
@@ -75,6 +76,13 @@ class AgentCancelled:
     pass
 
 
+@dataclass(frozen=True)
+class AgentGateOpened:
+    # A gated tool is about to run; the worker is blocking on the user's Yes/No. pump_events
+    # materializes a pending_action Message from this so the UI can draw the confirm (§7.1).
+    request: GateRequest
+
+
 AgentEvent = (
     AgentTextDelta
     | AgentStatus
@@ -82,6 +90,7 @@ AgentEvent = (
     | AgentTurnDone
     | AgentError
     | AgentCancelled
+    | AgentGateOpened
 )
 
 
@@ -174,6 +183,24 @@ def _tool_message(tool_call_id: str, content: str) -> LLMMessage:
     return LLMMessage(role="tool", tool_call_id=tool_call_id, content=content)
 
 
+_GATE_PROMPTS: dict[str, Callable[[dict], str]] = {
+    "delete_node": lambda a: f"Delete node '{a.get('node', '')}'? It moves to the project trash (recoverable).",
+}
+
+
+def build_gate(name: str, args: dict) -> GateRequest:
+    # Engine-built confirm prompt (§7.2 / feature 020·17): the engine owns the destructive-
+    # action phrasing so it's accurate, not the model. Falls back to a generic line for any
+    # future ALWAYS-gated tool without a template.
+    template = _GATE_PROMPTS.get(name)
+    prompt = (
+        template(args)
+        if template is not None
+        else f"Run {name}? This action will change your project."
+    )
+    return GateRequest(kind=GateKind.CONFIRM, prompt=prompt, options=["Yes", "No"])
+
+
 def run_turn(
     client: object,
     registry: ToolRegistry,
@@ -188,7 +215,6 @@ def run_turn(
     # `client` is an llm.api.LLMClient — kept as `object` here so this module imports no
     # provider impl. The duck-typed `.stream(...)` is the only call. `trace` is the
     # full-transcript sink (None in tests) — it records everything, in full (trace.py).
-    _ = gate  # present for the seam; slice-1 tools never trigger requires_gate (§16.1)
     tr = trace if trace is not None else NULL_TRACE
     messages = build_messages(context, history, user_text)
     specs = registry.eager_specs()
@@ -311,6 +337,28 @@ def run_turn(
                 logger.debug(f"copilot turn cancelled before tool {tc.name}")
                 yield AgentCancelled()
                 return
+            # Gate a destructive/publish tool on a user Yes/No before it runs (§7 / 020·17).
+            # On decline: record + append the tool result (a declined call STILL needs a
+            # matching tool message — an orphaned tool_call_id 400s the next stream) + continue
+            # to the next call in the batch. The continue lands BEFORE the execute + the
+            # consecutive_failed_edits logic, so a decline never reaches either: a user choice
+            # is not a convergence failure and must not count toward the edit-retry cap.
+            if registry.requires_gate(tc.name, args, config):
+                req = build_gate(tc.name, args)
+                tr.event("gate_open", name=tc.name, prompt=req.prompt)
+                yield AgentGateOpened(req)
+                resp = gate.ask(req)
+                if resp.cancelled:
+                    logger.debug(f"copilot turn cancelled at gate for {tc.name}")
+                    tr.event("gate_cancelled", name=tc.name)
+                    yield AgentCancelled()
+                    return
+                if not resp.approved:
+                    logger.info(f"copilot tool {tc.name} | user declined")
+                    tr.event("gate_declined", name=tc.name)
+                    ran.record(tc.name, False, "error: user declined")
+                    messages.append(_tool_message(tc.id, "error: user declined"))
+                    continue
             ok, msg, payload = registry.execute(tc.name, args)
             total_tool_calls += 1
             logger.info(f"copilot tool #{total_tool_calls} {tc.name} -> ok={ok}")

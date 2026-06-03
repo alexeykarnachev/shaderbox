@@ -205,8 +205,8 @@ emit AgentTurnDone(ran.executed_actions_note())   # max-iterations cutoff, §I4
 > pre-scoping; the request-driven audit reshaped it. Corrections the audit + impl made: `list_nodes`
 > (§3.1) is NOT GL-free with uniform names — `get_active_uniforms()` is a GL read, so the shipped
 > project map is a LEAN in-prompt tree (id+name+has_errors+is_current, no uniforms, GL-free); `grep`
-> drops the `scope` arg and the `docs` scope (no runtime docs corpus); `delete_node` is DEFERRED to the
-> gate-UI wave (gate body unbuilt); the merged read is `read_shader` (not `get_current_shader` +
+> drops the `scope` arg and the `docs` scope (no runtime docs corpus); `delete_node` landed in the
+> gate-UI wave (`17_gate_ui.md` — always-gate + Recover-from-trash); the merged read is `read_shader` (not `get_current_shader` +
 > `get_shader_source` + `get_compile_errors`); edits are target-addressable (node or `lib:`). Read §16's
 > spec for the shipped shape; the rest of §3 is kept for the design rationale only.
 

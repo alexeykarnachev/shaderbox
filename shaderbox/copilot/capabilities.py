@@ -69,6 +69,18 @@ class SetUniformResult:
 
 
 @dataclass(frozen=True)
+class DeleteNodeResult:
+    # The outcome of a delete_node (feature 020·17). ok=False carries `error` (no such node).
+    # On ok=True, node_id + trash_name feed the recover card (trash_name is the dir-NAME under
+    # the project trash, NOT an absolute path — the project dir is relocatable).
+    ok: bool
+    error: str = ""
+    deleted_name: str = ""
+    node_id: str = ""
+    trash_name: str = ""
+
+
+@dataclass(frozen=True)
 class GrepHit:
     # One origin-labeled match for grep (feature 020·16). `origin` is the addressable handle
     # the agent can hand to a read/edit tool: a node id, or a "lib:<path>" address.
@@ -154,3 +166,7 @@ class CopilotCapabilities:
     # result" invariant). switch_to controls the tab. (name, source, switch_to) -> (new node-id,
     # post-compile errors) (020·16 Decision 8).
     create_node: Callable[[str, str, bool], tuple[str, list[CompileErrorInfo]]]
+    # Delete a node (move its dir to the project trash, recoverable). Destructive => the loop
+    # always gates it (GatePolicy.ALWAYS); the closure marshals the GL teardown via the bridge.
+    # (node short-id) -> DeleteNodeResult (feature 020·17).
+    delete_node: Callable[[str], "DeleteNodeResult"]

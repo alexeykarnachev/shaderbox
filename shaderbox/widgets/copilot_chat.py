@@ -1,7 +1,7 @@
 from imgui_bundle import imgui, imgui_ctx
 
 from shaderbox.app import App
-from shaderbox.copilot.state import CopilotLayout, MessageRole
+from shaderbox.copilot.state import CopilotLayout, Message
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_primitives import (
     active_region_outline,
@@ -16,10 +16,8 @@ from shaderbox.ui_primitives import (
 # top. no_nav_focus keeps it out of imgui's Ctrl+Tab window-switcher (does NOT block
 # click-to-focus — verified in imgui source); no_collapse so it can't be collapsed into
 # an unrecoverable thin title-bar strip (the collapse state persists in imgui.ini).
-#
-# SCAFFOLD: the transcript / input / streaming / tool-call rendering is the capability
-# wave. This wave stands up the window, the layout presets, the focus wiring, and the
-# not-configured gate.
+# Renders the transcript by message role — incl. the pending_action confirm gate + its
+# Recover affordance (feature 020·17) — plus the streaming/input row.
 
 _WINDOW_FLAGS = imgui.WindowFlags_.no_nav_focus | imgui.WindowFlags_.no_collapse
 _NEXT_LAYOUT: dict[CopilotLayout, CopilotLayout] = {
@@ -112,10 +110,10 @@ def _draw_transcript(app: App) -> None:
     input_h = imgui.get_frame_height_with_spacing() + float(SPACE.SM)
     avail = imgui.get_content_region_avail()
     if imgui.begin_child("##copilot_history", size=(0.0, avail.y - input_h)):
-        for msg in state.messages:
-            _draw_message(msg.role, msg.text)
+        for i, msg in enumerate(state.messages):
+            _draw_message(app, msg, i)
         if state.streaming_text:
-            _draw_message("assistant", state.streaming_text)
+            _draw_message(app, Message(role="assistant", text=state.streaming_text), -1)
         if state.in_flight and not state.streaming_text:
             caption_text("thinking…")
         if state.in_flight:
@@ -143,17 +141,46 @@ def _draw_transcript(app: App) -> None:
             app.copilot.cancel_turn()
 
 
-def _draw_message(role: MessageRole, text: str) -> None:
+def _draw_message(app: App, msg: Message, idx: int) -> None:
+    role = msg.role
     if role == "user":
         imgui.text_colored(COLOR.ACCENT_PRIMARY, "you")
-        imgui.text_wrapped(text)
+        imgui.text_wrapped(msg.text)
     elif role == "assistant":
-        imgui.text_wrapped(text)
+        imgui.text_wrapped(msg.text)
     elif role == "tool_status":
-        caption_text(text)
+        caption_text(msg.text)
     elif role == "error":
-        imgui.text_colored(COLOR.STATE_ERROR, text)
+        imgui.text_colored(COLOR.STATE_ERROR, msg.text)
+    elif role == "pending_action":
+        _draw_pending_action(app, msg, idx)
     imgui.separator()
+
+
+def _draw_pending_action(app: App, msg: Message, idx: int) -> None:
+    imgui.text_wrapped(msg.text)
+    if not msg.resolved:
+        if primary_button(f"Yes##gate_yes_{idx}"):
+            app.copilot.answer_gate(approved=True)
+        imgui.same_line()
+        if ghost_button(f"No##gate_no_{idx}"):
+            app.copilot.answer_gate(approved=False)
+        return
+    recover = msg.recover
+    if recover is None:
+        return
+    if recover.done:
+        # done True + the node back in play = recovered; gone = the trash was cleared.
+        caption_text(
+            "Recovered" if recover.node_id in app.ui_nodes else "No longer recoverable"
+        )
+        return
+    # Disabled while a turn runs: a recover mutates ui_nodes/current-node, which the
+    # in-flight turn owns (matches the Clear button's in_flight guard).
+    imgui.begin_disabled(app.copilot.state.in_flight)
+    if ghost_button(f"Recover##gate_recover_{idx}"):
+        app.recover_deleted_node(msg)
+    imgui.end_disabled()
 
 
 def _send_button_offset() -> float:

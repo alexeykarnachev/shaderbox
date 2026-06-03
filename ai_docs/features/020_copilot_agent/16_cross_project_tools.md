@@ -84,10 +84,9 @@ returns each function's `lib:<path>` address) — it copies addresses, never con
 
 ## Out of scope (each with a trigger)
 
-- **`delete_node` + the gate-UI wave.** The `GateChannel` body is unbuilt (`agent.py:191` is `_ = gate`;
-  `take_pending`/`answer` have no caller; the loop never checks `requires_gate`). `delete_node` is the
-  first `ALWAYS`-gate tool, so it ships WITH that wave. **Trigger:** the gate-UI wave starts, OR a user
-  asks the copilot to delete a node and the honest-decline ("delete it from the node grid") is friction.
+- **`delete_node` + the gate-UI wave.** LANDED in the gate-UI wave (`17_gate_ui.md`): the `GateChannel`
+  CONFIRM body is wired, `delete_node` is the first `ALWAYS`-gate tool (with a Recover-from-trash button).
+  Deferred-from-16 because it needed the gate body first; resolved there.
 - **Eager-recompile-one-caller for lib edits.** A lib edit returns an honest "written; errors surface when
   a caller recompiles" string (Decision 4). The richer variant — eagerly recompile a node that already
   calls the function and surface ITS remapped errors — is deferred; it is also structurally inert for the

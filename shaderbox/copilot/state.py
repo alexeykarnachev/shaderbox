@@ -19,14 +19,26 @@ class CopilotLayout(StrEnum):
     FREE = auto()  # user-moved/resized; position persisted via imgui.ini
 
 
+@dataclass(frozen=True)
+class RecoverInfo:
+    # Carried by a resolved-Yes delete card so it can offer a Recover button (feature 020·17).
+    # trash_name is the dir-NAME under the project trash (NOT an absolute path — the project dir
+    # is relocatable), re-anchored via App.trash_dir at click time. done = the one-shot consumed.
+    node_id: str
+    node_name: str
+    trash_name: str
+    done: bool = False
+
+
 @dataclass
 class Message:
     role: MessageRole
     text: str = ""
-    # For role == "pending_action": the agent loop is blocked on the request queue
-    # until the user answers (the action-required gate, skeleton 10 §7). resolved flips
-    # True once the UI enqueues the answer.
+    # For role == "pending_action": the agent loop is blocked on the gate until the user
+    # answers (feature 020·17). resolved flips True once the UI answers (or a cancel resolves it).
     resolved: bool = False
+    # Set on a resolved-Yes delete card: the undo affordance (feature 020·17).
+    recover: RecoverInfo | None = None
 
 
 @dataclass

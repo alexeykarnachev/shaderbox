@@ -10,6 +10,7 @@ from shaderbox.copilot.agent import (
     AgentCancelled,
     AgentError,
     AgentEvent,
+    AgentGateOpened,
     AgentStatus,
     AgentTextDelta,
     AgentToolCard,
@@ -21,11 +22,11 @@ from shaderbox.copilot.capabilities import CopilotCapabilities
 from shaderbox.copilot.config import COPILOT_CONFIG
 from shaderbox.copilot.context import build_context
 from shaderbox.copilot.errors import CopilotConfigError
-from shaderbox.copilot.gate import GateChannel
+from shaderbox.copilot.gate import GateChannel, GateResponse
 from shaderbox.copilot.llm.api import LLMMessage
 from shaderbox.copilot.llm.openrouter import OpenRouterLLMClient
 from shaderbox.copilot.persistence import ConversationStore
-from shaderbox.copilot.state import ChatState, Message
+from shaderbox.copilot.state import ChatState, Message, RecoverInfo
 from shaderbox.copilot.tools.registry import build_registry
 from shaderbox.copilot.trace import TraceLog, new_trace_log
 
@@ -127,13 +128,26 @@ class CopilotSession:
                 self.state.streaming_text += ev.text
             case AgentStatus():
                 pass  # per-tool cards (below) carry the durable line; status is transient
+            case AgentGateOpened():
+                # Dequeue the GatePending (keeps _pending in lockstep with _current) and
+                # materialize the confirm card. The UI draws Yes/No from this Message; the
+                # answer flows back via answer_gate -> gate.answer (feature 020·17 §7.1).
+                self.gate.take_pending()
+                self.state.messages.append(
+                    Message(role="pending_action", text=ev.request.prompt)
+                )
             case AgentToolCard():
                 verb = "ok" if ev.ok else "failed"
                 self.state.messages.append(
                     Message(role="tool_status", text=f"{ev.name}: {verb}")
                 )
+                # A successful delete attaches the Recover affordance to its (resolved-Yes)
+                # confirm card — the gated tool's card always trails the open pending_action.
+                if ev.name == "delete_node" and ev.ok and ev.payload is not None:
+                    self._attach_recover(ev.payload)
             case AgentError():
                 self.state.messages.append(Message(role="error", text=ev.message))
+                self._resolve_open_gate_card("cancelled")
                 self._finish_turn()
             case AgentTurnDone():
                 if self.state.streaming_text:
@@ -145,7 +159,50 @@ class CopilotSession:
                 self._finish_turn()
             case AgentCancelled():
                 self.state.streaming_text = ""
+                self._resolve_open_gate_card("cancelled")
                 self._finish_turn()
+
+    def _open_gate_card(self) -> Message | None:
+        # The trailing pending_action Message still awaiting an answer (resolved==False).
+        # There is only ever one open gate (_current), so the last unresolved card is it.
+        for msg in reversed(self.state.messages):
+            if msg.role == "pending_action" and not msg.resolved:
+                return msg
+        return None
+
+    def _resolve_open_gate_card(self, outcome: str) -> None:
+        # A cancel/error mid-gate must mark the open confirm card resolved, or it renders
+        # live Yes/No buttons forever (feature 020·17). outcome = the terminal label.
+        card = self._open_gate_card()
+        if card is not None:
+            card.resolved = True
+            card.text = f"{card.text}\n({outcome})"
+
+    def _attach_recover(self, payload: dict) -> None:
+        # Attach RecoverInfo to the resolved-Yes delete card (the trailing resolved
+        # pending_action with no recover yet). node_id/trash_name come from the tool payload.
+        node_id = str(payload.get("node_id", ""))
+        trash_name = str(payload.get("trash_name", ""))
+        if not node_id or not trash_name:
+            return
+        for msg in reversed(self.state.messages):
+            if msg.role == "pending_action" and msg.resolved and msg.recover is None:
+                msg.recover = RecoverInfo(
+                    node_id=node_id,
+                    node_name=str(payload.get("deleted_name", "")),
+                    trash_name=trash_name,
+                )
+                return
+
+    def answer_gate(self, approved: bool) -> None:
+        # MAIN THREAD (Yes/No click). Mark the open confirm card resolved + unblock the worker.
+        card = self._open_gate_card()
+        if card is not None:
+            card.resolved = True
+            card.text = f"{card.text}\nYou chose: {'Yes' if approved else 'No'}"
+        self.gate.answer(
+            GateResponse(approved=approved, option="Yes" if approved else "No")
+        )
 
     def _finish_turn(self) -> None:
         self.state.in_flight = False

@@ -28,6 +28,7 @@ from shaderbox.constants import RESOURCES_DIR
 from shaderbox.copilot.capabilities import (
     CompileErrorInfo,
     CopilotCapabilities,
+    DeleteNodeResult,
     EditResult,
     GrepHit,
     LibCatalogEntry,
@@ -41,7 +42,7 @@ from shaderbox.copilot.glsl_lex import token_match
 from shaderbox.copilot.llm.openrouter import OpenRouterLLMClient
 from shaderbox.copilot.persistence import ConversationStore, archive_conversation
 from shaderbox.copilot.session import CopilotSession
-from shaderbox.copilot.state import CopilotLayout
+from shaderbox.copilot.state import CopilotLayout, Message
 from shaderbox.core import Canvas, Node
 from shaderbox.editor_types import EditorSession, HoverMark, InlineInput, JumpRequest
 from shaderbox.exporters.integrations import IntegrationsStore
@@ -601,6 +602,7 @@ class App:
             apply_line_edit=self._copilot_apply_line_edit,
             set_uniform=self._copilot_set_uniform,
             create_node=self._copilot_create_node,
+            delete_node=self._copilot_delete_node,
         )
 
     def _copilot_short_ids(self) -> dict[str, str]:
@@ -862,6 +864,42 @@ class App:
             return self._copilot_short_ids()[new_node.id], errors
 
         return self.copilot.bridge.run_on_main(_on_main)
+
+    def _copilot_delete_node(self, node: str) -> DeleteNodeResult:
+        # Delete a node on the copilot's behalf (feature 020·17). The agent loop has already
+        # cleared a user Yes (GatePolicy.ALWAYS) before this runs. Resolves the short id, then
+        # marshals the GL teardown to the main thread via the bridge (node release is GL-affine).
+        # Returns the node_id + trash dir-name so the chat can offer a Recover.
+        def _on_main() -> DeleteNodeResult:
+            node_id = self._copilot_resolve_node_id(node)
+            if node_id is None or node_id not in self.ui_nodes:
+                return DeleteNodeResult(
+                    ok=False,
+                    error=f"no such node '{node}' — check the project map for ids",
+                )
+            name = self.ui_nodes[node_id].ui_state.ui_name
+            trash_name = self._delete_node_unguarded(node_id)
+            logger.info(f"copilot deleted node {node_id} (trash={trash_name})")
+            return DeleteNodeResult(
+                ok=True, deleted_name=name, node_id=node_id, trash_name=trash_name
+            )
+
+        return self.copilot.bridge.run_on_main(_on_main)
+
+    def recover_deleted_node(self, msg: Message) -> None:
+        # MAIN THREAD (the chat's Recover button, feature 020·17). Restore the node, flip the
+        # card's one-shot, persist so the flip survives a reopen. A pure user-side undo — the
+        # worker isn't involved and the agent never learns (it re-reads the live map next turn).
+        if msg.recover is None or msg.recover.done:
+            return
+        ok = self.restore_node_from_trash(msg.recover.trash_name, msg.recover.node_id)
+        if ok:
+            msg.recover = replace(msg.recover, done=True)
+            self.notifications.push(f"Recovered node '{msg.recover.node_name}'")
+        else:
+            msg.recover = replace(msg.recover, done=True)
+            self.notifications.push("Node is no longer in trash — can't recover")
+        self.copilot.save_conversation(self.copilot_conversation_path)
 
     # ---- edit / compile-feedback (target-addressable: node or lib: file, 020·16) ----
 
@@ -1929,33 +1967,61 @@ class App:
         self.delete_node(self.current_node_id)
 
     def delete_node(self, node_id: str) -> None:
+        # The guarded public path (node grid / hotkeys). The copilot calls the unguarded
+        # body via _copilot_delete_node — its own mid-turn delete must bypass the busy gate.
         if self._copilot_busy_blocked("Deleting a node"):
             return
         if not node_id or node_id not in self.ui_nodes:
             return
+        self._delete_node_unguarded(node_id)
 
+    def _delete_node_unguarded(self, node_id: str) -> str:
+        # The teardown shared by the public delete + the copilot delete: release GL, drop the
+        # editor session, reselect current, move the dir to trash. Returns the trash dir-NAME
+        # (id, or id_<ts> on collision) so a caller can offer a Recover. Caller guarantees
+        # node_id is in ui_nodes.
         new_node_id = select_next_value(
             values=list(self.ui_nodes.keys()),
             current_value=node_id,
             default_value="",
         )
-
         if new_node_id == node_id:
             new_node_id = ""
 
         path = self.ui_nodes[node_id].node.source.path
         self.ui_nodes.pop(node_id).node.release()
         self.editor_sessions.pop(path, None)
+        self._copilot_read_revision.pop(node_id, None)
         if node_id == self.node_delete_armed:
             self.node_delete_armed = ""
         if node_id == self.current_node_id or not self.current_node_id:
             self.set_current_node_id(new_node_id)
-        dest = self.trash_dir / node_id
+        trash_name = node_id
+        dest = self.trash_dir / trash_name
         if dest.exists():  # a prior node with this id was already trashed
-            dest = self.trash_dir / f"{node_id}_{int(time.time() * 1000)}"
+            trash_name = f"{node_id}_{int(time.time() * 1000)}"
+            dest = self.trash_dir / trash_name
         shutil.move(self.nodes_dir / node_id, dest)
 
         logger.info(f"Node deleted: {node_id}")
+        return trash_name
+
+    def restore_node_from_trash(self, trash_name: str, node_id: str) -> bool:
+        # Recover a copilot-deleted node from trash (feature 020·17). Move FIRST, then load —
+        # so the loaded id is the dir-name node_id, not the trashed id_<ts>. False (graceful
+        # no-op) if the trash dir was cleared or the dest id is occupied.
+        src = self.trash_dir / trash_name
+        if not src.exists():
+            return False
+        dst = self.nodes_dir / node_id
+        if dst.exists():
+            return False
+        shutil.move(src, dst)
+        node = load_node_from_dir(dst)
+        self.ui_nodes[node_id] = node
+        self.set_current_node_id(node_id)
+        logger.info(f"Node recovered from trash: {node_id}")
+        return True
 
     def _seed_starter_node(self) -> None:
         template_dir = self.node_templates_dir / _STARTER_TEMPLATE_ID

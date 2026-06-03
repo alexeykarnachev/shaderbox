@@ -113,6 +113,14 @@ class _ReadLibArgs(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class _DeleteNodeArgs(BaseModel):
+    node: str = Field(
+        description="node id (from the project map) to delete — REQUIRED, never empty "
+        "(deleting is destructive, so the target must be explicit, not the current node)"
+    )
+    model_config = {"extra": "forbid"}
+
+
 _READ_SHADER_DESC = (
     "Read shader nodes: returns each node's source with line numbers (for orientation — you "
     "match on text content, NOT line numbers, when editing), its uniforms (name, type, and "
@@ -184,6 +192,14 @@ _READ_LIB_DESC = (
     "Read the full body of one or more library functions by name (the catalogue in your "
     "context lists signatures only). Use this when you need to see how a SB_* helper works "
     "before calling it, or to read it before editing it."
+)
+
+_DELETE_NODE_DESC = (
+    "Delete a shader node. Pass the node id (from the project map) — required, never empty. "
+    "This is destructive, so the user is shown a Yes/No confirmation before it happens; if they "
+    "decline you'll get 'user declined' and should stop and explain. The node moves to the project "
+    "trash and the user can recover it, so reassure them it's not permanently lost. After a delete "
+    "the node is gone from the project map; do not read or edit it again."
 )
 
 _OUT_OF_RANGE = "error: line number out of range — re-read with read_shader and use a line number it shows"
@@ -356,6 +372,22 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             body += f"\n\n(no function found for: {', '.join(missing)})"
         return True, body, {"read": list(found)}
 
+    def delete_node(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
+        # The gate (GatePolicy.ALWAYS) has already cleared a user Yes by the time this runs.
+        # The payload carries node_id + trash_name so the chat can attach a Recover affordance.
+        result = caps.delete_node(args["node"])
+        if not result.ok:
+            return False, f"error: {result.error}", None
+        return (
+            True,
+            f"deleted node '{result.deleted_name}' — moved to the project trash (recoverable)",
+            {
+                "node_id": result.node_id,
+                "trash_name": result.trash_name,
+                "deleted_name": result.deleted_name,
+            },
+        )
+
     return [
         ToolDefinition(
             name="read_shader",
@@ -444,5 +476,16 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             category="shader",
             eager=True,
             gate_policy=GatePolicy.NONE,
+        ),
+        ToolDefinition(
+            name="delete_node",
+            description=_DELETE_NODE_DESC,
+            args_model=_DeleteNodeArgs,
+            handler=delete_node,
+            mutating=True,
+            needs_gl=True,
+            category="shader",
+            eager=True,
+            gate_policy=GatePolicy.ALWAYS,
         ),
     ]

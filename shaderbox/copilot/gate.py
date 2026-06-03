@@ -9,9 +9,10 @@ from enum import StrEnum, auto
 # and sets the event, the worker unblocks. Same proven primitive as bridge.py, opposite
 # direction. See ai_docs/features/020_copilot_agent/11_capability_wave_spec.md §7.
 #
-# SLICE 1: the TYPE exists (the agent-loop signature names it) but is never triggered —
-# all three slice-1 tools are non-destructive, so requires_gate is always False. The
-# BODY (UI rendering + the answer path) lands with the interactive-widget wave (step 5).
+# The CONFIRM body is wired (feature 020·17): the agent loop calls ask() before a gated
+# tool (delete_node), pump_events materializes a pending_action Message + dequeues via
+# take_pending, the chat draws Yes/No, answer() unblocks the worker. CREDENTIAL stays a
+# type-only stub (no publish tool needs it yet).
 
 
 class GateKind(StrEnum):
