@@ -28,10 +28,11 @@ class _CreatePackArgs(BaseModel):
 
 
 _SET_TOKEN_DESC = (
-    "Connect Telegram: opens a SECURE input in the chat for the user to paste their bot token "
-    "(from @BotFather) — you never see the token itself. After it's set, I try to link the "
-    "account. If the user hasn't messaged the bot yet, tell them to open the bot and press Start, "
-    "then call telegram_connect."
+    "THIS is how YOU connect Telegram — call it whenever the user wants to connect / set up the "
+    "bot token / 'do it yourself'. It opens a SECURE inline paste field in the chat for the user "
+    "to enter their @BotFather token (you never see the token), sets it, and links the account. "
+    "Do NOT tell the user to go to Settings — you have this tool. If linking needs the user to "
+    "press Start on their bot first, you'll be told; then call telegram_connect."
 )
 _CONNECT_DESC = (
     "Finish linking Telegram after the user has pressed Start / sent a message to their bot. Use "

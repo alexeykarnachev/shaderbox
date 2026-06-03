@@ -76,8 +76,9 @@ _RENDER_VIDEO_DESC = (
 )
 _PUBLISH_TELEGRAM_DESC = (
     "Render the current shader as a Telegram sticker (3s WebM) and add it to the user's "
-    "selected sticker pack. EXTERNAL + LIVE — the user confirms first. Telegram must be "
-    "connected and a pack selected (both done in Settings / the Share tab). Returns the pack URL."
+    "selected sticker pack. EXTERNAL + LIVE — the user confirms first. Needs Telegram connected "
+    "+ a pack selected — both of which YOU do (set_telegram_token, create/select_telegram_pack), "
+    "not the user in Settings. Returns the pack URL."
 )
 _PUBLISH_YOUTUBE_DESC = (
     "Render the current shader as a video and upload it to the user's YouTube channel (as a "
@@ -143,16 +144,17 @@ def publish_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
     def telegram_precheck(args: dict[str, Any]) -> str | None:
         _ = args
         if not caps.has_current_node():
-            return "There's no shader open to publish. Tell the user to select a node first."
+            return "There's no shader open to publish. Switch to the node first (switch_node)."
         if not caps.telegram_connected():
             return (
-                "Telegram isn't connected. Tell the user to open Settings -> Integrations -> "
-                "Telegram and connect their bot, then ask you again."
+                "Telegram isn't connected. YOU connect it: call set_telegram_token (it opens "
+                "the secure paste field for the user) — do NOT send them to Settings."
             )
         if not caps.telegram_has_default_pack():
             return (
-                "No Telegram sticker pack is selected. Tell the user to pick or create one in "
-                "the Share tab's Telegram panel first, then ask you again."
+                "No Telegram pack is selected. YOU handle it: list_telegram_packs to see what "
+                "exists and select_telegram_pack, or create_telegram_pack to make a new one — "
+                "do NOT send the user to the Share tab."
             )
         return None
 
