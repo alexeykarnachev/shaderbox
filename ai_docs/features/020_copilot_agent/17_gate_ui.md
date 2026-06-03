@@ -407,3 +407,24 @@ dir-collision is near-impossible with UUIDs but the cheap guard goes in anyway (
 **No todo.md deferral's trigger fires this wave** (both reviewers confirmed: the `_ensure_open`,
 node-grid, and cleartext-credentials deferrals are all un-fired). The Out-of-scope items here are
 roadmap-backlog, not landmines — they stay in this spec, not todo.md.
+
+### Post-impl maintainer-found fixes (live testing)
+
+Three bugs surfaced only in the real app (the headless `run_turn` tests structurally couldn't reach
+worker↔init lifecycle); each landed with a teeth-verified regression in `copilot_gate_check.py`:
+
+- **Gate instant-cancelled every confirm.** `gate.ask()` short-circuits to `cancelled=True` when
+  `_shutdown` is latched; `App._init`'s teardown `release()` latches it before first use, and — unlike
+  the bridge — the gate had no `reopen()` re-armed in `enqueue_turn`. Cards resolved "(cancelled)" with
+  no clickable buttons. Fix: `GateChannel.reopen()` mirroring `bridge.reopen()`, called in
+  `enqueue_turn`. Generalized to `conventions.md ## Design decisions` (the latch-needs-reopen rule).
+  Regression: check C.
+- **A silent successful turn was flagged "model incompatible".** A reasoning model ran the tools then
+  ended with `finish_reason=stop` + empty text (reasoning-only output); the empty-after-tool guard
+  misread that as incompatibility. Fix: a native tool call already executed proves compatibility, so a
+  recognized terminal reason (`stop`/`length`/`content_filter`) is never incompatibility. Regression:
+  check D (`stop`).
+- **`length`/`content_filter` were the missing half of the above.** A reasoning model can burn the
+  whole `max_tokens_per_turn` budget → `length` + empty text → still falsely "incompatible". Fix:
+  `length` gets an honest "ran out of budget — ask me to continue" note; `content_filter` ends clean.
+  Regression: check D (`length` + `content_filter`).

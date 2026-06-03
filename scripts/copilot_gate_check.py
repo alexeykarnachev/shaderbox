@@ -251,7 +251,8 @@ def _check_decline_path() -> None:
     assert dones, "turn did not end in AgentTurnDone (the model's comment)"
     logger.info(f"B1 ok: {n} declined deletes end in AgentTurnDone, no giveup")
 
-    # B2: the final messages must carry a matching `tool` result for every assistant tool_call.
+    # The final messages must carry a matching `tool` result for every assistant tool_call
+    # (an orphaned tool_call_id 400s the next provider stream).
     msgs = client.last_messages
     open_ids: set[str] = set()
     result_ids: set[str] = set()

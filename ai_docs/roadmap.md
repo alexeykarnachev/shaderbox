@@ -30,14 +30,15 @@ feature; brief points at the superseder).
 - **DO NOT SHIP YET.** The copilot is NOT ship-ready (maintainer, explicit). Before any ship: a **copilot
   UI/UX polish wave** (to be planned). `master` stays at `v0.12.1`; a large unshipped stack sits on `dev`
   (020 wave 12→17 + 021 logging + 022 persistence) — intentional, keep accumulating.
-- **020·17 gate-UI wave — DONE (headless-verified; maintainer manual UI pass pending).** The `GateChannel`
-  body is wired: a destructive tool call pops an inline Yes/No confirm that blocks the worker (the gate is
-  the built bridge-mirror, reused not duplicated). Landed `delete_node` (always-gate; the live trigger — a
-  test user asked "remove the last 3") with a **Recover-from-trash** button on the resolved card, persisted
-  across restart, dying on chat-clear + trash removal. Decline continues the loop so the model comments (it
-  doesn't silently stop); a declined call doesn't trip the edit-retry cap. New `scripts/copilot_gate_check.py`
-  covers the persistence round-trip + decline-counter headlessly. Spec: `17_gate_ui.md`. **Maintainer: run
-  `make run` for the Yes/No/Recover/Stop-mid-gate visual pass (un-headless-able).**
+- **020·17 gate-UI wave — DONE + maintainer-verified live.** The `GateChannel` body is wired: a destructive
+  tool call pops an inline Yes/No confirm that blocks the worker (the gate is the built bridge-mirror, reused
+  not duplicated). Landed `delete_node` (always-gate; the live trigger — a test user asked "remove the last
+  3") with a **Recover-from-trash** button on the resolved card, persisted across restart, dying on
+  chat-clear + trash removal. Decline continues the loop so the model comments; a declined call doesn't trip
+  the edit-retry cap. Three post-test fixes (each with a teeth-verified regression in
+  `scripts/copilot_gate_check.py`): the gate is `reopen()`-ed each turn (was instant-cancelling — the
+  bridge's latch-after-init trap, un-mirrored); a clean `stop`/`length`/`content_filter` after a native tool
+  call is NOT model-incompatibility (`length` gets an honest "ran out of budget" note). Spec: `17_gate_ui.md`.
 - **NEXT — Tier 2 render/publish tools, OR the copilot UI/UX polish wave.** Render/publish: `render_image`/
   `render_video` + telegram/youtube wrappers (always-gate, 3s-cap-in-schema) — they reuse the gate machinery
   this wave built + the CREDENTIAL gate kind (stubbed today). The UI/UX polish wave is the gate to shipping.

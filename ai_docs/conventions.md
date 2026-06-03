@@ -121,6 +121,14 @@ belong in the feature spec (`ai_docs/features/NNN_*.md`). This file is not a cha
   network client (YouTube's Google libs) uses the same worker-thread pattern but WITHOUT the asyncio
   loop — `_worker_main` calls the blocking client directly. Revisit if a new async-required dep doesn't
   fit the worker-thread + own-loop pattern.
+- **A worker↔main blocking primitive that latches `_shutdown` on `release()` MUST expose `reopen()` and
+  be re-armed at turn start.** The copilot has two (`CopilotBridge` worker→main-GL, `GateChannel`
+  worker→UI-confirm). Both latch `_shutdown` on a non-reusable `cancel_all()` (release), and `App._init`
+  calls `release()` on the freshly constructed session before first use — so without a `reopen()` cleared
+  in `enqueue_turn`, every `run_on_main`/`ask` short-circuits ("shutting down" / instant-cancel) forever.
+  `cancel_turn`/`reset_conversation` use `reusable=True` (no latch), so only the release path needs the
+  re-arm. A NEW such primitive must mirror this: `reopen()` + a call beside the existing two in
+  `enqueue_turn`. Revisit if the latch model changes (e.g. a per-primitive ready flag replaces `_shutdown`).
 - **Exporters: own thread, own panel, GL-free artifacts.** The `Exporter` ABC enforces thread
   affinity — render-thread methods may touch moderngl; worker-thread methods (`prepare`, `export`,
   the `_do_*`/`_handle_*` job handlers) MUST NOT, they see only `RenderedArtifact` (a pure value
