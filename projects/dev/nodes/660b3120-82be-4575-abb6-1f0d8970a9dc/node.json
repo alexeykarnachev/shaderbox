@@ -28,6 +28,7 @@
     },
     "ui_state": {
         "ui_name": "Media Input",
+        "description": "",
         "render_media_details": {
             "is_video": true,
             "file_details": {
