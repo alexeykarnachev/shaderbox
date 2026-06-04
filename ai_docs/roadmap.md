@@ -89,13 +89,15 @@ feature; brief points at the superseder).
   matched `<word> SB_foo(`, taking `return` as the type), so the lib function was treated as shadowed,
   never spliced, and failed to compile as "undefined"; the regex now requires the full `(...) {` body so a
   keyword-preceded call can't masquerade as a def. Both pinned by regression tests.
-- **020·26 Render-tab render cue — DONE + headless-verified (state machine); awaits a maintainer eye.**
-  The "Rendering…" cue only ever covered the COPILOT render path; the Render-tab "Render" button rendered
-  inline on the click frame (froze the editor with no indication — the reported symptom). The button now
-  sets a one-frame-deferred `app.render_request` closure; `ui.py::_run_pending_render` holds it one frame
-  (the cue paints + swaps), then runs the encode on the next — the held buffer keeps the cue on screen
-  through the freeze. The cue overlay now fires for either producer. State machine pinned by
-  `test_render_cue_defer.py`; on-screen visibility is the one bit only a live eye can confirm.
+- **020·26 Render-tab render cue — DONE + maintainer-verified live (the cue now shows).** The
+  "Rendering…" cue only ever covered the COPILOT path; the Render-tab "Render" button rendered inline on
+  the click frame (froze the editor with no indication — the reported symptom). The button now sets a
+  deferred `app.render_request` closure that `update_and_draw` runs AFTER the frame's swap, with
+  `gl.finish()` between the swap and the encode. The real root cause (three prior scheduling attempts
+  failed): `glfwSwapBuffers` only QUEUES the buffer — on X11 a queued cue frame never composites while the
+  main thread blocks for seconds inside the encode, so `gl.finish()` is required to force the present before
+  the freeze (`conventions.md ## Known quirks`). The COPILOT render path runs its encode at the top of the
+  frame (before the swap) and so has the same latent invisibility — tracked in `todo.md`.
 - **NEXT — a maintainer re-pass on the 020 stack (020·19→26), then ship.** Still deferred: the lazy
   tool-catalogue (its ~16-tool threshold FIRED), true in-line drag-selection of wrapped chat prose,
   `bind_media`/`undo_edit` — all in `todo.md`.

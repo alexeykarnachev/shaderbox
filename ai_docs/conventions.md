@@ -279,6 +279,15 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   traceback frames stay; the variable values don't). So a log line only ever contains what you put in its
   message string — when you log around a secret-holding call, log the OUTCOME (`ok=False`, an error class),
   never the value. Re-verify the pin survives if you touch `logging_setup.py`.
+- **A pre-freeze repaint needs `gl.finish()` to actually reach the screen.** `glfwSwapBuffers` only
+  QUEUES the back buffer; the compositor presents it on its own cycle. If the main thread swaps and then
+  immediately blocks for seconds (a synchronous render/encode that freezes the frame loop), the queued
+  "Rendering…" cue frame may NEVER composite — the user sees the pre-render frame the whole time. The fix:
+  draw the cue, `swap_buffers`, then `gl.finish()` (blocks until the GPU has executed the present) BEFORE
+  the blocking encode (`ui.py::update_and_draw`, the Render-tab `render_request` path). Verified live on the
+  maintainer's X11 box: the cue was correctly scheduled three times and stayed invisible until the swap was
+  followed by `gl.finish()` before the encode. The copilot bridge render path runs its encode at the TOP of
+  the frame (`drain_bridge`, before the swap) and so has the SAME latent invisibility — tracked in `todo.md`.
 - **imgui / imgui-bundle quirks live in the `/imgui-ui` skill §8.** That includes: TextEditor
   palette read-only, monochrome emoji, dynamic glyph loading, `push_font` rasterized-size,
   `image()` lost `tint_col`, glfw cursor sync gap, pfd non-blocking handles, TextEditor

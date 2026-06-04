@@ -358,9 +358,10 @@ def update_and_draw(app: App) -> None:
     cheatsheet.draw(app)
     copilot_chat.draw(app)
     # The "Rendering..." cue. Two producers: the copilot bridge (a render op held one frame before
-    # the encode, feature 020·20 D3) and the Render-tab button (a deferred main-thread encode). Both
-    # hold one frame so the cue paints, then run on the next — see _run_pending_render below.
-    _run_pending_render(app)
+    # the encode, feature 020·20 D3) and the Render-tab button (a deferred main-thread encode). The
+    # Render-tab encode runs AFTER this frame's swap (below) so its cue is provably on the glass
+    # before the encode freezes the loop; the copilot bridge handles its own deferral.
+    run_render_now = app.render_request is not None and app.render_request_shown
     if app.copilot.bridge.render_pending() or app.render_request is not None:
         rendering_overlay("Rendering... the app pauses while it encodes.")
     imgui.pop_font()
@@ -380,24 +381,24 @@ def update_and_draw(app: App) -> None:
 
     glfw.swap_buffers(app.window)
 
-    app.frame_idx += 1
-
-
-def _run_pending_render(app: App) -> None:
-    # Drive the Render-tab deferred encode (set by the Render button). Hold it ONE frame so the
-    # "Rendering..." cue paints + swaps first; on the NEXT frame run the encode. During the encode
-    # (which freezes the loop) the last swapped buffer — the cue frame — stays on screen, so the
-    # cue is visible for the whole freeze. Called before the overlay-draw each frame.
-    if app.render_request is None:
+    # Run the Render-tab encode HERE, after the swap, so the cue frame is presented before the
+    # encode blocks. glFinish forces the GPU to actually display it (a queued buffer can otherwise
+    # never composite while the main thread blocks for seconds inside the encode).
+    if run_render_now:
+        gl.finish()
+        request = app.render_request
+        app.render_request = None
         app.render_request_shown = False
-        return
-    if not app.render_request_shown:
-        app.render_request_shown = True  # hold this frame; the cue paints below
-        return
-    request = app.render_request
-    app.render_request = None
-    app.render_request_shown = False
-    request()
+        if request is not None:
+            request()
+    elif app.render_request is not None:
+        # First sight of the request: hold it one frame so the cue paints + swaps above next loop.
+        app.render_request_shown = True
+    else:
+        # No request (or it was cleared externally): re-arm so the next one gets its own hold frame.
+        app.render_request_shown = False
+
+    app.frame_idx += 1
 
 
 def _hint(app: App, command_id: CommandId) -> str:

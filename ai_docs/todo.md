@@ -28,6 +28,19 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
 
 ---
 
+## [DEFERRAL] copilot render/publish cue likely invisible (no gl.finish before the freeze)
+- **Trigger:** a maintainer reports the "Rendering…" cue is missing when the COPILOT renders/publishes
+  (render_image / render_video / publish_telegram / publish_youtube), the same symptom the Render-tab
+  button had — OR next time you touch `bridge.drain` / `drain_bridge` / the copilot render defer.
+- The Render-tab fix (`ui.py`) presents the cue with `gl.finish()` AFTER the swap and BEFORE the encode
+  (see `conventions.md ## Known quirks` — a queued buffer never composites while the main thread blocks).
+  The copilot path runs its encode inside `drain_bridge()` at the TOP of the frame (line ~177), BEFORE the
+  cue is drawn and the buffer swapped — so the cue frame it scheduled has the same "queued, never presented"
+  problem and is probably invisible too. The 020·24/25 fixes corrected the `_render_pending` FLAG timing but
+  not this present-before-freeze requirement. Honest fix: route the copilot deferred render so its encode
+  also runs after a swap + `gl.finish()` (or have the bridge's held-op run at the same post-swap point as
+  `render_request`). Deferred — needs a live copilot render to confirm it's actually invisible first.
+
 ## [DEFERRAL] TraceLog._ensure_open can't distinguish "closed" from "never opened" (structural)
 - **Trigger:** a NON-MODAL project switch lands (a "recent projects" menu / hotkey that doesn't go
   through the blocking `pfd` folder dialog), OR `open_project`'s `_copilot_busy_blocked` gate is ever
