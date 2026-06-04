@@ -39,9 +39,9 @@ class CopilotBridge:
     def __init__(self) -> None:
         self._ops: queue.Queue[MainThreadOp] = queue.Queue(maxsize=64)
         self._shutdown: threading.Event = threading.Event()
-        # True for the one frame a deferred (render) op is held — the UI paints the "Rendering..."
-        # modal off this (feature 020·20 D3). Set in drain() when it holds the op, cleared the
-        # frame the op actually runs.
+        # True across BOTH the hold frame and the frame that runs the deferred (render) op — the UI
+        # paints the "Rendering..." cue off this (feature 020·20 D3). The run frame keeps it True so
+        # the cue covers the just-frozen frame; the next empty drain clears it.
         self._render_pending: bool = False
 
     def reopen(self) -> None:
@@ -72,14 +72,16 @@ class CopilotBridge:
         # Called ON THE MAIN THREAD, once per frame. Bounded so it never starves
         # the frame. A raising op sets op.error (re-raised on the worker) and the
         # frame continues — a buggy tool cannot crash the loop.
-        self._render_pending = False
         for _ in range(max_ops):
             try:
                 op = self._ops.get_nowait()
             except queue.Empty:
+                # Nothing held ran this frame: the cue (if any) was painted last frame and the
+                # encode has since returned — clear it so the overlay stops next frame.
+                self._render_pending = False
                 return
             if op.defer and not op._held:
-                # First sight of a render op: hold it ONE frame so the "Rendering..." modal paints
+                # First sight of a render op: hold it ONE frame so the "Rendering..." cue paints
                 # (D3), then stop draining so it runs at the top of the NEXT frame. Returning here
                 # is safe because the worker is single-threaded and blocks on this op's result —
                 # the queue holds nothing else behind it until the render returns.
@@ -94,6 +96,12 @@ class CopilotBridge:
                 op.error = e
             finally:
                 op.done.set()
+            if op.defer:
+                # The held render just ran (froze the loop). Leave _render_pending True and stop
+                # draining so the cue paints over THIS frame (the freeze frame) at the bottom of the
+                # loop; the next frame's empty drain clears it. Without this early return the loop
+                # would fall through to an Empty get and clear the flag in this same frame.
+                return
 
     def render_pending(self) -> bool:
         # MAIN THREAD: True for the one frame a render op is held (D3) — the UI draws the modal.

@@ -6,7 +6,7 @@ bridge patched to execute inline (the worker->main marshalling is what a real tu
 """
 
 import contextlib
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -14,7 +14,6 @@ import pytest
 
 from shaderbox.copilot.capabilities import EditResult
 from shaderbox.templates_descriptions import TemplateDescriptionsStore
-
 
 # ---- the sidecar store (pure, GL-free) ----
 
@@ -61,14 +60,20 @@ def app() -> Iterator[Any]:
 
 
 def _text_handle(app: Any) -> str:
-    return next(t.template_id for t in app._copilot_template_catalog() if t.name == "Text Rendering")
+    return next(
+        t.template_id
+        for t in app._copilot_template_catalog()
+        if t.name == "Text Rendering"
+    )
 
 
 def test_catalogue_has_three_prefixed_unique_templates(app: Any) -> None:
     cat = app._copilot_template_catalog()
     assert len(cat) == 3
     assert all(t.template_id.startswith("template:") for t in cat)
-    assert len({t.template_id for t in cat}) == 3  # short ids never collide for the shipped set
+    assert (
+        len({t.template_id for t in cat}) == 3
+    )  # short ids never collide for the shipped set
     assert {t.name for t in cat} == {"UV Mango", "Media Input", "Text Rendering"}
 
 

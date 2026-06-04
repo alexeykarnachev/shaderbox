@@ -29,14 +29,10 @@ from shaderbox.util import open_in_file_manager
 # Renders the transcript by message role — incl. the pending_action confirm gate + its
 # Recover affordance (feature 020·17) — plus the streaming/input row.
 
-# no_move: a drag on the BODY no longer moves the window (so text selection in a message works) — the
-# title bar still drags it (imgui special-cases the title bar under no_move). FREE layout repositioning
-# narrows to title-bar-only (feature 020·23 D7); CORNER/BOTTOM_STRIP force pos every frame regardless.
-_WINDOW_FLAGS = (
-    imgui.WindowFlags_.no_nav_focus
-    | imgui.WindowFlags_.no_collapse
-    | imgui.WindowFlags_.no_move
-)
+# no_move is layout-conditional (added per-layout in _apply_layout). The fixed presets
+# (CORNER/BOTTOM_STRIP) force pos+size every frame, so no_move only stops a stray drag from
+# fighting that snap; FREE is user-positioned, so it must stay draggable from the title bar.
+_WINDOW_FLAGS = imgui.WindowFlags_.no_nav_focus | imgui.WindowFlags_.no_collapse
 _NEXT_LAYOUT: dict[CopilotLayout, CopilotLayout] = {
     CopilotLayout.CORNER: CopilotLayout.BOTTOM_STRIP,
     CopilotLayout.BOTTOM_STRIP: CopilotLayout.FREE,
@@ -44,25 +40,28 @@ _NEXT_LAYOUT: dict[CopilotLayout, CopilotLayout] = {
 }
 
 
-def _apply_layout(app: App) -> None:
+def _apply_layout(app: App) -> int:
     # Anchor to the editor child's screen rect (the coding area), NOT the glfw window —
     # the chat belongs over the editor column. CORNER / BOTTOM_STRIP force pos+size every
-    # frame (fixed presets). FREE seeds once and lets imgui.ini persist the user's drag.
+    # frame (fixed presets) and add no_move so a drag can't fight the per-frame snap. FREE
+    # seeds once, stays draggable, and lets imgui.ini persist the user's position.
     ex, ey, ew, eh = app.editor_rect
     margin = float(SIZE.COPILOT_MARGIN)
     if app.copilot_layout == CopilotLayout.CORNER:
         w, h = float(SIZE.COPILOT_W), float(SIZE.COPILOT_H)
         imgui.set_next_window_pos((ex + ew - w - margin, ey + eh - h - margin))
         imgui.set_next_window_size((w, h))
-    elif app.copilot_layout == CopilotLayout.BOTTOM_STRIP:
+        return imgui.WindowFlags_.no_move
+    if app.copilot_layout == CopilotLayout.BOTTOM_STRIP:
         h = float(SIZE.COPILOT_STRIP_H)
         imgui.set_next_window_pos((ex + margin, ey + eh - h - margin))
         imgui.set_next_window_size((ew - 2.0 * margin, h))
-    else:
-        imgui.set_next_window_size(
-            (float(SIZE.COPILOT_W), float(SIZE.COPILOT_H)),
-            imgui.Cond_.first_use_ever,
-        )
+        return imgui.WindowFlags_.no_move
+    imgui.set_next_window_size(
+        (float(SIZE.COPILOT_W), float(SIZE.COPILOT_H)),
+        imgui.Cond_.first_use_ever,
+    )
+    return 0
 
 
 def draw(app: App) -> None:
@@ -74,8 +73,8 @@ def draw(app: App) -> None:
     if app.copilot_focus_pending:
         imgui.set_next_window_focus()
 
-    _apply_layout(app)
-    with imgui_ctx.begin("Copilot", flags=_WINDOW_FLAGS) as window:
+    flags = _WINDOW_FLAGS | _apply_layout(app)
+    with imgui_ctx.begin("Copilot", flags=flags) as window:
         if not window.expanded:
             app.copilot_focused = False
             app.copilot_hovered = False
@@ -188,9 +187,9 @@ def _draw_message(app: App, msg: Message, idx: int) -> None:
 
 
 def _copy_affordance(text: str, idx: int) -> None:
-    # A copy-to-clipboard for a chat message (feature 020·23 D7): the window now drags only from the
-    # title bar (no_move), so a body drag stays put — but prose isn't natively selectable, so this gets
-    # the text OUT. A small always-visible ghost (no hover-jitter); copies the whole message.
+    # A copy-to-clipboard for a chat message (feature 020·23 D7): prose isn't natively selectable in
+    # imgui, so this gets the text OUT. A small always-visible ghost (no hover-jitter); copies the
+    # whole message.
     if ghost_button(f"Copy##msg_copy_{idx}"):
         with contextlib.suppress(pyperclip.PyperclipException):
             pyperclip.copy(text)

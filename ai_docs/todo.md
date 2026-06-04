@@ -156,18 +156,6 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   scope`). Building the lazy path is the fix: the tools already carry `eager`/`category` for it.
   Spec: `20_ui_ux_polish.md` D5.
 
-## [BLOCKER] copilot full-turn history grows unbounded — no window trim
-- **Trigger:** a multi-turn `read_shader`-heavy copilot session approaches the provider's context limit
-  (the symptom is a stream that starts erroring once history is large), OR the next time you touch
-  `prompt.build_messages` / `session._commit_turn`.
-- 020·23 D4 persists the FULL per-turn tail (assistant + tool messages incl. read_shader's full source
-  listing) to `self.history` so the agent sees its own trajectory next turn. History now grows
-  MONOTONICALLY and `config.max_input_tokens` is a DEAD constant (read nowhere — no trim exists). Fine
-  for the text-shader workflow (~2-3 iterations) but a real risk for long sessions. Fix: a turn-window
-  trim in `build_messages` (drop/summarize the oldest tool messages once a token estimate over history
-  exceeds a budget), keyed on `max_input_tokens` (wire it up). Spec: `23_uniform_history_chat_untangle.md`
-  ## Out of scope.
-
 ## [DEFERRAL] true in-line drag-selection of WRAPPED copilot chat prose
 - **Trigger:** the per-message Copy button (020·23 D7) proves insufficient — a user wants to select a
   PHRASE within a message, not copy the whole thing.

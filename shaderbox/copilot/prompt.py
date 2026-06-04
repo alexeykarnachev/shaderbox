@@ -1,5 +1,18 @@
+from loguru import logger
+
+from shaderbox.copilot.config import COPILOT_CONFIG
 from shaderbox.copilot.context import CopilotContext
 from shaderbox.copilot.llm.api import LLMMessage
+
+# Min turns the trim always keeps, even over budget — the agent needs recent trajectory to stay
+# coherent (its own last read_shader / edit results). A "turn" starts at a user message and runs to
+# the next user message; trimming whole turns preserves the assistant->tool_call->tool pairing that
+# the provider 400s on if broken.
+_MIN_KEPT_TURNS: int = 4
+# Rough char->token ratio for the trim THRESHOLD only (no tokenizer in-tree; the provider returns
+# real counts but only post-send). ~4 chars/token is the standard English/code heuristic; we only
+# need "is history big", not an exact count.
+_CHARS_PER_TOKEN: int = 4
 
 # Prompt assembly: (context snapshot, history, the new user turn) -> list[LLMMessage].
 # Knows nothing of tools or the client. Ordered least-volatile -> most-volatile for
@@ -196,6 +209,56 @@ def _context_block(context: CopilotContext) -> str:
     )
 
 
+def _estimate_tokens(messages: list[LLMMessage]) -> int:
+    # Char-count / ratio over content + tool-call arguments (the tool args echoed back in an
+    # assistant turn are real prompt bytes too). Threshold-only — see _CHARS_PER_TOKEN.
+    chars = 0
+    for m in messages:
+        if m.content:
+            chars += len(m.content)
+        for tc in m.tool_calls or ():
+            chars += len(tc.name) + len(tc.arguments)
+    return chars // _CHARS_PER_TOKEN
+
+
+def _split_turns(history: list[LLMMessage]) -> list[list[LLMMessage]]:
+    # Group the flat history into turns, each starting at a `user` message and running to the next
+    # one. The assistant(+tool_calls)->tool tail of a turn stays inside that turn's group, so dropping
+    # whole groups never orphans a tool_call_id. A leading non-user fragment (shouldn't occur — every
+    # commit starts with a user message) becomes its own leading group, preserved as-is.
+    turns: list[list[LLMMessage]] = []
+    for m in history:
+        if m.role == "user" or not turns:
+            turns.append([m])
+        else:
+            turns[-1].append(m)
+    return turns
+
+
+def _trim_history(
+    history: list[LLMMessage], fixed_overhead_tokens: int
+) -> list[LLMMessage]:
+    # Drop whole leading turns until the estimate fits max_input_tokens, always keeping the last
+    # _MIN_KEPT_TURNS. fixed_overhead_tokens is the non-history prefix (system + context + new user
+    # message) so the budget covers the whole request, not just history.
+    budget = COPILOT_CONFIG.max_input_tokens
+    if fixed_overhead_tokens + _estimate_tokens(history) <= budget:
+        return history
+    turns = _split_turns(history)
+    while len(turns) > _MIN_KEPT_TURNS:
+        kept = [m for turn in turns for m in turn]
+        if fixed_overhead_tokens + _estimate_tokens(kept) <= budget:
+            break
+        turns.pop(0)
+    trimmed = [m for turn in turns for m in turn]
+    if len(trimmed) < len(history):
+        logger.debug(
+            f"copilot history trimmed: {len(history)} -> {len(trimmed)} messages "
+            f"(~{fixed_overhead_tokens + _estimate_tokens(trimmed)} tok, budget {budget})"
+        )
+    return trimmed
+
+
 def build_messages(
     context: CopilotContext,
     history: list[LLMMessage],
@@ -203,9 +266,10 @@ def build_messages(
 ) -> list[LLMMessage]:
     # least-volatile -> most-volatile: stable system rules, then the rare-volatility project
     # map/catalogue, then inert history, then the pending user message (§6/§B1a).
-    return [
+    prefix = [
         LLMMessage(role="system", content=_SYSTEM_PROMPT),
         LLMMessage(role="system", content=_context_block(context)),
-        *history,
-        LLMMessage(role="user", content=_sanitize(user_text)),
     ]
+    new_user = LLMMessage(role="user", content=_sanitize(user_text))
+    overhead = _estimate_tokens([*prefix, new_user])
+    return [*prefix, *_trim_history(history, overhead), new_user]

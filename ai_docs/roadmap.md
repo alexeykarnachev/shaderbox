@@ -71,10 +71,18 @@ feature; brief points at the superseder).
   no-default-init GLSL invariant + the "on 'I see nothing' don't re-assert, re-read" escalation);
   read_shader shows a chat SUMMARY (the user reads code in the editor); chat `no_move` + a per-message
   Copy. Spec: `23_uniform_history_chat_untangle.md`.
-- **NEXT — a maintainer live pass on the 020 stack (020·19→23), then ship.** Still deferred: the lazy
-  tool-catalogue (its ~16-tool threshold FIRED), the history-window TRIM (full-turn persistence now
-  grows history monotonically; `max_input_tokens` is dead), true in-line drag-selection of wrapped chat
-  prose, `bind_media`/`undo_edit` — all in `todo.md`.
+- **020·24 live-pass fixes — DONE + headless-verified; awaits a maintainer re-pass.** A maintainer live
+  session (11 turns: build/animate/center a text shader, then publish to TG + YT Shorts) surfaced three
+  harness defects, all fixed: (1) the "Rendering…" cue never visibly painted — `bridge.drain` cleared
+  `_render_pending` at the top of the run frame, so the freeze frame showed no cue; now the flag survives
+  the run frame so the cue covers the freeze. (2) the chat window was un-draggable in ALL layouts — a
+  false in-code premise ("title bar still drags under `no_move`"; it does not) froze even FREE; `no_move`
+  is now layout-conditional (forced presets only). (3) the unbounded-history BLOCKER is RESOLVED —
+  `build_messages` now trims whole leading turns once the request estimate exceeds `max_input_tokens`
+  (the dead constant is wired up), keeping the last 4 turns and never orphaning a tool_call_id.
+- **NEXT — a maintainer re-pass on the 020 stack (020·19→24), then ship.** Still deferred: the lazy
+  tool-catalogue (its ~16-tool threshold FIRED), true in-line drag-selection of wrapped chat prose,
+  `bind_media`/`undo_edit` — all in `todo.md`.
 - **Trace-gated (NOT now):** semantic-editing (rename/outline/add_uniform), GLSL-aware grep, uniforms-in-
   tree, eager-recompile for lib edits — each only if a trace shows the current tools struggling (none does).
   The visual-variant-optimizer (render N variants as clickable chat boxes) is the big future feature.

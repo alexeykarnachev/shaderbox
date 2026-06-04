@@ -40,7 +40,9 @@ def test_float_array_flat_exact_length() -> None:
 
 
 def test_float_array_wrong_length_rejects_no_pad() -> None:
-    assert _coerce_uniform_value([1, 2, 3], _u(1, 4)) is None  # short -> None, NOT padded
+    assert (
+        _coerce_uniform_value([1, 2, 3], _u(1, 4)) is None
+    )  # short -> None, NOT padded
     assert _coerce_uniform_value([1, 2, 3, 4, 5], _u(1, 4)) is None
 
 
@@ -58,7 +60,9 @@ def test_vec_array_wrong_length_rejects() -> None:
 
 
 def test_string_on_numeric_uniform_rejects() -> None:
-    assert _coerce_uniform_value("fast", _u(1, 1)) is None  # str only valid for a uint text array
+    assert (
+        _coerce_uniform_value("fast", _u(1, 1)) is None
+    )  # str only valid for a uint text array
     assert _coerce_uniform_value("x", _u(1, 4)) is None  # float array, not text
 
 
