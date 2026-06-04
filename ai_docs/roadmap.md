@@ -80,7 +80,16 @@ feature; brief points at the superseder).
   is now layout-conditional (forced presets only). (3) the unbounded-history BLOCKER is RESOLVED —
   `build_messages` now trims whole leading turns once the request estimate exceeds `max_input_tokens`
   (the dead constant is wired up), keeping the last 4 turns and never orphaning a tool_call_id.
-- **NEXT — a maintainer re-pass on the 020 stack (020·19→24), then ship.** Still deferred: the lazy
+- **020·25 live-pass round 2 — DONE + headless-verified; awaits a maintainer re-pass.** A second live
+  session (build/animate/publish a text shader) exposed two more: (1) the render cue STILL didn't show —
+  the 020·24 fix was correct but `_copilot_publish` called the bridge WITHOUT `defer=True` (only the bare
+  `render_image`/`render_video` deferred), and the session only ever PUBLISHED, so the cue path was never
+  taken; publish now defers too. (2) a lib resolver bug forced the agent off the library entirely — a
+  `return SB_palette_sunset(...)` call read as a user DEFINITION of `SB_palette_sunset` (`USER_FN_DEF_RE`
+  matched `<word> SB_foo(`, taking `return` as the type), so the lib function was treated as shadowed,
+  never spliced, and failed to compile as "undefined"; the regex now requires the full `(...) {` body so a
+  keyword-preceded call can't masquerade as a def. Both pinned by regression tests.
+- **NEXT — a maintainer re-pass on the 020 stack (020·19→25), then ship.** Still deferred: the lazy
   tool-catalogue (its ~16-tool threshold FIRED), true in-line drag-selection of wrapped chat prose,
   `bind_media`/`undo_edit` — all in `todo.md`.
 - **Trace-gated (NOT now):** semantic-editing (rename/outline/add_uniform), GLSL-aware grep, uniforms-in-

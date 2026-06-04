@@ -257,6 +257,27 @@ def test_user_shadowing_suppresses_lib_version(tmp_path: Path) -> None:
     assert "return 0.0" not in flattened
 
 
+def test_call_after_return_keyword_is_not_a_shadowing_def(tmp_path: Path) -> None:
+    # Regression: `return SB_foo(...)` must NOT read as a user definition of SB_foo. The old
+    # USER_FN_DEF_RE matched `<word> SB_foo(` and so saw `return` as a type, wrongly suppressing
+    # the lib splice — the function then failed to compile as "undefined" (a live copilot session
+    # hit exactly this with `return SB_palette_sunset(...)`).
+    lib = tmp_path / "lib"
+    idx = _make_lib(lib, {"palette.glsl": "vec3 SB_pal(float t) { return vec3(t); }\n"})
+    root = _write(
+        tmp_path / "root.glsl",
+        "vec3 animated(float t) { return SB_pal(t); }\n"
+        "void main() { vec3 c = animated(0.5); }\n",
+    )
+    flattened, sources, _smap, errors = resolve_usage(root, idx)
+    assert errors == []
+    # The lib function MUST be spliced (it was wrongly treated as user-shadowed before the fix).
+    assert "vec3 SB_pal(float t)" in flattened
+    assert len(sources) == 2  # root + the lib file pulled in
+    # And it's spliced BEFORE the call site (GLSL needs def-before-use).
+    assert flattened.find("vec3 SB_pal(float t)") < flattened.find("return SB_pal(t)")
+
+
 def test_preamble_inserted_after_version_directive(tmp_path: Path) -> None:
     lib = tmp_path / "lib"
     idx = _make_lib(lib, {"x.glsl": "float SB_x() { return 0.0; }\n"})

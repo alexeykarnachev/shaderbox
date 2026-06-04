@@ -1223,7 +1223,9 @@ class App:
             # The returned object is held HERE for the whole wait, so the terminal can never
             # be a different object reused at the baseline's address (no id() ambiguity).
             baseline = self.copilot.bridge.run_on_main(
-                _render_and_enqueue, timeout=COPILOT_CONFIG.render_op_timeout_s
+                _render_and_enqueue,
+                timeout=COPILOT_CONFIG.render_op_timeout_s,
+                defer=True,
             )
         except CopilotToolError:
             return PublishResult(ok=False, error="render failed (see logs)", kind=kind)

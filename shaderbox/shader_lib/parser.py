@@ -22,10 +22,15 @@ IDENT_RE = re.compile(r"\b([A-Za-z_]\w*)\b")
 # A `SB_` identifier — what the user types in their shader to call a lib function.
 SB_IDENT_RE = re.compile(r"\bSB_\w+\b")
 
-# A function definition IN THE USER'S text (so we can suppress the lib version when
-# the user shadows it). The regex deliberately matches more loosely than FN_SIG_RE
-# — it just needs to find `<type> SB_foo(`.
-USER_FN_DEF_RE = re.compile(r"\b\w+(?:\s*\[\s*\d*\s*\])?\s+(SB_\w+)\s*\(", re.MULTILINE)
+# A function DEFINITION in the user's text (so we can suppress the lib version when the
+# user shadows it). Must match the full signature `<type> SB_foo(args) {` — the trailing
+# `)` + `{` body is what distinguishes a definition from a CALL that happens to follow a
+# keyword (`return SB_foo(...)` reads `return` as a type otherwise, and the lib function is
+# wrongly treated as shadowed and never spliced). Args are non-capturing so findall yields
+# just the name.
+USER_FN_DEF_RE = re.compile(
+    r"\b\w+(?:\s*\[\s*\d*\s*\])?\s+(SB_\w+)\s*\((?:[^)]*)\)\s*\{", re.MULTILINE
+)
 
 
 def strip_comments(text: str) -> str:
