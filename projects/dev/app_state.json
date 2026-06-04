@@ -1,5 +1,5 @@
 {
-    "current_node_id": "c184b3a7-4e0a-464a-b7af-ff333f8085f3",
+    "current_node_id": "4b87cb6f-35e3-49ed-bb6c-bfa41e774ba3",
     "selected_node_template_id": "73ea2431-13f6-41e4-b923-04d846b678b0",
     "new_node_name": "Media Input",
     "is_render_all_nodes": true,
@@ -8,8 +8,8 @@
         "youtube": {},
         "x": {}
     },
-    "active_exporter_id": "",
-    "telegram_default_pack": "raymarched_sphere_by_shaderbox_bot",
+    "active_exporter_id": "telegram",
+    "telegram_default_pack": "shaderbox_test_pack_by_shaderbox_bot",
     "global_target_fps": 60,
     "editor_split_fraction": 0.4817610062893079,
     "editor_settings": {
@@ -20,8 +20,8 @@
         "tab_size": 4,
         "line_spacing": 1.0
     },
-    "active_node_tab": "share",
-    "is_copilot_open": false,
+    "active_node_tab": "node",
+    "is_copilot_open": true,
     "copilot_layout": "free",
     "key_bindings": {},
     "show_cheatsheet": true
