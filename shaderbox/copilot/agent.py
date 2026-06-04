@@ -1,7 +1,7 @@
 import json
 import threading
 from collections.abc import Callable, Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from loguru import logger
 
@@ -18,6 +18,7 @@ from shaderbox.copilot.llm.api import (
     LLMUsage,
 )
 from shaderbox.copilot.prompt import build_messages
+from shaderbox.copilot.state import ResultWidget
 from shaderbox.copilot.tools.registry import ToolRegistry
 from shaderbox.copilot.trace import NULL_TRACE, TraceLog
 
@@ -58,22 +59,40 @@ class AgentToolCard:
     name: str
     ok: bool
     payload: dict | None
+    # The tool's result string (render path / publish URL / error text) so the transcript can show
+    # a result line under the card (feature 020·20 D1), not just "name: ok/failed". Engine-built,
+    # already concise; goes to the LLM history + trace too.
+    result: str = ""
+    # A first-class result widget the engine renders from payload["widget"] (feature 020·21): a button
+    # the user clicks; the raw target never reaches the model. None = no widget (the default).
+    widget: ResultWidget | None = None
+    # A terse chat-display line from payload["display"] (feature 020·23): when a tool's full `result`
+    # is heavy (read_shader's full source listing), the USER sees this summary instead — the full
+    # result still goes to the AGENT's context. "" = show `result` as before.
+    display: str = ""
+
+
+# The terminal events carry the per-turn TAIL (feature 020·23 D4): the assistant/tool messages this
+# turn produced, orphan-cleaned, for _commit_turn to persist into the replay history. Empty default so
+# the session's bare-except AgentError fallbacks (which never see run_turn's messages) commit no tail.
 
 
 @dataclass(frozen=True)
 class AgentTurnDone:
     note: str
     usage: LLMUsage
+    messages: list[LLMMessage] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
 class AgentError:
     message: str
+    messages: list[LLMMessage] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
 class AgentCancelled:
-    pass
+    messages: list[LLMMessage] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -153,12 +172,29 @@ def _parse_args(raw: str) -> dict | None:
     return _unescape_double_escaped(parsed)
 
 
+_ESCAPE_MARKERS: tuple[str, ...] = ("\\n", "\\t", "\\r", '\\"')
+
+
+def _looks_double_escaped(v: str) -> bool:
+    # The double-escape signature (cc-server _maybe_unescape, §J6): the value is a quoted JSON
+    # string whose BODY carries escape markers (\n \t \r \") but no real whitespace — meaning the
+    # provider serialized a newline as the two chars `\` `n`. A plainly-quoted payload that the
+    # model legitimately wrapped in literal double-quotes (e.g. an `#include "x"` token) has no
+    # such marker, so it is left untouched: unwrapping it would silently strip a real quote level.
+    if len(v) < 2 or v[0] != '"' or v[-1] != '"':
+        return False
+    body = v[1:-1]
+    return any(m in body for m in _ESCAPE_MARKERS) and not any(
+        c in body for c in " \t\n\r"
+    )
+
+
 def _unescape_double_escaped(args: dict) -> dict:
-    # grok footgun (§J6): a string value can be double-escaped JSON ({"x": "\"y\""}).
-    # Unwrap one level when a value is a quoted JSON string.
+    # grok footgun (§J6): a string value can be double-escaped JSON ({"x": "\"y\""}). Unwrap one
+    # level ONLY when the value carries the double-escape signature (_looks_double_escaped).
     out: dict = {}
     for k, v in args.items():
-        if isinstance(v, str) and len(v) >= 2 and v[0] == '"' and v[-1] == '"':
+        if isinstance(v, str) and _looks_double_escaped(v):
             try:
                 out[k] = json.loads(v)
             except json.JSONDecodeError:
@@ -166,6 +202,45 @@ def _unescape_double_escaped(args: dict) -> dict:
         else:
             out[k] = v
     return out
+
+
+_RESULT_WIDGET_KINDS: frozenset[str] = frozenset({"open_url", "open_path"})
+
+
+def _widget_from_payload(payload: dict | None) -> ResultWidget | None:
+    # A tool surfaces a first-class result widget by putting a {"kind","label","target"} dict under
+    # payload["widget"] (feature 020·21). Built engine-side, so it's well-formed — but guard defensively
+    # (a known kind + a non-empty target) so a malformed entry yields no widget rather than a bad button.
+    spec = (payload or {}).get("widget")
+    if not isinstance(spec, dict):
+        return None
+    kind = spec.get("kind")
+    target = spec.get("target", "")
+    if kind not in _RESULT_WIDGET_KINDS or not target:
+        return None
+    return ResultWidget(
+        kind=kind, label=str(spec.get("label", "Open")), target=str(target)
+    )
+
+
+def _turn_tail(messages: list[LLMMessage], head_len: int) -> list[LLMMessage]:
+    # The per-turn tail to persist (feature 020·23 D4): messages[head_len:], with a trailing assistant
+    # whose tool_calls lack matching tool results DROPPED — a cancel can return mid-batch (the assistant-
+    # with-tool_calls is appended before the per-call results), and an orphaned tool_call_id 400s the
+    # next stream. Drop that trailing assistant + any partial tool messages that follow it.
+    tail = messages[head_len:]
+    last_assistant = next(
+        (i for i in range(len(tail) - 1, -1, -1) if tail[i].tool_calls), None
+    )
+    if last_assistant is None:
+        return tail
+    wanted = {c.id for c in (tail[last_assistant].tool_calls or [])}
+    have = {m.tool_call_id for m in tail[last_assistant + 1 :] if m.tool_call_id}
+    if wanted <= have:
+        return tail
+    return tail[
+        :last_assistant
+    ]  # drop the orphaned assistant + its partial tool messages
 
 
 def _assistant_message(text: str, calls: list[_ToolCallBuilder]) -> LLMMessage:
@@ -190,6 +265,7 @@ _GATE_PROMPTS: dict[str, Callable[[dict], str]] = {
     "publish_telegram": lambda a: "Publish this shader to your Telegram sticker pack? This uploads the sticker (external + live).",
     "publish_youtube": lambda a: f"Publish this shader to YouTube as '{a.get('title', '')}'? The video goes live on your channel (private; external).",
     "set_telegram_token": lambda a: "Paste your Telegram bot token below (from @BotFather). It's stored locally; I never see it.",
+    "set_youtube_credentials": lambda a: "Set up YouTube below: paste your client_secret JSON, then press Connect (a browser sign-in opens). Or Cancel.",
     "create_telegram_pack": lambda a: f"Create a new Telegram sticker pack '{a.get('title', '')}'?",
     "select_telegram_pack": lambda a: f"Switch your active Telegram pack to '{a.get('set_name', '')}'?",
     "delete_telegram_pack": lambda a: f"Delete the Telegram sticker pack '{a.get('set_name', '')}'? This removes it from Telegram (external + irreversible).",
@@ -212,6 +288,11 @@ def build_gate(registry: ToolRegistry, name: str, args: dict) -> GateRequest:
         return GateRequest(
             kind=GateKind.CREDENTIAL, prompt=prompt, secret_field=tool.secret_field
         )
+    if tool is not None and tool.gate_kind is GateKind.CONFIG:
+        # secret_field names the INTEGRATION whose draw_config_ui the card renders (feature 020·21).
+        return GateRequest(
+            kind=GateKind.CONFIG, prompt=prompt, secret_field=tool.secret_field
+        )
     return GateRequest(kind=GateKind.CONFIRM, prompt=prompt, options=["Yes", "No"])
 
 
@@ -231,6 +312,10 @@ def run_turn(
     # full-transcript sink (None in tests) — it records everything, in full (trace.py).
     tr = trace if trace is not None else NULL_TRACE
     messages = build_messages(context, history, user_text)
+    # The head = [system, system, *history, user] (build_messages); the per-turn TAIL the model produced
+    # is messages[head_len:] (feature 020·23 D4). _commit_turn persists that tail (the user message is
+    # re-added separately), so cross-turn replay carries what the agent actually DID, not just its reply.
+    head_len = len(messages)
     specs = registry.eager_specs()
     usage = _UsageRollup()
     ran = _RunLog()
@@ -246,7 +331,7 @@ def run_turn(
     for iteration in range(config.max_iterations):
         if cancel.is_set():
             logger.debug(f"copilot turn cancelled at iteration {iteration}")
-            yield AgentCancelled()
+            yield AgentCancelled(_turn_tail(messages, head_len))
             return
 
         text_buf = ""
@@ -322,7 +407,9 @@ def run_turn(
                 tr.event(
                     "model_incompatible", iteration=iteration, reason="empty_after_tool"
                 )
-                yield AgentError(_MODEL_INCOMPATIBLE_MSG)
+                yield AgentError(
+                    _MODEL_INCOMPATIBLE_MSG, messages=_turn_tail(messages, head_len)
+                )
                 return
             if not text_buf and fr == "length":
                 # The model was cut off mid-reply by the per-turn token budget. Tell the user
@@ -333,9 +420,15 @@ def run_turn(
                 tr.event("turn_truncated", iteration=iteration, reason="length")
                 yield AgentError(
                     "I ran out of my per-reply token budget before I could summarize. "
-                    "The actions above did complete — ask me to continue or recap."
+                    "The actions above did complete — ask me to continue or recap.",
+                    messages=_turn_tail(messages, head_len),
                 )
                 return
+            # The final assistant reply (text-only, no tool calls) is in text_buf but not yet in
+            # `messages` (only tool-call iterations append an assistant message) — append it so the
+            # persisted turn tail carries the agent's last word (feature 020·23 D4).
+            if text_buf:
+                messages.append(LLMMessage(role="assistant", content=text_buf))
             logger.info(
                 f"copilot turn done | iterations={iteration + 1} "
                 f"tool_calls={total_tool_calls} reply={len(text_buf)}ch "
@@ -348,11 +441,16 @@ def run_turn(
                 reply=text_buf,
                 usage=usage.value(),
             )
-            yield AgentTurnDone(ran.executed_actions_note(registry), usage.value())
+            yield AgentTurnDone(
+                ran.executed_actions_note(registry),
+                usage.value(),
+                messages=_turn_tail(messages, head_len),
+            )
             return
 
         calls = [builders[i] for i in sorted(builders)]
         messages.append(_assistant_message(text_buf, calls))
+        giveup = False
         for tc in calls:
             args = _parse_args(tc.arguments)
             if args is None:
@@ -365,11 +463,20 @@ def run_turn(
                     arguments_raw=tc.arguments,
                 )
                 messages.append(_tool_message(tc.id, "error: invalid arguments JSON"))
+                # Malformed args for an EDIT tool is a non-converging retry too (§020·20 D4) — a
+                # model that keeps emitting unparseable edit JSON must hit the same giveup cap, not
+                # loop to max_iterations. Non-edit malformed calls don't count (same as a failed
+                # non-edit tool below).
+                if registry.is_edit_tool(tc.name):
+                    consecutive_failed_edits += 1
+                    if consecutive_failed_edits >= config.max_edit_retries:
+                        giveup = True
+                        break
                 continue
             yield AgentStatus(registry.status_for(tc.name, args))
             if cancel.is_set():
                 logger.debug(f"copilot turn cancelled before tool {tc.name}")
-                yield AgentCancelled()
+                yield AgentCancelled(_turn_tail(messages, head_len))
                 return
             # Pre-gate guard (feature 020·18): a publish that can't run (no creds / no pack)
             # returns a guided-handoff message BEFORE the gate, so the user never gets a
@@ -397,7 +504,7 @@ def run_turn(
                 if resp.cancelled:
                     logger.debug(f"copilot turn cancelled at gate for {tc.name}")
                     tr.event("gate_cancelled", name=tc.name)
-                    yield AgentCancelled()
+                    yield AgentCancelled(_turn_tail(messages, head_len))
                     return
                 if not resp.approved:
                     logger.info(f"copilot tool {tc.name} | user declined")
@@ -420,39 +527,51 @@ def run_turn(
                 payload=payload,
             )
             ran.record(tc.name, ok, msg)
-            yield AgentToolCard(tc.name, ok, payload)
+            display = str((payload or {}).get("display", ""))
+            yield AgentToolCard(
+                tc.name,
+                ok,
+                payload,
+                result=msg,
+                widget=_widget_from_payload(payload),
+                display=display,
+            )
             messages.append(_tool_message(tc.id, msg))
 
             # §I2 self-correction cap: a model stuck on an edit (an old_str that keeps not
             # matching, a line range that keeps not resolving) would otherwise retry to the
-            # max_iterations ceiling. Count CONSECUTIVE failed MUTATING tools; any success or
-            # non-mutating tool resets it. A freshness reject (payload["stale"], §15) is a
-            # benign "re-read and continue", NOT a convergence failure, so it does not count.
+            # max_iterations ceiling. Count CONSECUTIVE failed shader-EDIT tools (not all mutating
+            # tools — a failed render/publish is non-convergence, not a stuck edit, §020·20 D4);
+            # any success or non-edit tool resets it. A freshness reject (payload["stale"], §15) is
+            # a benign "re-read and continue", NOT a convergence failure, so it does not count.
             # payload is None on a malformed-args/unknown-tool result — guard the .get.
             stale = bool((payload or {}).get("stale"))
-            if registry.is_mutating(tc.name) and not ok and not stale:
+            if registry.is_edit_tool(tc.name) and not ok and not stale:
                 consecutive_failed_edits += 1
             else:
                 consecutive_failed_edits = 0
             if consecutive_failed_edits >= config.max_edit_retries:
-                logger.warning(
-                    f"copilot edit giveup after {consecutive_failed_edits} failed "
-                    f"edits | total_in={usage.input_tokens} "
-                    f"cost=${usage.value().cost_usd:.6f}"
-                )
-                tr.event(
-                    "edit_giveup",
-                    consecutive_failed_edits=consecutive_failed_edits,
-                    usage=usage.value(),
-                )
-                note = (
-                    f"I couldn't apply that edit after {consecutive_failed_edits} tries "
-                    "— the edit kept not applying to the shader source. I've stopped to "
-                    "avoid looping. Tell me to try again, or describe the change "
-                    "differently."
-                )
-                yield AgentError(note)
-                return
+                giveup = True
+                break
+
+        if giveup:
+            logger.warning(
+                f"copilot edit giveup after {consecutive_failed_edits} failed "
+                f"edits | total_in={usage.input_tokens} "
+                f"cost=${usage.value().cost_usd:.6f}"
+            )
+            tr.event(
+                "edit_giveup",
+                consecutive_failed_edits=consecutive_failed_edits,
+                usage=usage.value(),
+            )
+            note = (
+                f"I couldn't apply that edit after {consecutive_failed_edits} tries "
+                "— the edit kept not applying to the shader source. I've stopped to "
+                "avoid looping. Tell me to try again, or describe the change differently."
+            )
+            yield AgentError(note, messages=_turn_tail(messages, head_len))
+            return
 
     logger.warning(
         f"copilot turn hit max_iterations={config.max_iterations} | "
@@ -470,4 +589,4 @@ def run_turn(
         f"I stopped after {config.max_iterations} steps without finishing this turn. "
         "Ask me to continue, or rephrase what you need."
     )
-    yield AgentError(cutoff_note)
+    yield AgentError(cutoff_note, messages=_turn_tail(messages, head_len))

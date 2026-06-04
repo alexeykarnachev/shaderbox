@@ -24,7 +24,9 @@ from shaderbox.ui_models import load_node_from_dir
 
 
 def _uniform(dimension: int) -> types.SimpleNamespace:
-    return types.SimpleNamespace(dimension=dimension)
+    # array_length=1 (a scalar/vec, not an array); gl_type GL_FLOAT — the array branch is exercised
+    # by the dedicated coercion tests in test_template_library / test_uniform_arrays.
+    return types.SimpleNamespace(dimension=dimension, array_length=1, gl_type=0x1406)
 
 
 def test_coerce_scalar() -> None:

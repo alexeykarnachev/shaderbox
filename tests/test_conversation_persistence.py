@@ -6,7 +6,7 @@ from pathlib import Path
 
 from shaderbox.copilot.llm.api import LLMMessage, LLMToolCall
 from shaderbox.copilot.persistence import ConversationStore, archive_conversation
-from shaderbox.copilot.state import ChatState, Message, SessionUsage
+from shaderbox.copilot.state import ChatState, Message, ResultWidget, SessionUsage
 
 
 def _populated_state() -> ChatState:
@@ -106,6 +106,87 @@ def test_unknown_role_survives_round_trip(tmp_path: Path) -> None:
     loaded = ConversationStore.load_and_migrate(path)
     msgs = loaded.to_messages()
     assert msgs[0].role == "future_role"  # passed through, not dropped
+
+
+def test_result_widget_round_trips(tmp_path: Path) -> None:
+    # A tool_status card's result widget (feature 020·21) survives a save/load round-trip.
+    state = ChatState()
+    state.messages = [
+        Message(
+            role="tool_status",
+            text="publish_youtube: ok",
+            result_widget=ResultWidget(
+                kind="open_url",
+                label="Open in YouTube",
+                target="https://studio.youtube.com/x",
+            ),
+        ),
+        Message(role="tool_status", text="edit_shader: ok"),  # no widget -> None
+    ]
+    path = tmp_path / "conversation.json"
+    ConversationStore.from_runtime(state, []).save(path)
+    msgs = ConversationStore.load_and_migrate(path).to_messages()
+    assert msgs[0].result_widget == ResultWidget(
+        kind="open_url", label="Open in YouTube", target="https://studio.youtube.com/x"
+    )
+    assert msgs[1].result_widget is None
+
+
+def test_v3_message_without_widget_loads_as_none(tmp_path: Path) -> None:
+    # A pre-020·21 (v3) file has no result_widget key — it must load as None, not raise.
+    path = tmp_path / "conversation.json"
+    path.write_text(
+        json.dumps(
+            {
+                "version": 3,
+                "messages": [{"role": "tool_status", "text": "render_image: ok"}],
+                "history": [],
+                "usage": {"input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0},
+            }
+        ),
+        encoding="utf-8",
+    )
+    msgs = ConversationStore.load_and_migrate(path).to_messages()
+    assert msgs[0].result_widget is None
+
+
+def test_unknown_widget_kind_fails_soft(tmp_path: Path) -> None:
+    # A future widget kind (or an empty target) on an older build drops to None — no dead button,
+    # no whole-conversation loss.
+    path = tmp_path / "conversation.json"
+    path.write_text(
+        json.dumps(
+            {
+                "version": 4,
+                "messages": [
+                    {
+                        "role": "tool_status",
+                        "text": "x",
+                        "result_widget": {
+                            "kind": "future_kind",
+                            "label": "L",
+                            "target": "t",
+                        },
+                    },
+                    {
+                        "role": "tool_status",
+                        "text": "y",
+                        "result_widget": {
+                            "kind": "open_url",
+                            "label": "L",
+                            "target": "",
+                        },
+                    },
+                ],
+                "history": [],
+                "usage": {"input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0},
+            }
+        ),
+        encoding="utf-8",
+    )
+    msgs = ConversationStore.load_and_migrate(path).to_messages()
+    assert msgs[0].result_widget is None  # unknown kind
+    assert msgs[1].result_widget is None  # empty target
 
 
 def test_archive_moves_file_and_leaves_none(tmp_path: Path) -> None:

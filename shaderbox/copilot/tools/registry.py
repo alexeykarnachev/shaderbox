@@ -16,6 +16,11 @@ from shaderbox.copilot.tools.base import (
 from shaderbox.copilot.tools.publish import publish_tools
 from shaderbox.copilot.tools.shader import shader_tools
 from shaderbox.copilot.tools.telegram import telegram_tools
+from shaderbox.copilot.tools.youtube import youtube_tools
+
+_EDIT_TOOL_NAMES: frozenset[str] = frozenset(
+    {"edit_shader", "replace_lines", "insert_after"}
+)
 
 
 def _validation_message(exc: ValidationError) -> str:
@@ -43,6 +48,12 @@ class ToolRegistry:
     def is_mutating(self, name: str) -> bool:
         tool = self._by_name.get(name)
         return tool is not None and tool.mutating
+
+    def is_edit_tool(self, name: str) -> bool:
+        # The three shader-SOURCE edit tools — the only ones the edit-retry giveup cap applies to
+        # (feature 020·20 D4). A failed render/publish is mutating but NOT an edit, so it must not
+        # trip the "edit kept not applying" giveup.
+        return name in _EDIT_TOOL_NAMES
 
     def requires_gate_always(self, name: str) -> bool:
         tool = self._by_name.get(name)
@@ -113,5 +124,6 @@ def build_registry(caps: CopilotCapabilities) -> ToolRegistry:
         *shader_tools(caps),
         *publish_tools(caps),
         *telegram_tools(caps),
+        *youtube_tools(caps),
     ]
     return ToolRegistry(definitions)

@@ -18,6 +18,12 @@ class MainThreadOp:
     done: threading.Event = field(default_factory=threading.Event)
     result: Any = None
     error: BaseException | None = None
+    # A render op freezes the frame loop for the whole encode (feature 020·20 D3). `defer` makes
+    # drain() hold it back ONE frame so a "Rendering..." modal paints before the freeze. The hold
+    # is one frame only (the worker's done.wait clock runs from enqueue — a longer hold eats the
+    # render_op_timeout_s budget); `_held` records that the one allowed deferral was spent.
+    defer: bool = False
+    _held: bool = False
 
 
 class CopilotBridge:
@@ -33,6 +39,10 @@ class CopilotBridge:
     def __init__(self) -> None:
         self._ops: queue.Queue[MainThreadOp] = queue.Queue(maxsize=64)
         self._shutdown: threading.Event = threading.Event()
+        # True for the one frame a deferred (render) op is held — the UI paints the "Rendering..."
+        # modal off this (feature 020·20 D3). Set in drain() when it holds the op, cleared the
+        # frame the op actually runs.
+        self._render_pending: bool = False
 
     def reopen(self) -> None:
         # MAIN THREAD, at the start of a turn. Clears a `_shutdown` latched by a prior
@@ -40,13 +50,16 @@ class CopilotBridge:
         # again. A real shutdown (release(), reusable=False) is NOT cleared here.
         self._shutdown.clear()
 
-    def run_on_main(self, fn: Callable[[], Any], timeout: float | None = None) -> Any:
+    def run_on_main(
+        self, fn: Callable[[], Any], timeout: float | None = None, defer: bool = False
+    ) -> Any:
         # Called ON THE WORKER THREAD. Enqueue + block until the main thread runs it.
         # `timeout` overrides the default for ops that legitimately freeze the frame loop
-        # longer (a video encode — render_op_timeout_s, §5).
+        # longer (a video encode — render_op_timeout_s, §5). `defer` holds the op one frame so
+        # a "Rendering..." modal paints before the freeze (feature 020·20 D3).
         if self._shutdown.is_set():
             raise CopilotCancelled("copilot shutting down")
-        op = MainThreadOp(fn=fn)
+        op = MainThreadOp(fn=fn, defer=defer)
         self._ops.put(op)
         wait_s = timeout if timeout is not None else COPILOT_CONFIG.bridge_op_timeout_s
         if not op.done.wait(wait_s):
@@ -59,10 +72,20 @@ class CopilotBridge:
         # Called ON THE MAIN THREAD, once per frame. Bounded so it never starves
         # the frame. A raising op sets op.error (re-raised on the worker) and the
         # frame continues — a buggy tool cannot crash the loop.
+        self._render_pending = False
         for _ in range(max_ops):
             try:
                 op = self._ops.get_nowait()
             except queue.Empty:
+                return
+            if op.defer and not op._held:
+                # First sight of a render op: hold it ONE frame so the "Rendering..." modal paints
+                # (D3), then stop draining so it runs at the top of the NEXT frame. Returning here
+                # is safe because the worker is single-threaded and blocks on this op's result —
+                # the queue holds nothing else behind it until the render returns.
+                op._held = True
+                self._render_pending = True
+                self._ops.put(op)
                 return
             try:
                 op.result = op.fn()
@@ -71,6 +94,10 @@ class CopilotBridge:
                 op.error = e
             finally:
                 op.done.set()
+
+    def render_pending(self) -> bool:
+        # MAIN THREAD: True for the one frame a render op is held (D3) — the UI draws the modal.
+        return self._render_pending
 
     def cancel_all(self, *, reusable: bool = False) -> None:
         # Release any worker blocked in run_on_main so a join can't deadlock. `reusable`

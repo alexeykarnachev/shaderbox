@@ -125,6 +125,21 @@ def glsl_lex(src: str) -> list[Token]:
     return tokens
 
 
+def span_has_comment(src: str, start: int, end: int) -> bool:
+    # True if the byte span src[start:end] contains a // or /* comment. token_match compares
+    # only the (kind, raw) token stream and _skip_trivia drops comments, so a comment sitting
+    # BETWEEN two matched tokens is inside the span yet invisible to the match — a verbatim
+    # _splice would silently delete it. The caller rejects such a span (the author's comment is
+    # content, not whitespace) and steers to a line-addressed edit instead.
+    i: int = start
+    while i < end:
+        c: str = src[i]
+        if c == "/" and i + 1 < end and src[i + 1] in "/*":
+            return True
+        i += 1
+    return False
+
+
 def token_match(src: str, old_str: str) -> list[tuple[int, int]]:
     # Every contiguous source-token run whose (kind, raw) sequence equals old_str's, as a
     # (byte_start, byte_end) span into src. Anchored (full-length, no prefix/subsequence),

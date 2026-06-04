@@ -19,6 +19,7 @@ from enum import StrEnum, auto
 class GateKind(StrEnum):
     CONFIRM = auto()  # yes/no or a procedurally-generated option list
     CREDENTIAL = auto()  # an inline secret field for a missing integration key
+    CONFIG = auto()  # an inline integration setup panel (reuses the exporter's draw_config_ui) + Cancel
 
 
 @dataclass(frozen=True)

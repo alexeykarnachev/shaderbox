@@ -25,7 +25,12 @@ from shaderbox.tabs import render as render_tab
 from shaderbox.tabs import share as share_tab
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_models import UINode
-from shaderbox.ui_primitives import active_region_outline, fps_overlay, toggle_button
+from shaderbox.ui_primitives import (
+    active_region_outline,
+    fps_overlay,
+    rendering_overlay,
+    toggle_button,
+)
 from shaderbox.util import adjust_size
 from shaderbox.widgets import cheatsheet, copilot_chat
 from shaderbox.widgets.node_grid import draw_node_preview_grid
@@ -352,6 +357,10 @@ def update_and_draw(app: App) -> None:
     imgui.push_font(app.font_14, _FONT_14_SIZE)
     cheatsheet.draw(app)
     copilot_chat.draw(app)
+    # The "Rendering..." cue while the copilot holds a render op one frame before the encode
+    # freezes the loop (feature 020·20 D3). render_pending() is True for exactly that hold frame.
+    if app.copilot.bridge.render_pending():
+        rendering_overlay("Rendering... the app pauses while it encodes.")
     imgui.pop_font()
 
     # ----------------------------------------------------------------

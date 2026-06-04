@@ -87,59 +87,67 @@ _PUBLISH_YOUTUBE_DESC = (
 )
 
 
-def _render_image_result_msg(r: RenderResult, kind: str) -> str:
+# Result strings are TERSE FACTS only — the URL/path is a first-class widget the engine renders
+# (feature 020·21), NEVER embedded here (this string IS the model-facing message; a URL in it would
+# pollute context and tempt the agent to paste a link it shouldn't). The "a button is shown" sentence
+# is CONDITIONAL on the widget being built (non-empty target), so the agent never promises a dead button.
+
+
+def _render_result(r: RenderResult, kind: str) -> tuple[bool, str, dict | None]:
     if not r.ok:
-        return f"error: {r.error}"
-    if r.is_video:
-        return (
-            f"rendered a {r.width}x{r.height} {r.duration:.1f}s video -> {r.path}. "
-            "Tell the user where it is — you can't see it."
-        )
-    return (
-        f"rendered a {r.width}x{r.height} {kind} -> {r.path}. "
-        "Tell the user where it is — you can't see it."
+        return False, f"error: {r.error}", None
+    what = (
+        f"{r.width}x{r.height} {r.duration:.1f}s video"
+        if r.is_video
+        else f"{r.width}x{r.height} {kind}"
     )
+    if not r.path:
+        return True, f"rendered a {what} (the file path wasn't captured).", None
+    msg = (
+        f"rendered a {what}. A 'Reveal render' button is shown to the user — point them to it "
+        "in words; you can't see the result and don't have the path."
+    )
+    widget = {"kind": "open_path", "label": "Reveal render", "target": r.path}
+    return True, msg, {"path": r.path, "widget": widget}
 
 
-def _publish_result_msg(r: PublishResult, target: str) -> str:
+def _publish_result(r: PublishResult, target: str) -> tuple[bool, str, dict | None]:
     if not r.ok:
-        return f"error: {r.error}"
-    where = f" ({r.url})" if r.url else ""
-    return f"published to {target}{where}. Give the user the link."
+        return False, f"error: {r.error}", None
+    if not r.url:
+        return (
+            True,
+            f"published to {target} (the link wasn't captured — tell the user to check {target}).",
+            None,
+        )
+    msg = (
+        f"published to {target}. An 'Open in {target}' button is shown to the user — point them "
+        "to it in words; you don't have the link."
+    )
+    widget = {"kind": "open_url", "label": f"Open in {target}", "target": r.url}
+    return True, msg, {"url": r.url, "widget": widget}
 
 
 def publish_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
     def render_image(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
         r = caps.render_image(args["node"], args["width"], args["height"])
-        return (
-            r.ok,
-            _render_image_result_msg(r, "image"),
-            {"path": r.path} if r.ok else None,
-        )
+        return _render_result(r, "image")
 
     def render_video(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
         r = caps.render_video(
             args["node"], args["seconds"], args["fps"], args["width"], args["height"]
         )
-        return (
-            r.ok,
-            _render_image_result_msg(r, "video"),
-            {"path": r.path} if r.ok else None,
-        )
+        return _render_result(r, "video")
 
     def publish_telegram(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
         r = caps.publish_telegram("", args["emoji"])
-        return (
-            r.ok,
-            _publish_result_msg(r, "Telegram"),
-            {"url": r.url} if r.ok else None,
-        )
+        return _publish_result(r, "Telegram")
 
     def publish_youtube(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
         r = caps.publish_youtube(
             "", args["title"], args["description"], args["is_short"]
         )
-        return r.ok, _publish_result_msg(r, "YouTube"), {"url": r.url} if r.ok else None
+        return _publish_result(r, "YouTube")
 
     def telegram_precheck(args: dict[str, Any]) -> str | None:
         _ = args
@@ -164,8 +172,8 @@ def publish_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             return "There's no shader open to publish. Tell the user to select a node first."
         if not caps.youtube_connected():
             return (
-                "YouTube isn't connected. Tell the user to open Settings -> Integrations -> "
-                "YouTube and connect their channel, then ask you again."
+                "YouTube isn't connected. YOU connect it: call set_youtube_credentials (it opens "
+                "the inline setup panel for the user) — do NOT just send them to Settings."
             )
         return None
 

@@ -46,9 +46,10 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   it now is hardening a path the invariant already closes.
 
 ## [DEFERRAL] docs describe a "freetype glyph-atlas text-rendering shader" that no shipped shader uses
-- **Trigger:** before the copilot's system prompt describes the text-rendering capability (it must
-  describe what's ACTUALLY on disk), OR a maintainer pass on dead code, OR the next edit to any of the
-  doc lines below.
+- **Trigger:** a maintainer pass on dead code (`fonts.py`), OR the next edit to any of the doc lines
+  below. (The copilot half is DONE — 020·22's shipped Text Rendering template description correctly
+  says "SDF 7-segment glyphs, NOT a font texture/atlas", so the agent's prompt now describes what's
+  actually on disk. What REMAINS: the dead `fonts.py` glyph-atlas + the 4 stale doc surfaces.)
 - `fonts.py::Font` genuinely builds a freetype glyph-atlas (a GL texture of rasterized glyphs + per-char
   UV/metrics) — but it has **zero consumers** (verified 2026-05-29: nothing imports `fonts.Font`; the
   `push_font` hits are unrelated imgui UI fonts). The shipped Text Rendering template (`f90f5ff9`) is a
@@ -144,23 +145,49 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   feature 010 (Out of scope); the share UI has no offset control today. The copilot `render_video`
   (020·18) inherits this — it too renders only t=0..seconds.
 
-## [DEFERRAL] copilot render has no "Rendering…" modal — the freeze is bare
-- **Trigger:** first maintainer/user report that the copilot render freeze reads as a hang/crash
-  (the app visibly stops responding for the encode with no "rendering" cue), OR when the copilot
-  UI/UX polish wave starts.
-- A copilot `render_image`/`render_video` runs as ONE blocking bridge op holding the frame loop for
-  the encode (feature 020·18 Decision 9). `11 §5`'s R3 decision (maintainer, 2026-05-31) mandated a
-  two-phase paint-then-freeze "Rendering…" modal so the UI shows a cue before freezing — deferred to
-  the UI/UX polish wave (it needs a two-phase commit). `render_op_timeout_s=60` bounds the worst case.
-
 ## [DEFERRAL] copilot tool catalogue is all-eager (no lazy search_tools/list_tools)
-- **Trigger:** the eager count has crossed the ~16 soft threshold (it kept growing through 020·18/19
-  + switch_node), so it has FIRED — build the lazy path when the next maintainer/log observation shows the model picking a wrong
-  tool attributable to catalogue size, OR the next tool wave would push the turn-start `tools=` block
-  large enough to measurably cost prompt-cache prefix.
-- All 19 copilot tools are eager (`11 §4` wanted publish/telegram tools lazy via `search_tools`/
+- **Trigger:** the eager count crossed the ~16 soft threshold (it kept growing through 020·18/19/20), so
+  it has FIRED — 020·20 D5 consciously deferred the lazy path to its own slice (it's a prompt-cache-prefix
+  optimization, not a legibility/correctness fix, so it doesn't gate shipping). Build it when a
+  maintainer/log observation shows the model picking a wrong tool attributable to catalogue size, OR the
+  next tool wave would push the turn-start `tools=` block large enough to measurably cost prompt-cache prefix.
+- All ~20 copilot tools are eager (`11 §4` wanted publish/telegram tools lazy via `search_tools`/
   `list_tools` + `grow_specs_from_payload`, but that mechanism is itself deferred — `16 ## Out of
   scope`). Building the lazy path is the fix: the tools already carry `eager`/`category` for it.
+  Spec: `20_ui_ux_polish.md` D5.
+
+## [BLOCKER] copilot full-turn history grows unbounded — no window trim
+- **Trigger:** a multi-turn `read_shader`-heavy copilot session approaches the provider's context limit
+  (the symptom is a stream that starts erroring once history is large), OR the next time you touch
+  `prompt.build_messages` / `session._commit_turn`.
+- 020·23 D4 persists the FULL per-turn tail (assistant + tool messages incl. read_shader's full source
+  listing) to `self.history` so the agent sees its own trajectory next turn. History now grows
+  MONOTONICALLY and `config.max_input_tokens` is a DEAD constant (read nowhere — no trim exists). Fine
+  for the text-shader workflow (~2-3 iterations) but a real risk for long sessions. Fix: a turn-window
+  trim in `build_messages` (drop/summarize the oldest tool messages once a token estimate over history
+  exceeds a budget), keyed on `max_input_tokens` (wire it up). Spec: `23_uniform_history_chat_untangle.md`
+  ## Out of scope.
+
+## [DEFERRAL] true in-line drag-selection of WRAPPED copilot chat prose
+- **Trigger:** the per-message Copy button (020·23 D7) proves insufficient — a user wants to select a
+  PHRASE within a message, not copy the whole thing.
+- 020·23 fixed the reported bug (the window dragged from the body — now `WindowFlags_.no_move`, title-bar
+  drag only) + added a per-message Copy. But true drag-selection of WRAPPED prose is a real imgui
+  limitation: `input_text_multiline` natively selects but does NOT word-wrap (it horizontal-scrolls long
+  lines — looks wrong for prose + risks nested scrollbars in the transcript child); `text_wrapped` wraps
+  but can't select. A clean fix needs a spike (a custom wrapped-selectable text widget, or an upstream
+  imgui-bundle capability) — not a forced bad multiline. `/imgui-ui` §5.
+
+## [DEFERRAL] copilot has no bind_media / undo_edit tools (scope decisions)
+- **Trigger:** bind_media — first real session where a user asks the copilot to load an image/video into
+  a sampler uniform and the set_uniform "samplers aren't settable, edit source" handoff reads as a wall.
+  undo_edit — first session where a bad multi-edit can only be re-edited (not reverted) and that friction
+  is reported (today only `delete_node` has a Recover affordance; edits have no undo).
+- Both are conscious SCOPE decisions parked at 020·20, not gaps to fix blind. bind_media: media binding is
+  a real first-class app feature (the Media Input template stores `u_image`/`u_video` file_path; `core.py`
+  binds the textures at render), so the capability is genuinely missing — the boundary is already
+  documented to the agent. undo_edit: `recover_deleted_node` is the only revert affordance. Spec each when
+  triggered. Source: the copilot-stack audit `missing_tools`.
 
 ## [DEFERRAL] imgui_color_text_edit render() FPE — editor hidden behind modals
 - **Trigger:** if imgui-bundle fixes the upstream glyph-metric div-by-zero (or you upgrade and

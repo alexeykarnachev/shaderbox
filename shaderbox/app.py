@@ -4,7 +4,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeGuard
 
 import glfw
 import moderngl
@@ -42,14 +42,16 @@ from shaderbox.copilot.capabilities import (
     TelegramConnectResult,
     TelegramOpResult,
     TelegramPackInfo,
+    TemplateEntry,
 )
 from shaderbox.copilot.config import COPILOT_CONFIG
 from shaderbox.copilot.errors import CopilotToolError
-from shaderbox.copilot.glsl_lex import token_match
+from shaderbox.copilot.glsl_lex import span_has_comment, token_match
 from shaderbox.copilot.llm.openrouter import OpenRouterLLMClient
 from shaderbox.copilot.persistence import ConversationStore, archive_conversation
 from shaderbox.copilot.session import CopilotSession
 from shaderbox.copilot.state import CopilotLayout, Message
+from shaderbox.copilot.text_render import sanitize_display
 from shaderbox.core import Canvas, Node
 from shaderbox.editor_types import EditorSession, HoverMark, InlineInput, JumpRequest
 from shaderbox.exporters.base import (
@@ -73,6 +75,7 @@ from shaderbox.shader_lib.file_ops import ShaderLibFileManager
 from shaderbox.shader_lib.tags import ShaderLibTagsStore
 from shaderbox.shader_source import ShaderSource
 from shaderbox.tabs import share_state
+from shaderbox.templates_descriptions import TemplateDescriptionsStore
 from shaderbox.theme import COLOR, apply_theme
 from shaderbox.ui_models import (
     EditorSettings,
@@ -86,6 +89,7 @@ from shaderbox.util import (
     open_in_file_manager,
     pfd_block,
     select_next_value,
+    str_to_unicode,
     try_to_release,
 )
 
@@ -271,23 +275,76 @@ _ENGINE_DRIVEN_UNIFORMS: frozenset[str] = frozenset(
 )
 
 
+def _is_number(v: object) -> TypeGuard[int | float]:
+    return isinstance(v, int | float) and not isinstance(v, bool)
+
+
 def _coerce_uniform_value(
     value: object, uniform: moderngl.Uniform
-) -> float | int | tuple[float, ...] | None:
-    # Coerce a JSON-decoded value to a uniform's shape (020·16 Decision 6). Scalar -> number;
-    # vecN -> a tuple of N numbers. Returns None on a shape mismatch (the handler turns that
-    # into an explicit error — never the silent render-time pop). Bools are rejected (JSON true
-    # is not a shader number).
+) -> float | int | list[int] | tuple[float, ...] | list[tuple[float, ...]] | None:
+    # Coerce a JSON-decoded value to the EXACT shape moderngl's Uniform write wants (020·16 / 020·23).
+    # The shapes are probe-pinned: a scalar -> number; vecN -> a tuple of N; a dim==1 array -> a FLAT
+    # list of array_length; a dim>1 array (vecN[M]) -> array_length NESTED dimension-tuples. Returns
+    # None on any mismatch (the handler turns that into an explicit error — never the silent render pop).
+    # Bools are rejected (JSON true is not a shader number).
     dim = uniform.dimension
+    n = uniform.array_length
+    if n > 1:
+        return _coerce_array(value, uniform, dim, n)
     if dim == 1:
-        if isinstance(value, bool) or not isinstance(value, int | float):
-            return None
-        return value
+        return value if _is_number(value) else None
     if not isinstance(value, list | tuple) or len(value) != dim:
         return None
-    if any(isinstance(v, bool) or not isinstance(v, int | float) for v in value):
+    if not all(_is_number(v) for v in value):
         return None
     return tuple(float(v) for v in value)
+
+
+def _coerce_array(
+    value: object, uniform: moderngl.Uniform, dim: int, n: int
+) -> list[int] | tuple[float, ...] | list[tuple[float, ...]] | None:
+    # A uint TEXT array (uint[N]): accept a str (-> codepoints, the UI's str_to_unicode) OR a list of
+    # ints; truncate/null-pad to exactly N (a string genuinely null-terminates). A NUMERIC array: exact
+    # length, NO padding (padding numeric data is silent corruption; moderngl raises on a short write).
+    gl_type = uniform.gl_type  # type: ignore
+    if dim == 1 and gl_type == GL_UNSIGNED_INT:
+        if isinstance(value, str):
+            return str_to_unicode(value, n)
+        if isinstance(value, list | tuple) and all(_is_number(v) for v in value):
+            ints = [int(v) for v in value][:n]
+            return ints + [0] * (n - len(ints))
+        return None
+    # numeric array. A str is never valid here.
+    if not isinstance(value, list | tuple) or not all(_is_number(v) for v in value):
+        return None
+    if dim == 1:  # float[N] -> flat list of exactly N
+        return tuple(float(v) for v in value) if len(value) == n else None
+    if len(value) != n * dim:  # vecN[M] -> N rows of `dim`
+        return None
+    flat = [float(v) for v in value]
+    return [tuple(flat[i : i + dim]) for i in range(0, n * dim, dim)]
+
+
+def _set_uniform_shape_hint(name: str, uniform: moderngl.Uniform, label: str) -> str:
+    # The single shape-mismatch feedback channel (020·23): teach the EXACT shape for what `name` is.
+    dim = uniform.dimension
+    n = uniform.array_length
+    gl_type = uniform.gl_type  # type: ignore
+    if n > 1 and dim == 1 and gl_type == GL_UNSIGNED_INT:
+        return (
+            f"value does not match {label} (a text array) — pass the text as a string e.g. "
+            f'"Hello\\nWorld", or a list of up to {n} codepoint ints'
+        )
+    if n > 1 and dim == 1:
+        return f"value does not match {label} — provide a list of exactly {n} numbers"
+    if n > 1:
+        return (
+            f"value does not match {label} — provide a list of {n * dim} numbers "
+            f"({n} groups of {dim})"
+        )
+    if dim > 1:
+        return f"value does not match {label} — provide a list of {dim} numbers for a vector"
+    return f"value does not match {label} — provide a number"
 
 
 def _format_uniforms(
@@ -450,6 +507,9 @@ class App:
         self.editor_rect: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
 
         self.is_node_creator_open: bool = False
+        # The node-creator popup's inline template-description editor (feature 020·22). Bound to the
+        # selected template's DIR path; closed when the popup opens or the selection changes.
+        self.template_desc_input: InlineInput = InlineInput()
         self.is_settings_open: bool = False
         self.is_emoji_picker_open: bool = False
         self.is_shader_lib_picker_open: bool = False
@@ -543,6 +603,11 @@ class App:
         )
         # Cross-project tags (function_name -> set of tag strings).
         self.shader_lib_tags: ShaderLibTagsStore = ShaderLibTagsStore.load()
+        # Cross-project user overrides for template descriptions (feature 020·22) — loaded ONCE here
+        # (a global store survives open_project, unlike per-project state).
+        self.template_descriptions: TemplateDescriptionsStore = (
+            TemplateDescriptionsStore.load()
+        )
 
         # Shader-library file CRUD + picker inline-input/filter state. Owns the
         # file operations; editor-session cleanup flows back via the two
@@ -609,6 +674,7 @@ class App:
         return CopilotCapabilities(
             node_tree=self._copilot_node_tree,
             lib_catalog=self._copilot_lib_catalog,
+            template_catalog=self._copilot_template_catalog,
             read_shaders=self._copilot_read_shaders,
             grep=self._copilot_grep,
             read_lib=self._copilot_read_lib,
@@ -652,7 +718,12 @@ class App:
     def _copilot_resolve_node_id(self, handle: str) -> str | None:
         # Resolve a copilot-supplied node handle (a short id, or — defensively — a full id) to the
         # full node-id, or None if it matches no node or is ambiguous. Accepts an exact full id, an
-        # exact short id, or any unique prefix (the model may copy a few extra/fewer chars).
+        # exact short id, or any unique prefix (the model may copy a few extra/fewer chars). An
+        # empty/whitespace handle is unresolvable (every id startswith(""), so it would silently
+        # resolve to the sole node and let delete/switch act on a node the model never named, §020·20
+        # D4) — required-target tools must reject it, not the caller's current-node fallback.
+        if not handle.strip():
+            return None
         if handle in self.ui_nodes:
             return handle
         matches = [i for i in self.ui_nodes if i.startswith(handle)]
@@ -674,6 +745,51 @@ class App:
             )
             for nid, ui_node in self.ui_nodes.items()
         ]
+
+    def template_description(self, template_uuid: str) -> str:
+        # The effective description for a template (feature 020·22): the user override if present, else
+        # the shipped node.json default. The in-memory ui_state is NOT mutated (so a 'reset' = delete the
+        # sidecar key), and both the agent catalogue + the popup read through here.
+        override = self.template_descriptions.get(template_uuid)
+        if override is not None:
+            return override
+        ui_node = self.ui_node_templates.get(template_uuid)
+        return ui_node.ui_state.description if ui_node is not None else ""
+
+    def _copilot_template_catalog(self) -> list[TemplateEntry]:
+        # GL-FREE: the shipped node templates the agent always sees so it can create_node(template=...)
+        # from a named template (e.g. Text Rendering) on intent, instead of writing source blind, AND
+        # read_shader/grep them via the template: handle (feature 020·22). The handle is the PREFIXED
+        # form `template:<4-char>` (self-describing, mirrors lib:) — never the full uuid in chat. The
+        # description is the merged (override-or-shipped) value, sanitized for the prompt + the font.
+        return [
+            TemplateEntry(
+                template_id=f"template:{tid[:4]}",
+                name=ui_node.ui_state.ui_name,
+                description=sanitize_display(self.template_description(tid)),
+            )
+            for tid, ui_node in self.ui_node_templates.items()
+        ]
+
+    def _copilot_resolve_template_id(self, handle: str) -> str | None:
+        # Resolve a copilot template handle (the 4-char short id, the `template:`-prefixed form, or —
+        # defensively — a full uuid) to the full template dir-uuid, or None if it matches no template /
+        # is ambiguous. The catalogue emits `template:` + a 4-char prefix; the resolver strips it.
+        h = handle.removeprefix("template:").strip()
+        if not h:
+            return None
+        if h in self.ui_node_templates:
+            return h
+        matches = [tid for tid in self.ui_node_templates if tid.startswith(h)]
+        return matches[0] if len(matches) == 1 else None
+
+    def _copilot_resolve_source(self, handle: str) -> tuple[str, str | None]:
+        # Unify read/grep source addressing (feature 020·22): a `template:` prefix -> a TEMPLATE
+        # (read-only), anything else a NODE. Returns (kind, full_id|None). lib: is NOT a read_shader
+        # target (read_lib owns lib), so it falls through to the node resolver and returns None.
+        if handle.startswith("template:"):
+            return "template", self._copilot_resolve_template_id(handle)
+        return "node", self._copilot_resolve_node_id(handle)
 
     def _copilot_lib_catalog(self) -> list[LibCatalogEntry]:
         # GL-FREE: the parsed lib index (name + signature + doc + the lib: address). No bodies
@@ -709,19 +825,31 @@ class App:
             # full id; pin 2a — a concrete id is what gets stamped).
             handles = node_ids or [self.current_node_id]
             views: list[ShaderView] = []
+            seen: set[str] = (
+                set()
+            )  # dedup: two prefixes of one source resolve to the same id
             for handle in handles:
-                node_id = self._copilot_resolve_node_id(handle)
-                if node_id is None:
+                kind, full_id = self._copilot_resolve_source(handle)
+                if full_id is None or full_id in seen:
                     continue
-                ui_node = self.ui_nodes[node_id]
+                seen.add(full_id)
+                if kind == "template":
+                    # Read-only: build the SAME view, BUT don't stamp freshness (no edit ever targets
+                    # a template) and address it by the `template:` prefixed handle (feature 020·22).
+                    ui_node = self.ui_node_templates[full_id]
+                    view_id = f"template:{full_id[:4]}"
+                else:
+                    ui_node = self.ui_nodes[full_id]
+                    view_id = short[full_id]
                 node = ui_node.node
                 if node.program is None:
                     node.compile()
                 text = node.source.text
-                self._copilot_read_revision[node_id] = _shader_digest(text)
+                if kind == "node":
+                    self._copilot_read_revision[full_id] = _shader_digest(text)
                 views.append(
                     ShaderView(
-                        node_id=short[node_id],
+                        node_id=view_id,
                         name=ui_node.ui_state.ui_name,
                         listing=_number_lines(text),
                         uniforms=_format_uniforms(node.get_active_uniforms()),
@@ -733,10 +861,10 @@ class App:
         return self.copilot.bridge.run_on_main(_on_main)
 
     def _copilot_grep(self, query: str) -> list[GrepHit]:
-        # GL-FREE: substring search across every node's source + every lib file's source. Hits
-        # are origin-labeled so the agent can hand the origin to a read/edit tool (a node id, or
-        # a lib: address). Case-sensitive substring match (a comment/#define can false-positive —
-        # acceptable for rare discovery, 020·16 Out-of-scope).
+        # GL-FREE: substring search across every node's source, every shipped TEMPLATE's source, and
+        # every lib file's source. Hits are origin-labeled so the agent can hand the origin to a read
+        # tool (a node id, a `template:` handle, or a lib: address). Case-sensitive substring match (a
+        # comment/#define can false-positive — acceptable for rare discovery, 020·16 Out-of-scope).
         if not query:
             return []
         short = self._copilot_short_ids()
@@ -751,6 +879,16 @@ class App:
                             location=label,
                             line=i,
                             text=line.strip(),
+                        )
+                    )
+        for tid, ui_node in self.ui_node_templates.items():
+            origin = f"template:{tid[:4]}"
+            label = f"template '{ui_node.ui_state.ui_name}'"
+            for i, line in enumerate(ui_node.node.source.text.split("\n"), start=1):
+                if query in line:
+                    hits.append(
+                        GrepHit(
+                            origin=origin, location=label, line=i, text=line.strip()
                         )
                     )
         root = shader_lib_root()
@@ -838,9 +976,7 @@ class App:
             coerced = _coerce_uniform_value(value, uniform)
             if coerced is None:
                 return SetUniformResult(
-                    ok=False,
-                    error=f"value does not match {label} — provide a number for a scalar or a "
-                    f"list of {uniform.dimension} numbers for a vector",
+                    ok=False, error=_set_uniform_shape_hint(name, uniform, label)
                 )
             try_to_release(target.uniform_values.get(name))
             target.uniform_values[name] = coerced
@@ -849,18 +985,23 @@ class App:
         return self.copilot.bridge.run_on_main(_on_main)
 
     def _copilot_create_node(
-        self, name: str, source: str, switch_to: bool
+        self, name: str, source: str, template: str, switch_to: bool
     ) -> tuple[str, list[CompileErrorInfo]]:
-        # Create a node (020·16 Decision 8). Binds the RAW create body (NOT the
-        # _copilot_busy_blocked-guarded create_node_from_selected_template, which refuses the
-        # copilot's own mid-turn call). Empty source = the compiling starter template; otherwise
-        # the starter is loaded then its source replaced. Insert order is save->insert->
-        # set-current (mirror _seed_starter_node) so current_node_id never points at a missing
-        # key. Freshness-auto-stamps the new node so the agent can edit it without a re-read.
-        # Compiles the new node and returns its errors — the same compile-feedback the edit tools
-        # give, so a create-from-broken-source can't report success on a non-compiling shader.
+        # Create a node (020·16 Decision 8 / 020·22). `template` = a template_catalog handle (bare or
+        # `template:`-prefixed); empty = the DEFAULT starter (UV Mango, the conventional blank canvas).
+        # `source` non-empty overrides the instantiated body. Binds the RAW create body (NOT the
+        # _copilot_busy_blocked-guarded create_node_from_selected_template). Insert order is save->insert->
+        # set-current (mirror _seed_starter_node). Freshness-auto-stamps the new node so the agent can edit
+        # it without a re-read. Compiles + returns errors — the same compile-feedback the edit tools give.
         def _on_main() -> tuple[str, list[CompileErrorInfo]]:
-            template_dir = self.node_templates_dir / _STARTER_TEMPLATE_ID
+            template_id = (
+                self._copilot_resolve_template_id(template)
+                if template.strip()
+                else _STARTER_TEMPLATE_ID
+            )
+            if template_id is None:
+                raise RuntimeError(f"no template matching '{template}'")
+            template_dir = self.node_templates_dir / template_id
             if not template_dir.is_dir():
                 # Shipped resource; missing only on a broken install. The bridge re-raises on
                 # the worker and the registry turns it into a clean tool error, not a crash.
@@ -991,7 +1132,7 @@ class App:
             )
 
         return self.copilot.bridge.run_on_main(
-            _on_main, timeout=COPILOT_CONFIG.render_op_timeout_s
+            _on_main, timeout=COPILOT_CONFIG.render_op_timeout_s, defer=True
         )
 
     def _copilot_render_video(
@@ -1018,7 +1159,7 @@ class App:
             )
 
         return self.copilot.bridge.run_on_main(
-            _on_main, timeout=COPILOT_CONFIG.render_op_timeout_s
+            _on_main, timeout=COPILOT_CONFIG.render_op_timeout_s, defer=True
         )
 
     def _copilot_render_target(self, node: str) -> UINode | None:
@@ -1386,6 +1527,8 @@ class App:
                 )
             if len(spans) > 1 and not replace_all:
                 return EditResult(matches=len(spans), errors=[])
+            if any(span_has_comment(src, s, e) for s, e in spans):
+                return EditResult(matches=0, errors=[], comment_loss=True)
             new_text = _splice(src, spans, new_str)
             # Single span -> a meaningful changed range for the apply-feedback; a multi-span
             # replace_all has no single honest range, so leave it None (§14 D5).
@@ -1430,6 +1573,16 @@ class App:
         # unknown node-id is a hard error (never a silent lib fallback).
         if target.startswith("lib:"):
             return self._copilot_resolve_lib_target(target, allow_create=allow_create)
+        if target.startswith("template:"):
+            # Templates are READ-ONLY shipped resources (feature 020·22). An EXPLICIT guard (not
+            # incidental non-resolution) with an actionable message, so the agent doesn't loop.
+            return EditResult(
+                matches=0,
+                errors=[],
+                unresolved=True,
+                unresolved_reason="templates are read-only — create_node(template=...) from it "
+                "first, then edit the resulting node",
+            )
         if not target:
             node_id = self.current_node_id
         else:
@@ -1438,9 +1591,9 @@ class App:
                 return EditResult(
                     matches=0,
                     errors=[],
-                    stale=True,
-                    stale_reason=f"no node with id '{target}' — use an id from the project "
-                    "map",
+                    unresolved=True,
+                    unresolved_reason=f"no node with id '{target}' — use an id from the "
+                    "project map",
                 )
             node_id = resolved
         if (reject := self._copilot_freshness_reject(node_id)) is not None:
@@ -1462,18 +1615,18 @@ class App:
             return EditResult(
                 matches=0,
                 errors=[],
-                stale=True,
-                stale_reason=f"invalid library path '{target}' — copy a lib: address from "
-                "the library catalogue or read_lib",
+                unresolved=True,
+                unresolved_reason=f"invalid library path '{target}' — copy a lib: address "
+                "from the library catalogue or read_lib",
             )
         if not path.exists():
             if not allow_create:
                 return EditResult(
                     matches=0,
                     errors=[],
-                    stale=True,
-                    stale_reason=f"no library file at '{target}' — use insert_after to create "
-                    "a new library file, or copy an existing lib: address",
+                    unresolved=True,
+                    unresolved_reason=f"no library file at '{target}' — use insert_after to "
+                    "create a new library file, or copy an existing lib: address",
                 )
             return _CopilotEditTarget(
                 kind="lib", lib_path=path, source="", lib_create=True
@@ -1762,9 +1915,14 @@ class App:
 
     def open_node_creator(self) -> None:
         self.is_node_creator_open = True
+        self.template_desc_input.close()  # no stale in-flight description editor on reopen (020·22)
         self.is_settings_open = False
         self.is_emoji_picker_open = False
         self.is_shader_lib_picker_open = False
+
+    def set_template_description(self, template_uuid: str, description: str) -> None:
+        # On-change persist of a user-edited template description to the sidecar (feature 020·22).
+        self.template_descriptions.set(template_uuid, description)
 
     def open_settings(self) -> None:
         self.is_settings_open = True

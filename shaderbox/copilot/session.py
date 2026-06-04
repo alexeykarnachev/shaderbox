@@ -27,6 +27,7 @@ from shaderbox.copilot.llm.api import LLMMessage
 from shaderbox.copilot.llm.openrouter import OpenRouterLLMClient
 from shaderbox.copilot.persistence import ConversationStore
 from shaderbox.copilot.state import ChatState, Message, RecoverInfo
+from shaderbox.copilot.text_render import sanitize_display
 from shaderbox.copilot.tools.base import mask_secret
 from shaderbox.copilot.tools.registry import build_registry
 from shaderbox.copilot.trace import TraceLog, new_trace_log
@@ -134,7 +135,9 @@ class CopilotSession:
             case AgentTextDelta():
                 self.state.streaming_text += ev.text
             case AgentStatus():
-                pass  # per-tool cards (below) carry the durable line; status is transient
+                # The transient in-flight line (feature 020·20 D1): the durable per-tool card lands
+                # below; this shows live progress in place of the bare "thinking" caption.
+                self.state.status = ev.text
             case AgentGateOpened():
                 # Dequeue the GatePending (keeps _pending in lockstep with _current) and
                 # materialize the gate card. gate_kind picks the widget (CONFIRM Yes/No vs
@@ -146,12 +149,23 @@ class CopilotSession:
                         role="pending_action",
                         text=ev.request.prompt,
                         gate_kind=ev.request.kind,
+                        gate_integration=ev.request.secret_field,
                     )
                 )
             case AgentToolCard():
                 verb = "ok" if ev.ok else "failed"
+                # The result line (the terse fact / error) under the card (feature 020·20 D1). A
+                # render path / publish URL no longer rides this line — it's a first-class widget
+                # (feature 020·21, ev.widget) the renderer draws as a button.
+                # A tool with a terse `display` (read_shader's summary) shows that in chat instead of
+                # its heavy full `result` — the user reads code in the editor (020·23 D6). The full
+                # result still rode into the AGENT's context in run_turn.
+                shown = ev.display or ev.result
+                line = f"{ev.name}: {verb}"
+                if shown:
+                    line += f"\n{shown}"
                 self.state.messages.append(
-                    Message(role="tool_status", text=f"{ev.name}: {verb}")
+                    Message(role="tool_status", text=line, result_widget=ev.widget)
                 )
                 # A successful delete attaches the Recover affordance to its (resolved-Yes)
                 # confirm card — the gated tool's card always trails the open pending_action.
@@ -164,7 +178,10 @@ class CopilotSession:
             case AgentTurnDone():
                 if self.state.streaming_text:
                     self.state.messages.append(
-                        Message(role="assistant", text=self.state.streaming_text)
+                        Message(
+                            role="assistant",
+                            text=sanitize_display(self.state.streaming_text),
+                        )
                     )
                 self.state.streaming_text = ""
                 self.state.usage.add(ev.usage)
@@ -229,6 +246,9 @@ class CopilotSession:
 
     def _finish_turn(self) -> None:
         self.state.in_flight = False
+        self.state.status = (
+            ""  # clear the transient in-flight status line (feature 020·20 D1)
+        )
 
     def drain_bridge(self) -> None:
         # MAIN THREAD, per frame, early (pre-render) so a recompiled node renders this
@@ -265,8 +285,12 @@ class CopilotSession:
 
     def _run_one_turn(self, user_text: str) -> None:
         context = build_context(self.caps)
-        assistant_text = ""
         error_text = ""
+        # The terminal event (AgentTurnDone / AgentError / AgentCancelled) flips in_flight on
+        # the main thread, which is the gate save_conversation reads. Buffer it and emit it
+        # ONLY after the history commit below, so the same-frame save can never observe a
+        # history short by the just-finished turn (the visible-messages-outrun-history race).
+        terminal: AgentEvent | None = None
         try:
             for ev in run_turn(
                 self.client,
@@ -279,35 +303,67 @@ class CopilotSession:
                 self._cancel,
                 self.trace,
             ):
-                if isinstance(ev, AgentTextDelta):
-                    assistant_text += ev.text
-                elif isinstance(ev, AgentError):
+                if isinstance(ev, AgentError):
                     error_text = ev.message
+                if isinstance(ev, AgentTurnDone | AgentError | AgentCancelled):
+                    terminal = ev
+                    break  # the generator yields nothing after a terminal event
                 self._events.put(ev)
         except CopilotConfigError as e:
             logger.warning(f"Copilot turn aborted: {e}")
-            self._events.put(AgentError(str(e)))
-            return
+            error_text = str(e)
+            terminal = AgentError(
+                str(e)
+            )  # no run_turn messages -> empty tail (default)
         except Exception:
             logger.exception("Copilot turn failed")
-            self._events.put(AgentError("copilot turn failed (see logs)"))
-            return
-        # A turn aborted by project teardown (reset_conversation / release set _drop_turn)
-        # must NOT commit — run_turn returns NORMALLY on cancel, so without this the
-        # in-flight turn's tail would land on the next project's freshly-reset history
-        # (feature 022 / the trace-bleed deferral's orphaned-append half). A user Stop does
-        # NOT set _drop_turn, so its partial reply still commits to this conversation.
+            error_text = "copilot turn failed (see logs)"
+            terminal = AgentError(error_text)
+        # The per-turn tail (assistant/tool messages this turn produced, orphan-cleaned) rides the
+        # terminal event (feature 020·23 D4); empty on the except fallbacks.
+        tail = list(getattr(terminal, "messages", []))
+        self._commit_turn(user_text, tail, error_text)
+        if terminal is not None:
+            self._events.put(terminal)
+
+    def _commit_turn(
+        self, user_text: str, tail: list[LLMMessage], error_text: str
+    ) -> None:
+        # Commit the turn to history (worker is the sole owner) so the next turn carries the FULL
+        # trajectory — the assistant/tool messages this turn produced, not just the final reply
+        # (feature 020·23 D4), so the agent can answer "what did I do / why did that fail". On EVERY
+        # exit path. The current shader source is re-fetched live each turn via read_shader (§B1).
+        #
+        # A turn aborted by project teardown (reset_conversation / release set _drop_turn) must NOT
+        # commit — run_turn returns NORMALLY on cancel, so the tail would otherwise land on the next
+        # project's freshly-reset history (feature 022). A user Stop does NOT set _drop_turn.
         if self._drop_turn.is_set():
             return
-        # Commit the turn to history (worker is the sole owner) so the next turn carries
-        # context. The current shader source is NOT stored here — it is re-fetched live
-        # each turn via get_current_shader (§B1). A turn that ended in an AgentError (a
-        # giveup / cutoff) carries that note as the assistant's last word, so the next
-        # turn's context shows the agent stopped instead of an empty assistant turn.
         self.history.append(LLMMessage(role="user", content=user_text))
-        self.history.append(
-            LLMMessage(role="assistant", content=assistant_text or error_text or None)
+        # Persist the tail, sanitizing assistant CONTENT only (never tool_call_id / arguments) so the
+        # model is conditioned on the ASCII it rendered (D2).
+        for m in tail:
+            if m.role == "assistant" and m.content is not None:
+                self.history.append(
+                    LLMMessage(
+                        role="assistant",
+                        content=sanitize_display(m.content),
+                        tool_calls=m.tool_calls,
+                    )
+                )
+            else:
+                self.history.append(m)
+        # A failed turn (giveup / cutoff / stream error) carries that note as the assistant's last
+        # word so the next turn's context shows the agent stopped — unless the tail already ends with
+        # an assistant text message (a clean turn / a turn whose last word IS the reply).
+        ends_assistant = (
+            bool(tail) and tail[-1].role == "assistant" and tail[-1].content
         )
+        if error_text and not ends_assistant:
+            self.history.append(LLMMessage(role="assistant", content=error_text))
+        elif not tail and not error_text:
+            # No tail at all and no error (shouldn't happen, but keep history paired): empty assistant.
+            self.history.append(LLMMessage(role="assistant", content=None))
 
     # ---- lifecycle ----
 

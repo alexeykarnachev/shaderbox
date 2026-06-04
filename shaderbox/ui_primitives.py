@@ -248,6 +248,27 @@ def modal_window(label: str, size: tuple[float, float]) -> Iterator[bool]:
         yield popup.visible
 
 
+def rendering_overlay(text: str) -> None:
+    # A centered, non-interactive cue painted while the copilot holds a render op one frame before
+    # the encode freezes the frame loop (feature 020·20 D3). NOT a begin_popup_modal — it stays off
+    # the popup ID stack + the popup-mutex (any_popup_open) so it never gates node rendering; it is
+    # a plain no-input overlay window. The frame it paints is the last that repaints before the
+    # encode, so the cue stays on screen through the freeze.
+    center = imgui.get_main_viewport().get_center()
+    imgui.set_next_window_pos(center, imgui.Cond_.always, imgui.ImVec2(0.5, 0.5))
+    imgui.set_next_window_bg_alpha(OVERLAY_ALPHA)
+    flags = (
+        imgui.WindowFlags_.no_decoration
+        | imgui.WindowFlags_.no_inputs
+        | imgui.WindowFlags_.no_nav
+        | imgui.WindowFlags_.no_saved_settings
+        | imgui.WindowFlags_.always_auto_resize
+    )
+    with imgui_ctx.begin("##copilot_rendering", flags=flags) as window:
+        if window:
+            imgui.text(text)
+
+
 @contextmanager
 def context_menu_style() -> Iterator[None]:
     """Style overrides to make a right-click context menu visually distinct
@@ -740,6 +761,26 @@ def draw_link(
         webbrowser.open(open_target)
     except Exception as e:
         logger.warning(f"Could not open browser: {e}")
+
+
+def open_url_button(label: str, url: str, *, id_: str = "") -> None:
+    # An OPEN-ONLY web-link button (feature 020·21): opens the browser, does NOT copy to the clipboard
+    # (distinct from draw_link, which copies + forces an https:// scheme). The url is assumed to carry
+    # its own scheme (a publish/Studio URL always does).
+    if ghost_button(f"{label}{id_}") and url:
+        try:
+            webbrowser.open(url)
+        except Exception as e:
+            logger.warning(f"Could not open browser: {e}")
+
+
+def open_path_button(
+    label: str, path: str, on_open: Callable[[str], None], *, id_: str = ""
+) -> None:
+    # An OPEN-ONLY local-file button (feature 020·21): reveals the file in the OS file manager via the
+    # injected opener (App-free here — the caller passes util.open_in_file_manager). NO clipboard.
+    if ghost_button(f"{label}{id_}") and path:
+        on_open(path)
 
 
 def clickable_label(

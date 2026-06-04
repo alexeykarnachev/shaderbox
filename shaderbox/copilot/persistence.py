@@ -22,10 +22,14 @@ from shaderbox.copilot.state import (
     Message,
     MessageRole,
     RecoverInfo,
+    ResultWidget,
+    ResultWidgetKind,
     SessionUsage,
 )
 
-_VERSION = 3
+_VERSION = 4
+
+_RESULT_WIDGET_KINDS: frozenset[str] = frozenset({"open_url", "open_path"})
 
 
 def _gate_kind_or_confirm(value: str) -> GateKind:
@@ -35,6 +39,16 @@ def _gate_kind_or_confirm(value: str) -> GateKind:
         return GateKind(value)
     except ValueError:
         return GateKind.CONFIRM
+
+
+def _result_widget_or_none(model: "_ResultWidgetModel | None") -> ResultWidget | None:
+    # An unknown widget kind (a future kind on an older build) or an empty target drops to None
+    # instead of failing the file or rendering a dead button (feature 020·21).
+    if model is None or model.kind not in _RESULT_WIDGET_KINDS or not model.target:
+        return None
+    return ResultWidget(
+        kind=cast(ResultWidgetKind, model.kind), label=model.label, target=model.target
+    )
 
 
 class _ToolCallModel(BaseModel):
@@ -55,6 +69,15 @@ class _RecoverModel(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class _ResultWidgetModel(BaseModel):
+    # A persisted first-class result widget (feature 020·21). kind is loose-str so a future widget
+    # kind on an older build round-trips (the renderer skips an unknown kind), like gate_kind/role.
+    kind: str
+    label: str = "Open"
+    target: str = ""
+    model_config = {"extra": "forbid"}
+
+
 class _MessageModel(BaseModel):
     # The UI render stream (ChatState.messages). role is validated loosely (str) so a
     # future MessageRole member loads on an older build instead of failing the whole file.
@@ -65,6 +88,9 @@ class _MessageModel(BaseModel):
     resolved: bool = False
     recover: _RecoverModel | None = None
     gate_kind: str = "confirm"
+    # The result widget on a tool_status card (feature 020·21). Optional + defaulted so a v3 file
+    # (no field) loads as None.
+    result_widget: _ResultWidgetModel | None = None
     model_config = {"extra": "forbid"}
 
 
@@ -114,6 +140,15 @@ class ConversationStore(BaseModel):
                         if m.recover is not None
                         else None
                     ),
+                    result_widget=(
+                        _ResultWidgetModel(
+                            kind=m.result_widget.kind,
+                            label=m.result_widget.label,
+                            target=m.result_widget.target,
+                        )
+                        if m.result_widget is not None
+                        else None
+                    ),
                 )
                 for m in state.messages
             ],
@@ -160,6 +195,7 @@ class ConversationStore(BaseModel):
                     if m.recover is not None
                     else None
                 ),
+                result_widget=_result_widget_or_none(m.result_widget),
             )
             for m in self.messages
         ]

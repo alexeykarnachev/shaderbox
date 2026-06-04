@@ -90,6 +90,7 @@
     },
     "ui_state": {
         "ui_name": "Text Rendering",
+        "description": "Renders text on screen using SDF (signed-distance-field) 7-segment glyphs synthesised in the shader from codepoints in u_text - NOT a font texture/atlas. Start here for any text- or number-display shader.",
         "render_media_details": {
             "is_video": true,
             "file_details": {

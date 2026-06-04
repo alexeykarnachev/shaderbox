@@ -150,6 +150,10 @@ def sort_uniform_hashes(
 
 class UINodeState(BaseModel):
     ui_name: str = ""
+    # A human/agent-facing one-line summary of what a node (esp. a shipped TEMPLATE) is for
+    # (feature 020·22). On a shipped template node.json it's the dev-authored default; a user edit
+    # overrides it via TemplateDescriptionsStore (the in-memory value stays the shipped default).
+    description: str = ""
 
     render_media_details: MediaDetails = MediaDetails()
     ui_uniforms: dict[int, UIUniform] = {}

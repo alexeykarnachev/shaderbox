@@ -1,17 +1,25 @@
+import contextlib
+from pathlib import Path
+
+import pyperclip
 from imgui_bundle import imgui, imgui_ctx
 
 from shaderbox.app import App
 from shaderbox.copilot.gate import GateKind
-from shaderbox.copilot.state import CopilotLayout, Message
+from shaderbox.copilot.state import CopilotLayout, Message, ResultWidget
+from shaderbox.copilot.text_render import sanitize_display
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_primitives import (
     active_region_outline,
     caption_text,
     ghost_button,
     labeled_text_input,
+    open_path_button,
+    open_url_button,
     primary_button,
     unconnected_gate,
 )
+from shaderbox.util import open_in_file_manager
 
 # The copilot chat — a floating top-level window (NOT a tab/region). Drawn from
 # update_and_draw after the main window closes, like the cheatsheet, so it floats on
@@ -21,7 +29,14 @@ from shaderbox.ui_primitives import (
 # Renders the transcript by message role — incl. the pending_action confirm gate + its
 # Recover affordance (feature 020·17) — plus the streaming/input row.
 
-_WINDOW_FLAGS = imgui.WindowFlags_.no_nav_focus | imgui.WindowFlags_.no_collapse
+# no_move: a drag on the BODY no longer moves the window (so text selection in a message works) — the
+# title bar still drags it (imgui special-cases the title bar under no_move). FREE layout repositioning
+# narrows to title-bar-only (feature 020·23 D7); CORNER/BOTTOM_STRIP force pos every frame regardless.
+_WINDOW_FLAGS = (
+    imgui.WindowFlags_.no_nav_focus
+    | imgui.WindowFlags_.no_collapse
+    | imgui.WindowFlags_.no_move
+)
 _NEXT_LAYOUT: dict[CopilotLayout, CopilotLayout] = {
     CopilotLayout.CORNER: CopilotLayout.BOTTOM_STRIP,
     CopilotLayout.BOTTOM_STRIP: CopilotLayout.FREE,
@@ -117,7 +132,11 @@ def _draw_transcript(app: App) -> None:
         if state.streaming_text:
             _draw_message(app, Message(role="assistant", text=state.streaming_text), -1)
         if state.in_flight and not state.streaming_text:
-            caption_text("thinking…")
+            # The transient status line (D1) in place of a bare caption — the latest per-tool
+            # phrase while a turn runs, falling back to "thinking..." before the first status.
+            caption_text(
+                sanitize_display(state.status) if state.status else "thinking..."
+            )
         if state.in_flight:
             imgui.set_scroll_here_y(1.0)
     imgui.end_child()
@@ -144,26 +163,63 @@ def _draw_transcript(app: App) -> None:
 
 
 def _draw_message(app: App, msg: Message, idx: int) -> None:
+    # Sanitize at DRAW so a glyph the font can't render never reaches the atlas (D2). The
+    # committed Message text is already ASCII (materialize-time sanitize) — this is idempotent;
+    # the live streaming preview (raw streaming_text) is sanitized HERE, tear-safe on the full
+    # accumulated string rather than per-delta.
+    text = sanitize_display(msg.text)
     role = msg.role
     if role == "user":
         imgui.text_colored(COLOR.ACCENT_PRIMARY, "you")
-        imgui.text_wrapped(msg.text)
+        imgui.text_wrapped(text)
+        _copy_affordance(text, idx)
     elif role == "assistant":
-        imgui.text_wrapped(msg.text)
+        imgui.text_wrapped(text)
+        _copy_affordance(text, idx)
     elif role == "tool_status":
-        caption_text(msg.text)
+        caption_text(text)
+        if msg.result_widget is not None:
+            _draw_result_widget(msg.result_widget, idx)
     elif role == "error":
-        imgui.text_colored(COLOR.STATE_ERROR, msg.text)
+        imgui.text_colored(COLOR.STATE_ERROR, text)
     elif role == "pending_action":
         _draw_pending_action(app, msg, idx)
     imgui.separator()
 
 
+def _copy_affordance(text: str, idx: int) -> None:
+    # A copy-to-clipboard for a chat message (feature 020·23 D7): the window now drags only from the
+    # title bar (no_move), so a body drag stays put — but prose isn't natively selectable, so this gets
+    # the text OUT. A small always-visible ghost (no hover-jitter); copies the whole message.
+    if ghost_button(f"Copy##msg_copy_{idx}"):
+        with contextlib.suppress(pyperclip.PyperclipException):
+            pyperclip.copy(text)
+
+
+def _draw_result_widget(widget: ResultWidget, idx: int) -> None:
+    # A first-class result button the engine renders from a tool's structured outcome (feature 020·21).
+    # Open-only: a url opens the browser, a path opens the file manager; neither copies. An unknown
+    # kind draws nothing (fail-soft for a future kind loaded on an older build). The ##_{idx} id keeps
+    # two transcript widgets from colliding.
+    label = sanitize_display(widget.label)
+    if widget.kind == "open_url":
+        open_url_button(label, widget.target, id_=f"##rw_url_{idx}")
+    elif widget.kind == "open_path":
+        open_path_button(
+            label,
+            widget.target,
+            lambda p: open_in_file_manager(Path(p)),
+            id_=f"##rw_path_{idx}",
+        )
+
+
 def _draw_pending_action(app: App, msg: Message, idx: int) -> None:
-    imgui.text_wrapped(msg.text)
+    imgui.text_wrapped(sanitize_display(msg.text))
     if not msg.resolved:
         if msg.gate_kind is GateKind.CREDENTIAL:
             _draw_credential_input(app, msg, idx)
+        elif msg.gate_kind is GateKind.CONFIG:
+            _draw_config_panel(app, msg, idx)
         else:
             if primary_button(f"Yes##gate_yes_{idx}"):
                 app.copilot.answer_gate(approved=True)
@@ -186,6 +242,27 @@ def _draw_pending_action(app: App, msg: Message, idx: int) -> None:
     if ghost_button(f"Recover##gate_recover_{idx}"):
         app.recover_deleted_node(msg)
     imgui.end_disabled()
+
+
+def _draw_config_panel(app: App, msg: Message, idx: int) -> None:
+    # An inline integration-setup gate (feature 020·21): render the exporter's EXISTING draw_config_ui()
+    # verbatim (same widgets as Settings — instruction + paste client_secret + Connect), plus a Cancel
+    # button absent in Settings. The exporter's own _progress_queue is drained by the global
+    # share_tab.update pump each frame, so we DON'T pump here (a second drain would steal events). When
+    # the exporter reaches connected the gate auto-resolves approved=True (the worker's connect await
+    # then sees it); Cancel resolves approved=False and the agent explains it couldn't proceed.
+    exporter = app.exporter_registry.get(msg.gate_integration)
+    if exporter is None:
+        if ghost_button(f"Cancel##gate_cfg_cancel_{idx}"):
+            app.copilot.answer_gate(approved=False)
+        return
+    if exporter.is_connected():
+        app.copilot.answer_gate(approved=True)
+        return
+    exporter.draw_config_ui()
+    imgui.dummy(imgui.ImVec2(0, float(SPACE.SM)))
+    if ghost_button(f"Cancel##gate_cfg_cancel_{idx}"):
+        app.copilot.answer_gate(approved=False)
 
 
 def _draw_credential_input(app: App, msg: Message, idx: int) -> None:

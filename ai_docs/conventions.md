@@ -144,6 +144,50 @@ belong in the feature spec (`ai_docs/features/NNN_*.md`). This file is not a cha
   a node the user isn't watching. Revisit the split if a real workflow needs background publish of a
   non-current node often enough that switching first is friction — then add the arg consciously, with a
   matching "you're publishing X, not the current Y" confirmation, not by default.
+- **A copilot tool's interactive output is a STRUCTURED entity the engine renders, never a raw value in
+  the model-facing message.** A tool returns `(ok, msg, payload)`: `msg` reaches the LLM, `payload` does
+  NOT. A URL / file path / button / panel a tool surfaces goes in `payload` as a structured spec the UI
+  renders as a first-class chat entity; `msg` stays a TERSE fact that also TELLS the agent a widget was
+  shown (so it points the user at the button instead of pasting a raw value it shouldn't have). Two
+  orthogonal vehicles, do NOT conflate: a **result widget** (`state.ResultWidget`, kind-dispatched in
+  `copilot_chat`) is NON-BLOCKING (a link/path button — the agent doesn't wait); a **gate**
+  (`GateKind`, the blocking worker↔UI round-trip) is for input the worker must wait on (CONFIRM /
+  CREDENTIAL secret / CONFIG setup-panel). A new such affordance picks its vehicle by blocking-ness and
+  reuses the existing channel — never a raw URL in `msg`, never a new event type, never overloading one
+  `GateKind` for both. An inline setup panel REUSES the exporter's `draw_config_ui()` verbatim (entropy:
+  the Settings widget set is the source of truth) + a Cancel the chat adds. There is a THIRD channel for
+  the agent-vs-user split: when a tool's `msg` is heavy (read_shader's full source listing) the AGENT
+  still needs it (it edits by line number) but the USER doesn't (the editor shows the code), so the tool
+  puts a terse `payload["display"]` summary that the chat shows INSTEAD of `msg` (`AgentToolCard.display`,
+  feature 020·23) — the full `msg` still rides the model's context + history. Revisit if a widget needs to
+  carry typed input back (then it's a gate, not a result widget) or persist live state.
+- **The copilot replay `history` carries the FULL per-turn trajectory, not just the final reply.**
+  `_commit_turn` (`session.py`) persists the assistant + tool messages a turn produced (feature 020·23),
+  so the next turn's model can see what it DID (answer "why did that fail"), not just what it said. Two
+  invariants any change here MUST keep: (1) persist the turn's TAIL only — the per-turn slice
+  `messages[head_len:]` from `run_turn` (the head is `[system, system, *history, user]`); never re-commit
+  the build_messages head or the user message would duplicate every turn. (2) tool-group completeness —
+  drop a trailing assistant whose `tool_calls` lack matching `tool` results (a cancel can return
+  mid-batch); an orphaned `tool_call_id` 400s the next stream (`_turn_tail`). This makes history grow
+  monotonically — the window-trim is the open follow-up (`todo.md`; `max_input_tokens` is its budget).
+- **A new addressable copilot SOURCE kind gets a `<kind>:` prefix + rides the EXISTING read/grep, never
+  a parallel tool.** Nodes are bare ids, library files are `lib:<path>`, templates are `template:<id>`
+  (feature 020·22). A new readable source (a future preset, an example, etc.) mirrors this: a
+  self-describing prefix the catalogue emits, a branch in `_copilot_resolve_source` + the read/grep
+  builders (the SAME `ShaderView`/`GrepHit`, one implementation), and — if it's read-only — an EXPLICIT
+  reject in the edit-target resolver (a `<kind>:` target returns an unresolved EditResult with an
+  actionable message, BEFORE the node resolver, so a lenient-resolver refactor can't make it a silent
+  edit target). Don't fork a `read_<kind>` method; don't merge the id namespaces (separate dicts, the
+  prefix carries the read-only-vs-editable semantics). Revisit if a source needs WRITE access (then it's
+  not just an address — it's an edit target with its own freshness/guard).
+- **Editable metadata on a SHIPPED (read-only-in-bundle) resource is two-tier: a shipped default + a
+  user sidecar at `app_data_dir()`.** A template description (feature 020·22) lives in the shipped
+  `node.json` (the dev default, ships immutable) AND in a `TemplateDescriptionsStore` sidecar keyed by
+  the stable full id; lookup is override-else-shipped AT THE CONSUMPTION SITE (never mutate the
+  in-memory shipped object — that keeps "reset" = delete the sidecar key). The sidecar mirrors the
+  shader-lib favorites/tags store posture (cross-project, fail-soft load/save, loaded in `__init__`).
+  User-edit-wins-forever (a later shipped-default change is shadowed) — accepted, matches favorites.
+  Revisit if a shipped-default update must win until the user touches it (needs a version/hash stamp).
 - **Exporters: own thread, own panel, GL-free artifacts.** The `Exporter` ABC enforces thread
   affinity — render-thread methods may touch moderngl; worker-thread methods (`prepare`, `export`,
   the `_do_*`/`_handle_*` job handlers) MUST NOT, they see only `RenderedArtifact` (a pure value

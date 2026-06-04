@@ -38,6 +38,17 @@ class LibCatalogEntry:
 
 
 @dataclass(frozen=True)
+class TemplateEntry:
+    # One shipped node template in the always-in-prompt catalogue (feature 020·22): the name + a
+    # description (what the template is FOR) + a `template:<short>` handle the agent passes to
+    # create_node / read_shader / grep. GL-free, cache-stable. So the agent can pick "the Text Rendering
+    # template" on intent and read its code, instead of guessing source from scratch.
+    template_id: str  # the `template:<4-char>` handle (self-describing; NOT the 36-char dir uuid)
+    name: str
+    description: str
+
+
+@dataclass(frozen=True)
 class CompileErrorInfo:
     path: str
     line: int  # 1-based (matches the agent's cat -n orientation)
@@ -128,11 +139,22 @@ class EditResult:
     # Freshness reject (feature 020 · 15): True when the edit was refused because the source
     # moved since the agent last read it this turn (or it never read / switched nodes).
     # stale_reason is the App-built message naming the specific cause. matches==0 on a reject.
+    # stale is EXEMPT from the edit-retry cap (re-read and continue is benign, not non-convergence).
     stale: bool = False
     stale_reason: str = ""
+    # Unresolvable-target reject (feature 020·20 D4): the model supplied a bad target (unknown node
+    # id / invalid lib path) — an ARGUMENT error, distinct from a freshness `stale`. It DOES count
+    # toward the edit-retry cap (a model repeating a bad target must hit the giveup), so it must NOT
+    # set stale. unresolved_reason is the App-built message. matches==0 on a reject.
+    unresolved: bool = False
+    unresolved_reason: str = ""
     # Lib edit (feature 020 · 16 Decision 4): the honest "no standalone compile" note returned
     # when the edit target was a lib: file. Empty for a node edit (which returns real errors).
     lib_note: str = ""
+    # Comment-loss reject: True when the matched span would verbatim-overwrite an interior
+    # comment the whitespace-invariant match can't see — the edit is refused so author content
+    # isn't silently destroyed; the model is steered to a line-addressed edit. matches==0.
+    comment_loss: bool = False
 
 
 @dataclass(frozen=True)
@@ -194,6 +216,9 @@ class CopilotCapabilities:
     # (uniform names need a GL read; see NodeTreeEntry). lib_catalog reads the parsed index.
     node_tree: Callable[[], list[NodeTreeEntry]]
     lib_catalog: Callable[[], list[LibCatalogEntry]]
+    # The shipped node templates the agent can instantiate via create_node(template=...) — the same
+    # set the human node-creator shows (feature 020·22). GL-free, cache-stable.
+    template_catalog: Callable[[], list[TemplateEntry]]
 
     # ---- cross-project reads (feature 020·16) ----
     # read_shader marshals (force-compile + uniform read are GL) and STAMPS freshness per node;
@@ -222,11 +247,11 @@ class CopilotCapabilities:
     # Set a uniform VALUE on a node (020·16 Decision 6): (name, value, node). node "" = current.
     # Validates up front; rejects sampler/block/engine-driven with an explicit error.
     set_uniform: Callable[[str, object, str], "SetUniformResult"]
-    # Create a node from source ("" = compiling starter), then COMPILE it and return its errors
-    # — the same compile-feedback every edit tool gives (the "every mutation returns its compile
-    # result" invariant). switch_to controls the tab. (name, source, switch_to) -> (new node-id,
-    # post-compile errors) (020·16 Decision 8).
-    create_node: Callable[[str, str, bool], tuple[str, list[CompileErrorInfo]]]
+    # Create a node, then COMPILE it and return its errors — the same compile-feedback every edit
+    # tool gives. `template` (feature 020·22) = a template id from template_catalog ("" = the default
+    # starter); `source` overrides the template body when non-empty. switch_to controls the tab.
+    # (name, source, template, switch_to) -> (new node-id, post-compile errors) (020·16 Dec. 8).
+    create_node: Callable[[str, str, str, bool], tuple[str, list[CompileErrorInfo]]]
     # Delete a node (move its dir to the project trash, recoverable). Destructive => the loop
     # always gates it (GatePolicy.ALWAYS); the closure marshals the GL teardown via the bridge.
     # (node short-id) -> DeleteNodeResult (feature 020·17).

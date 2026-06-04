@@ -15,7 +15,6 @@ from shaderbox.copilot.agent import AgentError, AgentToolCard, run_turn
 from shaderbox.copilot.capabilities import (
     CopilotCapabilities,
     EditResult,
-    SetUniformResult,
     ShaderView,
 )
 from shaderbox.copilot.config import COPILOT_CONFIG
@@ -28,6 +27,7 @@ from shaderbox.copilot.llm.api import (
     LLMToolSpec,
 )
 from shaderbox.copilot.tools.registry import build_registry
+from tests._caps import minimal_caps
 from tests.test_copilot_loop import _fake_context, _FakeClient, _tool_call
 
 
@@ -99,16 +99,10 @@ class _FreshnessApp:
         return EditResult(matches=1, errors=[])
 
     def caps(self) -> CopilotCapabilities:
-        return CopilotCapabilities(
-            node_tree=lambda: [],
-            lib_catalog=lambda: [],
+        return minimal_caps(
             read_shaders=self.read_shaders,
-            grep=lambda _q: [],
-            read_lib=lambda _names: [],
             apply_shader_edit=self.apply_shader_edit,
             apply_line_edit=self.apply_line_edit,
-            set_uniform=lambda _n, _v, _node: SetUniformResult(ok=True),
-            create_node=lambda _n, _s, _sw: ("node-new", []),
         )
 
 

@@ -19,7 +19,6 @@ from shaderbox.copilot.capabilities import (
     CompileErrorInfo,
     CopilotCapabilities,
     EditResult,
-    SetUniformResult,
     ShaderView,
 )
 from shaderbox.copilot.config import COPILOT_CONFIG
@@ -37,6 +36,7 @@ from shaderbox.copilot.llm.api import (
     LLMUsage,
 )
 from shaderbox.copilot.tools.registry import build_registry
+from tests._caps import minimal_caps
 
 
 def _tool_call(call_id: str, name: str, args: str) -> list[LLMStreamEvent]:
@@ -70,6 +70,7 @@ def _fake_context() -> CopilotContext:
     return CopilotContext(
         node_tree="- shader (id: node-1)  [current]",
         lib_catalog="(library is empty)",
+        template_catalog="(no templates)",
         conventions="",
     )
 
@@ -128,16 +129,10 @@ def _fake_caps(edit_errors: list[list[CompileErrorInfo]]) -> CopilotCapabilities
             )
         ]
 
-    return CopilotCapabilities(
-        node_tree=lambda: [],
-        lib_catalog=lambda: [],
+    return minimal_caps(
         read_shaders=read_shaders,
-        grep=lambda _q: [],
-        read_lib=lambda _names: [],
         apply_shader_edit=apply_edit,
         apply_line_edit=apply_line,
-        set_uniform=lambda _n, _v, _node: SetUniformResult(ok=True),
-        create_node=lambda _n, _s, _sw: ("node-new", []),
     )
 
 
@@ -361,3 +356,36 @@ def test_stale_shutdown_sentinel_does_not_strand_turn() -> None:
 
     assert not sess.state.in_flight, "turn stranded by a stale shutdown sentinel"
     assert any(m.role == "assistant" for m in sess.state.messages)
+
+
+def test_terminal_carries_tool_trajectory_for_history() -> None:
+    # feature 020·23 D4: the terminal event's `messages` tail = the assistant/tool trajectory this
+    # turn produced (assistant-with-tool_calls + the tool result + the final assistant reply), so
+    # _commit_turn can persist it and the next turn's model sees what the agent actually DID.
+    caps = _fake_caps(edit_errors=[[]])
+    registry = build_registry(caps)
+    scripts: list[list[LLMStreamEvent]] = [
+        _tool_call("c1", "read_shader", "{}"),
+        [LLMTextDelta("Read it."), LLMDone("stop", LLMUsage())],
+    ]
+    events = list(
+        run_turn(
+            _FakeClient(scripts),
+            registry,
+            COPILOT_CONFIG,
+            _fake_context(),
+            history=[],
+            user_text="read the shader",
+            gate=GateChannel(),
+            cancel=threading.Event(),
+        )
+    )
+    from shaderbox.copilot.agent import AgentTurnDone
+
+    done = next(e for e in events if isinstance(e, AgentTurnDone))
+    roles = [m.role for m in done.messages]
+    assert roles == ["assistant", "tool", "assistant"], roles
+    # the tool call + its result pair up (no orphan), and the final reply is last
+    assert done.messages[0].tool_calls and done.messages[0].tool_calls[0].id == "c1"
+    assert done.messages[1].tool_call_id == "c1"
+    assert done.messages[2].content == "Read it."

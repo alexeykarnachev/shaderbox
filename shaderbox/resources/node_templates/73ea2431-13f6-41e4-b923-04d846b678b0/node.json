@@ -28,6 +28,7 @@
     },
     "ui_state": {
         "ui_name": "Media Input",
+        "description": "Samples external media: an image (u_image) and a video (u_video) bound as sampler2D textures, tinted by u_color. Use this when a shader needs to read a picture or video.",
         "render_media_details": {
             "is_video": true,
             "file_details": {

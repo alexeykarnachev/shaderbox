@@ -73,9 +73,12 @@ class _InsertAfterArgs(BaseModel):
 
 class _SetUniformArgs(BaseModel):
     name: str = Field(description="the uniform's name (e.g. u_color)")
-    value: float | int | list[float] = Field(
-        description="a number for a scalar uniform, or a list of numbers for a vector "
-        "(e.g. [1.0, 0.0, 0.0] for a vec3 color)"
+    value: float | int | str | list[float | int] = Field(
+        description="the value, shaped to the uniform: a NUMBER for a scalar; a LIST of numbers for "
+        "a vector ([1.0, 0.0, 0.0] for a vec3) or a numeric array; a STRING for a uint text array "
+        '(e.g. "Hello\\nWorld" for u_text — ShaderBox converts it to codepoints, the same control '
+        "the user has in the UI). To change displayed TEXT, set the text uniform with a string — "
+        "do NOT edit the source (a uniform can't be default-initialized)."
     )
     node: str = Field(
         default="",
@@ -86,10 +89,16 @@ class _SetUniformArgs(BaseModel):
 
 class _CreateNodeArgs(BaseModel):
     name: str = Field(description="a display name for the new node")
+    template: str = Field(
+        default="",
+        description="a template: handle from the TEMPLATE LIBRARY to start from (e.g. for a "
+        "text-rendering shader, pick the text template) — prefer this over writing source blind; "
+        "empty = the default blank-canvas starter",
+    )
     source: str = Field(
         default="",
-        description="initial GLSL source; empty = a ready-made starter shader you then edit, "
-        "or full GLSL following the project conventions",
+        description="initial GLSL source; empty = the chosen template (or the starter), or full "
+        "GLSL following the project conventions (overrides the template body)",
     )
     switch_to: bool = Field(
         default=True,
@@ -223,6 +232,14 @@ def _format_errors(errors: list[CompileErrorInfo]) -> str:
     return "\n".join(f"{e.path}:{e.line}: {e.message}" for e in errors)
 
 
+def _view_summary(view: ShaderView) -> str:
+    # The terse chat line for a read (020·23 D6): name + size + uniform count + compile state. The
+    # full listing goes to the agent's context, not the chat (the user reads code in the editor).
+    lines = view.listing.count("\n") + 1 if view.listing else 0
+    state = f"{len(view.errors)} compile error(s)" if view.errors else "compiled clean"
+    return f"read {view.name} — {lines} lines, {len(view.uniforms)} uniforms, {state}"
+
+
 def _format_view(view: ShaderView) -> str:
     uniforms = "\n".join(view.uniforms) if view.uniforms else "(none)"
     errors = _format_errors(view.errors) if view.errors else "none"
@@ -241,6 +258,15 @@ def _stale_result(result: EditResult) -> tuple[bool, str, dict] | None:
     # payload["stale"] lets run_turn keep it OUT of the edit-retry cap (re-read, don't spiral).
     if result.stale:
         return False, f"error: {result.stale_reason}", {"stale": True}
+    return None
+
+
+def _unresolved_result(result: EditResult) -> tuple[bool, str, None] | None:
+    # An unresolvable-target reject (feature 020·20 D4): a bad node id / lib path. Unlike a stale
+    # reject it does NOT carry payload["stale"], so a model that keeps supplying a bad target DOES
+    # count toward the edit-retry cap (it is non-convergence, not a benign re-read).
+    if result.unresolved:
+        return False, f"error: {result.unresolved_reason}", None
     return None
 
 
@@ -271,14 +297,25 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
         views = caps.read_shaders(node_ids)
         if not views:
             return False, "error: no such node(s) — check the project map for ids", None
-        found = {v.node_id for v in views}
-        missing = [nid for nid in node_ids if nid not in found]
+        # A handle is "found" if it matches a returned view's SHORT id under the same prefix rule
+        # the resolver uses (a longer/shorter unique prefix both resolve) — diffing the raw handle
+        # against the short id directly would mis-report a full-id/long-prefix read as missing
+        # (feature 020·20 D4).
+        short_ids = [v.node_id for v in views]
+        missing = [
+            nid
+            for nid in node_ids
+            if not any(s.startswith(nid) or nid.startswith(s) for s in short_ids)
+        ]
         body = "\n\n".join(_format_view(v) for v in views)
         if missing:
             body += f"\n\n(no node found for: {', '.join(missing)})"
+        # `body` (the full line-numbered listing) is what the AGENT gets — it edits by line number.
+        # `display` is the terse chat-line the USER sees (the editor already shows the code, 020·23 D6).
         payload = {
             "errors": [e.__dict__ for v in views for e in v.errors],
             "read": [v.node_id for v in views],
+            "display": "\n".join(_view_summary(v) for v in views),
         }
         return True, body, payload
 
@@ -286,8 +323,18 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
         result = caps.apply_shader_edit(
             args["old_str"], args["new_str"], args["replace_all"], args["target"]
         )
+        if (unresolved := _unresolved_result(result)) is not None:
+            return unresolved
         if (stale := _stale_result(result)) is not None:
             return stale
+        if result.comment_loss:
+            return (
+                False,
+                "error: that region spans a comment your old_str doesn't reproduce, so "
+                "replacing it verbatim would delete the comment. Use replace_lines (addressed "
+                "by line number) so the surrounding lines stay intact.",
+                None,
+            )
         if result.matches == 0:
             base = (
                 "error: old_str not found in the shader — re-read with read_shader and copy "
@@ -318,6 +365,8 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
                 None,
             )
         result = caps.apply_line_edit(start, end, args["new_text"], args["target"])
+        if (unresolved := _unresolved_result(result)) is not None:
+            return unresolved
         if (stale := _stale_result(result)) is not None:
             return stale
         if result.matches == 0:
@@ -327,6 +376,8 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
     def insert_after(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
         line = args["line"]
         result = caps.apply_line_edit(line + 1, line, args["new_text"], args["target"])
+        if (unresolved := _unresolved_result(result)) is not None:
+            return unresolved
         if (stale := _stale_result(result)) is not None:
             return stale
         if result.matches == 0:
@@ -346,7 +397,7 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
 
     def create_node(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
         node_id, errors = caps.create_node(
-            args["name"], args["source"], args["switch_to"]
+            args["name"], args["source"], args["template"], args["switch_to"]
         )
         where = "now active" if args["switch_to"] else "in the background"
         # Same compile-result vocabulary as the edit tools (success stays True even with errors —
