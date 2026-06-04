@@ -575,42 +575,55 @@ float value_noise(vec2 p) {
     return 2.0 * n - 1.0;
 }
 
-void main() {
-    vec2 uv = (vs_uv - u_offset) * vec2(u_aspect, 1.0) * u_zoomout;
+  void main() {
+      vec2 uv = (vs_uv - u_offset) * vec2(u_aspect, 1.0) * u_zoomout;
 
-    float dist = MAX_DIST;
+      float dist = MAX_DIST;
 
-    float col = 0.0; // advancing x position, reset on newline
-    float row = 0.0; // line index, grows downward
+      float col = 0.0;
+      float row = 0.0;
 
-    for (uint i = 0; i < MAX_TEXT_LEN; ++i) {
-        uint char_unicode_idx = u_text[i];
+      // first pass: compute extents for centering
+      float max_col = 0.0;
+      float num_rows = 1.0;
+      for (uint i = 0; i < MAX_TEXT_LEN; ++i) {
+          uint c = u_text[i];
+          if (c == 0u) break;
+          if (c == 10u) { num_rows += 1.0; col = 0.0; continue; }
+          col += 1.0;
+          if (col > max_col) max_col = col;
+      }
 
-        if (char_unicode_idx == 0u) { // end of string
-            break;
-        }
+      float line_step = u_char_scale * CH + u_text_spacing.y;
+                  vec2 text_size = vec2(max_col * (1.0 + u_text_spacing.x),
+                            (num_rows - 1.0) * line_step + u_char_scale * CH);
+      vec2 center_off = text_size * 0.5 / u_zoomout;
 
-        if (char_unicode_idx == 10u) { // '\n' -> carriage return + line feed
-            col = 0.0;
-            row += 1.0;
-            continue;
-        }
+      col = 0.0; row = 0.0;
+      for (uint i = 0; i < MAX_TEXT_LEN; ++i) {
+          uint char_unicode_idx = u_text[i];
+          if (char_unicode_idx == 0u) break;
 
-        // Lines stack downward: y starts at u_zoomout and each row drops by one
-        // glyph height (in uv units, = u_char_scale * CH) plus the vertical spacing.
-        float line_step = u_char_scale * CH + u_text_spacing.y;
-        vec2 char_pos = vec2(col * (1.0 + u_text_spacing.x),
-                             u_zoomout - row * line_step);
+          if (char_unicode_idx == 10u) {
+              col = 0.0;
+              row += 1.0;
+              continue;
+          }
 
-        vec2 p = 2.0 * (uv - char_pos) / u_char_scale;
-        dist = min(dist, get_dist_to_latin_char(p, char_unicode_idx));
+          float bob = sin(u_time * 4.0 + float(i) * 1.3) * 0.08;
+          vec2 char_pos = vec2(col * (1.0 + u_text_spacing.x),
+                               u_zoomout - row * line_step + bob) - center_off;
 
-        col += 1.0;
-    }
+          vec2 p = 2.0 * (uv - char_pos) / u_char_scale;
+          dist = min(dist, get_dist_to_latin_char(p, char_unicode_idx));
 
-    float text_thickness = u_text_thickness + 0.1 * value_noise(vec2(128.0 * vs_uv.x, 32.0 * vs_uv.y));
-    float line = get_line(dist, text_thickness, u_text_smoothness);
-    vec3 color = u_color * line;
+          col += 1.0;
+      }
 
-    fs_color = vec4(color, 1.0);
+          float text_thickness = u_text_thickness + 0.1 * value_noise(vec2(128.0 * vs_uv.x, 32.0 * vs_uv.y));
+      float line = get_line(dist, text_thickness, u_text_smoothness);
+      vec3 palette = SB_palette_sunset(fract(u_time * 0.2 + vs_uv.x * 2.0));
+      vec3 color = mix(palette, u_color, 0.3) * line;
+
+      fs_color = vec4(color, 1.0);
 }
