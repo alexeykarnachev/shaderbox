@@ -21,7 +21,7 @@
         "line_spacing": 1.0
     },
     "active_node_tab": "render",
-    "is_copilot_open": true,
+    "is_copilot_open": false,
     "copilot_layout": "free",
     "key_bindings": {},
     "show_cheatsheet": true
