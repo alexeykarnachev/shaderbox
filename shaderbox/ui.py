@@ -357,9 +357,11 @@ def update_and_draw(app: App) -> None:
     imgui.push_font(app.font_14, _FONT_14_SIZE)
     cheatsheet.draw(app)
     copilot_chat.draw(app)
-    # The "Rendering..." cue while the copilot holds a render op one frame before the encode
-    # freezes the loop (feature 020·20 D3). render_pending() is True for exactly that hold frame.
-    if app.copilot.bridge.render_pending():
+    # The "Rendering..." cue. Two producers: the copilot bridge (a render op held one frame before
+    # the encode, feature 020·20 D3) and the Render-tab button (a deferred main-thread encode). Both
+    # hold one frame so the cue paints, then run on the next — see _run_pending_render below.
+    _run_pending_render(app)
+    if app.copilot.bridge.render_pending() or app.render_request is not None:
         rendering_overlay("Rendering... the app pauses while it encodes.")
     imgui.pop_font()
 
@@ -379,6 +381,23 @@ def update_and_draw(app: App) -> None:
     glfw.swap_buffers(app.window)
 
     app.frame_idx += 1
+
+
+def _run_pending_render(app: App) -> None:
+    # Drive the Render-tab deferred encode (set by the Render button). Hold it ONE frame so the
+    # "Rendering..." cue paints + swaps first; on the NEXT frame run the encode. During the encode
+    # (which freezes the loop) the last swapped buffer — the cue frame — stays on screen, so the
+    # cue is visible for the whole freeze. Called before the overlay-draw each frame.
+    if app.render_request is None:
+        app.render_request_shown = False
+        return
+    if not app.render_request_shown:
+        app.render_request_shown = True  # hold this frame; the cue paints below
+        return
+    request = app.render_request
+    app.render_request = None
+    app.render_request_shown = False
+    request()
 
 
 def _hint(app: App, command_id: CommandId) -> str:

@@ -545,6 +545,12 @@ class App:
         # Where a picked emoji is delivered (set by whoever opens the picker).
         self.emoji_pick_target: Callable[[str], None] | None = None
         self.node_delete_armed: str = ""  # node id pending delete-confirm
+        # A Render-tab render deferred one frame so the "Rendering..." cue paints before the
+        # encode freezes the loop (the render runs synchronously on the main thread). Set by the
+        # Render button; update_and_draw holds it one frame (cue paints), then runs + clears it.
+        # None = nothing pending. render_request_shown records that the one cue frame was spent.
+        self.render_request: Callable[[], None] | None = None
+        self.render_request_shown: bool = False
         self.editor_focused: bool = False
         # Sticky variant: stays True while the editor is a real interaction
         # target (even after focus is lost to a transient popup / menu / picker).

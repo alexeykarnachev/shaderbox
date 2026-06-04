@@ -38,7 +38,7 @@ def draw(app: App) -> None:
 
 
 def _draw_render_button(app: App, details: MediaDetails) -> MediaDetails:
-    if not (ui_node := app.ui_nodes.get(app.current_node_id)):
+    if app.current_node_id not in app.ui_nodes:
         return details
 
     media_type = "video" if details.is_video else "image"
@@ -46,10 +46,22 @@ def _draw_render_button(app: App, details: MediaDetails) -> MediaDetails:
 
     imgui.begin_disabled(not has_path)
     if primary_button("Render"):
-        try:
-            details = ui_node.node.render_media(details)
-        except Exception as e:
-            logger.error(f"Failed to render media: {e}")
+        # Defer the encode one frame so the "Rendering..." cue paints before it freezes the
+        # loop (update_and_draw runs the request, then writes the result back). Capture the
+        # node id, not ui_node, so a node switch before the run frame can't render the wrong one.
+        node_id = app.current_node_id
+        pending = details
+
+        def _run_render() -> None:
+            target = app.ui_nodes.get(node_id)
+            if target is None:
+                return
+            try:
+                target.ui_state.render_media_details = target.node.render_media(pending)
+            except Exception as e:
+                logger.error(f"Failed to render media: {e}")
+
+        app.render_request = _run_render
     imgui.end_disabled()
 
     if not has_path:
