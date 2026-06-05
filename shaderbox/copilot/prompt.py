@@ -1,27 +1,56 @@
+from collections.abc import Callable
+from dataclasses import dataclass
+from enum import IntEnum
+
 from loguru import logger
 
 from shaderbox.copilot.config import COPILOT_CONFIG
 from shaderbox.copilot.context import CopilotContext
 from shaderbox.copilot.llm.api import LLMMessage
 
-# Min turns the trim always keeps, even over budget — the agent needs recent trajectory to stay
-# coherent (its own last read_shader / edit results). A "turn" starts at a user message and runs to
-# the next user message; trimming whole turns preserves the assistant->tool_call->tool pairing that
-# the provider 400s on if broken.
+# Min turns the trim always keeps, even over budget — the agent needs the recent conversation to stay
+# coherent (its own last NL turn-summaries). A "turn" starts at a user message and runs to the next
+# user message; history is NL-only (feature 020·25), so a turn is just user + one assistant summary.
 _MIN_KEPT_TURNS: int = 4
 # Rough char->token ratio for the trim THRESHOLD only (no tokenizer in-tree; the provider returns
 # real counts but only post-send). ~4 chars/token is the standard English/code heuristic; we only
 # need "is history big", not an exact count.
 _CHARS_PER_TOKEN: int = 4
 
-# Prompt assembly: (context snapshot, history, the new user turn) -> list[LLMMessage].
-# Knows nothing of tools or the client. Ordered least-volatile -> most-volatile for
-# OpenRouter prefix-cache friendliness (§6/§J1): a stable system message (capabilities map +
-# tool-use rules), then the rare-volatility project map + lib catalogue (they change on
-# create/delete/rename/compile-flip, NOT per frame — they carry NO uniform VALUES, so they
-# stay cacheable), then inert history, then the pending user message. The CURRENT SHADER
-# SOURCE is deliberately NOT a prompt block — it enters via the read_shader tool result,
-# after the warm prefix (§B1a).
+# Prompt assembly: named BLOCKS composed by volatility, NOT a flat string concat (feature 020·25).
+# Knows nothing of tools or the client. Tiers, least-volatile -> most-volatile for OpenRouter
+# prefix-cache friendliness (§6/§J1): STATIC (the system rules) < RARE (project map + lib/template
+# catalogue + conventions — change on create/delete/rename/compile-flip, carry NO per-frame value) <
+# DIALOGUE (NL-only history — user msgs + one engine-derived turn-summary each; inert across turns so
+# the prefix grows monotonically) < PER_TURN (reserved for future per-round scratchpads — a member
+# sorts BELOW dialogue automatically, the cache-correct placement). The CURRENT SHADER SOURCE is NOT a
+# block and is NOT in history — it enters live via the read_shader tool result, after the warm prefix.
+
+
+class Volatility(IntEnum):
+    # Sort key for a prompt block — lower = more stable = higher in the prompt = better cached.
+    STATIC = 0
+    RARE = 1
+    DIALOGUE = 2
+    PER_TURN = 3
+
+
+@dataclass(frozen=True)
+class PromptBlock:
+    # One named tier of the prompt. `render` returns the block's messages ([] => the block is dropped),
+    # so dialogue (many messages), a singleton (one), and an empty scratchpad (none) are one mechanism.
+    name: str
+    volatility: Volatility
+    render: Callable[[], list[LLMMessage]]
+
+
+def build_prompt(blocks: list[PromptBlock]) -> list[LLMMessage]:
+    # Sort by volatility (stable for equal ranks), render each, drop empties, flatten.
+    out: list[LLMMessage] = []
+    for block in sorted(blocks, key=lambda b: b.volatility):
+        out.extend(block.render())
+    return out
+
 
 _SYSTEM_PROMPT = """\
 You are ShaderBox's in-app coding copilot. ShaderBox is a real-time GLSL fragment-shader
@@ -222,10 +251,10 @@ def _estimate_tokens(messages: list[LLMMessage]) -> int:
 
 
 def _split_turns(history: list[LLMMessage]) -> list[list[LLMMessage]]:
-    # Group the flat history into turns, each starting at a `user` message and running to the next
-    # one. The assistant(+tool_calls)->tool tail of a turn stays inside that turn's group, so dropping
-    # whole groups never orphans a tool_call_id. A leading non-user fragment (shouldn't occur — every
-    # commit starts with a user message) becomes its own leading group, preserved as-is.
+    # Group the NL-only history into turns, each starting at a `user` message and running to the next
+    # one (feature 020·25: a turn is just user + one assistant summary). Whole-turn grouping lets the
+    # window trim evict complete turns. A leading non-user fragment (shouldn't occur — every commit
+    # starts with a user message) becomes its own leading group, preserved as-is.
     turns: list[list[LLMMessage]] = []
     for m in history:
         if m.role == "user" or not turns:
@@ -264,12 +293,19 @@ def build_messages(
     history: list[LLMMessage],
     user_text: str,
 ) -> list[LLMMessage]:
-    # least-volatile -> most-volatile: stable system rules, then the rare-volatility project
-    # map/catalogue, then inert history, then the pending user message (§6/§B1a).
-    prefix = [
-        LLMMessage(role="system", content=_SYSTEM_PROMPT),
-        LLMMessage(role="system", content=_context_block(context)),
-    ]
+    # Compose the prompt as named blocks (feature 020·25). The pending-user block is PER_TURN so it
+    # sorts to the bottom; a future scratchpad block (also PER_TURN) slots in beside it, below dialogue.
+    static = LLMMessage(role="system", content=_SYSTEM_PROMPT)
+    rare = LLMMessage(role="system", content=_context_block(context))
     new_user = LLMMessage(role="user", content=_sanitize(user_text))
-    overhead = _estimate_tokens([*prefix, new_user])
-    return [*prefix, *_trim_history(history, overhead), new_user]
+    # The dialogue block is trimmed against the budget left after the fixed (non-history) blocks.
+    overhead = _estimate_tokens([static, rare, new_user])
+    blocks = [
+        PromptBlock("static", Volatility.STATIC, lambda: [static]),
+        PromptBlock("project_context", Volatility.RARE, lambda: [rare]),
+        PromptBlock(
+            "dialogue", Volatility.DIALOGUE, lambda: _trim_history(history, overhead)
+        ),
+        PromptBlock("pending_user", Volatility.PER_TURN, lambda: [new_user]),
+    ]
+    return build_prompt(blocks)

@@ -358,14 +358,13 @@ def test_stale_shutdown_sentinel_does_not_strand_turn() -> None:
     assert any(m.role == "assistant" for m in sess.state.messages)
 
 
-def test_terminal_carries_tool_trajectory_for_history() -> None:
-    # feature 020·23 D4: the terminal event's `messages` tail = the assistant/tool trajectory this
-    # turn produced (assistant-with-tool_calls + the tool result + the final assistant reply), so
-    # _commit_turn can persist it and the next turn's model sees what the agent actually DID.
+def test_terminal_carries_nl_summary_not_tool_tail() -> None:
+    # feature 020·25: the terminal event carries an engine-derived NL TurnSummary, NOT the tool tail.
+    # A read_shader turn (non-mutating) yields the agent's reply + the read node in `nodes`, no ledger.
     caps = _fake_caps(edit_errors=[[]])
     registry = build_registry(caps)
     scripts: list[list[LLMStreamEvent]] = [
-        _tool_call("c1", "read_shader", "{}"),
+        _tool_call("c1", "read_shader", '{"nodes": ["abcd"]}'),
         [LLMTextDelta("Read it."), LLMDone("stop", LLMUsage())],
     ]
     events = list(
@@ -383,9 +382,8 @@ def test_terminal_carries_tool_trajectory_for_history() -> None:
     from shaderbox.copilot.agent import AgentTurnDone
 
     done = next(e for e in events if isinstance(e, AgentTurnDone))
-    roles = [m.role for m in done.messages]
-    assert roles == ["assistant", "tool", "assistant"], roles
-    # the tool call + its result pair up (no orphan), and the final reply is last
-    assert done.messages[0].tool_calls and done.messages[0].tool_calls[0].id == "c1"
-    assert done.messages[1].tool_call_id == "c1"
-    assert done.messages[2].content == "Read it."
+    assert done.summary.reply == "Read it."
+    assert done.summary.ledger == [], "a non-mutating read must add no ledger line"
+    assert (
+        "abcd" in done.summary.nodes
+    ), "the read node must be referenced for cross-turn binding"

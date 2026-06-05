@@ -16,7 +16,7 @@ from loguru import logger
 from pydantic import BaseModel, ValidationError
 
 from shaderbox.copilot.gate import GateKind
-from shaderbox.copilot.llm.api import LLMMessage, LLMToolCall
+from shaderbox.copilot.llm.api import LLMMessage
 from shaderbox.copilot.state import (
     ChatState,
     Message,
@@ -27,7 +27,7 @@ from shaderbox.copilot.state import (
     SessionUsage,
 )
 
-_VERSION = 4
+_VERSION = 5
 
 _RESULT_WIDGET_KINDS: frozenset[str] = frozenset({"open_url", "open_path"})
 
@@ -49,13 +49,6 @@ def _result_widget_or_none(model: "_ResultWidgetModel | None") -> ResultWidget |
     return ResultWidget(
         kind=cast(ResultWidgetKind, model.kind), label=model.label, target=model.target
     )
-
-
-class _ToolCallModel(BaseModel):
-    id: str
-    name: str
-    arguments: str
-    model_config = {"extra": "forbid"}
 
 
 class _RecoverModel(BaseModel):
@@ -95,12 +88,12 @@ class _MessageModel(BaseModel):
 
 
 class _HistoryModel(BaseModel):
-    # The LLM replay context (CopilotSession.history). Optional tool fields tolerate older
-    # shapes (the read-first / line-edit waves added tool calls).
+    # The LLM replay context (CopilotSession.history) — NATURAL-LANGUAGE only (feature 020·25):
+    # user messages + one engine-derived assistant turn-summary each. No tool messages. A pre-v5
+    # store carrying tool_call_id / tool_calls hits extra="forbid" -> ValidationError ->
+    # load_and_migrate fail-softs it to an empty chat (no backward-compat migration by design).
     role: str
     content: str | None = None
-    tool_call_id: str | None = None
-    tool_calls: list[_ToolCallModel] | None = None
     model_config = {"extra": "forbid"}
 
 
@@ -152,22 +145,7 @@ class ConversationStore(BaseModel):
                 )
                 for m in state.messages
             ],
-            history=[
-                _HistoryModel(
-                    role=h.role,
-                    content=h.content,
-                    tool_call_id=h.tool_call_id,
-                    tool_calls=(
-                        [
-                            _ToolCallModel(id=t.id, name=t.name, arguments=t.arguments)
-                            for t in h.tool_calls
-                        ]
-                        if h.tool_calls is not None
-                        else None
-                    ),
-                )
-                for h in history
-            ],
+            history=[_HistoryModel(role=h.role, content=h.content) for h in history],
             usage=_UsageModel(
                 input_tokens=state.usage.input_tokens,
                 output_tokens=state.usage.output_tokens,
@@ -201,26 +179,14 @@ class ConversationStore(BaseModel):
         ]
 
     def to_history(self) -> list[LLMMessage]:
-        out: list[LLMMessage] = []
-        for h in self.history:
-            calls = (
-                [
-                    LLMToolCall(id=t.id, name=t.name, arguments=t.arguments)
-                    for t in h.tool_calls
-                ]
-                if h.tool_calls is not None
-                else None
+        # NL-only (feature 020·25): every persisted history message is a plain user/assistant message.
+        return [
+            LLMMessage(
+                role=cast(Literal["system", "user", "assistant", "tool"], h.role),
+                content=h.content,
             )
-            role = cast(Literal["system", "user", "assistant", "tool"], h.role)
-            out.append(
-                LLMMessage(
-                    role=role,
-                    content=h.content,
-                    tool_call_id=h.tool_call_id,
-                    tool_calls=calls,
-                )
-            )
-        return out
+            for h in self.history
+        ]
 
     def to_usage(self) -> SessionUsage:
         return SessionUsage(

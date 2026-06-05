@@ -4,13 +4,14 @@ fail-soft load, and archive. Pure: no GL, no App."""
 import json
 from pathlib import Path
 
-from shaderbox.copilot.llm.api import LLMMessage, LLMToolCall
+from shaderbox.copilot.llm.api import LLMMessage
 from shaderbox.copilot.persistence import ConversationStore, archive_conversation
 from shaderbox.copilot.state import ChatState, Message, ResultWidget, SessionUsage
 
 
 def _populated_state() -> ChatState:
     state = ChatState()
+    # The UI render stream (state.messages) still carries tool_status cards — UI != history.
     state.messages = [
         Message(role="user", text="add a uniform"),
         Message(role="tool_status", text="edit_shader: ok"),
@@ -21,15 +22,13 @@ def _populated_state() -> ChatState:
 
 
 def _history() -> list[LLMMessage]:
+    # NL-only history (feature 020·25): user + one engine-derived assistant turn-summary. No tool msgs.
     return [
         LLMMessage(role="user", content="add a uniform"),
         LLMMessage(
             role="assistant",
-            content=None,
-            tool_calls=[LLMToolCall(id="c1", name="edit_shader", arguments='{"x":1}')],
+            content="Done — added u_speed.\n(this turn: edit_shader: ok)",
         ),
-        LLMMessage(role="tool", content="ok — compiled clean", tool_call_id="c1"),
-        LLMMessage(role="assistant", content="Done — added u_speed."),
     ]
 
 
@@ -46,11 +45,8 @@ def test_round_trip_messages_history_usage(tmp_path: Path) -> None:
         ("assistant", "Done — added u_speed."),
     ]
     hist = loaded.to_history()
-    assert [h.role for h in hist] == ["user", "assistant", "tool", "assistant"]
-    assert hist[1].tool_calls is not None
-    assert hist[1].tool_calls[0].id == "c1"
-    assert hist[1].tool_calls[0].arguments == '{"x":1}'
-    assert hist[2].tool_call_id == "c1"
+    assert [h.role for h in hist] == ["user", "assistant"]
+    assert hist[1].content == "Done — added u_speed.\n(this turn: edit_shader: ok)"
     usage = loaded.to_usage()
     assert (usage.input_tokens, usage.output_tokens, usage.cost_usd) == (
         1200,
@@ -87,6 +83,37 @@ def test_incompatible_schema_fails_soft(tmp_path: Path) -> None:
     )
     loaded = ConversationStore.load_and_migrate(path)
     assert loaded.to_messages() == []
+
+
+def test_pre_v5_tool_paired_store_fails_soft_to_empty(tmp_path: Path) -> None:
+    # feature 020·25: an old store whose history carries tool_call_id / tool_calls hits extra="forbid"
+    # on _HistoryModel -> ValidationError -> empty chat (NL-only by construction, no migration).
+    path = tmp_path / "conversation.json"
+    path.write_text(
+        json.dumps(
+            {
+                "version": 4,
+                "messages": [],
+                "history": [
+                    {"role": "user", "content": "x"},
+                    {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {"id": "c1", "name": "read_shader", "arguments": "{}"}
+                        ],
+                    },
+                    {"role": "tool", "content": "...source...", "tool_call_id": "c1"},
+                ],
+                "usage": {"input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0},
+            }
+        ),
+        encoding="utf-8",
+    )
+    loaded = ConversationStore.load_and_migrate(path)  # must NOT raise
+    assert (
+        loaded.to_history() == []
+    ), "a pre-v5 tool-paired store must reset, not load tool messages"
 
 
 def test_unknown_role_survives_round_trip(tmp_path: Path) -> None:

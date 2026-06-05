@@ -72,27 +72,38 @@ class AgentToolCard:
     display: str = ""
 
 
-# The terminal events carry the per-turn TAIL (feature 020·23 D4): the assistant/tool messages this
-# turn produced, orphan-cleaned, for _commit_turn to persist into the replay history. Empty default so
-# the session's bare-except AgentError fallbacks (which never see run_turn's messages) commit no tail.
+@dataclass(frozen=True)
+class TurnSummary:
+    # The engine-derived NATURAL-LANGUAGE summary of a committed turn (feature 020·25). Replaces the
+    # verbatim tool tail in history: `reply` is the agent's prose (its final reply at clean-done; the
+    # branch note/error at a cutoff) — it carries the agent's stated ASSUMPTION (fact 3); `ledger` is
+    # the mutating-action lines (new values + irreversible identities, fact 2/4); `nodes` is every node
+    # referenced this turn (fact 1). _commit_turn renders these into one assistant history message.
+    reply: str = ""
+    ledger: list[str] = field(default_factory=list)
+    nodes: list[str] = field(default_factory=list)
+
+
+# The terminal events carry the engine-derived NL TurnSummary (feature 020·25) for _commit_turn to
+# persist as one assistant history message. Empty default so the session's bare-except AgentError
+# fallbacks (which never see run_turn's run-log) commit an empty summary.
 
 
 @dataclass(frozen=True)
 class AgentTurnDone:
-    note: str
     usage: LLMUsage
-    messages: list[LLMMessage] = field(default_factory=list)
+    summary: TurnSummary = field(default_factory=TurnSummary)
 
 
 @dataclass(frozen=True)
 class AgentError:
     message: str
-    messages: list[LLMMessage] = field(default_factory=list)
+    summary: TurnSummary = field(default_factory=TurnSummary)
 
 
 @dataclass(frozen=True)
 class AgentCancelled:
-    messages: list[LLMMessage] = field(default_factory=list)
+    summary: TurnSummary = field(default_factory=TurnSummary)
 
 
 @dataclass(frozen=True)
@@ -142,24 +153,93 @@ class _UsageRollup:
         return self._in
 
 
+@dataclass
+class _RunEntry:
+    name: str
+    ok: bool
+    msg: str  # the tool's terse model-facing result (carries set_uniform's new value)
+    args: dict  # the call args — for node names referenced/targeted this turn
+    payload: (
+        dict | None
+    )  # the structured side-channel — carries id / pack / url (NOT in msg)
+
+
+# Max non-irreversible mutating lines kept in a turn-summary ledger; irreversible
+# (publish/delete) lines are always kept verbatim (the don't-re-do safety invariant, §020·25 fact 4).
+_LEDGER_SOFT_CAP: int = 8
+# Tool-arg keys that name a node (for fact 1: every node touched OR referenced this turn).
+_NODE_ARG_KEYS: tuple[str, ...] = ("node", "target", "nodes")
+
+
 class _RunLog:
-    # The loop-local action ledger (§2.3). Loop-private — never on state (§T2).
+    # The loop-local action ledger (§2.3). Loop-private — never on state (§T2). Feeds the engine-derived
+    # NL turn-summary persisted to history (feature 020·25 — the full tool tail is no longer persisted).
     def __init__(self) -> None:
-        self._entries: list[tuple[str, bool, str]] = []
+        self._entries: list[_RunEntry] = []
 
-    def record(self, name: str, ok: bool, msg: str) -> None:
-        self._entries.append((name, ok, msg))
+    def record(
+        self, name: str, ok: bool, msg: str, args: dict, payload: dict | None
+    ) -> None:
+        self._entries.append(_RunEntry(name, ok, msg, args, payload))
 
-    def executed_actions_note(self, registry: ToolRegistry) -> str:
-        # The cutoff "what mutating work already committed" note (§I4): filter to
-        # mutating + ok.
-        mutating = [
-            name for name, ok, _ in self._entries if ok and registry.is_mutating(name)
-        ]
-        if not mutating:
-            return ""
-        uniq = list(dict.fromkeys(mutating))
-        return "Already done this turn: " + ", ".join(uniq)
+    def referenced_nodes(self) -> list[str]:
+        # Every node name/handle the turn touched or referenced (fact 1): the args of every call,
+        # deduped, order-preserved. A later turn's "do the same to C" needs the prior referent named.
+        seen: dict[str, None] = {}
+        for e in self._entries:
+            for key in _NODE_ARG_KEYS:
+                val = e.args.get(key)
+                for handle in val if isinstance(val, list) else [val]:
+                    if isinstance(handle, str) and handle:
+                        seen[handle] = None
+        return list(seen)
+
+    def summary_lines(self, registry: ToolRegistry) -> list[str]:
+        # The ledger lines for the NL turn-summary. Irreversible actions (publish/delete — gated ALWAYS)
+        # carry their IDENTITY (id / pack / url, which live in `payload`, NOT `msg`) verbatim + uncapped,
+        # so a "continue" after a cutoff never re-does them. Other mutating actions carry verb + result;
+        # they are soft-capped so a many-call turn can't bloat history. Failed mutating calls are noted.
+        irreversible: list[str] = []
+        other: list[str] = []
+        for e in self._entries:
+            if not registry.is_mutating(e.name):
+                continue
+            if registry.requires_gate_always(e.name):
+                ident = _identity_from_payload(e.payload)
+                status = "" if e.ok else " (FAILED)"
+                tail = f" [{ident}]" if ident else ""
+                irreversible.append(f"{e.name}{status}: {e.msg}{tail}")
+            elif e.ok:
+                other.append(f"{e.name}: {e.msg}")
+            else:
+                other.append(f"{e.name} FAILED: {e.msg}")
+        if len(other) > _LEDGER_SOFT_CAP:
+            kept = other[:_LEDGER_SOFT_CAP]
+            kept.append(f"... and {len(other) - _LEDGER_SOFT_CAP} more edits")
+            other = kept
+        return irreversible + other
+
+
+def _identity_from_payload(payload: dict | None) -> str:
+    # Pull the action's durable identity out of a tool payload (feature 020·25 fact 4): the created
+    # node id, the pack set_name, or a published URL — whichever the tool surfaced. "" if none.
+    if not payload:
+        return ""
+    for key in ("created", "node_id", "set_name", "url", "trash_name"):
+        val = payload.get(key)
+        if isinstance(val, str) and val:
+            return f"{key}={val}"
+    return ""
+
+
+def _build_turn_summary(
+    reply: str, run_log: _RunLog, registry: ToolRegistry
+) -> TurnSummary:
+    return TurnSummary(
+        reply=reply,
+        ledger=run_log.summary_lines(registry),
+        nodes=run_log.referenced_nodes(),
+    )
 
 
 def _parse_args(raw: str) -> dict | None:
@@ -221,26 +301,6 @@ def _widget_from_payload(payload: dict | None) -> ResultWidget | None:
     return ResultWidget(
         kind=kind, label=str(spec.get("label", "Open")), target=str(target)
     )
-
-
-def _turn_tail(messages: list[LLMMessage], head_len: int) -> list[LLMMessage]:
-    # The per-turn tail to persist (feature 020·23 D4): messages[head_len:], with a trailing assistant
-    # whose tool_calls lack matching tool results DROPPED — a cancel can return mid-batch (the assistant-
-    # with-tool_calls is appended before the per-call results), and an orphaned tool_call_id 400s the
-    # next stream. Drop that trailing assistant + any partial tool messages that follow it.
-    tail = messages[head_len:]
-    last_assistant = next(
-        (i for i in range(len(tail) - 1, -1, -1) if tail[i].tool_calls), None
-    )
-    if last_assistant is None:
-        return tail
-    wanted = {c.id for c in (tail[last_assistant].tool_calls or [])}
-    have = {m.tool_call_id for m in tail[last_assistant + 1 :] if m.tool_call_id}
-    if wanted <= have:
-        return tail
-    return tail[
-        :last_assistant
-    ]  # drop the orphaned assistant + its partial tool messages
 
 
 def _assistant_message(text: str, calls: list[_ToolCallBuilder]) -> LLMMessage:
@@ -311,11 +371,10 @@ def run_turn(
     # provider impl. The duck-typed `.stream(...)` is the only call. `trace` is the
     # full-transcript sink (None in tests) — it records everything, in full (trace.py).
     tr = trace if trace is not None else NULL_TRACE
+    # `messages` is the WITHIN-TURN context: full assistant/tool pairs accumulate here as the loop runs
+    # (the provider 400s on an orphaned tool_call_id). It is NEVER persisted — at commit the turn collapses
+    # to one engine-derived NL TurnSummary (feature 020·25), so history stays natural-language only.
     messages = build_messages(context, history, user_text)
-    # The head = [system, system, *history, user] (build_messages); the per-turn TAIL the model produced
-    # is messages[head_len:] (feature 020·23 D4). _commit_turn persists that tail (the user message is
-    # re-added separately), so cross-turn replay carries what the agent actually DID, not just its reply.
-    head_len = len(messages)
     specs = registry.eager_specs()
     usage = _UsageRollup()
     ran = _RunLog()
@@ -331,7 +390,7 @@ def run_turn(
     for iteration in range(config.max_iterations):
         if cancel.is_set():
             logger.debug(f"copilot turn cancelled at iteration {iteration}")
-            yield AgentCancelled(_turn_tail(messages, head_len))
+            yield AgentCancelled(_build_turn_summary("", ran, registry))
             return
 
         text_buf = ""
@@ -408,7 +467,8 @@ def run_turn(
                     "model_incompatible", iteration=iteration, reason="empty_after_tool"
                 )
                 yield AgentError(
-                    _MODEL_INCOMPATIBLE_MSG, messages=_turn_tail(messages, head_len)
+                    _MODEL_INCOMPATIBLE_MSG,
+                    summary=_build_turn_summary("", ran, registry),
                 )
                 return
             if not text_buf and fr == "length":
@@ -418,17 +478,17 @@ def run_turn(
                     f"copilot turn truncated (length) after {total_tool_calls} tool call(s)"
                 )
                 tr.event("turn_truncated", iteration=iteration, reason="length")
-                yield AgentError(
+                cutoff_note = (
                     "I ran out of my per-reply token budget before I could summarize. "
-                    "The actions above did complete — ask me to continue or recap.",
-                    messages=_turn_tail(messages, head_len),
+                    "The actions above did complete — ask me to continue or recap."
+                )
+                # The note is the reply prose (text_buf is empty here) so a "continue" next turn
+                # sees what happened + the ledger of what already committed (feature 020·25 fact 3/4).
+                yield AgentError(
+                    cutoff_note,
+                    summary=_build_turn_summary(cutoff_note, ran, registry),
                 )
                 return
-            # The final assistant reply (text-only, no tool calls) is in text_buf but not yet in
-            # `messages` (only tool-call iterations append an assistant message) — append it so the
-            # persisted turn tail carries the agent's last word (feature 020·23 D4).
-            if text_buf:
-                messages.append(LLMMessage(role="assistant", content=text_buf))
             logger.info(
                 f"copilot turn done | iterations={iteration + 1} "
                 f"tool_calls={total_tool_calls} reply={len(text_buf)}ch "
@@ -441,10 +501,10 @@ def run_turn(
                 reply=text_buf,
                 usage=usage.value(),
             )
+            # text_buf is the agent's final reply, carrying its stated assumption (fact 3).
             yield AgentTurnDone(
-                ran.executed_actions_note(registry),
                 usage.value(),
-                messages=_turn_tail(messages, head_len),
+                summary=_build_turn_summary(text_buf, ran, registry),
             )
             return
 
@@ -476,7 +536,7 @@ def run_turn(
             yield AgentStatus(registry.status_for(tc.name, args))
             if cancel.is_set():
                 logger.debug(f"copilot turn cancelled before tool {tc.name}")
-                yield AgentCancelled(_turn_tail(messages, head_len))
+                yield AgentCancelled(_build_turn_summary(text_buf, ran, registry))
                 return
             # Pre-gate guard (feature 020·18): a publish that can't run (no creds / no pack)
             # returns a guided-handoff message BEFORE the gate, so the user never gets a
@@ -486,7 +546,7 @@ def run_turn(
             if handoff is not None:
                 logger.info(f"copilot tool {tc.name} | precheck handoff")
                 tr.event("tool_precheck_handoff", name=tc.name, message=handoff)
-                ran.record(tc.name, False, handoff)
+                ran.record(tc.name, False, handoff, args, None)
                 messages.append(_tool_message(tc.id, handoff))
                 continue
             # Gate a destructive/publish tool on a user Yes/No before it runs (§7 / 020·17).
@@ -504,12 +564,12 @@ def run_turn(
                 if resp.cancelled:
                     logger.debug(f"copilot turn cancelled at gate for {tc.name}")
                     tr.event("gate_cancelled", name=tc.name)
-                    yield AgentCancelled(_turn_tail(messages, head_len))
+                    yield AgentCancelled(_build_turn_summary(text_buf, ran, registry))
                     return
                 if not resp.approved:
                     logger.info(f"copilot tool {tc.name} | user declined")
                     tr.event("gate_declined", name=tc.name)
-                    ran.record(tc.name, False, "error: user declined")
+                    ran.record(tc.name, False, "error: user declined", args, None)
                     messages.append(_tool_message(tc.id, "error: user declined"))
                     continue
                 secret = resp.secret
@@ -526,7 +586,7 @@ def run_turn(
                 result=msg,
                 payload=payload,
             )
-            ran.record(tc.name, ok, msg)
+            ran.record(tc.name, ok, msg, args, payload)
             display = str((payload or {}).get("display", ""))
             yield AgentToolCard(
                 tc.name,
@@ -570,7 +630,7 @@ def run_turn(
                 "— the edit kept not applying to the shader source. I've stopped to "
                 "avoid looping. Tell me to try again, or describe the change differently."
             )
-            yield AgentError(note, messages=_turn_tail(messages, head_len))
+            yield AgentError(note, summary=_build_turn_summary(note, ran, registry))
             return
 
     logger.warning(
@@ -589,4 +649,6 @@ def run_turn(
         f"I stopped after {config.max_iterations} steps without finishing this turn. "
         "Ask me to continue, or rephrase what you need."
     )
-    yield AgentError(cutoff_note, messages=_turn_tail(messages, head_len))
+    yield AgentError(
+        cutoff_note, summary=_build_turn_summary(cutoff_note, ran, registry)
+    )

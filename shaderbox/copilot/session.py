@@ -15,6 +15,7 @@ from shaderbox.copilot.agent import (
     AgentTextDelta,
     AgentToolCard,
     AgentTurnDone,
+    TurnSummary,
     run_turn,
 )
 from shaderbox.copilot.bridge import CopilotBridge
@@ -319,51 +320,46 @@ class CopilotSession:
             logger.exception("Copilot turn failed")
             error_text = "copilot turn failed (see logs)"
             terminal = AgentError(error_text)
-        # The per-turn tail (assistant/tool messages this turn produced, orphan-cleaned) rides the
-        # terminal event (feature 020·23 D4); empty on the except fallbacks.
-        tail = list(getattr(terminal, "messages", []))
-        self._commit_turn(user_text, tail, error_text)
+        # The engine-derived NL turn-summary rides the terminal event (feature 020·25); an empty
+        # default on the except fallbacks. _commit_turn renders it into one assistant history message.
+        summary = getattr(terminal, "summary", TurnSummary())
+        self._commit_turn(user_text, summary, error_text)
         if terminal is not None:
             self._events.put(terminal)
 
     def _commit_turn(
-        self, user_text: str, tail: list[LLMMessage], error_text: str
+        self, user_text: str, summary: TurnSummary, error_text: str
     ) -> None:
-        # Commit the turn to history (worker is the sole owner) so the next turn carries the FULL
-        # trajectory — the assistant/tool messages this turn produced, not just the final reply
-        # (feature 020·23 D4), so the agent can answer "what did I do / why did that fail". On EVERY
-        # exit path. The current shader source is re-fetched live each turn via read_shader (§B1).
+        # Commit the turn to history (worker is the sole owner) as NATURAL LANGUAGE ONLY (feature 020·25):
+        # the user message + ONE assistant message rendered from the engine-derived turn-summary. No tool
+        # messages ever — the full source the agent read is re-fetched live each turn, never persisted.
         #
-        # A turn aborted by project teardown (reset_conversation / release set _drop_turn) must NOT
-        # commit — run_turn returns NORMALLY on cancel, so the tail would otherwise land on the next
-        # project's freshly-reset history (feature 022). A user Stop does NOT set _drop_turn.
+        # A turn aborted by project teardown (reset_conversation / release set _drop_turn) must NOT commit
+        # — run_turn returns NORMALLY on cancel, so it would otherwise land on the next project's
+        # freshly-reset history (feature 022). A user Stop does NOT set _drop_turn.
         if self._drop_turn.is_set():
             return
         self.history.append(LLMMessage(role="user", content=user_text))
-        # Persist the tail, sanitizing assistant CONTENT only (never tool_call_id / arguments) so the
-        # model is conditioned on the ASCII it rendered (D2).
-        for m in tail:
-            if m.role == "assistant" and m.content is not None:
-                self.history.append(
-                    LLMMessage(
-                        role="assistant",
-                        content=sanitize_display(m.content),
-                        tool_calls=m.tool_calls,
-                    )
-                )
-            else:
-                self.history.append(m)
-        # A failed turn (giveup / cutoff / stream error) carries that note as the assistant's last
-        # word so the next turn's context shows the agent stopped — unless the tail already ends with
-        # an assistant text message (a clean turn / a turn whose last word IS the reply).
-        ends_assistant = (
-            bool(tail) and tail[-1].role == "assistant" and tail[-1].content
+        self.history.append(
+            LLMMessage(
+                role="assistant", content=self._render_summary(summary, error_text)
+            )
         )
-        if error_text and not ends_assistant:
-            self.history.append(LLMMessage(role="assistant", content=error_text))
-        elif not tail and not error_text:
-            # No tail at all and no error (shouldn't happen, but keep history paired): empty assistant.
-            self.history.append(LLMMessage(role="assistant", content=None))
+
+    def _render_summary(self, summary: TurnSummary, error_text: str) -> str | None:
+        # The NL assistant message persisted for a turn: the agent's reply prose (sanitized ASCII)
+        # followed by a terse action ledger (mutations + irreversible identities) + the nodes it
+        # touched, so the next turn can resolve "it" / dial back / not re-publish. None only when a turn
+        # produced literally nothing (a bare error with no reply) — keeps the user/assistant pairing.
+        parts: list[str] = []
+        reply = summary.reply or error_text
+        if reply:
+            parts.append(sanitize_display(reply))
+        if summary.ledger:
+            parts.append("(this turn: " + "; ".join(summary.ledger) + ")")
+        if summary.nodes:
+            parts.append("(nodes: " + ", ".join(summary.nodes) + ")")
+        return "\n".join(parts) if parts else None
 
     # ---- lifecycle ----
 
