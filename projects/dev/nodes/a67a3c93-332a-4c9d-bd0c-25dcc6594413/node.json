@@ -3,93 +3,9 @@
         1280,
         960
     ],
-    "uniforms": {
-        "u_char_scale": 0.5,
-        "u_color": [
-            0.6639005541801453,
-            0.8883720636367798,
-            0.22725796699523926
-        ],
-        "u_offset": [
-            0.125,
-            -0.49000000953674316
-        ],
-        "u_text": [
-            72,
-            101,
-            108,
-            108,
-            111,
-            10,
-            87,
-            111,
-            114,
-            108,
-            100,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0
-        ],
-        "u_text_smoothness": 0.009999999776482582,
-        "u_text_spacing": [
-            -0.5199999809265137,
-            0.0
-        ],
-        "u_text_thickness": 0.14000000059604645,
-        "u_zoomout": 3.809999942779541
-    },
+    "uniforms": {},
     "ui_state": {
-        "ui_name": "Hello World Anim",
+        "ui_name": "Hello World Text",
         "description": "Renders text on screen using SDF (signed-distance-field) 7-segment glyphs synthesised in the shader from codepoints in u_text - NOT a font texture/atlas. Start here for any text- or number-display shader.",
         "render_media_details": {
             "is_video": true,
@@ -98,8 +14,8 @@
                 "size": 0
             },
             "resolution_details": {
-                "width": 1280,
-                "height": 960
+                "width": 0,
+                "height": 0
             },
             "quality": 0,
             "fps": 30,
@@ -217,6 +133,22 @@
                 "dimension": 1,
                 "array_length": 64,
                 "input_type": "text"
+            },
+            "267848497047819118016968162639315258524": {
+                "name": "u_bg_intensity",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "112953378056106343669165055466825779428": {
+                "name": "u_bg_scale",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
             }
         },
         "uniform_sort_key": "code",

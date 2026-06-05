@@ -21,6 +21,12 @@ uniform float u_text_smoothness = 0.01;
 uniform uint u_text[MAX_TEXT_LEN];
 uniform vec3 u_color = vec3(1.0, 0.0, 0.0);
 
+/* background experiment handles */
+  /* background experiment handles */
+  uniform float u_bg_intensity = 0.2;
+  uniform float u_bg_scale     = 3.0;
+  uniform vec3  u_bg_color     = vec3(0.06, 0.07, 0.12);
+
 float get_dist_to_line(vec2 p, vec2 a, vec2 b) {
     vec2 ab = b - a;
     vec2 ap = p - a;
@@ -575,42 +581,67 @@ float value_noise(vec2 p) {
     return 2.0 * n - 1.0;
 }
 
-void main() {
-    vec2 uv = (vs_uv - u_offset) * vec2(u_aspect, 1.0) * u_zoomout;
+        void main() {
+            float phase = u_time * 1.2;
+            float breathe = 1.0 + 0.06 * sin(phase);
+            float rot = 0.04 * sin(phase * 0.6);
 
-    float dist = MAX_DIST;
+            mat2 rotm = mat2(cos(rot), -sin(rot), sin(rot), cos(rot));
 
-    float col = 0.0; // advancing x position, reset on newline
-    float row = 0.0; // line index, grows downward
+            vec2 uv = ((vs_uv - u_offset) * vec2(u_aspect, 1.0) * u_zoomout)
+                      * breathe * rotm;
 
-    for (uint i = 0; i < MAX_TEXT_LEN; ++i) {
-        uint char_unicode_idx = u_text[i];
+            float dist = MAX_DIST;
+            float col = 0.0;
+            float row = 0.0;
+            float line_step = u_char_scale * CH + u_text_spacing.y;
 
-        if (char_unicode_idx == 0u) { // end of string
-            break;
+            for (uint i = 0; i < MAX_TEXT_LEN; ++i) {
+                uint char_unicode_idx = u_text[i];
+                if (char_unicode_idx == 0u) break;
+
+                if (char_unicode_idx == 10u) {
+                    col = 0.0;
+                    row += 1.0;
+                    continue;
+                }
+
+                vec2 char_pos = vec2(col * (1.0 + u_text_spacing.x),
+                                     -row * line_step);
+                vec2 p = 2.0 * (uv - char_pos) / u_char_scale;
+                dist = min(dist, get_dist_to_latin_char(p, char_unicode_idx));
+
+                col += 1.0;
+            }
+
+            float text_thickness = u_text_thickness +
+                                   0.1 * value_noise(vec2(128.0 * vs_uv.x,
+                                                          32.0 * vs_uv.y));
+            float line = get_line(dist, text_thickness, u_text_smoothness);
+
+            vec2 n = normalize(vec2(dFdx(dist), dFdy(dist)) + 1e-4);
+            float shade = clamp(dot(n, vec2(0.6, 0.8)), 0.0, 1.0) * 0.6 + 0.4;
+
+            float glow = 1.0 - smoothstep(0.0, u_text_smoothness * 6.0,
+                                          dist - text_thickness * 1.6);
+            vec3 glow_color = u_color * 0.25;
+
+            // background
+            vec2 bg_uv = vs_uv - vec2(0.5);
+            float vignette = 1.0 - smoothstep(0.3, 0.85, length(bg_uv * vec2(u_aspect, 1.0)));
+            float radial = 1.0 - smoothstep(0.0, 0.9, length(bg_uv * vec2(u_aspect, 1.0)));
+            float bg_noise = 0.025 * (value_noise(vs_uv * 180.0) + 0.5);
+
+            float t = u_time * 0.12;
+            float neb = u_bg_intensity *
+                        (0.6 * SB_fbm(vs_uv * u_bg_scale * 1.8 + vec2(t * 0.5, -t * 0.3), 5)
+                         + 0.35 * SB_fbm(vs_uv * u_bg_scale * 5.0 + vec2(-t * 0.4, t * 0.35), 3));
+
+            vec3 bg_col = u_bg_color + bg_noise + 0.035 * radial + neb;
+            bg_col *= vignette;
+
+            vec3 color = (u_color * shade) * line + glow_color * glow;
+            color = mix(bg_col, color, line + 0.6 * glow);
+            fs_color = vec4(color, 1.0);
         }
-
-        if (char_unicode_idx == 10u) { // '\n' -> carriage return + line feed
-            col = 0.0;
-            row += 1.0;
-            continue;
-        }
-
-        // Lines stack downward: y starts at u_zoomout and each row drops by one
-        // glyph height (in uv units, = u_char_scale * CH) plus the vertical spacing.
-        float line_step = u_char_scale * CH + u_text_spacing.y;
-        vec2 char_pos = vec2(col * (1.0 + u_text_spacing.x),
-                             u_zoomout - row * line_step);
-
-        vec2 p = 2.0 * (uv - char_pos) / u_char_scale;
-        dist = min(dist, get_dist_to_latin_char(p, char_unicode_idx));
-
-        col += 1.0;
     }
-
-    float text_thickness = u_text_thickness + 0.1 * value_noise(vec2(128.0 * vs_uv.x, 32.0 * vs_uv.y));
-    float line = get_line(dist, text_thickness, u_text_smoothness);
-    vec3 color = u_color * line;
-
-    fs_color = vec4(color, 1.0);
-}
