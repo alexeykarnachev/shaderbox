@@ -359,7 +359,7 @@ def test_stale_shutdown_sentinel_does_not_strand_turn() -> None:
 
 
 def test_terminal_carries_nl_summary_not_tool_tail() -> None:
-    # feature 020·25: the terminal event carries an engine-derived NL TurnSummary, NOT the tool tail.
+    # feature 020·28: the terminal event carries an engine-derived NL TurnSummary, NOT the tool tail.
     # A read_shader turn (non-mutating) yields the agent's reply + the read node in `nodes`, no ledger.
     caps = _fake_caps(edit_errors=[[]])
     registry = build_registry(caps)

@@ -25,7 +25,7 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-**As of 2026-06-04.**
+**As of 2026-06-05.**
 
 - **DO NOT SHIP YET.** The copilot is NOT ship-ready (maintainer, explicit). `master` stays at `v0.12.1`;
   a large unshipped stack sits on `dev` (020 sub-waves 12→21 + feature 021 logging + 022 persistence) —
@@ -98,9 +98,22 @@ feature; brief points at the superseder).
   main thread blocks for seconds inside the encode, so `gl.finish()` is required to force the present before
   the freeze (`conventions.md ## Known quirks`). The COPILOT render path runs its encode at the top of the
   frame (before the swap) and so has the same latent invisibility — tracked in `todo.md`.
-- **NEXT — a maintainer re-pass on the 020 stack (020·19→26), then ship.** Still deferred: the lazy
-  tool-catalogue (its ~16-tool threshold FIRED), true in-line drag-selection of wrapped chat prose,
-  `bind_media`/`undo_edit` — all in `todo.md`.
+- **020·28 prompt tier architecture (NL-only history + block constructor) — DONE + headless-verified;
+  awaits a maintainer live pass.** A cost/structure investigation (measured: the SAME ~4,850-tok shader
+  source appeared 10x in one session's history; ~25k avg / 230k peak input tok/turn; OpenRouter caching
+  IS working ~6x within-turn) plus an intent-driven design swarm reframed the fix: history is now
+  NATURAL-LANGUAGE ONLY — `_commit_turn` collapses each turn to one engine-derived `TurnSummary` (reply +
+  action ledger + referenced nodes), the full source the agent reads is NEVER persisted (re-fetched live).
+  Prompt assembly moved from a flat string-concat to a block constructor (`PromptBlock`/`Volatility`/
+  `build_prompt`). Per-read history contribution drops ~266x (~6,115 -> ~23 tok). Spec:
+  `28_prompt_tier_architecture.md`. Spec `27_structural_shader_view.md` (the read_shader STRUCTURE block —
+  the shader-representation pass) is FILED but DEFERRED to after this lands per the maintainer's ordering.
+- **NEXT — a maintainer live pass on the 020 stack (020·19→28), then ship.** Specifically test the copilot
+  over a multi-turn edit session (animate -> "not so much" -> "no, that's wrong" -> publish): confirm the
+  NL summary resolves the dial-back, the correction, and doesn't re-publish on "continue". Still deferred:
+  the lazy tool-catalogue (its ~16-tool threshold FIRED), the structural shader view (020·27), the
+  within-turn read de-dup + reasoning-notes scratchpad (020·28 follow-ups), `bind_media`/`undo_edit` — all
+  in `todo.md`.
 - **Trace-gated (NOT now):** semantic-editing (rename/outline/add_uniform), GLSL-aware grep, uniforms-in-
   tree, eager-recompile for lib edits — each only if a trace shows the current tools struggling (none does).
   The visual-variant-optimizer (render N variants as clickable chat boxes) is the big future feature.

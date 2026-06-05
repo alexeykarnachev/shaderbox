@@ -22,7 +22,7 @@ def _populated_state() -> ChatState:
 
 
 def _history() -> list[LLMMessage]:
-    # NL-only history (feature 020·25): user + one engine-derived assistant turn-summary. No tool msgs.
+    # NL-only history (feature 020·28): user + one engine-derived assistant turn-summary. No tool msgs.
     return [
         LLMMessage(role="user", content="add a uniform"),
         LLMMessage(
@@ -86,7 +86,7 @@ def test_incompatible_schema_fails_soft(tmp_path: Path) -> None:
 
 
 def test_pre_v5_tool_paired_store_fails_soft_to_empty(tmp_path: Path) -> None:
-    # feature 020·25: an old store whose history carries tool_call_id / tool_calls hits extra="forbid"
+    # feature 020·28: an old store whose history carries tool_call_id / tool_calls hits extra="forbid"
     # on _HistoryModel -> ValidationError -> empty chat (NL-only by construction, no migration).
     path = tmp_path / "conversation.json"
     path.write_text(

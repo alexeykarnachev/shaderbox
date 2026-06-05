@@ -74,7 +74,7 @@ class AgentToolCard:
 
 @dataclass(frozen=True)
 class TurnSummary:
-    # The engine-derived NATURAL-LANGUAGE summary of a committed turn (feature 020·25). Replaces the
+    # The engine-derived NATURAL-LANGUAGE summary of a committed turn (feature 020·28). Replaces the
     # verbatim tool tail in history: `reply` is the agent's prose (its final reply at clean-done; the
     # branch note/error at a cutoff) — it carries the agent's stated ASSUMPTION (fact 3); `ledger` is
     # the mutating-action lines (new values + irreversible identities, fact 2/4); `nodes` is every node
@@ -84,7 +84,7 @@ class TurnSummary:
     nodes: list[str] = field(default_factory=list)
 
 
-# The terminal events carry the engine-derived NL TurnSummary (feature 020·25) for _commit_turn to
+# The terminal events carry the engine-derived NL TurnSummary (feature 020·28) for _commit_turn to
 # persist as one assistant history message. Empty default so the session's bare-except AgentError
 # fallbacks (which never see run_turn's run-log) commit an empty summary.
 
@@ -165,7 +165,7 @@ class _RunEntry:
 
 
 # Max non-irreversible mutating lines kept in a turn-summary ledger; irreversible
-# (publish/delete) lines are always kept verbatim (the don't-re-do safety invariant, §020·25 fact 4).
+# (publish/delete) lines are always kept verbatim (the don't-re-do safety invariant, §020·28 fact 4).
 _LEDGER_SOFT_CAP: int = 8
 # Tool-arg keys that name a node (for fact 1: every node touched OR referenced this turn).
 _NODE_ARG_KEYS: tuple[str, ...] = ("node", "target", "nodes")
@@ -173,7 +173,7 @@ _NODE_ARG_KEYS: tuple[str, ...] = ("node", "target", "nodes")
 
 class _RunLog:
     # The loop-local action ledger (§2.3). Loop-private — never on state (§T2). Feeds the engine-derived
-    # NL turn-summary persisted to history (feature 020·25 — the full tool tail is no longer persisted).
+    # NL turn-summary persisted to history (feature 020·28 — the full tool tail is no longer persisted).
     def __init__(self) -> None:
         self._entries: list[_RunEntry] = []
 
@@ -221,11 +221,13 @@ class _RunLog:
 
 
 def _identity_from_payload(payload: dict | None) -> str:
-    # Pull the action's durable identity out of a tool payload (feature 020·25 fact 4): the created
-    # node id, the pack set_name, or a published URL — whichever the tool surfaced. "" if none.
+    # Pull the action's durable identity out of a tool payload (feature 020·28 fact 4): a published
+    # URL or a deleted node id/trash-name — whichever the tool surfaced. "" if none. (Pack ops carry
+    # their set_name only in the verbatim `msg`, which the irreversible bucket keeps uncapped, so no
+    # payload key is needed for them.)
     if not payload:
         return ""
-    for key in ("created", "node_id", "set_name", "url", "trash_name"):
+    for key in ("url", "node_id", "trash_name"):
         val = payload.get(key)
         if isinstance(val, str) and val:
             return f"{key}={val}"
@@ -373,7 +375,7 @@ def run_turn(
     tr = trace if trace is not None else NULL_TRACE
     # `messages` is the WITHIN-TURN context: full assistant/tool pairs accumulate here as the loop runs
     # (the provider 400s on an orphaned tool_call_id). It is NEVER persisted — at commit the turn collapses
-    # to one engine-derived NL TurnSummary (feature 020·25), so history stays natural-language only.
+    # to one engine-derived NL TurnSummary (feature 020·28), so history stays natural-language only.
     messages = build_messages(context, history, user_text)
     specs = registry.eager_specs()
     usage = _UsageRollup()
@@ -483,7 +485,7 @@ def run_turn(
                     "The actions above did complete — ask me to continue or recap."
                 )
                 # The note is the reply prose (text_buf is empty here) so a "continue" next turn
-                # sees what happened + the ledger of what already committed (feature 020·25 fact 3/4).
+                # sees what happened + the ledger of what already committed (feature 020·28 fact 3/4).
                 yield AgentError(
                     cutoff_note,
                     summary=_build_turn_summary(cutoff_note, ran, registry),

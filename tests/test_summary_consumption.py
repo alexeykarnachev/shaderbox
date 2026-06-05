@@ -1,10 +1,9 @@
-"""The load-bearing 020·25 invariant: a committed NL turn-summary is actually RECEIVED by the agent on a
+"""The load-bearing 020·28 invariant: a committed NL turn-summary is actually RECEIVED by the agent on a
 LATER turn (not merely built). Every other test checks the summary's content in isolation; this drives two
 turns through a real CopilotSession and asserts the second turn's LLM request carries the first turn's
 summary (target name + new value) in its messages. Without this, "source-fidelity traded for resolvability"
 is unverified end-to-end. Pure: a capturing fake client, fake caps, no GL."""
 
-import threading
 from collections.abc import Iterator
 
 from shaderbox.copilot.capabilities import SetUniformResult
@@ -16,7 +15,6 @@ from shaderbox.copilot.llm.api import (
     LLMUsage,
 )
 from shaderbox.copilot.session import CopilotSession
-
 from tests._caps import minimal_caps
 from tests.test_copilot_loop import _tool_call
 
@@ -74,8 +72,12 @@ def test_second_turn_receives_first_turn_summary() -> None:
     # The LAST request is turn 2's prompt. It must contain the NL summary of turn 1 — NO tool messages,
     # but the target name + new value carried in an assistant message.
     turn2 = client.requests[-1]
-    assert all(m.role != "tool" for m in turn2), "a tool message leaked into NL-only history"
-    assert all(m.tool_calls is None for m in turn2), "a tool_call leaked into NL-only history"
+    assert all(
+        m.role != "tool" for m in turn2
+    ), "a tool message leaked into NL-only history"
+    assert all(
+        m.tool_calls is None for m in turn2
+    ), "a tool_call leaked into NL-only history"
     blob = "\n".join(m.content or "" for m in turn2)
     assert "u_speed" in blob and "2.5" in blob, "turn-1 summary not visible to turn 2"
     assert "ab" in blob, "turn-1 referenced node not visible to turn 2"

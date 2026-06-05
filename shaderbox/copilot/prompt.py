@@ -10,14 +10,14 @@ from shaderbox.copilot.llm.api import LLMMessage
 
 # Min turns the trim always keeps, even over budget — the agent needs the recent conversation to stay
 # coherent (its own last NL turn-summaries). A "turn" starts at a user message and runs to the next
-# user message; history is NL-only (feature 020·25), so a turn is just user + one assistant summary.
+# user message; history is NL-only (feature 020·28), so a turn is just user + one assistant summary.
 _MIN_KEPT_TURNS: int = 4
 # Rough char->token ratio for the trim THRESHOLD only (no tokenizer in-tree; the provider returns
 # real counts but only post-send). ~4 chars/token is the standard English/code heuristic; we only
 # need "is history big", not an exact count.
 _CHARS_PER_TOKEN: int = 4
 
-# Prompt assembly: named BLOCKS composed by volatility, NOT a flat string concat (feature 020·25).
+# Prompt assembly: named BLOCKS composed by volatility, NOT a flat string concat (feature 020·28).
 # Knows nothing of tools or the client. Tiers, least-volatile -> most-volatile for OpenRouter
 # prefix-cache friendliness (§6/§J1): STATIC (the system rules) < RARE (project map + lib/template
 # catalogue + conventions — change on create/delete/rename/compile-flip, carry NO per-frame value) <
@@ -252,7 +252,7 @@ def _estimate_tokens(messages: list[LLMMessage]) -> int:
 
 def _split_turns(history: list[LLMMessage]) -> list[list[LLMMessage]]:
     # Group the NL-only history into turns, each starting at a `user` message and running to the next
-    # one (feature 020·25: a turn is just user + one assistant summary). Whole-turn grouping lets the
+    # one (feature 020·28: a turn is just user + one assistant summary). Whole-turn grouping lets the
     # window trim evict complete turns. A leading non-user fragment (shouldn't occur — every commit
     # starts with a user message) becomes its own leading group, preserved as-is.
     turns: list[list[LLMMessage]] = []
@@ -293,7 +293,7 @@ def build_messages(
     history: list[LLMMessage],
     user_text: str,
 ) -> list[LLMMessage]:
-    # Compose the prompt as named blocks (feature 020·25). The pending-user block is PER_TURN so it
+    # Compose the prompt as named blocks (feature 020·28). The pending-user block is PER_TURN so it
     # sorts to the bottom; a future scratchpad block (also PER_TURN) slots in beside it, below dialogue.
     static = LLMMessage(role="system", content=_SYSTEM_PROMPT)
     rare = LLMMessage(role="system", content=_context_block(context))

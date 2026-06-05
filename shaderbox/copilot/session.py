@@ -320,7 +320,7 @@ class CopilotSession:
             logger.exception("Copilot turn failed")
             error_text = "copilot turn failed (see logs)"
             terminal = AgentError(error_text)
-        # The engine-derived NL turn-summary rides the terminal event (feature 020·25); an empty
+        # The engine-derived NL turn-summary rides the terminal event (feature 020·28); an empty
         # default on the except fallbacks. _commit_turn renders it into one assistant history message.
         summary = getattr(terminal, "summary", TurnSummary())
         self._commit_turn(user_text, summary, error_text)
@@ -330,7 +330,7 @@ class CopilotSession:
     def _commit_turn(
         self, user_text: str, summary: TurnSummary, error_text: str
     ) -> None:
-        # Commit the turn to history (worker is the sole owner) as NATURAL LANGUAGE ONLY (feature 020·25):
+        # Commit the turn to history (worker is the sole owner) as NATURAL LANGUAGE ONLY (feature 020·28):
         # the user message + ONE assistant message rendered from the engine-derived turn-summary. No tool
         # messages ever — the full source the agent read is re-fetched live each turn, never persisted.
         #

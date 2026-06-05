@@ -1,4 +1,4 @@
-# 020·25 — Prompt tier architecture: NL-only history + read-result collapse
+# 020·28 — Prompt tier architecture: NL-only history + read-result collapse
 
 The copilot's message HISTORY is misused: `_commit_turn` appends the FULL per-turn tail — every
 assistant-with-tool_calls message and every tool result, including `read_shader`'s complete ~4,850-token
@@ -58,7 +58,7 @@ Four facts the NL turn-summary MUST preserve (each pins a real corpus failure mo
 - **Reasoning-notes scratchpad bucket** — the proper home for the agent's live coordinate assumption (fact
   #3's real fix). **Trigger:** when CORRECTION/COORDINATE regresses because the assumption wasn't in
   `text_buf`, or when reasoning/CoT is implemented — it becomes the first PER_TURN bucket member.
-- **Shader-representation tuning** (020·24 STRUCTURE block content/size — structural vs raw listing). The
+- **Shader-representation tuning** (020·27 STRUCTURE block content/size — structural vs raw listing). The
   maintainer's explicitly-named LATER retrospective pass. **Trigger:** after this tier structure is stable.
 - **UI color-coding** of message vs scratchpad vs tool-call in the chat. **Trigger:** when the chat UI is
   revisited. A `/imgui-ui` concern.

@@ -28,6 +28,38 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
 
 ---
 
+## [DEFERRAL] copilot within-turn read de-dup (the intra-turn token peak)
+- **Trigger:** after 020·28 lands, the within-turn multi-iteration token peaks (measured 117k-231k) remain
+  the top copilot cost — a multi-iteration edit turn still re-emits the same node's full source N times in
+  `messages[head_len:]` (the freshness guard forces a re-read before each edit). OR next time you touch
+  `agent.run_turn`'s tool-result append / the bridge drain.
+- 020·28 fixed the CROSS-turn duplication (NL-only history) but NOT the intra-turn re-emit. Fix: a
+  node-keyed overwrite-by-key scratchpad that emits a node's source ONCE per turn. Design:
+  `ai_docs/features/020_copilot_agent/28_prompt_tier_architecture.md ## Out of scope`.
+
+## [DEFERRAL] copilot reasoning-notes scratchpad (the first PER_TURN block)
+- **Trigger:** the CORRECTION/COORDINATE intent regresses in practice (the agent's stated assumption is lost
+  because it wasn't in its reply prose `text_buf`), OR when reasoning/CoT is implemented for the copilot.
+- 020·28 carries the agent's assumption via its verbatim reply (fragile — model-dependent). The robust home
+  is a reasoning-notes scratchpad — the first member of the reserved PER_TURN block tier. Design:
+  `ai_docs/features/020_copilot_agent/28_prompt_tier_architecture.md ## Out of scope` + Design decision 4.
+
+## [DEFERRAL] copilot cross-shader derived-edit memory ("do the same to C")
+- **Trigger:** a trace shows the agent failing a "do the same to C" because it can't reconstruct what "the
+  same" was even though the referenced shader's NAME survived in the turn-summary (fact 1).
+- 020·28's NL summary records every node NAMED in a turn but not the source CONTENT an edit was derived from
+  (source is never persisted). Recoverable via a live re-read of the named shader; if that proves
+  insufficient, persist a richer derived-edit note. Design: `28_prompt_tier_architecture.md ## Out of scope`.
+
+## [DEFERRAL] copilot structural shader view (the read_shader STRUCTURE block)
+- **Trigger:** after the 020·28 tier structure is stable + maintainer-verified — the shader-representation
+  retrospective pass the maintainer sequenced LAST. OR first time the agent re-declares an already-declared
+  uniform again (the `u_time` C1038 class the spec targets).
+- A concise STRUCTURE block (uniforms incl. declared-but-inactive + engine flag + decl line, defines,
+  functions, entry) atop the read_shader result, so the agent sees what a shader already declares. Fully
+  specced: `ai_docs/features/020_copilot_agent/27_structural_shader_view.md` (pre-impl reviewed, not yet
+  implemented).
+
 ## [DEFERRAL] copilot render/publish cue likely invisible (no gl.finish before the freeze)
 - **Trigger:** a maintainer reports the "Rendering…" cue is missing when the COPILOT renders/publishes
   (render_image / render_video / publish_telegram / publish_youtube), the same symptom the Render-tab

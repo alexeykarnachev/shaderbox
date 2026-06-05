@@ -1,4 +1,4 @@
-"""The block-based prompt constructor (feature 020·25): build_prompt sorts named blocks by volatility,
+"""The block-based prompt constructor (feature 020·28): build_prompt sorts named blocks by volatility,
 renders each, drops empty ones, flattens. build_messages composes [static < rare < dialogue < pending].
 Pure: no GL, no client."""
 

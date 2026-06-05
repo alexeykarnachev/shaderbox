@@ -88,7 +88,7 @@ class _MessageModel(BaseModel):
 
 
 class _HistoryModel(BaseModel):
-    # The LLM replay context (CopilotSession.history) — NATURAL-LANGUAGE only (feature 020·25):
+    # The LLM replay context (CopilotSession.history) — NATURAL-LANGUAGE only (feature 020·28):
     # user messages + one engine-derived assistant turn-summary each. No tool messages. A pre-v5
     # store carrying tool_call_id / tool_calls hits extra="forbid" -> ValidationError ->
     # load_and_migrate fail-softs it to an empty chat (no backward-compat migration by design).
@@ -179,7 +179,7 @@ class ConversationStore(BaseModel):
         ]
 
     def to_history(self) -> list[LLMMessage]:
-        # NL-only (feature 020·25): every persisted history message is a plain user/assistant message.
+        # NL-only (feature 020·28): every persisted history message is a plain user/assistant message.
         return [
             LLMMessage(
                 role=cast(Literal["system", "user", "assistant", "tool"], h.role),

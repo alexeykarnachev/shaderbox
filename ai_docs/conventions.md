@@ -161,15 +161,22 @@ belong in the feature spec (`ai_docs/features/NNN_*.md`). This file is not a cha
   puts a terse `payload["display"]` summary that the chat shows INSTEAD of `msg` (`AgentToolCard.display`,
   feature 020·23) — the full `msg` still rides the model's context + history. Revisit if a widget needs to
   carry typed input back (then it's a gate, not a result widget) or persist live state.
-- **The copilot replay `history` carries the FULL per-turn trajectory, not just the final reply.**
-  `_commit_turn` (`session.py`) persists the assistant + tool messages a turn produced (feature 020·23),
-  so the next turn's model can see what it DID (answer "why did that fail"), not just what it said. Two
-  invariants any change here MUST keep: (1) persist the turn's TAIL only — the per-turn slice
-  `messages[head_len:]` from `run_turn` (the head is `[system, system, *history, user]`); never re-commit
-  the build_messages head or the user message would duplicate every turn. (2) tool-group completeness —
-  drop a trailing assistant whose `tool_calls` lack matching `tool` results (a cancel can return
-  mid-batch); an orphaned `tool_call_id` 400s the next stream (`_turn_tail`). This makes history grow
-  monotonically — the window-trim is the open follow-up (`todo.md`; `max_input_tokens` is its budget).
+- **The copilot replay `history` is NATURAL-LANGUAGE ONLY: user messages + one engine-derived turn-summary
+  each, never tool messages.** `_commit_turn` (`session.py`) appends `user` + ONE `assistant` rendered from
+  a `TurnSummary` (`agent.py` — built deterministically from the loop's `_RunLog`, no extra LLM call); the
+  full tool tail (incl. `read_shader`'s source listing) is consumed only to derive the summary, then
+  discarded (feature 020·28, supersedes 020·23 D4). The full source is re-fetched live each turn, never
+  persisted (a stale copy is worse than no copy). Invariants any change MUST keep: (1) WITHIN a turn the
+  live loop's `messages[]` still carries full assistant+tool pairs (the provider 400s on an orphaned
+  `tool_call_id`) — NL-only applies ONLY at the commit boundary, never mid-turn. (2) the summary must
+  preserve the four cross-turn facts (every node referenced; a mutation's new value; the agent's stated
+  assumption — verbatim reply at clean-done, the branch note at a cutoff; the irreversible-action ledger
+  with identity, verbatim + uncapped) or a real intent regresses. (3) the block-prompt constructor
+  (`prompt.py` `PromptBlock`/`Volatility`/`build_prompt`) composes `[static < rare < dialogue < pending]`;
+  a new prompt tier is a named block at its volatility rank, not a string-concat. Prompt composition lives
+  ONLY in `build_prompt`; the summary is produced in `agent.py` and rendered to a message in `session.py`
+  (clean producer/render/compose split — `prompt.py` imports no agent/registry). Deferred follow-ups
+  (within-turn read de-dup, reasoning-notes scratchpad, cross-shader derived-edit memory) are in `todo.md`.
 - **A new addressable copilot SOURCE kind gets a `<kind>:` prefix + rides the EXISTING read/grep, never
   a parallel tool.** Nodes are bare ids, library files are `lib:<path>`, templates are `template:<id>`
   (feature 020·22). A new readable source (a future preset, an example, etc.) mirrors this: a

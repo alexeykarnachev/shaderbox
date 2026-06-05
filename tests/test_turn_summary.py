@@ -1,4 +1,4 @@
-"""The engine-derived NL turn-summary (feature 020·25): history is NL-only, so each committed turn
+"""The engine-derived NL turn-summary (feature 020·28): history is NL-only, so each committed turn
 collapses to one summary that MUST preserve four facts (each a real corpus failure moment): the new value
 of a mutation (dial-back), the agent's stated assumption (correction), the irreversible-action ledger with
 identity (don't re-publish on continue), and the failure note (why-did-that-fail). Pure: scripted fake
@@ -15,7 +15,6 @@ from shaderbox.copilot.agent import (
     run_turn,
 )
 from shaderbox.copilot.capabilities import (
-    CompileErrorInfo,
     EditResult,
     PublishResult,
     SetUniformResult,
@@ -25,9 +24,8 @@ from shaderbox.copilot.config import COPILOT_CONFIG
 from shaderbox.copilot.gate import GateChannel, GateResponse
 from shaderbox.copilot.llm.api import LLMDone, LLMStreamEvent, LLMTextDelta, LLMUsage
 from shaderbox.copilot.tools.registry import build_registry
-
 from tests._caps import minimal_caps
-from tests.test_copilot_loop import _FakeClient, _fake_context, _tool_call
+from tests.test_copilot_loop import _fake_context, _FakeClient, _tool_call
 
 
 def _run(caps, scripts, *, gate=None, cancel=None):
@@ -96,7 +94,9 @@ def test_fact4_irreversible_ledger_carries_identity() -> None:
         _tool_call("c1", "publish_telegram", '{"emoji": "x"}'),
         [LLMTextDelta("Published."), LLMDone("stop", LLMUsage())],
     ]
-    done = next(e for e in _run(caps, scripts, gate=gate) if isinstance(e, AgentTurnDone))
+    done = next(
+        e for e in _run(caps, scripts, gate=gate) if isinstance(e, AgentTurnDone)
+    )
     approver.join(timeout=1.0)
     joined = " ".join(done.summary.ledger)
     assert "publish_telegram" in joined

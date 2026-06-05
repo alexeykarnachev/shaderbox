@@ -1,4 +1,4 @@
-# 020·24 — Structural shader view (the read_shader STRUCTURE block)
+# 020·27 — Structural shader view (the read_shader STRUCTURE block)
 
 Make the copilot's `read_shader` result lead with a concise **structural inventory** of the shader —
 every uniform it DECLARES (with type, value, engine-driven flag, declaration line), its `#define`s, its
