@@ -5,6 +5,11 @@
     ],
     "uniforms": {
         "u_char_scale": 0.5,
+        "u_color": [
+            0.6639005541801453,
+            0.8883720636367798,
+            0.22725796699523926
+        ],
         "u_offset": [
             0.125,
             -0.49000000953674316
@@ -21,7 +26,7 @@
             114,
             108,
             100,
-            33,
+            0,
             0,
             0,
             0,
@@ -84,21 +89,21 @@
         "u_zoomout": 3.809999942779541
     },
     "ui_state": {
-        "ui_name": "Hello World",
+        "ui_name": "Hello World Anim",
         "description": "Renders text on screen using SDF (signed-distance-field) 7-segment glyphs synthesised in the shader from codepoints in u_text - NOT a font texture/atlas. Start here for any text- or number-display shader.",
         "render_media_details": {
             "is_video": true,
             "file_details": {
-                "path": "/home/akarnachev/src/tmp.mp4",
-                "size": 2322575
+                "path": "",
+                "size": 0
             },
             "resolution_details": {
                 "width": 1280,
                 "height": 960
             },
             "quality": 0,
-            "fps": 60,
-            "duration": 7.800000190734863
+            "fps": 30,
+            "duration": 1.0
         },
         "ui_uniforms": {
             "260085533400259490348506664942395818974": {
