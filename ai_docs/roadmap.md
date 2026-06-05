@@ -25,7 +25,7 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-**As of 2026-06-05.**
+**As of 2026-06-05 (eod).**
 
 - **DO NOT SHIP YET.** The copilot is NOT ship-ready (maintainer, explicit). `master` stays at `v0.12.1`;
   a large unshipped stack sits on `dev` (020 sub-waves 12→21 + feature 021 logging + 022 persistence) —
@@ -108,11 +108,21 @@ feature; brief points at the superseder).
   `build_prompt`). Per-read history contribution drops ~266x (~6,115 -> ~23 tok). Spec:
   `28_prompt_tier_architecture.md`. Spec `27_structural_shader_view.md` (the read_shader STRUCTURE block —
   the shader-representation pass) is FILED but DEFERRED to after this lands per the maintainer's ordering.
-- **NEXT — a maintainer live pass on the 020 stack (020·19→28), then ship.** Specifically test the copilot
-  over a multi-turn edit session (animate -> "not so much" -> "no, that's wrong" -> publish): confirm the
-  NL summary resolves the dial-back, the correction, and doesn't re-publish on "continue". Still deferred:
-  the lazy tool-catalogue (its ~16-tool threshold FIRED), the structural shader view (020·27), the
-  within-turn read de-dup + reasoning-notes scratchpad (020·28 follow-ups), `bind_media`/`undo_edit` — all
+- **020·29 working-set scratchpad — SPEC SEALED, ready to IMPLEMENT (next session).** A maintainer live pass
+  (2026-06-05) bricked a GLSL shader: the agent mixed substring `edit_shader` (shifts line count) + line-addressed
+  `replace_lines` (stale numbers) within a turn → cascade → 12 iterations, max_iterations, 299k input tokens,
+  non-compiling. Root cause: the freshness guard is a CONTENT guard, blind to the agent's own line-number drift.
+  An intent-grounded design swarm + adversarial pass (1 FATAL + 5 serious, all folded) produced the fix: the
+  current source stops being a frozen `read_shader` snapshot and becomes a LIVE PER_TURN scratchpad block — the
+  WORKING SET (every shader/lib touched this turn), rebuilt from live source + spliced onto the message bottom
+  EVERY iteration. Line-drift becomes structurally impossible (across iterations by the rebuild; within-batch by
+  a per-batch line-edit guard, D9); `read_shader` becomes "add to working set"; the freshness guard RETIRES;
+  the 299k turn collapses to ~25k. Spec: `29_working_set_scratchpad.md` (ONE wave, high-blast-radius; build D9
+  first). `scratchpad_reserve_tokens=50k`.
+- **NEXT — implement 020·29 (next session), then a re-pass + ship.** Build order in the spec (D9 FATAL guard
+  first). After it lands, re-run the failed flow to confirm the brick is gone, then the ship gate. Still deferred:
+  the lazy tool-catalogue (its ~16-tool threshold FIRED), the structural shader view (020·27), reasoning-notes
+  scratchpad (020·28/29 follow-up — DE-RISKED by 029), `bind_media`/`undo_edit` — all
   in `todo.md`.
 - **Trace-gated (NOT now):** semantic-editing (rename/outline/add_uniform), GLSL-aware grep, uniforms-in-
   tree, eager-recompile for lib edits — each only if a trace shows the current tools struggling (none does).

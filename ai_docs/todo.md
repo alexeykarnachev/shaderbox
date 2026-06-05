@@ -28,21 +28,22 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
 
 ---
 
-## [DEFERRAL] copilot within-turn read de-dup (the intra-turn token peak)
-- **Trigger:** after 020·28 lands, the within-turn multi-iteration token peaks (measured 117k-231k) remain
-  the top copilot cost — a multi-iteration edit turn still re-emits the same node's full source N times in
-  `messages[head_len:]` (the freshness guard forces a re-read before each edit). OR next time you touch
-  `agent.run_turn`'s tool-result append / the bridge drain.
-- 020·28 fixed the CROSS-turn duplication (NL-only history) but NOT the intra-turn re-emit. Fix: a
-  node-keyed overwrite-by-key scratchpad that emits a node's source ONCE per turn. Design:
-  `ai_docs/features/020_copilot_agent/28_prompt_tier_architecture.md ## Out of scope`.
+## [DEFERRAL] copilot within-turn read de-dup + line-drift — SPECCED as 020·29 (pending impl)
+- **Trigger:** IMPLEMENT 020·29 (the next implementation wave). Both the within-turn token peak (the
+  re-emitted full source) and the line-number-drift bricking class are CLOSED by its design (the working-set
+  scratchpad rebuilds live source once/iteration; a per-batch guard closes the within-batch residual).
+- No longer an open design question — fully specced + adversarially reviewed:
+  `ai_docs/features/020_copilot_agent/29_working_set_scratchpad.md` (ONE wave, high-blast-radius, build D9
+  first). Delete this entry in the commit that lands 029.
 
-## [DEFERRAL] copilot reasoning-notes scratchpad (the first PER_TURN block)
+## [DEFERRAL] copilot reasoning-notes scratchpad (the second PER_TURN block)
 - **Trigger:** the CORRECTION/COORDINATE intent regresses in practice (the agent's stated assumption is lost
   because it wasn't in its reply prose `text_buf`), OR when reasoning/CoT is implemented for the copilot.
 - 020·28 carries the agent's assumption via its verbatim reply (fragile — model-dependent). The robust home
-  is a reasoning-notes scratchpad — the first member of the reserved PER_TURN block tier. Design:
-  `ai_docs/features/020_copilot_agent/28_prompt_tier_architecture.md ## Out of scope` + Design decision 4.
+  is a reasoning-notes scratchpad — a PER_TURN block member. **DE-RISKED by 020·29** (which proves the
+  PER_TURN tier + per-iteration rebuild with a real member, the working set — reasoning-notes becomes a
+  second member on the same machinery). Design: `28_prompt_tier_architecture.md ## Out of scope` +
+  `29_working_set_scratchpad.md ## Out of scope`.
 
 ## [DEFERRAL] copilot cross-shader derived-edit memory ("do the same to C")
 - **Trigger:** a trace shows the agent failing a "do the same to C" because it can't reconstruct what "the
