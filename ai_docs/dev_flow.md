@@ -241,7 +241,9 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   set_uniform / create_node / grep / read_lib / delete_node / switch_node; `tools/publish.py` — render_image / render_video
   / publish_telegram / publish_youtube; `tools/telegram.py` — set_telegram_token / telegram_connect + pack
   CRUD list/select/create/delete) are built. The node-id/edit/uniform/delete + render/publish + telegram
-  machinery lives on `App` as `_copilot_*` closures bound into `CopilotCapabilities`. `gate.py`
+  machinery lives in `backend.py` (`CopilotBackend` — feature 023, extracted from `App`; explicit deps +
+  injected getters/callbacks, never imports `App`); `App._build_copilot_capabilities` constructs it and
+  binds its methods into `CopilotCapabilities`. `gate.py`
   (`GateChannel`) is the worker→UI blocking round-trip (the bridge's mirror) — BOTH gate kinds wired: CONFIRM
   Yes/No (`delete_node` + publish + pack mutations) and CREDENTIAL, a masked secret input
   (`set_telegram_token`, the token redacted to a prefix everywhere but the live store —

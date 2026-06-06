@@ -300,8 +300,11 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
 - **Trigger:** when editing `app.py` feels painful (lost search-and-replace, unclear blast
   radius), OR when a 4th tab module needs cross-cutting `App` operations not on its public API.
 - NOT a default next-step — a 2026-05-15 parallel-agent assessment concluded extraction would
-  be premature abstraction (same shape as feature 002's reversed AppContext). Spec when
-  triggered.
+  be premature abstraction (same shape as feature 002's reversed AppContext). Feature 023 already
+  lifted the largest tenant (the copilot backend, ~1100 lines → `copilot/backend.py`); what remains is
+  the genuine node/editor/project lifecycle orchestrator. An audit there judged the further candidates
+  (node-CRUD, path-properties, the `shader_lib_*` picker forwards) net-negative — don't re-propose them
+  without a fresh pain signal. Spec when triggered.
 
 ## [DEFERRAL] adopt `hello_imgui.apply_theme()` + `imgui-knobs` during UI/UX refactor
 - **Trigger:** when starting the planned UI/UX refactor with custom themes — i.e. the moment a

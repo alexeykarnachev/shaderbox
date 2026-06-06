@@ -25,126 +25,38 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-**As of 2026-06-06 (020·29 landed + live-verified + overfit-pruned; ship-ready, awaiting the go).**
+**As of 2026-06-06 (023 app.py refinement wave landed + reviewed; copilot stack still unshipped).**
 
-- **SHIP-READY, NOT YET SHIPPED.** `master` stays at `v0.12.1`; the full copilot stack sits unshipped on
-  `dev` (020 sub-waves 12→29 + feature 021 logging + 022 persistence). 020·29 closed the last known brick;
-  the stopping rule (conventions.md ## Design decisions, the guard-earns-its-place decision) says no further
-  trace-patch round is warranted. Awaiting the maintainer's explicit ship go (work is uncommitted).
-- **Audit + must-fix wave — DONE (uncommitted).** A holistic adversarial audit of the full copilot stack
-  (verdict: structurally sound, ship-shaped) fixed 5 silent-correctness items: the mid-turn-exception
-  history divergence + the sub-frame commit-ordering race (`session.py`), the `_unescape_double_escaped`
-  marker guard (`agent.py`), the `token_match` interior-comment guard (`glsl_lex.py`), and the
-  array-uniform `set_uniform` false-success (`app.py`).
-- **020·20 UI/UX polish wave — DONE + headless-verified; awaits a maintainer live pass.** The ship gate.
-  D1: per-tool status line + tool-result line reach the transcript (`AgentStatus`/`ChatState.status` +
-  `AgentToolCard.result`). D2: ASCII glyph sanitization (`copilot/text_render.py`) at three boundaries
-  (history-commit + Message-materialize + draw) + a prompt nudge — fixes the `?`-box on arrows/em-dashes
-  the maintainer hit (the font lacks arrows; 1.92 dynamic atlas). D3: two-phase "Rendering…" modal (a
-  `MainThreadOp.defer` marker holds the render op one frame so the cue paints before the freeze). D4: the
-  5 low-severity footguns (retry-cap scoped to edit tools, unresolved-≠-stale, empty-handle guard,
-  malformed-args cap, read_shader dedup + prefix missing-report). Spec: `20_ui_ux_polish.md`.
-- **020·21 first-class chat widgets — DONE + headless-verified; awaits a maintainer live pass.** Tool
-  results are now STRUCTURED OUTCOMES the engine renders as first-class chat buttons; the agent reports
-  the FACT + is TOLD a widget was shown, raw URLs/paths NEVER reach the model (the live-session leak +
-  dead-link fix). `ResultWidget` (`state.py`) rides the existing payload channel; publish/render
-  producers emit terse facts + `open_url`/`open_path` widgets; open-only buttons (`ui_primitives`, no
-  clipboard). Inline YouTube connect: a new `GateKind.CONFIG` renders the EXISTING `draw_config_ui`
-  panel inline + a Cancel button (`tools/youtube.py`, `set_youtube_credentials`); persistence v3->v4.
-  Spec: `21_chat_widgets_and_links.md`.
-- **020·22 template library — DONE + headless-verified; awaits a maintainer live pass.** The copilot
-  now SEES the shipped node templates (UV Mango / Media Input / Text Rendering) with descriptions in its
-  prompt, so it picks the right one on intent ("render text" -> the SDF Text Rendering template); it
-  READS + GREPS them via the EXISTING read_shader/grep with a `template:` address (one impl, mirrors
-  `lib:`), INSTANTIATES via `create_node(template=...)`, and the default starter is just-a-template
-  (no hardcoded special-case). Editable descriptions: shipped `node.json` default + a user sidecar
-  (`templates_descriptions.py`); the node-creator popup is now a template-management center.
-  `UINodeState.description` (forward-compat). Spec: `22_template_library.md`.
-- **020·23 the untangle — DONE + headless-verified; awaits a maintainer live pass.** A live session
-  exposed a tangled failure (a "Hello World" text shader thrashed to the iteration cap, then couldn't
-  explain why). A brainstorm/review swarm traced it to ONE false premise: the 020·20 array-uniform
-  reject (probe-disproved — moderngl raises on a bad array write, never silently corrupts), which
-  blocked the agent's correct `set_uniform('u_text', codepoints)` and forced an illegal source edit.
-  Fixes: `_coerce_uniform_value` now handles arrays (probe-pinned shapes — `set_uniform("u_text",
-  "Hello\nWorld")` as a string just works, reusing the UI's `str_to_unicode`); the guard is deleted;
-  full-turn history persistence (the agent sees its own tool trajectory next turn — `_commit_turn` now
-  persists the assistant/tool tail, orphan-cleaned); prompt rules (value-vs-declaration + the
-  no-default-init GLSL invariant + the "on 'I see nothing' don't re-assert, re-read" escalation);
-  read_shader shows a chat SUMMARY (the user reads code in the editor); chat `no_move` + a per-message
-  Copy. Spec: `23_uniform_history_chat_untangle.md`.
-- **020·24 live-pass fixes — DONE + headless-verified; awaits a maintainer re-pass.** A maintainer live
-  session (11 turns: build/animate/center a text shader, then publish to TG + YT Shorts) surfaced three
-  harness defects, all fixed: (1) the "Rendering…" cue never visibly painted — `bridge.drain` cleared
-  `_render_pending` at the top of the run frame, so the freeze frame showed no cue; now the flag survives
-  the run frame so the cue covers the freeze. (2) the chat window was un-draggable in ALL layouts — a
-  false in-code premise ("title bar still drags under `no_move`"; it does not) froze even FREE; `no_move`
-  is now layout-conditional (forced presets only). (3) the unbounded-history BLOCKER is RESOLVED —
-  `build_messages` now trims whole leading turns once the request estimate exceeds `max_input_tokens`
-  (the dead constant is wired up), keeping the last 4 turns and never orphaning a tool_call_id.
-- **020·25 live-pass round 2 — DONE + headless-verified; awaits a maintainer re-pass.** A second live
-  session (build/animate/publish a text shader) exposed two more: (1) the render cue STILL didn't show —
-  the 020·24 fix was correct but `_copilot_publish` called the bridge WITHOUT `defer=True` (only the bare
-  `render_image`/`render_video` deferred), and the session only ever PUBLISHED, so the cue path was never
-  taken; publish now defers too. (2) a lib resolver bug forced the agent off the library entirely — a
-  `return SB_palette_sunset(...)` call read as a user DEFINITION of `SB_palette_sunset` (`USER_FN_DEF_RE`
-  matched `<word> SB_foo(`, taking `return` as the type), so the lib function was treated as shadowed,
-  never spliced, and failed to compile as "undefined"; the regex now requires the full `(...) {` body so a
-  keyword-preceded call can't masquerade as a def. Both pinned by regression tests.
-- **020·26 Render-tab render cue — DONE + maintainer-verified live (the cue now shows).** The
-  "Rendering…" cue only ever covered the COPILOT path; the Render-tab "Render" button rendered inline on
-  the click frame (froze the editor with no indication — the reported symptom). The button now sets a
-  deferred `app.render_request` closure that `update_and_draw` runs AFTER the frame's swap, with
-  `gl.finish()` between the swap and the encode. The real root cause (three prior scheduling attempts
-  failed): `glfwSwapBuffers` only QUEUES the buffer — on X11 a queued cue frame never composites while the
-  main thread blocks for seconds inside the encode, so `gl.finish()` is required to force the present before
-  the freeze (`conventions.md ## Known quirks`). The COPILOT render path runs its encode at the top of the
-  frame (before the swap) and so has the same latent invisibility — tracked in `todo.md`.
-- **020·28 prompt tier architecture (NL-only history + block constructor) — DONE + headless-verified;
-  awaits a maintainer live pass.** A cost/structure investigation (measured: the SAME ~4,850-tok shader
-  source appeared 10x in one session's history; ~25k avg / 230k peak input tok/turn; OpenRouter caching
-  IS working ~6x within-turn) plus an intent-driven design swarm reframed the fix: history is now
-  NATURAL-LANGUAGE ONLY — `_commit_turn` collapses each turn to one engine-derived `TurnSummary` (reply +
-  action ledger + referenced nodes), the full source the agent reads is NEVER persisted (re-fetched live).
-  Prompt assembly moved from a flat string-concat to a block constructor (`PromptBlock`/`Volatility`/
-  `build_prompt`). Per-read history contribution drops ~266x (~6,115 -> ~23 tok). Spec:
-  `28_prompt_tier_architecture.md`. Spec `27_structural_shader_view.md` (the read_shader STRUCTURE block —
-  the shader-representation pass) is FILED but DEFERRED to after this lands per the maintainer's ordering.
-- **020·29 working-set scratchpad — DONE + maintainer-live-verified (the brick is gone) + B1-B6 polish landed.**
-  The 2026-06-05 brick: the agent mixed substring `edit_shader` (shifts line count) + line-addressed
-  `replace_lines` (stale numbers) within a turn → cascade → 12 iterations, max_iterations, 299k input tokens,
-  non-compiling. Root cause: the freshness guard was a CONTENT guard, blind to the agent's own line-number drift.
-  Fix: the current source is no longer a frozen `read_shader` snapshot — it is a LIVE PER_TURN scratchpad block,
-  the WORKING SET (every shader/lib touched this turn), rebuilt from live source + spliced onto the message bottom
-  EVERY iteration (`_copilot_working_set` + `caps.read_working_set` + the `working_set` PromptBlock +
-  `render_working_set`). Line-drift is structurally impossible across iterations (the rebuild) and within-batch
-  (the per-batch line-edit guard D9, reset via `caps.batch_begin`); `read_shader` now "adds to working set"; the
-  content-freshness guard (+`_shader_digest`/`_copilot_read_revision`/`EditResult.stale`/the apply excerpt)
-  RETIRED; D10 `scratchpad_reserve_tokens=50k` keeps the trim from overflowing on the scratchpad. Reviewed by a
-  2-agent pre-impl + 3-agent post-impl convergence loop (PASS). The live re-pass confirmed the brick is gone (a
-  15-turn session: no max_iterations, no giveup, the worst 11-iteration multi-edit turn recovered to compiled
-  clean). A 6-lens trace-review wave proposed 6 tooling guards (B1-B6); an overfit tribunal (generality bar,
-  not the trace) then CUT most as overfit to one model on one transcript — SURVIVING: the out-of-range reject
-  points at the working set (B1a, a consistency fix 029 forced), a one-clause "uniform rows are live ground
-  truth" note (B4a), the D9-prose de-dup (B6); CUT: the line-count echo (B1b), the EOF-overshoot clamp (B2,
-  masked a line-math error on a guess), the brace-imbalance advisory (B3, false-accuses), the per-iteration
-  actions ledger (B4b) + the non-ASCII-codepoints rule (B5, both patched a transient grok quirk). Established a
-  governing principle (a guard earns its place only if a strictly better model would still need it) + a stopping
-  rule (all conditions met — no further trace-patch round warranted). Spec: `29_working_set_scratchpad.md`.
-- **NEXT — ship.** 020·29 is verified end-to-end; the copilot stack (020 sub-waves 12→29 + 021 + 022) is
-  ship-shaped pending the maintainer's go. Still deferred (each gates a FUTURE round only on a NEW failure class
-  in a DIFFERENT session): the lazy tool-catalogue (its ~16-tool threshold FIRED), the structural shader view
-  (020·27), reasoning-notes / intent-carryover guard (DE-RISKED by 029), a broken-compile circuit-breaker,
-  machine-readable render feedback, `bind_media`/`undo_edit` — all in `todo.md`.
+- **023 app.py refinement wave — DONE + reviewed (3-agent post-impl swarm, PASS).** `app.py` had grown to
+  ~2700 lines, ~41% of it the copilot capability backend. Three green-gated commits: **C2** extracted the 49
+  `_copilot_*` methods into `copilot/backend.py` (`CopilotBackend` — the `ShaderLibFileManager` idiom:
+  explicit deps + injected getters/callbacks, never imports `App`; `App._build_copilot_capabilities`
+  constructs it + binds its methods); `app.py` dropped ~1250 lines. **C3** collapsed the four modal popup
+  booleans into a `PopupState` enum (the mutex is now structural). **C4** fixed a latent Esc bug the enum
+  surfaced (Esc consumed the keypress but left the emoji + lib pickers open — now closes all modals). The
+  working-set/batch state stays App-owned (forced by init order — caps built before the state initializers),
+  reached via accessors. Two design-audit swarms + a pre-impl + a post-impl review preceded/closed it.
+  Spec: `ai_docs/features/023_app_refinement_wave.md`.
+- **NEXT — ship (the maintainer chose to refactor first; 023 is now done).** `master` stays at `v0.12.1`;
+  the full copilot stack (020 sub-waves 12→29 + 021 logging + 022 persistence + 023 refinement) sits
+  ship-shaped on `dev`, unshipped. 020·29 closed the last known brick; the guard-earns-its-place stopping
+  rule says no further trace-patch round is warranted. Several copilot sub-waves still await a maintainer
+  live pass; then ship. Awaiting the maintainer's explicit go.
+- **Deferred (each gates a FUTURE round only on a NEW failure class in a DIFFERENT session):** the lazy
+  tool-catalogue (its ~16-tool threshold FIRED), the structural shader view (020·27), reasoning-notes /
+  intent-carryover guard (DE-RISKED by 029), a broken-compile circuit-breaker, machine-readable render
+  feedback, `bind_media`/`undo_edit` — all in `todo.md`.
 - **Trace-gated (NOT now):** semantic-editing (rename/outline/add_uniform), GLSL-aware grep, uniforms-in-
   tree, eager-recompile for lib edits — each only if a trace shows the current tools struggling (none does).
   The visual-variant-optimizer (render N variants as clickable chat boxes) is the big future feature.
-  Scope decisions parked for the maintainer: a `bind_media` tool, an `undo_edit` tool (`todo.md`).
+  Further `app.py` splits (node-CRUD, path-properties, picker forwards) judged net-negative — `todo.md`.
 - **No open BLOCKERs.** Cosmetic nav tails parked in `todo.md`, trigger-gated.
 
 ## Features
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 023 | app_refinement_wave | done | Pure-shape refactor of the overgrown `app.py` (~41% was the copilot backend). Three green-gated commits: C2 extracted the 49 `_copilot_*` methods into `copilot/backend.py` (`CopilotBackend`, the `ShaderLibFileManager` idiom — explicit deps + injected getters/callbacks, never imports `App`; `_build_copilot_capabilities` constructs + binds it; working-set/batch state stays App-owned via accessors; `app.py` −~1250 lines); C3 collapsed the four modal popup booleans into a `PopupState` enum (structural mutex); C4 fixed a latent Esc bug the enum surfaced (Esc now closes the emoji + lib pickers — the one behavior change). Two design-audit swarms + pre/post-impl review. Spec: `ai_docs/features/023_app_refinement_wave.md`. |
 | 022 | copilot_chat_persistence | done | The copilot conversation is tied to its project + restored on reopen (was memory-only, dropped on switch/exit). `copilot/persistence.py` (`ConversationStore`, versioned + fail-soft like `app_state.json`) persists both the UI render messages and the LLM history + usage to `project_dir/copilot/conversation.json`; `CopilotSession.save_conversation`/`load_conversation`; App saves the outgoing project's chat in `release()` (top of `_init` + shutdown) and loads the incoming one after `reset_conversation`; a `begin_disabled`-during-turn clear button archives to `copilot/archive/`. Folded the trace-bleed deferral: the orphaned-history append is guarded on `_cancel`, and the worker-is-idle invariant (020·15's `open_project` gate) closes the trace-bleed window (the residual `_ensure_open` structural weakness re-scoped in `todo.md`). Spec: `ai_docs/features/022_copilot_chat_persistence.md`. |
 | 021 | logging_refactor | done | Three-stream logging: a terse INFO+ console, a rotated DEBUG+ file (`logs/`) that is a strict superset, and a full-fidelity copilot transcript (`copilot_traces/copilot_<slug>_<stamp>.transcript` — human/agent-readable plain text replacing the old jsonl). `shaderbox/logging_setup.py` configures all loguru sinks once; `LoggingConfig` holds the internal config (console/file levels, rotation, retention, trace-retention=20); the 118-call logger survey audited 24 modules with ~37 calls shifted (lifecycle→DEBUG, user events stay INFO, fallback-config ERROR→WARNING); trace gains a transcript renderer + `tool_args_parse_error` event + mtime-pruned retention. Maintainer-verified live (console terse, transcript readable cold). Spec: `ai_docs/features/021_logging_refactor.md`. |
 | 020 | copilot_agent | in progress | In-app coding-copilot agent (free-form chat over OpenRouter; in-process compile-feedback is the differentiator). Scaffold + Slice 1 (edit/compile-feedback vertical) landed, runs, and verified end-to-end on a real read→edit turn: the `shaderbox/copilot/` package (capabilities / `LLMClient` / worker→main `CopilotBridge` / worker↔UI queues / chat `state` / `agent` loop / `prompt` / `trace`), the three current-node tools (`get_current_shader` / `edit_shader` / `get_compile_errors`), the OpenRouter stream + key/model in Settings, the editor lock, and a full per-session transcript trace. Default model `x-ai/grok-4-fast` (tool-call compatible, verified); the agent rejects tool-incompatible models. Slice-1 self-correction completed (`12_edit_robustness.md`): `edit_shader` whitespace near-miss hint (echoes exact bytes on a 0-match), enforced `max_edit_retries=3` (was dead config), and giveup/`max_iterations` cutoffs now surface as chat errors. The GLSL token matcher landed (`13_glsl_lexer.md`): `copilot/glsl_lex.py` (`glsl_lex` + `token_match`) replaces `edit_shader`'s byte-exact match with whitespace-invariant token-stream equality, so a whitespace-divergent `old_str` succeeds at the match layer (the slice-12 hint becomes the no-op fallback). Slice 2 landed (`14_slice2_line_editing.md`): two line-anchored editing tools (`replace_lines`/`insert_after`, addressed by line numbers — the model quotes nothing) + the retry-cap widened to all mutating tools (the "what changed" apply excerpt was retired by 020·29 — the working-set scratchpad shows the whole post-edit source). Edit-safety landed (`15_edit_safety.md`): Half A — the editor is read-only + node-switch/create/delete/save/open-project are frozen while a turn runs (RETAINED); Half B — the content source-freshness guard — was RETIRED by 020·29 (the live per-iteration working-set rebuild makes line/content drift structurally impossible; a per-batch line-edit guard closes the within-batch residual). Cross-project tools (`16_cross_project_tools.md`) DONE + live-verified across 3 maintainer test sessions: the agent works the whole project (8 tools `read_shader`/`edit_shader`/`replace_lines`/`insert_after`/`set_uniform`/`create_node`/`grep`/`read_lib`, an always-in-prompt project map + lib catalogue, live-source lib creation). Post-test fixes: `create_node` returns its compile result; a GLSL-skeleton + engine-uniform-declaration conventions note; short 4-char node ids (no UUIDs in chat). Gate-UI wave (`17_gate_ui.md`) landed: the `GateChannel` body is wired (inline Yes/No confirm blocking the worker via the built bridge-mirror) + `delete_node` (always-gate, the "remove the last 3" trigger) + a Recover-from-trash button persisted across restart; decline continues the loop so the model comments. Render/publish wave (`18_render_publish_tools.md`) landed: 4 always-gated tools — `render_image`/`render_video` (to the project `renders/` dir via the bridge with `render_op_timeout_s`) + `publish_telegram`/`publish_youtube` (render-then-enqueue-then-await the exporter's terminal progress, all marshalled through the bridge); missing creds = a pre-gate guided handoff (a new `precheck` seam on `ToolDefinition`); the exporters gained public `is_connected()`/`publish()`. Telegram connect/pack wave (`19_credential_pack_tools.md`) landed: the `GateKind.CREDENTIAL` widget is built (a masked inline secret input — `set_telegram_token`, the token redacted to a prefix everywhere but the live store) + auto-link (the `AuthState.LINKING` floor + a connect-await) + full pack CRUD (list/select/create/delete, gated); the exporters gained public token/pack wrappers. Follow-ups: a `switch_node` tool (the copilot makes any shader current — publish acts on the current node ONLY, render takes an optional node id; conventions.md ## Design decisions pins the risk-scaled addressing rule), and a prompt fix so the agent treats `set_telegram_token`/pack CRUD as ITS capabilities (never deflects to Settings). UI/UX polish wave (020·20) landed: per-tool status + tool-result transcript lines (D1), ASCII glyph sanitization at three boundaries + a prompt nudge (D2, `copilot/text_render.py`), the two-phase "Rendering…" modal via a `MainThreadOp.defer` marker (D3), and the 5 low-severity correctness footguns (D4); a pre-impl review corrected the modal's threading (main-thread one-frame hold, not a worker-side two-phase). A separate audit-driven must-fix wave closed 5 silent-correctness items (history divergence, double-escape guard, comment-loss guard, array-uniform reject). STILL IN PROGRESS: a maintainer live pass on the stack, then ship; the lazy tool-catalogue (D5) + `delete_lib_file` + semantic-editing stay deferred/trace-gated, and a `bind_media`/`undo_edit` tool are parked scope decisions (`todo.md`). Spec: `ai_docs/features/020_copilot_agent/11_capability_wave_spec.md §16` + `12`–`20`. |
