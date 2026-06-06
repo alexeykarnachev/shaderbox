@@ -449,7 +449,6 @@ class App:
             working_set_add=self._copilot_ws_add,
             batch_mutated_reader=lambda: self._copilot_batch_mutated,
             batch_mutated_add=lambda a: self._copilot_batch_mutated.add(a),
-            batch_begin=lambda: self._copilot_batch_mutated.clear(),
         )
         b = self.copilot_backend
         return CopilotCapabilities(

@@ -67,8 +67,10 @@ review trail.)
    exactly so a reader sees the same shape.
 
 2. **The constructor splits dependencies into five categories, each by its volatility.** Keyword-only:
-   - **Direct refs** (stable singletons, never reassigned): `bridge: CopilotBridge`,
-     `notifications: Notifications`.
+   - **Direct ref** (stable, resolved lazily): `get_bridge: Callable[[], CopilotBridge]` — the bridge
+     lives on the `CopilotSession`, constructed *after* the backend (it takes the caps the backend's
+     methods bind into), so it can't be an eager ref; a getter resolves it at turn-time. (`notifications`
+     is NOT a dep — no moved method uses it; `recover_deleted_node`, which does, stayed on App.)
    - **Frozen values** (project-independent, no side effect): `node_templates_dir: Path` (it is
      `RESOURCES_DIR / "node_templates"` — safe to freeze); `starter_template_id: str` (the default
      "UV Mango" template uuid `_copilot_create_node` falls back to — see decision 8a).
@@ -78,8 +80,9 @@ review trail.)
    - **App-action callbacks** (effects App owns/guards): `set_current_node_id`, `save_ui_node`,
      `sync_editor_from_disk`, `delete_node_unguarded`, `template_description`.
    - **Shared-state accessors** (working-set/batch state stays on App — see decision 3):
-     `working_set_reader`, `working_set_add`, `batch_mutated_reader`, `batch_mutated_add`,
-     `batch_begin`.
+     `working_set_reader`, `working_set_add`, `batch_mutated_reader`, `batch_mutated_add`. (No
+     `batch_begin` accessor — the batch-clear is bound ONLY into the capability, App-side; no moved
+     method clears the set itself.)
 
    The getter-vs-frozen split is load-bearing: `open_project` reassigns the project dir, so a `Path`
    captured in `__init__` would stale-point. `get_renders_dir` **must** stay a getter; only the shipped,
@@ -198,16 +201,22 @@ separate bool. (Same revisit trigger: a popup grows internal state that doesn't 
 - **`tests/test_uniform_arrays.py`** — repoint `_coerce_uniform_value` import to
   `shaderbox.copilot.backend`.
 - **`tests/test_cross_project_tools.py`** — repoint `_coerce_uniform_value` + `_ENGINE_DRIVEN_UNIFORMS`
-  imports to `shaderbox.copilot.backend`.
+  imports to `shaderbox.copilot.backend` (`_STARTER_TEMPLATE_ID` stays from `shaderbox.app`); repoint the
+  `_id_stub`-driven `_copilot_short_ids`/`_copilot_resolve_node_id` unit calls onto `CopilotBackend`
+  (the stub now feeds `_get_ui_nodes`).
 - **`tests/test_line_editing.py`** — repoint `_number_lines` import to `shaderbox.copilot.backend`.
+- **`tests/test_template_library.py`** + **`tests/test_working_set.py`** — repoint the `app._copilot_*`
+  call sites to `app.copilot_backend.*` (a consequence of the extraction: these exercise the backend
+  through a live `App`).
 
 ### C3 — PopupState enum
 - **`shaderbox/app.py`** — the `PopupState` enum + `popup_state` field; `any_popup_open()`,
   `escape_has_job()`, and the four `open_*()` methods rewired; the four modal bools removed
   (`is_palette_open` kept).
-- **`shaderbox/ui.py`**, **`shaderbox/tabs/code.py`**, **`shaderbox/widgets/node_grid.py`**,
-  **`shaderbox/widgets/cheatsheet.py`**, **`shaderbox/widgets/copilot_chat.py`** — popup-gate reads
-  repointed to `popup_state` comparisons / `any_popup_open()`.
+- **`shaderbox/ui.py`** — the one direct modal-flag read (`is_node_creator_open` in the template-grid
+  render gate) repointed to `popup_state == PopupState.NODE_CREATOR`. (The other render-gates already
+  go through `any_popup_open()`, which is unchanged behaviorally — so `tabs/code.py`,
+  `widgets/node_grid.py`, `widgets/cheatsheet.py`, `widgets/copilot_chat.py` needed NO edit.)
 - **`shaderbox/hotkeys.py`** — `_handle_escape` migrates its modal-flag reads/writes to `popup_state`
   in C3 (it reads `is_settings_open` + writes the modal flags, so it MUST move with the enum or C3's
   green-gate breaks). C3 keeps the SAME behavior — it still clears node-creator/settings/palette and

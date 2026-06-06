@@ -293,7 +293,6 @@ class CopilotBackend:
         working_set_add: Callable[[str], None],
         batch_mutated_reader: Callable[[], set[str]],
         batch_mutated_add: Callable[[str], None],
-        batch_begin: Callable[[], None],
     ) -> None:
         self._get_bridge = get_bridge
         self._node_templates_dir = node_templates_dir
@@ -315,7 +314,6 @@ class CopilotBackend:
         self._working_set_add = working_set_add
         self._batch_mutated_reader = batch_mutated_reader
         self._batch_mutated_add = batch_mutated_add
-        self._batch_begin = batch_begin
 
     @property
     def _bridge(self) -> CopilotBridge:
