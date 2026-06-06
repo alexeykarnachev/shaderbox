@@ -1,11 +1,9 @@
-"""On-disk persistence for a copilot conversation (feature 022).
+"""On-disk persistence for a copilot conversation.
 
-The conversation is durable, per-project state — same class as `app_state.json` (021
-decision 9) — so it lives in the project dir and travels with it. This module owns the
-versioned `ConversationStore` pydantic model + its load/save/archive, mirroring
-`UIAppState`'s discipline (`extra="forbid"`, fail-soft `load_and_migrate`). It maps the
-runtime dataclasses (`Message` / `LLMMessage` / `SessionUsage`, which `state.py` keeps
-runtime-pure) to/from their persisted shape here, so `state.py` stays free of disk concerns.
+Durable per-project state in the project dir. Owns the versioned `ConversationStore`
+pydantic model + load/save/archive (`extra="forbid"`, fail-soft `load_and_migrate`), and
+maps the runtime dataclasses (`Message` / `LLMMessage` / `SessionUsage`) to/from their
+persisted shape so `state.py` stays free of disk concerns.
 """
 
 import json
@@ -33,8 +31,8 @@ _RESULT_WIDGET_KINDS: frozenset[str] = frozenset({"open_url", "open_path"})
 
 
 def _gate_kind_or_confirm(value: str) -> GateKind:
-    # A future GateKind member on an older build loads as CONFIRM (the renderer falls back to
-    # Yes/No), instead of failing the whole conversation file (feature 020·19).
+    # Unknown GateKind (future member on an older build) loads as CONFIRM instead of failing
+    # the file.
     try:
         return GateKind(value)
     except ValueError:
@@ -42,8 +40,8 @@ def _gate_kind_or_confirm(value: str) -> GateKind:
 
 
 def _result_widget_or_none(model: "_ResultWidgetModel | None") -> ResultWidget | None:
-    # An unknown widget kind (a future kind on an older build) or an empty target drops to None
-    # instead of failing the file or rendering a dead button (feature 020·21).
+    # Unknown widget kind or empty target drops to None instead of failing the file or
+    # rendering a dead button.
     if model is None or model.kind not in _RESULT_WIDGET_KINDS or not model.target:
         return None
     return ResultWidget(
@@ -52,9 +50,8 @@ def _result_widget_or_none(model: "_ResultWidgetModel | None") -> ResultWidget |
 
 
 class _RecoverModel(BaseModel):
-    # The persisted Recover affordance on a resolved-Yes delete card (feature 020·17). Stores
-    # the trash dir-NAME (NOT an absolute path — the project dir is relocatable; re-anchored
-    # via App.trash_dir at click time).
+    # Stores the trash dir-NAME, not an absolute path — the project dir is relocatable;
+    # re-anchored via App.trash_dir at click time.
     node_id: str
     node_name: str = ""
     trash_name: str
@@ -63,8 +60,7 @@ class _RecoverModel(BaseModel):
 
 
 class _ResultWidgetModel(BaseModel):
-    # A persisted first-class result widget (feature 020·21). kind is loose-str so a future widget
-    # kind on an older build round-trips (the renderer skips an unknown kind), like gate_kind/role.
+    # kind is loose-str so a future widget kind round-trips (the renderer skips an unknown one).
     kind: str
     label: str = "Open"
     target: str = ""
@@ -72,26 +68,22 @@ class _ResultWidgetModel(BaseModel):
 
 
 class _MessageModel(BaseModel):
-    # The UI render stream (ChatState.messages). role is validated loosely (str) so a
-    # future MessageRole member loads on an older build instead of failing the whole file.
-    # gate_kind is loose-str for the same reason (feature 020·19); gate_input (the typed
-    # secret buffer) is deliberately NOT a field — it is never persisted.
+    # role / gate_kind are loose-str so a future member loads instead of failing the file.
+    # gate_input (the typed secret buffer) is deliberately NOT a field — never persisted.
     role: str
     text: str = ""
     resolved: bool = False
     recover: _RecoverModel | None = None
     gate_kind: str = "confirm"
-    # The result widget on a tool_status card (feature 020·21). Optional + defaulted so a v3 file
-    # (no field) loads as None.
+    # Optional + defaulted so a pre-field file loads as None.
     result_widget: _ResultWidgetModel | None = None
     model_config = {"extra": "forbid"}
 
 
 class _HistoryModel(BaseModel):
-    # The LLM replay context (CopilotSession.history) — NATURAL-LANGUAGE only (feature 020·28):
-    # user messages + one engine-derived assistant turn-summary each. No tool messages. A pre-v5
-    # store carrying tool_call_id / tool_calls hits extra="forbid" -> ValidationError ->
-    # load_and_migrate fail-softs it to an empty chat (no backward-compat migration by design).
+    # LLM replay context — NATURAL-LANGUAGE only: user messages + one assistant turn-summary
+    # each, no tool messages. A pre-v5 store with tool_call_id / tool_calls hits extra="forbid"
+    # and fail-softs to an empty chat (no backward-compat migration by design).
     role: str
     content: str | None = None
     model_config = {"extra": "forbid"}
@@ -154,9 +146,8 @@ class ConversationStore(BaseModel):
         )
 
     def to_messages(self) -> list[Message]:
-        # role is a free str on disk (loose so a future MessageRole member survives an
-        # older build); cast back to the Literal — the renderer treats an unknown role as
-        # plain text anyway, so the value is safe regardless.
+        # role is a free str on disk; cast back to the Literal — the renderer treats an
+        # unknown role as plain text anyway.
         return [
             Message(
                 role=cast(MessageRole, m.role),
@@ -179,7 +170,7 @@ class ConversationStore(BaseModel):
         ]
 
     def to_history(self) -> list[LLMMessage]:
-        # NL-only (feature 020·28): every persisted history message is a plain user/assistant message.
+        # NL-only: every persisted history message is a plain user/assistant message.
         return [
             LLMMessage(
                 role=cast(Literal["system", "user", "assistant", "tool"], h.role),
@@ -202,9 +193,8 @@ class ConversationStore(BaseModel):
 
     @classmethod
     def load_and_migrate(cls, file_path: Path) -> Self:
-        # Fail-soft, mirroring UIAppState: a missing file is a first-use empty chat; an
-        # unreadable / incompatible one degrades to empty + a file-only WARNING, never a
-        # crash and never a lost project (021 leveling).
+        # Fail-soft: a missing file is a first-use empty chat; an unreadable / incompatible
+        # one degrades to empty + a WARNING, never a crash and never a lost project.
         if not file_path.exists():
             return cls()
         try:
@@ -222,7 +212,7 @@ class ConversationStore(BaseModel):
 
 def archive_conversation(conversation_path: Path, stamp: str) -> None:
     # Move the live conversation into copilot/archive/conversation_<stamp>.json on clear
-    # (recoverable, not destroyed — Q1: uncapped, projects + clears are both rare).
+    # (recoverable, not destroyed; archive is uncapped).
     if not conversation_path.exists():
         return
     archive_dir = conversation_path.parent / "archive"

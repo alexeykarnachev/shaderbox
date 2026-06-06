@@ -48,15 +48,11 @@ _MAIN_WINDOW_FLAGS = (
     | imgui.WindowFlags_.no_scrollbar
     | imgui.WindowFlags_.no_scroll_with_mouse
     | imgui.WindowFlags_.menu_bar
-    # Skip the sole top-level window in imgui's built-in Ctrl+Tab window-cycle (which
-    # is on regardless of nav_enable_keyboard) — otherwise Ctrl+Tab pops a 1-item
-    # window switcher and highlights the whole window (a 2nd outline over ours). This
-    # also frees Ctrl+Tab for our CYCLE_REGION command (commands.py).
+    # Skip imgui's Ctrl+Tab window-cycle (would pop a 1-item switcher + 2nd outline);
+    # also frees Ctrl+Tab for our CYCLE_REGION command.
     | imgui.WindowFlags_.no_nav_focus
-    # Don't raise the full-screen main window above the floating copilot chat when the
-    # editor/panel is clicked — else focusing a region would z-order the main window
-    # over an open-but-unfocused chat and bury it (the chat must stay visible while open,
-    # independent of focus). The chat is submitted after this window so it stays on top.
+    # Don't z-order this full-screen window above the floating copilot chat on focus —
+    # the chat must stay visible while open. It's submitted after this window to stay on top.
     | imgui.WindowFlags_.no_bring_to_front_on_focus
 )
 
@@ -83,10 +79,8 @@ def run(app: App) -> None:
 
 
 def _reload_if_changed(app: App, name: str, ui_node: UINode) -> None:
-    # Walk every source the last compile depended on (root + included libs).
-    # sources[0] is the root by construction (resolve_includes seeds it first);
-    # sources[1:] are lib files in first-seen order. Each kind has a different
-    # reload action — see comments inline.
+    # sources[0] is the root (resolve_includes seeds it first); sources[1:] are lib
+    # files in first-seen order. Root and lib reloads differ — see inline.
     for i, src in enumerate(ui_node.node.compile_unit.sources):
         path = src.path
         if not path.exists():
@@ -96,7 +90,7 @@ def _reload_if_changed(app: App, name: str, ui_node: UINode) -> None:
             continue
 
         if i == 0:
-            # Root reload: read text, replace, re-sync the open editor session.
+            # Root reload: re-sync the open editor session from disk.
             logger.debug(f"Reloading node {name} (root shader changed)")
             try:
                 new_text = path.read_text()
@@ -106,15 +100,12 @@ def _reload_if_changed(app: App, name: str, ui_node: UINode) -> None:
             except Exception as e:
                 logger.error(f"Failed to reload node {name}: {e}")
                 ui_node.node.source = replace(ui_node.node.source, mtime=disk_mtime)
-            # `sources` was rebuilt by release_program() via CompileUnit.empty;
-            # don't keep iterating the stale list.
+            # release_program() rebuilt `sources` — stop iterating the stale list.
             return
 
-        # Lib reload: bump the cached mtime so we don't re-fire next frame, then
-        # invalidate the node so the next render's compile re-resolves the
-        # include from disk. If a session is open on this lib file AND its text
-        # diverges from disk, re-sync it (external edit); if the texts already
-        # match, the user just saved in-app — don't clobber their undo history.
+        # Lib reload: bump cached mtime + invalidate so the next compile re-resolves the
+        # include. If an open session's text diverges from disk, re-sync (external edit);
+        # if it matches, the user saved in-app — don't clobber their undo history.
         logger.debug(f"Reloading node {name} (lib changed: {path.name})")
         ui_node.node.compile_unit.sources[i] = replace(src, mtime=disk_mtime)
         ui_node.node.invalidate()
@@ -133,11 +124,9 @@ def _reload_if_changed(app: App, name: str, ui_node: UINode) -> None:
 
 
 def _maybe_rebuild_lib_index(app: App) -> bool:
-    # Detect lib-root changes: file added, removed, or mtime bumped. If anything
-    # changed, rebuild the index. Cheap: one glob + N stats per frame.
-    # `is_shader_lib_path` keeps `.trash/` (and any future dot-dir) out — must match
-    # the filter ShaderLibIndex.build applies, or current vs cached would diverge
-    # every frame on trashed files and loop rebuilds forever.
+    # Detect lib-root changes (add / remove / mtime) and rebuild the index. One glob + N
+    # stats per frame. `is_shader_lib_path` MUST match the filter ShaderLibIndex.build
+    # applies, else current vs cached diverge every frame on trashed files and loop forever.
     root = shader_lib_root()
     current: dict[str, float] = {}
     for path in root.glob("**/*.glsl"):
@@ -151,10 +140,8 @@ def _maybe_rebuild_lib_index(app: App) -> bool:
     if current == cached:
         return False
     app.rebuild_shader_lib_index()
-    # Any node whose last compile pulled in a lib file might now need a fresh
-    # compile (the function it referenced may have changed body or disappeared).
-    # We invalidate every node that has lib files in its sources; the next render
-    # of each will recompile with the new index.
+    # Invalidate every node that pulled in a lib file so its next render recompiles
+    # against the new index (a referenced function may have changed or disappeared).
     for ui_node in app.ui_nodes.values():
         if len(ui_node.node.compile_unit.sources) > 1:
             ui_node.node.invalidate()
@@ -163,16 +150,12 @@ def _maybe_rebuild_lib_index(app: App) -> bool:
 
 def update_and_draw(app: App) -> None:
     # ----------------------------------------------------------------
-    # Rebuild the lib index if any lib file changed (added / removed / edited).
-    # Walks shader_lib_root each frame; for small libs the cost is microseconds. If the
-    # index changed we invalidate every node that depended on a lib file so its
-    # next render recompiles against the fresh index.
+    # Rebuild the lib index if any lib file changed.
     _maybe_rebuild_lib_index(app)
 
     # ----------------------------------------------------------------
-    # Run any GL ops the copilot worker is blocked on (the worker->main bridge), EARLY
-    # so a freshly recompiled node renders this same frame. Each op is isolated inside
-    # drain(); the wrapper is belt-and-suspenders for the frame loop.
+    # Run any GL ops the copilot worker is blocked on (worker->main bridge), EARLY so a
+    # freshly recompiled node renders this same frame.
     try:
         app.copilot.drain_bridge()
     except Exception as e:
@@ -205,10 +188,8 @@ def update_and_draw(app: App) -> None:
     # ----------------------------------------------------------------
     # Drain copilot worker events into the chat render-state (no GL; single-writer).
     app.copilot.pump_events()
-    # The editor lock follows the turn: set on send, lifted when the turn ends (§11).
-    # A True->False transition means a turn just completed — persist it (feature 022: the
-    # completed turn is the durable unit, so a later crash never loses it). project_dir is
-    # always set here (the frame loop only runs after the first _init).
+    # A True->False transition means a turn just completed — persist it (a completed turn
+    # is the durable unit, so a later crash never loses it).
     if app.copilot_turn_active and not app.copilot.state.in_flight:
         app.copilot.save_conversation(app.copilot_conversation_path)
     app.copilot_turn_active = app.copilot.state.in_flight
@@ -243,9 +224,8 @@ def update_and_draw(app: App) -> None:
     imgui.set_next_window_pos((0, 0))
     with imgui_ctx.begin("ShaderBox - UI", flags=_MAIN_WINDOW_FLAGS):
         # ------------------------------------------------------------
-        # Keyboard command dispatch — in-frame (imgui.shortcut() asserts outside
-        # a frame), at the top of the block so ESC's editor-defocus is consumed
-        # by code_tab.draw the same frame.
+        # Keyboard command dispatch — in-frame (imgui.shortcut() asserts outside a frame),
+        # at the top so ESC's editor-defocus reaches code_tab.draw the same frame.
         dispatch_commands(app)
 
         # ------------------------------------------------------------
@@ -263,10 +243,9 @@ def update_and_draw(app: App) -> None:
             ),
         )
 
-        # Same-frame splitter-drag test (computed BEFORE the editor draws): the
-        # splitter sits at x = editor's right edge, width _SPLITTER_W. Latch on the
-        # press over that rect, hold while the button is down. code.py reads
-        # app.splitter_dragging to neutralize the editor's mouse during the drag.
+        # Splitter-drag test computed BEFORE the editor draws (splitter is at the editor's
+        # right edge, width _SPLITTER_W). Latch on press over the rect, hold while down;
+        # code.py reads app.splitter_dragging to neutralize the editor's mouse mid-drag.
         io = imgui.get_io()
         split_origin = imgui.get_cursor_screen_pos()
         on_splitter = (
@@ -280,10 +259,9 @@ def update_and_draw(app: App) -> None:
             app._splitter_press_on_splitter = False
         app.splitter_dragging = app._splitter_press_on_splitter
 
-        # The editor column = a code-editor child (top) + a fixed copilot bar (bottom),
-        # stacked in one group so the splitter to their right spans the full height. The
-        # bar OWNS the launcher button (always visible, always clickable — a reserved
-        # region, never overlapped by the floating chat, which anchors above it).
+        # Editor column = code-editor child (top) + fixed copilot bar (bottom), grouped so
+        # the splitter to their right spans the full height. The bar owns the launcher
+        # button (a reserved region the floating chat anchors above, never covers).
         editor_height = split_region.y - _COPILOT_BAR_H
         with imgui_ctx.begin_group():
             with imgui_ctx.begin_child(
@@ -292,25 +270,22 @@ def update_and_draw(app: App) -> None:
                 child_flags=imgui.ChildFlags_.borders,
                 window_flags=imgui.WindowFlags_.no_nav_inputs,
             ):
-                # Capture the editor child's screen rect so the chat window anchors to the
-                # coding area (above the bar), not the whole glfw window. get_window_pos/
-                # size inside the child give its real screen rect (correct live).
+                # Capture the editor child's screen rect so the chat anchors to the coding
+                # area (above the bar), not the whole glfw window.
                 ed_pos = imgui.get_window_pos()
                 ed_size = imgui.get_window_size()
                 app.editor_rect = (ed_pos.x, ed_pos.y, ed_size.x, ed_size.y)
-                # active_region is corrected from LIVE focus (so a mouse click that moves
-                # focus updates it) — but NOT while a chord move is in flight (focus still
-                # reads as the old region for a frame; correcting then would revert the
-                # chord target + break cycling), and NOT while the chat owns focus (the
-                # chat is a separate top-level window; the editor must yield to it).
+                # Correct active_region from live focus, but NOT during a chord move (focus
+                # still reads the old region for a frame — correcting reverts the target +
+                # breaks cycling) and NOT while the chat owns focus (separate window).
                 if (
                     imgui.is_window_focused(imgui.FocusedFlags_.child_windows)
                     and not app.focus_move_in_flight()
                     and not app.copilot_focused
                 ):
                     app.active_region = ActiveRegion.EDITOR
-                # Not while a modal is open: the outline is on the foreground draw list
-                # (immune to window clip) so it would render OVER the popup.
+                # Not while a modal is open: the outline is on the foreground draw list,
+                # so it would render OVER the popup.
                 if (
                     app.active_region == ActiveRegion.EDITOR
                     and not app.any_popup_open()
@@ -352,15 +327,14 @@ def update_and_draw(app: App) -> None:
 
     imgui.pop_font()
 
-    # The cheatsheet + the copilot chat are their OWN top-level windows — drawn after
-    # the full-screen main window closes so they aren't obscured by it.
+    # Cheatsheet + copilot chat are their OWN top-level windows — drawn after the
+    # full-screen main window closes so they aren't obscured by it.
     imgui.push_font(app.font_14, _FONT_14_SIZE)
     cheatsheet.draw(app)
     copilot_chat.draw(app)
-    # The "Rendering..." cue. Two producers: the copilot bridge (a render op held one frame before
-    # the encode, feature 020·20 D3) and the Render-tab button (a deferred main-thread encode). The
-    # Render-tab encode runs AFTER this frame's swap (below) so its cue is provably on the glass
-    # before the encode freezes the loop; the copilot bridge handles its own deferral.
+    # The "Rendering..." cue. The Render-tab encode runs AFTER this frame's swap (below)
+    # so its cue is provably on the glass before the encode freezes the loop; the copilot
+    # bridge handles its own deferral.
     run_render_now = app.render_request is not None and app.render_request_shown
     if app.copilot.bridge.render_pending() or app.render_request is not None:
         rendering_overlay("Rendering... the app pauses while it encodes.")
@@ -381,9 +355,9 @@ def update_and_draw(app: App) -> None:
 
     glfw.swap_buffers(app.window)
 
-    # Run the Render-tab encode HERE, after the swap, so the cue frame is presented before the
-    # encode blocks. glFinish forces the GPU to actually display it (a queued buffer can otherwise
-    # never composite while the main thread blocks for seconds inside the encode).
+    # Run the Render-tab encode HERE, after the swap, so the cue frame is presented before
+    # the encode blocks. glFinish forces the GPU to display it (a queued buffer can't
+    # composite while the main thread blocks for seconds inside the encode).
     if run_render_now:
         gl.finish()
         request = app.render_request
@@ -392,10 +366,9 @@ def update_and_draw(app: App) -> None:
         if request is not None:
             request()
     elif app.render_request is not None:
-        # First sight of the request: hold it one frame so the cue paints + swaps above next loop.
+        # First sight of the request: hold one frame so the cue paints + swaps next loop.
         app.render_request_shown = True
     else:
-        # No request (or it was cleared externally): re-arm so the next one gets its own hold frame.
         app.render_request_shown = False
 
     app.frame_idx += 1
@@ -441,19 +414,16 @@ def _draw_menu_bar(app: App) -> None:
 
 
 def _draw_copilot_bar(app: App, width: float) -> None:
-    # A fixed bar at the bottom of the editor column. It holds the editor's status chrome
-    # (file path, dirty/compiled state, Open dir, back links — code_tab.draw_chrome) on
-    # the left and the Copilot CTA on the right. The bar is its OWN region (sibling of the
-    # editor child, not an overlay), so the button is always visible + clickable and the
-    # floating chat anchors ABOVE it without ever covering it.
+    # Fixed bar at the bottom of the editor column: editor status chrome (code_tab.
+    # draw_chrome) on the left, Copilot CTA on the right. Its OWN region (sibling of the
+    # editor child, not an overlay), so the button stays clickable and the chat anchors above.
     with imgui_ctx.begin_child(
         "copilot_bar",
         size=imgui.ImVec2(width, _COPILOT_BAR_H),
         window_flags=imgui.WindowFlags_.no_nav_inputs,
     ):
         code_tab.draw_chrome(app)
-        # Right-align the Copilot toggle on the same row — same label both states; the
-        # style carries the state (filled accent when open, bordered ghost when closed).
+        # Right-align the Copilot toggle — same label both states; the style carries state.
         label = "Copilot"
         btn_w = imgui.calc_text_size(label).x + 2.0 * float(SPACE.MD)
         imgui.same_line(width - btn_w - float(SPACE.MD))
@@ -493,8 +463,8 @@ def _draw_app_panel(app: App) -> None:
         image_width = min(max_image_width, max_image_height * image_aspect)
         image_height = min(max_image_height, max_image_width / image_aspect)
 
-        # On compile failure the last-good program stays bound, so the render is a
-        # live reference — kept bright; the error surfaces in the editor pane strip.
+        # On compile failure the last-good program stays bound — kept bright; the error
+        # surfaces in the editor pane strip.
         imgui.image_with_bg(
             imgui.ImTextureRef(ui_node.node.canvas.texture.glo),
             image_size=(image_width, image_height),
@@ -565,15 +535,13 @@ _NODE_TABS: list[tuple[str, NodeTab, Callable[[App], None]]] = [
 
 def _draw_node_settings(app: App) -> None:
     panel_active = app.active_region == ActiveRegion.PANEL
-    # Each region consumes (reads + clears) its OWN region_focus_pending — clearing
-    # it here unconditionally would eat a request the GRID set after it already drew
-    # this frame (e.g. select_node re-latching grid focus), so the grid never sees it.
+    # Consume region_focus_pending only when this region is active — clearing it
+    # unconditionally would eat a request the grid set later this same frame.
     focus_panel = app.region_focus_pending and panel_active
     if focus_panel:
         app.region_focus_pending = False
-    # Capture the jump target NOW — the loop rewrites active_node_tab from the
-    # visible tab, which would otherwise clobber the target before set_selected
-    # reads it (set_selected only takes effect next frame).
+    # Capture the jump target NOW — the loop rewrites active_node_tab from the visible tab,
+    # which would clobber the target before set_selected reads it (takes effect next frame).
     tab_select_target = app.active_node_tab if app.node_tab_select_pending else None
     app.node_tab_select_pending = False
 
@@ -587,9 +555,8 @@ def _draw_node_settings(app: App) -> None:
         child_flags=imgui.ChildFlags_.borders,
         window_flags=panel_flags,
     ):
-        # active_region corrected from live focus (mouse clicks) except during a chord
-        # move, and except while the chat owns focus (it's a separate window the regions
-        # must yield to). See the editor pane.
+        # Correct active_region from live focus, except during a chord move and while the
+        # chat owns focus. See the editor pane.
         if (
             imgui.is_window_focused(imgui.FocusedFlags_.child_windows)
             and not app.focus_move_in_flight()
@@ -606,8 +573,7 @@ def _draw_node_settings(app: App) -> None:
             if bar:
                 visible_tab = app.active_node_tab
                 for label, tab_id, draw_tab in _NODE_TABS:
-                    # set_selected drives the tab on the next frame after a Ctrl+digit
-                    # jump; imgui then remembers the selection.
+                    # set_selected drives the tab the frame after a Ctrl+digit jump.
                     flags = (
                         imgui.TabItemFlags_.set_selected
                         if tab_select_target == tab_id
@@ -617,8 +583,8 @@ def _draw_node_settings(app: App) -> None:
                         if tab:
                             visible_tab = tab_id
                             draw_tab(app)
-                # The visible tab IS the selected one — commit after the loop so the
-                # mid-loop write can't clobber the jump target read above.
+                # Commit the visible tab after the loop so the mid-loop write can't
+                # clobber the jump target read above.
                 app.active_node_tab = visible_tab
 
 

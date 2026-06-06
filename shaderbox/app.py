@@ -61,26 +61,22 @@ from shaderbox.util import (
     select_next_value,
 )
 
-# The procedural starter shader seeded into an empty project on first run (no
-# external media to load, unlike the Media Input template).
+# Procedural starter seeded into an empty project on first run (no external media).
 _STARTER_TEMPLATE_ID = "53724dbd-8efb-4c09-8c7d-28d626a066e7"  # "UV Mango"
 
-# Copilot node-id shortening: the agent sees/passes a short prefix, never the 36-char UUID.
-# 4 chars is collision-free for any realistic project (16^4 = 65536 over a handful of nodes);
-# _copilot_short_ids grows the prefix only on an actual collision.
+# Copilot node-id shortening: 4-char prefix, grown only on an actual collision.
 _COPILOT_SHORT_ID_LEN = 4
 _COPILOT_FULL_ID_LEN = 36
 
-# Authored display order for the node-creator template grid. Filesystem ctime
-# (load_nodes_from_dir's default) is not preserved through git/zip/bundle, so the
-# shipped order would otherwise be arbitrary. Templates not listed sort last.
+# Authored display order for the template grid — filesystem ctime isn't preserved
+# through git/zip/bundle. Templates not listed sort last.
 _TEMPLATE_ORDER = [
     "53724dbd-8efb-4c09-8c7d-28d626a066e7",  # UV Mango
     "73ea2431-13f6-41e4-b923-04d846b678b0",  # Media Input
     "f90f5ff9-29c6-4bcf-aee7-090f20542353",  # Text Rendering
 ]
 
-# Region-cycle order for the keyboard-nav command (feature 019).
+# Region-cycle order for the keyboard-nav command.
 _REGION_CYCLE: tuple[ActiveRegion, ...] = (
     ActiveRegion.EDITOR,
     ActiveRegion.GRID,
@@ -89,8 +85,8 @@ _REGION_CYCLE: tuple[ActiveRegion, ...] = (
 
 
 class PopupState(Enum):
-    # The one open modal popup, or CLOSED. A single field makes the "at most one open" mutex
-    # structural. The command palette is non-modal (App.is_palette_open), not in here.
+    # The one open modal popup, or CLOSED — a single field makes the "at most one open"
+    # mutex structural. The command palette is non-modal (App.is_palette_open), not here.
     CLOSED = "closed"
     NODE_CREATOR = "node_creator"
     SETTINGS = "settings"
@@ -105,16 +101,15 @@ def _order_templates(templates: dict[str, UINode]) -> dict[str, UINode]:
 
 
 def _conversation_stamp() -> str:
-    # Filesystem-safe timestamp for an archived conversation filename (feature 022).
+    # Filesystem-safe timestamp for an archived conversation filename.
     return time.strftime("%Y-%m-%d_%H-%M-%S")
 
 
 @dataclass
 class App:
     def __init__(self, project_dir: Path | None = None) -> None:
-        # Genuine first launch: no project pointer has ever been written, so we'll
-        # fall back to the default project and seed a starter node into it. Opening
-        # an existing/empty project later (via open_project) must NOT seed.
+        # First launch = no project pointer ever written: fall back to the default
+        # project and seed a starter. open_project later must NOT seed.
         is_first_launch = (
             project_dir is None and not self.project_dir_file_path.exists()
         )
@@ -151,35 +146,26 @@ class App:
         glfw.make_context_current(window)
 
         imgui.create_context()
-        # Persist window sizes/positions (the Settings modal, the FREE-mode copilot chat,
-        # etc.) under the app data dir, not the launch CWD — the default writes a stray
-        # imgui.ini there.
+        # Persist imgui layout under the app data dir, not the launch CWD (the default
+        # writes a stray imgui.ini there).
         self._imgui_ini_path: Path = app_data_dir() / "imgui.ini"
         self._imgui_ini_path.parent.mkdir(parents=True, exist_ok=True)
         imgui.get_io().set_ini_filename(str(self._imgui_ini_path))
-        # Steady caret, no blink — applies to imgui input fields and (if honored
-        # by the binding) the TextEditor widget too.
+        # Steady caret, no blink.
         imgui.get_io().config_input_text_cursor_blink = False
-        # App-wide keyboard navigation: Tab/arrows traverse widgets, Space/Enter
-        # activate, arrows drive sliders (feature 019). Confined per-region via
-        # no_nav_inputs in ui.py.
+        # App-wide keyboard navigation. Confined per-region via no_nav_inputs in ui.py.
         imgui.get_io().config_flags |= imgui.ConfigFlags_.nav_enable_keyboard
-        # Esc must NOT clear the nav highlight: by default Esc steps the nav cursor out
-        # one window-containment level per press, highlighting each enclosing window
-        # (cell -> grid -> control_panel -> main window) — reads as "the border climbs
-        # the hierarchy". Keep the highlight pinned in place instead; region/widget
-        # changes are driven by our chords, not Esc.
+        # Esc must NOT clear the nav highlight: by default Esc steps the nav cursor out one
+        # window-containment level per press (cell -> grid -> control_panel -> main),
+        # reading as "the border climbs the hierarchy". Keep it pinned; region/widget
+        # changes are driven by our chords.
         imgui.get_io().config_nav_escape_clear_focus_item = False
         apply_theme(imgui.get_style())
         self.window = window
         self.imgui_renderer = GlfwRenderer(window)
-        # Swallow Esc at the source unless it has an app job. imgui's keyboard-nav
-        # cancel (NavUpdateCancelRequest) steps focus out to the parent window on Esc,
-        # climbing the child-window hierarchy with a highlight (no clean off-switch in
-        # this binding — upstream imgui #8059). We install our own glfw key callback
-        # in front of the renderer's: when Esc has no job (no popup open, editor not
-        # focused), drop it so neither imgui-nav nor our handler sees it; otherwise
-        # delegate so popup-close / editor-defocus + the in-frame _handle_escape work.
+        # imgui #8059: keyboard-nav cancel climbs the child-window hierarchy with a
+        # highlight on Esc, no clean off-switch in this binding. Our glfw key callback
+        # sits in front of the renderer's and swallows Esc when it has no app job.
         self._install_escape_filter()
 
         # glfw cursors driven directly — imgui cursors are no-op in this backend (conventions.md ## Known quirks)
@@ -205,32 +191,30 @@ class App:
         self.exporter_registry.register(YouTubeExporter())
         self.share_tab_state: share_state.TabState | None = None
 
-        # Working set: every node/lib address the agent touched this turn, order-preserved; reset per
-        # turn. Owned by App, accessed by CopilotBackend via callbacks — init'd HERE, above the backend
-        # construction, so those callbacks capture a live attr.
+        # Working set: every node/lib address the agent touched this turn, order-preserved,
+        # reset per turn. Init'd above the backend construction so its callbacks capture a
+        # live attr.
         self._copilot_working_set: list[str] = []
-        # Per-batch mutated-target guard (D9): a line edit to an id already here is rejected (its lines
-        # shifted from an earlier same-batch edit). Cleared before each batch.
+        # Per-batch mutated-target guard: a line edit to an id already here is rejected (its
+        # lines shifted from an earlier same-batch edit). Cleared before each batch.
         self._copilot_batch_mutated: set[str] = set()
 
-        # Copilot (feature 020). Constructed BEFORE the _init below (which calls
-        # release()) so release() never hits a missing attr. The client reads the key/
-        # model LIVE through getters — _init reassigns integrations_store, so capturing
-        # it here would go stale.
+        # Constructed BEFORE the _init below (which calls release()) so release() never hits
+        # a missing attr. The client reads the key/model LIVE through getters — _init
+        # reassigns integrations_store, so capturing it here would go stale.
         self.copilot = CopilotSession(
             caps=self._build_copilot_capabilities(),
             client=OpenRouterLLMClient(
                 get_api_key=lambda: self.integrations_store.copilot.openrouter_key,
                 get_model=lambda: self.integrations_store.copilot.model,
             ),
-            # The trace filename carries the active project's dir name, read live. At
-            # first read (during __init__) project_dir is not yet set -> "project"; the
-            # real slug lands when _init's reset_conversation rotates the trace.
+            # The trace filename carries the active project's dir name, read live. During
+            # __init__ project_dir isn't set yet -> "project"; the real slug lands when
+            # _init's reset_conversation rotates the trace.
             get_project_slug=lambda: getattr(self, "project_dir", Path("project")).name,
         )
-        # Copilot chat is a floating window (NOT a tab/region). open/layout/focus state
-        # lives here; the widget reads it. copilot_focus_pending is the one-shot the
-        # chat input consumes via set_keyboard_focus_here on the next draw.
+        # Copilot chat is a floating window (NOT a tab/region). copilot_focus_pending is
+        # the one-shot the chat input consumes via set_keyboard_focus_here on the next draw.
         self.is_copilot_open: bool = False
         self.copilot_layout: CopilotLayout = CopilotLayout.CORNER
         self.copilot_focus_pending: bool = False
@@ -238,30 +222,28 @@ class App:
         self.copilot_defocus_requested: bool = False
         # True while the mouse is over the open chat window. code.py neutralizes the
         # editor's direct io.mouse_down read so a drag inside the chat doesn't select
-        # editor text beneath it (the TextEditor bypasses imgui hit-testing). One-frame
-        # lag (chat draws after the editor) is harmless — hover precedes a press.
+        # editor text beneath it (the TextEditor bypasses imgui hit-testing).
         self.copilot_hovered: bool = False
-        # True while a copilot turn runs — locks the editor read-only (§11). Set in
-        # copilot_send, reconciled to session.state.in_flight each frame in ui.py.
+        # True while a copilot turn runs — locks the editor read-only. Set in copilot_send,
+        # reconciled to session.state.in_flight each frame in ui.py.
         self.copilot_turn_active: bool = False
         self.copilot_input: str = ""
-        # The editor child's screen rect (pos + size), captured inside the child each
-        # frame so the floating chat window anchors to the CODING AREA above the copilot
-        # bar (not the whole glfw window). (x, y, w, h).
+        # The editor child's screen rect (x, y, w, h), captured inside the child so the
+        # floating chat anchors to the coding area, not the whole glfw window.
         self.editor_rect: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
 
-        # The one open modal popup (feature 023). A single PopupState enum replaces four
-        # mutually-exclusive booleans; the "at most one open" mutex is structural.
+        # A single PopupState enum replaces four mutually-exclusive booleans; the
+        # "at most one open" mutex is structural.
         self.popup_state: PopupState = PopupState.CLOSED
-        # The node-creator popup's inline template-description editor (feature 020·22). Bound to the
-        # selected template's DIR path; closed when the popup opens or the selection changes.
+        # The node-creator popup's inline template-description editor. Bound to the selected
+        # template's DIR path; closed when the popup opens or the selection changes.
         self.template_desc_input: InlineInput = InlineInput()
-        # Command palette (feature 018): a transient floating search box, NOT one
-        # of the modal popups above — excluded from the popup mutex on purpose.
+        # Command palette: a transient floating search box, NOT one of the modal popups
+        # above — excluded from the popup mutex on purpose.
         self.is_palette_open: bool = False
         self.palette_ctx = imcmd.ContextWrapper()
-        # CommandId -> callback (closes over self); effective_bindings is the
-        # spec defaults with the project's rebindings merged over them.
+        # CommandId -> callback (closes over self); effective_bindings is the spec defaults
+        # with the project's rebindings merged over them.
         self.command_callbacks: dict[CommandId, Callable[[], None]] = {}
         self.effective_bindings: dict[CommandId, int] = {}
         # Snapshot of template ids for the palette's two-step "New node" prompt
@@ -272,16 +254,13 @@ class App:
         self._palette_command_names: list[str] = []
         # CommandId currently capturing a new chord in the rebinder (None = idle).
         self.rebinding_command: CommandId | None = None
-        # Keyboard-nav focus model (feature 019): which of the three regions owns
-        # nav, which settings tab is active. Transient (reset each launch). Start on
-        # the node grid (the editor auto-grabs focus on first render but is defocused
-        # below; we latch the grid so launch lands on a sensible nav region).
+        # Which of the three regions owns nav. Transient (reset each launch). Start on the
+        # grid (the editor auto-grabs focus on first render but is defocused below).
         self.active_region: ActiveRegion = ActiveRegion.GRID
         self.active_node_tab: NodeTab = NodeTab.NODE
-        # One-shots: a region-switch / tab-jump requested this frame. The owning
-        # draw fn latches focus (set_next_window_focus) / drives the tab
-        # (set_selected) then the flag is cleared. Start pending so the grid grabs
-        # focus on the first frame.
+        # One-shots: a region-switch / tab-jump requested this frame. The owning draw fn
+        # latches focus (set_next_window_focus) / drives the tab (set_selected), then clears
+        # the flag. Start pending so the grid grabs focus on the first frame.
         self.region_focus_pending: bool = True
         self.node_tab_select_pending: bool = False
         self.emoji_picker_query: str = ""
@@ -289,47 +268,41 @@ class App:
         self.emoji_pick_target: Callable[[str], None] | None = None
         self.node_delete_armed: str = ""  # node id pending delete-confirm
         # A Render-tab render deferred one frame so the "Rendering..." cue paints before the
-        # encode freezes the loop (the render runs synchronously on the main thread). Set by the
-        # Render button; update_and_draw holds it one frame (cue paints), then runs + clears it.
-        # None = nothing pending. render_request_shown records that the one cue frame was spent.
+        # synchronous main-thread encode freezes the loop. update_and_draw holds it one frame
+        # (cue paints), then runs + clears it. render_request_shown records the cue frame.
         self.render_request: Callable[[], None] | None = None
         self.render_request_shown: bool = False
         self.editor_focused: bool = False
-        # Sticky variant: stays True while the editor is a real interaction
-        # target (even after focus is lost to a transient popup / menu / picker).
-        # Cleared ONLY by explicit defocus (Esc, arrow nav). Used by the lib
-        # picker to gate Insert at caret — `editor_focused` itself is False
-        # while the picker is open (the picker steals focus), and
-        # `current_editor_path is not None` is too lax (a freshly-selected node
-        # has a session but the user never typed into it, so insert would land
-        # at (0,0)).
+        # Sticky variant: stays True while the editor is a real interaction target (even
+        # after focus is lost to a transient popup / menu / picker). Cleared ONLY by explicit
+        # defocus (Esc, arrow nav). The lib picker gates Insert-at-caret on it — `editor_focused`
+        # is False while the picker holds focus, and `current_editor_path is not None` is too
+        # lax (a freshly-selected node has a session the user never typed into -> insert at (0,0)).
         self.editor_was_ever_focused: bool = False
-        # Start in navigation mode: defocus the editor on its first render so the
-        # caret isn't active and arrows navigate nodes (the editor auto-grabs focus).
+        # Start in navigation mode: defocus the editor on its first render (it auto-grabs
+        # focus) so arrows navigate nodes.
         self.editor_defocus_requested: bool = True
-        # One-shot focus request (mirror of defocus): after a lib-function insert,
-        # the picker closes and the editor must re-grab focus with the caret left
-        # where the insert ended. tabs/code.py honors + clears it on the next render.
+        # One-shot focus request (mirror of defocus): after a lib-function insert the picker
+        # closes and the editor must re-grab focus, caret where the insert ended. tabs/code.py
+        # honors + clears it on the next render.
         self.editor_focus_requested: bool = False
-        # Path-tagged jump request for tabs/code.py to honor next render — the consumer
-        # gates on `path == current_editor_path` so an error in a non-active file
-        # doesn't move the active editor's caret. Cleared on consume.
+        # Path-tagged jump request for tabs/code.py to honor next render — the consumer gates
+        # on `path == current_editor_path` so an error in a non-active file doesn't move the
+        # active editor's caret. Cleared on consume.
         self.editor_jump_request: JumpRequest | None = None
-        # Transient: declaration line to mark in the gutter while a uniform control is
-        # hovered. Re-set every frame by widgets/uniform.py (None when nothing hovered).
+        # Transient: declaration line to mark in the gutter while a uniform control is hovered.
+        # Re-set every frame by widgets/uniform.py (None when nothing hovered).
         self.editor_hover_line: HoverMark | None = None
-        # Transient: uniform name hovered in the code editor this frame, so its panel
-        # row highlights. Set by tabs/code.py (drawn before the panel), "" when none.
+        # Transient: uniform name hovered in the code editor this frame, so its panel row
+        # highlights. Set by tabs/code.py (drawn before the panel), "" when none.
         self.code_hovered_uniform: str = ""
         self.global_fps = 0.0
         self.fps_details_open: bool = False
-        # The editor↔panel splitter drag. `splitter_dragging` is computed SAME-FRAME
-        # in update_and_draw (before the editor draws) so tabs/code.py can neutralize
-        # the editor's mouse for its render — the TextEditor reads io.mouse_down
-        # directly (bypassing imgui's disabled/active-id), so the drag sweep would
-        # otherwise select text. `_press_on_splitter` latches on the press frame and
-        # holds until release, covering the whole drag even as the cursor sweeps off
-        # the splitter onto the editor.
+        # The editor↔panel splitter drag. `splitter_dragging` is computed SAME-FRAME in
+        # update_and_draw (before the editor draws) so tabs/code.py can neutralize the editor's
+        # mouse — the TextEditor reads io.mouse_down directly (bypassing imgui's disabled/active-id),
+        # so the drag sweep would otherwise select text. `_press_on_splitter` latches on the press
+        # frame and holds until release, covering the drag even as the cursor sweeps onto the editor.
         self.splitter_dragging: bool = False
         self._splitter_press_on_splitter: bool = False
 
@@ -343,8 +316,7 @@ class App:
         # `open_shader_lib_file`; never cleared by `show_node_editor`.
         self.last_shader_lib_path: Path | None = None
 
-        # The currently-active library index. Populated by rebuild_shader_lib_index()
-        # (called from _init below + the mtime watcher on lib changes).
+        # The currently-active library index. Populated by rebuild_shader_lib_index().
         self.shader_lib_index: ShaderLibIndex = ShaderLibIndex.empty()
         # Cross-project favorites (function names the user has starred).
         self.shader_lib_favorites: ShaderLibFavoritesStore = (
@@ -352,15 +324,14 @@ class App:
         )
         # Cross-project tags (function_name -> set of tag strings).
         self.shader_lib_tags: ShaderLibTagsStore = ShaderLibTagsStore.load()
-        # Cross-project user overrides for template descriptions (feature 020·22) — loaded ONCE here
-        # (a global store survives open_project, unlike per-project state).
+        # Cross-project template-description overrides — loaded ONCE here (a global store
+        # survives open_project, unlike per-project state).
         self.template_descriptions: TemplateDescriptionsStore = (
             TemplateDescriptionsStore.load()
         )
 
-        # Shader-library file CRUD + picker inline-input/filter state. Owns the
-        # file operations; editor-session cleanup flows back via the two
-        # callbacks (App's editor domain).
+        # Shader-library file CRUD + picker inline-input/filter state. Owns the file
+        # operations; editor-session cleanup flows back via the two callbacks.
         self.shader_lib_files = ShaderLibFileManager(
             notifications=self.notifications,
             rebuild_index=self.rebuild_shader_lib_index,
@@ -381,15 +352,14 @@ class App:
             window: Any, key: int, scancode: int, action: int, mods: int
         ) -> None:
             if key == glfw.KEY_ESCAPE and not self.escape_has_job():
-                return  # swallow: no popup/editor to dismiss, leave nav untouched
+                return  # swallow: nothing to dismiss, leave nav untouched
             renderer_cb(window, key, scancode, action, mods)
 
         glfw.set_key_callback(self.window, key_callback)
 
     def escape_has_job(self) -> bool:
         # Esc is meaningful only to dismiss a popup/palette, drop the editor caret, or
-        # defocus the chat. Otherwise it's swallowed before imgui sees it (see
-        # _install_escape_filter).
+        # defocus the chat. Otherwise it's swallowed before imgui sees it.
         return (
             self.any_popup_open()
             or self.is_palette_open
@@ -418,8 +388,8 @@ class App:
 
     def _build_copilot_capabilities(self) -> CopilotCapabilities:
         # Construct the CopilotBackend and bind its methods into the capabilities dataclass.
-        # Project-dependent deps are getters (a project switch retargets them); deps that reference
-        # self.copilot are lazy (it doesn't exist yet); working-set/batch state stays App-owned.
+        # Project-dependent deps are getters (a project switch retargets them); deps that
+        # reference self.copilot are lazy (it doesn't exist yet).
         self.copilot_backend = CopilotBackend(
             get_bridge=lambda: self.copilot.bridge,
             node_templates_dir=self.node_templates_dir,
@@ -476,9 +446,8 @@ class App:
         )
 
     def template_description(self, template_uuid: str) -> str:
-        # The effective description for a template (feature 020·22): the user override if present, else
-        # the shipped node.json default. The in-memory ui_state is NOT mutated (so a 'reset' = delete the
-        # sidecar key), and both the agent catalogue + the popup read through here.
+        # Effective description: the user override if present, else the shipped node.json
+        # default. ui_state is NOT mutated, so a 'reset' = delete the sidecar key.
         override = self.template_descriptions.get(template_uuid)
         if override is not None:
             return override
@@ -486,15 +455,15 @@ class App:
         return ui_node.ui_state.description if ui_node is not None else ""
 
     def _copilot_ws_add(self, address: str) -> None:
-        # Add a node full-id or "lib:" address to the working set, order-preserved, no duplicates
-        # (feature 020·29). Called from the read + every edit-applier success.
+        # Add a node full-id or "lib:" address to the working set, order-preserved, no
+        # duplicates.
         if address not in self._copilot_working_set:
             self._copilot_working_set.append(address)
 
     def recover_deleted_node(self, msg: Message) -> None:
-        # MAIN THREAD (the chat's Recover button, feature 020·17). Restore the node, flip the
-        # card's one-shot, persist so the flip survives a reopen. A pure user-side undo — the
-        # worker isn't involved and the agent never learns (it re-reads the live map next turn).
+        # MAIN THREAD (the chat's Recover button). Restore the node, flip the card's
+        # one-shot, persist so the flip survives a reopen. A pure user-side undo — the
+        # worker isn't involved.
         if msg.recover is None or msg.recover.done:
             return
         ok = self.restore_node_from_trash(msg.recover.trash_name, msg.recover.node_id)
@@ -506,20 +475,18 @@ class App:
             self.notifications.push("Node is no longer in trash — can't recover")
         self.copilot.save_conversation(self.copilot_conversation_path)
 
-    # ---- render / publish (feature 020·18) ----
+    # ---- render / publish ----
 
     def _register_palette_commands(self) -> None:
-        # One entry per palette-eligible command; the name carries the chord so the
-        # palette reads as the same list as the cheatsheet. The initial_callback
-        # runs the SAME verb the chord dispatch uses. "New node" is a two-step
-        # command: initial prompts for a template, subsequent creates the picked one.
-        # Re-registerable: a rebind re-runs this so the shown chords stay live.
+        # One entry per palette-eligible command; the name carries the chord so the palette
+        # reads as the same list as the cheatsheet. "New node" is two-step: initial prompts
+        # for a template, subsequent creates the picked one. Re-run on a rebind so the shown
+        # chords stay live.
         for name in self._palette_command_names:
             imcmd.remove_command(name)
         self._palette_command_names = []
         palette_specs = [spec for spec in COMMAND_SPECS if spec.in_palette]
-        # Pad labels to a common width so the chord column lines up (the palette
-        # renders names in a fixed-width font).
+        # Pad labels to a common width so the chord column lines up.
         label_w = max(len(spec.label) for spec in palette_specs)
         for spec in palette_specs:
             chord = self.effective_bindings.get(spec.id, 0)
@@ -576,10 +543,8 @@ class App:
 
     def toggle_copilot(self) -> None:
         # Ctrl+J (keyboard): closed -> open + focus; open & focused -> close; open &
-        # unfocused -> focus it. The focus-aware branch only works from the keyboard,
-        # where focus is still in the chat. (The BAR BUTTON uses toggle_copilot_open
-        # instead — a click moves focus to the bar, so copilot_focused already reads
-        # False here and this would wrongly re-open. See toggle_copilot_open.)
+        # unfocused -> focus it. Focus-aware, so keyboard-only — the bar button uses
+        # toggle_copilot_open (a click already moved focus off the chat).
         if not self.is_copilot_open:
             self.is_copilot_open = True
             self.focus_copilot()
@@ -589,24 +554,21 @@ class App:
             self.focus_copilot()
 
     def toggle_copilot_open(self) -> None:
-        # The bar button: a plain open/close toggle on is_copilot_open. NOT focus-aware
-        # (a click on the button already moved focus off the chat, so the focus-aware
-        # toggle_copilot would blink it back open).
+        # The bar button: a plain open/close toggle, NOT focus-aware (a click already moved
+        # focus off the chat, so the focus-aware toggle_copilot would blink it back open).
         self.is_copilot_open = not self.is_copilot_open
         if self.is_copilot_open:
             self.focus_copilot()
 
     def focus_copilot(self) -> None:
         # Only arm the chat's focus latch. Do NOT set editor_defocus_requested: the editor
-        # yields on its own when the chat becomes the focused window (its is_window_focused
-        # reads False; the TextEditor auto-grab is first-render-only). editor_defocus_requested
-        # is consumed by code.py via set_window_focus(None) — a GLOBAL NavWindow clear that
-        # fires a frame later and would steal the chat's just-acquired focus (the blink).
+        # yields on its own when the chat takes focus, and that flag drives a GLOBAL
+        # set_window_focus(None) a frame later that would steal the chat's focus (the blink).
         self.copilot_focus_pending = True
 
     def copilot_send(self, text: str) -> None:
-        # MAIN THREAD. Flush + lock the editor (§11) BEFORE the worker reads source, so
-        # its first read_shader sees disk-consistent state.
+        # MAIN THREAD. Flush + lock the editor BEFORE the worker reads source, so its first
+        # read_shader sees disk-consistent state.
         if not text.strip():
             return
         if self.copilot.state.in_flight:
@@ -616,16 +578,14 @@ class App:
         logger.debug(f"copilot_send: enqueuing {preview!r}")
         self.flush_current_editor()
         self.copilot_turn_active = True
-        # A fresh working set per turn (feature 020·29): the scratchpad starts empty + accretes the
-        # nodes/libs this turn touches, rebuilt from live source each iteration.
+        # A fresh working set per turn — starts empty, accretes the nodes/libs this turn touches.
         self._copilot_working_set = []
         self.copilot.enqueue_turn(text)
 
     def copilot_clear_chat(self) -> None:
-        # Archive the current conversation (recoverable, not destroyed — Q1), then reset to
-        # a fresh empty chat + write an empty conversation.json (feature 022). Gated on
-        # not-in-flight at the UI (the clear button is disabled mid-turn), so the worker is
-        # idle here — same invariant reset_conversation relies on.
+        # Archive the current conversation (recoverable), then reset to a fresh empty chat +
+        # write an empty conversation.json. Gated on not-in-flight at the UI, so the worker
+        # is idle here — the invariant reset_conversation relies on.
         if self.copilot.state.in_flight:
             return
         archive_conversation(self.copilot_conversation_path, _conversation_stamp())
@@ -633,8 +593,8 @@ class App:
         self.copilot.save_conversation(self.copilot_conversation_path)
 
     def _copilot_busy_blocked(self, action: str) -> bool:
-        # True (+ a notification) when an action that mutates the editor/node target must be
-        # refused because a copilot turn is in flight (§15 A). The turn owns the current node.
+        # True (+ a notification) when an editor/node-mutating action must be refused because
+        # a copilot turn is in flight (it owns the current node).
         if self.copilot_turn_active:
             self.notifications.push(
                 f"{action} is locked while the assistant is working"
@@ -652,12 +612,10 @@ class App:
         self._set_region(ActiveRegion.PANEL)
 
     def focus_move_in_flight(self) -> bool:
-        # A chord-driven region focus move hasn't landed yet (the set_next_window_focus
-        # latch / editor set_focus takes effect a frame later). While in flight, the
-        # live-focus derive of active_region must NOT run — focus still reads as the
-        # OLD region for a frame, which would revert the chord's target and break
-        # cycling. Mouse-click focus changes have no pending flag, so the derive
-        # corrects active_region for those.
+        # A chord-driven region focus move hasn't landed yet (the latch takes effect a frame
+        # later). While in flight the live-focus derive of active_region must NOT run — focus
+        # still reads the OLD region for a frame, reverting the chord's target and breaking
+        # cycling. Mouse-click changes have no pending flag, so the derive corrects them.
         return self.region_focus_pending or self.editor_focus_requested
 
     def _set_region(self, region: ActiveRegion) -> None:
@@ -675,9 +633,8 @@ class App:
                 self.editor_defocus_requested = True
 
     def select_node(self, node_id: str) -> None:
-        # Picking a node from the grid switches the current node. If the grid owns
-        # keyboard focus, keep it there: the new node's editor auto-grabs focus on its
-        # first render (TextEditor.render() quirk), so defocus it and re-latch the grid.
+        # If the grid owns keyboard focus, keep it there: the new node's editor auto-grabs
+        # focus on its first render (TextEditor quirk), so defocus it and re-latch the grid.
         if self._copilot_busy_blocked("Switching nodes"):
             return
         self.set_current_node_id(node_id)
@@ -686,16 +643,14 @@ class App:
             self.region_focus_pending = True
 
     def rebind_command(self, command_id: CommandId, chord: int) -> None:
-        # Maintain key_bindings as a diff-only dict: store only chords that differ
-        # from the spec default; reset-to-default drops the key. Re-merge so the
-        # change takes effect this frame, not after restart.
+        # key_bindings is diff-only: store only chords that differ from the spec default;
+        # reset-to-default drops the key. Re-merge so the change takes effect this frame.
         default = SPEC_BY_ID[command_id].default_chord
         if chord == default:
             self.app_state.key_bindings.pop(command_id.value, None)
         else:
             self.app_state.key_bindings[command_id.value] = chord
         self._merge_effective_bindings()
-        # Refresh the palette entries so their shown chords match the new binding.
         self._register_palette_commands()
 
     def _merge_effective_bindings(self) -> None:
@@ -709,10 +664,10 @@ class App:
 
     def open_node_creator(self) -> None:
         self.popup_state = PopupState.NODE_CREATOR
-        self.template_desc_input.close()  # no stale in-flight description editor on reopen (020·22)
+        self.template_desc_input.close()  # no stale description editor on reopen
 
     def set_template_description(self, template_uuid: str, description: str) -> None:
-        # On-change persist of a user-edited template description to the sidecar (feature 020·22).
+        # On-change persist of a user-edited template description to the sidecar.
         self.template_descriptions.set(template_uuid, description)
 
     def open_settings(self) -> None:
@@ -724,10 +679,8 @@ class App:
         self.emoji_picker_query = ""
 
     def open_shader_lib_picker(self) -> None:
-        # Insert-at-caret is gated inside the picker on `current_editor_path is
-        # not None` (a real editor target exists). The picker derives
-        # `shader_lib_picker_just_opened` from imgui's `is_window_appearing()` on its
-        # first frame.
+        # The picker derives `shader_lib_picker_just_opened` from imgui's
+        # `is_window_appearing()` on its first frame.
         self.reset_shader_lib_inline_state()
         self.popup_state = PopupState.SHADER_LIB_PICKER
         self.shader_lib_picker_query = ""
@@ -743,10 +696,9 @@ class App:
         return path
 
     # ----------------------------------------------------------------
-    # Shader-library picker state — delegated to self.shader_lib_files so the
-    # picker UI keeps its `app.shader_lib_*` access while the state lives on the
-    # manager. Mutable objects (inline inputs, disabled_tags) are accessed in
-    # place; scalars get read/write delegation.
+    # Shader-library picker state — delegated to self.shader_lib_files so the picker UI
+    # keeps its `app.shader_lib_*` access while the state lives on the manager. Mutable
+    # objects accessed in place; scalars get read/write delegation.
     # ----------------------------------------------------------------
 
     @property
@@ -863,8 +815,8 @@ class App:
 
     @property
     def renders_dir(self) -> Path:
-        # Copilot render outputs (feature 020·18) — user artifacts the agent produced on
-        # request, so durable inside the project dir, NOT the transient exporter_scratch.
+        # Copilot render outputs — durable user artifacts inside the project dir, NOT the
+        # transient exporter_scratch.
         return self._create_dir_if_needed(self.project_dir / "renders")
 
     @property
@@ -889,9 +841,8 @@ class App:
         return self.ui_nodes[node_id].ui_state
 
     def set_current_node_id(self, id: str = "") -> None:
-        # Switching nodes invalidates the "user has been typing in the editor"
-        # sticky bit — the new node's session starts fresh; insertions would
-        # land at (0,0) until the user actually clicks into it.
+        # Switching nodes invalidates the "user has been typing" sticky bit — the new node's
+        # session starts fresh; insertions would land at (0,0) until the user clicks into it.
         if id != self.app_state.current_node_id:
             self.editor_was_ever_focused = False
         self.app_state.current_node_id = id
@@ -914,9 +865,8 @@ class App:
         logger.info(f"Project loaded: {self.project_dir}")
 
         # ----------------------------------------------------------------
-        # Build the lib index before loading nodes — every node's first compile
-        # (warm-up in load_from_dir → render → compile → resolve_usage) reads
-        # the active index.
+        # Build the lib index before loading nodes — every node's first compile (warm-up
+        # in load_from_dir) reads the active index.
         self.rebuild_shader_lib_index()
 
         # ----------------------------------------------------------------
@@ -926,9 +876,8 @@ class App:
             load_nodes_from_dir(self.node_templates_dir)
         )
 
-        # First launch only: seed a starter node into the empty default project so
-        # the user lands on a live, editable shader. NOT on open_project (which would
-        # pollute a folder the user picked expecting it empty).
+        # First launch only: seed a starter into the empty default project. NOT on
+        # open_project (which would pollute a folder the user picked expecting it empty).
         if seed_starter and not self.ui_nodes:
             self._seed_starter_node()
 
@@ -936,16 +885,15 @@ class App:
         # Load ui state
         if self.app_state_file_path.exists():
             self.app_state = UIAppState.load_and_migrate(self.app_state_file_path)
-        # Merge the project's key rebindings over the spec defaults (app_state was
-        # just replaced, so the effective map must be recomputed per project).
+        # app_state was just replaced, so the effective binding map is recomputed per project.
         self._merge_effective_bindings()
-        # Restore the persisted layout prefs into the live working attrs (the App holds
-        # the live copies; save() mirrors them back). active_region stays transient.
+        # Restore persisted layout prefs into the live attrs (save() mirrors them back).
+        # active_region stays transient.
         self.active_node_tab = self.app_state.active_node_tab
         self.is_copilot_open = self.app_state.is_copilot_open
         self.copilot_layout = self.app_state.copilot_layout
-        # Drive imgui's tab bar to the restored tab on the first frame — set_selected
-        # only fires while this one-shot is set (else imgui defaults to the first tab).
+        # Drive imgui's tab bar to the restored tab on the first frame — set_selected only
+        # fires while this one-shot is set (else imgui defaults to the first tab).
         self.node_tab_select_pending = True
 
         # ----------------------------------------------------------------
@@ -973,11 +921,9 @@ class App:
         if isinstance(telegram, TelegramExporter):
             telegram.set_default_pack(self.app_state.telegram_default_pack)
 
-        # Reset to a clean slate, then restore the INCOMING project's conversation
-        # (feature 022 — the outgoing one was saved in release() at the top of _init).
-        # The client reads the reloaded integrations_store live, so no re-wire is needed.
-        # Guarded for the first _init, which runs during __init__ right after copilot is
-        # constructed.
+        # Reset, then restore the INCOMING project's conversation (the outgoing one was
+        # saved in release() at the top of _init). The client reads the reloaded
+        # integrations_store live, so no re-wire. Guarded for the first _init.
         if hasattr(self, "copilot"):
             self.copilot.reset_conversation()
             store = ConversationStore.load_and_migrate(self.copilot_conversation_path)
@@ -991,9 +937,8 @@ class App:
         )
 
     def get_emoji_font(self, size: int) -> Any:
-        # Monochrome glyphs only — this imgui-bundle build can't rasterize color
-        # emoji (conventions.md ## Known quirks). Added at atlas-build time, never
-        # lazily mid-frame.
+        # Monochrome glyphs only — this imgui-bundle build can't rasterize color emoji
+        # (conventions.md ## Known quirks). Added at atlas-build time, never mid-frame.
         fonts = imgui.get_io().fonts
         return fonts.add_font_from_file_ttf(
             str(RESOURCES_DIR / "fonts" / "NotoEmoji" / "NotoEmoji-Regular.ttf"),
@@ -1012,15 +957,11 @@ class App:
         return self.ui_nodes[node_id].node.source.path
 
     def open_shader_lib_file(self, path: Path) -> EditorSession:
-        # Lazy-create or focus a session on a lib file path; switch the editor
-        # to show it. The picker (popup) and the tab bar both use this.
+        # Lazy-create or focus a session on a lib file path; switch the editor to show it.
         source = ShaderSource.load(path)
         session = self.get_session(source)
-        # If the session already existed, its `source` may be stale (a previous
-        # mtime sync would have refreshed it; either way it's safe to leave).
         if self._explicit_editor_path != source.path:
-            # Target changed — the sticky "user was typing" bit no longer
-            # applies to the new file's caret.
+            # Target changed — the sticky "user was typing" bit no longer applies.
             self.editor_was_ever_focused = False
         self._explicit_editor_path = source.path
         # Remember the lib for the "back to lib" shortcut in node-editor mode.
@@ -1028,15 +969,14 @@ class App:
         return session
 
     def show_node_editor(self) -> None:
-        # Drop the lib-file override so the editor falls back to the current
-        # node's shader. Called from the tab bar / node-switch path.
+        # Drop the lib-file override so the editor falls back to the current node's shader.
         if self._explicit_editor_path is not None:
             self.editor_was_ever_focused = False
         self._explicit_editor_path = None
 
     def get_session(self, source: ShaderSource) -> EditorSession:
-        # Lazy-create a session bound to this source's path. The path is the
-        # stable identity; `source.text` is used as the initial buffer text.
+        # Lazy-create a session bound to this source's path (the stable identity);
+        # `source.text` is the initial buffer text.
         session = self.editor_sessions.get(source.path)
         if session is None:
             editor = text_edit.TextEditor()
@@ -1072,9 +1012,7 @@ class App:
 
     def rebuild_shader_lib_index(self) -> None:
         # Walk shader_lib_root, extract every top-level function, publish via the
-        # module-level accessor that Node.compile() reads. Cheap (a sorted glob
-        # + ~150 lines/sec regex parse); called once at boot and again whenever
-        # the watcher detects a lib file change.
+        # module-level accessor that Node.compile() reads.
         self.shader_lib_index = ShaderLibIndex.build(shader_lib_root())
         set_active_lib_index(self.shader_lib_index)
         logger.debug(f"Lib index: {len(self.shader_lib_index.functions)} functions")
@@ -1086,8 +1024,8 @@ class App:
         return session.editor.get_undo_index() != session.saved_undo
 
     def get_current_session_if_exists(self) -> EditorSession | None:
-        # Non-creating variant — for callers that read state but mustn't spawn
-        # a session as a side effect (e.g. the dirty-check during render).
+        # Non-creating variant — for callers that read state but mustn't spawn a session as
+        # a side effect (e.g. the dirty-check during render).
         path = self.current_editor_path
         if path is None:
             return None
@@ -1101,15 +1039,15 @@ class App:
         node = self.ui_nodes[node_id].node
         text = session.editor.get_text()
         if session.source.path == node.source.path:
-            # Saving the node's own shader: replace its source, drop the program;
-            # the next render's compile() picks up the new text + re-resolves.
+            # Saving the node's own shader: replace its source, drop the program; the next
+            # render's compile() picks up the new text + re-resolves.
             node.release_program(text)
-            # Re-render to bind a valid program — a freed program left GL-current crashes the imgui renderer's restore (GLError 1281)
+            # Re-render to bind a valid program — a freed program left GL-current crashes
+            # the imgui renderer's restore (GLError 1281).
             node.render()
         else:
-            # Saving a lib file: write it to disk. The mtime watcher will detect
-            # the change next frame, rebuild the lib index, and invalidate every
-            # node that depends on it.
+            # Saving a lib file: write to disk. The mtime watcher detects the change next
+            # frame, rebuilds the lib index, and invalidates every dependent node.
             try:
                 session.source.path.write_text(text, encoding="utf-8")
             except OSError as e:
@@ -1118,8 +1056,8 @@ class App:
         session.saved_undo = session.editor.get_undo_index()
 
     def sync_editor_from_disk(self, node_id: str, source: str) -> None:
-        # Called by the mtime watcher. The node's source.path is still the same
-        # (only the text/mtime change), so we look the session up by that path.
+        # Called by the mtime watcher. The node's source.path is unchanged (only text/mtime),
+        # so look the session up by that path.
         if node_id not in self.ui_nodes:
             return
         path = self.ui_nodes[node_id].node.source.path
@@ -1147,10 +1085,9 @@ class App:
             logger.error(f"Failed to open directory {node_dir}: {e}")
 
     # ----------------------------------------------------------------
-    # Shader-library file CRUD — delegated to self.shader_lib_files. The picker
-    # UI calls these `app.*` wrappers; the logic + state live on the manager.
-    # The two callbacks below are App's editor-session cleanup (the manager's
-    # one reach back into the editor domain).
+    # Shader-library file CRUD — delegated to self.shader_lib_files. The picker UI calls
+    # these `app.*` wrappers; the logic + state live on the manager. The two callbacks
+    # below are App's editor-session cleanup, reached back into from the manager.
     # ----------------------------------------------------------------
 
     def _on_shader_lib_paths_removed(self, paths: list[Path]) -> None:
@@ -1168,8 +1105,8 @@ class App:
                 self.editor_jump_request = None
 
     def _on_shader_lib_path_renamed(self, old: Path, new: Path) -> None:
-        # Re-key the open EditorSession (if any) so future writes target the new
-        # path; the editor's text is untouched.
+        # Re-key the open EditorSession (if any) so future writes target the new path;
+        # the editor's text is untouched.
         session = self.editor_sessions.pop(old, None)
         if session is not None:
             session.source = replace(session.source, path=new)
@@ -1284,24 +1221,19 @@ class App:
         self.app_state.save(self.app_state_file_path)
 
     def save_imgui_ini(self) -> None:
-        # Force-flush imgui's own layout file (FREE-mode chat size/pos, window positions,
-        # the settings-modal size). imgui otherwise only autosaves on a 5s timer when its
-        # settings go dirty — so a resize-then-quick-quit would be lost. Called at
-        # shutdown so the last layout always persists.
+        # Force-flush imgui's layout file at shutdown. imgui otherwise only autosaves on a
+        # 5s dirty timer, so a resize-then-quick-quit would be lost.
         imgui.save_ini_settings_to_disk(str(self._imgui_ini_path))
 
     def release(self) -> None:
-        # Persist the OUTGOING project's conversation before the worker is torn down
-        # (feature 022). Runs at the top of _init (project switch — project_dir still the
-        # outgoing one) and at app shutdown. Guarded: skipped on the first _init (no
-        # project_dir yet) and when copilot was never constructed.
+        # Persist the OUTGOING project's conversation before the worker is torn down. Runs at
+        # the top of _init (project switch — project_dir still the outgoing one) and at
+        # shutdown. Guarded: skipped on the first _init (no project_dir / copilot yet).
         if hasattr(self, "copilot") and hasattr(self, "project_dir"):
             self.copilot.save_conversation(self.copilot_conversation_path)
 
-        # Copilot first: cancel_all() + join() before the node release below, so a
-        # queued GL op can't run against half-released nodes. Guarded like
-        # preview_canvas — _init calls release() and self.copilot is set just before
-        # the first _init, but the guard keeps the contract robust to reordering.
+        # Copilot first: cancel_all() + join() BEFORE the node release below, so a queued GL
+        # op can't run against half-released nodes.
         if hasattr(self, "copilot"):
             self.copilot.release()
 
@@ -1337,8 +1269,8 @@ class App:
         self.delete_node(self.current_node_id)
 
     def delete_node(self, node_id: str) -> None:
-        # The guarded public path (node grid / hotkeys). The copilot calls the unguarded
-        # body via _copilot_delete_node — its own mid-turn delete must bypass the busy gate.
+        # The guarded public path (node grid / hotkeys). The copilot calls the unguarded body
+        # directly — its mid-turn delete must bypass the busy gate.
         if self._copilot_busy_blocked("Deleting a node"):
             return
         if not node_id or node_id not in self.ui_nodes:
@@ -1346,10 +1278,9 @@ class App:
         self._delete_node_unguarded(node_id)
 
     def _delete_node_unguarded(self, node_id: str) -> str:
-        # The teardown shared by the public delete + the copilot delete: release GL, drop the
-        # editor session, reselect current, move the dir to trash. Returns the trash dir-NAME
-        # (id, or id_<ts> on collision) so a caller can offer a Recover. Caller guarantees
-        # node_id is in ui_nodes.
+        # Teardown shared by the public + copilot delete: release GL, drop the editor session,
+        # reselect current, move the dir to trash. Returns the trash dir-NAME (id, or id_<ts>
+        # on collision) so a caller can offer a Recover. Caller guarantees node_id in ui_nodes.
         new_node_id = select_next_value(
             values=list(self.ui_nodes.keys()),
             current_value=node_id,
@@ -1378,9 +1309,9 @@ class App:
         return trash_name
 
     def restore_node_from_trash(self, trash_name: str, node_id: str) -> bool:
-        # Recover a copilot-deleted node from trash (feature 020·17). Move FIRST, then load —
-        # so the loaded id is the dir-name node_id, not the trashed id_<ts>. False (graceful
-        # no-op) if the trash dir was cleared or the dest id is occupied.
+        # Recover a copilot-deleted node from trash. Move FIRST, then load — so the loaded id
+        # is the dir-name node_id, not the trashed id_<ts>. False (graceful no-op) if the
+        # trash dir was cleared or the dest id is occupied.
         src = self.trash_dir / trash_name
         if not src.exists():
             return False

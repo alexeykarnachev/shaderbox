@@ -1,13 +1,10 @@
 """A minimal GLSL tokenizer + whitespace-invariant token-stream matcher.
 
-The copilot's `edit_shader` matches an `old_str` against the live shader source. A
-byte-exact match (`str.count`/`str.replace`) fails when the model reproduces a region
-correctly token-for-token but indents it differently. `token_match` lexes both sides and
-compares the token streams, ignoring only inter-token whitespace, so a whitespace-divergent
-copy still locates. The returned spans index the EXACT original bytes — replacement splices
-in place and never touches the file's own formatting.
+`token_match` lexes both sides and compares token streams, ignoring inter-token
+whitespace, so a whitespace-divergent copy still locates. Returned spans index the
+EXACT original bytes — replacement splices in place without touching formatting.
 
-Leaf: no GL, no imgui, no App, no copilot-package imports. Spec: feature 020 · 13.
+Leaf: no GL, no imgui, no App, no copilot-package imports.
 """
 
 import re
@@ -25,21 +22,20 @@ class TokenKind(StrEnum):
 @dataclass(frozen=True)
 class Token:
     kind: TokenKind
-    raw: str  # verbatim source slice — compared as-is, never canonicalized (I3)
+    raw: str  # verbatim source slice — compared as-is, never canonicalized
     start: int  # byte offset into the lexed source
     end: int
 
 
-# Number sub-grammars, tried hex-first (the `f`/`e` in 0xFe/0xFF are hex digits, never a
-# float suffix/exponent). The float branch's `[+-]` is reachable ONLY after `e`/`E`, so a
-# bare leading `-` stays subtraction (`a-1` -> a, -, 1) and `1.0e-3` keeps its exponent
-# sign in one token. A lone `.` not followed by a digit falls through to PUNCT.
+# Number sub-grammars, hex-first (the `f`/`e` in 0xFe are hex digits, not a float suffix).
+# Float `[+-]` is reachable only after `e`/`E`: a bare leading `-` stays subtraction
+# (`a-1` -> a, -, 1). A lone `.` not followed by a digit falls through to PUNCT.
 _HEX_RE = re.compile(r"0[xX][0-9a-fA-F]+[uU]?")
 _FLOAT_RE = re.compile(r"(?:\d+\.\d*|\.\d+|\d+)(?:[eE][+-]?\d+)?(?:lf|LF|[uUfF])?")
 
 _IDENT_RE = re.compile(r"[A-Za-z_]\w*")
 
-# Multi-char operators, longest-first (maximal munch, I2). Single chars handle the rest.
+# Multi-char operators, longest-first (maximal munch). Single chars handle the rest.
 _MULTI_PUNCT: tuple[str, ...] = (
     "<<=",
     ">>=",
@@ -65,9 +61,9 @@ _MULTI_PUNCT: tuple[str, ...] = (
 
 
 def _skip_trivia(src: str, i: int, n: int) -> int:
-    # Advance past whitespace and comments POSITIONALLY (never a re.sub pre-strip — that
-    # would break token spans). GLSL comment rules (also in shader_lib/parser.strip_comments,
-    # kept in sync if those rules ever change): //...\n, /*...*/, no strings, no nesting.
+    # Advance past whitespace/comments POSITIONALLY — a re.sub pre-strip would break spans.
+    # GLSL comment rules (mirror shader_lib/parser.strip_comments): //...\n, /*...*/,
+    # no strings, no nesting.
     while i < n:
         c: str = src[i]
         if c in " \t\r\n":
@@ -80,7 +76,7 @@ def _skip_trivia(src: str, i: int, n: int) -> int:
             i += 2
             while i < n and not (src[i] == "*" and i + 1 < n and src[i + 1] == "/"):
                 i += 1
-            i = min(i + 2, n)  # consume the closing */ (or land at EOF if unterminated)
+            i = min(i + 2, n)  # consume closing */ (or land at EOF if unterminated)
         else:
             break
     return i
@@ -95,9 +91,8 @@ def glsl_lex(src: str) -> list[Token]:
         if i >= n:
             break
         c: str = src[i]
-        # Probe number first (hex before float). A `.` only starts a number when a digit
-        # follows; the regexes are anchored at i, so a non-match (e.g. a unicode "digit"
-        # that \d rejects) falls through to ident/punct rather than crashing.
+        # Probe number first (hex before float); a `.` only starts a number when a digit
+        # follows. Regexes are anchored at i, so a non-match falls through to ident/punct.
         num: re.Match[str] | None = None
         if c in "0123456789" or (c == "." and i + 1 < n and src[i + 1] in "0123456789"):
             num = _HEX_RE.match(src, i) or _FLOAT_RE.match(src, i)
@@ -126,11 +121,9 @@ def glsl_lex(src: str) -> list[Token]:
 
 
 def span_has_comment(src: str, start: int, end: int) -> bool:
-    # True if the byte span src[start:end] contains a // or /* comment. token_match compares
-    # only the (kind, raw) token stream and _skip_trivia drops comments, so a comment sitting
-    # BETWEEN two matched tokens is inside the span yet invisible to the match — a verbatim
-    # _splice would silently delete it. The caller rejects such a span (the author's comment is
-    # content, not whitespace) and steers to a line-addressed edit instead.
+    # True if src[start:end] contains a // or /* comment. token_match ignores comments, so
+    # one sitting BETWEEN two matched tokens is invisible to the match yet inside the span —
+    # a verbatim splice would silently delete it. The caller rejects such a span.
     i: int = start
     while i < end:
         c: str = src[i]
@@ -142,9 +135,9 @@ def span_has_comment(src: str, start: int, end: int) -> bool:
 
 def token_match(src: str, old_str: str) -> list[tuple[int, int]]:
     # Every contiguous source-token run whose (kind, raw) sequence equals old_str's, as a
-    # (byte_start, byte_end) span into src. Anchored (full-length, no prefix/subsequence),
-    # non-overlapping left-to-right (matches str.replace), ALL matches returned (I4 — a
-    # token-ambiguous old_str must surface as ">1", never a silent wrong-region edit).
+    # (byte_start, byte_end) span into src. Anchored full-length, non-overlapping
+    # left-to-right (matches str.replace). ALL matches returned so an ambiguous old_str
+    # surfaces as ">1" rather than a silent wrong-region edit.
     needle: list[Token] = glsl_lex(old_str)
     if not needle:
         return []  # empty/whitespace-only/comment-only old_str — never a zero-length span

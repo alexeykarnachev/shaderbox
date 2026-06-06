@@ -13,12 +13,10 @@ _REGION_OUTLINE_THICKNESS: float = 2.0
 
 
 def active_region_outline() -> None:
-    """Stroke the swappable accent around the CURRENT child window (the keyboard-nav
-    active-region cue). Call from INSIDE the region's `begin_child` (first line of its
-    body) — it reads the child's own `get_window_pos()`/`get_window_size()`, the
-    reliable full rect (`get_item_rect_*` after `end_child` can report a collapsed
-    rect, which drew a stub box). Drawn on the FOREGROUND draw list so the per-child
-    clip can't cut edges. Selection borders use the fixed `COLOR.SELECT`, never this."""
+    """Stroke the accent around the CURRENT child window (keyboard-nav active-region cue).
+    Call from INSIDE the region's `begin_child` — reads the child's own window rect
+    (`get_item_rect_*` after `end_child` can report a collapsed rect). Drawn on the
+    FOREGROUND draw list so the per-child clip can't cut edges."""
     pos = imgui.get_window_pos()
     size = imgui.get_window_size()
     inset = _REGION_OUTLINE_THICKNESS
@@ -117,11 +115,9 @@ def pill_button(
     text_color: tuple[float, float, float, float] = COLOR.BG_APP,
     inactive_alpha: float = 0.4,
 ) -> bool:
-    """A small filled pill whose ACCENT color is the role (a tag, a favs toggle,
-    a reset action). `active` fills it solid; otherwise a faded variant signals
-    "available but off". For multi-state filter pills with custom roles — when
-    `chip_button`'s fixed CHIP_BG / ACCENT_PRIMARY palette doesn't fit the
-    semantic (e.g. blue for tags, yellow for favs, pink for reset)."""
+    """A small filled pill whose `color` is the role (a tag, a favs toggle, a reset
+    action). `active` fills it solid; otherwise a faded variant signals "off". Use
+    when `chip_button`'s fixed palette doesn't fit (e.g. blue tags, yellow favs)."""
     fill = color if active else fade(color, inactive_alpha)
     imgui.push_style_color(imgui.Col_.button, fill)
     imgui.push_style_color(imgui.Col_.text, text_color)
@@ -169,9 +165,8 @@ def centered_image(
 ) -> None:
     """Letterbox a texture centered in a `box_w x box_h` cell (preview panels).
 
-    Fits the texture into the box preserving aspect, then offsets the cursor to
-    center it. Uses normal-flow `imgui.image` (cursor-positioned), distinct from
-    `preview_cell`'s draw-list path."""
+    Normal-flow `imgui.image` (cursor-positioned), distinct from `preview_cell`'s
+    draw-list path."""
     w, h = size
     if w <= 0 or h <= 0:
         return
@@ -196,10 +191,8 @@ def preview_box(
     overlay: Callable[[imgui.ImVec2], None] | None = None,
 ) -> None:
     """A bordered, surface-bg, letterboxed preview tile shared by exporter share
-    panels (so every exporter's preview is byte-identical). Fixed size — never
-    measured — so it can't jitter. `overlay` (optional) draws one affordance at the
-    box's top-left, receiving the box origin (Telegram's emoji button); it carries
-    no exporter vocabulary."""
+    panels. Fixed size — never measured — so it can't jitter. `overlay` (optional)
+    draws one affordance at the box's top-left, receiving the box origin."""
     imgui.push_style_color(imgui.Col_.child_bg, COLOR.BG_SURFACE)
     with imgui_ctx.begin_child(
         id_,
@@ -219,12 +212,10 @@ def preview_box(
 
 @contextmanager
 def modal_window(label: str, size: tuple[float, float]) -> Iterator[bool]:
-    """Boilerplate-free modal-popup wrapper. Caller owns the `is_X_open` flag
-    on `App` (kept off this primitive to allow per-modal cleanup like
-    `settings.apply_editor_settings` on close); this owns the imgui dance:
-    open by label, seed size once (per `conventions.md ## Design decisions`
-    "Popup modal size" — always `Cond_.first_use_ever`), enter the popup
-    scope, yield visibility. Use as:
+    """Boilerplate-free modal-popup wrapper. Caller owns the `is_X_open` flag on `App`
+    (allows per-modal cleanup on close); this owns the imgui dance: open by label,
+    seed size once (`Cond_.first_use_ever`), enter the popup scope, yield visibility.
+    Use as:
 
         if not app.is_X_open:
             return
@@ -238,8 +229,8 @@ def modal_window(label: str, size: tuple[float, float]) -> Iterator[bool]:
     if not imgui.is_popup_open(label):
         imgui.open_popup(label)
     imgui.set_next_window_size(imgui.ImVec2(*size), imgui.Cond_.first_use_ever)
-    # Center on the viewport (pivot at the window's own center). first_use_ever, like
-    # the size, so it centers on first open but a user drag still persists via imgui.ini.
+    # Center on the viewport (pivot at the window's own center). first_use_ever so a
+    # user drag persists via imgui.ini.
     center = imgui.get_main_viewport().get_center()
     imgui.set_next_window_pos(
         center, imgui.Cond_.first_use_ever, imgui.ImVec2(0.5, 0.5)
@@ -249,11 +240,9 @@ def modal_window(label: str, size: tuple[float, float]) -> Iterator[bool]:
 
 
 def rendering_overlay(text: str) -> None:
-    # A centered, non-interactive cue painted while the copilot holds a render op one frame before
-    # the encode freezes the frame loop (feature 020·20 D3). NOT a begin_popup_modal — it stays off
-    # the popup ID stack + the popup-mutex (any_popup_open) so it never gates node rendering; it is
-    # a plain no-input overlay window. The frame it paints is the last that repaints before the
-    # encode, so the cue stays on screen through the freeze.
+    # A centered, non-interactive cue painted one frame before the encode freezes the
+    # frame loop. NOT a begin_popup_modal — it stays off the popup ID stack + the
+    # popup-mutex (any_popup_open) so it never gates node rendering.
     center = imgui.get_main_viewport().get_center()
     imgui.set_next_window_pos(center, imgui.Cond_.always, imgui.ImVec2(0.5, 0.5))
     imgui.set_next_window_bg_alpha(OVERLAY_ALPHA)
@@ -271,19 +260,15 @@ def rendering_overlay(text: str) -> None:
 
 @contextmanager
 def context_menu_style() -> Iterator[None]:
-    """Style overrides to make a right-click context menu visually distinct
-    from the modal/popup it lives over — both use `popup_bg` by default, so
-    they otherwise blend. Use as a `with` wrapper AROUND a
-    `begin_popup_context_item` block:
+    """Style overrides to make a right-click context menu visually distinct from the
+    modal/popup it lives over (both use `popup_bg` by default, so they otherwise blend).
+    Wrap AROUND a `begin_popup_context_item` block — styles must be pushed before
+    `begin_popup_context_item` so they apply when imgui materializes the popup window:
 
         with context_menu_style():
             if imgui.begin_popup_context_item(...):
                 ...
                 imgui.end_popup()
-
-    The wrapper pushes the styles before begin_popup_context_item (so they
-    apply when imgui materializes the popup window) and pops on exit
-    regardless of whether the popup opened that frame.
     """
     imgui.push_style_color(imgui.Col_.popup_bg, COLOR.BG_FRAME)
     imgui.push_style_color(imgui.Col_.border, fade(COLOR.SELECT, 0.6))
@@ -299,11 +284,9 @@ def context_menu_style() -> Iterator[None]:
 
 @contextmanager
 def status_slot(id_: str, width: float) -> Iterator[None]:
-    """A fixed-height (one frame-height) borderless child the caller draws the
-    export status into — a progress bar, a result link, a hint, or nothing. Because
-    it's a fixed-size child, whatever branch is drawn occupies the SAME height, so
-    the surrounding column never changes height between idle/uploading/uploaded
-    (no jitter, nothing below it shifts). Use as `with status_slot(id, w):`.
+    """A fixed-height (one frame-height) borderless child the caller draws the export
+    status into — fixed size so the surrounding column never changes height between
+    idle/uploading/uploaded (no jitter). Use as `with status_slot(id, w):`.
 
     Zero WindowPadding: an 18px-tall child with the default 8px padding leaves ~2px
     of usable content — the status content must fill the frame, not be squeezed."""
@@ -327,9 +310,8 @@ def caption_text(
 
 
 # ---------------------------------------------------------------------------
-# Labelled fields — a dim caption on its own line above the control, used by the
-# exporter panels. One primitive per control type instead of the ad-hoc
-# caption_text + set_next_item_width + imgui.xxx trio repeated at every call site.
+# Labelled fields — a dim caption on its own line above the control. One primitive
+# per control type, used by the exporter panels.
 # ---------------------------------------------------------------------------
 
 
@@ -409,8 +391,7 @@ def setup_steps(steps: list[str | tuple[str, str]]) -> None:
 
     Each item is either a plain step (`"1. Do the thing"`, ghost/dim wrapped text)
     or a `(step_text, copyable_url)` tuple — the step then a click-to-copy link.
-    Shared by every integration so their setup blocks read identically; callers
-    gate it on "credential not set yet". Numbering is the caller's (in the strings)."""
+    Numbering is the caller's (in the strings)."""
     for item in steps:
         if isinstance(item, tuple):
             text, url = item
@@ -455,8 +436,7 @@ def small_caption(font: imgui.ImFont, text: str) -> None:
     """Dim caption in a smaller font (column labels, inline readouts).
 
     `font.legacy_size` is the rasterized size push_font wants (conventions.md
-    ## Known quirks).
-    """
+    ## Known quirks)."""
     imgui.push_font(font, font.legacy_size)
     imgui.text_colored(COLOR.FG_DIM, text)
     imgui.pop_font()
@@ -465,9 +445,8 @@ def small_caption(font: imgui.ImFont, text: str) -> None:
 def close_cross_button(id_: str, side: float) -> bool:
     """A red square with a crisp drawn ✕ — overlay close/delete affordance.
 
-    The glyph is two draw-list lines (no font dependency / baseline guesswork),
-    so it is always perfectly centred. Returns True on click.
-    """
+    The glyph is two draw-list lines (no font dependency), so it's always centred.
+    Returns True on click."""
     origin = imgui.get_cursor_screen_pos()
     imgui.push_style_color(imgui.Col_.button, COLOR.STATE_ERROR)
     imgui.push_style_color(imgui.Col_.button_hovered, COLOR.STATE_ERROR)
@@ -541,17 +520,15 @@ def preview_cell(
     """A bordered preview tile: a `cell_w`-wide square image + whole-cell click
     target + selection border + a top-right delete-✕ arming an in-cell `Delete?` wash.
 
-    The cell is `cell_w` wide and grows below the image by exactly one text line when
-    `footer` is set; the caller sizes only the width. `overlay` draws an extra top-LEFT
-    control (e.g. an emoji button), receiving the standard overlay-button side; it's
-    shown alongside the delete-✕ only while `selected` and not `armed`. The whole
-    tile is its own child window so the overlays' absolute cursor moves can't perturb
-    the parent (no jitter / SetCursorPos assert).
+    The cell is `cell_w` wide and grows below the image by one text line when `footer`
+    is set; the caller sizes only the width. `overlay` draws an extra top-LEFT control,
+    shown alongside the delete-✕ only while `selected` and not `armed`. The whole tile
+    is its own child window so the overlays' absolute cursor moves can't perturb the
+    parent (no jitter / SetCursorPos assert).
 
-    `nav_flatten` lets keyboard-nav cross the per-tile child border so a grid of cells
-    traverses as one ring; the click target is a `selectable` (a nav stop, unlike an
-    `invisible_button`) drawn with a transparent fill so the image/border carries the
-    visual.
+    `nav_flatten` lets keyboard-nav cross the per-tile child border so a grid traverses
+    as one ring; the click target is a `selectable` (a nav stop, unlike an
+    `invisible_button`) with a transparent fill so the image/border carries the visual.
     """
     footer_h: float = imgui.get_text_line_height_with_spacing() if footer else 0.0
     cell_h: float = cell_w + footer_h
@@ -594,8 +571,7 @@ def preview_cell(
             )
 
         # selectable (not invisible_button) so keyboard-nav can land on the cell;
-        # transparent fill so the image/border carries the visual, allow_overlap so
-        # the delete-x / overlay buttons drawn on top still win the click.
+        # transparent fill; allow_overlap so the buttons drawn on top win the click.
         imgui.push_style_color(imgui.Col_.header, COLOR.TRANSPARENT)
         imgui.push_style_color(imgui.Col_.header_hovered, COLOR.TRANSPARENT)
         imgui.push_style_color(imgui.Col_.header_active, COLOR.TRANSPARENT)
@@ -670,10 +646,10 @@ def fps_overlay(
     """A clickable FPS chip pinned to the top-right of a region, optionally
     unfolding a stats panel beneath it.
 
-    `anchor_x` / `anchor_y` are the top-RIGHT screen corner of the region the
-    overlay hugs (the pill's right edge sits `inset` left of `anchor_x`). Returns
-    the new open state (toggled on a pill click). The pill is anchored in screen
-    space independent of the detail panel, so opening it never shifts the pill.
+    `anchor_x` / `anchor_y` are the top-RIGHT screen corner of the region the overlay
+    hugs (the pill's right edge sits `inset` left of `anchor_x`). Returns the new open
+    state (toggled on a pill click). The pill is anchored in screen space independent
+    of the detail panel, so opening it never shifts the pill.
     """
     label = f"{fps} FPS"
     pad: float = float(SPACE.MD)
@@ -764,9 +740,8 @@ def draw_link(
 
 
 def open_url_button(label: str, url: str, *, id_: str = "") -> None:
-    # An OPEN-ONLY web-link button (feature 020·21): opens the browser, does NOT copy to the clipboard
-    # (distinct from draw_link, which copies + forces an https:// scheme). The url is assumed to carry
-    # its own scheme (a publish/Studio URL always does).
+    # An OPEN-ONLY web-link button: opens the browser, does NOT copy (distinct from
+    # draw_link). The url must carry its own scheme.
     if ghost_button(f"{label}{id_}") and url:
         try:
             webbrowser.open(url)
@@ -777,8 +752,8 @@ def open_url_button(label: str, url: str, *, id_: str = "") -> None:
 def open_path_button(
     label: str, path: str, on_open: Callable[[str], None], *, id_: str = ""
 ) -> None:
-    # An OPEN-ONLY local-file button (feature 020·21): reveals the file in the OS file manager via the
-    # injected opener (App-free here — the caller passes util.open_in_file_manager). NO clipboard.
+    # An OPEN-ONLY local-file button: reveals the file in the OS file manager via the
+    # injected opener (the caller passes util.open_in_file_manager). NO clipboard.
     if ghost_button(f"{label}{id_}") and path:
         on_open(path)
 
@@ -793,14 +768,12 @@ def clickable_label(
     text_color: tuple[float, float, float, float] | None = None,
     accent: tuple[float, float, float, float] | None = None,
 ) -> bool:
-    """A fixed-width clickable text cell (used for the uniform name -> jump-to-code).
+    """A fixed-width clickable text cell (the uniform name -> jump-to-code).
 
-    Sized so a following `same_line(x)` column stays put; the hover affordance is a
-    colour change only (jitter-free). `highlight` paints the same translucent accent
-    wash the editor gutter uses (a code-side hover lighting up the row). `text_color`
-    overrides the label text colour (default: dim foreground); `accent` overrides the
-    hover/active wash (default: ACCENT_PRIMARY) so auto-uniforms can swap to blue.
-    Returns True on click.
+    Fixed width so a following `same_line(x)` column stays put; the hover affordance is
+    a colour change only (jitter-free). `highlight` paints the translucent accent wash.
+    `text_color` overrides the label colour (default: dim foreground); `accent`
+    overrides the hover/active wash (default: ACCENT_PRIMARY). Returns True on click.
     """
     imgui.align_text_to_frame_padding()
     text = _ellipsize(label, width)
@@ -822,10 +795,10 @@ def clickable_label(
 def chord_row(
     label: str, chord_str: str, label_w: float, *, highlight: bool = False
 ) -> None:
-    """One ``label    [chord]`` row — the action name (dim, left) and its keychord
-    as a pill, the pill's left edge at `label_w`. Shared by the cheatsheet overlay
-    and the rebinder rows so the two never drift. `highlight` paints the pill text
-    in the accent (the rebinder's "press a key..." capture state)."""
+    """One ``label    [chord]`` row — the action name (dim, left) and its keychord as
+    a pill, the pill's left edge at `label_w`. Shared by the cheatsheet overlay and the
+    rebinder rows. `highlight` paints the pill text in the accent (the rebinder's
+    "press a key..." capture state)."""
     imgui.align_text_to_frame_padding()
     imgui.text_colored(COLOR.FG_SECONDARY, label)
     imgui.same_line(label_w)

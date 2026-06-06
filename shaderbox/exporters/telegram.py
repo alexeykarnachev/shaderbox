@@ -65,8 +65,7 @@ _TG_VIDEO_MAX_DURATION_SEC = 3.0
 _TG_VIDEO_MAX_FPS = 30
 _DEFAULT_PACK_TITLE = "ShaderBox"
 _DEFAULT_NEW_STICKER_EMOJI = "🎨"
-# The link error that means "the user hasn't messaged the bot yet" — a public constant so the
-# copilot connect-await can detect it by identity (feature 020·19), not a fragile substring match.
+# Public constant so the connect-await can match by identity, not a fragile substring.
 NEEDS_START_ERROR = "No message received — open the bot, press Start, then Connect."
 # Telegram errors that mean "the linked user can't be acted on" — re-link guidance.
 _USER_PROBLEM_MARKERS = (
@@ -81,12 +80,10 @@ T = TypeVar("T")
 
 
 def _ipv4_request() -> HTTPXRequest:
-    # Bind egress to IPv4. Telegram's AAAA resolves, but ptb's default HTTP/2
-    # client picks the v6 address with no v4 fallback; on an IPv6-incapable
-    # tunnel that fails the TLS handshake every time (EndOfStream).
-    # Generous timeouts: ptb defaults are 5s read/connect, which a VPN/tunnel
-    # routinely exceeds (ReadTimeout -> TimedOut); the sticker upload also needs a
-    # long write window.
+    # Bind egress to IPv4: ptb's HTTP/2 client picks the AAAA with no v4 fallback,
+    # which fails the TLS handshake on an IPv6-incapable tunnel (EndOfStream).
+    # Generous timeouts: ptb's 5s defaults are routinely exceeded over a tunnel,
+    # and the sticker upload needs a long write window.
     transport = httpx.AsyncHTTPTransport(local_address="0.0.0.0")
     return HTTPXRequest(
         httpx_kwargs={"transport": transport},
@@ -106,11 +103,7 @@ def _map_tg_error(e: tg.error.TelegramError) -> str:
 
 @dataclass
 class EmojiControl:
-    """Telegram-owned emoji affordances, delivered via `RenderControl.extras`.
-
-    The share tab builds these (it owns `App`'s emoji font + picker); the
-    generic render contract never names emoji.
-    """
+    """Telegram-owned emoji affordances, delivered via `RenderControl.extras`."""
 
     emoji: str
     set_emoji: Callable[[str], None]
@@ -227,7 +220,7 @@ class TelegramExporter(Exporter):
 
     def rebind(self, settings: dict[str, Any]) -> None:
         _ = settings
-        # Restore the connected state from the persisted store — no network call.
+        # Restore connected state from the persisted store — no network call.
         # A stale token surfaces as an error at the next API call, not here.
         self._render_state.auth_state = (
             AuthState.AUTHED
@@ -248,12 +241,11 @@ class TelegramExporter(Exporter):
     def set_default_pack(self, set_name: str) -> None:
         self._render_state.active_pack_set_name = set_name
         if set_name and self._tg.find_pack(set_name) is None:
-            # Orphan pointer: the API can't enumerate packs, so this is the only
-            # evidence the pack exists — re-add it (title falls back to set_name).
+            # The API can't enumerate packs, so this pointer is the only evidence
+            # the pack exists — re-add it (title falls back to set_name).
             self._tg.packs.append(PackEntry(title=set_name, set_name=set_name))
             self._store.save()
-        # Restored on launch: pull the pack's current stickers so the grid isn't
-        # stale-empty until the user manually re-selects.
+        # Pull the pack's current stickers so the grid isn't stale-empty on launch.
         if set_name and self._is_connected():
             self._enqueue(_Job(kind="refresh", pack_set_name=set_name))
 
@@ -265,16 +257,15 @@ class TelegramExporter(Exporter):
             self._render_state.auth_state = AuthState.ERROR
             self._render_state.auth_message = "Enter a bot token first."
             return
-        # LINKING is the floor the copilot connect-await waits to LEAVE (feature 020·19) — set it
-        # BEFORE enqueueing so a stale AUTHED/ERROR can't make the await return instantly.
+        # Set LINKING BEFORE enqueueing so a stale AUTHED/ERROR can't make the
+        # connect-await return instantly.
         self._render_state.auth_state = AuthState.LINKING
         self._render_state.auth_message = ""
         self._ensure_worker()
         self._enqueue(_Job(kind=_LINK_SENTINEL))
 
     def set_token(self, token: str) -> None:
-        # Public token setter for the copilot (feature 020·19) — the UI writes _tg.bot_token
-        # inline; this mirrors it + persists, so begin_auth() then sees a token.
+        # Mirror + persist the token so a later begin_auth() sees it.
         self._tg.bot_token = token
         self._store.save()
 
@@ -365,9 +356,8 @@ class TelegramExporter(Exporter):
         have_token: bool = bool(self._tg.bot_token)
         connected: bool = self._is_connected()
 
-        # Setup steps show until actually connected — a pasted-but-not-connected
-        # token is just text, the user still needs the instructions. Ghost/dim
-        # wrapped text via the shared primitive (parity with YouTube).
+        # Setup steps show until connected — a pasted-but-not-connected token is
+        # just text, the user still needs the instructions.
         if not connected:
             setup_steps(
                 [
@@ -380,7 +370,7 @@ class TelegramExporter(Exporter):
             imgui.dummy(imgui.ImVec2(0, SPACE.SM))
 
         # Token field + Connect only while not connected; once connected just the
-        # status + Disconnect (parity with YouTube — re-link is Disconnect -> Connect).
+        # status + Disconnect (re-link is Disconnect -> Connect).
         if not connected:
             self._tg.bot_token = labeled_text_input(
                 "Bot token", self._tg.bot_token, full_width, password=True
@@ -434,8 +424,8 @@ class TelegramExporter(Exporter):
         self._draw_sticker_section(render_control, current_node is not None)
 
     def _is_connected(self) -> bool:
-        # bot_username is the unambiguous "a real Connect happened" signal — it is
-        # only ever set by a successful link (get_me).
+        # bot_username is set only by a successful link (get_me) — the unambiguous
+        # "a real Connect happened" signal.
         return (
             self._render_state.auth_state == AuthState.AUTHED
             and self._has_persisted_identity()
@@ -520,7 +510,7 @@ class TelegramExporter(Exporter):
 
     def _delete_pack(self, set_name: str) -> None:
         self._enqueue(_Job(kind="delete_pack", pack_set_name=set_name))
-        # Remove locally now (render-side state); the worker deletes on Telegram.
+        # Remove locally now; the worker deletes on Telegram.
         self._tg.packs = [p for p in self._tg.packs if p.set_name != set_name]
         self._store.save()
         new_active: str = self._tg.packs[0].set_name if self._tg.packs else ""
@@ -532,8 +522,8 @@ class TelegramExporter(Exporter):
 
     def _select_pack(self, set_name: str) -> None:
         self._render_state.active_pack_set_name = set_name
-        # Clear the previous pack's stickers immediately so the grid never renders
-        # the old pack's slots (with a stale selected_index) under the new pack.
+        # Clear now so the grid never renders the old pack's slots (with a stale
+        # selected_index) under the new pack.
         self._clear_grid()
         self._enqueue(_Job(kind="refresh", pack_set_name=set_name))
 
@@ -565,8 +555,7 @@ class TelegramExporter(Exporter):
             if emoji.emoji_button(emoji.emoji, float(SIZE.ROW_HEIGHT)):
                 emoji.open_emoji_picker(emoji.set_emoji)
 
-        # Preview on the left (the shared fixed size — always taller than the
-        # controls, no alignment math); controls + carousel stack top-down on the right.
+        # Preview on the left (fixed size); controls + carousel on the right.
         preview_box(
             "sticker_preview",
             rc.preview_texture_glo,
@@ -595,8 +584,6 @@ class TelegramExporter(Exporter):
         artifact: RenderedArtifact | None,
         has_node: bool,
     ) -> None:
-        # Pack selector + management live here on the right (beside the preview),
-        # so the preview can be large. Then duration + Render/Add below.
         self._draw_pack_row()
         imgui.dummy(imgui.ImVec2(0, SPACE.SM))
 
@@ -616,8 +603,7 @@ class TelegramExporter(Exporter):
             imgui.text_colored(COLOR.STATE_WARN, "Select a node to render.")
             return
 
-        # Render (ordinary) + Add to pack (CTA) on one row; Add's right edge
-        # aligns with the Duration drag's right edge.
+        # Render + Add on one row; Add's right edge aligns with the Duration drag.
         render_w: float = imgui.calc_text_size("Render").x + 2 * SPACE.MD
         add_w: float = row_w - render_w - imgui.get_style().item_spacing.x
         if button("Render", width=render_w):
@@ -625,10 +611,8 @@ class TelegramExporter(Exporter):
         imgui.same_line()
         self._draw_add_button(rc, artifact, add_w)
 
-        # Constant-height status slot (one text line + one bar line) so the controls
-        # never grow when uploading — otherwise the absolutely-positioned carousel
-        # below would be overlapped. While uploading: message + progress bar; else:
-        # render stats + an empty bar-height spacer (space reserved, no jitter).
+        # Constant-height status slot so the controls don't grow when uploading —
+        # otherwise the absolutely-positioned carousel below would be overlapped.
         self._draw_status_slot(rc, artifact, row_w)
 
     def _draw_add_button(
@@ -656,11 +640,10 @@ class TelegramExporter(Exporter):
             imgui.end_disabled()
 
     def _draw_sticker_grid_full(self, rc: RenderControl) -> None:
-        """A carousel row: [<] [cell x4] [>]. The arrows scroll a 4-wide window
-        into the pack; they're always shown, disabled when there's nowhere to go.
+        """A carousel row [<] [cell x4] [>] scrolling a 4-wide window into the pack.
 
-        Each cell is its own child window so the corner overlays' absolute cursor
-        moves stay inside the child (avoids imgui's SetCursorPos assert + jitter).
+        Each cell is its own child window so the overlays' absolute cursor moves
+        stay inside the child (avoids imgui's SetCursorPos assert + jitter).
         """
         slots = self._render_state.sticker_slots
         cols: int = _GRID_COLUMNS
@@ -768,9 +751,7 @@ class TelegramExporter(Exporter):
         self, rc: RenderControl, artifact: "RenderedArtifact | None", full_width: float
     ) -> None:
         _ = rc
-        # Fixed-height status slot (shared primitive): progress bar w/ overlay while
-        # uploading, else the render stats, else empty — same height always, so the
-        # carousel below never shifts.
+        # Fixed height always, so the carousel below never shifts.
         with status_slot("tg_status", full_width):
             if self._render_state.in_flight:
                 prog: ExportProgress | None = self._render_state.last_progress
@@ -855,8 +836,8 @@ class TelegramExporter(Exporter):
         return self._is_connected()
 
     def publish(self, artifact: RenderedArtifact, settings: dict[str, Any]) -> None:
-        # Enqueue an "add to pack" job (feature 020·18). `settings`: pack_set_name (the
-        # default pack), pack_title, emoji. The worker runs prepare() + the upload.
+        # Enqueue an "add to pack" job; the worker runs prepare() + the upload.
+        # `settings`: pack_set_name, pack_title, emoji.
         pack_set_name: str = str(settings.get("pack_set_name", ""))
         pack: PackEntry | None = self._tg.find_pack(pack_set_name)
         title: str = pack.title if pack is not None else _DEFAULT_PACK_TITLE
@@ -955,9 +936,8 @@ class TelegramExporter(Exporter):
             self._current_async_task = None
 
     async def _with_bot(self, op: Callable[[tg.Bot], Awaitable[T]]) -> T:
-        # Both pools need the IPv4 bind: get_updates() uses get_updates_request,
-        # a separate pool that otherwise dials the dead AAAA (conventions.md
-        # ## Known quirks / vpn-stack Gotcha #4).
+        # Both pools need the IPv4 bind: get_updates() uses a separate pool that
+        # otherwise dials the dead AAAA (conventions.md ## Known quirks).
         bot = tg.Bot(
             token=self._tg.bot_token,
             request=_ipv4_request(),
@@ -967,9 +947,8 @@ class TelegramExporter(Exporter):
             await bot.initialize()
             return await op(bot)
         except (tg.error.InvalidToken, tg.error.Forbidden) as e:
-            # The persisted connection is no longer valid (token revoked / bot
-            # blocked) → reflect it in the Settings panel instead of leaving a
-            # green "Connected" lie. initialize() itself can raise InvalidToken.
+            # Token revoked / bot blocked → reflect ERROR in Settings instead of a
+            # stale "Connected". initialize() itself can raise InvalidToken.
             self._push_event(
                 _AuthEvent(
                     state=AuthState.ERROR,
@@ -978,9 +957,8 @@ class TelegramExporter(Exporter):
             )
             raise ExporterError(_map_tg_error(e)) from e
         except tg.error.TelegramError as e:
-            # No exception= traceback: loguru's annotated frames would write the
-            # bot token (Bot repr + request URL) to the log in cleartext. The
-            # cause's type+message is enough to diagnose (e.g. httpx.ConnectError).
+            # No traceback: loguru's annotated frames would leak the bot token
+            # (Bot repr + request URL) into the log in cleartext.
             cause: str = (
                 f"{type(e.__cause__).__name__}: {e.__cause__}" if e.__cause__ else ""
             )
@@ -1127,8 +1105,8 @@ class TelegramExporter(Exporter):
                 )
             )
         finally:
-            # Only the prepared (re-encoded) file is ours to delete; the input
-            # artifact belongs to the share tab, which owns its lifecycle.
+            # Only the prepared file is ours to delete; the input artifact belongs
+            # to the share tab.
             self._cleanup_paths(prepared.path)
 
     async def _do_add(
@@ -1175,9 +1153,8 @@ class TelegramExporter(Exporter):
         pack_set_name: str,
         pack_title: str,
     ) -> None:
-        # The user pressed Start, so the bot may DM them the pack link (one tap to
-        # open it). Notification failure must not fail the upload (the sticker is
-        # already in the set).
+        # Notification failure must not fail the upload — the sticker is already
+        # in the set.
         link: str = f"https://t.me/addstickers/{pack_set_name}"
         try:
             await bot.send_message(
@@ -1197,7 +1174,7 @@ class TelegramExporter(Exporter):
 
     def _safe_refresh(self, pack_set_name: str) -> None:
         # The mutating op already succeeded; a refresh failure must not surface as
-        # a terminal error overwriting the success.
+        # a terminal error overwriting it.
         try:
             self._handle_refresh(pack_set_name)
         except Exception as e:

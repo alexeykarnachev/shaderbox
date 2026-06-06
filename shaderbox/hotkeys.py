@@ -11,16 +11,14 @@ from shaderbox.commands import (
 
 
 def process_hotkeys(app: App) -> None:
-    # Pre-frame ONLY: these must run before imgui.new_frame(). Registry dispatch
-    # lives in dispatch_commands (in-frame) because imgui.shortcut() asserts
-    # outside an active frame.
+    # Pre-frame ONLY: must run before imgui.new_frame(). imgui.shortcut() asserts
+    # outside an active frame, so registry dispatch lives in dispatch_commands.
     glfw.poll_events()
     app.imgui_renderer.process_inputs()
 
 
 def dispatch_commands(app: App) -> None:
-    # In-frame: called at the TOP of the main-window block, before the editor
-    # child draws, so ESC's defocus request is consumed the same frame.
+    # In-frame, before the editor child draws, so ESC's defocus is consumed this frame.
     _dispatch_registry(app)
     _handle_escape(app)
 
@@ -45,23 +43,20 @@ def _dispatch_registry(app: App) -> None:
 def _handle_escape(app: App) -> None:
     if not imgui.is_key_pressed(imgui.Key.escape, repeat=False):
         return
-    # While the rebinder is capturing, Esc cancels the capture (handled in the
-    # settings draw) — don't also close the modal.
+    # While rebinding, Esc cancels the capture (settings draw) — don't also close the modal.
     if app.rebinding_command is not None:
         return
-    # Esc with no job (no popup/editor) is swallowed at the glfw layer before imgui
-    # sees it (App._install_escape_filter), so this in-frame handler shouldn't even
-    # receive it then — but gate defensively on the same condition.
+    # Jobless Esc is already swallowed at the glfw layer (App._install_escape_filter);
+    # gate defensively on the same condition.
     if not app.escape_has_job():
         return
-    # ESC returns the app to its default state: close any popup, drop editor focus.
-    # Never quits. Settings holds the editor options — push them on close (apply-on-
-    # close avoids the modal-open FPE, conventions.md ## Known quirks).
+    # Apply editor settings on close, not while open — avoids the modal-open FPE
+    # (conventions.md ## Known quirks).
     was_settings_open = app.popup_state == PopupState.SETTINGS
     app.popup_state = PopupState.CLOSED
     app.is_palette_open = False
     app.editor_defocus_requested = True
-    # Esc defocuses the chat (back to the editor/grid) but leaves it open.
+    # Esc defocuses the chat but leaves it open.
     if app.copilot_focused:
         app.copilot_defocus_requested = True
     if was_settings_open:

@@ -21,10 +21,8 @@ def _apply_markers(
     current_path: Path,
 ) -> None:
     editor.clear_markers()
-    # The marker colours are line fills, so use translucent washes — an opaque fill
-    # hides the glyphs underneath. Only errors whose `path` matches the currently
-    # open editor file mark its gutter; cross-file errors will surface in their own
-    # editor's gutter once multi-file editing lands (today there's only one file).
+    # Markers are line fills — translucent or they hide the glyphs. Only errors whose
+    # `path` matches the open file mark its gutter.
     err_color = imgui.color_convert_float4_to_u32(fade(COLOR.STATE_ERROR, 0.35))
     for err in errors:
         if err.line >= 0 and err.path == current_path:
@@ -38,9 +36,7 @@ def _consume_jump(app: App, editor: text_edit.TextEditor, current_path: Path) ->
     req = app.editor_jump_request
     if req is None:
         return False
-    # A request for a different file is left intact for a future consumer (or
-    # cleared once the right session opens). Today we have exactly one editor
-    # so any non-matching request is stale; clear it to avoid stuck state.
+    # A request for a different file is stale (one editor only); clear it.
     if req.path != current_path:
         app.editor_jump_request = None
         return False
@@ -79,9 +75,7 @@ def _draw_error_strip(
 
 
 def draw_chrome(app: App) -> None:
-    # The editor's status chrome — file path (copyable) + dirty/compiled state + Open
-    # dir + back-to-node / back-to-lib links. Lives in the copilot bar (ui.py) so it
-    # shares the row with the Copilot CTA, not stacked above the editor body.
+    # The editor's status chrome — file path + dirty/compiled state + nav links.
     if not (ui_node := app.ui_nodes.get(app.current_node_id)):
         imgui.text_colored(COLOR.FG_DIM, "No node selected")
         return
@@ -92,14 +86,11 @@ def draw_chrome(app: App) -> None:
     is_lib = current_path != ui_node.node.source.path
 
     if is_lib:
-        # Lib mode: file name + a "back to node" link.
         imgui.text_colored(COLOR.FG_DIM, str(current_path.name))
         imgui.same_line(spacing=float(SPACE.LG))
         if imgui.button("< back to node", size=(SIZE.BTN_SM_W * 1.5, 0)):
             app.show_node_editor()
     else:
-        # Node mode: full path + dirty/compiled status + Open dir + optional "back to
-        # lib" shortcut to the most recently viewed lib file.
         full_file_path = ui_node.node.source.path
         local_file_path = full_file_path.relative_to(app.project_dir)
         if draw_copyable_text(str(local_file_path), copy_value=str(full_file_path)):
@@ -129,9 +120,7 @@ def draw(app: App) -> None:
         app.editor_focused = False
         return
 
-    # Decide which file the editor is showing — the node's shader OR (when the
-    # user opened a lib file from the picker) a lib file. The status chrome moved to
-    # the copilot bar (draw_chrome); the editor body is identical for both.
+    # The editor shows the node's shader OR a lib file the user opened.
     current_path = app.current_editor_path
     if current_path is None:
         glfw.set_cursor(app.window, None)
@@ -139,8 +128,7 @@ def draw(app: App) -> None:
         return
     is_lib = current_path != ui_node.node.source.path
 
-    # The editor's render() FPEs while a popup is open (conventions.md ## Known quirks),
-    # so it's simply not drawn then — it reappears when the popup closes.
+    # render() FPEs while a popup is open (conventions.md ## Known quirks) — skip drawing it.
     if app.any_popup_open():
         glfw.set_cursor(app.window, None)
         app.editor_focused = False
@@ -148,8 +136,6 @@ def draw(app: App) -> None:
 
     session = app.editor_sessions.get(current_path)
     if session is None:
-        # Lazy-load the lib session if it doesn't exist yet (e.g. _explicit set
-        # but session not yet created via open_shader_lib_file — defensive).
         session = (
             app.open_shader_lib_file(current_path)
             if is_lib
@@ -158,15 +144,14 @@ def draw(app: App) -> None:
     editor = session.editor
     settings = app.app_state.editor_settings
 
-    # Error markers come from the active NODE's compile unit; we filter by path
-    # so errors that target the active editor file (root OR a lib) are shown.
+    # Markers come from the active node's compile unit, filtered by path in _apply_markers.
     errors = ui_node.node.compile_unit.errors
     _apply_markers(editor, errors, app.editor_hover_line, current_path)
     app.editor_hover_line = None
     strip_height = 0.0
     if errors:
         n = len(errors)
-        # error rows (capped) + the "+N more" line + the "N errors" count header
+        # capped rows + "+N more" line + "N errors" header
         rows = min(n, _MAX_ERROR_ROWS) + (n > _MAX_ERROR_ROWS) + (n > 1)
         # Measure in the strip's own font (font_12), not the ambient UI font.
         imgui.push_font(app.font_12, app.font_12.legacy_size)
@@ -193,36 +178,27 @@ def draw(app: App) -> None:
         settings.font_size = max(8, min(48, new_size))
         io.mouse_wheel = 0.0
 
-    # set_cursor/select_line/scroll latch a request the upcoming render() executes;
-    # a jump also focuses the editor so the highlighted line shows un-dimmed.
+    # Jump/focus requests latch for the upcoming render(); must run before it.
     jumped = _consume_jump(app, editor, current_path)
 
-    # One-shot focus request (e.g. after a lib-function insert): re-grab focus
-    # before render so the caret is live where the insert ended. set_focus latches
-    # for the upcoming render(), like the jump path.
     focus_requested = app.editor_focus_requested
     if focus_requested:
         editor.set_focus()
         app.editor_focus_requested = False
         app.editor_was_ever_focused = True
 
-    # Dim the whole pane while the editor lacks focus. app.editor_focused is last
-    # frame's value (computed below, after render) — a one-frame lag on transitions.
+    # Dim the pane while unfocused. editor_focused is last frame's value (set after render).
     dim = not app.editor_focused and not jumped and not focus_requested
     if dim:
         imgui.push_style_var(imgui.StyleVar_.alpha, EDITOR_UNFOCUSED_ALPHA)
 
-    # Lock the editor read-only while a copilot turn runs (§15 A) — the user must not edit
-    # source the agent is reasoning about. Set every frame on the active session (it latches,
-    # but the active session can change between frames). Programmatic set_text (the agent's
-    # own edits, synced in) is unaffected by read-only.
+    # Lock read-only during a copilot turn. Set every frame — the active session can change.
+    # Programmatic set_text is unaffected by read-only.
     editor.set_read_only_enabled(app.copilot_turn_active)
 
-    # Neutralize the editor's mouse so it doesn't select text under (a) a splitter drag
-    # sweep or (b) the floating copilot chat the mouse is over. The TextEditor reads
-    # io.mouse_down[0] directly (bypassing imgui's disabled/active-id + window hit-test,
-    # so begin_disabled / window z-order do nothing) — force it False for this render
-    # only, restore right after (well before the splitter itself reads the button state).
+    # TextEditor reads io.mouse_down[0] directly, bypassing imgui's hit-test (begin_disabled
+    # / z-order do nothing) — force it False for this render so it can't select under a
+    # splitter drag or the copilot chat, then restore before the splitter reads it.
     if app.splitter_dragging or app.copilot_hovered:
         prev_down = bool(io.mouse_down[0])
         io.mouse_down[0] = False
@@ -234,33 +210,27 @@ def draw(app: App) -> None:
     if dim:
         imgui.pop_style_var()
 
-    # The editor exposes no is-focused getter, so read imgui's real focus state for
-    # this pane (the editor renders its own focusable child window). hotkeys.py reads
-    # app.editor_focused to suppress arrow nav while the caret is active.
+    # No is-focused getter on the editor — read imgui's child-window focus instead.
     app.editor_focused = imgui.is_window_focused(imgui.FocusedFlags_.child_windows)
     if app.editor_focused:
-        # Sticky bit: stays True across popups/menus until an explicit defocus.
+        # Sticky: stays True across popups/menus until an explicit defocus.
         app.editor_was_ever_focused = True
 
-    # Esc / region-cycle-out request defocus (hotkeys.py, app._set_region).
-    # A freshly-rendered editor auto-grabs focus, so the focus must be cleared AFTER
-    # render — clearing before is undone by the editor's own first-render focus grab.
+    # A freshly-rendered editor auto-grabs focus, so clear it AFTER render, not before.
     if app.editor_defocus_requested:
         imgui.set_window_focus(None)
         app.editor_defocus_requested = False
         app.editor_focused = False
         app.editor_was_ever_focused = False
 
-    # glfw cursor driven directly — editor isn't a hoverable imgui item and imgui cursors are no-op here (conventions.md ## Known quirks).
-    # is_window_hovered respects popup-blocking (is_mouse_hovering_rect doesn't), so a menu over the editor keeps the arrow.
+    # Drive the glfw cursor directly — imgui cursors are no-op here (conventions.md ## Known
+    # quirks). is_window_hovered respects popup-blocking (is_mouse_hovering_rect doesn't).
     cursor_over_editor = hovering and imgui.is_window_hovered(
         imgui.HoveredFlags_.child_windows
     )
     glfw.set_cursor(app.window, app.ibeam_cursor if cursor_over_editor else None)
 
-    # A passive cursor-following tooltip (not the editor's own popup, which would
-    # occlude the code beneath it) — only for words that are live uniforms. The
-    # hovered uniform also lights up its panel row (the panel draws after this).
+    # Cursor-following tooltip for words that are live uniforms; also lights up the panel row.
     if cursor_over_editor and editor.is_mouse_pos_over_glyph(imgui.get_mouse_pos()):
         word = editor.get_word_at_mouse_pos(imgui.get_mouse_pos())
         if word in ui_node.node.uniform_values:

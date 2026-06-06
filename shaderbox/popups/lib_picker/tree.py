@@ -28,19 +28,14 @@ from shaderbox.ui_primitives import _ellipsize, context_menu_style, ghost_button
 class TreeNode:
     subdirs: set[str] = field(default_factory=set)
     files: list[Path] = field(default_factory=list)
-    # Functions PER FILE — populated only for files that pass the filter.
-    # Empty list = file has no visible functions (still drawn if the file
-    # itself matched, e.g. via filename search later).
+    # Per-file visible functions; empty list = file matched but has no visible functions.
     functions_by_file: dict[Path, list[ShaderLibFunction]] = field(default_factory=dict)
 
 
 def build_tree(
     visible: list[ShaderLibFunction], root: Path
 ) -> dict[tuple[str, ...], TreeNode]:
-    # Build the dir tree keyed by tuple-of-parts. Only files containing at
-    # least one VISIBLE function appear in the tree (so search/favs/tags filter
-    # the tree naturally). The visible functions for each file are also stored
-    # so the leaf walker can emit them in deterministic order.
+    # Dir tree keyed by tuple-of-parts; only files with >=1 visible function appear.
     tree: dict[tuple[str, ...], TreeNode] = {(): TreeNode()}
     by_file: dict[Path, list[ShaderLibFunction]] = {}
     for fn in visible:
@@ -62,8 +57,7 @@ def build_tree(
 def flatten_visible_leaves(
     tree: dict[tuple[str, ...], TreeNode], dir_rel: tuple[str, ...]
 ) -> list[ShaderLibFunction]:
-    # Emit leaves in the SAME order the draw walks them — files-before-subdirs,
-    # alphabetical at each level. Arrow-nav relies on this for natural up/down.
+    # MUST match the draw order (files-before-subdirs, alphabetical) — arrow-nav relies on it.
     out: list[ShaderLibFunction] = []
     node = tree.get(dir_rel)
     if node is None:
@@ -76,9 +70,7 @@ def flatten_visible_leaves(
 
 
 def draw_tree(app: App, tree: dict[tuple[str, ...], TreeNode], root: Path) -> bool:
-    # Wraps the whole tree in a `/` root node (collapsible). Right-clicking the
-    # root opens the dir context menu (New file / New subdir / Reveal).
-    # Returns True iff a "Open at decl" action fired and the picker should close.
+    # Returns True iff an "Open at decl" action fired and the picker should close.
     flags = imgui.TreeNodeFlags_.default_open | imgui.TreeNodeFlags_.span_avail_width
     open_root = imgui.tree_node_ex("/##dirnode_root", flags)
     _draw_dir_context_menu(app, (), is_root=True)
@@ -101,7 +93,6 @@ def _draw_tree_children(
     node = tree.get(dir_rel)
     if node is None:
         return False
-    # Files first (alphabetical), then subdirs.
     for file_path in sorted(node.files, key=lambda p: p.name.lower()):
         if _draw_file_node(app, file_path, node.functions_by_file.get(file_path, [])):
             close_picker = True
@@ -111,12 +102,9 @@ def _draw_tree_children(
             imgui.TreeNodeFlags_.default_open | imgui.TreeNodeFlags_.span_avail_width
         )
         node_id = f"{subname}##dirnode_{'/'.join(child)}"
-        # Armed state is stored as the ABSOLUTE path (the context menu arms with
-        # `shader_lib_root() / dir_rel`); compare like-for-like or the red tint never shows.
+        # Armed state is an absolute path; compare like-for-like or the red tint never shows.
         is_armed = app.shader_lib_dir_delete_armed == root / Path(*child)
-        # Force-open if a new-file / new-dir input is targeted at this dir or
-        # any descendant — otherwise the inline input would render inside an
-        # invisible collapsed branch.
+        # Force-open so a pending inline input in a descendant isn't hidden in a collapsed branch.
         if _dir_contains_pending_input(app, child):
             imgui.set_next_item_open(True, imgui.Cond_.always)
         if is_armed:
@@ -134,8 +122,7 @@ def _draw_tree_children(
 
 
 def _dir_contains_pending_input(app: App, dir_rel: tuple[str, ...]) -> bool:
-    # True iff the inline new-file or new-dir input is targeted at this dir
-    # or one of its descendants. Drives auto-expand so the input is visible.
+    # True iff a pending new-file/new-dir input targets this dir or a descendant.
     dir_path = Path(*dir_rel)
 
     def _is_descendant(target: Path | None) -> bool:
@@ -153,8 +140,7 @@ def _dir_contains_pending_input(app: App, dir_rel: tuple[str, ...]) -> bool:
 
 
 def _draw_dir_context_menu(app: App, dir_rel: tuple[str, ...], is_root: bool) -> None:
-    # `begin_popup_context_item` opens on right-click of the last submitted
-    # item (the tree_node_ex header). Unique id per dir.
+    # begin_popup_context_item opens on right-click of the last submitted item (the header).
     popup_id = f"##dirctx_{'/'.join(dir_rel) if dir_rel else 'root'}"
     with context_menu_style():
         if imgui.begin_popup_context_item(popup_id):
@@ -189,8 +175,6 @@ def _draw_dir_context_menu(app: App, dir_rel: tuple[str, ...], is_root: bool) ->
 
 
 def _draw_dir_new_inputs_for(app: App, dir_rel: tuple[str, ...]) -> None:
-    # Both "New file:" and "New dir:" inline inputs share the same chrome —
-    # one helper, two configs.
     _draw_inline_new_input(
         state=app.shader_lib_file_new,
         label="New file:",
@@ -250,7 +234,6 @@ def _draw_inline_new_input(
 
 
 def _draw_file_node(app: App, path: Path, fns: list[ShaderLibFunction]) -> bool:
-    # File becomes a tree_node_ex (collapsible) with its functions as children.
     # Returns True iff a child function's "Open at decl" closed the picker.
     is_renaming = app.shader_lib_file_rename.target == path
     if is_renaming:
@@ -320,9 +303,7 @@ def _draw_file_rename_input(app: App, path: Path) -> None:
 
 
 def _draw_function_leaf(app: App, fn: ShaderLibFunction) -> bool:
-    # Function leaf: favs star + selectable. Right-click → context menu
-    # (Insert / Open at decl / Copy / Toggle favorite). Returns True if the
-    # "Open at decl" action fired and the picker should close.
+    # Returns True iff the "Open at decl" action fired and the picker should close.
     is_selected = app.shader_lib_picker_selected_function == fn.name
     is_fav = app.shader_lib_favorites.is_favorite(fn.name)
     star_label = ("*" if is_fav else "o") + f"##fav_{fn.name}"
@@ -334,8 +315,7 @@ def _draw_function_leaf(app: App, fn: ShaderLibFunction) -> bool:
     label = f"{fn.name}##leaf_{fn.name}"
     if imgui.selectable(label, is_selected)[0]:
         app.shader_lib_picker_selected_function = fn.name
-        # Clicking a function disarms any pending file/dir delete — moving on
-        # to inserting/exploring is a clear "I'm not deleting" signal.
+        # Selecting a function disarms any pending file/dir delete.
         app.arm_shader_lib_file_delete(None)
         app.arm_shader_lib_dir_delete(None)
     close_picker = _draw_function_context_menu(app, fn)

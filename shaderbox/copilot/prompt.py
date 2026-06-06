@@ -9,27 +9,18 @@ from shaderbox.copilot.config import COPILOT_CONFIG
 from shaderbox.copilot.context import CopilotContext
 from shaderbox.copilot.llm.api import LLMMessage
 
-# Min turns the trim always keeps, even over budget — the agent needs the recent conversation to stay
-# coherent (its own last NL turn-summaries). A "turn" starts at a user message and runs to the next
-# user message; history is NL-only (feature 020·28), so a turn is just user + one assistant summary.
+# Min turns the trim keeps even over budget. A turn = user msg + one assistant summary (NL-only history).
 _MIN_KEPT_TURNS: int = 4
-# Rough char->token ratio for the trim THRESHOLD only (no tokenizer in-tree; the provider returns
-# real counts but only post-send). ~4 chars/token is the standard English/code heuristic; we only
-# need "is history big", not an exact count.
+# Threshold-only char->token ratio (no in-tree tokenizer; real counts arrive only post-send).
 _CHARS_PER_TOKEN: int = 4
 
-# Prompt assembly: named BLOCKS composed by volatility, NOT a flat string concat (feature 020·28).
-# Knows nothing of tools or the client. Tiers, least-volatile -> most-volatile for OpenRouter
-# prefix-cache friendliness (§6/§J1): STATIC (the system rules) < RARE (project map + lib/template
-# catalogue + conventions — change on create/delete/rename/compile-flip, carry NO per-frame value) <
-# DIALOGUE (NL-only history — user msgs + one engine-derived turn-summary each; inert across turns so
-# the prefix grows monotonically) < PER_TURN (reserved for future per-round scratchpads — a member
-# sorts BELOW dialogue automatically, the cache-correct placement). The CURRENT SHADER SOURCE is NOT a
-# block and is NOT in history — it enters live via the read_shader tool result, after the warm prefix.
+# Prompt = named blocks sorted least->most volatile for prefix-cache friendliness: STATIC < RARE
+# (project map + catalogues + conventions) < DIALOGUE (NL-only history) < PER_TURN. The current shader
+# source is NOT a block and NOT in history — it enters live via the read_shader tool result.
 
 
 class Volatility(IntEnum):
-    # Sort key for a prompt block — lower = more stable = higher in the prompt = better cached.
+    # Block sort key — lower = more stable = higher in the prompt = better cached.
     STATIC = 0
     RARE = 1
     DIALOGUE = 2
@@ -38,15 +29,14 @@ class Volatility(IntEnum):
 
 @dataclass(frozen=True)
 class PromptBlock:
-    # One named tier of the prompt. `render` returns the block's messages ([] => the block is dropped),
-    # so dialogue (many messages), a singleton (one), and an empty scratchpad (none) are one mechanism.
+    # One named prompt tier. `render` returns the block's messages; [] drops the block.
     name: str
     volatility: Volatility
     render: Callable[[], list[LLMMessage]]
 
 
 def build_prompt(blocks: list[PromptBlock]) -> list[LLMMessage]:
-    # Sort by volatility (stable for equal ranks), render each, drop empties, flatten.
+    # Stable sort by volatility, render each, flatten (empties drop themselves).
     out: list[LLMMessage] = []
     for block in sorted(blocks, key=lambda b: b.volatility):
         out.extend(block.render())
@@ -226,15 +216,13 @@ _CONTROL_CHARS = {c for c in range(0x20) if c not in (0x09, 0x0A, 0x0D)}
 
 
 def _sanitize(text: str) -> str:
-    # Strip control chars (keep tab/newline/CR) — prompt-injection hygiene (§J9). Applies
-    # to anything user-/shader-supplied spliced into the prompt.
+    # Strip control chars (keep tab/newline/CR) — prompt-injection hygiene for spliced user/shader text.
     return "".join(c for c in text if ord(c) not in _CONTROL_CHARS)
 
 
 def _context_block(context: CopilotContext) -> str:
-    # The rare-volatility project map + library catalogue + template library + conventions. Placed
-    # AFTER the stable system prompt and BEFORE history so it sits in the cacheable prefix region (it
-    # carries no per-frame value — it only shifts on create/delete/rename/compile-flip/template-edit).
+    # Rare-volatility project map + library/template catalogues + conventions; sits in the cacheable
+    # prefix (after system, before history) — shifts only on create/delete/rename/compile-flip.
     return (
         "PROJECT MAP (your shader nodes; the one marked `current` is what the user is "
         f"looking at):\n{context.node_tree}\n\n"
@@ -254,8 +242,8 @@ _WORKING_SET_HEADER = (
 
 
 def _render_working_set_member(view: WorkingSetView) -> str:
-    # One member of the working-set scratchpad (feature 020·29 D4). A NODE shows header+marks +
-    # cat -n + uniforms + errors; a LIB FILE shows header + cat -n + a "no standalone compile" note.
+    # One working-set member: a node shows listing + uniforms + errors; a lib file shows listing
+    # + a "no standalone compile" note.
     if view.is_lib:
         return (
             f"=== {view.address} ===\n{view.listing}\n"
@@ -276,10 +264,8 @@ def _format_compile_errors(errors: list[CompileErrorInfo]) -> str:
 
 
 def render_working_set(views: list[WorkingSetView]) -> list[LLMMessage]:
-    # The per-turn working-set scratchpad as ONE inert user message (feature 020·29 D2/D4): no
-    # tool_call_id/tool_calls (it only ever concatenates onto a complete message set, so it can't
-    # orphan a pair). [] when the working set is empty -> the block drops entirely. The listings are
-    # already sanitized at the source-read boundary; the engine builds them, so no re-sanitize here.
+    # One inert user message (no tool_call_id/tool_calls, so it can't orphan a tool pair); [] when
+    # empty. Listings are already sanitized at the source-read boundary — do NOT re-sanitize here.
     if not views:
         return []
     body = (
@@ -291,8 +277,7 @@ def render_working_set(views: list[WorkingSetView]) -> list[LLMMessage]:
 
 
 def _estimate_tokens(messages: list[LLMMessage]) -> int:
-    # Char-count / ratio over content + tool-call arguments (the tool args echoed back in an
-    # assistant turn are real prompt bytes too). Threshold-only — see _CHARS_PER_TOKEN.
+    # Char-count / ratio over content + tool-call args (echoed args are real prompt bytes too).
     chars = 0
     for m in messages:
         if m.content:
@@ -303,10 +288,8 @@ def _estimate_tokens(messages: list[LLMMessage]) -> int:
 
 
 def _split_turns(history: list[LLMMessage]) -> list[list[LLMMessage]]:
-    # Group the NL-only history into turns, each starting at a `user` message and running to the next
-    # one (feature 020·28: a turn is just user + one assistant summary). Whole-turn grouping lets the
-    # window trim evict complete turns. A leading non-user fragment (shouldn't occur — every commit
-    # starts with a user message) becomes its own leading group, preserved as-is.
+    # Group history into turns, each starting at a `user` message, so the trim can evict whole turns.
+    # A leading non-user fragment (shouldn't occur) becomes its own leading group.
     turns: list[list[LLMMessage]] = []
     for m in history:
         if m.role == "user" or not turns:
@@ -319,9 +302,8 @@ def _split_turns(history: list[LLMMessage]) -> list[list[LLMMessage]]:
 def _trim_history(
     history: list[LLMMessage], fixed_overhead_tokens: int
 ) -> list[LLMMessage]:
-    # Drop whole leading turns until the estimate fits max_input_tokens, always keeping the last
-    # _MIN_KEPT_TURNS. fixed_overhead_tokens is the non-history prefix (system + context + new user
-    # message) so the budget covers the whole request, not just history.
+    # Drop leading turns until it fits max_input_tokens, always keeping _MIN_KEPT_TURNS.
+    # fixed_overhead_tokens = the non-history prefix, so the budget covers the whole request.
     budget = COPILOT_CONFIG.max_input_tokens
     if fixed_overhead_tokens + _estimate_tokens(history) <= budget:
         return history
@@ -345,16 +327,13 @@ def build_messages(
     history: list[LLMMessage],
     user_text: str,
 ) -> list[LLMMessage]:
-    # Compose the prompt as named blocks (feature 020·28). The pending-user block is PER_TURN so it
-    # sorts to the bottom; the working-set scratchpad (also PER_TURN) renders [] HERE and is injected
-    # live per-iteration by run_turn (feature 020·29 D2) — a build-time block that rendered real
-    # source would go write-only every iteration. Its only build-time job is the trim reserve.
+    # The working-set block renders [] HERE — it's injected live per-iteration by run_turn (a
+    # build-time real-source block would go write-only). Its only build-time job is the trim reserve.
     static = LLMMessage(role="system", content=_SYSTEM_PROMPT)
     rare = LLMMessage(role="system", content=_context_block(context))
     new_user = LLMMessage(role="user", content=_sanitize(user_text))
-    # The dialogue block is trimmed against the budget left after the fixed (non-history) blocks
-    # PLUS the scratchpad reserve — the working set is spliced AFTER the trim runs, so without the
-    # reserve a near-budget history would overflow every stream by the full scratchpad (020·29 D10).
+    # Reserve the scratchpad budget here: the working set is spliced AFTER the trim runs, so without
+    # the reserve a near-budget history would overflow every stream by the full scratchpad.
     overhead = (
         _estimate_tokens([static, rare, new_user])
         + COPILOT_CONFIG.scratchpad_reserve_tokens

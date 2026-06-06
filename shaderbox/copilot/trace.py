@@ -11,18 +11,9 @@ from shaderbox.copilot.llm.api import LLMMessage, LLMToolSpec, LLMUsage
 from shaderbox.logging_setup import LOGGING_CONFIG
 from shaderbox.paths import copilot_trace_dir
 
-# A DEDICATED full-fidelity transcript for the copilot, separate from the regular log
-# stream (loguru). Every prompt, wire message, LLM response, tool call + result, and
-# turn boundary is written here IN FULL (no truncation). The ONLY consumer is a human /
-# an AI agent reading the file back COLD to debug the copilot flow — so the format is a
-# plain-text transcript (real newlines, turn banners, indented blocks), NOT jsonl: a
-# 50-line shader reads as a shader, not a `\n`-escaped one-liner, and there are no
-# repeated keys per event. One TraceLog per CopilotSession; appends across turns; flushed
-# per event so a crash loses nothing.
-#
-# The file is opened LAZILY on the first event() and re-opened if it was closed: the App
-# lifecycle calls release() (-> close()) at the top of every _init, which would otherwise
-# null the handle the session opened in __init__ and silently drop the whole transcript.
+# Full-fidelity copilot transcript: plain-text (not jsonl) so a 50-line shader reads as a
+# shader, not a `\n`-escaped one-liner. One TraceLog per session; appends; flushed per event.
+# Opened lazily and re-opened after close — the App lifecycle calls release() at every _init.
 
 _INDENT = "    "
 _RULE = "=" * 78
@@ -67,7 +58,6 @@ def _render_tool_calls(tool_calls: list[dict[str, Any]]) -> str:
 
 
 def _render_value(key: str, value: Any) -> str:
-    # Dispatch on the known payload shapes so each renders readably; fall back to str().
     if value is None:
         return f"{key}: (none)"
     if isinstance(value, LLMUsage):
@@ -90,11 +80,11 @@ def _render_value(key: str, value: Any) -> str:
 class TraceLog:
     def __init__(self, path: Path) -> None:
         self._path = path
-        self._lock = threading.Lock()  # the worker thread writes; serialize appends
+        self._lock = threading.Lock()  # worker thread writes; serialize appends
         self._fh: TextIOWrapper | None = None
 
     def _ensure_open(self) -> TextIOWrapper | None:
-        # Caller holds the lock. Open (append) on first use / after a close().
+        # Caller holds the lock. Open (append) on first use / after close().
         if self._fh is not None:
             return self._fh
         try:
@@ -109,7 +99,7 @@ class TraceLog:
     def event(self, kind: str, **fields: Any) -> None:
         ts = datetime.now().isoformat(timespec="milliseconds")
         lines: list[str] = []
-        # A turn_start opens a visible banner so turn boundaries are scannable cold.
+        # turn_start gets a banner rule so turn boundaries are scannable.
         if kind == "turn_start":
             lines.append(_RULE)
         lines.append(f"### {kind}  ·  {ts}")
@@ -133,10 +123,8 @@ class TraceLog:
 
 
 def _prune_old_traces(keep: int) -> None:
-    # Keep only the newest `keep` transcript files — they are large debug ephemera.
-    # Sort by mtime, NOT name: the filename is copilot_<slug>_<stamp>, so a name sort
-    # orders by slug-then-time and would prune a newer project's files before an older
-    # project's whenever the newer slug sorts later.
+    # Sort by mtime, NOT name: the name is copilot_<slug>_<stamp>, so a name sort orders
+    # slug-then-time and would prune a newer project's files before an older project's.
     try:
         files = sorted(
             copilot_trace_dir().glob("copilot_*.transcript"),
@@ -153,17 +141,14 @@ def _prune_old_traces(keep: int) -> None:
 
 
 def new_trace_log(project_slug: str, stamp: str) -> TraceLog:
-    # `project_slug` + `stamp` are passed in (the caller composes them; keeps TraceLog
-    # construction pure). Prune older transcripts to the retention cap on each new
-    # session so the dir stays bounded.
+    # Prune to the retention cap each new session so the dir stays bounded.
     _prune_old_traces(LOGGING_CONFIG.trace_retention)
     name = f"copilot_{project_slug}_{stamp}.transcript"
     return TraceLog(copilot_trace_dir() / name)
 
 
 class _NullTraceLog(TraceLog):
-    # The agent loop's default when no trace sink is supplied (tests). event() no-ops
-    # (its path can never be opened).
+    # No-op sink (default when none supplied): _ensure_open never opens, so event() no-ops.
     def __init__(self) -> None:
         super().__init__(Path())
 

@@ -31,8 +31,8 @@ def draw_settings(app: App) -> None:
         if not visible:
             return
         if not _draw_body(app):
-            # Editor settings apply on close only — set_*() while the modal is open
-            # FPE-crashes the editor (conventions.md ## Known quirks).
+            # Apply on close only — set_*() while the modal is open FPE-crashes
+            # the editor (conventions.md ## Known quirks).
             app.apply_editor_settings()
             app.popup_state = PopupState.CLOSED
             imgui.close_current_popup()
@@ -110,9 +110,6 @@ def _draw_body(app: App) -> bool:
 
 
 def _draw_copilot_config(app: App) -> None:
-    # The OpenRouter key + model for the in-app copilot (feature 020). Edit-on-change +
-    # save, matching the exporter credential blocks. The client reads both live via
-    # getters, so a key/model entered here is seen on the next turn.
     field_w = float(SIZE.SETTINGS_CTRL_W) * 2.0
     cfg = app.integrations_store.copilot
     new_key = labeled_text_input(
@@ -137,11 +134,8 @@ def _chord_in_use(
 
 
 def _draw_keybindings(app: App) -> None:
-    # One row per command (the same set the cheatsheet shows): name + current
-    # chord + a Rebind button that arms one-frame capture. While armed, the next
-    # pressed chord commits (unless it duplicates another command in the same
-    # scope or lacks a modifier), Esc cancels. Fixed-key commands (arrow nav) show
-    # their chord with the Rebind button disabled.
+    # Rebind arms one-frame capture: the next chord commits unless it lacks a
+    # modifier or duplicates a command in the same scope; Esc cancels.
     if app.rebinding_command is not None:
         chord = capture_chord()
         if imgui.is_key_pressed(imgui.Key.escape, repeat=False):

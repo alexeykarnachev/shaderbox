@@ -10,28 +10,19 @@ After creating the imgui context and BEFORE the first frame::
     apply_theme(imgui.get_style(), accent="yellow", density="tight",
                 rounding="subtle")
 
-At runtime (Tweaks panel callbacks, future feature 009), call ``apply_theme(...)``
-again with new args to re-skin. The function is idempotent.
-
-This module is the live source of truth for the theme. (It originated from the
-feature-005 design pass; the palette ramp has since diverged from that pass's
-``ai_docs/design/tokens.json`` — that file is an archived snapshot, not a synced
-source.)
+Re-callable at runtime with new args to re-skin; idempotent. The live source of
+truth for the theme.
 
 Color framework (portable to a future non-gruvbox theme):
   - ``_P`` — the raw palette (named hues). The ONLY place literal colors live.
-  - ``_ACCENTS`` — accent presets drawn from ``_P``; the user picks one. This is the
-    single SWAPPABLE hue ("active / interactive / call-to-action"); ``apply_theme``
-    rewrites ``COLOR.ACCENT_*`` from it.
-  - ``_ColorBag`` (``COLOR``) — role tokens. Every role maps to a ``_P`` entry, never
-    a literal. Roles are either swappable (``ACCENT_*``) or FIXED (everything else:
-    ``SELECT`` / ``STATE_*`` / ``TAG`` / ...). The one fixed role that shares spatial
-    context with the accent — ``SELECT`` (its outline nests inside the accent's) —
-    must use a hue no accent preset and no state color uses; enforced by the
-    import-time invariant below. (State colors are status text, so they may overlap
-    an accent hue.)
-  Adding a theme = supply a new ``_P`` + ``_ACCENTS`` + role mapping; the invariant
-  check tells you at import whether the SELECT assignment is valid.
+  - ``_ACCENTS`` — accent presets drawn from ``_P``; the one SWAPPABLE hue, rewritten
+    into ``COLOR.ACCENT_*`` by ``apply_theme``.
+  - ``_ColorBag`` (``COLOR``) — role tokens, each mapping to a ``_P`` entry. Roles are
+    swappable (``ACCENT_*``) or FIXED (``SELECT`` / ``STATE_*`` / ``TAG`` / ...). FIXED
+    hues must read distinctly under every accent — enforced by the import-time
+    invariant below.
+  Adding a theme = new ``_P`` + ``_ACCENTS`` + role mapping; the invariant check
+  validates the SELECT assignment at import.
 """
 
 from typing import Literal
@@ -111,8 +102,7 @@ _ACCENTS: dict[
 # ============================================================================
 # Public role tokens
 # ============================================================================
-# The codebase imports these instead of hardcoding hex strings.
-# Accent fields are overwritten by apply_theme() when the user swaps accents.
+# Accent fields are overwritten by apply_theme() on accent swap.
 
 
 class _ColorBag:
@@ -146,10 +136,8 @@ class _ColorBag:
         0.18,
     )
 
-    # selection / context cue — FIXED (never written by apply_theme). The swappable
-    # accent is the active-region/tab cue; selection must stay a distinct hue from it
-    # under EVERY accent preset, so it can't be the accent. purple_b is used by no
-    # accent preset and no state color.
+    # selection cue — FIXED (never written by apply_theme); must stay distinct from
+    # every accent preset and state hue (see import-time invariant below).
     SELECT: tuple[float, float, float, float] = _P["purple_b"]
 
     # state semantics
@@ -163,7 +151,7 @@ class _ColorBag:
     FAVS: tuple[float, float, float, float] = _P["yellow_b"]
     RESET_PILL: tuple[float, float, float, float] = _P["purple_n"]
 
-    # syntax (for imgui_color_text_edit palette wiring; feature 006)
+    # syntax (imgui_color_text_edit palette wiring)
     SYN_KEYWORD: tuple[float, float, float, float] = _P["red_b"]
     SYN_TYPE: tuple[float, float, float, float] = _P["yellow_b"]
     SYN_BUILTIN: tuple[float, float, float, float] = _P["green_b"]
@@ -180,35 +168,16 @@ COLOR = _ColorBag()
 
 
 # ----------------------------------------------------------------------------
-# Theme-portability invariant (enforced at import).
-#
-# The color framework has TWO kinds of role: the SWAPPABLE accent (ACCENT_*, the
-# one "active / interactive" hue, chosen per `_ACCENTS` preset and rewritten by
-# `apply_theme`), and FIXED semantic hues (SELECT / STATE_* / TAG / FAVS / ...)
-# that must read distinctly no matter which accent is picked. The whole scheme —
-# and its portability to a future non-gruvbox palette — rests on one rule:
-#
-#   a FIXED hue may not equal ANY accent preset's primary, nor another fixed hue
-#   it shares spatial context with.
-#
-# Break it (e.g. set SELECT to a hue some accent preset also uses) and the
-# selection cue silently merges with the active-region cue the moment that accent
-# is chosen — exactly the clash this framework exists to prevent. A new theme just
-# supplies its own `_P` + `_ACCENTS` + role mapping; this check is what tells the
-# author, at import, whether their assignment is valid. Keep it; extend the
-# `_fixed` list when a new fixed cross-context role is added.
+# Theme-portability invariant (enforced at import): a FIXED hue (SELECT / STATE_* /
+# ...) may not equal any accent preset's primary, nor another fixed hue it shares
+# spatial context with — else two cues merge under some accent.
 # ----------------------------------------------------------------------------
 _accent_primaries: set[tuple[float, float, float, float]] = {
     primary for primary, _active, _alpha in _ACCENTS.values()
 }
-# SELECT is the one fixed role that shares SPATIAL context with the swappable accent
-# — a selected-tile border can sit INSIDE an accent-outlined region, and the
-# context-menu chrome floats over accent-bearing UI. So it must be distinct from
-# every accent primary AND from every state hue (a selected-but-errored tile must
-# still read 'error', not 'selected'). State colors are status TEXT in their own
-# rows (not outlines nesting under the accent), so they MAY share a hue with an
-# accent preset — that's a tolerable text/accent overlap, not the nested-outline
-# clash. If a future fixed role gains accent-adjacent OUTLINE context, add it here.
+# SELECT's outline nests inside accent-outlined regions, so it must differ from every
+# accent primary AND every state hue. State colors are status TEXT, not nested
+# outlines, so they may share an accent hue.
 assert COLOR.SELECT not in _accent_primaries, (
     f"theme invariant: SELECT={COLOR.SELECT} collides with an accent preset's "
     f"primary — pick a hue no accent uses, or the selection outline merges with the "
@@ -257,10 +226,8 @@ class SIZE:
     PREVIEW_W: int = 200
     PANEL_CTRL_MINH: int = 600
 
-    # Shared share-panel preview box — every exporter's preview is this exact size
-    # (one source of truth so all outlets match; fixed so it can't jitter). Height is
-    # set generously so the preview is always taller than any outlet's control column
-    # (no bottom-alignment math — controls just stack top-down beside it).
+    # Shared share-panel preview box — every exporter's preview is this exact size.
+    # Height is generous so it always exceeds any outlet's control column.
     SHARE_PREVIEW_W: int = 200
     SHARE_PREVIEW_H: int = 310
 
@@ -273,11 +240,11 @@ class SIZE:
     SCROLLBAR_W: int = 12
     GRAB_MIN: int = 10
 
-    # Keyboard cheatsheet floating overlay (feature 018).
+    # Keyboard cheatsheet floating overlay.
     CHEATSHEET_W: int = 230
     CHEATSHEET_MARGIN: int = 12  # gap from the window's bottom-right corner
 
-    # Copilot chat floating window (feature 020): corner-preset box + bottom-strip height.
+    # Copilot chat floating window: corner-preset box + bottom-strip height.
     COPILOT_W: int = 420
     COPILOT_H: int = 480
     COPILOT_STRIP_H: int = 260
@@ -422,12 +389,10 @@ def _set_colors(
 ) -> None:
     """Map every relevant ImGuiCol_* slot to a gruvbox palette token.
 
-    All slot names verified against imgui-bundle 1.92.801's pyi stub.
-    Pre-1.91 names (nav_highlight, tab_active, tab_unfocused*) are
-    intentionally absent — they were renamed in Dear ImGui 1.91+.
-
-    Uses imgui-bundle's `Style.set_color_(idx, ImVec4Like)` accessor since
-    the C++ `Colors[]` array isn't directly exposed as a Python attribute.
+    Slot names verified against imgui-bundle 1.92.801's pyi stub; pre-1.91 names
+    (nav_highlight, tab_active, tab_unfocused*) are renamed in Dear ImGui 1.91+ and
+    absent on purpose. Uses `Style.set_color_(idx, ImVec4Like)` — the C++ `Colors[]`
+    array isn't exposed as a Python attribute.
     """
     col = imgui.Col_
 

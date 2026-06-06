@@ -40,16 +40,13 @@ def _trace_stamp() -> str:
 
 
 def _slugify(name: str) -> str:
-    # Project-dir name -> a filesystem-safe trace-filename slug (the trace file is
-    # copilot_<slug>_<stamp>.transcript). Keep alnum/dash/underscore, collapse the rest.
+    # Project-dir name -> filesystem-safe trace-filename slug. Keep alnum/dash/underscore.
     safe = "".join(c if c.isalnum() or c in "-_" else "-" for c in name).strip("-")
     return safe or "project"
 
 
-# The package composition root. App owns ONE of these (constructed before the first
-# _init, which calls release()) and drives it: bridge.drain() + pump_events() per
-# frame, enqueue_turn() on send, release() at shutdown. The worker thread is spawned
-# lazily on the first turn (don't start a thread for a user who never opens the chat).
+# Composition root. App owns ONE; drives it bridge.drain() + pump_events() per frame,
+# enqueue_turn() on send, release() at shutdown. Worker thread spawned lazily on first turn.
 
 _SHUTDOWN = object()  # sentinel on the turn queue to unblock the worker's get() at exit
 
@@ -68,26 +65,22 @@ class CopilotSession:
         self.bridge = CopilotBridge()
         self.gate = GateChannel()
         self.state = ChatState()
-        # Conversation memory across turns. Owned + mutated ONLY by the worker thread
-        # (read at turn start, appended at turn end) — never by the UI. Persisted
-        # per-project (feature 022) via App, which reads it at a quiescent point.
+        # Conversation memory. Owned + mutated ONLY by the worker thread (read at turn
+        # start, appended at turn end) — never by the UI.
         self.history: list[LLMMessage] = []
         self._turn_queue: queue.Queue[str | object] = queue.Queue()
         self._events: queue.Queue[AgentEvent] = queue.Queue()
         self._worker: threading.Thread | None = None
         self._cancel = threading.Event()
-        # Set ONLY by reset_conversation / release (project teardown), never by the Stop
-        # button: tells a worker finishing an aborted turn to DROP its history commit so it
-        # doesn't land on the next project's freshly-reset history (feature 022). A user
-        # Stop (cancel_turn) does NOT set this, so a stopped turn's partial reply still
-        # commits to THIS conversation's context.
+        # Set ONLY by reset_conversation / release (teardown), never by Stop: tells a worker
+        # finishing an aborted turn to DROP its history commit so it doesn't land on the next
+        # project's reset history. A user Stop still commits its partial reply to THIS context.
         self._drop_turn = threading.Event()
         self._released = (
             False  # True only after release() — gates the shutdown sentinel
         )
-        # Full-transcript sink (prompts / responses / tool calls, in full) — a dedicated
-        # per-session file, separate from the regular log stream (trace.py). Lazily
-        # opened; a fresh file per project switch (reset_conversation).
+        # Full-transcript sink, per-session file separate from the log stream. Fresh file
+        # per project switch (reset_conversation).
         self.trace = self._new_trace()
 
     def _new_trace(self) -> TraceLog:
@@ -96,14 +89,14 @@ class CopilotSession:
     # ---- main thread: enqueue + drain ----
 
     def enqueue_turn(self, user_text: str) -> None:
-        # MAIN THREAD (on Send). The editor flush + lock happens App-side BEFORE this
-        # call (App.copilot_send) so the worker's first read sees consistent state.
+        # MAIN THREAD (on Send). The editor flush + lock happens App-side BEFORE this call so
+        # the worker's first read sees consistent state.
         self.state.messages.append(Message(role="user", text=user_text))
         self.state.streaming_text = ""
         self.state.in_flight = True
-        # Clear a `_shutdown` the bridge + gate may have latched from the first _init's
-        # release() (App._init tears down prior state before reuse) — else every GL tool
-        # raises "copilot shutting down" and every gate.ask() returns cancelled immediately.
+        # Clear a `_shutdown` the bridge + gate may have latched from a prior release() on this
+        # reused session — else every GL tool raises "copilot shutting down" and gate.ask()
+        # returns cancelled immediately.
         self.bridge.reopen()
         self.gate.reopen()
         self._ensure_worker()
@@ -111,20 +104,19 @@ class CopilotSession:
         logger.debug("copilot enqueue_turn: queued + worker ensured")
 
     def cancel_turn(self) -> None:
-        # MAIN THREAD (Stop button). The loop checks cancel.is_set() between steps; the
-        # gate's cancel_all releases a worker blocked on a pending widget. reusable: the
-        # channel must stay live for the next turn.
+        # MAIN THREAD (Stop button). The loop checks cancel.is_set() between steps; cancel_all
+        # releases a worker blocked on a pending widget. reusable: channel stays live next turn.
         self._cancel.set()
         self.gate.cancel_all(reusable=True)
 
     def is_cancelled(self) -> bool:
-        # ANY THREAD. Reads the CURRENT _cancel — reset_conversation REPLACES the event,
-        # so a captured reference would go stale. The publish-await polls this (feature 020·18).
+        # ANY THREAD. Reads the CURRENT _cancel — reset_conversation REPLACES the event, so a
+        # captured reference would go stale.
         return self._cancel.is_set()
 
     def pump_events(self) -> None:
-        # MAIN THREAD, per frame. Drain worker events into self.state — the ONLY writer
-        # of state (single-writer invariant, skeleton Seam-E).
+        # MAIN THREAD, per frame. Drain worker events into self.state — the ONLY writer of
+        # state (single-writer invariant).
         while True:
             try:
                 ev = self._events.get_nowait()
@@ -137,14 +129,13 @@ class CopilotSession:
             case AgentTextDelta():
                 self.state.streaming_text += ev.text
             case AgentStatus():
-                # The transient in-flight line (feature 020·20 D1): the durable per-tool card lands
-                # below; this shows live progress in place of the bare "thinking" caption.
+                # Transient in-flight status line; the durable per-tool card lands below.
                 self.state.status = ev.text
             case AgentGateOpened():
                 # Dequeue the GatePending (keeps _pending in lockstep with _current) and
                 # materialize the gate card. gate_kind picks the widget (CONFIRM Yes/No vs
                 # CREDENTIAL masked input); the answer flows back via answer_gate /
-                # answer_gate_credential -> gate.answer (feature 020·17 §7.1, 020·19).
+                # answer_gate_credential -> gate.answer.
                 self.gate.take_pending()
                 self.state.messages.append(
                     Message(
@@ -156,12 +147,10 @@ class CopilotSession:
                 )
             case AgentToolCard():
                 verb = "ok" if ev.ok else "failed"
-                # The result line (the terse fact / error) under the card (feature 020·20 D1). A
-                # render path / publish URL no longer rides this line — it's a first-class widget
-                # (feature 020·21, ev.widget) the renderer draws as a button.
-                # A tool with a terse `display` (read_shader's summary) shows that in chat instead of
-                # its heavy full `result` — the user reads code in the editor (020·23 D6). The full
-                # result still rode into the AGENT's context in run_turn.
+                # The result line under the card. A render path / publish URL rides ev.widget
+                # (drawn as a button), not this line. A tool with a terse `display` shows that
+                # in chat instead of its heavy full `result`; the full result still went to the
+                # agent's context in run_turn.
                 shown = ev.display or ev.result
                 line = f"{ev.name}: {verb}"
                 if shown:
@@ -194,24 +183,22 @@ class CopilotSession:
                 self._finish_turn()
 
     def _open_gate_card(self) -> Message | None:
-        # The trailing pending_action Message still awaiting an answer (resolved==False).
-        # There is only ever one open gate (_current), so the last unresolved card is it.
+        # The trailing unresolved pending_action. Only ever one open gate, so the last is it.
         for msg in reversed(self.state.messages):
             if msg.role == "pending_action" and not msg.resolved:
                 return msg
         return None
 
     def _resolve_open_gate_card(self, outcome: str) -> None:
-        # A cancel/error mid-gate must mark the open confirm card resolved, or it renders
-        # live Yes/No buttons forever (feature 020·17). outcome = the terminal label.
+        # A cancel/error mid-gate must mark the open confirm card resolved, or it renders live
+        # Yes/No buttons forever. outcome = the terminal label.
         card = self._open_gate_card()
         if card is not None:
             card.resolved = True
             card.text = f"{card.text}\n({outcome})"
 
     def _attach_recover(self, payload: dict) -> None:
-        # Attach RecoverInfo to the resolved-Yes delete card (the trailing resolved
-        # pending_action with no recover yet). node_id/trash_name come from the tool payload.
+        # Attach RecoverInfo to the trailing resolved pending_action with no recover yet.
         node_id = str(payload.get("node_id", ""))
         trash_name = str(payload.get("trash_name", ""))
         if not node_id or not trash_name:
@@ -226,7 +213,7 @@ class CopilotSession:
                 return
 
     def answer_gate(self, approved: bool) -> None:
-        # MAIN THREAD (Yes/No click). Mark the open confirm card resolved + unblock the worker.
+        # MAIN THREAD (Yes/No click). Mark the open card resolved + unblock the worker.
         card = self._open_gate_card()
         if card is not None:
             card.resolved = True
@@ -236,9 +223,9 @@ class CopilotSession:
         )
 
     def answer_gate_credential(self, secret: str) -> None:
-        # MAIN THREAD (Save on a CREDENTIAL gate, feature 020·19). The secret rides GateResponse
-        # back to the worker; the card text gets only a REDACTED echo, so the persisted card +
-        # the trace never hold the full secret.
+        # MAIN THREAD (Save on a CREDENTIAL gate). The secret rides GateResponse back to the
+        # worker; the card text gets only a REDACTED echo, so the persisted card + the trace
+        # never hold the full secret.
         card = self._open_gate_card()
         if card is not None:
             card.resolved = True
@@ -248,13 +235,10 @@ class CopilotSession:
 
     def _finish_turn(self) -> None:
         self.state.in_flight = False
-        self.state.status = (
-            ""  # clear the transient in-flight status line (feature 020·20 D1)
-        )
+        self.state.status = ""  # clear the transient in-flight status line
 
     def drain_bridge(self) -> None:
-        # MAIN THREAD, per frame, early (pre-render) so a recompiled node renders this
-        # frame. Wrapped by the caller; bridge.drain isolates each op anyway.
+        # MAIN THREAD, per frame, early (pre-render) so a recompiled node renders this frame.
         self.bridge.drain()
 
     # ---- worker thread ----
@@ -275,9 +259,8 @@ class CopilotSession:
                 if self._released:
                     logger.debug("copilot worker thread exiting (shutdown)")
                     return
-                # A stale sentinel from a prior release() on this REUSED session — the
-                # app is still live (not released), so this worker must keep serving.
-                # Swallow it instead of dying, or the next turn is stranded.
+                # Stale sentinel from a prior release() on this REUSED session — app still
+                # live, so keep serving or the next turn is stranded.
                 logger.debug("copilot worker: ignoring stale shutdown sentinel")
                 continue
             assert isinstance(item, str)
@@ -288,10 +271,9 @@ class CopilotSession:
     def _run_one_turn(self, user_text: str) -> None:
         context = build_context(self.caps)
         error_text = ""
-        # The terminal event (AgentTurnDone / AgentError / AgentCancelled) flips in_flight on
-        # the main thread, which is the gate save_conversation reads. Buffer it and emit it
-        # ONLY after the history commit below, so the same-frame save can never observe a
-        # history short by the just-finished turn (the visible-messages-outrun-history race).
+        # The terminal event flips in_flight (which gates save_conversation). Buffer it and
+        # emit it ONLY after the history commit below, so a same-frame save can't observe a
+        # history short by the just-finished turn.
         terminal: AgentEvent | None = None
         try:
             for ev in run_turn(
@@ -325,8 +307,8 @@ class CopilotSession:
             logger.exception("Copilot turn failed")
             error_text = "copilot turn failed (see logs)"
             terminal = AgentError(error_text)
-        # The engine-derived NL turn-summary rides the terminal event (feature 020·28); an empty
-        # default on the except fallbacks. _commit_turn renders it into one assistant history message.
+        # The engine-derived NL turn-summary rides the terminal event; empty default on the
+        # except fallbacks. _commit_turn renders it into one assistant history message.
         summary = getattr(terminal, "summary", TurnSummary())
         self._commit_turn(user_text, summary, error_text)
         if terminal is not None:
@@ -335,13 +317,13 @@ class CopilotSession:
     def _commit_turn(
         self, user_text: str, summary: TurnSummary, error_text: str
     ) -> None:
-        # Commit the turn to history (worker is the sole owner) as NATURAL LANGUAGE ONLY (feature 020·28):
-        # the user message + ONE assistant message rendered from the engine-derived turn-summary. No tool
-        # messages ever — the full source the agent read is re-fetched live each turn, never persisted.
+        # Commit to history (worker is sole owner) as NATURAL LANGUAGE ONLY: the user message +
+        # ONE assistant message from the turn-summary. No tool messages — the source the agent
+        # read is re-fetched live each turn, never persisted.
         #
-        # A turn aborted by project teardown (reset_conversation / release set _drop_turn) must NOT commit
-        # — run_turn returns NORMALLY on cancel, so it would otherwise land on the next project's
-        # freshly-reset history (feature 022). A user Stop does NOT set _drop_turn.
+        # A turn aborted by teardown (_drop_turn set) must NOT commit — run_turn returns NORMALLY
+        # on cancel, so it would otherwise land on the next project's reset history. A user Stop
+        # does NOT set _drop_turn.
         if self._drop_turn.is_set():
             return
         self.history.append(LLMMessage(role="user", content=user_text))
@@ -352,10 +334,9 @@ class CopilotSession:
         )
 
     def _render_summary(self, summary: TurnSummary, error_text: str) -> str | None:
-        # The NL assistant message persisted for a turn: the agent's reply prose (sanitized ASCII)
-        # followed by a terse action ledger (mutations + irreversible identities) + the nodes it
-        # touched, so the next turn can resolve "it" / dial back / not re-publish. None only when a turn
-        # produced literally nothing (a bare error with no reply) — keeps the user/assistant pairing.
+        # The NL assistant message persisted for a turn: reply prose (sanitized ASCII) + a terse
+        # action ledger + the nodes touched, so the next turn can resolve "it" / not re-publish.
+        # None only when a turn produced nothing — keeps the user/assistant pairing.
         parts: list[str] = []
         reply = summary.reply or error_text
         if reply:
@@ -369,12 +350,10 @@ class CopilotSession:
     # ---- lifecycle ----
 
     def reset_conversation(self) -> None:
-        # Project switch / clear: drop the transcript + history. The caps closures read
-        # live app.*, so no reconstruction is needed (skeleton 10 §4). reusable: the same
-        # session serves the next project, so the gate must NOT latch shut.
-        # INVARIANT (feature 022): callers gate this on `not in_flight` (open_project +
-        # the clear button both refuse while a turn runs), so the worker is idle here and
-        # no join is needed. Warn if that invariant is ever violated.
+        # Project switch / clear: drop the transcript + history. reusable: the same session
+        # serves the next project, so the gate must NOT latch shut.
+        # INVARIANT: callers gate this on `not in_flight`, so the worker is idle here and no
+        # join is needed. Warn if that invariant is ever violated.
         if self.state.in_flight:
             logger.warning(
                 "reset_conversation called mid-turn — caller bypassed the in_flight gate"
@@ -382,8 +361,8 @@ class CopilotSession:
         self._drop_turn.set()  # a worker finishing an aborted turn must not commit it
         self._cancel.set()
         self.gate.cancel_all(reusable=True)
-        # Drain any queued turns / a stale shutdown sentinel left by a prior release()
-        # on this reused session, so nothing strands the next turn.
+        # Drain queued turns / a stale shutdown sentinel from a prior release(), so nothing
+        # strands the next turn.
         while True:
             try:
                 self._turn_queue.get_nowait()
@@ -392,22 +371,21 @@ class CopilotSession:
         self.state = ChatState()
         self.history = []
         self._cancel = threading.Event()
-        # A fresh transcript for the project we are switching INTO — its name carries
-        # the new project's slug, and the prior project's transcript is left closed
-        # on disk (retention prunes it later).
+        # Fresh transcript for the project we switch INTO; the prior one is left closed on
+        # disk (retention prunes it later).
         self.trace.close()
         self.trace = self._new_trace()
 
     def save_conversation(self, path: Path) -> None:
-        # MAIN THREAD, at a quiescent point (not in_flight): snapshot state + history to
-        # disk (feature 022). Both arrays are consistent here — the worker is idle.
+        # MAIN THREAD, at a quiescent point (not in_flight): snapshot state + history to disk.
+        # Both arrays are consistent here — the worker is idle.
         self.pump_events()  # drain any terminal event so the last turn's bubble + usage land
         store = ConversationStore.from_runtime(self.state, self.history)
         store.save(path)
 
     def load_conversation(self, store: ConversationStore) -> None:
-        # MAIN THREAD, after reset_conversation (fresh session): restore the parsed store
-        # into state + history + usage (feature 022). Builds on reset's clean slate.
+        # MAIN THREAD, after reset_conversation (fresh session): restore the parsed store into
+        # state + history + usage.
         self.state.messages = store.to_messages()
         self.state.usage = store.to_usage()
         self.history = store.to_history()
@@ -419,10 +397,9 @@ class CopilotSession:
             )
 
     def release(self) -> None:
-        # MAIN THREAD, at shutdown — called at the TOP of App.release(), before the node
-        # release, so a queued GL op never runs against half-released nodes. Safe when no
-        # worker was ever spawned: the sentinel + cancel_all + join on a None thread are
-        # all no-ops.
+        # MAIN THREAD, at shutdown — called BEFORE the node release, so a queued GL op never
+        # runs against half-released nodes. Safe when no worker was spawned: sentinel +
+        # cancel_all + join on a None thread are all no-ops.
         self._released = True
         self._drop_turn.set()  # abandon any in-flight turn's commit at teardown
         self._cancel.set()

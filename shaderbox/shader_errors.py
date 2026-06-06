@@ -5,9 +5,7 @@ from pathlib import Path
 
 @dataclass(frozen=True)
 class ShaderError:
-    # `path` identifies which source file the error belongs to (the root today; an
-    # included file once 015 lands). `line` is 0-based editor line; -1 when the raw
-    # driver string didn't match either error regex (fallback row, not clickable).
+    # `line` is 0-based editor line; -1 = unparsable driver string (fallback, not clickable).
     path: Path
     line: int
     message: str
@@ -15,12 +13,9 @@ class ShaderError:
 
 @dataclass(frozen=True)
 class SourceMap:
-    # Maps a driver-emitted `(file_id, line)` pair back to a source file + 1-based
-    # line in that file. The include resolver populates `file_id_to_path` and emits
-    # `#line N <id>` directives during flatten — both NVIDIA `0(LINE) : msg` and Mesa
-    # `ERROR: 0:LINE: msg` honour `#line`, so the line they report is already the
-    # source line; we just need the file-id table to recover the path. The root
-    # file is always file-id 0.
+    # Maps a driver-emitted `(file_id, line)` back to source path + 1-based line.
+    # Drivers honour the `#line N <id>` directives emitted during flatten, so the
+    # reported line is already the source line; only the path needs recovery. Root = file-id 0.
     file_id_to_path: dict[int, Path]
 
     @property
@@ -32,16 +27,14 @@ class SourceMap:
         return cls(file_id_to_path={0: root_path})
 
     def resolve(self, file_id: int, line: int) -> tuple[Path, int]:
-        # Unknown file_id (driver emitted an id we never declared) → fall back to
-        # root file; better than dropping the error entirely.
+        # Unknown file_id falls back to root rather than dropping the error.
         path = self.file_id_to_path.get(file_id, self.file_id_to_path[0])
         return (path, line)
 
 
 # NVIDIA `0(LINE) : error CXXXX: msg`; Mesa/Intel/AMD `ERROR: 0:LINE: msg`.
-# The leading number is the source-string file-id set by our `#line N M` directives
-# (0 for the root). Driver lines are 1-based; we resolve via SourceMap then shift
-# 1-based -> 0-based DocPos.
+# Leading number = file-id from our `#line` directives (0 = root). Driver lines are
+# 1-based; resolved via SourceMap then shifted to 0-based.
 _NVIDIA_ERROR_RE = re.compile(r"^\s*(\d+)\((\d+)\)\s*:\s*(.+)$")
 _MESA_ERROR_RE = re.compile(r"^\s*(?:ERROR|WARNING):\s*(\d+):(\d+):\s*(.+)$")
 
@@ -62,8 +55,7 @@ def parse_shader_errors(raw: str, source_map: SourceMap) -> list[ShaderError]:
 
 
 def next_error_line(errors: list[ShaderError], after_line: int) -> int | None:
-    # Markable lines (line >= 0), sorted; the first strictly after `after_line`,
-    # wrapping to the first. None when there are no markable errors.
+    # First markable line (line >= 0) strictly after `after_line`, wrapping to the first.
     lines = sorted({e.line for e in errors if e.line >= 0})
     if not lines:
         return None
@@ -74,11 +66,9 @@ def next_error_line(errors: list[ShaderError], after_line: int) -> int | None:
 
 
 def find_uniform_declaration_line(source: str, name: str) -> int | None:
-    # The name must be the declared identifier (immediately before `[`/`=`/`;`/`{`),
-    # not merely mentioned on a `uniform` line (a comment / another's initializer).
-    # `{` covers UBO blocks (`layout(std140) uniform u_params { ... }`) where the
-    # name is the block-type, terminated by `{`, and the line may carry an optional
-    # `layout(...)` prefix before `uniform`.
+    # Name must be the declared identifier (immediately before `[`/`=`/`;`/`{`), not
+    # just mentioned on a `uniform` line. `{` covers UBO blocks where the name is the
+    # block-type; an optional `layout(...)` may precede `uniform`.
     pattern = re.compile(
         rf"^\s*(?:layout\s*\([^)]*\)\s*)?uniform\b[^=;{{]*\b{re.escape(name)}\s*(?:\[|=|;|\{{)"
     )

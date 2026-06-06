@@ -9,12 +9,8 @@ from shaderbox.copilot.capabilities import (
 )
 from shaderbox.copilot.tools.base import GatePolicy, ToolDefinition
 
-# The render + publish tool surface (feature 020·18). render_image/render_video write a file
-# under the project renders dir (GL => the capability marshals via the bridge with the longer
-# render_op_timeout_s). publish_telegram/publish_youtube render-then-upload, returning the
-# pack/Studio URL. ALL are GatePolicy.ALWAYS (a render freezes the UI + costs a confirm; a
-# publish is external + irreversible). The publish tools carry a `precheck` that returns a
-# guided handoff (connect in Settings / pick a pack) BEFORE the gate when they can't run.
+# Render tools marshal GL via the bridge; all are GatePolicy.ALWAYS (render freezes the UI,
+# publish is external + irreversible). Publish tools precheck (handoff) before the gate.
 
 # Dimensions snap to the codec alignment, so the result reports the ACTUAL rendered size.
 _DIM_DESC = "pixels; omit (0) to use the node's current canvas size. Snaps up to the codec alignment."
@@ -87,10 +83,8 @@ _PUBLISH_YOUTUBE_DESC = (
 )
 
 
-# Result strings are TERSE FACTS only — the URL/path is a first-class widget the engine renders
-# (feature 020·21), NEVER embedded here (this string IS the model-facing message; a URL in it would
-# pollute context and tempt the agent to paste a link it shouldn't). The "a button is shown" sentence
-# is CONDITIONAL on the widget being built (non-empty target), so the agent never promises a dead button.
+# The URL/path goes in the widget, never embedded in the result string (the model-facing message).
+# The "a button is shown" line is conditional on a non-empty target, so no dead-button promise.
 
 
 def _render_result(r: RenderResult, kind: str) -> tuple[bool, str, dict | None]:

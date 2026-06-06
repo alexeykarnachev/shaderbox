@@ -78,8 +78,8 @@ _DESC_INPUT_H = 60
 _STOP_SENTINEL = "__stop__"
 _OPEN_SETTINGS_KEY = "open_settings"
 
-# Both job kinds run on the serial worker; both must gate the buttons, or an
-# upload could enqueue behind a connect blocked on run_local_server.
+# Both gate the buttons, or an upload could enqueue behind a connect blocked on
+# run_local_server.
 _BUSY_KINDS = frozenset({"connect", "upload"})
 
 
@@ -120,7 +120,7 @@ class _RenderState:
     last_progress: ExportProgress | None = None
     in_flight: bool = False
     paste_error: str = ""
-    show_paste: bool = False  # reveal the paste-fallback textarea (vs. file pick)
+    show_paste: bool = False  # paste-fallback textarea vs. file pick
 
 
 def _read_client_secret_file(path: Path) -> str:
@@ -182,9 +182,8 @@ class YouTubeExporter(Exporter):
 
     def rebind(self, settings: dict[str, Any]) -> None:
         _ = settings
-        # Restore auth purely from the persisted store — no network call. Clear all
-        # per-outlet render state so a previous project's metadata/artifact pointer
-        # never bleeds into the newly-opened one.
+        # Restore auth from the persisted store (no network call); clear per-outlet
+        # render state so a previous project's metadata never bleeds into this one.
         self._render_state.auth_state = (
             AuthState.AUTHED if self._has_identity() else AuthState.UNCONFIGURED
         )
@@ -217,8 +216,8 @@ class YouTubeExporter(Exporter):
         self._enqueue(_Job(kind="connect"))
 
     def disconnect(self) -> None:
-        # Drop the OAuth token but keep the client key — re-Connect is one click and
-        # the setup instructions stay hidden.
+        # Drop the OAuth token but keep the client key (re-Connect stays one click;
+        # setup instructions stay hidden).
         self._yt.token_json = ""
         self._yt.channel_title = ""
         self._yt.channel_id = ""
@@ -227,7 +226,7 @@ class YouTubeExporter(Exporter):
         self._render_state.auth_message = ""
 
     def clear_credentials(self) -> None:
-        # Wipe everything incl. the client key — the setup instructions reappear.
+        # Wipe everything incl. the client key — setup instructions reappear.
         self._yt.client_id = ""
         self._yt.client_secret = ""
         self.disconnect()
@@ -242,8 +241,7 @@ class YouTubeExporter(Exporter):
         return self._render_state.shape == "short"
 
     def set_shape(self, is_short: bool) -> None:
-        # The copilot publish path sets the shape so render_preset() + the upload flag agree
-        # (feature 020·18) — the UI sets it via the Long/Short chips.
+        # Lets the publish path set the shape so render_preset() and the upload flag agree.
         self._render_state.shape = "short" if is_short else "long"
 
     def render_preset(self) -> RenderPreset:
@@ -301,8 +299,7 @@ class YouTubeExporter(Exporter):
     def draw_config_ui(self) -> None:
         full_width: float = imgui.get_content_region_avail().x
 
-        # Setup steps show only until a client key is loaded; reappear when the key
-        # is cleared. Same shared primitive + ghost styling as Telegram.
+        # Setup steps show only until a client key is loaded; reappear when cleared.
         have_key: bool = bool(self._yt.client_id)
         if not have_key:
             setup_steps(
@@ -333,8 +330,8 @@ class YouTubeExporter(Exporter):
         busy: bool = self._render_state.in_flight
         connected_now: bool = self._is_connected()
 
-        # Three states (parity with Telegram):
-        #   no key            -> Load / Paste (no Connect yet)
+        # Three states:
+        #   no key             -> Load / Paste (no Connect yet)
         #   key, not connected -> Client loaded + Connect + Clear (no Load)
         #   connected          -> just status + Disconnect (below)
         if not connected_now and not have_key:
@@ -423,8 +420,8 @@ class YouTubeExporter(Exporter):
             )
             return
 
-        # Preview on the left (the shared fixed size — always taller than the
-        # controls, no alignment math); controls stack top-down on the right.
+        # Preview left at the shared fixed size (always taller than the controls, so no
+        # alignment math); controls stack on the right.
         preview_box(
             "yt_preview",
             render_control.preview_texture_glo,
@@ -507,19 +504,14 @@ class YouTubeExporter(Exporter):
         if not upload_enabled:
             imgui.end_disabled()
 
-        # Fixed-height status slot pinned to the bottom of the right child, so its
-        # bottom edge lines up with the preview's bottom (and it never jitters —
-        # status_slot is itself fixed-height). Progress bar while uploading, else the
-        # Studio link, else the shape-mismatch hint, else an idle placeholder.
         mismatch: bool = (
             artifact is not None
             and rc.artifact_is_fresh
             and not rs.in_flight
             and not size_ok
         )
-        # Reserved fixed-height status row (always present, so nothing jumps): the
-        # progress bar / link / hint, else stub text. Slot spans the full column width
-        # so the text isn't clipped (the progress bar still sizes to field_w).
+        # Fixed-height status row (always present, so nothing jumps). Spans the full
+        # column width so text isn't clipped; the progress bar still sizes to field_w.
         slot_w: float = imgui.get_content_region_avail().x
         with status_slot("yt_status", slot_w):
             if rs.in_flight:
@@ -530,8 +522,7 @@ class YouTubeExporter(Exporter):
                     overlay=prog.message if prog is not None else "Working...",
                 )
             elif rs.last_studio_url:
-                # A short label, not the raw URL (which is too long for the slot and
-                # clips); click opens + copies the real link.
+                # Short label, not the raw URL (too long for the slot); click opens + copies.
                 draw_link("Open in YouTube Studio", url=rs.last_studio_url)
             elif mismatch:
                 want: str = "Short" if rs.shape == "short" else "Long-form"
@@ -689,8 +680,8 @@ class YouTubeExporter(Exporter):
         )
 
     def _revoked_error(self, e: Exception) -> ExporterError:
-        # A dead/revoked token: reflect it in Settings (don't leave a green
-        # "Connected" lie) and return the terminal error for the upload.
+        # Dead/revoked token: reflect it in Settings (don't leave a stale "Connected")
+        # and return the terminal error for the upload.
         self._push_event(
             _AuthEvent(
                 state=AuthState.ERROR,
@@ -710,7 +701,7 @@ class YouTubeExporter(Exporter):
                 creds.refresh(google.auth.transport.requests.Request())
             except RefreshError as e:
                 raise self._revoked_error(e) from e
-            # Persist the refreshed token in the worker so a crash can't lose it.
+            # Persist the refreshed token so a crash can't lose it.
             self._yt.token_json = creds.to_json()
             self._store.save()
         return creds
@@ -729,8 +720,7 @@ class YouTubeExporter(Exporter):
         return self._is_connected()
 
     def publish(self, artifact: RenderedArtifact, settings: dict[str, Any]) -> None:
-        # Enqueue an upload job (feature 020·18). `settings`: title, description, is_short.
-        # tags/category use the exporter defaults (the copilot tool surfaces the minimal set).
+        # `settings`: title, description, is_short. tags/category use the defaults.
         is_short: bool = bool(settings.get("is_short", False))
         self._enqueue(
             _Job(

@@ -6,11 +6,9 @@ from shaderbox.copilot.capabilities import CopilotCapabilities
 from shaderbox.copilot.gate import GateKind
 from shaderbox.copilot.tools.base import GatePolicy, ToolDefinition, mask_secret
 
-# The Telegram connect + pack-CRUD tool surface (feature 020·19). set_telegram_token is the one
-# CREDENTIAL-gated tool: the chat shows a masked input, the secret arrives as the handler's 2nd
-# arg (never in args/trace/history), the handler sets it via caps + auto-links, and returns a
-# REDACTED confirmation. The pack tools are normal CONFIRM-gated mutations (list is ungated); all
-# precheck on connection so an unconnected op never pops a confirm.
+# set_telegram_token is CREDENTIAL-gated: the secret arrives as the handler's 2nd arg, never in
+# args/trace/history, and the returned confirmation is REDACTED. Pack tools precheck connection
+# so an unconnected op never pops a confirm.
 
 
 class _EmptyArgs(BaseModel):
@@ -53,8 +51,7 @@ def telegram_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
     def set_telegram_token(
         args: dict[str, Any], secret: str
     ) -> tuple[bool, str, dict | None]:
-        # `secret` is the gate's typed token (out-of-band). caps.set_telegram_token sets it +
-        # auto-links; the returned msg is REDACTED (the only thing reaching LLM history).
+        # `secret` is out-of-band; the returned msg is REDACTED (the only thing reaching history).
         _ = args
         if not secret.strip():
             return False, "error: no token entered", None

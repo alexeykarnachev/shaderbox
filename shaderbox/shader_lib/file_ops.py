@@ -1,12 +1,11 @@
 """Shader-library file management: create / rename / delete (trash) / reveal.
 
 `ShaderLibFileManager` owns the picker's inline-input + delete-armed + filter
-state and the file/dir CRUD against `shader_lib_root()`. It does NOT import
-`App` — editor-session cleanup (which is App's editor domain) flows back through
-injected callbacks (`on_paths_removed`, `on_path_renamed`). The mutating verbs
-take explicit args (path / name) so a non-UI caller (e.g. a future agent tool)
-can drive them; the picker keeps thin inline-input shims that read the buffer
-then call the explicit core (`create_file_in` / `create_dir_in` / `rename_file`).
+state and the file/dir CRUD against `shader_lib_root()`. Editor-session cleanup
+flows back through injected callbacks (`on_paths_removed`, `on_path_renamed`) so
+this module never imports `App`. Mutating verbs take explicit args (path / name)
+so a non-UI caller can drive them; the picker's inline-input shims read the
+buffer then call the explicit core (`create_file_in` / `rename_file`).
 """
 
 import shutil
@@ -47,13 +46,12 @@ class ShaderLibFileManager:
         self.picker_new_tag_buf: str = ""
         self.picker_tag_input_focused: bool = False
 
-        # Three mutually-exclusive inline inputs (only one open at a time;
-        # `reset_inline_state` enforces the mutex). Rename's `target` is the file
-        # being renamed; new-file/new-dir's `target` is the parent directory.
+        # Mutually-exclusive inline inputs (`reset_inline_state` enforces the mutex).
+        # Rename's `target` is the file being renamed; new-file/new-dir's is the parent.
         self.file_rename = InlineInput()
         self.file_new = InlineInput()
         self.dir_new = InlineInput()
-        # A single file/dir path armed for delete-confirm at a time. Root never armed.
+        # One path armed for delete-confirm at a time. Root never armed.
         self.file_delete_armed: Path | None = None
         self.dir_delete_armed: Path | None = None
 
@@ -62,8 +60,7 @@ class ShaderLibFileManager:
     # ----------------------------------------------------------------
 
     def reset_inline_state(self) -> None:
-        # Single source of mutual-exclusion: every `begin_*` / `arm_*` opener
-        # calls this first to clear ALL sibling inline-input + armed state.
+        # Every `begin_*` / `arm_*` opener calls this first to clear all sibling state.
         self.file_rename.close()
         self.file_new.close()
         self.dir_new.close()
@@ -71,7 +68,7 @@ class ShaderLibFileManager:
         self.dir_delete_armed = None
 
     def arm_file_delete(self, path: Path | None) -> None:
-        # Disarm-by-passing-None is the cancel; otherwise replace mutex state.
+        # None disarms (cancel); otherwise replace mutex state.
         if path is None:
             self.file_delete_armed = None
             return
@@ -86,8 +83,7 @@ class ShaderLibFileManager:
         self.dir_delete_armed = path
 
     def begin_file_rename(self, path: Path) -> None:
-        # Pre-fill the buffer with the current relative path so the user can
-        # edit, not retype.
+        # Pre-fill the buffer with the current relative path (edit, not retype).
         try:
             rel = path.relative_to(shader_lib_root())
         except ValueError:
@@ -99,8 +95,7 @@ class ShaderLibFileManager:
         self.file_rename.close()
 
     def begin_file_new_in(self, dir_rel: Path) -> None:
-        # Open the inline new-file input under the given subdir (Path("") for
-        # the lib root). `target` is the parent dir; `buf` is the new filename.
+        # `dir_rel` is the parent subdir (Path("") = lib root); `buf` is the new filename.
         self.reset_inline_state()
         self.file_new.open(dir_rel)
 
@@ -140,7 +135,7 @@ class ShaderLibFileManager:
     # ----------------------------------------------------------------
 
     def create_file_in(self, dir_rel: Path, name: str) -> Path | None:
-        # Create the new file at `<shader_lib_root>/<dir_rel>/<name>(.glsl)`.
+        # File at `<shader_lib_root>/<dir_rel>/<name>(.glsl)`.
         target = self._validate_target(
             str(dir_rel / name), kind="new-file", suffix=".glsl"
         )
@@ -166,10 +161,9 @@ class ShaderLibFileManager:
         return target
 
     def resolve_copilot_path(self, rel_path: str) -> Path | None:
-        # Resolve a copilot "lib:<rel>" address to an absolute path UNDER shader_lib_root,
-        # rejecting path traversal (feature 020·16 Decision 5 — the same guard create_file_in
-        # uses, but allowing an EXISTING file since the copilot edits existing lib files too).
-        # Returns None if the path escapes the root or is empty/non-.glsl.
+        # Resolve a copilot "lib:<rel>" address under shader_lib_root, rejecting traversal.
+        # Unlike create_file_in, allows an existing file (the copilot edits existing files).
+        # None if the path escapes the root or is empty.
         cleaned = rel_path.strip().lstrip("/")
         if not cleaned:
             return None
@@ -185,10 +179,8 @@ class ShaderLibFileManager:
         return target
 
     def write_copilot_lib_file(self, path: Path, source: str) -> bool:
-        # Write LIVE (uncommented) source to a lib file for the copilot (feature 020·16
-        # Decision 5) — distinct from create_file_in's commented stub, which the index would
-        # see as zero functions. Creates parent dirs, writes, rebuilds the index so the new
-        # function is immediately resolvable. Returns False on an OS error.
+        # Write LIVE (uncommented) source — unlike create_file_in's commented stub, which
+        # the index reads as zero functions. Rebuilds the index so the function resolves.
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(source, encoding="utf-8")
@@ -200,15 +192,12 @@ class ShaderLibFileManager:
         return True
 
     def create_dir_in(self, parent_rel: Path, name: str) -> Path | None:
-        # Create `<shader_lib_root>/<parent_rel>/<name>` as a real directory + a
-        # starter `placeholder.glsl` inside (so the dir survives the
-        # ShaderLibIndex.build glob, which only walks `.glsl`).
+        # Dir + a starter `placeholder.glsl` — the index globs `.glsl` only, so an
+        # empty dir wouldn't survive.
         target = self._validate_target(str(parent_rel / name), kind="new-dir")
         if target is None:
             return None
-        # Emit a real SB_ stub (not a commented-out one) so the file shows up as a
-        # function leaf the user can immediately rename/edit — an empty placeholder
-        # would render as an un-expandable leaf and look like a bug.
+        # Real SB_ stub (not commented-out) so it renders as a usable function leaf.
         starter = target / "placeholder.glsl"
         sanitized_name = "".join(c if c.isalnum() else "_" for c in target.name)
         stub_fn_name = f"SB_{sanitized_name}_placeholder"
@@ -232,8 +221,7 @@ class ShaderLibFileManager:
         return target
 
     def delete_file(self, path: Path) -> None:
-        # Move into `.trash/` (basename + numeric suffix on collision). The mtime
-        # watcher rebuilds the index next frame. Armed state cleared on every exit.
+        # Move into `.trash/` (basename + numeric suffix on collision).
         self.file_delete_armed = None
         if not path.exists():
             logger.warning(f"Lib file no longer exists: {path}")
@@ -262,11 +250,9 @@ class ShaderLibFileManager:
         self._notifications.push(msg)
 
     def delete_dir(self, path: Path) -> None:
-        # Recursive move of an entire subdir into .trash/. EVERY file under the
-        # dir lands in `.trash/<basename>` with the numeric-suffix collision rule
-        # — nothing is silently rmtree'd. Refuses symlinked dirs so a
-        # `shader_lib/external -> /other/repo/` link can't trash files outside
-        # shader_lib_root. Always clears armed state on any exit.
+        # Move a subdir into .trash/: every file is moved first (numeric-suffix on
+        # collision) so nothing is silently rmtree'd. Refuses symlinked/escaping dirs
+        # so a `shader_lib/external -> /other/repo/` link can't trash files outside root.
         self.dir_delete_armed = None
         if not path.exists() or not path.is_dir():
             logger.warning(f"Lib dir no longer exists or not a dir: {path}")
@@ -286,15 +272,13 @@ class ShaderLibFileManager:
         trash = shader_lib_trash_dir()
         moved_files: list[Path] = []
         try:
-            # Walk EVERY file (glsl + non-glsl) so the user's `notes.md` next to
-            # their shader isn't silently destroyed by the rmtree below. Skip
-            # symlinks to avoid following an escape route mid-walk.
+            # Walk every file (not just .glsl) so a user's `notes.md` isn't lost to the
+            # rmtree below. Skip symlinks to avoid following an escape route mid-walk.
             for f in sorted(path.rglob("*")):
                 if not f.is_file() or f.is_symlink():
                     continue
                 if not f.resolve().is_relative_to(root):
-                    # Defensive: a file here should never resolve outside root (we
-                    # refused symlinked dirs above) — log and skip.
+                    # Defensive: shouldn't happen (symlinked dirs refused above).
                     logger.debug(f"Skipping out-of-root file during dir delete: {f}")
                     continue
                 dest = trash / f.name
@@ -340,8 +324,7 @@ class ShaderLibFileManager:
             return None
         logger.info(f"Renamed lib file: {old} -> {target}")
         self._on_path_renamed(old, target)
-        # Function names don't change on rename, so picker_selected_function stays
-        # valid; the next frame's tree walk re-discovers it at its new file path.
+        # Rename keeps the function name, so picker_selected_function stays valid.
         self.cancel_file_rename()
         return target
 
@@ -362,10 +345,8 @@ class ShaderLibFileManager:
         suffix: str | None = None,
         allow_existing: Path | None = None,
     ) -> Path | None:
-        # Centralized validation for new-file / new-dir / rename: strip, append
-        # `suffix` (e.g. ".glsl") if missing, resolve under shader_lib_root, reject
-        # path traversal, reject collisions (unless the target equals
-        # `allow_existing` — used by rename's self-rename short-circuit).
+        # Resolve `rel_path` under shader_lib_root, reject traversal + collisions.
+        # `allow_existing` exempts one path from the collision check (rename self-rename).
         cleaned = rel_path.strip()
         if not cleaned:
             return None

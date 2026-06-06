@@ -24,9 +24,7 @@ def _section_break() -> None:
 
 def _draw_auto_row(app: App, uniforms: list[UIUniform]) -> None:
     # Engine-driven uniforms (u_time / u_aspect / u_resolution): one inline row,
-    # each name a blue clickable label that participates in the same code↔panel
-    # hover + jump-to-declaration bridge as regular uniforms. Value renders dim
-    # next to the name (read-only — the engine sets it every frame).
+    # names participate in the code<->panel hover/jump bridge; value is read-only.
     ui_node = app.ui_nodes[app.current_node_id]
     imgui.push_font(app.font_12, app.font_12.legacy_size)
     for i, u in enumerate(uniforms):
@@ -163,9 +161,7 @@ def draw(app: App) -> None:
         node_ui_state.uniform_sort_desc,
     )
 
-    # nav_flattened: keyboard-nav crosses into this scroll child as if its uniform
-    # widgets were direct siblings — Tab/arrows reach the sliders without an
-    # Enter-to-descend / Esc-to-ascend window boundary (feature 019).
+    # nav_flattened: Tab/arrows reach the sliders without an Enter/Esc window boundary.
     with imgui_ctx.begin_child(
         "ui_uniforms", child_flags=imgui.ChildFlags_.nav_flattened
     ):

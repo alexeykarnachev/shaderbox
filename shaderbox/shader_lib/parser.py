@@ -1,16 +1,12 @@
 """Pure GLSL text machinery for the shader library — regexes + brace-matching.
 
-No index types, no GL, no imgui. `index._extract_functions` (the build path) and
-`resolver._collect_used_lib_names` (the resolve path) both lean on these helpers,
-so they live in this leaf to keep the index/resolver split acyclic.
+No index types, no GL, no imgui — a leaf so the index/resolver split stays acyclic.
 """
 
 import re
 
-# Top-level function signature: `<type> <name>(<args>)` followed by `{`. The type
-# permits a trailing `[]` (rare in lib code but cheap to allow). Captures: 1=type,
-# 2=name, 3=args. Anchored to start-of-line so we don't pick up function calls
-# inside other functions.
+# Top-level function signature `<type> <name>(<args>) {`. Captures 1=type, 2=name,
+# 3=args. Anchored to start-of-line so nested calls aren't matched.
 FN_SIG_RE = re.compile(
     r"^\s*(\w+(?:\s*\[\s*\d*\s*\])?)\s+(\w+)\s*\(([^)]*)\)\s*\{",
     re.MULTILINE,
@@ -22,30 +18,26 @@ IDENT_RE = re.compile(r"\b([A-Za-z_]\w*)\b")
 # A `SB_` identifier — what the user types in their shader to call a lib function.
 SB_IDENT_RE = re.compile(r"\bSB_\w+\b")
 
-# A function DEFINITION in the user's text (so we can suppress the lib version when the
-# user shadows it). Must match the full signature `<type> SB_foo(args) {` — the trailing
-# `)` + `{` body is what distinguishes a definition from a CALL that happens to follow a
-# keyword (`return SB_foo(...)` reads `return` as a type otherwise, and the lib function is
-# wrongly treated as shadowed and never spliced). Args are non-capturing so findall yields
-# just the name.
+# A function DEFINITION in the user's text — matches it to suppress the shadowed lib
+# version. Must require the `) {` body: without it a CALL after a keyword
+# (`return SB_foo(...)`) reads as a definition and wrongly suppresses the lib function.
+# Args are non-capturing so findall yields just the name.
 USER_FN_DEF_RE = re.compile(
     r"\b\w+(?:\s*\[\s*\d*\s*\])?\s+(SB_\w+)\s*\((?:[^)]*)\)\s*\{", re.MULTILINE
 )
 
 
 def strip_comments(text: str) -> str:
-    # GLSL has `//` line comments and `/* ... */` block comments. No strings, no
-    # nested block comments. Block-strip is non-greedy + multi-line.
+    # GLSL has no strings and no nested block comments, so a non-greedy block-strip
+    # then a line-strip is safe.
     text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
     text = re.sub(r"//[^\n]*", "", text)
     return text
 
 
 def split_root_header(text: str) -> tuple[int, list[str], list[str]]:
-    # Return (header_end_index, header_lines, body_lines).
-    # Header = any prefix of: blank lines, line-comments (kept verbatim), and
-    # `#version` / `#extension` / `#pragma` directives. First line that's not one
-    # of those starts the body.
+    # Header = leading prefix of blank lines, `//` comments, and
+    # `#version`/`#extension`/`#pragma` directives. First other line starts the body.
     lines = text.splitlines()
     header_end = 0
     for i, line in enumerate(lines):
@@ -57,19 +49,16 @@ def split_root_header(text: str) -> tuple[int, list[str], list[str]]:
         if stripped.startswith(("#version", "#extension", "#pragma")):
             header_end = i + 1
             continue
-        # First non-header line.
         header_end = i
         break
     else:
-        # All lines were header.
         header_end = len(lines)
     return header_end, lines[:header_end], lines[header_end:]
 
 
 def find_body_end(lines: list[str], start: int) -> int | None:
-    # Starting at `start` (line with the function signature + opening `{`), walk
-    # forward counting braces; return the 0-based line index containing the
-    # matching `}`.
+    # `start` holds the signature's opening `{`; count braces forward, return the
+    # line index of the matching `}`.
     depth = 0
     in_string = False  # GLSL has no strings, but keep the toggle harmless
     for i in range(start, len(lines)):

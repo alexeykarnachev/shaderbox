@@ -7,16 +7,11 @@ from shaderbox.copilot.capabilities import (
     TemplateEntry,
 )
 
-# Per-turn app-state snapshot, built from GL-FREE reads via the capability seam (it runs on
-# the worker thread, no bridge — feature 020·16). The always-in-prompt blocks live here:
-# the lean node tree (the project map), the lib catalogue (what SB_* helpers exist), and the
-# code conventions the agent follows. They are RENDERED to text here so prompt.py stays a
-# pure assembler. The CURRENT SHADER SOURCE is deliberately NOT here — it enters via the
-# read_shader tool result, after the warm prefix (cache health, §B1a).
+# Per-turn app-state snapshot, GL-FREE so it builds off-main. Rendered to text here so
+# prompt.py stays a pure assembler. Current shader source is NOT here — it enters via the
+# read_shader tool result.
 
-# Conventions the agent (not the user) follows so the project stays grep-able + consistent.
-# Always in the prompt (never a tool — the copilot is fundamentally about writing GLSL, so a
-# "conventions" tool would be ceremony). Keep terse; this is steering, not a manual.
+# Conventions always in the prompt (never a tool). Keep terse — this is steering, not a manual.
 _CONVENTIONS = """\
 - A fragment shader starts `#version 460 core`, reads the normalized [0,1] surface coordinate \
 from `in vec2 vs_uv` (there is NO gl_FragCoord), and writes `out vec4 fs_color`. No `precision` \
@@ -65,8 +60,7 @@ def _render_lib_catalog(entries: list[LibCatalogEntry]) -> str:
 
 
 def _render_template_catalog(entries: list[TemplateEntry]) -> str:
-    # name + the `template:` handle (read_shader / grep / create_node target) + the one-line
-    # description. Terse — this rides the warm prompt prefix every turn (feature 020·22).
+    # name + the `template:` handle + one-line description.
     if not entries:
         return "(no templates)"
     rows: list[str] = []

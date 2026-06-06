@@ -34,17 +34,13 @@ from shaderbox.shader_lib import active as active_lib_index
 from shaderbox.shader_lib import resolve_usage
 from shaderbox.shader_source import ShaderSource
 
-# A node's shader is its sibling `shader.frag.glsl`; only ShaderSource.load_node
-# and the per-node disk save know this name.
 _NODE_SHADER_BASENAME = "shader.frag.glsl"
 
 
 @dataclass
 class CompileUnit:
-    # The flattened text handed to the driver + the source map for remapping
-    # driver-emitted line numbers back to (path, line). `sources` lists every
-    # file contributing to `flattened` (root + each lib file whose function was
-    # auto-resolved into the preamble).
+    # `sources`: every file contributing to `flattened` (root + auto-resolved lib
+    # files). `source_map` remaps driver-emitted line numbers back to (path, line).
     sources: list[ShaderSource]
     flattened: str
     source_map: SourceMap
@@ -145,7 +141,6 @@ class Node:
         )
 
         # ----------------------------------------------------------------
-        # Load uniforms
         for uniform_name, value in metadata["uniforms"].items():
             if isinstance(value, dict):
                 local_file_path = value.get("file_path")
@@ -183,18 +178,17 @@ class Node:
 
             node.uniform_values[uniform_name] = value
 
-        node.render()  # Warm-up the node
+        node.render()  # warm-up
         return node, metadata
 
     def release_program(self, new_fs_source: str = "") -> None:
-        # Path is the stable identity of a node's source; only text + mtime change.
+        # Path is the stable identity; only text + mtime change.
         self.source = replace(self.source, text=new_fs_source, mtime=self.source.mtime)
         self.invalidate()
 
     def invalidate(self) -> None:
-        # Drop the cached GL program + compile unit without touching `self.source`.
-        # Used when an included lib file changes — next compile re-reads it via the
-        # resolver. The unit is rebuilt by the next render's compile().
+        # Drop the cached GL program + compile unit without touching `self.source`;
+        # next compile() re-reads included lib files via the resolver.
         self.compile_unit = CompileUnit.empty(self.source)
         if self.program:
             self.program.release()
@@ -205,7 +199,8 @@ class Node:
         self.program = None
         self.vbo = None
         self.vao = None
-        # Bind 0 — a deleted program left GL-current crashes the imgui renderer's end-of-frame restore (GLError 1281)
+        # Bind 0 — a deleted program left GL-current crashes the imgui
+        # renderer's end-of-frame restore (GLError 1281).
         glUseProgram(0)
 
     def release(self) -> None:
@@ -223,10 +218,8 @@ class Node:
         return uniforms
 
     def compile(self) -> None:
-        # Rebuild the compile unit and (on success) the GL program. On failure
-        # the previous valid `self.program` is preserved — the rendered preview
-        # stays bright while the editor's error strip surfaces the diagnostics
-        # (feature-013 invariant).
+        # On failure the previous valid `self.program` is preserved, so the
+        # preview keeps rendering while the error strip surfaces diagnostics.
         flattened, sources, source_map, resolve_errors = resolve_usage(
             self.source, active_lib_index()
         )
@@ -235,12 +228,11 @@ class Node:
             flattened=flattened,
             source_map=source_map,
         )
-        # Resolver-domain failures surface as synthetic ShaderErrors so the same
+        # Resolver failures surface as synthetic ShaderErrors so the same
         # error-strip + click-to-jump path handles them.
         for re_err in resolve_errors:
             unit.errors.append(ShaderError(re_err.path, re_err.line, re_err.message))
-        # If the resolver failed, don't bother the driver — its output would just
-        # be confusing on top of our clearer message.
+        # Resolver already failed — skip the driver; its output would only confuse.
         if resolve_errors:
             unit.error_raw = "\n".join(e.message for e in resolve_errors)
             if unit.error_raw != self.compile_unit.error_raw:

@@ -11,12 +11,8 @@ from shaderbox.copilot.capabilities import (
 )
 from shaderbox.copilot.tools.base import GatePolicy, ToolDefinition
 
-# The shader tool surface (spec §16 + feature 020·16 cross-project wave). read_shader is the
-# one read (source + uniforms/values + errors, for one or many nodes); the three edit tools
-# match/line/insert against a target (current node by default); grep + read_lib are discovery.
-# All non-destructive (gate_policy NONE). Handlers do GL-free text work on the worker thread
-# and call a capability closure for anything GL-touching (the closure owns the bridge
-# round-trip; marshalling is invisible here — leaf-seam rule §3.2).
+# The shader tool surface. Handlers do GL-free text work on the worker thread and call a
+# capability closure for anything GL-touching (the closure owns the bridge round-trip).
 
 
 class _ReadShaderArgs(BaseModel):
@@ -237,8 +233,8 @@ def _format_errors(errors: list[CompileErrorInfo]) -> str:
 
 
 def _view_summary(view: ShaderView) -> str:
-    # The terse chat line for a read (020·23 D6): name + size + uniform count + compile state. The
-    # full listing goes to the agent's context, not the chat (the user reads code in the editor).
+    # The terse chat line for a read: name + size + uniform count + compile state (the full
+    # listing goes to the agent's context, not the chat).
     lines = view.listing.count("\n") + 1 if view.listing else 0
     state = f"{len(view.errors)} compile error(s)" if view.errors else "compiled clean"
     return f"read {view.name} — {lines} lines, {len(view.uniforms)} uniforms, {state}"
@@ -249,21 +245,17 @@ def _format_hits(hits: list[GrepHit]) -> str:
 
 
 def _unresolved_result(result: EditResult) -> tuple[bool, str, None] | None:
-    # An unresolvable-/non-converging reject (feature 020·20 D4, 020·29): a bad node id / lib path,
-    # a read-only template, a failed lib write, or the D9 intra-batch line-edit guard. Counts toward
-    # the edit-retry cap (a model that keeps repeating it must hit the giveup).
+    # An unresolvable reject (bad node id / lib path, read-only template, failed lib write,
+    # intra-batch line-edit guard). Counts toward the edit-retry cap.
     if result.unresolved:
         return False, f"error: {result.unresolved_reason}", None
     return None
 
 
 def _applied_result(result: EditResult) -> tuple[bool, str, dict]:
-    # The shared success/compile-error message for any applied edit (edit_shader /
-    # replace_lines / insert_after). A LIB edit returns the honest "no standalone compile"
-    # note (020·16 Decision 4) instead of a compile result; a NODE edit returns compile errors
-    # or "compiled clean". The post-edit source is shown by the next iteration's working-set
-    # scratchpad (feature 020·29), so no "what changed" excerpt — only a region count for a
-    # multi-span replace_all.
+    # The shared success/compile-error message for any applied edit. A LIB edit returns the
+    # "no standalone compile" note instead of a compile result; a NODE edit returns compile
+    # errors or "compiled clean". Region count only for a multi-span replace_all.
     if result.lib_note:
         head = result.lib_note
     elif result.errors:
@@ -277,20 +269,16 @@ def _applied_result(result: EditResult) -> tuple[bool, str, dict]:
 
 def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
     def read_shader(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
-        # nodes are short ids from the project map; [] = current node (resolved App-side so the
-        # tool layer never touches a full id). The read ADDS each node to the working set — its full
-        # line-numbered source then rides the per-turn scratchpad, live, rebuilt every step (feature
-        # 020·29). So the AGENT body is a SHORT confirmation + the compile errors (it needs "is B
-        # broken?" this same iteration, before the next rebuild) — NOT the listing, which the
-        # scratchpad now carries. The USER's chat `display` line is unchanged (020·23 D6).
+        # nodes are short ids from the project map; [] = current node (resolved App-side). The
+        # read ADDS each node to the working set, whose per-turn scratchpad carries the full
+        # source — so the agent body is a short confirmation + compile errors, not the listing.
         node_ids: list[str] = list(args["nodes"])
         views = caps.read_shaders(node_ids)
         if not views:
             return False, "error: no such node(s) — check the project map for ids", None
-        # A handle is "found" if it matches a returned view's SHORT id under the same prefix rule
-        # the resolver uses (a longer/shorter unique prefix both resolve) — diffing the raw handle
-        # against the short id directly would mis-report a full-id/long-prefix read as missing
-        # (feature 020·20 D4).
+        # A handle is "found" if it matches a returned view's SHORT id under the resolver's
+        # prefix rule (either is a prefix of the other) — a direct compare would mis-report a
+        # full-id/long-prefix read as missing.
         short_ids = [v.node_id for v in views]
         missing = [
             nid
@@ -391,8 +379,8 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             args["name"], args["source"], args["template"], args["switch_to"]
         )
         where = "now active" if args["switch_to"] else "in the background"
-        # Same compile-result vocabulary as the edit tools (success stays True even with errors —
-        # the node IS created; the agent reads the errors and fixes them with an edit).
+        # success stays True even with compile errors — the node IS created; the agent reads
+        # the errors and fixes them with an edit.
         status = (
             "compiled with errors:\n" + _format_errors(errors)
             if errors
@@ -430,7 +418,7 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
 
     def delete_node(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
         # The gate (GatePolicy.ALWAYS) has already cleared a user Yes by the time this runs.
-        # The payload carries node_id + trash_name so the chat can attach a Recover affordance.
+        # payload carries node_id + trash_name for the chat's Recover affordance.
         result = caps.delete_node(args["node"])
         if not result.ok:
             return False, f"error: {result.error}", None

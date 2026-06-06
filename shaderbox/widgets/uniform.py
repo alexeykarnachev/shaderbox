@@ -42,10 +42,8 @@ def uniform_name_label(
     text_color: tuple[float, float, float, float] | None = None,
     accent: tuple[float, float, float, float] | None = None,
 ) -> None:
-    """Clickable uniform-name cell — jump-to-declaration on click, code↔panel
-    hover bridge on hover. Used by both regular and engine (`auto`) uniform
-    rows; the `text_color` + `accent` overrides let the auto row pick blue
-    while regular rows stay on the default accent.
+    """Clickable uniform-name cell — jump-to-declaration on click, code<->panel
+    hover bridge on hover. `text_color`/`accent` override the row's colour.
     """
     clicked = clickable_label(
         name,
@@ -72,8 +70,7 @@ def _begin_ctrl(app: App, name: str) -> None:
     """Lay out a uniform row: chip (already drawn) -> clickable name -> control.
 
     Call after the chip; positions the cursor at the control column and sets
-    the next item's width. Clicking the name jumps the editor caret to the
-    uniform's declaration. The control's own imgui label must be hidden (##).
+    the next item's width. The control's own imgui label must be hidden (##).
     """
     imgui.same_line(_NAME_X)
     uniform_name_label(app, name, SIZE.UNIFORM_NAME_W)

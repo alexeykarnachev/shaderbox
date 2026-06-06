@@ -1,11 +1,10 @@
-"""Command registry — the keyboard-control spine (feature 018).
+"""Command registry — the keyboard-control spine.
 
-Leaf module: imports `imgui` only, never `App`. The id->callback wiring lives on
-`App` (built at init, closing over self) so this stays cycle-free.
+Leaf module: imports `imgui` only, never `App` (id->callback wiring lives on `App`).
 
-Chords are stored as imgui KeyChord ints (`int(Key.x) | int(Key.mod_ctrl)`).
-`chord_to_str` is display-only; the int is the persistence + comparison key
-(imgui's `get_key_name` is explicitly not for persistence).
+Chords are stored as imgui KeyChord ints (`int(Key.x) | int(Key.mod_ctrl)`); the int
+is the persistence + comparison key. `chord_to_str` is display-only — imgui's
+`get_key_name` is not for persistence.
 """
 
 from dataclasses import dataclass
@@ -33,8 +32,8 @@ class CommandId(StrEnum):
 
 
 class ActiveRegion(StrEnum):
-    # The three keyboard-nav focus regions; the region-cycle command moves between
-    # them and nav (nav_enable_keyboard) operates within the focused one (feature 019).
+    # The three keyboard-nav focus regions; CYCLE_REGION moves between them and
+    # nav operates within the focused one.
     EDITOR = auto()
     GRID = auto()
     PANEL = auto()
@@ -49,12 +48,9 @@ class NodeTab(StrEnum):
 
 class CommandScope(StrEnum):
     # Fires anywhere EXCEPT while a modal popup is open (the dispatcher applies
-    # the explicit any_popup_open() gate — routing alone does not suppress
-    # globals under a modal).
+    # the explicit any_popup_open() gate — routing alone does not suppress it).
     GLOBAL = auto()
-    # Fires only when the code editor child is focused. Defined as the extension
-    # point for editor-only commands; no command uses it yet (node-creator nav is
-    # a bespoke fixed-key block in hotkeys.py, not a rebindable command).
+    # Fires only when the code editor child is focused. Extension point; unused yet.
     EDITOR = auto()
 
 
@@ -80,8 +76,7 @@ def _chord(key: imgui.Key, *mods: imgui.Key) -> int:
 
 K = imgui.Key
 
-# The static default table. No App reference — the dispatcher pairs each id with
-# a callback held on App. Each chord lives in exactly ONE scope so a single press
+# Static default table. Each chord lives in exactly ONE scope so a single press
 # never dispatches twice.
 COMMAND_SPECS: list[CommandSpec] = [
     CommandSpec(CommandId.OPEN_PROJECT, "Open project", _chord(K.o, K.mod_ctrl)),
@@ -102,8 +97,8 @@ COMMAND_SPECS: list[CommandSpec] = [
         "Toggle keyboard cheatsheet",
         _chord(K.slash, K.mod_ctrl),
     ),
-    # Region cycle: Ctrl+Tab. imgui's built-in Ctrl+Tab window-cycle is suppressed by
-    # WindowFlags_.no_nav_focus on the main window (ui.py), freeing the chord for us.
+    # Ctrl+Tab is free for us because WindowFlags_.no_nav_focus on the main window
+    # (ui.py) suppresses imgui's built-in window-cycle.
     CommandSpec(CommandId.CYCLE_REGION, "Cycle region", _chord(K.tab, K.mod_ctrl)),
     CommandSpec(CommandId.FOCUS_TAB_NODE, "Node tab", _chord(K._1, K.mod_ctrl)),
     CommandSpec(CommandId.FOCUS_TAB_RENDER, "Render tab", _chord(K._2, K.mod_ctrl)),
@@ -148,8 +143,7 @@ def chord_to_str(chord: int) -> str:
 
 
 def route_flag(scope: CommandScope) -> imgui.InputFlags_:
-    # GLOBAL chords route globally (then get the explicit popup gate in the
-    # dispatcher); scoped chords route to the focused window stack so a focused
+    # GLOBAL routes globally; scoped routes to the focused window stack so a focused
     # inner scope wins the same chord.
     if scope == CommandScope.GLOBAL:
         return imgui.InputFlags_.route_global
@@ -161,8 +155,7 @@ def popup_suppresses(scope: CommandScope) -> bool:
     return scope == CommandScope.GLOBAL
 
 
-# Bindable non-mod keys offered to the rebinder's capture (letters, digits,
-# function keys, common navigation/editing keys). Mods are read separately.
+# Non-mod keys offered to the rebinder's capture. Mods are read separately.
 _BINDABLE_KEYS: list[imgui.Key] = [
     *(getattr(K, c) for c in "abcdefghijklmnopqrstuvwxyz"),
     *(getattr(K, f"_{d}") for d in range(10)),
@@ -183,8 +176,8 @@ _BINDABLE_KEYS: list[imgui.Key] = [
 ]
 
 
-# Function keys are the only keys safe to bind without a modifier (they don't
-# collide with typing into the editor). Everything else needs a mod.
+# Function keys are the only keys safe to bind without a modifier — everything else
+# collides with typing into the editor.
 _STANDALONE_KEYS: frozenset[int] = frozenset(
     int(getattr(K, f"f{n}")) for n in range(1, 13)
 )

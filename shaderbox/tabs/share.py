@@ -65,7 +65,7 @@ def _draw_inner(app: App) -> None:
 
     imgui.dummy(imgui.ImVec2(0, SPACE.SM))  # breathing room below the tab bar
 
-    # Single outlet: no accordion (collapsing a list of one only adds a divider).
+    # Single outlet: no accordion.
     if len(available) == 1:
         exporter = available[0]
         registry.set_active(exporter.exporter_id)
@@ -75,10 +75,8 @@ def _draw_inner(app: App) -> None:
             )
         return
 
-    # Accordion: at most one outlet open at a time. The active header is left FREE
-    # to toggle (so clicking it actually closes it); only the *non-active* headers
-    # are force-collapsed each frame. Forcing the active one open every frame would
-    # re-open it the instant the user clicks to close (blink + never shuts).
+    # Accordion: one outlet open at a time. Force-collapse only NON-active headers
+    # each frame; leave the active one free to toggle, else it never shuts.
     for exporter in available:
         outlet: OutletRenderState = state.outlet(exporter.exporter_id)
         is_active: bool = registry.active_id == exporter.exporter_id
@@ -89,9 +87,9 @@ def _draw_inner(app: App) -> None:
             f"{exporter.display_name}##outlet_{exporter.exporter_id}"
         )
         if header_open and not is_active:
-            registry.active_id = exporter.exporter_id  # opened a new one
+            registry.active_id = exporter.exporter_id
         elif not header_open and is_active:
-            registry.active_id = ""  # closed the active one
+            registry.active_id = ""
         if not header_open:
             continue
 

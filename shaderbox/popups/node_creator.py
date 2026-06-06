@@ -16,8 +16,7 @@ from shaderbox.widgets.node_grid import draw_node_preview_button
 _LABEL = "New node##popup"
 _POPUP_W = 490.0
 _POPUP_H = 530.0
-# The description slot below the grid (caption or editor) is fixed-height so a growing grid (in its own
-# scrollable child) never pushes it off the modal. ~one button row + ~3 text lines + the editor toggle.
+# Fixed-height so a growing grid never pushes the description slot off the modal.
 _DESC_SLOT_H = 132.0
 _DESC_EDIT_H = 60.0
 
@@ -35,8 +34,7 @@ def draw_node_creator(app: App) -> None:
 
 
 def _draw_body(app: App) -> bool:
-    # The grid lives in its own scrollable child so adding templates never pushes the fixed-height
-    # description slot + the action row off the 490x530 modal (feature 020·22).
+    # Grid lives in its own scrollable child so it never pushes the description slot + action row off the modal.
     grid_h = imgui.get_content_region_avail().y - _DESC_SLOT_H - float(SIZE.BTN_SM_H)
     selected = app.app_state.selected_node_template_id
     if imgui.begin_child("##template_grid", size=(0.0, max(grid_h, 0.0))):
@@ -44,8 +42,7 @@ def _draw_body(app: App) -> bool:
     imgui.end_child()
     is_template_selected = selected != ""
 
-    # A selection change closes any in-flight description editor (else it shows template A's text but
-    # saves to template B's uuid — a real corruption, pre-impl HIGH).
+    # A selection change must close any open editor — else it saves template A's text to template B.
     if (
         app.template_desc_input.is_open
         and app.template_desc_input.target != _template_dir(app, selected)
@@ -54,9 +51,7 @@ def _draw_body(app: App) -> bool:
 
     desc_focused = _draw_description_slot(app, selected)
 
-    # Enter on a selected template commits — BUT suppressed while the description editor is focused
-    # (else Enter-to-newline creates a node + closes the modal, pre-impl HIGH). The modal's Esc
-    # auto-closes via imgui; the editor carries its own Done/Cancel so Esc isn't the only exit.
+    # Enter commits — suppressed while the editor is focused, else newline-in-editor creates a node.
     enter_create = (
         is_template_selected
         and not desc_focused
@@ -77,7 +72,6 @@ def _draw_body(app: App) -> bool:
 
 
 def _draw_grid(app: App) -> str:
-    # Draw the template preview grid; returns the selected template id (or "").
     selected_id = app.app_state.selected_node_template_id
     preview_size = SIZE.THUMB_LG
     available_width = imgui.get_content_region_avail().x
@@ -104,9 +98,7 @@ def _template_dir(app: App, template_id: str) -> Path | None:
 
 
 def _draw_description_slot(app: App, selected: str) -> bool:
-    # The fixed-height description zone (feature 020·22): the effective description as a wrapped caption
-    # + an "Edit description" toggle; while editing, a small multiline persisted ON CHANGE to the
-    # sidecar. Returns True if the editor has keyboard focus (so the outer Enter is suppressed).
+    # Returns True if the editor has keyboard focus, so the outer Enter is suppressed.
     focused = False
     if imgui.begin_child("##template_desc", size=(0.0, _DESC_SLOT_H)):
         template_dir = _template_dir(app, selected)
@@ -117,7 +109,7 @@ def _draw_description_slot(app: App, selected: str) -> bool:
         else:
             imgui.push_text_wrap_pos(
                 0.0
-            )  # imgui.text clips; wrap at the edge (/imgui-ui §5)
+            )  # imgui.text clips long strings; wrap at the edge (/imgui-ui)
             desc = app.template_description(selected)
             imgui.text(desc if desc else "(no description)")
             imgui.pop_text_wrap_pos()

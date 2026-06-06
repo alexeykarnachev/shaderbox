@@ -18,45 +18,38 @@ class MainThreadOp:
     done: threading.Event = field(default_factory=threading.Event)
     result: Any = None
     error: BaseException | None = None
-    # A render op freezes the frame loop for the whole encode (feature 020·20 D3). `defer` makes
-    # drain() hold it back ONE frame so a "Rendering..." modal paints before the freeze. The hold
-    # is one frame only (the worker's done.wait clock runs from enqueue — a longer hold eats the
-    # render_op_timeout_s budget); `_held` records that the one allowed deferral was spent.
+    # `defer` holds the op back ONE frame in drain() so a "Rendering..." modal paints before the
+    # freeze. One frame only — done.wait's clock runs from enqueue, a longer hold eats the timeout.
+    # `_held` records the single allowed deferral was spent.
     defer: bool = False
     _held: bool = False
 
 
 class CopilotBridge:
-    """Worker -> main-thread synchronous round-trip. GL has thread-affinity (only
-    the main thread owns the context), but a worker-thread tool sometimes needs a
-    GL result mid-turn. The worker hands a closure over and blocks; the frame loop
-    drains it once per frame and unblocks the worker with the result.
-
-    The one mechanism the exporters never needed (they marshal output one-way,
-    GL-free worker). See ai_docs/features/020_copilot_agent/01_threading_architecture.md.
+    """Worker -> main-thread synchronous round-trip. GL has thread-affinity (only the
+    main thread owns the context); a worker-thread tool sometimes needs a GL result
+    mid-turn. The worker hands a closure over and blocks; the frame loop drains it once
+    per frame and unblocks the worker with the result.
     """
 
     def __init__(self) -> None:
         self._ops: queue.Queue[MainThreadOp] = queue.Queue(maxsize=64)
         self._shutdown: threading.Event = threading.Event()
-        # True across BOTH the hold frame and the frame that runs the deferred (render) op — the UI
-        # paints the "Rendering..." cue off this (feature 020·20 D3). The run frame keeps it True so
-        # the cue covers the just-frozen frame; the next empty drain clears it.
+        # True across the hold frame AND the frame that runs the deferred render op — the UI paints
+        # the "Rendering..." cue off this. The next empty drain clears it.
         self._render_pending: bool = False
 
     def reopen(self) -> None:
-        # MAIN THREAD, at the start of a turn. Clears a `_shutdown` latched by a prior
-        # reusable cancel_all() (a project switch / Stop) so a reused bridge serves
-        # again. A real shutdown (release(), reusable=False) is NOT cleared here.
+        # MAIN THREAD. Clears a `_shutdown` latched by a reusable cancel_all() so a reused
+        # bridge serves again. A real shutdown (reusable=False) is NOT cleared here.
         self._shutdown.clear()
 
     def run_on_main(
         self, fn: Callable[[], Any], timeout: float | None = None, defer: bool = False
     ) -> Any:
-        # Called ON THE WORKER THREAD. Enqueue + block until the main thread runs it.
-        # `timeout` overrides the default for ops that legitimately freeze the frame loop
-        # longer (a video encode — render_op_timeout_s, §5). `defer` holds the op one frame so
-        # a "Rendering..." modal paints before the freeze (feature 020·20 D3).
+        # WORKER THREAD. Enqueue + block until the main thread runs it. `timeout` overrides the
+        # default for ops that legitimately freeze the loop longer (a video encode). `defer` holds
+        # the op one frame so a "Rendering..." modal paints before the freeze.
         if self._shutdown.is_set():
             raise CopilotCancelled("copilot shutting down")
         op = MainThreadOp(fn=fn, defer=defer)
@@ -69,22 +62,19 @@ class CopilotBridge:
         return op.result
 
     def drain(self, max_ops: int = 8) -> None:
-        # Called ON THE MAIN THREAD, once per frame. Bounded so it never starves
-        # the frame. A raising op sets op.error (re-raised on the worker) and the
-        # frame continues — a buggy tool cannot crash the loop.
+        # MAIN THREAD, once per frame. Bounded so it never starves the frame. A raising op sets
+        # op.error (re-raised on the worker) and the frame continues — a buggy tool can't crash it.
         for _ in range(max_ops):
             try:
                 op = self._ops.get_nowait()
             except queue.Empty:
-                # Nothing held ran this frame: the cue (if any) was painted last frame and the
-                # encode has since returned — clear it so the overlay stops next frame.
+                # Nothing ran this frame — the encode has returned; clear the cue.
                 self._render_pending = False
                 return
             if op.defer and not op._held:
-                # First sight of a render op: hold it ONE frame so the "Rendering..." cue paints
-                # (D3), then stop draining so it runs at the top of the NEXT frame. Returning here
-                # is safe because the worker is single-threaded and blocks on this op's result —
-                # the queue holds nothing else behind it until the render returns.
+                # First sight of a render op: hold it ONE frame so the "Rendering..." cue paints,
+                # then stop draining so it runs at the top of the NEXT frame. Safe to return — the
+                # worker is single-threaded and blocks on this op, so nothing queues behind it.
                 op._held = True
                 self._render_pending = True
                 self._ops.put(op)
@@ -97,20 +87,18 @@ class CopilotBridge:
             finally:
                 op.done.set()
             if op.defer:
-                # The held render just ran (froze the loop). Leave _render_pending True and stop
-                # draining so the cue paints over THIS frame (the freeze frame) at the bottom of the
-                # loop; the next frame's empty drain clears it. Without this early return the loop
-                # would fall through to an Empty get and clear the flag in this same frame.
+                # The held render just ran. Stop draining (keeping _render_pending True) so the cue
+                # paints over this freeze frame; without the early return an Empty get would clear
+                # the flag in this same frame. The next frame's empty drain clears it.
                 return
 
     def render_pending(self) -> bool:
-        # MAIN THREAD: True for the one frame a render op is held (D3) — the UI draws the modal.
+        # MAIN THREAD: True while a render op is held/running — the UI draws the modal.
         return self._render_pending
 
     def cancel_all(self, *, reusable: bool = False) -> None:
-        # Release any worker blocked in run_on_main so a join can't deadlock. `reusable`
-        # (project switch / Stop) leaves the bridge able to serve again after a reopen();
-        # the default (release() at shutdown) latches it shut permanently.
+        # Release any worker blocked in run_on_main so a join can't deadlock. `reusable` leaves
+        # the bridge able to serve again after a reopen(); the default latches it shut permanently.
         if not reusable:
             self._shutdown.set()
         while True:

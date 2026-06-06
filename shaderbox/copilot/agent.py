@@ -22,11 +22,10 @@ from shaderbox.copilot.state import ResultWidget
 from shaderbox.copilot.tools.registry import ToolRegistry
 from shaderbox.copilot.trace import NULL_TRACE, TraceLog
 
-# The agent loop: own a growing conversation, stream one assistant turn, execute any
-# tool calls, append the results, re-stream until the model stops calling tools or a
-# limit trips (spec §2; faithful to cc-server AgentLoop.run). A tool whose gate_policy
-# trips requires_gate blocks on the GateChannel for a user Yes/No before it runs (§7 /
-# feature 020·17).
+# The agent loop: own a growing conversation, stream one assistant turn, execute any tool
+# calls, append the results, re-stream until the model stops calling tools or a limit trips.
+# A tool whose gate_policy trips requires_gate blocks on the GateChannel for a user Yes/No
+# before it runs.
 
 _MODEL_INCOMPATIBLE_MSG = (
     "The selected model isn't compatible with tool calling — after using a tool it "
@@ -36,9 +35,8 @@ _MODEL_INCOMPATIBLE_MSG = (
 
 
 def _trunc(text: str, limit: int) -> str:
-    # Log-line truncation with an explicit ASCII marker so a cut value never reads as
-    # the whole thing. The full text always lives in the trace (trace.py); these caps
-    # are for the terse console/file log only.
+    # Log-line truncation with an ASCII marker so a cut value never reads as the whole thing.
+    # The full text lives in the trace; these caps are for the terse log only.
     return (
         text if len(text) <= limit else f"{text[:limit]}[...{len(text) - limit} more]"
     )
@@ -59,34 +57,31 @@ class AgentToolCard:
     name: str
     ok: bool
     payload: dict | None
-    # The tool's result string (render path / publish URL / error text) so the transcript can show
-    # a result line under the card (feature 020·20 D1), not just "name: ok/failed". Engine-built,
-    # already concise; goes to the LLM history + trace too.
+    # The tool's result string (render path / publish URL / error text) for a result line under
+    # the card. Goes to the LLM history + trace too.
     result: str = ""
-    # A first-class result widget the engine renders from payload["widget"] (feature 020·21): a button
-    # the user clicks; the raw target never reaches the model. None = no widget (the default).
+    # Engine-rendered result widget from payload["widget"]: a button; the raw target never reaches
+    # the model. None = no widget.
     widget: ResultWidget | None = None
-    # A terse chat-display line from payload["display"] (feature 020·23): when a tool's full `result`
-    # is heavy (read_shader's full source listing), the USER sees this summary instead — the full
-    # result still goes to the AGENT's context. "" = show `result` as before.
+    # Terse chat-display line from payload["display"]: when `result` is heavy (read_shader's full
+    # source), the USER sees this summary while the full result still goes to the AGENT. "" = show `result`.
     display: str = ""
 
 
 @dataclass(frozen=True)
 class TurnSummary:
-    # The engine-derived NATURAL-LANGUAGE summary of a committed turn (feature 020·28). Replaces the
-    # verbatim tool tail in history: `reply` is the agent's prose (its final reply at clean-done; the
-    # branch note/error at a cutoff) — it carries the agent's stated ASSUMPTION (fact 3); `ledger` is
-    # the mutating-action lines (new values + irreversible identities, fact 2/4); `nodes` is every node
-    # referenced this turn (fact 1). _commit_turn renders these into one assistant history message.
+    # The engine-derived NL summary of a committed turn; replaces the verbatim tool tail in history.
+    # `reply` is the agent's prose (final reply at clean-done; the note/error at a cutoff); `ledger`
+    # is the mutating-action lines (new values + irreversible identities); `nodes` is every node
+    # referenced this turn. _commit_turn renders these into one assistant history message.
     reply: str = ""
     ledger: list[str] = field(default_factory=list)
     nodes: list[str] = field(default_factory=list)
 
 
-# The terminal events carry the engine-derived NL TurnSummary (feature 020·28) for _commit_turn to
-# persist as one assistant history message. Empty default so the session's bare-except AgentError
-# fallbacks (which never see run_turn's run-log) commit an empty summary.
+# The terminal events carry the engine-derived NL TurnSummary for _commit_turn to persist as one
+# assistant history message. Empty default so the session's bare-except AgentError fallbacks (which
+# never see run_turn's run-log) commit an empty summary.
 
 
 @dataclass(frozen=True)
@@ -109,7 +104,7 @@ class AgentCancelled:
 @dataclass(frozen=True)
 class AgentGateOpened:
     # A gated tool is about to run; the worker is blocking on the user's Yes/No. pump_events
-    # materializes a pending_action Message from this so the UI can draw the confirm (§7.1).
+    # materializes a pending_action Message from this so the UI can draw the confirm.
     request: GateRequest
 
 
@@ -164,16 +159,16 @@ class _RunEntry:
     )  # the structured side-channel — carries id / pack / url (NOT in msg)
 
 
-# Max non-irreversible mutating lines kept in a turn-summary ledger; irreversible
-# (publish/delete) lines are always kept verbatim (the don't-re-do safety invariant, §020·28 fact 4).
+# Max non-irreversible mutating lines kept in a turn-summary ledger; irreversible (publish/delete)
+# lines are always kept verbatim (the don't-re-do safety invariant).
 _LEDGER_SOFT_CAP: int = 8
-# Tool-arg keys that name a node (for fact 1: every node touched OR referenced this turn).
+# Tool-arg keys that name a node (every node touched or referenced this turn).
 _NODE_ARG_KEYS: tuple[str, ...] = ("node", "target", "nodes")
 
 
 class _RunLog:
-    # The loop-local action ledger (§2.3). Loop-private — never on state (§T2). Feeds the engine-derived
-    # NL turn-summary persisted to history (feature 020·28 — the full tool tail is no longer persisted).
+    # The loop-local action ledger. Loop-private — never on state. Feeds the engine-derived NL
+    # turn-summary persisted to history.
     def __init__(self) -> None:
         self._entries: list[_RunEntry] = []
 
@@ -183,8 +178,8 @@ class _RunLog:
         self._entries.append(_RunEntry(name, ok, msg, args, payload))
 
     def referenced_nodes(self) -> list[str]:
-        # Every node name/handle the turn touched or referenced (fact 1): the args of every call,
-        # deduped, order-preserved. A later turn's "do the same to C" needs the prior referent named.
+        # Every node name/handle the turn touched or referenced: args of every call, deduped,
+        # order-preserved. A later turn's "do the same to C" needs the prior referent named.
         seen: dict[str, None] = {}
         for e in self._entries:
             for key in _NODE_ARG_KEYS:
@@ -195,10 +190,10 @@ class _RunLog:
         return list(seen)
 
     def summary_lines(self, registry: ToolRegistry) -> list[str]:
-        # The ledger lines for the NL turn-summary. Irreversible actions (publish/delete — gated ALWAYS)
-        # carry their IDENTITY (id / pack / url, which live in `payload`, NOT `msg`) verbatim + uncapped,
-        # so a "continue" after a cutoff never re-does them. Other mutating actions carry verb + result;
-        # they are soft-capped so a many-call turn can't bloat history. Failed mutating calls are noted.
+        # The ledger lines for the NL turn-summary. Irreversible actions (publish/delete — gated
+        # always) carry their identity (id / pack / url, which live in `payload`, not `msg`) verbatim
+        # and uncapped, so a "continue" after a cutoff never re-does them. Other mutating actions
+        # carry verb + result and are soft-capped so a many-call turn can't bloat history.
         irreversible: list[str] = []
         other: list[str] = []
         for e in self._entries:
@@ -221,10 +216,9 @@ class _RunLog:
 
 
 def _identity_from_payload(payload: dict | None) -> str:
-    # Pull the action's durable identity out of a tool payload (feature 020·28 fact 4): a published
-    # URL or a deleted node id/trash-name — whichever the tool surfaced. "" if none. (Pack ops carry
-    # their set_name only in the verbatim `msg`, which the irreversible bucket keeps uncapped, so no
-    # payload key is needed for them.)
+    # Pull the action's durable identity out of a tool payload: a published URL or a deleted node
+    # id/trash-name — whichever the tool surfaced. "" if none. (Pack ops carry their set_name only
+    # in the verbatim `msg`, which the irreversible bucket keeps uncapped, so no payload key here.)
     if not payload:
         return ""
     for key in ("url", "node_id", "trash_name"):
@@ -258,11 +252,10 @@ _ESCAPE_MARKERS: tuple[str, ...] = ("\\n", "\\t", "\\r", '\\"')
 
 
 def _looks_double_escaped(v: str) -> bool:
-    # The double-escape signature (cc-server _maybe_unescape, §J6): the value is a quoted JSON
-    # string whose BODY carries escape markers (\n \t \r \") but no real whitespace — meaning the
-    # provider serialized a newline as the two chars `\` `n`. A plainly-quoted payload that the
-    # model legitimately wrapped in literal double-quotes (e.g. an `#include "x"` token) has no
-    # such marker, so it is left untouched: unwrapping it would silently strip a real quote level.
+    # The double-escape signature: a quoted JSON string whose body carries escape markers
+    # (\n \t \r \") but no real whitespace — the provider serialized a newline as the two chars
+    # `\` `n`. A payload the model legitimately wrapped in literal double-quotes (e.g. `#include "x"`)
+    # has no such marker, so it's left untouched: unwrapping it would strip a real quote level.
     if len(v) < 2 or v[0] != '"' or v[-1] != '"':
         return False
     body = v[1:-1]
@@ -272,8 +265,8 @@ def _looks_double_escaped(v: str) -> bool:
 
 
 def _unescape_double_escaped(args: dict) -> dict:
-    # grok footgun (§J6): a string value can be double-escaped JSON ({"x": "\"y\""}). Unwrap one
-    # level ONLY when the value carries the double-escape signature (_looks_double_escaped).
+    # grok footgun: a string value can be double-escaped JSON ({"x": "\"y\""}). Unwrap one level
+    # ONLY when the value carries the double-escape signature (_looks_double_escaped).
     out: dict = {}
     for k, v in args.items():
         if isinstance(v, str) and _looks_double_escaped(v):
@@ -290,9 +283,9 @@ _RESULT_WIDGET_KINDS: frozenset[str] = frozenset({"open_url", "open_path"})
 
 
 def _widget_from_payload(payload: dict | None) -> ResultWidget | None:
-    # A tool surfaces a first-class result widget by putting a {"kind","label","target"} dict under
-    # payload["widget"] (feature 020·21). Built engine-side, so it's well-formed — but guard defensively
-    # (a known kind + a non-empty target) so a malformed entry yields no widget rather than a bad button.
+    # A tool surfaces a result widget via a {"kind","label","target"} dict under payload["widget"].
+    # Guard defensively (known kind + non-empty target) so a malformed entry yields no widget rather
+    # than a bad button.
     spec = (payload or {}).get("widget")
     if not isinstance(spec, dict):
         return None
@@ -306,7 +299,7 @@ def _widget_from_payload(payload: dict | None) -> ResultWidget | None:
 
 
 def _assistant_message(text: str, calls: list[_ToolCallBuilder]) -> LLMMessage:
-    # content="" -> None when there are tool calls (grok, §J5).
+    # content="" -> None when there are tool calls (grok quirk).
     return LLMMessage(
         role="assistant",
         content=text or None,
@@ -335,10 +328,9 @@ _GATE_PROMPTS: dict[str, Callable[[dict], str]] = {
 
 
 def build_gate(registry: ToolRegistry, name: str, args: dict) -> GateRequest:
-    # Engine-built gate request (§7.2 / feature 020·17, 020·19): the engine owns the prompt
-    # phrasing so it's accurate, not the model. A CREDENTIAL tool (gate_kind) gets a secret-input
-    # gate; everything else the CONFIRM Yes/No. Falls back to a generic line for any ALWAYS-gated
-    # tool without a template.
+    # Engine-built gate request: the engine owns the prompt phrasing so it's accurate, not the model.
+    # A CREDENTIAL tool (gate_kind) gets a secret-input gate; everything else the CONFIRM Yes/No.
+    # Falls back to a generic line for any always-gated tool without a template.
     template = _GATE_PROMPTS.get(name)
     prompt = (
         template(args)
@@ -351,7 +343,7 @@ def build_gate(registry: ToolRegistry, name: str, args: dict) -> GateRequest:
             kind=GateKind.CREDENTIAL, prompt=prompt, secret_field=tool.secret_field
         )
     if tool is not None and tool.gate_kind is GateKind.CONFIG:
-        # secret_field names the INTEGRATION whose draw_config_ui the card renders (feature 020·21).
+        # secret_field names the integration whose draw_config_ui the card renders.
         return GateRequest(
             kind=GateKind.CONFIG, prompt=prompt, secret_field=tool.secret_field
         )
@@ -371,27 +363,26 @@ def run_turn(
     scratchpad_render: Callable[[], list[LLMMessage]] | None = None,
     batch_begin: Callable[[], None] | None = None,
 ) -> Iterator[AgentEvent]:
-    # `client` is an llm.api.LLMClient — kept as `object` here so this module imports no
-    # provider impl. The duck-typed `.stream(...)` is the only call. `trace` is the
-    # full-transcript sink (None in tests) — it records everything, in full (trace.py).
-    # `scratchpad_render` rebuilds the live PER_TURN working-set block each iteration (feature
-    # 020·29); spliced onto the bottom of `messages` for the stream + trace, never into the durable
-    # list. `batch_begin` clears the App-side per-batch line-edit guard once per tool-call batch (D9 —
-    # the batch boundary is the only signal App can't see itself). Both default to no-ops (tests).
+    # `client` is an llm.api.LLMClient — kept as `object` so this module imports no provider impl;
+    # the duck-typed `.stream(...)` is the only call. `trace` is the full-transcript sink (None in
+    # tests). `scratchpad_render` rebuilds the live per-turn working-set block each iteration, spliced
+    # onto the bottom of `messages` for the stream + trace, never into the durable list. `batch_begin`
+    # clears the App-side per-batch line-edit guard once per tool-call batch (the batch boundary is the
+    # only signal App can't see itself). Both default to no-ops (tests).
     tr = trace if trace is not None else NULL_TRACE
     render_scratchpad = (
         scratchpad_render if scratchpad_render is not None else (lambda: [])
     )
     begin_batch = batch_begin if batch_begin is not None else (lambda: None)
-    # `messages` is the WITHIN-TURN context: full assistant/tool pairs accumulate here as the loop runs
-    # (the provider 400s on an orphaned tool_call_id). It is NEVER persisted — at commit the turn collapses
-    # to one engine-derived NL TurnSummary (feature 020·28), so history stays natural-language only.
+    # `messages` is the within-turn context: full assistant/tool pairs accumulate here as the loop
+    # runs (the provider 400s on an orphaned tool_call_id). Never persisted — at commit the turn
+    # collapses to one engine-derived NL TurnSummary, so history stays natural-language only.
     messages = build_messages(context, history, user_text)
     specs = registry.eager_specs()
     usage = _UsageRollup()
     ran = _RunLog()
     total_tool_calls = 0
-    consecutive_failed_edits = 0  # §I2 self-correction cap (reset on any other outcome)
+    consecutive_failed_edits = 0  # self-correction cap (reset on any other outcome)
     logger.info(f"copilot turn start | user={_trunc(user_text, 80)!r}")
     logger.debug(
         f"copilot turn detail | history_msgs={len(history)} "
@@ -408,10 +399,9 @@ def run_turn(
         text_buf = ""
         builders: dict[int, _ToolCallBuilder] = {}
         done: LLMDone | None = None
-        # Rebuild the live working-set scratchpad ONCE per iteration and splice it onto the bottom of
-        # the durable messages for BOTH the trace AND the stream (feature 020·29 D11 — two calls of
-        # render_scratchpad could diverge if a mutation interleaved). The durable `messages` is never
-        # mutated, so the source term is one overwritten copy per iteration, not accumulating.
+        # Rebuild the working-set scratchpad ONCE per iteration and splice it onto the bottom for
+        # both the trace AND the stream (two render_scratchpad calls could diverge if a mutation
+        # interleaved). The durable `messages` is never mutated.
         request_messages = messages + render_scratchpad()
         tr.event(
             "llm_request",
@@ -463,12 +453,11 @@ def run_turn(
         if done is None or done.finish_reason != "tool_calls" or not builders:
             if done is None:
                 logger.warning("copilot stream ended with no LLMDone event")
-            # Tool-incompatible model: empty text after a tool ran AND the stream did not end
-            # with a recognized terminal reason. A native tool call already executed this turn
-            # is itself PROOF the model is tool-compatible, so the only thing that still reads
-            # as "couldn't continue" is a torn stream (done is None) or an unknown finish_reason
-            # — `stop` / `length` / `content_filter` are all legitimate provider terminations,
-            # not an incompatibility (length is a token-budget cutoff, handled separately below).
+            # Tool-incompatible model: empty text after a tool ran AND the stream ended with no
+            # recognized terminal reason. A native tool call having executed is itself proof the
+            # model is tool-compatible, so the only "couldn't continue" left is a torn stream
+            # (done is None) or an unknown finish_reason — `stop` / `length` / `content_filter`
+            # are legitimate terminations (length is a token-budget cutoff, handled below).
             fr = done.finish_reason if done is not None else ""
             incompatible = (
                 not text_buf
@@ -489,8 +478,8 @@ def run_turn(
                 )
                 return
             if not text_buf and fr == "length":
-                # The model was cut off mid-reply by the per-turn token budget. Tell the user
-                # honestly (not "incompatible") so they can ask it to continue.
+                # Cut off mid-reply by the per-turn token budget. Tell the user honestly (not
+                # "incompatible") so they can ask it to continue.
                 logger.warning(
                     f"copilot turn truncated (length) after {total_tool_calls} tool call(s)"
                 )
@@ -500,7 +489,7 @@ def run_turn(
                     "The actions above did complete — ask me to continue or recap."
                 )
                 # The note is the reply prose (text_buf is empty here) so a "continue" next turn
-                # sees what happened + the ledger of what already committed (feature 020·28 fact 3/4).
+                # sees what happened + the ledger of what already committed.
                 yield AgentError(
                     cutoff_note,
                     summary=_build_turn_summary(cutoff_note, ran, registry),
@@ -518,7 +507,7 @@ def run_turn(
                 reply=text_buf,
                 usage=usage.value(),
             )
-            # text_buf is the agent's final reply, carrying its stated assumption (fact 3).
+            # text_buf is the agent's final reply, carrying its stated assumption.
             yield AgentTurnDone(
                 usage.value(),
                 summary=_build_turn_summary(text_buf, ran, registry),
@@ -527,7 +516,7 @@ def run_turn(
 
         calls = [builders[i] for i in sorted(builders)]
         messages.append(_assistant_message(text_buf, calls))
-        begin_batch()  # reset the D9 per-batch line-edit guard (feature 020·29)
+        begin_batch()  # reset the per-batch line-edit guard
         giveup = False
         for tc in calls:
             args = _parse_args(tc.arguments)
@@ -541,10 +530,9 @@ def run_turn(
                     arguments_raw=tc.arguments,
                 )
                 messages.append(_tool_message(tc.id, "error: invalid arguments JSON"))
-                # Malformed args for an EDIT tool is a non-converging retry too (§020·20 D4) — a
-                # model that keeps emitting unparseable edit JSON must hit the same giveup cap, not
-                # loop to max_iterations. Non-edit malformed calls don't count (same as a failed
-                # non-edit tool below).
+                # Malformed args for an EDIT tool is a non-converging retry too — a model that keeps
+                # emitting unparseable edit JSON must hit the same giveup cap, not loop to
+                # max_iterations. Non-edit malformed calls don't count.
                 if registry.is_edit_tool(tc.name):
                     consecutive_failed_edits += 1
                     if consecutive_failed_edits >= config.max_edit_retries:
@@ -556,10 +544,10 @@ def run_turn(
                 logger.debug(f"copilot turn cancelled before tool {tc.name}")
                 yield AgentCancelled(_build_turn_summary(text_buf, ran, registry))
                 return
-            # Pre-gate guard (feature 020·18): a publish that can't run (no creds / no pack)
-            # returns a guided-handoff message BEFORE the gate, so the user never gets a
-            # confirm dialog for an action that would fail. Routes around execute + the gate +
-            # the retry cap (a cred miss is not a convergence failure), exactly like a decline.
+            # Pre-gate guard: a publish that can't run (no creds / no pack) returns a guided-handoff
+            # message BEFORE the gate, so the user never gets a confirm dialog for an action that
+            # would fail. Routes around execute + gate + retry cap (a cred miss is not a convergence
+            # failure), like a decline.
             handoff = registry.precheck(tc.name, args)
             if handoff is not None:
                 logger.info(f"copilot tool {tc.name} | precheck handoff")
@@ -567,13 +555,12 @@ def run_turn(
                 ran.record(tc.name, False, handoff, args, None)
                 messages.append(_tool_message(tc.id, handoff))
                 continue
-            # Gate a destructive/publish tool on a user Yes/No before it runs (§7 / 020·17).
-            # On decline: record + append the tool result (a declined call STILL needs a
-            # matching tool message — an orphaned tool_call_id 400s the next stream) + continue
-            # to the next call in the batch. The continue lands BEFORE the execute + the
-            # consecutive_failed_edits logic, so a decline never reaches either: a user choice
-            # is not a convergence failure and must not count toward the edit-retry cap.
-            secret = ""  # a CREDENTIAL gate's typed key, forwarded to execute OUT of args (020·19)
+            # Gate a destructive/publish tool on a user Yes/No before it runs. On decline: record +
+            # append the tool result (a declined call STILL needs a matching tool message — an
+            # orphaned tool_call_id 400s the next stream) + continue. The continue lands BEFORE
+            # execute and the consecutive_failed_edits logic, so a user decline never counts toward
+            # the edit-retry cap.
+            secret = ""  # a CREDENTIAL gate's typed key, forwarded to execute
             if registry.requires_gate(tc.name, args, config):
                 req = build_gate(registry, tc.name, args)
                 tr.event("gate_open", name=tc.name, prompt=req.prompt)
@@ -616,11 +603,11 @@ def run_turn(
             )
             messages.append(_tool_message(tc.id, msg))
 
-            # §I2 self-correction cap: a model stuck on an edit (an old_str that keeps not
-            # matching, a line range that keeps not resolving) would otherwise retry to the
-            # max_iterations ceiling. Count CONSECUTIVE failed shader-EDIT tools (not all mutating
-            # tools — a failed render/publish is non-convergence, not a stuck edit, §020·20 D4);
-            # any success or non-edit tool resets it. Every failed edit counts, incl. the D9 reject.
+            # Self-correction cap: a model stuck on an edit (an old_str that keeps not matching, a
+            # line range that keeps not resolving) would otherwise retry to the max_iterations
+            # ceiling. Count CONSECUTIVE failed shader-EDIT tools (not all mutating tools — a failed
+            # render/publish is non-convergence, not a stuck edit); any success or non-edit tool
+            # resets it.
             if registry.is_edit_tool(tc.name) and not ok:
                 consecutive_failed_edits += 1
             else:
