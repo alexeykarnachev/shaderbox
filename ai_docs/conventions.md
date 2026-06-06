@@ -91,10 +91,15 @@ belong in the feature spec (`ai_docs/features/NNN_*.md`). This file is not a cha
 - **`widgets/*.py`: free functions taking `app: App`, no wrapper, no protocol.** Widgets are an
   organizational convention, not a polymorphic contract — no `Widget` ABC, no shared return shape;
   each gets the shape that fits its job. Revisit if a polymorphic `list[Widget]` dispatcher materializes.
-- **`popups/*.py`: free `draw(app: App)` functions; open/closed state lives on `App` as booleans.**
-  Each `app.open_*()` helper sets its own flag True and clears ALL siblings — the "at most one popup
-  open" invariant; keep it when adding a popup. `app.any_popup_open()` is the render-gate question.
-  No popup classes. Revisit if a popup grows internal state that doesn't belong on `App`.
+- **`popups/*.py`: free `draw(app: App)` functions; open/closed state lives on `App` as a single
+  `PopupState` enum field.** The four modal popups (node creator, settings, emoji picker, shader-lib
+  picker) share one `app.popup_state` field — `CLOSED` / `NODE_CREATOR` / `SETTINGS` / `EMOJI_PICKER`
+  / `SHADER_LIB_PICKER`. Each `app.open_*()` helper sets `popup_state`; the single field IS the mutex
+  ("at most one modal open" holds by construction — one field can't be two states). A new modal popup
+  adds an enum member + its `open_*()` + a self-close to `CLOSED`. `app.any_popup_open()`
+  (`popup_state != CLOSED`) is the render-gate question. The command palette (`is_palette_open`) stays
+  a separate bool — non-modal, coexists with any modal. No popup classes. Revisit if a popup grows
+  internal state that doesn't belong on `App`.
 - **Inline editor state lives on `App`; disk is the source of truth.** One `TextEditor` per node
   (+ a parallel dirty-baseline dict), created lazily; `app.save()` flushes the dirty editor before
   writing the file; the mtime watcher re-syncs from disk on external change (disk wins). Editor

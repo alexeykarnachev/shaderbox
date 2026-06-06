@@ -1,6 +1,6 @@
 from imgui_bundle import imgui, imgui_ctx
 
-from shaderbox.app import App
+from shaderbox.app import App, PopupState
 from shaderbox.popups.emoji_data import EmojiEntry, EmojiGroup, load_emoji_groups
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_primitives import ghost_button, modal_window
@@ -13,13 +13,13 @@ _POPUP_H = 560.0
 
 
 def draw_emoji_picker(app: App) -> None:
-    if not app.is_emoji_picker_open:
+    if app.popup_state != PopupState.EMOJI_PICKER:
         return
     with modal_window(_LABEL, (_POPUP_W, _POPUP_H)) as visible:
         if not visible:
             return
         if not _draw_body(app):
-            app.is_emoji_picker_open = False
+            app.popup_state = PopupState.CLOSED
             app.emoji_pick_target = None
             imgui.close_current_popup()
 

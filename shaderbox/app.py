@@ -2,6 +2,7 @@ import shutil
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, replace
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
@@ -85,6 +86,18 @@ _REGION_CYCLE: tuple[ActiveRegion, ...] = (
     ActiveRegion.GRID,
     ActiveRegion.PANEL,
 )
+
+
+class PopupState(Enum):
+    # The one open modal popup, or CLOSED (feature 023). A single field replaces four
+    # mutually-exclusive booleans: the "at most one modal open" invariant is now structural
+    # (one field can't hold two states). The command palette is NOT here — it's a non-modal
+    # floating search box that coexists with any modal (App.is_palette_open).
+    CLOSED = "closed"
+    NODE_CREATOR = "node_creator"
+    SETTINGS = "settings"
+    EMOJI_PICKER = "emoji_picker"
+    SHADER_LIB_PICKER = "shader_lib_picker"
 
 
 def _order_templates(templates: dict[str, UINode]) -> dict[str, UINode]:
@@ -244,13 +257,12 @@ class App:
         # bar (not the whole glfw window). (x, y, w, h).
         self.editor_rect: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
 
-        self.is_node_creator_open: bool = False
+        # The one open modal popup (feature 023). A single PopupState enum replaces four
+        # mutually-exclusive booleans; the "at most one open" mutex is structural.
+        self.popup_state: PopupState = PopupState.CLOSED
         # The node-creator popup's inline template-description editor (feature 020·22). Bound to the
         # selected template's DIR path; closed when the popup opens or the selection changes.
         self.template_desc_input: InlineInput = InlineInput()
-        self.is_settings_open: bool = False
-        self.is_emoji_picker_open: bool = False
-        self.is_shader_lib_picker_open: bool = False
         # Command palette (feature 018): a transient floating search box, NOT one
         # of the modal popups above — excluded from the popup mutex on purpose.
         self.is_palette_open: bool = False
@@ -702,37 +714,23 @@ class App:
         }
 
     def any_popup_open(self) -> bool:
-        return (
-            self.is_node_creator_open
-            or self.is_settings_open
-            or self.is_emoji_picker_open
-            or self.is_shader_lib_picker_open
-        )
+        return self.popup_state != PopupState.CLOSED
 
     def open_node_creator(self) -> None:
-        self.is_node_creator_open = True
+        self.popup_state = PopupState.NODE_CREATOR
         self.template_desc_input.close()  # no stale in-flight description editor on reopen (020·22)
-        self.is_settings_open = False
-        self.is_emoji_picker_open = False
-        self.is_shader_lib_picker_open = False
 
     def set_template_description(self, template_uuid: str, description: str) -> None:
         # On-change persist of a user-edited template description to the sidecar (feature 020·22).
         self.template_descriptions.set(template_uuid, description)
 
     def open_settings(self) -> None:
-        self.is_settings_open = True
-        self.is_node_creator_open = False
-        self.is_emoji_picker_open = False
-        self.is_shader_lib_picker_open = False
+        self.popup_state = PopupState.SETTINGS
 
     def open_emoji_picker(self, target: Callable[[str], None] | None = None) -> None:
-        self.is_emoji_picker_open = True
+        self.popup_state = PopupState.EMOJI_PICKER
         self.emoji_pick_target = target
         self.emoji_picker_query = ""
-        self.is_node_creator_open = False
-        self.is_settings_open = False
-        self.is_shader_lib_picker_open = False
 
     def open_shader_lib_picker(self) -> None:
         # Insert-at-caret is gated inside the picker on `current_editor_path is
@@ -740,11 +738,8 @@ class App:
         # `shader_lib_picker_just_opened` from imgui's `is_window_appearing()` on its
         # first frame.
         self.reset_shader_lib_inline_state()
-        self.is_shader_lib_picker_open = True
+        self.popup_state = PopupState.SHADER_LIB_PICKER
         self.shader_lib_picker_query = ""
-        self.is_node_creator_open = False
-        self.is_settings_open = False
-        self.is_emoji_picker_open = False
 
     @staticmethod
     def _create_dir_if_needed(path: Path | str) -> Path:

@@ -2,7 +2,7 @@ from pathlib import Path
 
 from imgui_bundle import imgui
 
-from shaderbox.app import App
+from shaderbox.app import App, PopupState
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_primitives import (
     caption_text,
@@ -23,13 +23,13 @@ _DESC_EDIT_H = 60.0
 
 
 def draw_node_creator(app: App) -> None:
-    if not app.is_node_creator_open:
+    if app.popup_state != PopupState.NODE_CREATOR:
         return
     with modal_window(_LABEL, (_POPUP_W, _POPUP_H)) as visible:
         if not visible:
             return
         if not _draw_body(app):
-            app.is_node_creator_open = False
+            app.popup_state = PopupState.CLOSED
             app.template_desc_input.close()
             imgui.close_current_popup()
 

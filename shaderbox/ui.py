@@ -9,7 +9,7 @@ from imgui_bundle import imgui, imgui_ctx
 from imgui_bundle import imgui_command_palette as imcmd
 from loguru import logger
 
-from shaderbox.app import App
+from shaderbox.app import App, PopupState
 from shaderbox.commands import ActiveRegion, CommandId, NodeTab, chord_to_str
 from shaderbox.hotkeys import dispatch_commands, process_hotkeys
 from shaderbox.logging_setup import configure_logging
@@ -223,7 +223,7 @@ def update_and_draw(app: App) -> None:
                 or app.frame_idx == 0
             ):
                 ui_node.node.render()
-    elif app.is_node_creator_open:
+    elif app.popup_state == PopupState.NODE_CREATOR:
         for ui_node in app.ui_node_templates.values():
             ui_node.node.render()
 

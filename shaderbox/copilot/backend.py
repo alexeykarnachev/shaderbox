@@ -176,10 +176,6 @@ def _uniform_type_label(u: moderngl.Uniform | moderngl.UniformBlock) -> str:
     return f"{scalar}[{u.array_length}]" if u.array_length > 1 else scalar
 
 
-# Engine-driven uniforms: Node.render() overwrites these every frame from the engine clock /
-# canvas regardless of uniform_values, so set_uniform on them is a per-frame no-op (020·16 Decision 6).
-
-
 def _is_number(v: object) -> TypeGuard[int | float]:
     return isinstance(v, int | float) and not isinstance(v, bool)
 
@@ -615,9 +611,7 @@ class CopilotBackend:
 
     # ---- cross-project mutations (feature 020·16) ----
 
-    def set_uniform(
-        self, name: str, value: object, node: str
-    ) -> SetUniformResult:
+    def set_uniform(self, name: str, value: object, node: str) -> SetUniformResult:
         # Set a runtime uniform VALUE on a node (020·16 Decision 6). Marshalled: validating the
         # name against get_active_uniforms() is a GL read, and try_to_release may touch GL. The
         # write itself mirrors the UI uniform widget (release old, dict-assign); the next render
@@ -626,7 +620,9 @@ class CopilotBackend:
         # and the engine-driven uniforms (which render() overwrites every frame).
         def _on_main() -> SetUniformResult:
             node_id = (
-                self._copilot_resolve_node_id(node) if node else self._get_current_node_id()
+                self._copilot_resolve_node_id(node)
+                if node
+                else self._get_current_node_id()
             )
             if node_id is None or node_id not in self._get_ui_nodes():
                 return SetUniformResult(
@@ -825,7 +821,9 @@ class CopilotBackend:
         )
 
     def _copilot_render_target(self, node: str) -> UINode | None:
-        node_id = self._copilot_resolve_node_id(node) if node else self._get_current_node_id()
+        node_id = (
+            self._copilot_resolve_node_id(node) if node else self._get_current_node_id()
+        )
         if node_id is None or node_id not in self._get_ui_nodes():
             return None
         return self._get_ui_nodes()[node_id]
@@ -1279,7 +1277,9 @@ class CopilotBackend:
             self._batch_mutated_add(tgt.ws_address)
             return EditResult(matches=matches, errors=errors)
         assert tgt.lib_path is not None
-        if not self._get_shader_lib_files().write_copilot_lib_file(tgt.lib_path, new_text):
+        if not self._get_shader_lib_files().write_copilot_lib_file(
+            tgt.lib_path, new_text
+        ):
             return EditResult(
                 matches=0,
                 errors=[],

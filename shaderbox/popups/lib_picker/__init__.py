@@ -16,7 +16,7 @@ Submodules: `search` (top bar + query parsing), `tree` (left column),
 
 from imgui_bundle import imgui, imgui_ctx
 
-from shaderbox.app import App
+from shaderbox.app import App, PopupState
 from shaderbox.paths import shader_lib_root
 from shaderbox.popups.lib_picker import filtering, preview, search, tree
 from shaderbox.theme import COLOR, SIZE, SPACE
@@ -30,13 +30,13 @@ _TREE_W_MIN = 280.0
 
 
 def draw_lib_picker(app: App) -> None:
-    if not app.is_shader_lib_picker_open:
+    if app.popup_state != PopupState.SHADER_LIB_PICKER:
         return
     with modal_window(_LABEL, (_POPUP_W, _POPUP_H)) as visible:
         if not visible:
             return
         if not _draw_body(app):
-            app.is_shader_lib_picker_open = False
+            app.popup_state = PopupState.CLOSED
             imgui.close_current_popup()
 
 

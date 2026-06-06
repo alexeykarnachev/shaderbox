@@ -1,6 +1,6 @@
 from imgui_bundle import imgui
 
-from shaderbox.app import App
+from shaderbox.app import App, PopupState
 from shaderbox.commands import (
     COMMAND_SPECS,
     SPEC_BY_ID,
@@ -23,7 +23,7 @@ _LABEL = "Settings##popup"
 
 
 def draw_settings(app: App) -> None:
-    if not app.is_settings_open:
+    if app.popup_state != PopupState.SETTINGS:
         return
     with modal_window(
         _LABEL, (float(SIZE.SETTINGS_W), float(SIZE.SETTINGS_H))
@@ -34,7 +34,7 @@ def draw_settings(app: App) -> None:
             # Editor settings apply on close only — set_*() while the modal is open
             # FPE-crashes the editor (conventions.md ## Known quirks).
             app.apply_editor_settings()
-            app.is_settings_open = False
+            app.popup_state = PopupState.CLOSED
             imgui.close_current_popup()
 
 

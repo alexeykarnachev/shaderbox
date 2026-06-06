@@ -15,7 +15,7 @@ from imgui_bundle import imgui
 from loguru import logger
 from platformdirs import user_data_dir
 
-from shaderbox.app import App
+from shaderbox.app import App, PopupState
 from shaderbox.commands import ActiveRegion, NodeTab
 from shaderbox.logging_setup import configure_logging
 from shaderbox.ui import update_and_draw
@@ -27,15 +27,11 @@ N_FRAMES: int = 200
 
 
 def _check_invariants(app: App, frame_idx: int) -> None:
-    n_open: int = sum(
-        [
-            app.is_node_creator_open,
-            app.is_settings_open,
-            app.is_emoji_picker_open,
-            app.is_shader_lib_picker_open,
-        ]
-    )
-    assert n_open <= 1, f"frame {frame_idx}: {n_open} popups open (mutex broken)"
+    # The "at most one modal popup open" mutex is now structural — popup_state is a single
+    # PopupState value, so two modals can't be open at once by construction (feature 023).
+    assert isinstance(
+        app.popup_state, PopupState
+    ), f"frame {frame_idx}: popup_state is not a PopupState ({app.popup_state!r})"
     assert app.current_node_id == "" or app.current_node_id in app.ui_nodes, (
         f"frame {frame_idx}: current_node_id={app.current_node_id!r} not in "
         f"ui_nodes={list(app.ui_nodes.keys())}"
