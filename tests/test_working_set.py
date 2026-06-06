@@ -267,9 +267,9 @@ def app() -> Iterator[Any]:
 
 def test_read_adds_to_working_set_and_rebuild_shows_live_source(app: Any) -> None:
     app._copilot_working_set = []
-    app._copilot_read_shaders([])  # current node
+    app.copilot_backend.read_shaders([])  # current node
     assert app._copilot_working_set  # the current node joined
-    views = app._copilot_read_working_set()
+    views = app.copilot_backend.read_working_set()
     assert views and views[0].is_current
     assert views[0].listing.strip().startswith("1  ")
 
@@ -277,7 +277,7 @@ def test_read_adds_to_working_set_and_rebuild_shows_live_source(app: Any) -> Non
 def test_current_node_unioned_into_rebuild(app: Any) -> None:
     # The current node is an implicit working-set member even if no read/edit added it (D1).
     app._copilot_working_set = []
-    views = app._copilot_read_working_set()
+    views = app.copilot_backend.read_working_set()
     assert any(v.is_current for v in views)
 
 
@@ -290,18 +290,18 @@ def test_intra_batch_line_edit_guard_rejects(app: Any) -> None:
     # verified end-to-end on a single real App, in the spec's failed-flow re-run).
     app._copilot_working_set = []
     app._copilot_batch_mutated = {app.current_node_id}
-    res = app._copilot_apply_line_edit(1, 0, "// shifted", "")
+    res = app.copilot_backend.apply_line_edit(1, 0, "// shifted", "")
     assert res.unresolved and "shifted" in res.unresolved_reason
     assert res.matches == 0  # mutated nothing
-    # A fresh batch clears the guard.
-    app._copilot_batch_begin()
+    # A fresh batch clears the guard (App owns the set; the capability's batch_begin clears it).
+    app._copilot_batch_mutated.clear()
     assert app.current_node_id not in app._copilot_batch_mutated
 
 
 def test_substring_edit_never_d9_rejected(app: Any) -> None:
     # A substring edit is NOT gated by D9 even when the target is batch-mutated (it matches by text).
     app._copilot_batch_mutated = {app.current_node_id}
-    res = app._copilot_apply_shader_edit("zzz-no-such-token", "x", False, "")
+    res = app.copilot_backend.apply_shader_edit("zzz-no-such-token", "x", False, "")
     # A genuine no-match (matches==0, hint), NOT a D9 unresolved reject.
     assert not res.unresolved
 
@@ -309,11 +309,11 @@ def test_substring_edit_never_d9_rejected(app: Any) -> None:
 def test_gone_node_skipped_in_rebuild(app: Any) -> None:
     # A working-set address that is no longer a node never KeyErrors the rebuild.
     app._copilot_working_set = ["does-not-exist-id"]
-    views = app._copilot_read_working_set()  # must not raise
+    views = app.copilot_backend.read_working_set()  # must not raise
     assert all(v.address != "does-not-exist-id" for v in views)
 
 
 def test_unknown_edit_target_rejects_as_unresolved(app: Any) -> None:
     # The resolver keeps its unresolved-target reject after the freshness guard retired (GL-free).
-    res = app._copilot_apply_line_edit(1, 1, "x", "no-such-node-zzz")
+    res = app.copilot_backend.apply_line_edit(1, 1, "x", "no-such-node-zzz")
     assert res.unresolved and "no node" in res.unresolved_reason

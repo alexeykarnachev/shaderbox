@@ -62,13 +62,13 @@ def app() -> Iterator[Any]:
 def _text_handle(app: Any) -> str:
     return next(
         t.template_id
-        for t in app._copilot_template_catalog()
+        for t in app.copilot_backend.template_catalog()
         if t.name == "Text Rendering"
     )
 
 
 def test_catalogue_has_three_prefixed_unique_templates(app: Any) -> None:
-    cat = app._copilot_template_catalog()
+    cat = app.copilot_backend.template_catalog()
     assert len(cat) == 3
     assert all(t.template_id.startswith("template:") for t in cat)
     assert (
@@ -78,51 +78,55 @@ def test_catalogue_has_three_prefixed_unique_templates(app: Any) -> None:
 
 
 def test_resolve_source_distinguishes_template_from_node(app: Any) -> None:
-    kind, full = app._copilot_resolve_source(_text_handle(app))
+    kind, full = app.copilot_backend._copilot_resolve_source(_text_handle(app))
     assert kind == "template" and full is not None
     # a bare (non-template:) handle is a node
-    kind2, _ = app._copilot_resolve_source("zzzz")
+    kind2, _ = app.copilot_backend._copilot_resolve_source("zzzz")
     assert kind2 == "node"
 
 
 def test_shipped_templates_read_clean_without_joining_working_set(app: Any) -> None:
-    for t in app._copilot_template_catalog():
-        views = app._copilot_read_shaders([t.template_id])
+    for t in app.copilot_backend.template_catalog():
+        views = app.copilot_backend.read_shaders([t.template_id])
         assert len(views) == 1, t.template_id
         v = views[0]
         assert v.node_id == t.template_id
         assert len(v.errors) == 0, f"{t.name} must compile clean: {v.errors}"
         # read-only: a template read never joins the (editable) working set
-        full = app._copilot_resolve_template_id(t.template_id)
+        full = app.copilot_backend._copilot_resolve_template_id(t.template_id)
         assert full not in app._copilot_working_set
         assert t.template_id not in app._copilot_working_set
 
 
 def test_grep_surfaces_template_origins(app: Any) -> None:
-    hits = app._copilot_grep("void main")
+    hits = app.copilot_backend.grep("void main")
     tpl = [h for h in hits if h.origin.startswith("template:")]
     assert tpl, "grep must scan templates"
     assert all(h.location.startswith("template '") for h in tpl)
 
 
 def test_create_from_template_instantiates_it(app: Any) -> None:
-    nid, errors = app._copilot_create_node("My Text", "", _text_handle(app), False)
+    nid, errors = app.copilot_backend.create_node(
+        "My Text", "", _text_handle(app), False
+    )
     assert nid and not errors
 
 
 def test_create_empty_template_uses_default_starter(app: Any) -> None:
-    nid, errors = app._copilot_create_node("Blank", "", "", False)
+    nid, errors = app.copilot_backend.create_node("Blank", "", "", False)
     assert nid and not errors
 
 
 def test_edit_on_template_target_is_rejected_read_only(app: Any) -> None:
-    res = app._copilot_resolve_target(_text_handle(app), allow_create=False)
+    res = app.copilot_backend._copilot_resolve_target(
+        _text_handle(app), allow_create=False
+    )
     assert isinstance(res, EditResult)
     assert res.unresolved and "read-only" in res.unresolved_reason
 
 
 def test_description_override_shadows_shipped(app: Any, monkeypatch: Any) -> None:
-    cat = app._copilot_template_catalog()
-    full = app._copilot_resolve_template_id(cat[0].template_id)
+    cat = app.copilot_backend.template_catalog()
+    full = app.copilot_backend._copilot_resolve_template_id(cat[0].template_id)
     app.template_descriptions.descriptions[full] = "MY OVERRIDE"
     assert app.template_description(full) == "MY OVERRIDE"

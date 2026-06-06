@@ -5,7 +5,7 @@ logic, not a GL write — the GL write is verified in-app + by the headless prob
 
 import types
 
-from shaderbox.app import _coerce_uniform_value
+from shaderbox.copilot.backend import _coerce_uniform_value
 
 _GL_FLOAT = 0x1406
 _GL_UINT = 0x1405

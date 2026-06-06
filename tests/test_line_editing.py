@@ -8,8 +8,8 @@ Two layers, both GL-free:
 
 import threading
 
-from shaderbox.app import _number_lines
 from shaderbox.copilot.agent import AgentError, AgentToolCard, run_turn
+from shaderbox.copilot.backend import _number_lines
 from shaderbox.copilot.capabilities import CompileErrorInfo, EditResult
 from shaderbox.copilot.config import COPILOT_CONFIG
 from shaderbox.copilot.gate import GateChannel
