@@ -89,10 +89,8 @@ _REGION_CYCLE: tuple[ActiveRegion, ...] = (
 
 
 class PopupState(Enum):
-    # The one open modal popup, or CLOSED (feature 023). A single field replaces four
-    # mutually-exclusive booleans: the "at most one modal open" invariant is now structural
-    # (one field can't hold two states). The command palette is NOT here — it's a non-modal
-    # floating search box that coexists with any modal (App.is_palette_open).
+    # The one open modal popup, or CLOSED. A single field makes the "at most one open" mutex
+    # structural. The command palette is non-modal (App.is_palette_open), not in here.
     CLOSED = "closed"
     NODE_CREATOR = "node_creator"
     SETTINGS = "settings"
@@ -207,17 +205,12 @@ class App:
         self.exporter_registry.register(YouTubeExporter())
         self.share_tab_state: share_state.TabState | None = None
 
-        # The copilot working set (feature 020·29): every node full-id / "lib:" address the agent
-        # touched (read OR edited) THIS turn, order-preserved. Rebuilt into the per-turn scratchpad
-        # block from LIVE source every loop iteration, so line numbers can never go stale across
-        # iterations. Reset to [] on each copilot_send; a deleted node is removed in the delete sink.
-        # OWNED by App, READ/WRITTEN by CopilotBackend via accessor callbacks (feature 023) — and
-        # initialized HERE, above the backend construction, so those callbacks capture a live attr.
+        # Working set: every node/lib address the agent touched this turn, order-preserved; reset per
+        # turn. Owned by App, accessed by CopilotBackend via callbacks — init'd HERE, above the backend
+        # construction, so those callbacks capture a live attr.
         self._copilot_working_set: list[str] = []
-        # The per-BATCH mutated-target guard (feature 020·29 D9): resolved full-ids a mutating edit
-        # touched within the CURRENT assistant tool-call batch. A line-addressed edit to an id already
-        # here is rejected (its line numbers shifted from an earlier same-batch edit; the scratchpad
-        # only refreshes BETWEEN batches). Cleared via batch_begin before each batch.
+        # Per-batch mutated-target guard (D9): a line edit to an id already here is rejected (its lines
+        # shifted from an earlier same-batch edit). Cleared before each batch.
         self._copilot_batch_mutated: set[str] = set()
 
         # Copilot (feature 020). Constructed BEFORE the _init below (which calls
@@ -424,10 +417,9 @@ class App:
         }
 
     def _build_copilot_capabilities(self) -> CopilotCapabilities:
-        # Seam A: construct the CopilotBackend (feature 023 — the worker-facing verbs, no App
-        # import) and bind its public methods into the capabilities dataclass (parallel to
-        # _build_command_callbacks). Project-dependent deps are getters so a project switch
-        # retargets them; the working-set/batch state stays on App, reached via accessors.
+        # Construct the CopilotBackend and bind its methods into the capabilities dataclass.
+        # Project-dependent deps are getters (a project switch retargets them); deps that reference
+        # self.copilot are lazy (it doesn't exist yet); working-set/batch state stays App-owned.
         self.copilot_backend = CopilotBackend(
             get_bridge=lambda: self.copilot.bridge,
             node_templates_dir=self.node_templates_dir,

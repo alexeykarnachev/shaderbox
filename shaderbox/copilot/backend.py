@@ -63,16 +63,13 @@ from shaderbox.tabs import share_state
 from shaderbox.ui_models import UINode, load_node_from_dir
 from shaderbox.util import str_to_unicode, try_to_release
 
-# Copilot node-id shortening: the agent sees/passes a short prefix, never the 36-char UUID.
-# 4 chars is collision-free for any realistic project (16^4 = 65536 over a handful of nodes);
-# _copilot_short_ids grows the prefix only on an actual collision.
+# Node-id prefix shown to the agent; _copilot_short_ids grows it past the floor only on collision.
 _COPILOT_SHORT_ID_LEN = 4
 _COPILOT_FULL_ID_LEN = 36
 
 
 def _to_error_infos(errors: list[ShaderError]) -> list[CompileErrorInfo]:
-    # ShaderError.line is 0-based (-1 = unparsed fallback row); the agent reads a cat -n
-    # listing, so report 1-based. The fallback row has no real line — report it as 0.
+    # ShaderError.line is 0-based (-1 = unparsed fallback); report 1-based, fallback as 0.
     return [
         CompileErrorInfo(
             path=str(e.path), line=e.line + 1 if e.line >= 0 else 0, message=e.message
@@ -82,8 +79,7 @@ def _to_error_infos(errors: list[ShaderError]) -> list[CompileErrorInfo]:
 
 
 def _number_lines(text: str) -> str:
-    # cat -n style. The prefixes orient the agent but are NOT part of the text it edits
-    # against (it matches on content) — spec §16.2.
+    # cat -n style. Prefixes orient the agent but are not part of the text it matches against.
     lines = text.split("\n")
     width = len(str(len(lines)))
     return "\n".join(f"{i:>{width}}  {line}" for i, line in enumerate(lines, start=1))
@@ -91,10 +87,9 @@ def _number_lines(text: str) -> str:
 
 @dataclass
 class _CopilotEditTarget:
-    # A resolved copilot edit target (feature 020·16): either a NODE (recompiles, returns
-    # compile errors) or a LIB file (written, no standalone compile). `source` is the current
-    # text the edit matches/line-edits against ("" for a not-yet-created lib file). `ws_address` is
-    # the working-set + per-batch-guard key (the node full-id, or the "lib:" address — feature 020·29).
+    # A resolved edit target: a NODE (recompiles) or a LIB file (written, no standalone compile).
+    # `source` is the current text to edit against ("" for a not-yet-created lib file).
+    # `ws_address` is the working-set + per-batch-guard key (node full-id, or the "lib:" address).
     kind: str  # "node" | "lib"
     source: str
     ws_address: str
@@ -105,10 +100,9 @@ class _CopilotEditTarget:
 
 
 def _ws_normalize(text: str) -> tuple[str, list[int]]:
-    # Collapse every run of horizontal whitespace to a single space and drop spaces
-    # adjacent to a newline, returning the normalized text plus a parallel map from each
-    # normalized-char index to its originating index in `text`. The map lets a match in
-    # normalized space be sliced back to the EXACT original bytes (feature 020 · 12 A).
+    # Collapse horizontal-whitespace runs to one space (dropped adjacent to a newline) and
+    # return the normalized text + a per-char map back to original indices, so a normalized-space
+    # match can be sliced back to exact original bytes.
     out: list[str] = []
     src_index: list[int] = []
     i = 0
@@ -119,8 +113,7 @@ def _ws_normalize(text: str) -> tuple[str, list[int]]:
             j = i
             while j < n and text[j] in " \t":
                 j += 1
-            # Emit a single space only when it sits between two non-newline chars; a run
-            # touching a newline collapses away (indentation / trailing space).
+            # One space only between two non-newline chars; a run touching a newline collapses away.
             prev = out[-1] if out else "\n"
             nxt = text[j] if j < n else "\n"
             if prev != "\n" and nxt != "\n":
@@ -136,9 +129,8 @@ def _ws_normalize(text: str) -> tuple[str, list[int]]:
 
 
 def _whitespace_near_match(src: str, old_str: str) -> str:
-    # When old_str doesn't match src exactly, find the UNIQUE region of src that matches
-    # it ignoring whitespace, and return that region's EXACT original bytes (so the model
-    # copies them verbatim). "" when there is no match or it's not unique.
+    # The unique region of src matching old_str ignoring whitespace, as exact original bytes;
+    # "" when no match or not unique.
     norm_src, src_index = _ws_normalize(src)
     norm_old, _ = _ws_normalize(old_str)
     if not norm_old:
@@ -150,8 +142,7 @@ def _whitespace_near_match(src: str, old_str: str) -> str:
 
 
 def _splice(src: str, spans: list[tuple[int, int]], new_str: str) -> str:
-    # Replace each non-overlapping (start, end) span (source order, from token_match) with
-    # new_str verbatim. Cursor walk is offset-stable because the spans never overlap.
+    # Replace each non-overlapping (start, end) span with new_str. Offset-stable: spans don't overlap.
     out: list[str] = []
     cursor: int = 0
     for start, end in spans:
@@ -167,8 +158,7 @@ def _uniform_type_label(u: moderngl.Uniform | moderngl.UniformBlock) -> str:
         return "block"
     # moderngl stub gap: Uniform.gl_type (conventions.md sanctioned allowlist).
     gl_type = u.gl_type  # type: ignore
-    # A sampler is a live Uniform (Node.render binds it) but is NOT a settable scalar/vector — label it
-    # honestly so the agent's type oracle and set_uniform's reject agree (020·16 Decision 6).
+    # A sampler is a live Uniform but not a settable scalar/vector — labelled so set_uniform rejects it.
     if gl_type == GL_SAMPLER_2D:
         return "sampler2D"
     base = "uint" if gl_type == GL_UNSIGNED_INT else "float"
@@ -183,11 +173,9 @@ def _is_number(v: object) -> TypeGuard[int | float]:
 def _coerce_uniform_value(
     value: object, uniform: moderngl.Uniform
 ) -> float | int | list[int] | tuple[float, ...] | list[tuple[float, ...]] | None:
-    # Coerce a JSON-decoded value to the EXACT shape moderngl's Uniform write wants (020·16 / 020·23).
-    # The shapes are probe-pinned: a scalar -> number; vecN -> a tuple of N; a dim==1 array -> a FLAT
-    # list of array_length; a dim>1 array (vecN[M]) -> array_length NESTED dimension-tuples. Returns
-    # None on any mismatch (the handler turns that into an explicit error — never the silent render pop).
-    # Bools are rejected (JSON true is not a shader number).
+    # Coerce a value to the exact shape moderngl's Uniform write wants (probe-pinned): scalar -> number;
+    # vecN -> tuple of N; dim==1 array -> flat list of array_length; vecN[M] -> array_length nested
+    # dim-tuples. None on any mismatch (caller errors). Bools rejected.
     dim = uniform.dimension
     n = uniform.array_length
     if n > 1:
@@ -204,9 +192,8 @@ def _coerce_uniform_value(
 def _coerce_array(
     value: object, uniform: moderngl.Uniform, dim: int, n: int
 ) -> list[int] | tuple[float, ...] | list[tuple[float, ...]] | None:
-    # A uint TEXT array (uint[N]): accept a str (-> codepoints, the UI's str_to_unicode) OR a list of
-    # ints; truncate/null-pad to exactly N (a string genuinely null-terminates). A NUMERIC array: exact
-    # length, NO padding (padding numeric data is silent corruption; moderngl raises on a short write).
+    # uint[N] TEXT array: a str (-> codepoints) or int list, truncated/null-padded to N. Numeric array:
+    # exact length, NO padding (padding numeric data is silent corruption).
     gl_type = uniform.gl_type  # type: ignore
     if dim == 1 and gl_type == GL_UNSIGNED_INT:
         if isinstance(value, str):
@@ -227,7 +214,7 @@ def _coerce_array(
 
 
 def _set_uniform_shape_hint(name: str, uniform: moderngl.Uniform, label: str) -> str:
-    # The single shape-mismatch feedback channel (020·23): teach the EXACT shape for what `name` is.
+    # The shape-mismatch feedback: the exact shape `name` expects.
     dim = uniform.dimension
     n = uniform.array_length
     gl_type = uniform.gl_type  # type: ignore
@@ -251,7 +238,7 @@ def _set_uniform_shape_hint(name: str, uniform: moderngl.Uniform, label: str) ->
 def _format_uniforms(
     uniforms: list[moderngl.Uniform | moderngl.UniformBlock],
 ) -> list[str]:
-    # "name type = value" rows for the agent's orientation. Blocks have no scalar value.
+    # "name type = value" rows. Blocks have no scalar value.
     rows: list[str] = []
     for u in uniforms:
         label = _uniform_type_label(u)
@@ -262,8 +249,7 @@ def _format_uniforms(
     return rows
 
 
-# Engine-driven uniforms: Node.render() overwrites these every frame from the engine clock /
-# canvas regardless of uniform_values, so set_uniform on them is a per-frame no-op (020·16 Decision 6).
+# Node.render() overwrites these every frame, so set_uniform on them is a no-op (rejected).
 _ENGINE_DRIVEN_UNIFORMS: frozenset[str] = frozenset(
     {"u_time", "u_aspect", "u_resolution"}
 )
@@ -317,16 +303,12 @@ class CopilotBackend:
 
     @property
     def _bridge(self) -> CopilotBridge:
-        # Resolved lazily: the bridge lives on the CopilotSession, which is constructed AFTER the
-        # backend (the session takes the caps the backend's methods are bound into). Every call is
-        # at turn-time, long after the session exists, so the getter always resolves.
+        # Lazy: the bridge lives on the CopilotSession, built AFTER the backend. Resolved at turn-time.
         return self._get_bridge()
 
     def _copilot_short_ids(self) -> dict[str, str]:
-        # full node-id -> short display id (feature: the copilot sees/passes a short prefix, not a
-        # 36-char UUID — fewer bytes to copy = fewer mangled ids, and the user sees no ugly UUIDs).
-        # Length is the shortest prefix (>=_COPILOT_SHORT_ID_LEN) that is unique across the CURRENT
-        # nodes; on the rare prefix collision ALL ids grow together so display + resolve agree.
+        # full node-id -> shortest unique prefix (>=_COPILOT_SHORT_ID_LEN); on collision ALL ids grow
+        # together so display + resolve stay consistent.
         ids = list(self._get_ui_nodes())
         n = _COPILOT_SHORT_ID_LEN
         while n < _COPILOT_FULL_ID_LEN:
@@ -337,12 +319,9 @@ class CopilotBackend:
         return {i: i[:n] for i in ids}
 
     def _copilot_resolve_node_id(self, handle: str) -> str | None:
-        # Resolve a copilot-supplied node handle (a short id, or — defensively — a full id) to the
-        # full node-id, or None if it matches no node or is ambiguous. Accepts an exact full id, an
-        # exact short id, or any unique prefix (the model may copy a few extra/fewer chars). An
-        # empty/whitespace handle is unresolvable (every id startswith(""), so it would silently
-        # resolve to the sole node and let delete/switch act on a node the model never named, §020·20
-        # D4) — required-target tools must reject it, not the caller's current-node fallback.
+        # Handle (full id, short id, or unique prefix) -> full node-id, or None if no/ambiguous match.
+        # Empty handle is unresolvable on purpose (else it'd resolve to the sole node — a required
+        # target must reject, not fall back to current).
         if not handle.strip():
             return None
         if handle in self._get_ui_nodes():
@@ -351,10 +330,8 @@ class CopilotBackend:
         return matches[0] if len(matches) == 1 else None
 
     def node_tree(self) -> list[NodeTreeEntry]:
-        # GL-FREE (feature 020·16, Decision 9): name + has_errors (cached compile_unit.errors,
-        # no GL) + is_current. NO uniforms — get_active_uniforms() is a GL read and this is
-        # called off-main when building the prompt context. Stays cache-stable (no per-frame value).
-        # node_id carries the SHORT id (the only handle the copilot ever sees / passes back).
+        # GL-FREE (runs off-main building prompt context): name + has_errors (cached) + is_current.
+        # No uniforms (that's a GL read). node_id is the short id.
         current = self._get_current_node_id()
         short = self._copilot_short_ids()
         return [
@@ -368,11 +345,8 @@ class CopilotBackend:
         ]
 
     def template_catalog(self) -> list[TemplateEntry]:
-        # GL-FREE: the shipped node templates the agent always sees so it can create_node(template=...)
-        # from a named template (e.g. Text Rendering) on intent, instead of writing source blind, AND
-        # read_shader/grep them via the template: handle (feature 020·22). The handle is the PREFIXED
-        # form `template:<4-char>` (self-describing, mirrors lib:) — never the full uuid in chat. The
-        # description is the merged (override-or-shipped) value, sanitized for the prompt + the font.
+        # GL-FREE: the shipped templates, addressed by a `template:<4-char>` handle (never the uuid).
+        # Description is the merged override-or-shipped value, sanitized.
         return [
             TemplateEntry(
                 template_id=f"template:{tid[:4]}",
@@ -383,9 +357,7 @@ class CopilotBackend:
         ]
 
     def _copilot_resolve_template_id(self, handle: str) -> str | None:
-        # Resolve a copilot template handle (the 4-char short id, the `template:`-prefixed form, or —
-        # defensively — a full uuid) to the full template dir-uuid, or None if it matches no template /
-        # is ambiguous. The catalogue emits `template:` + a 4-char prefix; the resolver strips it.
+        # Template handle (`template:`-prefixed, short, or full uuid) -> full uuid, or None if no/ambiguous.
         h = handle.removeprefix("template:").strip()
         if not h:
             return None
@@ -395,16 +367,14 @@ class CopilotBackend:
         return matches[0] if len(matches) == 1 else None
 
     def _copilot_resolve_source(self, handle: str) -> tuple[str, str | None]:
-        # Unify read/grep source addressing (feature 020·22): a `template:` prefix -> a TEMPLATE
-        # (read-only), anything else a NODE. Returns (kind, full_id|None). lib: is NOT a read_shader
-        # target (read_lib owns lib), so it falls through to the node resolver and returns None.
+        # read/grep addressing: `template:` -> TEMPLATE, else NODE. Returns (kind, full_id|None).
+        # lib: falls through to the node resolver (read_lib owns lib) and returns None.
         if handle.startswith("template:"):
             return "template", self._copilot_resolve_template_id(handle)
         return "node", self._copilot_resolve_node_id(handle)
 
     def lib_catalog(self) -> list[LibCatalogEntry]:
-        # GL-FREE: the parsed lib index (name + signature + doc + the lib: address). No bodies
-        # (that is the read_lib pull). The address is the edit target for the function's file.
+        # GL-FREE: name + signature + doc + lib: address per function. No bodies (that's read_lib).
         root = shader_lib_root()
         entries: list[LibCatalogEntry] = []
         for fn in self._get_shader_lib_index().functions.values():
@@ -425,15 +395,11 @@ class CopilotBackend:
     # ---- cross-project reads (feature 020·16) ----
 
     def read_shaders(self, node_ids: list[str]) -> list[ShaderView]:
-        # Marshalled (force-compile + uniform read are GL). `node_ids` are copilot handles (short
-        # ids, or the resolved current id when the agent omitted them); each resolves to a full id.
-        # For each: ensure a fresh compile, read source + uniforms (type + value) + errors, and ADD
-        # it to the working set so its live source rides the scratchpad (feature 020·29). Unknown
-        # handles are skipped (the tool layer reports them). The ShaderView carries the SHORT id.
+        # Marshalled (compile + uniform read are GL). Per handle: compile, read source + uniforms +
+        # errors, add to the working set. Unknown handles skipped. ShaderView carries the short id.
         def _on_main() -> list[ShaderView]:
             short = self._copilot_short_ids()
-            # [] / empty -> the current node (resolved here so the tool layer never handles a
-            # full id; pin 2a — a concrete id is what gets stamped).
+            # [] -> the current node (resolved here so a concrete id is what gets stamped).
             handles = node_ids or [self._get_current_node_id()]
             views: list[ShaderView] = []
             seen: set[str] = (
@@ -445,8 +411,7 @@ class CopilotBackend:
                     continue
                 seen.add(full_id)
                 if kind == "template":
-                    # Read-only: build the SAME view, BUT don't add it to the working set (no edit ever
-                    # targets a template) and address it by the `template:` prefixed handle (feature 020·22).
+                    # Read-only: same view, not added to the working set, addressed by `template:` handle.
                     ui_node = self._get_ui_node_templates()[full_id]
                     view_id = f"template:{full_id[:4]}"
                 else:
@@ -472,11 +437,9 @@ class CopilotBackend:
         return self._bridge.run_on_main(_on_main)
 
     def read_working_set(self) -> list[WorkingSetView]:
-        # Rebuild the working set into live views (feature 020·29). Bridge-marshalled: uniform reads
-        # and the program-is-None recompile are GL. Current node is UNIONED in (never a filter) and
-        # sorts FIRST; then the touched addresses in add-order. A gone node is skipped (never a hard
-        # KeyError). Coherence invariant: a node with no live program is recompiled HERE so its shown
-        # source and its errors are computed in the same rebuild (never a stale `errors: none`).
+        # Rebuild the working set into live views (marshalled: uniform read + recompile are GL).
+        # Current node unioned in first, then touched addresses in add-order; gone nodes skipped.
+        # A program-less node is recompiled here so its source and errors are coherent.
         def _on_main() -> list[WorkingSetView]:
             short = self._copilot_short_ids()
             current = self._get_current_node_id()
@@ -518,8 +481,7 @@ class CopilotBackend:
         )
 
     def _copilot_lib_working_view(self, address: str) -> WorkingSetView | None:
-        # A lib file's live whole-file listing (feature 020·29 D6 — read_lib is function-keyed, so a
-        # lib has no other source view). No standalone compile; a consuming node shows the new errors.
+        # A lib file's whole-file listing (read_lib is function-keyed, so a lib has no other view).
         path = self._get_shader_lib_files().resolve_copilot_path(address[len("lib:") :])
         if path is None or not path.exists():
             return None
@@ -538,10 +500,8 @@ class CopilotBackend:
         )
 
     def grep(self, query: str) -> list[GrepHit]:
-        # GL-FREE: substring search across every node's source, every shipped TEMPLATE's source, and
-        # every lib file's source. Hits are origin-labeled so the agent can hand the origin to a read
-        # tool (a node id, a `template:` handle, or a lib: address). Case-sensitive substring match (a
-        # comment/#define can false-positive — acceptable for rare discovery, 020·16 Out-of-scope).
+        # GL-FREE case-sensitive substring search across node / template / lib sources. Each hit is
+        # origin-labelled (node id, `template:` handle, or lib: address) for a follow-up read.
         if not query:
             return []
         short = self._copilot_short_ids()
@@ -585,8 +545,7 @@ class CopilotBackend:
         return hits
 
     def read_lib(self, names: list[str]) -> list[LibFunctionBody]:
-        # GL-FREE: the full body of each named lib function (the explicit pull; the catalogue in
-        # the prompt carries signatures only). Unknown names are skipped (tool layer reports them).
+        # GL-FREE: the full body of each named lib function. Unknown names skipped.
         root = shader_lib_root()
         bodies: list[LibFunctionBody] = []
         for name in names:
@@ -610,12 +569,10 @@ class CopilotBackend:
     # ---- cross-project mutations (feature 020·16) ----
 
     def set_uniform(self, name: str, value: object, node: str) -> SetUniformResult:
-        # Set a runtime uniform VALUE on a node (020·16 Decision 6). Marshalled: validating the
-        # name against get_active_uniforms() is a GL read, and try_to_release may touch GL. The
-        # write itself mirrors the UI uniform widget (release old, dict-assign); the next render
-        # picks it up. Up-front validation is the ONLY feedback channel — the render-time shape-pop
-        # in Node.render is off-thread and the handler never sees it. Rejects samplers, blocks,
-        # and the engine-driven uniforms (which render() overwrites every frame).
+        # Set a uniform value on a node (marshalled: validation + try_to_release touch GL). The write
+        # mirrors the UI widget (release old, dict-assign); next render picks it up. Up-front validation
+        # is the only feedback channel (the render-time shape-pop is off-thread). Rejects samplers,
+        # blocks, and engine-driven uniforms.
         def _on_main() -> SetUniformResult:
             node_id = (
                 self._copilot_resolve_node_id(node)
@@ -664,12 +621,8 @@ class CopilotBackend:
     def create_node(
         self, name: str, source: str, template: str, switch_to: bool
     ) -> tuple[str, list[CompileErrorInfo]]:
-        # Create a node (020·16 Decision 8 / 020·22). `template` = a template_catalog handle (bare or
-        # `template:`-prefixed); empty = the DEFAULT starter (UV Mango, the conventional blank canvas).
-        # `source` non-empty overrides the instantiated body. Binds the RAW create body (NOT the
-        # _copilot_busy_blocked-guarded create_node_from_selected_template). Insert order is save->insert->
-        # set-current (mirror _seed_starter_node). Freshness-auto-stamps the new node so the agent can edit
-        # it without a re-read. Compiles + returns errors — the same compile-feedback the edit tools give.
+        # Create a node from `template` (empty = the default starter); `source` overrides the body.
+        # Order: save -> insert -> set-current. Adds to the working set; compiles + returns errors.
         def _on_main() -> tuple[str, list[CompileErrorInfo]]:
             template_id = (
                 self._copilot_resolve_template_id(template)
@@ -680,20 +633,17 @@ class CopilotBackend:
                 raise RuntimeError(f"no template matching '{template}'")
             template_dir = self._node_templates_dir / template_id
             if not template_dir.is_dir():
-                # Shipped resource; missing only on a broken install. The bridge re-raises on
-                # the worker and the registry turns it into a clean tool error, not a crash.
+                # Missing only on a broken install; the registry turns the raise into a tool error.
                 raise RuntimeError("starter template is missing")
             new_node = load_node_from_dir(template_dir)
             new_node.reset_id()
             if name.strip():
                 new_node.ui_state.ui_name = name.strip()
             if source.strip():
-                # release_program sets source.text; save_ui_node then writes it to the new
-                # node's OWN dir + rebinds source.path. Do NOT write through source.path here —
-                # it still points at the shared starter template until the save rebinds it.
+                # release_program sets source.text; save_ui_node writes + rebinds source.path. Do NOT
+                # write through source.path here — it still points at the shared starter template.
                 new_node.node.release_program(source)
-            # Compile (GL-affine, must stay on main) BEFORE save so the persisted program matches
-            # the reported errors. Empty source keeps the starter's clean program -> compiles clean.
+            # Compile (GL, main-thread) BEFORE save so the persisted program matches the reported errors.
             new_node.node.compile()
             self._save_ui_node(new_node)
             self._get_ui_nodes()[new_node.id] = new_node
@@ -705,17 +655,14 @@ class CopilotBackend:
                 f"copilot created node {new_node.id} (switch_to={switch_to}, "
                 f"errors={len(errors)})"
             )
-            # Return the SHORT id (computed after insert, so it's part of the current id set) —
-            # the agent re-uses this handle to read/edit the node it just made.
+            # Short id, computed after insert so it's in the current id set.
             return self._copilot_short_ids()[new_node.id], errors
 
         return self._bridge.run_on_main(_on_main)
 
     def delete_node(self, node: str) -> DeleteNodeResult:
-        # Delete a node on the copilot's behalf (feature 020·17). The agent loop has already
-        # cleared a user Yes (GatePolicy.ALWAYS) before this runs. Resolves the short id, then
-        # marshals the GL teardown to the main thread via the bridge (node release is GL-affine).
-        # Returns the node_id + trash dir-name so the chat can offer a Recover.
+        # Delete a node (already user-confirmed). Marshals the GL teardown to main; returns node_id +
+        # trash dir-name so the chat can offer a Recover.
         def _on_main() -> DeleteNodeResult:
             node_id = self._copilot_resolve_node_id(node)
             if node_id is None or node_id not in self._get_ui_nodes():
@@ -733,9 +680,8 @@ class CopilotBackend:
         return self._bridge.run_on_main(_on_main)
 
     def switch_node(self, node: str) -> SwitchNodeResult:
-        # Make `node` the current one (so publish/render/edit-without-target act on it).
-        # set_current_node_id is a bare state write the frame loop reads — marshal it on the main
-        # thread. The switched node joins the working set so it rides the scratchpad (feature 020·29).
+        # Make `node` current (publish/render/untargeted-edit act on it). State write -> main thread;
+        # the node joins the working set.
         def _on_main() -> SwitchNodeResult:
             node_id = self._copilot_resolve_node_id(node)
             if node_id is None or node_id not in self._get_ui_nodes():
@@ -752,8 +698,7 @@ class CopilotBackend:
         return self._bridge.run_on_main(_on_main)
 
     def _copilot_render_path(self, node: UINode, ext: str) -> Path:
-        # A non-colliding render filename: <name>_<short-id>_<n>.<ext>, n = the next free
-        # index in renders_dir (the agent may render the same node several times a turn).
+        # Non-colliding filename <name>_<short-id>_<n>.<ext>, n = next free index in renders_dir.
         base = "".join(
             c if c.isalnum() or c in "-_" else "_" for c in node.ui_state.ui_name
         )
@@ -767,8 +712,7 @@ class CopilotBackend:
             n += 1
 
     def render_image(self, node: str, width: int, height: int) -> RenderResult:
-        # Render the node's current frame to a PNG (feature 020·18). GL => marshalled via the
-        # bridge with the longer render_op_timeout_s (a heavy shader freezes the frame loop).
+        # Render the current frame to a PNG (GL; marshalled with the longer render_op_timeout_s).
         def _on_main() -> RenderResult:
             ui_node = self._copilot_render_target(node)
             if ui_node is None:
@@ -794,7 +738,7 @@ class CopilotBackend:
     def render_video(
         self, node: str, seconds: float, fps: int, width: int, height: int
     ) -> RenderResult:
-        # Render `seconds` of the node's animation (from t=0) to a WebM (feature 020·18).
+        # Render `seconds` of animation (from t=0) to a WebM.
         def _on_main() -> RenderResult:
             ui_node = self._copilot_render_target(node)
             if ui_node is None:
@@ -829,15 +773,14 @@ class CopilotBackend:
     def _copilot_render_dims(
         self, node: UINode, width: int, height: int
     ) -> tuple[int, int]:
-        # 0 => the node's current canvas size (read on the main thread, GL-affine).
+        # 0 => the node's current canvas size (GL read, main thread).
         cw, ch = node.node.canvas.texture.size
         return (width or cw, height or ch)
 
     def _copilot_render_preset(
         self, is_video: bool, fps: int | None, w: int, h: int
     ) -> RenderPreset:
-        # FIXED_DIMS + RENDER_AT_TARGET so the resolved (w, h) actually drives the output —
-        # the default FREE/SCALE_DISTORT renders into the node's own canvas and ignores them.
+        # FIXED_DIMS + RENDER_AT_TARGET so (w, h) drives the output (the default ignores them).
         return RenderPreset(
             is_video=is_video,
             fps=fps,
@@ -855,11 +798,9 @@ class CopilotBackend:
         preset: RenderPreset,
         settings: dict[str, Any],
     ) -> PublishResult:
-        # Render the node with the exporter's own preset, then enqueue the upload + AWAIT its
-        # terminal progress (feature 020·18, Decision 5). Every exporter touch (render, enqueue,
-        # the await poll's update()+status()) runs on the MAIN thread via the bridge — the worker
-        # only sleeps + checks cancel between polls, so the frame loop stays responsive during the
-        # network upload and the render-thread affinity contract holds.
+        # Render with the exporter's preset, enqueue the upload, then await its terminal progress.
+        # Every exporter touch (render/enqueue/poll) runs on main via the bridge; the worker only
+        # sleeps + checks cancel between polls.
         node_id = self._get_current_node_id()
         if node_id is None or node_id not in self._get_ui_nodes():
             return PublishResult(
@@ -878,8 +819,7 @@ class CopilotBackend:
             return baseline
 
         try:
-            # The returned object is held HERE for the whole wait, so the terminal can never
-            # be a different object reused at the baseline's address (no id() ambiguity).
+            # Held for the whole wait so the terminal can't be a different object at the same address.
             baseline = self._bridge.run_on_main(
                 _render_and_enqueue,
                 timeout=COPILOT_CONFIG.render_op_timeout_s,
@@ -898,7 +838,7 @@ class CopilotBackend:
                     lambda: (exporter.update(None), exporter.status())[1]
                 )
             except CopilotToolError:
-                # A busy main thread timed out this poll; the upload still runs — try again.
+                # Poll timed out on a busy main thread; the upload still runs — retry.
                 continue
             prog = status.last_progress
             if prog is not None and prog.is_terminal and prog is not baseline:
@@ -935,9 +875,7 @@ class CopilotBackend:
             return PublishResult(
                 ok=False, error="YouTube exporter unavailable", kind="youtube"
             )
-        # Drive the render shape from the tool arg so the preset (aspect/duration) and the
-        # upload's is_short flag agree; restore the user's Share-tab shape after, so a copilot
-        # publish doesn't silently flip their visible Long/Short selection.
+        # Drive the shape from the arg so preset + is_short agree; restore the user's Share-tab shape after.
         prior_short: bool = exporter.current_is_short()
         exporter.set_shape(is_short)
         try:
@@ -980,9 +918,8 @@ class CopilotBackend:
         return tg is not None and tg.bot_token_present()
 
     def set_telegram_token(self, secret: str) -> TelegramConnectResult:
-        # MARSHAL the token-set + auto-link kickoff to the main thread (the exporter is render-
-        # thread); then AWAIT auth_state leaving LINKING. The secret is set into the live store
-        # here and nowhere else.
+        # Marshal token-set + auto-link to main, then await auth_state leaving LINKING. The secret is
+        # set into the live store here and nowhere else.
         def _on_main() -> None:
             tg = self._copilot_telegram()
             if tg is not None:
@@ -1012,10 +949,9 @@ class CopilotBackend:
         return self._copilot_await_telegram_connect()
 
     def _copilot_await_telegram_connect(self) -> TelegramConnectResult:
-        # Poll auth_state to LEAVE the LINKING floor (begin_auth set it). Each poll pumps the
-        # exporter's typed-event queue via the bridge (update() is what transitions auth_state)
-        # — a status-only read would never see the change. cancel/teardown aware like the
-        # publish-await. A "no message received" ERROR is surfaced as needs_start (guidance).
+        # Poll auth_state off the LINKING floor. Each poll pumps the exporter's event queue via the
+        # bridge (update() drives the transition; a status-only read wouldn't see it). A "no message"
+        # ERROR surfaces as needs_start.
         tg = self._copilot_telegram()
         if tg is None:
             return TelegramConnectResult(
@@ -1087,8 +1023,7 @@ class CopilotBackend:
         return TelegramOpResult(ok=True, set_name=result)
 
     def delete_telegram_pack(self, set_name: str) -> TelegramOpResult:
-        # delete_pack drops the pack locally + enqueues the Telegram delete (which pushes a
-        # terminal ExportProgress) — await it like a publish so the agent can report the outcome.
+        # delete_pack drops it locally + enqueues the Telegram delete; await its terminal progress.
         def _enqueue() -> ExportProgress | None:
             tg = self._copilot_telegram()
             if tg is None:
@@ -1131,14 +1066,10 @@ class CopilotBackend:
     def apply_shader_edit(
         self, old_str: str, new_str: str, replace_all: bool, target: str
     ) -> EditResult:
-        # Match + replace against the TARGET's AUTHORITATIVE source, then recompile (node) or
-        # write (lib), persist, refresh the read-only editor — ONE bridge round-trip (spec
-        # §16.3 / 020·16 Decision 3). Matching here (not on the worker against a re-read copy)
-        # gives a single source of truth and no staleness window. A 0/ambiguous match mutates
-        # nothing. The failed-compile early-return in Node.compile() keeps the old program live
-        # (feature-013), so a broken node edit never blanks the user's preview. A substring edit
-        # is NOT subject to the D9 guard (it matches by text, not line number) — but it RECORDS its
-        # target as batch-mutated so a later same-batch LINE edit on it is caught (feature 020·29).
+        # Match + replace against the target's live source, recompile (node) / write (lib), persist,
+        # refresh the editor — one bridge round-trip (matching on main = no staleness window). 0/ambiguous
+        # match mutates nothing. A substring edit skips the D9 guard (matches by text) but records its
+        # target as batch-mutated so a later same-batch line edit is caught.
         def _on_main() -> EditResult:
             tgt = self._copilot_resolve_target(target, allow_create=False)
             if isinstance(tgt, EditResult):
@@ -1161,13 +1092,9 @@ class CopilotBackend:
     def _copilot_persist_shader(
         self, node_id: str, node: Node, new_text: str
     ) -> list[CompileErrorInfo]:
-        # Swap in the new source, recompile, persist to disk, refresh the read-only editor —
-        # the shared main-thread tail of every copilot NODE edit (§16.3 / §14 L4). release_program
-        # is what actually adopts new_text; compile()'s failed-compile early-return keeps the
-        # old program live (feature-013) so a broken edit never blanks the preview. `node_id`
-        # is the edit's TARGET (020·16 Decision 2b): the editor sync must key on it, NOT
-        # self._get_current_node_id() — else a non-current edit syncs the wrong editor session.
-        # sync_editor_from_disk no-ops when the target has no open editor (the usual non-current case).
+        # Adopt new_text, recompile, persist, refresh the editor — the shared tail of every node edit.
+        # sync_editor must key on `node_id` (the edit TARGET), not the current node, else a non-current
+        # edit syncs the wrong session; it no-ops when the target has no open editor.
         node.release_program(new_text)
         node.compile()
         node.source.path.write_text(new_text, encoding="utf-8")
@@ -1177,15 +1104,12 @@ class CopilotBackend:
     def _copilot_resolve_target(
         self, target: str, *, allow_create: bool
     ) -> "_CopilotEditTarget | EditResult":
-        # Resolve an edit target to its source + identity, or an EditResult REJECT (020·16
-        # Decision 1/3). Parse rule (pin, Decision F1): a target is a LIB file IFF it starts
-        # with "lib:"; otherwise it is a node-id; an empty target is the current node. An
-        # unknown node-id is a hard error (never a silent lib fallback).
+        # Resolve an edit target to source + identity, or an EditResult REJECT. "lib:"-prefixed -> lib
+        # file; empty -> current node; else a node-id (unknown is a hard error, never a lib fallback).
         if target.startswith("lib:"):
             return self._copilot_resolve_lib_target(target, allow_create=allow_create)
         if target.startswith("template:"):
-            # Templates are READ-ONLY shipped resources (feature 020·22). An EXPLICIT guard (not
-            # incidental non-resolution) with an actionable message, so the agent doesn't loop.
+            # Templates are read-only; an explicit guard with an actionable message (not silent non-resolution).
             return EditResult(
                 matches=0,
                 errors=[],
@@ -1225,9 +1149,8 @@ class CopilotBackend:
     def _copilot_resolve_lib_target(
         self, target: str, *, allow_create: bool
     ) -> "_CopilotEditTarget | EditResult":
-        # Resolve a "lib:<rel-path>" address to its file + current source. Reuses the
-        # ShaderLibFileManager path-traversal guard (020·16 Decision 5). A non-existent path is
-        # an error UNLESS allow_create (insert_after auto-creates the file, written LIVE).
+        # Resolve "lib:<rel-path>" to file + source (reuses the path-traversal guard). A missing path
+        # errors unless allow_create (insert_after auto-creates).
         rel = target[len("lib:") :]
         path = self._get_shader_lib_files().resolve_copilot_path(rel)
         if path is None:
@@ -1264,10 +1187,8 @@ class CopilotBackend:
     def _copilot_persist_target(
         self, tgt: "_CopilotEditTarget", new_text: str, matches: int
     ) -> EditResult:
-        # Persist an applied edit and return the target-kind-aware result (020·16 Decision 3/4).
-        # A NODE recompiles and returns compile errors; a LIB file is written (created if new) and
-        # returns the honest "no standalone compile" string. On success the target joins the working
-        # set + is marked batch-mutated (feature 020·29 — a later same-batch LINE edit on it is caught).
+        # Persist an applied edit. A NODE recompiles + returns errors; a LIB file is written + returns
+        # the "no standalone compile" note. On success the target joins the working set + is batch-mutated.
         if tgt.kind == "node":
             assert tgt.node is not None and tgt.node_id is not None
             errors = self._copilot_persist_shader(tgt.node_id, tgt.node, new_text)
@@ -1296,13 +1217,10 @@ class CopilotBackend:
         return EditResult(matches=matches, errors=[], lib_note=note)
 
     def _copilot_invalidate_lib_consumers(self, lib_path: Path) -> None:
-        # A lib edit changes only the LIB file's text, not any consumer node's source.text — so the
-        # next scratchpad rebuild's program-is-None recompile would NOT fire for the consumer, and it
-        # would show stale errors. Invalidate every working-set node whose last compile pulled in this
-        # lib file so the rebuild recompiles it with the new lib source (write_copilot_lib_file already
-        # rebuilt the index — feature 020·29 D5). Match on the RESOLVED path: lib_path is fully resolved
-        # (resolve_copilot_path) but the index glob's source paths are not, and they diverge under a
-        # symlinked/relative SHADERBOX_DATA_DIR.
+        # A lib edit leaves consumer nodes' source.text unchanged, so the next rebuild wouldn't recompile
+        # them — invalidate every working-set node that pulled in this lib so they recompile with the new
+        # source. Match on the resolved path (the index's source paths aren't resolved; they diverge under
+        # a symlinked SHADERBOX_DATA_DIR).
         target = lib_path.resolve()
         for address in self._working_set_reader():
             node = self._get_ui_nodes().get(address)
@@ -1314,14 +1232,10 @@ class CopilotBackend:
     def apply_line_edit(
         self, start_line: int, end_line: int, new_text: str, target: str
     ) -> EditResult:
-        # Replace the 1-based inclusive line range [start_line, end_line] with new_text over
-        # the split("\n") line list (§14 L2 — byte-exact by construction), recompile/write +
-        # persist. end_line == start_line - 1 is the one legal empty selection (a pure insert at
-        # start_line); any other start > end, or an out-of-range bound, fails loud and mutates
-        # nothing. A lib: target that does not exist yet is CREATED here (insert path only —
-        # allow_create, 020·16 Decision 5). D9 (feature 020·29): a line-addressed edit to a target a
-        # PRIOR edit already mutated THIS batch is rejected — its line numbers shifted, and the
-        # scratchpad only refreshes BETWEEN batches.
+        # Replace the 1-based inclusive range [start_line, end_line] with new_text, recompile/write +
+        # persist. end_line == start_line - 1 is the one legal empty selection (pure insert); any other
+        # start > end or out-of-range fails loud, mutates nothing. A missing lib: target is created here.
+        # D9: a line edit to a target a prior edit mutated this batch is rejected (its lines shifted).
         def _on_main() -> EditResult:
             tgt = self._copilot_resolve_target(target, allow_create=True)
             if isinstance(tgt, EditResult):
@@ -1338,8 +1252,7 @@ class CopilotBackend:
             lines = tgt.source.split("\n") if tgt.source else []
             n = len(lines)
             is_insert = end_line == start_line - 1
-            # A brand-new lib file (source "") accepts the one bootstrap insert at line 1
-            # (insert_after 0); every other target uses the normal range bounds.
+            # A brand-new lib file accepts the one bootstrap insert at line 1; else normal range bounds.
             new_lib_bootstrap = tgt.lib_create and is_insert and start_line == 1
             out_of_range = (
                 start_line < 1
