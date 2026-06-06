@@ -1,4 +1,3 @@
-import hashlib
 import shutil
 import time
 from collections.abc import Callable
@@ -43,6 +42,7 @@ from shaderbox.copilot.capabilities import (
     TelegramOpResult,
     TelegramPackInfo,
     TemplateEntry,
+    WorkingSetView,
 )
 from shaderbox.copilot.config import COPILOT_CONFIG
 from shaderbox.copilot.errors import CopilotToolError
@@ -138,58 +138,20 @@ def _number_lines(text: str) -> str:
     return "\n".join(f"{i:>{width}}  {line}" for i, line in enumerate(lines, start=1))
 
 
-def _line_of_offset(text: str, offset: int) -> int:
-    # 1-based line number containing byte `offset` (split-on-newline model, L1).
-    return text.count("\n", 0, offset) + 1
-
-
-def _changed_excerpt(new_text: str, line_range: tuple[int, int], context: int) -> str:
-    # A line-numbered window of new_text around the 1-based inclusive `line_range`, with
-    # `context` lines of padding each side — the copilot's "what changed" apply-feedback
-    # (feature 020 · 14). Same split-on-newline line model as _number_lines (L1).
-    lines = new_text.split("\n")
-    width = len(str(len(lines)))
-    lo = max(1, line_range[0] - context)
-    hi = min(len(lines), line_range[1] + context)
-    return "\n".join(f"{i:>{width}}  {lines[i - 1]}" for i in range(lo, hi + 1))
-
-
 def _conversation_stamp() -> str:
     # Filesystem-safe timestamp for an archived conversation filename (feature 022).
     return time.strftime("%Y-%m-%d_%H-%M-%S")
-
-
-def _shader_digest(text: str) -> bytes:
-    # The content digest half of the freshness token (feature 020 · 15 / 16). Catches a disk
-    # reload / cross-turn edit. Node identity is now the DICT KEY (per-node freshness, 020·16
-    # Decision 2), not part of the token — a stale read on node X can't pass node Y's edit.
-    return hashlib.blake2b(text.encode("utf-8"), digest_size=16).digest()
-
-
-def _edit_result(
-    matches: int,
-    errors: list[CompileErrorInfo],
-    new_text: str,
-    changed: tuple[int, int] | None,
-) -> EditResult:
-    # Wrap a successful copilot apply with the "what changed" excerpt (feature 020 · 14).
-    excerpt = (
-        _changed_excerpt(new_text, changed, COPILOT_CONFIG.edit_feedback_context)
-        if changed is not None
-        else ""
-    )
-    return EditResult(
-        matches=matches, errors=errors, changed_excerpt=excerpt, changed_range=changed
-    )
 
 
 @dataclass
 class _CopilotEditTarget:
     # A resolved copilot edit target (feature 020·16): either a NODE (recompiles, returns
     # compile errors) or a LIB file (written, no standalone compile). `source` is the current
-    # text the edit matches/line-edits against ("" for a not-yet-created lib file).
+    # text the edit matches/line-edits against ("" for a not-yet-created lib file). `ws_address` is
+    # the working-set + per-batch-guard key (the node full-id, or the "lib:" address — feature 020·29).
     kind: str  # "node" | "lib"
     source: str
+    ws_address: str
     node_id: str | None = None
     node: "Node | None" = None
     lib_path: Path | None = None
@@ -495,11 +457,16 @@ class App:
         # True while a copilot turn runs — locks the editor read-only (§11). Set in
         # copilot_send, reconciled to session.state.in_flight each frame in ui.py.
         self.copilot_turn_active: bool = False
-        # Per-node content digests the copilot has read THIS turn (feature 020 · 15 / 16
-        # Decision 2): node_id -> digest of the source as last read. A mutating edit on a node
-        # whose source has moved since (or was never read) is rejected. Keyed per-node so a
-        # read on node X authorizes an edit on X but not on Y. Reset to {} on each copilot_send.
-        self._copilot_read_revision: dict[str, bytes] = {}
+        # The copilot working set (feature 020·29): every node full-id / "lib:" address the agent
+        # touched (read OR edited) THIS turn, order-preserved. Rebuilt into the per-turn scratchpad
+        # block from LIVE source every loop iteration, so line numbers can never go stale across
+        # iterations. Reset to [] on each copilot_send; a deleted node is removed in the delete sink.
+        self._copilot_working_set: list[str] = []
+        # The per-BATCH mutated-target guard (feature 020·29 D9): resolved full-ids a mutating edit
+        # touched within the CURRENT assistant tool-call batch. A line-addressed edit to an id already
+        # here is rejected (its line numbers shifted from an earlier same-batch edit; the scratchpad
+        # only refreshes BETWEEN batches). Cleared by _copilot_batch_begin before each batch.
+        self._copilot_batch_mutated: set[str] = set()
         self.copilot_input: str = ""
         # The editor child's screen rect (pos + size), captured inside the child each
         # frame so the floating chat window anchors to the CODING AREA above the copilot
@@ -684,6 +651,8 @@ class App:
             read_shaders=self._copilot_read_shaders,
             grep=self._copilot_grep,
             read_lib=self._copilot_read_lib,
+            read_working_set=self._copilot_read_working_set,
+            batch_begin=self._copilot_batch_begin,
             apply_shader_edit=self._copilot_apply_shader_edit,
             apply_line_edit=self._copilot_apply_line_edit,
             set_uniform=self._copilot_set_uniform,
@@ -822,8 +791,8 @@ class App:
     def _copilot_read_shaders(self, node_ids: list[str]) -> list[ShaderView]:
         # Marshalled (force-compile + uniform read are GL). `node_ids` are copilot handles (short
         # ids, or the resolved current id when the agent omitted them); each resolves to a full id.
-        # For each: ensure a fresh compile, read source + uniforms (type + value) + errors, and
-        # STAMP its freshness so a follow-up edit passes the guard (020·16 Decision 2). Unknown
+        # For each: ensure a fresh compile, read source + uniforms (type + value) + errors, and ADD
+        # it to the working set so its live source rides the scratchpad (feature 020·29). Unknown
         # handles are skipped (the tool layer reports them). The ShaderView carries the SHORT id.
         def _on_main() -> list[ShaderView]:
             short = self._copilot_short_ids()
@@ -840,8 +809,8 @@ class App:
                     continue
                 seen.add(full_id)
                 if kind == "template":
-                    # Read-only: build the SAME view, BUT don't stamp freshness (no edit ever targets
-                    # a template) and address it by the `template:` prefixed handle (feature 020·22).
+                    # Read-only: build the SAME view, BUT don't add it to the working set (no edit ever
+                    # targets a template) and address it by the `template:` prefixed handle (feature 020·22).
                     ui_node = self.ui_node_templates[full_id]
                     view_id = f"template:{full_id[:4]}"
                 else:
@@ -852,7 +821,7 @@ class App:
                     node.compile()
                 text = node.source.text
                 if kind == "node":
-                    self._copilot_read_revision[full_id] = _shader_digest(text)
+                    self._copilot_ws_add(full_id)
                 views.append(
                     ShaderView(
                         node_id=view_id,
@@ -865,6 +834,83 @@ class App:
             return views
 
         return self.copilot.bridge.run_on_main(_on_main)
+
+    def _copilot_ws_add(self, address: str) -> None:
+        # Add a node full-id or "lib:" address to the working set, order-preserved, no duplicates
+        # (feature 020·29). Called from the read + every edit-applier success.
+        if address not in self._copilot_working_set:
+            self._copilot_working_set.append(address)
+
+    def _copilot_batch_begin(self) -> None:
+        # Clear the per-batch line-edit guard (feature 020·29 D9). run_turn calls this once before
+        # each assistant tool-call batch — the only batch-boundary signal App can't observe itself.
+        self._copilot_batch_mutated.clear()
+
+    def _copilot_read_working_set(self) -> list[WorkingSetView]:
+        # Rebuild the working set into live views (feature 020·29). Bridge-marshalled: uniform reads
+        # and the program-is-None recompile are GL. Current node is UNIONED in (never a filter) and
+        # sorts FIRST; then the touched addresses in add-order. A gone node is skipped (never a hard
+        # KeyError). Coherence invariant: a node with no live program is recompiled HERE so its shown
+        # source and its errors are computed in the same rebuild (never a stale `errors: none`).
+        def _on_main() -> list[WorkingSetView]:
+            short = self._copilot_short_ids()
+            current = self.current_node_id
+            ordered: list[str] = []
+            if current and current in self.ui_nodes:
+                ordered.append(current)
+            for address in self._copilot_working_set:
+                if address not in ordered:
+                    ordered.append(address)
+            views: list[WorkingSetView] = []
+            for address in ordered:
+                if address.startswith("lib:"):
+                    view = self._copilot_lib_working_view(address)
+                else:
+                    view = self._copilot_node_working_view(address, short, current)
+                if view is not None:
+                    views.append(view)
+            return views
+
+        return self.copilot.bridge.run_on_main(_on_main)
+
+    def _copilot_node_working_view(
+        self, full_id: str, short: dict[str, str], current: str
+    ) -> WorkingSetView | None:
+        ui_node = self.ui_nodes.get(full_id)
+        if ui_node is None:
+            return None
+        node = ui_node.node
+        if node.program is None:
+            node.compile()
+        return WorkingSetView(
+            address=short.get(full_id, full_id),
+            name=ui_node.ui_state.ui_name,
+            listing=_number_lines(node.source.text),
+            is_current=(full_id == current),
+            is_lib=False,
+            uniforms=_format_uniforms(node.get_active_uniforms()),
+            errors=_to_error_infos(node.compile_unit.errors),
+        )
+
+    def _copilot_lib_working_view(self, address: str) -> WorkingSetView | None:
+        # A lib file's live whole-file listing (feature 020·29 D6 — read_lib is function-keyed, so a
+        # lib has no other source view). No standalone compile; a consuming node shows the new errors.
+        path = self.shader_lib_files.resolve_copilot_path(address[len("lib:") :])
+        if path is None or not path.exists():
+            return None
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            return None
+        return WorkingSetView(
+            address=address,
+            name=address,
+            listing=_number_lines(text),
+            is_current=False,
+            is_lib=True,
+            uniforms=[],
+            errors=[],
+        )
 
     def _copilot_grep(self, query: str) -> list[GrepHit]:
         # GL-FREE: substring search across every node's source, every shipped TEMPLATE's source, and
@@ -1028,9 +1074,7 @@ class App:
             self.ui_nodes[new_node.id] = new_node
             if switch_to:
                 self.set_current_node_id(new_node.id)
-            self._copilot_read_revision[new_node.id] = _shader_digest(
-                new_node.node.source.text
-            )
+            self._copilot_ws_add(new_node.id)
             errors = _to_error_infos(new_node.node.compile_unit.errors)
             logger.info(
                 f"copilot created node {new_node.id} (switch_to={switch_to}, "
@@ -1066,7 +1110,7 @@ class App:
     def _copilot_switch_node(self, node: str) -> SwitchNodeResult:
         # Make `node` the current one (so publish/render/edit-without-target act on it).
         # set_current_node_id is a bare state write the frame loop reads — marshal it on the main
-        # thread. Stamp freshness for the switched node so a follow-up edit passes the §15 guard.
+        # thread. The switched node joins the working set so it rides the scratchpad (feature 020·29).
         def _on_main() -> SwitchNodeResult:
             node_id = self._copilot_resolve_node_id(node)
             if node_id is None or node_id not in self.ui_nodes:
@@ -1076,9 +1120,7 @@ class App:
                 )
             ui_node = self.ui_nodes[node_id]
             self.set_current_node_id(node_id)
-            self._copilot_read_revision[node_id] = _shader_digest(
-                ui_node.node.source.text
-            )
+            self._copilot_ws_add(node_id)
             logger.info(f"copilot switched current node to {node_id}")
             return SwitchNodeResult(ok=True, name=ui_node.ui_state.ui_name)
 
@@ -1476,44 +1518,6 @@ class App:
 
     # ---- edit / compile-feedback (target-addressable: node or lib: file, 020·16) ----
 
-    def _copilot_freshness_reject(self, node_id: str) -> EditResult | None:
-        # Reject (mutate-nothing) if the TARGET node's source moved since the agent last read
-        # it THIS turn (feature 020 · 15 / 16 Decision 2). `node_id` is the already-RESOLVED
-        # target ("" -> current is resolved by the caller, pin 2a). Runs BEFORE any ui_nodes
-        # deref so a deleted node yields a clean reject, not a KeyError. None = fresh, proceed.
-        digest = self._copilot_read_revision.get(node_id)
-        if digest is None:
-            # Either the agent never read this node this turn, or it read a DIFFERENT node and
-            # the user/agent moved to this one. The "you switched nodes" framing (pin 2c) is the
-            # right hint when the agent has read SOMETHING but not this node.
-            if self._copilot_read_revision:
-                reason = (
-                    "the shader you're editing isn't the one you read (you switched nodes) — "
-                    "call read_shader for this node again"
-                )
-            else:
-                reason = (
-                    "call read_shader before editing — you have not read this shader "
-                    "this turn"
-                )
-            return EditResult(matches=0, errors=[], stale=True, stale_reason=reason)
-        if node_id not in self.ui_nodes:
-            return EditResult(
-                matches=0,
-                errors=[],
-                stale=True,
-                stale_reason="that shader no longer exists — call read_shader again",
-            )
-        if digest != _shader_digest(self.ui_nodes[node_id].node.source.text):
-            return EditResult(
-                matches=0,
-                errors=[],
-                stale=True,
-                stale_reason="this shader's source changed since you read it — call "
-                "read_shader again and re-match",
-            )
-        return None
-
     def _copilot_apply_shader_edit(
         self, old_str: str, new_str: str, replace_all: bool, target: str
     ) -> EditResult:
@@ -1522,11 +1526,13 @@ class App:
         # §16.3 / 020·16 Decision 3). Matching here (not on the worker against a re-read copy)
         # gives a single source of truth and no staleness window. A 0/ambiguous match mutates
         # nothing. The failed-compile early-return in Node.compile() keeps the old program live
-        # (feature-013), so a broken node edit never blanks the user's preview.
+        # (feature-013), so a broken node edit never blanks the user's preview. A substring edit
+        # is NOT subject to the D9 guard (it matches by text, not line number) — but it RECORDS its
+        # target as batch-mutated so a later same-batch LINE edit on it is caught (feature 020·29).
         def _on_main() -> EditResult:
             tgt = self._copilot_resolve_target(target, allow_create=False)
             if isinstance(tgt, EditResult):
-                return tgt  # an unresolvable / stale target rejects, mutates nothing
+                return tgt  # an unresolvable target rejects, mutates nothing
             src = tgt.source
             spans = token_match(src, old_str)
             if not spans:
@@ -1538,17 +1544,7 @@ class App:
             if any(span_has_comment(src, s, e) for s, e in spans):
                 return EditResult(matches=0, errors=[], comment_loss=True)
             new_text = _splice(src, spans, new_str)
-            # Single span -> a meaningful changed range for the apply-feedback; a multi-span
-            # replace_all has no single honest range, so leave it None (§14 D5).
-            changed: tuple[int, int] | None = None
-            if len(spans) == 1:
-                start_off = spans[0][0]
-                end_off = start_off + max(len(new_str) - 1, 0)
-                changed = (
-                    _line_of_offset(new_text, start_off),
-                    _line_of_offset(new_text, end_off),
-                )
-            return self._copilot_persist_target(tgt, new_text, len(spans), changed)
+            return self._copilot_persist_target(tgt, new_text, len(spans))
 
         return self.copilot.bridge.run_on_main(_on_main)
 
@@ -1559,17 +1555,13 @@ class App:
         # the shared main-thread tail of every copilot NODE edit (§16.3 / §14 L4). release_program
         # is what actually adopts new_text; compile()'s failed-compile early-return keeps the
         # old program live (feature-013) so a broken edit never blanks the preview. `node_id`
-        # is the edit's TARGET (020·16 Decision 2b): the editor sync + the re-stamp must key on
-        # it, NOT self.current_node_id — else a non-current edit syncs the wrong editor session
-        # and re-stamps the wrong freshness entry. sync_editor_from_disk no-ops when the target
-        # has no open editor (the usual case for a non-current node).
+        # is the edit's TARGET (020·16 Decision 2b): the editor sync must key on it, NOT
+        # self.current_node_id — else a non-current edit syncs the wrong editor session.
+        # sync_editor_from_disk no-ops when the target has no open editor (the usual non-current case).
         node.release_program(new_text)
         node.compile()
         node.source.path.write_text(new_text, encoding="utf-8")
         self.sync_editor_from_disk(node_id, new_text)
-        # Re-stamp the TARGET node so the agent can chain edits without an intervening read
-        # (§15 B6 / 020·16 Decision 2b).
-        self._copilot_read_revision[node_id] = _shader_digest(new_text)
         return _to_error_infos(node.compile_unit.errors)
 
     def _copilot_resolve_target(
@@ -1604,11 +1596,20 @@ class App:
                     "project map",
                 )
             node_id = resolved
-        if (reject := self._copilot_freshness_reject(node_id)) is not None:
-            return reject
+        if node_id not in self.ui_nodes:
+            return EditResult(
+                matches=0,
+                errors=[],
+                unresolved=True,
+                unresolved_reason="that shader no longer exists — check the project map for ids",
+            )
         node = self.ui_nodes[node_id].node
         return _CopilotEditTarget(
-            kind="node", node_id=node_id, node=node, source=node.source.text
+            kind="node",
+            node_id=node_id,
+            node=node,
+            source=node.source.text,
+            ws_address=node_id,
         )
 
     def _copilot_resolve_lib_target(
@@ -1637,49 +1638,66 @@ class App:
                     "create a new library file, or copy an existing lib: address",
                 )
             return _CopilotEditTarget(
-                kind="lib", lib_path=path, source="", lib_create=True
+                kind="lib",
+                lib_path=path,
+                source="",
+                lib_create=True,
+                ws_address=target,
             )
         return _CopilotEditTarget(
-            kind="lib", lib_path=path, source=path.read_text(encoding="utf-8")
+            kind="lib",
+            lib_path=path,
+            source=path.read_text(encoding="utf-8"),
+            ws_address=target,
         )
 
     def _copilot_persist_target(
-        self,
-        tgt: "_CopilotEditTarget",
-        new_text: str,
-        matches: int,
-        changed: tuple[int, int] | None,
+        self, tgt: "_CopilotEditTarget", new_text: str, matches: int
     ) -> EditResult:
         # Persist an applied edit and return the target-kind-aware result (020·16 Decision 3/4).
-        # A NODE recompiles and returns compile errors; a LIB file is written (created if new)
-        # and returns the honest "no standalone compile" string — a lib function only compiles
-        # when a consuming node recompiles.
+        # A NODE recompiles and returns compile errors; a LIB file is written (created if new) and
+        # returns the honest "no standalone compile" string. On success the target joins the working
+        # set + is marked batch-mutated (feature 020·29 — a later same-batch LINE edit on it is caught).
         if tgt.kind == "node":
             assert tgt.node is not None and tgt.node_id is not None
             errors = self._copilot_persist_shader(tgt.node_id, tgt.node, new_text)
-            return _edit_result(matches, errors, new_text, changed)
+            self._copilot_ws_add(tgt.ws_address)
+            self._copilot_batch_mutated.add(tgt.ws_address)
+            return EditResult(matches=matches, errors=errors)
         assert tgt.lib_path is not None
         if not self.shader_lib_files.write_copilot_lib_file(tgt.lib_path, new_text):
             return EditResult(
                 matches=0,
                 errors=[],
-                stale=True,
-                stale_reason="failed to write the library file",
+                unresolved=True,
+                unresolved_reason="failed to write the library file",
             )
-        excerpt = (
-            _changed_excerpt(new_text, changed, COPILOT_CONFIG.edit_feedback_context)
-            if changed
-            else ""
-        )
+        self._copilot_invalidate_lib_consumers(tgt.lib_path)
+        self._copilot_ws_add(tgt.ws_address)
+        self._copilot_batch_mutated.add(tgt.ws_address)
         verb = "created" if tgt.lib_create else "written"
         note = (
             f"library file {verb}; it has no standalone compile — errors will surface when a "
             "node that calls the function recompiles. Edit (or read) a node that uses it to "
             "confirm it is valid."
         )
-        return EditResult(
-            matches=matches, errors=[], changed_excerpt=excerpt, lib_note=note
-        )
+        return EditResult(matches=matches, errors=[], lib_note=note)
+
+    def _copilot_invalidate_lib_consumers(self, lib_path: Path) -> None:
+        # A lib edit changes only the LIB file's text, not any consumer node's source.text — so the
+        # next scratchpad rebuild's program-is-None recompile would NOT fire for the consumer, and it
+        # would show stale errors. Invalidate every working-set node whose last compile pulled in this
+        # lib file so the rebuild recompiles it with the new lib source (write_copilot_lib_file already
+        # rebuilt the index — feature 020·29 D5). Match on the RESOLVED path: lib_path is fully resolved
+        # (resolve_copilot_path) but the index glob's source paths are not, and they diverge under a
+        # symlinked/relative SHADERBOX_DATA_DIR.
+        target = lib_path.resolve()
+        for address in self._copilot_working_set:
+            node = self.ui_nodes.get(address)
+            if node is None:
+                continue
+            if any(s.path.resolve() == target for s in node.node.compile_unit.sources):
+                node.node.invalidate()
 
     def _copilot_apply_line_edit(
         self, start_line: int, end_line: int, new_text: str, target: str
@@ -1689,11 +1707,22 @@ class App:
         # persist. end_line == start_line - 1 is the one legal empty selection (a pure insert at
         # start_line); any other start > end, or an out-of-range bound, fails loud and mutates
         # nothing. A lib: target that does not exist yet is CREATED here (insert path only —
-        # allow_create, 020·16 Decision 5).
+        # allow_create, 020·16 Decision 5). D9 (feature 020·29): a line-addressed edit to a target a
+        # PRIOR edit already mutated THIS batch is rejected — its line numbers shifted, and the
+        # scratchpad only refreshes BETWEEN batches.
         def _on_main() -> EditResult:
             tgt = self._copilot_resolve_target(target, allow_create=True)
             if isinstance(tgt, EditResult):
                 return tgt
+            if tgt.ws_address in self._copilot_batch_mutated:
+                return EditResult(
+                    matches=0,
+                    errors=[],
+                    unresolved=True,
+                    unresolved_reason="the line numbers shifted from an edit earlier in this "
+                    "same step — the working set refreshes next step with current numbers; "
+                    "re-issue then (or use edit_shader, which matches by text not line number)",
+                )
             lines = tgt.source.split("\n") if tgt.source else []
             n = len(lines)
             is_insert = end_line == start_line - 1
@@ -1710,10 +1739,7 @@ class App:
             repl = new_text.split("\n") if new_text != "" else []
             new_lines = lines[: start_line - 1] + repl + lines[end_line:]
             new_full = "\n".join(new_lines)
-            changed: tuple[int, int] | None = None
-            if repl:
-                changed = (start_line, start_line + len(repl) - 1)
-            return self._copilot_persist_target(tgt, new_full, 1, changed)
+            return self._copilot_persist_target(tgt, new_full, 1)
 
         return self.copilot.bridge.run_on_main(_on_main)
 
@@ -1825,9 +1851,9 @@ class App:
         logger.debug(f"copilot_send: enqueuing {preview!r}")
         self.flush_current_editor()
         self.copilot_turn_active = True
-        # Force a re-read at the start of every turn (§15 B8) — catches a source the user
-        # edited+saved while the copilot was idle.
-        self._copilot_read_revision = {}
+        # A fresh working set per turn (feature 020·29): the scratchpad starts empty + accretes the
+        # nodes/libs this turn touches, rebuilt from live source each iteration.
+        self._copilot_working_set = []
         self.copilot.enqueue_turn(text)
 
     def copilot_clear_chat(self) -> None:
@@ -2587,7 +2613,8 @@ class App:
         path = self.ui_nodes[node_id].node.source.path
         self.ui_nodes.pop(node_id).node.release()
         self.editor_sessions.pop(path, None)
-        self._copilot_read_revision.pop(node_id, None)
+        if node_id in self._copilot_working_set:
+            self._copilot_working_set.remove(node_id)
         if node_id == self.node_delete_armed:
             self.node_delete_armed = ""
         if node_id == self.current_node_id or not self.current_node_id:

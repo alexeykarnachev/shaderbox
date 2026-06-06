@@ -28,17 +28,47 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
 
 ---
 
-## [DEFERRAL] copilot within-turn read de-dup + line-drift — SPECCED as 020·29 (pending impl)
-- **Trigger:** IMPLEMENT 020·29 (the next implementation wave). Both the within-turn token peak (the
-  re-emitted full source) and the line-number-drift bricking class are CLOSED by its design (the working-set
-  scratchpad rebuilds live source once/iteration; a per-batch guard closes the within-batch residual).
-- No longer an open design question — fully specced + adversarially reviewed:
-  `ai_docs/features/020_copilot_agent/29_working_set_scratchpad.md` (ONE wave, high-blast-radius, build D9
-  first). Delete this entry in the commit that lands 029.
+## [DEFERRAL] test_template_library create_node tests leave orphan nodes in projects/dev
+- **Trigger:** `git status` shows untracked `projects/dev/nodes/<uuid>/` dirs after running the test
+  suite, OR next time you touch `tests/test_template_library.py`'s `app` fixture / its `create_node`
+  tests.
+- `test_create_from_template_instantiates_it` + `test_create_empty_template_uses_default_starter` call
+  the real `App._copilot_create_node`, which `save_ui_node`s to disk. With `project_dir=None` the default
+  project resolves to the maintainer's active project (`projects/dev` on the dev box), so each run leaves
+  2 orphan node dirs the sandbox-sync rule then has to `git clean`. Honest fix: the `app` fixture should
+  point at a `tmp_path` project (or the create_node tests should delete what they create in teardown), so
+  the suite never writes into the tracked sandbox. Pre-existing (feature 020·22); surfaced 020·29.
 
-## [DEFERRAL] copilot reasoning-notes scratchpad (the second PER_TURN block)
+## [DEFERRAL] copilot broken-compile circuit-breaker (edit-applies-but-compiles-with-errors thrash)
+- **Trigger:** a trace shows a turn approaching `max_iterations` on broken-compile EDIT thrash (an edit that
+  APPLIES but compiles WITH errors, repeated), OR before anyone raises `max_iterations` to absorb such a turn.
+  (Observed 2026-06-05: the cyrillic turn ran 8 consecutive applies-with-errors, bounded only by max_iterations
+  at iter 11 — one of headroom; it recovered, but with no headroom margin.)
+- An edit that applies but compiles with errors returns `ok=True` (`tools/shader.py::_applied_result`), so
+  `consecutive_failed_edits` resets every step (`agent.py`) — the edit-giveup cap never engages on a model that
+  keeps producing applies-but-broken edits. Honest fix when triggered: a SEPARATE `consecutive_compile_failures`
+  counter that increments on a non-empty `result.errors` and, at ~4-5, injects a one-time nudge ("N broken
+  compiles in a row — re-read the full function and rewrite the whole block in ONE edit") rather than a hard
+  giveup. NOT built now (the overfit tribunal spared it as genuinely structural but not yet recurring — model
+  competence absorbs most of it).
+
+## [DEFERRAL] copilot machine-readable render feedback (the visual-blindness affordance)
+- **Trigger:** the first recurrence (in a DIFFERENT session) of "the agent can't tell its change had no visual
+  effect" — it reports success after a clean compile while the user sees no change (observed 2026-06-05: the
+  cyrillic text never rendered; the agent claimed it did). OR when wiring the structural shader view (020·27).
+- The copilot's ONLY correctness signal is the compiler, so a clean compile with unchanged output is
+  indistinguishable from success. A lightweight `inspect_render(node?)` returning a few scalars (non-background
+  pixel fraction, ink bounding box, a coarse luma grid) would let the agent detect "my change didn't take" —
+  the one HONEST fix for the hallucinated-success class (the prompt-side ledger/honesty guards were CUT as
+  overfit; this is the pipeline-intrinsic version). Large; spec before building. Source: the overfit-tribunal
+  audit (visual-blindness lens).
+
+## [DEFERRAL] copilot reasoning-notes scratchpad (the second PER_TURN block) — also the intent-carryover guard
 - **Trigger:** the CORRECTION/COORDINATE intent regresses in practice (the agent's stated assumption is lost
-  because it wasn't in its reply prose `text_buf`), OR when reasoning/CoT is implemented for the copilot.
+  because it wasn't in its reply prose `text_buf`), OR the agent runs an UNREQUESTED action carried over from a
+  prior turn and the user reports it (observed 2026-06-05: an unrequested `set_uniform(u_offset)` re-applied on a
+  pure-delete turn — the "why did you touch positioning, I didn't ask" report), OR when reasoning/CoT is
+  implemented for the copilot.
 - 020·28 carries the agent's assumption via its verbatim reply (fragile — model-dependent). The robust home
   is a reasoning-notes scratchpad — a PER_TURN block member. **DE-RISKED by 020·29** (which proves the
   PER_TURN tier + per-iteration rebuild with a real member, the working set — reasoning-notes becomes a
@@ -67,9 +97,9 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   button had — OR next time you touch `bridge.drain` / `drain_bridge` / the copilot render defer.
 - The Render-tab fix (`ui.py`) presents the cue with `gl.finish()` AFTER the swap and BEFORE the encode
   (see `conventions.md ## Known quirks` — a queued buffer never composites while the main thread blocks).
-  The copilot path runs its encode inside `drain_bridge()` at the TOP of the frame (line ~177), BEFORE the
-  cue is drawn and the buffer swapped — so the cue frame it scheduled has the same "queued, never presented"
-  problem and is probably invisible too. The 020·24/25 fixes corrected the `_render_pending` FLAG timing but
+  The copilot path runs its encode inside `drain_bridge()` at the TOP of the frame (in `update_and_draw`,
+  before the cue is drawn and the buffer swapped) — so the cue frame it scheduled has the same "queued,
+  never presented" problem and is probably invisible too. The 020·24/25 fixes corrected the `_render_pending` FLAG timing but
   not this present-before-freeze requirement. Honest fix: route the copilot deferred render so its encode
   also runs after a swap + `gl.finish()` (or have the bridge's held-op run at the same post-swap point as
   `render_request`). Deferred — needs a live copilot render to confirm it's actually invisible first.

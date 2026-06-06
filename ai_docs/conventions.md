@@ -175,8 +175,9 @@ belong in the feature spec (`ai_docs/features/NNN_*.md`). This file is not a cha
   (`prompt.py` `PromptBlock`/`Volatility`/`build_prompt`) composes `[static < rare < dialogue < pending]`;
   a new prompt tier is a named block at its volatility rank, not a string-concat. Prompt composition lives
   ONLY in `build_prompt`; the summary is produced in `agent.py` and rendered to a message in `session.py`
-  (clean producer/render/compose split — `prompt.py` imports no agent/registry). Deferred follow-ups
-  (within-turn read de-dup, reasoning-notes scratchpad, cross-shader derived-edit memory) are in `todo.md`.
+  (clean producer/render/compose split — `prompt.py` imports no agent/registry). The within-turn read
+  de-dup + line-drift follow-up was CLOSED by 020·29 (the PER_TURN working-set block); reasoning-notes
+  scratchpad + cross-shader derived-edit memory remain deferred in `todo.md`.
 - **A new addressable copilot SOURCE kind gets a `<kind>:` prefix + rides the EXISTING read/grep, never
   a parallel tool.** Nodes are bare ids, library files are `lib:<path>`, templates are `template:<id>`
   (feature 020·22). A new readable source (a future preset, an example, etc.) mirrors this: a
@@ -187,6 +188,20 @@ belong in the feature spec (`ai_docs/features/NNN_*.md`). This file is not a cha
   edit target). Don't fork a `read_<kind>` method; don't merge the id namespaces (separate dicts, the
   prefix carries the read-only-vs-editable semantics). Revisit if a source needs WRITE access (then it's
   not just an address — it's an edit target with its own freshness/guard).
+- **A copilot tooling/prompt GUARD earns its place only if a strictly BETTER model would still need it.**
+  When a trace shows the agent doing something wrong, the fix must target a CLASS of failure derivable from
+  OUR pipeline's design — a missing affordance, a false/misleading tool message, a real coherence hole — NOT
+  an INSTANCE of the current model being careless or its provider's arg-transport being buggy. The test: "would
+  a more careful LLM still trip here?" If no, it's model competence the vendor amortizes for free; building a
+  guard for it is permanent prompt tax (every line is paid on every request + dilutes attention from the
+  load-bearing rules) against a transient flaw. Two hard corollaries: (1) NEVER change a destructive edit's
+  behavior on a heuristic GUESS the model can't see (an EOF-overshoot clamp that silently deletes lines under a
+  green checkmark masks the agent's error — a loud reject that lets it self-correct is the floor); (2) a
+  provider/transport quirk gets a TOOL-SIDE invisible normalizer at the parse boundary (the
+  `_unescape_double_escaped` §J6 pattern), never a standing prompt rule. STOPPING RULE for trace-review-and-patch
+  rounds: stop once a fresh session has no terminal failure, no NEW failure class, and a residual that fails the
+  "better model" test — a new INSTANCE of a known class is NOT a trigger for another round; a new CLASS in a
+  different session is. (Established by the 020·29 overfit audit, which cut 3.5 of 6 proposed guards.)
 - **Editable metadata on a SHIPPED (read-only-in-bundle) resource is two-tier: a shipped default + a
   user sidecar at `app_data_dir()`.** A template description (feature 020·22) lives in the shipped
   `node.json` (the dev default, ships immutable) AND in a `TemplateDescriptionsStore` sidecar keyed by

@@ -1,14 +1,14 @@
 """Slice-2 line-editing tools (feature 020 · 14).
 
 Two layers, both GL-free:
-- the pure line-edit math + apply-feedback helpers (app.py module functions);
+- the pure line-edit math (app.py module functions);
 - the tool-layer behavior (replace_lines / insert_after) driven through a fake App, incl.
   the start>end insert-vs-error disambiguation and the widened retry cap.
 """
 
 import threading
 
-from shaderbox.app import _changed_excerpt, _line_of_offset, _number_lines
+from shaderbox.app import _number_lines
 from shaderbox.copilot.agent import AgentError, AgentToolCard, run_turn
 from shaderbox.copilot.capabilities import CompileErrorInfo, EditResult
 from shaderbox.copilot.config import COPILOT_CONFIG
@@ -74,76 +74,26 @@ def test_trailing_newline_line_count_matches_listing() -> None:
     assert _line_edit(src, 4, 4, "z") == "a\nb\nc\nz"  # replace the empty trailing line
 
 
-def test_changed_excerpt_window() -> None:
-    new_text = "l1\nl2\nl3\nl4\nl5\nl6\nl7"
-    out = _changed_excerpt(new_text, (4, 4), context=1)
-    # lines 3..5, 1-based, numbered against the new source.
-    assert out == "3  l3\n4  l4\n5  l5"
-
-
-def test_changed_excerpt_clamps_at_edges() -> None:
-    out = _changed_excerpt("a\nb\nc", (1, 1), context=2)
-    assert out == "1  a\n2  b\n3  c"
-
-
-def test_line_of_offset() -> None:
-    src = "a\nbb\nccc"
-    assert _line_of_offset(src, 0) == 1
-    assert _line_of_offset(src, 2) == 2  # first char of line 2
-    assert _line_of_offset(src, len(src)) == 3
-
-
-def _edit_shader_changed_range(
-    new_text: str, start_off: int, new_str: str
-) -> tuple[int, int]:
-    # Mirrors _copilot_apply_shader_edit's single-span changed-range formula (the -1 keeps a
-    # trailing newline in new_str off the next, unchanged line).
-    end_off = start_off + max(len(new_str) - 1, 0)
-    return (_line_of_offset(new_text, start_off), _line_of_offset(new_text, end_off))
-
-
-def test_edit_shader_changed_range_no_trailing_newline() -> None:
-    # src "line1\nline2\nline3", replace "line2" (off 6) with "LX" -> range stays on line 2.
-    new_text = "line1\nLX\nline3"
-    assert _edit_shader_changed_range(new_text, 6, "LX") == (2, 2)
-
-
-def test_edit_shader_changed_range_trailing_newline_no_bleed() -> None:
-    # The off-by-one guard: new_str ends in "\n" must NOT extend the range onto line 3.
-    new_text = "line1\nLX\nline3"  # from replacing "line2\n" (off 6) with "LX\n"
-    assert _edit_shader_changed_range(new_text, 6, "LX\n") == (2, 2)
-
-
-def test_applied_result_appends_excerpt() -> None:
-    # A clean apply with a changed_excerpt surfaces it in the tool message.
-    ok, msg, payload = _applied_result(
-        EditResult(matches=1, errors=[], changed_excerpt="2  LX", changed_range=(2, 2))
-    )
+def test_applied_result_clean_compile() -> None:
+    # A clean single-region apply (feature 020·29: no excerpt — the scratchpad shows the source).
+    ok, msg, payload = _applied_result(EditResult(matches=1, errors=[]))
     assert ok is True
     assert "ok — compiled clean" in msg
-    assert "changed lines:\n2  LX" in msg
     assert payload == {"errors": []}
 
 
 def test_applied_result_multi_span_reports_count() -> None:
-    # A multi-span replace_all has no single excerpt -> the region count instead (D5).
-    ok, msg, _payload = _applied_result(
-        EditResult(matches=3, errors=[], changed_excerpt="", changed_range=None)
-    )
+    # A multi-span replace_all reports the region count (D5).
+    ok, msg, _payload = _applied_result(EditResult(matches=3, errors=[]))
     assert ok is True
     assert "3 regions changed" in msg
 
 
 def test_applied_result_compile_errors_included() -> None:
     err = CompileErrorInfo(path="n.frag.glsl", line=4, message="boom")
-    ok, msg, payload = _applied_result(
-        EditResult(
-            matches=1, errors=[err], changed_excerpt="4  bad", changed_range=(4, 4)
-        )
-    )
+    ok, msg, payload = _applied_result(EditResult(matches=1, errors=[err]))
     assert ok is True
     assert "compiled with errors" in msg and "boom" in msg
-    assert "changed lines:\n4  bad" in msg
     assert payload == {"errors": [err.__dict__]}
 
 

@@ -27,6 +27,8 @@ def minimal_caps(**overrides: Any) -> CopilotCapabilities:
         "read_shaders": lambda _ids: [],
         "grep": lambda _q: [],
         "read_lib": lambda _names: [],
+        "read_working_set": lambda: [],
+        "batch_begin": lambda: None,
         "apply_shader_edit": lambda _o, _n, _r, _t: None,
         "apply_line_edit": lambda _s, _e, _t, _tg: None,
         "set_uniform": lambda _n, _v, _node: SetUniformResult(ok=True),

@@ -27,6 +27,7 @@ from shaderbox.copilot.gate import GateChannel, GateResponse
 from shaderbox.copilot.llm.api import LLMMessage
 from shaderbox.copilot.llm.openrouter import OpenRouterLLMClient
 from shaderbox.copilot.persistence import ConversationStore
+from shaderbox.copilot.prompt import render_working_set
 from shaderbox.copilot.state import ChatState, Message, RecoverInfo
 from shaderbox.copilot.text_render import sanitize_display
 from shaderbox.copilot.tools.base import mask_secret
@@ -303,6 +304,10 @@ class CopilotSession:
                 self.gate,
                 self._cancel,
                 self.trace,
+                scratchpad_render=lambda: render_working_set(
+                    self.caps.read_working_set()
+                ),
+                batch_begin=self.caps.batch_begin,
             ):
                 if isinstance(ev, AgentError):
                     error_text = ev.message

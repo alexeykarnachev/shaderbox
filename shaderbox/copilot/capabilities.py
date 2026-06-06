@@ -121,6 +121,22 @@ class LibFunctionBody:
 
 
 @dataclass(frozen=True)
+class WorkingSetView:
+    # One working-set member's live view for the per-turn scratchpad (feature 020·29): the
+    # in-memory source listing (cat -n) + compile-coherent errors, rebuilt every iteration. A NODE
+    # carries marks (current) + uniform rows + errors; a LIB file carries only the listing (is_lib,
+    # no standalone compile). GL-FREE value object — read_working_set marshals the GL/recompile work
+    # on the main thread and hands these back to the worker.
+    address: str  # the agent-facing handle: a short node id, or a "lib:<path>" address
+    name: str  # node display name; the lib: address itself for a lib file
+    listing: str  # cat -n style, from live source.text
+    is_current: bool
+    is_lib: bool
+    uniforms: list[str]  # "name type = value" rows (node only; [] for a lib)
+    errors: list[CompileErrorInfo]
+
+
+@dataclass(frozen=True)
 class EditResult:
     # The outcome of an edit_shader apply. The match + replace + recompile all happen
     # against the node's authoritative source on the main thread (§16.3), so the handler
@@ -131,21 +147,10 @@ class EditResult:
     # ignoring whitespace — the model copies this instead of re-guessing. "" when there
     # is no unique whitespace-only near-match (feature 020 · 12).
     hint: str = ""
-    # Apply-feedback (feature 020 · 14): the post-edit "what changed" excerpt (line-numbered
-    # context around the changed region) + its 1-based line range in the NEW source. Set on a
-    # single-region apply; both empty/None on a non-apply OR a multi-span replace_all.
-    changed_excerpt: str = ""
-    changed_range: tuple[int, int] | None = None
-    # Freshness reject (feature 020 · 15): True when the edit was refused because the source
-    # moved since the agent last read it this turn (or it never read / switched nodes).
-    # stale_reason is the App-built message naming the specific cause. matches==0 on a reject.
-    # stale is EXEMPT from the edit-retry cap (re-read and continue is benign, not non-convergence).
-    stale: bool = False
-    stale_reason: str = ""
     # Unresolvable-target reject (feature 020·20 D4): the model supplied a bad target (unknown node
-    # id / invalid lib path) — an ARGUMENT error, distinct from a freshness `stale`. It DOES count
-    # toward the edit-retry cap (a model repeating a bad target must hit the giveup), so it must NOT
-    # set stale. unresolved_reason is the App-built message. matches==0 on a reject.
+    # id / invalid lib path), targeted a read-only template, hit the D9 intra-batch line-edit guard,
+    # or a lib write failed. An ARGUMENT/operation error that DOES count toward the edit-retry cap (a
+    # model repeating it must hit the giveup). unresolved_reason is the App-built message. matches==0.
     unresolved: bool = False
     unresolved_reason: str = ""
     # Lib edit (feature 020 · 16 Decision 4): the honest "no standalone compile" note returned
@@ -227,6 +232,15 @@ class CopilotCapabilities:
     read_shaders: Callable[[list[str]], list[ShaderView]]
     grep: Callable[[str], list[GrepHit]]
     read_lib: Callable[[list[str]], list[LibFunctionBody]]
+    # The per-turn working set (feature 020·29): every shader/lib the agent touched this turn,
+    # rebuilt from LIVE in-memory source every loop iteration and spliced onto the message bottom.
+    # read_working_set reads the App-side set (current node unioned in) and returns a compile-coherent
+    # view (bridge-marshalled — uniform read + the program-is-None recompile are GL); the scratchpad
+    # render calls it once per iteration. batch_begin clears the per-batch line-edit guard's
+    # mutated-target set; run_turn calls it ONCE before each assistant tool-call batch (the only signal
+    # App can't observe for itself, D9).
+    read_working_set: Callable[[], list[WorkingSetView]]
+    batch_begin: Callable[[], None]
 
     # ---- mutations the worker REQUESTS but the main thread APPLIES ----
     # Implemented App-side as bridge.run_on_main(...) closures (the worker blocks for

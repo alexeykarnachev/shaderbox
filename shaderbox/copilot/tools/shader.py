@@ -138,12 +138,13 @@ class _SwitchNodeArgs(BaseModel):
 
 
 _READ_SHADER_DESC = (
-    "Read shader nodes: returns each node's source with line numbers (for orientation — you "
-    "match on text content, NOT line numbers, when editing), its uniforms (name, type, and "
-    "current value), and any compile errors. Pass a list of node ids to read several at once "
-    "(e.g. to compare two shaders); leave nodes empty to read the one you are currently working "
-    "on. ALWAYS read a node before editing it — you cannot edit a shader you have not read this "
-    "turn. You cannot see the rendered image — never claim a visual result."
+    "Bring shader nodes into your WORKING SET — their full live source (line-numbered), uniforms, "
+    "and compile errors then appear in the working-set block at the bottom of the conversation, "
+    "rebuilt every step with CURRENT line numbers. Pass a list of node ids to add several at once "
+    "(e.g. to compare two shaders); leave nodes empty for the node you are currently working on "
+    "(it is already in your working set). Use this to add a DIFFERENT node before editing it. The "
+    "node you are currently working on needs no read before you edit it — its source is already in "
+    "the working set. You cannot see the rendered image — never claim a visual result."
 )
 
 _EDIT_SHADER_DESC = (
@@ -160,22 +161,22 @@ _EDIT_SHADER_DESC = (
 _REPLACE_LINES_DESC = (
     "BEST FOR replacing a whole block or function — you give the line numbers, so you never "
     "re-type the old lines (cheaper + no exact-match risk vs a large edit_shader old_str). "
-    "Replace an inclusive range of lines [start_line, end_line] (1-based, the line numbers "
-    "shown by read_shader) with new_text, then recompile. ALWAYS read_shader first — the line "
-    "numbers must be current. new_text is inserted verbatim, so include the exact indentation "
-    "you want. An empty new_text deletes the range. To insert without replacing, use "
-    "insert_after. After the edit I recompile and return any compile errors plus a snippet of "
-    "the changed region; if there are none, it compiled clean."
+    "Replace an inclusive range of lines [start_line, end_line] (1-based) with new_text, then "
+    "recompile. Use the line numbers from the WORKING SET block at the bottom of the conversation "
+    "— they are current for THIS step. new_text is inserted verbatim, so include the exact "
+    "indentation you want. An empty new_text deletes the range. To insert without replacing, use "
+    "insert_after. (One line-addressed edit per file per step — see HOW TO WORK.) After the edit I "
+    "recompile and return any compile errors; if there are none, it compiled clean."
 )
 
 _INSERT_AFTER_DESC = (
     "BEST FOR adding new lines (a uniform, a helper function, a statement) — you quote no "
     "anchor text at all, just the line to insert after. Insert new_text as new line(s) AFTER "
-    "the given 1-based line (the numbers shown by read_shader); pass 0 to insert at the very "
-    "top, or the last line number to append at the end. ALWAYS read_shader first. new_text is "
-    "inserted verbatim — include the indentation you want. Existing lines shift down; nothing "
-    "is replaced. After the edit I recompile and return any compile errors plus a snippet of "
-    "the changed region; if there are none, it compiled clean."
+    "the given 1-based line (use the WORKING SET block's current numbers); pass 0 to insert at the "
+    "very top, or the last line number to append at the end. new_text is inserted verbatim — "
+    "include the indentation you want. Existing lines shift down; nothing is replaced. (One "
+    "line-addressed edit per file per step — see HOW TO WORK.) After the edit I recompile and "
+    "return any compile errors; if there are none, it compiled clean."
 )
 
 _SET_UNIFORM_DESC = (
@@ -225,7 +226,10 @@ _SWITCH_NODE_DESC = (
     "view switches to it."
 )
 
-_OUT_OF_RANGE = "error: line number out of range — re-read with read_shader and use a line number it shows"
+_OUT_OF_RANGE = (
+    "error: line number out of range — use a line number from the WORKING SET block below, "
+    "which has this file's current line numbers"
+)
 
 
 def _format_errors(errors: list[CompileErrorInfo]) -> str:
@@ -240,31 +244,14 @@ def _view_summary(view: ShaderView) -> str:
     return f"read {view.name} — {lines} lines, {len(view.uniforms)} uniforms, {state}"
 
 
-def _format_view(view: ShaderView) -> str:
-    uniforms = "\n".join(view.uniforms) if view.uniforms else "(none)"
-    errors = _format_errors(view.errors) if view.errors else "none"
-    return (
-        f"=== {view.name} (id: {view.node_id}) ===\n{view.listing}\n\n"
-        f"uniforms:\n{uniforms}\n\nerrors:\n{errors}"
-    )
-
-
 def _format_hits(hits: list[GrepHit]) -> str:
     return "\n".join(f"{h.location}:{h.line}: {h.text}  [{h.origin}]" for h in hits)
 
 
-def _stale_result(result: EditResult) -> tuple[bool, str, dict] | None:
-    # A freshness reject (feature 020 · 15): the source moved since the agent read it.
-    # payload["stale"] lets run_turn keep it OUT of the edit-retry cap (re-read, don't spiral).
-    if result.stale:
-        return False, f"error: {result.stale_reason}", {"stale": True}
-    return None
-
-
 def _unresolved_result(result: EditResult) -> tuple[bool, str, None] | None:
-    # An unresolvable-target reject (feature 020·20 D4): a bad node id / lib path. Unlike a stale
-    # reject it does NOT carry payload["stale"], so a model that keeps supplying a bad target DOES
-    # count toward the edit-retry cap (it is non-convergence, not a benign re-read).
+    # An unresolvable-/non-converging reject (feature 020·20 D4, 020·29): a bad node id / lib path,
+    # a read-only template, a failed lib write, or the D9 intra-batch line-edit guard. Counts toward
+    # the edit-retry cap (a model that keeps repeating it must hit the giveup).
     if result.unresolved:
         return False, f"error: {result.unresolved_reason}", None
     return None
@@ -274,17 +261,16 @@ def _applied_result(result: EditResult) -> tuple[bool, str, dict]:
     # The shared success/compile-error message for any applied edit (edit_shader /
     # replace_lines / insert_after). A LIB edit returns the honest "no standalone compile"
     # note (020·16 Decision 4) instead of a compile result; a NODE edit returns compile errors
-    # or "compiled clean". Appends the "what changed" excerpt, or a region count for a
-    # multi-span replace_all (no single excerpt — §14 D5).
+    # or "compiled clean". The post-edit source is shown by the next iteration's working-set
+    # scratchpad (feature 020·29), so no "what changed" excerpt — only a region count for a
+    # multi-span replace_all.
     if result.lib_note:
         head = result.lib_note
     elif result.errors:
         head = "compiled with errors:\n" + _format_errors(result.errors)
     else:
         head = "ok — compiled clean"
-    if result.changed_excerpt:
-        head += f"\nchanged lines:\n{result.changed_excerpt}"
-    elif result.matches > 1:
+    if result.matches > 1:
         head += f" ({result.matches} regions changed)"
     return True, head, {"errors": [e.__dict__ for e in result.errors]}
 
@@ -292,7 +278,11 @@ def _applied_result(result: EditResult) -> tuple[bool, str, dict]:
 def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
     def read_shader(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
         # nodes are short ids from the project map; [] = current node (resolved App-side so the
-        # tool layer never touches a full id). The returned ShaderViews carry short ids too.
+        # tool layer never touches a full id). The read ADDS each node to the working set — its full
+        # line-numbered source then rides the per-turn scratchpad, live, rebuilt every step (feature
+        # 020·29). So the AGENT body is a SHORT confirmation + the compile errors (it needs "is B
+        # broken?" this same iteration, before the next rebuild) — NOT the listing, which the
+        # scratchpad now carries. The USER's chat `display` line is unchanged (020·23 D6).
         node_ids: list[str] = list(args["nodes"])
         views = caps.read_shaders(node_ids)
         if not views:
@@ -307,13 +297,20 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             for nid in node_ids
             if not any(s.startswith(nid) or nid.startswith(s) for s in short_ids)
         ]
-        body = "\n\n".join(_format_view(v) for v in views)
+        names = ", ".join(v.name for v in views)
+        body = (
+            f"added to your working set: {names} (their live source is shown below). "
+        )
+        all_errors = [e for v in views for e in v.errors]
+        body += (
+            "compile errors:\n" + _format_errors(all_errors)
+            if all_errors
+            else "all compiled clean."
+        )
         if missing:
-            body += f"\n\n(no node found for: {', '.join(missing)})"
-        # `body` (the full line-numbered listing) is what the AGENT gets — it edits by line number.
-        # `display` is the terse chat-line the USER sees (the editor already shows the code, 020·23 D6).
+            body += f"\n(no node found for: {', '.join(missing)})"
         payload = {
-            "errors": [e.__dict__ for v in views for e in v.errors],
+            "errors": [e.__dict__ for e in all_errors],
             "read": [v.node_id for v in views],
             "display": "\n".join(_view_summary(v) for v in views),
         }
@@ -325,8 +322,6 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
         )
         if (unresolved := _unresolved_result(result)) is not None:
             return unresolved
-        if (stale := _stale_result(result)) is not None:
-            return stale
         if result.comment_loss:
             return (
                 False,
@@ -367,8 +362,6 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
         result = caps.apply_line_edit(start, end, args["new_text"], args["target"])
         if (unresolved := _unresolved_result(result)) is not None:
             return unresolved
-        if (stale := _stale_result(result)) is not None:
-            return stale
         if result.matches == 0:
             return False, _OUT_OF_RANGE, None
         return _applied_result(result)
@@ -378,8 +371,6 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
         result = caps.apply_line_edit(line + 1, line, args["new_text"], args["target"])
         if (unresolved := _unresolved_result(result)) is not None:
             return unresolved
-        if (stale := _stale_result(result)) is not None:
-            return stale
         if result.matches == 0:
             return False, _OUT_OF_RANGE, None
         return _applied_result(result)

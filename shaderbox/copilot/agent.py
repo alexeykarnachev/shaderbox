@@ -368,11 +368,21 @@ def run_turn(
     gate: GateChannel,
     cancel: threading.Event,
     trace: TraceLog | None = None,
+    scratchpad_render: Callable[[], list[LLMMessage]] | None = None,
+    batch_begin: Callable[[], None] | None = None,
 ) -> Iterator[AgentEvent]:
     # `client` is an llm.api.LLMClient — kept as `object` here so this module imports no
     # provider impl. The duck-typed `.stream(...)` is the only call. `trace` is the
     # full-transcript sink (None in tests) — it records everything, in full (trace.py).
+    # `scratchpad_render` rebuilds the live PER_TURN working-set block each iteration (feature
+    # 020·29); spliced onto the bottom of `messages` for the stream + trace, never into the durable
+    # list. `batch_begin` clears the App-side per-batch line-edit guard once per tool-call batch (D9 —
+    # the batch boundary is the only signal App can't see itself). Both default to no-ops (tests).
     tr = trace if trace is not None else NULL_TRACE
+    render_scratchpad = (
+        scratchpad_render if scratchpad_render is not None else (lambda: [])
+    )
+    begin_batch = batch_begin if batch_begin is not None else (lambda: None)
     # `messages` is the WITHIN-TURN context: full assistant/tool pairs accumulate here as the loop runs
     # (the provider 400s on an orphaned tool_call_id). It is NEVER persisted — at commit the turn collapses
     # to one engine-derived NL TurnSummary (feature 020·28), so history stays natural-language only.
@@ -398,15 +408,20 @@ def run_turn(
         text_buf = ""
         builders: dict[int, _ToolCallBuilder] = {}
         done: LLMDone | None = None
+        # Rebuild the live working-set scratchpad ONCE per iteration and splice it onto the bottom of
+        # the durable messages for BOTH the trace AND the stream (feature 020·29 D11 — two calls of
+        # render_scratchpad could diverge if a mutation interleaved). The durable `messages` is never
+        # mutated, so the source term is one overwritten copy per iteration, not accumulating.
+        request_messages = messages + render_scratchpad()
         tr.event(
             "llm_request",
             iteration=iteration,
-            messages=messages,
+            messages=request_messages,
             tools=specs,
             max_tokens=config.max_tokens_per_turn,
         )
         for ev in client.stream(  # type: ignore[attr-defined]
-            messages, tools=specs, max_tokens=config.max_tokens_per_turn
+            request_messages, tools=specs, max_tokens=config.max_tokens_per_turn
         ):
             match ev:
                 case LLMTextDelta():
@@ -512,6 +527,7 @@ def run_turn(
 
         calls = [builders[i] for i in sorted(builders)]
         messages.append(_assistant_message(text_buf, calls))
+        begin_batch()  # reset the D9 per-batch line-edit guard (feature 020·29)
         giveup = False
         for tc in calls:
             args = _parse_args(tc.arguments)
@@ -604,11 +620,8 @@ def run_turn(
             # matching, a line range that keeps not resolving) would otherwise retry to the
             # max_iterations ceiling. Count CONSECUTIVE failed shader-EDIT tools (not all mutating
             # tools — a failed render/publish is non-convergence, not a stuck edit, §020·20 D4);
-            # any success or non-edit tool resets it. A freshness reject (payload["stale"], §15) is
-            # a benign "re-read and continue", NOT a convergence failure, so it does not count.
-            # payload is None on a malformed-args/unknown-tool result — guard the .get.
-            stale = bool((payload or {}).get("stale"))
-            if registry.is_edit_tool(tc.name) and not ok and not stale:
+            # any success or non-edit tool resets it. Every failed edit counts, incl. the D9 reject.
+            if registry.is_edit_tool(tc.name) and not ok:
                 consecutive_failed_edits += 1
             else:
                 consecutive_failed_edits = 0

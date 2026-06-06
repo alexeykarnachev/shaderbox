@@ -85,16 +85,17 @@ def test_resolve_source_distinguishes_template_from_node(app: Any) -> None:
     assert kind2 == "node"
 
 
-def test_shipped_templates_read_clean_without_freshness_stamp(app: Any) -> None:
+def test_shipped_templates_read_clean_without_joining_working_set(app: Any) -> None:
     for t in app._copilot_template_catalog():
         views = app._copilot_read_shaders([t.template_id])
         assert len(views) == 1, t.template_id
         v = views[0]
         assert v.node_id == t.template_id
         assert len(v.errors) == 0, f"{t.name} must compile clean: {v.errors}"
-        # read-only: a template read never stamps the edit-freshness map
+        # read-only: a template read never joins the (editable) working set
         full = app._copilot_resolve_template_id(t.template_id)
-        assert full not in app._copilot_read_revision
+        assert full not in app._copilot_working_set
+        assert t.template_id not in app._copilot_working_set
 
 
 def test_grep_surfaces_template_origins(app: Any) -> None:
