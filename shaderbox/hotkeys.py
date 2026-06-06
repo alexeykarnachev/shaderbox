@@ -58,8 +58,7 @@ def _handle_escape(app: App) -> None:
     # Never quits. Settings holds the editor options — push them on close (apply-on-
     # close avoids the modal-open FPE, conventions.md ## Known quirks).
     was_settings_open = app.popup_state == PopupState.SETTINGS
-    if app.popup_state in (PopupState.NODE_CREATOR, PopupState.SETTINGS):
-        app.popup_state = PopupState.CLOSED
+    app.popup_state = PopupState.CLOSED
     app.is_palette_open = False
     app.editor_defocus_requested = True
     # Esc defocuses the chat (back to the editor/grid) but leaves it open.
