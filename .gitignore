@@ -30,3 +30,6 @@ shaderbox-design-handoff-*.tar.gz
 
 # Playwright MCP browser-session artifacts
 .playwright-mcp/
+
+# Claude Code runtime state (the scheduler lock under the tracked .claude/ dir)
+.claude/scheduled_tasks.lock
