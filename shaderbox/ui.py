@@ -573,7 +573,7 @@ def _draw_node_settings(app: App) -> None:
         if (
             app.active_region == ActiveRegion.PANEL
             and not app.any_popup_open()
-            and not app.copilot_focused
+            and not app.is_copilot_open
         ):
             active_region_outline()
         with imgui_ctx.begin_tab_bar("node_settings_tabs") as bar:

@@ -58,7 +58,7 @@ def draw_node_preview_grid(app: App, width: float, height: float) -> None:
         if (
             app.active_region == ActiveRegion.GRID
             and not app.any_popup_open()
-            and not app.copilot_focused
+            and not app.is_copilot_open
         ):
             active_region_outline()
         # Node create/switch/delete are frozen while a copilot turn runs (§15 A); disable the

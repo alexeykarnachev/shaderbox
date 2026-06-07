@@ -107,10 +107,13 @@ Keep entries faithful. A simple fix gets one or two lines of resolution, not a s
   already had its read-only lock; the chat input is disabled (F03); the chat's own Stop stays live
   (separate window). Node/project mutations were already `_copilot_busy_blocked`.
 
-### F09 — editor active-region outline leaks through the chat window   [fixed]
-- **Where:** the editor's accent nav-outline vs the floating chat that sits over the editor.
-- **Observed:** the editor outline drew on top of the opaque chat window.
-- **Resolution:** the outline is on the FOREGROUND draw list (immune to window clip / z-order), so it
-  punched through the later-drawn chat. It is now suppressed while `is_copilot_open` (the chat floats
-  over the editor). Surfaced by F07's focus jump (which made the editor the active region under the
-  chat); the foreground-list strategy is the underlying cause.
+### F09 — active-region outline leaks through the chat window   [fixed]
+- **Where:** any region's accent nav-outline vs the floating chat. (Reported on the node grid in the
+  bottom-right panel — the actual culprit was the GRID outline, not the editor.)
+- **Observed:** a region's outline drew on top of the opaque chat window.
+- **Resolution:** `active_region_outline()` is on the FOREGROUND draw list (immune to window clip /
+  z-order), so it punched through the later-drawn chat. ALL THREE region draw-sites — editor
+  (`ui.py`), panel (`ui.py`), node grid (`widgets/node_grid.py`) — now suppress the outline while
+  `is_copilot_open` (was `not copilot_focused`, which only covered the focused case). The chat's OWN
+  outline (`copilot_chat.py`) stays — it strokes the chat window itself. The systemic cause is the
+  foreground-list strategy ignoring the floating chat; the fix is the same gate at every instance.
