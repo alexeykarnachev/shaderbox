@@ -21,15 +21,15 @@ from shaderbox.copilot.agent import (
 from shaderbox.copilot.bridge import CopilotBridge
 from shaderbox.copilot.capabilities import CopilotCapabilities
 from shaderbox.copilot.config import COPILOT_CONFIG
-from shaderbox.copilot.context import build_context
 from shaderbox.copilot.errors import CopilotConfigError
 from shaderbox.copilot.gate import GateChannel, GateResponse
 from shaderbox.copilot.llm.api import LLMMessage
 from shaderbox.copilot.llm.openrouter import OpenRouterLLMClient
 from shaderbox.copilot.persistence import ConversationStore
 from shaderbox.copilot.prompt import render_working_set
+from shaderbox.copilot.prompt_context import build_context
+from shaderbox.copilot.sanitize import sanitize_display
 from shaderbox.copilot.state import ChatState, Message, RecoverInfo
-from shaderbox.copilot.text_render import sanitize_display
 from shaderbox.copilot.tools.base import mask_secret
 from shaderbox.copilot.tools.registry import build_registry
 from shaderbox.copilot.trace import TraceLog, new_trace_log
@@ -319,7 +319,8 @@ class CopilotSession:
     ) -> None:
         # Commit to history (worker is sole owner) as NATURAL LANGUAGE ONLY: the user message +
         # ONE assistant message from the turn-summary. No tool messages — the source the agent
-        # read is re-fetched live each turn, never persisted.
+        # read is re-fetched live each turn, never persisted. `summary` is built engine-side in
+        # run_turn and rides the terminal event (see agent.TurnSummary); _render_summary renders it.
         #
         # A turn aborted by teardown (_drop_turn set) must NOT commit — run_turn returns NORMALLY
         # on cancel, so it would otherwise land on the next project's reset history. A user Stop

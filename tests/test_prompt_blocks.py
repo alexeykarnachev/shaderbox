@@ -2,7 +2,6 @@
 renders each, drops empty ones, flattens. build_messages composes [static < rare < dialogue < pending].
 Pure: no GL, no client."""
 
-from shaderbox.copilot.context import CopilotContext
 from shaderbox.copilot.llm.api import LLMMessage
 from shaderbox.copilot.prompt import (
     PromptBlock,
@@ -10,6 +9,7 @@ from shaderbox.copilot.prompt import (
     build_messages,
     build_prompt,
 )
+from shaderbox.copilot.prompt_context import CopilotContext
 
 
 def _m(role: str, content: str) -> LLMMessage:

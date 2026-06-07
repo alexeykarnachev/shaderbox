@@ -9,6 +9,9 @@ from loguru import logger
 from shaderbox.copilot.config import COPILOT_CONFIG
 from shaderbox.copilot.errors import CopilotCancelled, CopilotToolError
 
+# Worker->main marshalling seam for GL/main-thread WORK (run a closure, return its result).
+# Sibling of `gate.py`, the same blocking round-trip for USER answers (confirm/credential).
+
 
 @dataclass
 class MainThreadOp:

@@ -43,7 +43,7 @@ from shaderbox.copilot.capabilities import (
 from shaderbox.copilot.config import COPILOT_CONFIG
 from shaderbox.copilot.errors import CopilotToolError
 from shaderbox.copilot.glsl_lex import span_has_comment, token_match
-from shaderbox.copilot.text_render import sanitize_display
+from shaderbox.copilot.sanitize import sanitize_display
 from shaderbox.core import Node
 from shaderbox.exporters.base import (
     AuthState,

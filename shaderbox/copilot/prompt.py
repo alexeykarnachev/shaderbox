@@ -6,8 +6,8 @@ from loguru import logger
 
 from shaderbox.copilot.capabilities import CompileErrorInfo, WorkingSetView
 from shaderbox.copilot.config import COPILOT_CONFIG
-from shaderbox.copilot.context import CopilotContext
 from shaderbox.copilot.llm.api import LLMMessage
+from shaderbox.copilot.prompt_context import CopilotContext
 
 # Min turns the trim keeps even over budget. A turn = user msg + one assistant summary (NL-only history).
 _MIN_KEPT_TURNS: int = 4

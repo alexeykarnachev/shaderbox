@@ -6,8 +6,8 @@ from imgui_bundle import imgui, imgui_ctx
 
 from shaderbox.app import App
 from shaderbox.copilot.gate import GateKind
+from shaderbox.copilot.sanitize import sanitize_display
 from shaderbox.copilot.state import CopilotLayout, Message, ResultWidget
-from shaderbox.copilot.text_render import sanitize_display
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_primitives import (
     active_region_outline,

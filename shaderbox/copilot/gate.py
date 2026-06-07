@@ -3,8 +3,9 @@ import threading
 from dataclasses import dataclass, field
 from enum import StrEnum, auto
 
-# Worker->UI blocking round-trip: the worker pushes a request + Event and blocks; the
-# main thread draws the widget, fills the response slot, sets the event, worker unblocks.
+# Worker->main marshalling seam for USER answers (confirm/credential): the worker pushes a
+# request + Event and blocks; the main thread draws the widget, fills the response slot, sets
+# the event, worker unblocks. Sibling of `bridge.py`, the same round-trip for GL WORK.
 
 
 class GateKind(StrEnum):

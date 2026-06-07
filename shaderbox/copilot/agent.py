@@ -6,7 +6,6 @@ from dataclasses import dataclass, field
 from loguru import logger
 
 from shaderbox.copilot.config import CopilotConfig
-from shaderbox.copilot.context import CopilotContext
 from shaderbox.copilot.gate import GateChannel, GateKind, GateRequest
 from shaderbox.copilot.llm.api import (
     LLMDone,
@@ -18,6 +17,7 @@ from shaderbox.copilot.llm.api import (
     LLMUsage,
 )
 from shaderbox.copilot.prompt import build_messages
+from shaderbox.copilot.prompt_context import CopilotContext
 from shaderbox.copilot.state import ResultWidget
 from shaderbox.copilot.tools.registry import ToolRegistry
 from shaderbox.copilot.trace import NULL_TRACE, TraceLog

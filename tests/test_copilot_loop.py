@@ -22,7 +22,6 @@ from shaderbox.copilot.capabilities import (
     ShaderView,
 )
 from shaderbox.copilot.config import COPILOT_CONFIG
-from shaderbox.copilot.context import CopilotContext
 from shaderbox.copilot.gate import GateChannel
 from shaderbox.copilot.glsl_lex import token_match
 from shaderbox.copilot.llm.api import (
@@ -35,6 +34,7 @@ from shaderbox.copilot.llm.api import (
     LLMToolSpec,
     LLMUsage,
 )
+from shaderbox.copilot.prompt_context import CopilotContext
 from shaderbox.copilot.tools.registry import build_registry
 from tests._caps import minimal_caps
 
