@@ -284,13 +284,9 @@ def update_and_draw(app: App) -> None:
                     and not app.copilot_focused
                 ):
                     app.active_region = ActiveRegion.EDITOR
-                # Foreground-draw-list outline (immune to window clip), so suppress it whenever
-                # something opaque floats over the editor: a modal, OR the copilot chat (which
-                # sits on top of the editor — a leaked outline would punch through it).
                 if (
                     app.active_region == ActiveRegion.EDITOR
                     and not app.any_popup_open()
-                    and not app.is_copilot_open
                 ):
                     active_region_outline()
                 code_tab.draw(app)
@@ -570,11 +566,7 @@ def _draw_node_settings(app: App) -> None:
             and not app.copilot_focused
         ):
             app.active_region = ActiveRegion.PANEL
-        if (
-            app.active_region == ActiveRegion.PANEL
-            and not app.any_popup_open()
-            and not app.is_copilot_open
-        ):
+        if app.active_region == ActiveRegion.PANEL and not app.any_popup_open():
             active_region_outline()
         with imgui_ctx.begin_tab_bar("node_settings_tabs") as bar:
             if bar:

@@ -15,12 +15,14 @@ _REGION_OUTLINE_THICKNESS: float = 2.0
 def active_region_outline() -> None:
     """Stroke the accent around the CURRENT child window (keyboard-nav active-region cue).
     Call from INSIDE the region's `begin_child` — reads the child's own window rect
-    (`get_item_rect_*` after `end_child` can report a collapsed rect). Drawn on the
-    FOREGROUND draw list so the per-child clip can't cut edges."""
+    (`get_item_rect_*` after `end_child` can report a collapsed rect). Drawn on the child's
+    OWN window draw list, inset by the stroke width so the clip rect can't cut it — this way
+    it is z-ordered beneath any later-drawn floating window instead of punching through it
+    (a foreground-list outline ignores window stacking)."""
     pos = imgui.get_window_pos()
     size = imgui.get_window_size()
     inset = _REGION_OUTLINE_THICKNESS
-    imgui.get_foreground_draw_list().add_rect(
+    imgui.get_window_draw_list().add_rect(
         (pos.x + inset, pos.y + inset),
         (pos.x + size.x - inset, pos.y + size.y - inset),
         imgui.color_convert_float4_to_u32(COLOR.ACCENT_PRIMARY),

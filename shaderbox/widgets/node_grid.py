@@ -55,11 +55,7 @@ def draw_node_preview_grid(app: App, width: float, height: float) -> None:
             and not app.copilot_focused
         ):
             app.active_region = ActiveRegion.GRID
-        if (
-            app.active_region == ActiveRegion.GRID
-            and not app.any_popup_open()
-            and not app.is_copilot_open
-        ):
+        if app.active_region == ActiveRegion.GRID and not app.any_popup_open():
             active_region_outline()
         # Node create/switch/delete are frozen while a copilot turn runs (§15 A); disable the
         # affordances so the freeze is visible (the verbs also hard-refuse, for non-grid paths).

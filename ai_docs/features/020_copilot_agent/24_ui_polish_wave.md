@@ -111,9 +111,11 @@ Keep entries faithful. A simple fix gets one or two lines of resolution, not a s
 - **Where:** any region's accent nav-outline vs the floating chat. (Reported on the node grid in the
   bottom-right panel — the actual culprit was the GRID outline, not the editor.)
 - **Observed:** a region's outline drew on top of the opaque chat window.
-- **Resolution:** `active_region_outline()` is on the FOREGROUND draw list (immune to window clip /
-  z-order), so it punched through the later-drawn chat. ALL THREE region draw-sites — editor
-  (`ui.py`), panel (`ui.py`), node grid (`widgets/node_grid.py`) — now suppress the outline while
-  `is_copilot_open` (was `not copilot_focused`, which only covered the focused case). The chat's OWN
-  outline (`copilot_chat.py`) stays — it strokes the chat window itself. The systemic cause is the
-  foreground-list strategy ignoring the floating chat; the fix is the same gate at every instance.
+- **Resolution (root, no coupling):** `active_region_outline()` drew on the FOREGROUND draw list
+  (always-on-top, ignores window stacking) → it punched through the later-drawn chat. Fixed IN THE
+  PRIMITIVE: it now draws on the child's OWN window draw list (inset by the stroke width so the clip
+  can't cut it), so it z-orders naturally beneath any floating window. No region code references the
+  copilot for the outline — an earlier `is_copilot_open` gate at the three draw-sites was a layering
+  violation (grid/editor/panel must not know the copilot exists) and was reverted. NOTE (pre-existing,
+  not touched): the `active_region` ASSIGNMENT gates still carry `and not app.copilot_focused` — same
+  smell, separate concern; left for a focused decoupling pass.
