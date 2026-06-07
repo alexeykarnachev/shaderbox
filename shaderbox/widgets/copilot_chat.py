@@ -301,7 +301,9 @@ def _draw_credential_input(app: App, msg: Message, idx: int) -> None:
 
 
 def _send_button_offset() -> float:
-    return -(float(SIZE.BTN_SM_W) + float(SPACE.SM))
+    # Reserve the button width + the exact gap same_line() inserts (style item_spacing.x), so
+    # the trailing button lands flush against the right content edge with no leftover sliver.
+    return -(float(SIZE.BTN_SM_W) + imgui.get_style().item_spacing.x)
 
 
 def _usage_fractions_tooltip(usage: LLMUsage | None) -> tuple[tuple[float, float], str]:
