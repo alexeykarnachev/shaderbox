@@ -162,7 +162,10 @@ def _draw_transcript(app: App) -> None:
     if app.copilot_focus_pending:
         imgui.set_keyboard_focus_here(0)
         app.copilot_focus_pending = False
-    input_w: float = -1.0 if in_flight else _send_button_offset()
+    # Reserve room for the trailing button (Send or Stop) in BOTH states: a full-width
+    # multiline box + same_line(button) would push content past the window edge and force
+    # the whole transcript to wrap at a too-wide extent.
+    input_w: float = _send_button_offset()
     input_h: float = _input_height()
     # Multiline + word_wrap so a long message wraps instead of scrolling off the right
     # edge; ctrl_enter_for_new_line keeps Enter as send and Ctrl+Enter for a newline.

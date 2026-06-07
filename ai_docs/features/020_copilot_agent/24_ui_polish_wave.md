@@ -137,3 +137,15 @@ Keep entries faithful. A simple fix gets one or two lines of resolution, not a s
   `editor_focused or editor_focus_requested` (the latch avoids a one-frame flicker on a chord-move
   into the editor), matching the dim condition. Grid/panel keep the sticky `active_region` (they ARE
   nav regions). Editor: focused = bright + outlined; unfocused = dim + no outline, together.
+
+### F11 — chat layout breaks (transcript overflows horizontally) while a turn runs   [fixed]
+- **Where:** the chat transcript during an in-flight turn.
+- **Observed:** after pressing Enter to send, the message text ran off the right edge (clipped
+  mid-word); only while the copilot was working.
+- **Cause:** regression from F05's multiline input. The in-flight branch sized the input
+  `input_w = -1.0` (full window width) then `same_line()` + Stop — a full-width multiline box
+  reserves its width as real content, so the trailing button pushed content past the window edge and
+  forced the whole transcript to wrap at that too-wide extent. (The old single-line input tolerated
+  `-1.0` — it just clipped its own text.)
+- **Resolution:** reserve the trailing-button width (`_send_button_offset()`) in BOTH states, not
+  just not-in-flight. Input + Send/Stop now fit within the window.
