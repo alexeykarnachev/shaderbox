@@ -133,10 +133,13 @@ maintainer walkthrough (sibling to the 024 polish wave):
     never drop below what the row needs. (FREE is the only resizable layout; CORNER/STRIP force their
     size.) Verify no overlap at the min size.
 
-12. **Not persisted.** `last_turn_usage` is transient `ChatState` (like `status`/`streaming_text`),
-    refreshed each turn. `persistence.py` / `ConversationStore` / `_VERSION` UNTOUCHED. (The session
-    total `ChatState.usage` IS already persisted — unchanged.) After a project reload the bars show
-    empty until the first turn completes.
+12. **Persisted (REVISED — maintainer follow-up).** Originally transient, but the bars going empty on
+    every restart read as data loss, so `last_turn_usage` is now persisted alongside the session
+    `usage` in `ConversationStore` (`_VERSION` 5 -> 6; a nullable `_UsageModel`, `to_last_turn_usage()`
+    restored in `load_conversation`). Old v5 files load fail-soft (missing field -> `None` -> empty
+    bars until the first turn — the prior behaviour, no regression). Clear still empties the bars
+    (`reset_conversation` builds a fresh `ChatState`). The conversation is per-project, so the bars
+    show the last turn of the project you reopen.
 
 ---
 
@@ -147,7 +150,10 @@ maintainer walkthrough (sibling to the 024 polish wave):
   (new field beside the existing summed `usage`).
 - `shaderbox/copilot/state.py` — `ChatState.last_turn_usage: LLMUsage | None`.
 - `shaderbox/copilot/session.py` — set `self.state.last_turn_usage = ev.last_turn_usage` in the
-  `AgentTurnDone` handler (beside the existing session `usage.add`).
+  `AgentTurnDone` handler (beside the existing session `usage.add`); restore it in
+  `load_conversation` (Decision 12 revision).
+- `shaderbox/copilot/persistence.py` — `ConversationStore.last_turn_usage` (nullable `_UsageModel`) +
+  `to_last_turn_usage()`; `_VERSION` 5 -> 6 (Decision 12 revision).
 - `shaderbox/theme.py` — `SIZE.USAGE_BAR_H`, `SIZE.USAGE_BARS_W` tokens.
 - `shaderbox/ui_primitives.py` — `layout_icon_button` (variant-based), `usage_bars` (fractions +
   tooltip, scalar-only — no `LLMUsage` import).
@@ -155,7 +161,7 @@ maintainer walkthrough (sibling to the 024 polish wave):
   format tooltip from `LLMUsage` + `COPILOT_CONFIG`; PRESERVE the F01 focus path and the danger-tier
   `Clear` + its `begin_disabled(in_flight)` gate verbatim. Possibly a window min-size in `draw`/
   `_apply_layout` (Decision 11).
-- **NOT touched:** `prompt.py`, `persistence.py`, `config.py`.
+- **NOT touched:** `prompt.py`, `config.py`.
 
 ---
 
@@ -180,7 +186,8 @@ maintainer walkthrough (sibling to the 024 polish wave):
 8. **Clear** (mid-session, after some turns) → bars go empty (expected — `reset_conversation`).
 9. Resize + switch layouts → bars and the Clear/Close cluster never overlap (verify at the FREE
    window's min size), no jitter; bars stay visible at the min width.
-10. Reload the project → bars empty (per-turn usage not persisted); session cost line unaffected;
+10. Restart the app / reopen the project → bars show the LAST turn's stats (now persisted, v6);
+    Clear empties them; an old v5 conversation loads with empty bars (no crash); session cost line
     Clear/Close still align.
 11. `make check` clean (0 pyright errors), `make smoke` green.
 
@@ -218,5 +225,5 @@ Resolved at plan-lock (2026-06-07):
 3. **Encapsulation** → all visuals (bars + hover tooltip) inside `usage_bars`, which takes only
    scalars; call site passes fractions + a tooltip string, so richer graphics land later without
    touching the data path (Decisions 6/7).
-4. **Narrow header / persistence** → min width + window-min-size overlap guard (Decision 11); not
-   persisted (Decision 12).
+4. **Narrow header / persistence** → min width + window-min-size overlap guard (Decision 11);
+   `last_turn_usage` IS persisted (Decision 12, revised — `ConversationStore` v6).

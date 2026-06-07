@@ -14,7 +14,7 @@ from loguru import logger
 from pydantic import BaseModel, ValidationError
 
 from shaderbox.copilot.gate import GateKind
-from shaderbox.copilot.llm.api import LLMMessage
+from shaderbox.copilot.llm.api import LLMMessage, LLMUsage
 from shaderbox.copilot.state import (
     ChatState,
     Message,
@@ -25,7 +25,7 @@ from shaderbox.copilot.state import (
     SessionUsage,
 )
 
-_VERSION = 5
+_VERSION = 6
 
 _RESULT_WIDGET_KINDS: frozenset[str] = frozenset({"open_url", "open_path"})
 
@@ -101,6 +101,7 @@ class ConversationStore(BaseModel):
     messages: list[_MessageModel] = []
     history: list[_HistoryModel] = []
     usage: _UsageModel = _UsageModel()
+    last_turn_usage: _UsageModel | None = None
     model_config = {"extra": "forbid"}
 
     @classmethod
@@ -143,6 +144,15 @@ class ConversationStore(BaseModel):
                 output_tokens=state.usage.output_tokens,
                 cost_usd=state.usage.cost_usd,
             ),
+            last_turn_usage=(
+                _UsageModel(
+                    input_tokens=state.last_turn_usage.input_tokens,
+                    output_tokens=state.last_turn_usage.output_tokens,
+                    cost_usd=state.last_turn_usage.cost_usd,
+                )
+                if state.last_turn_usage is not None
+                else None
+            ),
         )
 
     def to_messages(self) -> list[Message]:
@@ -184,6 +194,15 @@ class ConversationStore(BaseModel):
             input_tokens=self.usage.input_tokens,
             output_tokens=self.usage.output_tokens,
             cost_usd=self.usage.cost_usd,
+        )
+
+    def to_last_turn_usage(self) -> LLMUsage | None:
+        if self.last_turn_usage is None:
+            return None
+        return LLMUsage(
+            input_tokens=self.last_turn_usage.input_tokens,
+            output_tokens=self.last_turn_usage.output_tokens,
+            cost_usd=self.last_turn_usage.cost_usd,
         )
 
     def save(self, file_path: Path) -> None:

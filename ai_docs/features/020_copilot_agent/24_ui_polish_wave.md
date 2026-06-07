@@ -153,3 +153,19 @@ Keep entries faithful. A simple fix gets one or two lines of resolution, not a s
   `begin_disabled` mid-turn, and the button is Send (primary) idle / Stop (ghost) working — same slot,
   same geometry, so the row can't shift between modes. (The earlier `-1.0`-vs-reserved width fork was
   the divergence that broke the layout.)
+
+### F12 — Send button not flush to the input's right edge   [fixed]
+- **Where:** the chat input's trailing Send/Stop button.
+- **Observed:** a few-px gap between the button's right edge and the window border.
+- **Cause:** `_send_button_offset` reserved `BTN_SM_W + SPACE.SM` (4) but `same_line()` inserts
+  `item_spacing.x` (`SPACE.MD` = 8), so the button stopped short.
+- **Resolution:** reserve the real `same_line` gap (`item_spacing.x`). Verified flush (0.00px).
+
+### F13 — last-turn usage bars don't survive an app restart   [fixed]
+- **Where:** the header usage bars after closing + reopening the app / project.
+- **Observed:** the bars reset to empty on restart (the stats were lost).
+- **Cause:** 025 Decision 12 made `last_turn_usage` transient (not persisted) by design — wrong call.
+- **Resolution:** persist it in `ConversationStore` beside the session `usage` (`_VERSION` 5 -> 6;
+  nullable `_UsageModel` + `to_last_turn_usage()`, restored in `load_conversation`). Old v5 files
+  load fail-soft (missing field -> None -> empty bars, no crash). Clear still empties them. Spec
+  Decision 12 + Files-touched + manual-verification updated. Round-trip + back-compat verified.

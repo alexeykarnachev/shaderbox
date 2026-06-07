@@ -391,6 +391,7 @@ class CopilotSession:
         # state + history + usage.
         self.state.messages = store.to_messages()
         self.state.usage = store.to_usage()
+        self.state.last_turn_usage = store.to_last_turn_usage()
         self.history = store.to_history()
         if self.state.messages or self.history:
             self.trace.event(
