@@ -12,10 +12,10 @@ wheels/
 trash/
 exporter_scratch/
 tg_state.json
-# Per-project downloaded sticker thumbnails (regenerable cache, file_id-named)
+
 projects/*/media/
-# Copilot render outputs (feature 020·18) — regenerable artifacts, not fixture data
 projects/*/renders/
+projects/*/copilot/archive/
 
 itch-config
 
