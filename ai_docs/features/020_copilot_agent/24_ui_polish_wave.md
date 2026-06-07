@@ -64,3 +64,29 @@ Keep entries faithful. A simple fix gets one or two lines of resolution, not a s
   compact icon + the context indicator grew into a specced feature (025) — the `Layout:` text became
   a drawn box-in-frame icon, and two thin stacked usage bars show the previous turn's input/output
   tokens vs budget. Spec + flow: `25_context_fill_indicator.md`.
+
+### F03 — chat input still editable while a turn runs   [fixed]
+- **Where:** the chat message input, during an in-flight turn.
+- **Observed:** the Send button hides while the agent works, but the text field stayed editable.
+- **Resolution:** the input is wrapped in `begin_disabled(in_flight)` — frozen until the turn ends.
+
+### F04 — Ctrl+W to cycle the chat layout   [fixed]
+- **Where:** keyboard, anywhere the global command scope fires.
+- **Resolution:** new `CommandId.CYCLE_COPILOT_LAYOUT` (Ctrl+W, was free) → `App.cycle_copilot_layout`
+  → `CopilotLayout.next()` (the canonical cycle now lives on the enum; the widget's `_NEXT_LAYOUT`
+  dict was retired in favour of it).
+
+### F05 — long input overflowed horizontally   [fixed]
+- **Where:** the chat input with a message wider than the field.
+- **Observed:** a long message scrolled off the right edge instead of wrapping.
+- **Resolution:** the input is now `input_text_multiline` with `InputTextFlags_.word_wrap` (1.92.801
+  supports it — the prior "multiline can't wrap" limitation is gone, `/imgui-ui` §8). Enter still
+  sends (`enter_returns_true`); Ctrl+Enter inserts a newline (`ctrl_enter_for_new_line`). The history
+  child reserves the 2-line input height via the shared `_input_height()`.
+
+### F06 — held-backspace repeat felt sluggish vs the OS   [fixed]
+- **Where:** any text input (global imgui key-repeat).
+- **Observed:** holding backspace deleted slower than the desktop's native key-repeat.
+- **Resolution:** `io.key_repeat_delay`/`key_repeat_rate` set to the maintainer's X11 values
+  (500ms delay, ~33/s) at startup — imgui's own globals, app-wide. NOT a live OS read (no portable
+  API); these are also the standard X11/GNOME defaults, so a sensible shipped default too.

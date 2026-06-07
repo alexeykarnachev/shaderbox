@@ -236,11 +236,12 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
 - **Trigger:** the per-message Copy button (020·23 D7) proves insufficient — a user wants to select a
   PHRASE within a message, not copy the whole thing.
 - 020·23 fixed the reported bug (the window dragged from the body — now `WindowFlags_.no_move`, title-bar
-  drag only) + added a per-message Copy. But true drag-selection of WRAPPED prose is a real imgui
-  limitation: `input_text_multiline` natively selects but does NOT word-wrap (it horizontal-scrolls long
-  lines — looks wrong for prose + risks nested scrollbars in the transcript child); `text_wrapped` wraps
-  but can't select. A clean fix needs a spike (a custom wrapped-selectable text widget, or an upstream
-  imgui-bundle capability) — not a forced bad multiline. `/imgui-ui` §5.
+  drag only) + added a per-message Copy. The old blocker ("`input_text_multiline` selects but can't
+  word-wrap") no longer holds: 1.92.801 ships `InputTextFlags_.word_wrap` (verified 2026-06-07, now used
+  for the chat INPUT). So a `read_only` + `word_wrap` multiline could give a selectable, wrapping
+  message bubble. Untried for the transcript — open questions: per-message dynamic height, nested
+  scrollbars in the history child, the disabled/read-only look vs `text_wrapped`. A spike when the
+  per-message Copy proves insufficient, not a blind swap. `/imgui-ui` §5.
 
 ## [DEFERRAL] copilot has no bind_media / undo_edit tools (scope decisions)
 - **Trigger:** bind_media — first real session where a user asks the copilot to load an image/video into

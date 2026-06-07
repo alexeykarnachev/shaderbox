@@ -16,6 +16,10 @@ class CopilotLayout(StrEnum):
     BOTTOM_STRIP = auto()  # full-width strip along the bottom
     FREE = auto()  # user-moved/resized; position persisted via imgui.ini
 
+    def next(self) -> "CopilotLayout":
+        order = list(CopilotLayout)
+        return order[(order.index(self) + 1) % len(order)]
+
 
 @dataclass(frozen=True)
 class RecoverInfo:

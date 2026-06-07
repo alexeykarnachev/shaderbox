@@ -37,11 +37,6 @@ _WINDOW_FLAGS = (
     | imgui.WindowFlags_.no_collapse
     | imgui.WindowFlags_.no_nav_inputs
 )
-_NEXT_LAYOUT: dict[CopilotLayout, CopilotLayout] = {
-    CopilotLayout.CORNER: CopilotLayout.BOTTOM_STRIP,
-    CopilotLayout.BOTTOM_STRIP: CopilotLayout.FREE,
-    CopilotLayout.FREE: CopilotLayout.CORNER,
-}
 _LAYOUT_VARIANT: dict[CopilotLayout, int] = {
     CopilotLayout.CORNER: 0,
     CopilotLayout.BOTTOM_STRIP: 1,
@@ -137,9 +132,13 @@ def draw(app: App) -> None:
             _draw_transcript(app)
 
 
+def _input_height() -> float:
+    return imgui.get_text_line_height() * 2.0 + float(SPACE.MD)
+
+
 def _draw_transcript(app: App) -> None:
     state = app.copilot.state
-    input_h = imgui.get_frame_height_with_spacing() + float(SPACE.SM)
+    input_h = _input_height() + float(SPACE.SM)
     avail = imgui.get_content_region_avail()
     if imgui.begin_child("##copilot_history", size=(0.0, avail.y - input_h)):
         for i, msg in enumerate(state.messages):
@@ -160,12 +159,20 @@ def _draw_transcript(app: App) -> None:
     if app.copilot_focus_pending:
         imgui.set_keyboard_focus_here(0)
         app.copilot_focus_pending = False
-    imgui.set_next_item_width(-1.0 if in_flight else _send_button_offset())
-    submitted, app.copilot_input = imgui.input_text(
+    input_w: float = -1.0 if in_flight else _send_button_offset()
+    input_h: float = _input_height()
+    # Multiline + word_wrap so a long message wraps instead of scrolling off the right
+    # edge; ctrl_enter_for_new_line keeps Enter as send and Ctrl+Enter for a newline.
+    imgui.begin_disabled(in_flight)
+    submitted, app.copilot_input = imgui.input_text_multiline(
         "##copilot_input",
         app.copilot_input,
-        flags=imgui.InputTextFlags_.enter_returns_true,
+        imgui.ImVec2(input_w, input_h),
+        flags=imgui.InputTextFlags_.enter_returns_true
+        | imgui.InputTextFlags_.ctrl_enter_for_new_line
+        | imgui.InputTextFlags_.word_wrap,
     )
+    imgui.end_disabled()
     if submitted:
         app.copilot_focus_pending = True
     if not in_flight:
@@ -320,7 +327,7 @@ def _draw_top_bar(app: App) -> None:
     if layout_icon_button(
         "copilot_layout", _LAYOUT_VARIANT[app.copilot_layout], icon_side
     ):
-        app.copilot_layout = _NEXT_LAYOUT[app.copilot_layout]
+        app.copilot_layout = app.copilot_layout.next()
     if imgui.is_item_hovered():
         imgui.set_tooltip(f"Layout: {app.copilot_layout.value}")
 

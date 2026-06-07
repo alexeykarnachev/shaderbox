@@ -29,6 +29,7 @@ class CommandId(StrEnum):
     FOCUS_TAB_RENDER = auto()
     FOCUS_TAB_SHARE = auto()
     TOGGLE_COPILOT = auto()
+    CYCLE_COPILOT_LAYOUT = auto()
 
 
 class ActiveRegion(StrEnum):
@@ -104,6 +105,11 @@ COMMAND_SPECS: list[CommandSpec] = [
     CommandSpec(CommandId.FOCUS_TAB_RENDER, "Render tab", _chord(K._2, K.mod_ctrl)),
     CommandSpec(CommandId.FOCUS_TAB_SHARE, "Share tab", _chord(K._3, K.mod_ctrl)),
     CommandSpec(CommandId.TOGGLE_COPILOT, "Toggle copilot", _chord(K.j, K.mod_ctrl)),
+    CommandSpec(
+        CommandId.CYCLE_COPILOT_LAYOUT,
+        "Cycle copilot layout",
+        _chord(K.w, K.mod_ctrl),
+    ),
 ]
 
 SPEC_BY_ID: dict[CommandId, CommandSpec] = {spec.id: spec for spec in COMMAND_SPECS}

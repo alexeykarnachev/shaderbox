@@ -413,6 +413,13 @@ Library footguns specific to the imgui-bundle Python build (currently
 - **`imgui.image(...)` lost `tint_col` / `border_col` since 1.91.9**. For
   tint, switch to `imgui.image_with_bg(...)`. For border, push the
   `ImageBorderSize` style var (or live without).
+- **`InputTextFlags_.word_wrap` makes `input_text_multiline` WORD-WRAP** (as of
+  1.92.801 — the old "multiline can't wrap, only horizontal-scrolls" limitation is
+  gone). A long line wraps with no horizontal overflow. Pair with
+  `ctrl_enter_for_new_line` so plain Enter still acts as submit (with
+  `enter_returns_true`) and Ctrl+Enter inserts a newline. Used by the copilot chat
+  input. A `read_only` + `word_wrap` multiline is also now a candidate for
+  selectable-AND-wrapping display text (untried — see the chat-prose deferral).
 - **imgui-bundle's `portable_file_dialogs` `pfd.open_file` /  `save_file` /
   `select_folder` are non-blocking class handles, not blocking functions.**
   Wrap with a `pfd_block(dialog)` helper that spins until `.ready(20)` so

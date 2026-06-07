@@ -153,6 +153,10 @@ class App:
         imgui.get_io().set_ini_filename(str(self._imgui_ini_path))
         # Steady caret, no blink.
         imgui.get_io().config_input_text_cursor_blink = False
+        # Key-repeat matched to the typical X11/GNOME desktop default (delay 500ms, ~33/s)
+        # rather than imgui's slower built-in (275ms / 20/s) — held-backspace feels native.
+        imgui.get_io().key_repeat_delay = 0.5
+        imgui.get_io().key_repeat_rate = 0.03
         # App-wide keyboard navigation. Confined per-region via no_nav_inputs in ui.py.
         imgui.get_io().config_flags |= imgui.ConfigFlags_.nav_enable_keyboard
         # Esc must NOT clear the nav highlight: by default Esc steps the nav cursor out one
@@ -385,6 +389,7 @@ class App:
             CommandId.FOCUS_TAB_RENDER: lambda: self.focus_node_tab(NodeTab.RENDER),
             CommandId.FOCUS_TAB_SHARE: lambda: self.focus_node_tab(NodeTab.SHARE),
             CommandId.TOGGLE_COPILOT: self.toggle_copilot,
+            CommandId.CYCLE_COPILOT_LAYOUT: self.cycle_copilot_layout,
         }
 
     def _build_copilot_capabilities(self) -> CopilotCapabilities:
@@ -560,6 +565,9 @@ class App:
         self.is_copilot_open = not self.is_copilot_open
         if self.is_copilot_open:
             self.focus_copilot()
+
+    def cycle_copilot_layout(self) -> None:
+        self.copilot_layout = self.copilot_layout.next()
 
     def focus_copilot(self) -> None:
         # Do NOT also set editor_defocus_requested: it drives a GLOBAL set_window_focus(None) a
