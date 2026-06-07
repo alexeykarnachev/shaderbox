@@ -237,6 +237,78 @@
       "recover": null,
       "gate_kind": "confirm",
       "result_widget": null
+    },
+    {
+      "role": "user",
+      "text": "asdfasdfasfasfasdfadsf",
+      "resolved": false,
+      "recover": null,
+      "gate_kind": "confirm",
+      "result_widget": null
+    },
+    {
+      "role": "assistant",
+      "text": "\"asdf\" received.  \n\nThe **Media Input** node (660b) is currently open -- clean compile, two samplers + a tint color.  \n\nWant to tweak something, read another node, create a new shader, or ...?",
+      "resolved": false,
+      "recover": null,
+      "gate_kind": "confirm",
+      "result_widget": null
+    },
+    {
+      "role": "user",
+      "text": "sadfsadfasdf",
+      "resolved": false,
+      "recover": null,
+      "gate_kind": "confirm",
+      "result_widget": null
+    },
+    {
+      "role": "assistant",
+      "text": "Got it -- just received the working-set dump for the current \"Media Input\" node (still clean).  \n\nAnything you actually want to do, or was that accidental spam? ?",
+      "resolved": false,
+      "recover": null,
+      "gate_kind": "confirm",
+      "result_widget": null
+    },
+    {
+      "role": "user",
+      "text": "asdfasdfdsafasdfdasfsafdasfsafasfsafafdsafsdafasdfasdfasfasfasdfasfsadfasdfasfasf",
+      "resolved": false,
+      "recover": null,
+      "gate_kind": "confirm",
+      "result_widget": null
+    },
+    {
+      "role": "assistant",
+      "text": "Ack -- just the working-set echo for \"Media Input\" (still clean).  \n\nAnything on your mind, or just a fat-finger?",
+      "resolved": false,
+      "recover": null,
+      "gate_kind": "confirm",
+      "result_widget": null
+    },
+    {
+      "role": "user",
+      "text": "asdfadsfdasf",
+      "resolved": false,
+      "recover": null,
+      "gate_kind": "confirm",
+      "result_widget": null
+    },
+    {
+      "role": "assistant",
+      "text": "Understood -- \"Media Input\" (660b) is active, compiles clean, and its uniforms are just a plain white tint (`u_color = 1,1,1`).\n\nAnything concrete you'd like me to do?",
+      "resolved": false,
+      "recover": null,
+      "gate_kind": "confirm",
+      "result_widget": null
+    },
+    {
+      "role": "user",
+      "text": "asdfas",
+      "resolved": false,
+      "recover": null,
+      "gate_kind": "confirm",
+      "result_widget": null
     }
   ],
   "history": [
@@ -295,11 +367,43 @@
     {
       "role": "assistant",
       "content": "The \"Media Input\" node is active and compiles cleanly (no errors).  \n\nLet me know if you want to edit it, switch shaders, or do something else!"
+    },
+    {
+      "role": "user",
+      "content": "asdfasdfasfasfasdfadsf"
+    },
+    {
+      "role": "assistant",
+      "content": "\"asdf\" received.  \n\nThe **Media Input** node (660b) is currently open -- clean compile, two samplers + a tint color.  \n\nWant to tweak something, read another node, create a new shader, or ...?"
+    },
+    {
+      "role": "user",
+      "content": "sadfsadfasdf"
+    },
+    {
+      "role": "assistant",
+      "content": "Got it -- just received the working-set dump for the current \"Media Input\" node (still clean).  \n\nAnything you actually want to do, or was that accidental spam? ?"
+    },
+    {
+      "role": "user",
+      "content": "asdfasdfdsafasdfdasfsafdasfsafasfsafafdsafsdafasdfasdfasfasfasdfasfsadfasdfasfasf"
+    },
+    {
+      "role": "assistant",
+      "content": "Ack -- just the working-set echo for \"Media Input\" (still clean).  \n\nAnything on your mind, or just a fat-finger?"
+    },
+    {
+      "role": "user",
+      "content": "asdfadsfdasf"
+    },
+    {
+      "role": "assistant",
+      "content": "Understood -- \"Media Input\" (660b) is active, compiles clean, and its uniforms are just a plain white tint (`u_color = 1,1,1`).\n\nAnything concrete you'd like me to do?"
     }
   ],
   "usage": {
-    "input_tokens": 202503,
-    "output_tokens": 4229,
-    "cost_usd": 0.23487245
+    "input_tokens": 241989,
+    "output_tokens": 4905,
+    "cost_usd": 0.26589435000000006
   }
 }

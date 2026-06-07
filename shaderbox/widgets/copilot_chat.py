@@ -79,8 +79,6 @@ def draw(app: App) -> None:
             return
 
         app.copilot_focused = imgui.is_window_focused(imgui.FocusedFlags_.child_windows)
-        # copilot_focus_pending is cleared at the input consume below, not here, so it survives
-        # the 1-2 frame window-focus settling.
         # Neutralize the editor's direct io.mouse_down read (code.py) while hovering OR
         # dragging the chat — a resize moves the cursor outside, which is_window_hovered
         # alone misses. No explicit editor defocus needed: focusing the chat makes it the
@@ -130,7 +128,7 @@ def _draw_transcript(app: App) -> None:
     imgui.end_child()
 
     in_flight = state.in_flight
-    # One-shot input focus — never every frame (that resets caret blink + nav outline; /imgui-ui §7.5).
+    # One-shot, never every frame (/imgui-ui §7.5).
     if app.copilot_focus_pending:
         imgui.set_keyboard_focus_here(0)
         app.copilot_focus_pending = False
@@ -140,12 +138,13 @@ def _draw_transcript(app: App) -> None:
         app.copilot_input,
         flags=imgui.InputTextFlags_.enter_returns_true,
     )
+    if submitted:
+        app.copilot_focus_pending = True
     if not in_flight:
         imgui.same_line()
         if (primary_button("Send") or submitted) and app.copilot_input.strip():
             app.copilot_send(app.copilot_input)
             app.copilot_input = ""
-            app.copilot_focus_pending = True  # post-send: caret returns to the input
     else:
         imgui.same_line()
         if ghost_button("Stop"):

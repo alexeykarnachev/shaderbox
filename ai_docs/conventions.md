@@ -21,14 +21,19 @@ belong in the feature spec (`ai_docs/features/NNN_*.md`). This file is not a cha
 
 - Full type annotations on all params and variables.
 - Imports at module top only — never inside function bodies.
-- **Comments state what's non-obvious about the code as it is NOW — never narrate development
-  history.** Banned: the bug-we-hit story, the why-we-changed-it backstory, the "see <doc> for the
-  full saga", paragraph-length rationale. If a line needs a comment, it's one terse line naming the
-  non-obvious fact (a GL invariant, an upstream-bug workaround, an ordering constraint) — and if the
-  rationale is already captured in its canonical home (`## Known quirks` / `todo.md`), the comment
-  shrinks to a ≤1-line pointer or disappears. The section-banner `# ----` separators are fine; the
-  multi-line "here's what happened during development" blocks are the target. (Enforced in review +
-  `/sanitize`.)
+- **Default to NO comment.** A comment restating what the code plainly says (`# re-focus the input`
+  over `focus_pending = True`, `# send the message` over `send(...)`) is noise — delete it. The bar:
+  would a competent reader be confused WITHOUT it? Only then does it earn a line. The bias to watch:
+  freshly-discussed code attracts a comment narrating the conversation we just had — that's exactly
+  the comment to NOT write. The rationale lives in the commit message and the spec, not the source.
+- **When a comment IS warranted, it states what's non-obvious about the code as it is NOW — never
+  narrates development history.** Banned: the bug-we-hit story, the why-we-changed-it backstory, the
+  "see <doc> for the full saga", paragraph-length rationale. One terse line naming the non-obvious
+  fact (a GL invariant, an upstream-bug workaround, an ordering constraint); if the rationale already
+  lives in its canonical home (`## Known quirks` / `todo.md` / a skill), the comment shrinks to a
+  ≤1-line pointer (`/imgui-ui §8`) or disappears. The section-banner `# ----` separators are fine;
+  the multi-line "here's what happened during development" blocks are the target. (Enforced in
+  review + `/sanitize`.)
 - **Stale counts rot faster than stale prose** — they look authoritative. When you change a number
   the code reflects (uniform-type count, line counts, "N tabs"), update every doc that quotes it in
   the same commit, or drop the count from the doc.

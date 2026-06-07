@@ -213,8 +213,7 @@ class App:
             # _init's reset_conversation rotates the trace.
             get_project_slug=lambda: getattr(self, "project_dir", Path("project")).name,
         )
-        # Copilot chat is a floating window (NOT a tab/region). copilot_focus_pending is the
-        # one-shot driving both the window and input focus; consumed at the input draw.
+        # copilot_focus_pending: one-shot driving window + input focus, consumed at the input draw.
         self.is_copilot_open: bool = False
         self.copilot_layout: CopilotLayout = CopilotLayout.CORNER
         self.copilot_focus_pending: bool = False
@@ -891,7 +890,7 @@ class App:
         self.active_node_tab = self.app_state.active_node_tab
         self.is_copilot_open = self.app_state.is_copilot_open
         if self.is_copilot_open:
-            self.focus_copilot()  # restored-open chat lands with the input ready to type
+            self.focus_copilot()
         self.copilot_layout = self.app_state.copilot_layout
         # Drive imgui's tab bar to the restored tab on the first frame — set_selected only
         # fires while this one-shot is set (else imgui defaults to the first tab).
