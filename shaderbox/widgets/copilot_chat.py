@@ -78,7 +78,10 @@ def draw(app: App) -> None:
         app.copilot_hovered = False
         return
 
-    if app.copilot_focus_pending:
+    # Hold focus on the chat while a turn runs: the editor steals focus when the copilot
+    # creates/switches the current node (TextEditor first-render grab, /imgui-ui §8), which
+    # would route a keystroke into the editor. Re-assert every frame, not just the one-shot.
+    if app.copilot_focus_pending or app.copilot.state.in_flight:
         imgui.set_next_window_focus()
 
     flags = _WINDOW_FLAGS | _apply_layout(app)

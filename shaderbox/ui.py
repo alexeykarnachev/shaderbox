@@ -284,12 +284,13 @@ def update_and_draw(app: App) -> None:
                     and not app.copilot_focused
                 ):
                     app.active_region = ActiveRegion.EDITOR
-                # Not while a modal is open: the outline is on the foreground draw list,
-                # so it would render OVER the popup.
+                # Foreground-draw-list outline (immune to window clip), so suppress it whenever
+                # something opaque floats over the editor: a modal, OR the copilot chat (which
+                # sits on top of the editor — a leaked outline would punch through it).
                 if (
                     app.active_region == ActiveRegion.EDITOR
                     and not app.any_popup_open()
-                    and not app.copilot_focused
+                    and not app.is_copilot_open
                 ):
                     active_region_outline()
                 code_tab.draw(app)
@@ -301,6 +302,10 @@ def update_and_draw(app: App) -> None:
         imgui.same_line(spacing=0.0)
 
         with imgui_ctx.begin_child("app_panel", size=imgui.ImVec2(0, split_region.y)):
+            # Freeze the panel (uniform sliders, tab controls, share) while a copilot turn
+            # runs — its inputs would race the values the worker reads. The editor has its own
+            # read-only lock; the chat (Stop) stays live in its own window.
+            imgui.begin_disabled(app.copilot_turn_active)
             try:
                 _draw_app_panel(app)
             except Exception as e:
@@ -308,6 +313,8 @@ def update_and_draw(app: App) -> None:
                 app.notifications.push(
                     f"Error in app panel: {e!s}", COLOR.STATE_ERROR[:3]
                 )
+            finally:
+                imgui.end_disabled()
 
         # ------------------------------------------------------------
         # Popups and notifications

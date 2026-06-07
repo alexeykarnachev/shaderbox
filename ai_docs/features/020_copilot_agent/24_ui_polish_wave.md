@@ -90,3 +90,27 @@ Keep entries faithful. A simple fix gets one or two lines of resolution, not a s
 - **Resolution:** `io.key_repeat_delay`/`key_repeat_rate` set to the maintainer's X11 values
   (500ms delay, ~33/s) at startup — imgui's own globals, app-wide. NOT a live OS read (no portable
   API); these are also the standard X11/GNOME defaults, so a sensible shipped default too.
+
+### F07 — focus jumps chat -> editor when the copilot manipulates a shader   [fixed]
+- **Where:** the chat, while the copilot creates/switches the current node mid-turn.
+- **Observed:** focus left the chat for the code editor; a keystroke meant for the chat then landed
+  in the editor (the ROOT CAUSE of the stray `a` that broke a shader compile earlier this session).
+- **Resolution:** `copilot_chat.draw()` re-asserts `set_next_window_focus()` EVERY frame while
+  `state.in_flight`, not just on the `copilot_focus_pending` one-shot — it out-races the TextEditor's
+  first-render focus grab (`/imgui-ui §8`) that fires when the new current-node editor session renders.
+
+### F08 — lock all user input while the copilot works   [fixed]
+- **Where:** the right app panel (uniform sliders, tab controls, share) during an in-flight turn.
+- **Observed:** the panel stayed interactive — its inputs could race the values the worker reads.
+- **Resolution:** the `app_panel` body is wrapped in `begin_disabled(copilot_turn_active)`
+  (try/finally-balanced so an exception can't leave the disabled stack unbalanced). The editor
+  already had its read-only lock; the chat input is disabled (F03); the chat's own Stop stays live
+  (separate window). Node/project mutations were already `_copilot_busy_blocked`.
+
+### F09 — editor active-region outline leaks through the chat window   [fixed]
+- **Where:** the editor's accent nav-outline vs the floating chat that sits over the editor.
+- **Observed:** the editor outline drew on top of the opaque chat window.
+- **Resolution:** the outline is on the FOREGROUND draw list (immune to window clip / z-order), so it
+  punched through the later-drawn chat. It is now suppressed while `is_copilot_open` (the chat floats
+  over the editor). Surfaced by F07's focus jump (which made the editor the active region under the
+  chat); the foreground-list strategy is the underlying cause.
