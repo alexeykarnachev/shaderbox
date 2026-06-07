@@ -626,6 +626,17 @@ class App:
         # cycling. Mouse-click changes have no pending flag, so the derive corrects them.
         return self.region_focus_pending or self.editor_focus_requested
 
+    def region_outline_visible(self, region: ActiveRegion) -> bool:
+        # The active-region nav cue shows only for the region that owns focus right now: the
+        # sticky active_region, BUT suppressed when a modal or the floating chat has focus
+        # instead (each draws its own cue — a stale region outline alongside it reads as two
+        # "active" windows). Regions call this; the focus-owner policy stays here.
+        return (
+            self.active_region == region
+            and not self.any_popup_open()
+            and not self.copilot_focused
+        )
+
     def _set_region(self, region: ActiveRegion) -> None:
         # Editor uses its own focus machinery (the TextEditor owns an inner window);
         # the other regions latch via set_next_window_focus in their draw fn.

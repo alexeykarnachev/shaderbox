@@ -111,11 +111,13 @@ Keep entries faithful. A simple fix gets one or two lines of resolution, not a s
 - **Where:** any region's accent nav-outline vs the floating chat. (Reported on the node grid in the
   bottom-right panel — the actual culprit was the GRID outline, not the editor.)
 - **Observed:** a region's outline drew on top of the opaque chat window.
-- **Resolution (root, no coupling):** `active_region_outline()` drew on the FOREGROUND draw list
-  (always-on-top, ignores window stacking) → it punched through the later-drawn chat. Fixed IN THE
-  PRIMITIVE: it now draws on the child's OWN window draw list (inset by the stroke width so the clip
-  can't cut it), so it z-orders naturally beneath any floating window. No region code references the
-  copilot for the outline — an earlier `is_copilot_open` gate at the three draw-sites was a layering
-  violation (grid/editor/panel must not know the copilot exists) and was reverted. NOTE (pre-existing,
-  not touched): the `active_region` ASSIGNMENT gates still carry `and not app.copilot_focused` — same
-  smell, separate concern; left for a focused decoupling pass.
+- **Resolution (two parts):** (1) `active_region_outline()` drew on the FOREGROUND draw list
+  (always-on-top), so it punched through the chat — fixed IN THE PRIMITIVE to draw on the child's OWN
+  window draw list (inset so the clip can't cut it), z-ordering beneath later windows. (2) That alone
+  left a SECOND bug: `active_region` is sticky (stays GRID when the chat takes focus), so the grid kept
+  drawing its outline ALONGSIDE the chat's — two "active" windows. Fixed by encapsulating the whole
+  outline policy in `App.region_outline_visible(region)` (active + no popup + chat-not-focused); the
+  three region draw-sites (editor/panel/grid) call it and reference the copilot for the outline NOWHERE.
+  The earlier `is_copilot_open`-spread-into-region-code was a layering violation, reverted. NOTE
+  (pre-existing, not touched): the `active_region` ASSIGNMENT gates still carry `not copilot_focused` —
+  same smell, separate concern; left for a focused decoupling pass.

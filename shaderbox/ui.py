@@ -284,10 +284,7 @@ def update_and_draw(app: App) -> None:
                     and not app.copilot_focused
                 ):
                     app.active_region = ActiveRegion.EDITOR
-                if (
-                    app.active_region == ActiveRegion.EDITOR
-                    and not app.any_popup_open()
-                ):
+                if app.region_outline_visible(ActiveRegion.EDITOR):
                     active_region_outline()
                 code_tab.draw(app)
 
@@ -566,7 +563,7 @@ def _draw_node_settings(app: App) -> None:
             and not app.copilot_focused
         ):
             app.active_region = ActiveRegion.PANEL
-        if app.active_region == ActiveRegion.PANEL and not app.any_popup_open():
+        if app.region_outline_visible(ActiveRegion.PANEL):
             active_region_outline()
         with imgui_ctx.begin_tab_bar("node_settings_tabs") as bar:
             if bar:
