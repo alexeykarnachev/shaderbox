@@ -118,6 +118,10 @@ Keep entries faithful. A simple fix gets one or two lines of resolution, not a s
   drawing its outline ALONGSIDE the chat's — two "active" windows. Fixed by encapsulating the whole
   outline policy in `App.region_outline_visible(region)` (active + no popup + chat-not-focused); the
   three region draw-sites (editor/panel/grid) call it and reference the copilot for the outline NOWHERE.
-  The earlier `is_copilot_open`-spread-into-region-code was a layering violation, reverted. NOTE
-  (pre-existing, not touched): the `active_region` ASSIGNMENT gates still carry `not copilot_focused` —
-  same smell, separate concern; left for a focused decoupling pass.
+  The earlier `is_copilot_open`-spread-into-region-code was a layering violation, reverted. (3) The
+  window-draw-list switch then clipped the CHAT's own outline under its title bar (the chat has one;
+  the borderless regions don't). Fixed with an `active_region_outline(foreground=True)` flag: regions
+  use the default (window list, z-orders under), the chat uses foreground (covers the title bar, and
+  being topmost it leaks over nothing but a gated modal). NOTE (pre-existing, not touched): the
+  `active_region` ASSIGNMENT gates still carry `not copilot_focused` — same smell, separate concern;
+  left for a focused decoupling pass.

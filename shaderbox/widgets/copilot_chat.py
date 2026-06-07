@@ -117,10 +117,10 @@ def draw(app: App) -> None:
             app.copilot_defocus_requested = False
             app.copilot_focused = False
 
-        # Focus outline. Skipped under a modal: it's on the foreground draw list (immune
-        # to window clip) so it would render over the popup.
+        # Focus outline on the foreground list so it covers the title bar (the content clip
+        # would cut it). Skipped under a modal — foreground would render over the popup.
         if app.copilot_focused and not app.any_popup_open():
-            active_region_outline()
+            active_region_outline(foreground=True)
 
         _draw_top_bar(app)
 

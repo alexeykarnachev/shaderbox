@@ -12,21 +12,31 @@ from shaderbox.theme import COLOR, OVERLAY_ALPHA, SIZE, SPACE, fade
 _REGION_OUTLINE_THICKNESS: float = 2.0
 
 
-def active_region_outline() -> None:
-    """Stroke the accent around the CURRENT child window (keyboard-nav active-region cue).
-    Call from INSIDE the region's `begin_child` — reads the child's own window rect
-    (`get_item_rect_*` after `end_child` can report a collapsed rect). Drawn on the child's
-    OWN window draw list, inset by the stroke width so the clip rect can't cut it — this way
-    it is z-ordered beneath any later-drawn floating window instead of punching through it
-    (a foreground-list outline ignores window stacking)."""
+def active_region_outline(foreground: bool = False) -> None:
+    """Stroke the accent around the CURRENT window (the active-region / focused cue).
+    Call from INSIDE the window — reads its own rect (`get_item_rect_*` after `end` can
+    report a collapsed rect).
+
+    Default (`foreground=False`): the child's OWN window draw list, which is clipped to the
+    content region — fine for the borderless region children (content == full rect), and it
+    z-orders beneath any later floating window so it can't punch through.
+
+    `foreground=True`: the foreground draw list, for a TOP-MOST window WITH a title bar (the
+    copilot chat) — the content clip would cut the title-bar row off the outline, and being
+    topmost it has nothing above it to leak over (a modal is gated by the caller)."""
     pos = imgui.get_window_pos()
     size = imgui.get_window_size()
     inset = _REGION_OUTLINE_THICKNESS
-    imgui.get_window_draw_list().add_rect(
+    style = imgui.get_style()
+    rounding = style.window_rounding if foreground else style.child_rounding
+    dl = (
+        imgui.get_foreground_draw_list() if foreground else imgui.get_window_draw_list()
+    )
+    dl.add_rect(
         (pos.x + inset, pos.y + inset),
         (pos.x + size.x - inset, pos.y + size.y - inset),
         imgui.color_convert_float4_to_u32(COLOR.ACCENT_PRIMARY),
-        rounding=imgui.get_style().child_rounding,
+        rounding=rounding,
         thickness=_REGION_OUTLINE_THICKNESS,
     )
 
