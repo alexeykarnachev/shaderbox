@@ -6,6 +6,7 @@
     "uniforms": {},
     "ui_state": {
         "ui_name": "Spiral Animation",
+        "description": "",
         "render_media_details": {
             "is_video": true,
             "file_details": {

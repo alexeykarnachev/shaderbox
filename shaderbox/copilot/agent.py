@@ -88,6 +88,9 @@ class TurnSummary:
 class AgentTurnDone:
     usage: LLMUsage
     summary: TurnSummary = field(default_factory=TurnSummary)
+    # input_tokens = the FIRST iteration's real context size (NOT the summed `usage`, which
+    # re-counts the growing context each iteration); output/cost stay the turn totals.
+    last_turn_usage: LLMUsage | None = None
 
 
 @dataclass(frozen=True)
@@ -383,6 +386,7 @@ def run_turn(
     ran = _RunLog()
     total_tool_calls = 0
     consecutive_failed_edits = 0  # self-correction cap (reset on any other outcome)
+    first_input_tokens: int | None = None  # iter-0 context size for the usage bar
     logger.info(f"copilot turn start | user={_trunc(user_text, 80)!r}")
     logger.debug(
         f"copilot turn detail | history_msgs={len(history)} "
@@ -425,6 +429,8 @@ def run_turn(
                     )
                 case LLMDone():
                     usage.add(ev.usage)
+                    if first_input_tokens is None:
+                        first_input_tokens = ev.usage.input_tokens
                     done = ev
 
         fr = done.finish_reason if done else "no-done-event"
@@ -507,10 +513,17 @@ def run_turn(
                 reply=text_buf,
                 usage=usage.value(),
             )
+            turn_total = usage.value()
+            last_turn_usage = LLMUsage(
+                input_tokens=first_input_tokens or 0,
+                output_tokens=turn_total.output_tokens,
+                cost_usd=turn_total.cost_usd,
+            )
             # text_buf is the agent's final reply, carrying its stated assumption.
             yield AgentTurnDone(
-                usage.value(),
+                turn_total,
                 summary=_build_turn_summary(text_buf, ran, registry),
+                last_turn_usage=last_turn_usage,
             )
             return
 

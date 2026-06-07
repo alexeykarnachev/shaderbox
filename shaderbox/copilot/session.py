@@ -176,6 +176,8 @@ class CopilotSession:
                     )
                 self.state.streaming_text = ""
                 self.state.usage.add(ev.usage)
+                if ev.last_turn_usage is not None:
+                    self.state.last_turn_usage = ev.last_turn_usage
                 self._finish_turn()
             case AgentCancelled():
                 self.state.streaming_text = ""

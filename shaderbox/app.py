@@ -216,6 +216,8 @@ class App:
         # copilot_focus_pending: one-shot driving window + input focus, consumed at the input draw.
         self.is_copilot_open: bool = False
         self.copilot_layout: CopilotLayout = CopilotLayout.CORNER
+        self.copilot_free_rect: tuple[float, float, float, float] | None = None
+        self.copilot_prev_layout: CopilotLayout = CopilotLayout.CORNER
         self.copilot_focus_pending: bool = False
         self.copilot_focused: bool = False
         self.copilot_defocus_requested: bool = False

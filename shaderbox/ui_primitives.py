@@ -442,17 +442,33 @@ def small_caption(font: imgui.ImFont, text: str) -> None:
     imgui.pop_font()
 
 
+def _glyph_button(
+    id_: str,
+    side: float,
+    base: tuple[float, float, float, float],
+    hovered: tuple[float, float, float, float],
+    active: tuple[float, float, float, float],
+) -> tuple[bool, imgui.ImVec2]:
+    """A square `side`x`side` button hosting a draw-list glyph (no label, so the caller
+    paints the icon over its rect). Returns (clicked, top-left screen origin). The one
+    sanctioned spot to push button colors for a glyph button — call sites don't hand-roll."""
+    origin = imgui.get_cursor_screen_pos()
+    imgui.push_style_color(imgui.Col_.button, base)
+    imgui.push_style_color(imgui.Col_.button_hovered, hovered)
+    imgui.push_style_color(imgui.Col_.button_active, active)
+    clicked: bool = imgui.button(f"##{id_}", size=(side, side))
+    imgui.pop_style_color(3)
+    return clicked, origin
+
+
 def close_cross_button(id_: str, side: float) -> bool:
     """A red square with a crisp drawn ✕ — overlay close/delete affordance.
 
     The glyph is two draw-list lines (no font dependency), so it's always centred.
     Returns True on click."""
-    origin = imgui.get_cursor_screen_pos()
-    imgui.push_style_color(imgui.Col_.button, COLOR.STATE_ERROR)
-    imgui.push_style_color(imgui.Col_.button_hovered, COLOR.STATE_ERROR)
-    imgui.push_style_color(imgui.Col_.button_active, COLOR.STATE_ERROR)
-    clicked: bool = imgui.button(f"##{id_}", size=(side, side))
-    imgui.pop_style_color(3)
+    clicked, origin = _glyph_button(
+        id_, side, COLOR.STATE_ERROR, COLOR.STATE_ERROR, COLOR.STATE_ERROR
+    )
     pad: float = side * 0.3
     col = imgui.color_convert_float4_to_u32(COLOR.FG_TITLE)
     dl = imgui.get_window_draw_list()
@@ -463,6 +479,73 @@ def close_cross_button(id_: str, side: float) -> bool:
     dl.add_line(a, b, col, 1.5)
     dl.add_line(c, d, col, 1.5)
     return clicked
+
+
+def layout_icon_button(id_: str, variant: int, side: float) -> bool:
+    """A square ghost button drawn as a box-in-frame glyph showing a panel layout.
+
+    `variant`: 0 = corner (small rect bottom-right), 1 = strip (wide rect along the
+    bottom), 2 = free (centred rect). The frame is the editor area; the filled sub-rect
+    is where the panel sits. No font/emoji dependency. Returns True on click."""
+    clicked, origin = _glyph_button(
+        id_, side, COLOR.TRANSPARENT, COLOR.BG_FRAME, COLOR.BORDER
+    )
+    pad: float = side * 0.25
+    fx0, fy0 = origin.x + pad, origin.y + pad
+    fx1, fy1 = origin.x + side - pad, origin.y + side - pad
+    fw, fh = fx1 - fx0, fy1 - fy0
+    dl = imgui.get_window_draw_list()
+    frame = imgui.color_convert_float4_to_u32(COLOR.BORDER)
+    fill = imgui.color_convert_float4_to_u32(COLOR.FG_SECONDARY)
+    dl.add_rect((fx0, fy0), (fx1, fy1), frame, thickness=1.0)
+    if variant == 1:  # bottom strip
+        sx0, sy0 = fx0, fy1 - fh * 0.32
+        sx1, sy1 = fx1, fy1
+    elif variant == 2:  # free / centred
+        sx0, sy0 = fx0 + fw * 0.28, fy0 + fh * 0.28
+        sx1, sy1 = fx1 - fw * 0.28, fy1 - fh * 0.28
+    else:  # corner (bottom-right)
+        sx0, sy0 = fx0 + fw * 0.45, fy0 + fh * 0.45
+        sx1, sy1 = fx1, fy1
+    dl.add_rect_filled((sx0, sy0), (sx1, sy1), fill)
+    return clicked
+
+
+def usage_bars(
+    id_: str,
+    fractions: tuple[float, float],
+    tooltip: str,
+    width: float,
+) -> None:
+    """Two thin stacked fill bars (top over bottom), each `fraction` pre-clamped to
+    [0, 1] by the caller, drawn vertically centred within one frame-height row. Owns the
+    hit rect + the shared hover tooltip. A prototype readout — geometry, colour, and the
+    tooltip all live here so richer visuals can replace it without touching the caller."""
+    top_frac, bottom_frac = fractions
+    bar_h: float = float(SIZE.USAGE_BAR_H)
+    gap: float = float(SPACE.XS)
+    stack_h: float = 2.0 * bar_h + gap
+    row_h: float = imgui.get_frame_height()
+    origin = imgui.get_cursor_screen_pos()
+    imgui.invisible_button(f"##{id_}", imgui.ImVec2(width, row_h))
+    if imgui.is_item_hovered():
+        imgui.set_tooltip(tooltip)
+    y0: float = origin.y + (row_h - stack_h) / 2.0
+    dl = imgui.get_window_draw_list()
+    track = imgui.color_convert_float4_to_u32(COLOR.BG_FRAME)
+    border = imgui.color_convert_float4_to_u32(COLOR.BORDER)
+    rows: list[tuple[float, tuple[float, float, float, float]]] = [
+        (top_frac, COLOR.ACCENT_PRIMARY),
+        (bottom_frac, COLOR.SELECT),
+    ]
+    for i, (frac, color) in enumerate(rows):
+        by0: float = y0 + i * (bar_h + gap)
+        by1: float = by0 + bar_h
+        dl.add_rect_filled((origin.x, by0), (origin.x + width, by1), track)
+        if frac > 0.0:
+            fill = imgui.color_convert_float4_to_u32(color)
+            dl.add_rect_filled((origin.x, by0), (origin.x + width * frac, by1), fill)
+        dl.add_rect((origin.x, by0), (origin.x + width, by1), border, thickness=1.0)
 
 
 def cell_delete_confirm(origin: imgui.ImVec2, avail: imgui.ImVec2) -> bool | None:

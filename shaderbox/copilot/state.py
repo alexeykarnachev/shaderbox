@@ -80,3 +80,6 @@ class ChatState:
     # turn end. Not persisted and not a durable Message.
     status: str = ""
     usage: SessionUsage = field(default_factory=SessionUsage)
+    # Last completed turn's usage (input = its first-iteration context size); drives the header
+    # usage bars. Transient (not persisted), reset with the conversation.
+    last_turn_usage: LLMUsage | None = None

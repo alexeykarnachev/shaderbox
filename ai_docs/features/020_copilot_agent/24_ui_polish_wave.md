@@ -51,3 +51,16 @@ Keep entries faithful. A simple fix gets one or two lines of resolution, not a s
   `set_nav_cursor_visible(False)` band-aid were both tried and rejected as wrong — durable imgui
   lessons folded into `/imgui-ui` §7.5 + §8. Clicking the chat *body* (not the input) leaves the
   input unfocused — intended (the one-shot must not fight other clicks).
+
+### F02 — header buttons blur together; no context indicator   [fixed]
+- **Where:** the floating copilot chat window — the top bar (`Layout: corner   Clear  Close`).
+- **Observed:** the three ghost buttons read as one undifferentiated strip — no separation, and the
+  destructive `Clear` looked identical to the benign `Layout`/`Close` (misclick risk). Then: the
+  `Layout: <name>` text took too much room (wanted a compact icon), and the freed space should hold a
+  context-fill indicator.
+- **Resolution (incremental):** `Clear` → `danger_button` (red) + the window-action cluster
+  (`Clear`/`Close`) right-aligned, `Layout` left as a control. Corner/strip presets enlarged; FREE
+  pos/size remembered across a preset round-trip (`copilot_free_rect`/`copilot_prev_layout`). The
+  compact icon + the context indicator grew into a specced feature (025) — the `Layout:` text became
+  a drawn box-in-frame icon, and two thin stacked usage bars show the previous turn's input/output
+  tokens vs budget. Spec + flow: `25_context_fill_indicator.md`.

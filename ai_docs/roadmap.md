@@ -29,10 +29,13 @@ feature; brief points at the superseder).
 
 - **NOW — copilot UI/UX polish wave (024), fix-as-we-go.** The maintainer drives the chat live and hands
   UI rough edges one at a time; simple ones are fixed inline (gated by `make check` + `make smoke` + a live
-  pass), larger ones filed. **F01 fixed:** the chat input now auto-focuses (open / startup-restore / after
-  send) via a one-shot `copilot_focus_pending` latch, and the nav outline on the programmatically-focused
-  input is killed by `WindowFlags_.no_nav_inputs` (durable imgui lessons → `/imgui-ui` §7.5 + §8). Findings
-  log: `ai_docs/features/020_copilot_agent/24_ui_polish_wave.md`. More findings expected next session.
+  pass), larger ones filed. **Landed:** F01 chat-input auto-focus (one-shot `copilot_focus_pending` latch +
+  `no_nav_inputs` kills the nav outline; `/imgui-ui` §7.5/§8); the header buttons re-tiered (`Clear`→danger,
+  right-aligned cluster); the corner/strip presets enlarged + FREE-layout pos/size remembered across a
+  preset round-trip. **Header feature (025) landed:** the `Layout:` text button → a drawn box-in-frame icon,
+  plus two thin stacked usage bars (prev turn's input/output tokens vs budget, real first-iteration input
+  count) — full feature flow (spec + 2 pre + 2 post review). Findings log:
+  `24_ui_polish_wave.md`; spec: `25_context_fill_indicator.md`. AWAITING the maintainer's live pass.
 - **Also landed today:** the light copilot decomposition pass — `text_render`→`sanitize`,
   `context`→`prompt_context` renames + bridge/gate sibling pointers (a 9-lens swarm + adversary concluded
   rename-only over a re-grouping; commit `e91eea8`). The topology re-group stays deferred (no firing pain).

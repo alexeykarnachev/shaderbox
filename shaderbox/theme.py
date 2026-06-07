@@ -245,10 +245,14 @@ class SIZE:
     CHEATSHEET_MARGIN: int = 12  # gap from the window's bottom-right corner
 
     # Copilot chat floating window: corner-preset box + bottom-strip height.
-    COPILOT_W: int = 420
-    COPILOT_H: int = 480
-    COPILOT_STRIP_H: int = 260
+    COPILOT_W: int = 504
+    COPILOT_H: int = 672
+    COPILOT_STRIP_H: int = 364
     COPILOT_MARGIN: int = 16
+
+    # Header usage bars (input over output): each bar's height + the stack's min width.
+    USAGE_BAR_H: int = 5
+    USAGE_BARS_W: int = 64
 
 
 class SPACE:
