@@ -162,18 +162,16 @@ def _draw_transcript(app: App) -> None:
     if app.copilot_focus_pending:
         imgui.set_keyboard_focus_here(0)
         app.copilot_focus_pending = False
-    # Reserve room for the trailing button (Send or Stop) in BOTH states: a full-width
-    # multiline box + same_line(button) would push content past the window edge and force
-    # the whole transcript to wrap at a too-wide extent.
-    input_w: float = _send_button_offset()
-    input_h: float = _input_height()
-    # Multiline + word_wrap so a long message wraps instead of scrolling off the right
-    # edge; ctrl_enter_for_new_line keeps Enter as send and Ctrl+Enter for a newline.
+
+    # ONE layout for both states — same input box + same trailing button slot. Only what
+    # changes by state changes: the input is frozen mid-turn, and the slot is Send (idle) vs
+    # Stop (working). The geometry is identical, so the row never shifts between modes.
+    btn_w: float = float(SIZE.BTN_SM_W)
     imgui.begin_disabled(in_flight)
     submitted, app.copilot_input = imgui.input_text_multiline(
         "##copilot_input",
         app.copilot_input,
-        imgui.ImVec2(input_w, input_h),
+        imgui.ImVec2(_send_button_offset(), _input_height()),
         flags=imgui.InputTextFlags_.enter_returns_true
         | imgui.InputTextFlags_.ctrl_enter_for_new_line
         | imgui.InputTextFlags_.word_wrap,
@@ -181,15 +179,15 @@ def _draw_transcript(app: App) -> None:
     imgui.end_disabled()
     if submitted:
         app.copilot_focus_pending = True
-    if not in_flight:
-        imgui.same_line()
-        if (primary_button("Send") or submitted) and app.copilot_input.strip():
-            app.copilot_send(app.copilot_input)
-            app.copilot_input = ""
-    else:
-        imgui.same_line()
-        if ghost_button("Stop"):
+    imgui.same_line()
+    if in_flight:
+        if ghost_button("Stop", width=btn_w):
             app.copilot.cancel_turn()
+    elif (
+        primary_button("Send", width=btn_w) or submitted
+    ) and app.copilot_input.strip():
+        app.copilot_send(app.copilot_input)
+        app.copilot_input = ""
 
 
 def _draw_message(app: App, msg: Message, idx: int) -> None:

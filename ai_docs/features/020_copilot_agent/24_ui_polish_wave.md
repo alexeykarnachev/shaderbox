@@ -147,5 +147,9 @@ Keep entries faithful. A simple fix gets one or two lines of resolution, not a s
   reserves its width as real content, so the trailing button pushed content past the window edge and
   forced the whole transcript to wrap at that too-wide extent. (The old single-line input tolerated
   `-1.0` — it just clipped its own text.)
-- **Resolution:** reserve the trailing-button width (`_send_button_offset()`) in BOTH states, not
-  just not-in-flight. Input + Send/Stop now fit within the window.
+- **Resolution:** the two states (idle vs in-flight) are now ONE layout — identical input box
+  (`_send_button_offset()` width, `_input_height()`) + an identical trailing button slot
+  (`BTN_SM_W`). The only state-dependent differences are the ones that should differ: the input is
+  `begin_disabled` mid-turn, and the button is Send (primary) idle / Stop (ghost) working — same slot,
+  same geometry, so the row can't shift between modes. (The earlier `-1.0`-vs-reserved width fork was
+  the divergence that broke the layout.)
