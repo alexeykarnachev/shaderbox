@@ -284,7 +284,11 @@ def update_and_draw(app: App) -> None:
                     and not app.copilot_focused
                 ):
                     app.active_region = ActiveRegion.EDITOR
-                if app.region_outline_visible(ActiveRegion.EDITOR):
+                # The editor is a focus-stop, not a sticky region: its outline tracks LIVE focus
+                # (incl. a pending chord-move into it, matching the unfocused-dim in code.py) so
+                # clicking the render canvas dims AND un-outlines it, not leaving a stale outline.
+                editor_lit = app.editor_focused or app.editor_focus_requested
+                if editor_lit and app.region_outline_visible(ActiveRegion.EDITOR):
                     active_region_outline()
                 code_tab.draw(app)
 

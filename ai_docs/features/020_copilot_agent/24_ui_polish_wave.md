@@ -125,3 +125,15 @@ Keep entries faithful. A simple fix gets one or two lines of resolution, not a s
   being topmost it leaks over nothing but a gated modal). NOTE (pre-existing, not touched): the
   `active_region` ASSIGNMENT gates still carry `not copilot_focused` — same smell, separate concern;
   left for a focused decoupling pass.
+
+### F10 — editor outline stays after clicking the render canvas (decoupled from the dim)   [fixed]
+- **Where:** the code editor's focus outline vs its unfocused-dim.
+- **Observed:** clicking the shader render canvas dims the editor (it lost focus) but leaves its
+  active-region outline drawn — two signals disagreeing.
+- **Cause:** the dim keys on LIVE focus (`editor_focused`); the outline keyed on the STICKY
+  `active_region`, which stays EDITOR because the render canvas (a plain `image`) isn't one of the
+  three nav regions, so nothing moves `active_region` off EDITOR.
+- **Resolution:** the editor is a focus-stop, not a sticky region — its outline now gates on
+  `editor_focused or editor_focus_requested` (the latch avoids a one-frame flicker on a chord-move
+  into the editor), matching the dim condition. Grid/panel keep the sticky `active_region` (they ARE
+  nav regions). Editor: focused = bright + outlined; unfocused = dim + no outline, together.
