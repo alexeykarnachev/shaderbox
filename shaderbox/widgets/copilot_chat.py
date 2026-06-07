@@ -23,10 +23,15 @@ from shaderbox.util import open_in_file_manager
 
 # Floating top-level window (NOT a tab/region), drawn after the main window so it floats on
 # top. no_nav_focus keeps it out of Ctrl+Tab (does NOT block click-to-focus); no_collapse
-# stops it collapsing into an unrecoverable title-bar strip.
+# stops it collapsing into an unrecoverable title-bar strip. no_nav_inputs stops the nav
+# outline on the programmatically-focused input (still typeable; /imgui-ui §8).
 # no_move is layout-conditional (added in _apply_layout): the fixed presets force pos+size
 # every frame so no_move just stops a drag fighting the snap; FREE must stay draggable.
-_WINDOW_FLAGS = imgui.WindowFlags_.no_nav_focus | imgui.WindowFlags_.no_collapse
+_WINDOW_FLAGS = (
+    imgui.WindowFlags_.no_nav_focus
+    | imgui.WindowFlags_.no_collapse
+    | imgui.WindowFlags_.no_nav_inputs
+)
 _NEXT_LAYOUT: dict[CopilotLayout, CopilotLayout] = {
     CopilotLayout.CORNER: CopilotLayout.BOTTOM_STRIP,
     CopilotLayout.BOTTOM_STRIP: CopilotLayout.FREE,
@@ -74,10 +79,8 @@ def draw(app: App) -> None:
             return
 
         app.copilot_focused = imgui.is_window_focused(imgui.FocusedFlags_.child_windows)
-        # Re-assert until it lands: a same-frame bar-button click races
-        # set_next_window_focus, so one attempt can lose (settles in 1-2 frames).
-        if app.copilot_focus_pending and app.copilot_focused:
-            app.copilot_focus_pending = False
+        # copilot_focus_pending is cleared at the input consume below, not here, so it survives
+        # the 1-2 frame window-focus settling.
         # Neutralize the editor's direct io.mouse_down read (code.py) while hovering OR
         # dragging the chat — a resize moves the cursor outside, which is_window_hovered
         # alone misses. No explicit editor defocus needed: focusing the chat makes it the
@@ -127,8 +130,10 @@ def _draw_transcript(app: App) -> None:
     imgui.end_child()
 
     in_flight = state.in_flight
+    # One-shot input focus — never every frame (that resets caret blink + nav outline; /imgui-ui §7.5).
     if app.copilot_focus_pending:
-        imgui.set_keyboard_focus_here()
+        imgui.set_keyboard_focus_here(0)
+        app.copilot_focus_pending = False
     imgui.set_next_item_width(-1.0 if in_flight else _send_button_offset())
     submitted, app.copilot_input = imgui.input_text(
         "##copilot_input",
@@ -140,7 +145,7 @@ def _draw_transcript(app: App) -> None:
         if (primary_button("Send") or submitted) and app.copilot_input.strip():
             app.copilot_send(app.copilot_input)
             app.copilot_input = ""
-            imgui.set_keyboard_focus_here(-1)
+            app.copilot_focus_pending = True  # post-send: caret returns to the input
     else:
         imgui.same_line()
         if ghost_button("Stop"):

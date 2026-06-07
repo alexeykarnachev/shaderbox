@@ -221,6 +221,22 @@
       "recover": null,
       "gate_kind": "confirm",
       "result_widget": null
+    },
+    {
+      "role": "user",
+      "text": "asdfsadf",
+      "resolved": false,
+      "recover": null,
+      "gate_kind": "confirm",
+      "result_widget": null
+    },
+    {
+      "role": "assistant",
+      "text": "The \"Media Input\" node is active and compiles cleanly (no errors).  \n\nLet me know if you want to edit it, switch shaders, or do something else!",
+      "resolved": false,
+      "recover": null,
+      "gate_kind": "confirm",
+      "result_widget": null
     }
   ],
   "history": [
@@ -271,11 +287,19 @@
     {
       "role": "assistant",
       "content": "The animated \"Hello World!\" shader is live and already compiles clean.  \nNo action needed -- the gentle rotation + travelling wobble you asked for is running now. Open the preview tab to admire it.\n(this turn: replace_lines: ok \u2014 compiled clean)"
+    },
+    {
+      "role": "user",
+      "content": "asdfsadf"
+    },
+    {
+      "role": "assistant",
+      "content": "The \"Media Input\" node is active and compiles cleanly (no errors).  \n\nLet me know if you want to edit it, switch shaders, or do something else!"
     }
   ],
   "usage": {
-    "input_tokens": 192777,
-    "output_tokens": 4077,
-    "cost_usd": 0.22246935
+    "input_tokens": 202503,
+    "output_tokens": 4229,
+    "cost_usd": 0.23487245
   }
 }

@@ -324,8 +324,13 @@ Inline inputs that replace a row when an action starts (Rename, New file):
   the input row — Esc is invisible, the explicit cancel is the affordance.
 - **Focus**: a one-shot `needs_focus` flag on a state object that the input's
   first draw consumes via `set_keyboard_focus_here(0)`. After that one frame,
-  imgui keeps the focus where it is. Don't call `set_keyboard_focus_here`
-  every frame — it fights other inputs.
+  imgui keeps the focus where it is. **Don't call `set_keyboard_focus_here`
+  every frame** — beyond fighting other inputs, re-grabbing each frame resets
+  the caret-blink timer (a fast-flickering cursor) and re-asserts the nav
+  cursor (the accent outline, see §8). The one-shot is not a style preference;
+  every-frame focus is a visible bug. For "always focused while the panel is
+  open," still use the one-shot (arm it on the open/show transition), NOT an
+  every-frame grab.
 - **Outer keyboard suppression**: when an inline input has focus, the modal's
   outer Enter (primary action) AND Esc (close) must be suppressed. Two ways:
   track `is_item_focused()` immediately after the input (the cleanest gate),
@@ -446,6 +451,29 @@ Library footguns specific to the imgui-bundle Python build (currently
   `SelectableFlags_.allow_overlap` + transparent `Col_.header*` (so the image/border
   carries the visual); overlay buttons drawn on top still win the click. (ShaderBox
   `ui_primitives.preview_cell`.)
+- **Programmatically focusing a text input (`set_keyboard_focus_here`) leaves an accent
+  nav-cursor RECTANGLE around it; a mouse click does not.** With `nav_enable_keyboard` on,
+  `set_keyboard_focus_here` routes focus *through the nav system* (there is no focus-without-nav
+  API), so it sets the nav-cursor on the item — `Col_.nav_cursor` (the 1.91+ rename of
+  `nav_highlight`) draws the outline. A mouse click hides the nav cursor
+  (`io.config_nav_cursor_visible_auto`), which is why click-focus shows no rect. **Two distinct
+  outlines, two fixes:**
+  - *Steady-state* outline (persists while the input holds focus) AND the *one-frame flash* when
+    a window APPEARS and imgui's NavInit auto-selects its first item: the clean fix for BOTH is
+    **`WindowFlags_.no_nav_inputs` on the window** — the input is no longer a nav target, so no
+    nav cursor is ever drawn on it, while `set_keyboard_focus_here` still focuses it and text
+    entry still works (`no_nav_inputs` blocks directional nav, NOT typing). Correct whenever a
+    floating panel has a text input you focus programmatically and don't need arrow-nav inside.
+  - **`set_nav_cursor_visible(False)` is the WRONG fix** — it's an every-frame global-state
+    band-aid that does NOT suppress the NavInit appearing-highlight (that highlight draws "even
+    when NavCursorVisible == False", per the internal flag) and is redundant once `no_nav_inputs`
+    is set. Reach for `no_nav_inputs`, not cursor-visibility toggling.
+  - **Debugging note:** `nav_visible` reads False on the flash frame — proof it's the NavId/NavInit
+    highlight, not the cursor. When chasing a mystery accent outline, instrument first
+    (`is_item_focused` / `is_item_active` / `style.frame_border_size` / `nav_visible` /
+    `is_window_appearing`) — `frame_border_size==0` rules out a frame border; an outline that
+    survives typing rules out the plain nav cursor; `is_window_appearing` on the flash frame
+    fingers NavInit. (ShaderBox `widgets/copilot_chat.py`.)
 
 ---
 

@@ -25,23 +25,19 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-**As of 2026-06-06 (023 app.py refinement wave landed + reviewed; copilot stack still unshipped).**
+**As of 2026-06-07 (copilot UI/UX polish wave 024 in flight — driven by a live maintainer walkthrough).**
 
-- **023 app.py refinement wave — DONE + reviewed (3-agent post-impl swarm, PASS).** `app.py` had grown to
-  ~2700 lines, ~41% of it the copilot capability backend. Three green-gated commits: **C2** extracted the 49
-  `_copilot_*` methods into `copilot/backend.py` (`CopilotBackend` — the `ShaderLibFileManager` idiom:
-  explicit deps + injected getters/callbacks, never imports `App`; `App._build_copilot_capabilities`
-  constructs it + binds its methods); `app.py` dropped ~1250 lines. **C3** collapsed the four modal popup
-  booleans into a `PopupState` enum (the mutex is now structural). **C4** fixed a latent Esc bug the enum
-  surfaced (Esc consumed the keypress but left the emoji + lib pickers open — now closes all modals). The
-  working-set/batch state stays App-owned (forced by init order — caps built before the state initializers),
-  reached via accessors. Two design-audit swarms + a pre-impl + a post-impl review preceded/closed it.
-  Spec: `ai_docs/features/023_app_refinement_wave.md`.
-- **NEXT — ship (the maintainer chose to refactor first; 023 is now done).** `master` stays at `v0.12.1`;
-  the full copilot stack (020 sub-waves 12→29 + 021 logging + 022 persistence + 023 refinement) sits
-  ship-shaped on `dev`, unshipped. 020·29 closed the last known brick; the guard-earns-its-place stopping
-  rule says no further trace-patch round is warranted. Several copilot sub-waves still await a maintainer
-  live pass; then ship. Awaiting the maintainer's explicit go.
+- **NOW — copilot UI/UX polish wave (024), fix-as-we-go.** The maintainer drives the chat live and hands
+  UI rough edges one at a time; simple ones are fixed inline (gated by `make check` + `make smoke` + a live
+  pass), larger ones filed. **F01 fixed:** the chat input now auto-focuses (open / startup-restore / after
+  send) via a one-shot `copilot_focus_pending` latch, and the nav outline on the programmatically-focused
+  input is killed by `WindowFlags_.no_nav_inputs` (durable imgui lessons → `/imgui-ui` §7.5 + §8). Findings
+  log: `ai_docs/features/020_copilot_agent/24_ui_polish_wave.md`. More findings expected next session.
+- **Also landed today:** the light copilot decomposition pass — `text_render`→`sanitize`,
+  `context`→`prompt_context` renames + bridge/gate sibling pointers (a 9-lens swarm + adversary concluded
+  rename-only over a re-grouping; commit `e91eea8`). The topology re-group stays deferred (no firing pain).
+- **THEN — ship.** `master` stays at `v0.12.1`; the full copilot stack (020 + 021 + 022 + 023) sits
+  ship-shaped on `dev`, unshipped, pending the polish wave + a maintainer live pass. Awaiting explicit go.
 - **Deferred (each gates a FUTURE round only on a NEW failure class in a DIFFERENT session):** the lazy
   tool-catalogue (its ~16-tool threshold FIRED), the structural shader view (020·27), reasoning-notes /
   intent-carryover guard (DE-RISKED by 029), a broken-compile circuit-breaker, machine-readable render
