@@ -138,14 +138,29 @@ def draw(app: App) -> None:
 
 _MIN_INPUT_H: float = 40.0
 _MIN_FEED_H: float = 60.0
-_SPLITTER_H: float = 6.0
+# Core divider thickness; the actual hit-band also absorbs the item-spacing on each side (see
+# _draw_input_splitter) so the whole feed->input gap is one hit-rect — no dead zone to flicker
+# the resize cursor — with the grab line centred in it.
+_SPLITTER_CORE_H: float = 4.0
+
+
+def _splitter_band_h() -> float:
+    # The full feed->input gap the splitter owns: core + the item-spacing above AND below it.
+    return _SPLITTER_CORE_H + 2.0 * imgui.get_style().item_spacing.y
 
 
 def _draw_input_splitter(app: App, avail_y: float) -> None:
     # The feed/input divider: drag to trade height between the feed (above) and the input
     # (below). The input keeps its set height on window resize; the FEED flexes. Mirrors the
-    # editor splitter idiom in ui.py (imgui has no built-in sibling-splitter widget).
-    imgui.invisible_button("##copilot_input_splitter", imgui.ImVec2(-1.0, _SPLITTER_H))
+    # editor splitter idiom in ui.py (imgui has no built-in sibling-splitter widget). The button
+    # is pulled UP over the spacing after the feed and spans the whole gap (core + both spacings),
+    # so the hit-rect runs feed-edge to input-edge (no dead zone) and the line is the true centre.
+    spacing_y = imgui.get_style().item_spacing.y
+    pos = imgui.get_cursor_pos()
+    imgui.set_cursor_pos((pos.x, pos.y - spacing_y))
+    imgui.invisible_button(
+        "##copilot_input_splitter", imgui.ImVec2(-1.0, _splitter_band_h())
+    )
     if imgui.is_item_hovered() or imgui.is_item_active():
         glfw.set_cursor(app.window, app.resize_ns_cursor)
     if imgui.is_item_active():
@@ -173,7 +188,7 @@ def _draw_transcript(app: App) -> None:
     input_h = max(
         _MIN_INPUT_H, min(app.app_state.copilot_input_h, avail_y - _MIN_FEED_H)
     )
-    feed_h = avail_y - input_h - _SPLITTER_H
+    feed_h = avail_y - input_h - _splitter_band_h()
     if imgui.begin_child("##copilot_history", size=(0.0, feed_h)):
         # Stick-to-bottom: read the scroll position BEFORE this frame's content is laid out (it
         # reflects last frame's layout). If the view was at the bottom, re-pin after drawing; if
