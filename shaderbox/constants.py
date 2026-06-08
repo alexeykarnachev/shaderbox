@@ -13,10 +13,6 @@ DEFAULT_IMAGE_FILE_PATH = RESOURCES_DIR / "textures" / "default.jpeg"
 
 # Canvas and texture sizes
 DEFAULT_CANVAS_SIZE = (64, 64)
-FONT_ATLAS_SIZE = (1024, 1024)
-
-# Font rendering
-FONT_ATLAS_PADDING = 2
 
 # Video encoding settings
 MP4_CRF_VALUES = [33, 28, 23, 18]  # Quality levels: 0=lowest, 3=highest
@@ -63,8 +59,3 @@ FULLSCREEN_QUAD_VERTICES = [
     -1.0,
     1.0,
 ]
-
-# ASCII character ranges for font rendering
-PRINTABLE_ASCII_START = 33
-PRINTABLE_ASCII_END = 127
-SPACE_CHAR_CODE = 32

@@ -7,7 +7,6 @@ from loguru import logger
 from shaderbox.theme import COLOR, SPACE
 
 _DEFAULT_COLOR: tuple[float, float, float] = COLOR.STATE_OK[:3]
-_ERROR_COLOR: tuple[float, float, float] = COLOR.STATE_ERROR[:3]
 
 
 @dataclass
@@ -27,10 +26,7 @@ class Notifications:
         color: tuple[float, float, float] = _DEFAULT_COLOR,
         ttl: float = 5.0,
     ) -> None:
-        if color == _ERROR_COLOR:
-            logger.debug(f"[notification] {text}")
-        else:
-            logger.debug(f"[notification] {text}")
+        logger.debug(f"[notification] {text}")
         self._stack.appendleft(_Notification(text, color, ttl))
 
     def update_and_draw(self) -> None:
