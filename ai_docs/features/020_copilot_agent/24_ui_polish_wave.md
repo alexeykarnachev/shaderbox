@@ -179,11 +179,14 @@ Keep entries faithful. A simple fix gets one or two lines of resolution, not a s
 - **Resolution:** (a) `gauge_w` reserves `SPACE.LG` before the cluster. (b) the input is
   `begin_disabled` for the whole turn so the on-send focus latch was lost mid-turn; re-arm
   `copilot_focus_pending` on the turn-done transition (`ui.py`) so it re-focuses once editable.
-  (c-e) user/assistant messages now render as rounded BUBBLES (`ui_primitives.message_bubble` —
-  bordered auto-height child; user = faint accent tint + "you" in accent, assistant = surface bg +
-  "copilot" in blue `STATE_INFO`) with a drawn corner copy glyph (`copy_icon_button`, top-right,
-  allow_overlap) replacing the text button; tool/error/pending lines use a `dummy` gap, not a rule.
-  `BUBBLE_ROUNDING` token. Headless-verified no SetCursorPos assert across all message kinds.
+  (c-e) user/assistant messages now render as rounded BUBBLES (`ui_primitives.message_bubble`;
+  user = faint accent tint + "you" in accent, assistant = surface bg + "copilot" in blue
+  `STATE_INFO`) with a drawn corner copy glyph (`copy_icon_button`, top-right, allow_overlap)
+  replacing the text button; tool/error/pending lines use a `dummy` gap, not a rule. `BUBBLE_ROUNDING`
+  token. (The bubble bg is a draw-list rounded rect drawn BEHIND normal-flow content via a 2-channel
+  split — NOT a nested child window. First built as an `auto_resize_y` child, but that lags the
+  feed's content height by a frame, which broke same-frame scroll-to-bottom (F17); the draw-list
+  version keeps the bubble in normal flow.) Headless-verified, no SetCursorPos assert.
 
 ### F15 — edit_shader comment-loss guard false-positive (trace-surfaced)   [fixed]
 - **Where:** `edit_shader` / the comment-loss guard (`backend.apply_shader_edit` +
@@ -219,9 +222,11 @@ Keep entries faithful. A simple fix gets one or two lines of resolution, not a s
 - **Where:** the chat feed on launch / project load.
 - **Observed:** a restored conversation opened scrolled to the top — had to scroll down each time.
   (The feed only auto-scrolled DURING an in-flight turn.)
-- **Resolution:** `App.copilot_scroll_frames` countdown (4 frames) — armed at init + after
-  `load_conversation`, decremented at the feed draw while it `set_scroll_y(get_scroll_max_y())`. A
-  one-shot DID NOT work: the message bubbles are `auto_resize_y` children, so on frame 0 the content
-  height (scroll-max) is still 0 — a single set scrolled to a stale zero. The multi-frame countdown
-  rides out the bubble-height settle and lands at the real bottom; self-terminates (a short chat
-  no-ops). Live-pass still needed (headless scroll geometry is unreliable, `/imgui-ui §0`).
+- **Resolution:** `App.copilot_scroll_pending` one-shot — armed at init + after `load_conversation`,
+  consumed at the feed draw (`set_scroll_here_y(1.0)`). A frame-countdown hack was briefly needed
+  because the bubbles were `auto_resize_y` CHILD windows (their height — and the feed's scroll-max —
+  lags a frame, so a one-shot scrolled to a stale zero). ROOT-FIXED by F16's bubble rewrite: the
+  bubble bg is now a draw-list rect behind normal-flow content (no nested child), so the feed's
+  content height is known the SAME frame and the one-shot lands at the real bottom. The countdown
+  + `_SCROLL_SETTLE_FRAMES` were deleted. Live-pass still confirms (headless scroll geometry is
+  unreliable, `/imgui-ui §0`).

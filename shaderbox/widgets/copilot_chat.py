@@ -184,15 +184,11 @@ def _draw_transcript(app: App) -> None:
             caption_text(
                 sanitize_display(state.status) if state.status else "thinking..."
             )
-        if state.in_flight:
+        if state.in_flight or app.copilot_scroll_pending:
+            # The bubbles are normal-flow now (draw-list bg, not auto_resize_y children), so the
+            # feed's content height is known THIS frame -> a single set lands at the real bottom.
             imgui.set_scroll_here_y(1.0)
-        elif app.copilot_scroll_frames > 0:
-            # Pin to the bottom for a few frames after a load: the message bubbles are
-            # auto_resize_y children, so the content height (and thus scroll-max) isn't settled
-            # on the first frame — a one-frame set would scroll to a stale zero-max. The countdown
-            # rides out the settle and self-terminates (a short chat just no-ops).
-            imgui.set_scroll_y(imgui.get_scroll_max_y())
-            app.copilot_scroll_frames -= 1
+            app.copilot_scroll_pending = False
     imgui.end_child()
 
     _draw_input_splitter(app, avail_y)
@@ -266,13 +262,12 @@ def _draw_bubble(
     # top-right (imgui prose isn't selectable, so copy is the affordance). The bubble gap, not
     # a separator, divides messages.
     side: float = float(SIZE.ROW_HEIGHT)
-    with message_bubble(f"##bubble_{idx}", bg) as origin:
+    with message_bubble(f"##bubble_{idx}", bg) as (origin, inner_w):
         imgui.text_colored(name_color, name)
         imgui.text_wrapped(text)
         # Copy glyph at the bubble's top-right inner corner; allow_overlap so it wins the click.
-        avail_w = imgui.get_content_region_avail().x + float(SPACE.MD)
         imgui.set_next_item_allow_overlap()
-        imgui.set_cursor_screen_pos((origin.x + avail_w - side, origin.y))
+        imgui.set_cursor_screen_pos((origin.x + inner_w - side, origin.y))
         if copy_icon_button(f"copy_{idx}", side):
             with contextlib.suppress(pyperclip.PyperclipException):
                 pyperclip.copy(text)

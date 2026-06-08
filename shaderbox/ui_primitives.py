@@ -225,25 +225,44 @@ def preview_box(
 @contextmanager
 def message_bubble(
     id_: str, bg: tuple[float, float, float, float]
-) -> Iterator[imgui.ImVec2]:
+) -> Iterator[tuple[imgui.ImVec2, float]]:
     """A full-width, auto-height rounded bubble (`bg` fill + border) for one chat message.
-    Yields the content origin (screen pos) so the caller can pin a corner affordance. The
-    caller draws the header + wrapped text inside; bubbles separate by their gap, not a rule."""
-    imgui.push_style_color(imgui.Col_.child_bg, bg)
-    imgui.push_style_var(imgui.StyleVar_.child_rounding, float(SIZE.BUBBLE_ROUNDING))
-    imgui.push_style_var(
-        imgui.StyleVar_.window_padding, imgui.ImVec2(SPACE.MD, SPACE.SM)
+    Yields (content_origin_screen_pos, inner_content_width) so the caller can pin a corner
+    affordance at the bubble's right edge. The caller draws the header + wrapped text inside;
+    bubbles separate by their gap, not a rule.
+
+    NOT a child window — the bg is a draw-list rect drawn BEHIND the content via a 2-channel
+    split (content on the top channel, bg on the bottom, sized to the measured group, merged).
+    This keeps the bubble in the parent's normal flow, so the feed's content height is known
+    the same frame (a nested auto_resize_y child reports its height a frame late — which broke
+    same-frame scroll-to-bottom)."""
+    pad_x, pad_y = float(SPACE.MD), float(SPACE.SM)
+    avail_w = imgui.get_content_region_avail().x
+    dl = imgui.get_window_draw_list()
+    dl.channels_split(2)
+    dl.channels_set_current(1)  # content channel (drawn on top)
+    imgui.begin_group()
+    imgui.dummy(imgui.ImVec2(avail_w, 0.0))  # force the group to full width
+    origin = imgui.get_cursor_screen_pos()
+    imgui.indent(pad_x)
+    inner_w = avail_w - 2.0 * pad_x
+    imgui.push_text_wrap_pos(origin.x + inner_w)
+    imgui.dummy(imgui.ImVec2(0.0, pad_y))  # top padding
+    yield origin, inner_w
+    imgui.dummy(imgui.ImVec2(0.0, pad_y))  # bottom padding
+    imgui.pop_text_wrap_pos()
+    imgui.unindent(pad_x)
+    imgui.end_group()
+    rmin, rmax = imgui.get_item_rect_min(), imgui.get_item_rect_max()
+    dl.channels_set_current(0)  # bg channel (drawn behind)
+    rounding = float(SIZE.BUBBLE_ROUNDING)
+    dl.add_rect_filled(
+        rmin, rmax, imgui.color_convert_float4_to_u32(bg), rounding=rounding
     )
-    with imgui_ctx.begin_child(
-        id_,
-        size=imgui.ImVec2(0.0, 0.0),
-        child_flags=imgui.ChildFlags_.borders | imgui.ChildFlags_.auto_resize_y,
-        window_flags=imgui.WindowFlags_.no_scrollbar,
-    ):
-        origin = imgui.get_cursor_screen_pos()
-        yield origin
-    imgui.pop_style_var(2)
-    imgui.pop_style_color(1)
+    dl.add_rect(
+        rmin, rmax, imgui.color_convert_float4_to_u32(COLOR.BORDER), rounding=rounding
+    )
+    dl.channels_merge()
 
 
 @contextmanager

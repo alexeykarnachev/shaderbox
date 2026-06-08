@@ -118,6 +118,16 @@ durable fix:
 - **A crisp ✕ / icon:** don't rely on a font glyph centered by button text-align (single chars sit
   off-center). Draw it with the draw list — two `add_line` calls for an ✕ — perfectly centered, no
   font dependency.
+- **A bordered/filled "card" behind content does NOT need a child window — and a child window costs
+  you a frame of layout lag.** A `begin_child(auto_resize_y)` reports its height to the PARENT one
+  frame late, so the parent's content height / `scroll_max_y` is stale on the frame the child first
+  draws (this silently breaks same-frame `set_scroll_here_y(1.0)` → "scroll to bottom" lands at a
+  stale zero, tempting a frame-countdown hack). Instead keep the content in NORMAL FLOW and draw the
+  card background BEHIND it with a 2-channel draw-list split: `dl.channels_split(2)` →
+  `channels_set_current(1)` + `begin_group()`, draw the padded content, `end_group()`, read
+  `get_item_rect_min/max` (known THIS frame) → `channels_set_current(0)`, `add_rect_filled`/`add_rect`
+  at those bounds → `channels_merge()`. The bg appears behind, the parent's layout is correct same-
+  frame, and you've removed N nested windows. (ShaderBox `ui_primitives.message_bubble`.)
 - **`is_mouse_hovering_rect` ignores window ordering and popup-blocking** (its own doc says so) — so a
   region's hover gate built on it stays "hovered" even when a menu dropdown / popup is open *on top* of
   it. Symptom: a custom cursor (or hover highlight) keyed to that rect fires through an open menu. Fix:
