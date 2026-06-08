@@ -23,6 +23,7 @@ from shaderbox.commands import (
     chord_to_str,
 )
 from shaderbox.constants import RESOURCES_DIR
+from shaderbox.copilot.address import strip_lib_prefix
 from shaderbox.copilot.backend import CopilotBackend
 from shaderbox.copilot.capabilities import CopilotCapabilities
 from shaderbox.copilot.checkpoint import RevertResult
@@ -1435,7 +1436,7 @@ class App:
     def _revert_lib_file(self, ws_address: str, pre_edit_source: str) -> bool:
         # Rewrite a lib file to its pre-turn bytes AND invalidate consumer nodes (a byte-only
         # rewrite leaves them compiled against the reverted-away source — feature 020·30 decision 2).
-        rel = ws_address[len("lib:") :] if ws_address.startswith("lib:") else ws_address
+        rel = strip_lib_prefix(ws_address)
         path = self.shader_lib_files.resolve_copilot_path(rel)
         if path is None or not self.shader_lib_files.write_copilot_lib_file(
             path, pre_edit_source
@@ -1448,7 +1449,7 @@ class App:
         # Reverse a lib FILE the turn created: invalidate consumers (while the path still
         # resolves) then delete it to trash. A byte-rewrite to empty would leave a dead file
         # that breaks every node calling its function (feature 020·30).
-        rel = ws_address[len("lib:") :] if ws_address.startswith("lib:") else ws_address
+        rel = strip_lib_prefix(ws_address)
         path = self.shader_lib_files.resolve_copilot_path(rel)
         if path is None or not path.exists():
             return False

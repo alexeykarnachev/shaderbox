@@ -22,6 +22,7 @@ from pathlib import Path
 
 from loguru import logger
 
+from shaderbox.copilot.address import strip_lib_prefix
 from shaderbox.ui_models import UINode
 
 # A node snapshot subdir name is the node id; a lib snapshot is stored by a sanitized address.
@@ -35,7 +36,7 @@ def _lib_snapshot_name(ws_address: str) -> str:
     # "lib:math/transform.glsl" -> a flat, collision-free name under the turn's _lib subdir. The
     # address hash disambiguates distinct addresses that sanitize to the same readable stem
     # (e.g. "a/b.glsl" vs "a_b.glsl").
-    rel = ws_address[len("lib:") :] if ws_address.startswith("lib:") else ws_address
+    rel = strip_lib_prefix(ws_address)
     stem = "".join(c if c.isalnum() or c in "-_." else "_" for c in rel)
     digest = hashlib.sha1(ws_address.encode("utf-8")).hexdigest()[:8]
     return f"{stem}.{digest}"

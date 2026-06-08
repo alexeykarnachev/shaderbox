@@ -20,6 +20,7 @@ import moderngl
 from loguru import logger
 from OpenGL.GL import GL_SAMPLER_2D, GL_UNSIGNED_INT
 
+from shaderbox.copilot.address import is_lib_address, lib_address, strip_lib_prefix
 from shaderbox.copilot.bridge import CopilotBridge
 from shaderbox.copilot.capabilities import (
     CompileErrorInfo,
@@ -419,7 +420,7 @@ class CopilotBackend:
                     name=fn.name,
                     signature=fn.signature,
                     doc=fn.doc,
-                    lib_address=f"lib:{rel.as_posix()}",
+                    lib_address=lib_address(rel),
                 )
             )
         return entries
@@ -483,7 +484,7 @@ class CopilotBackend:
                     ordered.append(address)
             views: list[WorkingSetView] = []
             for address in ordered:
-                if address.startswith("lib:"):
+                if is_lib_address(address):
                     view = self._copilot_lib_working_view(address)
                 else:
                     view = self._copilot_node_working_view(address, short, current)
@@ -514,7 +515,9 @@ class CopilotBackend:
 
     def _copilot_lib_working_view(self, address: str) -> WorkingSetView | None:
         # A lib file's whole-file listing (read_lib is function-keyed, so a lib has no other view).
-        path = self._get_shader_lib_files().resolve_copilot_path(address[len("lib:") :])
+        path = self._get_shader_lib_files().resolve_copilot_path(
+            strip_lib_prefix(address)
+        )
         if path is None or not path.exists():
             return None
         try:
@@ -566,7 +569,7 @@ class CopilotBackend:
                 rel = path.relative_to(root)
             except ValueError:
                 rel = path
-            address = f"lib:{rel.as_posix()}"
+            address = lib_address(rel)
             for i, line in enumerate(source.text.split("\n"), start=1):
                 if query in line:
                     hits.append(
@@ -592,7 +595,7 @@ class CopilotBackend:
                 LibFunctionBody(
                     name=fn.name,
                     signature=fn.signature,
-                    lib_address=f"lib:{rel.as_posix()}",
+                    lib_address=lib_address(rel),
                     body=fn.body,
                 )
             )
@@ -1148,7 +1151,7 @@ class CopilotBackend:
     ) -> "_CopilotEditTarget | EditResult":
         # Resolve an edit target to source + identity, or an EditResult REJECT. "lib:"-prefixed -> lib
         # file; empty -> current node; else a node-id (unknown is a hard error, never a lib fallback).
-        if target.startswith("lib:"):
+        if is_lib_address(target):
             return self._copilot_resolve_lib_target(target, allow_create=allow_create)
         if target.startswith("template:"):
             # Templates are read-only; an explicit guard with an actionable message (not silent non-resolution).
@@ -1193,7 +1196,7 @@ class CopilotBackend:
     ) -> "_CopilotEditTarget | EditResult":
         # Resolve "lib:<rel-path>" to file + source (reuses the path-traversal guard). A missing path
         # errors unless allow_create (insert_after auto-creates).
-        rel = target[len("lib:") :]
+        rel = strip_lib_prefix(target)
         path = self._get_shader_lib_files().resolve_copilot_path(rel)
         if path is None:
             return EditResult(
