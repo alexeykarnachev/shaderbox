@@ -39,6 +39,13 @@ class LLMUsage:
     output_tokens: int = 0
     cost_usd: float = 0.0  # OpenRouter returns the charged cost on usage.cost
 
+    def __add__(self, other: "LLMUsage") -> "LLMUsage":
+        return LLMUsage(
+            input_tokens=self.input_tokens + other.input_tokens,
+            output_tokens=self.output_tokens + other.output_tokens,
+            cost_usd=self.cost_usd + other.cost_usd,
+        )
+
 
 # ---- stream events (the union the agent loop consumes) ----
 

@@ -645,6 +645,13 @@ class App:
             and not self.copilot_focused
         )
 
+    def _yield_editor_to_region(self) -> None:
+        # Defocus the editor (its TextEditor auto-grabs on first render) + re-latch the
+        # currently-active non-editor region. The pair used both when leaving the editor via a
+        # chord and when a node switch re-renders the editor under a grid that owns focus.
+        self.editor_defocus_requested = True
+        self.region_focus_pending = True
+
     def _set_region(self, region: ActiveRegion) -> None:
         # Editor uses its own focus machinery (the TextEditor owns an inner window);
         # the other regions latch via set_next_window_focus in their draw fn.
@@ -654,10 +661,10 @@ class App:
         self.active_region = region
         if region == ActiveRegion.EDITOR:
             self.editor_focus_requested = True
+        elif leaving_editor:
+            self._yield_editor_to_region()
         else:
             self.region_focus_pending = True
-            if leaving_editor:
-                self.editor_defocus_requested = True
 
     def select_node(self, node_id: str) -> None:
         # If the grid owns keyboard focus, keep it there: the new node's editor auto-grabs
@@ -666,8 +673,7 @@ class App:
             return
         self.set_current_node_id(node_id)
         if self.active_region == ActiveRegion.GRID:
-            self.editor_defocus_requested = True
-            self.region_focus_pending = True
+            self._yield_editor_to_region()
 
     def rebind_command(self, command_id: CommandId, chord: int) -> None:
         # key_bindings is diff-only: store only chords that differ from the spec default;

@@ -129,28 +129,6 @@ class _ToolCallBuilder:
     arguments: str
 
 
-class _UsageRollup:
-    # LLMUsage is frozen (no in-place add); accumulate here, materialize on demand.
-    def __init__(self) -> None:
-        self._in = 0
-        self._out = 0
-        self._cost = 0.0
-
-    def add(self, u: LLMUsage) -> None:
-        self._in += u.input_tokens
-        self._out += u.output_tokens
-        self._cost += u.cost_usd
-
-    def value(self) -> LLMUsage:
-        return LLMUsage(
-            input_tokens=self._in, output_tokens=self._out, cost_usd=self._cost
-        )
-
-    @property
-    def input_tokens(self) -> int:
-        return self._in
-
-
 @dataclass
 class _RunEntry:
     name: str
@@ -382,7 +360,7 @@ def run_turn(
     # collapses to one engine-derived NL TurnSummary, so history stays natural-language only.
     messages = build_messages(context, history, user_text)
     specs = registry.eager_specs()
-    usage = _UsageRollup()
+    usage = LLMUsage()  # running per-turn total (LLMUsage.__add__)
     ran = _RunLog()
     total_tool_calls = 0
     consecutive_failed_edits = 0  # self-correction cap (reset on any other outcome)
@@ -428,7 +406,7 @@ def run_turn(
                         id=ev.id, name=ev.name, arguments=ev.arguments
                     )
                 case LLMDone():
-                    usage.add(ev.usage)
+                    usage += ev.usage
                     if first_input_tokens is None:
                         first_input_tokens = ev.usage.input_tokens
                     done = ev
@@ -504,16 +482,16 @@ def run_turn(
             logger.info(
                 f"copilot turn done | iterations={iteration + 1} "
                 f"tool_calls={total_tool_calls} reply={len(text_buf)}ch "
-                f"total_in={usage.input_tokens} cost=${usage.value().cost_usd:.6f}"
+                f"total_in={usage.input_tokens} cost=${usage.cost_usd:.6f}"
             )
             tr.event(
                 "turn_done",
                 iterations=iteration + 1,
                 tool_calls=total_tool_calls,
                 reply=text_buf,
-                usage=usage.value(),
+                usage=usage,
             )
-            turn_total = usage.value()
+            turn_total = usage
             stats = TurnStats(
                 context_tokens=first_input_tokens or 0,
                 reply_tokens=turn_total.output_tokens,
@@ -632,12 +610,12 @@ def run_turn(
             logger.warning(
                 f"copilot edit giveup after {consecutive_failed_edits} failed "
                 f"edits | total_in={usage.input_tokens} "
-                f"cost=${usage.value().cost_usd:.6f}"
+                f"cost=${usage.cost_usd:.6f}"
             )
             tr.event(
                 "edit_giveup",
                 consecutive_failed_edits=consecutive_failed_edits,
-                usage=usage.value(),
+                usage=usage,
             )
             note = (
                 f"I couldn't apply that edit after {consecutive_failed_edits} tries "
@@ -650,14 +628,14 @@ def run_turn(
     logger.warning(
         f"copilot turn hit max_iterations={config.max_iterations} | "
         f"tool_calls={total_tool_calls} total_in={usage.input_tokens} "
-        f"cost=${usage.value().cost_usd:.6f}"
+        f"cost=${usage.cost_usd:.6f}"
     )
     tr.event(
         "turn_done",
         cutoff="max_iterations",
         iterations=config.max_iterations,
         tool_calls=total_tool_calls,
-        usage=usage.value(),
+        usage=usage,
     )
     cutoff_note = (
         f"I stopped after {config.max_iterations} steps without finishing this turn. "
