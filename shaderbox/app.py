@@ -1474,7 +1474,7 @@ class App:
             path, pre_edit_source
         ):
             return False
-        self.copilot_backend._copilot_invalidate_lib_consumers(path)
+        self.copilot_backend.invalidate_lib_consumers(path)
         return True
 
     def _revert_created_lib(self, ws_address: str) -> bool:
@@ -1485,7 +1485,7 @@ class App:
         path = self.shader_lib_files.resolve_copilot_path(rel)
         if path is None or not path.exists():
             return False
-        self.copilot_backend._copilot_invalidate_lib_consumers(path)
+        self.copilot_backend.invalidate_lib_consumers(path)
         self.shader_lib_files.delete_file(path)
         return True
 

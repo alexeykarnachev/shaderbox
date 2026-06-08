@@ -1250,7 +1250,7 @@ class CopilotBackend:
                 unresolved=True,
                 unresolved_reason="failed to write the library file",
             )
-        self._copilot_invalidate_lib_consumers(tgt.lib_path)
+        self.invalidate_lib_consumers(tgt.lib_path)
         self._working_set_add(tgt.ws_address)
         self._batch_mutated.add(tgt.ws_address)
         verb = "created" if tgt.lib_create else "written"
@@ -1261,7 +1261,7 @@ class CopilotBackend:
         )
         return EditResult(matches=matches, errors=[], lib_note=note)
 
-    def _copilot_invalidate_lib_consumers(self, lib_path: Path) -> None:
+    def invalidate_lib_consumers(self, lib_path: Path) -> None:
         # A lib edit leaves consumer nodes' source.text unchanged, so the next rebuild wouldn't recompile
         # them — invalidate every working-set node that pulled in this lib so they recompile with the new
         # source. Match on the resolved path (the index's source paths aren't resolved; they diverge under
