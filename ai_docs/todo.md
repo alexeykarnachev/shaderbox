@@ -28,18 +28,16 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
 
 ---
 
-## [DEFERRAL] copilot edits are irreversible — no per-turn checkpoint / rollback
-- **Trigger:** the NEXT copilot session (a different one from 2026-06-08) where the agent mutates a
-  shader the user didn't want touched and the user wants it BACK, OR before plan-locking any feature
-  that adds a new mutating copilot tool (it must register with the checkpoint container, or its
-  change escapes the undo net), OR when starting feature 020·30.
-- The editing tools overwrite source in place at `backend.py::_copilot_persist_target` with no
-  capture of prior bytes — there is no undo. Observed 2026-06-08: the agent edited the wrong node,
-  compounded it over two turns, and "reverted" by reconstructing from memory (not the original) —
-  the user's work was lost. Design (capture = tools log what they touch; per-user-turn checkpoint;
-  a per-message Revert button) is specced with its OPEN questions in
-  `ai_docs/features/020_copilot_agent/30_turn_rollback.md`. NOT plan-locked. (The wrong-node
-  TARGETING bug is separate — a prompt fix, see the next entry.)
+## [DEFERRAL] copilot turn-rollback: a NEW mutating tool must register with the checkpoint
+- **Trigger:** before plan-locking any feature that adds a new MUTATING copilot tool (one that
+  writes a node / lib / uniform / creates / deletes) — it MUST capture into the active checkpoint
+  (`backend.py::_capture_node`/`_capture_lib` pattern, keyed on `get_active_checkpoint`), or its
+  change silently escapes the rollback net. ALSO: if `bind_media` lands, a media-binding turn needs
+  its `media/`/`textures/` captured too (decision 9 snapshots only the two text files today).
+- The rollback feature (020·30) is the one fragility of its log-what-you-touch model: capture is
+  opt-in per mutation seam. The existing seams cover edit/replace/insert/set_uniform/create/delete/
+  switch + lib edits. A new tool that mutates durable state without a capture call leaves an
+  un-revertable change. Spec: `ai_docs/features/020_copilot_agent/30_turn_rollback.md` (decision 2).
 
 ## [DEFERRAL] copilot resolves "this"/"it"/the-shader to a name-match, not the current node
 - **Trigger:** the next session where the agent edits/targets a node the user referred to only by a

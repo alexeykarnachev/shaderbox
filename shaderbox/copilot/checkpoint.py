@@ -26,7 +26,9 @@ from shaderbox.ui_models import UINode
 
 # A node snapshot subdir name is the node id; a lib snapshot is stored by a sanitized address.
 _LIB_SNAPSHOT_SUBDIR = "_lib"
-_INDEX_BASENAME = "checkpoint.json"  # the self-describing index beside a turn's snapshots
+_INDEX_BASENAME = (
+    "checkpoint.json"  # the self-describing index beside a turn's snapshots
+)
 
 
 def _lib_snapshot_name(ws_address: str) -> str:
@@ -45,9 +47,13 @@ class RevertResult:
 
     restored_nodes: list[str] = field(default_factory=list)  # names
     deleted_nodes: list[str] = field(default_factory=list)  # names of reverted-creates
-    recovered_nodes: list[str] = field(default_factory=list)  # names of reverted-deletes
+    recovered_nodes: list[str] = field(
+        default_factory=list
+    )  # names of reverted-deletes
     reverted_libs: list[str] = field(default_factory=list)  # addresses
-    unrestorable: list[str] = field(default_factory=list)  # nodes with no/failed snapshot
+    unrestorable: list[str] = field(
+        default_factory=list
+    )  # nodes with no/failed snapshot
 
     @property
     def touched_anything(self) -> bool:
@@ -66,7 +72,9 @@ class TurnCheckpoint:
 
     turn_id: str
     root: Path  # <project>/copilot/checkpoints
-    user_excerpt: str = ""  # first line of the user text, for the confirm modal + notice
+    user_excerpt: str = (
+        ""  # first line of the user text, for the confirm modal + notice
+    )
     # node_id -> the node's CURRENT name at capture (for the modal); its snapshot is at
     # root/turn_id/<node_id>/ (a full save_ui_node serialize of the pre-edit LIVE node).
     snapshotted_nodes: dict[str, str] = field(default_factory=dict)
@@ -111,7 +119,9 @@ class TurnCheckpoint:
             save_into(node, dest)
             self.snapshotted_nodes[node_id] = node.ui_state.ui_name
         except Exception as e:
-            logger.warning(f"copilot checkpoint: failed to snapshot node {node_id}: {e}")
+            logger.warning(
+                f"copilot checkpoint: failed to snapshot node {node_id}: {e}"
+            )
             name = node.ui_state.ui_name
             if name not in self.failed_nodes:
                 self.failed_nodes.append(name)
@@ -141,7 +151,9 @@ class TurnCheckpoint:
             snap.write_text(pre_edit_source, encoding="utf-8")
             self.snapshotted_libs[ws_address] = snap.name
         except Exception as e:
-            logger.warning(f"copilot checkpoint: failed to snapshot lib {ws_address}: {e}")
+            logger.warning(
+                f"copilot checkpoint: failed to snapshot lib {ws_address}: {e}"
+            )
 
     def record_pre_switch(self, current_node_id: str) -> None:
         # Only the FIRST switch of the turn matters (reverse = the node current before the turn).
@@ -179,7 +191,9 @@ class TurnCheckpoint:
                 json.dumps(data, indent=2), encoding="utf-8"
             )
         except Exception as e:
-            logger.warning(f"copilot checkpoint: failed to save index {self.turn_id}: {e}")
+            logger.warning(
+                f"copilot checkpoint: failed to save index {self.turn_id}: {e}"
+            )
 
     @classmethod
     def load(cls, turn_dir: Path, root: Path) -> "TurnCheckpoint | None":

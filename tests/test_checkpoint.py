@@ -24,7 +24,9 @@ def _fake_save(name: str):
 def test_snapshot_node_is_first_touch_only(tmp_path: Path) -> None:
     cp = TurnCheckpoint(turn_id="turn_0001", root=tmp_path)
     cp.snapshot_node("n1", _fake_node("N1"), _fake_save("v1"))
-    cp.snapshot_node("n1", _fake_node("N1"), _fake_save("v2"))  # second touch is ignored
+    cp.snapshot_node(
+        "n1", _fake_node("N1"), _fake_save("v2")
+    )  # second touch is ignored
     assert cp.snapshotted_nodes == {"n1": "N1"}
     snap = cp.node_snapshot_dir("n1")
     assert snap is not None
@@ -49,13 +51,17 @@ def test_snapshot_does_not_rebind_live_source(tmp_path: Path) -> None:
     snap = cp.node_snapshot_dir("n1")
     assert snap is not None
     assert (snap / "shader.frag.glsl").read_text() == "ORIGINAL"  # pre-edit captured
-    assert live.source_path == real_path  # live node NOT repointed into the snapshot dir
+    assert (
+        live.source_path == real_path
+    )  # live node NOT repointed into the snapshot dir
 
 
 def test_created_then_deleted_nets_to_create(tmp_path: Path) -> None:
     cp = TurnCheckpoint(turn_id="t", root=tmp_path)
     cp.mark_created("n1")
-    cp.record_deleted("n1", "n1_trash")  # a node created+deleted this turn stays a create
+    cp.record_deleted(
+        "n1", "n1_trash"
+    )  # a node created+deleted this turn stays a create
     assert cp.created_nodes == ["n1"]
     assert "n1" not in cp.deleted_nodes
 

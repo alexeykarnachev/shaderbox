@@ -233,7 +233,7 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   **`util.py`** (non-UI helpers: `adjust_size`, `select_next_value`, `get_uniform_hash`, `pfd_block`,
   `open_in_file_manager`, `format_auto_value`, …) / **`constants.py`** / **`notifications.py`**.
 - **`copilot/`** — the in-app coding-copilot agent (feature 020, cross-project + gate-UI + render/publish +
-  Telegram-connect/pack waves DONE; UI/UX polish is the remaining wave). Mirrors `exporters/`: its own
+  Telegram-connect/pack + UI/UX-polish + turn-rollback waves DONE). Mirrors `exporters/`: its own
   package + worker thread + queues + a worker→main GL `bridge`. `App` owns a `CopilotSession` handle + drains
   it per frame; the chat is a floating window (`widgets/copilot_chat.py`) launched from the editor bottom bar.
   The seams (`capabilities` Protocol / `llm.api` / `bridge` / queues / `state`), the `agent` loop, the
@@ -247,8 +247,11 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   (`GateChannel`) is the worker→UI blocking round-trip (the bridge's mirror) — BOTH gate kinds wired: CONFIRM
   Yes/No (`delete_node` + publish + pack mutations) and CREDENTIAL, a masked secret input
   (`set_telegram_token`, the token redacted to a prefix everywhere but the live store —
-  `19_credential_pack_tools.md`). Full design: `ai_docs/features/020_copilot_agent/`
-  (`19_credential_pack_tools.md` is the current spec; `10_skeleton_plan.md` for the original structure).
+  `19_credential_pack_tools.md`). `checkpoint.py` (`TurnCheckpoint`/`CheckpointStore`) backs per-turn
+  rollback (feature 030): a best-effort capture at each mutation seam in `backend.py` (serialize the
+  LIVE node, never the on-disk dir) + `App.restore_checkpoint` reload-and-replace; the Revert glyph +
+  modal live in `copilot_chat.py`. Full design: `ai_docs/features/020_copilot_agent/`
+  (`30_turn_rollback.md` is the latest; `10_skeleton_plan.md` for the original structure).
 - **`scripts/smoke.py`** — headless smoke test (see `## Recipes > make smoke`). Not part of
   `shaderbox/` proper; one-off script that imports `App` + `update_and_draw` and runs frames in
   an invisible glfw window via `App(headless=True)` (which sets the `VISIBLE=FALSE` window hint —
