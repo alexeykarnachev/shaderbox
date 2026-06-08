@@ -253,6 +253,13 @@ def _draw_transcript(app: App) -> None:
         app.copilot_input = ""
 
 
+def _wrapped_colored(text: str, color: tuple[float, float, float, float]) -> None:
+    # Colored + wrapped to the content region (imgui has no colored-wrapped text in one call).
+    imgui.push_style_color(imgui.Col_.text, color)
+    imgui.text_wrapped(text)
+    imgui.pop_style_color(1)
+
+
 def _draw_message(app: App, msg: Message, idx: int) -> None:
     # Sanitize at DRAW so an unrenderable glyph never reaches the atlas. Idempotent on
     # committed (already-ASCII) text; on the live streaming preview it runs on the full
@@ -266,15 +273,18 @@ def _draw_message(app: App, msg: Message, idx: int) -> None:
     elif role == "assistant":
         _draw_bubble("copilot", COLOR.STATE_INFO, COLOR.BG_SURFACE, text, idx)
     elif role == "tool_status":
-        caption_text(text)
-        if msg.result_widget is not None:
-            _draw_result_widget(msg.result_widget, idx)
+        with message_bubble(f"##bubble_{idx}", COLOR.TRANSPARENT, bordered=False):
+            _wrapped_colored(text, COLOR.FG_DIM)
+            if msg.result_widget is not None:
+                _draw_result_widget(msg.result_widget, idx)
         imgui.dummy(imgui.ImVec2(0, float(SPACE.SM)))
     elif role == "error":
-        imgui.text_colored(COLOR.STATE_ERROR, text)
+        with message_bubble(f"##bubble_{idx}", COLOR.TRANSPARENT, bordered=False):
+            _wrapped_colored(text, COLOR.STATE_ERROR)
         imgui.dummy(imgui.ImVec2(0, float(SPACE.SM)))
     elif role == "pending_action":
-        _draw_pending_action(app, msg, idx)
+        with message_bubble(f"##bubble_{idx}", COLOR.TRANSPARENT, bordered=False):
+            _draw_pending_action(app, msg, idx)
         imgui.dummy(imgui.ImVec2(0, float(SPACE.SM)))
 
 
@@ -288,12 +298,13 @@ def _draw_bubble(
     # A chat bubble: a colored name header + wrapped text, with a corner copy glyph pinned
     # top-right (imgui prose isn't selectable, so copy is the affordance). The bubble gap, not
     # a separator, divides messages.
-    side: float = float(SIZE.ROW_HEIGHT)
+    side: float = float(SIZE.ICON_SM)
     with message_bubble(f"##bubble_{idx}", bg) as origin:
         imgui.text_colored(name_color, name)
         imgui.text_wrapped(text)
         # Copy glyph at the bubble's top-right inner corner; allow_overlap so it wins the click.
-        avail_w = imgui.get_content_region_avail().x + float(SPACE.MD)
+        # SPACE.SM gap from the right edge matches the top gap (the window padding).
+        avail_w = imgui.get_content_region_avail().x - float(SPACE.SM)
         imgui.set_next_item_allow_overlap()
         imgui.set_cursor_screen_pos((origin.x + avail_w - side, origin.y))
         if copy_icon_button(f"copy_{idx}", side):

@@ -224,26 +224,39 @@ def preview_box(
 
 @contextmanager
 def message_bubble(
-    id_: str, bg: tuple[float, float, float, float]
+    id_: str,
+    bg: tuple[float, float, float, float],
+    bordered: bool = True,
 ) -> Iterator[imgui.ImVec2]:
-    """A full-width, auto-height rounded bubble (`bg` fill + border) for one chat message.
-    Yields the content origin (screen pos) so the caller can pin a corner affordance. The
-    caller draws the header + wrapped text inside; bubbles separate by their gap, not a rule."""
-    imgui.push_style_color(imgui.Col_.child_bg, bg)
+    """A full-width, auto-height rounded bubble for one chat message. `bordered=True` draws
+    `bg` fill + border (user/assistant); `bordered=False` is fully invisible (no fill, no
+    border) but keeps the same inset + padding, so system lines (tool/error) align with the
+    bubbles. Yields the content origin (screen pos) so the caller can pin a corner affordance.
+    Bubbles separate by their gap, not a rule."""
+    # The borders flag stays set in BOTH modes (an invisible bubble paints fill + border
+    # transparent) so the border inset is identical and the text aligns with visible bubbles.
+    imgui.push_style_color(imgui.Col_.child_bg, bg if bordered else COLOR.TRANSPARENT)
+    imgui.push_style_color(
+        imgui.Col_.border, COLOR.BORDER if bordered else COLOR.TRANSPARENT
+    )
     imgui.push_style_var(imgui.StyleVar_.child_rounding, float(SIZE.BUBBLE_ROUNDING))
     imgui.push_style_var(
-        imgui.StyleVar_.window_padding, imgui.ImVec2(SPACE.MD, SPACE.SM)
+        imgui.StyleVar_.window_padding, imgui.ImVec2(SPACE.SM, SPACE.SM)
     )
+    # Inset both edges by SPACE.SM so the side margin matches the inter-bubble vertical gap.
+    imgui.indent(float(SPACE.SM))
+    width = imgui.get_content_region_avail().x - float(SPACE.SM)
     with imgui_ctx.begin_child(
         id_,
-        size=imgui.ImVec2(0.0, 0.0),
+        size=imgui.ImVec2(width, 0.0),
         child_flags=imgui.ChildFlags_.borders | imgui.ChildFlags_.auto_resize_y,
         window_flags=imgui.WindowFlags_.no_scrollbar,
     ):
         origin = imgui.get_cursor_screen_pos()
         yield origin
+    imgui.unindent(float(SPACE.SM))
     imgui.pop_style_var(2)
-    imgui.pop_style_color(1)
+    imgui.pop_style_color(2)
 
 
 @contextmanager
@@ -525,12 +538,13 @@ def copy_icon_button(id_: str, side: float) -> bool:
     )
     col = imgui.color_convert_float4_to_u32(COLOR.FG_DIM)
     dl = imgui.get_window_draw_list()
-    # Two overlapping sheets: a back rect up-right, a front rect down-left.
+    # Two overlapping sheets: a back rect up-right, a front rect down-left. The pair's
+    # bounding box is (w + off) square; center it in the button.
     s = side
-    w = s * 0.34  # sheet side
-    off = s * 0.12  # diagonal offset between the two sheets
-    bx = origin.x + s * 0.32
-    by = origin.y + s * 0.22
+    w = s * 0.5  # sheet side
+    off = s * 0.18  # diagonal offset between the two sheets
+    bx = origin.x + (s - (w + off)) * 0.5
+    by = origin.y + (s - (w + off)) * 0.5 + off
     dl.add_rect((bx + off, by - off), (bx + off + w, by - off + w), col, rounding=1.5)
     dl.add_rect((bx, by), (bx + w, by + w), col, rounding=1.5)
     return clicked

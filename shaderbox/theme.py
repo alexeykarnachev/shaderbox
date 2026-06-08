@@ -201,6 +201,8 @@ class SIZE:
 
     BTN_SM_W: int = 80
     BTN_SM_H: int = 19
+    # Small square for a drawn corner glyph (e.g. the bubble copy icon).
+    ICON_SM: int = 16
 
     CHIP_W: int = 64
     CHIP_ROUNDING: int = 8

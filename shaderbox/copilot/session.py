@@ -45,6 +45,55 @@ def _slugify(name: str) -> str:
     return safe or "project"
 
 
+# Human verb per tool for the chat card. The agent's verbose `result` is its own feedback;
+# the chat shows this + a terse outcome. A tool absent here falls back to its raw name.
+_TOOL_VERBS: dict[str, str] = {
+    "read_shader": "Read shader",
+    "edit_shader": "Edited shader",
+    "replace_lines": "Edited shader",
+    "insert_after": "Edited shader",
+    "set_uniform": "Set uniform",
+    "create_node": "Created node",
+    "delete_node": "Deleted node",
+    "switch_node": "Switched node",
+    "grep": "Searched",
+    "read_lib": "Read library",
+    "render_image": "Rendered image",
+    "render_video": "Rendered video",
+    "publish_telegram": "Published to Telegram",
+    "publish_youtube": "Published to YouTube",
+    "set_telegram_token": "Set Telegram token",
+    "telegram_connect": "Connected Telegram",
+    "list_telegram_packs": "Listed packs",
+    "select_telegram_pack": "Selected pack",
+    "create_telegram_pack": "Created pack",
+    "delete_telegram_pack": "Deleted pack",
+    "set_youtube_credentials": "Set YouTube credentials",
+}
+
+
+def _tool_card_outcome(ev: AgentToolCard) -> str:
+    # The terse, human consequence after the verb. Failures are just "failed" (the agent holds
+    # the reason). A compile result (mutating shader tools, create_node, read_shader) collapses
+    # to clean / N-errors; grep shows its hit count. Otherwise no outcome (the verb stands alone).
+    if not ev.ok:
+        return "failed"
+    payload = ev.payload or {}
+    if "errors" in payload:
+        n = len(payload.get("errors", []))
+        return f"{n} compile error{'s' if n != 1 else ''}" if n else "compiled clean"
+    if ev.name == "grep":
+        n = int(payload.get("hits", 0))
+        return f"{n} match{'es' if n != 1 else ''}"
+    return ""
+
+
+def _tool_card_line(ev: AgentToolCard) -> str:
+    verb = _TOOL_VERBS.get(ev.name, ev.name)
+    outcome = _tool_card_outcome(ev)
+    return f"{verb}  -  {outcome}" if outcome else verb
+
+
 # Composition root. App owns ONE; drives it bridge.drain() + pump_events() per frame,
 # enqueue_turn() on send, release() at shutdown. Worker thread spawned lazily on first turn.
 
@@ -146,17 +195,15 @@ class CopilotSession:
                     )
                 )
             case AgentToolCard():
-                verb = "ok" if ev.ok else "failed"
-                # The result line under the card. A render path / publish URL rides ev.widget
-                # (drawn as a button), not this line. A tool with a terse `display` shows that
-                # in chat instead of its heavy full `result`; the full result still went to the
-                # agent's context in run_turn.
-                shown = ev.display or ev.result
-                line = f"{ev.name}: {verb}"
-                if shown:
-                    line += f"\n{shown}"
+                # A single human line ("Edited shader  ·  compiled clean"). The verbose tool
+                # `result` is the AGENT's feedback (already in its history); the chat shows a
+                # glanceable summary. A render path / publish URL rides ev.widget (a button).
                 self.state.messages.append(
-                    Message(role="tool_status", text=line, result_widget=ev.widget)
+                    Message(
+                        role="tool_status",
+                        text=_tool_card_line(ev),
+                        result_widget=ev.widget,
+                    )
                 )
                 # A successful delete attaches the Recover affordance to its (resolved-Yes)
                 # confirm card — the gated tool's card always trails the open pending_action.
