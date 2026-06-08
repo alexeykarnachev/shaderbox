@@ -176,6 +176,11 @@ class App:
         self.ibeam_cursor = glfw.create_standard_cursor(glfw.IBEAM_CURSOR)
         self.resize_ew_cursor = glfw.create_standard_cursor(glfw.RESIZE_EW_CURSOR)
         self.resize_ns_cursor = glfw.create_standard_cursor(glfw.RESIZE_NS_CURSOR)
+        # Single cursor owner: surfaces REQUEST a cursor into want_cursor each frame; apply_cursor
+        # sets it via glfw ONCE, only on change. Re-calling glfw.set_cursor every frame (or several
+        # times per frame as panes competed) flickers the cursor on X11. None = default arrow.
+        self.want_cursor: object | None = None
+        self.cur_cursor: object | None = object()  # sentinel != None so frame 1 applies
 
         self.notifications = Notifications()
 

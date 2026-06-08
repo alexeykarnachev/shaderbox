@@ -1,6 +1,5 @@
 from pathlib import Path
 
-import glfw
 from imgui_bundle import imgui
 from imgui_bundle import imgui_color_text_edit as text_edit
 
@@ -116,21 +115,18 @@ def draw_chrome(app: App) -> None:
 def draw(app: App) -> None:
     app.code_hovered_uniform = ""
     if not (ui_node := app.ui_nodes.get(app.current_node_id)):
-        glfw.set_cursor(app.window, None)
         app.editor_focused = False
         return
 
     # The editor shows the node's shader OR a lib file the user opened.
     current_path = app.current_editor_path
     if current_path is None:
-        glfw.set_cursor(app.window, None)
         app.editor_focused = False
         return
     is_lib = current_path != ui_node.node.source.path
 
     # render() FPEs while a popup is open (conventions.md ## Known quirks) — skip drawing it.
     if app.any_popup_open():
-        glfw.set_cursor(app.window, None)
         app.editor_focused = False
         return
 
@@ -233,8 +229,8 @@ def draw(app: App) -> None:
         and imgui.is_window_hovered(imgui.HoveredFlags_.child_windows)
         and not app.copilot_hovered
     )
-    if not app.copilot_hovered:
-        glfw.set_cursor(app.window, app.ibeam_cursor if cursor_over_editor else None)
+    if cursor_over_editor:
+        app.want_cursor = app.ibeam_cursor
 
     # Cursor-following tooltip for words that are live uniforms; also lights up the panel row.
     if cursor_over_editor and editor.is_mouse_pos_over_glyph(imgui.get_mouse_pos()):

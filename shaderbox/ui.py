@@ -336,6 +336,13 @@ def update_and_draw(app: App) -> None:
     imgui.push_font(app.font_14, _FONT_14_SIZE)
     cheatsheet.draw(app)
     copilot_chat.draw(app)
+    # Apply the frame's requested cursor ONCE, only on change — every glfw.set_cursor re-poke
+    # flickers on X11. Surfaces set app.want_cursor; None = default arrow. (Done after all draws
+    # so the topmost surface's request wins; reset for next frame.)
+    if app.want_cursor is not app.cur_cursor:
+        glfw.set_cursor(app.window, app.want_cursor)
+        app.cur_cursor = app.want_cursor
+    app.want_cursor = None
     # The "Rendering..." cue. The Render-tab encode runs AFTER this frame's swap (below)
     # so its cue is provably on the glass before the encode freezes the loop; the copilot
     # bridge handles its own deferral.
@@ -438,8 +445,7 @@ def _draw_copilot_bar(app: App, width: float) -> None:
 def _draw_splitter(app: App, total_width: float, height: float) -> None:
     imgui.invisible_button("##editor_splitter", imgui.ImVec2(_SPLITTER_W, height))
     if imgui.is_item_hovered() or imgui.is_item_active():
-        # glfw cursor — imgui cursors are no-op in this backend (conventions.md ## Known quirks)
-        glfw.set_cursor(app.window, app.resize_ew_cursor)
+        app.want_cursor = app.resize_ew_cursor
     if imgui.is_item_active():
         delta_x = imgui.get_io().mouse_delta.x
         if delta_x and total_width > 0.0:

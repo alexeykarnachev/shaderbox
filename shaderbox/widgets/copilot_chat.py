@@ -1,7 +1,6 @@
 import contextlib
 from pathlib import Path
 
-import glfw
 import pyperclip
 from imgui_bundle import imgui, imgui_ctx
 
@@ -113,10 +112,6 @@ def draw(app: App) -> None:
         hovered = imgui.is_window_hovered(imgui.HoveredFlags_.child_windows)
         dragging = app.copilot_focused and imgui.is_mouse_down(imgui.MouseButton_.left)
         app.copilot_hovered = hovered or dragging
-        # Own the cursor while hovering the chat (the editor yields — code.py). Baseline arrow;
-        # the splitter overrides to the resize cursor over its handle (drawn later this frame).
-        if app.copilot_hovered:
-            glfw.set_cursor(app.window, None)
         if app.copilot_defocus_requested:
             imgui.set_window_focus(None)
             app.copilot_defocus_requested = False
@@ -166,7 +161,7 @@ def _draw_input_splitter(app: App, avail_y: float) -> None:
         "##copilot_input_splitter", imgui.ImVec2(-1.0, _splitter_band_h())
     )
     if imgui.is_item_hovered() or imgui.is_item_active():
-        glfw.set_cursor(app.window, app.resize_ns_cursor)
+        app.want_cursor = app.resize_ns_cursor
     if imgui.is_item_active():
         dy = imgui.get_io().mouse_delta.y
         if dy:  # drag down -> smaller input; drag up -> larger input

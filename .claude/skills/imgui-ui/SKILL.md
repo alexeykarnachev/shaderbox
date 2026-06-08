@@ -447,6 +447,15 @@ Library footguns specific to the imgui-bundle Python build (currently
   glfw cursors yourself (`glfw.create_standard_cursor(...)`) and call
   `glfw.set_cursor(window, cursor_or_None)`. Restore with
   `glfw.set_cursor(window, None)`.
+  - **But call `glfw.set_cursor` ONCE PER FRAME, only on change — re-poking it every frame (or
+    several times per frame when multiple panes each set it) FLICKERS the cursor on X11.** With
+    overlapping surfaces (a floating window over an editor that both want a cursor) the naive
+    "each surface sets its own cursor" cycles arrow↔ibeam↔resize every frame. Fix: a single owner
+    — each surface REQUESTS into one `app.want_cursor` per frame (default None=arrow; topmost
+    request wins as it's drawn last), then ONE apply at end-of-frame: `if want != cur:
+    set_cursor(want); cur = want`. (Diagnosing: the panes weren't "fighting" in logic — focus/hover
+    flags were all correct; the flicker was purely the redundant per-frame `set_cursor` calls.
+    ShaderBox `App.want_cursor`/`cur_cursor` applied in `ui.update_and_draw`.)
 - **`imgui_color_text_edit.TextEditor.render()` auto-grabs imgui keyboard
   focus on a child window's first frame** — so a never-yet-rendered editor
   (app open, or just-switched node) steals focus and the caret goes live
