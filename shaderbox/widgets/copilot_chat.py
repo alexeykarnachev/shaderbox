@@ -236,6 +236,10 @@ def _draw_transcript(app: App) -> None:
         | imgui.InputTextFlags_.word_wrap,
     )
     imgui.end_disabled()
+    # Text cursor over the editable input (not while it's frozen mid-turn). Requests into the
+    # single cursor owner; the splitter/editor requests lose since the input is drawn last here.
+    if not in_flight and imgui.is_item_hovered():
+        app.want_cursor = app.ibeam_cursor
     if submitted:
         app.copilot_focus_pending = True
     imgui.same_line()
