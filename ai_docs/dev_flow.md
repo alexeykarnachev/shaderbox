@@ -251,7 +251,9 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   (`19_credential_pack_tools.md` is the current spec; `10_skeleton_plan.md` for the original structure).
 - **`scripts/smoke.py`** — headless smoke test (see `## Recipes > make smoke`). Not part of
   `shaderbox/` proper; one-off script that imports `App` + `update_and_draw` and runs frames in
-  an invisible glfw window.
+  an invisible glfw window via `App(headless=True)` (which sets the `VISIBLE=FALSE` window hint —
+  WITHOUT it `App` creates a visible MAXIMIZED window that pops up + hangs the loop on a real
+  display). Any offscreen driver should use `App(headless=True)`, not a hand-rolled hidden window.
 - **Node-dir data format:** a project lives in `<project>/nodes/<uuid>/{node.json, shader.frag.glsl,
   media/, textures/}` + `<project>/app_state.json`. The active-project pointer is
   `~/.local/share/shaderbox/project_dir`; templates ship under `shaderbox/resources/node_templates/`.

@@ -302,10 +302,9 @@ def _check_render_to_file() -> None:
         return
     saved: str | None = _POINTER.read_text() if _POINTER.exists() else None
     glfw.init()
-    glfw.window_hint(glfw.VISIBLE, glfw.FALSE)
     app: App | None = None
     try:
-        app = App(project_dir=_DEV_PROJECT)
+        app = App(project_dir=_DEV_PROJECT, headless=True)
         node_id: str = app.current_node_id
         assert node_id and node_id in app.ui_nodes, "no current node in the dev fixture"
         ui_node = app.ui_nodes[node_id]

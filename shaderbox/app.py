@@ -107,7 +107,9 @@ def _conversation_stamp() -> str:
 
 @dataclass
 class App:
-    def __init__(self, project_dir: Path | None = None) -> None:
+    def __init__(self, project_dir: Path | None = None, headless: bool = False) -> None:
+        # headless: create the glfw window hidden (the smoke test + any offscreen driver) so it
+        # never pops a visible maximized window on a real display.
         # First launch = no project pointer ever written: fall back to the default
         # project and seed a starter. open_project later must NOT seed.
         is_first_launch = (
@@ -127,7 +129,10 @@ class App:
         monitor = glfw.get_primary_monitor()
         video_mode = glfw.get_video_mode(monitor)
 
-        glfw.window_hint(glfw.MAXIMIZED, glfw.TRUE)
+        if headless:
+            glfw.window_hint(glfw.VISIBLE, glfw.FALSE)
+        else:
+            glfw.window_hint(glfw.MAXIMIZED, glfw.TRUE)
         window = glfw.create_window(
             width=video_mode.size[0],
             height=video_mode.size[1],

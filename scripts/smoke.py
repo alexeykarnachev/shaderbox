@@ -59,10 +59,9 @@ def main() -> int:
     )
 
     glfw.init()
-    glfw.window_hint(glfw.VISIBLE, glfw.FALSE)
 
     try:
-        app = App(project_dir=DEV_PROJECT_DIR)
+        app = App(project_dir=DEV_PROJECT_DIR, headless=True)
         # Feature 019: nav_enable_keyboard is set in __init__, before any frame —
         # check it here (get_io() reads are frame-context-sensitive mid-loop).
         assert (
