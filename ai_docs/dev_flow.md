@@ -228,10 +228,12 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   **Integrations** credential blocks), `emoji_data.py` + `emoji_picker.py` (monochrome glyph grid),
   `lib_picker/` (package: `__init__` entry+orchestrator, `tree`, `preview`, `search`, `filtering` —
   the tree+preview shader-library browser with right-click file/dir/function context menus).
-- **`fonts.py`** — freetype → GL atlas. **`ui_primitives.py`** (imgui+theme draw helpers: button
+- **`ui_primitives.py`** (imgui+theme draw helpers: button
   tiers + shared draw primitives — `context_menu_style()`, `pill_button`, `preview_cell`, …) /
   **`util.py`** (non-UI helpers: `adjust_size`, `select_next_value`, `get_uniform_hash`, `pfd_block`,
-  `open_in_file_manager`, `format_auto_value`, …) / **`constants.py`** / **`notifications.py`**.
+  `open_in_file_manager`, `format_auto_value`, …) / **`constants.py`** / **`notifications.py`** /
+  **`watch.py`** (the per-frame mtime watcher: `reload_node_if_changed` / `maybe_rebuild_lib_index`,
+  called from `ui.py::update_and_draw`).
 - **`copilot/`** — the in-app coding-copilot agent (feature 020, cross-project + gate-UI + render/publish +
   Telegram-connect/pack + UI/UX-polish + turn-rollback waves DONE). Mirrors `exporters/`: its own
   package + worker thread + queues + a worker→main GL `bridge`. `App` owns a `CopilotSession` handle + drains

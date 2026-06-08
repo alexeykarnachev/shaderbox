@@ -2,8 +2,8 @@
 
 A real-time GLSL fragment-shader playground. Stack: **moderngl + glfw + imgui-bundle** (Python 3.12).
 You write a `.frag.glsl`; ShaderBox introspects the program's active uniforms and auto-generates
-imgui controls for them; hot-reloads on file mtime; exports to image/video; has a custom freetype
-glyph-atlas text-rendering shader; uploads to Telegram sticker sets. Ships on itch.io. Solo project.
+imgui controls for them; hot-reloads on file mtime; exports to image/video; has a custom SDF
+segment-glyph text-rendering shader; uploads to Telegram sticker sets. Ships on itch.io. Solo project.
 
 ## Cold start chain
 

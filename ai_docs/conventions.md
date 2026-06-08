@@ -341,8 +341,7 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
 - **The sanctioned `# type: ignore` allowlist (upstream stub gaps only).** The no-suppression rule
   has exactly these exceptions — all are missing/wrong annotations in third-party stubs, never our
   own type errors. New markers outside this list are a design smell; fix the design, don't add to
-  the list. Re-audit when bumping `moderngl` / `freetype-py` / `pydantic`.
+  the list. Re-audit when bumping `moderngl` / `pydantic`.
   - `moderngl.Uniform.gl_type` — not in moderngl's stub.
-  - `freetype.load_char(...)` — `freetype-py` ships no stubs.
   - `@model_validator(mode="after")` on a method returning `Self` — pydantic's decorator stub
     mistypes the wrapped method.

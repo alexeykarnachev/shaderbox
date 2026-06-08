@@ -146,23 +146,6 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   respects (the `_init`/release reopen path then needs its own re-arm). Deliberately deferred — adding
   it now is hardening a path the invariant already closes.
 
-## [DEFERRAL] docs describe a "freetype glyph-atlas text-rendering shader" that no shipped shader uses
-- **Trigger:** a maintainer pass on dead code (`fonts.py`), OR the next edit to any of the doc lines
-  below. (The copilot half is DONE — 020·22's shipped Text Rendering template description correctly
-  says "SDF 7-segment glyphs, NOT a font texture/atlas", so the agent's prompt now describes what's
-  actually on disk. What REMAINS: the dead `fonts.py` glyph-atlas + the 4 stale doc surfaces.)
-- `fonts.py::Font` genuinely builds a freetype glyph-atlas (a GL texture of rasterized glyphs + per-char
-  UV/metrics) — but it has **zero consumers** (verified 2026-05-29: nothing imports `fonts.Font`; the
-  `push_font` hits are unrelated imgui UI fonts). The shipped Text Rendering template (`f90f5ff9`) is a
-  pure **SDF 7-segment glyph synth** driven by `uniform uint u_text[64]` (codepoints) — NO atlas, NO
-  sampler. So `fonts.py` is an abandoned approach the SDF template superseded, yet the docs still
-  advertise the dead path as the live feature — grep `freetype glyph-atlas` across `CLAUDE.md`,
-  `README.md`, `ai_docs/itch/page.yaml`, and `ai_docs/features/004_imgui_bundle_migration.md`. Honest
-  fix when triggered: either delete the dead `fonts.py` glyph-atlas + correct all four doc surfaces to
-  "SDF segment glyphs", OR confirm there's a real plan to wire the atlas (then the docs are aspirational,
-  not stale). Re-check the itch store-page LIVE copy too (page.yaml is the source of truth, but a prior
-  sync may have pushed the wrong line — `dev_flow.md ## Sync the itch.io page`).
-
 ## [DEFERRAL] node-grid nav-cursor resets to cell 0 after Enter-selecting a node
 - **Trigger:** maintainer finds the nav highlight jumping to the first cell ("New node") after
   picking a node with Enter annoying enough to want it fixed (it's cosmetic — focus stays in the grid,
