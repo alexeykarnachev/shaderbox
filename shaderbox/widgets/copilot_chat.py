@@ -184,8 +184,9 @@ def _draw_transcript(app: App) -> None:
             caption_text(
                 sanitize_display(state.status) if state.status else "thinking..."
             )
-        if state.in_flight:
+        if state.in_flight or app.copilot_scroll_pending:
             imgui.set_scroll_here_y(1.0)
+            app.copilot_scroll_pending = False
     imgui.end_child()
 
     _draw_input_splitter(app, avail_y)

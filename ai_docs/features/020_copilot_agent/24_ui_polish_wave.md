@@ -214,3 +214,11 @@ Keep entries faithful. A simple fix gets one or two lines of resolution, not a s
   up = bigger input. (First tried `ChildFlags_.resize_y` on the feed — WRONG: resize_y stores an
   absolute size that fights window-flex and squeezes the input; reverted. A stored-height splitter is
   the correct model.)
+
+### F17 — chat feed opens scrolled to the top, not the bottom   [fixed]
+- **Where:** the chat feed on launch / project load.
+- **Observed:** a restored conversation opened scrolled to the top — had to scroll down each time.
+  (The feed only auto-scrolled DURING an in-flight turn.)
+- **Resolution:** `App.copilot_scroll_pending` one-shot — armed at init (covers first launch) +
+  after `load_conversation` (project switch), consumed at the feed draw (`set_scroll_here_y(1.0)`).
+  One-shot, so it never fights a manual scroll; only re-fires on a fresh conversation load.
