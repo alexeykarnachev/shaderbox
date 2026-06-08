@@ -626,6 +626,14 @@ class App:
         # cycling. Mouse-click changes have no pending flag, so the derive corrects them.
         return self.region_focus_pending or self.editor_focus_requested
 
+    def region_derive_allowed(self) -> bool:
+        # May a region adopt itself as active_region from its OWN live focus this frame? No during
+        # a chord move (focus reads the old region for a frame — would revert the chord), and no
+        # while the floating chat owns focus (a separate window, not a region). The region still
+        # ANDs its own is_window_focused; this is the shared "is the derive legal now" guard, so
+        # ui.py / node_grid.py don't each name copilot_focused.
+        return not self.focus_move_in_flight() and not self.copilot_focused
+
     def region_outline_visible(self, region: ActiveRegion) -> bool:
         # The active-region nav cue shows only for the region that owns focus right now: the
         # sticky active_region, BUT suppressed when a modal or the floating chat has focus

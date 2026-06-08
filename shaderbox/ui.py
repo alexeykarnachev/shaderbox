@@ -275,13 +275,11 @@ def update_and_draw(app: App) -> None:
                 ed_pos = imgui.get_window_pos()
                 ed_size = imgui.get_window_size()
                 app.editor_rect = (ed_pos.x, ed_pos.y, ed_size.x, ed_size.y)
-                # Correct active_region from live focus, but NOT during a chord move (focus
-                # still reads the old region for a frame — correcting reverts the target +
-                # breaks cycling) and NOT while the chat owns focus (separate window).
+                # Adopt EDITOR as the active region from live focus (App.region_derive_allowed
+                # owns the "is this legal now" guard — chord move / chat focus).
                 if (
                     imgui.is_window_focused(imgui.FocusedFlags_.child_windows)
-                    and not app.focus_move_in_flight()
-                    and not app.copilot_focused
+                    and app.region_derive_allowed()
                 ):
                     app.active_region = ActiveRegion.EDITOR
                 # The editor is a focus-stop, not a sticky region: its outline tracks LIVE focus
@@ -559,12 +557,10 @@ def _draw_node_settings(app: App) -> None:
         child_flags=imgui.ChildFlags_.borders,
         window_flags=panel_flags,
     ):
-        # Correct active_region from live focus, except during a chord move and while the
-        # chat owns focus. See the editor pane.
+        # Adopt PANEL as the active region from live focus. See the editor pane.
         if (
             imgui.is_window_focused(imgui.FocusedFlags_.child_windows)
-            and not app.focus_move_in_flight()
-            and not app.copilot_focused
+            and app.region_derive_allowed()
         ):
             app.active_region = ActiveRegion.PANEL
         if app.region_outline_visible(ActiveRegion.PANEL):

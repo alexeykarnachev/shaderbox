@@ -47,12 +47,10 @@ def draw_node_preview_grid(app: App, width: float, height: float) -> None:
         child_flags=imgui.ChildFlags_.borders,
         window_flags=grid_flags,
     ):
-        # active_region corrected from live focus (mouse clicks) except during a chord
-        # move, and except while the chat owns focus. See the editor pane in ui.py.
+        # Adopt GRID as the active region from live focus. See the editor pane in ui.py.
         if (
             imgui.is_window_focused(imgui.FocusedFlags_.child_windows)
-            and not app.focus_move_in_flight()
-            and not app.copilot_focused
+            and app.region_derive_allowed()
         ):
             app.active_region = ActiveRegion.GRID
         if app.region_outline_visible(ActiveRegion.GRID):
