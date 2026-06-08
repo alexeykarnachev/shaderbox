@@ -175,9 +175,9 @@ class CopilotSession:
                         )
                     )
                 self.state.streaming_text = ""
-                self.state.usage.add(ev.usage)
-                if ev.last_turn_usage is not None:
-                    self.state.last_turn_usage = ev.last_turn_usage
+                if ev.stats is not None:
+                    self.state.last_turn = ev.stats
+                    self.state.session_cost_usd += ev.stats.cost_usd
                 self._finish_turn()
             case AgentCancelled():
                 self.state.streaming_text = ""
@@ -390,8 +390,8 @@ class CopilotSession:
         # MAIN THREAD, after reset_conversation (fresh session): restore the parsed store into
         # state + history + usage.
         self.state.messages = store.to_messages()
-        self.state.usage = store.to_usage()
-        self.state.last_turn_usage = store.to_last_turn_usage()
+        self.state.session_cost_usd = store.to_session_cost()
+        self.state.last_turn = store.to_last_turn()
         self.history = store.to_history()
         if self.state.messages or self.history:
             self.trace.event(

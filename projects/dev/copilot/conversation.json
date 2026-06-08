@@ -1,5 +1,5 @@
 {
-  "version": 6,
+  "version": 7,
   "messages": [
     {
       "role": "user",
@@ -1180,10 +1180,6 @@
       "content": null
     }
   ],
-  "usage": {
-    "input_tokens": 610270,
-    "output_tokens": 24494,
-    "cost_usd": 0.43424530000000006
-  },
-  "last_turn_usage": null
+  "session_cost_usd": 0.43424530000000006,
+  "last_turn": null
 }

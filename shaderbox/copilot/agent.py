@@ -18,7 +18,7 @@ from shaderbox.copilot.llm.api import (
 )
 from shaderbox.copilot.prompt import build_messages
 from shaderbox.copilot.prompt_context import CopilotContext
-from shaderbox.copilot.state import ResultWidget
+from shaderbox.copilot.state import ResultWidget, TurnStats
 from shaderbox.copilot.tools.registry import ToolRegistry
 from shaderbox.copilot.trace import NULL_TRACE, TraceLog
 
@@ -86,11 +86,11 @@ class TurnSummary:
 
 @dataclass(frozen=True)
 class AgentTurnDone:
-    usage: LLMUsage
     summary: TurnSummary = field(default_factory=TurnSummary)
-    # input_tokens = the FIRST iteration's real context size (NOT the summed `usage`, which
-    # re-counts the growing context each iteration); output/cost stay the turn totals.
-    last_turn_usage: LLMUsage | None = None
+    # The turn's stats for the header gauge: context = the FIRST iteration's input (standing
+    # context, NOT the summed input which re-counts the growing context each iteration); reply/cost
+    # are the turn totals. None only if no LLMDone ever fired (torn stream).
+    stats: TurnStats | None = None
 
 
 @dataclass(frozen=True)
@@ -514,16 +514,15 @@ def run_turn(
                 usage=usage.value(),
             )
             turn_total = usage.value()
-            last_turn_usage = LLMUsage(
-                input_tokens=first_input_tokens or 0,
-                output_tokens=turn_total.output_tokens,
+            stats = TurnStats(
+                context_tokens=first_input_tokens or 0,
+                reply_tokens=turn_total.output_tokens,
                 cost_usd=turn_total.cost_usd,
             )
             # text_buf is the agent's final reply, carrying its stated assumption.
             yield AgentTurnDone(
-                turn_total,
                 summary=_build_turn_summary(text_buf, ran, registry),
-                last_turn_usage=last_turn_usage,
+                stats=stats,
             )
             return
 

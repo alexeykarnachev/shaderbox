@@ -2,7 +2,7 @@
 
 Durable per-project state in the project dir. Owns the versioned `ConversationStore`
 pydantic model + load/save/archive (`extra="forbid"`, fail-soft `load_and_migrate`), and
-maps the runtime dataclasses (`Message` / `LLMMessage` / `SessionUsage`) to/from their
+maps the runtime dataclasses (`Message` / `LLMMessage` / `TurnStats`) to/from their
 persisted shape so `state.py` stays free of disk concerns.
 """
 
@@ -14,7 +14,7 @@ from loguru import logger
 from pydantic import BaseModel, ValidationError
 
 from shaderbox.copilot.gate import GateKind
-from shaderbox.copilot.llm.api import LLMMessage, LLMUsage
+from shaderbox.copilot.llm.api import LLMMessage
 from shaderbox.copilot.state import (
     ChatState,
     Message,
@@ -22,12 +22,28 @@ from shaderbox.copilot.state import (
     RecoverInfo,
     ResultWidget,
     ResultWidgetKind,
-    SessionUsage,
+    TurnStats,
 )
 
-_VERSION = 6
+_VERSION = 7
 
 _RESULT_WIDGET_KINDS: frozenset[str] = frozenset({"open_url", "open_path"})
+
+
+def _migrate_pre_v7(data: dict[str, object]) -> None:
+    # In place: pre-v7 stored a cumulative `usage` block + a `last_turn_usage` (input/output/cost).
+    # v7 keeps only the running cost (`session_cost_usd`) + a `last_turn` (context/reply/cost). The
+    # model forbids extra keys, so remap the old keys before construction or the file is rejected.
+    old_usage = data.pop("usage", None)
+    if isinstance(old_usage, dict) and "session_cost_usd" not in data:
+        data["session_cost_usd"] = old_usage.get("cost_usd", 0.0)
+    old_last = data.pop("last_turn_usage", None)
+    if isinstance(old_last, dict) and "last_turn" not in data:
+        data["last_turn"] = {
+            "context_tokens": old_last.get("input_tokens", 0),
+            "reply_tokens": old_last.get("output_tokens", 0),
+            "cost_usd": old_last.get("cost_usd", 0.0),
+        }
 
 
 def _gate_kind_or_confirm(value: str) -> GateKind:
@@ -89,9 +105,9 @@ class _HistoryModel(BaseModel):
     model_config = {"extra": "forbid"}
 
 
-class _UsageModel(BaseModel):
-    input_tokens: int = 0
-    output_tokens: int = 0
+class _TurnStatsModel(BaseModel):
+    context_tokens: int = 0
+    reply_tokens: int = 0
     cost_usd: float = 0.0
     model_config = {"extra": "forbid"}
 
@@ -100,8 +116,8 @@ class ConversationStore(BaseModel):
     version: int = _VERSION
     messages: list[_MessageModel] = []
     history: list[_HistoryModel] = []
-    usage: _UsageModel = _UsageModel()
-    last_turn_usage: _UsageModel | None = None
+    session_cost_usd: float = 0.0
+    last_turn: _TurnStatsModel | None = None
     model_config = {"extra": "forbid"}
 
     @classmethod
@@ -139,18 +155,14 @@ class ConversationStore(BaseModel):
                 for m in state.messages
             ],
             history=[_HistoryModel(role=h.role, content=h.content) for h in history],
-            usage=_UsageModel(
-                input_tokens=state.usage.input_tokens,
-                output_tokens=state.usage.output_tokens,
-                cost_usd=state.usage.cost_usd,
-            ),
-            last_turn_usage=(
-                _UsageModel(
-                    input_tokens=state.last_turn_usage.input_tokens,
-                    output_tokens=state.last_turn_usage.output_tokens,
-                    cost_usd=state.last_turn_usage.cost_usd,
+            session_cost_usd=state.session_cost_usd,
+            last_turn=(
+                _TurnStatsModel(
+                    context_tokens=state.last_turn.context_tokens,
+                    reply_tokens=state.last_turn.reply_tokens,
+                    cost_usd=state.last_turn.cost_usd,
                 )
-                if state.last_turn_usage is not None
+                if state.last_turn is not None
                 else None
             ),
         )
@@ -189,20 +201,16 @@ class ConversationStore(BaseModel):
             for h in self.history
         ]
 
-    def to_usage(self) -> SessionUsage:
-        return SessionUsage(
-            input_tokens=self.usage.input_tokens,
-            output_tokens=self.usage.output_tokens,
-            cost_usd=self.usage.cost_usd,
-        )
+    def to_session_cost(self) -> float:
+        return self.session_cost_usd
 
-    def to_last_turn_usage(self) -> LLMUsage | None:
-        if self.last_turn_usage is None:
+    def to_last_turn(self) -> TurnStats | None:
+        if self.last_turn is None:
             return None
-        return LLMUsage(
-            input_tokens=self.last_turn_usage.input_tokens,
-            output_tokens=self.last_turn_usage.output_tokens,
-            cost_usd=self.last_turn_usage.cost_usd,
+        return TurnStats(
+            context_tokens=self.last_turn.context_tokens,
+            reply_tokens=self.last_turn.reply_tokens,
+            cost_usd=self.last_turn.cost_usd,
         )
 
     def save(self, file_path: Path) -> None:
@@ -222,6 +230,7 @@ class ConversationStore(BaseModel):
         except (OSError, json.JSONDecodeError) as e:
             logger.warning(f"Unreadable copilot conversation ({e}); starting empty")
             return cls()
+        _migrate_pre_v7(data)
         try:
             return cls(**data)
         except ValidationError as e:

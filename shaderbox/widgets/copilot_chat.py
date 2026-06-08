@@ -5,16 +5,20 @@ import pyperclip
 from imgui_bundle import imgui, imgui_ctx
 
 from shaderbox.app import App
-from shaderbox.copilot.config import COPILOT_CONFIG
 from shaderbox.copilot.gate import GateKind
-from shaderbox.copilot.llm.api import LLMUsage
 from shaderbox.copilot.sanitize import sanitize_display
-from shaderbox.copilot.state import CopilotLayout, Message, ResultWidget
+from shaderbox.copilot.state import (
+    CopilotLayout,
+    Message,
+    ResultWidget,
+    context_gauge_readout,
+)
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_primitives import (
     active_region_outline,
     caption_text,
     danger_button,
+    gauge_bar,
     ghost_button,
     labeled_text_input,
     layout_icon_button,
@@ -22,7 +26,6 @@ from shaderbox.ui_primitives import (
     open_url_button,
     primary_button,
     unconnected_gate,
-    usage_bars,
 )
 from shaderbox.util import open_in_file_manager
 
@@ -37,11 +40,6 @@ _WINDOW_FLAGS = (
     | imgui.WindowFlags_.no_collapse
     | imgui.WindowFlags_.no_nav_inputs
 )
-_LAYOUT_VARIANT: dict[CopilotLayout, int] = {
-    CopilotLayout.CORNER: 0,
-    CopilotLayout.BOTTOM_STRIP: 1,
-    CopilotLayout.FREE: 2,
-}
 
 
 def _apply_layout(app: App) -> int:
@@ -306,46 +304,30 @@ def _send_button_offset() -> float:
     return -(float(SIZE.BTN_SM_W) + imgui.get_style().item_spacing.x)
 
 
-def _usage_fractions_tooltip(usage: LLMUsage | None) -> tuple[tuple[float, float], str]:
-    in_budget = COPILOT_CONFIG.max_input_tokens
-    out_budget = COPILOT_CONFIG.max_tokens_per_turn
-    if usage is None:
-        return (0.0, 0.0), "No turn yet."
-    in_frac = min(1.0, usage.input_tokens / in_budget) if in_budget else 0.0
-    out_frac = min(1.0, usage.output_tokens / out_budget) if out_budget else 0.0
-    tooltip = (
-        "Last turn\n"
-        f"input {usage.input_tokens} / {in_budget} tok\n"
-        f"output {usage.output_tokens} / {out_budget} tok\n"
-        f"cost ${usage.cost_usd:.4f}"
-    )
-    return (in_frac, out_frac), tooltip
-
-
 def _draw_top_bar(app: App) -> None:
+    # Row: [layout icon] [context gauge ............] [Clear][Close]. One arithmetic owner so the
+    # gauge width and the right-aligned cluster x can't drift apart.
     content_w: float = imgui.get_content_region_avail().x
-    pad: float = 2.0 * float(SPACE.MD)
-    clear_w = imgui.calc_text_size("Clear").x + pad
-    close_w = imgui.calc_text_size("Close").x + pad
-    cluster_w = clear_w + float(SPACE.SM) + close_w
-
     icon_side: float = float(SIZE.BTN_SM_H)
-    if layout_icon_button(
-        "copilot_layout", _LAYOUT_VARIANT[app.copilot_layout], icon_side
-    ):
-        app.copilot_layout = app.copilot_layout.next()
+    btn_pad: float = 2.0 * float(SPACE.MD)
+    clear_w: float = imgui.calc_text_size("Clear").x + btn_pad
+    close_w: float = imgui.calc_text_size("Close").x + btn_pad
+    cluster_w: float = clear_w + float(SPACE.SM) + close_w
+    cluster_x: float = content_w - cluster_w
+    gauge_w: float = max(
+        float(SIZE.USAGE_BARS_W), cluster_x - icon_side - 2.0 * float(SPACE.MD)
+    )
+
+    if layout_icon_button("copilot_layout", app.copilot_layout.variant, icon_side):
+        app.cycle_copilot_layout()
     if imgui.is_item_hovered():
         imgui.set_tooltip(f"Layout: {app.copilot_layout.value}")
 
-    # Bars fill the middle between the icon and the right-aligned cluster, floored at
-    # USAGE_BARS_W (the chat window's min size keeps content_w wide enough — _apply_layout).
-    cluster_x: float = content_w - cluster_w
-    bars_w = max(
-        float(SIZE.USAGE_BARS_W), cluster_x - icon_side - 2.0 * float(SPACE.MD)
-    )
     imgui.same_line()
-    fractions, tooltip = _usage_fractions_tooltip(app.copilot.state.last_turn_usage)
-    usage_bars("copilot_usage", fractions, tooltip, bars_w)
+    fraction, tooltip = context_gauge_readout(
+        app.copilot.state.last_turn, app.copilot.state.session_cost_usd
+    )
+    gauge_bar("copilot_context", fraction, tooltip, gauge_w)
 
     imgui.same_line(cluster_x)
     # Disabled mid-turn so it can't bypass the in_flight gate the reset relies on.

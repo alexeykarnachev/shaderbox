@@ -2,8 +2,8 @@ from dataclasses import dataclass, field
 from enum import StrEnum, auto
 from typing import Literal
 
+from shaderbox.copilot.config import COPILOT_CONFIG
 from shaderbox.copilot.gate import GateKind
-from shaderbox.copilot.llm.api import LLMUsage
 
 # Chat render-state. Written ONLY by session.pump_events on the main thread, read ONLY by
 # the UI on the main thread -> single-writer, no lock. The worker bridges its writes via events.
@@ -19,6 +19,11 @@ class CopilotLayout(StrEnum):
     def next(self) -> "CopilotLayout":
         order = list(CopilotLayout)
         return order[(order.index(self) + 1) % len(order)]
+
+    @property
+    def variant(self) -> int:
+        # The drawn-glyph index for layout_icon_button (which stays feature-agnostic).
+        return list(CopilotLayout).index(self)
 
 
 @dataclass(frozen=True)
@@ -63,16 +68,36 @@ class Message:
     result_widget: ResultWidget | None = None
 
 
-@dataclass
-class SessionUsage:
-    input_tokens: int = 0
-    output_tokens: int = 0
+@dataclass(frozen=True)
+class TurnStats:
+    # Last completed turn, for the header context gauge + its tooltip.
+    # context_tokens = the FIRST iteration's input size = system + project + accumulated history +
+    #   working set, BEFORE within-turn tool churn (which is discarded at turn end). This is the
+    #   standing-context "how full / when to compact" signal, NOT the per-turn peak.
+    # reply_tokens = output tokens summed across the turn's iterations (how much the model wrote).
+    # cost_usd = this turn's total charged cost.
+    context_tokens: int = 0
+    reply_tokens: int = 0
     cost_usd: float = 0.0
 
-    def add(self, u: LLMUsage) -> None:
-        self.input_tokens += u.input_tokens
-        self.output_tokens += u.output_tokens
-        self.cost_usd += u.cost_usd
+
+def context_gauge_readout(
+    last_turn: "TurnStats | None", session_cost_usd: float
+) -> tuple[float, str]:
+    """The header context gauge: (fill_fraction, tooltip). fill = standing context vs the input
+    budget — the 'how full / when to compact' signal. The tooltip carries the secondary numbers
+    (last reply, last turn cost, session cost) that are info, not fullness."""
+    budget = COPILOT_CONFIG.max_input_tokens
+    if last_turn is None:
+        return 0.0, "No turn yet."
+    fill = min(1.0, last_turn.context_tokens / budget) if budget else 0.0
+    pct = round(fill * 100)
+    return fill, (
+        f"Context: {last_turn.context_tokens} / {budget} tok ({pct}%)\n"
+        f"Last reply: {last_turn.reply_tokens} tok\n"
+        f"Last turn cost: ${last_turn.cost_usd:.4f}\n"
+        f"Session cost: ${session_cost_usd:.4f}"
+    )
 
 
 @dataclass
@@ -83,7 +108,8 @@ class ChatState:
     # Transient in-flight status phrase from AgentStatus; shown in place of "thinking", cleared on
     # turn end. Not persisted and not a durable Message.
     status: str = ""
-    usage: SessionUsage = field(default_factory=SessionUsage)
-    # Last completed turn's usage (input = its first-iteration context size); drives the header
-    # usage bars. Transient (not persisted), reset with the conversation.
-    last_turn_usage: LLMUsage | None = None
+    # Running cost across the whole conversation (persisted; shown in the gauge tooltip).
+    session_cost_usd: float = 0.0
+    # Last completed turn's stats; drives the header context gauge. Persisted (ConversationStore v7),
+    # restored on load, reset by Clear.
+    last_turn: TurnStats | None = None

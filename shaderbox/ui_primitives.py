@@ -523,41 +523,37 @@ def layout_icon_button(id_: str, variant: int, side: float) -> bool:
     return clicked
 
 
-def usage_bars(
-    id_: str,
-    fractions: tuple[float, float],
-    tooltip: str,
-    width: float,
-) -> None:
-    """Two thin stacked fill bars (top over bottom), each `fraction` pre-clamped to
-    [0, 1] by the caller, drawn vertically centred within one frame-height row. Owns the
-    hit rect + the shared hover tooltip. A prototype readout — geometry, colour, and the
-    tooltip all live here so richer visuals can replace it without touching the caller."""
-    top_frac, bottom_frac = fractions
+def gauge_bar(id_: str, fraction: float, tooltip: str, width: float) -> None:
+    """A thin horizontal fill bar (`fraction` pre-clamped [0, 1] by the caller), vertically
+    centred within one frame-height row, with a hover tooltip. Owns the hit rect + the
+    tooltip — geometry/colour live here so richer visuals can replace it without touching the
+    caller."""
     bar_h: float = float(SIZE.USAGE_BAR_H)
-    gap: float = float(SPACE.XS)
-    stack_h: float = 2.0 * bar_h + gap
     row_h: float = imgui.get_frame_height()
     origin = imgui.get_cursor_screen_pos()
     imgui.invisible_button(f"##{id_}", imgui.ImVec2(width, row_h))
     if imgui.is_item_hovered():
         imgui.set_tooltip(tooltip)
-    y0: float = origin.y + (row_h - stack_h) / 2.0
+    by0: float = origin.y + (row_h - bar_h) / 2.0
+    by1: float = by0 + bar_h
     dl = imgui.get_window_draw_list()
-    track = imgui.color_convert_float4_to_u32(COLOR.BG_FRAME)
-    border = imgui.color_convert_float4_to_u32(COLOR.BORDER)
-    rows: list[tuple[float, tuple[float, float, float, float]]] = [
-        (top_frac, COLOR.ACCENT_PRIMARY),
-        (bottom_frac, COLOR.SELECT),
-    ]
-    for i, (frac, color) in enumerate(rows):
-        by0: float = y0 + i * (bar_h + gap)
-        by1: float = by0 + bar_h
-        dl.add_rect_filled((origin.x, by0), (origin.x + width, by1), track)
-        if frac > 0.0:
-            fill = imgui.color_convert_float4_to_u32(color)
-            dl.add_rect_filled((origin.x, by0), (origin.x + width * frac, by1), fill)
-        dl.add_rect((origin.x, by0), (origin.x + width, by1), border, thickness=1.0)
+    dl.add_rect_filled(
+        (origin.x, by0),
+        (origin.x + width, by1),
+        imgui.color_convert_float4_to_u32(COLOR.BG_FRAME),
+    )
+    if fraction > 0.0:
+        dl.add_rect_filled(
+            (origin.x, by0),
+            (origin.x + width * fraction, by1),
+            imgui.color_convert_float4_to_u32(COLOR.ACCENT_PRIMARY),
+        )
+    dl.add_rect(
+        (origin.x, by0),
+        (origin.x + width, by1),
+        imgui.color_convert_float4_to_u32(COLOR.BORDER),
+        thickness=1.0,
+    )
 
 
 def cell_delete_confirm(origin: imgui.ImVec2, avail: imgui.ImVec2) -> bool | None:
