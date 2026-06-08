@@ -270,8 +270,8 @@ def update_and_draw(app: App) -> None:
     # The "Rendering..." cue. The Render-tab encode runs AFTER this frame's swap (below)
     # so its cue is provably on the glass before the encode freezes the loop; the copilot
     # bridge handles its own deferral.
-    run_render_now = app.render_request is not None and app.render_request_shown
-    if app.copilot.bridge.render_pending() or app.render_request is not None:
+    run_render_now = app.render_defer.ready_to_fire()
+    if app.copilot.bridge.render_pending() or app.render_defer.has_request():
         rendering_overlay("Rendering... the app pauses while it encodes.")
     imgui.pop_font()
 
@@ -295,16 +295,14 @@ def update_and_draw(app: App) -> None:
     # composite while the main thread blocks for seconds inside the encode).
     if run_render_now:
         gl.finish()
-        request = app.render_request
-        app.render_request = None
-        app.render_request_shown = False
+        request = app.render_defer.fire_and_clear()
         if request is not None:
             request()
-    elif app.render_request is not None:
+    elif app.render_defer.has_request():
         # First sight of the request: hold one frame so the cue paints + swaps next loop.
-        app.render_request_shown = True
+        app.render_defer.mark_shown()
     else:
-        app.render_request_shown = False
+        app.render_defer.shown = False
 
     app.frame_idx += 1
 

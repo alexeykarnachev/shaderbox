@@ -61,7 +61,7 @@ def _draw_render_button(app: App, details: MediaDetails) -> MediaDetails:
             except Exception as e:
                 logger.error(f"Failed to render media: {e}")
 
-        app.render_request = _run_render
+        app.render_defer.submit(_run_render)
     imgui.end_disabled()
 
     if not has_path:

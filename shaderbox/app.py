@@ -39,6 +39,7 @@ from shaderbox.exporters.telegram import TelegramExporter
 from shaderbox.exporters.youtube import YouTubeExporter
 from shaderbox.notifications import Notifications
 from shaderbox.paths import app_data_dir, shader_lib_root
+from shaderbox.render_defer import RenderDefer
 from shaderbox.shader_errors import next_error_line
 from shaderbox.shader_lib import ShaderLibIndex
 from shaderbox.shader_lib import set_active as set_active_lib_index
@@ -292,11 +293,7 @@ class App:
         # Where a picked emoji is delivered (set by whoever opens the picker).
         self.emoji_pick_target: Callable[[str], None] | None = None
         self.node_delete_armed: str = ""  # node id pending delete-confirm
-        # A Render-tab render deferred one frame so the "Rendering..." cue paints before the
-        # synchronous main-thread encode freezes the loop. update_and_draw holds it one frame
-        # (cue paints), then runs + clears it. render_request_shown records the cue frame.
-        self.render_request: Callable[[], None] | None = None
-        self.render_request_shown: bool = False
+        self.render_defer = RenderDefer()
         self.editor_focused: bool = False
         # Sticky variant: stays True while the editor is a real interaction target (even
         # after focus is lost to a transient popup / menu / picker). Cleared ONLY by explicit
