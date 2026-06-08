@@ -28,6 +28,33 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
 
 ---
 
+## [DEFERRAL] copilot edits are irreversible — no per-turn checkpoint / rollback
+- **Trigger:** the NEXT copilot session (a different one from 2026-06-08) where the agent mutates a
+  shader the user didn't want touched and the user wants it BACK, OR before plan-locking any feature
+  that adds a new mutating copilot tool (it must register with the checkpoint container, or its
+  change escapes the undo net), OR when starting feature 020·30.
+- The editing tools overwrite source in place at `backend.py::_copilot_persist_target` with no
+  capture of prior bytes — there is no undo. Observed 2026-06-08: the agent edited the wrong node,
+  compounded it over two turns, and "reverted" by reconstructing from memory (not the original) —
+  the user's work was lost. Design (capture = tools log what they touch; per-user-turn checkpoint;
+  a per-message Revert button) is specced with its OPEN questions in
+  `ai_docs/features/020_copilot_agent/30_turn_rollback.md`. NOT plan-locked. (The wrong-node
+  TARGETING bug is separate — a prompt fix, see the next entry.)
+
+## [DEFERRAL] copilot resolves "this"/"it"/the-shader to a name-match, not the current node
+- **Trigger:** the next session where the agent edits/targets a node the user referred to only by a
+  demonstrative ("this", "it", "the shader") and picks the wrong one, OR next time you touch the
+  `HOW TO WORK` / targeting guidance in `copilot/prompt.py`.
+- Observed 2026-06-08: "project this onto a sphere" (current node = Input Types Test) made the agent
+  target the node NAMED "Raymarched Sphere" — it free-associated the word "sphere" to a node name
+  instead of resolving "this" to the `current` node it had been editing. The prompt has no rule for
+  pronoun/demonstrative → current-node resolution, and no warning against name-matching. Honest fix:
+  a TARGETING rule near the top of `HOW TO WORK` — a bare reference = the `current` node; only target
+  another node when the user NAMES it (name/id) or the request can only be satisfied there; when
+  ambiguous, ASK before mutating. Prompt-level, small; separate from the rollback recoverability work
+  (020·30). A confirm-gate on non-current-node edits is a possible structural backstop (bigger; the
+  maintainer deferred deciding that).
+
 ## [DEFERRAL] test_template_library create_node tests leave orphan nodes in projects/dev
 - **Trigger:** `git status` shows untracked `projects/dev/nodes/<uuid>/` dirs after running the test
   suite, OR next time you touch `tests/test_template_library.py`'s `app` fixture / its `create_node`
