@@ -5,6 +5,7 @@ summary (target name + new value) in its messages. Without this, "source-fidelit
 is unverified end-to-end. Pure: a capturing fake client, fake caps, no GL."""
 
 from collections.abc import Iterator
+from pathlib import Path
 
 from shaderbox.copilot.capabilities import SetUniformResult
 from shaderbox.copilot.llm.api import (
@@ -47,7 +48,7 @@ def _drain(session: CopilotSession) -> None:
         time.sleep(0.002)
 
 
-def test_second_turn_receives_first_turn_summary() -> None:
+def test_second_turn_receives_first_turn_summary(tmp_path: Path) -> None:
     caps = minimal_caps(
         set_uniform=lambda _n, _v, _node: SetUniformResult(ok=True, type_label="float")
     )
@@ -60,7 +61,12 @@ def test_second_turn_receives_first_turn_summary() -> None:
         [LLMTextDelta("Okay."), LLMDone("stop", LLMUsage())],
     ]
     client = _CapturingClient(scripts)
-    session = CopilotSession(caps, client, get_project_slug=lambda: "test")  # type: ignore[arg-type]
+    session = CopilotSession(  # type: ignore[arg-type]
+        caps,
+        client,
+        get_project_slug=lambda: "test",
+        get_checkpoints_root=lambda: tmp_path / "checkpoints",
+    )
     try:
         session.enqueue_turn("set the speed to 2.5")
         _drain(session)

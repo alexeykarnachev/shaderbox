@@ -56,6 +56,9 @@ class Message:
     # role == "pending_action": agent loop is blocked on the gate; resolved flips True on answer/cancel.
     resolved: bool = False
     recover: RecoverInfo | None = None  # undo affordance on a resolved-Yes delete card
+    # role == "user": the turn id this message initiated, keying its rollback checkpoint. "" = no
+    # checkpoint (a read-only turn, or a message that predates the feature). Backs the Revert glyph.
+    turn_id: str = ""
     # Gate widget on a pending_action card: CONFIRM = Yes/No, CREDENTIAL = masked input. gate_input
     # is the UI-only typed-secret buffer — NEVER persisted/read by session (leaves via GateResponse.secret).
     gate_kind: GateKind = GateKind.CONFIRM

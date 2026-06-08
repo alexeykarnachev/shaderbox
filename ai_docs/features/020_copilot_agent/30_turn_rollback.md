@@ -1,10 +1,15 @@
 # 020 · 30 — Copilot turn rollback (checkpoint + revert)
 
-> **STATUS: PLAN-LOCKED + pre-impl review folded — ready to implement.** Mechanism, data model, and
-> all four forks resolved (decisions 1-14). The pre-impl review (2 agents, anchored to the real code)
-> caught two blockers that overturned the original disk-copy model — the corrected model is
-> serialize-the-LIVE-node on capture + reload-and-replace on restore (decisions 1-2, 10-14). Next:
-> implement in one coherent diff.
+> **STATUS: IMPLEMENTED + post-impl review folded — done.** Mechanism, data model, and all forks
+> resolved (decisions 1-14). The pre-impl review overturned the disk-copy model → serialize-the-LIVE-
+> node + reload-and-replace. The post-impl review (3 lenses) caught a load-bearing BLOCKER — the
+> snapshot `UINode.save` rebound the live node's `source.path` into the snapshot dir, so a later edit
+> wrote the snapshot and Revert restored the EDITED shader (the exact opposite of the goal); fixed
+> with a `rebind=False` param + a regression test. Lib-create reverse, the failed-only-capture seal,
+> the read-only-turn glyph gate, and the lib-filename collision were the should-fixes folded.
+> Code: `copilot/checkpoint.py` (new) + the capture seams + `App.restore_checkpoint`. Tests:
+> `tests/test_checkpoint.py` (10). Awaiting a maintainer live `make run` pass (the UI glyph + modal
+> + the live-surface restore are headless-unverifiable).
 
 ## The problem (why this exists)
 

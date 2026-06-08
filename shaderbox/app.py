@@ -25,6 +25,7 @@ from shaderbox.commands import (
 from shaderbox.constants import RESOURCES_DIR
 from shaderbox.copilot.backend import CopilotBackend
 from shaderbox.copilot.capabilities import CopilotCapabilities
+from shaderbox.copilot.checkpoint import RevertResult
 from shaderbox.copilot.llm.openrouter import OpenRouterLLMClient
 from shaderbox.copilot.persistence import ConversationStore, archive_conversation
 from shaderbox.copilot.session import CopilotSession
@@ -103,6 +104,28 @@ def _order_templates(templates: dict[str, UINode]) -> dict[str, UINode]:
 def _conversation_stamp() -> str:
     # Filesystem-safe timestamp for an archived conversation filename.
     return time.strftime("%Y-%m-%d_%H-%M-%S")
+
+
+def _format_revert_notice(result: RevertResult) -> str:
+    # The NL note shown in chat + handed to the agent after a revert.
+    if not result.touched_anything and not result.unrestorable:
+        return "Reverted: nothing to restore for that turn."
+    parts: list[str] = []
+    if result.restored_nodes:
+        parts.append(f"restored {', '.join(result.restored_nodes)}")
+    if result.recovered_nodes:
+        parts.append(f"recovered {', '.join(result.recovered_nodes)}")
+    if result.deleted_nodes:
+        parts.append(f"removed {', '.join(result.deleted_nodes)}")
+    if result.reverted_libs:
+        parts.append(f"reverted library {', '.join(result.reverted_libs)}")
+    notice = "Reverted that turn's changes: " + "; ".join(parts) + "." if parts else ""
+    if result.unrestorable:
+        gap = " " if notice else ""
+        notice += (
+            f"{gap}Could not restore {', '.join(result.unrestorable)} (no snapshot)."
+        )
+    return notice
 
 
 @dataclass
@@ -227,6 +250,7 @@ class App:
             # __init__ project_dir isn't set yet -> "project"; the real slug lands when
             # _init's reset_conversation rotates the trace.
             get_project_slug=lambda: getattr(self, "project_dir", Path("project")).name,
+            get_checkpoints_root=lambda: self.copilot_checkpoints_dir,
         )
         # copilot_focus_pending: one-shot driving window + input focus, consumed at the input draw.
         self.is_copilot_open: bool = False
@@ -236,6 +260,8 @@ class App:
         self.copilot_focus_pending: bool = False
         self.copilot_focused: bool = False
         self.copilot_defocus_requested: bool = False
+        # The user message whose Revert glyph was clicked; drives the confirm modal. None = closed.
+        self.copilot_revert_target: Message | None = None
         # True while the mouse is over the open chat window. code.py neutralizes the
         # editor's direct io.mouse_down read so a drag inside the chat doesn't select
         # editor text beneath it (the TextEditor bypasses imgui hit-testing).
@@ -428,6 +454,7 @@ class App:
             working_set_add=self._copilot_ws_add,
             batch_mutated_reader=lambda: self._copilot_batch_mutated,
             batch_mutated_add=lambda a: self._copilot_batch_mutated.add(a),
+            get_active_checkpoint=lambda: self.copilot.checkpoints.active,
         )
         b = self.copilot_backend
         return CopilotCapabilities(
@@ -490,6 +517,19 @@ class App:
         else:
             msg.recover = replace(msg.recover, done=True)
             self.notifications.push("Node is no longer in trash — can't recover")
+        self.copilot.save_conversation(self.copilot_conversation_path)
+
+    def revert_turn(self, msg: Message) -> None:
+        # MAIN THREAD (the chat's Revert button on a user message, gated on not-in-flight). Restore
+        # every node the turn touched to its pre-turn state, drop the message's turn_id so the
+        # button retires, note the revert to the agent, persist (feature 020·30).
+        if not msg.turn_id or self.copilot.state.in_flight:
+            return
+        result = self.restore_checkpoint(msg.turn_id)
+        msg.turn_id = ""
+        self.copilot.note_revert(_format_revert_notice(result))
+        if result.touched_anything:
+            self.notifications.push("Reverted the assistant's changes")
         self.copilot.save_conversation(self.copilot_conversation_path)
 
     # ---- render / publish ----
@@ -608,6 +648,7 @@ class App:
         if self.copilot.state.in_flight:
             return
         archive_conversation(self.copilot_conversation_path, _conversation_stamp())
+        self.copilot.clear_checkpoints()  # delete outright, not archived (feature 020·30)
         self.copilot.reset_conversation()
         self.copilot.save_conversation(self.copilot_conversation_path)
 
@@ -870,6 +911,10 @@ class App:
     @property
     def copilot_conversation_path(self) -> Path:
         return self.copilot_dir / "conversation.json"
+
+    @property
+    def copilot_checkpoints_dir(self) -> Path:
+        return self.copilot_dir / "checkpoints"
 
     @property
     def current_node_id(self) -> str:
@@ -1369,6 +1414,102 @@ class App:
         self.ui_nodes[node_id] = node
         self.set_current_node_id(node_id)
         logger.info(f"Node recovered from trash: {node_id}")
+        return True
+
+    def _reload_node_in_place(self, node_id: str) -> None:
+        # Reload-and-replace a node STILL in ui_nodes from its (just-restored) on-disk dir, so the
+        # live Node / GL program / uniform_values all reflect disk (feature 020·30). Release the
+        # stale Node's GL, load fresh, then push the restored text into any OPEN editor session
+        # (its source.path — nodes/<id>/shader.frag.glsl — is stable across the reload, so the
+        # session is reused, not dropped; matches the mtime-watcher's external-change resync).
+        node_dir = self.nodes_dir / node_id
+        if not node_dir.is_dir():
+            return
+        old = self.ui_nodes.get(node_id)
+        if old is not None:
+            old.node.release()
+        fresh = load_node_from_dir(node_dir)
+        self.ui_nodes[node_id] = fresh
+        self.sync_editor_from_disk(node_id, fresh.node.source.text)
+
+    def restore_checkpoint(self, turn_id: str) -> RevertResult:
+        # MAIN THREAD (the chat's Revert button, gated on not-in-flight). Rewind every node this
+        # turn touched to its pre-turn state (feature 020·30): reload-and-replace edited/uniform
+        # nodes, delete-to-trash created ones, restore deleted ones, rewrite reverted libs +
+        # invalidate consumers, restore the pre-switch current node.
+        result = RevertResult()
+        cp = self.copilot.checkpoints.get(turn_id)
+        if cp is None:
+            return result
+
+        for node_id, name in cp.snapshotted_nodes.items():
+            snap = cp.node_snapshot_dir(node_id)
+            if snap is None:
+                result.unrestorable.append(name)
+                continue
+            dst = self.nodes_dir / node_id
+            if dst.exists():
+                shutil.rmtree(dst, ignore_errors=True)
+            shutil.copytree(snap, dst)
+            if node_id in self.ui_nodes:
+                self._reload_node_in_place(node_id)
+            else:
+                # A later turn deleted it -> re-create from the snapshot (decision 11).
+                self.ui_nodes[node_id] = load_node_from_dir(dst)
+            result.restored_nodes.append(name)
+        for name in cp.failed_nodes:
+            if name not in result.unrestorable:
+                result.unrestorable.append(name)
+
+        for node_id in cp.created_nodes:
+            if node_id in self.ui_nodes:
+                name = self.ui_nodes[node_id].ui_state.ui_name
+                self._delete_node_unguarded(node_id)
+                result.deleted_nodes.append(name)
+
+        for node_id, trash_name in cp.deleted_nodes.items():
+            if node_id not in self.ui_nodes and self.restore_node_from_trash(
+                trash_name, node_id
+            ):
+                result.recovered_nodes.append(self.ui_nodes[node_id].ui_state.ui_name)
+
+        for address in cp.snapshotted_libs:
+            text = cp.lib_snapshot_text(address)
+            if text is not None and self._revert_lib_file(address, text):
+                result.reverted_libs.append(address)
+
+        for address in cp.created_libs:
+            if self._revert_created_lib(address):
+                result.reverted_libs.append(address)
+
+        if cp.pre_switch_node_id is not None and cp.pre_switch_node_id in self.ui_nodes:
+            self.set_current_node_id(cp.pre_switch_node_id)
+
+        self.copilot.checkpoints.drop(turn_id)
+        return result
+
+    def _revert_lib_file(self, ws_address: str, pre_edit_source: str) -> bool:
+        # Rewrite a lib file to its pre-turn bytes AND invalidate consumer nodes (a byte-only
+        # rewrite leaves them compiled against the reverted-away source — feature 020·30 decision 2).
+        rel = ws_address[len("lib:") :] if ws_address.startswith("lib:") else ws_address
+        path = self.shader_lib_files.resolve_copilot_path(rel)
+        if path is None or not self.shader_lib_files.write_copilot_lib_file(
+            path, pre_edit_source
+        ):
+            return False
+        self.copilot_backend._copilot_invalidate_lib_consumers(path)
+        return True
+
+    def _revert_created_lib(self, ws_address: str) -> bool:
+        # Reverse a lib FILE the turn created: invalidate consumers (while the path still
+        # resolves) then delete it to trash. A byte-rewrite to empty would leave a dead file
+        # that breaks every node calling its function (feature 020·30).
+        rel = ws_address[len("lib:") :] if ws_address.startswith("lib:") else ws_address
+        path = self.shader_lib_files.resolve_copilot_path(rel)
+        if path is None or not path.exists():
+            return False
+        self.copilot_backend._copilot_invalidate_lib_consumers(path)
+        self.shader_lib_files.delete_file(path)
         return True
 
     def _seed_starter_node(self) -> None:

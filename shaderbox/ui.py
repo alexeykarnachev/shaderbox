@@ -192,6 +192,7 @@ def update_and_draw(app: App) -> None:
     # is the durable unit, so a later crash never loses it) + re-focus the input, which was
     # disabled (unfocusable) for the whole turn so the on-send focus latch was lost.
     if app.copilot_turn_active and not app.copilot.state.in_flight:
+        app.copilot.seal_checkpoint()  # finalize the turn's rollback snapshot (feature 020·30)
         app.copilot.save_conversation(app.copilot_conversation_path)
         app.copilot_focus_pending = True
     app.copilot_turn_active = app.copilot.state.in_flight

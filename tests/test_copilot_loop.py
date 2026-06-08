@@ -7,6 +7,7 @@ feeds results back, and terminates on the clean compile with the final text.
 
 import threading
 from collections.abc import Iterator
+from pathlib import Path
 
 from shaderbox.copilot.agent import (
     AgentError,
@@ -320,7 +321,7 @@ def test_max_iterations_cutoff_surfaces_as_error() -> None:
     assert "stopped after" in events[-1].message.lower()
 
 
-def test_stale_shutdown_sentinel_does_not_strand_turn() -> None:
+def test_stale_shutdown_sentinel_does_not_strand_turn(tmp_path: Path) -> None:
     # Regression: a reused CopilotSession could hold a leftover _SHUTDOWN sentinel in
     # its turn queue (from a prior release()); the worker would dequeue it and exit
     # before processing the real turn, leaving in_flight=True forever ("thinking…").
@@ -344,6 +345,7 @@ def test_stale_shutdown_sentinel_does_not_strand_turn() -> None:
         _fake_caps(edit_errors=[]),  # type: ignore[arg-type]
         _PlainClient(),  # type: ignore[arg-type]
         get_project_slug=lambda: "test",
+        get_checkpoints_root=lambda: tmp_path / "checkpoints",
     )
     sess._turn_queue.put(_SHUTDOWN)  # simulate the stale sentinel
     sess.enqueue_turn("hey")

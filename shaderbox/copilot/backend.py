@@ -40,6 +40,7 @@ from shaderbox.copilot.capabilities import (
     TemplateEntry,
     WorkingSetView,
 )
+from shaderbox.copilot.checkpoint import TurnCheckpoint
 from shaderbox.copilot.config import COPILOT_CONFIG
 from shaderbox.copilot.errors import CopilotToolError
 from shaderbox.copilot.glsl_lex import span_drops_comment, token_match
@@ -279,6 +280,7 @@ class CopilotBackend:
         working_set_add: Callable[[str], None],
         batch_mutated_reader: Callable[[], set[str]],
         batch_mutated_add: Callable[[str], None],
+        get_active_checkpoint: Callable[[], TurnCheckpoint | None],
     ) -> None:
         self._get_bridge = get_bridge
         self._node_templates_dir = node_templates_dir
@@ -300,11 +302,39 @@ class CopilotBackend:
         self._working_set_add = working_set_add
         self._batch_mutated_reader = batch_mutated_reader
         self._batch_mutated_add = batch_mutated_add
+        self._get_active_checkpoint = get_active_checkpoint
 
     @property
     def _bridge(self) -> CopilotBridge:
         # Lazy: the bridge lives on the CopilotSession, built AFTER the backend. Resolved at turn-time.
         return self._get_bridge()
+
+    # ---- rollback checkpoint capture (feature 020·30) ----
+    # All run main-thread inside the bridge _on_main blocks, BEFORE the mutation. Best-effort:
+    # TurnCheckpoint's own try/except swallows a capture failure so the edit never fails (decision 10).
+
+    def _capture_node(self, node_id: str) -> None:
+        # Serialize the LIVE node (not the stale on-disk dir — set_uniform never writes node.json).
+        cp = self._get_active_checkpoint()
+        node = self._get_ui_nodes().get(node_id)
+        if cp is None or node is None:
+            return
+        cp.snapshot_node(
+            node_id, node, lambda n, dest: n.save(dest.parent, dest.name, rebind=False)
+        )
+
+    def _capture_lib(
+        self, ws_address: str, pre_edit_source: str, lib_create: bool
+    ) -> None:
+        cp = self._get_active_checkpoint()
+        if cp is None:
+            return
+        if lib_create:
+            cp.mark_created_lib(
+                ws_address
+            )  # reverse = delete the file, no pre-edit bytes
+        else:
+            cp.snapshot_lib(ws_address, pre_edit_source)
 
     def _copilot_short_ids(self) -> dict[str, str]:
         # full node-id -> shortest unique prefix (>=_COPILOT_SHORT_ID_LEN); on collision ALL ids grow
@@ -612,6 +642,7 @@ class CopilotBackend:
                 return SetUniformResult(
                     ok=False, error=_set_uniform_shape_hint(name, uniform, label)
                 )
+            self._capture_node(node_id)  # pre-change rollback snapshot (best-effort)
             try_to_release(target.uniform_values.get(name))
             target.uniform_values[name] = coerced
             return SetUniformResult(ok=True, type_label=label)
@@ -647,6 +678,9 @@ class CopilotBackend:
             new_node.node.compile()
             self._save_ui_node(new_node)
             self._get_ui_nodes()[new_node.id] = new_node
+            cp = self._get_active_checkpoint()
+            if cp is not None:
+                cp.mark_created(new_node.id)  # reverse = delete-to-trash, no snapshot
             if switch_to:
                 self._set_current_node_id(new_node.id)
             self._working_set_add(new_node.id)
@@ -672,6 +706,9 @@ class CopilotBackend:
                 )
             name = self._get_ui_nodes()[node_id].ui_state.ui_name
             trash_name = self._delete_node_unguarded_cb(node_id)
+            cp = self._get_active_checkpoint()
+            if cp is not None:
+                cp.record_deleted(node_id, trash_name)  # reverse = restore from trash
             logger.info(f"copilot deleted node {node_id} (trash={trash_name})")
             return DeleteNodeResult(
                 ok=True, deleted_name=name, node_id=node_id, trash_name=trash_name
@@ -690,6 +727,9 @@ class CopilotBackend:
                     error=f"no such node '{node}' — check the project map for ids",
                 )
             ui_node = self._get_ui_nodes()[node_id]
+            cp = self._get_active_checkpoint()
+            if cp is not None:
+                cp.record_pre_switch(self._get_current_node_id())
             self._set_current_node_id(node_id)
             self._working_set_add(node_id)
             logger.info(f"copilot switched current node to {node_id}")
@@ -1191,11 +1231,14 @@ class CopilotBackend:
         # the "no standalone compile" note. On success the target joins the working set + is batch-mutated.
         if tgt.kind == "node":
             assert tgt.node is not None and tgt.node_id is not None
+            self._capture_node(tgt.node_id)  # pre-write rollback snapshot (best-effort)
             errors = self._copilot_persist_shader(tgt.node_id, tgt.node, new_text)
             self._working_set_add(tgt.ws_address)
             self._batch_mutated_add(tgt.ws_address)
             return EditResult(matches=matches, errors=errors)
         assert tgt.lib_path is not None
+        # pre-write rollback snapshot (a brand-new lib reverses to a delete, not empty bytes)
+        self._capture_lib(tgt.ws_address, tgt.source, tgt.lib_create)
         if not self._get_shader_lib_files().write_copilot_lib_file(
             tgt.lib_path, new_text
         ):

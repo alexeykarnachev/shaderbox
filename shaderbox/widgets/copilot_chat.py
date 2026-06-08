@@ -24,9 +24,11 @@ from shaderbox.ui_primitives import (
     labeled_text_input,
     layout_icon_button,
     message_bubble,
+    modal_window,
     open_path_button,
     open_url_button,
     primary_button,
+    revert_icon_button,
     unconnected_gate,
 )
 from shaderbox.util import open_in_file_manager
@@ -137,6 +139,39 @@ def draw(app: App) -> None:
             )
         else:
             _draw_transcript(app)
+
+        _draw_revert_modal(app)
+
+
+_REVERT_MODAL_LABEL = "Revert turn?"
+
+
+def _draw_revert_modal(app: App) -> None:
+    # The confirm modal for a clicked Revert glyph (decision 6): spell out the consequence,
+    # Confirm / Cancel. app.copilot_revert_target carries the user Message to revert.
+    target = app.copilot_revert_target
+    if target is None:
+        return
+    with modal_window(_REVERT_MODAL_LABEL, (380.0, 0.0)) as visible:
+        if not visible:
+            return
+        excerpt = sanitize_display(target.text).strip().splitlines()
+        head = excerpt[0][:80] if excerpt else ""
+        imgui.text_wrapped(f'Revert the assistant\'s changes from "{head}"?')
+        imgui.dummy(imgui.ImVec2(0, float(SPACE.XS)))
+        caption_text(
+            "Shaders edited since that message are restored to their state before it. "
+            "This undoes the assistant's work on those nodes.",
+        )
+        imgui.dummy(imgui.ImVec2(0, float(SPACE.SM)))
+        if primary_button("Revert"):
+            app.revert_turn(target)
+            app.copilot_revert_target = None
+            imgui.close_current_popup()
+        imgui.same_line()
+        if ghost_button("Cancel"):
+            app.copilot_revert_target = None
+            imgui.close_current_popup()
 
 
 _MIN_INPUT_H: float = 40.0
@@ -268,7 +303,13 @@ def _draw_message(app: App, msg: Message, idx: int) -> None:
     role = msg.role
     if role == "user":
         _draw_bubble(
-            "you", COLOR.ACCENT_PRIMARY, fade(COLOR.ACCENT_PRIMARY, 0.08), text, idx
+            "you",
+            COLOR.ACCENT_PRIMARY,
+            fade(COLOR.ACCENT_PRIMARY, 0.08),
+            text,
+            idx,
+            app=app,
+            revert_msg=msg,
         )
     elif role == "assistant":
         _draw_bubble("copilot", COLOR.STATE_INFO, COLOR.BG_SURFACE, text, idx)
@@ -294,24 +335,46 @@ def _draw_bubble(
     bg: tuple[float, float, float, float],
     text: str,
     idx: int,
+    app: App | None = None,
+    revert_msg: Message | None = None,
 ) -> None:
-    # A chat bubble: a colored name header + wrapped text, with a corner copy glyph pinned
-    # top-right (imgui prose isn't selectable, so copy is the affordance). The bubble gap, not
-    # a separator, divides messages.
+    # A chat bubble: a colored name header + wrapped text, with corner glyphs pinned top-right
+    # (imgui prose isn't selectable, so copy is the affordance). A user message that has a
+    # rollback checkpoint also gets a revert glyph to copy's left. The bubble gap, not a
+    # separator, divides messages.
     side: float = float(SIZE.ICON_SM)
+    # Only when a sealed checkpoint with real changes still exists for this turn — the store drops
+    # empty (read-only) turns at seal, so a read-only message shows no glyph; also self-heals a
+    # pruned/orphaned checkpoint (the Message kept its turn_id but the snapshot is gone).
+    show_revert = (
+        app is not None
+        and revert_msg is not None
+        and bool(revert_msg.turn_id)
+        and app.copilot.checkpoints.get(revert_msg.turn_id) is not None
+    )
     with message_bubble(f"##bubble_{idx}", bg) as origin:
         imgui.text_colored(name_color, name)
         imgui.text_wrapped(text)
-        # Copy glyph at the bubble's top-right inner corner; allow_overlap so it wins the click.
+        # Corner glyphs at the bubble's top-right inner corner; allow_overlap so they win clicks.
         # SPACE.SM gap from the right edge matches the top gap (the window padding).
-        avail_w = imgui.get_content_region_avail().x - float(SPACE.SM)
+        right = origin.x + imgui.get_content_region_avail().x - float(SPACE.SM)
         imgui.set_next_item_allow_overlap()
-        imgui.set_cursor_screen_pos((origin.x + avail_w - side, origin.y))
+        imgui.set_cursor_screen_pos((right - side, origin.y))
         if copy_icon_button(f"copy_{idx}", side):
             with contextlib.suppress(pyperclip.PyperclipException):
                 pyperclip.copy(text)
         if imgui.is_item_hovered():
             imgui.set_tooltip("Copy")
+        if show_revert and app is not None and revert_msg is not None:
+            imgui.set_next_item_allow_overlap()
+            imgui.set_cursor_screen_pos((right - 2 * side - float(SPACE.XS), origin.y))
+            disabled = app.copilot.state.in_flight
+            imgui.begin_disabled(disabled)
+            if revert_icon_button(f"revert_{idx}", side):
+                app.copilot_revert_target = revert_msg
+            imgui.end_disabled()
+            if not disabled and imgui.is_item_hovered():
+                imgui.set_tooltip("Revert this turn's changes")
     imgui.dummy(imgui.ImVec2(0, float(SPACE.SM)))
 
 

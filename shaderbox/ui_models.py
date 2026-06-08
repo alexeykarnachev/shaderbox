@@ -297,7 +297,9 @@ class UINode(BaseModel):
     def reset_id(self) -> None:
         self.id = str(uuid4())
 
-    def save(self, root_dir: Path, dir_name: str | None = None) -> Path:
+    def save(
+        self, root_dir: Path, dir_name: str | None = None, rebind: bool = True
+    ) -> Path:
         dir = root_dir / (dir_name or self.id)
         dir.mkdir(exist_ok=True, parents=True)
 
@@ -310,11 +312,14 @@ class UINode(BaseModel):
         fs_file_path = dir / _NODE_SHADER_BASENAME
         with fs_file_path.open("w") as f:
             f.write(self.node.source.text)
-        # Rebind the source to its (possibly new) on-disk location + fresh mtime,
-        # so the mtime watcher and any subsequent load read consistent state.
-        self.node.source = replace(
-            self.node.source, path=fs_file_path, mtime=fs_file_path.lstat().st_mtime
-        )
+        # Rebind the live source to its on-disk location + fresh mtime, so the mtime watcher and
+        # any subsequent load read consistent state. A rollback-checkpoint snapshot passes
+        # rebind=False: it serializes a COPY into the snapshot dir and must NOT repoint the live
+        # node into it (else the next edit writes the snapshot, not nodes/<id>).
+        if rebind:
+            self.node.source = replace(
+                self.node.source, path=fs_file_path, mtime=fs_file_path.lstat().st_mtime
+            )
 
         # ----------------------------------------------------------------
         # Save uniforms

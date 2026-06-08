@@ -25,35 +25,30 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-**As of 2026-06-08 (copilot UI/UX polish wave 024 in flight — driven by a live maintainer walkthrough).**
+<!-- As of 2026-06-08. -->
+**Copilot turn-rollback (030) implemented + reviewed; awaiting a maintainer live pass.**
 
-- **NOW — copilot UI/UX polish wave (024), fix-as-we-go.** The maintainer drives the chat live and hands
-  UI rough edges one at a time; simple ones fixed inline (gated by `make check` + `make smoke` + a live
-  pass), larger ones filed. **Landed (F01-F16 in `24_ui_polish_wave.md`):** chat-input auto-focus + focus
-  held / app-panel locked while a turn runs (closed the stray-keystroke compile bug); header buttons
-  re-tiered (`Clear`→danger) + Ctrl+W layout cycle + FREE pos/size remembered; input multiline-wrap (Enter
-  sends, Ctrl+Enter newline) + OS-matched key-repeat + ibeam cursor; the active-region outline saga
-  (window-draw-list, one-outline + region-derive policy in `App`, title-bar cover); message BUBBLES + corner
-  copy icon + "you"/"copilot" names; a feed/input SPLITTER (input keeps height, feed flexes) + stick-to-
-  bottom scroll (opens at bottom, releases on scroll-up) + single window scrollbar; single cursor-owner
-  (kills X11 per-frame `set_cursor` flicker); the `edit_shader` comment-guard false-positive (trace-found).
-- **Header feature (025) landed + redesigned:** the `Layout:` text → a drawn box-in-frame icon; ONE
-  context-fullness gauge (standing context = first-iteration input ÷ `max_input_tokens`, the "when to
-  compact" signal) + a hover tooltip (last-reply / last-turn-cost / session-cost). `TurnStats` type;
-  persistence v7. Spec: `25_context_fill_indicator.md`.
-- **Refactor pass (swarm-reviewed) landed:** verdict "not spaghetti — 1 systemic fix + small
-  consolidations". The `copilot_focused` leak into generic region code is GONE (`region_outline_visible` +
-  `region_derive_allowed` own the policy in `App`); `_UsageRollup`→`LLMUsage.__add__`; editor-yield latch +
-  layout-cycle deduped.
-- **Infra fix:** `make smoke`'s window was visible+hung on a real display; `App(headless=True)` now hides
-  it (offscreen drivers use that, not a hand-rolled window — `dev_flow.md`).
-- **AWAITING the maintainer's live `make run` pass** on the whole chat (cursor/scroll/layout/focus are
-  headless-unverifiable), THEN ship.
-- **Also landed today:** the light copilot decomposition pass — `text_render`→`sanitize`,
-  `context`→`prompt_context` renames + bridge/gate sibling pointers (a 9-lens swarm + adversary concluded
-  rename-only over a re-grouping; commit `e91eea8`). The topology re-group stays deferred (no firing pain).
-- **THEN — ship.** `master` stays at `v0.12.1`; the full copilot stack (020 + 021 + 022 + 023) sits
-  ship-shaped on `dev`, unshipped, pending the polish wave + a maintainer live pass. Awaiting explicit go.
+- **NOW — copilot turn-rollback (030) landed, pre+post-impl reviewed.** A per-USER-turn checkpoint +
+  a Revert glyph on each user bubble (confirm modal) that rewinds every node the turn touched to its
+  pre-turn state. `copilot/checkpoint.py` (new — `TurnCheckpoint`/`CheckpointStore`, best-effort
+  capture, self-describing on-disk index, persisted across restart, deleted-not-archived on Clear);
+  capture seams in `backend.py` (serialize the LIVE node, never the stale on-disk dir);
+  `App.restore_checkpoint` reload-and-replace (mirrors `restore_node_from_trash`) + lib-rewrite +
+  consumer-invalidate + create/delete reverse. The pre-impl review overturned a naive disk-copy model;
+  the post-impl review caught a load-bearing BLOCKER (the snapshot `UINode.save` rebound the live
+  node's `source.path` into the snapshot dir → Revert would have restored the EDITED shader; fixed
+  with `rebind=False` + a regression test). Spec: `30_turn_rollback.md`. **Awaiting a maintainer live
+  `make run` pass** (the glyph + modal + live-surface restore are headless-unverifiable).
+- **Filed, not started (separate from rollback):** the wrong-node TARGETING bug — the agent resolved
+  "this"/"the shader" to a NAME-match instead of the current node (the 2026-06-08 trace: edited
+  "Raymarched Sphere" on "project this onto a sphere"). A prompt-level fix in `copilot/prompt.py`;
+  `todo.md` trigger.
+- **Prior wave (024 UI/UX polish) + the human tool-call cards SHIPPED on `dev`:** chat bubbles (smaller
+  + inset, system messages in invisible bubbles, centered copy glyph), the human one-line tool-call
+  cards (`session.py::_tool_card_line`), auto-focus/lock-while-running, the feed/input splitter,
+  stick-to-bottom scroll, single cursor owner, Ctrl+W layout cycle. Spec: `24_ui_polish_wave.md`.
+- **THEN — ship.** `master` stays at `v0.12.1`; the full copilot stack (020-024 + 030) sits ship-shaped
+  on `dev`, unshipped, pending the live pass. Awaiting explicit go.
 - **Deferred (each gates a FUTURE round only on a NEW failure class in a DIFFERENT session):** the lazy
   tool-catalogue (its ~16-tool threshold FIRED), the structural shader view (020·27), reasoning-notes /
   intent-carryover guard (DE-RISKED by 029), a broken-compile circuit-breaker, machine-readable render

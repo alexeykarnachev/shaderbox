@@ -25,7 +25,7 @@ from shaderbox.copilot.state import (
     TurnStats,
 )
 
-_VERSION = 7
+_VERSION = 8
 
 _RESULT_WIDGET_KINDS: frozenset[str] = frozenset({"open_url", "open_path"})
 
@@ -93,6 +93,9 @@ class _MessageModel(BaseModel):
     gate_kind: str = "confirm"
     # Optional + defaulted so a pre-field file loads as None.
     result_widget: _ResultWidgetModel | None = None
+    # The user message's turn id, keying its rollback checkpoint (feature 020·30). Defaulted so a
+    # pre-field file loads with no turn_id (no Revert button — the checkpoint dirs are gone anyway).
+    turn_id: str = ""
     model_config = {"extra": "forbid"}
 
 
@@ -151,6 +154,7 @@ class ConversationStore(BaseModel):
                         if m.result_widget is not None
                         else None
                     ),
+                    turn_id=m.turn_id,
                 )
                 for m in state.messages
             ],
@@ -187,6 +191,7 @@ class ConversationStore(BaseModel):
                     else None
                 ),
                 result_widget=_result_widget_or_none(m.result_widget),
+                turn_id=m.turn_id,
             )
             for m in self.messages
         ]

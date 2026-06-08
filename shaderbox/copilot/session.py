@@ -20,6 +20,7 @@ from shaderbox.copilot.agent import (
 )
 from shaderbox.copilot.bridge import CopilotBridge
 from shaderbox.copilot.capabilities import CopilotCapabilities
+from shaderbox.copilot.checkpoint import CheckpointStore
 from shaderbox.copilot.config import COPILOT_CONFIG
 from shaderbox.copilot.errors import CopilotConfigError
 from shaderbox.copilot.gate import GateChannel, GateResponse
@@ -43,6 +44,12 @@ def _slugify(name: str) -> str:
     # Project-dir name -> filesystem-safe trace-filename slug. Keep alnum/dash/underscore.
     safe = "".join(c if c.isalnum() or c in "-_" else "-" for c in name).strip("-")
     return safe or "project"
+
+
+def _first_line(text: str, limit: int = 80) -> str:
+    # The user-text excerpt shown in the revert confirm modal + notice.
+    line = text.strip().splitlines()[0] if text.strip() else ""
+    return line[:limit] + ("..." if len(line) > limit else "")
 
 
 # Human verb per tool for the chat card. The agent's verbose `result` is its own feedback;
@@ -106,14 +113,21 @@ class CopilotSession:
         caps: CopilotCapabilities,
         client: OpenRouterLLMClient,
         get_project_slug: Callable[[], str],
+        get_checkpoints_root: Callable[[], Path],
     ) -> None:
         self.caps = caps
         self.client = client
         self._get_project_slug = get_project_slug
+        self._get_checkpoints_root = get_checkpoints_root
         self.registry = build_registry(caps)
         self.bridge = CopilotBridge()
         self.gate = GateChannel()
         self.state = ChatState()
+        # Per-turn rollback checkpoints (feature 020·30). Built lazily: the project dir isn't
+        # known at session construction (App sets it later), and reset_conversation rebuilds it
+        # for the project we switch INTO. None until first accessed via `checkpoints`.
+        self._checkpoints: CheckpointStore | None = None
+        self._turn_seq = 0
         # Conversation memory. Owned + mutated ONLY by the worker thread (read at turn
         # start, appended at turn end) — never by the UI.
         self.history: list[LLMMessage] = []
@@ -135,12 +149,25 @@ class CopilotSession:
     def _new_trace(self) -> TraceLog:
         return new_trace_log(_slugify(self._get_project_slug()), _trace_stamp())
 
+    @property
+    def checkpoints(self) -> CheckpointStore:
+        # Lazy first build (rehydrates the active project's persisted checkpoints); rebuilt on a
+        # project switch by reset_conversation.
+        if self._checkpoints is None:
+            self._checkpoints = CheckpointStore(self._get_checkpoints_root())
+        return self._checkpoints
+
     # ---- main thread: enqueue + drain ----
 
     def enqueue_turn(self, user_text: str) -> None:
         # MAIN THREAD (on Send). The editor flush + lock happens App-side BEFORE this call so
         # the worker's first read sees consistent state.
-        self.state.messages.append(Message(role="user", text=user_text))
+        self._turn_seq += 1
+        turn_id = f"turn_{self._turn_seq:04d}_{_trace_stamp()}"
+        self.checkpoints.open(turn_id, _first_line(user_text))
+        self.state.messages.append(
+            Message(role="user", text=user_text, turn_id=turn_id)
+        )
         self.state.streaming_text = ""
         self.state.in_flight = True
         # Clear a `_shutdown` the bridge + gate may have latched from a prior release() on this
@@ -421,10 +448,33 @@ class CopilotSession:
         self.state = ChatState()
         self.history = []
         self._cancel = threading.Event()
+        # Rebuild the checkpoint store for the project we switch INTO (rehydrates ITS persisted
+        # checkpoints); the outgoing project's snapshots stay on its own disk. A Clear deletes
+        # them explicitly App-side BEFORE this call (clear_checkpoints). Lazily rebuilt next access.
+        self._checkpoints = None
         # Fresh transcript for the project we switch INTO; the prior one is left closed on
         # disk (retention prunes it later).
         self.trace.close()
         self.trace = self._new_trace()
+
+    def seal_checkpoint(self) -> None:
+        # MAIN THREAD, at turn-done (the ui.py copilot_turn_active True->False transition):
+        # finalize the active checkpoint + persist its index, then prune any checkpoint whose
+        # user Message is gone (retention, decision 14).
+        self.checkpoints.seal()
+        live = {m.turn_id for m in self.state.messages if m.turn_id}
+        self.checkpoints.prune_to(live)
+
+    def clear_checkpoints(self) -> None:
+        # Clear-the-chat: delete every snapshot outright (decision 4), no archive.
+        self.checkpoints.clear()
+
+    def note_revert(self, text: str) -> None:
+        # MAIN THREAD, idle (Revert is gated on not-in-flight, decision 12): record a revert as a
+        # plain NL message in BOTH the transcript and the worker's replay history, so the agent's
+        # next turn sees that its earlier edits were undone (keeps history coherent with disk).
+        self.state.messages.append(Message(role="tool_status", text=text))
+        self.history.append(LLMMessage(role="assistant", content=text))
 
     def save_conversation(self, path: Path) -> None:
         # MAIN THREAD, at a quiescent point (not in_flight): snapshot state + history to disk.

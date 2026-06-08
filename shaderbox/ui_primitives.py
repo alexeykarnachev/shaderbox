@@ -1,3 +1,4 @@
+import math
 import webbrowser
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -547,6 +548,28 @@ def copy_icon_button(id_: str, side: float) -> bool:
     by = origin.y + (s - (w + off)) * 0.5 + off
     dl.add_rect((bx + off, by - off), (bx + off + w, by - off + w), col, rounding=1.5)
     dl.add_rect((bx, by), (bx + w, by + w), col, rounding=1.5)
+    return clicked
+
+
+def revert_icon_button(id_: str, side: float) -> bool:
+    """A ghost square with a drawn counter-clockwise undo arc + arrowhead, for the rollback
+    affordance on a chat turn. No font dependency. Returns True on click."""
+    clicked, origin = _glyph_button(
+        id_, side, COLOR.TRANSPARENT, COLOR.BG_FRAME, COLOR.BORDER
+    )
+    col = imgui.color_convert_float4_to_u32(COLOR.FG_DIM)
+    dl = imgui.get_window_draw_list()
+    cx, cy = origin.x + side * 0.5, origin.y + side * 0.54
+    r = side * 0.26
+    # A ~270deg arc open at the top-left, with an arrowhead at the open (upper) end.
+    dl.path_arc_to(imgui.ImVec2(cx, cy), r, math.radians(300), math.radians(120))
+    dl.path_stroke(col, 1.5)
+    tip = imgui.ImVec2(
+        cx + r * math.cos(math.radians(300)), cy + r * math.sin(math.radians(300))
+    )
+    a = side * 0.16
+    dl.add_line(tip, imgui.ImVec2(tip.x - a, tip.y - a * 0.2), col, 1.5)
+    dl.add_line(tip, imgui.ImVec2(tip.x - a * 0.2, tip.y - a), col, 1.5)
     return clicked
 
 
