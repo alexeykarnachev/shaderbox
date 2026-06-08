@@ -13,15 +13,17 @@ from shaderbox.copilot.state import (
     ResultWidget,
     context_gauge_readout,
 )
-from shaderbox.theme import COLOR, SIZE, SPACE
+from shaderbox.theme import COLOR, SIZE, SPACE, fade
 from shaderbox.ui_primitives import (
     active_region_outline,
     caption_text,
+    copy_icon_button,
     danger_button,
     gauge_bar,
     ghost_button,
     labeled_text_input,
     layout_icon_button,
+    message_bubble,
     open_path_button,
     open_url_button,
     primary_button,
@@ -195,28 +197,48 @@ def _draw_message(app: App, msg: Message, idx: int) -> None:
     text = sanitize_display(msg.text)
     role = msg.role
     if role == "user":
-        imgui.text_colored(COLOR.ACCENT_PRIMARY, "you")
-        imgui.text_wrapped(text)
-        _copy_affordance(text, idx)
+        _draw_bubble(
+            "you", COLOR.ACCENT_PRIMARY, fade(COLOR.ACCENT_PRIMARY, 0.08), text, idx
+        )
     elif role == "assistant":
-        imgui.text_wrapped(text)
-        _copy_affordance(text, idx)
+        _draw_bubble("copilot", COLOR.STATE_INFO, COLOR.BG_SURFACE, text, idx)
     elif role == "tool_status":
         caption_text(text)
         if msg.result_widget is not None:
             _draw_result_widget(msg.result_widget, idx)
+        imgui.dummy(imgui.ImVec2(0, float(SPACE.SM)))
     elif role == "error":
         imgui.text_colored(COLOR.STATE_ERROR, text)
+        imgui.dummy(imgui.ImVec2(0, float(SPACE.SM)))
     elif role == "pending_action":
         _draw_pending_action(app, msg, idx)
-    imgui.separator()
+        imgui.dummy(imgui.ImVec2(0, float(SPACE.SM)))
 
 
-def _copy_affordance(text: str, idx: int) -> None:
-    # imgui prose isn't selectable, so this copies the whole message out.
-    if ghost_button(f"Copy##msg_copy_{idx}"):
-        with contextlib.suppress(pyperclip.PyperclipException):
-            pyperclip.copy(text)
+def _draw_bubble(
+    name: str,
+    name_color: tuple[float, float, float, float],
+    bg: tuple[float, float, float, float],
+    text: str,
+    idx: int,
+) -> None:
+    # A chat bubble: a colored name header + wrapped text, with a corner copy glyph pinned
+    # top-right (imgui prose isn't selectable, so copy is the affordance). The bubble gap, not
+    # a separator, divides messages.
+    side: float = float(SIZE.ROW_HEIGHT)
+    with message_bubble(f"##bubble_{idx}", bg) as origin:
+        imgui.text_colored(name_color, name)
+        imgui.text_wrapped(text)
+        # Copy glyph at the bubble's top-right inner corner; allow_overlap so it wins the click.
+        avail_w = imgui.get_content_region_avail().x + float(SPACE.MD)
+        imgui.set_next_item_allow_overlap()
+        imgui.set_cursor_screen_pos((origin.x + avail_w - side, origin.y))
+        if copy_icon_button(f"copy_{idx}", side):
+            with contextlib.suppress(pyperclip.PyperclipException):
+                pyperclip.copy(text)
+        if imgui.is_item_hovered():
+            imgui.set_tooltip("Copy")
+    imgui.dummy(imgui.ImVec2(0, float(SPACE.SM)))
 
 
 def _draw_result_widget(widget: ResultWidget, idx: int) -> None:
@@ -314,8 +336,11 @@ def _draw_top_bar(app: App) -> None:
     close_w: float = imgui.calc_text_size("Close").x + btn_pad
     cluster_w: float = clear_w + float(SPACE.SM) + close_w
     cluster_x: float = content_w - cluster_w
+    # Leave a clear breathing gap between the gauge and the Clear button (SPACE.LG), beyond the
+    # icon's same_line gap on the left.
     gauge_w: float = max(
-        float(SIZE.USAGE_BARS_W), cluster_x - icon_side - 2.0 * float(SPACE.MD)
+        float(SIZE.USAGE_BARS_W),
+        cluster_x - icon_side - float(SPACE.MD) - float(SPACE.LG),
     )
 
     if layout_icon_button("copilot_layout", app.copilot_layout.variant, icon_side):

@@ -254,6 +254,9 @@ class SIZE:
     USAGE_BAR_H: int = 5
     USAGE_BARS_W: int = 64
 
+    # Chat message bubble corner radius.
+    BUBBLE_ROUNDING: int = 6
+
 
 class SPACE:
     XS: int = 2

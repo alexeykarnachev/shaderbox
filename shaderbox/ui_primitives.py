@@ -223,6 +223,30 @@ def preview_box(
 
 
 @contextmanager
+def message_bubble(
+    id_: str, bg: tuple[float, float, float, float]
+) -> Iterator[imgui.ImVec2]:
+    """A full-width, auto-height rounded bubble (`bg` fill + border) for one chat message.
+    Yields the content origin (screen pos) so the caller can pin a corner affordance. The
+    caller draws the header + wrapped text inside; bubbles separate by their gap, not a rule."""
+    imgui.push_style_color(imgui.Col_.child_bg, bg)
+    imgui.push_style_var(imgui.StyleVar_.child_rounding, float(SIZE.BUBBLE_ROUNDING))
+    imgui.push_style_var(
+        imgui.StyleVar_.window_padding, imgui.ImVec2(SPACE.MD, SPACE.SM)
+    )
+    with imgui_ctx.begin_child(
+        id_,
+        size=imgui.ImVec2(0.0, 0.0),
+        child_flags=imgui.ChildFlags_.borders | imgui.ChildFlags_.auto_resize_y,
+        window_flags=imgui.WindowFlags_.no_scrollbar,
+    ):
+        origin = imgui.get_cursor_screen_pos()
+        yield origin
+    imgui.pop_style_var(2)
+    imgui.pop_style_color(1)
+
+
+@contextmanager
 def modal_window(label: str, size: tuple[float, float]) -> Iterator[bool]:
     """Boilerplate-free modal-popup wrapper. Caller owns the `is_X_open` flag on `App`
     (allows per-modal cleanup on close); this owns the imgui dance: open by label,
@@ -490,6 +514,25 @@ def close_cross_button(id_: str, side: float) -> bool:
     d = (origin.x + pad, origin.y + side - pad)
     dl.add_line(a, b, col, 1.5)
     dl.add_line(c, d, col, 1.5)
+    return clicked
+
+
+def copy_icon_button(id_: str, side: float) -> bool:
+    """A ghost square with a drawn copy glyph (two offset rounded-rect outlines), for a
+    corner copy affordance. No font dependency. Returns True on click."""
+    clicked, origin = _glyph_button(
+        id_, side, COLOR.TRANSPARENT, COLOR.BG_FRAME, COLOR.BORDER
+    )
+    col = imgui.color_convert_float4_to_u32(COLOR.FG_DIM)
+    dl = imgui.get_window_draw_list()
+    # Two overlapping sheets: a back rect up-right, a front rect down-left.
+    s = side
+    w = s * 0.34  # sheet side
+    off = s * 0.12  # diagonal offset between the two sheets
+    bx = origin.x + s * 0.32
+    by = origin.y + s * 0.22
+    dl.add_rect((bx + off, by - off), (bx + off + w, by - off + w), col, rounding=1.5)
+    dl.add_rect((bx, by), (bx + w, by + w), col, rounding=1.5)
     return clicked
 
 

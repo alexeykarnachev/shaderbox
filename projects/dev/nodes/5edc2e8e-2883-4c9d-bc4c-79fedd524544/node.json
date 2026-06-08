@@ -27,6 +27,7 @@
     },
     "ui_state": {
         "ui_name": "Input Types Test",
+        "description": "",
         "render_media_details": {
             "is_video": true,
             "file_details": {

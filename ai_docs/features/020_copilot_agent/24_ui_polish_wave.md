@@ -169,3 +169,18 @@ Keep entries faithful. A simple fix gets one or two lines of resolution, not a s
   nullable `_UsageModel` + `to_last_turn_usage()`, restored in `load_conversation`). Old v5 files
   load fail-soft (missing field -> None -> empty bars, no crash). Clear still empties them. Spec
   Decision 12 + Files-touched + manual-verification updated. Round-trip + back-compat verified.
+
+### F14 — chat polish batch: gap, focus-on-send, bubbles, names, copy icon   [fixed]
+- **Where:** the copilot chat header gap + the message transcript.
+- **Observed (maintainer):** (a) gauge sat flush against Clear — wanted a gap; (b) the input lost
+  focus after pressing Enter to send; (c) the per-message under-text `Copy` button was clutter;
+  (d) "you" was labelled but the copilot's messages had no name; (e) messages divided by bare
+  separators read as boring.
+- **Resolution:** (a) `gauge_w` reserves `SPACE.LG` before the cluster. (b) the input is
+  `begin_disabled` for the whole turn so the on-send focus latch was lost mid-turn; re-arm
+  `copilot_focus_pending` on the turn-done transition (`ui.py`) so it re-focuses once editable.
+  (c-e) user/assistant messages now render as rounded BUBBLES (`ui_primitives.message_bubble` —
+  bordered auto-height child; user = faint accent tint + "you" in accent, assistant = surface bg +
+  "copilot" in blue `STATE_INFO`) with a drawn corner copy glyph (`copy_icon_button`, top-right,
+  allow_overlap) replacing the text button; tool/error/pending lines use a `dummy` gap, not a rule.
+  `BUBBLE_ROUNDING` token. Headless-verified no SetCursorPos assert across all message kinds.

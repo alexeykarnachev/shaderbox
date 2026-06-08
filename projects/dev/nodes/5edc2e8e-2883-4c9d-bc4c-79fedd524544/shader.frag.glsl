@@ -2,6 +2,20 @@
 #define TEXT_LEN 16
 #define ARR_LEN 4
 
+// minimal self-contained hash + value noise (polar noise version no seam)
+float hash21(vec2 p) {
+    p = fract(p * vec2(123.34, 234.56));
+    p += dot(p, p + 34.23);
+    return fract(p.x * p.y);
+}
+float value_noise(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    float a = hash21(i),              b = hash21(i + vec2(1,0));
+    float c = hash21(i + vec2(0,1)),  d = hash21(i + vec2(1,1));
+    vec2 u = f*f*(3.0-2.0*f);
+    return mix(mix(a,b,u.x), mix(c,d,u.x), u.y);
+}
+
 in vec2 vs_uv;
 out vec4 fs_color;
 
@@ -52,13 +66,19 @@ vec3 calcNormal(vec3 p) {
 }
 
 void main() {
-    vec2 uv = vs_uv;
-    uv.x *= u_aspect;
+// center-based, aspect-corrected coordinates (rings remain circular)
+        vec2 p = vs_uv * 2.0 - 1.0;
+        p.x *= u_aspect;
+      float radius = length(p);
+      float angle  = atan(p.y, p.x);
 
-    // center-based polar coordinates
-    vec2 p = uv * 2.0 - 1.0;
-    float radius = length(p) + 0.02 * sin(u_time * 2.0 + u_drag_vec2.y * 6.28);
-    float angle  = atan(p.y, p.x);
+// polar wiggly noise on each ring (seamless via circular direction: constant radius around unit circle)
+        vec2 dir = vec2(cos(angle), sin(angle));
+        float rmod = radius * 4.5 + sin(u_time * 0.6) * 0.4;
+        float polar_noise = value_noise(dir * rmod) - 0.5;
+        radius += 0.22 * polar_noise * (0.9 + 0.5 * sin(u_time * 0.9));
+
+      radius += 0.02 * sin(u_time * 2.0 + u_drag_vec2.y * 6.28);
 
     // concentric rings
     float ring = abs(fract(radius * 6.0 + sin(u_time) * 0.5) - 0.5) * 2.0;

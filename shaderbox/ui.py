@@ -189,9 +189,11 @@ def update_and_draw(app: App) -> None:
     # Drain copilot worker events into the chat render-state (no GL; single-writer).
     app.copilot.pump_events()
     # A True->False transition means a turn just completed — persist it (a completed turn
-    # is the durable unit, so a later crash never loses it).
+    # is the durable unit, so a later crash never loses it) + re-focus the input, which was
+    # disabled (unfocusable) for the whole turn so the on-send focus latch was lost.
     if app.copilot_turn_active and not app.copilot.state.in_flight:
         app.copilot.save_conversation(app.copilot_conversation_path)
+        app.copilot_focus_pending = True
     app.copilot_turn_active = app.copilot.state.in_flight
 
     # ----------------------------------------------------------------
