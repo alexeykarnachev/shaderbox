@@ -1,5 +1,5 @@
 {
-    "current_node_id": "5edc2e8e-2883-4c9d-bc4c-79fedd524544",
+    "current_node_id": "83c49813-7f3c-49a5-83c3-50305c0354fe",
     "selected_node_template_id": "73ea2431-13f6-41e4-b923-04d846b678b0",
     "new_node_name": "Media Input",
     "is_render_all_nodes": true,
@@ -22,7 +22,7 @@
     },
     "copilot_input_h": 89.0,
     "active_node_tab": "node",
-    "is_copilot_open": true,
+    "is_copilot_open": false,
     "copilot_layout": "free",
     "key_bindings": {},
     "show_cheatsheet": true
