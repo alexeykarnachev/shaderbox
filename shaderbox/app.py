@@ -175,6 +175,7 @@ class App:
         # glfw cursors driven directly — imgui cursors are no-op in this backend (conventions.md ## Known quirks)
         self.ibeam_cursor = glfw.create_standard_cursor(glfw.IBEAM_CURSOR)
         self.resize_ew_cursor = glfw.create_standard_cursor(glfw.RESIZE_EW_CURSOR)
+        self.resize_ns_cursor = glfw.create_standard_cursor(glfw.RESIZE_NS_CURSOR)
 
         self.notifications = Notifications()
 

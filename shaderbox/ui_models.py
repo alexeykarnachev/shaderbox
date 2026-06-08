@@ -188,6 +188,9 @@ class UIAppState(BaseModel):
 
     editor_split_fraction: float = 0.5
     editor_settings: EditorSettings = EditorSettings()
+    # Chat input height in px, set by the feed/input splitter (the input keeps this height on
+    # window resize; the feed above flexes). Clamped at draw.
+    copilot_input_h: float = 48.0
 
     # Persisted UI layout prefs (the App holds the live copies; synced at load/save).
     # NOT active_region / copilot_focused — those are transient-by-design (focus on

@@ -202,3 +202,15 @@ Keep entries faithful. A simple fix gets one or two lines of resolution, not a s
   message was already accurate for the new condition. 5 unit tests (both directions). NOT a
   prompt-level fix — the agent was already phrasing the edit correctly; the false-positive was wholly
   in the tool.
+
+### F16 — draggable feed/input splitter (input keeps height on window resize)   [fixed]
+- **Where:** the chat transcript feed vs the message input.
+- **Observed:** the input was a fixed 2 lines; the maintainer wanted to make it bigger manually, and
+  resizing the whole chat window must NOT shrink/hide the input.
+- **Resolution:** a feed/input splitter (the `ui.py` editor-splitter idiom — `invisible_button` +
+  `is_item_active` + `mouse_delta.y` + the `resize_ns_cursor`; imgui has no built-in sibling-splitter).
+  The INPUT keeps its stored height (`UIAppState.copilot_input_h`, persisted, clamped); the FEED takes
+  the remainder so it flexes with the window and the input is never hidden. Drag down = bigger feed,
+  up = bigger input. (First tried `ChildFlags_.resize_y` on the feed — WRONG: resize_y stores an
+  absolute size that fights window-flex and squeezes the input; reverted. A stored-height splitter is
+  the correct model.)

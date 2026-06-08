@@ -1,6 +1,7 @@
 import contextlib
 from pathlib import Path
 
+import glfw
 import pyperclip
 from imgui_bundle import imgui, imgui_ctx
 
@@ -135,15 +136,45 @@ def draw(app: App) -> None:
             _draw_transcript(app)
 
 
-def _input_height() -> float:
-    return imgui.get_text_line_height() * 2.0 + float(SPACE.MD)
+_MIN_INPUT_H: float = 40.0
+_MIN_FEED_H: float = 60.0
+_SPLITTER_H: float = 6.0
+
+
+def _draw_input_splitter(app: App, avail_y: float) -> None:
+    # The feed/input divider: drag to trade height between the feed (above) and the input
+    # (below). The input keeps its set height on window resize; the FEED flexes. Mirrors the
+    # editor splitter idiom in ui.py (imgui has no built-in sibling-splitter widget).
+    imgui.invisible_button("##copilot_input_splitter", imgui.ImVec2(-1.0, _SPLITTER_H))
+    if imgui.is_item_hovered() or imgui.is_item_active():
+        glfw.set_cursor(app.window, app.resize_ns_cursor)
+    if imgui.is_item_active():
+        dy = imgui.get_io().mouse_delta.y
+        if dy:  # drag down -> smaller input; drag up -> larger input
+            hi = max(_MIN_INPUT_H, avail_y - _MIN_FEED_H)
+            app.app_state.copilot_input_h = max(
+                _MIN_INPUT_H, min(hi, app.app_state.copilot_input_h - dy)
+            )
+    rmin, rmax = imgui.get_item_rect_min(), imgui.get_item_rect_max()
+    cx, cy = (rmin.x + rmax.x) * 0.5, (rmin.y + rmax.y) * 0.5
+    imgui.get_window_draw_list().add_line(
+        (cx - 12.0, cy),
+        (cx + 12.0, cy),
+        imgui.color_convert_float4_to_u32(COLOR.BORDER),
+        1.0,
+    )
 
 
 def _draw_transcript(app: App) -> None:
     state = app.copilot.state
-    input_h = _input_height() + float(SPACE.SM)
-    avail = imgui.get_content_region_avail()
-    if imgui.begin_child("##copilot_history", size=(0.0, avail.y - input_h)):
+    avail_y = imgui.get_content_region_avail().y
+    # Input keeps its stored height (clamped); the FEED takes the rest -> the input never gets
+    # hidden by a window resize, and the splitter trades height between the two.
+    input_h = max(
+        _MIN_INPUT_H, min(app.app_state.copilot_input_h, avail_y - _MIN_FEED_H)
+    )
+    feed_h = avail_y - input_h - _SPLITTER_H
+    if imgui.begin_child("##copilot_history", size=(0.0, feed_h)):
         for i, msg in enumerate(state.messages):
             _draw_message(app, msg, i)
         if state.streaming_text:
@@ -156,6 +187,8 @@ def _draw_transcript(app: App) -> None:
         if state.in_flight:
             imgui.set_scroll_here_y(1.0)
     imgui.end_child()
+
+    _draw_input_splitter(app, avail_y)
 
     in_flight = state.in_flight
     # One-shot, never every frame (/imgui-ui §7.5).
@@ -171,7 +204,7 @@ def _draw_transcript(app: App) -> None:
     submitted, app.copilot_input = imgui.input_text_multiline(
         "##copilot_input",
         app.copilot_input,
-        imgui.ImVec2(_send_button_offset(), _input_height()),
+        imgui.ImVec2(_send_button_offset(), input_h),
         flags=imgui.InputTextFlags_.enter_returns_true
         | imgui.InputTextFlags_.ctrl_enter_for_new_line
         | imgui.InputTextFlags_.word_wrap,
