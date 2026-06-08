@@ -289,18 +289,18 @@ def test_intra_batch_line_edit_guard_rejects(app: Any) -> None:
     # instances in one process, so the post-edit rebuild-coherence is a maintainer-live-pass item —
     # verified end-to-end on a single real App, in the spec's failed-flow re-run).
     app._copilot_working_set = []
-    app._copilot_batch_mutated = {app.current_node_id}
+    app.copilot_backend._batch_mutated = {app.current_node_id}
     res = app.copilot_backend.apply_line_edit(1, 0, "// shifted", "")
     assert res.unresolved and "shifted" in res.unresolved_reason
     assert res.matches == 0  # mutated nothing
-    # A fresh batch clears the guard (App owns the set; the capability's batch_begin clears it).
-    app._copilot_batch_mutated.clear()
-    assert app.current_node_id not in app._copilot_batch_mutated
+    # A fresh batch clears the guard (the backend owns the set; batch_begin clears it per batch).
+    app.copilot_backend.batch_begin()
+    assert app.current_node_id not in app.copilot_backend._batch_mutated
 
 
 def test_substring_edit_never_d9_rejected(app: Any) -> None:
     # A substring edit is NOT gated by D9 even when the target is batch-mutated (it matches by text).
-    app._copilot_batch_mutated = {app.current_node_id}
+    app.copilot_backend._batch_mutated = {app.current_node_id}
     res = app.copilot_backend.apply_shader_edit("zzz-no-such-token", "x", False, "")
     # A genuine no-match (matches==0, hint), NOT a D9 unresolved reject.
     assert not res.unresolved

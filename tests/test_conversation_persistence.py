@@ -6,7 +6,7 @@ from pathlib import Path
 
 from shaderbox.copilot.llm.api import LLMMessage
 from shaderbox.copilot.persistence import ConversationStore, archive_conversation
-from shaderbox.copilot.state import ChatState, Message, ResultWidget, SessionUsage
+from shaderbox.copilot.state import ChatState, Message, ResultWidget, TurnStats
 
 
 def _populated_state() -> ChatState:
@@ -17,7 +17,8 @@ def _populated_state() -> ChatState:
         Message(role="tool_status", text="edit_shader: ok"),
         Message(role="assistant", text="Done — added u_speed."),
     ]
-    state.usage = SessionUsage(input_tokens=1200, output_tokens=340, cost_usd=0.0042)
+    state.last_turn = TurnStats(context_tokens=1200, reply_tokens=340, cost_usd=0.0042)
+    state.session_cost_usd = 0.0042
     return state
 
 
@@ -32,7 +33,7 @@ def _history() -> list[LLMMessage]:
     ]
 
 
-def test_round_trip_messages_history_usage(tmp_path: Path) -> None:
+def test_round_trip_messages_history_stats(tmp_path: Path) -> None:
     state, history = _populated_state(), _history()
     path = tmp_path / "copilot" / "conversation.json"
     ConversationStore.from_runtime(state, history).save(path)
@@ -47,12 +48,14 @@ def test_round_trip_messages_history_usage(tmp_path: Path) -> None:
     hist = loaded.to_history()
     assert [h.role for h in hist] == ["user", "assistant"]
     assert hist[1].content == "Done — added u_speed.\n(this turn: edit_shader: ok)"
-    usage = loaded.to_usage()
-    assert (usage.input_tokens, usage.output_tokens, usage.cost_usd) == (
+    last_turn = loaded.to_last_turn()
+    assert last_turn is not None
+    assert (last_turn.context_tokens, last_turn.reply_tokens, last_turn.cost_usd) == (
         1200,
         340,
         0.0042,
     )
+    assert loaded.to_session_cost() == 0.0042
 
 
 def test_save_creates_parent_dir(tmp_path: Path) -> None:
@@ -65,7 +68,8 @@ def test_missing_file_is_empty_chat(tmp_path: Path) -> None:
     loaded = ConversationStore.load_and_migrate(tmp_path / "nope.json")
     assert loaded.to_messages() == []
     assert loaded.to_history() == []
-    assert loaded.to_usage().input_tokens == 0
+    assert loaded.to_last_turn() is None
+    assert loaded.to_session_cost() == 0.0
 
 
 def test_corrupt_file_fails_soft(tmp_path: Path) -> None:
@@ -270,6 +274,7 @@ def test_drop_turn_skips_commit_but_stop_does_not(tmp_path: Path) -> None:
             _fake_caps(edit_errors=[]),  # type: ignore[arg-type]
             _OneTextClient(),  # type: ignore[arg-type]
             get_project_slug=lambda: "test",
+            get_checkpoints_root=lambda: tmp_path / "checkpoints",
         )
 
     # Teardown abort -> no commit.
@@ -289,8 +294,8 @@ def test_drop_turn_skips_commit_but_stop_does_not(tmp_path: Path) -> None:
 
 def test_session_save_then_load_restores(tmp_path: Path) -> None:
     # The session seam: save_conversation writes (state, history); load_conversation on a
-    # FRESH session restores both + usage. No worker is spawned (no turn enqueued), and
-    # the client is never called by save/load, so a bare stub suffices.
+    # FRESH session restores both + the turn stats. No worker is spawned (no turn enqueued),
+    # and the client is never called by save/load, so a bare stub suffices.
     from shaderbox.copilot.session import CopilotSession
     from tests.test_copilot_loop import _fake_caps
 
@@ -299,6 +304,7 @@ def test_session_save_then_load_restores(tmp_path: Path) -> None:
             _fake_caps(edit_errors=[]),  # type: ignore[arg-type]
             object(),  # type: ignore[arg-type]  # client unused by save/load
             get_project_slug=lambda: "test",
+            get_checkpoints_root=lambda: tmp_path / "checkpoints",
         )
 
     sess = _mk()
@@ -310,7 +316,8 @@ def test_session_save_then_load_restores(tmp_path: Path) -> None:
         LLMMessage(role="user", content="hi"),
         LLMMessage(role="assistant", content="yo"),
     ]
-    sess.state.usage = SessionUsage(input_tokens=10, output_tokens=5, cost_usd=0.001)
+    sess.state.last_turn = TurnStats(context_tokens=10, reply_tokens=5, cost_usd=0.001)
+    sess.state.session_cost_usd = 0.001
     path = tmp_path / "conversation.json"
     sess.save_conversation(path)
     sess.release()
@@ -322,5 +329,7 @@ def test_session_save_then_load_restores(tmp_path: Path) -> None:
         ("assistant", "yo"),
     ]
     assert [h.role for h in fresh.history] == ["user", "assistant"]
-    assert fresh.state.usage.input_tokens == 10
+    assert fresh.state.last_turn is not None
+    assert fresh.state.last_turn.context_tokens == 10
+    assert fresh.state.session_cost_usd == 0.001
     fresh.release()
