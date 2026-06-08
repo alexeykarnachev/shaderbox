@@ -29,19 +29,26 @@ feature; brief points at the superseder).
 
 - **NOW — copilot UI/UX polish wave (024), fix-as-we-go.** The maintainer drives the chat live and hands
   UI rough edges one at a time; simple ones fixed inline (gated by `make check` + `make smoke` + a live
-  pass), larger ones filed. **Landed (F01-F13):** chat-input auto-focus; header buttons re-tiered
-  (`Clear`→danger); corner/strip presets enlarged + FREE pos/size remembered across a preset round-trip;
-  Ctrl+W cycles layout; input disabled + multiline-wrapping (Enter sends, Ctrl+Enter newline) mid-turn;
-  OS-matched key-repeat; chat holds focus + the app panel locks while a turn runs (closed the stray-keystroke
-  cause); the active-region outline saga (window-draw-list, one-outline policy, title-bar cover).
-- **Header feature (025) landed + redesigned:** the `Layout:` text → a drawn box-in-frame icon; the usage
-  display is now ONE context-fullness gauge (standing context = first-iteration input ÷ `max_input_tokens`,
-  the "when to compact" signal) with a hover tooltip carrying last-reply / last-turn-cost / session-cost.
-  `TurnStats` value type; persistence v7 (last turn + session cost). Spec: `25_context_fill_indicator.md`.
-- **Refactor pass (swarm-reviewed) landed:** verdict was "not spaghetti — 1 systemic fix + small
+  pass), larger ones filed. **Landed (F01-F16 in `24_ui_polish_wave.md`):** chat-input auto-focus + focus
+  held / app-panel locked while a turn runs (closed the stray-keystroke compile bug); header buttons
+  re-tiered (`Clear`→danger) + Ctrl+W layout cycle + FREE pos/size remembered; input multiline-wrap (Enter
+  sends, Ctrl+Enter newline) + OS-matched key-repeat + ibeam cursor; the active-region outline saga
+  (window-draw-list, one-outline + region-derive policy in `App`, title-bar cover); message BUBBLES + corner
+  copy icon + "you"/"copilot" names; a feed/input SPLITTER (input keeps height, feed flexes) + stick-to-
+  bottom scroll (opens at bottom, releases on scroll-up) + single window scrollbar; single cursor-owner
+  (kills X11 per-frame `set_cursor` flicker); the `edit_shader` comment-guard false-positive (trace-found).
+- **Header feature (025) landed + redesigned:** the `Layout:` text → a drawn box-in-frame icon; ONE
+  context-fullness gauge (standing context = first-iteration input ÷ `max_input_tokens`, the "when to
+  compact" signal) + a hover tooltip (last-reply / last-turn-cost / session-cost). `TurnStats` type;
+  persistence v7. Spec: `25_context_fill_indicator.md`.
+- **Refactor pass (swarm-reviewed) landed:** verdict "not spaghetti — 1 systemic fix + small
   consolidations". The `copilot_focused` leak into generic region code is GONE (`region_outline_visible` +
   `region_derive_allowed` own the policy in `App`); `_UsageRollup`→`LLMUsage.__add__`; editor-yield latch +
-  layout-cycle deduped. Findings log: `24_ui_polish_wave.md`. AWAITING the maintainer's live pass, then ship.
+  layout-cycle deduped.
+- **Infra fix:** `make smoke`'s window was visible+hung on a real display; `App(headless=True)` now hides
+  it (offscreen drivers use that, not a hand-rolled window — `dev_flow.md`).
+- **AWAITING the maintainer's live `make run` pass** on the whole chat (cursor/scroll/layout/focus are
+  headless-unverifiable), THEN ship.
 - **Also landed today:** the light copilot decomposition pass — `text_render`→`sanitize`,
   `context`→`prompt_context` renames + bridge/gate sibling pointers (a 9-lens swarm + adversary concluded
   rename-only over a re-grouping; commit `e91eea8`). The topology re-group stays deferred (no firing pain).
