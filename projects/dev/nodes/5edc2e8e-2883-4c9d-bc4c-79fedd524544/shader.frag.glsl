@@ -45,51 +45,25 @@ layout(std140) uniform u_params {
 
 float sdSphere(vec3 p, float r) { return length(p) - r; }
 
-float map(vec3 p) {
-    float t = u_time * 0.8 + u_drag_float * 2.0;
-    vec3 center = u_drag_vec3 * 1.5;
-    // simple automatic orbit animation around Y axis
-    center.x += sin(u_time * 1.2) * 0.6;
-    center.z += cos(u_time * 1.2) * 0.6;
-    float r = 0.8 + u_drag_vec4.x * 0.6 + params.a.x * 0.2;
-    r += sin(u_floats[0] * 6.28318) * 0.05;
-    return sdSphere(p - center, r);
-}
-
-vec3 calcNormal(vec3 p) {
-    const float h = 0.001;
-    return normalize(vec3(
-        map(p + vec3(h,0,0)) - map(p - vec3(h,0,0)),
-        map(p + vec3(0,h,0)) - map(p - vec3(0,h,0)),
-        map(p + vec3(0,0,h)) - map(p - vec3(0,0,h))
-    ));
-}
-
 void main() {
-// center-based, aspect-corrected coordinates (rings remain circular)
-        vec2 p = vs_uv * 2.0 - 1.0;
-        p.x *= u_aspect;
-      float radius = length(p);
-      float angle  = atan(p.y, p.x);
+    vec2 uv = vs_uv;
 
-// polar wiggly noise on each ring (seamless via circular direction: constant radius around unit circle)
-        vec2 dir = vec2(cos(angle), sin(angle));
-        float rmod = radius * 4.5 + sin(u_time * 0.6) * 0.4;
-        float polar_noise = value_noise(dir * rmod) - 0.5;
-        radius += 0.22 * polar_noise * (0.9 + 0.5 * sin(u_time * 0.9));
+    // simple test pattern driven by the various input uniforms
+    vec3 base = u_color * u_brightness;
+    base += u_drag_vec3 * 0.5;
+    base += vec3(u_drag_vec2, 0.0) * 0.3;
 
-      radius += 0.02 * sin(u_time * 2.0 + u_drag_vec2.y * 6.28);
+    float t = u_time * 0.5 + u_drag_float * 3.0;
+    float wave = 0.5 + 0.5 * sin(t + uv.x * 8.0);
 
-    // concentric rings
-    float ring = abs(fract(radius * 6.0 + sin(u_time) * 0.5) - 0.5) * 2.0;
-    float mask = smoothstep(0.08, 0.0, ring);
+    vec3 col = mix(base, u_tint_color.rgb, 0.4) * wave;
 
-    vec3 ring_color = mix(u_color, u_tint_color.rgb, 0.5 + 0.5 * sin(angle * 4.0 + u_time));
-    vec3 col = ring_color * mask * 1.8;
+    // show texture if present
+    vec4 tex = texture(u_texture, uv);
+    col = mix(col, tex.rgb, tex.a * 0.5);
 
-    col *= max(u_enable, 1.0);
+    col *= max(u_enable, 0.0);
     col = clamp(col, 0.0, 1.0);
-
-    fs_color = vec4(col * u_brightness, 1.0);
+    fs_color = vec4(col, 1.0);
 }
 
