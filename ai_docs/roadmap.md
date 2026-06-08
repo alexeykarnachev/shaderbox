@@ -25,17 +25,23 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-**As of 2026-06-07 (copilot UI/UX polish wave 024 in flight — driven by a live maintainer walkthrough).**
+**As of 2026-06-08 (copilot UI/UX polish wave 024 in flight — driven by a live maintainer walkthrough).**
 
 - **NOW — copilot UI/UX polish wave (024), fix-as-we-go.** The maintainer drives the chat live and hands
-  UI rough edges one at a time; simple ones are fixed inline (gated by `make check` + `make smoke` + a live
-  pass), larger ones filed. **Landed:** F01 chat-input auto-focus (one-shot `copilot_focus_pending` latch +
-  `no_nav_inputs` kills the nav outline; `/imgui-ui` §7.5/§8); the header buttons re-tiered (`Clear`→danger,
-  right-aligned cluster); the corner/strip presets enlarged + FREE-layout pos/size remembered across a
-  preset round-trip. **Header feature (025) landed:** the `Layout:` text button → a drawn box-in-frame icon,
-  plus two thin stacked usage bars (prev turn's input/output tokens vs budget, real first-iteration input
-  count) — full feature flow (spec + 2 pre + 2 post review). Findings log:
-  `24_ui_polish_wave.md`; spec: `25_context_fill_indicator.md`. AWAITING the maintainer's live pass.
+  UI rough edges one at a time; simple ones fixed inline (gated by `make check` + `make smoke` + a live
+  pass), larger ones filed. **Landed (F01-F13):** chat-input auto-focus; header buttons re-tiered
+  (`Clear`→danger); corner/strip presets enlarged + FREE pos/size remembered across a preset round-trip;
+  Ctrl+W cycles layout; input disabled + multiline-wrapping (Enter sends, Ctrl+Enter newline) mid-turn;
+  OS-matched key-repeat; chat holds focus + the app panel locks while a turn runs (closed the stray-keystroke
+  cause); the active-region outline saga (window-draw-list, one-outline policy, title-bar cover).
+- **Header feature (025) landed + redesigned:** the `Layout:` text → a drawn box-in-frame icon; the usage
+  display is now ONE context-fullness gauge (standing context = first-iteration input ÷ `max_input_tokens`,
+  the "when to compact" signal) with a hover tooltip carrying last-reply / last-turn-cost / session-cost.
+  `TurnStats` value type; persistence v7 (last turn + session cost). Spec: `25_context_fill_indicator.md`.
+- **Refactor pass (swarm-reviewed) landed:** verdict was "not spaghetti — 1 systemic fix + small
+  consolidations". The `copilot_focused` leak into generic region code is GONE (`region_outline_visible` +
+  `region_derive_allowed` own the policy in `App`); `_UsageRollup`→`LLMUsage.__add__`; editor-yield latch +
+  layout-cycle deduped. Findings log: `24_ui_polish_wave.md`. AWAITING the maintainer's live pass, then ship.
 - **Also landed today:** the light copilot decomposition pass — `text_render`→`sanitize`,
   `context`→`prompt_context` renames + bridge/gate sibling pointers (a 9-lens swarm + adversary concluded
   rename-only over a re-grouping; commit `e91eea8`). The topology re-group stays deferred (no firing pain).

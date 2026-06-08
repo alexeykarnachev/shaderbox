@@ -1,4 +1,14 @@
-# 020 · 25 — Copilot usage bars + compact layout toggle
+# 020 · 25 — Copilot context gauge + compact layout toggle
+
+> **FINAL SHAPE (redesigned 2026-06-08 — read this first; the body below is the as-built record of
+> how it evolved, kept for the reasoning).** The two-bar input/output display was replaced by a
+> SINGLE context-fullness gauge: fill = the turn's first-iteration input (standing context) ÷
+> `max_input_tokens` — the "when do I compact?" signal. The hover tooltip carries the secondary
+> numbers (last reply tokens, last turn cost, **running session cost**) as info, not gauges. Data:
+> `ChatState.last_turn: TurnStats` (context/reply/cost) + `session_cost_usd`, persisted at
+> `ConversationStore` v7. Primitive: `gauge_bar` (one bar). Readout: `state.context_gauge_readout`.
+> Why: two bars where only one measured fullness was confusing; "max-input" was rejected as an
+> alarmist transient-spike measure. See Review history.
 
 The copilot chat header is `[Layout: corner    Clear  Close]`. Two changes, driven by a live
 maintainer walkthrough (sibling to the 024 polish wave):
@@ -194,6 +204,17 @@ maintainer walkthrough (sibling to the 024 polish wave):
 ---
 
 ## Review history
+
+**Redesign (2026-06-08, maintainer-driven).** After living with the two bars, the maintainer asked
+"what should this actually show?" The conclusion: the goal is ONE question — *when do I compact?* —
+so two bars where only one (input) measured fullness was confusing, and the output bar was a
+non-fullness gauge. Considered+rejected: a "max input/output of the run" gauge (the per-iteration peak
+is dominated by transient tool churn that's discarded at turn end → alarmist; the iteration-0 standing
+context is the honest fullness signal). Landed: a single `gauge_bar`, the secondary numbers (incl. the
+running **session cost**, which the maintainer wanted surfaced) demoted to the tooltip. Drove the data
+reshape `last_turn_usage: LLMUsage` → `last_turn: TurnStats` + `session_cost_usd` (dropping the unused
+cumulative session token totals), persistence v6→v7. Also folded the swarm-reviewed refactor steps
+(readout moved to `state`, `CopilotLayout.variant`, `cycle_copilot_layout`, one header-geometry owner).
 
 **Pre-impl review (2026-06-07, 2 adversarial reviewers, both anchored to the real code).** Both
 independently raised one BLOCKER and several should-fixes; all accepted, spec revised before lock:
