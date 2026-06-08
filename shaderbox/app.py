@@ -30,6 +30,7 @@ from shaderbox.copilot.llm.openrouter import OpenRouterLLMClient
 from shaderbox.copilot.persistence import ConversationStore, archive_conversation
 from shaderbox.copilot.session import CopilotSession
 from shaderbox.copilot.state import CopilotLayout, Message
+from shaderbox.copilot.wiring import build_capabilities
 from shaderbox.core import Canvas
 from shaderbox.editor_types import EditorSession, HoverMark, InlineInput, JumpRequest
 from shaderbox.exporters.integrations import IntegrationsStore
@@ -432,38 +433,7 @@ class App:
             working_set_add=self._copilot_ws_add,
             get_active_checkpoint=lambda: self.copilot.checkpoints.active,
         )
-        b = self.copilot_backend
-        return CopilotCapabilities(
-            node_tree=b.node_tree,
-            lib_catalog=b.lib_catalog,
-            template_catalog=b.template_catalog,
-            read_shaders=b.read_shaders,
-            grep=b.grep,
-            read_lib=b.read_lib,
-            read_working_set=b.read_working_set,
-            batch_begin=b.batch_begin,
-            apply_shader_edit=b.apply_shader_edit,
-            apply_line_edit=b.apply_line_edit,
-            set_uniform=b.set_uniform,
-            create_node=b.create_node,
-            delete_node=b.delete_node,
-            switch_node=b.switch_node,
-            render_image=b.render_image,
-            render_video=b.render_video,
-            publish_telegram=b.publish_telegram,
-            publish_youtube=b.publish_youtube,
-            has_current_node=b.has_current_node,
-            telegram_connected=b.telegram_connected,
-            youtube_connected=b.youtube_connected,
-            telegram_has_default_pack=b.telegram_has_default_pack,
-            set_telegram_token=b.set_telegram_token,
-            telegram_connect=b.telegram_connect,
-            telegram_token_set=b.telegram_token_set,
-            list_telegram_packs=b.list_telegram_packs,
-            select_telegram_pack=b.select_telegram_pack,
-            create_telegram_pack=b.create_telegram_pack,
-            delete_telegram_pack=b.delete_telegram_pack,
-        )
+        return build_capabilities(self.copilot_backend)
 
     def template_description(self, template_uuid: str) -> str:
         # Effective description: the user override if present, else the shipped node.json
