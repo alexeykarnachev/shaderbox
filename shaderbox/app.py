@@ -224,9 +224,6 @@ class App:
         self.copilot_free_rect: tuple[float, float, float, float] | None = None
         self.copilot_prev_layout: CopilotLayout = CopilotLayout.CORNER
         self.copilot_focus_pending: bool = False
-        # One-shot: scroll the feed to the bottom once after a conversation load, consumed at the
-        # feed draw. Otherwise a restored conversation opens scrolled to the top.
-        self.copilot_scroll_pending: bool = True
         self.copilot_focused: bool = False
         self.copilot_defocus_requested: bool = False
         # True while the mouse is over the open chat window. code.py neutralizes the
@@ -967,9 +964,6 @@ class App:
             self.copilot.reset_conversation()
             store = ConversationStore.load_and_migrate(self.copilot_conversation_path)
             self.copilot.load_conversation(store)
-            self.copilot_scroll_pending = (
-                True  # open a restored conversation at the bottom
-            )
 
     def get_font(self, size: int) -> Any:
         fonts = imgui.get_io().fonts

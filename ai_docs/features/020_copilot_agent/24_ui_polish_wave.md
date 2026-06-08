@@ -183,10 +183,10 @@ Keep entries faithful. A simple fix gets one or two lines of resolution, not a s
   user = faint accent tint + "you" in accent, assistant = surface bg + "copilot" in blue
   `STATE_INFO`) with a drawn corner copy glyph (`copy_icon_button`, top-right, allow_overlap)
   replacing the text button; tool/error/pending lines use a `dummy` gap, not a rule. `BUBBLE_ROUNDING`
-  token. (The bubble bg is a draw-list rounded rect drawn BEHIND normal-flow content via a 2-channel
-  split — NOT a nested child window. First built as an `auto_resize_y` child, but that lags the
-  feed's content height by a frame, which broke same-frame scroll-to-bottom (F17); the draw-list
-  version keeps the bubble in normal flow.) Headless-verified, no SetCursorPos assert.
+  token. The bubble is a native `begin_child` (borders + `child_bg` + `auto_resize_y`) — imgui owns
+  the bg/border/padding/rounding/clip (a draw-list-rect version was tried to dodge the child's
+  one-frame height lag but was fragile geometry; the lag is instead handled in the scroll rule, F17).
+  Headless-verified, no SetCursorPos assert.
 
 ### F15 — edit_shader comment-loss guard false-positive (trace-surfaced)   [fixed]
 - **Where:** `edit_shader` / the comment-loss guard (`backend.apply_shader_edit` +
@@ -218,15 +218,15 @@ Keep entries faithful. A simple fix gets one or two lines of resolution, not a s
   absolute size that fights window-flex and squeezes the input; reverted. A stored-height splitter is
   the correct model.)
 
-### F17 — chat feed opens scrolled to the top, not the bottom   [fixed]
-- **Where:** the chat feed on launch / project load.
-- **Observed:** a restored conversation opened scrolled to the top — had to scroll down each time.
-  (The feed only auto-scrolled DURING an in-flight turn.)
-- **Resolution:** `App.copilot_scroll_pending` one-shot — armed at init + after `load_conversation`,
-  consumed at the feed draw (`set_scroll_here_y(1.0)`). A frame-countdown hack was briefly needed
-  because the bubbles were `auto_resize_y` CHILD windows (their height — and the feed's scroll-max —
-  lags a frame, so a one-shot scrolled to a stale zero). ROOT-FIXED by F16's bubble rewrite: the
-  bubble bg is now a draw-list rect behind normal-flow content (no nested child), so the feed's
-  content height is known the SAME frame and the one-shot lands at the real bottom. The countdown
-  + `_SCROLL_SETTLE_FRAMES` were deleted. Live-pass still confirms (headless scroll geometry is
-  unreliable, `/imgui-ui §0`).
+### F17 — chat feed scroll: open at bottom + stick-to-bottom, release on scroll-up   [fixed]
+- **Where:** the chat feed scroll, on launch + during generation.
+- **Observed/wanted:** a restored conversation opened scrolled to the TOP; and during a streaming
+  turn the feed yanked to the bottom even when the user scrolled up to read earlier output.
+- **Resolution:** ONE stick-to-bottom rule replaces every prior attempt (the in-flight-only scroll, a
+  load one-shot, a frame-countdown, and a draw-list-bubble detour). Each frame, read the scroll
+  position BEFORE laying out new content: `stick = scroll_y >= scroll_max_y - 1`; after drawing, if
+  `stick`, `set_scroll_here_y(1.0)`. So: opens at the bottom (first draw scroll_max is 0 -> sticks);
+  autoscrolls while streaming; and the moment the user scrolls up even slightly, `stick` is False and
+  autoscroll stops until they return to the bottom. No latch, no frame count, no manual drawing — the
+  per-frame re-evaluation makes the bubble's one-frame height lag irrelevant. Live-pass confirms
+  (headless scroll geometry is unreliable, `/imgui-ui §0`).

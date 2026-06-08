@@ -175,6 +175,11 @@ def _draw_transcript(app: App) -> None:
     )
     feed_h = avail_y - input_h - _SPLITTER_H
     if imgui.begin_child("##copilot_history", size=(0.0, feed_h)):
+        # Stick-to-bottom: read the scroll position BEFORE this frame's content is laid out (it
+        # reflects last frame's layout). If the view was at the bottom, re-pin after drawing; if
+        # the user scrolled up even slightly, stop auto-scrolling so they can read while a turn
+        # streams. On first draw scroll_max is 0 -> at-bottom -> opens pinned to the bottom.
+        stick = imgui.get_scroll_y() >= imgui.get_scroll_max_y() - 1.0
         for i, msg in enumerate(state.messages):
             _draw_message(app, msg, i)
         if state.streaming_text:
@@ -184,11 +189,8 @@ def _draw_transcript(app: App) -> None:
             caption_text(
                 sanitize_display(state.status) if state.status else "thinking..."
             )
-        if state.in_flight or app.copilot_scroll_pending:
-            # The bubbles are normal-flow now (draw-list bg, not auto_resize_y children), so the
-            # feed's content height is known THIS frame -> a single set lands at the real bottom.
+        if stick:
             imgui.set_scroll_here_y(1.0)
-            app.copilot_scroll_pending = False
     imgui.end_child()
 
     _draw_input_splitter(app, avail_y)
@@ -262,12 +264,13 @@ def _draw_bubble(
     # top-right (imgui prose isn't selectable, so copy is the affordance). The bubble gap, not
     # a separator, divides messages.
     side: float = float(SIZE.ROW_HEIGHT)
-    with message_bubble(f"##bubble_{idx}", bg) as (origin, inner_w):
+    with message_bubble(f"##bubble_{idx}", bg) as origin:
         imgui.text_colored(name_color, name)
         imgui.text_wrapped(text)
         # Copy glyph at the bubble's top-right inner corner; allow_overlap so it wins the click.
+        avail_w = imgui.get_content_region_avail().x + float(SPACE.MD)
         imgui.set_next_item_allow_overlap()
-        imgui.set_cursor_screen_pos((origin.x + inner_w - side, origin.y))
+        imgui.set_cursor_screen_pos((origin.x + avail_w - side, origin.y))
         if copy_icon_button(f"copy_{idx}", side):
             with contextlib.suppress(pyperclip.PyperclipException):
                 pyperclip.copy(text)
