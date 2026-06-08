@@ -184,9 +184,15 @@ def _draw_transcript(app: App) -> None:
             caption_text(
                 sanitize_display(state.status) if state.status else "thinking..."
             )
-        if state.in_flight or app.copilot_scroll_pending:
+        if state.in_flight:
             imgui.set_scroll_here_y(1.0)
-            app.copilot_scroll_pending = False
+        elif app.copilot_scroll_frames > 0:
+            # Pin to the bottom for a few frames after a load: the message bubbles are
+            # auto_resize_y children, so the content height (and thus scroll-max) isn't settled
+            # on the first frame — a one-frame set would scroll to a stale zero-max. The countdown
+            # rides out the settle and self-terminates (a short chat just no-ops).
+            imgui.set_scroll_y(imgui.get_scroll_max_y())
+            app.copilot_scroll_frames -= 1
     imgui.end_child()
 
     _draw_input_splitter(app, avail_y)

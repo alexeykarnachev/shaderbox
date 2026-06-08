@@ -219,6 +219,9 @@ Keep entries faithful. A simple fix gets one or two lines of resolution, not a s
 - **Where:** the chat feed on launch / project load.
 - **Observed:** a restored conversation opened scrolled to the top — had to scroll down each time.
   (The feed only auto-scrolled DURING an in-flight turn.)
-- **Resolution:** `App.copilot_scroll_pending` one-shot — armed at init (covers first launch) +
-  after `load_conversation` (project switch), consumed at the feed draw (`set_scroll_here_y(1.0)`).
-  One-shot, so it never fights a manual scroll; only re-fires on a fresh conversation load.
+- **Resolution:** `App.copilot_scroll_frames` countdown (4 frames) — armed at init + after
+  `load_conversation`, decremented at the feed draw while it `set_scroll_y(get_scroll_max_y())`. A
+  one-shot DID NOT work: the message bubbles are `auto_resize_y` children, so on frame 0 the content
+  height (scroll-max) is still 0 — a single set scrolled to a stale zero. The multi-frame countdown
+  rides out the bubble-height settle and lands at the real bottom; self-terminates (a short chat
+  no-ops). Live-pass still needed (headless scroll geometry is unreliable, `/imgui-ui §0`).

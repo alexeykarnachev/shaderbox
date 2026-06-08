@@ -76,6 +76,10 @@ _TEMPLATE_ORDER = [
     "f90f5ff9-29c6-4bcf-aee7-090f20542353",  # Text Rendering
 ]
 
+# Frames to keep the chat feed pinned to the bottom after a conversation load (rides out the
+# auto_resize_y bubble-height settle so the scroll lands at the real bottom, not a stale max).
+_SCROLL_SETTLE_FRAMES = 4
+
 # Region-cycle order for the keyboard-nav command.
 _REGION_CYCLE: tuple[ActiveRegion, ...] = (
     ActiveRegion.EDITOR,
@@ -224,9 +228,10 @@ class App:
         self.copilot_free_rect: tuple[float, float, float, float] | None = None
         self.copilot_prev_layout: CopilotLayout = CopilotLayout.CORNER
         self.copilot_focus_pending: bool = False
-        # One-shot: scroll the feed to the bottom once (conversation load / clear), consumed at
-        # the feed draw. Otherwise a restored conversation opens scrolled to the top.
-        self.copilot_scroll_pending: bool = True
+        # Frame countdown: pin the feed to the bottom for a few frames after a conversation load
+        # (the message bubbles' heights settle over a couple frames, so a single set scrolls to a
+        # stale zero scroll-max). Otherwise a restored conversation opens scrolled to the top.
+        self.copilot_scroll_frames: int = _SCROLL_SETTLE_FRAMES
         self.copilot_focused: bool = False
         self.copilot_defocus_requested: bool = False
         # True while the mouse is over the open chat window. code.py neutralizes the
@@ -967,9 +972,8 @@ class App:
             self.copilot.reset_conversation()
             store = ConversationStore.load_and_migrate(self.copilot_conversation_path)
             self.copilot.load_conversation(store)
-            self.copilot_scroll_pending = (
-                True  # open a restored conversation at the bottom
-            )
+            # Open a restored conversation at the bottom (rides out the bubble-height settle).
+            self.copilot_scroll_frames = _SCROLL_SETTLE_FRAMES
 
     def get_font(self, size: int) -> Any:
         fonts = imgui.get_io().fonts
