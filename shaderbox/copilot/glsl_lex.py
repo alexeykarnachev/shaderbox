@@ -120,17 +120,51 @@ def glsl_lex(src: str) -> list[Token]:
     return tokens
 
 
-def span_has_comment(src: str, start: int, end: int) -> bool:
-    # True if src[start:end] contains a // or /* comment. token_match ignores comments, so
-    # one sitting BETWEEN two matched tokens is invisible to the match yet inside the span —
-    # a verbatim splice would silently delete it. The caller rejects such a span.
+def comments_in(src: str, start: int = 0, end: int | None = None) -> list[str]:
+    # The normalized text of every // or /* comment in src[start:end], in order. token_match
+    # ignores comments, so a comment between two matched tokens is invisible to the match yet
+    # inside the span. The caller compares the span's comments against old_str's: a comment in
+    # the span but NOT in old_str would be silently deleted by a verbatim splice (reject); one
+    # present in both is an intentional rewrite (allow). Normalized (stripped + inner whitespace
+    # collapsed) so a reformat-but-same comment in old_str still counts as reproduced.
+    n: int = len(src) if end is None else end
+    out: list[str] = []
     i: int = start
-    while i < end:
+    while i < n:
         c: str = src[i]
-        if c == "/" and i + 1 < end and src[i + 1] in "/*":
-            return True
-        i += 1
-    return False
+        if c == "/" and i + 1 < n and src[i + 1] == "/":
+            j = i + 2
+            while j < n and src[j] != "\n":
+                j += 1
+            out.append(_norm_comment(src[i:j]))
+            i = j
+        elif c == "/" and i + 1 < n and src[i + 1] == "*":
+            j = i + 2
+            while j < n and not (src[j] == "*" and j + 1 < n and src[j + 1] == "/"):
+                j += 1
+            j = min(j + 2, n)
+            out.append(_norm_comment(src[i:j]))
+            i = j
+        else:
+            i += 1
+    return out
+
+
+def _norm_comment(text: str) -> str:
+    return " ".join(text.split())
+
+
+def span_drops_comment(src: str, start: int, end: int, old_str: str) -> bool:
+    # True iff the matched source span src[start:end] contains a comment that old_str does NOT
+    # reproduce — i.e. a verbatim splice would SILENTLY delete it (reject). A comment present in
+    # both is a deliberate rewrite (allow). Multiset-aware so two identical comments aren't
+    # masked by one in old_str.
+    span = comments_in(src, start, end)
+    quoted = comments_in(old_str)
+    for c in quoted:
+        if c in span:
+            span.remove(c)
+    return bool(span)
 
 
 def token_match(src: str, old_str: str) -> list[tuple[int, int]]:

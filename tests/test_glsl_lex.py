@@ -6,7 +6,13 @@ the load-bearing ones — they prove the matcher REJECTS what it must, not only 
 matches what it should.
 """
 
-from shaderbox.copilot.glsl_lex import TokenKind, glsl_lex, token_match
+from shaderbox.copilot.glsl_lex import (
+    TokenKind,
+    comments_in,
+    glsl_lex,
+    span_drops_comment,
+    token_match,
+)
 
 
 def _kinds_raws(src: str) -> list[tuple[TokenKind, str]]:
@@ -175,3 +181,44 @@ def test_true_zero_match() -> None:
     # A token typo or dropped token -> no span (the hint path then runs upstream).
     assert token_match("vec3 p = u_pos;", "vec3 p = u_poss;") == []
     assert token_match("vec3 p = u_pos;", "p = u_pos = q;") == []
+
+
+def test_comments_in_extracts_normalized() -> None:
+    src = "a = 1; // first\nb = /*  inner  */ 2;"
+    assert comments_in(src) == ["// first", "/* inner */"]
+    assert comments_in("no comments here") == []
+
+
+# The comment-loss guard: reject only a SILENT drop (comment in the matched span but not in
+# old_str), allow a deliberate rewrite (comment quoted in old_str). The bug this fixes: the
+# old guard rejected ANY span-with-a-comment, blocking legitimate rewrites (real trace case).
+_SRC = (
+    "uv.y /= u_aspect;\n\n"
+    "// center-based polar coordinates\n"
+    "vec2 p = uv * 2.0 - 1.0;"
+)
+
+
+def test_guard_allows_deliberate_comment_rewrite() -> None:
+    # old_str reproduces the comment -> the rewrite is intentional, NOT a silent drop. (The
+    # exact shape that wrongly failed in the 2026-06-08 trace.)
+    old = (
+        "uv.y /= u_aspect;\n// center-based polar coordinates\nvec2 p = uv * 2.0 - 1.0;"
+    )
+    (s, e), *_ = token_match(_SRC, old)
+    assert span_drops_comment(_SRC, s, e, old) is False
+
+
+def test_guard_rejects_silent_comment_drop() -> None:
+    # old_str omits the comment that sits inside the matched span -> a verbatim splice would
+    # delete it. Must still reject (the protection the guard exists for).
+    old = "uv.y /= u_aspect;\nvec2 p = uv * 2.0 - 1.0;"
+    (s, e), *_ = token_match(_SRC, old)
+    assert span_drops_comment(_SRC, s, e, old) is True
+
+
+def test_guard_no_comment_in_span_never_fires() -> None:
+    src = "vec2 p = uv * 2.0 - 1.0;\nfloat r = length(p);"
+    old = "float r = length(p);"
+    (s, e), *_ = token_match(src, old)
+    assert span_drops_comment(src, s, e, old) is False

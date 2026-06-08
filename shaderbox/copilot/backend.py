@@ -42,7 +42,7 @@ from shaderbox.copilot.capabilities import (
 )
 from shaderbox.copilot.config import COPILOT_CONFIG
 from shaderbox.copilot.errors import CopilotToolError
-from shaderbox.copilot.glsl_lex import span_has_comment, token_match
+from shaderbox.copilot.glsl_lex import span_drops_comment, token_match
 from shaderbox.copilot.sanitize import sanitize_display
 from shaderbox.core import Node
 from shaderbox.exporters.base import (
@@ -1082,7 +1082,7 @@ class CopilotBackend:
                 )
             if len(spans) > 1 and not replace_all:
                 return EditResult(matches=len(spans), errors=[])
-            if any(span_has_comment(src, s, e) for s, e in spans):
+            if any(span_drops_comment(src, s, e, old_str) for s, e in spans):
                 return EditResult(matches=0, errors=[], comment_loss=True)
             new_text = _splice(src, spans, new_str)
             return self._copilot_persist_target(tgt, new_text, len(spans))

@@ -184,3 +184,21 @@ Keep entries faithful. A simple fix gets one or two lines of resolution, not a s
   "copilot" in blue `STATE_INFO`) with a drawn corner copy glyph (`copy_icon_button`, top-right,
   allow_overlap) replacing the text button; tool/error/pending lines use a `dummy` gap, not a rule.
   `BUBBLE_ROUNDING` token. Headless-verified no SetCursorPos assert across all message kinds.
+
+### F15 — edit_shader comment-loss guard false-positive (trace-surfaced)   [fixed]
+- **Where:** `edit_shader` / the comment-loss guard (`backend.apply_shader_edit` +
+  `glsl_lex.span_has_comment`).
+- **Observed:** the 2026-06-08 live session's only two `edit_shader` failures were BOTH this guard
+  ("that region spans a comment your old_str doesn't reproduce"), each forcing a wasted
+  `replace_lines` retry. In both, the model's `old_str` DID include the comment and was deliberately
+  rewriting the block — a false-positive. (The agent's own end-of-session feedback flagged
+  edit_shader brittleness; the trace pinned the real cause to the guard, not whitespace.)
+- **Cause:** `token_match` is comment-invariant, so the guard checked only whether the matched SOURCE
+  span had a comment — never whether `old_str` reproduced it. It couldn't tell an accidental silent
+  drop from an intentional rewrite, so it blocked both.
+- **Resolution:** `span_has_comment` → `span_drops_comment(src, s, e, old_str)`: fire only when the
+  span has a comment that `old_str` does NOT reproduce (a genuine silent drop); allow a rewrite that
+  quotes the comment. `glsl_lex.comments_in` (normalized, multiset-aware) backs it. The guard's error
+  message was already accurate for the new condition. 5 unit tests (both directions). NOT a
+  prompt-level fix — the agent was already phrasing the edit correctly; the false-positive was wholly
+  in the tool.
