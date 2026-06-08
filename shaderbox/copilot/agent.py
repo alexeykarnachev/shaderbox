@@ -8,6 +8,7 @@ from loguru import logger
 from shaderbox.copilot.config import CopilotConfig
 from shaderbox.copilot.gate import GateChannel, GateKind, GateRequest
 from shaderbox.copilot.llm.api import (
+    LLMClient,
     LLMDone,
     LLMMessage,
     LLMTextDelta,
@@ -332,7 +333,7 @@ def build_gate(registry: ToolRegistry, name: str, args: dict) -> GateRequest:
 
 
 def run_turn(
-    client: object,
+    client: LLMClient,
     registry: ToolRegistry,
     config: CopilotConfig,
     context: CopilotContext,
@@ -344,8 +345,7 @@ def run_turn(
     scratchpad_render: Callable[[], list[LLMMessage]] | None = None,
     batch_begin: Callable[[], None] | None = None,
 ) -> Iterator[AgentEvent]:
-    # `client` is an llm.api.LLMClient — kept as `object` so this module imports no provider impl;
-    # the duck-typed `.stream(...)` is the only call. `trace` is the full-transcript sink (None in
+    # `trace` is the full-transcript sink (None in
     # tests). `scratchpad_render` rebuilds the live per-turn working-set block each iteration, spliced
     # onto the bottom of `messages` for the stream + trace, never into the durable list. `batch_begin`
     # clears the App-side per-batch line-edit guard once per tool-call batch (the batch boundary is the
@@ -392,7 +392,7 @@ def run_turn(
             tools=specs,
             max_tokens=config.max_tokens_per_turn,
         )
-        for ev in client.stream(  # type: ignore[attr-defined]
+        for ev in client.stream(
             request_messages, tools=specs, max_tokens=config.max_tokens_per_turn
         ):
             match ev:

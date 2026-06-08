@@ -1,7 +1,7 @@
 import shutil
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -106,29 +106,14 @@ def _conversation_stamp() -> str:
     return time.strftime("%Y-%m-%d_%H-%M-%S")
 
 
-def _format_revert_notice(result: RevertResult) -> str:
-    # The NL note shown in chat + handed to the agent after a revert.
-    if not result.touched_anything and not result.unrestorable:
-        return "Reverted: nothing to restore for that turn."
-    parts: list[str] = []
-    if result.restored_nodes:
-        parts.append(f"restored {', '.join(result.restored_nodes)}")
-    if result.recovered_nodes:
-        parts.append(f"recovered {', '.join(result.recovered_nodes)}")
-    if result.deleted_nodes:
-        parts.append(f"removed {', '.join(result.deleted_nodes)}")
-    if result.reverted_libs:
-        parts.append(f"reverted library {', '.join(result.reverted_libs)}")
-    notice = "Reverted that turn's changes: " + "; ".join(parts) + "." if parts else ""
-    if result.unrestorable:
-        gap = " " if notice else ""
-        notice += (
-            f"{gap}Could not restore {', '.join(result.unrestorable)} (no snapshot)."
-        )
-    return notice
+def _create_dir_if_needed(path: Path | str) -> Path:
+    path = Path(path)
+    if not path.exists():
+        path.mkdir(parents=True)
+        logger.debug(f"Directory created: {path}")
+    return path
 
 
-@dataclass
 class App:
     def __init__(self, project_dir: Path | None = None, headless: bool = False) -> None:
         # headless: create the glfw window hidden (the smoke test + any offscreen driver) so it
@@ -233,9 +218,6 @@ class App:
         # reset per turn. Init'd above the backend construction so its callbacks capture a
         # live attr.
         self._copilot_working_set: list[str] = []
-        # Per-batch mutated-target guard: a line edit to an id already here is rejected (its
-        # lines shifted from an earlier same-batch edit). Cleared before each batch.
-        self._copilot_batch_mutated: set[str] = set()
 
         # Constructed BEFORE the _init below (which calls release()) so release() never hits
         # a missing attr. The client reads the key/model LIVE through getters — _init
@@ -340,11 +322,7 @@ class App:
         self.code_hovered_uniform: str = ""
         self.global_fps = 0.0
         self.fps_details_open: bool = False
-        # The editor↔panel splitter drag. `splitter_dragging` is computed SAME-FRAME in
-        # update_and_draw (before the editor draws) so tabs/code.py can neutralize the editor's
-        # mouse — the TextEditor reads io.mouse_down directly (bypassing imgui's disabled/active-id),
-        # so the drag sweep would otherwise select text. `_press_on_splitter` latches on the press
-        # frame and holds until release, covering the drag even as the cursor sweeps onto the editor.
+        # The editor↔panel splitter drag, latched in update_splitter_drag.
         self.splitter_dragging: bool = False
         self._splitter_press_on_splitter: bool = False
 
@@ -452,8 +430,6 @@ class App:
             template_description=self.template_description,
             working_set_reader=lambda: self._copilot_working_set,
             working_set_add=self._copilot_ws_add,
-            batch_mutated_reader=lambda: self._copilot_batch_mutated,
-            batch_mutated_add=lambda a: self._copilot_batch_mutated.add(a),
             get_active_checkpoint=lambda: self.copilot.checkpoints.active,
         )
         b = self.copilot_backend
@@ -465,7 +441,7 @@ class App:
             grep=b.grep,
             read_lib=b.read_lib,
             read_working_set=b.read_working_set,
-            batch_begin=lambda: self._copilot_batch_mutated.clear(),
+            batch_begin=b.batch_begin,
             apply_shader_edit=b.apply_shader_edit,
             apply_line_edit=b.apply_line_edit,
             set_uniform=b.set_uniform,
@@ -527,7 +503,7 @@ class App:
             return
         result = self.restore_checkpoint(msg.turn_id)
         msg.turn_id = ""
-        self.copilot.note_revert(_format_revert_notice(result))
+        self.copilot.note_revert(result.as_notice())
         if result.touched_anything:
             self.notifications.push("Reverted the assistant's changes")
         self.copilot.save_conversation(self.copilot_conversation_path)
@@ -727,6 +703,17 @@ class App:
         if self.active_region == ActiveRegion.GRID:
             self._yield_editor_to_region()
 
+    def update_splitter_drag(self, on_splitter: bool) -> None:
+        # Latch on the press frame, hold until release — so the drag is covered even as the
+        # cursor sweeps onto the editor. tabs/code.py reads splitter_dragging to neutralize the
+        # TextEditor's direct io.mouse_down read (it bypasses imgui's disabled/active-id, so the
+        # sweep would otherwise select editor text). on_splitter is the caller's geometry test.
+        if imgui.is_mouse_clicked(imgui.MouseButton_.left):
+            self._splitter_press_on_splitter = on_splitter
+        if not imgui.is_mouse_down(imgui.MouseButton_.left):
+            self._splitter_press_on_splitter = False
+        self.splitter_dragging = self._splitter_press_on_splitter
+
     def rebind_command(self, command_id: CommandId, chord: int) -> None:
         # key_bindings is diff-only: store only chords that differ from the spec default;
         # reset-to-default drops the key. Re-merge so the change takes effect this frame.
@@ -769,16 +756,6 @@ class App:
         self.reset_shader_lib_inline_state()
         self.popup_state = PopupState.SHADER_LIB_PICKER
         self.shader_lib_picker_query = ""
-
-    @staticmethod
-    def _create_dir_if_needed(path: Path | str) -> Path:
-        path = Path(path)
-
-        if not path.exists():
-            path.mkdir(parents=True)
-            logger.debug(f"Directory created: {path}")
-
-        return path
 
     # ----------------------------------------------------------------
     # Shader-library picker state — delegated to self.shader_lib_files so the picker UI
@@ -872,11 +849,11 @@ class App:
 
     @property
     def default_projects_root_dir(self) -> Path:
-        return self._create_dir_if_needed(self.app_dir / "projects")
+        return _create_dir_if_needed(self.app_dir / "projects")
 
     @property
     def default_project_dir(self) -> Path:
-        return self._create_dir_if_needed(self.default_projects_root_dir / "default")
+        return _create_dir_if_needed(self.default_projects_root_dir / "default")
 
     @property
     def node_templates_dir(self) -> Path:
@@ -888,25 +865,25 @@ class App:
 
     @property
     def nodes_dir(self) -> Path:
-        return self._create_dir_if_needed(self.project_dir / "nodes")
+        return _create_dir_if_needed(self.project_dir / "nodes")
 
     @property
     def media_dir(self) -> Path:
-        return self._create_dir_if_needed(self.project_dir / "media")
+        return _create_dir_if_needed(self.project_dir / "media")
 
     @property
     def trash_dir(self) -> Path:
-        return self._create_dir_if_needed(self.project_dir / "trash")
+        return _create_dir_if_needed(self.project_dir / "trash")
 
     @property
     def renders_dir(self) -> Path:
         # Copilot render outputs — durable user artifacts inside the project dir, NOT the
         # transient exporter_scratch.
-        return self._create_dir_if_needed(self.project_dir / "renders")
+        return _create_dir_if_needed(self.project_dir / "renders")
 
     @property
     def copilot_dir(self) -> Path:
-        return self._create_dir_if_needed(self.project_dir / "copilot")
+        return _create_dir_if_needed(self.project_dir / "copilot")
 
     @property
     def copilot_conversation_path(self) -> Path:
@@ -949,7 +926,7 @@ class App:
 
         self.ui_nodes.clear()
 
-        self.project_dir = self._create_dir_if_needed(project_dir).resolve()
+        self.project_dir = _create_dir_if_needed(project_dir).resolve()
         self.project_dir_file_path.write_text(str(self.project_dir))
         logger.info(f"Project loaded: {self.project_dir}")
 
@@ -992,7 +969,7 @@ class App:
         # THEN rebind (which reads the store).
         self.integrations_store = IntegrationsStore.load()
 
-        scratch_dir = self._create_dir_if_needed(self.project_dir / "exporter_scratch")
+        scratch_dir = _create_dir_if_needed(self.project_dir / "exporter_scratch")
         if self.share_tab_state is None:
             self.share_tab_state = share_state.make_state(scratch_dir=scratch_dir)
         else:

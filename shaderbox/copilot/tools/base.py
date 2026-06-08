@@ -48,6 +48,10 @@ class ToolDefinition:
     needs_gl: bool  # True => the handler's capability marshals to the main thread
     category: str  # the catalogue tree (§4); single source of truth for grouping
     eager: bool  # True => carried in eager_specs() (turn-start tools=) (§4)
+    # Shader-SOURCE edit tools only (edit_shader / replace_lines / insert_after) — drives the
+    # consecutive-failed-edits giveup cap. Deliberately NARROWER than `mutating`: a failed
+    # render/publish must not trip the edit-retry cap.
+    is_edit: bool = False
     gate_policy: GatePolicy = GatePolicy.NONE
     # The gate WIDGET (feature 020·19): CONFIRM = Yes/No, CREDENTIAL = a masked secret input.
     # Orthogonal to gate_policy (WHEN to gate vs WHICH widget). A CREDENTIAL tool's handler is a

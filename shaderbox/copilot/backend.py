@@ -278,8 +278,6 @@ class CopilotBackend:
         template_description: Callable[[str], str],
         working_set_reader: Callable[[], list[str]],
         working_set_add: Callable[[str], None],
-        batch_mutated_reader: Callable[[], set[str]],
-        batch_mutated_add: Callable[[str], None],
         get_active_checkpoint: Callable[[], TurnCheckpoint | None],
     ) -> None:
         self._get_bridge = get_bridge
@@ -300,9 +298,13 @@ class CopilotBackend:
         self._template_description = template_description
         self._working_set_reader = working_set_reader
         self._working_set_add = working_set_add
-        self._batch_mutated_reader = batch_mutated_reader
-        self._batch_mutated_add = batch_mutated_add
+        # Per-batch mutated-target guard: a line edit to an address already here is rejected
+        # (its lines shifted from an earlier same-batch edit). Cleared per batch via batch_begin.
+        self._batch_mutated: set[str] = set()
         self._get_active_checkpoint = get_active_checkpoint
+
+    def batch_begin(self) -> None:
+        self._batch_mutated.clear()
 
     @property
     def _bridge(self) -> CopilotBridge:
@@ -1234,7 +1236,7 @@ class CopilotBackend:
             self._capture_node(tgt.node_id)  # pre-write rollback snapshot (best-effort)
             errors = self._copilot_persist_shader(tgt.node_id, tgt.node, new_text)
             self._working_set_add(tgt.ws_address)
-            self._batch_mutated_add(tgt.ws_address)
+            self._batch_mutated.add(tgt.ws_address)
             return EditResult(matches=matches, errors=errors)
         assert tgt.lib_path is not None
         # pre-write rollback snapshot (a brand-new lib reverses to a delete, not empty bytes)
@@ -1250,7 +1252,7 @@ class CopilotBackend:
             )
         self._copilot_invalidate_lib_consumers(tgt.lib_path)
         self._working_set_add(tgt.ws_address)
-        self._batch_mutated_add(tgt.ws_address)
+        self._batch_mutated.add(tgt.ws_address)
         verb = "created" if tgt.lib_create else "written"
         note = (
             f"library file {verb}; it has no standalone compile — errors will surface when a "
@@ -1283,7 +1285,7 @@ class CopilotBackend:
             tgt = self._copilot_resolve_target(target, allow_create=True)
             if isinstance(tgt, EditResult):
                 return tgt
-            if tgt.ws_address in self._batch_mutated_reader():
+            if tgt.ws_address in self._batch_mutated:
                 return EditResult(
                     matches=0,
                     errors=[],

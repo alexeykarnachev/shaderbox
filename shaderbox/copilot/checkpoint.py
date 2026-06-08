@@ -64,6 +64,29 @@ class RevertResult:
             or self.reverted_libs
         )
 
+    def as_notice(self) -> str:
+        # The NL note shown in chat + handed to the agent after a revert.
+        if not self.touched_anything and not self.unrestorable:
+            return "Reverted: nothing to restore for that turn."
+        parts: list[str] = []
+        if self.restored_nodes:
+            parts.append(f"restored {', '.join(self.restored_nodes)}")
+        if self.recovered_nodes:
+            parts.append(f"recovered {', '.join(self.recovered_nodes)}")
+        if self.deleted_nodes:
+            parts.append(f"removed {', '.join(self.deleted_nodes)}")
+        if self.reverted_libs:
+            parts.append(f"reverted library {', '.join(self.reverted_libs)}")
+        notice = (
+            "Reverted that turn's changes: " + "; ".join(parts) + "." if parts else ""
+        )
+        if self.unrestorable:
+            gap = " " if notice else ""
+            notice += (
+                f"{gap}Could not restore {', '.join(self.unrestorable)} (no snapshot)."
+            )
+        return notice
+
 
 @dataclass
 class TurnCheckpoint:

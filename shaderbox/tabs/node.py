@@ -61,7 +61,7 @@ def draw(app: App) -> None:
     matching_uniforms = []
     uniform_sizes = set()
     for uniform in ui_node.node.get_active_uniforms():
-        if getattr(uniform, "gl_type", None) == GL_SAMPLER_2D:  # type: ignore
+        if getattr(uniform, "gl_type", None) == GL_SAMPLER_2D:
             value = ui_node.node.uniform_values[uniform.name]
 
             w, h = value.texture.size

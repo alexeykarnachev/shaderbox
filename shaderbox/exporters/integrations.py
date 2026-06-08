@@ -15,6 +15,10 @@ _STORE_FILE = "integrations.json"
 _SAVE_LOCK = threading.Lock()
 
 
+def _file_path() -> Path:
+    return app_data_dir() / _STORE_FILE
+
+
 class PackEntry(BaseModel):
     title: str = ""
     set_name: str = ""
@@ -62,13 +66,9 @@ class IntegrationsStore(BaseModel):
 
     model_config = {"extra": "forbid"}
 
-    @staticmethod
-    def file_path() -> Path:
-        return app_data_dir() / _STORE_FILE
-
     @classmethod
     def load(cls) -> Self:
-        path: Path = cls.file_path()
+        path: Path = _file_path()
         if not path.exists():
             return cls()
         try:
@@ -88,7 +88,7 @@ class IntegrationsStore(BaseModel):
             return cls()
 
     def save(self) -> None:
-        path: Path = self.file_path()
+        path: Path = _file_path()
         with _SAVE_LOCK:
             path.parent.mkdir(parents=True, exist_ok=True)
             with path.open("w") as f:

@@ -18,10 +18,6 @@ from shaderbox.copilot.tools.shader import shader_tools
 from shaderbox.copilot.tools.telegram import telegram_tools
 from shaderbox.copilot.tools.youtube import youtube_tools
 
-_EDIT_TOOL_NAMES: frozenset[str] = frozenset(
-    {"edit_shader", "replace_lines", "insert_after"}
-)
-
 
 def _validation_message(exc: ValidationError) -> str:
     first = exc.errors()[0] if exc.errors() else {}
@@ -47,9 +43,8 @@ class ToolRegistry:
         return tool is not None and tool.mutating
 
     def is_edit_tool(self, name: str) -> bool:
-        # Shader-source edit tools only — the edit-retry giveup cap applies to these,
-        # not to a (mutating but non-edit) render/publish.
-        return name in _EDIT_TOOL_NAMES
+        tool = self._by_name.get(name)
+        return tool is not None and tool.is_edit
 
     def requires_gate_always(self, name: str) -> bool:
         tool = self._by_name.get(name)
