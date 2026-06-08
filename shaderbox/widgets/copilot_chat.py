@@ -41,6 +41,10 @@ _WINDOW_FLAGS = (
     imgui.WindowFlags_.no_nav_focus
     | imgui.WindowFlags_.no_collapse
     | imgui.WindowFlags_.no_nav_inputs
+    # The feed (an inner child) owns the only scrollbar; the window itself never scrolls — its
+    # content (header + feed + splitter + input) is sized to exactly fit, never overflow.
+    | imgui.WindowFlags_.no_scrollbar
+    | imgui.WindowFlags_.no_scroll_with_mouse
 )
 
 
@@ -187,8 +191,11 @@ def _draw_transcript(app: App) -> None:
     input_h = max(
         _MIN_INPUT_H, min(app.app_state.copilot_input_h, avail_y - _MIN_FEED_H)
     )
-    feed_h = avail_y - input_h - _splitter_band_h()
-    if imgui.begin_child("##copilot_history", size=(0.0, feed_h)):
+    # Feed fills everything EXCEPT the reserved footer (splitter band + input). A NEGATIVE child
+    # height = "available minus this" — self-adjusting, so the column can't overflow the window
+    # (no second, window-level scrollbar) regardless of spacing accounting.
+    footer_h = _splitter_band_h() + input_h
+    if imgui.begin_child("##copilot_history", size=(0.0, -footer_h)):
         # Stick-to-bottom: read the scroll position BEFORE this frame's content is laid out (it
         # reflects last frame's layout). If the view was at the bottom, re-pin after drawing; if
         # the user scrolled up even slightly, stop auto-scrolling so they can read while a turn
