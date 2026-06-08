@@ -288,10 +288,18 @@ Connect, not committable fixture state.
 way to screenshot it from the agent: with no window manager on the dev display the freshly-mapped
 window stays buried behind the terminal, and capturing it would mean stealing the full screen, which
 disrupts the maintainer. So **don't** spin on `import -window root` / window-raise tricks. Verify
-behavior the way that actually works: `make smoke` (headless invariant check) + a focused headless
-introspection script (e.g. construct a `Node`, call `render()` once to compile the program lazily,
-then assert on `get_active_uniforms()`), and **hand visual confirmation to the maintainer** with a
-one-line "run `make run` and check X". State the limitation once and move on.
+behavior the way that actually works: `make smoke` (headless invariant check — it already drives the
+full `update_and_draw` loop) + a focused headless introspection script that constructs a NARROW
+object (e.g. a `Node`, call `render()` once to compile lazily, then assert on
+`get_active_uniforms()`), and **hand visual confirmation to the maintainer** with a one-line "run
+`make run` and check X". State the limitation once and move on.
+
+**Do NOT write throwaway scripts that construct a second `App(...)` to "verify" a UI change.** A full
+`App` spins up a glfw window + GL context + fonts + project load + copilot session — slow, and it
+hangs / pops a window (it did, repeatedly, across a session). `make smoke` already covers the
+`update_and_draw` path; anything genuinely visual (cursor, scroll position, layout geometry) headless
+can't judge anyway — hand it to a `make run` pass. If a headless assertion is truly needed, drive a
+narrow object or a bare GL+imgui context, never a whole `App`.
 
 ### `make check`
 The single canonical lint/typecheck command — delegates to `uv run pre-commit run --all-files`:
