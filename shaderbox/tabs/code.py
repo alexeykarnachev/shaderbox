@@ -224,11 +224,17 @@ def draw(app: App) -> None:
         app.editor_was_ever_focused = False
 
     # Drive the glfw cursor directly — imgui cursors are no-op here (conventions.md ## Known
-    # quirks). is_window_hovered respects popup-blocking (is_mouse_hovering_rect doesn't).
-    cursor_over_editor = hovering and imgui.is_window_hovered(
-        imgui.HoveredFlags_.child_windows
+    # quirks). is_window_hovered respects popup-blocking (is_mouse_hovering_rect doesn't). Also
+    # NOT over the editor when the floating chat is hovered: it owns its own cursor (the splitter's
+    # resize cursor), and the editor's rect-test reads "hovered" THROUGH the chat — so without this
+    # the two fight every frame and the cursor blinks (this also suppresses the glyph tooltip there).
+    cursor_over_editor = (
+        hovering
+        and imgui.is_window_hovered(imgui.HoveredFlags_.child_windows)
+        and not app.copilot_hovered
     )
-    glfw.set_cursor(app.window, app.ibeam_cursor if cursor_over_editor else None)
+    if not app.copilot_hovered:
+        glfw.set_cursor(app.window, app.ibeam_cursor if cursor_over_editor else None)
 
     # Cursor-following tooltip for words that are live uniforms; also lights up the panel row.
     if cursor_over_editor and editor.is_mouse_pos_over_glyph(imgui.get_mouse_pos()):

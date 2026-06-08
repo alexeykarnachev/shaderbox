@@ -113,6 +113,10 @@ def draw(app: App) -> None:
         hovered = imgui.is_window_hovered(imgui.HoveredFlags_.child_windows)
         dragging = app.copilot_focused and imgui.is_mouse_down(imgui.MouseButton_.left)
         app.copilot_hovered = hovered or dragging
+        # Own the cursor while hovering the chat (the editor yields — code.py). Baseline arrow;
+        # the splitter overrides to the resize cursor over its handle (drawn later this frame).
+        if app.copilot_hovered:
+            glfw.set_cursor(app.window, None)
         if app.copilot_defocus_requested:
             imgui.set_window_focus(None)
             app.copilot_defocus_requested = False
