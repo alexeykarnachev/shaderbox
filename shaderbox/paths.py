@@ -1,5 +1,7 @@
 import os
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Self
 
 from platformdirs import user_data_dir
 
@@ -45,3 +47,40 @@ def copilot_trace_dir() -> Path:
     path = app_data_dir() / "copilot_traces"
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+@dataclass(frozen=True)
+class ProjectPaths:
+    # The on-disk layout of one project dir. The five directory fields are created up front by
+    # for_root; the three file/dir paths whose consumers create their own parent stay un-mkdir'd.
+    root: Path
+    app_state_file: Path
+    nodes_dir: Path
+    media_dir: Path
+    trash_dir: Path
+    renders_dir: Path
+    copilot_dir: Path
+    copilot_conversation_path: Path
+    copilot_checkpoints_dir: Path
+
+    @classmethod
+    def for_root(cls, project_dir: Path) -> Self:
+        root = project_dir.resolve()
+        nodes_dir = root / "nodes"
+        media_dir = root / "media"
+        trash_dir = root / "trash"
+        renders_dir = root / "renders"
+        copilot_dir = root / "copilot"
+        for d in (root, nodes_dir, media_dir, trash_dir, renders_dir, copilot_dir):
+            d.mkdir(parents=True, exist_ok=True)
+        return cls(
+            root=root,
+            app_state_file=root / "app_state.json",
+            nodes_dir=nodes_dir,
+            media_dir=media_dir,
+            trash_dir=trash_dir,
+            renders_dir=renders_dir,
+            copilot_dir=copilot_dir,
+            copilot_conversation_path=copilot_dir / "conversation.json",
+            copilot_checkpoints_dir=copilot_dir / "checkpoints",
+        )

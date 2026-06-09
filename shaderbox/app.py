@@ -39,7 +39,7 @@ from shaderbox.exporters.registry import ExporterRegistry
 from shaderbox.exporters.telegram import TelegramExporter
 from shaderbox.exporters.youtube import YouTubeExporter
 from shaderbox.notifications import Notifications
-from shaderbox.paths import app_data_dir, shader_lib_root
+from shaderbox.paths import ProjectPaths, app_data_dir, shader_lib_root
 from shaderbox.render_defer import RenderDefer
 from shaderbox.shader_errors import next_error_line
 from shaderbox.shader_lib import ShaderLibIndex
@@ -235,7 +235,7 @@ class App:
             # __init__ project_dir isn't set yet -> "project"; the real slug lands when
             # _init's reset_conversation rotates the trace.
             get_project_slug=lambda: getattr(self, "project_dir", Path("project")).name,
-            get_checkpoints_root=lambda: self.copilot_checkpoints_dir,
+            get_checkpoints_root=lambda: self.paths.copilot_checkpoints_dir,
         )
         # copilot_focus_pending: one-shot driving window + input focus, consumed at the input draw.
         self.is_copilot_open: bool = False
@@ -414,7 +414,7 @@ class App:
             get_bridge=lambda: self.copilot.bridge,
             node_templates_dir=self.node_templates_dir,
             starter_template_id=_STARTER_TEMPLATE_ID,
-            get_renders_dir=lambda: self.renders_dir,
+            get_renders_dir=lambda: self.paths.renders_dir,
             get_ui_nodes=lambda: self.ui_nodes,
             get_ui_node_templates=lambda: self.ui_node_templates,
             get_exporter_registry=lambda: self.exporter_registry,
@@ -461,7 +461,7 @@ class App:
         else:
             msg.recover = replace(msg.recover, done=True)
             self.notifications.push("Node is no longer in trash — can't recover")
-        self.copilot.save_conversation(self.copilot_conversation_path)
+        self.copilot.save_conversation(self.paths.copilot_conversation_path)
 
     def revert_turn(self, msg: Message) -> None:
         # MAIN THREAD (the chat's Revert button on a user message, gated on not-in-flight). Restore
@@ -474,7 +474,7 @@ class App:
         self.copilot.note_revert(result.as_notice())
         if result.touched_anything:
             self.notifications.push("Reverted the assistant's changes")
-        self.copilot.save_conversation(self.copilot_conversation_path)
+        self.copilot.save_conversation(self.paths.copilot_conversation_path)
 
     # ---- render / publish ----
 
@@ -591,10 +591,12 @@ class App:
         # is idle here — the invariant reset_conversation relies on.
         if self.copilot.state.in_flight:
             return
-        archive_conversation(self.copilot_conversation_path, _conversation_stamp())
+        archive_conversation(
+            self.paths.copilot_conversation_path, _conversation_stamp()
+        )
         self.copilot.clear_checkpoints()  # delete outright, not archived (feature 020·30)
         self.copilot.reset_conversation()
-        self.copilot.save_conversation(self.copilot_conversation_path)
+        self.copilot.save_conversation(self.paths.copilot_conversation_path)
 
     def _copilot_busy_blocked(self, action: str) -> bool:
         # True (+ a notification) when an editor/node-mutating action must be refused because
@@ -746,40 +748,6 @@ class App:
         return RESOURCES_DIR / "node_templates"
 
     @property
-    def app_state_file_path(self) -> Path:
-        return Path(self.project_dir / "app_state.json")
-
-    @property
-    def nodes_dir(self) -> Path:
-        return _create_dir_if_needed(self.project_dir / "nodes")
-
-    @property
-    def media_dir(self) -> Path:
-        return _create_dir_if_needed(self.project_dir / "media")
-
-    @property
-    def trash_dir(self) -> Path:
-        return _create_dir_if_needed(self.project_dir / "trash")
-
-    @property
-    def renders_dir(self) -> Path:
-        # Copilot render outputs — durable user artifacts inside the project dir, NOT the
-        # transient exporter_scratch.
-        return _create_dir_if_needed(self.project_dir / "renders")
-
-    @property
-    def copilot_dir(self) -> Path:
-        return _create_dir_if_needed(self.project_dir / "copilot")
-
-    @property
-    def copilot_conversation_path(self) -> Path:
-        return self.copilot_dir / "conversation.json"
-
-    @property
-    def copilot_checkpoints_dir(self) -> Path:
-        return self.copilot_dir / "checkpoints"
-
-    @property
     def current_node_id(self) -> str:
         return self.app_state.current_node_id
 
@@ -812,7 +780,8 @@ class App:
 
         self.ui_nodes.clear()
 
-        self.project_dir = _create_dir_if_needed(project_dir).resolve()
+        self.paths = ProjectPaths.for_root(project_dir)
+        self.project_dir = self.paths.root
         self.project_dir_file_path.write_text(str(self.project_dir))
         logger.info(f"Project loaded: {self.project_dir}")
 
@@ -823,7 +792,7 @@ class App:
 
         # ----------------------------------------------------------------
         # Load nodes
-        self.ui_nodes = load_nodes_from_dir(self.nodes_dir)
+        self.ui_nodes = load_nodes_from_dir(self.paths.nodes_dir)
         self.ui_node_templates = _order_templates(
             load_nodes_from_dir(self.node_templates_dir)
         )
@@ -835,8 +804,8 @@ class App:
 
         # ----------------------------------------------------------------
         # Load ui state
-        if self.app_state_file_path.exists():
-            self.app_state = UIAppState.load_and_migrate(self.app_state_file_path)
+        if self.paths.app_state_file.exists():
+            self.app_state = UIAppState.load_and_migrate(self.paths.app_state_file)
         # app_state was just replaced, so the effective binding map is recomputed per project.
         self._merge_effective_bindings()
         # Restore persisted layout prefs into the live attrs (save() mirrors them back).
@@ -866,7 +835,7 @@ class App:
         for eid in self.exporter_registry.ids():
             exporter = self.exporter_registry.get(eid)
             if exporter is not None:
-                exporter.set_media_dir(self.media_dir)
+                exporter.set_media_dir(self.paths.media_dir)
         self.exporter_registry.rebind(self.app_state.exporter_settings)
         if self.app_state.active_exporter_id:
             self.exporter_registry.set_active(self.app_state.active_exporter_id)
@@ -880,7 +849,9 @@ class App:
         # integrations_store live, so no re-wire. Guarded for the first _init.
         if hasattr(self, "copilot"):
             self.copilot.reset_conversation()
-            store = ConversationStore.load_and_migrate(self.copilot_conversation_path)
+            store = ConversationStore.load_and_migrate(
+                self.paths.copilot_conversation_path
+            )
             self.copilot.load_conversation(store)
 
     def get_font(self, size: int) -> Any:
@@ -1025,7 +996,7 @@ class App:
         if not self.current_node_id:
             logger.warning("No node selected")
             return
-        node_dir = self.nodes_dir / self.current_node_id
+        node_dir = self.paths.nodes_dir / self.current_node_id
         if not node_dir.exists():
             logger.warning(f"Node directory does not exist: {node_dir}")
             return
@@ -1090,7 +1061,7 @@ class App:
         root_dir: Path | None = None,
         dir_name: str | None = None,
     ) -> Path:
-        root_dir = root_dir or self.nodes_dir
+        root_dir = root_dir or self.paths.nodes_dir
         dir = ui_node.save(root_dir, dir_name)
 
         logger.info(f"Node '{ui_node.ui_state.ui_name}' saved: {dir}")
@@ -1126,7 +1097,7 @@ class App:
         self.app_state.copilot_layout = self.copilot_layout
 
         self.integrations_store.save()
-        self.app_state.save(self.app_state_file_path)
+        self.app_state.save(self.paths.app_state_file)
 
     def save_imgui_ini(self) -> None:
         # Force-flush imgui's layout file at shutdown. imgui otherwise only autosaves on a
@@ -1138,7 +1109,7 @@ class App:
         # the top of _init (project switch — project_dir still the outgoing one) and at
         # shutdown. Guarded: skipped on the first _init (no project_dir / copilot yet).
         if hasattr(self, "copilot") and hasattr(self, "project_dir"):
-            self.copilot.save_conversation(self.copilot_conversation_path)
+            self.copilot.save_conversation(self.paths.copilot_conversation_path)
 
         # Copilot first: cancel_all() + join() BEFORE the node release below, so a queued GL
         # op can't run against half-released nodes.
@@ -1207,11 +1178,11 @@ class App:
         if node_id == self.current_node_id or not self.current_node_id:
             self.set_current_node_id(new_node_id)
         trash_name = node_id
-        dest = self.trash_dir / trash_name
+        dest = self.paths.trash_dir / trash_name
         if dest.exists():  # a prior node with this id was already trashed
             trash_name = f"{node_id}_{int(time.time() * 1000)}"
-            dest = self.trash_dir / trash_name
-        shutil.move(self.nodes_dir / node_id, dest)
+            dest = self.paths.trash_dir / trash_name
+        shutil.move(self.paths.nodes_dir / node_id, dest)
 
         logger.info(f"Node deleted: {node_id}")
         return trash_name
@@ -1220,10 +1191,10 @@ class App:
         # Recover a copilot-deleted node from trash. Move FIRST, then load — so the loaded id
         # is the dir-name node_id, not the trashed id_<ts>. False (graceful no-op) if the
         # trash dir was cleared or the dest id is occupied.
-        src = self.trash_dir / trash_name
+        src = self.paths.trash_dir / trash_name
         if not src.exists():
             return False
-        dst = self.nodes_dir / node_id
+        dst = self.paths.nodes_dir / node_id
         if dst.exists():
             return False
         shutil.move(src, dst)
@@ -1239,7 +1210,7 @@ class App:
         # stale Node's GL, load fresh, then push the restored text into any OPEN editor session
         # (its source.path — nodes/<id>/shader.frag.glsl — is stable across the reload, so the
         # session is reused, not dropped; matches the mtime-watcher's external-change resync).
-        node_dir = self.nodes_dir / node_id
+        node_dir = self.paths.nodes_dir / node_id
         if not node_dir.is_dir():
             return
         old = self.ui_nodes.get(node_id)
@@ -1264,7 +1235,7 @@ class App:
             if snap is None:
                 result.unrestorable.append(name)
                 continue
-            dst = self.nodes_dir / node_id
+            dst = self.paths.nodes_dir / node_id
             if dst.exists():
                 shutil.rmtree(dst, ignore_errors=True)
             shutil.copytree(snap, dst)
@@ -1337,7 +1308,7 @@ class App:
         try:
             new_node = load_node_from_dir(template_dir)
             new_node.reset_id()
-            new_node.save(self.nodes_dir, new_node.id)
+            new_node.save(self.paths.nodes_dir, new_node.id)
             self.ui_nodes[new_node.id] = new_node
             self.set_current_node_id(new_node.id)
             logger.debug(f"Seeded starter node {new_node.id} (first run)")

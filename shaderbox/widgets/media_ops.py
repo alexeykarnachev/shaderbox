@@ -39,7 +39,7 @@ def draw_video_filters(app: App, input_video: Video) -> Video:
             w = node_ui_state.video_to_video_smoothing_window
             s = node_ui_state.video_to_video_smoothing_sigma
             name = f"{input_file_path.stem}_w:{w}_s:{s}"
-            output_file_path = (app.trash_dir / name).with_suffix(
+            output_file_path = (app.paths.trash_dir / name).with_suffix(
                 input_file_path.suffix
             )
             input_video.apply_temporal_smoothing(

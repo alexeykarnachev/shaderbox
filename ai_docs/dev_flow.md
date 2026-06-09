@@ -211,7 +211,9 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   `app_data_dir()/integrations.json`. `telegram_util.py` (`derive_set_name`, pure) + `youtube_util.py`
   (metadata builders + constants) — exporter-specific helpers. Adding an exporter: subclass `Exporter`,
   register in `App.__init__`. Worker thread MUST NOT touch moderngl (thread-affinity contract).
-- **`paths.py`** — `app_data_dir()`, `shader_lib_root()`, `shader_lib_trash_dir()` (leaf, no `App`).
+- **`paths.py`** — `app_data_dir()`, `shader_lib_root()`, `shader_lib_trash_dir()` + `ProjectPaths`
+  (frozen value object for one project dir's layout; `for_root` eagerly mkdirs the 5 subdirs;
+  `App.paths` holds the live one) (leaf, no `App`).
 - **`tabs/`** — `draw(app: App)` UI modules + optional `update(app: App)` (pre-imgui GL work).
   `code.py` (inline GLSL editor — main-window LEFT split), `node.py`, `render.py`, `share.py`.
   `share_state.py` holds the share-tab dataclass (`TabState`) separately to keep `app.py`
