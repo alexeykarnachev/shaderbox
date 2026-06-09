@@ -26,7 +26,7 @@ feature; brief points at the superseder).
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
 <!-- As of 2026-06-09. -->
-**ProjectSession extraction (025) landed on `dev` (C1-C4, type-checked + post-impl-reviewed); awaiting a maintainer live `make run` pass. Next: build the dogfood harness (026) on the new headless core, then ship.**
+**ProjectSession extraction (025) + dogfood-harness scaffold (026) landed on `dev`. The harness CONSTRUCTS + LOADS + RENDERS live on the Pi (first real runtime proof the 025 headless core works) — only a live LLM turn is unrun, blocked on the maintainer's `OPENROUTER_API_KEY` (none on this Pi). Then: drive real dogfood scenarios, the 025 `make run` pass, ship.**
 
 - **NOW — ProjectSession extraction (025) landed, 4 green commits, post-impl reviewed.** Extracted the
   headless project + copilot CORE out of `App` into `project_session.py` (no imgui/glfw imports, no
@@ -40,11 +40,17 @@ feature; brief points at the superseder).
   `025_project_session_extraction.md`. **Type-checked + GL-free tests green (212/24 skip) + post-impl
   reviewed; the `App.__init__`/`_init`/`release` runtime path is un-runtime-tested on the display-less
   Pi → a maintainer `make run` pass is the remaining gate.**
-- **NEXT — copilot dogfood harness (026), now unblocked by 025.** A hand-driven headless driver: build a
-  real `ProjectSession` on a standalone EGL context, drive `session.copilot` turn by turn, render 400×400
-  PNGs, eyeball them. Judge = human reading the trace + images (no code assertions). Probes the known
-  weak spots (visual-blindness, wrong-node targeting, compile-thrash). Spec:
-  `026_copilot_dogfood_harness.md`. Not started.
+- **NOW — copilot dogfood harness (026) SCAFFOLD landed + verified on the Pi.** `scripts/dogfood.py`:
+  `DogfoodHarness.create()` builds a real headless `ProjectSession` on a standalone EGL context (no
+  App/glfw), loads a tmp project (templates seeded), and `render(size=400)` produces a real 400×400 PNG
+  via the actual `render_image` capability (bridge-pumped on the context-owning thread — the worker-marshal
+  pattern, NOT a sync patch, which would corrupt the GL context). Construction + load + render + the
+  human-eyeball loop all verified live (the UV-Mango gradient rendered + read back correctly). This is the
+  FIRST runtime proof the 025 headless core works. `send()` + `drive_until_idle()` (the real-LLM turn) are
+  code-complete but UNRUN — no `OPENROUTER_API_KEY` on this Pi. Spec: `026_copilot_dogfood_harness.md`.
+- **BLOCKED — the live dogfood run needs the maintainer's `OPENROUTER_API_KEY`** (billed; absent here). To
+  run: `export OPENROUTER_API_KEY=…` then drive a real turn. Then write + run the weak-spot scenarios
+  (visual-blindness, wrong-node targeting, compile-thrash).
 - **Also landed this wave:** `make smoke` now self-skips on a no-GPU-window box (its `_has_gpu_window`
   probe) instead of crashing on the Pi.
 - **Still pending (separate from 025):** copilot turn-rollback (030) awaits its own maintainer live pass
@@ -66,7 +72,7 @@ feature; brief points at the superseder).
 
 | # | Name | Status | Brief |
 |---|---|---|---|
-| 026 | copilot_dogfood_harness | pending | Hand-driven headless driver to dogfood the copilot ENGINE: build a real `ProjectSession` on a standalone EGL context, drive `session.copilot` turn by turn, render 400×400 PNGs, eyeball them (judge = human reading the trace + images, no code assertions). Probes the known weak spots (visual-blindness, wrong-node targeting, compile-thrash). Built on 025's headless core. Spec: `ai_docs/features/026_copilot_dogfood_harness.md`. |
+| 026 | copilot_dogfood_harness | partial | Hand-driven headless driver to dogfood the copilot ENGINE: `scripts/dogfood.py` `DogfoodHarness` builds a real `ProjectSession` on a standalone EGL context (no App/glfw), drives `session.copilot` turn by turn (worker + bridge-pump, the App-mirror — NOT a sync patch), renders 400×400 PNGs, eyeballs them (judge = human reading the trace + images, no code assertions). Scaffold + load + render + eyeball-loop VERIFIED live on the Pi (first runtime proof of 025's headless core). `send`/`drive_until_idle` (real-LLM turn) code-complete but UNRUN — needs `OPENROUTER_API_KEY` (absent on this Pi). Probes the known weak spots (visual-blindness, wrong-node targeting, compile-thrash). Spec: `ai_docs/features/026_copilot_dogfood_harness.md`. |
 | 025 | project_session_extraction | partial | Extracted the headless project + copilot CORE out of `App` into `project_session.py` (no imgui/glfw imports, no window/context creation), so the dogfood harness (026) can drive the real copilot engine without `App`/glfw. 4 green commits: C1 pure-core state + `@property` forwarders; C2 GL-free project load (`load`/`seed_starter_node`); C3 copilot cluster (`CopilotSession`/`CopilotBackend`/`RevertExecutor`) + the 4 UI-tail methods moved whole; C4 UI-tail → injected `on_*` callbacks (chosen over return-values: reactions fire mid-turn on the worker-drain thread, App off-stack) + the mid-turn "Node saved" toast dropped (now user-path-only). The long-deferred `app.py` split. Type-checked + GL-free tests green + post-impl reviewed; **awaiting a maintainer `make run` pass** (the `App.__init__`/`_init`/`release` runtime path is un-runtime-testable on the display-less Pi). Spec: `ai_docs/features/025_project_session_extraction.md`. |
 | 023 | app_refinement_wave | done | Pure-shape refactor of the overgrown `app.py` (~41% was the copilot backend). Three green-gated commits: C2 extracted the 49 `_copilot_*` methods into `copilot/backend.py` (`CopilotBackend`, the `ShaderLibFileManager` idiom — explicit deps + injected getters/callbacks, never imports `App`; `_build_copilot_capabilities` constructs + binds it; working-set/batch state stays App-owned via accessors; `app.py` −~1250 lines); C3 collapsed the four modal popup booleans into a `PopupState` enum (structural mutex); C4 fixed a latent Esc bug the enum surfaced (Esc now closes the emoji + lib pickers — the one behavior change). Two design-audit swarms + pre/post-impl review. Spec: `ai_docs/features/023_app_refinement_wave.md`. |
 | 022 | copilot_chat_persistence | done | The copilot conversation is tied to its project + restored on reopen (was memory-only, dropped on switch/exit). `copilot/persistence.py` (`ConversationStore`, versioned + fail-soft like `app_state.json`) persists both the UI render messages and the LLM history + usage to `project_dir/copilot/conversation.json`; `CopilotSession.save_conversation`/`load_conversation`; App saves the outgoing project's chat in `release()` (top of `_init` + shutdown) and loads the incoming one after `reset_conversation`; a `begin_disabled`-during-turn clear button archives to `copilot/archive/`. Folded the trace-bleed deferral: the orphaned-history append is guarded on `_cancel`, and the worker-is-idle invariant (020·15's `open_project` gate) closes the trace-bleed window (the residual `_ensure_open` structural weakness re-scoped in `todo.md`). Spec: `ai_docs/features/022_copilot_chat_persistence.md`. |

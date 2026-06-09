@@ -211,3 +211,35 @@ pinned as decisions 4–10: the
 set-MESA-before-context requirement, and the standalone-context teardown suppression. Established facts
 verified live this session: EGL→V3D compiles `#version 460`; 400×400 render ≈ 2.6 ms; `glfw.init()` fails
 on this display-less Pi [App path excluded]. Pre-impl engine review TBD before plan-lock if requested.)
+
+## Resolution (as-built — scaffold landed + verified, LLM turn blocked)
+
+`scripts/dogfood.py` landed (commit `7b64bae`): `DogfoodHarness.create()` + `send` / `drive_until_idle` /
+`render` / `approve` / `decline` / `nodes` / `release`. Built on a real `ProjectSession` (025), constructed
++ load + render + the human-eyeball loop VERIFIED live on the Pi (the UV-Mango gradient rendered headless on
+V3D at 400×400 and read back correctly — the first runtime proof 025's headless core works).
+
+As-built corrections to the plan above:
+- **Threading: worker + bridge-pump, NOT a sync patch (decision 2 was wrong).** Verified against the code:
+  `CopilotSession` ALWAYS spawns a worker thread (`_ensure_worker`), and `run_turn` runs there; the worker
+  marshals GL via `bridge.run_on_main` which BLOCKS until the main thread drains it. A sync patch
+  (`run_on_main = fn()`) would run GL on the WORKER thread → EGL thread-affinity violation. So the harness's
+  `drive_until_idle` pumps `drain_bridge()` + `pump_events()` on the context-owning thread while the worker
+  runs (the exact `App` frame-loop shape, `ui.py`). `render()` likewise runs `render_image` on a throwaway
+  thread and pumps the bridge from the owner thread (a direct call deadlocks — confirmed).
+- **Env via module-top side effect, not a `bootstrap_env()` call.** `SHADERBOX_DATA_DIR` + the MESA
+  overrides + the written `integrations.json` are set at the top of `scripts/dogfood.py` BEFORE the
+  shaderbox imports (the import-order constraint), reading the key from `OPENROUTER_API_KEY`.
+- **No `make_current` call** — `moderngl.create_standalone_context(backend='egl')` leaves the context
+  current on the creating thread (verified); `Node`/`Canvas` pick it up via `get_context()`. One sanctioned
+  `# type: ignore[arg-type]` (moderngl's `**kwargs` stub gap, added to `conventions.md` allowlist).
+- **glfw warning silenced.** `core.py`'s render reads `glfw.get_time()` for the default `u_time`; glfw is
+  never `init()`'d (EGL path), so it warns + returns 0.0 — which is exactly the static t=0 frame the dogfood
+  wants. The harness installs a no-op glfw error callback to keep output clean.
+- **`ProjectSession` has no `release()`** (App owns lifecycle live); the harness tears down via
+  `session.copilot.release()` then `ctx.release()`.
+
+BLOCKED: a live LLM turn (`send` + `drive_until_idle`) needs `OPENROUTER_API_KEY` — none on this Pi (no
+`integrations.json` at the standard paths, env unset). Run it on a box with the maintainer's key; then write
++ drive the weak-spot scenarios. The token/context-review and `context_breakdown` log are still deferred to
+after the first real runs show eyeballing the existing trace is too tedious.)
