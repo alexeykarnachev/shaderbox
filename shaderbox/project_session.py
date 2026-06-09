@@ -1,27 +1,22 @@
 """The headless project core (feature 025).
 
-`ProjectSession` owns the project-lifecycle + (later, C3) copilot state that has no UI/GL
-dependency — the state and methods the copilot backend reaches that App used to own directly.
-It imports no imgui/glfw (the headless invariant): every UI side effect of a project mutation
-flows back to the owner through injected callbacks the core invokes (the `ShaderLibFileManager`
-idiom), and the `notifier` is injected, never constructed here (`Notifications` imports imgui).
+`ProjectSession` owns the project-lifecycle + copilot state that has no UI/GL dependency — the
+state and methods the copilot backend reaches that App used to own directly. It imports no
+imgui/glfw (the headless invariant): every UI side effect of a project mutation flows back to the
+owner through injected `on_*` callbacks the core invokes (the `ShaderLibFileManager` idiom), so the
+core never touches notifications, editor sessions, or any imgui state itself.
 
 App constructs one `ProjectSession` and forwards project state/ops to it via explicit
 `@property` accessors; a headless harness (feature 026) constructs it directly on a standalone
-EGL context. A moderngl context must be current on the constructing thread before any node load
-(Node/Canvas do `self._gl = gl or moderngl.get_context()`).
-
-Slices: C1 pure-core STATE + pure methods; C2 the GL-free project load (`load` / `seed_starter_node`);
-C3 the copilot cluster (`CopilotSession`/`CopilotBackend`/`RevertExecutor`) + the 4 UI-tail methods,
-moved whole — their imgui-bound work routes through the injected `notifier` + the App-owned
-`editor_sessions` getter (C4 cuts that coupling, replacing it with on_* callbacks).
+EGL context, passing no `on_*` callbacks (they default to no-ops). A moderngl context must be
+current on the constructing thread before any node load (Node/Canvas do
+`self._gl = gl or moderngl.get_context()`).
 """
 
 import shutil
 import time
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
 
 from loguru import logger
 
@@ -33,7 +28,6 @@ from shaderbox.copilot.session import CopilotSession
 from shaderbox.copilot.wiring import build_capabilities
 from shaderbox.exporters.integrations import IntegrationsStore
 from shaderbox.exporters.registry import ExporterRegistry
-from shaderbox.notifications import Notifications
 from shaderbox.paths import ProjectPaths, shader_lib_root
 from shaderbox.shader_lib import ShaderLibIndex
 from shaderbox.shader_lib import set_active as set_active_lib_index
@@ -54,7 +48,11 @@ def _noop_current_node_changed(old_id: str, new_id: str) -> None:
     pass
 
 
-def _noop_clear_delete_arm(node_id: str) -> None:
+def _noop_node_source_synced(node_id: str, source: str) -> None:
+    pass
+
+
+def _noop_node_deleted(node_id: str, source_path: Path) -> None:
     pass
 
 
@@ -65,32 +63,29 @@ class ProjectSession:
         node_templates_dir: Path,
         starter_template_id: str,
         template_order: list[str],
-        notifier: Notifications,
         get_exporter_registry: Callable[[], ExporterRegistry],
         get_shader_lib_files: Callable[[], ShaderLibFileManager],
-        # editor_sessions is path-keyed dict[Path, EditorSession]; EditorSession imports imgui
-        # (TextEditor), so the value is typed Any to keep this core import-clean (C3 coupling,
-        # removed in C4).
-        get_editor_sessions: Callable[[], dict[Path, Any]],
+        # UI reactions to project mutations ride these callbacks (the core never touches imgui
+        # state): the owner clears the sticky-focus bit / rehydrates the editor session / drops
+        # the editor session + delete-arm. All default to no-ops so a headless caller omits them.
         on_current_node_changed: Callable[
             [str, str], None
         ] = _noop_current_node_changed,
-        clear_delete_arm: Callable[[str], None] = _noop_clear_delete_arm,
+        on_node_source_synced: Callable[[str, str], None] = _noop_node_source_synced,
+        on_node_deleted: Callable[[str, Path], None] = _noop_node_deleted,
     ) -> None:
-        # notifier is injected (Notifications imports imgui — never built by the core).
-        self._notifier = notifier
         self._node_templates_dir = node_templates_dir
         self._starter_template_id = starter_template_id
         # Authored template display order (filesystem ctime isn't preserved through git/zip);
         # templates not listed sort last.
         self._template_order = template_order
-        # Injected refs: exporter_registry + shader_lib_files stay App-side (imgui-coupled);
-        # editor_sessions is App-owned UI state the C3 UI-tail methods still touch directly.
+        # Injected refs: exporter_registry + shader_lib_files stay App-side (imgui-coupled).
         self._get_exporter_registry = get_exporter_registry
         self._get_shader_lib_files = get_shader_lib_files
-        self._get_editor_sessions = get_editor_sessions
+        # UI-reaction callbacks the core invokes after a mutation (the owner does the imgui work).
         self._on_current_node_changed = on_current_node_changed
-        self._clear_delete_arm = clear_delete_arm
+        self._on_node_source_synced = on_node_source_synced
+        self._on_node_deleted = on_node_deleted
 
         # ---- per-project state, (re)populated by _load ----
         self.paths: ProjectPaths
@@ -177,25 +172,18 @@ class ProjectSession:
         root_dir: Path | None = None,
         dir_name: str | None = None,
     ) -> Path:
+        # No toast here: the copilot calls this mid-turn (create_node) where a "Node saved"
+        # toast is spurious (the chat already reports it). The user-initiated toast lives in
+        # App.save_ui_node, the forwarder the UI paths call.
         root_dir = root_dir or self.paths.nodes_dir
         dir = ui_node.save(root_dir, dir_name)
-
         logger.info(f"Node '{ui_node.ui_state.ui_name}' saved: {dir}")
-        self._notifier.push(f"Node '{ui_node.ui_state.ui_name}' saved")
-
         return dir
 
     def sync_editor_from_disk(self, node_id: str, source: str) -> None:
-        # Called by the mtime watcher. The node's source.path is unchanged (only text/mtime),
-        # so look the session up by that path.
-        if node_id not in self.ui_nodes:
-            return
-        path = self.ui_nodes[node_id].node.source.path
-        session = self._get_editor_sessions().get(path)
-        if session is None:
-            return
-        session.editor.set_text(source)
-        session.saved_undo = session.editor.get_undo_index()
+        # The whole reaction is UI (push new disk text into the live editor session), so the
+        # core just fires the callback; the owner's handler does the editor work.
+        self._on_node_source_synced(node_id, source)
 
     def _delete_node_unguarded(self, node_id: str) -> str:
         # Teardown shared by the public + copilot delete: release GL, drop the editor session,
@@ -209,12 +197,13 @@ class ProjectSession:
         if new_node_id == node_id:
             new_node_id = ""
 
+        # Capture the source path BEFORE the pop (it's gone after; the owner's editor sessions
+        # are path-keyed). The on_node_deleted handler drops the editor session + delete-arm.
         path = self.ui_nodes[node_id].node.source.path
         self.ui_nodes.pop(node_id).node.release()
-        self._get_editor_sessions().pop(path, None)
         if node_id in self._copilot_working_set:
             self._copilot_working_set.remove(node_id)
-        self._clear_delete_arm(node_id)
+        self._on_node_deleted(node_id, path)
         if node_id == self.current_node_id or not self.current_node_id:
             self.set_current_node_id(new_node_id)
         trash_name = node_id

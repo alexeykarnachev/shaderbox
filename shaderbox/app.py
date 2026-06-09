@@ -213,12 +213,11 @@ class App:
             node_templates_dir=RESOURCES_DIR / "node_templates",
             starter_template_id=_STARTER_TEMPLATE_ID,
             template_order=_TEMPLATE_ORDER,
-            notifier=self.notifications,
             get_exporter_registry=lambda: self.exporter_registry,
             get_shader_lib_files=lambda: self.shader_lib_files,
-            get_editor_sessions=lambda: self.editor_sessions,
             on_current_node_changed=self._on_current_node_changed,
-            clear_delete_arm=self._clear_delete_arm,
+            on_node_source_synced=self._on_node_source_synced,
+            on_node_deleted=self._on_node_deleted,
         )
 
         # copilot_focus_pending: one-shot driving window + input focus, consumed at the input draw.
@@ -398,7 +397,22 @@ class App:
         # session starts fresh; insertions would land at (0,0) until the user clicks into it.
         self.editor_was_ever_focused = False
 
-    def _clear_delete_arm(self, node_id: str) -> None:
+    def _on_node_source_synced(self, node_id: str, source: str) -> None:
+        # The mtime watcher rebuilt a node's source on disk; push the new text into its live
+        # editor session (path-keyed; the node's source.path is unchanged, only text/mtime).
+        if node_id not in self.ui_nodes:
+            return
+        path = self.ui_nodes[node_id].node.source.path
+        session = self.editor_sessions.get(path)
+        if session is None:
+            return
+        session.editor.set_text(source)
+        session.saved_undo = session.editor.get_undo_index()
+
+    def _on_node_deleted(self, node_id: str, source_path: Path) -> None:
+        # A node's dir was trashed by the core; drop its editor session + clear a pending
+        # delete-arm if it matched.
+        self.editor_sessions.pop(source_path, None)
         if node_id == self.node_delete_armed:
             self.node_delete_armed = ""
 
@@ -1031,7 +1045,11 @@ class App:
         root_dir: Path | None = None,
         dir_name: str | None = None,
     ) -> Path:
-        return self.session.save_ui_node(ui_node, root_dir, dir_name)
+        # The user-initiated save path: toast. The copilot's mid-turn saves go straight to the
+        # core (session.save_ui_node) and deliberately don't toast (feature 025 decision 7).
+        dir = self.session.save_ui_node(ui_node, root_dir, dir_name)
+        self.notifications.push(f"Node '{ui_node.ui_state.ui_name}' saved")
+        return dir
 
     def save(self) -> None:
         if self._copilot_busy_blocked("Saving"):
