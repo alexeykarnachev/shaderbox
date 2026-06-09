@@ -218,16 +218,45 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   feature 010 (Out of scope); the share UI has no offset control today. The copilot `render_video`
   (020·18) inherits this — it too renders only t=0..seconds.
 
-## [DEFERRAL] copilot tool catalogue is all-eager (no lazy search_tools/list_tools)
-- **Trigger:** the eager count crossed the ~16 soft threshold (it kept growing through 020·18/19/20), so
-  it has FIRED — 020·20 D5 consciously deferred the lazy path to its own slice (it's a prompt-cache-prefix
-  optimization, not a legibility/correctness fix, so it doesn't gate shipping). Build it when a
-  maintainer/log observation shows the model picking a wrong tool attributable to catalogue size, OR the
-  next tool wave would push the turn-start `tools=` block large enough to measurably cost prompt-cache prefix.
-- All ~20 copilot tools are eager (`11 §4` wanted publish/telegram tools lazy via `search_tools`/
-  `list_tools` + `grow_specs_from_payload`, but that mechanism is itself deferred — `16 ## Out of
-  scope`). Building the lazy path is the fix: the tools already carry `eager`/`category` for it.
-  Spec: `20_ui_ux_polish.md` D5.
+## [DEFERRAL] copilot context bloat: tool catalogue sent TWICE + all-eager (no lazy load)
+- **Trigger:** FIRED + now MEASURED. The 2026-06-09 dogfood run (`026_dogfood_report_run1.md`) measured a
+  simple "make it red" request at 8055 input tokens, of which ~3550 is the system-prompt prose (which
+  re-describes every tool) and ~1950 is the native `tools=` block (the SAME 21 tools again) — ~5500 tok of
+  DUPLICATED tool description per request, 15/21 tools (telegram/youtube/publish) irrelevant to a shader
+  turn. A trivial one-line edit cost $0.021. Build the fix when optimizing copilot cost/latency.
+- TWO levers (independent): (1) STOP duplicating the tool descriptions in the system-prompt prose — the
+  native `tools=` block already carries them; the prose should be a short "you can edit/create/render/
+  publish" overview (`copilot/prompt.py`), not a re-listing. (2) Lazily load the telegram/youtube/publish
+  tools (they already carry `eager`/`category`) so a shader turn ships ~6 tools not 21 (`11 §4`'s
+  `search_tools`/`list_tools` + `grow_specs_from_payload`, itself deferred — `16 ## Out of scope`).
+  Together ~halve per-turn input tokens. Spec: `20_ui_ux_polish.md` D5 + `026_dogfood_report_run1.md §5`.
+
+## [DEFERRAL] copilot default model `x-ai/grok-4-fast` is DEPRECATED (404)
+- **Trigger:** FIRED — the 2026-06-09 dogfood run got a 404 "Grok 4 Fast is deprecated" on the FIRST
+  request; the run only worked with an explicit `OPENROUTER_MODEL=x-ai/grok-4.3` override. Fix before any
+  copilot ship or the next dogfood run.
+- The default model lives in `CopilotIntegration.model` (`exporters/integrations.py`) = `"x-ai/grok-4-fast"`,
+  and the same id is referenced in `copilot/config.py` / the prompt / `roadmap.md` row 020 as the
+  tool-call-verified default. Bump to a current cheap tool-call-capable model (`x-ai/grok-4.3` worked,
+  ~$1.25/$2.50 per Mtok) — and grep for every hardcoded `grok-4-fast` so none is missed. Re-verify
+  tool-call compatibility with the new id (the agent rejects tool-incompatible models).
+
+## [DEFERRAL] copilot headless GLError 1282 glUseProgram(0) on bridge-marshalled create/edit
+- **Trigger:** FIRED in the 2026-06-09 dogfood run — `create_node`/`replace_lines` spuradically threw
+  `OpenGL.error.GLError(err=1282, invalid operation, baseOperation=glUseProgram, cArguments=(0,))` under the
+  standalone EGL context. The copilot RECOVERS (the tool returns `error: … failed`, the agent retries +
+  succeeds), so it's not user-fatal, but it wastes a tool call + tokens + $ and a worse model might not
+  recover. Pick it up when hardening the headless path (the dogfood harness / feature 026) or when a
+  maintainer sees `error: create_node failed` / `replace_lines failed` in a real trace.
+- `glUseProgram(0)` (unbind) throws `invalid operation` under a standalone context — the SAME headless
+  GL-quirk already suppressed for node teardown (`conventions.md ## Known quirks`, `test_render_for.py`'s
+  Exception-suppressed `node.release()`). Here it surfaces in the create/edit persist→render path
+  (`copilot/backend.py::_copilot_persist_shader` → `node.render()` → somewhere a `glUseProgram(0)`). A
+  minimal repro (5 nodes compile+render in a loop) does NOT reproduce it — it's tied to the
+  bridge-marshalled create/render interleaving + the render_image-between-turns timing. Honest fix: guard/
+  suppress the `glUseProgram(0)` in the persist/render path under a standalone context (mirror the teardown
+  suppression), OR ensure the harness's render never interleaves with an in-flight worker compile. Source:
+  `026_dogfood_report_run1.md §GLError`. NOT reproduced in the live App (glfw context) — headless-specific.
 
 ## [DEFERRAL] true in-line drag-selection of WRAPPED copilot chat prose
 - **Trigger:** the per-message Copy button (020·23 D7) proves insufficient — a user wants to select a
