@@ -362,3 +362,5 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   - `moderngl.Uniform.gl_type` — not in moderngl's stub.
   - `@model_validator(mode="after")` on a method returning `Self` — pydantic's decorator stub
     mistypes the wrapped method.
+  - `moderngl.create_standalone_context(backend="egl")` — the stub types `**kwargs` as a single
+    `dict`, so a keyword arg trips `arg-type` (`scripts/dogfood.py`, the headless EGL context).
