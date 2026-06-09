@@ -268,11 +268,12 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   reads what the copilot actually did and ADAPTS the next message — a hardcoded progression replays a
   recording instead. (Hit 2026-06-09: a `dogfood_scenarios.py` rigid driver was written, then deleted —
   the `/dogfood` skill §1 still says "write a throwaway driver", which is what misled it.)
-- PLANNED FIX (next task): a blocking dogfood SERVER — a foreground script Claude starts ONCE that listens
-  on a file/pipe, runs one copilot turn per message, and writes the reply back, blocking until ready. Goal:
-  Claude sends a line + blocks for the answer (no background processes to juggle, no per-turn process
-  respawn that would lose the worker/EGL/project state). Interface TBD (file-watch + blocking read is the
-  leading shape). When it lands: rewrite `/dogfood` skill §1 to mandate it + forbid pre-scripted drivers.
+- PLANNED FIX (next task, drafted): a blocking dogfood SERVER — Claude sends a line + blocks for the
+  reply, no background process to juggle, state persists across turns. Base ideas + transport options +
+  open questions are captured in the DRAFT spec `ai_docs/features/027_interactive_dogfood_server.md`
+  (not plan-locked — a dedicated agent pass writes/reviews the real spec). When it lands: rewrite
+  `/dogfood` skill §1 to mandate it + forbid pre-scripted drivers, and delete this entry + the
+  "conversation-restart / gate-decline" entry below (027 folds both in).
 - NOTE: the 2026-06-09 recovery probes (scenario 06 A/B/C, scenario 03) WERE run, but via the deleted rigid
   driver — treat their PASS as provisional; re-run them through the interactive server to confirm.
 
