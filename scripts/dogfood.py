@@ -252,6 +252,16 @@ class DogfoodHarness:
             for nid, ui_node in self.session.ui_nodes.items()
         }
 
+    @property
+    def trace_path(self) -> Path:
+        """The full-fidelity copilot transcript for this session (system prompt + context +
+        tools + per-iteration usage/tokens/cost) — the anchor for the dogfood report."""
+        return self._copilot.trace._path
+
+    @property
+    def session_cost_usd(self) -> float:
+        return self._copilot.state.session_cost_usd
+
     def release(self) -> None:
         # ProjectSession has no release() (App owns lifecycle in the live app); tear down the
         # copilot worker + bridge directly, then the GL context.
