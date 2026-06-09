@@ -38,11 +38,11 @@ from shaderbox.exporters.registry import ExporterRegistry
 from shaderbox.exporters.telegram import TelegramExporter
 from shaderbox.exporters.youtube import YouTubeExporter
 from shaderbox.notifications import Notifications
-from shaderbox.paths import ProjectPaths, app_data_dir, shader_lib_root
+from shaderbox.paths import ProjectPaths, app_data_dir
+from shaderbox.project_session import ProjectSession
 from shaderbox.render_defer import RenderDefer
 from shaderbox.shader_errors import next_error_line
 from shaderbox.shader_lib import ShaderLibIndex
-from shaderbox.shader_lib import set_active as set_active_lib_index
 from shaderbox.shader_lib.favorites import ShaderLibFavoritesStore
 from shaderbox.shader_lib.file_ops import ShaderLibFileManager
 from shaderbox.shader_lib.tags import ShaderLibTagsStore
@@ -206,20 +206,20 @@ class App:
 
         self.preview_canvas: Canvas
 
-        self.ui_nodes: dict[str, UINode] = {}
-        self.ui_node_templates: dict[str, UINode] = {}
-        self.app_state = UIAppState()
+        # The headless project core (feature 025): owns the pure-core project state (nodes,
+        # app_state, lib index + cross-project stores, working set). App forwards to it via
+        # @property accessors below. notifier is injected (the core never builds imgui state).
+        self.session = ProjectSession(
+            node_templates_dir=RESOURCES_DIR / "node_templates",
+            starter_template_id=_STARTER_TEMPLATE_ID,
+            notifier=self.notifications,
+        )
         self.integrations_store = IntegrationsStore()
 
         self.exporter_registry = ExporterRegistry()
         self.exporter_registry.register(TelegramExporter())
         self.exporter_registry.register(YouTubeExporter())
         self.share_tab_state: share_state.TabState | None = None
-
-        # Working set: every node/lib address the agent touched this turn, order-preserved,
-        # reset per turn. Init'd above the backend construction so its callbacks capture a
-        # live attr.
-        self._copilot_working_set: list[str] = []
 
         # Constructed BEFORE the _init below (which calls release()) so release() never hits
         # a missing attr. The client reads the key/model LIVE through getters — _init
@@ -334,26 +334,15 @@ class App:
         # `open_shader_lib_file`; never cleared by `show_node_editor`.
         self.last_shader_lib_path: Path | None = None
 
-        # The currently-active library index. Populated by rebuild_shader_lib_index().
-        self.shader_lib_index: ShaderLibIndex = ShaderLibIndex.empty()
-        # Cross-project favorites (function names the user has starred).
-        self.shader_lib_favorites: ShaderLibFavoritesStore = (
-            ShaderLibFavoritesStore.load()
-        )
-        # Cross-project tags (function_name -> set of tag strings).
-        self.shader_lib_tags: ShaderLibTagsStore = ShaderLibTagsStore.load()
-        # Cross-project template-description overrides — loaded ONCE here (a global store
-        # survives open_project, unlike per-project state).
-        self.template_descriptions: TemplateDescriptionsStore = (
-            TemplateDescriptionsStore.load()
-        )
+        # shader_lib_index + the cross-project stores (favorites/tags/template-descriptions)
+        # live on self.session (feature 025); App reaches them via the @property forwarders.
 
         # Shader-library file CRUD + picker inline-input/filter state. Owns the file
         # operations; editor-session cleanup flows back via the two callbacks.
         self.shader_lib_files = ShaderLibFileManager(
             notifications=self.notifications,
-            rebuild_index=self.rebuild_shader_lib_index,
-            index_getter=lambda: self.shader_lib_index,
+            rebuild_index=self.session.rebuild_shader_lib_index,
+            index_getter=lambda: self.session.shader_lib_index,
             on_paths_removed=self._on_shader_lib_paths_removed,
             on_path_renamed=self._on_shader_lib_path_renamed,
         )
@@ -426,8 +415,8 @@ class App:
             sync_editor_from_disk=self.sync_editor_from_disk,
             delete_node_unguarded=self._delete_node_unguarded,
             template_description=self.template_description,
-            working_set_reader=lambda: self._copilot_working_set,
-            working_set_add=self._copilot_ws_add,
+            working_set_reader=lambda: self.session._copilot_working_set,
+            working_set_add=self.session._copilot_ws_add,
             get_active_checkpoint=lambda: self.copilot.checkpoints.active,
         )
         self.revert_executor = RevertExecutor(
@@ -442,21 +431,6 @@ class App:
             invalidate_lib_consumers=self.copilot_backend.invalidate_lib_consumers,
         )
         return build_capabilities(self.copilot_backend)
-
-    def template_description(self, template_uuid: str) -> str:
-        # Effective description: the user override if present, else the shipped node.json
-        # default. ui_state is NOT mutated, so a 'reset' = delete the sidecar key.
-        override = self.template_descriptions.get(template_uuid)
-        if override is not None:
-            return override
-        ui_node = self.ui_node_templates.get(template_uuid)
-        return ui_node.ui_state.description if ui_node is not None else ""
-
-    def _copilot_ws_add(self, address: str) -> None:
-        # Add a node full-id or "lib:" address to the working set, order-preserved, no
-        # duplicates.
-        if address not in self._copilot_working_set:
-            self._copilot_working_set.append(address)
 
     def recover_deleted_node(self, msg: Message) -> None:
         # MAIN THREAD (the chat's Recover button). Restore the node, flip the card's
@@ -594,7 +568,7 @@ class App:
         self.flush_current_editor()
         self.copilot_turn_active = True
         # A fresh working set per turn — starts empty, accretes the nodes/libs this turn touches.
-        self._copilot_working_set = []
+        self.session._copilot_working_set = []
         self.copilot.enqueue_turn(text)
 
     def copilot_clear_chat(self) -> None:
@@ -755,13 +729,55 @@ class App:
     def default_project_dir(self) -> Path:
         return _create_dir_if_needed(self.default_projects_root_dir / "default")
 
+    # ---- ProjectSession forwarders (feature 025) ----
+    # App owns one ProjectSession (the headless project core) and forwards project state +
+    # ops to it. Explicit @property (not __getattr__) so pyright sees the surface. Reads only —
+    # the writes all happen inside _init / release / rebuild via self.session.X directly.
+
+    @property
+    def ui_nodes(self) -> dict[str, UINode]:
+        return self.session.ui_nodes
+
+    @property
+    def ui_node_templates(self) -> dict[str, UINode]:
+        return self.session.ui_node_templates
+
+    @property
+    def app_state(self) -> UIAppState:
+        return self.session.app_state
+
+    @property
+    def shader_lib_index(self) -> ShaderLibIndex:
+        return self.session.shader_lib_index
+
+    @property
+    def shader_lib_favorites(self) -> ShaderLibFavoritesStore:
+        return self.session.shader_lib_favorites
+
+    @property
+    def shader_lib_tags(self) -> ShaderLibTagsStore:
+        return self.session.shader_lib_tags
+
+    @property
+    def template_descriptions(self) -> TemplateDescriptionsStore:
+        return self.session.template_descriptions
+
     @property
     def node_templates_dir(self) -> Path:
-        return RESOURCES_DIR / "node_templates"
+        return self.session.node_templates_dir
 
     @property
     def current_node_id(self) -> str:
-        return self.app_state.current_node_id
+        return self.session.current_node_id
+
+    def rebuild_shader_lib_index(self) -> None:
+        self.session.rebuild_shader_lib_index()
+
+    def template_description(self, template_uuid: str) -> str:
+        return self.session.template_description(template_uuid)
+
+    def _copilot_ws_add(self, address: str) -> None:
+        self.session._copilot_ws_add(address)
 
     @property
     def current_node_ui_state_or_default(self) -> UINodeState:
@@ -790,7 +806,7 @@ class App:
         self.app_start_time = int(time.time() * 1000)
         self.frame_idx = 0
 
-        self.ui_nodes.clear()
+        self.session.ui_nodes.clear()
 
         self.paths = ProjectPaths.for_root(project_dir)
         self.project_dir = self.paths.root
@@ -804,8 +820,8 @@ class App:
 
         # ----------------------------------------------------------------
         # Load nodes
-        self.ui_nodes = load_nodes_from_dir(self.paths.nodes_dir)
-        self.ui_node_templates = _order_templates(
+        self.session.ui_nodes = load_nodes_from_dir(self.paths.nodes_dir)
+        self.session.ui_node_templates = _order_templates(
             load_nodes_from_dir(self.node_templates_dir)
         )
 
@@ -817,7 +833,9 @@ class App:
         # ----------------------------------------------------------------
         # Load ui state
         if self.paths.app_state_file.exists():
-            self.app_state = UIAppState.load_and_migrate(self.paths.app_state_file)
+            self.session.app_state = UIAppState.load_and_migrate(
+                self.paths.app_state_file
+            )
         # app_state was just replaced, so the effective binding map is recomputed per project.
         self._merge_effective_bindings()
         # Restore persisted layout prefs into the live attrs (save() mirrors them back).
@@ -946,13 +964,6 @@ class App:
     def apply_editor_settings(self) -> None:
         for session in self.editor_sessions.values():
             self._apply_editor_settings_to(session.editor)
-
-    def rebuild_shader_lib_index(self) -> None:
-        # Walk shader_lib_root, extract every top-level function, publish via the
-        # module-level accessor that Node.compile() reads.
-        self.shader_lib_index = ShaderLibIndex.build(shader_lib_root())
-        set_active_lib_index(self.shader_lib_index)
-        logger.debug(f"Lib index: {len(self.shader_lib_index.functions)} functions")
 
     def is_current_editor_dirty(self) -> bool:
         session = self.get_current_session_if_exists()
@@ -1183,8 +1194,8 @@ class App:
         path = self.ui_nodes[node_id].node.source.path
         self.ui_nodes.pop(node_id).node.release()
         self.editor_sessions.pop(path, None)
-        if node_id in self._copilot_working_set:
-            self._copilot_working_set.remove(node_id)
+        if node_id in self.session._copilot_working_set:
+            self.session._copilot_working_set.remove(node_id)
         if node_id == self.node_delete_armed:
             self.node_delete_armed = ""
         if node_id == self.current_node_id or not self.current_node_id:

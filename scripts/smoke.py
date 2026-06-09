@@ -24,6 +24,23 @@ from shaderbox.logging_setup import configure_logging
 from shaderbox.ui import update_and_draw
 
 N_FRAMES: int = 200
+
+
+def _has_gpu_window() -> bool:
+    # The GUI smoke drives a full glfw window backed by hardware GL. On a display-less box
+    # (a Pi over SSH, a CI runner with no GPU) glfw can't create that window — skip the smoke
+    # loudly instead of crashing. Probe by actually trying: init + a hidden window. See
+    # ai_docs/todo.md "headless GL".
+    if not glfw.init():
+        return False
+    glfw.window_hint(glfw.VISIBLE, glfw.FALSE)
+    window = glfw.create_window(64, 64, "probe", None, None)
+    if window is None:
+        return False
+    glfw.destroy_window(window)
+    return True
+
+
 _TEMPLATE_IDS: list[str] = [
     "53724dbd-8efb-4c09-8c7d-28d626a066e7",  # UV Mango
     "73ea2431-13f6-41e4-b923-04d846b678b0",  # Media Input
@@ -66,7 +83,13 @@ def _check_invariants(app: App, frame_idx: int) -> None:
 
 def main() -> int:
     configure_logging()
-    glfw.init()
+
+    if not _has_gpu_window():
+        logger.warning(
+            "smoke: SKIPPED — no GPU window available (display-less box / no hardware GL). "
+            "The GUI smoke needs a real glfw window; run it on a machine with a display."
+        )
+        return 0
 
     with tempfile.TemporaryDirectory(prefix="shaderbox-smoke-") as tmp:
         project = _seed_tmp_project(Path(tmp))
