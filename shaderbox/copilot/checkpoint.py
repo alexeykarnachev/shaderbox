@@ -6,9 +6,9 @@ feature 020·30 decision 10) and runs main-thread inside the backend's bridge `_
 keyed on the active turn id.
 
 This module owns only the DATA (the index + the per-node serialized snapshots on disk under
-`<checkpoints_root>/<turn_id>/`). The RESTORE orchestration is App-side (`App.restore_checkpoint`)
-because reload-and-replace touches live `Node` / GL / editor state the backend can't reach
-(decisions 1-2). A captured node snapshot is a full `save_ui_node` serialize of the LIVE node — NOT
+`<checkpoints_root>/<turn_id>/`). The RESTORE orchestration lives in `copilot/revert.py`
+(`RevertExecutor`) because reload-and-replace touches live `Node` / GL / editor state, reached via
+injected callbacks (decisions 1-2). A captured node snapshot is a full `save_ui_node` serialize of the LIVE node — NOT
 a copy of the possibly-stale on-disk dir — because `set_uniform` writes only in-memory
 `uniform_values`, never `node.json` (decision 2).
 """
