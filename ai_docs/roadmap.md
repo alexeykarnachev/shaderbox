@@ -48,9 +48,10 @@ feature; brief points at the superseder).
   human-eyeball loop all verified live (the UV-Mango gradient rendered + read back correctly). This is the
   FIRST runtime proof the 025 headless core works. `send()` + `drive_until_idle()` (the real-LLM turn) are
   code-complete but UNRUN — no `OPENROUTER_API_KEY` on this Pi. Spec: `026_copilot_dogfood_harness.md`.
-- **BLOCKED — the live dogfood run needs the maintainer's `OPENROUTER_API_KEY`** (billed; absent here). To
-  run: `export OPENROUTER_API_KEY=…` then drive a real turn. Then write + run the weak-spot scenarios
-  (visual-blindness, wrong-node targeting, compile-thrash).
+- **BLOCKED — the live dogfood run needs the maintainer's `OPENROUTER_API_KEY`** (billed; absent here). The
+  5 weak-spot scenario checklists are WRITTEN + ready to drive (`ai_docs/scenarios/`: visual-blindness,
+  wrong-node targeting, compile-thrash, circle/square/morph, grep→read_lib+uniforms). To run:
+  `export OPENROUTER_API_KEY=…` then drive a scenario via the REPL (see `ai_docs/scenarios/README.md`).
 - **Also landed this wave:** `make smoke` now self-skips on a no-GPU-window box (its `_has_gpu_window`
   probe) instead of crashing on the Pi.
 - **Still pending (separate from 025):** copilot turn-rollback (030) awaits its own maintainer live pass
