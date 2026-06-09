@@ -25,8 +25,8 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-06-08. -->
-**Copilot turn-rollback (030) implemented + reviewed; awaiting a maintainer live pass.**
+<!-- As of 2026-06-09. -->
+**Copilot turn-rollback (030) implemented + reviewed; awaiting a maintainer live pass. Next planned: a copilot-engine dogfood harness.**
 
 - **NOW — copilot turn-rollback (030) landed, pre+post-impl reviewed.** A per-USER-turn checkpoint +
   a Revert glyph on each user bubble (confirm modal) that rewinds every node the turn touched to its
@@ -43,6 +43,12 @@ feature; brief points at the superseder).
   "this"/"the shader" to a NAME-match instead of the current node (the 2026-06-08 trace: edited
   "Raymarched Sphere" on "project this onto a sphere"). A prompt-level fix in `copilot/prompt.py`;
   `todo.md` trigger.
+- **Filed, not started — copilot dogfood harness (maintainer's next planned work).** A headless e2e
+  harness to exercise the copilot ENGINE across models: real LLM → tool calls → analyse the tool
+  results for consistency. Recon done (no code): 18/20 tools are compile-only or non-GL and run fast
+  headless on a `moderngl` standalone context (no glfw/App window); only `render_image`/`render_video`
+  truly render and should be excluded or mocked. The `ToolDefinition.needs_gl` + `category` fields
+  already classify the set. `todo.md` "headless GL" entry carries the GL specifics.
 - **Prior wave (024 UI/UX polish) + the human tool-call cards SHIPPED on `dev`:** chat bubbles (smaller
   + inset, system messages in invisible bubbles, centered copy glyph), the human one-line tool-call
   cards (`session.py::_tool_card_line`), auto-focus/lock-while-running, the feed/input splitter,

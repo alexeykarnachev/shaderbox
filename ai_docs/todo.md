@@ -325,6 +325,26 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   the maintainer's manual test (`BUILDING.md`), not CI. If a software-GL path (Mesa/llvmpipe on
   the runner) ever makes headless smoke reliable on Windows, drop the `continue-on-error`.
 
+## [DEFERRAL] headless GL on a display-less Linux box (Raspberry Pi dev sessions)
+- **Trigger:** when working on a headless Linux box with no X/Wayland (e.g. a Pi over SSH) and
+  `make test` skips the GL tests / `make smoke` fails on `glfw.init()`, OR when building the
+  copilot dogfood harness (which needs a GL context but not rendering).
+- Two separable GL needs, very different costs: **shader COMPILE** (`node.compile()` → `gl.program`)
+  is ~3.5 ms and is all the copilot shader tools actually do (`read/edit/replace/insert/set_uniform/
+  create/delete/switch_node` — `needs_gl=True` but compile-only; only `render_image`/`render_video`
+  in `category="render"` truly render). **Frame RENDER** (`glDrawElements` of the imgui UI) is ~65 ms
+  PER draw-call on llvmpipe (~1.4 s/frame for the 3-node grid) — the whole reason headless `smoke`
+  crawls. So a compile-only harness (dogfood, the GL unit tests) is fast headless; only the GUI/`smoke`
+  is slow.
+- To get a GL context headless: `moderngl.create_standalone_context(backend='egl')` reaches the Pi's
+  real GPU (`V3D`), which does 20 fullscreen draws in 16 ms vs llvmpipe's 1.3 s. v3d/llvmpipe report
+  GL ≤4.5 by default but the project needs `#version 460`; `MESA_GL_VERSION_OVERRIDE=4.6
+  MESA_GLSL_VERSION_OVERRIDE=460` lifts the reported version (the features are present, just
+  version-gated). glfw itself CANNOT reach v3d headless (NULL platform fails EGL init; xvfb forces
+  llvmpipe) — so a v3d GUI path would mean decoupling `App` from glfw (~80-100 LOC across `app.py`/
+  `ui.py`/`hotkeys.py`/`cheatsheet.py`); judged not worth it for a temporary box. For running the
+  GUI `smoke`/GL tests here anyway: `xvfb` + the two MESA_* overrides (llvmpipe, slow but green).
+
 ## [DEFERRAL] pre-commit ruff hook is pinned older than the resolved ruff
 - **Trigger:** next time you bump `ruff` in `pyproject.toml`, OR the first time `make check`
   passes but `uv run ruff check .` fails (a lint the pinned hook is too old to emit). Bump the
