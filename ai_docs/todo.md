@@ -298,11 +298,13 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
 - **Trigger:** when editing `app.py` feels painful (lost search-and-replace, unclear blast
   radius), OR when a 4th tab module needs cross-cutting `App` operations not on its public API.
 - NOT a default next-step — a 2026-05-15 parallel-agent assessment concluded extraction would
-  be premature abstraction (same shape as feature 002's reversed AppContext). Feature 023 already
-  lifted the largest tenant (the copilot backend, ~1100 lines → `copilot/backend.py`); what remains is
-  the genuine node/editor/project lifecycle orchestrator. An audit there judged the further candidates
-  (node-CRUD, path-properties, the `shader_lib_*` picker forwards) net-negative — don't re-propose them
-  without a fresh pain signal. Spec when triggered.
+  be premature abstraction (same shape as feature 002's reversed AppContext). Feature 023 lifted the
+  copilot backend → `copilot/backend.py`; feature 025 then lifted the whole headless project + copilot
+  CORE → `project_session.py` (`App` now owns one `ProjectSession` + forwards via `@property`). What
+  remains in `App` is genuinely UI/glfw/imgui-bound (windowing, editor sessions, popups, nav, the
+  exporter panels). The further candidates (node-CRUD, path-properties, the `shader_lib_*` picker
+  forwards) were judged net-negative — don't re-propose them without a fresh pain signal. Spec when
+  triggered.
 
 ## [DEFERRAL] adopt `hello_imgui.apply_theme()` + `imgui-knobs` during UI/UX refactor
 - **Trigger:** when starting the planned UI/UX refactor with custom themes — i.e. the moment a
@@ -327,23 +329,26 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
 
 ## [DEFERRAL] headless GL on a display-less Linux box (Raspberry Pi dev sessions)
 - **Trigger:** when working on a headless Linux box with no X/Wayland (e.g. a Pi over SSH) and
-  `make test` skips the GL tests / `make smoke` fails on `glfw.init()`, OR when building the
-  copilot dogfood harness (which needs a GL context but not rendering).
+  `make test` skips the GL tests, OR when building the copilot dogfood harness (feature 026 — needs a
+  GL context but not GUI rendering). NOTE: `make smoke` now self-skips on a no-GPU-window box (its
+  `_has_gpu_window` probe), so it no longer crashes/crawls here — it prints SKIPPED and returns 0.
 - Two separable GL needs, very different costs: **shader COMPILE** (`node.compile()` → `gl.program`)
   is ~3.5 ms and is all the copilot shader tools actually do (`read/edit/replace/insert/set_uniform/
   create/delete/switch_node` — `needs_gl=True` but compile-only; only `render_image`/`render_video`
-  in `category="render"` truly render). **Frame RENDER** (`glDrawElements` of the imgui UI) is ~65 ms
-  PER draw-call on llvmpipe (~1.4 s/frame for the 3-node grid) — the whole reason headless `smoke`
-  crawls. So a compile-only harness (dogfood, the GL unit tests) is fast headless; only the GUI/`smoke`
-  is slow.
+  in `category="render"` truly render; a 400×400 image render ≈ 2.6 ms on V3D). **Frame RENDER**
+  (`glDrawElements` of the imgui UI) is ~65 ms PER draw-call on llvmpipe (~1.4 s/frame for the 3-node
+  grid) — the whole reason the GUI `smoke` crawls under xvfb. So a compile-only/image-only harness
+  (dogfood, the GL unit tests) is fast headless; only the GUI `smoke` is slow.
 - To get a GL context headless: `moderngl.create_standalone_context(backend='egl')` reaches the Pi's
-  real GPU (`V3D`), which does 20 fullscreen draws in 16 ms vs llvmpipe's 1.3 s. v3d/llvmpipe report
-  GL ≤4.5 by default but the project needs `#version 460`; `MESA_GL_VERSION_OVERRIDE=4.6
-  MESA_GLSL_VERSION_OVERRIDE=460` lifts the reported version (the features are present, just
-  version-gated). glfw itself CANNOT reach v3d headless (NULL platform fails EGL init; xvfb forces
-  llvmpipe) — so a v3d GUI path would mean decoupling `App` from glfw (~80-100 LOC across `app.py`/
-  `ui.py`/`hotkeys.py`/`cheatsheet.py`); judged not worth it for a temporary box. For running the
-  GUI `smoke`/GL tests here anyway: `xvfb` + the two MESA_* overrides (llvmpipe, slow but green).
+  real GPU (`V3D`). v3d/llvmpipe report GL ≤4.5 by default but the project needs `#version 460`;
+  `MESA_GL_VERSION_OVERRIDE=4.6 MESA_GLSL_VERSION_OVERRIDE=460` lifts the reported version (set BEFORE
+  context creation — the driver reads them at creation). glfw itself CANNOT reach v3d headless (NULL
+  platform fails EGL init; xvfb forces llvmpipe) — so the GUI `smoke`/App path is un-runnable here
+  except slowly under `xvfb` + the MESA overrides. Feature 025 extracted `ProjectSession` (the headless
+  project + copilot core, App-free) precisely so the dogfood harness (026) can drive the real copilot
+  engine on a standalone EGL context WITHOUT App/glfw. NOTE: `import glfw`/`import imgui` succeed on the
+  Pi (only `glfw.init()`/window/context creation fail), so a transitive imgui import (e.g. via
+  `CopilotBackend`→exporter classes) does NOT block headless construction.
 
 ## [DEFERRAL] pre-commit ruff hook is pinned older than the resolved ruff
 - **Trigger:** next time you bump `ruff` in `pyproject.toml`, OR the first time `make check`

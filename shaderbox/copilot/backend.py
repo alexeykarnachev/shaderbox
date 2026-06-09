@@ -3,7 +3,7 @@
 
 `CopilotBackend` owns the node/edit/uniform/render/publish/telegram verbs the copilot
 worker calls. It does NOT import `App` (the no-`TYPE_CHECKING` rule): every dependency
-is an explicit ref / getter / callback injected by `App._build_copilot_capabilities`,
+is an explicit ref / getter / callback injected by `ProjectSession._build_copilot_capabilities`,
 mirroring `shader_lib/file_ops.py::ShaderLibFileManager`. Project-dependent reads are
 getters (re-read every call so a project switch retargets them); the working-set /
 batch-mutated state stays on `App` and is reached through accessor callbacks. Every

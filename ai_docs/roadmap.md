@@ -26,35 +26,32 @@ feature; brief points at the superseder).
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
 <!-- As of 2026-06-09. -->
-**Copilot turn-rollback (030) implemented + reviewed; awaiting a maintainer live pass. Next planned: a copilot-engine dogfood harness.**
+**ProjectSession extraction (025) landed on `dev` (C1-C4, type-checked + post-impl-reviewed); awaiting a maintainer live `make run` pass. Next: build the dogfood harness (026) on the new headless core, then ship.**
 
-- **NOW — copilot turn-rollback (030) landed, pre+post-impl reviewed.** A per-USER-turn checkpoint +
-  a Revert glyph on each user bubble (confirm modal) that rewinds every node the turn touched to its
-  pre-turn state. `copilot/checkpoint.py` (new — `TurnCheckpoint`/`CheckpointStore`, best-effort
-  capture, self-describing on-disk index, persisted across restart, deleted-not-archived on Clear);
-  capture seams in `backend.py` (serialize the LIVE node, never the stale on-disk dir);
-  `App.restore_checkpoint` reload-and-replace (mirrors `restore_node_from_trash`) + lib-rewrite +
-  consumer-invalidate + create/delete reverse. The pre-impl review overturned a naive disk-copy model;
-  the post-impl review caught a load-bearing BLOCKER (the snapshot `UINode.save` rebound the live
-  node's `source.path` into the snapshot dir → Revert would have restored the EDITED shader; fixed
-  with `rebind=False` + a regression test). Spec: `30_turn_rollback.md`. **Awaiting a maintainer live
-  `make run` pass** (the glyph + modal + live-surface restore are headless-unverifiable).
-- **Filed, not started (separate from rollback):** the wrong-node TARGETING bug — the agent resolved
-  "this"/"the shader" to a NAME-match instead of the current node (the 2026-06-08 trace: edited
-  "Raymarched Sphere" on "project this onto a sphere"). A prompt-level fix in `copilot/prompt.py`;
-  `todo.md` trigger.
-- **Filed, not started — copilot dogfood harness (maintainer's next planned work).** A headless e2e
-  harness to exercise the copilot ENGINE across models: real LLM → tool calls → analyse the tool
-  results for consistency. Recon done (no code): 18/20 tools are compile-only or non-GL and run fast
-  headless on a `moderngl` standalone context (no glfw/App window); only `render_image`/`render_video`
-  truly render and should be excluded or mocked. The `ToolDefinition.needs_gl` + `category` fields
-  already classify the set. `todo.md` "headless GL" entry carries the GL specifics.
-- **Prior wave (024 UI/UX polish) + the human tool-call cards SHIPPED on `dev`:** chat bubbles (smaller
-  + inset, system messages in invisible bubbles, centered copy glyph), the human one-line tool-call
-  cards (`session.py::_tool_card_line`), auto-focus/lock-while-running, the feed/input splitter,
-  stick-to-bottom scroll, single cursor owner, Ctrl+W layout cycle. Spec: `24_ui_polish_wave.md`.
-- **THEN — ship.** `master` stays at `v0.12.1`; the full copilot stack (020-024 + 030) sits ship-shaped
-  on `dev`, unshipped, pending the live pass. Awaiting explicit go.
+- **NOW — ProjectSession extraction (025) landed, 4 green commits, post-impl reviewed.** Extracted the
+  headless project + copilot CORE out of `App` into `project_session.py` (no imgui/glfw imports, no
+  window/context creation): paths/nodes/app_state/lib-index/stores/integrations + the whole copilot
+  cluster (`CopilotSession`/`CopilotBackend`/`RevertExecutor`). `App` now owns one `self.session` +
+  forwards via `@property`; UI side effects of a core mutation ride injected `on_*` callbacks (chosen
+  over return-values because the reactions fire mid-copilot-turn on the worker-drain thread with `App`
+  off the stack). One intended behavior delta: the copilot's mid-turn "Node saved" toast is dropped
+  (the toast now lives in the user-path `App.save_ui_node` forwarder only). This is the long-deferred
+  `app.py` split + the foundation for the dogfood harness. Spec:
+  `025_project_session_extraction.md`. **Type-checked + GL-free tests green (212/24 skip) + post-impl
+  reviewed; the `App.__init__`/`_init`/`release` runtime path is un-runtime-tested on the display-less
+  Pi → a maintainer `make run` pass is the remaining gate.**
+- **NEXT — copilot dogfood harness (026), now unblocked by 025.** A hand-driven headless driver: build a
+  real `ProjectSession` on a standalone EGL context, drive `session.copilot` turn by turn, render 400×400
+  PNGs, eyeball them. Judge = human reading the trace + images (no code assertions). Probes the known
+  weak spots (visual-blindness, wrong-node targeting, compile-thrash). Spec:
+  `026_copilot_dogfood_harness.md`. Not started.
+- **Also landed this wave:** `make smoke` now self-skips on a no-GPU-window box (its `_has_gpu_window`
+  probe) instead of crashing on the Pi.
+- **Still pending (separate from 025):** copilot turn-rollback (030) awaits its own maintainer live pass
+  (the Revert glyph + modal are headless-unverifiable); the wrong-node TARGETING prompt fix (`todo.md`
+  trigger) is filed not started.
+- **THEN — ship.** `master` stays at `v0.12.1`; the full copilot stack (020-024 + 030 + 025) sits
+  ship-shaped on `dev`, unshipped, pending the live passes + the dogfood harness. Awaiting explicit go.
 - **Deferred (each gates a FUTURE round only on a NEW failure class in a DIFFERENT session):** the lazy
   tool-catalogue (its ~16-tool threshold FIRED), the structural shader view (020·27), reasoning-notes /
   intent-carryover guard (DE-RISKED by 029), a broken-compile circuit-breaker, machine-readable render
@@ -69,6 +66,8 @@ feature; brief points at the superseder).
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 026 | copilot_dogfood_harness | pending | Hand-driven headless driver to dogfood the copilot ENGINE: build a real `ProjectSession` on a standalone EGL context, drive `session.copilot` turn by turn, render 400×400 PNGs, eyeball them (judge = human reading the trace + images, no code assertions). Probes the known weak spots (visual-blindness, wrong-node targeting, compile-thrash). Built on 025's headless core. Spec: `ai_docs/features/026_copilot_dogfood_harness.md`. |
+| 025 | project_session_extraction | partial | Extracted the headless project + copilot CORE out of `App` into `project_session.py` (no imgui/glfw imports, no window/context creation), so the dogfood harness (026) can drive the real copilot engine without `App`/glfw. 4 green commits: C1 pure-core state + `@property` forwarders; C2 GL-free project load (`load`/`seed_starter_node`); C3 copilot cluster (`CopilotSession`/`CopilotBackend`/`RevertExecutor`) + the 4 UI-tail methods moved whole; C4 UI-tail → injected `on_*` callbacks (chosen over return-values: reactions fire mid-turn on the worker-drain thread, App off-stack) + the mid-turn "Node saved" toast dropped (now user-path-only). The long-deferred `app.py` split. Type-checked + GL-free tests green + post-impl reviewed; **awaiting a maintainer `make run` pass** (the `App.__init__`/`_init`/`release` runtime path is un-runtime-testable on the display-less Pi). Spec: `ai_docs/features/025_project_session_extraction.md`. |
 | 023 | app_refinement_wave | done | Pure-shape refactor of the overgrown `app.py` (~41% was the copilot backend). Three green-gated commits: C2 extracted the 49 `_copilot_*` methods into `copilot/backend.py` (`CopilotBackend`, the `ShaderLibFileManager` idiom — explicit deps + injected getters/callbacks, never imports `App`; `_build_copilot_capabilities` constructs + binds it; working-set/batch state stays App-owned via accessors; `app.py` −~1250 lines); C3 collapsed the four modal popup booleans into a `PopupState` enum (structural mutex); C4 fixed a latent Esc bug the enum surfaced (Esc now closes the emoji + lib pickers — the one behavior change). Two design-audit swarms + pre/post-impl review. Spec: `ai_docs/features/023_app_refinement_wave.md`. |
 | 022 | copilot_chat_persistence | done | The copilot conversation is tied to its project + restored on reopen (was memory-only, dropped on switch/exit). `copilot/persistence.py` (`ConversationStore`, versioned + fail-soft like `app_state.json`) persists both the UI render messages and the LLM history + usage to `project_dir/copilot/conversation.json`; `CopilotSession.save_conversation`/`load_conversation`; App saves the outgoing project's chat in `release()` (top of `_init` + shutdown) and loads the incoming one after `reset_conversation`; a `begin_disabled`-during-turn clear button archives to `copilot/archive/`. Folded the trace-bleed deferral: the orphaned-history append is guarded on `_cancel`, and the worker-is-idle invariant (020·15's `open_project` gate) closes the trace-bleed window (the residual `_ensure_open` structural weakness re-scoped in `todo.md`). Spec: `ai_docs/features/022_copilot_chat_persistence.md`. |
 | 021 | logging_refactor | done | Three-stream logging: a terse INFO+ console, a rotated DEBUG+ file (`logs/`) that is a strict superset, and a full-fidelity copilot transcript (`copilot_traces/copilot_<slug>_<stamp>.transcript` — human/agent-readable plain text replacing the old jsonl). `shaderbox/logging_setup.py` configures all loguru sinks once; `LoggingConfig` holds the internal config (console/file levels, rotation, retention, trace-retention=20); the 118-call logger survey audited 24 modules with ~37 calls shifted (lifecycle→DEBUG, user events stay INFO, fallback-config ERROR→WARNING); trace gains a transcript renderer + `tool_args_parse_error` event + mtime-pruned retention. Maintainer-verified live (console terse, transcript readable cold). Spec: `ai_docs/features/021_logging_refactor.md`. |

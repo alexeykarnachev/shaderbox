@@ -64,12 +64,29 @@ belong in the feature spec (`ai_docs/features/NNN_*.md`). This file is not a cha
 
 ## Design decisions (we decided X; revisit if Y)
 
-- **Three-layer UI architecture.** `app.py` = state holder + lifecycle (project, GL context, node
-  management, popup booleans) — no imgui drawing. `ui.py` = thin orchestrator owning the frame loop
-  (`run` + `update_and_draw`). `widgets`/`popups`/`tabs` = pure draw functions taking `app: App`.
-  (The split is forced by the no-`TYPE_CHECKING` rule: a draw fn annotating `app: App` while `App`
-  imports it would cycle — so `App` lives in its own module.) Revisit if a 4th UI sub-package is
-  needed. Tracked: `todo.md [DEFERRAL] split ui.py`.
+- **Three-layer UI architecture.** `app.py` = UI/glfw/imgui owner + lifecycle wrapper (windowing, GL
+  context, editor sessions, popups, nav, the exporter panels) — no imgui drawing in the orchestrator
+  sense, but it owns all imgui-bound state. `ui.py` = thin orchestrator owning the frame loop (`run` +
+  `update_and_draw`). `widgets`/`popups`/`tabs` = pure draw functions taking `app: App`. (The split is
+  forced by the no-`TYPE_CHECKING` rule: a draw fn annotating `app: App` while `App` imports it would
+  cycle — so `App` lives in its own module.) Revisit if a 4th UI sub-package is needed. Tracked:
+  `todo.md [DEFERRAL] split ui.py`.
+- **`ProjectSession` is the headless project + copilot core; `App` owns one and forwards to it.** The
+  project lifecycle (paths, nodes, app_state, lib index + cross-project stores, integrations) and the
+  whole copilot cluster (`CopilotSession`/`CopilotBackend`/`RevertExecutor` + the capability wiring)
+  live in `project_session.py`, which imports no imgui/glfw and creates no glfw window / imgui context
+  — so a headless harness (feature 026) constructs it on a standalone EGL context without `App`. `App`
+  holds one `self.session` and forwards project state/ops via explicit `@property` accessors (NOT
+  `__getattr__` — pyright must see the surface). **UI side effects of a core mutation ride injected
+  `on_*` callbacks the core invokes** (`on_current_node_changed` / `on_node_source_synced` /
+  `on_node_deleted` — the `ShaderLibFileManager` idiom); a return-value seam is WRONG here because the
+  reactions fire mid-copilot-turn on the worker-drain thread with `App` off the call stack. The toast on
+  a node save lives in `App.save_ui_node` (the user-path forwarder), NOT the core — so the copilot's
+  mid-turn saves don't toast. Imgui-coupled services the core needs (`exporter_registry` because the
+  exporters carry panels, `shader_lib_files`) stay App-side, reached via injected getters. A NEW core
+  mutation whose UI reaction touches imgui state adds an `on_*` callback (default no-op), never a direct
+  imgui import. Spec: `ai_docs/features/025_project_session_extraction.md`. Revisit if a core op needs a
+  UI reaction that a fire-and-forget callback can't express (e.g. it needs a return value App reads).
 - **`tabs/*.py`: free `draw(app: App)` + optional `update(app: App)`.** `draw()` does imgui calls
   only; `update()` runs *before* imgui draws, for GL/canvas/mtime work outside the frame body. Tab
   state goes on `App` directly; a state-only sibling module (e.g. `tabs/share_state.py`) may hold

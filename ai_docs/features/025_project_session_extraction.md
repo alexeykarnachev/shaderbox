@@ -238,5 +238,40 @@ handler, core never calls notifier); who fires `on_node_deleted` (the core delet
 what's constructor-injected vs `_load`-from-disk; the GL-context-current-before-construction precondition is
 the caller's job; and the 025/026 boundary (026 owns the harness + `pump_until_idle`, not a commit here).
 Rejected as over-specification: listing the architect's 5 questions verbatim, and pinning the internal
-callback-firing ORDER in a delete (an impl detail — the handlers touch disjoint attrs, decision 10). Pre-impl spec-fidelity review TBD before plan-lock if
-requested.)
+callback-firing ORDER in a delete (an impl detail — the handlers touch disjoint attrs, decision 10).
+
+## Resolution (as-built, C1-C4 landed)
+
+Implemented in 4 green commits (C1 d3435a7 pure-core state + forwarders; C2 81a6d08 GL-free project load;
+C3 704ae62 copilot cluster + whole UI-tail methods; C4 176fc18 UI-tail→callbacks + toast drop). Each green
+by `make check` + the GL-free test suite (212 passed / 24 skipped — the 24 are App-construction tests that
+SKIP on this display-less Pi, so the `App.__init__`/`_init`/`release` runtime path is type-checked + review-
+verified but NOT runtime-tested here; a maintainer `make run` pass on a display box is the remaining gate).
+
+As-built deltas from the plan above (the impl went cleaner; docs reconciled):
+- **`notifier` dropped entirely.** Decisions 2-3 described routing the toast through an injected `notifier`;
+  C4 made that unnecessary — the toast moved to App's `save_ui_node` forwarder (user path), the core's
+  `save_ui_node` is silent, so the core needs no `Notifications` at all. The core now imports zero
+  imgui-coupled symbols directly (`project_session.py` has no imgui/glfw/Notifications/editor_sessions/App
+  import). The four UI reactions ride `on_current_node_changed` / `on_node_source_synced` / `on_node_deleted`
+  (+ the C3-early `on_current_node_changed`); there is no `on_node_saved` callback (the toast-at-the-forwarder
+  cut made it redundant).
+- **`exporter_registry` + `shader_lib_files` stay in App**, reached by the core via injected getters
+  (`get_exporter_registry` / `get_shader_lib_files`) — a correction to the plan's "copilot cluster moves whole":
+  the exporter classes (`telegram.py`/`youtube.py`) carry imgui panels, so the registry is imgui-coupled and
+  can't live in the headless core. `editor_sessions` likewise stays App-side (reached via the `on_*` callbacks,
+  not a getter, after C4).
+- **`save_project` was never extracted** (decision 9's name): `App.save` orchestrates the save directly
+  (`flush_current_editor` + `session.save_ui_node`), behavior identical; no core `save_project` method exists.
+- **Transitive imgui import remains, harmless.** `CopilotBackend` imports the exporter classes, so importing
+  `project_session` (→ `CopilotBackend`) still pulls imgui/glfw into `sys.modules`. This does NOT block headless
+  use: `import glfw`/`import imgui` succeed on the Pi — only `glfw.init()`/window/context creation fail (need a
+  display), and `ProjectSession` does none of those. The load-bearing invariant ("no glfw window / imgui context
+  at construction") holds; the residual is a pre-existing `backend.py`↔exporters coupling, out of 025's scope.
+
+Post-impl review: PASS (one adversarial agent anchored to the spec decisions AND the pre-refactor original
+`git show bb89737`; byte-level parity on the 4 UI-tail methods, construction-ordering + release-guard +
+toast-seam + forwarder-completeness + re-entrancy all verified). The two strongest adversarial cases — the
+lazy-getter construction order and the always-True `copilot` guard — both correctly fail to be bugs (the
+getters aren't dereferenced at construction; the release guard's `and hasattr(project_dir)` still gates
+first-launch).)

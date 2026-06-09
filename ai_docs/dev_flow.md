@@ -162,10 +162,16 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
 - **`core.py`** — `Canvas`, `Node`: GL program lifecycle, uniform introspection + binding,
   render-to-texture, image/video export. Needs a live GL context. Imports `shader_lib` (compile-time
   `#include` resolution) + `shader_errors`.
-- **`app.py`** — `App` class: state holder + lifecycle (project, GL context, node management,
-  popup-state booleans, editor sessions). No UI drawing. Imported by `ui.py`, `widgets/`, `popups/`,
-  `tabs/`. Holds `self.shader_lib_files: ShaderLibFileManager`; the picker reads its CRUD + inline
-  state directly via `app.shader_lib_files.*` (no `App` forwarding facade).
+- **`project_session.py`** — `ProjectSession`: the headless project + copilot CORE (paths, nodes,
+  app_state, lib index + cross-project stores, integrations, the `CopilotSession`/`CopilotBackend`/
+  `RevertExecutor` cluster). Imports no imgui/glfw, creates no window/context — a headless harness
+  (feature 026) constructs it on a standalone EGL context without `App`. UI reactions ride injected
+  `on_*` callbacks. Feature 025.
+- **`app.py`** — `App` class: the UI/glfw/imgui owner + lifecycle wrapper (windowing, GL context,
+  editor sessions, popup-state, nav, exporter panels). Owns one `self.session: ProjectSession` +
+  forwards project state/ops via `@property` accessors. No UI drawing. Imported by `ui.py`, `widgets/`,
+  `popups/`, `tabs/`. Holds `self.shader_lib_files: ShaderLibFileManager`; the picker reads its CRUD +
+  inline state directly via `app.shader_lib_files.*` (no `App` forwarding facade).
 - **`ui.py`** — thin entrypoint + orchestrator. `run(app)`, `update_and_draw(app)` (the imgui frame
   loop: render gates + the main-window left/right split — LEFT = code editor via `code_tab.draw`,
   RIGHT = `_draw_app_panel`), `_draw_splitter`, `_draw_app_panel`, `_draw_node_settings`
