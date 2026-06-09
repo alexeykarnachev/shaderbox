@@ -231,21 +231,18 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   `search_tools`/`list_tools` + `grow_specs_from_payload`, itself deferred — `16 ## Out of scope`).
   Together ~halve per-turn input tokens. Spec: `20_ui_ux_polish.md` D5 + `026_dogfood_report_run1.md §5`.
 
-## [DEFERRAL] copilot agent-level error recovery is UNPROVEN (the dogfood happy-path gap)
-- **Trigger:** before the next dogfood run, OR before claiming the copilot "recovers from its own
-  mistakes" / shipping the copilot — RUN scenario 03 (compile-thrash) live first, it was authored but
-  never run.
-- The 2026-06-09 dogfood (`026_dogfood_report_run1.md`) ran only happy paths: the ONLY tool failures the
-  agent ever saw were the transient GL quirk (now fixed — recovered by a blind byte-identical retry, NOT
-  comprehension) and one designed `u_time` reject. The agent NEVER read a `0:N: error` compile message and
-  fixed broken GLSL, recovered from an `old_str` mismatch, re-resolved a bad node id, or survived malformed
-  args. Scenario 03 (`ai_docs/scenarios/03_compile_thrash.md`) — built to force applies-but-broken edits and
-  exercise the `consecutive_failed_edits`/`consecutive_compile_failures` circuit-breaker — was never run +
-  was silently absent from the report's coverage table. Honest next step: run 03 live, ADD an
-  agent-level-failure scenario (bad `old_str`, typo'd node id, applies-but-compiles-with-errors), and watch
-  whether the agent reads the error + converges or loops to `max_iterations` (inspect the
-  `edit_giveup`/`max_iterations` trace events the agent already emits — `agent.py`). This is the single most
-  important copilot behavior for real-user robustness, and it's the one thing the dogfood did not test.
+## [DEFERRAL] copilot agent-level error recovery — partially proven, the THRASH + edit-mismatch classes untested
+- **Trigger:** before claiming the copilot is robust to its own mistakes / shipping the copilot — run the
+  remaining recovery probes (scenario 03 compile-thrash + scenario 06 Parts B/C), not yet run.
+- PROVEN (2026-06-09, `026_dogfood_report_run1.md`): the broken-compile read→fix loop WORKS — a forced
+  "call a nonexistent function" produced a real compile error, the agent read it and defined the function
+  inline, compiled clean in 2 calls, no giveup. So single-error comprehension + correction is confirmed.
+- STILL UNTESTED: (a) the THRASH case — MANY consecutive applies-but-compile-with-errors edits, where
+  `consecutive_failed_edits` resets every step so the giveup cap never engages (scenario 03, authored but
+  never run); (b) `old_str` mismatch recovery (scenario 06 Part B); (c) bad-node-id recovery (Part C);
+  (d) malformed-args recovery. Run those live + inspect the `edit_giveup`/`max_iterations`/
+  `consecutive_failed_edits` trace events (`agent.py`). The thrash case is the one tied to the separate
+  broken-compile circuit-breaker deferral above.
 
 ## [DEFERRAL] dogfood harness can't drive conversation-restart / gate-decline scenarios
 - **Trigger:** when a dogfood scenario needs to test conversation persistence across a reload, OR the

@@ -29,13 +29,18 @@ Renders verified by eye: solid red, darkened gradient, white squircle, red-via-u
 - **WORKING SET live-rebuild**: the block at the conversation bottom shows current line-numbered source +
   uniforms + errors, rebuilt every iteration. After the red edit, `uniforms:` correctly dropped `u_time`
   (no longer used). Working as designed.
-- **Infrastructure error recovery (NARROW — see the gap below):** when `create_node` hit the GL error,
-  the tool returned `error: … failed`, the agent re-submitted a byte-identical create, which succeeded. The
-  loop never hung — the worker+bridge-pump drive is solid. **But this is a BLIND retry of a transient
-  infra failure, NOT agent-level error comprehension.** The agent never had to read a `0:N: error` compile
-  message and FIX broken GLSL, recover from an `old_str` mismatch, or survive malformed args — those paths
-  are UNTESTED (scenario 03 compile-thrash was never run live). Do not read this as "the copilot recovers
-  from its own mistakes" — that's the biggest unproven gap (see Retrospective).
+- **Infrastructure error recovery:** when `create_node` hit the GL error, the tool returned
+  `error: … failed`, the agent re-submitted a byte-identical create, which succeeded. The loop never hung —
+  the worker+bridge-pump drive is solid. (This was a BLIND retry of a transient infra failure, NOT agent
+  comprehension — and the GL error itself is now fixed.)
+- **✅ Agent-level compile-error recovery (the biggest gap — NOW CLOSED for the broken-compile class).**
+  A follow-up live run (scenario 06 Part A) forced a GUARANTEED compile error: the agent was asked to call a
+  nonexistent `plasma_wave(...)`. Trace evidence: `edit_shader` #1 → `compiled with errors: ... no function
+  with name 'plasma_wave'`; the agent READ that error → `insert_after` #2 defined `vec3 plasma_wave(...)`
+  inline → `compiled clean`. 2 tool calls, no giveup, no max_iterations; the render shows the correct plasma
+  pattern. So the copilot DOES read a compile error and self-correct (a comprehending fix, not a blind
+  retry) — for this class. STILL untested: `old_str` mismatch recovery, bad-node-id recovery, and the THRASH case
+  (many consecutive applies-but-broken edits — scenario 03 + 06 Parts B/C, not yet run).
 - **Gate flow**: render_image is always-gated; `drive_until_idle(auto_approve_gates=True)` answered them
   inline; no deadlock.
 - **set_uniform type handling**: engine-driven `u_time` rejected with a clear message; a real `vec3`
@@ -140,13 +145,12 @@ catalogue is the biggest single lever on per-turn cost.
 4. **An `inspect_render` affordance** for the visual-blindness gap (deferred in `todo.md`).
 
 **Dogfooding (the harness + scenarios + skill):**
-5. **🔴 BIGGEST GAP — agent-level error recovery is UNPROVEN.** Every scenario ran the happy path; the only
-   failures the agent saw were the transient GL quirk (blind byte-identical retry) + one designed u_time
-   reject. It NEVER had to read a compile-error message and fix broken GLSL, recover from an `old_str`
-   mismatch, or survive malformed args — and scenario 03 (compile-thrash), the one built to force that, was
-   never run live and was silently absent from the coverage table. RUN scenario 03 next, add a deliberate
-   agent-level-failure scenario, and inspect the `edit_giveup`/`max_iterations`/`consecutive_failed_edits`
-   trace events. This is the single most important copilot behavior for real-user robustness.
+5. **Agent-level error recovery — PARTIALLY closed.** The broken-compile read→fix loop is now PROVEN (the
+   scenario-06 plasma_wave run above: real compile error → agent reads it → defines the function → clean).
+   STILL untested: the THRASH case (many consecutive applies-but-broken edits — scenario 03, never run, the
+   one tied to the broken-compile circuit-breaker), `old_str` mismatch recovery, bad-node-id recovery,
+   malformed args (scenario 06 Parts B/C). Run those + inspect the `edit_giveup`/`max_iterations`/
+   `consecutive_failed_edits` trace events.
 6. **Strengthen scenario 04** so the multi-file read content is LOAD-BEARING (the task must be unsolvable
    without the reference, e.g. "use the exact color constant from node X") — the current task is solvable
    from the model's own knowledge, so it only proves the read MECHANISM fires, not that the content matters.
