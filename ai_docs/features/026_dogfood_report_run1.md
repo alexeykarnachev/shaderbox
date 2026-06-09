@@ -5,10 +5,11 @@ First real end-to-end dogfood of the copilot ENGINE, headless on the Pi via `scr
 OpenRouter; first finding). 5 scenarios, 16 turns, **$0.207 total**. All renders eyeballed.
 
 **Bottom line: the whole pipeline WORKS** — real LLM → tool calls → edit/create → compile → render →
-correct image. Every scenario produced a visually-correct result. But the run surfaced one real
-pipeline BUG (a headless GL error) and one large EFFICIENCY problem (tool catalogue sent twice per
-request), plus confirmed/refuted several behavioral weak-spots. None fixed yet (per maintainer: run
-first, retrospect after).
+correct image. Every scenario produced a visually-correct result. The run surfaced one real pipeline BUG
+(a headless GL error — now FIXED), a dead default model (now FIXED), and one large EFFICIENCY problem (tool
+catalogue sent twice per request — deferred), plus confirmed/refuted several behavioral weak-spots. A
+follow-up review swarm corrected three trace-interpretation errors in an earlier draft of this report (see
+the inline "corrected by the review" notes).
 
 ## What each scenario showed (pipeline mechanics)
 
@@ -64,7 +65,7 @@ failed`. The stack above is from the live-run stderr, not trace evidence.
 **CALL PATH (corrected by the review):** the report originally mis-cited this as
 `_copilot_persist_shader → node.render()` and blamed "render/worker interleaving". That was wrong on both
 counts. The real chain is `create_node`/edit → `Node.release_program()` → `Node.invalidate()` →
-**`glUseProgram(0)` at `core.py:204`**. `_copilot_persist_shader` never calls `render()`, and `render()`
+**`glUseProgram(0)` in `Node.invalidate` (core.py)**. `_copilot_persist_shader` never calls `render()`, and `render()`
 contains no `glUseProgram`. The harness's `render()` blocks on `worker.join()` and runs only when the turn
 is idle, so it cannot interleave with a worker compile — that "fix" was chasing a non-cause.
 
@@ -76,7 +77,7 @@ is idle, so it cannot interleave with a worker compile — that "fix" was chasin
 - Impact (pre-fix): the copilot RECOVERED (the tool returned `error: create_node failed`, the agent
   re-submitted a byte-identical create, which succeeded), so the user got a correct result — but it wasted
   a tool call + tokens + money, and a worse model might not recover.
-- Fix (DONE): wrap the `core.py:204` `glUseProgram(0)` in `contextlib.suppress(Exception)` — harmless in
+- Fix (DONE): wrap the `glUseProgram(0)` in `Node.invalidate` in `contextlib.suppress(Exception)` — harmless in
   the live app (the call still runs), and under a standalone context the bind is pointless (no imgui
   restore to protect) so only its exception mattered. Verified: re-running the morph scenario after the fix
   created 3 nodes with `create_node/replace_lines failed count = 0` (was 3 before).
@@ -137,7 +138,7 @@ catalogue is the biggest single lever on per-turn cost.
 1. ✅ **DONE — bumped the default model** off the deprecated `grok-4-fast` → `x-ai/grok-4.3`
    (`exporters/integrations.py::CopilotIntegration.model`). Also fixed a SECOND hardcoded default the
    harness carried (`scripts/dogfood.py`'s `OPENROUTER_MODEL` fallback — now defers to the in-tree default).
-2. ✅ **DONE — fixed the headless `glUseProgram(0)` GLError** (`core.py:204`, wrapped in
+2. ✅ **DONE — fixed the headless `glUseProgram(0)` GLError** (`Node.invalidate`, wrapped in
    `contextlib.suppress(Exception)`). Re-verified: the morph scenario now creates 3 nodes with 0 failures.
 3. **De-duplicate + lazy-load the tool catalogue** (the `todo.md` lazy-catalogue item) — the biggest token/$
    win, ~halves per-turn input. NOT done (its own slice). Two levers: drop the prose tool-walk in the

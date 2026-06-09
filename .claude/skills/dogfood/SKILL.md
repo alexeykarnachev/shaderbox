@@ -20,10 +20,11 @@ skill is the operating manual — the process + every gotcha already hit, so you
 
 - **`OPENROUTER_API_KEY`** — required, billed. The maintainer supplies it. Pass it in the COMMAND env
   (`env OPENROUTER_API_KEY=… uv run …`), not a permanent export — the harness reads it at import.
-- **Model:** the configured default (`x-ai/grok-4-fast`) is DEPRECATED (404). Pass `OPENROUTER_MODEL`
-  explicitly — `x-ai/grok-4.3` worked (cheap: ~$1.25/$2.50 per Mtok). Verify the current cheap grok before
-  a run: `curl -s https://openrouter.ai/api/v1/models | …` filter `x-ai/grok`. (When the default is fixed
-  in-tree, drop the override.)
+- **Model:** the in-tree default (`CopilotIntegration.model`) is `x-ai/grok-4.3` (cheap: ~$1.25/$2.50 per
+  Mtok), used automatically — no `OPENROUTER_MODEL` override needed. Set `OPENROUTER_MODEL` only to try a
+  different model. Models go deprecated (grok-4-fast 404'd a prior run) — if a run 404s on the model, check
+  `curl -s https://openrouter.ai/api/v1/models | …` filter `x-ai/grok` for the current cheap grok and bump
+  the in-tree default.
 - **This is a display-less Pi.** `glfw.init()` FAILS here; `import glfw`/`import imgui` SUCCEED. The whole
   point of the headless harness is to bypass glfw via a standalone EGL context.
 
