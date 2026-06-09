@@ -56,7 +56,6 @@ from shaderbox.ui_models import (
     UINode,
     UINodeState,
     load_node_from_dir,
-    load_nodes_from_dir,
 )
 from shaderbox.util import (
     open_in_file_manager,
@@ -95,12 +94,6 @@ class PopupState(Enum):
     SETTINGS = "settings"
     EMOJI_PICKER = "emoji_picker"
     SHADER_LIB_PICKER = "shader_lib_picker"
-
-
-def _order_templates(templates: dict[str, UINode]) -> dict[str, UINode]:
-    rank = {tid: i for i, tid in enumerate(_TEMPLATE_ORDER)}
-    ordered_ids = sorted(templates, key=lambda tid: rank.get(tid, len(rank)))
-    return {tid: templates[tid] for tid in ordered_ids}
 
 
 def _conversation_stamp() -> str:
@@ -212,9 +205,9 @@ class App:
         self.session = ProjectSession(
             node_templates_dir=RESOURCES_DIR / "node_templates",
             starter_template_id=_STARTER_TEMPLATE_ID,
+            template_order=_TEMPLATE_ORDER,
             notifier=self.notifications,
         )
-        self.integrations_store = IntegrationsStore()
 
         self.exporter_registry = ExporterRegistry()
         self.exporter_registry.register(TelegramExporter())
@@ -735,6 +728,18 @@ class App:
     # the writes all happen inside _init / release / rebuild via self.session.X directly.
 
     @property
+    def paths(self) -> ProjectPaths:
+        return self.session.paths
+
+    @property
+    def project_dir(self) -> Path:
+        return self.session.project_dir
+
+    @property
+    def integrations_store(self) -> IntegrationsStore:
+        return self.session.integrations_store
+
+    @property
     def ui_nodes(self) -> dict[str, UINode]:
         return self.session.ui_nodes
 
@@ -806,36 +811,15 @@ class App:
         self.app_start_time = int(time.time() * 1000)
         self.frame_idx = 0
 
-        self.session.ui_nodes.clear()
-
-        self.paths = ProjectPaths.for_root(project_dir)
-        self.project_dir = self.paths.root
+        # Project load (GL-free): paths, lib index, nodes + templates, app_state, integrations.
+        self.session.load(project_dir)
         self.project_dir_file_path.write_text(str(self.project_dir))
-        logger.info(f"Project loaded: {self.project_dir}")
-
-        # ----------------------------------------------------------------
-        # Build the lib index before loading nodes — every node's first compile (warm-up
-        # in load_from_dir) reads the active index.
-        self.rebuild_shader_lib_index()
-
-        # ----------------------------------------------------------------
-        # Load nodes
-        self.session.ui_nodes = load_nodes_from_dir(self.paths.nodes_dir)
-        self.session.ui_node_templates = _order_templates(
-            load_nodes_from_dir(self.node_templates_dir)
-        )
 
         # First launch only: seed a starter into the empty default project. NOT on
         # open_project (which would pollute a folder the user picked expecting it empty).
         if seed_starter and not self.ui_nodes:
-            self._seed_starter_node()
+            self.session.seed_starter_node(self.set_current_node_id)
 
-        # ----------------------------------------------------------------
-        # Load ui state
-        if self.paths.app_state_file.exists():
-            self.session.app_state = UIAppState.load_and_migrate(
-                self.paths.app_state_file
-            )
         # app_state was just replaced, so the effective binding map is recomputed per project.
         self._merge_effective_bindings()
         # Restore persisted layout prefs into the live attrs (save() mirrors them back).
@@ -850,10 +834,9 @@ class App:
         self.node_tab_select_pending = True
 
         # ----------------------------------------------------------------
-        # Wire exporter registry to project state: load global creds, set_integrations,
-        # THEN rebind (which reads the store).
-        self.integrations_store = IntegrationsStore.load()
-
+        # Wire exporter registry to project state: set_integrations (the store was loaded by
+        # session.load), THEN rebind (which reads the store). The exporters carry imgui panels,
+        # so the registry + this wiring stay App-side.
         scratch_dir = _create_dir_if_needed(self.project_dir / "exporter_scratch")
         if self.share_tab_state is None:
             self.share_tab_state = share_state.make_state(scratch_dir=scratch_dir)
@@ -1209,21 +1192,6 @@ class App:
 
         logger.info(f"Node deleted: {node_id}")
         return trash_name
-
-    def _seed_starter_node(self) -> None:
-        template_dir = self.node_templates_dir / _STARTER_TEMPLATE_ID
-        if not template_dir.is_dir():
-            logger.warning(f"Starter template missing ({template_dir}); skipping seed")
-            return
-        try:
-            new_node = load_node_from_dir(template_dir)
-            new_node.reset_id()
-            new_node.save(self.paths.nodes_dir, new_node.id)
-            self.ui_nodes[new_node.id] = new_node
-            self.set_current_node_id(new_node.id)
-            logger.debug(f"Seeded starter node {new_node.id} (first run)")
-        except Exception as e:
-            logger.error(f"Failed to seed starter node: {e}")
 
     def create_node_from_selected_template(self) -> None:
         if self._copilot_busy_blocked("Creating a node"):
