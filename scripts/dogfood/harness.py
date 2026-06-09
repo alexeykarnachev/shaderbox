@@ -12,27 +12,40 @@ a display-less Raspberry Pi where glfw can't open a window but a standalone EGL 
 reaches the real V3D GPU.
 
 ENV (load-bearing, set at module top BEFORE the shaderbox imports below): `SHADERBOX_DATA_DIR`
-redirects the data dir to an isolated tmp (so lib edits + the written `integrations.json`
+redirects the data dir to an isolated run dir (so lib edits + the written `integrations.json`
 never touch the real library / creds — `paths.app_data_dir()` reads it at import time); the
 MESA overrides give the V3D driver `#version 460` (read at context creation). The OpenRouter
 key comes from the `OPENROUTER_API_KEY` env var (export it before running). The model defaults to
 `CopilotIntegration.model` (the in-tree default); set `OPENROUTER_MODEL` only to override it.
+
+A caller-provided `SHADERBOX_DATA_DIR` wins (the module-top `setdefault` no-ops) — that is the
+RESUME seam (feature 027): set it (+ pass `project_dir`) on the COMMAND LINE before `uv run`, never
+in-script after import (the env block runs at import). All run artifacts live under
+`scripts/dogfood/runs/`.
 
 THREADING (load-bearing): `CopilotSession` spawns a worker thread for the turn; the worker
 marshals GL ops back to the context-owning (main) thread via `bridge.run_on_main`, which
 BLOCKS until the main thread drains it. So the harness drive loop MUST pump the bridge +
 events from the main thread (the one that created the EGL context), exactly as `App`'s frame
 loop does — a synchronous-bridge patch would run GL on the worker thread and corrupt the
-context. `drive_until_idle` is that pump.
+context. `drive_until_idle` is that pump. A gate pauses the worker mid-turn; it can ONLY be
+answered within the SAME process (the worker is daemon=False, dies on exit, and a gated turn
+is never persisted) — there is no answer-a-gate-after-resume.
 
 Usage (from a REPL / chat-driven loop, with OPENROUTER_API_KEY exported):
 
     from scripts.dogfood import DogfoodHarness
-    h = DogfoodHarness.create()                 # fresh tmp project, EGL context, real copilot
+    h = DogfoodHarness.create()                 # fresh run project, EGL context, real copilot
     h.send("Create a shader that draws a filled white circle in the center.")
     h.drive_until_idle()                        # pump; auto-prints events + any gate
     png = h.render()                            # 400x400 PNG of the current node
     # ...open png with Read, eyeball it...
+
+Interactive one-blocking-call-per-turn (feature 027): resume a prior run + emit a structured
+JSON turn-result, so a fresh process per turn keeps full state via disk:
+
+    h = DogfoodHarness.create(project_dir=Path("scripts/dogfood/runs/proj-XXXX"))
+    h.send("..."); h.drive_until_idle(); h.dump(Path("scripts/dogfood/runs/turn.json"))
 """
 
 import json
@@ -43,12 +56,18 @@ import threading
 import time
 from pathlib import Path
 
+# All dogfood run artifacts (data dir, per-run project dirs, JSON dumps, traces, PNGs) live
+# under scripts/dogfood/runs/ — one consolidated, gitignored home (feature 027).
+_RUNS_DIR = Path(__file__).resolve().parent / "runs"
+_RUNS_DIR.mkdir(parents=True, exist_ok=True)
+
 # --- env MUST be set before the shaderbox imports below (paths.app_data_dir reads it at
-# --- import time; the MESA overrides are read at EGL context creation). ----------------
+# --- import time; the MESA overrides are read at EGL context creation). A caller-set
+# --- SHADERBOX_DATA_DIR wins (setdefault no-ops) — the resume seam (feature 027). -------
 _DATA_DIR = Path(
     os.environ.setdefault(
         "SHADERBOX_DATA_DIR",
-        tempfile.mkdtemp(prefix="shaderbox-dogfood-data-"),
+        tempfile.mkdtemp(prefix="data-", dir=_RUNS_DIR),
     )
 )
 os.environ.setdefault("MESA_GL_VERSION_OVERRIDE", "4.6")
@@ -77,6 +96,7 @@ glfw.set_error_callback(lambda code, desc: None)
 
 from shaderbox.constants import RESOURCES_DIR  # noqa: E402
 from shaderbox.copilot.capabilities import RenderResult  # noqa: E402
+from shaderbox.copilot.persistence import ConversationStore  # noqa: E402
 from shaderbox.copilot.session import CopilotSession  # noqa: E402
 from shaderbox.copilot.state import Message  # noqa: E402
 from shaderbox.exporters.registry import ExporterRegistry  # noqa: E402
@@ -107,10 +127,24 @@ class DogfoodHarness:
         self._ctx = ctx
         self.session = session
         self.project_dir = project_dir
-        self._seen_msg_count = 0  # for incremental event printing
+        self._seen_msg_count = 0  # incremental event printing (drive_until_idle)
+        self._dumped_msg_count = (
+            0  # incremental JSON slice (dump) — separate from printing
+        )
+        self._last_render_path = ""  # echoed in the dump payload if a turn rendered
 
     @classmethod
-    def create(cls, *, seed_templates: bool = True) -> "DogfoodHarness":
+    def create(
+        cls, project_dir: Path | None = None, *, seed_templates: bool = True
+    ) -> "DogfoodHarness":
+        """Build the EGL context + a real `ProjectSession` + restore the conversation if resuming.
+
+        `project_dir=None` -> a fresh mkdtemp'd project (seeded unless `seed_templates=False`).
+        `project_dir=<existing run dir>` -> RESUME: skip seeding (the nodes persist from prior
+        turns), reload the shaders, and restore the conversation from disk (zero LLM calls) so a
+        per-turn process keeps full state. The caller must also point `SHADERBOX_DATA_DIR` at the
+        same prior data dir (command-line env — read at import), so the lib + integrations match.
+        """
         node_templates_dir = RESOURCES_DIR / "node_templates"
 
         # Create + leave-current the EGL context on THIS thread (the context owner). No
@@ -119,12 +153,13 @@ class DogfoodHarness:
         # as a dict, so `backend=` trips pyright — an upstream stub gap.)
         ctx = moderngl.create_standalone_context(backend="egl")  # type: ignore[arg-type]
 
-        # A fresh throwaway project. Seed the shipped templates as nodes so the agent has
-        # something to read/edit (seed_templates=False leaves it empty -> create_node only).
-        project_dir = Path(tempfile.mkdtemp(prefix="shaderbox-dogfood-proj-"))
+        resuming = project_dir is not None
+        if project_dir is None:
+            project_dir = Path(tempfile.mkdtemp(prefix="proj-", dir=_RUNS_DIR))
         nodes_dir = project_dir / "nodes"
-        nodes_dir.mkdir(parents=True)
-        if seed_templates:
+        nodes_dir.mkdir(parents=True, exist_ok=True)
+        # On resume the nodes already exist on disk; seeding only applies to a fresh project.
+        if seed_templates and not resuming:
             for tid in _TEMPLATE_ORDER:
                 src = node_templates_dir / tid
                 if src.is_dir():
@@ -159,12 +194,16 @@ class DogfoodHarness:
 
         # Load the project (paths/lib-index/nodes/app_state/integrations). The node warm-up
         # compiles run here, so the EGL context must be current — it is (created above on this
-        # thread).
+        # thread). On resume, load() restores app_state -> current_node_id from disk; only pick a
+        # default when it's unset (a fresh project) so a resumed turn keeps its current node.
         session.load(project_dir)
-        if session.ui_nodes:
+        if session.ui_nodes and not session.current_node_id:
             session.set_current_node_id(next(iter(session.ui_nodes)))
 
-        return cls(ctx, session, project_dir)
+        harness = cls(ctx, session, project_dir)
+        if resuming:
+            harness._restore_conversation()
+        return harness
 
     @property
     def _copilot(self) -> CopilotSession:
@@ -244,6 +283,7 @@ class DogfoodHarness:
             print(f"    [render FAILED: {err}]")
             return ""
         print(f"    [rendered {result.width}x{result.height} -> {result.path}]")
+        self._last_render_path = result.path
         return result.path
 
     # ---- inspection ----
@@ -273,6 +313,82 @@ class DogfoodHarness:
         finally:
             self._ctx.release()
 
+    # ---- interactive (feature 027): persist + structured turn-result ----
+
+    def dump(self, path: Path) -> dict[str, object]:
+        """Persist the conversation, then write a structured JSON turn-result to `path`.
+
+        Persisting lets the NEXT per-turn process resume via `create(project_dir=...)`. The JSON
+        is built from structured state (NOT scraped stdout) on its OWN cursor, so it reports only
+        the messages new since the last dump even though `drive_until_idle` already advanced the
+        print cursor. `project_dir` / `data_dir` echo the two stable paths the next turn reuses.
+        """
+        cop = self._copilot
+        cop.save_conversation(self.session.paths.copilot_conversation_path)
+        # Persist app_state too, so a switch_node'd current node survives the next resume (load()
+        # restores it; without this the resume falls back to the oldest node).
+        self.session.app_state.save(self.session.paths.app_state_file)
+        msgs = cop.state.messages
+        new = [
+            {"role": m.role, "text": (m.text or "").strip()}
+            for m in msgs[self._dumped_msg_count :]
+            if m.role != "pending_action" and (m.text or "").strip()
+        ]
+        self._dumped_msg_count = len(msgs)
+        stats = cop.state.last_turn
+        payload: dict[str, object] = {
+            "new_messages": new,
+            "assistant_text": next(
+                (m["text"] for m in reversed(new) if m["role"] == "assistant"), ""
+            ),
+            "open_gate": self._open_gate_payload(),
+            "last_turn": (
+                {
+                    "context_tokens": stats.context_tokens,
+                    "reply_tokens": stats.reply_tokens,
+                    "cost_usd": stats.cost_usd,
+                }
+                if stats is not None
+                else None
+            ),
+            "session_cost_usd": cop.state.session_cost_usd,
+            "last_render_path": self._last_render_path,
+            "trace_path": str(self.trace_path),
+            "project_dir": str(self.project_dir),
+            "data_dir": str(_DATA_DIR),
+        }
+        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        print(f"    [dumped turn-result -> {path}]")
+        return payload
+
+    def clear_context(self) -> None:
+        """Wipe the conversation — a FRESH agent on the SAME project (the context-wipe technique).
+
+        Archives + resets the chat (via the engine seam `ProjectSession.clear_conversation`), so the
+        copilot resumes with ZERO memory of prior turns; only the nodes on disk remain. The next turn
+        forces real tool-use (read_shader / grep) because nothing is in history. Resets both message
+        cursors since the chat is now empty.
+        """
+        self.session.clear_conversation()
+        self._seen_msg_count = len(self._copilot.state.messages)
+        self._dumped_msg_count = len(self._copilot.state.messages)
+
+    def reload(self) -> None:
+        """Persist then re-load the conversation in-process — simulates an App restart.
+
+        The literal composition `create(project_dir=...)` uses for resume, exposed for a
+        single-process REPL persistence scenario. Must be idle (a mid-turn reload strands the
+        worker). `trace_path` CHANGES after this (reset_conversation rotates the trace) — re-read
+        it, never cache it.
+        """
+        cop = self._copilot
+        if cop.state.in_flight:
+            raise RuntimeError("reload() while a turn is in flight")
+        cop.save_conversation(self.session.paths.copilot_conversation_path)
+        self.session.app_state.save(self.session.paths.app_state_file)
+        cop.reset_conversation()
+        self._restore_conversation()
+
     # ---- internals ----
 
     def _print_new_messages(self) -> None:
@@ -290,6 +406,30 @@ class DogfoodHarness:
             if msg.role == "pending_action" and not msg.resolved:
                 return msg
         return None
+
+    def _open_gate_payload(self) -> dict[str, str] | None:
+        gate = self._open_gate()
+        if gate is None:
+            return None
+        return {"text": gate.text, "kind": gate.gate_kind.value}
+
+    def _restore_conversation(self) -> None:
+        # Restore the persisted conversation onto a quiescent session (zero LLM calls): the
+        # NL-only history + chat messages + cost. Both message cursors count the restored chat as
+        # already-seen so the next drive/dump reports only NEW messages.
+        cop = self._copilot
+        store = ConversationStore.load_and_migrate(
+            self.session.paths.copilot_conversation_path
+        )
+        cop.load_conversation(store)
+        # A gate dumped mid-turn persists an unresolved pending_action, but no worker is parked on
+        # it after a resume (the gated turn died with its process) — mark it resolved so it doesn't
+        # read as a live "stuck" gate that drive_until_idle returns on forever.
+        for msg in cop.state.messages:
+            if msg.role == "pending_action" and not msg.resolved:
+                msg.resolved = True
+        self._seen_msg_count = len(cop.state.messages)
+        self._dumped_msg_count = len(cop.state.messages)
 
     def _print_turn_footer(self) -> None:
         stats = self._copilot.state.last_turn

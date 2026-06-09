@@ -23,6 +23,7 @@ from loguru import logger
 from shaderbox.copilot.backend import CopilotBackend
 from shaderbox.copilot.capabilities import CopilotCapabilities
 from shaderbox.copilot.llm.openrouter import OpenRouterLLMClient
+from shaderbox.copilot.persistence import archive_conversation
 from shaderbox.copilot.revert import RevertExecutor
 from shaderbox.copilot.session import CopilotSession
 from shaderbox.copilot.wiring import build_capabilities
@@ -272,6 +273,21 @@ class ProjectSession:
             self.app_state = UIAppState.load_and_migrate(self.paths.app_state_file)
 
         self.integrations_store = IntegrationsStore.load()
+
+    def clear_conversation(self) -> None:
+        # Archive the live conversation (recoverable), delete checkpoints, reset to a fresh empty
+        # chat + persist the empty store. No-op mid-turn (the reset_conversation invariant needs an
+        # idle worker). The copilot resumes with ZERO memory of prior turns — only the nodes on disk
+        # remain. App.copilot_clear_chat forwards here; the dogfood harness calls it for a
+        # context-wipe (a fresh agent on an existing project).
+        if self.copilot.state.in_flight:
+            return
+        archive_conversation(
+            self.paths.copilot_conversation_path, time.strftime("%Y-%m-%d_%H-%M-%S")
+        )
+        self.copilot.clear_checkpoints()
+        self.copilot.reset_conversation()
+        self.copilot.save_conversation(self.paths.copilot_conversation_path)
 
     def seed_starter_node(self, seed_current: Callable[[str], None]) -> None:
         # First-run only: seed a starter into an empty project. A node load + save + select;

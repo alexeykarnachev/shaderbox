@@ -248,45 +248,18 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
 
 ## [DEFERRAL] copilot agent-level error recovery — partially proven, the THRASH + edit-mismatch classes untested
 - **Trigger:** before claiming the copilot is robust to its own mistakes / shipping the copilot — run the
-  remaining recovery probes (scenario 03 compile-thrash + scenario 06 Parts B/C), not yet run.
-- PROVEN (2026-06-09, `026_dogfood_report_run1.md`): the broken-compile read→fix loop WORKS — a forced
-  "call a nonexistent function" produced a real compile error, the agent read it and defined the function
-  inline, compiled clean in 2 calls, no giveup. So single-error comprehension + correction is confirmed.
+  recovery probes through a dedicated dogfood mission (the THRASH case in particular); not yet covered by
+  `01_shape_gallery`, which only surfaces incidental single-error recoveries.
+- PROVEN (2026-06-09): the broken-compile read→fix loop WORKS — across dogfood runs 3-4 (codex-mini) the
+  agent self-corrected applies-with-errors edits 4-5x per run, including CROSS-tool (a broken `create_node`
+  fixed by a clean `replace_lines`), confirmed by `scripts/dogfood/analyze.py`'s recovery rollup. So
+  single-error comprehension + correction is solidly confirmed.
 - STILL UNTESTED: (a) the THRASH case — MANY consecutive applies-but-compile-with-errors edits, where
-  `consecutive_failed_edits` resets every step so the giveup cap never engages (scenario 03, authored but
-  never run); (b) `old_str` mismatch recovery (scenario 06 Part B); (c) bad-node-id recovery (Part C);
-  (d) malformed-args recovery. Run those live + inspect the `edit_giveup`/`max_iterations`/
+  `consecutive_failed_edits` resets every step so the giveup cap never engages; (b) `old_str` mismatch
+  recovery; (c) bad-node-id recovery; (d) malformed-args recovery. A future dogfood mission should drive
+  these deliberately + inspect the `edit_giveup`/`max_iterations`/
   `consecutive_failed_edits` trace events (`agent.py`). The thrash case is the one tied to the separate
   broken-compile circuit-breaker deferral above.
-
-## [DEFERRAL] dogfood must be driven INTERACTIVELY, not by a pre-scripted reply sequence
-- **Trigger:** the NEXT dogfood run (before writing any driver) — and when building the interactive
-  dogfood server (the agreed next task). Until that server exists, drive turns one at a time, reading
-  each copilot reply before deciding the next message.
-- The scenarios in `ai_docs/scenarios/` are FREE-FORM GOALS + a `Human check:`, NOT fixed dialogues. A
-  pre-baked `h.send(...)` sequence defeats the whole point: the dogfood tests whether the agent (Claude)
-  reads what the copilot actually did and ADAPTS the next message — a hardcoded progression replays a
-  recording instead. (Hit 2026-06-09: a `dogfood_scenarios.py` rigid driver was written, then deleted —
-  the `/dogfood` skill §1 still says "write a throwaway driver", which is what misled it.)
-- PLANNED FIX (next task, drafted): a blocking dogfood SERVER — Claude sends a line + blocks for the
-  reply, no background process to juggle, state persists across turns. Base ideas + transport options +
-  open questions are captured in the DRAFT spec `ai_docs/features/027_interactive_dogfood_server.md`
-  (not plan-locked — a dedicated agent pass writes/reviews the real spec). When it lands: rewrite
-  `/dogfood` skill §1 to mandate it + forbid pre-scripted drivers, and delete this entry + the
-  "conversation-restart / gate-decline" entry below (027 folds both in).
-- NOTE: the 2026-06-09 recovery probes (scenario 06 A/B/C, scenario 03) WERE run, but via the deleted rigid
-  driver — treat their PASS as provisional; re-run them through the interactive server to confirm.
-
-## [DEFERRAL] dogfood harness can't drive conversation-restart / gate-decline scenarios
-- **Trigger:** when a dogfood scenario needs to test conversation persistence across a reload, OR the
-  gate-decline path (the copilot's reaction to a declined render/delete).
-- `DogfoodHarness.create()` always mkdtemp's a fresh project and `ProjectSession.load` does NOT load the
-  conversation (that wiring — `reset_conversation` + `ConversationStore.load_and_migrate` +
-  `load_conversation` — is App-only, `app.py`). So a few-turns-then-reload scenario can't be driven through
-  the current harness API. The invariant IS unit-tested (`test_conversation_persistence.py`), so this is a
-  harness-coverage gap, not a bug. Optional fix: add `h.reload()` (re-run the App conversation-load
-  sequence) + a persistence scenario; and a gate-decline scenario (`h.decline()` already exists, but none
-  of the 5 scenarios exercise it).
 
 ## [DEFERRAL] true in-line drag-selection of WRAPPED copilot chat prose
 - **Trigger:** the per-message Copy button (020·23 D7) proves insufficient — a user wants to select a

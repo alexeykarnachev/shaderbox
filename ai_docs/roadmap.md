@@ -26,37 +26,34 @@ feature; brief points at the superseder).
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
 <!-- As of 2026-06-09. -->
-**025 (ProjectSession extraction) + 026 (dogfood harness) landed + DOGFOODED live on the Pi; the pipeline works end-to-end (edit/create → compile → render → correct image, incl. agent compile-error self-correction). This wave COMPRESSED the copilot system prompt ~20% (info-preserving, reviewer-audited, −678 tok/request) + MEASURED tool-catalogue token cost empirically (`scripts/token_probe.py`). Key finding: the native `tools=` block re-bills in FULL every iteration BUT OpenRouter prompt-caching (~99% hit on grok-4.3) amortizes it — so run1's "halve every request" was overstated. Next: feature 027 — the interactive dogfood SERVER (turn-by-turn, blocking — the agreed method fix), a ROUGH DRAFT spec is filed (`ai_docs/features/027_interactive_dogfood_server.md`) for a dedicated agent pass to flesh out + review; then re-run the recovery probes through it; the remaining lazy-tool-catalogue win (lever 2); the 025 `make run` pass; ship.**
+**027 (interactive dogfood by RESUME/DUMP — NO server) landed: code green + storm + pre/post-impl reviewed. A devil's-advocate storm killed the originally-planned blocking server — the copilot conversation is already a free, NL-only, zero-LLM-call serialized replay (`ConversationStore`/`load_conversation`) and the EGL+worker rebuild it'd protect is ~1s, so a long-lived process was complexity bought to avoid a cheap rebuild. The shape that shipped: `DogfoodHarness.create(project_dir=)` resumes a prior run from disk + `dump(path)` persists conversation/app_state + writes a structured JSON turn-result, so each dogfood turn is ONE blocking `uv run` (state on disk, Claude reads the reply + composes the next message live). Everything dogfood consolidated under `scripts/dogfood/` (harness + analyzer + scenarios + gitignored `runs/`); the 6 shallow scenarios became ONE goal-driven mission (`01_shape_gallery.md`, the pressure axes folded in — harder code-quality/token-overflow missions come later). DOGFOODED LIVE 4 runs on codex-mini ($0.05-0.09 each): mechanism proven (resume/dump + context-wipe + the `analyze.py` auto-rollup), the run-3 findings (set_uniform loop, create_node footgun) fixed + re-verified in run 4, the analyzer + scenario hardened (cross-tool recovery, dump-per-run filter, grep provocation). Remaining: the lazy-tool-catalogue lever 2; the 025 `make run` pass; then COMMIT + ship.**
 
-- **DONE this wave — copilot system-prompt compression.** `copilot/prompt.py` `_SYSTEM_PROMPT` cut from
-  13530→10606 chars (−678 input tok/request, measured live on grok-4.3) with ZERO information loss — an
-  adversarial reviewer audited ~90 atoms, found one dropped mechanism note, restored it. The prose is now
-  POLICY-only (no longer a verbose re-walk of every tool; the native `tools=` block is the canonical tool
-  copy). All 6 scenarios re-run green (see todo caveat on method). This is lever 1 of the `todo.md`
-  tool-catalogue token item; lever 2 (lazy-load the 11 integration tools) remains.
-- **DONE — 025 ProjectSession extraction (4 green commits, post-impl reviewed).** Headless project + copilot
-  CORE extracted from `App` into `project_session.py` (no imgui/glfw, no window/context): paths/nodes/
-  app_state/lib-index/stores/integrations + the copilot cluster (`CopilotSession`/`CopilotBackend`/
-  `RevertExecutor`). `App` owns one `self.session` + forwards via `@property`; UI reactions ride injected
-  `on_*` callbacks (worker-mid-turn timing forces callbacks over return-values). Spec:
-  `025_project_session_extraction.md`. The `App.__init__`/`_init`/`release` runtime path is still
-  un-runtime-tested on the display-less Pi → a maintainer `make run` pass is the one remaining 025 gate.
-- **DONE — 026 dogfood harness, built + DOGFOODED live.** `scripts/dogfood.py` (`DogfoodHarness`) drives the
-  REAL copilot engine headless on a standalone EGL context, renders 400×400 PNGs, eyeballed. First live run
-  (5 scenarios, 16 turns, $0.21 on grok-4.3) + a 19-agent review swarm: PIPELINE WORKS end-to-end; agent
-  compile-error self-correction PROVEN (forced a bad call → agent read the error → fixed it → clean). The
-  swarm corrected 3 trace-misreadings in the report draft + refuted 7 false-positive findings. Report:
-  `026_dogfood_report_run1.md`. Operating manual: the `/dogfood` skill.
-- **FIXED earlier this day (from the dogfood):** the headless `GLError 1282 glUseProgram(0)` (`Node.invalidate`
-  suppressed under standalone ctx) + the dead default model (`grok-4-fast` 404 → `grok-4.3`). Verified live.
-  `make smoke` self-skips on a no-GPU box.
-- **NEXT (method fix first):** build the INTERACTIVE dogfood server (turn-by-turn, blocking — scenarios are
-  free-form goals, not scripted dialogues; `todo.md`), then RE-RUN the recovery probes (scenario 03 thrash +
-  06 A/B/C) through it (this wave ran them via a rigid driver since deleted — PASS is provisional). Then the
-  lazy-tool-catalogue lever 2 (`token_probe.py` measures: 10 shader tools = 2495 tok vs 21 = 3941).
+- **DONE this wave — 027 interactive dogfood (resume/dump).** `git mv scripts/dogfood.py ->
+  scripts/dogfood/harness.py`; new `create(project_dir=)` resume + `dump(path)` + `reload()` (composing the
+  existing `ConversationStore`/`load_conversation`/`save_conversation` seams — no new `shaderbox/` code).
+  Consolidated `scripts/dogfood/{harness.py, analyze.py, scenarios/, runs/}` (`runs/` gitignored). 6 shallow
+  scenarios -> ONE goal-driven mission (`01_shape_gallery.md`); `analyze.py` auto-rolls coverage/cost/tokens/
+  recoveries from the trace into the report template (the human writes only the judgment + visual sections).
+  `/dogfood` skill §1 rewritten to the one-blocking-call-per-turn flow + §1a tool-coverage discipline + the
+  single-process gate rule. Folds in the driven-INTERACTIVELY + conversation-restart/gate-decline `todo.md`
+  deferrals. DOGFOODED LIVE 4 runs (codex-mini): set_uniform-loop + create_node-footgun fixed in `backend.py`
+  + re-verified, analyzer cross-tool-recovery + per-run dump filter hardened, mega-review-swarm clean. Spec:
+  `027_interactive_dogfood_server.md` (kept filename; the server is the Out-of-scope reversal record).
+- **DONE earlier — 025 ProjectSession extraction + 026 dogfood harness + prompt compression** (all landed,
+  reviewed; see their spec rows). 026 DOGFOODED live (5 scenarios, 16 turns, $0.21 on grok-4.3): pipeline
+  works end-to-end, agent compile-error self-correction proven. Prompt compressed ~20% (−678 tok/request,
+  reviewer-audited). Tool-catalogue token cost measured (`scripts/token_probe.py`): the native `tools=` block
+  re-bills in FULL every iteration BUT OpenRouter prompt-caching (~99% hit) amortizes it — run1's "halve
+  every request" was overstated; lever 2 (lazy-load) remains.
+- **NEXT:** COMMIT the 027 wave (mega-review clean), then lever 2 lazy-tool-catalogue (`token_probe.py`:
+  10 shader tools = 2495 tok vs 21 = 3941) + the 025 `make run` pass. Harder dogfood missions (code-quality
+  grading, token-overflow provocation) come after, building on the obkatan `01_shape_gallery` mechanism.
 - **Still pending (separate):** copilot turn-rollback (030) awaits its own `make run` pass; the wrong-node
   TARGETING prompt fix is filed not started (REPRODUCED 2026-06-09 on name-association: "give the sphere a
-  glow" jumped to a node named Blue Sphere — `todo.md`).
+  glow" jumped to a node named Blue Sphere — `todo.md`; a future targeting mission re-probes it).
+- **Observed (codex-mini, 4 dogfood runs):** the model NEVER calls `switch_node` — it self-targets via
+  `read_shader` + a targeted edit; `switch_node` is effectively vestigial for it (a `todo.md` note + a
+  coverage-target decision, not a bug).
 - **THEN — ship.** `master` stays at `v0.12.1`; the full copilot stack (020-024 + 025 + 030) sits ship-shaped
   on `dev`, unshipped, pending the 025/030 live passes. Awaiting explicit go.
 - **Deferred (each gates a FUTURE round only on a NEW failure class in a DIFFERENT session):** the lazy
@@ -73,8 +70,8 @@ feature; brief points at the superseder).
 
 | # | Name | Status | Brief |
 |---|---|---|---|
-| 027 | interactive_dogfood_server | pending | A blocking dogfood SERVER so scenarios are driven INTERACTIVELY (Claude sends one turn, BLOCKS, reads the copilot reply, ADAPTS the next message) instead of by a pre-scripted reply sequence — the harness state (worker/EGL/project/conversation) persists across the read-and-think gaps. Leading shape: a long-running `scripts/dogfood_server.py` owning one `DogfoodHarness` + a filesystem request/reply transport (a `send/render/approve/decline/reload/stop` CLI over a request-file + blocking-wait). Folds in the `reload()` + gate-decline harness-coverage gaps. ROUGH DRAFT only (transport A/B/C + design decisions TBD by a dedicated agent pass). Spec: `ai_docs/features/027_interactive_dogfood_server.md`. |
-| 026 | copilot_dogfood_harness | partial | Hand-driven headless driver to dogfood the copilot ENGINE: `scripts/dogfood.py` `DogfoodHarness` builds a real `ProjectSession` on a standalone EGL context (no App/glfw), drives `session.copilot` turn by turn (worker + bridge-pump, the App-mirror — NOT a sync patch), renders 400×400 PNGs, eyeballs them (judge = human reading the trace + images, no code assertions). DOGFOODED LIVE (5 scenarios + 16 turns on grok-4.3, $0.21) + a 19-agent review swarm: pipeline works end-to-end, agent compile-error self-correction proven, 2 bugs fixed (GLError, dead model), 3 report-misreadings corrected. STILL partial: the recovery-thrash probes (scenario 03 + 06 B/C) + the tool-catalogue token win are un-run/deferred. Report: `026_dogfood_report_run1.md`; manual: `/dogfood` skill. Spec: `ai_docs/features/026_copilot_dogfood_harness.md`. |
+| 027 | interactive_dogfood_dump | partial | Interactive dogfooding by RESUME/DUMP, NO server (a devil's-advocate storm killed the server: the conversation is already a free NL-only zero-LLM-call serialized replay, the EGL+worker rebuild it'd protect is ~1s). `DogfoodHarness.create(project_dir=)` resumes a prior run from disk + `dump(path)` writes a structured JSON turn-result + persists conversation/app_state, so each turn is one blocking `uv run` (state on disk, Claude reads the reply + composes the next message live). Everything dogfood consolidated under `scripts/dogfood/` (harness + `analyze.py` auto-report-rollup + scenarios + gitignored `runs/`). 6 shallow scenarios -> ONE goal-driven mission (`01_shape_gallery.md`). Folds in the `reload()` + gate-decline + conversation-restart coverage gaps. DOGFOODED LIVE 4 runs on codex-mini + a mega-review swarm: mechanism proven, run-3 findings fixed + re-verified (set_uniform loop, create_node footgun), analyzer hardened. STILL partial: commit + the lazy-tool-catalogue lever 2 + the 025 `make run` pass remain. Spec: `ai_docs/features/027_interactive_dogfood_server.md`. |
+| 026 | copilot_dogfood_harness | partial | Hand-driven headless driver to dogfood the copilot ENGINE: `scripts/dogfood/harness.py` `DogfoodHarness` builds a real `ProjectSession` on a standalone EGL context (no App/glfw), drives `session.copilot` turn by turn (worker + bridge-pump, the App-mirror — NOT a sync patch), renders 400×400 PNGs, eyeballs them (judge = human reading the trace + images, no code assertions). DOGFOODED LIVE (5 scenarios + 16 turns on grok-4.3, $0.21) + a 19-agent review swarm: pipeline works end-to-end, agent compile-error self-correction proven, 2 bugs fixed (GLError, dead model), 3 report-misreadings corrected. STILL partial: the recovery-thrash probes + the tool-catalogue token win are un-run/deferred (the interactive resume/dump flow is feature 027). Report: `026_dogfood_report_run1.md`; manual: `/dogfood` skill. Spec: `ai_docs/features/026_copilot_dogfood_harness.md`. |
 | 025 | project_session_extraction | partial | Extracted the headless project + copilot CORE out of `App` into `project_session.py` (no imgui/glfw imports, no window/context creation), so the dogfood harness (026) can drive the real copilot engine without `App`/glfw. 4 green commits: C1 pure-core state + `@property` forwarders; C2 GL-free project load (`load`/`seed_starter_node`); C3 copilot cluster (`CopilotSession`/`CopilotBackend`/`RevertExecutor`) + the 4 UI-tail methods moved whole; C4 UI-tail → injected `on_*` callbacks (chosen over return-values: reactions fire mid-turn on the worker-drain thread, App off-stack) + the mid-turn "Node saved" toast dropped (now user-path-only). The long-deferred `app.py` split. Type-checked + GL-free tests green + post-impl reviewed; **awaiting a maintainer `make run` pass** (the `App.__init__`/`_init`/`release` runtime path is un-runtime-testable on the display-less Pi). Spec: `ai_docs/features/025_project_session_extraction.md`. |
 | 023 | app_refinement_wave | done | Pure-shape refactor of the overgrown `app.py` (~41% was the copilot backend). Three green-gated commits: C2 extracted the 49 `_copilot_*` methods into `copilot/backend.py` (`CopilotBackend`, the `ShaderLibFileManager` idiom — explicit deps + injected getters/callbacks, never imports `App`; `_build_copilot_capabilities` constructs + binds it; working-set/batch state stays App-owned via accessors; `app.py` −~1250 lines); C3 collapsed the four modal popup booleans into a `PopupState` enum (structural mutex); C4 fixed a latent Esc bug the enum surfaced (Esc now closes the emoji + lib pickers — the one behavior change). Two design-audit swarms + pre/post-impl review. Spec: `ai_docs/features/023_app_refinement_wave.md`. |
 | 022 | copilot_chat_persistence | done | The copilot conversation is tied to its project + restored on reopen (was memory-only, dropped on switch/exit). `copilot/persistence.py` (`ConversationStore`, versioned + fail-soft like `app_state.json`) persists both the UI render messages and the LLM history + usage to `project_dir/copilot/conversation.json`; `CopilotSession.save_conversation`/`load_conversation`; App saves the outgoing project's chat in `release()` (top of `_init` + shutdown) and loads the incoming one after `reset_conversation`; a `begin_disabled`-during-turn clear button archives to `copilot/archive/`. Folded the trace-bleed deferral: the orphaned-history append is guarded on `_cancel`, and the worker-is-idle invariant (020·15's `open_project` gate) closes the trace-bleed window (the residual `_ensure_open` structural weakness re-scoped in `todo.md`). Spec: `ai_docs/features/022_copilot_chat_persistence.md`. |

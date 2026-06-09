@@ -23,7 +23,7 @@ from shaderbox.commands import (
 )
 from shaderbox.constants import RESOURCES_DIR
 from shaderbox.copilot.backend import CopilotBackend
-from shaderbox.copilot.persistence import ConversationStore, archive_conversation
+from shaderbox.copilot.persistence import ConversationStore
 from shaderbox.copilot.revert import RevertExecutor
 from shaderbox.copilot.session import CopilotSession
 from shaderbox.copilot.state import CopilotLayout, Message
@@ -89,11 +89,6 @@ class PopupState(Enum):
     SETTINGS = "settings"
     EMOJI_PICKER = "emoji_picker"
     SHADER_LIB_PICKER = "shader_lib_picker"
-
-
-def _conversation_stamp() -> str:
-    # Filesystem-safe timestamp for an archived conversation filename.
-    return time.strftime("%Y-%m-%d_%H-%M-%S")
 
 
 def _create_dir_if_needed(path: Path | str) -> Path:
@@ -556,17 +551,7 @@ class App:
         self.copilot.enqueue_turn(text)
 
     def copilot_clear_chat(self) -> None:
-        # Archive the current conversation (recoverable), then reset to a fresh empty chat +
-        # write an empty conversation.json. Gated on not-in-flight at the UI, so the worker
-        # is idle here — the invariant reset_conversation relies on.
-        if self.copilot.state.in_flight:
-            return
-        archive_conversation(
-            self.paths.copilot_conversation_path, _conversation_stamp()
-        )
-        self.copilot.clear_checkpoints()  # delete outright, not archived (feature 020·30)
-        self.copilot.reset_conversation()
-        self.copilot.save_conversation(self.paths.copilot_conversation_path)
+        self.session.clear_conversation()
 
     def _copilot_busy_blocked(self, action: str) -> bool:
         # True (+ a notification) when an editor/node-mutating action must be refused because

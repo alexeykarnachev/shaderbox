@@ -237,17 +237,18 @@ def _set_uniform_shape_hint(name: str, uniform: moderngl.Uniform, label: str) ->
     return f"value does not match {label} — provide a number"
 
 
-def _format_uniforms(
-    uniforms: list[moderngl.Uniform | moderngl.UniformBlock],
-) -> list[str]:
-    # "name type = value" rows. Blocks have no scalar value.
+def _format_uniforms(node: Node) -> list[str]:
+    # "name type = value" rows. Blocks have no scalar value. The shown value comes from the node's
+    # uniform_values cache (the same source tabs/node.py reads) — NOT live u.value, which Node.render()
+    # overwrites every frame, so a just-set_uniform value would read back stale and the agent loops.
     rows: list[str] = []
-    for u in uniforms:
+    for u in node.get_active_uniforms():
         label = _uniform_type_label(u)
         if isinstance(u, moderngl.UniformBlock):
             rows.append(f"{u.name} {label}")
         else:
-            rows.append(f"{u.name} {label} = {u.value}")
+            value = node.uniform_values.get(u.name, u.value)
+            rows.append(f"{u.name} {label} = {value}")
     return rows
 
 
@@ -391,13 +392,23 @@ class CopilotBackend:
 
     def _copilot_resolve_template_id(self, handle: str) -> str | None:
         # Template handle (`template:`-prefixed, short, or full uuid) -> full uuid, or None if no/ambiguous.
+        # Forgiving: also matches a template by its DISPLAY NAME (case-insensitive) — the model copies the
+        # human half of the `template:<id> | <name>` catalogue, so a bare name must resolve, not hard-fail.
+        templates = self._get_ui_node_templates()
         h = handle.removeprefix("template:").strip()
         if not h:
             return None
-        if h in self._get_ui_node_templates():
+        if h in templates:
             return h
-        matches = [tid for tid in self._get_ui_node_templates() if tid.startswith(h)]
-        return matches[0] if len(matches) == 1 else None
+        prefix = [tid for tid in templates if tid.startswith(h)]
+        if len(prefix) == 1:
+            return prefix[0]
+        named = [
+            tid
+            for tid, n in templates.items()
+            if n.ui_state.ui_name.casefold() == h.casefold()
+        ]
+        return named[0] if len(named) == 1 else None
 
     def _copilot_resolve_source(self, handle: str) -> tuple[str, str | None]:
         # read/grep addressing: `template:` -> TEMPLATE, else NODE. Returns (kind, full_id|None).
@@ -461,7 +472,7 @@ class CopilotBackend:
                         node_id=view_id,
                         name=ui_node.ui_state.ui_name,
                         listing=_number_lines(text),
-                        uniforms=_format_uniforms(node.get_active_uniforms()),
+                        uniforms=_format_uniforms(node),
                         errors=_to_error_infos(node.compile_unit.errors),
                     )
                 )
@@ -509,7 +520,7 @@ class CopilotBackend:
             listing=_number_lines(node.source.text),
             is_current=(full_id == current),
             is_lib=False,
-            uniforms=_format_uniforms(node.get_active_uniforms()),
+            uniforms=_format_uniforms(node),
             errors=_to_error_infos(node.compile_unit.errors),
         )
 

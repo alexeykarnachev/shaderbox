@@ -13,57 +13,136 @@ there are NO code assertions. The point is to test the whole PIPELINE and find w
 where context wastes tokens, and what's broken — not to make the copilot write good shaders (use a CHEAP
 model and SIMPLE tasks; it will make mistakes, that's fine).
 
-This is feature 026. The harness is `scripts/dogfood.py`; scenarios are in `ai_docs/scenarios/`. This
-skill is the operating manual — the process + every gotcha already hit, so you don't re-discover them.
+Features 026 (the harness) + 027 (interactive resume/dump). Everything dogfood lives under ONE dir:
+`scripts/dogfood/` — the harness is `scripts/dogfood/harness.py`, scenarios are
+`scripts/dogfood/scenarios/`, and ALL run artifacts (per-run project dirs, the data dir, JSON dumps,
+traces, PNGs) land in `scripts/dogfood/runs/` (gitignored). The public import is unchanged:
+`from scripts.dogfood import DogfoodHarness`. This skill is the operating manual — the process + every
+gotcha already hit, so you don't re-discover them.
 
 ## 0. Prerequisites (the run fails without these)
 
-- **`OPENROUTER_API_KEY`** — required, billed. The maintainer supplies it. Pass it in the COMMAND env
-  (`env OPENROUTER_API_KEY=… uv run …`), not a permanent export — the harness reads it at import.
-- **Model:** the in-tree default (`CopilotIntegration.model`) is `x-ai/grok-4.3` (cheap: ~$1.25/$2.50 per
-  Mtok), used automatically — no `OPENROUTER_MODEL` override needed. Set `OPENROUTER_MODEL` only to try a
-  different model. Models go deprecated (grok-4-fast 404'd a prior run) — if a run 404s on the model, check
-  `curl -s https://openrouter.ai/api/v1/models | …` filter `x-ai/grok` for the current cheap grok and bump
-  the in-tree default.
+- **`OPENROUTER_API_KEY`** — required, billed. **Already `export`ed in `~/.bashrc`** (don't ask the
+  maintainer for it). FOOTGUN: `~/.bashrc` has the standard "if not running interactively, return" guard
+  at the top, and the export sits BELOW it — so a NON-interactive shell (the default for tool Bash calls)
+  does NOT pick the key up (`echo $OPENROUTER_API_KEY` comes back empty). Run dogfood commands through an
+  INTERACTIVE shell so the export fires: `bash -ic '<the uv run … one-liner>'`. (Verified 2026-06-09: the
+  key surfaces under `bash -ic`, len 73, `sk-or-…`.) The harness reads the key at import, so it must be in
+  the process env before `uv run` — which `bash -ic` guarantees.
+- **Model:** the in-tree default (`CopilotIntegration.model`) is `openai/gpt-5.1-codex-mini` (cheap:
+  ~$0.25/$2.00 per Mtok, tool-call compatible, 400k ctx), used automatically — no `OPENROUTER_MODEL`
+  override needed. Chosen over grok: grok writes BAD GLSL (you can't dogfood the authoring pipeline on a
+  model that can't write a shader); codex-mini is the cheap-but-competent-at-code pick. Set
+  `OPENROUTER_MODEL` only to try a different model. Models go deprecated (grok-4-fast 404'd a prior run) —
+  if a run 404s, `curl -s https://openrouter.ai/api/v1/models` and filter for the current cheap codex,
+  confirm `tools` is in its `supported_parameters` (the agent rejects tool-incompatible models), bump the
+  in-tree default.
 - **This is a display-less Pi.** `glfw.init()` FAILS here; `import glfw`/`import imgui` SUCCEED. The whole
   point of the headless harness is to bypass glfw via a standalone EGL context.
 
-## 1. Run a scenario
+## 1. Drive a scenario — ONE blocking `uv run` per turn (resume/dump)
 
-> ⚠️ **DRIVE INTERACTIVELY — do NOT pre-script the reply sequence.** The scenarios are FREE-FORM GOALS
-> (§ the `User:`/`Human check:` shape), not fixed dialogues. The dogfood tests whether YOU read each
-> copilot reply and ADAPT the next message; a hardcoded `h.send(...)` progression replays a recording and
-> defeats the point. Send ONE turn, read the reply, THEN decide the next message. An interactive
-> blocking-server interface is the planned fix (`todo.md` "dogfood must be driven INTERACTIVELY"); until it
-> lands, drive turn-by-turn from a REPL / one `python -c` per turn — never a baked multi-turn driver.
+> ⚠️ **DRIVE INTERACTIVELY — NEVER pre-script the reply sequence.** The scenarios are FREE-FORM GOALS
+> with branch points (the `User:` / `if it does X, do Y` shape), not fixed dialogues. The dogfood tests
+> whether YOU read each copilot reply and ADAPT the next message; a baked multi-turn `h.send(...)`
+> progression replays a recording and defeats the entire point. Send ONE turn, READ the reply, THEN
+> compose the next message. **A baked multi-turn driver is forbidden.**
 
-The harness is a hand-driven library. Drive it inline from a `python -c` (one turn at a time), reading the
-printed events before composing the next `h.send`. Pattern:
+The mechanism (feature 027): each turn is its OWN `uv run` process (inherently one blocking call). State
+persists ON DISK — the harness `dump`s the conversation after the turn, and the NEXT process `resume`s it
+via `create(project_dir=...)` with ZERO LLM calls (the conversation is NL-only-serialized; node edits are
+already on disk). So you read turn N's JSON, think, then write turn N+1's command. No server, no background
+process, no PID.
 
-```python
+**Turn 1 (fresh project):**
+```
+env OPENROUTER_API_KEY=… uv run python -c '
+from pathlib import Path
 from scripts.dogfood import DogfoodHarness
-h = DogfoodHarness.create()                 # seeded tmp project (UV Mango / Media / Text)
-# h = DogfoodHarness.create(seed_templates=False)   # empty project -> create_node from scratch
+h = DogfoodHarness.create()                          # seeded project (UV Mango / Media / Text)
+# h = DogfoodHarness.create(seed_templates=False)    # empty -> create_node from scratch
 h.send("Make the current shader output solid red. Keep it simple.")
-h.drive_until_idle(auto_approve_gates=True) # pump worker+bridge; prints each event; auto-yes gates
-png = h.render(size=400)                     # 400x400 PNG of the current node (FORCED size)
-# ...then Read the png and eyeball it...
-print("cost $%.5f" % h.session_cost_usd, "trace", h.trace_path)
-h.release()
+h.drive_until_idle()                                 # pump worker+bridge; STOPS on a gate
+h.render(size=400)                                   # 400x400 PNG (path echoed in the dump)
+h.dump(Path("scripts/dogfood/runs/turn.json"))       # persist convo + write the JSON turn-result
+h.release()'
+cat scripts/dogfood/runs/turn.json                   # READ the result; note project_dir + data_dir
 ```
+The JSON has `new_messages`, `assistant_text`, `open_gate`, `last_turn` (tokens/cost), `session_cost_usd`,
+`last_render_path`, `trace_path`, and the two stable paths `project_dir` + `data_dir` to reuse next turn.
+**Read the dumped `last_render_path` PNG** — the visual check is the whole point.
 
-Run it:
+**Turn 2+ (resume — REUSE the same project_dir AND SHADERBOX_DATA_DIR from turn 1's dump):**
 ```
-env OPENROUTER_API_KEY=… OPENROUTER_MODEL=x-ai/grok-4.3 uv run python scripts/_dogfood_run.py <scenario>
+env OPENROUTER_API_KEY=… SHADERBOX_DATA_DIR=<data_dir from turn.json> uv run python -c '
+from pathlib import Path
+from scripts.dogfood import DogfoodHarness
+h = DogfoodHarness.create(project_dir=Path("<project_dir from turn.json>"))  # resumes the convo
+h.send("<the message YOU chose after reading turn 1>")
+h.drive_until_idle(); h.render(size=400)
+h.dump(Path("scripts/dogfood/runs/turn.json")); h.release()'
+cat scripts/dogfood/runs/turn.json
 ```
+🔴 **`SHADERBOX_DATA_DIR` MUST be set on the COMMAND LINE before `uv run`** — the harness reads it at
+import (the env block runs when `scripts.dogfood` is imported, before any `create()` arg). Setting it
+in-script after import loses to the already-run `setdefault`. Same for the resume project_dir: it's a
+`create()` arg, but the data dir is env-only.
 
-Then for each render: `cp <png> /tmp/dogfood_<tag>.png` and **Read it** — the visual check is the whole
-point. Copy the trace too (`h.trace_path` → `/tmp/dogfood_<tag>.transcript`) — it's the per-turn context +
-token/cost record you analyze.
+**Gates are answered WITHIN one process — a gate CANNOT span two turns.** A gate pauses the worker
+mid-turn; the worker dies on process exit and a gated turn is never persisted, so there is no "dump the
+gate, resume, answer it". Decide the gate answer UP FRONT when you compose that turn's command:
+```python
+h.send("delete the Media node")
+h.drive_until_idle()                       # stops on the gate
+if h._open_gate() is not None:
+    h.decline()                            # or approve() — YOU decide per the scenario
+    h.drive_until_idle()                   # let the copilot react to the decision
+h.dump(Path("scripts/dogfood/runs/turn.json"))
+```
+For an unconditional yes, `h.drive_until_idle(auto_approve_gates=True)` is the shortcut. (Answering a gate
+based on reading its OWN prompt text first is the one thing this can't do — reserved for a future server,
+`027` Out-of-scope.)
 
-The 5 scenarios live in `ai_docs/scenarios/` (visual-blindness, wrong-node targeting, compile-thrash,
-circle/square/morph, grep+read_lib+uniforms). Read each `.md`, translate its `User:` lines into
-`h.send(...)`, judge its `Human check:` against the trace + PNG.
+The scenarios live in `scripts/dogfood/scenarios/`. Read each `.md`, drive its arc turn-by-turn, judge its
+`Human check:` against the trace + the rendered PNG. (REPL note: for ad-hoc poking you can still drive the
+harness from one long-lived `python` REPL — `send` / `drive_until_idle` / `render` / `approve` / `decline`
+/ `reload` — but for a real scenario run the one-blocking-call-per-turn shape above is the discipline that
+keeps you honest about reading each reply.)
+
+## 1a. Tool-coverage discipline — DELIBERATELY route through the cold tools
+
+Run 2 fired only 5 of ~12 reachable tools (`create_node` / `read_shader` / `replace_lines` /
+`insert_after` / `edit_shader`); the whole navigation/value/integration half stayed COLD (`grep`,
+`read_lib`, `set_uniform`, `switch_node`, `delete_node`, `render_image`/`render_video`). A cheap model
+takes the lazy path — it answers "what nodes exist?" from the project map instead of grepping, hard-codes a
+constant instead of adding a tunable uniform, edits the current node instead of switching. So coverage
+won't happen by accident; YOU (the driver) have to provoke it.
+
+**Before composing each turn, ask: "which cold tool can THIS turn legitimately force?"** Prefer the phrasing
+that routes through an unexercised tool, as long as it stays a natural mission move (never a fake "now call
+grep" instruction — the agent must have a real reason):
+
+- **`grep` / `read_lib`** — ask the agent to REUSE something it must first LOCATE: a `SB_*` helper by
+  behavior not name ("reuse the library edge helper"), or "which shaders use `u_time`?". A bare "what nodes
+  exist?" loses to the project map — make the thing live in the LIBRARY (not in the always-present map) so
+  it has to grep + read_lib to find and read it.
+- **`set_uniform`** — demand an ADJUSTABLE look and then DIAL it ("turn the glow up", "make it dimmer").
+  A hard-coded constant can't be tuned; the agent must introduce a uniform and `set_uniform` a value.
+- **`switch_node`** — with node A current, ask to edit node B by name. Edits with no target hit the
+  current node, so the agent must `switch_node` to B first.
+- **`delete_node`** — give it a genuine throwaway to remove. It's GATED — decide approve/decline UP FRONT
+  when you compose that turn (a gate can't span turns; `/dogfood` §1).
+- **`render_image` / `render_video`** — these are the COPILOT's own gated tools, distinct from the harness
+  `h.render()`. Ask the AGENT to save the result to a file ("render this to a PNG"); drive that turn with
+  `drive_until_idle(auto_approve_gates=True)`.
+
+**The analyzer reports coverage, and thin coverage is a first-class finding.** Every run's report MUST
+include the per-tool fired/not-fired table (report §4 / run-2 format) and call out any tool that stayed
+cold — distinguishing "the scenario never pressured it" from "a pressure move aimed at it but the agent
+dodged" (the latter is a behavioral finding about the model). Treat full reachable-surface coverage as a
+run goal alongside the scenario's visual goal: a beautiful render that touched 5 tools is a worse run than
+a rougher one that exercised 11. (`publish_*` precheck-fails in the harness — empty `ExporterRegistry` —
+so it's NOT reachable; don't count it as a missed cold tool.)
 
 ## 2. The gotchas (hard-won — don't re-discover them)
 
@@ -76,9 +155,18 @@ circle/square/morph, grep+read_lib+uniforms). Read each `.md`, translate its `Us
   thread DEADLOCKS (it enqueues a bridge op and blocks on a drain that never comes). The harness runs it on
   a helper thread and drains from the owner thread. Already handled — don't call `render_image` directly.
 - **Env order: set BEFORE importing shaderbox.** `SHADERBOX_DATA_DIR` (isolation — never pollute the real
-  library/creds) + the two MESA overrides (`MESA_GL_VERSION_OVERRIDE=4.6` / `MESA_GLSL_VERSION_OVERRIDE=460`,
-  for `#version 460` on V3D) are set at the TOP of `scripts/dogfood.py` before the shaderbox imports. If
-  you write a new entry point, preserve that order.
+  library/creds; also the RESUME seam) + the two MESA overrides (`MESA_GL_VERSION_OVERRIDE=4.6` /
+  `MESA_GLSL_VERSION_OVERRIDE=460`, for `#version 460` on V3D) are set at the TOP of
+  `scripts/dogfood/harness.py` before the shaderbox imports, AND re-run whenever `scripts.dogfood` is
+  imported. A caller-set `SHADERBOX_DATA_DIR` WINS (the `setdefault` no-ops) — so on resume you MUST pass it
+  on the command line, never assign it in-script after import.
+- **Resume = same project_dir + same SHADERBOX_DATA_DIR.** `create(project_dir=<existing>)` skips seeding,
+  reloads the shaders, restores the conversation from `<project_dir>/copilot/conversation.json` (zero LLM
+  calls). The data dir (lib + integrations) is separate and env-only — both must point at turn 1's dirs or
+  the resume is half-restored. `dump`'s JSON echoes both paths so you copy them forward without bookkeeping.
+- **`dump` uses its own cursor.** `drive_until_idle` advances the PRINT cursor; `dump` slices on a SEPARATE
+  cursor, so `new_messages` reports the turn's output even after the prints. Don't expect `dump` to re-emit
+  the restored conversation on a resume — that's already-seen by design.
 - **EGL context is already current after creation** — no `make_current` call; `Node`/`Canvas` pick it up
   via `moderngl.get_context()`. (moderngl's stub mistypes `backend=` — the one sanctioned `# type: ignore`.)
 - **The `GLFWError: not initialized` warning is benign** — `core.py` reads `glfw.get_time()` for the default
@@ -101,45 +189,58 @@ eager_tools), each `llm_request` (the FULL messages array — system prompt + pr
 the native `tools=` block — + max_tokens), each `llm_response` (finish_reason + text + tool_calls +
 `usage: in/out/cost`), each `tool_call` (name + args + ok + result), `turn_done` (summed usage).
 
-To estimate the per-section context cost, split one `llm_request` block: the system prompt (prose), the
-project-map/lib/templates/conventions system block, the user message, the WORKING SET (shader source), and
-the native `tools=` block. Rough tokens ≈ chars/4. (A `context_breakdown` trace event would automate this —
-it's a deferred improvement.)
+**Run `uv run python scripts/dogfood/analyze.py <data_dir>` to auto-extract** tool coverage, the per-turn
+iteration/token/cost table, recoveries, and the token-growth shape — paste its markdown block into the
+report §2/§4/§5 instead of hand-summing. (The per-section context_breakdown — system prompt vs project map
+vs working set vs `tools=` block — remains a separate deferred trace event, not yet automated; for that,
+split one `llm_request` block by hand, ~chars/4.)
 
-## 4. The report format (what the maintainer wants to see at the end)
+**Load-bearing token note:** the `turn_done` `in=` is the CUMULATIVE billed input (the SUM of every
+iteration's input — e.g. 68k on the 4-node read turn); the real per-turn CONTEXT size is the max
+per-iteration `in=` (analyze.py's `peak_iter_in_tokens`, ~10k on that turn). Don't report the cumulative
+figure as "context size" — it's the cost driver, the peak is the context-size driver.
 
-Produce a markdown report (save it as `ai_docs/features/026_dogfood_report_<run>.md` — these are durable
-findings). Sections, in this order:
+## 4. The report (template + analyzer flow)
 
-1. **Bottom line** — does the whole pipeline work end-to-end? One paragraph. Note the model used.
-2. **Per-scenario table** — scenario | result | pipeline verdict (✅/⚠️/🔴). One row each.
-3. **Pipeline mechanics that WORK** — confirmed-in-the-trace: edit→compile feedback, WORKING SET
-   live-rebuild, error recovery, gate flow, set_uniform handling, the "you cannot see" discipline. Cite the
-   trace evidence, don't just assert.
-4. **🔴 Pipeline BUGS** — anything that actually broke (the GLError, a deadlock, a wrong result). For each:
-   the exact error, a minimal-repro attempt, the impact (did the copilot recover?), and the honest fix.
-5. **🔴 Efficiency / token findings** — the per-section context breakdown (a table of ~tokens per section),
-   where tokens are wasted (e.g. the tool catalogue shipped twice + irrelevant tools), and the lever to fix
-   it. THIS IS A FIRST-CLASS DELIVERABLE — the maintainer specifically wants the context composition + token
-   flow + the optimization.
-6. **Behavioral findings (model, NOT pipeline)** — visual-blindness, multi-file read, targeting, tool
-   selection. Be clear these are model-quality on a CHEAP model, separate from pipeline health.
-7. **💲 Cost summary** — total $, per-turn average, the biggest cost lever. ALWAYS include cost.
-8. **Retrospective priorities** — numbered, what to fix next, split into:
-   - **What to improve in SHADERBOX** (the copilot engine itself — model default, the GLError, the tool
-     catalogue, an `inspect_render` affordance, etc.).
-   - **What to improve in the DOGFOODING** (the harness + this skill — a `context_breakdown` event, better
-     scenario design, a cost ceiling, automating the per-section breakdown, anything that made this run
-     awkward).
+The report is half AUTO (filled by the analyzer from logs — you never hand-sum), half HUMAN (your
+judgment). Flow:
+
+1. Copy `scripts/dogfood/REPORT_TEMPLATE.md` → `ai_docs/features/NNN_dogfood_report_<run>.md` (durable,
+   roadmap-linked finding — stays in `ai_docs/features/`, NOT under `scripts/dogfood/`).
+2. Run the analyzer to fill the **AUTO slots** (run label/model/turns/cost, per-turn table, render
+   list, tool-coverage table, cold tools, token range/peak, cost range, token-growth, recovery summary):
+   ```
+   uv run python scripts/dogfood/analyze.py <data_dir> \
+       --template scripts/dogfood/REPORT_TEMPLATE.md \
+       --report-out ai_docs/features/NNN_dogfood_report_<run>.md
+   ```
+   (Pass `--model <id>` if the run used a non-default model not recorded in the data dir's
+   `integrations.json`.)
+3. Write the **7 HUMAN sections** by hand — the things a log can't give you:
+   - **Verdict** — mechanism works Y/N, overall conclusion.
+   - **Per-render visual eyeball** — open each PNG with Read; correct/wrong, quadrants, did a tuned uniform
+     visibly change anything. (NOT automatable — you have to look.)
+   - **Honesty / visual-blindness** — did the agent CLAIM a visual result it couldn't see, and was it right?
+   - **TODOs**, split: (a) improve the COPILOT/agent, (b) improve the DOGFOODING framework/harness/skill,
+     (c) improve the LIBRARY.
+
+The template's inline comments mark every `{{AUTO:...}}` vs `{{HUMAN:...}}` slot. Treat full reachable-tool
+coverage (§1a) as a run goal — the AUTO coverage table makes a thin run visible.
 
 ## 5. Clean up
 
-Delete the throwaway driver (`scripts/_dogfood_run.py`). Keep the report + the traces/PNGs (copy traces
-somewhere durable if a reviewer needs to verify your log interpretations). The harness + scenarios + this
-skill stay. File the prioritized findings into `todo.md` with concrete triggers.
+No throwaway driver to delete (the one-blocking-call-per-turn shape has none). All run artifacts live under
+`scripts/dogfood/runs/` (gitignored). To free disk between runs:
+`rm -rf scripts/dogfood/runs/{data-*,proj-*,*.json}` (regenerable — the harness recreates `runs/` on the
+next run; the dumps are the stray `*.json`). NOTE: these data dirs hold the LIVE OpenRouter key in their
+`integrations.json`, so purging them is also key hygiene. Keep the report (durable, in `ai_docs/features/`);
+if a reviewer needs your trace, copy the specific `trace_path` somewhere durable before the purge. The
+harness + analyzer + template + scenarios + this skill stay. File prioritized findings into `todo.md` with
+concrete triggers.
 
 ## 6. Improve this skill
 
 This is a LIVING skill. Each run, if you hit a new gotcha or the report format wants a new section, ADD it
 here so the next run is smoother. The maintainer wants the dogfooding itself to get more convenient over
-time — that improvement loop lives in this file's §4 "improve the DOGFOODING" findings flowing back here.
+time — the report's "improve the DOGFOODING framework" TODO bucket (§4 HUMAN section b) is where those
+findings start, and they flow back HERE (the skill) or into `scripts/dogfood/analyze.py` (the analyzer).

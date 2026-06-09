@@ -17,6 +17,9 @@ projects/*/media/
 projects/*/renders/
 projects/*/copilot/archive/
 
+# Dogfood run artifacts (project dirs, data dir, JSON dumps, traces, PNGs) — regenerable junk
+scripts/dogfood/runs/
+
 itch-config
 
 imgui.ini
