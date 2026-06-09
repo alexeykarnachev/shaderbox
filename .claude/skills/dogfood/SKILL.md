@@ -30,9 +30,15 @@ skill is the operating manual — the process + every gotcha already hit, so you
 
 ## 1. Run a scenario
 
-The harness is a hand-driven library. Write a tiny throwaway driver (NOT committed — name it
-`scripts/_dogfood_run.py`, delete it after) that imports `DogfoodHarness` and drives the steps, OR drive
-it inline from a `python -c`. Pattern:
+> ⚠️ **DRIVE INTERACTIVELY — do NOT pre-script the reply sequence.** The scenarios are FREE-FORM GOALS
+> (§ the `User:`/`Human check:` shape), not fixed dialogues. The dogfood tests whether YOU read each
+> copilot reply and ADAPT the next message; a hardcoded `h.send(...)` progression replays a recording and
+> defeats the point. Send ONE turn, read the reply, THEN decide the next message. An interactive
+> blocking-server interface is the planned fix (`todo.md` "dogfood must be driven INTERACTIVELY"); until it
+> lands, drive turn-by-turn from a REPL / one `python -c` per turn — never a baked multi-turn driver.
+
+The harness is a hand-driven library. Drive it inline from a `python -c` (one turn at a time), reading the
+printed events before composing the next `h.send`. Pattern:
 
 ```python
 from scripts.dogfood import DogfoodHarness

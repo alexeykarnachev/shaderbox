@@ -26,8 +26,14 @@ feature; brief points at the superseder).
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
 <!-- As of 2026-06-09. -->
-**025 (ProjectSession extraction) + 026 (dogfood harness) landed + DOGFOODED live on the Pi. The first real LLM dogfood run + a follow-up review swarm proved the pipeline works end-to-end (edit/create → compile → render → correct image, including agent compile-error self-correction) and fixed 2 real bugs (headless GLError, dead default model). Next: the remaining recovery probes (scenario 03 + 06 B/C), the deferred tool-catalogue token win, the 025 `make run` pass, ship.**
+**025 (ProjectSession extraction) + 026 (dogfood harness) landed + DOGFOODED live on the Pi; the pipeline works end-to-end (edit/create → compile → render → correct image, incl. agent compile-error self-correction). This wave COMPRESSED the copilot system prompt ~20% (info-preserving, reviewer-audited, −678 tok/request) + MEASURED tool-catalogue token cost empirically (`scripts/token_probe.py`). Key finding: the native `tools=` block re-bills in FULL every iteration BUT OpenRouter prompt-caching (~99% hit on grok-4.3) amortizes it — so run1's "halve every request" was overstated. Next: the interactive dogfood SERVER (turn-by-turn, blocking — the agreed method fix), then re-run the recovery probes through it; the remaining lazy-tool-catalogue win (lever 2); the 025 `make run` pass; ship.**
 
+- **DONE this wave — copilot system-prompt compression.** `copilot/prompt.py` `_SYSTEM_PROMPT` cut from
+  13530→10606 chars (−678 input tok/request, measured live on grok-4.3) with ZERO information loss — an
+  adversarial reviewer audited ~90 atoms, found one dropped mechanism note, restored it. The prose is now
+  POLICY-only (no longer a verbose re-walk of every tool; the native `tools=` block is the canonical tool
+  copy). All 6 scenarios re-run green (see todo caveat on method). This is lever 1 of the `todo.md`
+  tool-catalogue token item; lever 2 (lazy-load the 11 integration tools) remains.
 - **DONE — 025 ProjectSession extraction (4 green commits, post-impl reviewed).** Headless project + copilot
   CORE extracted from `App` into `project_session.py` (no imgui/glfw, no window/context): paths/nodes/
   app_state/lib-index/stores/integrations + the copilot cluster (`CopilotSession`/`CopilotBackend`/
@@ -41,14 +47,16 @@ feature; brief points at the superseder).
   compile-error self-correction PROVEN (forced a bad call → agent read the error → fixed it → clean). The
   swarm corrected 3 trace-misreadings in the report draft + refuted 7 false-positive findings. Report:
   `026_dogfood_report_run1.md`. Operating manual: the `/dogfood` skill.
-- **FIXED this wave (from the dogfood):** the headless `GLError 1282 glUseProgram(0)` (`Node.invalidate`
+- **FIXED earlier this day (from the dogfood):** the headless `GLError 1282 glUseProgram(0)` (`Node.invalidate`
   suppressed under standalone ctx) + the dead default model (`grok-4-fast` 404 → `grok-4.3`). Verified live.
-  Earlier: `make smoke` self-skips on a no-GPU box.
-- **NEXT (dogfood follow-ups, in `todo.md`):** run the remaining recovery probes (scenario 03 compile-thrash
-  + 06 Parts B/C — old_str-mismatch / bad-node-id / thrash, all un-run); the tool-catalogue token win
-  (catalogue ships TWICE/turn, ~50% of per-turn cost — the deferred lazy-catalogue item, now measured).
+  `make smoke` self-skips on a no-GPU box.
+- **NEXT (method fix first):** build the INTERACTIVE dogfood server (turn-by-turn, blocking — scenarios are
+  free-form goals, not scripted dialogues; `todo.md`), then RE-RUN the recovery probes (scenario 03 thrash +
+  06 A/B/C) through it (this wave ran them via a rigid driver since deleted — PASS is provisional). Then the
+  lazy-tool-catalogue lever 2 (`token_probe.py` measures: 10 shader tools = 2495 tok vs 21 = 3941).
 - **Still pending (separate):** copilot turn-rollback (030) awaits its own `make run` pass; the wrong-node
-  TARGETING prompt fix is filed not started (the dogfood did NOT reproduce it on the simple case).
+  TARGETING prompt fix is filed not started (REPRODUCED 2026-06-09 on name-association: "give the sphere a
+  glow" jumped to a node named Blue Sphere — `todo.md`).
 - **THEN — ship.** `master` stays at `v0.12.1`; the full copilot stack (020-024 + 025 + 030) sits ship-shaped
   on `dev`, unshipped, pending the 025/030 live passes. Awaiting explicit go.
 - **Deferred (each gates a FUTURE round only on a NEW failure class in a DIFFERENT session):** the lazy

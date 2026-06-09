@@ -52,6 +52,12 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   ambiguous, ASK before mutating. Prompt-level, small; separate from the rollback recoverability work
   (020·30). A confirm-gate on non-current-node edits is a possible structural backstop (bigger; the
   maintainer deferred deciding that).
+- REPRODUCED 2026-06-09 (scenario 02, on the compressed prompt): a BARE demonstrative ("make this one a
+  circle", current=Red Quad) resolved CORRECTLY to current; but a name-adjacent phrase ("give the sphere
+  a glow", current=Red Quad, a node named "Blue Sphere" exists) made the agent silently `switch_node` to
+  Blue Sphere + edit it — case (c), the "clearest bug" the scenario flags. So the gap is specifically
+  name-association, not bare pronouns. The compression did NOT touch this (no targeting rule existed to
+  preserve); the fix above is still the honest one.
 
 ## [DEFERRAL] copilot broken-compile circuit-breaker (edit-applies-but-compiles-with-errors thrash)
 - **Trigger:** a trace shows a turn approaching `max_iterations` on broken-compile EDIT thrash (an edit that
@@ -218,18 +224,27 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   feature 010 (Out of scope); the share UI has no offset control today. The copilot `render_video`
   (020·18) inherits this — it too renders only t=0..seconds.
 
-## [DEFERRAL] copilot context bloat: tool catalogue sent TWICE + all-eager (no lazy load)
-- **Trigger:** FIRED + now MEASURED. The 2026-06-09 dogfood run (`026_dogfood_report_run1.md`) measured a
-  simple "make it red" request at 8055 input tokens, of which ~3550 is the system-prompt prose (which
-  re-describes every tool) and ~1950 is the native `tools=` block (the SAME 21 tools again) — ~5500 tok of
-  DUPLICATED tool description per request, 15/21 tools (telegram/youtube/publish) irrelevant to a shader
-  turn. A trivial one-line edit cost $0.021. Build the fix when optimizing copilot cost/latency.
-- TWO levers (independent): (1) STOP duplicating the tool descriptions in the system-prompt prose — the
-  native `tools=` block already carries them; the prose should be a short "you can edit/create/render/
-  publish" overview (`copilot/prompt.py`), not a re-listing. (2) Lazily load the telegram/youtube/publish
-  tools (they already carry `eager`/`category`) so a shader turn ships ~6 tools not 21 (`11 §4`'s
-  `search_tools`/`list_tools` + `grow_specs_from_payload`, itself deferred — `16 ## Out of scope`).
-  Together ~halve per-turn input tokens. Spec: `20_ui_ux_polish.md` D5 + `026_dogfood_report_run1.md §5`.
+## [DEFERRAL] copilot context bloat: tool catalogue all-eager (no lazy load) — lever 2 of 2
+- **Trigger:** when optimizing copilot cost/latency again — the remaining win is lazy-loading. Re-measure
+  with `scripts/token_probe.py` before AND after (it reads real specs + hits OpenRouter; the measured
+  numbers, not chars/4, are what to trust).
+- MEASURED 2026-06-09 (`scripts/token_probe.py`, grok-4.3): a system+user request is ~7346 input tok —
+  +3271 system prompt (now COMPRESSED to +2725) + 3941 the native 21-tool `tools=` block. Per-tool marginal
+  ~131 tok, of which the DESCRIPTION (~133/tool) dominates over name (~76 incl. block overhead) + schema
+  (~47). **The native `tools=` block is re-sent + re-billed in FULL on EVERY iteration** (confirmed:
+  step-1 and step-2 deltas both 3941) — `agent.py` re-passes `eager_specs()` each `client.stream`.
+- **CACHE NUANCE (the run1 report overstated the win):** OpenRouter prompt-caching IS active on grok-4.3 —
+  a repeated prefix reports ~99% `cached_tokens` (~4x cheaper, NOT free), so the per-iteration re-send is
+  amortized WITHIN a turn; full price is paid on the first iteration + after the ~5min cache TTL lapses.
+  So lazy-load saves real money but LESS than "halve every request". Don't touch the per-iteration re-send
+  (Q3 amortizes it; removing it risks tool-calling).
+- DONE this wave (lever 1): the system prompt was compressed ~20% (13530->10606 chars, -678 tok/request,
+  info-preserving — reviewer-audited) — it is now POLICY-only, no longer a verbose re-walk of every tool.
+- REMAINING (lever 2): lazily load the telegram/youtube/publish tools (they carry `eager`/`category`;
+  `registry.specs_for(names)` + `eager_specs()` filter already exist) so a shader turn ships ~10 tools not
+  21 (measured: 2495 vs 3941 tok). A compact plaintext menu of the long tail costs ~1714 tok and a 2-stage
+  `load_tools(names)` flow was verified to work on grok-4.3. Scaffold: `11 §4` search_tools/list_tools +
+  `grow_specs_from_payload` (`16 ## Out of scope`). Spec: `20_ui_ux_polish.md` D5 + `026_dogfood_report_run1.md §5`.
 
 ## [DEFERRAL] copilot agent-level error recovery — partially proven, the THRASH + edit-mismatch classes untested
 - **Trigger:** before claiming the copilot is robust to its own mistakes / shipping the copilot — run the
@@ -243,6 +258,23 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   (d) malformed-args recovery. Run those live + inspect the `edit_giveup`/`max_iterations`/
   `consecutive_failed_edits` trace events (`agent.py`). The thrash case is the one tied to the separate
   broken-compile circuit-breaker deferral above.
+
+## [DEFERRAL] dogfood must be driven INTERACTIVELY, not by a pre-scripted reply sequence
+- **Trigger:** the NEXT dogfood run (before writing any driver) — and when building the interactive
+  dogfood server (the agreed next task). Until that server exists, drive turns one at a time, reading
+  each copilot reply before deciding the next message.
+- The scenarios in `ai_docs/scenarios/` are FREE-FORM GOALS + a `Human check:`, NOT fixed dialogues. A
+  pre-baked `h.send(...)` sequence defeats the whole point: the dogfood tests whether the agent (Claude)
+  reads what the copilot actually did and ADAPTS the next message — a hardcoded progression replays a
+  recording instead. (Hit 2026-06-09: a `dogfood_scenarios.py` rigid driver was written, then deleted —
+  the `/dogfood` skill §1 still says "write a throwaway driver", which is what misled it.)
+- PLANNED FIX (next task): a blocking dogfood SERVER — a foreground script Claude starts ONCE that listens
+  on a file/pipe, runs one copilot turn per message, and writes the reply back, blocking until ready. Goal:
+  Claude sends a line + blocks for the answer (no background processes to juggle, no per-turn process
+  respawn that would lose the worker/EGL/project state). Interface TBD (file-watch + blocking read is the
+  leading shape). When it lands: rewrite `/dogfood` skill §1 to mandate it + forbid pre-scripted drivers.
+- NOTE: the 2026-06-09 recovery probes (scenario 06 A/B/C, scenario 03) WERE run, but via the deleted rigid
+  driver — treat their PASS as provisional; re-run them through the interactive server to confirm.
 
 ## [DEFERRAL] dogfood harness can't drive conversation-restart / gate-decline scenarios
 - **Trigger:** when a dogfood scenario needs to test conversation persistence across a reload, OR the

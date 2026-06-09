@@ -364,3 +364,6 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
     mistypes the wrapped method.
   - `moderngl.create_standalone_context(backend="egl")` — the stub types `**kwargs` as a single
     `dict`, so a keyword arg trips `arg-type` (`scripts/dogfood.py`, the headless EGL context).
+  - `openai`'s `chat.completions.create(messages=, tools=)` rejects plain dict literals (its params
+    are TypedDicts; production goes through `openrouter.py::_to_wire`). `scripts/token_probe.py` (a
+    throwaway token-measurement probe) builds wire dicts by hand -> `arg-type`/`list-item`.
