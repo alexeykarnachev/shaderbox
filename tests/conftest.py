@@ -43,7 +43,9 @@ def app(tmp_path: Path) -> Iterator[Any]:
     # No main loop in a test: run every marshalled bridge op INLINE (already on the GL thread).
     a.copilot.bridge.run_on_main = lambda fn, timeout=None, defer=False: fn()  # type: ignore[method-assign]
     a.set_current_node_id(_CURRENT_TEMPLATE_ID)
-    a.ui_nodes[_CURRENT_TEMPLATE_ID].node.render()  # warm the GL program (matches the live loop)
+    a.ui_nodes[
+        _CURRENT_TEMPLATE_ID
+    ].node.render()  # warm the GL program (matches the live loop)
     yield a
     with contextlib.suppress(Exception):
         a.release()

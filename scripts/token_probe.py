@@ -84,7 +84,10 @@ class Probe:
             "model": self.model,
             "messages": messages,
             "max_completion_tokens": 1,
-            "extra_body": {"reasoning": {"effort": "minimal"}, "usage": {"include": True}},
+            "extra_body": {
+                "reasoning": {"effort": "minimal"},
+                "usage": {"include": True},
+            },
         }
         if tools:
             kwargs["tools"] = tools
@@ -135,7 +138,10 @@ def q1_anatomy(probe: Probe, registry: Any) -> None:
     # Per-tool marginal: tools block with N vs N-1 (drop the largest tool).
     # Cheaper: measure 1 tool vs 0, and all vs all-but-one, to bracket per-tool cost.
     one, _ = probe.prompt_tokens([_USER], tools=wire_all[:1])
-    _line("native tools=[1 tool] (no sys)", f"{one}  (+{one - base} for 1 tool incl. block overhead)")
+    _line(
+        "native tools=[1 tool] (no sys)",
+        f"{one}  (+{one - base} for 1 tool incl. block overhead)",
+    )
 
     half = wire_all[: len(wire_all) // 2]
     half_tok, _ = probe.prompt_tokens([_USER], tools=half)
@@ -149,19 +155,42 @@ def q1_anatomy(probe: Probe, registry: Any) -> None:
     # Split one tool into name-only / +desc / +schema to see where the tool's tokens live.
     sample = specs[0]
     empty_schema: dict[str, Any] = {"type": "object", "properties": {}}
-    name_only = [{"type": "function", "function": {"name": sample.name, "description": "", "parameters": empty_schema}}]
-    name_desc = [{"type": "function", "function": {"name": sample.name, "description": sample.description, "parameters": empty_schema}}]
+    name_only = [
+        {
+            "type": "function",
+            "function": {
+                "name": sample.name,
+                "description": "",
+                "parameters": empty_schema,
+            },
+        }
+    ]
+    name_desc = [
+        {
+            "type": "function",
+            "function": {
+                "name": sample.name,
+                "description": sample.description,
+                "parameters": empty_schema,
+            },
+        }
+    ]
     name_full = [_tool_to_wire(sample)]
     n0, _ = probe.prompt_tokens([_USER], tools=name_only)
     n1, _ = probe.prompt_tokens([_USER], tools=name_desc)
     n2, _ = probe.prompt_tokens([_USER], tools=name_full)
     print(f"\n  anatomy of ONE tool ('{sample.name}'):")
-    _line("name only (empty desc, empty schema)", f"{n0}  (+{n0 - base} over baseline = block+name)")
+    _line(
+        "name only (empty desc, empty schema)",
+        f"{n0}  (+{n0 - base} over baseline = block+name)",
+    )
     _line("+ description", f"{n1}  (+{n1 - n0} for the description)")
     _line("+ full JSON schema (parameters)", f"{n2}  (+{n2 - n1} for the schema)")
     desc_chars = len(sample.description)
     schema_chars = len(json.dumps(sample.parameters))
-    _line("   (description chars / json-schema chars)", f"{desc_chars} / {schema_chars}")
+    _line(
+        "   (description chars / json-schema chars)", f"{desc_chars} / {schema_chars}"
+    )
 
 
 def q2_resent_every_step(probe: Probe, registry: Any) -> None:
@@ -208,9 +237,13 @@ def q2_resent_every_step(probe: Probe, registry: Any) -> None:
     _line("tools-block delta on step 1", d1)
     _line("tools-block delta on step 2", d2)
     if abs(d1 - d2) <= max(3, int(0.05 * d1)):
-        print("  => VERDICT: the tools block is re-billed in FULL on every step (deltas match).")
+        print(
+            "  => VERDICT: the tools block is re-billed in FULL on every step (deltas match)."
+        )
     else:
-        print(f"  => deltas differ ({d1} vs {d2}) -- inspect (caching or accounting nuance).")
+        print(
+            f"  => deltas differ ({d1} vs {d2}) -- inspect (caching or accounting nuance)."
+        )
 
 
 def q3_caching(probe: Probe, registry: Any) -> None:
@@ -225,9 +258,13 @@ def q3_caching(probe: Probe, registry: Any) -> None:
     _line("call 2: prompt_tokens / cached_tokens", f"{p2} / {c2}")
     if c2 > 0:
         print(f"  => caching IS active: {c2}/{p2} tokens hit cache on the repeat.")
-        print("     (NOTE: cached input is cheaper but usually NOT free -- still billed, at a discount.)")
+        print(
+            "     (NOTE: cached input is cheaper but usually NOT free -- still billed, at a discount.)"
+        )
     else:
-        print("  => NO cached_tokens reported for this model/route: the full prefix is billed every call.")
+        print(
+            "  => NO cached_tokens reported for this model/route: the full prefix is billed every call."
+        )
 
 
 def q4_compact_menu(probe: Probe, registry: Any) -> None:
@@ -242,28 +279,55 @@ def q4_compact_menu(probe: Probe, registry: Any) -> None:
 
     # A compact plaintext menu: one line per tool, name + description, as a system message.
     # This is the "agent sees a cheap menu, then asks for the few it needs" idea.
-    menu_lines = [f"- {s.name}: {s.description.splitlines()[0] if s.description else ''}" for s in specs]
+    menu_lines = [
+        f"- {s.name}: {s.description.splitlines()[0] if s.description else ''}"
+        for s in specs
+    ]
     menu = "AVAILABLE TOOLS (ask to load the ones you need):\n" + "\n".join(menu_lines)
     menu_msgs = [_SYS, {"role": "system", "content": menu}, _USER]
     with_menu, _ = probe.prompt_tokens(menu_msgs)
-    _line("compact plaintext menu (all 21, name+1-line desc)", f"+{with_menu - base} tok")
+    _line(
+        "compact plaintext menu (all 21, name+1-line desc)", f"+{with_menu - base} tok"
+    )
 
     # The eager-core-only native block (shader tools only): what a typical edit turn would
     # actually need if the long tail loaded lazily.
-    shader_specs = [s for s in specs if s.name in {
-        "read_shader", "edit_shader", "replace_lines", "insert_after",
-        "set_uniform", "create_node", "grep", "read_lib", "delete_node", "switch_node",
-    }]
+    shader_specs = [
+        s
+        for s in specs
+        if s.name
+        in {
+            "read_shader",
+            "edit_shader",
+            "replace_lines",
+            "insert_after",
+            "set_uniform",
+            "create_node",
+            "grep",
+            "read_lib",
+            "delete_node",
+            "switch_node",
+        }
+    ]
     shader_wire = [_tool_to_wire(s) for s in shader_specs]
     with_shader, _ = probe.prompt_tokens([_SYS, _USER], tools=shader_wire)
-    _line(f"native tools= block (shader-core only, {len(shader_wire)})", f"+{with_shader - base} tok")
+    _line(
+        f"native tools= block (shader-core only, {len(shader_wire)})",
+        f"+{with_shader - base} tok",
+    )
 
     print()
     print("  Interpretation:")
-    print(f"    full native (21):        +{full_native - base} tok / request, EVERY step")
+    print(
+        f"    full native (21):        +{full_native - base} tok / request, EVERY step"
+    )
     print(f"    shader-core native (10): +{with_shader - base} tok / request")
-    print(f"    compact menu (21):       +{with_menu - base} tok (a cheap always-on index)")
-    print("    => lazy design: ship shader-core natively + a 1-line menu of the long tail;")
+    print(
+        f"    compact menu (21):       +{with_menu - base} tok (a cheap always-on index)"
+    )
+    print(
+        "    => lazy design: ship shader-core natively + a 1-line menu of the long tail;"
+    )
     print("       attach a long-tail tool natively only once the agent asks for it.")
 
 
@@ -272,7 +336,10 @@ def q4b_two_stage_works(probe: Probe, registry: Any) -> None:
     # Give the model ONLY a meta-tool `load_tools(names)` + a plaintext menu, ask it to
     # publish to telegram, and check it picks the right tools to load.
     specs: list[LLMToolSpec] = registry.eager_specs()
-    menu_lines = [f"- {s.name}: {(s.description.splitlines()[0] if s.description else '')[:90]}" for s in specs]
+    menu_lines = [
+        f"- {s.name}: {(s.description.splitlines()[0] if s.description else '')[:90]}"
+        for s in specs
+    ]
     menu = (
         "You can load tools on demand. Below is the MENU of available tools. To use any, "
         "first call load_tools(names=[...]) with the ones you need; they then become callable.\n\n"
@@ -292,7 +359,10 @@ def q4b_two_stage_works(probe: Probe, registry: Any) -> None:
     }
     msgs = [
         {"role": "system", "content": menu},
-        {"role": "user", "content": "publish the current shader to my telegram sticker pack"},
+        {
+            "role": "user",
+            "content": "publish the current shader to my telegram sticker pack",
+        },
     ]
     resp = probe.client.chat.completions.create(
         model=probe.model,
@@ -316,7 +386,9 @@ def q4b_two_stage_works(probe: Probe, registry: Any) -> None:
         picked = args.get("names", [])
         good = any("telegram" in p or "publish" in p for p in picked)
         print(f"\n  => picked {picked}")
-        print(f"  => {'CORRECT' if good else 'MISSED'}: it {'did' if good else 'did NOT'} request a publish/telegram tool.")
+        print(
+            f"  => {'CORRECT' if good else 'MISSED'}: it {'did' if good else 'did NOT'} request a publish/telegram tool."
+        )
     except (json.JSONDecodeError, AttributeError) as exc:
         print(f"  (couldn't parse names: {exc})")
 

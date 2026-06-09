@@ -43,7 +43,9 @@ def test_restore_checkpoint_reverts_an_edited_node(app: Any) -> None:
 
     assert app.ui_nodes[node_id].ui_state.ui_name in result.restored_nodes
     assert app.ui_nodes[node_id].node.source.text == original
-    assert app.copilot.checkpoints.get("turn_x") is None  # dropped after a successful revert
+    assert (
+        app.copilot.checkpoints.get("turn_x") is None
+    )  # dropped after a successful revert
 
 
 def test_restore_checkpoint_unknown_turn_is_noop(app: Any) -> None:
