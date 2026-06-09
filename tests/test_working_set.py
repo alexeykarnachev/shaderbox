@@ -8,12 +8,9 @@ Three layers:
   gone-node skip, lib-consumer invalidation) — against a real headless App with the bridge inlined.
 """
 
-import contextlib
 import threading
 from collections.abc import Iterator
 from typing import Any
-
-import pytest
 
 from shaderbox.copilot.agent import run_turn
 from shaderbox.copilot.capabilities import (
@@ -243,26 +240,6 @@ def test_batch_begin_called_once_per_batch() -> None:
 
 
 # ---- the App-side machinery (real headless App, bridge inlined) ----
-
-
-@pytest.fixture
-def app() -> Iterator[Any]:
-    glfw = pytest.importorskip("glfw")
-    if not glfw.init():
-        pytest.skip("no GL")
-    glfw.window_hint(glfw.VISIBLE, glfw.FALSE)
-    from shaderbox.app import App
-
-    a = App(project_dir=None)
-    a.copilot.bridge.run_on_main = lambda fn, timeout=None, defer=False: fn()  # type: ignore[method-assign]
-    # Warm the current node's GL program the way the live render loop does, so an edit's
-    # release_program -> invalidate -> glUseProgram(0) runs against a bound program (headless,
-    # outside a frame, an un-warmed program makes glUseProgram(0) raise GL_INVALID_OPERATION).
-    if a.current_node_id:
-        a.ui_nodes[a.current_node_id].node.render()
-    yield a
-    with contextlib.suppress(Exception):
-        a.release()
 
 
 def test_read_adds_to_working_set_and_rebuild_shows_live_source(app: Any) -> None:

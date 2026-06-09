@@ -5,12 +5,8 @@ unit-tested directly; the GL-marshalled read/grep/create paths run against a rea
 bridge patched to execute inline (the worker->main marshalling is what a real turn drives via the loop).
 """
 
-import contextlib
-from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
-
-import pytest
 
 from shaderbox.copilot.capabilities import EditResult
 from shaderbox.templates_descriptions import TemplateDescriptionsStore
@@ -40,23 +36,6 @@ def test_descriptions_store_corrupt_is_empty(tmp_path: Path, monkeypatch: Any) -
 
 
 # ---- the GL-marshalled paths (real headless App, bridge inlined) ----
-
-
-@pytest.fixture
-def app() -> Iterator[Any]:
-    glfw = pytest.importorskip("glfw")
-    if not glfw.init():
-        pytest.skip("no GL")
-    glfw.window_hint(glfw.VISIBLE, glfw.FALSE)
-    from shaderbox.app import App
-
-    a = App(project_dir=None)
-    # The bridge latches _shutdown during App-init teardown + needs the main loop to drain ops; in a
-    # test there's no loop, so run every marshalled op INLINE (we're already on the GL thread).
-    a.copilot.bridge.run_on_main = lambda fn, timeout=None, defer=False: fn()  # type: ignore[method-assign]
-    yield a
-    with contextlib.suppress(Exception):
-        a.release()
 
 
 def _text_handle(app: Any) -> str:

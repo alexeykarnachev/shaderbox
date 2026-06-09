@@ -53,17 +53,6 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   (020·30). A confirm-gate on non-current-node edits is a possible structural backstop (bigger; the
   maintainer deferred deciding that).
 
-## [DEFERRAL] test_template_library create_node tests leave orphan nodes in projects/dev
-- **Trigger:** `git status` shows untracked `projects/dev/nodes/<uuid>/` dirs after running the test
-  suite, OR next time you touch `tests/test_template_library.py`'s `app` fixture / its `create_node`
-  tests.
-- `test_create_from_template_instantiates_it` + `test_create_empty_template_uses_default_starter` call
-  the real `App._copilot_create_node`, which `save_ui_node`s to disk. With `project_dir=None` the default
-  project resolves to the maintainer's active project (`projects/dev` on the dev box), so each run leaves
-  2 orphan node dirs the sandbox-sync rule then has to `git clean`. Honest fix: the `app` fixture should
-  point at a `tmp_path` project (or the create_node tests should delete what they create in teardown), so
-  the suite never writes into the tracked sandbox. Pre-existing (feature 020·22); surfaced 020·29.
-
 ## [DEFERRAL] copilot broken-compile circuit-breaker (edit-applies-but-compiles-with-errors thrash)
 - **Trigger:** a trace shows a turn approaching `max_iterations` on broken-compile EDIT thrash (an edit that
   APPLIES but compiles WITH errors, repeated), OR before anyone raises `max_iterations` to absorb such a turn.

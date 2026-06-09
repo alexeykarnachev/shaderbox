@@ -1,5 +1,6 @@
-"""Headless smoke test — runs ~200 frames of update_and_draw against projects/dev/
-in an invisible glfw window and asserts no exception + a few invariants.
+"""Headless smoke test — runs ~200 frames of update_and_draw against a THROWAWAY tmp project
+(seeded with the shipped template nodes; never the tracked projects/dev sandbox) in an invisible
+glfw window and asserts no exception + a few invariants.
 
 Catches import errors, callback dispatch failures, popup state-machine crashes,
 released-texture binding errors. Doesn't catch visual bugs.
@@ -7,23 +8,38 @@ released-texture binding errors. Doesn't catch visual bugs.
 Usage: `uv run python scripts/smoke.py` (exit 0 on success, non-zero on failure).
 """
 
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 import glfw
 from imgui_bundle import imgui
 from loguru import logger
-from platformdirs import user_data_dir
 
 from shaderbox.app import App, PopupState
 from shaderbox.commands import ActiveRegion, NodeTab
+from shaderbox.constants import RESOURCES_DIR
 from shaderbox.logging_setup import configure_logging
 from shaderbox.ui import update_and_draw
 
-REPO_ROOT: Path = Path(__file__).resolve().parent.parent
-DEV_PROJECT_DIR: Path = REPO_ROOT / "projects" / "dev"
-PROJECT_DIR_POINTER: Path = Path(user_data_dir("shaderbox")) / "project_dir"
 N_FRAMES: int = 200
+_TEMPLATE_IDS: list[str] = [
+    "53724dbd-8efb-4c09-8c7d-28d626a066e7",  # UV Mango
+    "73ea2431-13f6-41e4-b923-04d846b678b0",  # Media Input
+    "f90f5ff9-29c6-4bcf-aee7-090f20542353",  # Text Rendering
+]
+
+
+def _seed_tmp_project(root: Path) -> Path:
+    # A throwaway project seeded with the shipped template nodes — smoke must never read or
+    # mutate the tracked projects/dev sandbox.
+    project = root / "project"
+    nodes = project / "nodes"
+    nodes.mkdir(parents=True)
+    for tid in _TEMPLATE_IDS:
+        shutil.copytree(RESOURCES_DIR / "node_templates" / tid, nodes / tid)
+    return project
 
 
 def _check_invariants(app: App, frame_idx: int) -> None:
@@ -50,41 +66,34 @@ def _check_invariants(app: App, frame_idx: int) -> None:
 
 def main() -> int:
     configure_logging()
-    if not DEV_PROJECT_DIR.exists():
-        logger.error(f"Fixture project not found: {DEV_PROJECT_DIR}")
-        return 1
-
-    saved_pointer: str | None = (
-        PROJECT_DIR_POINTER.read_text() if PROJECT_DIR_POINTER.exists() else None
-    )
-
     glfw.init()
 
-    try:
-        app = App(project_dir=DEV_PROJECT_DIR, headless=True)
-        # Feature 019: nav_enable_keyboard is set in __init__, before any frame —
-        # check it here (get_io() reads are frame-context-sensitive mid-loop).
-        assert (
-            imgui.get_io().config_flags & imgui.ConfigFlags_.nav_enable_keyboard
-        ), "nav_enable_keyboard not set"
-        for frame_idx in range(N_FRAMES):
-            update_and_draw(app)
-            _check_invariants(app, frame_idx)
-            # Exercise the region-cycle + tab-jump wiring (a callback throw surfaces
-            # via the except below); nav *behavior* is un-headless-able.
-            if frame_idx == 50:
-                app.cycle_region()
-            if frame_idx == 60:
-                app.focus_node_tab(NodeTab.RENDER)
-        app.release()
-        logger.info(f"smoke: OK ({N_FRAMES} frames, {len(app.ui_nodes)} nodes)")
-        return 0
-    except Exception as e:
-        logger.exception(f"smoke: FAIL — {e}")
-        return 1
-    finally:
-        if saved_pointer is not None:
-            PROJECT_DIR_POINTER.write_text(saved_pointer)
+    with tempfile.TemporaryDirectory(prefix="shaderbox-smoke-") as tmp:
+        project = _seed_tmp_project(Path(tmp))
+        try:
+            app = App(project_dir=project, headless=True)
+            if app.ui_nodes:
+                app.set_current_node_id(next(iter(app.ui_nodes)))
+            # Feature 019: nav_enable_keyboard is set in __init__, before any frame —
+            # check it here (get_io() reads are frame-context-sensitive mid-loop).
+            assert (
+                imgui.get_io().config_flags & imgui.ConfigFlags_.nav_enable_keyboard
+            ), "nav_enable_keyboard not set"
+            for frame_idx in range(N_FRAMES):
+                update_and_draw(app)
+                _check_invariants(app, frame_idx)
+                # Exercise the region-cycle + tab-jump wiring (a callback throw surfaces
+                # via the except below); nav *behavior* is un-headless-able.
+                if frame_idx == 50:
+                    app.cycle_region()
+                if frame_idx == 60:
+                    app.focus_node_tab(NodeTab.RENDER)
+            app.release()
+            logger.info(f"smoke: OK ({N_FRAMES} frames, {len(app.ui_nodes)} nodes)")
+            return 0
+        except Exception as e:
+            logger.exception(f"smoke: FAIL — {e}")
+            return 1
 
 
 if __name__ == "__main__":
