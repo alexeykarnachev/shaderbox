@@ -192,7 +192,9 @@ class DogfoodHarness:
                     print(f"    [gate auto-approved: {gate.text!r}]")
                     cop.answer_gate(True)
                     continue
-                print(f"\n??? GATE (answer with h.approve() / h.decline()): {gate.text}")
+                print(
+                    f"\n??? GATE (answer with h.approve() / h.decline()): {gate.text}"
+                )
                 return
             if not cop.state.in_flight:
                 self._print_turn_footer()
@@ -222,7 +224,9 @@ class DogfoodHarness:
         out: dict[str, RenderResult] = {}
 
         def _do() -> None:
-            out["result"] = self.session.copilot_backend.render_image(target, size, size)
+            out["result"] = self.session.copilot_backend.render_image(
+                target, size, size
+            )
 
         worker = threading.Thread(target=_do, name="dogfood-render", daemon=True)
         worker.start()
