@@ -1,4 +1,5 @@
 import base64
+import contextlib
 import json
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
@@ -199,9 +200,12 @@ class Node:
         self.program = None
         self.vbo = None
         self.vao = None
-        # Bind 0 — a deleted program left GL-current crashes the imgui
-        # renderer's end-of-frame restore (GLError 1281).
-        glUseProgram(0)
+        # Bind 0 — a deleted program left GL-current crashes the imgui renderer's
+        # end-of-frame restore (GLError 1281). Suppressed: under a standalone (headless)
+        # context this same call raises GLError 1282 (invalid operation) — there's no imgui
+        # restore to protect there, so the bind is pointless and only its exception matters.
+        with contextlib.suppress(Exception):
+            glUseProgram(0)
 
     def release(self) -> None:
         self.release_program()

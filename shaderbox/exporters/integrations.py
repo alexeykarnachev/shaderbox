@@ -54,7 +54,7 @@ class YouTubeIntegration(BaseModel):
 
 class CopilotIntegration(BaseModel):
     openrouter_key: str = ""
-    model: str = "x-ai/grok-4-fast"  # OpenRouter "provider/model-id"
+    model: str = "x-ai/grok-4.3"  # OpenRouter "provider/model-id"
 
     model_config = {"extra": "forbid"}
 

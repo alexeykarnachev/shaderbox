@@ -32,7 +32,11 @@ per-turn context + token breakdown — the other half of the dogfood (where are 
 | `01_visual_blindness.md` | copilot claims a visual result it can't see | machine-readable render feedback |
 | `02_wrong_node_targeting.md` | "this"/"the X" resolves to the wrong node | demonstrative → current-node |
 | `03_compile_thrash.md` | applies-but-broken edits loop to max_iterations | broken-compile circuit-breaker |
-| `04_circle_square_morph.md` | multi-file read + aggregate (the maintainer's example) | — (core capability) |
+| `04_circle_square_morph.md` | multi-file read + aggregate (content load-bearing) | — (core capability) |
 | `05_grep_readlib_uniforms.md` | grep→read_lib two-step + set_uniform edge cases | — (core capability) |
+| `06_agent_error_recovery.md` | does the agent READ a failure + self-correct, or loop? | agent-level recovery (the biggest gap) |
+
+**Run priority:** 06 (agent-level recovery) + 03 (compile-thrash) are the highest-value UNRUN probes — the
+2026-06-09 run only exercised happy paths. Run those next.
 
 Add scenarios freely — the format is loose on purpose.

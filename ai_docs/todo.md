@@ -231,32 +231,32 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   `search_tools`/`list_tools` + `grow_specs_from_payload`, itself deferred — `16 ## Out of scope`).
   Together ~halve per-turn input tokens. Spec: `20_ui_ux_polish.md` D5 + `026_dogfood_report_run1.md §5`.
 
-## [DEFERRAL] copilot default model `x-ai/grok-4-fast` is DEPRECATED (404)
-- **Trigger:** FIRED — the 2026-06-09 dogfood run got a 404 "Grok 4 Fast is deprecated" on the FIRST
-  request; the run only worked with an explicit `OPENROUTER_MODEL=x-ai/grok-4.3` override. Fix before any
-  copilot ship or the next dogfood run.
-- The default model lives in `CopilotIntegration.model` (`exporters/integrations.py`) = `"x-ai/grok-4-fast"`,
-  and the same id is referenced in `copilot/config.py` / the prompt / `roadmap.md` row 020 as the
-  tool-call-verified default. Bump to a current cheap tool-call-capable model (`x-ai/grok-4.3` worked,
-  ~$1.25/$2.50 per Mtok) — and grep for every hardcoded `grok-4-fast` so none is missed. Re-verify
-  tool-call compatibility with the new id (the agent rejects tool-incompatible models).
+## [DEFERRAL] copilot agent-level error recovery is UNPROVEN (the dogfood happy-path gap)
+- **Trigger:** before the next dogfood run, OR before claiming the copilot "recovers from its own
+  mistakes" / shipping the copilot — RUN scenario 03 (compile-thrash) live first, it was authored but
+  never run.
+- The 2026-06-09 dogfood (`026_dogfood_report_run1.md`) ran only happy paths: the ONLY tool failures the
+  agent ever saw were the transient GL quirk (now fixed — recovered by a blind byte-identical retry, NOT
+  comprehension) and one designed `u_time` reject. The agent NEVER read a `0:N: error` compile message and
+  fixed broken GLSL, recovered from an `old_str` mismatch, re-resolved a bad node id, or survived malformed
+  args. Scenario 03 (`ai_docs/scenarios/03_compile_thrash.md`) — built to force applies-but-broken edits and
+  exercise the `consecutive_failed_edits`/`consecutive_compile_failures` circuit-breaker — was never run +
+  was silently absent from the report's coverage table. Honest next step: run 03 live, ADD an
+  agent-level-failure scenario (bad `old_str`, typo'd node id, applies-but-compiles-with-errors), and watch
+  whether the agent reads the error + converges or loops to `max_iterations` (inspect the
+  `edit_giveup`/`max_iterations` trace events the agent already emits — `agent.py`). This is the single most
+  important copilot behavior for real-user robustness, and it's the one thing the dogfood did not test.
 
-## [DEFERRAL] copilot headless GLError 1282 glUseProgram(0) on bridge-marshalled create/edit
-- **Trigger:** FIRED in the 2026-06-09 dogfood run — `create_node`/`replace_lines` spuradically threw
-  `OpenGL.error.GLError(err=1282, invalid operation, baseOperation=glUseProgram, cArguments=(0,))` under the
-  standalone EGL context. The copilot RECOVERS (the tool returns `error: … failed`, the agent retries +
-  succeeds), so it's not user-fatal, but it wastes a tool call + tokens + $ and a worse model might not
-  recover. Pick it up when hardening the headless path (the dogfood harness / feature 026) or when a
-  maintainer sees `error: create_node failed` / `replace_lines failed` in a real trace.
-- `glUseProgram(0)` (unbind) throws `invalid operation` under a standalone context — the SAME headless
-  GL-quirk already suppressed for node teardown (`conventions.md ## Known quirks`, `test_render_for.py`'s
-  Exception-suppressed `node.release()`). Here it surfaces in the create/edit persist→render path
-  (`copilot/backend.py::_copilot_persist_shader` → `node.render()` → somewhere a `glUseProgram(0)`). A
-  minimal repro (5 nodes compile+render in a loop) does NOT reproduce it — it's tied to the
-  bridge-marshalled create/render interleaving + the render_image-between-turns timing. Honest fix: guard/
-  suppress the `glUseProgram(0)` in the persist/render path under a standalone context (mirror the teardown
-  suppression), OR ensure the harness's render never interleaves with an in-flight worker compile. Source:
-  `026_dogfood_report_run1.md §GLError`. NOT reproduced in the live App (glfw context) — headless-specific.
+## [DEFERRAL] dogfood harness can't drive conversation-restart / gate-decline scenarios
+- **Trigger:** when a dogfood scenario needs to test conversation persistence across a reload, OR the
+  gate-decline path (the copilot's reaction to a declined render/delete).
+- `DogfoodHarness.create()` always mkdtemp's a fresh project and `ProjectSession.load` does NOT load the
+  conversation (that wiring — `reset_conversation` + `ConversationStore.load_and_migrate` +
+  `load_conversation` — is App-only, `app.py`). So a few-turns-then-reload scenario can't be driven through
+  the current harness API. The invariant IS unit-tested (`test_conversation_persistence.py`), so this is a
+  harness-coverage gap, not a bug. Optional fix: add `h.reload()` (re-run the App conversation-load
+  sequence) + a persistence scenario; and a gate-decline scenario (`h.decline()` already exists, but none
+  of the 5 scenarios exercise it).
 
 ## [DEFERRAL] true in-line drag-selection of WRAPPED copilot chat prose
 - **Trigger:** the per-message Copy button (020·23 D7) proves insufficient — a user wants to select a

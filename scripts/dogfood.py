@@ -15,8 +15,8 @@ ENV (load-bearing, set at module top BEFORE the shaderbox imports below): `SHADE
 redirects the data dir to an isolated tmp (so lib edits + the written `integrations.json`
 never touch the real library / creds — `paths.app_data_dir()` reads it at import time); the
 MESA overrides give the V3D driver `#version 460` (read at context creation). The OpenRouter
-key comes from the `OPENROUTER_API_KEY` env var (export it before running); the model from
-`OPENROUTER_MODEL` (default grok-4-fast).
+key comes from the `OPENROUTER_API_KEY` env var (export it before running). The model defaults to
+`CopilotIntegration.model` (the in-tree default); set `OPENROUTER_MODEL` only to override it.
 
 THREADING (load-bearing): `CopilotSession` spawns a worker thread for the turn; the worker
 marshals GL ops back to the context-owning (main) thread via `bridge.run_on_main`, which
@@ -55,14 +55,17 @@ os.environ.setdefault("MESA_GL_VERSION_OVERRIDE", "4.6")
 os.environ.setdefault("MESA_GLSL_VERSION_OVERRIDE", "460")
 
 # Write the OpenRouter creds into the isolated integrations.json (the client reads it live).
+# Only override the model when OPENROUTER_MODEL is set — otherwise let CopilotIntegration's
+# own default apply (single source of truth; no duplicated model string to go stale).
 _INTEGRATIONS = _DATA_DIR / "integrations.json"
 if not _INTEGRATIONS.exists():
-    _KEY = os.environ.get("OPENROUTER_API_KEY", "")
-    _MODEL = os.environ.get("OPENROUTER_MODEL", "x-ai/grok-4-fast")
-    _INTEGRATIONS.write_text(
-        json.dumps({"copilot": {"openrouter_key": _KEY, "model": _MODEL}}),
-        encoding="utf-8",
-    )
+    _copilot: dict[str, str] = {
+        "openrouter_key": os.environ.get("OPENROUTER_API_KEY", "")
+    }
+    _model = os.environ.get("OPENROUTER_MODEL", "")
+    if _model:
+        _copilot["model"] = _model
+    _INTEGRATIONS.write_text(json.dumps({"copilot": _copilot}), encoding="utf-8")
 
 import glfw  # noqa: E402
 import moderngl  # noqa: E402

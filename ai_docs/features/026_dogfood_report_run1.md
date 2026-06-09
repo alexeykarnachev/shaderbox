@@ -17,7 +17,7 @@ first, retrospect after).
 | smoke (solid red) | red rendered, edit→compile→render clean | ✅ full loop works |
 | 01 visual-blindness (darker / vignette) | darker honest + visible; vignette in code but visually imperceptible | ⚠️ soft visual-blindness (below) |
 | 02 wrong-node targeting | "make this green" correctly hit CURRENT (Red Quad), not name-match | ✅ targeting healthy (simple case) |
-| 04 circle / square / morph | squircle rendered correctly; but agent did NOT read the two refs | ✅ render ok / ⚠️ multi-file not exercised |
+| 04 circle / square / morph | squircle rendered correctly; agent DID read both refs (but content not load-bearing) | ✅ render ok / ⚠️ multi-file read happened, content unproven |
 | 05 set_uniform edges | u_time correctly REJECTED; u_color added+set→red rendered | ✅ uniform path + reject both correct |
 
 Renders verified by eye: solid red, darkened gradient, white squircle, red-via-uniform — all correct.
@@ -29,9 +29,13 @@ Renders verified by eye: solid red, darkened gradient, white squircle, red-via-u
 - **WORKING SET live-rebuild**: the block at the conversation bottom shows current line-numbered source +
   uniforms + errors, rebuilt every iteration. After the red edit, `uniforms:` correctly dropped `u_time`
   (no longer used). Working as designed.
-- **Error recovery**: when `create_node` / `replace_lines` hit the GL error (below), the tool returned
-  `error: … failed`, the agent received it, RETRIED, and the retry succeeded. The loop never hung — the
-  worker+bridge-pump drive is solid.
+- **Infrastructure error recovery (NARROW — see the gap below):** when `create_node` hit the GL error,
+  the tool returned `error: … failed`, the agent re-submitted a byte-identical create, which succeeded. The
+  loop never hung — the worker+bridge-pump drive is solid. **But this is a BLIND retry of a transient
+  infra failure, NOT agent-level error comprehension.** The agent never had to read a `0:N: error` compile
+  message and FIX broken GLSL, recover from an `old_str` mismatch, or survive malformed args — those paths
+  are UNTESTED (scenario 03 compile-thrash was never run live). Do not read this as "the copilot recovers
+  from its own mistakes" — that's the biggest unproven gap (see Retrospective).
 - **Gate flow**: render_image is always-gated; `drive_until_idle(auto_approve_gates=True)` answered them
   inline; no deadlock.
 - **set_uniform type handling**: engine-driven `u_time` rejected with a clear message; a real `vec3`
@@ -41,27 +45,36 @@ Renders verified by eye: solid red, darkened gradient, white squircle, red-via-u
 
 ## 🔴 PIPELINE BUG — `GLError 1282 (invalid operation) glUseProgram(0)` headless
 
-The single real bug. During scenario 04 (multiple create_node + a replace_lines in one session), two tool
-calls failed with:
+**FIXED** (see Resolution at the end). During scenario 04 (multiple create_node in one session), some
+`create_node` calls returned `error: create_node failed`. The underlying GL exception was:
 
 ```
 OpenGL.error.GLError(err=1282, description=b'invalid operation', baseOperation=glUseProgram, cArguments=(0,))
 ```
 
-- `glUseProgram(0)` (unbind program) throws `invalid operation` under the standalone EGL context — the
-  SAME headless GL-quirk class already documented for node teardown (`conventions.md ## Known quirks`,
-  `test_render_for.py`'s Exception-suppressed `node.release()`). Here it surfaces in the
-  create/replace → `_copilot_persist_shader` → `node.render()` path, not just teardown.
-- A minimal repro (5 nodes compile+render in a loop) does NOT reproduce it — so it's not plain repeated
-  compile; it's tied to the bridge-marshalled create/render interleaving (render_image between turns +
-  the worker-drain timing). Spuradic, not deterministic.
-- Impact: the copilot RECOVERS (retries, succeeds) so the user gets a correct result, but it wastes a
-  tool call + tokens + money each time, and a worse model might not recover. The render path itself
-  (render_image) never failed — only the create/edit persist path.
-- Honest fix (when retrospecting): suppress / guard the `glUseProgram(0)` in the persist/render path
-  under a standalone context (mirror the teardown suppression), OR make the harness's render not
-  interleave with an in-flight worker compile. Needs a focused look at `core.py`'s render + the bridge
-  drain ordering.
+**PROVENANCE (corrected by the review):** this stack came from STDERR (loguru `logger.exception` in
+`registry.py::execute`), NOT the trace transcript — the traces only show `result: error: create_node
+failed`. The stack above is from the live-run stderr, not trace evidence.
+
+**CALL PATH (corrected by the review):** the report originally mis-cited this as
+`_copilot_persist_shader → node.render()` and blamed "render/worker interleaving". That was wrong on both
+counts. The real chain is `create_node`/edit → `Node.release_program()` → `Node.invalidate()` →
+**`glUseProgram(0)` at `core.py:204`**. `_copilot_persist_shader` never calls `render()`, and `render()`
+contains no `glUseProgram`. The harness's `render()` blocks on `worker.join()` and runs only when the turn
+is idle, so it cannot interleave with a worker compile — that "fix" was chasing a non-cause.
+
+- `glUseProgram(0)` (unbind) is needed in the LIVE app (a deleted program left GL-current crashes the imgui
+  end-of-frame restore — GLError 1281). Under a STANDALONE EGL context the same call raises GLError 1282
+  (invalid operation) — the same headless GL-quirk class already suppressed for node teardown
+  (`conventions.md ## Known quirks`, `test_render_for.py`). Spuradic in the run (timing-dependent), not on
+  every create.
+- Impact (pre-fix): the copilot RECOVERED (the tool returned `error: create_node failed`, the agent
+  re-submitted a byte-identical create, which succeeded), so the user got a correct result — but it wasted
+  a tool call + tokens + money, and a worse model might not recover.
+- Fix (DONE): wrap the `core.py:204` `glUseProgram(0)` in `contextlib.suppress(Exception)` — harmless in
+  the live app (the call still runs), and under a standalone context the bind is pointless (no imgui
+  restore to protect) so only its exception mattered. Verified: re-running the morph scenario after the fix
+  created 3 nodes with `create_node/replace_lines failed count = 0` (was 3 before).
 
 ## 🔴 EFFICIENCY — the tool catalogue is sent TWICE per request, and 15/21 tools are irrelevant
 
@@ -69,8 +82,8 @@ Per-section breakdown of ONE simple request (iter-0, "make it red", 8055 input t
 
 | Section | ~tokens | note |
 |---|---|---|
-| system prompt (prose) | ~3550 | **includes a full prose description of every tool** ("WHAT YOU CAN DO" lists edit/replace/insert/… with explanations) |
-| native `tools=` block | ~1950 | **the SAME 21 tools again**, full descriptions, as native tool-defs |
+| system prompt (prose) | ~3550 | **abbreviated prose mentions of the tools** ("WHAT YOU CAN DO" walks edit/replace/insert/render/publish/… with explanations) — a SECOND, prose copy on top of the native defs |
+| native `tools=` block | ~1950 | the 21 tools as full native tool-defs (the canonical copy) |
 | WORKING SET (shader source) | ~2900 | the live source — legitimately needed |
 | project map + lib + templates + conventions | ~490 | compact, useful |
 | user message | ~17 | — |
@@ -94,10 +107,14 @@ a shader turn ships ~6 tools, not 21. Together these could roughly HALVE the per
   smoothstep range + already-dark frame). NOT a hallucination — but the human can't confirm the claimed
   effect and neither can the agent. This is the milder shape of the `inspect_render` motivation: "can't
   verify the claimed effect", not "lied about it".
-- **Multi-file read NOT exercised:** despite "read both of those shaders first", the agent wrote the
-  squircle from its own knowledge and only `read_shader`'d the new Rounded node (for GL-error recovery).
-  To actually probe multi-file read, the task must be UNSOLVABLE without the references (e.g. "use the
-  exact color from node X"). The capability isn't broken — the task was too easy to need it.
+- **Multi-file read HAPPENED, but its content wasn't load-bearing (corrected):** the agent DID call
+  `read_shader({"nodes":["<square>","<circle>"]})` — both reference shaders — the moment the user said
+  "read both first" (verified in the trace; the earlier claim that it "did NOT read the refs / only read
+  Rounded" was a misreading and is wrong — `read_shader` isn't even a valid recovery for a create_node GL
+  failure). So the multi-file read MECHANISM works. What's unproven is whether the read CONTENT actually
+  drove the synthesis — the squircle is simple enough the model could have written it from knowledge
+  regardless. To probe that the content is load-bearing, the task must be UNSOLVABLE without the references
+  (e.g. "use the EXACT color constant from node X"). The capability isn't broken; the probe was too weak.
 - **Targeting healthy (simple case):** a bare "this one" correctly resolved to the CURRENT node, did not
   name-match a sibling. The harder bait (a request word matching a different node's name) wasn't run.
 - **Tool selection sane:** create_node with `switch_to=False` for a background node; edit vs set_uniform
@@ -109,13 +126,29 @@ a shader turn ships ~6 tools, not 21. Together these could roughly HALVE the per
 trivial edit ~$0.005-0.021 (dominated by the re-shipped context). The duplicated+irrelevant tool
 catalogue is the biggest single lever on per-turn cost.
 
-## Retrospective priorities (NOT done — for the next pass)
+## Retrospective priorities
 
-1. **Bump the default model** off the deprecated `grok-4-fast` (→ `x-ai/grok-4.3` or current). One-line
-   config fix in `copilot/integrations` default + anywhere `grok-4-fast` is hardcoded.
-2. **Fix the headless `glUseProgram(0)` GLError** in the create/persist/render path (suppress/guard under
-   standalone context, mirroring the teardown fix).
-3. **De-duplicate + lazy-load the tool catalogue** (the `todo.md` lazy-catalogue item) — biggest token/$
-   win; ~halves per-turn input.
-4. Optionally: a `context_breakdown` trace event (per-section token counts) so this analysis is automatic,
-   not hand-estimated.
+**Shaderbox engine:**
+1. ✅ **DONE — bumped the default model** off the deprecated `grok-4-fast` → `x-ai/grok-4.3`
+   (`exporters/integrations.py::CopilotIntegration.model`). Also fixed a SECOND hardcoded default the
+   harness carried (`scripts/dogfood.py`'s `OPENROUTER_MODEL` fallback — now defers to the in-tree default).
+2. ✅ **DONE — fixed the headless `glUseProgram(0)` GLError** (`core.py:204`, wrapped in
+   `contextlib.suppress(Exception)`). Re-verified: the morph scenario now creates 3 nodes with 0 failures.
+3. **De-duplicate + lazy-load the tool catalogue** (the `todo.md` lazy-catalogue item) — the biggest token/$
+   win, ~halves per-turn input. NOT done (its own slice). Two levers: drop the prose tool-walk in the
+   system prompt (the native `tools=` block is canonical); lazy-load the telegram/youtube/publish tools.
+4. **An `inspect_render` affordance** for the visual-blindness gap (deferred in `todo.md`).
+
+**Dogfooding (the harness + scenarios + skill):**
+5. **🔴 BIGGEST GAP — agent-level error recovery is UNPROVEN.** Every scenario ran the happy path; the only
+   failures the agent saw were the transient GL quirk (blind byte-identical retry) + one designed u_time
+   reject. It NEVER had to read a compile-error message and fix broken GLSL, recover from an `old_str`
+   mismatch, or survive malformed args — and scenario 03 (compile-thrash), the one built to force that, was
+   never run live and was silently absent from the coverage table. RUN scenario 03 next, add a deliberate
+   agent-level-failure scenario, and inspect the `edit_giveup`/`max_iterations`/`consecutive_failed_edits`
+   trace events. This is the single most important copilot behavior for real-user robustness.
+6. **Strengthen scenario 04** so the multi-file read content is LOAD-BEARING (the task must be unsolvable
+   without the reference, e.g. "use the exact color constant from node X") — the current task is solvable
+   from the model's own knowledge, so it only proves the read MECHANISM fires, not that the content matters.
+7. **A `context_breakdown` trace event** (per-section token counts) so the §5 analysis is automatic, not
+   hand-estimated — and a per-run cost ceiling so a runaway turn can't burn credits.
