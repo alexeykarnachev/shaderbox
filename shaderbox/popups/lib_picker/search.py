@@ -36,26 +36,32 @@ def draw_favs_and_reset_row(app: App) -> None:
     # Yellow Favs pill (active=solid, inactive=faded). Pink Reset appears
     # right after when any tag is disabled.
     if pill_button(
-        "Favs##favs_toggle", color=COLOR.FAVS, active=app.shader_lib_picker_favs_only
+        "Favs##favs_toggle",
+        color=COLOR.FAVS,
+        active=app.shader_lib_files.picker_favs_only,
     ):
-        app.shader_lib_picker_favs_only = not app.shader_lib_picker_favs_only
-    if app.shader_lib_picker_disabled_tags:
+        app.shader_lib_files.picker_favs_only = (
+            not app.shader_lib_files.picker_favs_only
+        )
+    if app.shader_lib_files.picker_disabled_tags:
         imgui.same_line()
         if pill_button("Reset##reset_pill", color=COLOR.RESET_PILL, active=True):
-            app.shader_lib_picker_disabled_tags.clear()
+            app.shader_lib_files.picker_disabled_tags.clear()
 
 
 def draw_search_row(app: App, visible_count: int, total: int) -> None:
-    if app.shader_lib_picker_just_opened:
+    if app.shader_lib_files.picker_just_opened:
         imgui.set_keyboard_focus_here(0)
     imgui.set_next_item_width(imgui.get_content_region_avail().x - 200.0)
-    _, app.shader_lib_picker_query = imgui.input_text(
-        "##q", app.shader_lib_picker_query
+    _, app.shader_lib_files.picker_query = imgui.input_text(
+        "##q", app.shader_lib_files.picker_query
     )
     imgui.same_line()
     imgui.text_colored(COLOR.FG_DIM, f"{visible_count} / {total}")
     # Live tag-prefix feedback (`#noi` → "matching: #noise").
-    tag_prefixes, _ = parse_query_tags(app.shader_lib_picker_query.strip().lower())
+    tag_prefixes, _ = parse_query_tags(
+        app.shader_lib_files.picker_query.strip().lower()
+    )
     if tag_prefixes:
         matched = resolve_tag_prefix_matches(app, tag_prefixes)
         imgui.same_line()
@@ -70,7 +76,9 @@ def draw_search_row(app: App, visible_count: int, total: int) -> None:
 def draw_tag_bar(app: App) -> None:
     # Blue pills (active = blue fill, disabled = dim). Wraps onto multiple rows.
     # Tag bar shows every tag in the lib; #prefix in the search bar narrows it.
-    tag_prefixes, _ = parse_query_tags(app.shader_lib_picker_query.strip().lower())
+    tag_prefixes, _ = parse_query_tags(
+        app.shader_lib_files.picker_query.strip().lower()
+    )
     all_tags_set = app.shader_lib_tags.all_tags()
     if tag_prefixes:
         bar_tags = sorted(
@@ -99,7 +107,7 @@ def draw_tag_bar(app: App) -> None:
                 cursor_x = w
         else:
             cursor_x = w
-        is_enabled = tag not in app.shader_lib_picker_disabled_tags
+        is_enabled = tag not in app.shader_lib_files.picker_disabled_tags
         if is_enabled:
             clicked = pill_button(
                 full_label_id, color=COLOR.TAG, active=False, inactive_alpha=0.7
@@ -116,10 +124,10 @@ def draw_tag_bar(app: App) -> None:
             if imgui.get_io().key_ctrl:
                 # Isolate ACROSS the WHOLE lib (not just visible) — `#prefix`
                 # may have narrowed the bar, but isolate means "only this tag".
-                app.shader_lib_picker_disabled_tags = {
+                app.shader_lib_files.picker_disabled_tags = {
                     t for t in app.shader_lib_tags.all_tags() if t != tag
                 }
             elif is_enabled:
-                app.shader_lib_picker_disabled_tags.add(tag)
+                app.shader_lib_files.picker_disabled_tags.add(tag)
             else:
-                app.shader_lib_picker_disabled_tags.discard(tag)
+                app.shader_lib_files.picker_disabled_tags.discard(tag)

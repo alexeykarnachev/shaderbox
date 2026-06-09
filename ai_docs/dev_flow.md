@@ -164,8 +164,8 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   `#include` resolution) + `shader_errors`.
 - **`app.py`** — `App` class: state holder + lifecycle (project, GL context, node management,
   popup-state booleans, editor sessions). No UI drawing. Imported by `ui.py`, `widgets/`, `popups/`,
-  `tabs/`. Holds `self.shader_lib_files: ShaderLibFileManager` + delegates the shader-lib-file CRUD
-  to it (exposes `shader_lib_*` properties the picker reads).
+  `tabs/`. Holds `self.shader_lib_files: ShaderLibFileManager`; the picker reads its CRUD + inline
+  state directly via `app.shader_lib_files.*` (no `App` forwarding facade).
 - **`ui.py`** — thin entrypoint + orchestrator. `run(app)`, `update_and_draw(app)` (the imgui frame
   loop: render gates + the main-window left/right split — LEFT = code editor via `code_tab.draw`,
   RIGHT = `_draw_app_panel`), `_draw_splitter`, `_draw_app_panel`, `_draw_node_settings`

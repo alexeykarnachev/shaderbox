@@ -48,7 +48,7 @@ def _draw_body(app: App) -> bool:
     # we use it for auto-select-first-leaf, search-input autofocus, and
     # suppression of the leaf autoscroll on the first frame.
     just_opened = imgui.is_window_appearing()
-    app.shader_lib_picker_just_opened = (
+    app.shader_lib_files.picker_just_opened = (
         just_opened  # widgets called from sub-draws read this
     )
 
@@ -58,23 +58,27 @@ def _draw_body(app: App) -> bool:
     node_tree = tree.build_tree(candidates, root)
     visible_leaves = tree.flatten_visible_leaves(node_tree, ())
 
-    rename_active = app.shader_lib_file_rename.target is not None
-    new_file_active = app.shader_lib_file_new.target is not None
-    new_dir_active = app.shader_lib_dir_new.target is not None
+    rename_active = app.shader_lib_files.file_rename.target is not None
+    new_file_active = app.shader_lib_files.file_new.target is not None
+    new_dir_active = app.shader_lib_files.dir_new.target is not None
     input_owns_keys = rename_active or new_file_active or new_dir_active
 
     if not input_owns_keys:
         filtering.handle_arrow_nav(app, visible_leaves)
 
-    if just_opened and not app.shader_lib_picker_selected_function and visible_leaves:
-        app.shader_lib_picker_selected_function = visible_leaves[0].name
+    if (
+        just_opened
+        and not app.shader_lib_files.picker_selected_function
+        and visible_leaves
+    ):
+        app.shader_lib_files.picker_selected_function = visible_leaves[0].name
 
     # The add-tag input also captures Enter (via `enter_returns_true`). When it
     # had focus last frame, suppress the outer Enter → Insert + close — otherwise
     # committing a tag would also close the picker. The flag is reset here and
     # re-set during the tag-editor draw if the input is focused this frame.
-    tag_input_was_focused = app.shader_lib_picker_tag_input_focused
-    app.shader_lib_picker_tag_input_focused = False
+    tag_input_was_focused = app.shader_lib_files.picker_tag_input_focused
+    app.shader_lib_files.picker_tag_input_focused = False
     pressed_enter = (
         not input_owns_keys
         and not tag_input_was_focused

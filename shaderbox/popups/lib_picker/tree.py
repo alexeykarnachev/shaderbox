@@ -103,7 +103,7 @@ def _draw_tree_children(
         )
         node_id = f"{subname}##dirnode_{'/'.join(child)}"
         # Armed state is an absolute path; compare like-for-like or the red tint never shows.
-        is_armed = app.shader_lib_dir_delete_armed == root / Path(*child)
+        is_armed = app.shader_lib_files.dir_delete_armed == root / Path(*child)
         # Force-open so a pending inline input in a descendant isn't hidden in a collapsed branch.
         if _dir_contains_pending_input(app, child):
             imgui.set_next_item_open(True, imgui.Cond_.always)
@@ -134,8 +134,8 @@ def _dir_contains_pending_input(app: App, dir_rel: tuple[str, ...]) -> bool:
             return False
         return True
 
-    return _is_descendant(app.shader_lib_file_new.target) or _is_descendant(
-        app.shader_lib_dir_new.target
+    return _is_descendant(app.shader_lib_files.file_new.target) or _is_descendant(
+        app.shader_lib_files.dir_new.target
     )
 
 
@@ -146,9 +146,9 @@ def _draw_dir_context_menu(app: App, dir_rel: tuple[str, ...], is_root: bool) ->
         if imgui.begin_popup_context_item(popup_id):
             dir_path_rel = Path(*dir_rel) if dir_rel else Path()
             if imgui.menu_item_simple("New file here"):
-                app.begin_shader_lib_file_new_in(dir_path_rel)
+                app.shader_lib_files.begin_file_new_in(dir_path_rel)
             if imgui.menu_item_simple("New subdirectory"):
-                app.begin_shader_lib_dir_new_in(dir_path_rel)
+                app.shader_lib_files.begin_dir_new_in(dir_path_rel)
             if imgui.menu_item_simple("Reveal in file manager"):
                 abs_path = (
                     shader_lib_root() / dir_path_rel if dir_rel else shader_lib_root()
@@ -157,7 +157,7 @@ def _draw_dir_context_menu(app: App, dir_rel: tuple[str, ...], is_root: bool) ->
             if not is_root:
                 imgui.separator()
                 abs_path = shader_lib_root() / dir_path_rel
-                is_armed = app.shader_lib_dir_delete_armed == abs_path
+                is_armed = app.shader_lib_files.dir_delete_armed == abs_path
                 label = (
                     "Confirm delete (recursive)"
                     if is_armed
@@ -168,29 +168,29 @@ def _draw_dir_context_menu(app: App, dir_rel: tuple[str, ...], is_root: bool) ->
                 imgui.pop_style_color(1)
                 if clicked:
                     if is_armed:
-                        app.delete_shader_lib_dir(abs_path)
+                        app.shader_lib_files.delete_dir(abs_path)
                     else:
-                        app.arm_shader_lib_dir_delete(abs_path)
+                        app.shader_lib_files.arm_dir_delete(abs_path)
             imgui.end_popup()
 
 
 def _draw_dir_new_inputs_for(app: App, dir_rel: tuple[str, ...]) -> None:
     _draw_inline_new_input(
-        state=app.shader_lib_file_new,
+        state=app.shader_lib_files.file_new,
         label="New file:",
         id_prefix="new_file_in",
         dir_rel=dir_rel,
-        commit=app.commit_shader_lib_file_new,
-        cancel=app.cancel_shader_lib_file_new,
+        commit=app.shader_lib_files.commit_file_new,
+        cancel=app.shader_lib_files.cancel_file_new,
         on_create=app.open_shader_lib_file,
     )
     _draw_inline_new_input(
-        state=app.shader_lib_dir_new,
+        state=app.shader_lib_files.dir_new,
         label="New dir:",
         id_prefix="new_dir_in",
         dir_rel=dir_rel,
-        commit=app.commit_shader_lib_dir_new,
-        cancel=app.cancel_shader_lib_dir_new,
+        commit=app.shader_lib_files.commit_dir_new,
+        cancel=app.shader_lib_files.cancel_dir_new,
         on_create=None,
     )
 
@@ -235,12 +235,12 @@ def _draw_inline_new_input(
 
 def _draw_file_node(app: App, path: Path, fns: list[ShaderLibFunction]) -> bool:
     # Returns True iff a child function's "Open at decl" closed the picker.
-    is_renaming = app.shader_lib_file_rename.target == path
+    is_renaming = app.shader_lib_files.file_rename.target == path
     if is_renaming:
         _draw_file_rename_input(app, path)
         return False
 
-    is_armed = app.shader_lib_file_delete_armed == path
+    is_armed = app.shader_lib_files.file_delete_armed == path
     if is_armed:
         imgui.push_style_color(imgui.Col_.text, COLOR.STATE_ERROR)
     flags = imgui.TreeNodeFlags_.default_open | imgui.TreeNodeFlags_.span_avail_width
@@ -261,20 +261,20 @@ def _draw_file_context_menu(app: App, path: Path) -> None:
     with context_menu_style():
         if imgui.begin_popup_context_item(f"##filectx_{path}"):
             if imgui.menu_item_simple("Rename"):
-                app.begin_shader_lib_file_rename(path)
+                app.shader_lib_files.begin_file_rename(path)
             if imgui.menu_item_simple("Reveal in file manager"):
                 app.reveal_shader_lib_file_in_manager(path)
             imgui.separator()
-            is_armed = app.shader_lib_file_delete_armed == path
+            is_armed = app.shader_lib_files.file_delete_armed == path
             label = "Confirm delete" if is_armed else "Delete"
             imgui.push_style_color(imgui.Col_.text, COLOR.STATE_ERROR)
             clicked = imgui.menu_item_simple(label)
             imgui.pop_style_color(1)
             if clicked:
                 if is_armed:
-                    app.delete_shader_lib_file(path)
+                    app.shader_lib_files.delete_file(path)
                 else:
-                    app.arm_shader_lib_file_delete(path)
+                    app.shader_lib_files.arm_file_delete(path)
             imgui.end_popup()
 
 
@@ -283,28 +283,28 @@ def _draw_file_rename_input(app: App, path: Path) -> None:
     # Reserve room on the right for the cancel `x` button.
     cancel_w = imgui.calc_text_size("x").x + float(SPACE.MD) * 2.0
     imgui.set_next_item_width(imgui.get_content_region_avail().x - cancel_w)
-    if app.shader_lib_file_rename.needs_focus:
+    if app.shader_lib_files.file_rename.needs_focus:
         imgui.set_keyboard_focus_here(0)
-        app.shader_lib_file_rename.needs_focus = False
-    changed, app.shader_lib_file_rename.buf = imgui.input_text(
+        app.shader_lib_files.file_rename.needs_focus = False
+    changed, app.shader_lib_files.file_rename.buf = imgui.input_text(
         f"##ren_in_{path}",
-        app.shader_lib_file_rename.buf,
+        app.shader_lib_files.file_rename.buf,
         flags=imgui.InputTextFlags_.enter_returns_true,
     )
     input_focused = imgui.is_item_focused()
     if input_focused and imgui.is_key_pressed(imgui.Key.escape, repeat=False):
-        app.cancel_shader_lib_file_rename()
+        app.shader_lib_files.cancel_file_rename()
     if changed:
-        app.rename_shader_lib_file(path, app.shader_lib_file_rename.buf)
+        app.shader_lib_files.rename_file(path, app.shader_lib_files.file_rename.buf)
     imgui.same_line()
     if ghost_button(f"x##cancel_ren_{path}"):
-        app.cancel_shader_lib_file_rename()
+        app.shader_lib_files.cancel_file_rename()
     imgui.unindent(float(SPACE.MD))
 
 
 def _draw_function_leaf(app: App, fn: ShaderLibFunction) -> bool:
     # Returns True iff the "Open at decl" action fired and the picker should close.
-    is_selected = app.shader_lib_picker_selected_function == fn.name
+    is_selected = app.shader_lib_files.picker_selected_function == fn.name
     is_fav = app.shader_lib_favorites.is_favorite(fn.name)
     star_label = ("*" if is_fav else "o") + f"##fav_{fn.name}"
     imgui.push_style_color(imgui.Col_.text, COLOR.FAVS if is_fav else COLOR.FG_DIM)
@@ -314,14 +314,14 @@ def _draw_function_leaf(app: App, fn: ShaderLibFunction) -> bool:
     imgui.same_line()
     label = f"{fn.name}##leaf_{fn.name}"
     if imgui.selectable(label, is_selected)[0]:
-        app.shader_lib_picker_selected_function = fn.name
+        app.shader_lib_files.picker_selected_function = fn.name
         # Selecting a function disarms any pending file/dir delete.
-        app.arm_shader_lib_file_delete(None)
-        app.arm_shader_lib_dir_delete(None)
+        app.shader_lib_files.arm_file_delete(None)
+        app.shader_lib_files.arm_dir_delete(None)
     close_picker = _draw_function_context_menu(app, fn)
     if (
         is_selected
-        and not app.shader_lib_picker_just_opened
+        and not app.shader_lib_files.picker_just_opened
         and not imgui.is_item_visible()
     ):
         imgui.set_scroll_here_y(0.5)

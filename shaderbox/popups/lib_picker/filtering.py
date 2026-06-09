@@ -17,7 +17,7 @@ from shaderbox.shader_lib import ShaderLibFunction
 
 def handle_arrow_nav(app: App, visible: list[ShaderLibFunction]) -> None:
     if not visible:
-        app.shader_lib_picker_selected_function = ""
+        app.shader_lib_files.picker_selected_function = ""
         return
     down = imgui.is_key_pressed(imgui.Key.down_arrow, repeat=True)
     up = imgui.is_key_pressed(imgui.Key.up_arrow, repeat=True)
@@ -25,25 +25,25 @@ def handle_arrow_nav(app: App, visible: list[ShaderLibFunction]) -> None:
         # Clamp: if the current selection is no longer visible (filter change),
         # fall back to the first visible leaf.
         names = [fn.name for fn in visible]
-        if app.shader_lib_picker_selected_function not in names:
-            app.shader_lib_picker_selected_function = visible[0].name
+        if app.shader_lib_files.picker_selected_function not in names:
+            app.shader_lib_files.picker_selected_function = visible[0].name
         return
     names = [fn.name for fn in visible]
     try:
-        idx = names.index(app.shader_lib_picker_selected_function)
+        idx = names.index(app.shader_lib_files.picker_selected_function)
     except ValueError:
         idx = 0
     step = 1 if down else -1
-    app.shader_lib_picker_selected_function = names[(idx + step) % len(names)]
+    app.shader_lib_files.picker_selected_function = names[(idx + step) % len(names)]
 
 
 def selected_function(
     app: App, candidates: list[ShaderLibFunction]
 ) -> ShaderLibFunction | None:
-    if not app.shader_lib_picker_selected_function:
+    if not app.shader_lib_files.picker_selected_function:
         return None
     for fn in candidates:
-        if fn.name == app.shader_lib_picker_selected_function:
+        if fn.name == app.shader_lib_files.picker_selected_function:
             return fn
     # The selected function is hidden by current filters. Fall back to None so
     # the preview shows "(no selection)" rather than a stale function.
@@ -51,9 +51,9 @@ def selected_function(
 
 
 def filter_functions(app: App) -> list[ShaderLibFunction]:
-    raw_query: str = app.shader_lib_picker_query.strip().lower()
+    raw_query: str = app.shader_lib_files.picker_query.strip().lower()
     tag_prefixes, text_query = parse_query_tags(raw_query)
-    disabled = app.shader_lib_picker_disabled_tags
+    disabled = app.shader_lib_files.picker_disabled_tags
 
     def passes(fn: ShaderLibFunction) -> bool:
         # Fetch tags ONCE per function; three filters share the result.
@@ -81,7 +81,7 @@ def filter_functions(app: App) -> list[ShaderLibFunction]:
         for fn in app.shader_lib_index.functions.values()
         if fn.name.startswith("SB_")
     ]
-    if app.shader_lib_picker_favs_only:
+    if app.shader_lib_files.picker_favs_only:
         candidates = [
             fn for fn in candidates if app.shader_lib_favorites.is_favorite(fn.name)
         ]

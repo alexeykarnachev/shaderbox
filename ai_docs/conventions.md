@@ -116,9 +116,9 @@ belong in the feature spec (`ai_docs/features/NNN_*.md`). This file is not a cha
   `open()` / `close()` / `is_open` (defined in `editor_types.py`). A single `reset_inline_state()`
   method enforces the mutex: every `begin_*` opener calls it first, then sets only its own fields.
   `needs_focus` is the one-shot the input's first draw consumes via `set_keyboard_focus_here(0)`.
-  The shader-lib instances live on `ShaderLibFileManager` (`shader_lib/file_ops.py`), surfaced to
-  the picker via `App.shader_lib_*` delegating properties. Revisit if a second multi-inline-input
-  surface lands (promote `InlineInput` to `ui_primitives.py`).
+  The shader-lib instances live on `ShaderLibFileManager` (`shader_lib/file_ops.py`); the picker
+  reads them directly via `app.shader_lib_files.*` (no delegating facade on `App`). Revisit if a
+  second multi-inline-input surface lands (promote `InlineInput` to `ui_primitives.py`).
 - **One shared row primitive per row-KIND, not per-kind special-case rows.** A list/grid whose
   items come in kinds (regular uniforms vs engine/`auto` uniforms) draws every kind through ONE
   row helper (`uniform_name_label`) with style overrides, never a separate hand-rolled row per

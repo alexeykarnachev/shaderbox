@@ -719,93 +719,11 @@ class App:
         self.emoji_picker_query = ""
 
     def open_shader_lib_picker(self) -> None:
-        # The picker derives `shader_lib_picker_just_opened` from imgui's
-        # `is_window_appearing()` on its first frame.
-        self.reset_shader_lib_inline_state()
+        # The picker derives `picker_just_opened` from imgui's `is_window_appearing()` on its
+        # first frame.
+        self.shader_lib_files.reset_inline_state()
         self.popup_state = PopupState.SHADER_LIB_PICKER
-        self.shader_lib_picker_query = ""
-
-    # ----------------------------------------------------------------
-    # Shader-library picker state — delegated to self.shader_lib_files so the picker UI
-    # keeps its `app.shader_lib_*` access while the state lives on the manager. Mutable
-    # objects accessed in place; scalars get read/write delegation.
-    # ----------------------------------------------------------------
-
-    @property
-    def shader_lib_picker_query(self) -> str:
-        return self.shader_lib_files.picker_query
-
-    @shader_lib_picker_query.setter
-    def shader_lib_picker_query(self, value: str) -> None:
-        self.shader_lib_files.picker_query = value
-
-    @property
-    def shader_lib_picker_selected_function(self) -> str:
-        return self.shader_lib_files.picker_selected_function
-
-    @shader_lib_picker_selected_function.setter
-    def shader_lib_picker_selected_function(self, value: str) -> None:
-        self.shader_lib_files.picker_selected_function = value
-
-    @property
-    def shader_lib_picker_just_opened(self) -> bool:
-        return self.shader_lib_files.picker_just_opened
-
-    @shader_lib_picker_just_opened.setter
-    def shader_lib_picker_just_opened(self, value: bool) -> None:
-        self.shader_lib_files.picker_just_opened = value
-
-    @property
-    def shader_lib_picker_favs_only(self) -> bool:
-        return self.shader_lib_files.picker_favs_only
-
-    @shader_lib_picker_favs_only.setter
-    def shader_lib_picker_favs_only(self, value: bool) -> None:
-        self.shader_lib_files.picker_favs_only = value
-
-    @property
-    def shader_lib_picker_disabled_tags(self) -> set[str]:
-        return self.shader_lib_files.picker_disabled_tags
-
-    @shader_lib_picker_disabled_tags.setter
-    def shader_lib_picker_disabled_tags(self, value: set[str]) -> None:
-        self.shader_lib_files.picker_disabled_tags = value
-
-    @property
-    def shader_lib_picker_new_tag_buf(self) -> str:
-        return self.shader_lib_files.picker_new_tag_buf
-
-    @shader_lib_picker_new_tag_buf.setter
-    def shader_lib_picker_new_tag_buf(self, value: str) -> None:
-        self.shader_lib_files.picker_new_tag_buf = value
-
-    @property
-    def shader_lib_picker_tag_input_focused(self) -> bool:
-        return self.shader_lib_files.picker_tag_input_focused
-
-    @shader_lib_picker_tag_input_focused.setter
-    def shader_lib_picker_tag_input_focused(self, value: bool) -> None:
-        self.shader_lib_files.picker_tag_input_focused = value
-
-    @property
-    def shader_lib_file_rename(self) -> InlineInput:
-        return self.shader_lib_files.file_rename
-
-    @property
-    def shader_lib_file_new(self) -> InlineInput:
-        return self.shader_lib_files.file_new
-
-    @property
-    def shader_lib_dir_new(self) -> InlineInput:
-        return self.shader_lib_files.dir_new
-
-    @property
-    def shader_lib_file_delete_armed(self) -> Path | None:
-        return self.shader_lib_files.file_delete_armed
-
-    @property
-    def shader_lib_dir_delete_armed(self) -> Path | None:
-        return self.shader_lib_files.dir_delete_armed
+        self.shader_lib_files.picker_query = ""
 
     @property
     def app_dir(self) -> Path:
@@ -1120,12 +1038,8 @@ class App:
             )
             logger.error(f"Failed to open directory {node_dir}: {e}")
 
-    # ----------------------------------------------------------------
-    # Shader-library file CRUD — delegated to self.shader_lib_files. The picker UI calls
-    # these `app.*` wrappers; the logic + state live on the manager. The two callbacks
-    # below are App's editor-session cleanup, reached back into from the manager.
-    # ----------------------------------------------------------------
-
+    # App-side editor-session cleanup, reached back into from ShaderLibFileManager when it
+    # trashes/renames a lib file (the picker UI drives the CRUD on the manager directly).
     def _on_shader_lib_paths_removed(self, paths: list[Path]) -> None:
         # Drop editor sessions + selections pointing at trashed lib paths.
         for path in paths:
@@ -1156,48 +1070,6 @@ class App:
             and self.editor_jump_request.path == old
         ):
             self.editor_jump_request = replace(self.editor_jump_request, path=new)
-
-    def reset_shader_lib_inline_state(self) -> None:
-        self.shader_lib_files.reset_inline_state()
-
-    def arm_shader_lib_file_delete(self, path: Path | None) -> None:
-        self.shader_lib_files.arm_file_delete(path)
-
-    def arm_shader_lib_dir_delete(self, path: Path | None) -> None:
-        self.shader_lib_files.arm_dir_delete(path)
-
-    def begin_shader_lib_file_rename(self, path: Path) -> None:
-        self.shader_lib_files.begin_file_rename(path)
-
-    def cancel_shader_lib_file_rename(self) -> None:
-        self.shader_lib_files.cancel_file_rename()
-
-    def begin_shader_lib_file_new_in(self, dir_rel: Path) -> None:
-        self.shader_lib_files.begin_file_new_in(dir_rel)
-
-    def cancel_shader_lib_file_new(self) -> None:
-        self.shader_lib_files.cancel_file_new()
-
-    def begin_shader_lib_dir_new_in(self, parent_rel: Path) -> None:
-        self.shader_lib_files.begin_dir_new_in(parent_rel)
-
-    def cancel_shader_lib_dir_new(self) -> None:
-        self.shader_lib_files.cancel_dir_new()
-
-    def commit_shader_lib_dir_new(self) -> Path | None:
-        return self.shader_lib_files.commit_dir_new()
-
-    def commit_shader_lib_file_new(self) -> Path | None:
-        return self.shader_lib_files.commit_file_new()
-
-    def delete_shader_lib_dir(self, path: Path) -> None:
-        self.shader_lib_files.delete_dir(path)
-
-    def delete_shader_lib_file(self, path: Path) -> None:
-        self.shader_lib_files.delete_file(path)
-
-    def rename_shader_lib_file(self, old: Path, new_rel: str) -> Path | None:
-        return self.shader_lib_files.rename_file(old, new_rel)
 
     def reveal_shader_lib_file_in_manager(self, path: Path) -> None:
         if not path.exists():

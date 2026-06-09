@@ -64,20 +64,20 @@ def _draw_function_tag_editor(app: App, fn: ShaderLibFunction) -> None:
         imgui.same_line()
 
     imgui.set_next_item_width(140.0)
-    changed, app.shader_lib_picker_new_tag_buf = imgui.input_text(
+    changed, app.shader_lib_files.picker_new_tag_buf = imgui.input_text(
         f"##newtag_{fn.name}",
-        app.shader_lib_picker_new_tag_buf,
+        app.shader_lib_files.picker_new_tag_buf,
         flags=imgui.InputTextFlags_.enter_returns_true,
     )
     # Update the "input owns Enter" flag immediately so the outer Enter check
     # on the NEXT frame skips Insert+close when the user is still typing here.
-    app.shader_lib_picker_tag_input_focused = imgui.is_item_focused()
+    app.shader_lib_files.picker_tag_input_focused = imgui.is_item_focused()
     imgui.same_line()
     add_pressed = ghost_button(f"+ Add##addtag_{fn.name}")
-    buf = app.shader_lib_picker_new_tag_buf.strip().lstrip("#").lower()
+    buf = app.shader_lib_files.picker_new_tag_buf.strip().lstrip("#").lower()
     if (changed or add_pressed) and buf:
         app.shader_lib_tags.add(fn.name, buf)
-        app.shader_lib_picker_new_tag_buf = ""
+        app.shader_lib_files.picker_new_tag_buf = ""
         return
 
     if buf:
@@ -95,7 +95,7 @@ def _draw_function_tag_editor(app: App, fn: ShaderLibFunction) -> None:
                     text_color=COLOR.FG_PRIMARY,
                 ):
                     app.shader_lib_tags.add(fn.name, s)
-                    app.shader_lib_picker_new_tag_buf = ""
+                    app.shader_lib_files.picker_new_tag_buf = ""
             imgui.pop_font()
 
 
