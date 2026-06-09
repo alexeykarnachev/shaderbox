@@ -37,6 +37,7 @@ from shaderbox.copilot.llm.api import (
 )
 from shaderbox.copilot.prompt_context import CopilotContext
 from shaderbox.copilot.tools.registry import build_registry
+from shaderbox.copilot.trace import TraceLog
 from tests._caps import minimal_caps
 
 
@@ -295,6 +296,61 @@ def test_repeated_failed_edits_stop_at_retry_cap() -> None:
     assert "couldn't apply" in events[-1].message
     # Did NOT run to the hard ceiling.
     assert len(failed_cards) < COPILOT_CONFIG.max_iterations
+
+
+def test_applies_but_broken_thrash_nudges_not_giveup() -> None:
+    # Broken-compile circuit-breaker: an edit that APPLIES but compiles WITH errors returns
+    # ok=True, so it never trips the failed-edit cap (which counts edits that fail to apply).
+    # max_compile_failures consecutive such edits splice a one-time rewrite nudge, NOT a giveup.
+    edit = _tool_call(
+        "cx",
+        "edit_shader",
+        '{"old_str": "vec3 p = u_pos;", "new_str": "vec3 p = u_pos;"}',
+    )
+    cap = COPILOT_CONFIG.max_compile_failures
+    # MORE than `cap` broken-but-applying edits, then a clean reply. The latch must keep the nudge
+    # to ONCE even though the thrash continues past the cap (no re-nudge every `cap` steps).
+    n_broken = cap + 3
+    scripts: list[list[LLMStreamEvent]] = [edit] * n_broken + [
+        [LLMTextDelta("Rewrote the block."), LLMDone("stop")]
+    ]
+    one_error = [
+        CompileErrorInfo(path="node.frag.glsl", line=1, message="'x' : undeclared")
+    ]
+    caps = _fake_caps(edit_errors=[one_error] * n_broken)
+    registry = build_registry(caps)
+
+    nudge_events: list[str] = []
+
+    class _RecordingTrace(TraceLog):
+        def __init__(self) -> None:
+            super().__init__(Path())
+
+        def event(self, kind: str, **fields: object) -> None:
+            nudge_events.append(kind)
+
+    events = list(
+        run_turn(
+            _FakeClient(scripts),
+            registry,
+            COPILOT_CONFIG,
+            _fake_context(),
+            history=[],
+            user_text="keep breaking it",
+            gate=GateChannel(),
+            cancel=threading.Event(),
+            trace=_RecordingTrace(),
+        )
+    )
+
+    cards = [e for e in events if isinstance(e, AgentToolCard)]
+    # All edits applied (ok=True) — none counted as a failed edit, so no giveup.
+    assert len(cards) == n_broken
+    assert all(c.ok for c in cards)
+    # The nudge fired exactly ONCE despite the thrash running past the cap (latch held).
+    assert nudge_events.count("compile_thrash_nudge") == 1
+    # The turn ended on the clean reply, NOT an AgentError giveup/cutoff.
+    assert isinstance(events[-1], AgentTurnDone)
 
 
 def test_max_iterations_cutoff_surfaces_as_error() -> None:

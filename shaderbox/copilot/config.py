@@ -10,6 +10,11 @@ class CopilotConfig:
     max_tokens_per_turn: int = 8_000
     # Soft per-edit compile-fix retry budget, distinct from max_iterations (§I2).
     max_edit_retries: int = 3
+    # Consecutive applies-but-compiles-with-errors edits before a one-time "rewrite the whole
+    # block in one edit" nudge. Distinct from max_edit_retries (which counts edits that FAIL to
+    # apply); an edit that applies returns ok=True, so it never trips that cap — this catches the
+    # apply-but-broken thrash separately. Not a giveup: the model usually recovers.
+    max_compile_failures: int = 5
     # Headroom the history trim withholds for the per-turn working-set scratchpad, which is
     # spliced AFTER the trim runs and is otherwise invisible to it (feature 020·29 D10).
     scratchpad_reserve_tokens: int = 50_000

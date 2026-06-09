@@ -34,6 +34,12 @@ _MODEL_INCOMPATIBLE_MSG = (
     "Settings -> Integrations -> Copilot."
 )
 
+_COMPILE_THRASH_NUDGE = (
+    "\n\n[hint] That's several edits in a row that applied but still left compile errors. "
+    "Stop patching line by line: re-read the FULL function/block from the working set, work out "
+    "the whole correct version, and rewrite it in ONE edit (replace_lines over the whole range)."
+)
+
 
 def _trunc(text: str, limit: int) -> str:
     # Log-line truncation with an ASCII marker so a cut value never reads as the whole thing.
@@ -364,6 +370,10 @@ def run_turn(
     ran = _RunLog()
     total_tool_calls = 0
     consecutive_failed_edits = 0  # self-correction cap (reset on any other outcome)
+    consecutive_compile_failures = 0  # applies-but-broken thrash counter
+    compile_nudge_sent = (
+        False  # latched once the nudge fires; re-armed by a non-thrash step
+    )
     first_input_tokens: int | None = None  # iter-0 context size for the usage bar
     logger.info(f"copilot turn start | user={_trunc(user_text, 80)!r}")
     logger.debug(
@@ -591,7 +601,6 @@ def run_turn(
                 widget=_widget_from_payload(payload),
                 display=display,
             )
-            messages.append(_tool_message(tc.id, msg))
 
             # Self-correction cap: a model stuck on an edit (an old_str that keeps not matching, a
             # line range that keeps not resolving) would otherwise retry to the max_iterations
@@ -602,6 +611,34 @@ def run_turn(
                 consecutive_failed_edits += 1
             else:
                 consecutive_failed_edits = 0
+
+            # Applies-but-broken thrash: an edit that APPLIES (ok=True) but leaves compile errors
+            # resets the failed-edit cap above, so a model that keeps producing broken-but-applying
+            # edits would loop to max_iterations. Count those separately and, at the cap, splice a
+            # rewrite nudge onto THIS edit's tool message — not a giveup; the model usually recovers.
+            # The latch fires the nudge ONCE per thrash run; a non-thrash step re-arms it (so a fresh
+            # thrash run after a clean edit nudges again, but a model ignoring it isn't re-nudged
+            # every max_compile_failures steps).
+            applied_with_errors = (
+                registry.is_edit_tool(tc.name)
+                and ok
+                and bool((payload or {}).get("errors"))
+            )
+            if applied_with_errors:
+                consecutive_compile_failures += 1
+            else:
+                consecutive_compile_failures = 0
+                compile_nudge_sent = False
+            if (
+                consecutive_compile_failures >= config.max_compile_failures
+                and not compile_nudge_sent
+            ):
+                msg += _COMPILE_THRASH_NUDGE
+                compile_nudge_sent = True
+                tr.event("compile_thrash_nudge", iteration=iteration)
+
+            messages.append(_tool_message(tc.id, msg))
+
             if consecutive_failed_edits >= config.max_edit_retries:
                 giveup = True
                 break

@@ -39,38 +39,16 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   switch + lib edits. A new tool that mutates durable state without a capture call leaves an
   un-revertable change. Spec: `ai_docs/features/020_copilot_agent/30_turn_rollback.md` (decision 2).
 
-## [DEFERRAL] copilot resolves "this"/"it"/the-shader to a name-match, not the current node
-- **Trigger:** the next session where the agent edits/targets a node the user referred to only by a
-  demonstrative ("this", "it", "the shader") and picks the wrong one, OR next time you touch the
-  `HOW TO WORK` / targeting guidance in `copilot/prompt.py`.
-- Observed 2026-06-08: "project this onto a sphere" (current node = Input Types Test) made the agent
-  target the node NAMED "Raymarched Sphere" — it free-associated the word "sphere" to a node name
-  instead of resolving "this" to the `current` node it had been editing. The prompt has no rule for
-  pronoun/demonstrative → current-node resolution, and no warning against name-matching. Honest fix:
-  a TARGETING rule near the top of `HOW TO WORK` — a bare reference = the `current` node; only target
-  another node when the user NAMES it (name/id) or the request can only be satisfied there; when
-  ambiguous, ASK before mutating. Prompt-level, small; separate from the rollback recoverability work
-  (020·30). A confirm-gate on non-current-node edits is a possible structural backstop (bigger; the
-  maintainer deferred deciding that).
-- REPRODUCED 2026-06-09 (scenario 02, on the compressed prompt): a BARE demonstrative ("make this one a
-  circle", current=Red Quad) resolved CORRECTLY to current; but a name-adjacent phrase ("give the sphere
-  a glow", current=Red Quad, a node named "Blue Sphere" exists) made the agent silently `switch_node` to
-  Blue Sphere + edit it — case (c), the "clearest bug" the scenario flags. So the gap is specifically
-  name-association, not bare pronouns. The compression did NOT touch this (no targeting rule existed to
-  preserve); the fix above is still the honest one.
-
-## [DEFERRAL] copilot broken-compile circuit-breaker (edit-applies-but-compiles-with-errors thrash)
-- **Trigger:** a trace shows a turn approaching `max_iterations` on broken-compile EDIT thrash (an edit that
-  APPLIES but compiles WITH errors, repeated), OR before anyone raises `max_iterations` to absorb such a turn.
-  (Observed 2026-06-05: the cyrillic turn ran 8 consecutive applies-with-errors, bounded only by max_iterations
-  at iter 11 — one of headroom; it recovered, but with no headroom margin.)
-- An edit that applies but compiles with errors returns `ok=True` (`tools/shader.py::_applied_result`), so
-  `consecutive_failed_edits` resets every step (`agent.py`) — the edit-giveup cap never engages on a model that
-  keeps producing applies-but-broken edits. Honest fix when triggered: a SEPARATE `consecutive_compile_failures`
-  counter that increments on a non-empty `result.errors` and, at ~4-5, injects a one-time nudge ("N broken
-  compiles in a row — re-read the full function and rewrite the whole block in ONE edit") rather than a hard
-  giveup. NOT built now (the overfit tribunal spared it as genuinely structural but not yet recurring — model
-  competence absorbs most of it).
+## [DEFERRAL] copilot non-current-node-edit confirm-gate (the targeting structural backstop)
+- **Trigger:** a trace shows the agent STILL mis-targeting a node by name-association AFTER the
+  `HOW TO WORK` TARGETING rule (the prompt-level fix landed) — i.e. the prompt rule proved
+  insufficient and a structural guard is warranted.
+- The prompt-level fix (a TARGETING rule: bare/demonstrative reference = current node; name-match
+  only when the user NAMES it or it can only be satisfied there; else ASK) landed in
+  `copilot/prompt.py`. The bigger structural option the maintainer deferred deciding: a confirm-gate
+  on any edit/switch that targets a NON-current node, so a wrong silent switch is caught even if the
+  model ignores the prompt. Only build it if the prompt rule visibly fails in a fresh trace (per the
+  "guard earns its place" convention — don't add standing structure for a transient model lapse).
 
 ## [DEFERRAL] copilot machine-readable render feedback (the visual-blindness affordance)
 - **Trigger:** the first recurrence (in a DIFFERENT session) of "the agent can't tell its change had no visual
@@ -166,18 +144,6 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   (The active-region visual cue — the accent outline + editor border — LANDED in the color/nav polish
   wave; no longer deferred.)
 
-## [DEFERRAL] cross-file uniform declaration jump (lib files)
-- **Trigger:** first user complaint that clicking a uniform name in the panel doesn't jump
-  anywhere when the uniform happens to be declared in a lib file (not the node's own shader),
-  OR when a real workflow puts uniform declarations in lib files often enough to feel friction.
-- `shader_errors.find_uniform_declaration_line` searches only the active session's editor text
-  (`widgets/uniform.py::_begin_ctrl`). A uniform declared in a lib file is discovered via the
-  driver's introspection (so it appears in the panel) but click-to-jump silently no-ops.
-  Honest fix: walk `node.compile_unit.sources` in order, search each, and open the matching
-  session via `App.open_shader_lib_file(path)` before issuing the `JumpRequest`. Out of scope in 015
-  (the spec calls this out: "lib = pure functions only" is the cognitive-clarity guarantee — if
-  this defaults to false in practice, revisit the guarantee too).
-
 ## [DEFERRAL] lib-author macro indirection for function dispatch
 - **Trigger:** first time a lib author writes `#define HASH SB_hash3` (or similar) inside a lib
   file as a way to dispatch through the SB_-prefixed function, and finds their wrapper isn't
@@ -201,17 +167,6 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
 - Today the code pane shows ONE file at a time (the node's shader or one lib file). Design
   shape (pinned node-shader tab + closable lib tabs) is in `015_shader_include_library.md`
   decision 8.
-
-## [DEFERRAL] resolution combo parses (w,h) back out of its display label
-- **Trigger:** next time you change `util.get_resolution_str`'s format string (anything before
-  the `WxH` token, or the `x`/space layout), OR the first time the canvas resolution silently
-  fails to change on combo select.
-- `tabs/node.py` reconstructs `(w, h)` from the selected combo item via
-  `resolution_str.split(" ")[0].split("x")` — it re-parses the human display label produced by
-  `get_resolution_str`. Safe today (the `WxH` token is always first, the `(ratio)` / `- name`
-  suffix can't corrupt it) and pinned by `tests/test_util.py::test_resolution_str_format_parses_back`,
-  but format and parser must agree forever. Cleaner fix when touched: carry a parallel `(w, h)`
-  list indexed by the combo index instead of round-tripping the string.
 
 ## [DEFERRAL] sticker render is always t=0..N (no loop-offset / "which 3s")
 - **Trigger:** first time a shader's interesting motion isn't at the start (a user wants a 3s
@@ -254,12 +209,13 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   agent self-corrected applies-with-errors edits 4-5x per run, including CROSS-tool (a broken `create_node`
   fixed by a clean `replace_lines`), confirmed by `scripts/dogfood/analyze.py`'s recovery rollup. So
   single-error comprehension + correction is solidly confirmed.
-- STILL UNTESTED: (a) the THRASH case — MANY consecutive applies-but-compile-with-errors edits, where
-  `consecutive_failed_edits` resets every step so the giveup cap never engages; (b) `old_str` mismatch
-  recovery; (c) bad-node-id recovery; (d) malformed-args recovery. A future dogfood mission should drive
-  these deliberately + inspect the `edit_giveup`/`max_iterations`/
-  `consecutive_failed_edits` trace events (`agent.py`). The thrash case is the one tied to the separate
-  broken-compile circuit-breaker deferral above.
+- STILL UNTESTED: (a) the THRASH case — MANY consecutive applies-but-compile-with-errors edits. The
+  broken-compile circuit-breaker now LANDED (`consecutive_compile_failures` + a one-time
+  `compile_thrash_nudge` at `max_compile_failures`, `agent.py`; unit-tested), but a dogfood mission must
+  still drive a real thrash to confirm the nudge FIRES and actually unsticks the model. (b) `old_str`
+  mismatch recovery; (c) bad-node-id recovery; (d) malformed-args recovery. A future dogfood mission should
+  drive these deliberately + inspect the `edit_giveup`/`max_iterations`/`consecutive_failed_edits`/
+  `compile_thrash_nudge` trace events (`agent.py`).
 
 ## [DEFERRAL] true in-line drag-selection of WRAPPED copilot chat prose
 - **Trigger:** the per-message Copy button (020·23 D7) proves insufficient — a user wants to select a

@@ -54,16 +54,38 @@ def uniform_name_label(
         text_color=text_color,
         accent=accent,
     )
-    if clicked or imgui.is_item_hovered():
-        session = app.get_current_session()
-        if session is None:
-            return
+    if not (clicked or imgui.is_item_hovered()):
+        return
+    located = _locate_uniform_declaration(app, name)
+    if located is None:
+        return
+    path, line = located
+    if clicked:
+        if path != app.current_editor_path:
+            app.open_shader_lib_file(path)
+        app.editor_jump_request = JumpRequest(path, line, 0)
+    elif path == app.current_editor_path:
+        # Hover only marks the active editor; a lib-declared uniform shows nothing to highlight.
+        app.editor_hover_line = HoverMark(path, line)
+
+
+def _locate_uniform_declaration(app: App, name: str) -> tuple[Path, int] | None:
+    # The active editor first (it carries unsaved edits); then every file in the node's
+    # compile unit, so a uniform declared in a resolved lib file is jump-reachable.
+    session = app.get_current_session()
+    if session is not None:
         line = find_uniform_declaration_line(session.editor.get_text(), name)
         if line is not None:
-            if clicked:
-                app.editor_jump_request = JumpRequest(session.source.path, line, 0)
-            else:
-                app.editor_hover_line = HoverMark(session.source.path, line)
+            return session.source.path, line
+    if ui_node := app.ui_nodes.get(app.current_node_id):
+        active_path = session.source.path if session is not None else None
+        for source in ui_node.node.compile_unit.sources:
+            if source.path == active_path:
+                continue
+            line = find_uniform_declaration_line(source.text, name)
+            if line is not None:
+                return source.path, line
+    return None
 
 
 def _begin_ctrl(app: App, name: str) -> None:

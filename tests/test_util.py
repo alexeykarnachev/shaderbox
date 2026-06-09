@@ -1,8 +1,8 @@
 """Pure unit tests for the text/unicode and resolution-string helpers — no GL.
 
 The unicode round-trip guards the text-uniform crash (a full char[N] with no
-trailing zero must decode without raising). The resolution tests pin the display
-format that tabs/node.py parses back to (w, h).
+trailing zero must decode without raising). The resolution test pins the display
+format tabs/node.py shows.
 """
 
 from pathlib import Path
@@ -48,18 +48,6 @@ def test_unicode_empty_round_trip() -> None:
     encoded = str_to_unicode("", 8)
     assert encoded == [0] * 8
     assert unicode_to_str(encoded) == ""
-
-
-def test_resolution_str_format_parses_back() -> None:
-    # tabs/node.py reconstructs (w, h) via label.split(" ")[0].split("x").
-    for name, w, h in [
-        (None, 960, 1280),
-        ("u_texture", 1920, 1080),
-        (None, 1080, 1080),
-    ]:
-        label = get_resolution_str(name, w, h)
-        pw, ph = map(int, label.split(" ")[0].split("x"))
-        assert (pw, ph) == (w, h)
 
 
 def test_resolution_str_name_suffix() -> None:

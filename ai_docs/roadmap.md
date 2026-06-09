@@ -26,7 +26,7 @@ feature; brief points at the superseder).
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
 <!-- As of 2026-06-09. -->
-**027 (interactive dogfood by RESUME/DUMP — NO server) landed: code green + storm + pre/post-impl reviewed. A devil's-advocate storm killed the originally-planned blocking server — the copilot conversation is already a free, NL-only, zero-LLM-call serialized replay (`ConversationStore`/`load_conversation`) and the EGL+worker rebuild it'd protect is ~1s, so a long-lived process was complexity bought to avoid a cheap rebuild. The shape that shipped: `DogfoodHarness.create(project_dir=)` resumes a prior run from disk + `dump(path)` persists conversation/app_state + writes a structured JSON turn-result, so each dogfood turn is ONE blocking `uv run` (state on disk, Claude reads the reply + composes the next message live). Everything dogfood consolidated under `scripts/dogfood/` (harness + analyzer + scenarios + gitignored `runs/`); the 6 shallow scenarios became ONE goal-driven mission (`01_shape_gallery.md`, the pressure axes folded in — harder code-quality/token-overflow missions come later). DOGFOODED LIVE 4 runs on codex-mini ($0.05-0.09 each): mechanism proven (resume/dump + context-wipe + the `analyze.py` auto-rollup), the run-3 findings (set_uniform loop, create_node footgun) fixed + re-verified in run 4, the analyzer + scenario hardened (cross-tool recovery, dump-per-run filter, grep provocation). Remaining: the lazy-tool-catalogue lever 2; the 025 `make run` pass; then COMMIT + ship.**
+**Polish wave landed on top of the committed 027: four headless deferral fixes, code green + adversarial 2-round review (converged). (1) Copilot TARGETING rule in `prompt.py` — a bare/demonstrative reference = current node; name-match only when the user NAMES it, else ASK (kills the reproduced "give the sphere a glow -> switch_node to Blue Sphere" name-association bug). (2) Broken-compile circuit-breaker in `agent.py` — a separate `consecutive_compile_failures` counter + a latched one-time `compile_thrash_nudge` at `max_compile_failures` (the applies-but-broken thrash reset `consecutive_failed_edits` every step, so the giveup cap never engaged; unit-tested incl. the re-arm). (3) Cross-file uniform jump in `widgets/uniform.py` — clicking a lib-declared uniform now walks `compile_unit.sources` + opens the lib file before the JumpRequest (was a silent no-op). (4) Resolution combo in `tabs/node.py` — a parallel `(w,h)` list replaces re-parsing the display label (killed the latent format-fragility + its now-dead test). Each resolved deferral deleted from `todo.md` in this wave. Remaining before ship: lever 2 lazy-tool-catalogue; the 025 + 030 `make run` passes; the targeting + cross-file-jump fixes want a maintainer `make run` / dogfood confirm (prompt-level + GUI, not headless-verifiable).**
 
 - **DONE this wave — 027 interactive dogfood (resume/dump).** `git mv scripts/dogfood.py ->
   scripts/dogfood/harness.py`; new `create(project_dir=)` resume + `dump(path)` + `reload()` (composing the
@@ -48,9 +48,9 @@ feature; brief points at the superseder).
 - **NEXT:** COMMIT the 027 wave (mega-review clean), then lever 2 lazy-tool-catalogue (`token_probe.py`:
   10 shader tools = 2495 tok vs 21 = 3941) + the 025 `make run` pass. Harder dogfood missions (code-quality
   grading, token-overflow provocation) come after, building on the obkatan `01_shape_gallery` mechanism.
-- **Still pending (separate):** copilot turn-rollback (030) awaits its own `make run` pass; the wrong-node
-  TARGETING prompt fix is filed not started (REPRODUCED 2026-06-09 on name-association: "give the sphere a
-  glow" jumped to a node named Blue Sphere — `todo.md`; a future targeting mission re-probes it).
+- **Still pending (separate):** copilot turn-rollback (030) awaits its own `make run` pass. The wrong-node
+  TARGETING prompt fix LANDED this polish wave (`prompt.py`); a dogfood re-probe confirms it holds, and a
+  confirm-gate backstop stays deferred in `todo.md` for if the prompt rule visibly fails.
 - **Observed (codex-mini, 4 dogfood runs):** the model NEVER calls `switch_node` — it self-targets via
   `read_shader` + a targeted edit; `switch_node` is effectively vestigial for it (a `todo.md` note + a
   coverage-target decision, not a bug).
@@ -58,8 +58,8 @@ feature; brief points at the superseder).
   on `dev`, unshipped, pending the 025/030 live passes. Awaiting explicit go.
 - **Deferred (each gates a FUTURE round only on a NEW failure class in a DIFFERENT session):** the lazy
   tool-catalogue (its ~16-tool threshold FIRED), the structural shader view (020·27), reasoning-notes /
-  intent-carryover guard (DE-RISKED by 029), a broken-compile circuit-breaker, machine-readable render
-  feedback, `bind_media`/`undo_edit` — all in `todo.md`.
+  intent-carryover guard (DE-RISKED by 029), machine-readable render feedback, `bind_media`/`undo_edit` —
+  all in `todo.md`. (The broken-compile circuit-breaker LANDED this polish wave.)
 - **Trace-gated (NOT now):** semantic-editing (rename/outline/add_uniform), GLSL-aware grep, uniforms-in-
   tree, eager-recompile for lib edits — each only if a trace shows the current tools struggling (none does).
   The visual-variant-optimizer (render N variants as clickable chat boxes) is the big future feature.

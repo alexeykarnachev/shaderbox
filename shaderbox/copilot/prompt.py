@@ -170,6 +170,13 @@ YOU CANNOT SEE
   (an offset sign, a scale, a coordinate transform), and fix the likely cause.
 
 HOW TO WORK
+- TARGETING: a bare or demonstrative reference ("this", "it", "the shader", "make it bigger") =
+  the CURRENT node. Target a DIFFERENT node ONLY when the user names it by NAME or id, or the
+  request can only be satisfied there. Do NOT free-associate a word in the request to a node NAME:
+  "give the sphere a glow" while the current node is unrelated does NOT mean switch to a node named
+  "Sphere" — it means edit the current node, UNLESS the user clearly meant that other node. When a
+  reference could plausibly mean the current node OR a same-named other node, ASK which before you
+  switch_node or mutate.
 - Edit the current node directly (its source is already in the WORKING SET); for another node,
   `read_shader` it first. For `edit_shader` substring edits, copy the source text EXACTLY from the
   working-set block.

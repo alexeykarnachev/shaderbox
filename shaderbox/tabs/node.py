@@ -55,7 +55,8 @@ def draw(app: App) -> None:
         (3440, 1440),
     ]
 
-    current_size = tuple(ui_node.node.canvas.texture.size)
+    cw, ch = ui_node.node.canvas.texture.size
+    current_size: tuple[int, int] = (cw, ch)
 
     uniform_resolutions = []
     matching_uniforms = []
@@ -73,11 +74,14 @@ def draw(app: App) -> None:
 
     current_name = ", ".join(matching_uniforms) if matching_uniforms else None
     resolution_items = [get_resolution_str(None, *current_size)]
+    resolution_sizes: list[tuple[int, int]] = [current_size]
     for w, h, name in uniform_resolutions:
         resolution_items.append(get_resolution_str(name, w, h))
+        resolution_sizes.append((w, h))
     for w, h in standard_resolutions:
         if (w, h) != current_size and (w, h) not in uniform_sizes:
             resolution_items.append(get_resolution_str(None, w, h))
+            resolution_sizes.append((w, h))
 
     node_ui_state = app.current_node_ui_state_or_default
 
@@ -99,10 +103,11 @@ def draw(app: App) -> None:
     imgui.set_next_item_width(SIZE.RES_COMBO_W)
     new_res_idx = imgui.combo("##resolution", 0, resolution_items)[1]
     if new_res_idx != 0:
-        resolution_str = resolution_items[new_res_idx]
-        w, h = map(int, resolution_str.split(" ")[0].split("x"))
+        w, h = resolution_sizes[new_res_idx]
         ui_node.node.canvas.set_size((w, h))
-        app.notifications.push(f"Canvas resolution changed: {resolution_str}")
+        app.notifications.push(
+            f"Canvas resolution changed: {resolution_items[new_res_idx]}"
+        )
 
     imgui.same_line()
     if ghost_button("...##node_actions"):
