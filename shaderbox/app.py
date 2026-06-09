@@ -1,4 +1,3 @@
-import shutil
 import time
 from collections.abc import Callable
 from dataclasses import replace
@@ -24,13 +23,10 @@ from shaderbox.commands import (
 )
 from shaderbox.constants import RESOURCES_DIR
 from shaderbox.copilot.backend import CopilotBackend
-from shaderbox.copilot.capabilities import CopilotCapabilities
-from shaderbox.copilot.llm.openrouter import OpenRouterLLMClient
 from shaderbox.copilot.persistence import ConversationStore, archive_conversation
 from shaderbox.copilot.revert import RevertExecutor
 from shaderbox.copilot.session import CopilotSession
 from shaderbox.copilot.state import CopilotLayout, Message
-from shaderbox.copilot.wiring import build_capabilities
 from shaderbox.core import Canvas
 from shaderbox.editor_types import EditorSession, HoverMark, InlineInput, JumpRequest
 from shaderbox.exporters.integrations import IntegrationsStore
@@ -60,7 +56,6 @@ from shaderbox.ui_models import (
 from shaderbox.util import (
     open_in_file_manager,
     pfd_block,
-    select_next_value,
 )
 
 # Procedural starter seeded into an empty project on first run (no external media).
@@ -199,36 +194,33 @@ class App:
 
         self.preview_canvas: Canvas
 
-        # The headless project core (feature 025): owns the pure-core project state (nodes,
-        # app_state, lib index + cross-project stores, working set). App forwards to it via
-        # @property accessors below. notifier is injected (the core never builds imgui state).
-        self.session = ProjectSession(
-            node_templates_dir=RESOURCES_DIR / "node_templates",
-            starter_template_id=_STARTER_TEMPLATE_ID,
-            template_order=_TEMPLATE_ORDER,
-            notifier=self.notifications,
-        )
-
         self.exporter_registry = ExporterRegistry()
         self.exporter_registry.register(TelegramExporter())
         self.exporter_registry.register(YouTubeExporter())
         self.share_tab_state: share_state.TabState | None = None
 
-        # Constructed BEFORE the _init below (which calls release()) so release() never hits
-        # a missing attr. The client reads the key/model LIVE through getters — _init
-        # reassigns integrations_store, so capturing it here would go stale.
-        self.copilot = CopilotSession(
-            caps=self._build_copilot_capabilities(),
-            client=OpenRouterLLMClient(
-                get_api_key=lambda: self.integrations_store.copilot.openrouter_key,
-                get_model=lambda: self.integrations_store.copilot.model,
-            ),
-            # The trace filename carries the active project's dir name, read live. During
-            # __init__ project_dir isn't set yet -> "project"; the real slug lands when
-            # _init's reset_conversation rotates the trace.
-            get_project_slug=lambda: getattr(self, "project_dir", Path("project")).name,
-            get_checkpoints_root=lambda: self.paths.copilot_checkpoints_dir,
+        # Path-keyed editor sessions: one TextEditor per opened file. Declared before the
+        # session so its get_editor_sessions getter has a target to close over.
+        self.editor_sessions: dict[Path, EditorSession] = {}
+
+        # The headless project core (feature 025): owns the pure-core project state (nodes,
+        # app_state, lib index + cross-project stores, working set) AND the copilot cluster
+        # (CopilotSession/CopilotBackend/RevertExecutor, built in its own __init__). App forwards
+        # to it via @property accessors below. notifier + exporter_registry + shader_lib_files +
+        # editor_sessions are injected (the core stays imgui-import-free); the two callbacks route
+        # the UI-tail side effects the core can't own (sticky-focus reset, delete-arm clear).
+        self.session = ProjectSession(
+            node_templates_dir=RESOURCES_DIR / "node_templates",
+            starter_template_id=_STARTER_TEMPLATE_ID,
+            template_order=_TEMPLATE_ORDER,
+            notifier=self.notifications,
+            get_exporter_registry=lambda: self.exporter_registry,
+            get_shader_lib_files=lambda: self.shader_lib_files,
+            get_editor_sessions=lambda: self.editor_sessions,
+            on_current_node_changed=self._on_current_node_changed,
+            clear_delete_arm=self._clear_delete_arm,
         )
+
         # copilot_focus_pending: one-shot driving window + input focus, consumed at the input draw.
         self.is_copilot_open: bool = False
         self.copilot_layout: CopilotLayout = CopilotLayout.CORNER
@@ -317,8 +309,6 @@ class App:
         self.splitter_dragging: bool = False
         self._splitter_press_on_splitter: bool = False
 
-        # Path-keyed editor sessions: one TextEditor per opened file.
-        self.editor_sessions: dict[Path, EditorSession] = {}
         # When non-None, the editor pane shows this file instead of the current
         # node's shader. Set by `open_shader_lib_file` / cleared by `show_node_editor`.
         self._explicit_editor_path: Path | None = None
@@ -387,43 +377,30 @@ class App:
             CommandId.CYCLE_COPILOT_LAYOUT: self.cycle_copilot_layout,
         }
 
-    def _build_copilot_capabilities(self) -> CopilotCapabilities:
-        # Construct the CopilotBackend and bind its methods into the capabilities dataclass.
-        # Project-dependent deps are getters (a project switch retargets them); deps that
-        # reference self.copilot are lazy (it doesn't exist yet).
-        self.copilot_backend = CopilotBackend(
-            get_bridge=lambda: self.copilot.bridge,
-            node_templates_dir=self.node_templates_dir,
-            starter_template_id=_STARTER_TEMPLATE_ID,
-            get_renders_dir=lambda: self.paths.renders_dir,
-            get_ui_nodes=lambda: self.ui_nodes,
-            get_ui_node_templates=lambda: self.ui_node_templates,
-            get_exporter_registry=lambda: self.exporter_registry,
-            get_shader_lib_index=lambda: self.shader_lib_index,
-            get_shader_lib_files=lambda: self.shader_lib_files,
-            get_current_node_id=lambda: self.current_node_id,
-            get_is_cancelled=lambda: self.copilot.is_cancelled(),
-            set_current_node_id=self.set_current_node_id,
-            save_ui_node=self.save_ui_node,
-            sync_editor_from_disk=self.sync_editor_from_disk,
-            delete_node_unguarded=self._delete_node_unguarded,
-            template_description=self.template_description,
-            working_set_reader=lambda: self.session._copilot_working_set,
-            working_set_add=self.session._copilot_ws_add,
-            get_active_checkpoint=lambda: self.copilot.checkpoints.active,
-        )
-        self.revert_executor = RevertExecutor(
-            get_nodes_dir=lambda: self.paths.nodes_dir,
-            get_trash_dir=lambda: self.paths.trash_dir,
-            get_ui_nodes=lambda: self.ui_nodes,
-            get_checkpoints=lambda: self.copilot.checkpoints,
-            get_shader_lib_files=lambda: self.shader_lib_files,
-            set_current_node_id=self.set_current_node_id,
-            sync_editor_from_disk=self.sync_editor_from_disk,
-            delete_node_unguarded=self._delete_node_unguarded,
-            invalidate_lib_consumers=self.copilot_backend.invalidate_lib_consumers,
-        )
-        return build_capabilities(self.copilot_backend)
+    # ---- copilot-cluster forwarders (feature 025) ----
+    # The CopilotSession/CopilotBackend/RevertExecutor cluster lives on self.session; App keeps
+    # only the copilot UI state + the thin revert_turn/recover_deleted_node wrappers below.
+
+    @property
+    def copilot(self) -> CopilotSession:
+        return self.session.copilot
+
+    @property
+    def copilot_backend(self) -> CopilotBackend:
+        return self.session.copilot_backend
+
+    @property
+    def revert_executor(self) -> RevertExecutor:
+        return self.session.revert_executor
+
+    def _on_current_node_changed(self, old_id: str, new_id: str) -> None:
+        # Switching nodes invalidates the "user has been typing" sticky bit — the new node's
+        # session starts fresh; insertions would land at (0,0) until the user clicks into it.
+        self.editor_was_ever_focused = False
+
+    def _clear_delete_arm(self, node_id: str) -> None:
+        if node_id == self.node_delete_armed:
+            self.node_delete_armed = ""
 
     def recover_deleted_node(self, msg: Message) -> None:
         # MAIN THREAD (the chat's Recover button). Restore the node, flip the card's
@@ -794,11 +771,7 @@ class App:
         return self.ui_nodes[node_id].ui_state
 
     def set_current_node_id(self, id: str = "") -> None:
-        # Switching nodes invalidates the "user has been typing" sticky bit — the new node's
-        # session starts fresh; insertions would land at (0,0) until the user clicks into it.
-        if id != self.app_state.current_node_id:
-            self.editor_was_ever_focused = False
-        self.app_state.current_node_id = id
+        self.session.set_current_node_id(id)
 
     def set_node_delete_armed(self, id: str = "") -> None:
         self.node_delete_armed = id
@@ -987,16 +960,7 @@ class App:
         session.saved_undo = session.editor.get_undo_index()
 
     def sync_editor_from_disk(self, node_id: str, source: str) -> None:
-        # Called by the mtime watcher. The node's source.path is unchanged (only text/mtime),
-        # so look the session up by that path.
-        if node_id not in self.ui_nodes:
-            return
-        path = self.ui_nodes[node_id].node.source.path
-        session = self.editor_sessions.get(path)
-        if session is None:
-            return
-        session.editor.set_text(source)
-        session.saved_undo = session.editor.get_undo_index()
+        self.session.sync_editor_from_disk(node_id, source)
 
     def open_current_node_dir(self) -> None:
         if not self.current_node_id:
@@ -1067,13 +1031,7 @@ class App:
         root_dir: Path | None = None,
         dir_name: str | None = None,
     ) -> Path:
-        root_dir = root_dir or self.paths.nodes_dir
-        dir = ui_node.save(root_dir, dir_name)
-
-        logger.info(f"Node '{ui_node.ui_state.ui_name}' saved: {dir}")
-        self.notifications.push(f"Node '{ui_node.ui_state.ui_name}' saved")
-
-        return dir
+        return self.session.save_ui_node(ui_node, root_dir, dir_name)
 
     def save(self) -> None:
         if self._copilot_busy_blocked("Saving"):
@@ -1163,35 +1121,7 @@ class App:
         self._delete_node_unguarded(node_id)
 
     def _delete_node_unguarded(self, node_id: str) -> str:
-        # Teardown shared by the public + copilot delete: release GL, drop the editor session,
-        # reselect current, move the dir to trash. Returns the trash dir-NAME (id, or id_<ts>
-        # on collision) so a caller can offer a Recover. Caller guarantees node_id in ui_nodes.
-        new_node_id = select_next_value(
-            values=list(self.ui_nodes.keys()),
-            current_value=node_id,
-            default_value="",
-        )
-        if new_node_id == node_id:
-            new_node_id = ""
-
-        path = self.ui_nodes[node_id].node.source.path
-        self.ui_nodes.pop(node_id).node.release()
-        self.editor_sessions.pop(path, None)
-        if node_id in self.session._copilot_working_set:
-            self.session._copilot_working_set.remove(node_id)
-        if node_id == self.node_delete_armed:
-            self.node_delete_armed = ""
-        if node_id == self.current_node_id or not self.current_node_id:
-            self.set_current_node_id(new_node_id)
-        trash_name = node_id
-        dest = self.paths.trash_dir / trash_name
-        if dest.exists():  # a prior node with this id was already trashed
-            trash_name = f"{node_id}_{int(time.time() * 1000)}"
-            dest = self.paths.trash_dir / trash_name
-        shutil.move(self.paths.nodes_dir / node_id, dest)
-
-        logger.info(f"Node deleted: {node_id}")
-        return trash_name
+        return self.session._delete_node_unguarded(node_id)
 
     def create_node_from_selected_template(self) -> None:
         if self._copilot_busy_blocked("Creating a node"):
