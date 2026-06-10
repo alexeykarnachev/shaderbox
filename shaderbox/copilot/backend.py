@@ -20,7 +20,14 @@ import moderngl
 from loguru import logger
 from OpenGL.GL import GL_SAMPLER_2D, GL_UNSIGNED_INT
 
-from shaderbox.copilot.address import is_lib_address, lib_address, strip_lib_prefix
+from shaderbox.copilot.address import (
+    is_lib_address,
+    is_template_address,
+    lib_address,
+    strip_lib_prefix,
+    strip_template_prefix,
+    template_address,
+)
 from shaderbox.copilot.bridge import CopilotBridge
 from shaderbox.copilot.capabilities import (
     CompileErrorInfo,
@@ -377,7 +384,7 @@ class CopilotBackend:
         # Description is the merged override-or-shipped value, sanitized.
         return [
             TemplateEntry(
-                template_id=f"template:{tid[:4]}",
+                template_id=template_address(tid),
                 name=ui_node.ui_state.ui_name,
                 description=sanitize_display(self._template_description(tid)),
             )
@@ -389,7 +396,7 @@ class CopilotBackend:
         # Forgiving: also matches a template by its DISPLAY NAME (case-insensitive) — the model copies the
         # human half of the `template:<id> | <name>` catalogue, so a bare name must resolve, not hard-fail.
         templates = self._get_ui_node_templates()
-        h = handle.removeprefix("template:").strip()
+        h = strip_template_prefix(handle).strip()
         if not h:
             return None
         if h in templates:
@@ -407,7 +414,7 @@ class CopilotBackend:
     def _copilot_resolve_source(self, handle: str) -> tuple[str, str | None]:
         # read/grep addressing: `template:` -> TEMPLATE, else NODE. Returns (kind, full_id|None).
         # lib: falls through to the node resolver (read_lib owns lib) and returns None.
-        if handle.startswith("template:"):
+        if is_template_address(handle):
             return "template", self._copilot_resolve_template_id(handle)
         return "node", self._copilot_resolve_node_id(handle)
 
@@ -451,7 +458,7 @@ class CopilotBackend:
                 if kind == "template":
                     # Read-only: same view, not added to the working set, addressed by `template:` handle.
                     ui_node = self._get_ui_node_templates()[full_id]
-                    view_id = f"template:{full_id[:4]}"
+                    view_id = template_address(full_id)
                 else:
                     ui_node = self._get_ui_nodes()[full_id]
                     view_id = short[full_id]
@@ -559,7 +566,7 @@ class CopilotBackend:
                         )
                     )
         for tid, ui_node in self._get_ui_node_templates().items():
-            origin = f"template:{tid[:4]}"
+            origin = template_address(tid)
             label = f"template '{ui_node.ui_state.ui_name}'"
             for i, line in enumerate(ui_node.node.source.text.split("\n"), start=1):
                 if query in line:
@@ -1156,7 +1163,7 @@ class CopilotBackend:
         # file; empty -> current node; else a node-id (unknown is a hard error, never a lib fallback).
         if is_lib_address(target):
             return self._copilot_resolve_lib_target(target, allow_create=allow_create)
-        if target.startswith("template:"):
+        if is_template_address(target):
             # Templates are read-only; an explicit guard with an actionable message (not silent non-resolution).
             return EditResult(
                 matches=0,
