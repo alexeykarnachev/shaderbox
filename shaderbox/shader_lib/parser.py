@@ -35,6 +35,16 @@ def strip_comments(text: str) -> str:
     return text
 
 
+def strip_comments_keep_lines(text: str) -> str:
+    # Like strip_comments but PRESERVES line numbering: a multi-line block comment
+    # collapses to an equal number of newlines. Use wherever line numbers are
+    # reported off the stripped text.
+    text = re.sub(
+        r"/\*.*?\*/", lambda m: "\n" * m.group(0).count("\n"), text, flags=re.DOTALL
+    )
+    return re.sub(r"//[^\n]*", "", text)
+
+
 def split_root_header(text: str) -> tuple[int, list[str], list[str]]:
     # Header = leading prefix of blank lines, `//` comments, and
     # `#version`/`#extension`/`#pragma` directives. First other line starts the body.

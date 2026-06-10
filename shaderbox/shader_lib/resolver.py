@@ -9,6 +9,7 @@ Pure functions, no GL, no imgui. `Node.compile()` is the single integration site
 """
 
 import difflib
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -110,20 +111,33 @@ def _collect_used_lib_names(root: ShaderSource, index: ShaderLibIndex) -> set[st
     return {n for n in referenced if n not in user_defined and n in index.functions}
 
 
+_SB_CALL_RE = re.compile(r"\b(SB_\w+)\s*\(")
+# Any user-side definition of an SB_ name (not only function defs): a #define, or a
+# declaration-ish line (`const float SB_PI = ...`, `uniform vec2 SB_X;`, struct, array).
+_SB_USER_DEF_RE = re.compile(
+    r"(?:#\s*define\s+(SB_\w+)|\b(?:const|uniform|struct)\b[^;{=]*?\b(SB_\w+)\s*[=;[{])"
+)
+
+
 def _unknown_name_errors(
     root: ShaderSource, index: ShaderLibIndex
 ) -> list[ResolveError]:
-    # A referenced `SB_*` name that is neither in the lib nor user-defined would
-    # otherwise reach the driver as a cryptic "undeclared identifier" — error here
-    # with the line and the closest catalogue name instead. (Line numbers can
-    # drift across multi-line block comments; `//` stripping keeps newlines.)
-    stripped = parser.strip_comments(root.text)
+    # An SB_* name CALLED like a function but neither in the lib nor user-defined
+    # would reach the driver as a cryptic "undeclared identifier" — error here with
+    # the line and the closest catalogue name instead. Non-call references and any
+    # user-side definition (function/#define/const/uniform/struct) are left alone:
+    # a resolve error BLOCKS the driver compile, so false positives are worse than
+    # a missed hint.
+    stripped = parser.strip_comments_keep_lines(root.text)
     user_defined = set(parser.USER_FN_DEF_RE.findall(stripped))
+    for m in _SB_USER_DEF_RE.finditer(stripped):
+        user_defined.add(m.group(1) or m.group(2))
     known = list(index.functions)
     errors: list[ResolveError] = []
     seen: set[str] = set()
     for line_no, line in enumerate(stripped.splitlines(), start=1):
-        for name in parser.SB_IDENT_RE.findall(line):
+        for m in _SB_CALL_RE.finditer(line):
+            name = m.group(1)
             if name in user_defined or name in index.functions or name in seen:
                 continue
             seen.add(name)
@@ -132,7 +146,9 @@ def _unknown_name_errors(
             errors.append(
                 ResolveError(
                     root.path,
-                    line_no,
+                    # ShaderError lines are 0-based (the cycle error's
+                    # line_in_file convention); enumerate is 1-based.
+                    line_no - 1,
                     f"unknown library function '{name}'{hint}",
                 )
             )

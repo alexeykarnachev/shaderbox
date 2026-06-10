@@ -32,17 +32,23 @@ class SourceMap:
         return (path, line)
 
 
-# NVIDIA `0(LINE) : error CXXXX: msg`; Mesa/Intel/AMD `ERROR: 0:LINE: msg`.
+# NVIDIA `0(LINE) : error CXXXX: msg`; Mesa/Intel/AMD `ERROR: 0:LINE: msg`;
+# Mesa GLSL-IR (V3D et al) `FILE:LINE(COL): error: msg`.
 # Leading number = file-id from our `#line` directives (0 = root). Driver lines are
 # 1-based; resolved via SourceMap then shifted to 0-based.
 _NVIDIA_ERROR_RE = re.compile(r"^\s*(\d+)\((\d+)\)\s*:\s*(.+)$")
 _MESA_ERROR_RE = re.compile(r"^\s*(?:ERROR|WARNING):\s*(\d+):(\d+):\s*(.+)$")
+_MESA_IR_ERROR_RE = re.compile(r"^\s*(\d+):(\d+)\(\d+\):\s*(.+)$")
 
 
 def parse_shader_errors(raw: str, source_map: SourceMap) -> list[ShaderError]:
     errors: list[ShaderError] = []
     for raw_line in raw.splitlines():
-        match = _NVIDIA_ERROR_RE.match(raw_line) or _MESA_ERROR_RE.match(raw_line)
+        match = (
+            _NVIDIA_ERROR_RE.match(raw_line)
+            or _MESA_ERROR_RE.match(raw_line)
+            or _MESA_IR_ERROR_RE.match(raw_line)
+        )
         if match:
             file_id = int(match.group(1))
             driver_line = int(match.group(2))

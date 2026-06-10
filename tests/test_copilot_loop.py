@@ -757,12 +757,13 @@ def _is_incompatible_error(events: list[AgentEvent]) -> bool:
     )
 
 
-def test_silent_finish_after_tool_is_not_flagged_incompatible() -> None:
-    # A clean `stop` after a successful tool ends in AgentTurnDone (no error at all);
-    # `length` / `content_filter` after a tool are terminal provider signals, NOT
-    # tool-incompatibility — the model proved it can call tools.
-    stop_events = _run_empty_finish("stop")
-    assert not [e for e in stop_events if isinstance(e, AgentError)]
-    assert [e for e in stop_events if isinstance(e, AgentTurnDone)]
-    assert not _is_incompatible_error(_run_empty_finish("length"))
-    assert not _is_incompatible_error(_run_empty_finish("content_filter"))
+def test_silent_finish_after_tool_gets_final_reply_not_incompatible() -> None:
+    # An EMPTY-text terminal finish after a successful tool routes through the 033
+    # final no-tools reply; a client that stays silent there ends in the honest
+    # cannot-reply error — never the tool-incompatibility one (the model proved it
+    # can call tools), and never a silent empty TurnDone.
+    for fr in ("stop", "length", "content_filter"):
+        events = _run_empty_finish(fr)
+        errors = [e for e in events if isinstance(e, AgentError)]
+        assert errors and "could not produce a reply" in errors[0].message
+        assert not _is_incompatible_error(events)

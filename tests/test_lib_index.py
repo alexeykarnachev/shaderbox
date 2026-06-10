@@ -325,7 +325,7 @@ def test_typo_errors_with_closest_name_suggestion(tmp_path: Path) -> None:
     _flattened, _sources, _smap, errors = resolve_usage(root, idx)
     assert len(errors) == 1
     assert errors[0].path == root.path
-    assert errors[0].line == 1
+    assert errors[0].line == 0  # 0-based, the ShaderError convention
     assert "unknown library function 'SB_perln'" in errors[0].message
     assert "did you mean 'SB_perlin'" in errors[0].message
 
@@ -338,6 +338,36 @@ def test_unknown_name_errors_even_with_no_known_names_used(tmp_path: Path) -> No
     _flattened, _sources, _smap, errors = resolve_usage(root, idx)
     assert len(errors) == 1
     assert "unknown library function 'SB_totally_made_up'" in errors[0].message
+
+
+def test_non_call_and_non_function_SB_names_are_not_unknown(tmp_path: Path) -> None:
+    # A user-side #define / const / uniform with an SB_ name must NOT error (a
+    # resolve error blocks the driver compile — false positives are regressions),
+    # and a bare non-call mention is left alone too.
+    lib = tmp_path / "lib"
+    idx = _make_lib(lib, {"x.glsl": "float SB_perlin() { return 0.0; }\n"})
+    root = _write(
+        tmp_path / "root.glsl",
+        "#define SB_SCALE 2.0\n"
+        "const float SB_PI = 3.14159;\n"
+        "uniform vec2 SB_OFFSET;\n"
+        "void main() { float x = SB_PI * SB_SCALE; }\n",
+    )
+    _flattened, _sources, _smap, errors = resolve_usage(root, idx)
+    assert errors == []
+
+
+def test_unknown_name_line_survives_block_comments(tmp_path: Path) -> None:
+    # Multi-line /* */ comments above the call must not shift the reported line.
+    lib = tmp_path / "lib"
+    idx = _make_lib(lib, {"x.glsl": "float SB_perlin() { return 0.0; }\n"})
+    root = _write(
+        tmp_path / "root.glsl",
+        "/* one\n   two\n   three */\n" "void main() { SB_perln(); }\n",
+    )
+    _flattened, _sources, _smap, errors = resolve_usage(root, idx)
+    assert len(errors) == 1
+    assert errors[0].line == 3  # 0-based: the call sits on source line 4
 
 
 def test_user_defined_SB_function_is_not_unknown(tmp_path: Path) -> None:

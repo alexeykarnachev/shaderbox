@@ -374,7 +374,7 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
         return True, msg, None
 
     def create_node(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
-        node_id, errors = caps.create_node(
+        node_id, errors, extra = caps.create_node(
             args["name"], args["source"], args["template"], args["switch_to"]
         )
         where = "now active" if args["switch_to"] else "in the background"
@@ -385,10 +385,15 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             if errors
             else "compiled clean"
         )
+        body = (
+            f"created node '{args['name']}' (id: {node_id}), {where} — {status}. "
+            "Read it before editing."
+        )
+        if extra:
+            body += "\n" + extra
         return (
             True,
-            f"created node '{args['name']}' (id: {node_id}), {where} — {status}. "
-            "Read it before editing.",
+            body,
             {"created": node_id, "errors": [e.__dict__ for e in errors]},
         )
 

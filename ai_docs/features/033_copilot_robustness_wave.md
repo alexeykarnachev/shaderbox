@@ -1,6 +1,7 @@
 # 033 — Copilot robustness wave (error-analysis driven)
 
-**Status:** plan-locked (maintainer comments 2026-06-10), implementation starting.
+**Status:** landed (C1-C8 + mega-review fixes, 2026-06-10 night); awaiting the verification
+dogfood round. Review verdicts + triage: see `## Review round` below.
 
 ## Goal
 
@@ -61,6 +62,30 @@ fixes).
    unknown `SB_*` identifier with a closest-name suggestion (instead of silently passing it to the
    driver); harness dump's `last_render_path` echo fixed; mission practice gains a final
    sweep-the-dead-code turn (skill edit).
+
+## Review round (4 adversarial reviewers, triaged)
+
+All four verdicts in: spec-fidelity, correctness, prompt info-preservation, live-behavior
+(real EGL/V3D runs). Fixed from findings: resolver false-positives on non-function user `SB_*`
+names (CRITICAL — call-shaped references only now, any user definition whitelisted) + 0-based
+line convention + comment-safe line numbers (`strip_comments_keep_lines` in parser, shared);
+`redefined` + multi-name blob support in compile hints; the V3D `0:LINE(COL):` driver format now
+parses to exact lines (was a line-0 blob — `shader_errors.py`); silent-turn guarantee extended to
+empty `stop`/`content_filter` finishes; cancel guards around the final reply; trace `turn_done`
+ordering; cancelled-turn stats; `rsn=` in trace usage; force-restore honesty (live-program check
+for the clean anchor, streak restarts when a clean file breaks, no-anchor hint, restore-with-
+errors note); aspect-true probe canvas; create_node now returns hints/facts like the edit tools;
+prompt restorations (current-node-in-working-set, map-content boundary + grep recipe, pack
+auto-activation, Studio/button names, relative-tweak procedure); harness `last_render_path` =
+newest file in renders/ (agent renders included).
+
+Accepted deviations (documented, not bugs): force-restore uses a per-node `_last_clean` source
+map instead of the 030 checkpoint store (turn-grained, wrong shape for mid-turn restore);
+library `///` docs NOT compressed — round-3 evidence shows the agent succeedes BECAUSE of those
+docs and the whole catalogue costs ~0.9k tok (maintainer may overrule); lib-edit streaks (errors
+surface via consumer recompiles) out of scope — parked; `_broken_streak`/`_last_clean` keys
+survive node deletion (uuid keys, harmless); GL-marshalled force-restore path covered by the
+dogfood round rather than unit tests (repo convention for bridge paths).
 
 ## Files touched (planned)
 

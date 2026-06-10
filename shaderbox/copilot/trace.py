@@ -24,7 +24,10 @@ def _indent(text: str) -> str:
 
 
 def _render_usage(u: LLMUsage) -> str:
-    return f"in={u.input_tokens} out={u.output_tokens} cost=${u.cost_usd:.6f}"
+    return (
+        f"in={u.input_tokens} out={u.output_tokens} rsn={u.reasoning_tokens} "
+        f"cost=${u.cost_usd:.6f}"
+    )
 
 
 def _render_message(m: LLMMessage) -> str:

@@ -261,7 +261,7 @@ class CopilotCapabilities(Protocol):
     # non-empty. Returns (new node-id, post-compile errors).
     def create_node(
         self, name: str, source: str, template: str, switch_to: bool, /
-    ) -> tuple[str, list[CompileErrorInfo]]: ...
+    ) -> tuple[str, list[CompileErrorInfo], str]: ...
 
     # Delete a node (move its dir to the project trash, recoverable). Destructive => always
     # gated; the method marshals the GL teardown via the bridge.

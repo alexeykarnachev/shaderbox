@@ -118,6 +118,8 @@ class AgentError:
 @dataclass(frozen=True)
 class AgentCancelled:
     summary: TurnSummary = field(default_factory=TurnSummary)
+    # Cancelled turns still billed their iterations (033) — None on pre-stream cancels.
+    stats: TurnStats | None = None
 
 
 @dataclass(frozen=True)
@@ -420,7 +422,14 @@ def run_turn(
     for iteration in range(config.max_iterations):
         if cancel.is_set():
             logger.debug(f"copilot turn cancelled at iteration {iteration}")
-            yield AgentCancelled(_build_turn_summary("", ran, registry))
+            yield AgentCancelled(
+                _build_turn_summary("", ran, registry),
+                stats=TurnStats(
+                    context_tokens=first_input_tokens or 0,
+                    reply_tokens=usage.output_tokens,
+                    cost_usd=usage.cost_usd,
+                ),
+            )
             return
 
         text_buf = ""
@@ -512,19 +521,29 @@ def run_turn(
                     ),
                 )
                 return
-            if not text_buf and fr == "length":
+            if not text_buf and fr in ("length", "stop", "content_filter"):
                 # Cut off by the per-iteration token budget with nothing produced (a hidden
                 # reasoning burn). Force one NO-TOOLS reply so the user never gets silence.
                 logger.warning(
                     f"copilot turn truncated (length) after {total_tool_calls} tool call(s)"
                 )
-                tr.event("turn_truncated", iteration=iteration, reason="length")
+                tr.event("turn_truncated", iteration=iteration, reason=fr)
+                if cancel.is_set():
+                    yield AgentCancelled(
+                        _build_turn_summary("", ran, registry),
+                        stats=TurnStats(
+                            context_tokens=first_input_tokens or 0,
+                            reply_tokens=usage.output_tokens,
+                            cost_usd=usage.cost_usd,
+                        ),
+                    )
+                    return
                 yield from stream_final_reply()
                 reply = final_reply_text[-1] if final_reply_text else ""
                 if not reply:
                     reply = (
-                        "I ran out of my per-reply token budget before I could act. "
-                        "The actions above did complete — ask me to continue or recap."
+                        "I could not produce a reply this turn. The actions above did "
+                        "complete — ask me to continue or recap."
                     )
                     yield AgentError(
                         reply,
@@ -598,7 +617,14 @@ def run_turn(
             yield AgentStatus(registry.status_for(tc.name, args))
             if cancel.is_set():
                 logger.debug(f"copilot turn cancelled before tool {tc.name}")
-                yield AgentCancelled(_build_turn_summary(text_buf, ran, registry))
+                yield AgentCancelled(
+                    _build_turn_summary(text_buf, ran, registry),
+                    stats=TurnStats(
+                        context_tokens=first_input_tokens or 0,
+                        reply_tokens=usage.output_tokens,
+                        cost_usd=usage.cost_usd,
+                    ),
+                )
                 return
             # Pre-gate guard: a publish that can't run (no creds / no pack) returns a guided-handoff
             # message BEFORE the gate, so the user never gets a confirm dialog for an action that
@@ -625,7 +651,14 @@ def run_turn(
                 if resp.cancelled:
                     logger.debug(f"copilot turn cancelled at gate for {tc.name}")
                     tr.event("gate_cancelled", name=tc.name)
-                    yield AgentCancelled(_build_turn_summary(text_buf, ran, registry))
+                    yield AgentCancelled(
+                        _build_turn_summary(text_buf, ran, registry),
+                        stats=TurnStats(
+                            context_tokens=first_input_tokens or 0,
+                            reply_tokens=usage.output_tokens,
+                            cost_usd=usage.cost_usd,
+                        ),
+                    )
                     return
                 if not resp.approved:
                     logger.info(f"copilot tool {tc.name} | user declined")
@@ -731,6 +764,17 @@ def run_turn(
         f"tool_calls={total_tool_calls} total_in={usage.input_tokens} "
         f"cost=${usage.cost_usd:.6f}"
     )
+    if cancel.is_set():
+        yield AgentCancelled(
+            _build_turn_summary("", ran, registry),
+            stats=TurnStats(
+                context_tokens=first_input_tokens or 0,
+                reply_tokens=usage.output_tokens,
+                cost_usd=usage.cost_usd,
+            ),
+        )
+        return
+    yield from stream_final_reply()
     tr.event(
         "turn_done",
         cutoff="max_iterations",
@@ -738,7 +782,6 @@ def run_turn(
         tool_calls=total_tool_calls,
         usage=usage,
     )
-    yield from stream_final_reply()
     reply = final_reply_text[-1] if final_reply_text else ""
     if not reply:
         reply = (

@@ -19,7 +19,7 @@ _CONVENTIONS = """\
   `SB_sd_*` sources (negative inside) -> `SB_op_*` SDF transforms -> renderers
   (`SB_fill`/`SB_fill_aa`/`SB_glow`) -> 0..1 mask. Compose: source -> ops -> render.
 - Uniforms: `u_` prefix. `u_time`/`u_aspect`/`u_resolution` are engine-driven (read, never set)
-  but MUST still be declared to be fed.
+  but MUST still be declared — an undeclared one fails the compile (nothing is auto-injected).
 - Keep helpers small/single-purpose so they factor into the library."""
 
 

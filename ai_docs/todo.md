@@ -153,14 +153,6 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
 - Honest fix is a real columns/clipper grid layout. Also parked: persisting the focused region across
   restart (transient by design today). See `ai_docs/features/019_keyboard_navigation.md` Out-of-scope.
 
-## [DEFERRAL] copilot: a reasoning burst can eat the whole per-iteration token budget (zero actions)
-- **Trigger: BEING RESOLVED IN 033** (delete this entry in the landing commit). The facts for the
-  implementer: `openrouter.py` already sends `reasoning: {effort: "minimal"}` yet round-3 T2 burned
-  the full 8000 output tokens on hidden thinking with zero actions — PROBE `reasoning_tokens` in
-  usage first, then escalate the param (`max_tokens`/`exclude`/`enabled:false`/`"low"`). The
-  `max_tokens_per_turn` bump is held unless the probe shows thinking can't be suppressed. ALSO in
-  033: the cutoff turn's spend missing from `session_cost_usd` (accounting skips errored turns).
-
 ## [DEFERRAL] SB_sd_text cell-cull (warm-render speedup) blocked by a quad-seam artifact
 - **Trigger:** warm text-render cost becomes a real pain (live text preview on the Pi at speed, or
   a profiler shows SB_sd_text dominating on desktop) — then pick this up and crack the artifact.
@@ -193,13 +185,6 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   rendered as `??????` in chat (the D2 ASCII glyph sanitization, 020·20). The chat font DOES carry
   the app's text; the sanitizer is the lossy step. Fix shape: allow Cyrillic through the sanitizer
   (the font supports it) or transliterate instead of `?`-replacing.
-
-## [DEFERRAL] dogfood harness: project state not persisted between turns + dump render-path echo
-- **Trigger: BEING RESOLVED IN 033** (delete in the landing commit). Two harness defects: (a)
-  `set_uniform` values are LOST between turns — the project is never saved, so exp-1 turn 3 had to
-  re-set every uniform, burning the iteration budget (fix: dump() saves the project); (b) dump's
-  `last_render_path` echoed empty while the PNG existed on disk (exp-2 turn 1 — check
-  `harness.py::render` result handling + dump's cursor).
 
 ## [DEFERRAL] lib-author macro indirection for function dispatch
 - **Trigger:** first time a lib author writes `#define HASH SB_hash3` (or similar) inside a lib

@@ -250,6 +250,9 @@ class CopilotSession:
             case AgentCancelled():
                 self.state.streaming_text = ""
                 self._resolve_open_gate_card("cancelled")
+                if ev.stats is not None:
+                    self.state.last_turn = ev.stats
+                    self.state.session_cost_usd += ev.stats.cost_usd
                 self._finish_turn()
 
     def _current_snippet(self) -> Message | None:

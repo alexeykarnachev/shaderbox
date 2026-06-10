@@ -680,10 +680,10 @@ class CopilotBackend:
 
     def create_node(
         self, name: str, source: str, template: str, switch_to: bool
-    ) -> tuple[str, list[CompileErrorInfo]]:
+    ) -> tuple[str, list[CompileErrorInfo], str]:
         # Create a node from `template` (empty = the default starter); `source` overrides the body.
         # Order: save -> insert -> set-current. Adds to the working set; compiles + returns errors.
-        def _on_main() -> tuple[str, list[CompileErrorInfo]]:
+        def _on_main() -> tuple[str, list[CompileErrorInfo], str]:
             template_id = (
                 self._copilot_resolve_template_id(template)
                 if template.strip()
@@ -718,8 +718,17 @@ class CopilotBackend:
                 f"copilot created node {new_node.id} (switch_to={switch_to}, "
                 f"errors={len(errors)})"
             )
+            if errors:
+                extra = "\n".join(
+                    compile_hints(
+                        new_node.node.source.text, [e.message for e in errors]
+                    )
+                )
+            else:
+                extra = self._render_facts_for(new_node.node)
+                self._last_clean[new_node.id] = new_node.node.source.text
             # Short id, computed after insert so it's in the current id set.
-            return self._copilot_short_ids()[new_node.id], errors
+            return self._copilot_short_ids()[new_node.id], errors, extra
 
         return self._bridge.run_on_main(_on_main)
 
@@ -1174,6 +1183,15 @@ class CopilotBackend:
             "was restored to its last clean-compiling state (the working set below shows "
             "the restored source). Re-read it and rewrite the whole block in ONE edit."
         )
+        if restore_errors:
+            err_lines = "\n".join(
+                f"{e.path}:{e.line}: {e.message}" for e in restore_errors
+            )
+            note = (
+                f"EDIT UNDONE — {streak} consecutive edits left compile errors; the "
+                "file was restored to an earlier state, which itself no longer "
+                f"compiles (likely a library change):\n{err_lines}"
+            )
         facts = self._render_facts_for(node) if not restore_errors else ""
         return EditResult(
             matches=matches,
@@ -1190,11 +1208,17 @@ class CopilotBackend:
             return ""
         try:
             size = COPILOT_CONFIG.render_facts_size
+            # Match the node's canvas aspect — a square probe would lay out
+            # aspect-corrected shaders (u_aspect) differently from the preview.
+            cw, ch = node.canvas.texture.size
+            h = max(8, round(size * ch / cw)) if cw else size
             if self._probe_canvas is None:
-                self._probe_canvas = Canvas(size=(size, size))
+                self._probe_canvas = Canvas(size=(size, h))
+            else:
+                self._probe_canvas.set_size((size, h))
             node.render(canvas=self._probe_canvas)
             raw = self._probe_canvas.texture.read()
-            return render_facts(raw, size, size)
+            return render_facts(raw, size, h)
         except Exception as exc:  # — advisory channel, never break an edit
             logger.debug(f"copilot render facts skipped: {exc}")
             return ""
@@ -1302,19 +1326,36 @@ class CopilotBackend:
         if tgt.kind == "node":
             assert tgt.node is not None and tgt.node_id is not None
             self._capture_node(tgt.node_id)  # pre-write rollback snapshot (best-effort)
-            prev_clean = not tgt.node.compile_unit.errors
+            # "Clean" requires a LIVE program: an invalidated compile_unit has
+            # errors=[] without one (e.g. after a lib edit) and must not anchor.
+            prev_clean = (
+                not tgt.node.compile_unit.errors and tgt.node.program is not None
+            )
             errors = self._copilot_persist_shader(tgt.node_id, tgt.node, new_text)
             self._working_set_add(tgt.ws_address)
             self._batch_mutated.add(tgt.ws_address)
             if errors:
                 if prev_clean:
+                    # A clean file just broke — this starts a NEW streak (anything
+                    # earlier was already fixed, possibly outside the copilot).
                     self._last_clean[tgt.node_id] = tgt.source
-                streak = self._broken_streak.get(tgt.node_id, 0) + 1
+                    streak = 1
+                else:
+                    streak = self._broken_streak.get(tgt.node_id, 0) + 1
                 self._broken_streak[tgt.node_id] = streak
                 limit = COPILOT_CONFIG.auto_revert_after_failed_edits
-                if limit > 0 and streak >= limit and tgt.node_id in self._last_clean:
-                    return self._force_restore(tgt.node_id, tgt.node, streak, matches)
                 hints = tuple(compile_hints(new_text, [e.message for e in errors]))
+                if limit > 0 and streak >= limit:
+                    if tgt.node_id in self._last_clean:
+                        return self._force_restore(
+                            tgt.node_id, tgt.node, streak, matches
+                        )
+                    hints = (
+                        *hints,
+                        f"hint: {streak} broken edits in a row and no clean state "
+                        "known for this file this session — stop patching, rewrite "
+                        "the whole shader in ONE edit",
+                    )
                 return EditResult(matches=matches, errors=errors, error_hints=hints)
             self._broken_streak[tgt.node_id] = 0
             self._last_clean[tgt.node_id] = new_text

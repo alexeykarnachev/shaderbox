@@ -15,6 +15,32 @@ def test_redeclared_hint_lists_both_declaration_lines() -> None:
     assert "'weight' is declared on lines 1, 3" in hints[0]
 
 
+def test_redefined_function_and_blob_multi_name() -> None:
+    # Mesa says `redefined` for duplicate FUNCTIONS, and V3D delivers all errors
+    # as one blob — both names must get hints.
+    src = (
+        "float weight = 0.1;\n"
+        "float text_sdf(vec2 p) { return 0.0; }\n"
+        "float weight = 0.2;\n"
+        "float text_sdf(vec2 p) { return 1.0; }\n"
+    )
+    blob = "0:3(7): error: `weight' redeclared\n0:4(7): error: `text_sdf' redefined"
+    hints = compile_hints(src, [blob])
+    assert any("'weight' is declared on lines 1, 3" in h for h in hints)
+    assert any("'text_sdf' is declared on lines 2, 4" in h for h in hints)
+
+
+def test_hint_lines_survive_block_comments() -> None:
+    src = (
+        "/* a\n   b\n   c */\n"
+        "float weight = 0.1;\n"
+        "float weight = 0.2;\n"
+        "void main() {}\n"
+    )
+    hints = compile_hints(src, ["`weight' redeclared"])
+    assert "'weight' is declared on lines 4, 5" in hints[0]
+
+
 def test_initializer_count_hint() -> None:
     hints = compile_hints(
         "void main() {}\n",

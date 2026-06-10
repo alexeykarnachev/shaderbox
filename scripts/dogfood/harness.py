@@ -280,6 +280,23 @@ class DogfoodHarness:
         self._last_render_path = result.path
         return result.path
 
+    def _latest_render_on_disk(self) -> str:
+        # The truthful render pointer: harness renders set _last_render_path, but
+        # AGENT-initiated render_image never did (and a bridge-timeout could lose it
+        # while the file still landed) — so report the newest file in renders/ (033).
+        renders = self.session.paths.renders_dir
+        try:
+            latest = max(
+                (p for p in renders.iterdir() if p.is_file()),
+                key=lambda p: p.stat().st_mtime,
+                default=None,
+            )
+        except OSError:
+            latest = None
+        if latest is not None:
+            return str(latest)
+        return self._last_render_path
+
     # ---- inspection ----
 
     def nodes(self) -> dict[str, str]:
@@ -351,7 +368,7 @@ class DogfoodHarness:
                 else None
             ),
             "session_cost_usd": cop.state.session_cost_usd,
-            "last_render_path": self._last_render_path,
+            "last_render_path": self._latest_render_on_disk(),
             "trace_path": str(self.trace_path),
             "project_dir": str(self.project_dir),
             "data_dir": str(_DATA_DIR),

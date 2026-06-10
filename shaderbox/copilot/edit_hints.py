@@ -11,7 +11,7 @@ import re
 
 from shaderbox.shader_lib import parser
 
-_REDECLARED_RE = re.compile(r"`(\w+)' redeclared")
+_REDECLARED_RE = re.compile(r"`(\w+)' (?:redeclared|redefined)")
 _INITIALIZER_RE = re.compile(
     r"initializer of type (\w+)\[(\d+)\] cannot be assigned to .*?\[(\d+)\]"
 )
@@ -23,13 +23,16 @@ _DECL_HEAD = r"^\s*(?:const\s+)?(?:uniform\s+)?[A-Za-z_]\w*(?:\s*\[\s*\d*\s*\])?
 def compile_hints(source: str, error_messages: list[str]) -> list[str]:
     """Structural hints for compile errors, derived from the post-edit source."""
     hints: list[str] = []
-    stripped = parser.strip_comments(source)
+    stripped = parser.strip_comments_keep_lines(source)
     lines = stripped.splitlines()
     seen: set[str] = set()
+    # V3D can deliver every error in ONE blob message — iterate ALL matches per
+    # message, not just the first.
     for msg in error_messages:
-        m = _REDECLARED_RE.search(msg)
-        if m and m.group(1) not in seen:
+        for m in _REDECLARED_RE.finditer(msg):
             name = m.group(1)
+            if name in seen:
+                continue
             seen.add(name)
             decl = re.compile(_DECL_HEAD + re.escape(name) + r"\s*[=;[(]")
             decl_lines = [i for i, ln in enumerate(lines, start=1) if decl.match(ln)]
@@ -44,7 +47,9 @@ def compile_hints(source: str, error_messages: list[str]) -> list[str]:
             kind, got, want = m.group(1), m.group(2), m.group(3)
             hints.append(
                 f"hint: the initializer has {got} elements, the array wants {want} — "
-                f"or declare it unsized (`{kind}[] x = {kind}[](...)`), no counting"
+                f"declare it unsized (`{kind}[] x = {kind}[](...)`) to skip counting; "
+                "for TEXT skip const arrays entirely: uniform uint u_text[64] + "
+                "set_uniform"
             )
     opens, closes = stripped.count("{"), stripped.count("}")
     if opens != closes:
