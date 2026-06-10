@@ -110,14 +110,6 @@ class Image(MediaWithTexture):
             ),
         )
 
-    @classmethod
-    def from_color(
-        cls, size: tuple[int, int], color: tuple[float, float, float]
-    ) -> "Image":
-        r, g, b = (int(c * 255) for c in color)
-        image = PILImage.new("RGBA", size, color=(r, g, b, 255))
-        return cls(image)
-
     @property
     def details(self) -> MediaDetails:
         return self._details

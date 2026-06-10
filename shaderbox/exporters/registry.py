@@ -20,14 +20,8 @@ class ExporterRegistry:
         if exporter is not None and exporter.is_available:
             self.active_id = exporter_id
 
-    def get_active(self) -> Exporter | None:
-        return self._exporters.get(self.active_id)
-
     def ids(self) -> list[str]:
         return list(self._exporters.keys())
-
-    def available_ids(self) -> list[str]:
-        return [eid for eid, e in self._exporters.items() if e.is_available]
 
     def all(self) -> list[Exporter]:
         return list(self._exporters.values())

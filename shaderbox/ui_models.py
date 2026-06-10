@@ -14,35 +14,6 @@ from shaderbox.commands import NodeTab
 from shaderbox.copilot.state import CopilotLayout
 from shaderbox.core import _NODE_SHADER_BASENAME, ENGINE_DRIVEN_UNIFORMS, Node
 from shaderbox.media import MediaDetails, MediaWithTexture
-from shaderbox.theme import COLOR
-
-
-class UIMessage(BaseModel):
-    text: str = ""
-    level: Literal["success", "warning", "error"]
-
-    def get_color(self) -> tuple[float, float, float, float]:
-        return {
-            "success": COLOR.STATE_OK,
-            "warning": COLOR.STATE_WARN,
-            "error": COLOR.STATE_ERROR,
-        }[self.level]
-
-    @classmethod
-    def success(cls, text: str = "") -> Self:
-        return cls(text=text, level="success")
-
-    @classmethod
-    def warning(cls, text: str = "") -> Self:
-        return cls(text=text, level="warning")
-
-    @classmethod
-    def error(cls, text: str = "") -> Self:
-        return cls(text=text, level="error")
-
-    def __repr__(self) -> str:
-        return self.text
-
 
 UIUniformInputType = Literal[
     "texture", "buffer", "array", "color", "text", "drag", "auto"
@@ -177,7 +148,6 @@ class EditorSettings(BaseModel):
 class UIAppState(BaseModel):
     current_node_id: str = ""
     selected_node_template_id: str = ""
-    new_node_name: str = ""
     is_render_all_nodes: bool = True
 
     exporter_settings: dict[str, dict[str, Any]] = {}

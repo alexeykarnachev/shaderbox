@@ -36,9 +36,6 @@ class ToolRegistry:
     def specs_for(self, names: list[str]) -> list[LLMToolSpec]:
         return [self._by_name[n].spec() for n in names if n in self._by_name]
 
-    def describe(self) -> str:
-        return "\n".join(f"- {d.name}: {d.description}" for d in self._by_name.values())
-
     def is_mutating(self, name: str) -> bool:
         tool = self._by_name.get(name)
         return tool is not None and tool.mutating

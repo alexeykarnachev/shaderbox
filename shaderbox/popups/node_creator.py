@@ -115,7 +115,6 @@ def _draw_grid(app: App) -> str:
             ui_node_template, border, preview_size, nav_flatten=True
         ).clicked:
             app.app_state.selected_node_template_id = ui_node_template.id
-            app.app_state.new_node_name = ui_node_template.ui_state.ui_name
             selected_id = ui_node_template.id
         if (i + 1) % _GRID_COLS != 0 and i != len(app.ui_node_templates) - 1:
             imgui.same_line()

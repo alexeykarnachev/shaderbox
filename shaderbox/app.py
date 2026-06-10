@@ -1,4 +1,3 @@
-import time
 from collections.abc import Callable
 from dataclasses import replace
 from enum import Enum
@@ -62,10 +61,6 @@ from shaderbox.util import (
     open_in_file_manager,
     pfd_block,
 )
-
-# Copilot node-id shortening: 4-char prefix, grown only on an actual collision.
-_COPILOT_SHORT_ID_LEN = 4
-_COPILOT_FULL_ID_LEN = 36
 
 # Region-cycle order for the keyboard-nav command.
 _REGION_CYCLE: tuple[ActiveRegion, ...] = (
@@ -815,7 +810,6 @@ class App:
 
         self.preview_canvas = Canvas()
 
-        self.app_start_time = int(time.time() * 1000)
         self.frame_idx = 0
 
         # Project load (GL-free): paths, lib index, nodes + templates, app_state, integrations.
