@@ -1,7 +1,10 @@
 # 032 — SDF shader library (seed) + copilot quality wave
 
-**Status:** in progress (library seeded + copilot fixes landed; the seed-loading mechanism and
-further dogfood-driven iteration continue next session, on the desktop).
+**Status:** partial. Landed: the seeded SDF library (+ data-driven glyphs, `scripts/gen_glyphs.py`
+— V3D first-draw codegen 20s -> ~1s, so the Pi stays the primary box and the desktop plan is
+CANCELLED), the copilot quality fixes, 3 dogfood rounds. The error-driven hardening continues as
+feature 033 (`033_copilot_robustness_wave.md`). Still open here: the seed-loading mechanism
+(todo), the Д glyph shape, Cyrillic chat replies (todo).
 
 ## Goal
 

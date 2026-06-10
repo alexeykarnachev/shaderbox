@@ -54,10 +54,13 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   "guard earns its place" convention — don't add standing structure for a transient model lapse).
 
 ## [DEFERRAL] copilot machine-readable render feedback (the visual-blindness affordance)
-- **Trigger: HAS FIRED (2026-06-10, feature-032 dogfood: blind 4x spacing re-edit roulette, a
-  letter-blob reported as "centered", ring-asked -> filled-disc — three instances in one session on
-  top of the 2026-06-05 cyrillic case). Next copilot feature slot: SPEC IT (large; spec before
-  building), unless the maintainer deprioritizes.**
+- **Trigger: FIRED and RESOLVED INTO 033** — the maintainer picked the ambient variant (render
+  FACTS appended to every clean-compile edit result: ink %, bbox, luma grid; the enriched-results
+  mechanism in `033_copilot_robustness_wave.md`). The standalone `inspect_render` TOOL variant is
+  REJECTED (tool count must not grow; a lazy model wouldn't call it). What remains deferred here:
+  the VLM-judge variant (a vision model critiques the render in words — judges aesthetics, not just
+  presence). Trigger for THAT: after 033 lands, a harness-side pilot (driver feeds VLM verdicts back
+  as user text) catches things the scalar facts miss.
 - Original trigger (kept for context): the first recurrence (in a DIFFERENT session) of "the agent
   can't tell its change had no visual effect" — it reports success after a clean compile while the
   user sees no change (observed 2026-06-05: the cyrillic text never rendered; the agent claimed it
@@ -151,15 +154,12 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   restart (transient by design today). See `ai_docs/features/019_keyboard_navigation.md` Out-of-scope.
 
 ## [DEFERRAL] copilot: a reasoning burst can eat the whole per-iteration token budget (zero actions)
-- **Trigger:** next dogfood round where a turn dies with "ran out of my per-reply token budget"
-  with NO tool calls executed (observed 2026-06-10 round 3: a debugging question made codex-mini
-  burn the full `max_tokens_per_turn=8000` on internal reasoning before the first tool call;
-  finish=length, honest cutoff surfaced, user said "continue" and it recovered). If it recurs,
-  decide: raise `max_tokens_per_turn` (reasoning models bill thinking into output tokens) or cap
-  reasoning via the OpenRouter `reasoning` param per-model.
-- ALSO: the cutoff turn's spend did NOT land in `session_cost_usd` (cost accounting skips errored
-  turns — the dump cross-check vs trace showed the gap). Fix the accounting when touching
-  `state.py`/usage fold; the trace stays authoritative meanwhile.
+- **Trigger: BEING RESOLVED IN 033** (delete this entry in the landing commit). The facts for the
+  implementer: `openrouter.py` already sends `reasoning: {effort: "minimal"}` yet round-3 T2 burned
+  the full 8000 output tokens on hidden thinking with zero actions — PROBE `reasoning_tokens` in
+  usage first, then escalate the param (`max_tokens`/`exclude`/`enabled:false`/`"low"`). The
+  `max_tokens_per_turn` bump is held unless the probe shows thinking can't be suppressed. ALSO in
+  033: the cutoff turn's spend missing from `session_cost_usd` (accounting skips errored turns).
 
 ## [DEFERRAL] SB_sd_text cell-cull (warm-render speedup) blocked by a quad-seam artifact
 - **Trigger:** warm text-render cost becomes a real pain (live text preview on the Pi at speed, or
@@ -176,8 +176,9 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   SB_fill_aa, or per-row instead of per-char cull.
 
 ## [DEFERRAL] shader-library seed has no load mechanism (canonical copy sits in resources)
-- **Trigger:** FIRST desktop session continuing feature 032 — decide + wire it before any new lib
-  work (everything else builds on the lib being present in `app_data_dir()/shader_lib`).
+- **Trigger:** before the next `make run` of the APP on any box, or before any ship — decide +
+  wire it (the desktop-session plan was CANCELLED, the Pi stays primary; dogfood sandboxes seed by
+  copy per `/dogfood`, but the real app's lib root still starts empty on a fresh box).
 - The canonical seed is `shaderbox/resources/shader_lib/` (in-repo, ships via `build.sh`); the live
   lib root `app_data_dir()/shader_lib` starts EMPTY on a fresh box. Interim: copy by hand (spec 032
   `## Resume on the desktop`). Decision pending: copy-on-first-run (user edits win; updates need a
@@ -193,11 +194,12 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   the app's text; the sanitizer is the lossy step. Fix shape: allow Cyrillic through the sanitizer
   (the font supports it) or transliterate instead of `?`-replacing.
 
-## [DEFERRAL] dogfood dump echoes an empty `last_render_path` while the PNG exists
-- **Trigger:** next dogfood run that reads `last_render_path` from the dump JSON and finds it
-  empty (the render PNG was on disk; observed 2026-06-10, exp-2 turn 1 — likely the render result
-  echo path, not the render itself). Check `harness.py::render`'s result handling + `dump`'s
-  cursor before trusting the field.
+## [DEFERRAL] dogfood harness: project state not persisted between turns + dump render-path echo
+- **Trigger: BEING RESOLVED IN 033** (delete in the landing commit). Two harness defects: (a)
+  `set_uniform` values are LOST between turns — the project is never saved, so exp-1 turn 3 had to
+  re-set every uniform, burning the iteration budget (fix: dump() saves the project); (b) dump's
+  `last_render_path` echoed empty while the PNG existed on disk (exp-2 turn 1 — check
+  `harness.py::render` result handling + dump's cursor).
 
 ## [DEFERRAL] lib-author macro indirection for function dispatch
 - **Trigger:** first time a lib author writes `#define HASH SB_hash3` (or similar) inside a lib

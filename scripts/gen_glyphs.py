@@ -35,21 +35,41 @@ _P: Point = (0.0, 0.5)
 
 # Straight segments by the historical seg ids (kept for readable glyph defs).
 SEGS: dict[int, tuple[Point, Point]] = {
-    0: (_A, _B), 1: (_B, _C), 2: (_C, _D), 3: (_D, _E),
-    4: (_E, _F), 5: (_F, _G), 6: (_G, _H), 7: (_H, _J),
-    8: (_J, _K), 9: (_K, _L), 10: (_M, _L), 11: (_A, _M),
-    12: (_M, _N), 14: (_N, _O), 16: (_O, _P), 18: (_P, _F),
-    20: (_A, _O), 21: (_E, _O), 22: (_O, _G), 23: (_O, _L),
-    24: (_C, _O), 25: (_O, _J),
+    0: (_A, _B),
+    1: (_B, _C),
+    2: (_C, _D),
+    3: (_D, _E),
+    4: (_E, _F),
+    5: (_F, _G),
+    6: (_G, _H),
+    7: (_H, _J),
+    8: (_J, _K),
+    9: (_K, _L),
+    10: (_M, _L),
+    11: (_A, _M),
+    12: (_M, _N),
+    14: (_N, _O),
+    16: (_O, _P),
+    18: (_P, _F),
+    20: (_A, _O),
+    21: (_E, _O),
+    22: (_O, _G),
+    23: (_O, _L),
+    24: (_C, _O),
+    25: (_O, _J),
 }
 
 # Quarter-circle arcs (radius 0.5): center + quadrant signs; endpoints derive as
 # c + (sx*0.5, 0) and c + (0, sy*0.5).
 ARCS: dict[int, tuple[Point, int, int]] = {
-    26: ((0.0, -0.5), -1, -1), 27: ((0.0, -0.5), -1, +1),
-    28: ((0.0, -0.5), +1, +1), 29: ((0.0, -0.5), +1, -1),
-    30: ((0.0, 0.5), -1, -1), 31: ((0.0, 0.5), -1, +1),
-    32: ((0.0, 0.5), +1, +1), 33: ((0.0, 0.5), +1, -1),
+    26: ((0.0, -0.5), -1, -1),
+    27: ((0.0, -0.5), -1, +1),
+    28: ((0.0, -0.5), +1, +1),
+    29: ((0.0, -0.5), +1, -1),
+    30: ((0.0, 0.5), -1, -1),
+    31: ((0.0, 0.5), -1, +1),
+    32: ((0.0, 0.5), +1, +1),
+    33: ((0.0, 0.5), +1, -1),
 }
 
 
@@ -131,15 +151,23 @@ GLYPHS: dict[str, list[Stroke]] = {
     "question": s(31, 32, 33, 14) + dot((0.0, -0.88)),
     "cyr_BE": s(0, 1, 2, 3, 4, 5, 24, 28, 29, 11),
     "cyr_GHE": s(0, 1, 2, 3, 4, 5),
-    "cyr_DE": EL + s(11, 10) + seg((-0.5, -1.0), (-0.5, -1.22)) + seg((0.5, -1.0), (0.5, -1.22)),
-    "cyr_YO": s(0, 1, 2, 3, 4, 5, 24, 25, 11, 10) + dot((-0.22, 1.32), 0.07) + dot((0.22, 1.32), 0.07),
+    "cyr_DE": EL
+    + s(11, 10)
+    + seg((-0.5, -1.0), (-0.5, -1.22))
+    + seg((0.5, -1.0), (0.5, -1.22)),
+    "cyr_YO": s(0, 1, 2, 3, 4, 5, 24, 25, 11, 10)
+    + dot((-0.22, 1.32), 0.07)
+    + dot((0.22, 1.32), 0.07),
     "cyr_ZHE": s(12, 14, 16, 18)
-    + tall((0.0, 1.0), +1, -1) + tall((0.0, 1.0), -1, -1)
-    + tall((0.0, -1.0), +1, +1) + tall((0.0, -1.0), -1, +1),
+    + tall((0.0, 1.0), +1, -1)
+    + tall((0.0, 1.0), -1, -1)
+    + tall((0.0, -1.0), +1, +1)
+    + tall((0.0, -1.0), -1, +1),
     "cyr_ZE": s(31, 32, 33, 28, 29, 26),
     "cyr_I": s(0, 1, 2, 3, 6, 7, 8, 9, 20, 22),
     "cyr_SHORT_I": s(0, 1, 2, 3, 6, 7, 8, 9, 20, 22)
-    + seg((-0.26, 1.38), (0.0, 1.1)) + seg((0.0, 1.1), (0.26, 1.38)),
+    + seg((-0.26, 1.38), (0.0, 1.1))
+    + seg((0.0, 1.1), (0.26, 1.38)),
     "cyr_EL": EL,
     "cyr_PE": s(0, 1, 2, 31, 32, 7, 8, 9),
     "cyr_U": s(3, 30, 25, 6, 7, 8, 29, 26),
@@ -162,13 +190,52 @@ GLYPHS: dict[str, list[Stroke]] = {
 ORDER: list[str] = (
     [f"lat_{c}" for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"]
     + [f"dig_{i}" for i in range(10)]
-    + ["exclaim", "ampersand", "apostrophe", "comma", "dash", "period",
-       "colon", "semicolon", "question", "cyr_YO"]
-    + ["lat_A", "cyr_BE", "lat_B", "cyr_GHE", "cyr_DE", "lat_E", "cyr_ZHE",
-       "cyr_ZE", "cyr_I", "cyr_SHORT_I", "lat_K", "cyr_EL", "lat_M", "lat_H",
-       "lat_O", "cyr_PE", "lat_P", "lat_C", "lat_T", "cyr_U", "cyr_EF", "lat_X",
-       "cyr_TSE", "cyr_CHE", "cyr_SHA", "cyr_SHCHA", "cyr_HARD", "cyr_YERU",
-       "cyr_SOFT", "cyr_E", "cyr_YU", "cyr_YA"]
+    + [
+        "exclaim",
+        "ampersand",
+        "apostrophe",
+        "comma",
+        "dash",
+        "period",
+        "colon",
+        "semicolon",
+        "question",
+        "cyr_YO",
+    ]
+    + [
+        "lat_A",
+        "cyr_BE",
+        "lat_B",
+        "cyr_GHE",
+        "cyr_DE",
+        "lat_E",
+        "cyr_ZHE",
+        "cyr_ZE",
+        "cyr_I",
+        "cyr_SHORT_I",
+        "lat_K",
+        "cyr_EL",
+        "lat_M",
+        "lat_H",
+        "lat_O",
+        "cyr_PE",
+        "lat_P",
+        "lat_C",
+        "lat_T",
+        "cyr_U",
+        "cyr_EF",
+        "lat_X",
+        "cyr_TSE",
+        "cyr_CHE",
+        "cyr_SHA",
+        "cyr_SHCHA",
+        "cyr_HARD",
+        "cyr_YERU",
+        "cyr_SOFT",
+        "cyr_E",
+        "cyr_YU",
+        "cyr_YA",
+    ]
 )
 
 # Strokes are stored sorted by kind within each glyph (segments, arcs, tall arcs,
@@ -198,16 +265,16 @@ def generate() -> str:
     data: list[str] = []
     for name in dict.fromkeys(ORDER):  # unique names, first-seen order
         strokes = sorted(GLYPHS[name], key=lambda st: KIND_ORDER[st[0]])
-        counts = [sum(1 for st in strokes if st[0] == k) for k in ("seg", "arc", "tall", "dot")]
+        counts = [
+            sum(1 for st in strokes if st[0] == k)
+            for k in ("seg", "arc", "tall", "dot")
+        ]
         spans[name] = (len(data), counts[0], counts[1], counts[2], counts[3])
         for st in strokes:
             data.append(_stroke_payload(st))
 
     span_rows = ",\n        ".join(
-        "ivec4({}, {}, {}, {})".format(
-            spans[name][0], spans[name][1], spans[name][2],
-            (spans[name][3] << 8) | spans[name][4],
-        )
+        f"ivec4({spans[name][0]}, {spans[name][1]}, {spans[name][2]}, {(spans[name][3] << 8) | spans[name][4]})"
         for name in ORDER
     )
     data_rows = ",\n        ".join(data)
@@ -317,13 +384,17 @@ float SB_sd_char(vec2 p, uint codepoint, float weight) {{
 
 
 def main() -> None:
-    out = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(
-        "shaderbox/resources/shader_lib/text/glyphs.glsl"
+    out = (
+        Path(sys.argv[1])
+        if len(sys.argv) > 1
+        else Path("shaderbox/resources/shader_lib/text/glyphs.glsl")
     )
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(generate(), encoding="utf-8")
     n_strokes = sum(len(GLYPHS[n]) for n in dict.fromkeys(ORDER))
-    print(f"wrote {out} ({len(dict.fromkeys(ORDER))} unique glyphs, {n_strokes} strokes)")
+    print(
+        f"wrote {out} ({len(dict.fromkeys(ORDER))} unique glyphs, {n_strokes} strokes)"
+    )
 
 
 if __name__ == "__main__":
