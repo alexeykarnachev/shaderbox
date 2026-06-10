@@ -206,7 +206,9 @@ it had no tool to do so.
     `AgentError` giveup (proves a declined mutating call doesn't trip `max_edit_retries`). Run it in
     CI-free fashion (`uv run python scripts/copilot_gate_check.py`); wire a mention into the verify
     checklist. NOT added to `make smoke` (it's copilot-specific + needs no GL — a separate script keeps
-    smoke's GL-frame focus clean).
+    smoke's GL-frame focus clean). *(Feature 031: the script bit-rotted with zero wiring; its checks
+    were ported into pytest — `tests/test_conversation_persistence.py` / `tests/test_copilot_loop.py`
+    / `tests/test_gate_channel.py` — and the script deleted.)*
 
 ## Files touched
 
@@ -273,7 +275,8 @@ it had no tool to do so.
   that from the node grid).", soften "You have no undo".
 - **`scripts/copilot_gate_check.py`** — NEW (B5, decision 15): the headless verification script
   (persistence round-trip + decline-counter via stub gate/client). Standalone `uv run python`-able;
-  mirrors `scripts/smoke.py`'s standalone shape but needs no GL context.
+  mirrors `scripts/smoke.py`'s standalone shape but needs no GL context. *(Ported to pytest +
+  deleted in feature 031.)*
 - **`shaderbox/copilot/gate.py`** — NO core change (the channel is built). Update the stale slice-1
   comment ("the BODY ... lands with the interactive-widget wave (step 5)") to reflect that the body
   now exists. Also refresh `agent.py`'s "never triggered in slice 1" comment block + drop `_ = gate`.
@@ -295,10 +298,12 @@ it had no tool to do so.
 - `make smoke` — 200 headless frames of `update_and_draw` (popup-mutex + `current_node_id`
   invariants); the chat is never opened here, but it catches any import/callback break the new code
   introduces in the always-run path.
-- `uv run python scripts/copilot_gate_check.py` (B5/decision 15) — the persistence round-trip
-  (recover-card survives save→load→to_messages; a v1 file loads soft) + the decline-counter (3 declined
-  `delete_node` calls end in `AgentTurnDone`, not an `AgentError` giveup, AND the post-decline
-  `messages` carry a matching `tool` result for every `tool_call_id` — B2's orphaned-tool_call guard).
+- The B5/decision-15 checks — the persistence round-trip (recover-card survives
+  save→load→to_messages; a v1 file loads soft) + the decline-counter (declined `delete_node` calls end
+  in `AgentTurnDone`, not an `AgentError` giveup, AND the post-decline `messages` carry a matching
+  `tool` result for every `tool_call_id` — B2's orphaned-tool_call guard) — now live in pytest
+  (`tests/test_conversation_persistence.py` / `tests/test_copilot_loop.py`; feature 031 ported them
+  from the deleted `scripts/copilot_gate_check.py`).
 
 ### Manual (maintainer — `make run`; no agent screenshot path)
 
@@ -411,7 +416,9 @@ roadmap-backlog, not landmines — they stay in this spec, not todo.md.
 ### Post-impl maintainer-found fixes (live testing)
 
 Three bugs surfaced only in the real app (the headless `run_turn` tests structurally couldn't reach
-worker↔init lifecycle); each landed with a teeth-verified regression in `copilot_gate_check.py`:
+worker↔init lifecycle); each landed with a teeth-verified regression in `copilot_gate_check.py`
+(feature 031 ported those regressions to pytest — the reopen check is `tests/test_gate_channel.py`,
+the finish-reason checks are in `tests/test_copilot_loop.py` — and deleted the script):
 
 - **Gate instant-cancelled every confirm.** `gate.ask()` short-circuits to `cancelled=True` when
   `_shutdown` is latched; `App._init`'s teardown `release()` latches it before first use, and — unlike

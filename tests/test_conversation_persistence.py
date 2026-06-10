@@ -9,6 +9,7 @@ from shaderbox.copilot.persistence import ConversationStore, archive_conversatio
 from shaderbox.copilot.state import (
     ChatState,
     Message,
+    RecoverInfo,
     ResultWidget,
     StepRecord,
     TurnStats,
@@ -395,3 +396,61 @@ def test_session_save_then_load_restores(tmp_path: Path) -> None:
     assert fresh.state.last_turn.context_tokens == 10
     assert fresh.state.session_cost_usd == 0.001
     fresh.release()
+
+
+def test_recover_card_survives_round_trip(tmp_path: Path) -> None:
+    # A resolved-Yes delete card carrying RecoverInfo must survive save -> load ->
+    # to_messages (the Recover button is rebuilt from it after a restart).
+    state = ChatState()
+    state.messages = [
+        Message(role="user", text="delete the gradient node"),
+        Message(
+            role="pending_action",
+            text="Delete node 'a1b2'?\nYou chose: Yes",
+            resolved=True,
+            recover=RecoverInfo(
+                node_id="full-uuid-1234",
+                node_name="Gradient",
+                trash_name="full-uuid-1234",
+            ),
+        ),
+        Message(role="assistant", text="Done — moved to trash."),
+    ]
+    path = tmp_path / "conversation.json"
+    ConversationStore.from_runtime(state, []).save(path)
+    msgs = ConversationStore.load_and_migrate(path).to_messages()
+
+    assert len(msgs) == 3
+    card = msgs[1]
+    assert card.role == "pending_action" and card.resolved
+    assert card.recover is not None
+    assert card.recover.node_id == "full-uuid-1234"
+    assert card.recover.trash_name == "full-uuid-1234"
+    assert card.recover.node_name == "Gradient"
+    assert not card.recover.done
+    assert msgs[2].recover is None
+
+
+def test_pre_recover_v1_file_loads_soft(tmp_path: Path) -> None:
+    # A v1-shaped file (no `recover` key) loads into the current schema with recover=None.
+    path = tmp_path / "v1.json"
+    path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "messages": [
+                    {"role": "user", "text": "hi", "resolved": False},
+                    {
+                        "role": "pending_action",
+                        "text": "Delete node 'x'?",
+                        "resolved": True,
+                    },
+                ],
+                "history": [],
+                "usage": {"input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0},
+            }
+        )
+    )
+    msgs = ConversationStore.load_and_migrate(path).to_messages()
+    assert len(msgs) == 2
+    assert msgs[1].recover is None

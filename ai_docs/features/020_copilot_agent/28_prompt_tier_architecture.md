@@ -141,7 +141,7 @@ Four facts the NL turn-summary MUST preserve (each pins a real corpus failure mo
   was built. **Rewrite (not just `.summary`-rename):** `test_copilot_loop.py::test_terminal_carries_tool_trajectory_for_history`
   (its premise — the tail IS the trajectory — is the thing being removed) + `test_conversation_persistence.py`'s
   tool-paired round-trip fixture. Re-run `scripts/copilot_gate_check.py` (a run_turn consumer; verified safe
-  but in-family). `test_edit_safety.py` / `test_cross_project_tools.py` / `test_line_editing.py` assert only
+  but in-family; feature 031 later ported it to pytest and deleted it). `test_edit_safety.py` / `test_cross_project_tools.py` / `test_line_editing.py` assert only
   on `AgentToolCard`/`AgentError.message` — unaffected.
 
 ## Manual verification

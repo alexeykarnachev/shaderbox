@@ -5,12 +5,14 @@ source-mapped error -> fix -> clean) and asserts the loop calls the tools in ord
 feeds results back, and terminates on the clean compile with the final text.
 """
 
+import json
 import threading
 from collections.abc import Iterator
 from pathlib import Path
 
 from shaderbox.copilot.agent import (
     AgentError,
+    AgentEvent,
     AgentTextDelta,
     AgentToolCard,
     AgentTurnDone,
@@ -23,7 +25,7 @@ from shaderbox.copilot.capabilities import (
     ShaderView,
 )
 from shaderbox.copilot.config import COPILOT_CONFIG
-from shaderbox.copilot.gate import GateChannel
+from shaderbox.copilot.gate import GateChannel, GateRequest, GateResponse
 from shaderbox.copilot.glsl_lex import token_match
 from shaderbox.copilot.llm.api import (
     LLMDone,
@@ -563,3 +565,150 @@ def test_terminal_carries_nl_summary_not_tool_tail() -> None:
     assert (
         "abcd" in done.summary.nodes
     ), "the read node must be referenced for cross-turn binding"
+
+
+class _AlwaysDeclineGate(GateChannel):
+    # ask() returns a decline without blocking — no UI thread in the test.
+    def ask(self, request: GateRequest) -> GateResponse:
+        _ = request
+        return GateResponse(approved=False, option="No")
+
+
+class _ApproveGate(GateChannel):
+    def ask(self, request: GateRequest) -> GateResponse:
+        _ = request
+        return GateResponse(approved=True, option="Yes")
+
+
+class _DeleteThenStopClient:
+    # Emits a `delete_node` tool call for the first `n_deletes` stream() calls, then a final
+    # plain-text reply. Captures the messages list it is handed each call so the test can
+    # assert tool-result integrity after the turn.
+    def __init__(self, n_deletes: int) -> None:
+        self._n_deletes = n_deletes
+        self._calls = 0
+        self.last_messages: list[LLMMessage] = []
+
+    def stream(
+        self,
+        messages: list[LLMMessage],
+        *,
+        tools: list[LLMToolSpec] | None = None,
+        max_tokens: int,
+    ) -> Iterator[LLMStreamEvent]:
+        _ = (tools, max_tokens)
+        self.last_messages = list(messages)
+        self._calls += 1
+        if self._calls <= self._n_deletes:
+            call_id = f"call_{self._calls}"
+            yield LLMToolCallStarted(index=0, id=call_id, name="delete_node")
+            yield LLMToolCallCompleted(
+                index=0,
+                id=call_id,
+                name="delete_node",
+                arguments=json.dumps({"node": f"n{self._calls}"}),
+            )
+            yield LLMDone(finish_reason="tool_calls", usage=LLMUsage(output_tokens=1))
+        else:
+            yield LLMTextDelta("You said no, so I've cancelled the deletion.")
+            yield LLMDone(finish_reason="stop", usage=LLMUsage(output_tokens=1))
+
+
+def test_declined_gates_no_giveup_no_orphaned_tool_calls() -> None:
+    # A declined delete_node must NOT trip the edit-retry cap (it ends in AgentTurnDone, the
+    # model's comment), AND every assistant tool_call must still get a matching tool result
+    # message — an orphaned tool_call_id 400s the real provider on the next stream.
+    n = COPILOT_CONFIG.max_edit_retries + 1  # one MORE than the cap
+    registry = build_registry(minimal_caps())
+    client = _DeleteThenStopClient(n_deletes=n)
+
+    events = list(
+        run_turn(
+            client,
+            registry,
+            COPILOT_CONFIG,
+            _fake_context(),
+            history=[],
+            user_text="delete everything",
+            gate=_AlwaysDeclineGate(),
+            cancel=threading.Event(),
+        )
+    )
+
+    errors = [e for e in events if isinstance(e, AgentError)]
+    assert (
+        not errors
+    ), f"a declined delete tripped a giveup: {[e.message for e in errors]}"
+    assert isinstance(events[-1], AgentTurnDone)
+
+    open_ids: set[str] = set()
+    result_ids: set[str] = set()
+    for m in client.last_messages:
+        if m.role == "assistant" and m.tool_calls:
+            open_ids.update(tc.id for tc in m.tool_calls)
+        if m.role == "tool" and m.tool_call_id:
+            result_ids.add(m.tool_call_id)
+    assert open_ids, "expected at least one tool_call in the replayed messages"
+    assert open_ids <= result_ids, f"orphaned tool_call_id(s): {open_ids - result_ids}"
+
+
+class _DeleteThenEmptyFinishClient:
+    # One delete, then an empty (no text, no tool calls) reply ending with the given
+    # finish_reason — a reasoning model that ran the tool then emitted no visible content.
+    # A native call already executed, so this must NOT be flagged tool-incompatible.
+    def __init__(self, finish_reason: str) -> None:
+        self._finish_reason = finish_reason
+        self._calls = 0
+
+    def stream(
+        self,
+        messages: list[LLMMessage],
+        *,
+        tools: list[LLMToolSpec] | None = None,
+        max_tokens: int,
+    ) -> Iterator[LLMStreamEvent]:
+        _ = (messages, tools, max_tokens)
+        self._calls += 1
+        if self._calls == 1:
+            yield LLMToolCallStarted(index=0, id="c1", name="delete_node")
+            yield LLMToolCallCompleted(
+                index=0, id="c1", name="delete_node", arguments='{"node": "n1"}'
+            )
+            yield LLMDone(finish_reason="tool_calls", usage=LLMUsage(output_tokens=1))
+        else:
+            yield LLMDone(
+                finish_reason=self._finish_reason, usage=LLMUsage(output_tokens=57)
+            )
+
+
+def _run_empty_finish(finish_reason: str) -> list[AgentEvent]:
+    return list(
+        run_turn(
+            _DeleteThenEmptyFinishClient(finish_reason),
+            build_registry(minimal_caps()),
+            COPILOT_CONFIG,
+            _fake_context(),
+            history=[],
+            user_text="delete n1",
+            gate=_ApproveGate(),
+            cancel=threading.Event(),
+        )
+    )
+
+
+def _is_incompatible_error(events: list[AgentEvent]) -> bool:
+    return any(
+        isinstance(e, AgentError) and "compatible with tool calling" in e.message
+        for e in events
+    )
+
+
+def test_silent_finish_after_tool_is_not_flagged_incompatible() -> None:
+    # A clean `stop` after a successful tool ends in AgentTurnDone (no error at all);
+    # `length` / `content_filter` after a tool are terminal provider signals, NOT
+    # tool-incompatibility — the model proved it can call tools.
+    stop_events = _run_empty_finish("stop")
+    assert not [e for e in stop_events if isinstance(e, AgentError)]
+    assert [e for e in stop_events if isinstance(e, AgentTurnDone)]
+    assert not _is_incompatible_error(_run_empty_finish("length"))
+    assert not _is_incompatible_error(_run_empty_finish("content_filter"))

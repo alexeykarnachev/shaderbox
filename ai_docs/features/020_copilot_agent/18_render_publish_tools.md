@@ -343,7 +343,9 @@ public methods delegating to existing private bodies; the Share-tab path is unto
 `make smoke` does NOT construct a turn or call the registry — it only runs `update_and_draw`, so it
 catches a new-module import error ONLY if App-construction imports it (it does, transitively, via
 `build_registry`). That is NOT enough. So this wave ADDS a focused headless introspection script
-(`scripts/copilot_render_check.py` or similar; a real GL context like smoke):
+(`scripts/copilot_render_check.py` or similar; a real GL context like smoke). *(Feature 031: the
+script bit-rotted with zero wiring; H1/H3-class checks were ported into pytest —
+`tests/test_tool_registry.py` — and the script deleted.)*
 
 - **H1 — registry builds.** `build_registry(caps)` returns 13 eager specs (9 shader + 4 new); each new tool's
   `args_model.model_json_schema()` builds (catches a pydantic `Field(ge=16, le=4096)` / required-arg

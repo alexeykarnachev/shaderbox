@@ -243,7 +243,9 @@ the secret never logged.
   the delete-await; bind them in `_build_copilot_capabilities`.
 - **`scripts/copilot_render_check.py`** (or a new `copilot_credential_check.py`) — a headless redaction
   test: a stub secret through the handler + the card echo never yields the full secret; the registry
-  builds with the new tools + `set_telegram_token` is `gate_kind=CREDENTIAL`.
+  builds with the new tools + `set_telegram_token` is `gate_kind=CREDENTIAL`. *(Feature 031: the
+  redaction checks now live in pytest — `tests/test_credential_redaction.py` — and the structural
+  CREDENTIAL invariants in `tests/test_tool_registry.py`; both check scripts deleted.)*
 - **`scripts/copilot_gate_check.py`** — the `_stub_caps` grows the new capability fields.
 - docs: `roadmap.md` row/banner, `dev_flow.md` module map, `todo.md` (resolve the CREDENTIAL-widget
   deferral; the pack-CRUD deferral collapses).
