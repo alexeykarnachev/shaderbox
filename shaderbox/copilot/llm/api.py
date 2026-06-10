@@ -37,12 +37,16 @@ class LLMMessage:
 class LLMUsage:
     input_tokens: int = 0
     output_tokens: int = 0
+    # Hidden thinking tokens (billed inside output_tokens). The request asks for
+    # effort=minimal; this field makes any burst visible in traces/stats.
+    reasoning_tokens: int = 0
     cost_usd: float = 0.0  # OpenRouter returns the charged cost on usage.cost
 
     def __add__(self, other: "LLMUsage") -> "LLMUsage":
         return LLMUsage(
             input_tokens=self.input_tokens + other.input_tokens,
             output_tokens=self.output_tokens + other.output_tokens,
+            reasoning_tokens=self.reasoning_tokens + other.reasoning_tokens,
             cost_usd=self.cost_usd + other.cost_usd,
         )
 
