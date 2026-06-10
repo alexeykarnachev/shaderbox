@@ -5,7 +5,7 @@ from dataclasses import dataclass
 class CopilotConfig:
     # Agent-loop limits. Not user-tuned — constants, so they avoid the UIAppState
     # migration discipline (they live here, not on app_state).
-    max_iterations: int = 12
+    max_iterations: int = 16
     max_input_tokens: int = 150_000
     max_tokens_per_turn: int = 8_000
     # Soft per-edit compile-fix retry budget, distinct from max_iterations (§I2).

@@ -420,9 +420,13 @@ class CopilotBackend:
 
     def lib_catalog(self) -> list[LibCatalogEntry]:
         # GL-FREE: name + signature + doc + lib: address per function. No bodies (that's read_lib).
+        # SB_-prefixed only — the public surface the prompt promises; non-prefixed helpers are
+        # file-private (callable only transitively) and would just be catalogue noise.
         root = shader_lib_root()
         entries: list[LibCatalogEntry] = []
         for fn in self._get_shader_lib_index().functions.values():
+            if not fn.name.startswith("SB_"):
+                continue
             try:
                 rel = fn.file.relative_to(root)
             except ValueError:

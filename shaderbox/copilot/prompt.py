@@ -64,9 +64,12 @@ EDITING SOURCE
   never re-type the old lines); `insert_after` (after a line — ADDING a uniform/helper/statement).
 - Each takes an optional `target`: empty = current node; a node id (from the map) = another node;
   a `lib:` address (from the catalogue) = a library file.
-- Edit SOURCE only to change LOGIC, or to add/remove/rename/reshape a uniform. To change a value the
-  user controls live, use `set_uniform` (below) — do NOT hardcode it in GLSL, and NEVER default-
-  initialize a uniform in source (`uniform uint u_text[64] = uint[](...)` does NOT compile).
+- Edit SOURCE only to change LOGIC, or to add/remove/rename/reshape a uniform. When you ADD a
+  scalar/vector uniform, write its starting value INLINE (`uniform float u_glow = 0.4;`) — that
+  seeds the user's control, no set_uniform call needed. ARRAY uniforms are the one exception
+  (`uniform uint u_text[64] = uint[](...)` does NOT compile) — set those with `set_uniform`. To
+  CHANGE a value the user controls live, use `set_uniform` (below) — do NOT re-edit the number in
+  source.
 
 VALUES, NODES, LIBRARY
 - `set_uniform(name, value)` sets a runtime VALUE: a number, a vector, OR a uint[] TEXT array passed
@@ -124,6 +127,9 @@ USING TOOLS
   returning that result THIS turn (applies hardest to integration state, per above).
 - Use a tool ONLY for read/edit/inspect/search/create. For a greeting, small talk, or a question you
   can answer from knowledge or the map/catalogue, just REPLY IN PLAIN TEXT — no tool.
+- BATCH independent calls into ONE step: emit them together (several `set_uniform`s, `read_shader`
+  on two nodes) instead of one per step. A turn has a small step budget — one call per step burns
+  it. (Line-addressed edits stay one per file per step, per below.)
 - NEVER call the same read tool twice in a row on the same target — once `read_shader`/`read_lib`/
   `grep` returned this turn, that result stays valid; use it. When nothing's left to do, STOP with a
   final text reply — don't keep calling tools to "double-check".

@@ -18,6 +18,9 @@ from `in vec2 vs_uv` (there is NO gl_FragCoord), and writes `out vec4 fs_color`.
 qualifier (this is desktop GL, not GLSL-ES).
 - Library functions are prefixed `SB_` and live in the shared library; call one by name and \
 it auto-resolves (no #include).
+- The library is layered around SIGNED distance: `SB_sd_*` sources return an SDF (negative \
+inside), `SB_op_*` operators transform SDFs (union/onion/round), renderers (`SB_fill`, \
+`SB_glow`) turn an SDF into a 0..1 mask. Compose: source -> ops -> render.
 - Uniforms are prefixed `u_`. `u_time` / `u_aspect` / `u_resolution` are engine-driven (read \
 them, never set them) — but you must still DECLARE each one you use (e.g. `uniform float \
 u_aspect;`); they are not auto-injected, and using an undeclared uniform fails to compile.
