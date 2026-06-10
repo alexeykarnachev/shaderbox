@@ -1211,7 +1211,7 @@ class CopilotBackend:
             # Match the node's canvas aspect — a square probe would lay out
             # aspect-corrected shaders (u_aspect) differently from the preview.
             cw, ch = node.canvas.texture.size
-            h = max(8, round(size * ch / cw)) if cw else size
+            h = min(4 * size, max(8, round(size * ch / cw))) if cw else size
             if self._probe_canvas is None:
                 self._probe_canvas = Canvas(size=(size, h))
             else:

@@ -87,6 +87,14 @@ surface via consumer recompiles) out of scope — parked; `_broken_streak`/`_las
 survive node deletion (uuid keys, harmless); GL-marshalled force-restore path covered by the
 dogfood round rather than unit tests (repo convention for bridge paths).
 
+Post-fix verification (focused live round): all six checks PASS on the real V3D engine —
+resolver clean on defines/consts/user-fns with exact agent-visible lines, `redefined` + blob
+hints fire with correct lines, V3D error format parses per-line, aspect-true probe verified
+load-bearing, suite + make check green, cutoff region single-terminal. Known minor gaps (info,
+pre-existing): the analyzer's per-turn rollup keys on `turn_done` so truncated turns lack
+cost rows; the max-iterations tail traces `turn_done` even when the final reply falls back to
+an error event.
+
 ## Files touched (planned)
 
 - `shaderbox/copilot/backend.py` — enriched results (compile hints + render facts), probe render.
