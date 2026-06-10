@@ -216,10 +216,10 @@ def _stub_caps() -> CopilotCapabilities:
     def _render_video(_n: str, _s: float, _f: int, _w: int, _h: int) -> RenderResult:
         return RenderResult(ok=False, error="n/a")
 
-    def _pub_tg(_n: str, _e: str) -> PublishResult:
+    def _pub_tg(_e: str) -> PublishResult:
         return PublishResult(ok=False, error="n/a", kind="telegram")
 
-    def _pub_yt(_n: str, _t: str, _d: str, _s: bool) -> PublishResult:
+    def _pub_yt(_t: str, _d: str, _s: bool) -> PublishResult:
         return PublishResult(ok=False, error="n/a", kind="youtube")
 
     return CopilotCapabilities(

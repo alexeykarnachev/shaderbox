@@ -901,8 +901,7 @@ class CopilotBackend:
             kind=kind,
         )
 
-    def publish_telegram(self, node: str, emoji: str) -> PublishResult:
-        _ = node  # publish always renders the current node (the share path's contract)
+    def publish_telegram(self, emoji: str) -> PublishResult:
         exporter = self._get_exporter_registry().get("telegram")
         if not isinstance(exporter, TelegramExporter):
             return PublishResult(
@@ -917,9 +916,8 @@ class CopilotBackend:
         return self._copilot_publish(exporter, "telegram", preset, settings)
 
     def publish_youtube(
-        self, node: str, title: str, description: str, is_short: bool
+        self, title: str, description: str, is_short: bool
     ) -> PublishResult:
-        _ = node
         exporter = self._get_exporter_registry().get("youtube")
         if not isinstance(exporter, YouTubeExporter):
             return PublishResult(

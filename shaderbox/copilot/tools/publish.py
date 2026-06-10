@@ -134,13 +134,11 @@ def publish_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
         return _render_result(r, "video")
 
     def publish_telegram(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
-        r = caps.publish_telegram("", args["emoji"])
+        r = caps.publish_telegram(args["emoji"])
         return _publish_result(r, "Telegram")
 
     def publish_youtube(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
-        r = caps.publish_youtube(
-            "", args["title"], args["description"], args["is_short"]
-        )
+        r = caps.publish_youtube(args["title"], args["description"], args["is_short"])
         return _publish_result(r, "YouTube")
 
     def telegram_precheck(args: dict[str, Any]) -> str | None:

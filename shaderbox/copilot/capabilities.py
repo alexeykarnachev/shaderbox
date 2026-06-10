@@ -256,8 +256,8 @@ class CopilotCapabilities:
     render_video: Callable[[str, float, int, int, int], "RenderResult"]
     # Render with the exporter's own preset, then enqueue the upload + AWAIT its terminal
     # progress (the closure does the bridge-marshalled poll).
-    publish_telegram: Callable[[str, str], "PublishResult"]
-    publish_youtube: Callable[[str, str, str, bool], "PublishResult"]
+    publish_telegram: Callable[[str], "PublishResult"]
+    publish_youtube: Callable[[str, str, bool], "PublishResult"]
     # GL-free precheck reads backing the pre-gate guided handoff: is there a current node, is
     # the integration connected, and (Telegram) is a pack selected.
     has_current_node: Callable[[], bool]
