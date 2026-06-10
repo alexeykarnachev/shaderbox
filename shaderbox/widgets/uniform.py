@@ -9,14 +9,10 @@ from imgui_bundle import portable_file_dialogs as pfd
 from OpenGL.GL import GL_FLOAT, GL_UNSIGNED_INT
 
 from shaderbox.app import App
-from shaderbox.constants import (
-    IMAGE_EXTENSIONS,
-    MEDIA_EXTENSIONS,
-    VIDEO_EXTENSIONS,
-)
+from shaderbox.constants import MEDIA_EXTENSIONS
 from shaderbox.core import UniformValue
 from shaderbox.editor_types import HoverMark, JumpRequest
-from shaderbox.media import Image, MediaWithTexture, Video
+from shaderbox.media import MediaWithTexture, Video, media_class_for
 from shaderbox.shader_errors import find_uniform_declaration_line
 from shaderbox.theme import SIZE, SPACE
 from shaderbox.ui_models import UIUniform
@@ -197,14 +193,8 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
             )
             file_path = Path(results[0]) if results else Path()
 
-            media_cls: type[Image] | type[Video] | None = None
-            if file_path.suffix in IMAGE_EXTENSIONS:
-                media_cls = Image
-            elif file_path.suffix in VIDEO_EXTENSIONS:
-                media_cls = Video
-
-            if media_cls:
-                new_value = media_cls(file_path)
+            if file_path.suffix in MEDIA_EXTENSIONS:
+                new_value = media_class_for(file_path.suffix)(file_path)
 
         imgui.same_line()
         caption_text(get_resolution_str(None, *current_value.texture.size))

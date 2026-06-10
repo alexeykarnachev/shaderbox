@@ -16,8 +16,10 @@ from pydantic import BaseModel
 
 from shaderbox.constants import (
     DEFAULT_FPS,
+    IMAGE_EXTENSIONS,
     MP4_CRF_VALUES,
     MP4_PRESETS,
+    VIDEO_EXTENSIONS,
 )
 
 
@@ -289,3 +291,11 @@ class Video(MediaWithTexture):
             capture_output=True,
             text=True,
         )
+
+
+def media_class_for(suffix: str) -> type[Image] | type[Video]:
+    if suffix in IMAGE_EXTENSIONS:
+        return Image
+    if suffix in VIDEO_EXTENSIONS:
+        return Video
+    raise ValueError(f"Unsupported media suffix: '{suffix}'")

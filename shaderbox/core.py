@@ -22,13 +22,19 @@ from shaderbox.constants import (
     MEDIA_DIR_NAME,
     MP4_CRF_VALUES,
     MP4_PRESETS,
-    SUPPORTED_MEDIA_EXTENSIONS,
     TEXTURES_DIR_NAME,
     VIDEO_RESOLUTION_ALIGNMENT,
     WEBM_CPU_USED_VALUES,
     WEBM_CRF_VALUES,
 )
-from shaderbox.media import Image, MediaDetails, MediaWithTexture, Video, texture_to_pil
+from shaderbox.media import (
+    Image,
+    MediaDetails,
+    MediaWithTexture,
+    Video,
+    media_class_for,
+    texture_to_pil,
+)
 from shaderbox.render_preset import FitPolicy, RenderPreset, resolve_dims
 from shaderbox.shader_errors import ShaderError, SourceMap, parse_shader_errors
 from shaderbox.shader_lib import active as active_lib_index
@@ -157,11 +163,7 @@ class Node:
                     dir_name = file_path.parent.name
 
                     if dir_name == MEDIA_DIR_NAME:
-                        media_cls = {
-                            ext: globals()[cls_name]
-                            for ext, cls_name in SUPPORTED_MEDIA_EXTENSIONS.items()
-                        }[file_path.suffix]
-                        value = media_cls(file_path)
+                        value = media_class_for(file_path.suffix)(file_path)
                     elif dir_name == TEXTURES_DIR_NAME:
                         data = file_path.read_bytes()
                         value = node._gl.texture(

@@ -37,9 +37,6 @@ IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".bmp", ".webp"]
 VIDEO_EXTENSIONS = [".mp4", ".webm"]
 MEDIA_EXTENSIONS = IMAGE_EXTENSIONS + VIDEO_EXTENSIONS
 
-# Supported media types for node loading
-SUPPORTED_MEDIA_EXTENSIONS = {".png": "Image", ".mp4": "Video"}
-
 # Directory names for node loading
 MEDIA_DIR_NAME = "media"
 TEXTURES_DIR_NAME = "textures"
