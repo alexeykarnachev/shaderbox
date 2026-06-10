@@ -53,11 +53,17 @@ def _handle_escape(app: App) -> None:
     # Apply editor settings on close, not while open — avoids the modal-open FPE
     # (conventions.md ## Known quirks).
     was_settings_open = app.popup_state == PopupState.SETTINGS
-    app.popup_state = PopupState.CLOSED
-    app.is_palette_open = False
-    app.editor_defocus_requested = True
-    # Esc defocuses the chat but leaves it open.
-    if app.copilot_focused:
+    # Esc dismisses ONE thing, most-modal first: an open popup, else the palette, else the chat
+    # focus, else the editor caret. Dismissing a popup/palette must NOT also defocus the editor or
+    # chat — App.reconcile_popup_focus restores focus to whoever the popup stole it from.
+    if app.any_popup_open():
+        app.popup_state = PopupState.CLOSED
+    elif app.is_palette_open:
+        app.is_palette_open = False
+    elif app.copilot_focused:
+        # Esc defocuses the chat but leaves it open.
         app.copilot_defocus_requested = True
+    else:
+        app.editor_defocus_requested = True
     if was_settings_open:
         app.apply_editor_settings()

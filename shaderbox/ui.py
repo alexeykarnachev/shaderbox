@@ -125,6 +125,10 @@ def update_and_draw(app: App) -> None:
         app.copilot_focus_pending = True
     app.copilot_turn_active = app.copilot.state.in_flight
 
+    # Restore focus to the surface a just-closed modal stole it from (snapshot on open / restore
+    # on close). Runs before new_frame so the restored latch is consumed this same frame.
+    app.reconcile_popup_focus()
+
     # ----------------------------------------------------------------
     # Render nodes
     if not app.any_popup_open():

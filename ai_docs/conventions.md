@@ -276,6 +276,16 @@ belong in the feature spec (`ai_docs/features/NNN_*.md`). This file is not a cha
   leaf `paths.py` (not `app.py`) so credential/store modules can root files without importing `App`
   (the no-`TYPE_CHECKING` rule would otherwise force a cycle). Revisit if a state root needs to
   diverge from this single base.
+- **The active-project pointer (`app_data_dir()/project_dir`) is persisted ONLY for a real launch,
+  never for an explicit-dir process.** `App._init` writes the pointer (so the next launch reopens the
+  same project), but `App.__init__` passes `persist_pointer=False` whenever `project_dir` was given
+  explicitly — that means a test/smoke harness (`scripts/smoke.py`, the pytest `app` fixture) driving
+  `App(project_dir=<tmp>)`. WITHOUT this, an explicit-dir process overwrites the user's pointer with a
+  throwaway tmp path that's deleted on exit, so the next real launch reads a dead pointer and silently
+  falls back to a different/empty project — the user's just-created nodes appear "gone" (they were
+  saved into the tmp project they were unknowingly working in). `open_project` (a real user action)
+  uses the default `persist_pointer=True`. Revisit only if a headless harness ever legitimately needs
+  to set the user's active project.
 - **Release versioning is manual semver, bumped only via `make release VERSION=x.y.z`.** Bump
   rule: **major** = breaks users' existing projects / saved state (e.g. a non-round-trip app_state
   migration); **minor** = a backward-compatible feature; **patch** = fixes / other non-breaking

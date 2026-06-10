@@ -325,13 +325,16 @@ of truth for the config. Run before declaring anything done. Both ruff and pyrig
 failure** — the repo is currently at 0 pyright errors; keep it that way.
 
 ### `make smoke`
-Headless smoke test (`scripts/smoke.py`) — runs ~200 frames of `update_and_draw` against
-`projects/dev/` in an invisible glfw window, asserts popup-mutex + `current_node_id` invariants.
-~1.5s; catches import errors, callback dispatch failures, popup state-machine crashes, released-
-texture binding errors. Doesn't catch visual bugs. Run after any refactor in `ui.py` / `app.py` /
-`widgets/` / `popups/` / `tabs/` / `hotkeys.py` before declaring done; **not** wired into
-`make check` (needs a real GL context). Save/restore the user's
-`~/.local/share/shaderbox/project_dir` pointer is handled inside the script.
+Headless smoke test (`scripts/smoke.py`) — runs ~200 frames of `update_and_draw` against a THROWAWAY
+tmp project (seeded with the shipped template nodes; never `projects/dev/`) in an invisible glfw window,
+asserts popup-mutex + `current_node_id` invariants. ~1.5s; catches import errors, callback dispatch
+failures, popup state-machine crashes, released-texture binding errors. Doesn't catch visual bugs. Run
+after any refactor in `ui.py` / `app.py` / `widgets/` / `popups/` / `tabs/` / `hotkeys.py` before
+declaring done; **not** wired into `make check` (needs a real GL context). It does NOT touch the user's
+`~/.local/share/shaderbox/project_dir` pointer — `App` only persists that pointer for a REAL launch
+(`project_dir` resolved from the saved pointer/default); an explicit-dir process (smoke, the pytest `app`
+fixture) constructs `App(project_dir=…)` with `persist_pointer=False`, so a test run can never leave the
+next launch aimed at a deleted tmp project (`conventions.md ## Known quirks`).
 
 ### Build / ship to itch.io
 **The full ship procedure is the `/ship` skill** (`.claude/skills/ship/SKILL.md`) — the canonical home

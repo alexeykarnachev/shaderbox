@@ -111,6 +111,12 @@ def main() -> int:
                     app.cycle_region()
                 if frame_idx == 60:
                     app.focus_node_tab(NodeTab.RENDER)
+                # Open the New Node modal for a stretch so its draw path (grid + desc slot +
+                # action row sizing) is exercised — it never opens on its own in the loop.
+                if frame_idx == 70:
+                    app.popup_state = PopupState.NODE_CREATOR
+                if frame_idx == 90:
+                    app.popup_state = PopupState.CLOSED
             app.release()
             logger.info(f"smoke: OK ({N_FRAMES} frames, {len(app.ui_nodes)} nodes)")
             return 0

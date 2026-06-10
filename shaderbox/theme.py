@@ -144,7 +144,9 @@ class _ColorBag:
     STATE_OK: tuple[float, float, float, float] = _P["aqua_b"]
     STATE_WARN: tuple[float, float, float, float] = _P["yellow_b"]
     STATE_ERROR: tuple[float, float, float, float] = _P["red_b"]
-    STATE_INFO: tuple[float, float, float, float] = _P["blue_b"]
+    # blue_n (saturated), NOT blue_b (desaturated teal): blue_b reads too close to the aqua STATE_OK
+    # green (CIEDE2000 ~16 vs ~29) — most visible where both sit as adjacent status squares.
+    STATE_INFO: tuple[float, float, float, float] = _P["blue_n"]
 
     # picker-specific roles
     TAG: tuple[float, float, float, float] = _P["blue_b"]

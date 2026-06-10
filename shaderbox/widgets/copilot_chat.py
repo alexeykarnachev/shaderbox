@@ -12,6 +12,7 @@ from shaderbox.copilot.state import (
     Message,
     ResultWidget,
     context_gauge_readout,
+    tool_label,
 )
 from shaderbox.theme import COLOR, SIZE, SPACE, fade
 from shaderbox.ui_primitives import (
@@ -29,6 +30,7 @@ from shaderbox.ui_primitives import (
     open_url_button,
     primary_button,
     revert_icon_button,
+    step_squares,
     unconnected_gate,
 )
 from shaderbox.util import open_in_file_manager
@@ -240,11 +242,9 @@ def _draw_transcript(app: App) -> None:
             _draw_message(app, msg, i)
         if state.streaming_text:
             _draw_message(app, Message(role="assistant", text=state.streaming_text), -1)
-        if state.in_flight and not state.streaming_text:
-            # Latest per-tool status phrase; "thinking..." before the first status.
-            caption_text(
-                sanitize_display(state.status) if state.status else "thinking..."
-            )
+        # The in-flight status line now lives INSIDE the turn's snippet (the trailing turn_snippet
+        # message renders the live status above its square bar — F06), so there's no separate
+        # status line here. It already has the bubble's left indent (F07).
         if stick:
             imgui.set_scroll_here_y(1.0)
     imgui.end_child()
@@ -257,6 +257,10 @@ def _draw_transcript(app: App) -> None:
         imgui.set_keyboard_focus_here(0)
         app.copilot_focus_pending = False
 
+    # Inset the input row by SPACE.SM on BOTH sides so its left edge aligns with the message
+    # bubbles (which self-indent by SPACE.SM) and the Send button's right edge matches their right.
+    imgui.indent(float(SPACE.SM))
+
     # ONE layout for both states — same input box + same trailing button slot. Only what
     # changes by state changes: the input is frozen mid-turn, and the slot is Send (idle) vs
     # Stop (working). The geometry is identical, so the row never shifts between modes.
@@ -265,7 +269,7 @@ def _draw_transcript(app: App) -> None:
     submitted, app.copilot_input = imgui.input_text_multiline(
         "##copilot_input",
         app.copilot_input,
-        imgui.ImVec2(_send_button_offset(), input_h),
+        imgui.ImVec2(_send_button_offset(right_inset=float(SPACE.SM)), input_h),
         flags=imgui.InputTextFlags_.enter_returns_true
         | imgui.InputTextFlags_.ctrl_enter_for_new_line
         | imgui.InputTextFlags_.word_wrap,
@@ -278,6 +282,11 @@ def _draw_transcript(app: App) -> None:
     if submitted:
         app.copilot_focus_pending = True
     imgui.same_line()
+    # Bottom-align the button with the (possibly tall, splitter-resized) input: same_line lands it
+    # at the input's TOP; push the cursor down by the height difference so the bottoms line up.
+    imgui.set_cursor_pos_y(
+        imgui.get_cursor_pos_y() + max(0.0, input_h - imgui.get_frame_height())
+    )
     if in_flight:
         if ghost_button("Stop", width=btn_w):
             app.copilot.cancel_turn()
@@ -286,6 +295,7 @@ def _draw_transcript(app: App) -> None:
     ) and app.copilot_input.strip():
         app.copilot_send(app.copilot_input)
         app.copilot_input = ""
+    imgui.unindent(float(SPACE.SM))
 
 
 def _wrapped_colored(text: str, color: tuple[float, float, float, float]) -> None:
@@ -323,10 +333,75 @@ def _draw_message(app: App, msg: Message, idx: int) -> None:
         with message_bubble(f"##bubble_{idx}", COLOR.TRANSPARENT, bordered=False):
             _wrapped_colored(text, COLOR.STATE_ERROR)
         imgui.dummy(imgui.ImVec2(0, float(SPACE.SM)))
+    elif role == "turn_snippet":
+        _draw_turn_snippet(app, msg, idx)
     elif role == "pending_action":
         with message_bubble(f"##bubble_{idx}", COLOR.TRANSPARENT, bordered=False):
             _draw_pending_action(app, msg, idx)
         imgui.dummy(imgui.ImVec2(0, float(SPACE.SM)))
+
+
+def _snippet_tooltip(msg: Message) -> str:
+    # Per-step list (name + ok/fail) + the turn's token/cost total. No per-call tokens — usage is
+    # billed per LLM iteration, not per tool call (F06 decision A).
+    lines = [
+        f"{i + 1}. {tool_label(s.name)}{'' if s.ok else '  (failed)'}"
+        for i, s in enumerate(msg.steps)
+    ]
+    st = msg.snippet_stats
+    if st is not None:
+        lines.append("")
+        lines.append(f"reply {st.reply_tokens} tok  -  ${st.cost_usd:.4f}")
+    return "\n".join(lines) if lines else "No tool calls."
+
+
+_SquareSpec = tuple[tuple[float, float, float, float], bool]  # (color, pulse)
+
+
+def _snippet_squares(msg: Message, live: bool) -> list[_SquareSpec]:
+    # The square language: a resolved tool step = solid green (ok) / red (fail); the live/pending
+    # head = a pulsing gray square (shown from frame 1 so the bar never changes height -> no jitter);
+    # a CLEANLY-finished turn caps with one solid info-blue ANSWER square (so a zero-tool reply is a
+    # single blue square). An error/cancel turn (no stats) adds no cap.
+    squares: list[_SquareSpec] = [
+        (COLOR.STATE_OK if s.ok else COLOR.STATE_ERROR, False) for s in msg.steps
+    ]
+    if live:
+        squares.append((COLOR.FG_DIM, True))
+    elif msg.snippet_stats is not None:
+        squares.append((COLOR.STATE_INFO, False))
+    return squares
+
+
+def _draw_turn_snippet(app: App, msg: Message, idx: int) -> None:
+    # One compact per-turn snippet: the square bar (see _snippet_squares) + a line below it that
+    # self-updates to the live status WHILE running, then collapses to a mini-stat at clean
+    # completion. Hover the bar -> per-step breakdown.
+    #   live               = running now (in_flight, no stats) -> pulsing head + live status line.
+    #   has stats          = completed cleanly -> answer square + mini-stat line.
+    #   finished, no stats = error/cancel/torn (a separate message states the reason) -> bar only.
+    live = msg.snippet_stats is None and app.copilot.state.in_flight
+    squares = _snippet_squares(msg, live)
+    if not squares:
+        return
+    with message_bubble(f"##bubble_{idx}", COLOR.TRANSPARENT, bordered=False):
+        hovered = step_squares(f"steps_{idx}", squares)
+        st = msg.snippet_stats
+        if live:
+            status = app.copilot.state.status
+            _wrapped_colored(
+                sanitize_display(status) if status else "thinking...", COLOR.FG_DIM
+            )
+        elif st is not None:
+            n = len(msg.steps)
+            _wrapped_colored(
+                f"{n} tool{'s' if n != 1 else ''}  -  "
+                f"{st.reply_tokens} tok  -  ${st.cost_usd:.4f}",
+                COLOR.FG_DIM,
+            )
+        if hovered:
+            imgui.set_tooltip(_snippet_tooltip(msg))
+    imgui.dummy(imgui.ImVec2(0, float(SPACE.SM)))
 
 
 def _draw_bubble(
@@ -457,10 +532,11 @@ def _draw_credential_input(app: App, msg: Message, idx: int) -> None:
         app.copilot.answer_gate(approved=False)
 
 
-def _send_button_offset() -> float:
-    # Reserve the button width + the exact gap same_line() inserts (style item_spacing.x), so
-    # the trailing button lands flush against the right content edge with no leftover sliver.
-    return -(float(SIZE.BTN_SM_W) + imgui.get_style().item_spacing.x)
+def _send_button_offset(right_inset: float = 0.0) -> float:
+    # Reserve the button width + the exact gap same_line() inserts (style item_spacing.x), so the
+    # trailing button lands against the right edge. right_inset pulls that edge in (to match the
+    # message bubbles' right margin), since indent() moves only the left edge, not the right.
+    return -(float(SIZE.BTN_SM_W) + imgui.get_style().item_spacing.x + right_inset)
 
 
 def _draw_top_bar(app: App) -> None:

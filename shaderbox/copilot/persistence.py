@@ -22,10 +22,11 @@ from shaderbox.copilot.state import (
     RecoverInfo,
     ResultWidget,
     ResultWidgetKind,
+    StepRecord,
     TurnStats,
 )
 
-_VERSION = 8
+_VERSION = 9
 
 _RESULT_WIDGET_KINDS: frozenset[str] = frozenset({"open_url", "open_path"})
 
@@ -65,6 +66,26 @@ def _result_widget_or_none(model: "_ResultWidgetModel | None") -> ResultWidget |
     )
 
 
+def _stats_model(stats: TurnStats | None) -> "_TurnStatsModel | None":
+    if stats is None:
+        return None
+    return _TurnStatsModel(
+        context_tokens=stats.context_tokens,
+        reply_tokens=stats.reply_tokens,
+        cost_usd=stats.cost_usd,
+    )
+
+
+def _stats_or_none(model: "_TurnStatsModel | None") -> TurnStats | None:
+    if model is None:
+        return None
+    return TurnStats(
+        context_tokens=model.context_tokens,
+        reply_tokens=model.reply_tokens,
+        cost_usd=model.cost_usd,
+    )
+
+
 class _RecoverModel(BaseModel):
     # Stores the trash dir-NAME, not an absolute path — the project dir is relocatable;
     # re-anchored via App.trash_dir at click time.
@@ -83,6 +104,19 @@ class _ResultWidgetModel(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class _StepRecordModel(BaseModel):
+    name: str
+    ok: bool = True
+    model_config = {"extra": "forbid"}
+
+
+class _TurnStatsModel(BaseModel):
+    context_tokens: int = 0
+    reply_tokens: int = 0
+    cost_usd: float = 0.0
+    model_config = {"extra": "forbid"}
+
+
 class _MessageModel(BaseModel):
     # role / gate_kind are loose-str so a future member loads instead of failing the file.
     # gate_input (the typed secret buffer) is deliberately NOT a field — never persisted.
@@ -96,6 +130,10 @@ class _MessageModel(BaseModel):
     # The user message's turn id, keying its rollback checkpoint (feature 020·30). Defaulted so a
     # pre-field file loads with no turn_id (no Revert button — the checkpoint dirs are gone anyway).
     turn_id: str = ""
+    # role == "turn_snippet": the per-tool step list + this turn's own stats (feature 028 F06).
+    # Defaulted so a pre-v9 file loads with an empty snippet / no stats.
+    steps: list[_StepRecordModel] = []
+    snippet_stats: _TurnStatsModel | None = None
     model_config = {"extra": "forbid"}
 
 
@@ -105,13 +143,6 @@ class _HistoryModel(BaseModel):
     # and fail-softs to an empty chat (no backward-compat migration by design).
     role: str
     content: str | None = None
-    model_config = {"extra": "forbid"}
-
-
-class _TurnStatsModel(BaseModel):
-    context_tokens: int = 0
-    reply_tokens: int = 0
-    cost_usd: float = 0.0
     model_config = {"extra": "forbid"}
 
 
@@ -155,20 +186,14 @@ class ConversationStore(BaseModel):
                         else None
                     ),
                     turn_id=m.turn_id,
+                    steps=[_StepRecordModel(name=s.name, ok=s.ok) for s in m.steps],
+                    snippet_stats=_stats_model(m.snippet_stats),
                 )
                 for m in state.messages
             ],
             history=[_HistoryModel(role=h.role, content=h.content) for h in history],
             session_cost_usd=state.session_cost_usd,
-            last_turn=(
-                _TurnStatsModel(
-                    context_tokens=state.last_turn.context_tokens,
-                    reply_tokens=state.last_turn.reply_tokens,
-                    cost_usd=state.last_turn.cost_usd,
-                )
-                if state.last_turn is not None
-                else None
-            ),
+            last_turn=_stats_model(state.last_turn),
         )
 
     def to_messages(self) -> list[Message]:
@@ -192,6 +217,8 @@ class ConversationStore(BaseModel):
                 ),
                 result_widget=_result_widget_or_none(m.result_widget),
                 turn_id=m.turn_id,
+                steps=[StepRecord(name=s.name, ok=s.ok) for s in m.steps],
+                snippet_stats=_stats_or_none(m.snippet_stats),
             )
             for m in self.messages
         ]
@@ -210,13 +237,7 @@ class ConversationStore(BaseModel):
         return self.session_cost_usd
 
     def to_last_turn(self) -> TurnStats | None:
-        if self.last_turn is None:
-            return None
-        return TurnStats(
-            context_tokens=self.last_turn.context_tokens,
-            reply_tokens=self.last_turn.reply_tokens,
-            cost_usd=self.last_turn.cost_usd,
-        )
+        return _stats_or_none(self.last_turn)
 
     def save(self, file_path: Path) -> None:
         file_path.parent.mkdir(parents=True, exist_ok=True)

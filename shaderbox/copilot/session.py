@@ -30,7 +30,13 @@ from shaderbox.copilot.persistence import ConversationStore
 from shaderbox.copilot.prompt import render_working_set
 from shaderbox.copilot.prompt_context import build_context
 from shaderbox.copilot.sanitize import sanitize_display
-from shaderbox.copilot.state import ChatState, Message, RecoverInfo
+from shaderbox.copilot.state import (
+    ChatState,
+    Message,
+    RecoverInfo,
+    StepRecord,
+    tool_label,
+)
 from shaderbox.copilot.tools.base import mask_secret
 from shaderbox.copilot.tools.registry import build_registry
 from shaderbox.copilot.trace import TraceLog, new_trace_log
@@ -52,33 +58,6 @@ def _first_line(text: str, limit: int = 80) -> str:
     return line[:limit] + ("..." if len(line) > limit else "")
 
 
-# Human verb per tool for the chat card. The agent's verbose `result` is its own feedback;
-# the chat shows this + a terse outcome. A tool absent here falls back to its raw name.
-_TOOL_VERBS: dict[str, str] = {
-    "read_shader": "Read shader",
-    "edit_shader": "Edited shader",
-    "replace_lines": "Edited shader",
-    "insert_after": "Edited shader",
-    "set_uniform": "Set uniform",
-    "create_node": "Created node",
-    "delete_node": "Deleted node",
-    "switch_node": "Switched node",
-    "grep": "Searched",
-    "read_lib": "Read library",
-    "render_image": "Rendered image",
-    "render_video": "Rendered video",
-    "publish_telegram": "Published to Telegram",
-    "publish_youtube": "Published to YouTube",
-    "set_telegram_token": "Set Telegram token",
-    "telegram_connect": "Connected Telegram",
-    "list_telegram_packs": "Listed packs",
-    "select_telegram_pack": "Selected pack",
-    "create_telegram_pack": "Created pack",
-    "delete_telegram_pack": "Deleted pack",
-    "set_youtube_credentials": "Set YouTube credentials",
-}
-
-
 def _tool_card_outcome(ev: AgentToolCard) -> str:
     # The terse, human consequence after the verb. Failures are just "failed" (the agent holds
     # the reason). A compile result (mutating shader tools, create_node, read_shader) collapses
@@ -96,7 +75,7 @@ def _tool_card_outcome(ev: AgentToolCard) -> str:
 
 
 def _tool_card_line(ev: AgentToolCard) -> str:
-    verb = _TOOL_VERBS.get(ev.name, ev.name)
+    verb = tool_label(ev.name)
     outcome = _tool_card_outcome(ev)
     return f"{verb}  -  {outcome}" if outcome else verb
 
@@ -168,6 +147,9 @@ class CopilotSession:
         self.state.messages.append(
             Message(role="user", text=user_text, turn_id=turn_id)
         )
+        # The turn's compact snippet: tool cards append a StepRecord (the square bar), the terminal
+        # event writes snippet_stats (the mini-stat line). One per turn, trailing its user message.
+        self.state.messages.append(Message(role="turn_snippet"))
         self.state.streaming_text = ""
         self.state.in_flight = True
         # Clear a `_shutdown` the bridge + gate may have latched from a prior release() on this
@@ -222,16 +204,21 @@ class CopilotSession:
                     )
                 )
             case AgentToolCard():
-                # A single human line ("Edited shader  ·  compiled clean"). The verbose tool
-                # `result` is the AGENT's feedback (already in its history); the chat shows a
-                # glanceable summary. A render path / publish URL rides ev.widget (a button).
-                self.state.messages.append(
-                    Message(
-                        role="tool_status",
-                        text=_tool_card_line(ev),
-                        result_widget=ev.widget,
+                # Each step folds into the turn snippet's square bar (one StepRecord = one square).
+                # The verbose tool `result` is the AGENT's feedback (already in its history). A tool
+                # that surfaces an ACTIONABLE widget (render path / publish URL) keeps its own visible
+                # result line — those are rare + worth a click, not noise to collapse.
+                snippet = self._current_snippet()
+                if snippet is not None:
+                    snippet.steps.append(StepRecord(name=ev.name, ok=ev.ok))
+                if ev.widget is not None:
+                    self.state.messages.append(
+                        Message(
+                            role="tool_status",
+                            text=_tool_card_line(ev),
+                            result_widget=ev.widget,
+                        )
                     )
-                )
                 # A successful delete attaches the Recover affordance to its (resolved-Yes)
                 # confirm card — the gated tool's card always trails the open pending_action.
                 if ev.name == "delete_node" and ev.ok and ev.payload is not None:
@@ -252,11 +239,22 @@ class CopilotSession:
                 if ev.stats is not None:
                     self.state.last_turn = ev.stats
                     self.state.session_cost_usd += ev.stats.cost_usd
+                    snippet = self._current_snippet()
+                    if snippet is not None:
+                        snippet.snippet_stats = ev.stats
                 self._finish_turn()
             case AgentCancelled():
                 self.state.streaming_text = ""
                 self._resolve_open_gate_card("cancelled")
                 self._finish_turn()
+
+    def _current_snippet(self) -> Message | None:
+        # This turn's snippet — the trailing turn_snippet message (one per turn, appended at
+        # enqueue). None defensively (e.g. a torn event stream with no enqueue).
+        for msg in reversed(self.state.messages):
+            if msg.role == "turn_snippet":
+                return msg
+        return None
 
     def _open_gate_card(self) -> Message | None:
         # The trailing unresolved pending_action. Only ever one open gate, so the last is it.

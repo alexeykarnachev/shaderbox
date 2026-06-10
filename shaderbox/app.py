@@ -108,9 +108,16 @@ class App:
         is_first_launch = (
             project_dir is None and not self.project_dir_file_path.exists()
         )
+        # An explicit project_dir means a test/smoke harness drives THIS process against a throwaway
+        # dir — it must NOT become the user's saved active project (that's how a smoke/pytest run
+        # left the real launch pointing at a deleted tmp dir). Only a real launch (resolved from the
+        # saved pointer / default) persists the pointer.
+        persist_pointer = project_dir is None
         if project_dir is None:
             if self.project_dir_file_path.exists():
-                project_dir = Path(self.project_dir_file_path.read_text())
+                # .strip(): a stray trailing newline (an external writer / a manual `echo >`) would
+                # otherwise become a literal "dev\n"-named project dir.
+                project_dir = Path(self.project_dir_file_path.read_text().strip())
             else:
                 project_dir = self.default_project_dir
 
@@ -240,6 +247,12 @@ class App:
         # A single PopupState enum replaces four mutually-exclusive booleans; the
         # "at most one open" mutex is structural.
         self.popup_state: PopupState = PopupState.CLOSED
+        # Popup focus restore (a modal steals focus on open + leaves nothing focused on close).
+        # The editor case reads the sticky editor_was_ever_focused directly; only the chat needs a
+        # captured pre-popup flag (copilot_focused is NOT sticky — the popup clobbers it). Set in the
+        # openers (before the popup draws), consumed on the close edge by reconcile_popup_focus.
+        self._popup_was_open: bool = False
+        self._chat_focused_before_popup: bool = False
         # The node-creator popup's inline template-description editor. Bound to the selected
         # template's DIR path; closed when the popup opens or the selection changes.
         self.template_desc_input: InlineInput = InlineInput()
@@ -324,7 +337,9 @@ class App:
             on_path_renamed=self._on_shader_lib_path_renamed,
         )
 
-        self._init(project_dir, seed_starter=is_first_launch)
+        self._init(
+            project_dir, seed_starter=is_first_launch, persist_pointer=persist_pointer
+        )
 
         self._build_command_callbacks()
         self._register_palette_commands()
@@ -534,6 +549,20 @@ class App:
         # frame later that would steal the chat's focus (the blink); the editor yields on its own.
         self.copilot_focus_pending = True
 
+    def reconcile_popup_focus(self) -> None:
+        # Per-frame (ui.py, before new_frame). A modal leaves nothing focused on close, so on the
+        # open->CLOSED edge hand focus back: to the chat if it held focus before the popup
+        # (_chat_focused_before_popup — copilot_focused isn't sticky), else to the editor if it was
+        # the sticky focus owner (editor_was_ever_focused survives the popup on its own).
+        is_open = self.any_popup_open()
+        if not is_open and self._popup_was_open:
+            if self._chat_focused_before_popup and self.is_copilot_open:
+                self.focus_copilot()
+            elif self.editor_was_ever_focused:
+                self.editor_focus_requested = True
+            self._chat_focused_before_popup = False
+        self._popup_was_open = is_open
+
     def copilot_send(self, text: str) -> None:
         # MAIN THREAD. Flush + lock the editor BEFORE the worker reads source, so its first
         # read_shader sees disk-consistent state.
@@ -659,8 +688,15 @@ class App:
     def any_popup_open(self) -> bool:
         return self.popup_state != PopupState.CLOSED
 
+    def _open_popup(self, state: PopupState) -> None:
+        # Capture chat focus BEFORE the popup steals it (the openers run in dispatch_commands,
+        # before any window draws, so copilot_focused still holds the true pre-popup value), then
+        # open. reconcile_popup_focus restores on the close edge.
+        self._chat_focused_before_popup = self.copilot_focused
+        self.popup_state = state
+
     def open_node_creator(self) -> None:
-        self.popup_state = PopupState.NODE_CREATOR
+        self._open_popup(PopupState.NODE_CREATOR)
         self.template_desc_input.close()  # no stale description editor on reopen
 
     def set_template_description(self, template_uuid: str, description: str) -> None:
@@ -668,10 +704,10 @@ class App:
         self.template_descriptions.set(template_uuid, description)
 
     def open_settings(self) -> None:
-        self.popup_state = PopupState.SETTINGS
+        self._open_popup(PopupState.SETTINGS)
 
     def open_emoji_picker(self, target: Callable[[str], None] | None = None) -> None:
-        self.popup_state = PopupState.EMOJI_PICKER
+        self._open_popup(PopupState.EMOJI_PICKER)
         self.emoji_pick_target = target
         self.emoji_picker_query = ""
 
@@ -679,7 +715,7 @@ class App:
         # The picker derives `picker_just_opened` from imgui's `is_window_appearing()` on its
         # first frame.
         self.shader_lib_files.reset_inline_state()
-        self.popup_state = PopupState.SHADER_LIB_PICKER
+        self._open_popup(PopupState.SHADER_LIB_PICKER)
         self.shader_lib_files.picker_query = ""
 
     @property
@@ -775,7 +811,12 @@ class App:
     def set_node_delete_armed(self, id: str = "") -> None:
         self.node_delete_armed = id
 
-    def _init(self, project_dir: Path, seed_starter: bool = False) -> None:
+    def _init(
+        self,
+        project_dir: Path,
+        seed_starter: bool = False,
+        persist_pointer: bool = True,
+    ) -> None:
         self.release()
 
         self.preview_canvas = Canvas()
@@ -785,7 +826,10 @@ class App:
 
         # Project load (GL-free): paths, lib index, nodes + templates, app_state, integrations.
         self.session.load(project_dir)
-        self.project_dir_file_path.write_text(str(self.project_dir))
+        # Persist the active-project pointer for the next launch — EXCEPT for an explicit-dir
+        # test/smoke process (persist_pointer=False), which must not overwrite the user's pointer.
+        if persist_pointer:
+            self.project_dir_file_path.write_text(str(self.project_dir))
 
         # First launch only: seed a starter into the empty default project. NOT on
         # open_project (which would pollute a folder the user picked expecting it empty).

@@ -261,11 +261,19 @@ def message_bubble(
 
 
 @contextmanager
-def modal_window(label: str, size: tuple[float, float]) -> Iterator[bool]:
+def modal_window(
+    label: str,
+    size: tuple[float, float],
+    flags: int = 0,
+    fixed_size: bool = False,
+) -> Iterator[bool]:
     """Boilerplate-free modal-popup wrapper. Caller owns the `is_X_open` flag on `App`
     (allows per-modal cleanup on close); this owns the imgui dance: open by label,
-    seed size once (`Cond_.first_use_ever`), enter the popup scope, yield visibility.
-    Use as:
+    seed size, enter the popup scope, yield visibility. `flags` passes window flags
+    through (e.g. `no_scrollbar` for a modal that sizes its own content). `fixed_size`
+    forces `size` every frame (`Cond_.always`) for a non-resizable modal — pair it with
+    `WindowFlags_.no_resize`; the default seeds `size` once (`Cond_.first_use_ever`) so a
+    user resize persists via imgui.ini. Use as:
 
         if not app.is_X_open:
             return
@@ -278,14 +286,15 @@ def modal_window(label: str, size: tuple[float, float]) -> Iterator[bool]:
     """
     if not imgui.is_popup_open(label):
         imgui.open_popup(label)
-    imgui.set_next_window_size(imgui.ImVec2(*size), imgui.Cond_.first_use_ever)
+    size_cond = imgui.Cond_.always if fixed_size else imgui.Cond_.first_use_ever
+    imgui.set_next_window_size(imgui.ImVec2(*size), size_cond)
     # Center on the viewport (pivot at the window's own center). first_use_ever so a
     # user drag persists via imgui.ini.
     center = imgui.get_main_viewport().get_center()
     imgui.set_next_window_pos(
         center, imgui.Cond_.first_use_ever, imgui.ImVec2(0.5, 0.5)
     )
-    with imgui_ctx.begin_popup_modal(label) as popup:
+    with imgui_ctx.begin_popup_modal(label, flags=flags) as popup:
         yield popup.visible
 
 
@@ -634,6 +643,43 @@ def gauge_bar(id_: str, fraction: float, tooltip: str, width: float) -> None:
         imgui.color_convert_float4_to_u32(COLOR.BORDER),
         thickness=1.0,
     )
+
+
+def step_squares(
+    id_: str,
+    squares: list[tuple[tuple[float, float, float, float], bool]],
+) -> bool:
+    """A row of small filled squares (a turn's compact progress bar) — one per `(color, pulse)`
+    entry, wrapping at the content-region width. A `pulse=True` square breathes its alpha via
+    `imgui.get_time()` (the live/pending head). Reserves its own layout height and overlays one
+    hit-rect; returns True while hovered (the caller shows a breakdown tooltip). No font dependency.
+
+    The caller owns the colour language (e.g. done=ok/fail, a gray pulsing head, a final answer
+    square) so this primitive stays feature-agnostic."""
+    side: float = float(SPACE.MD)
+    gap: float = float(SPACE.XS)
+    avail_w: float = max(imgui.get_content_region_avail().x, side)
+    per_row: int = max(1, int((avail_w + gap) // (side + gap)))
+    n: int = len(squares)
+    rows: int = max(1, -(-n // per_row)) if n else 1
+    total_h: float = rows * side + max(0, rows - 1) * gap
+    origin = imgui.get_cursor_screen_pos()
+    # Reserve the block + own the hover hit-rect in one item. Height is fixed by the row count
+    # (independent of WHICH squares fill it), so a turn's bar never changes height as steps land.
+    imgui.invisible_button(f"##{id_}", imgui.ImVec2(avail_w, total_h))
+    hovered: bool = imgui.is_item_hovered()
+    # Triangle-wave alpha in [0.35, 1.0] at ~1.4 Hz for the pulsing head.
+    t = imgui.get_time() * 1.4
+    pulse_a: float = 0.35 + 0.65 * abs((t - math.floor(t)) * 2.0 - 1.0)
+    dl = imgui.get_window_draw_list()
+    for i, (color, pulse) in enumerate(squares):
+        r, c = divmod(i, per_row)
+        x0: float = origin.x + c * (side + gap)
+        y0: float = origin.y + r * (side + gap)
+        rgba = (color[0], color[1], color[2], color[3] * (pulse_a if pulse else 1.0))
+        col = imgui.color_convert_float4_to_u32(rgba)
+        dl.add_rect_filled((x0, y0), (x0 + side, y0 + side), col, rounding=2.0)
+    return hovered
 
 
 def cell_delete_confirm(origin: imgui.ImVec2, avail: imgui.ImVec2) -> bool | None:

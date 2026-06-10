@@ -8,7 +8,49 @@ from shaderbox.copilot.gate import GateKind
 # Chat render-state. Written ONLY by session.pump_events on the main thread, read ONLY by
 # the UI on the main thread -> single-writer, no lock. The worker bridges its writes via events.
 
-MessageRole = Literal["user", "assistant", "tool_status", "error", "pending_action"]
+MessageRole = Literal[
+    "user", "assistant", "tool_status", "error", "pending_action", "turn_snippet"
+]
+
+
+# Human PAST-TENSE verb per tool, for the chat (the per-step hover breakdown + the verbose
+# tool_status line). A tool absent here falls back to its raw name.
+_TOOL_VERBS: dict[str, str] = {
+    "read_shader": "Read shader",
+    "edit_shader": "Edited shader",
+    "replace_lines": "Edited shader",
+    "insert_after": "Edited shader",
+    "set_uniform": "Set uniform",
+    "create_node": "Created node",
+    "delete_node": "Deleted node",
+    "switch_node": "Switched node",
+    "grep": "Searched",
+    "read_lib": "Read library",
+    "render_image": "Rendered image",
+    "render_video": "Rendered video",
+    "publish_telegram": "Published to Telegram",
+    "publish_youtube": "Published to YouTube",
+    "set_telegram_token": "Set Telegram token",
+    "telegram_connect": "Connected Telegram",
+    "list_telegram_packs": "Listed packs",
+    "select_telegram_pack": "Selected pack",
+    "create_telegram_pack": "Created pack",
+    "delete_telegram_pack": "Deleted pack",
+    "set_youtube_credentials": "Set YouTube credentials",
+}
+
+
+def tool_label(name: str) -> str:
+    """Human-readable verb for a tool name (the chat shows this, not the raw `create_node` id)."""
+    return _TOOL_VERBS.get(name, name)
+
+
+@dataclass
+class StepRecord:
+    # One tool call in a turn's snippet — drives a single square in the progress bar (green ok /
+    # red fail) + a row in the hover breakdown. No per-call tokens (usage is per-iteration).
+    name: str
+    ok: bool
 
 
 class CopilotLayout(StrEnum):
@@ -69,6 +111,11 @@ class Message:
     # role == "tool_status": result widget (a button) from a tool's outcome. None = plain status line.
     # Non-blocking, unlike a gate.
     result_widget: ResultWidget | None = None
+    # role == "turn_snippet": one record per tool call this turn (the square bar + hover list);
+    # snippet_stats is THIS turn's own totals (mini-stat line), set at turn end. Distinct from
+    # ChatState.last_turn (the session's latest). string annotation: TurnStats is defined below.
+    steps: list[StepRecord] = field(default_factory=list)
+    snippet_stats: "TurnStats | None" = None
 
 
 @dataclass(frozen=True)

@@ -6,7 +6,13 @@ from pathlib import Path
 
 from shaderbox.copilot.llm.api import LLMMessage
 from shaderbox.copilot.persistence import ConversationStore, archive_conversation
-from shaderbox.copilot.state import ChatState, Message, ResultWidget, TurnStats
+from shaderbox.copilot.state import (
+    ChatState,
+    Message,
+    ResultWidget,
+    StepRecord,
+    TurnStats,
+)
 
 
 def _populated_state() -> ChatState:
@@ -218,6 +224,62 @@ def test_unknown_widget_kind_fails_soft(tmp_path: Path) -> None:
     msgs = ConversationStore.load_and_migrate(path).to_messages()
     assert msgs[0].result_widget is None  # unknown kind
     assert msgs[1].result_widget is None  # empty target
+
+
+def test_turn_snippet_round_trips(tmp_path: Path) -> None:
+    # F06: a turn_snippet's step list + its own stats survive a save/load round-trip.
+    state = ChatState()
+    state.messages = [
+        Message(role="user", text="add a uniform", turn_id="turn_0001"),
+        Message(
+            role="turn_snippet",
+            steps=[
+                StepRecord(name="read_shader", ok=True),
+                StepRecord(name="edit_shader", ok=False),
+                StepRecord(name="replace_lines", ok=True),
+            ],
+            snippet_stats=TurnStats(
+                context_tokens=900, reply_tokens=210, cost_usd=0.0031
+            ),
+        ),
+    ]
+    path = tmp_path / "conversation.json"
+    ConversationStore.from_runtime(state, []).save(path)
+    msgs = ConversationStore.load_and_migrate(path).to_messages()
+    snip = msgs[1]
+    assert snip.role == "turn_snippet"
+    assert [(s.name, s.ok) for s in snip.steps] == [
+        ("read_shader", True),
+        ("edit_shader", False),
+        ("replace_lines", True),
+    ]
+    assert snip.snippet_stats is not None
+    assert snip.snippet_stats.reply_tokens == 210
+    assert snip.snippet_stats.cost_usd == 0.0031
+
+
+def test_pre_v9_snippet_fields_default(tmp_path: Path) -> None:
+    # A pre-F06 (v8) file has no steps / snippet_stats keys — they must default (empty / None),
+    # not raise. A persisted tool_status line still loads as a plain message.
+    path = tmp_path / "conversation.json"
+    path.write_text(
+        json.dumps(
+            {
+                "version": 8,
+                "messages": [
+                    {"role": "user", "text": "x"},
+                    {"role": "tool_status", "text": "edit_shader: ok"},
+                ],
+                "history": [],
+                "session_cost_usd": 0.0,
+            }
+        ),
+        encoding="utf-8",
+    )
+    msgs = ConversationStore.load_and_migrate(path).to_messages()
+    assert msgs[1].role == "tool_status"
+    assert msgs[1].steps == []
+    assert msgs[1].snippet_stats is None
 
 
 def test_archive_moves_file_and_leaves_none(tmp_path: Path) -> None:

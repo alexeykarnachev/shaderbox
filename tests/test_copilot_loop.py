@@ -416,6 +416,124 @@ def test_stale_shutdown_sentinel_does_not_strand_turn(tmp_path: Path) -> None:
     assert any(m.role == "assistant" for m in sess.state.messages)
 
 
+def test_turn_snippet_collects_steps_not_status_lines(tmp_path: Path) -> None:
+    # F06: tool cards fold into ONE turn_snippet (square per call), NOT a tool_status line each.
+    # A card carrying an actionable widget keeps its own visible tool_status line.
+    from shaderbox.copilot.agent import AgentTurnDone
+    from shaderbox.copilot.session import CopilotSession
+    from shaderbox.copilot.state import ResultWidget, TurnStats
+
+    sess = CopilotSession(
+        _fake_caps(edit_errors=[]),  # type: ignore[arg-type]
+        object(),  # type: ignore[arg-type]  # client unused — we feed events directly
+        get_project_slug=lambda: "test",
+        get_checkpoints_root=lambda: tmp_path / "checkpoints",
+    )
+    sess.enqueue_turn("do stuff")  # appends the user msg + the empty turn_snippet
+    sess._apply_event(AgentToolCard(name="read_shader", ok=True, payload=None))
+    sess._apply_event(AgentToolCard(name="edit_shader", ok=False, payload=None))
+    sess._apply_event(
+        AgentToolCard(
+            name="render_image",
+            ok=True,
+            payload=None,
+            widget=ResultWidget(kind="open_path", label="Reveal", target="/x.png"),
+        )
+    )
+    sess._apply_event(
+        AgentTurnDone(
+            stats=TurnStats(context_tokens=500, reply_tokens=80, cost_usd=0.002)
+        )
+    )
+
+    snippets = [m for m in sess.state.messages if m.role == "turn_snippet"]
+    assert len(snippets) == 1, "exactly one snippet per turn"
+    snip = snippets[0]
+    assert [(s.name, s.ok) for s in snip.steps] == [
+        ("read_shader", True),
+        ("edit_shader", False),
+        ("render_image", True),
+    ]
+    assert snip.snippet_stats is not None and snip.snippet_stats.reply_tokens == 80
+    # Only the widget-bearing card keeps a visible tool_status line; the other two do NOT.
+    tool_lines = [m for m in sess.state.messages if m.role == "tool_status"]
+    assert len(tool_lines) == 1
+    assert tool_lines[0].result_widget is not None
+    sess.release()
+
+
+def test_errored_turn_leaves_snippet_finished_not_live(tmp_path: Path) -> None:
+    # Reviewer-caught bug: AgentError/AgentCancelled set no snippet_stats. The renderer must NOT
+    # treat a statless snippet as live (frozen "thinking...") — that's gated on state.in_flight,
+    # which the terminal event clears. Assert the post-error invariant the renderer relies on.
+    from shaderbox.copilot.agent import AgentCancelled, AgentError
+    from shaderbox.copilot.session import CopilotSession
+
+    def _mk() -> CopilotSession:
+        return CopilotSession(
+            _fake_caps(edit_errors=[]),  # type: ignore[arg-type]
+            object(),  # type: ignore[arg-type]
+            get_project_slug=lambda: "test",
+            get_checkpoints_root=lambda: tmp_path / "checkpoints",
+        )
+
+    for terminal in (AgentError(message="boom"), AgentCancelled()):
+        sess = _mk()
+        sess.enqueue_turn("go")
+        sess._apply_event(AgentToolCard(name="edit_shader", ok=True, payload=None))
+        sess._apply_event(terminal)
+        snip = next(m for m in sess.state.messages if m.role == "turn_snippet")
+        assert snip.snippet_stats is None  # error/cancel set no stats
+        assert (
+            sess.state.in_flight is False
+        )  # so the renderer's `live` is False -> no thinking
+        assert len(snip.steps) == 1  # the squares still record what happened
+        sess.release()
+
+
+def test_snippet_square_language() -> None:
+    # F09: the bar's (color, pulse) list across turn states. A pulsing gray head is shown from
+    # frame 1 (no jitter); a clean turn caps with an info-blue answer square (so a zero-tool reply
+    # is one blue square); an error/cancel turn (no stats) adds no cap.
+    from shaderbox.copilot.state import Message, StepRecord, TurnStats
+    from shaderbox.theme import COLOR
+    from shaderbox.widgets.copilot_chat import _snippet_squares
+
+    # zero-tool, still running -> just the pulsing gray head.
+    sq = _snippet_squares(Message(role="turn_snippet"), live=True)
+    assert sq == [(COLOR.FG_DIM, True)]
+
+    # zero-tool, clean done -> one solid info-blue answer square.
+    done = Message(role="turn_snippet", snippet_stats=TurnStats(0, 10, 0.001))
+    assert _snippet_squares(done, live=False) == [(COLOR.STATE_INFO, False)]
+
+    # multi-tool, running -> green/red done squares + the pulsing head.
+    running = Message(
+        role="turn_snippet",
+        steps=[StepRecord("a", True), StepRecord("b", False)],
+    )
+    assert _snippet_squares(running, live=True) == [
+        (COLOR.STATE_OK, False),
+        (COLOR.STATE_ERROR, False),
+        (COLOR.FG_DIM, True),
+    ]
+
+    # multi-tool, clean done -> done squares + the answer cap (no head).
+    multi_done = Message(
+        role="turn_snippet",
+        steps=[StepRecord("a", True)],
+        snippet_stats=TurnStats(0, 10, 0.001),
+    )
+    assert _snippet_squares(multi_done, live=False) == [
+        (COLOR.STATE_OK, False),
+        (COLOR.STATE_INFO, False),
+    ]
+
+    # error/cancel (steps, no stats, not live) -> bar only, NO head and NO answer cap.
+    errored = Message(role="turn_snippet", steps=[StepRecord("a", True)])
+    assert _snippet_squares(errored, live=False) == [(COLOR.STATE_OK, False)]
+
+
 def test_terminal_carries_nl_summary_not_tool_tail() -> None:
     # feature 020·28: the terminal event carries an engine-derived NL TurnSummary, NOT the tool tail.
     # A read_shader turn (non-mutating) yields the agent's reply + the read node in `nodes`, no ledger.
