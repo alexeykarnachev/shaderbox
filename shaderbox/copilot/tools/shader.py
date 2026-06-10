@@ -1,6 +1,6 @@
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from shaderbox.copilot.capabilities import (
     CompileErrorInfo,
@@ -9,19 +9,18 @@ from shaderbox.copilot.capabilities import (
     GrepHit,
     ShaderView,
 )
-from shaderbox.copilot.tools.base import GatePolicy, ToolDefinition
+from shaderbox.copilot.tools.base import GatePolicy, ToolArgs, ToolDefinition
 
 # The shader tool surface. Handlers do GL-free text work on the worker thread and call a
 # capability closure for anything GL-touching (the closure owns the bridge round-trip).
 
 
-class _ReadShaderArgs(BaseModel):
+class _ReadShaderArgs(ToolArgs):
     nodes: list[str] = Field(
         default_factory=list,
         description="node ids to read (from the project map); empty = the shader you are "
         "currently working on. NEVER means 'all'.",
     )
-    model_config = {"extra": "forbid"}
 
 
 _TARGET_DESC = (
@@ -31,7 +30,7 @@ _TARGET_DESC = (
 )
 
 
-class _EditArgs(BaseModel):
+class _EditArgs(ToolArgs):
     old_str: str = Field(description="exact substring of the source to replace")
     new_str: str = Field(description="the replacement text")
     replace_all: bool = Field(
@@ -39,10 +38,9 @@ class _EditArgs(BaseModel):
         description="replace every occurrence (resolves a non-unique old_str)",
     )
     target: str = Field(default="", description=_TARGET_DESC)
-    model_config = {"extra": "forbid"}
 
 
-class _ReplaceLinesArgs(BaseModel):
+class _ReplaceLinesArgs(ToolArgs):
     start_line: int = Field(description="first line to replace (1-based, inclusive)")
     end_line: int = Field(description="last line to replace (1-based, inclusive)")
     new_text: str = Field(
@@ -50,10 +48,9 @@ class _ReplaceLinesArgs(BaseModel):
         "the range"
     )
     target: str = Field(default="", description=_TARGET_DESC)
-    model_config = {"extra": "forbid"}
 
 
-class _InsertAfterArgs(BaseModel):
+class _InsertAfterArgs(ToolArgs):
     line: int = Field(
         description="insert after this 1-based line; 0 inserts at the top of the file"
     )
@@ -64,10 +61,9 @@ class _InsertAfterArgs(BaseModel):
         + " — a 'lib:<path>' that doesn't exist yet is CREATED here (the way to add a new "
         "library function)",
     )
-    model_config = {"extra": "forbid"}
 
 
-class _SetUniformArgs(BaseModel):
+class _SetUniformArgs(ToolArgs):
     name: str = Field(description="the uniform's name (e.g. u_color)")
     value: float | int | str | list[float | int] = Field(
         description="the value, shaped to the uniform: a NUMBER for a scalar; a LIST of numbers for "
@@ -80,10 +76,9 @@ class _SetUniformArgs(BaseModel):
         default="",
         description="node id (from the project map); empty = the node you're working on",
     )
-    model_config = {"extra": "forbid"}
 
 
-class _CreateNodeArgs(BaseModel):
+class _CreateNodeArgs(ToolArgs):
     name: str = Field(description="a display name for the new node")
     template: str = Field(
         default="",
@@ -101,36 +96,31 @@ class _CreateNodeArgs(BaseModel):
         description="switch the user's view to the new node (true), or create it in the "
         "background and keep editing via its returned id (false)",
     )
-    model_config = {"extra": "forbid"}
 
 
-class _GrepArgs(BaseModel):
+class _GrepArgs(ToolArgs):
     query: str = Field(
         description="substring to find across every node's source and the library"
     )
-    model_config = {"extra": "forbid"}
 
 
-class _ReadLibArgs(BaseModel):
+class _ReadLibArgs(ToolArgs):
     names: list[str] = Field(
         description="library function names (SB_*) whose full body you want to read"
     )
-    model_config = {"extra": "forbid"}
 
 
-class _DeleteNodeArgs(BaseModel):
+class _DeleteNodeArgs(ToolArgs):
     node: str = Field(
         description="node id (from the project map) to delete — REQUIRED, never empty "
         "(deleting is destructive, so the target must be explicit, not the current node)"
     )
-    model_config = {"extra": "forbid"}
 
 
-class _SwitchNodeArgs(BaseModel):
+class _SwitchNodeArgs(ToolArgs):
     node: str = Field(
         description="node id (from the project map) to make the current shader — REQUIRED"
     )
-    model_config = {"extra": "forbid"}
 
 
 _READ_SHADER_DESC = (

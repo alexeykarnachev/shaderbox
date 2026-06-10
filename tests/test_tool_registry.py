@@ -20,3 +20,7 @@ def test_every_tool_fully_carded() -> None:
         assert d.label_done and d.label_done != d.name
         if d.gate_policy is GatePolicy.ALWAYS:
             assert d.gate_prompt is not None
+        # The LLM-facing contract: hallucinated arg keys must be rejected, not swallowed.
+        # Checks the emitted schema, so a stray non-ToolArgs args model can't sneak past.
+        schema = d.args_model.model_json_schema()
+        assert schema.get("additionalProperties") is False, d.name

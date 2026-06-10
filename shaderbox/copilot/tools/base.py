@@ -12,6 +12,18 @@ from shaderbox.copilot.llm.api import LLMToolSpec
 # registry.py so the per-domain tool modules (tools/shader.py, …) import these without
 # cycling through the registry (which imports those modules to build the catalog).
 
+
+class ToolArgs(BaseModel):
+    # Every tool args model subclasses this. The forbid is load-bearing: without it pydantic
+    # silently swallows hallucinated arg keys at registry.execute (pinned by the registry
+    # invariant test on the emitted JSON schema).
+    model_config = {"extra": "forbid"}
+
+
+class EmptyArgs(ToolArgs):
+    pass
+
+
 # (ok, message_for_llm, payload_for_ui). Sync — handlers run on the worker thread.
 ToolHandler = Callable[[dict[str, Any]], tuple[bool, str, dict[str, Any] | None]]
 # A credential tool's handler (feature 020·19): receives the gate's typed secret as a SECOND
@@ -45,7 +57,7 @@ class GatePolicy(StrEnum):
 class ToolDefinition:
     name: str
     description: str
-    args_model: type[BaseModel]  # pydantic — schema + validation from one definition
+    args_model: type[ToolArgs]  # pydantic — schema + validation from one definition
     handler: ToolHandler | CredentialToolHandler
     # Display labels (feature 029): present for the in-flight status pill ("Editing shader"),
     # past for the finished tool card + snippet hover ("Edited shader"). Display-only — `name`

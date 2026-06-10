@@ -1,28 +1,28 @@
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from shaderbox.copilot.capabilities import CopilotCapabilities
 from shaderbox.copilot.gate import GateKind
-from shaderbox.copilot.tools.base import GatePolicy, ToolDefinition, mask_secret
+from shaderbox.copilot.tools.base import (
+    EmptyArgs,
+    GatePolicy,
+    ToolArgs,
+    ToolDefinition,
+    mask_secret,
+)
 
 # set_telegram_token is CREDENTIAL-gated: the secret arrives as the handler's 2nd arg, never in
 # args/trace/history, and the returned confirmation is REDACTED. Pack tools precheck connection
 # so an unconnected op never pops a confirm.
 
 
-class _EmptyArgs(BaseModel):
-    model_config = {"extra": "forbid"}
-
-
-class _SetNameArgs(BaseModel):
+class _SetNameArgs(ToolArgs):
     set_name: str = Field(description="the pack's set_name (from list_telegram_packs)")
-    model_config = {"extra": "forbid"}
 
 
-class _CreatePackArgs(BaseModel):
+class _CreatePackArgs(ToolArgs):
     title: str = Field(description="a human title for the new sticker pack")
-    model_config = {"extra": "forbid"}
 
 
 _SET_TOKEN_DESC = (
@@ -139,7 +139,7 @@ def telegram_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             label_live="Setting Telegram token",
             label_done="Set Telegram token",
             description=_SET_TOKEN_DESC,
-            args_model=_EmptyArgs,
+            args_model=EmptyArgs,
             handler=set_telegram_token,
             mutating=True,
             needs_gl=False,
@@ -158,7 +158,7 @@ def telegram_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             label_live="Connecting Telegram",
             label_done="Connected Telegram",
             description=_CONNECT_DESC,
-            args_model=_EmptyArgs,
+            args_model=EmptyArgs,
             handler=telegram_connect,
             mutating=True,
             needs_gl=False,
@@ -171,7 +171,7 @@ def telegram_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             label_live="Listing packs",
             label_done="Listed packs",
             description=_LIST_DESC,
-            args_model=_EmptyArgs,
+            args_model=EmptyArgs,
             handler=list_telegram_packs,
             mutating=False,
             needs_gl=False,

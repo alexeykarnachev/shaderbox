@@ -1,13 +1,13 @@
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from shaderbox.copilot.capabilities import (
     CopilotCapabilities,
     PublishResult,
     RenderResult,
 )
-from shaderbox.copilot.tools.base import GatePolicy, ToolDefinition
+from shaderbox.copilot.tools.base import GatePolicy, ToolArgs, ToolDefinition
 
 # Render tools marshal GL via the bridge; all are GatePolicy.ALWAYS (render freezes the UI,
 # publish is external + irreversible). Publish tools precheck (handoff) before the gate.
@@ -16,17 +16,16 @@ from shaderbox.copilot.tools.base import GatePolicy, ToolDefinition
 _DIM_DESC = "pixels; omit (0) to use the node's current canvas size. Snaps up to the codec alignment."
 
 
-class _RenderImageArgs(BaseModel):
+class _RenderImageArgs(ToolArgs):
     node: str = Field(
         default="",
         description="node id (from the project map); empty = the shader you're working on",
     )
     width: int = Field(default=0, ge=0, le=4096, description=_DIM_DESC)
     height: int = Field(default=0, ge=0, le=4096, description=_DIM_DESC)
-    model_config = {"extra": "forbid"}
 
 
-class _RenderVideoArgs(BaseModel):
+class _RenderVideoArgs(ToolArgs):
     node: str = Field(
         default="",
         description="node id (from the project map); empty = the shader you're working on",
@@ -39,25 +38,22 @@ class _RenderVideoArgs(BaseModel):
     fps: int = Field(default=30, ge=1, le=120, description="frames per second")
     width: int = Field(default=0, ge=0, le=4096, description=_DIM_DESC)
     height: int = Field(default=0, ge=0, le=4096, description=_DIM_DESC)
-    model_config = {"extra": "forbid"}
 
 
-class _PublishTelegramArgs(BaseModel):
+class _PublishTelegramArgs(ToolArgs):
     emoji: str = Field(
         default="🎨",
         description="the emoji to associate with the sticker (one character)",
     )
-    model_config = {"extra": "forbid"}
 
 
-class _PublishYoutubeArgs(BaseModel):
+class _PublishYoutubeArgs(ToolArgs):
     title: str = Field(description="the video title")
     description: str = Field(default="", description="the video description")
     is_short: bool = Field(
         default=False,
         description="True = a YouTube Short (9:16, <=60s); False = a normal video",
     )
-    model_config = {"extra": "forbid"}
 
 
 _RENDER_IMAGE_DESC = (

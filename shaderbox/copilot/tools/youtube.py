@@ -1,20 +1,14 @@
 from typing import Any
 
-from pydantic import BaseModel
-
 from shaderbox.copilot.capabilities import CopilotCapabilities
 from shaderbox.copilot.gate import GateKind
-from shaderbox.copilot.tools.base import GatePolicy, ToolDefinition
+from shaderbox.copilot.tools.base import EmptyArgs, GatePolicy, ToolDefinition
 
 # The YouTube connect tool (feature 020·21). set_youtube_credentials is CONFIG-gated: the chat renders
 # the exporter's EXISTING draw_config_ui() inline (paste client_secret + Connect, the same widgets as
 # Settings) + a Cancel button. The gate blocks until the panel reaches connected (auto-resolved) or the
 # user cancels; the handler then only reports the outcome. Mirrors the Telegram connect shape, but the
 # inline panel IS the multi-step flow, so no separate async-connect tail tool is needed.
-
-
-class _EmptyArgs(BaseModel):
-    model_config = {"extra": "forbid"}
 
 
 _SET_YT_DESC = (
@@ -54,7 +48,7 @@ def youtube_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             label_live="Setting YouTube credentials",
             label_done="Set YouTube credentials",
             description=_SET_YT_DESC,
-            args_model=_EmptyArgs,
+            args_model=EmptyArgs,
             handler=set_youtube_credentials,
             mutating=True,
             needs_gl=False,
