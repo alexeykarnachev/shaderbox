@@ -8,6 +8,7 @@ header — emitting `#line N M` directives so driver errors remap back to source
 Pure functions, no GL, no imgui. `Node.compile()` is the single integration site.
 """
 
+import difflib
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -54,6 +55,7 @@ def resolve_usage(
     # Root is always file_id 0.
     _intern(state, root)
 
+    state.errors.extend(_unknown_name_errors(root, index))
     used = _collect_used_lib_names(root, index)
     if not used:
         # Fast path: no lib functions referenced; the flattened text IS the root.
@@ -106,6 +108,35 @@ def _collect_used_lib_names(root: ShaderSource, index: ShaderLibIndex) -> set[st
     referenced = set(parser.SB_IDENT_RE.findall(stripped))
     user_defined = set(parser.USER_FN_DEF_RE.findall(stripped))
     return {n for n in referenced if n not in user_defined and n in index.functions}
+
+
+def _unknown_name_errors(
+    root: ShaderSource, index: ShaderLibIndex
+) -> list[ResolveError]:
+    # A referenced `SB_*` name that is neither in the lib nor user-defined would
+    # otherwise reach the driver as a cryptic "undeclared identifier" — error here
+    # with the line and the closest catalogue name instead. (Line numbers can
+    # drift across multi-line block comments; `//` stripping keeps newlines.)
+    stripped = parser.strip_comments(root.text)
+    user_defined = set(parser.USER_FN_DEF_RE.findall(stripped))
+    known = list(index.functions)
+    errors: list[ResolveError] = []
+    seen: set[str] = set()
+    for line_no, line in enumerate(stripped.splitlines(), start=1):
+        for name in parser.SB_IDENT_RE.findall(line):
+            if name in user_defined or name in index.functions or name in seen:
+                continue
+            seen.add(name)
+            close = difflib.get_close_matches(name, known, n=1, cutoff=0.6)
+            hint = f" — did you mean '{close[0]}'?" if close else ""
+            errors.append(
+                ResolveError(
+                    root.path,
+                    line_no,
+                    f"unknown library function '{name}'{hint}",
+                )
+            )
+    return errors
 
 
 def _topo_sort(

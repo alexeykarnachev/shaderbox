@@ -315,17 +315,42 @@ def test_resolve_error_on_lib_cycle(tmp_path: Path) -> None:
     assert any("cycle" in e.message for e in errors)
 
 
-def test_typo_silently_passes_through(tmp_path: Path) -> None:
-    # User typoed `SB_perln` (no such function); the resolver doesn't prepend
-    # anything for it and doesn't emit a ResolveError — the driver will produce
-    # "undeclared identifier" at the user's line, which is the right home for it.
+def test_typo_errors_with_closest_name_suggestion(tmp_path: Path) -> None:
+    # User typoed `SB_perln` (no such function): the resolver errors at the user's
+    # line with the closest catalogue name, instead of letting the driver emit a
+    # cryptic "undeclared identifier" (feature 033).
     lib = tmp_path / "lib"
     idx = _make_lib(lib, {"x.glsl": "float SB_perlin() { return 0.0; }\n"})
     root = _write(tmp_path / "root.glsl", "void main() { float x = SB_perln(); }\n")
-    flattened, _sources, _smap, errors = resolve_usage(root, idx)
+    _flattened, _sources, _smap, errors = resolve_usage(root, idx)
+    assert len(errors) == 1
+    assert errors[0].path == root.path
+    assert errors[0].line == 1
+    assert "unknown library function 'SB_perln'" in errors[0].message
+    assert "did you mean 'SB_perlin'" in errors[0].message
+
+
+def test_unknown_name_errors_even_with_no_known_names_used(tmp_path: Path) -> None:
+    # The fast path (no known lib names referenced) must still catch unknowns.
+    lib = tmp_path / "lib"
+    idx = _make_lib(lib, {"x.glsl": "float SB_perlin() { return 0.0; }\n"})
+    root = _write(tmp_path / "root.glsl", "void main() { SB_totally_made_up(); }\n")
+    _flattened, _sources, _smap, errors = resolve_usage(root, idx)
+    assert len(errors) == 1
+    assert "unknown library function 'SB_totally_made_up'" in errors[0].message
+
+
+def test_user_defined_SB_function_is_not_unknown(tmp_path: Path) -> None:
+    # A user-defined SB_* function (shadowing convention) must not error.
+    lib = tmp_path / "lib"
+    idx = _make_lib(lib, {"x.glsl": "float SB_perlin() { return 0.0; }\n"})
+    root = _write(
+        tmp_path / "root.glsl",
+        "float SB_mine(vec2 p) { return p.x; }\n"
+        "void main() { SB_mine(vec2(0.0)); SB_perlin(); }\n",
+    )
+    _flattened, _sources, _smap, errors = resolve_usage(root, idx)
     assert errors == []
-    assert "SB_perlin" not in flattened  # not requested
-    assert "SB_perln" in flattened  # user's typo preserved
 
 
 def test_line_markers_thread_through_source_map(tmp_path: Path) -> None:
