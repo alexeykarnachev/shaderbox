@@ -243,9 +243,9 @@ def test_batch_begin_called_once_per_batch() -> None:
 
 
 def test_read_adds_to_working_set_and_rebuild_shows_live_source(app: Any) -> None:
-    app._copilot_working_set = []
+    app.session._copilot_working_set = []
     app.copilot_backend.read_shaders([])  # current node
-    assert app._copilot_working_set  # the current node joined
+    assert app.session._copilot_working_set  # the current node joined
     views = app.copilot_backend.read_working_set()
     assert views and views[0].is_current
     assert views[0].listing.strip().startswith("1  ")
@@ -253,7 +253,7 @@ def test_read_adds_to_working_set_and_rebuild_shows_live_source(app: Any) -> Non
 
 def test_current_node_unioned_into_rebuild(app: Any) -> None:
     # The current node is an implicit working-set member even if no read/edit added it (D1).
-    app._copilot_working_set = []
+    app.session._copilot_working_set = []
     views = app.copilot_backend.read_working_set()
     assert any(v.is_current for v in views)
 
@@ -265,7 +265,7 @@ def test_intra_batch_line_edit_guard_rejects(app: Any) -> None:
     # lines" (a real successful edit can't run twice headlessly: glfw context state bleeds across App
     # instances in one process, so the post-edit rebuild-coherence is a maintainer-live-pass item —
     # verified end-to-end on a single real App, in the spec's failed-flow re-run).
-    app._copilot_working_set = []
+    app.session._copilot_working_set = []
     app.copilot_backend._batch_mutated = {app.current_node_id}
     res = app.copilot_backend.apply_line_edit(1, 0, "// shifted", "")
     assert res.unresolved and "shifted" in res.unresolved_reason
@@ -285,7 +285,7 @@ def test_substring_edit_never_d9_rejected(app: Any) -> None:
 
 def test_gone_node_skipped_in_rebuild(app: Any) -> None:
     # A working-set address that is no longer a node never KeyErrors the rebuild.
-    app._copilot_working_set = ["does-not-exist-id"]
+    app.session._copilot_working_set = ["does-not-exist-id"]
     views = app.copilot_backend.read_working_set()  # must not raise
     assert all(v.address != "does-not-exist-id" for v in views)
 

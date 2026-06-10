@@ -73,8 +73,8 @@ def test_shipped_templates_read_clean_without_joining_working_set(app: Any) -> N
         assert len(v.errors) == 0, f"{t.name} must compile clean: {v.errors}"
         # read-only: a template read never joins the (editable) working set
         full = app.copilot_backend._copilot_resolve_template_id(t.template_id)
-        assert full not in app._copilot_working_set
-        assert t.template_id not in app._copilot_working_set
+        assert full not in app.session._copilot_working_set
+        assert t.template_id not in app.session._copilot_working_set
 
 
 def test_grep_surfaces_template_origins(app: Any) -> None:
