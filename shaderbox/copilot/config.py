@@ -7,7 +7,9 @@ class CopilotConfig:
     # migration discipline (they live here, not on app_state).
     max_iterations: int = 16
     max_input_tokens: int = 150_000
-    max_tokens_per_turn: int = 8_000
+    # 12k: codex-mini burns ~7k hidden reasoning on creative generations even at
+    # effort=minimal (round-4 evidence: iter-0 rsn=6784 nearly clipped the args).
+    max_tokens_per_turn: int = 12_000
     # Soft per-edit compile-fix retry budget, distinct from max_iterations (§I2).
     max_edit_retries: int = 3
     # Consecutive broken-compile edits on ONE file before the engine force-restores it to

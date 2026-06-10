@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TypeGuard
 
+import glfw
 import moderngl
 from loguru import logger
 from OpenGL.GL import GL_SAMPLER_2D, GL_UNSIGNED_INT
@@ -1216,9 +1217,13 @@ class CopilotBackend:
                 self._probe_canvas = Canvas(size=(size, h))
             else:
                 self._probe_canvas.set_size((size, h))
-            node.render(canvas=self._probe_canvas)
+            t = glfw.get_time()
+            node.render(u_time=t, canvas=self._probe_canvas)
             raw = self._probe_canvas.texture.read()
-            return render_facts(raw, size, h)
+            facts = render_facts(raw, size, h)
+            # Stamp the sample time: an animated shader's facts change with phase,
+            # which otherwise reads as an edit effect.
+            return facts.replace("render:", f"render@t={t:.1f}s:", 1) if facts else ""
         except Exception as exc:  # — advisory channel, never break an edit
             logger.debug(f"copilot render facts skipped: {exc}")
             return ""

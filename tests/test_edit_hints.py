@@ -53,6 +53,12 @@ def test_initializer_count_hint() -> None:
     assert "uint[]" in hints[0]
 
 
+def test_redeclared_hint_covers_inout_qualifiers() -> None:
+    src = "out vec4 fs_color;\nuniform float x;\nout vec4 fs_color;\nvoid main() {}\n"
+    hints = compile_hints(src, ["`fs_color' redeclared"])
+    assert hints and "'fs_color' is declared on lines 1, 3" in hints[0]
+
+
 def test_brace_imbalance_hint() -> None:
     src = "void main() {\n    float x = 1.0;\n}\n}\n"
     hints = compile_hints(src, ["syntax error, unexpected '}', expecting end of file"])

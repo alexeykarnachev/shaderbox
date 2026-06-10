@@ -17,7 +17,9 @@ _INITIALIZER_RE = re.compile(
 )
 # A declaration-ish line: optional qualifiers, a type (with optional array suffix),
 # then the identifier followed by `=`, `;`, `[` or `(` (function defs redeclare too).
-_DECL_HEAD = r"^\s*(?:const\s+)?(?:uniform\s+)?[A-Za-z_]\w*(?:\s*\[\s*\d*\s*\])?\s+"
+_DECL_HEAD = (
+    r"^\s*(?:(?:const|uniform|in|out|flat)\s+)*[A-Za-z_]\w*(?:\s*\[\s*\d*\s*\])?\s+"
+)
 
 
 def compile_hints(source: str, error_messages: list[str]) -> list[str]:

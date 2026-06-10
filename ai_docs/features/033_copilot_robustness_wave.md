@@ -120,7 +120,23 @@ an error event.
   correct-but-ugly with the maintainer wanting library-side color tooling (the MIT vendoring list
   from the 032 research).
 
-## Manual verification
+## Manual verification — ROUND 4 RESULTS (countdown mission, 6 turns, $0.12)
+
+(a) Range-error recovery with hints: PARTIAL-GOOD — the orphan-tail class reproduced live and
+converged in 3 hinted attempts with the brace hint quantifying each step (round 3: 6-7 blind);
+one `redeclared` case (`out vec4 fs_color`) got no hint — the qualifier gap fixed post-round.
+(b) Zero silent turns: PASS — 6/6 turns ended with a reply, including a 16-iteration thrash turn
+(round-3 analog ended silent). (c) Facts reactions: MIXED — facts present on every mutation
+(create_node included) but orientation is invisible to them, and animation PHASE made facts drift
+between edits (mistaken for edit effects — fixed post-round: facts now stamp the sample time).
+(d) Reasoning: observability VERIFIED — creative iterations burn ~6.8k rsn even at effort=minimal
+(routine edits 100-1000); per the spec's out-clause `max_tokens_per_turn` bumped 8k->12k.
+Cost accounting verified live: dump session_cost == trace total to the cent.
+DRIVER LESSON: the round's "upside-down" saga was a maintainer-side misread of the segment font
+(arched П reads as U) — judge calibration matters, for humans and future VLM judges alike; the
+agent cannot push back on a false visual report (it trusts the user per prompt).
+
+## Manual verification (original criteria)
 
 A fresh dogfood round (same mission class as round 3) after landing: expect (a) range-bookkeeping
 errors recovered in ≤1 attempt thanks to hints, (b) zero silent turns, (c) the agent reacting to
