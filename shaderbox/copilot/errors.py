@@ -7,7 +7,8 @@ class CopilotCancelled(CopilotError):
 
 
 class CopilotToolError(CopilotError):
-    """A tool could not run (bad args, a failed main-thread op, a timeout)."""
+    """A tool DELIBERATELY rejected the call (bad args, a failed main-thread op, a timeout,
+    a guard). Its message is authored FOR the model — the registry surfaces it verbatim."""
 
 
 class CopilotConfigError(CopilotError):

@@ -5,6 +5,7 @@ from pydantic import ValidationError
 
 from shaderbox.copilot.capabilities import CopilotCapabilities
 from shaderbox.copilot.config import CopilotConfig
+from shaderbox.copilot.errors import CopilotToolError
 from shaderbox.copilot.gate import GateKind
 from shaderbox.copilot.llm.api import LLMToolSpec
 from shaderbox.copilot.tools.base import (
@@ -98,10 +99,16 @@ class ToolRegistry:
                     args.model_dump(), secret
                 )
             return cast(ToolHandler, tool.handler)(args.model_dump())
-        except Exception:
-            # Generic message only — never leak exception internals into LLM context.
+        except CopilotToolError as exc:
+            # A deliberate domain reject: the message is authored for the model. Log at warning
+            # (expected control flow, not a bug) and surface it verbatim.
+            logger.warning(f"copilot tool rejected: {name}: {exc}")
+            return False, f"error: {exc}", None
+        except Exception as exc:
+            # An unexpected bug: surface only the class name (never the message/traceback — those
+            # can carry paths/secrets); the full traceback goes to the debug log.
             logger.exception(f"copilot tool failed: {name}")
-            return False, f"error: {name} failed", None
+            return False, f"error: {name} failed ({type(exc).__name__})", None
 
 
 def build_registry(caps: CopilotCapabilities) -> ToolRegistry:

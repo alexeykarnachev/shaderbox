@@ -12,7 +12,6 @@ import moderngl
 import pytest
 
 from shaderbox.core import Node
-from shaderbox.shader_source import ShaderSource
 from shaderbox.ui_models import UINode
 
 _SCALAR_SRC = """#version 460 core
@@ -79,7 +78,9 @@ def test_save_seeds_sampler_uniform_without_render(
 ) -> None:
     node = _node_from_source(gl_ctx, _SAMPLER_SRC)
     ui_node = UINode(node=node, id="sampler")
-    ui_node.save(tmp_path)  # pre-fix: ValueError (sampler default was an int, not a texture)
+    ui_node.save(
+        tmp_path
+    )  # pre-fix: ValueError (sampler default was an int, not a texture)
     reloaded, meta = Node.load_from_dir(tmp_path / "sampler", gl=gl_ctx)
     assert "u_image" in meta["uniforms"]  # serialized via the default Image
     _teardown(node)
@@ -89,5 +90,7 @@ def test_save_seeds_sampler_uniform_without_render(
 def test_seed_skips_engine_uniforms(gl_ctx: moderngl.Context) -> None:
     node = _node_from_source(gl_ctx, _SCALAR_SRC)
     node.seed_uniform_values()
-    assert "u_aspect" not in node.uniform_values  # engine-driven: valued only in render()
+    assert (
+        "u_aspect" not in node.uniform_values
+    )  # engine-driven: valued only in render()
     _teardown(node)
