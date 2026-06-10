@@ -291,6 +291,9 @@ class CopilotBackend:
         # the last source text that compiled clean (the restore target).
         self._broken_streak: dict[str, int] = {}
         self._last_clean: dict[str, str] = {}
+        # Oscillation brake (review cycle 2): recent source-state hashes per node —
+        # an edit that returns the file to an earlier state is flagged as a fact.
+        self._state_history: dict[str, list[int]] = {}
         self._node_templates_dir = node_templates_dir
         self._starter_template_id = starter_template_id
         self._get_renders_dir = get_renders_dir
@@ -1166,6 +1169,25 @@ class CopilotBackend:
 
         return self._bridge.run_on_main(_on_main)
 
+    def _oscillation_note(self, node_id: str, new_text: str) -> str:
+        # Deterministic A->B->A detector: hash the post-edit source; if it matches
+        # any earlier state of this node (excluding the immediately previous one,
+        # which is just "no-op edit"), the agent is cycling between versions —
+        # tell it as a fact. History is bounded; clears never needed (uuid keys).
+        h = hash(new_text)
+        hist = self._state_history.setdefault(node_id, [])
+        note = ""
+        if h in hist[:-1]:
+            back = len(hist) - hist.index(h)
+            note = (
+                f"NOTE: this edit returns the file to a state it already had "
+                f"{back} edit(s) ago — you are oscillating between versions. Stop "
+                "editing; re-read the working set and reason before the next change."
+            )
+        hist.append(h)
+        del hist[:-8]
+        return note
+
     def _force_restore(
         self, node_id: str, node: Node, streak: int, matches: int
     ) -> EditResult:
@@ -1364,10 +1386,14 @@ class CopilotBackend:
                 return EditResult(matches=matches, errors=errors, error_hints=hints)
             self._broken_streak[tgt.node_id] = 0
             self._last_clean[tgt.node_id] = new_text
+            facts = self._render_facts_for(tgt.node)
+            loop_note = self._oscillation_note(tgt.node_id, new_text)
+            if loop_note:
+                facts = f"{facts}\n{loop_note}" if facts else loop_note
             return EditResult(
                 matches=matches,
                 errors=errors,
-                render_facts=self._render_facts_for(tgt.node),
+                render_facts=facts,
             )
         assert tgt.lib_path is not None
         # pre-write rollback snapshot (a brand-new lib reverses to a delete, not empty bytes)

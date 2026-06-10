@@ -11,14 +11,33 @@ import re
 
 from shaderbox.shader_lib import parser
 
-_REDECLARED_RE = re.compile(r"`(\w+)' (?:redeclared|redefined)")
-_INITIALIZER_RE = re.compile(
-    r"initializer of type (\w+)\[(\d+)\] cannot be assigned to .*?\[(\d+)\]"
+# Duplicate-declaration wordings across the closed vendor set (Mesa GLSL-IR,
+# glslang/Apple/Intel-Windows, NVIDIA, AMD) — the hint itself is source-verified
+# (fires only when >=2 declaration lines actually exist), so broad matching is safe.
+_REDECLARED_RES = (
+    re.compile(r"`(\w+)' (?:redeclared|redefined)"),
+    re.compile(r"'(\w+)'\s*:\s*(?:redefinition|already)"),
+    re.compile(r'"(\w+)".*conflicts with previous declaration'),
+    re.compile(r"[Rr]edeclaration of symbol:?\s*'?(\w+)'?"),
 )
-# A declaration-ish line: optional qualifiers, a type (with optional array suffix),
-# then the identifier followed by `=`, `;`, `[` or `(` (function defs redeclare too).
+# Any wording that smells like an array-initializer size problem; the COUNT comes
+# from the post-edit source (driver-agnostic), not from the message.
+_INITIALIZER_SMELL_RE = re.compile(
+    r"initializ|too many elements|element array", re.IGNORECASE
+)
+# Both GLSL spellings: `type[N] name = type[](...)` and `type name[N] = type[](...)`.
+_ARRAY_INIT_RE = re.compile(
+    r"(\w+)\s*(?:\[\s*(\d+)\s*\])?\s+\w+\s*(?:\[\s*(\d+)\s*\])?\s*="
+    r"\s*\w+\s*\[\s*\d*\s*\]\s*\("
+)
+# A declaration-ish line: the FULL (closed, spec-defined) qualifier set + optional
+# layout(...), a type (with optional array suffix), then the identifier followed by
+# `=`, `;`, `[` or `(` (function defs redeclare too).
 _DECL_HEAD = (
-    r"^\s*(?:(?:const|uniform|in|out|flat)\s+)*[A-Za-z_]\w*(?:\s*\[\s*\d*\s*\])?\s+"
+    r"^\s*(?:layout\s*\([^)]*\)\s*)?"
+    r"(?:(?:const|uniform|in|out|inout|flat|smooth|noperspective|centroid|sample|"
+    r"patch|invariant|precise|highp|mediump|lowp|varying|attribute|buffer|shared)\s+)*"
+    r"[A-Za-z_]\w*(?:\s*\[\s*\d*\s*\])?\s+"
 )
 
 
@@ -28,38 +47,101 @@ def compile_hints(source: str, error_messages: list[str]) -> list[str]:
     stripped = parser.strip_comments_keep_lines(source)
     lines = stripped.splitlines()
     seen: set[str] = set()
-    # V3D can deliver every error in ONE blob message — iterate ALL matches per
-    # message, not just the first.
+    # Drivers can deliver every error in ONE blob message — iterate ALL matches of
+    # ALL vendor wordings per message, not just the first.
+    init_smell = False
     for msg in error_messages:
-        for m in _REDECLARED_RE.finditer(msg):
-            name = m.group(1)
-            if name in seen:
+        for rx in _REDECLARED_RES:
+            for m in rx.finditer(msg):
+                name = m.group(1)
+                if name in seen:
+                    continue
+                seen.add(name)
+                decl = re.compile(_DECL_HEAD + re.escape(name) + r"\s*[=;[(]")
+                decl_lines = [
+                    i for i, ln in enumerate(lines, start=1) if decl.match(ln)
+                ]
+                if len(decl_lines) >= 2:
+                    rows = ", ".join(str(i) for i in decl_lines)
+                    hints.append(
+                        f"hint: '{name}' is declared on lines {rows} — the edit "
+                        "range missed one copy; widen the range over it or delete "
+                        "the duplicate"
+                    )
+        if _INITIALIZER_SMELL_RE.search(msg):
+            init_smell = True
+    if init_smell:
+        # Count source-side (driver-agnostic): any sized array whose initializer
+        # list length mismatches its declared size gets a quantified hint.
+        for i, ln in enumerate(lines, start=1):
+            m = _ARRAY_INIT_RE.search(ln)
+            if not m or (m.group(2) is None and m.group(3) is None):
                 continue
-            seen.add(name)
-            decl = re.compile(_DECL_HEAD + re.escape(name) + r"\s*[=;[(]")
-            decl_lines = [i for i, ln in enumerate(lines, start=1) if decl.match(ln)]
-            if len(decl_lines) >= 2:
-                rows = ", ".join(str(i) for i in decl_lines)
+            kind = m.group(1)
+            want = int(m.group(2) or m.group(3))
+            got = _count_initializer_elements(stripped, i - 1)
+            if got is not None and got != want:
                 hints.append(
-                    f"hint: '{name}' is declared on lines {rows} — the edit range "
-                    "missed one copy; widen the range over it or delete the duplicate"
+                    f"hint: line {i}: the initializer has {got} elements, the "
+                    f"array wants {want} — declare it unsized "
+                    f"(`{kind}[] x = {kind}[](...)`) to skip counting; for TEXT "
+                    "skip const arrays entirely: uniform uint u_text[64] + "
+                    "set_uniform"
                 )
-        m = _INITIALIZER_RE.search(msg)
-        if m:
-            kind, got, want = m.group(1), m.group(2), m.group(3)
-            hints.append(
-                f"hint: the initializer has {got} elements, the array wants {want} — "
-                f"declare it unsized (`{kind}[] x = {kind}[](...)`) to skip counting; "
-                "for TEXT skip const arrays entirely: uniform uint u_text[64] + "
-                "set_uniform"
-            )
     opens, closes = stripped.count("{"), stripped.count("}")
     if opens != closes:
+        loc = _brace_imbalance_location(stripped)
         hints.append(
-            f"hint: the file has {opens} '{{' vs {closes} '}}' — an orphan tail "
-            "survived below the edit range, or a brace went missing in new_text"
+            f"hint: the file has {opens} '{{' vs {closes} '}}'{loc} — an orphan "
+            "tail survived below the edit range, or a brace went missing in new_text"
         )
     return hints
+
+
+def _count_initializer_elements(stripped: str, decl_line_idx: int) -> int | None:
+    # Count top-level commas inside the type[](...) initializer starting on the
+    # given line; spans multiple lines until the matching ')'.
+    text = "\n".join(stripped.splitlines()[decl_line_idx:])
+    start = text.find("(")
+    if start < 0:
+        return None
+    depth = 0
+    count = 1
+    empty = True
+    for ch in text[start:]:
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth == 0:
+                return 0 if empty else count
+        elif depth == 1:
+            if ch == ",":
+                count += 1
+            elif not ch.isspace():
+                empty = False
+    return None
+
+
+def _brace_imbalance_location(stripped: str) -> str:
+    # Locate the imbalance: the line where depth first goes negative (extra '}'),
+    # or the opener line of the block left unclosed at EOF (missing '}').
+    depth = 0
+    open_stack: list[int] = []
+    for i, ln in enumerate(stripped.splitlines(), start=1):
+        for ch in ln:
+            if ch == "{":
+                depth += 1
+                open_stack.append(i)
+            elif ch == "}":
+                depth -= 1
+                if depth < 0:
+                    return f" (first unmatched '}}' on line {i})"
+                if open_stack:
+                    open_stack.pop()
+    if open_stack:
+        return f" (the block opened on line {open_stack[-1]} never closes)"
+    return ""
 
 
 def render_facts(rgba: bytes, width: int, height: int) -> str:
@@ -99,7 +181,20 @@ def render_facts(rgba: bytes, width: int, height: int) -> str:
                 max_y = max(max_y, y)
 
     if ink == 0:
-        return "render: EMPTY — every pixel matches the background color"
+        # Self-describing flat-frame verdict: a blank AND a full-screen fill both
+        # land here — the color + max deviation lets the agent tell them apart.
+        max_dev = 0
+        for y in range(height):
+            row = y * width
+            for x in range(width):
+                r, g, b = at(row + x)
+                dev = abs(r - bg[0]) + abs(g - bg[1]) + abs(b - bg[2])
+                if dev > max_dev:
+                    max_dev = dev
+        return (
+            f"render: FLAT — one uniform color rgb({bg[0]},{bg[1]},{bg[2]}), "
+            f"max pixel deviation {max_dev}/765 (a blank OR a full-screen fill)"
+        )
 
     grid = [
         round((luma_sum[i] / luma_cnt[i]) / 255.0 * 9.0) if luma_cnt[i] else 0

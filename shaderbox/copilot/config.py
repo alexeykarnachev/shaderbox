@@ -7,14 +7,15 @@ class CopilotConfig:
     # migration discipline (they live here, not on app_state).
     max_iterations: int = 16
     max_input_tokens: int = 150_000
-    # 12k: codex-mini burns ~7k hidden reasoning on creative generations even at
-    # effort=minimal (round-4 evidence: iter-0 rsn=6784 nearly clipped the args).
+    # Reasoning models bill hidden thinking into the output budget; creative
+    # generations need headroom beyond the visible reply + tool args.
     max_tokens_per_turn: int = 12_000
     # Soft per-edit compile-fix retry budget, distinct from max_iterations (§I2).
     max_edit_retries: int = 3
     # Consecutive broken-compile edits on ONE file before the engine force-restores it to
-    # its last clean-compiling state (033; 0 = off). Fires AFTER the thrash nudge below had
-    # its chance — keep this above max_compile_failures.
+    # its last clean-compiling state (033; 0 = off). The engine streak is per-node and
+    # session-persistent, the nudge counter is per-turn — nudge-before-restore ordering is
+    # best-effort within a turn, not guaranteed across turns/interleavings.
     auto_revert_after_failed_edits: int = 6
     # Consecutive applies-but-compiles-with-errors edits before a one-time "rewrite the whole
     # block in one edit" nudge. Distinct from max_edit_retries (which counts edits that FAIL to

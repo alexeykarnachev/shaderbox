@@ -120,6 +120,23 @@ an error event.
   correct-but-ugly with the maintainer wanting library-side color tooling (the MIT vendoring list
   from the 032 research).
 
+## Review cycle 2 (post-round-4) — triage
+
+Anti-overfit audit confirmed the maintainer's worry at the TRIGGER level (architecture generic,
+surfaces Pi/Mesa-locked). Fixed generically: redeclare hints now match the closed vendor wording
+set (Mesa/glslang/NVIDIA/AMD); the initializer hint counts elements in the SOURCE (driver-
+agnostic — count-less vendor messages still get numbers); EMPTY verdict replaced by self-
+describing FLAT (color + max deviation — a fill is no longer reported as a blank, sub-threshold
+changes are visible in the deviation); the qualifier set is now the full spec-closed list +
+layout(...); brace hints локализуют (first unmatched brace / unclosed opener line); NEW
+oscillation brake (per-node source-state hashes — an A->B->A edit gets a NOTE; round-4's 16-edit
+clean flip-flop class); final-reply nudge demands NET state, no intentions-as-done; trust-the-
+user rule is two-sided (facts contradicting a report -> say and ask); prompt teaches the
+`render@t=` format. Corrected diagnosis: round-4 "phase drift" was wrong — harness probes are
+time-frozen at t=0 (glfw uninitialized), the fact changes were genuine edit effects; the t-stamp
+matters only in the live App. Accepted (documented): nudge-before-restore ordering is best-effort
+(comment fixed); restore vs manual user edits / mid-batch edges (rollback snapshot bounds them).
+
 ## Manual verification — ROUND 4 RESULTS (countdown mission, 6 turns, $0.12)
 
 (a) Range-error recovery with hints: PARTIAL-GOOD — the orphan-tail class reproduced live and

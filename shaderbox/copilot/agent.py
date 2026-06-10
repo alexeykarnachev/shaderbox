@@ -36,8 +36,9 @@ _MODEL_INCOMPATIBLE_MSG = (
 
 _FINAL_REPLY_NUDGE = (
     "[engine] Tool budget exhausted for this turn. Reply to the USER now, plain text: "
-    "address their request directly — what changed (see the tool results above), what is "
-    "still missing. Short. No tool calls."
+    "address their request directly — state the file's NET state vs the start of the turn "
+    "(the working set below is the live truth), what is still missing. Do not state "
+    "intentions as done and do not claim visual results. Short. No tool calls."
 )
 
 _COMPILE_THRASH_NUDGE = (
