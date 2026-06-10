@@ -62,11 +62,11 @@ mkdir -p scripts/dogfood/runs/data-<run> \
   && cp -r shaderbox/resources/shader_lib scripts/dogfood/runs/data-<run>/shader_lib
 env SHADERBOX_DATA_DIR=$PWD/scripts/dogfood/runs/data-<run> ... uv run ...
 ```
-V3D render cost (Pi): a full-text-stack shader (`SB_sd_text`) renders ~20s at 300x300 — compile is
-fast (~1.4s), the cost is per-pixel (64-char loop x glyph switch). `h.render(size=400)` on a
-multi-text-layer shader can brush the 60s `render_op_timeout_s`; for time-sampled stills or big
-renders, load the node directly on a standalone EGL context (no timeout) instead of blaming a hang
-— 99%-CPU-for-minutes is usually an oversized canvas x heavy shader, not a deadlock.
+V3D shader-codegen cost (Pi): the driver compiles the final GPU code lazily at FIRST DRAW, on the
+CPU — a heavy shader's first render pays it once (the old code-based glyphs paid ~20s; the
+data-driven glyphs of 032 cut that to ~1s). Warm renders are fast (text 300x300 ~ tens of ms). If
+a render burns 99% CPU for minutes it's first-draw codegen of an oversized shader, not a deadlock;
+for time-sampled stills load the node directly on a standalone EGL context (no bridge timeout).
 
 **Turn 1 (fresh project):**
 ```

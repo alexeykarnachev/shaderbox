@@ -66,9 +66,14 @@ tokens. Non-`SB_` names are library-private (filtered from the copilot catalogue
 
 ## Known quirks (this feature's own)
 
-- **V3D render cost:** one full-text layer ~20s at 300x300 (64-char loop x glyph switch per
-  pixel); compile is fast (~1.4s). Desktop GPUs are fine; on the Pi use 300-420px probes and
-  expect the harness `render_op_timeout_s=60` to be tight for multi-text-layer shaders.
+- **V3D first-draw codegen (SOLVED by data-driven glyphs):** Mesa v3d compiles the final GPU
+  code at first draw on the CPU, retrying up to 13 strategies; the old code-based glyph switch
+  cost ~20s per shader (10+ min for multi-text-layer). `scripts/gen_glyphs.py` now generates
+  glyphs as constant stroke TABLES + a tiny evaluator loop: compile ~1s, pixel-identical output
+  (diff max=0), warm render ~60-180ms/300px on the Pi (slightly slower warm than the old inlined
+  code — stroke data now reads through memory; a cell-cull optimization that wins it back is
+  parked in todo with a quad-seam artifact note). Glyph edits go in the python tables, then
+  regenerate.
 - `SB_text_char_center` is two text scans per call — per-char loops must bound at the real text
   length (doc warns; a full-64 loop nesting it is pathologically slow).
 - Engine `u_text` arrays cap at 64 codepoints (`str_to_unicode` truncates silently).

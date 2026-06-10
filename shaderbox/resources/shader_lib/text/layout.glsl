@@ -146,8 +146,7 @@ float SB_sd_text(vec2 uv, uint text[64], float char_height, vec2 spacing, float 
         float row_w = row_chars[row] * adv - spacing.x * s;
         vec2 center = vec2(-0.5 * row_w + 0.5 * s + col * adv,
                            top_y - float(row) * line_step);
-        vec2 p = (uv - center) / s;
-        d = min(d, sbt_char_skel(p, cp));
+        d = min(d, sbt_char_skel((uv - center) / s, cp));
         col += 1.0;
     }
     return d * s - weight;

@@ -150,6 +150,20 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
 - Honest fix is a real columns/clipper grid layout. Also parked: persisting the focused region across
   restart (transient by design today). See `ai_docs/features/019_keyboard_navigation.md` Out-of-scope.
 
+## [DEFERRAL] SB_sd_text cell-cull (warm-render speedup) blocked by a quad-seam artifact
+- **Trigger:** warm text-render cost becomes a real pain (live text preview on the Pi at speed, or
+  a profiler shows SB_sd_text dominating on desktop) — then pick this up and crack the artifact.
+- The data-driven glyphs (032, `scripts/gen_glyphs.py`) fixed the V3D first-draw codegen explosion
+  (~20s -> ~1s) but warm render went 19ms -> ~176ms at 300px on the Pi (stroke tables read through
+  memory per stroke per char per pixel). A per-char cell cull (evaluate the glyph only within
+  ~1.2 cells, else use the cell-box SDF as a continuous lower bound) won back 176 -> 67ms BUT
+  paints a faint full-frame DIAGONAL line (the fullscreen quad's triangle seam): with the divergent
+  branch around the dynamic-indexed stroke loads, seam-quad helper pixels disagree and fwidth(d)
+  spikes (920 px diff at 900x900, max 119/255; a value-continuous blend across the branch did NOT
+  fix it). Shipped pixel-identical no-cull instead. Attack ideas when triggered: branchless cull
+  (clamp the stroke loop count per char), screen-space-uniform AA width instead of fwidth(d) in
+  SB_fill_aa, or per-row instead of per-char cull.
+
 ## [DEFERRAL] shader-library seed has no load mechanism (canonical copy sits in resources)
 - **Trigger:** FIRST desktop session continuing feature 032 — decide + wire it before any new lib
   work (everything else builds on the lib being present in `app_data_dir()/shader_lib`).
