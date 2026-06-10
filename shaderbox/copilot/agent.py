@@ -34,6 +34,12 @@ _MODEL_INCOMPATIBLE_MSG = (
     "Settings -> Integrations -> Copilot."
 )
 
+_FINAL_REPLY_NUDGE = (
+    "[engine] Tool budget exhausted for this turn. Reply to the USER now, plain text: "
+    "address their request directly — what changed (see the tool results above), what is "
+    "still missing. Short. No tool calls."
+)
+
 _COMPILE_THRASH_NUDGE = (
     "\n\n[hint] That's several edits in a row that applied but still left compile errors. "
     "Stop patching line by line: re-read the FULL function/block from the working set, work out "
@@ -365,6 +371,49 @@ def run_turn(
     )
     tr.event("turn_start", user_text=user_text, history=history, eager_tools=specs)
 
+    final_reply_text: list[str] = []
+
+    def stream_final_reply() -> "Iterator[AgentEvent]":
+        # One extra NO-TOOLS stream so a budget-exhausted turn still ends with the model
+        # addressing the USER (3/10 round-3 turns ended silent — feature 033). Appends
+        # nothing durable; usage folds into the turn total.
+        nonlocal usage
+        request_messages = (
+            messages
+            + render_scratchpad()
+            + [LLMMessage(role="user", content=_FINAL_REPLY_NUDGE)]
+        )
+        tr.event(
+            "llm_request",
+            iteration=-1,
+            messages=request_messages,
+            tools=[],
+            max_tokens=config.max_tokens_per_turn,
+        )
+        buf = ""
+        done: LLMDone | None = None
+        for ev in client.stream(
+            request_messages, tools=None, max_tokens=config.max_tokens_per_turn
+        ):
+            match ev:
+                case LLMTextDelta():
+                    buf += ev.text
+                    yield AgentTextDelta(ev.text)
+                case LLMDone():
+                    usage += ev.usage
+                    done = ev
+                case _:
+                    pass
+        tr.event(
+            "llm_response",
+            iteration=-1,
+            finish_reason=done.finish_reason if done else "no-done-event",
+            text=buf,
+            tool_calls=[],
+            usage=done.usage if done else None,
+        )
+        final_reply_text.append(buf.strip())
+
     for iteration in range(config.max_iterations):
         if cancel.is_set():
             logger.debug(f"copilot turn cancelled at iteration {iteration}")
@@ -407,7 +456,8 @@ def run_turn(
         fr = done.finish_reason if done else "no-done-event"
         u = done.usage if done else None
         tokens = (
-            f"in={u.input_tokens} out={u.output_tokens} cost=${u.cost_usd:.6f}"
+            f"in={u.input_tokens} out={u.output_tokens} rsn={u.reasoning_tokens} "
+            f"cost=${u.cost_usd:.6f}"
             if u
             else "in=? out=? cost=?"
         )
@@ -455,21 +505,30 @@ def run_turn(
                 )
                 return
             if not text_buf and fr == "length":
-                # Cut off mid-reply by the per-turn token budget. Tell the user honestly (not
-                # "incompatible") so they can ask it to continue.
+                # Cut off by the per-iteration token budget with nothing produced (a hidden
+                # reasoning burn). Force one NO-TOOLS reply so the user never gets silence.
                 logger.warning(
                     f"copilot turn truncated (length) after {total_tool_calls} tool call(s)"
                 )
                 tr.event("turn_truncated", iteration=iteration, reason="length")
-                cutoff_note = (
-                    "I ran out of my per-reply token budget before I could summarize. "
-                    "The actions above did complete — ask me to continue or recap."
+                yield from stream_final_reply()
+                reply = final_reply_text[-1] if final_reply_text else ""
+                if not reply:
+                    reply = (
+                        "I ran out of my per-reply token budget before I could act. "
+                        "The actions above did complete — ask me to continue or recap."
+                    )
+                    yield AgentError(
+                        reply, summary=_build_turn_summary(reply, ran, registry)
+                    )
+                    return
+                stats = TurnStats(
+                    context_tokens=first_input_tokens or 0,
+                    reply_tokens=usage.output_tokens,
+                    cost_usd=usage.cost_usd,
                 )
-                # The note is the reply prose (text_buf is empty here) so a "continue" next turn
-                # sees what happened + the ledger of what already committed.
-                yield AgentError(
-                    cutoff_note,
-                    summary=_build_turn_summary(cutoff_note, ran, registry),
+                yield AgentTurnDone(
+                    summary=_build_turn_summary(reply, ran, registry), stats=stats
                 )
                 return
             logger.info(
@@ -657,10 +716,18 @@ def run_turn(
         tool_calls=total_tool_calls,
         usage=usage,
     )
-    cutoff_note = (
-        f"I stopped after {config.max_iterations} steps without finishing this turn. "
-        "Ask me to continue, or rephrase what you need."
+    yield from stream_final_reply()
+    reply = final_reply_text[-1] if final_reply_text else ""
+    if not reply:
+        reply = (
+            f"I stopped after {config.max_iterations} steps without finishing this "
+            "turn. Ask me to continue, or rephrase what you need."
+        )
+        yield AgentError(reply, summary=_build_turn_summary(reply, ran, registry))
+        return
+    stats = TurnStats(
+        context_tokens=first_input_tokens or 0,
+        reply_tokens=usage.output_tokens,
+        cost_usd=usage.cost_usd,
     )
-    yield AgentError(
-        cutoff_note, summary=_build_turn_summary(cutoff_note, ran, registry)
-    )
+    yield AgentTurnDone(summary=_build_turn_summary(reply, ran, registry), stats=stats)

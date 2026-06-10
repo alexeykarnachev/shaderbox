@@ -286,6 +286,10 @@ class CopilotBackend:
     ) -> None:
         self._get_bridge = get_bridge
         self._probe_canvas: Canvas | None = None  # lazy 033 render-facts target
+        # 033 force-restore bookkeeping: per-node consecutive broken-compile edits +
+        # the last source text that compiled clean (the restore target).
+        self._broken_streak: dict[str, int] = {}
+        self._last_clean: dict[str, str] = {}
         self._node_templates_dir = node_templates_dir
         self._starter_template_id = starter_template_id
         self._get_renders_dir = get_renders_dir
@@ -1152,6 +1156,32 @@ class CopilotBackend:
 
         return self._bridge.run_on_main(_on_main)
 
+    def _force_restore(
+        self, node_id: str, node: Node, streak: int, matches: int
+    ) -> EditResult:
+        # The 033 unstick: N consecutive broken edits -> put the file back at its last
+        # clean-compiling state and tell the agent as a fact. Resets the streak so the
+        # next broken run gets a fresh budget.
+        restore_errors = self._copilot_persist_shader(
+            node_id, node, self._last_clean[node_id]
+        )
+        self._broken_streak[node_id] = 0
+        logger.info(
+            f"copilot force-restore | node={node_id} after {streak} broken edits"
+        )
+        note = (
+            f"EDIT UNDONE — {streak} consecutive edits left compile errors, so the file "
+            "was restored to its last clean-compiling state (the working set below shows "
+            "the restored source). Re-read it and rewrite the whole block in ONE edit."
+        )
+        facts = self._render_facts_for(node) if not restore_errors else ""
+        return EditResult(
+            matches=matches,
+            errors=restore_errors,
+            restored_note=note,
+            render_facts=facts,
+        )
+
     def _render_facts_for(self, node: Node) -> str:
         # Best-effort probe render -> one facts line (feature 033). Runs on the main
         # thread (bridge-marshalled callers) with the GL context current. Never raises
@@ -1272,12 +1302,22 @@ class CopilotBackend:
         if tgt.kind == "node":
             assert tgt.node is not None and tgt.node_id is not None
             self._capture_node(tgt.node_id)  # pre-write rollback snapshot (best-effort)
+            prev_clean = not tgt.node.compile_unit.errors
             errors = self._copilot_persist_shader(tgt.node_id, tgt.node, new_text)
             self._working_set_add(tgt.ws_address)
             self._batch_mutated.add(tgt.ws_address)
             if errors:
+                if prev_clean:
+                    self._last_clean[tgt.node_id] = tgt.source
+                streak = self._broken_streak.get(tgt.node_id, 0) + 1
+                self._broken_streak[tgt.node_id] = streak
+                limit = COPILOT_CONFIG.auto_revert_after_failed_edits
+                if limit > 0 and streak >= limit and tgt.node_id in self._last_clean:
+                    return self._force_restore(tgt.node_id, tgt.node, streak, matches)
                 hints = tuple(compile_hints(new_text, [e.message for e in errors]))
                 return EditResult(matches=matches, errors=errors, error_hints=hints)
+            self._broken_streak[tgt.node_id] = 0
+            self._last_clean[tgt.node_id] = new_text
             return EditResult(
                 matches=matches,
                 errors=errors,

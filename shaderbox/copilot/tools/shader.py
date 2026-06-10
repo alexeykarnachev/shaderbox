@@ -246,7 +246,11 @@ def _applied_result(result: EditResult) -> tuple[bool, str, dict]:
     # The shared success/compile-error message for any applied edit. A LIB edit returns the
     # "no standalone compile" note instead of a compile result; a NODE edit returns compile
     # errors or "compiled clean". Region count only for a multi-span replace_all.
-    if result.lib_note:
+    if result.restored_note:
+        head = result.restored_note
+        if result.render_facts:
+            head += "\n" + result.render_facts
+    elif result.lib_note:
         head = result.lib_note
     elif result.errors:
         head = "compiled with errors:\n" + _format_errors(result.errors)

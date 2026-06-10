@@ -151,6 +151,9 @@ class EditResult:
     # clean compile. Both engine-computed, both ride the tool result text.
     error_hints: tuple[str, ...] = ()
     render_facts: str = ""
+    # Set when the engine force-restored the file to its last clean state after N
+    # consecutive broken edits (033) — dominates the result message.
+    restored_note: str = ""
     # True when the matched span would verbatim-overwrite an interior comment the
     # whitespace-invariant match can't see — refused so author content isn't silently
     # destroyed; the model is steered to a line-addressed edit. matches==0.

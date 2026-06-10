@@ -10,6 +10,10 @@ class CopilotConfig:
     max_tokens_per_turn: int = 8_000
     # Soft per-edit compile-fix retry budget, distinct from max_iterations (§I2).
     max_edit_retries: int = 3
+    # Consecutive broken-compile edits on ONE file before the engine force-restores it to
+    # its last clean-compiling state (033; 0 = off). Fires AFTER the thrash nudge below had
+    # its chance — keep this above max_compile_failures.
+    auto_revert_after_failed_edits: int = 6
     # Consecutive applies-but-compiles-with-errors edits before a one-time "rewrite the whole
     # block in one edit" nudge. Distinct from max_edit_retries (which counts edits that FAIL to
     # apply); an edit that applies returns ok=True, so it never trips that cap — this catches the

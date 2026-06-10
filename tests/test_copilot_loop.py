@@ -379,6 +379,60 @@ def test_max_iterations_cutoff_surfaces_as_error() -> None:
     assert "stopped after" in events[-1].message.lower()
 
 
+def test_max_iterations_streams_a_final_no_tools_reply() -> None:
+    # 033: budget exhaustion must end with the model addressing the user, not a canned
+    # error — the engine runs one extra NO-TOOLS stream and commits a normal TurnDone.
+    read = _tool_call("cr", "read_shader", "{}")
+    scripts: list[list[LLMStreamEvent]] = [read] * COPILOT_CONFIG.max_iterations
+    scripts.append(
+        [LLMTextDelta("I kept re-reading; nothing changed yet."), LLMDone("stop")]
+    )
+    caps = _fake_caps(edit_errors=[])
+    registry = build_registry(caps)
+    events = list(
+        run_turn(
+            _FakeClient(scripts),
+            registry,
+            COPILOT_CONFIG,
+            _fake_context(),
+            history=[],
+            user_text="read forever",
+            gate=GateChannel(),
+            cancel=threading.Event(),
+        )
+    )
+    assert isinstance(events[-1], AgentTurnDone)
+    assert "nothing changed yet" in events[-1].summary.reply
+
+
+def test_empty_length_cutoff_gets_a_final_reply() -> None:
+    # 033: a hidden-reasoning burn (finish=length, zero text, zero tools) forces the
+    # same no-tools reply instead of ending the turn silent.
+    scripts: list[list[LLMStreamEvent]] = [
+        [LLMDone("length")],
+        [
+            LLMTextDelta("Budget burned before I could act - ask me to continue."),
+            LLMDone("stop"),
+        ],
+    ]
+    caps = _fake_caps(edit_errors=[])
+    registry = build_registry(caps)
+    events = list(
+        run_turn(
+            _FakeClient(scripts),
+            registry,
+            COPILOT_CONFIG,
+            _fake_context(),
+            history=[],
+            user_text="fix the layout",
+            gate=GateChannel(),
+            cancel=threading.Event(),
+        )
+    )
+    assert isinstance(events[-1], AgentTurnDone)
+    assert "continue" in events[-1].summary.reply
+
+
 def test_stale_shutdown_sentinel_does_not_strand_turn(tmp_path: Path) -> None:
     # Regression: a reused CopilotSession could hold a leftover _SHUTDOWN sentinel in
     # its turn queue (from a prior release()); the worker would dequeue it and exit
