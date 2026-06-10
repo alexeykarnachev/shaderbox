@@ -18,7 +18,9 @@ def test_redeclared_hint_lists_both_declaration_lines() -> None:
 def test_initializer_count_hint() -> None:
     hints = compile_hints(
         "void main() {}\n",
-        ["initializer of type uint[73] cannot be assigned to variable of type uint[64]"],
+        [
+            "initializer of type uint[73] cannot be assigned to variable of type uint[64]"
+        ],
     )
     assert len(hints) == 1
     assert "73 elements, the array wants 64" in hints[0]
