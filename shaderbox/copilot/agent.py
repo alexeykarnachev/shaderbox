@@ -110,6 +110,9 @@ class AgentTurnDone:
 class AgentError:
     message: str
     summary: TurnSummary = field(default_factory=TurnSummary)
+    # Usage stats for the errored turn — errored spend must still reach the session
+    # cost accounting (033; None on session-level fallback errors with no run).
+    stats: TurnStats | None = None
 
 
 @dataclass(frozen=True)
@@ -502,6 +505,11 @@ def run_turn(
                 yield AgentError(
                     _MODEL_INCOMPATIBLE_MSG,
                     summary=_build_turn_summary("", ran, registry),
+                    stats=TurnStats(
+                        context_tokens=first_input_tokens or 0,
+                        reply_tokens=usage.output_tokens,
+                        cost_usd=usage.cost_usd,
+                    ),
                 )
                 return
             if not text_buf and fr == "length":
@@ -519,7 +527,13 @@ def run_turn(
                         "The actions above did complete — ask me to continue or recap."
                     )
                     yield AgentError(
-                        reply, summary=_build_turn_summary(reply, ran, registry)
+                        reply,
+                        summary=_build_turn_summary(reply, ran, registry),
+                        stats=TurnStats(
+                            context_tokens=first_input_tokens or 0,
+                            reply_tokens=usage.output_tokens,
+                            cost_usd=usage.cost_usd,
+                        ),
                     )
                     return
                 stats = TurnStats(
@@ -701,7 +715,15 @@ def run_turn(
                 "— the edit kept not applying to the shader source. I've stopped to "
                 "avoid looping. Tell me to try again, or describe the change differently."
             )
-            yield AgentError(note, summary=_build_turn_summary(note, ran, registry))
+            yield AgentError(
+                note,
+                summary=_build_turn_summary(note, ran, registry),
+                stats=TurnStats(
+                    context_tokens=first_input_tokens or 0,
+                    reply_tokens=usage.output_tokens,
+                    cost_usd=usage.cost_usd,
+                ),
+            )
             return
 
     logger.warning(
@@ -723,7 +745,15 @@ def run_turn(
             f"I stopped after {config.max_iterations} steps without finishing this "
             "turn. Ask me to continue, or rephrase what you need."
         )
-        yield AgentError(reply, summary=_build_turn_summary(reply, ran, registry))
+        yield AgentError(
+            reply,
+            summary=_build_turn_summary(reply, ran, registry),
+            stats=TurnStats(
+                context_tokens=first_input_tokens or 0,
+                reply_tokens=usage.output_tokens,
+                cost_usd=usage.cost_usd,
+            ),
+        )
         return
     stats = TurnStats(
         context_tokens=first_input_tokens or 0,

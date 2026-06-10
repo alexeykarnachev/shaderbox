@@ -224,6 +224,12 @@ class CopilotSession:
             case AgentError():
                 self.state.messages.append(Message(role="error", text=ev.message))
                 self._resolve_open_gate_card("cancelled")
+                if ev.stats is not None:
+                    self.state.last_turn = ev.stats
+                    self.state.session_cost_usd += ev.stats.cost_usd
+                    snippet = self._current_snippet()
+                    if snippet is not None:
+                        snippet.snippet_stats = ev.stats
                 self._finish_turn()
             case AgentTurnDone():
                 if self.state.streaming_text:

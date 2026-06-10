@@ -322,6 +322,11 @@ class DogfoodHarness:
         # Persist app_state too, so a switch_node'd current node survives the next resume (load()
         # restores it; without this the resume falls back to the oldest node).
         self.session.app_state.save(self.session.paths.app_state_file)
+        # Persist every node (uniform VALUES live in node.json, written only on save) — without
+        # this each per-turn process loses the previous turn's set_uniform values, forcing the
+        # agent to re-set them and burn its step budget (033; observed exp-1 turn 3).
+        for ui_node in self.session.ui_nodes.values():
+            self.session.save_ui_node(ui_node)
         msgs = cop.state.messages
         new = [
             {"role": m.role, "text": (m.text or "").strip()}
