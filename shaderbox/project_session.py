@@ -26,7 +26,6 @@ from shaderbox.copilot.llm.openrouter import OpenRouterLLMClient
 from shaderbox.copilot.persistence import archive_conversation
 from shaderbox.copilot.revert import RevertExecutor
 from shaderbox.copilot.session import CopilotSession
-from shaderbox.copilot.wiring import build_capabilities
 from shaderbox.exporters.integrations import IntegrationsStore
 from shaderbox.exporters.registry import ExporterRegistry
 from shaderbox.paths import ProjectPaths, shader_lib_root
@@ -123,10 +122,11 @@ class ProjectSession:
         )
 
     def _build_copilot_capabilities(self) -> CopilotCapabilities:
-        # Construct the CopilotBackend and bind its methods into the capabilities dataclass.
-        # Project-dependent deps are getters (a project switch retargets them); deps that
-        # reference self.copilot are lazy (it doesn't exist yet). exporter_registry +
-        # shader_lib_files stay App-side, reached via injected getters.
+        # Construct the CopilotBackend — it satisfies the CopilotCapabilities Protocol
+        # structurally, so it IS the capabilities object. Project-dependent deps are getters
+        # (a project switch retargets them); deps that reference self.copilot are lazy (it
+        # doesn't exist yet). exporter_registry + shader_lib_files stay App-side, reached
+        # via injected getters.
         self.copilot_backend = CopilotBackend(
             get_bridge=lambda: self.copilot.bridge,
             node_templates_dir=self.node_templates_dir,
@@ -159,7 +159,7 @@ class ProjectSession:
             delete_node_unguarded=self._delete_node_unguarded,
             invalidate_lib_consumers=self.copilot_backend.invalidate_lib_consumers,
         )
-        return build_capabilities(self.copilot_backend)
+        return self.copilot_backend
 
     def set_current_node_id(self, id: str = "") -> None:
         old_id = self.app_state.current_node_id

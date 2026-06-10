@@ -1,11 +1,13 @@
-from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Protocol
 
-# The only app surface the copilot package imports: a frozen dataclass of bound
-# callables App builds in __init__. The package imports ONLY this leaf — never App,
-# imgui, or moderngl — so the dependency stays one-way (app -> copilot), cycle-free.
-# No field may be annotated with a type that transitively imports App/imgui/moderngl:
-# only leaf types (primitives + the GL-free value objects defined HERE).
+# The only app surface the copilot package imports: a Protocol the backend
+# (copilot/backend.py::CopilotBackend) satisfies structurally — the production session
+# passes the backend itself. The package imports ONLY this leaf — never App, imgui, or
+# moderngl — so the dependency stays one-way (app -> copilot), cycle-free. No method may
+# be annotated with a type that transitively imports App/imgui/moderngl: only leaf types
+# (primitives + the GL-free value objects defined HERE). Methods take positional-only
+# params (`/`) so a Callable-field dataclass fake (tests/_caps.py) also conforms.
 
 
 @dataclass(frozen=True)
@@ -199,80 +201,97 @@ class TelegramPackInfo:
     is_default: bool
 
 
-@dataclass(frozen=True)
-class CopilotCapabilities:
+class CopilotCapabilities(Protocol):
     # ---- GL-FREE context reads — safe on the worker thread (no bridge). node_tree excludes
     # uniforms ON PURPOSE (uniform names need a GL read; see NodeTreeEntry).
-    node_tree: Callable[[], list[NodeTreeEntry]]
-    lib_catalog: Callable[[], list[LibCatalogEntry]]
+    def node_tree(self) -> list[NodeTreeEntry]: ...
+    def lib_catalog(self) -> list[LibCatalogEntry]: ...
     # Shipped node templates for create_node(template=...). GL-free.
-    template_catalog: Callable[[], list[TemplateEntry]]
+    def template_catalog(self) -> list[TemplateEntry]: ...
 
     # ---- cross-project reads ----
     # read_shaders marshals (force-compile + uniform read are GL) and STAMPS freshness per
     # node. grep + read_lib are GL-FREE (string reads over the parsed index / in-memory).
-    read_shaders: Callable[[list[str]], list[ShaderView]]
-    grep: Callable[[str], list[GrepHit]]
-    read_lib: Callable[[list[str]], list[LibFunctionBody]]
+    def read_shaders(self, node_ids: list[str], /) -> list[ShaderView]: ...
+    def grep(self, query: str, /) -> list[GrepHit]: ...
+    def read_lib(self, names: list[str], /) -> list[LibFunctionBody]: ...
     # The per-turn working set: every shader/lib touched this turn, rebuilt from live source
     # each iteration. read_working_set returns a compile-coherent view (bridge-marshalled —
     # uniform read + the program-is-None recompile are GL). batch_begin clears the per-batch
     # line-edit guard's mutated-target set; run_turn calls it ONCE before each tool-call batch.
-    read_working_set: Callable[[], list[WorkingSetView]]
-    batch_begin: Callable[[], None]
+    def read_working_set(self) -> list[WorkingSetView]: ...
+    def batch_begin(self) -> None: ...
 
     # ---- mutations the worker REQUESTS but the main thread APPLIES ----
-    # App-side bridge.run_on_main(...) closures (the worker blocks for the result); the
-    # marshalling is hidden inside the closure, so the tool layer just calls them.
+    # Backend methods wrapping bridge.run_on_main(...) (the worker blocks for the result);
+    # the marshalling is hidden inside the method, so the tool layer just calls them.
     #
     # Match old_str against the TARGET's CURRENT source, replace, recompile (node) / write
     # (lib), persist, refresh the editor — all on the main thread. `target` "" = current
-    # node, a node-id, or a "lib:<path>" address. (old_str, new_str, replace_all, target).
-    apply_shader_edit: Callable[[str, str, bool, str], EditResult]
+    # node, a node-id, or a "lib:<path>" address.
+    def apply_shader_edit(
+        self, old_str: str, new_str: str, replace_all: bool, target: str, /
+    ) -> EditResult: ...
+
     # Replace the 1-based inclusive line range [start, end] with new_text, recompile/write +
     # persist + refresh. An empty selection (end == start - 1) is a pure insert at `start`;
-    # for a non-existent lib: target this CREATES the file. (start, end, new_text, target).
-    apply_line_edit: Callable[[int, int, str, str], EditResult]
-    # Set a uniform VALUE: (name, value, node). node "" = current. Rejects
-    # sampler/block/engine-driven with an explicit error.
-    set_uniform: Callable[[str, object, str], "SetUniformResult"]
+    # for a non-existent lib: target this CREATES the file.
+    def apply_line_edit(
+        self, start_line: int, end_line: int, new_text: str, target: str, /
+    ) -> EditResult: ...
+
+    # Set a uniform VALUE. node "" = current. Rejects sampler/block/engine-driven with an
+    # explicit error.
+    def set_uniform(
+        self, name: str, value: object, node: str, /
+    ) -> SetUniformResult: ...
+
     # Create a node, then COMPILE it and return its errors. `template` = a template id from
     # template_catalog ("" = the default starter); `source` overrides the template body when
-    # non-empty. (name, source, template, switch_to) -> (new node-id, post-compile errors).
-    create_node: Callable[[str, str, str, bool], tuple[str, list[CompileErrorInfo]]]
+    # non-empty. Returns (new node-id, post-compile errors).
+    def create_node(
+        self, name: str, source: str, template: str, switch_to: bool, /
+    ) -> tuple[str, list[CompileErrorInfo]]: ...
+
     # Delete a node (move its dir to the project trash, recoverable). Destructive => always
-    # gated; the closure marshals the GL teardown via the bridge.
-    # (node short-id) -> DeleteNodeResult.
-    delete_node: Callable[[str], "DeleteNodeResult"]
+    # gated; the method marshals the GL teardown via the bridge.
+    def delete_node(self, node: str, /) -> DeleteNodeResult: ...
+
     # Make a node CURRENT so the per-current tools (publish/render/edit-without-target) act
-    # on it. Stamps freshness so a follow-up edit lands. (node short-id) -> SwitchNodeResult.
-    switch_node: Callable[[str], "SwitchNodeResult"]
+    # on it. Stamps freshness so a follow-up edit lands.
+    def switch_node(self, node: str, /) -> SwitchNodeResult: ...
 
     # ---- render / publish (all gated) ----
     # Render a node's current frame to a PNG / `seconds` of animation to a WebM under the
-    # project renders dir. GL => the closure marshals via the bridge with the longer
+    # project renders dir. GL => the method marshals via the bridge with the longer
     # render_op_timeout_s. A 0 width/height means "use the node's canvas size".
-    render_image: Callable[[str, int, int], "RenderResult"]
-    render_video: Callable[[str, float, int, int, int], "RenderResult"]
+    def render_image(self, node: str, width: int, height: int, /) -> RenderResult: ...
+    def render_video(
+        self, node: str, seconds: float, fps: int, width: int, height: int, /
+    ) -> RenderResult: ...
+
     # Render with the exporter's own preset, then enqueue the upload + AWAIT its terminal
-    # progress (the closure does the bridge-marshalled poll).
-    publish_telegram: Callable[[str], "PublishResult"]
-    publish_youtube: Callable[[str, str, bool], "PublishResult"]
+    # progress (the method does the bridge-marshalled poll).
+    def publish_telegram(self, emoji: str, /) -> PublishResult: ...
+    def publish_youtube(
+        self, title: str, description: str, is_short: bool, /
+    ) -> PublishResult: ...
+
     # GL-free precheck reads backing the pre-gate guided handoff: is there a current node, is
     # the integration connected, and (Telegram) is a pack selected.
-    has_current_node: Callable[[], bool]
-    telegram_connected: Callable[[], bool]
-    youtube_connected: Callable[[], bool]
-    telegram_has_default_pack: Callable[[], bool]
+    def has_current_node(self) -> bool: ...
+    def telegram_connected(self) -> bool: ...
+    def youtube_connected(self) -> bool: ...
+    def telegram_has_default_pack(self) -> bool: ...
 
     # ---- Telegram connect + pack CRUD ----
     # set_telegram_token sets the token then auto-kicks the link + awaits AUTHED.
     # telegram_connect re-runs the link (after the user starts the bot). The pack ops are
     # gated state writes; delete awaits its terminal progress.
-    set_telegram_token: Callable[[str], "TelegramConnectResult"]
-    telegram_connect: Callable[[], "TelegramConnectResult"]
-    telegram_token_set: Callable[[], bool]
-    list_telegram_packs: Callable[[], list["TelegramPackInfo"]]
-    select_telegram_pack: Callable[[str], "TelegramOpResult"]
-    create_telegram_pack: Callable[[str], "TelegramOpResult"]
-    delete_telegram_pack: Callable[[str], "TelegramOpResult"]
+    def set_telegram_token(self, secret: str, /) -> TelegramConnectResult: ...
+    def telegram_connect(self) -> TelegramConnectResult: ...
+    def telegram_token_set(self) -> bool: ...
+    def list_telegram_packs(self) -> list[TelegramPackInfo]: ...
+    def select_telegram_pack(self, set_name: str, /) -> TelegramOpResult: ...
+    def create_telegram_pack(self, title: str, /) -> TelegramOpResult: ...
+    def delete_telegram_pack(self, set_name: str, /) -> TelegramOpResult: ...
