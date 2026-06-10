@@ -307,6 +307,22 @@ belong in the feature spec (`ai_docs/features/NNN_*.md`). This file is not a cha
   terse `logger.info("copilot tool #N <name> -> ok")` line is for the console, the full args/result go to
   the trace, never spelled out in a log line. Revisit if a module genuinely needs its own format/sink
   (none does today). Spec: `021_logging_refactor.md`.
+- **`Node.render()` owns per-type uniform defaulting; a persist path SEEDS, it never relies on a prior
+  render.** A node's `uniform_values` dict is filled by `Node.seed_uniform_values()` (block → zero
+  buffer, sampler → default `Image`, scalar/vector → `uniform.value`) — the single home for "default of
+  a uniform of type X". `render()` calls it; so must any code that reads `uniform_values` for an active
+  uniform without a guaranteed prior render — `UINode.save` does. A new persist/serialize path that
+  swaps source then reads `uniform_values` MUST call `seed_uniform_values()` first (else it KeyErrors on
+  an unseeded uniform; a naive `.get(name, uniform.value)` is WRONG for samplers — their GL default is
+  an int texture-unit). `ENGINE_DRIVEN_UNIFORMS` (in `core.py`) is the one home for the
+  `u_time/u_aspect/u_resolution` skip set — never re-list the three names. Revisit if uniform defaulting
+  needs a value the GL default can't express.
+- **The copilot tool boundary (`registry.execute`) splits domain-reject from bug.** A `CopilotToolError`
+  is a DELIBERATE reject whose message is authored for the model — surfaced verbatim, logged at warning.
+  Any other exception is an unexpected bug — only its class name reaches the model (message/traceback
+  could carry paths/secrets), full traceback to the debug log. A tool handler signals an expected
+  failure by `raise CopilotToolError(<model-facing message>)`, never by returning a bare string through
+  the generic path. Revisit if a third class (e.g. a retryable-vs-terminal distinction) earns a branch.
 
 *(Each bullet is a generic constraint on future code + a revisit trigger — NOT a feature changelog.
 The `/sanitize` noise audit deletes bullets that narrate a one-off implementation choice; per-feature

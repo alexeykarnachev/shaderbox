@@ -25,8 +25,8 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-06-09. -->
-**Polish wave landed on top of the committed 027: four headless deferral fixes, code green + adversarial 2-round review (converged). (1) Copilot TARGETING rule in `prompt.py` — a bare/demonstrative reference = current node; name-match only when the user NAMES it, else ASK (kills the reproduced "give the sphere a glow -> switch_node to Blue Sphere" name-association bug). (2) Broken-compile circuit-breaker in `agent.py` — a separate `consecutive_compile_failures` counter + a latched one-time `compile_thrash_nudge` at `max_compile_failures` (the applies-but-broken thrash reset `consecutive_failed_edits` every step, so the giveup cap never engaged; unit-tested incl. the re-arm). (3) Cross-file uniform jump in `widgets/uniform.py` — clicking a lib-declared uniform now walks `compile_unit.sources` + opens the lib file before the JumpRequest (was a silent no-op). (4) Resolution combo in `tabs/node.py` — a parallel `(w,h)` list replaces re-parsing the display label (killed the latent format-fragility + its now-dead test). Each resolved deferral deleted from `todo.md` in this wave. Remaining before ship: lever 2 lazy-tool-catalogue; the 025 + 030 `make run` passes; the targeting + cross-file-jump fixes want a maintainer `make run` / dogfood confirm (prompt-level + GUI, not headless-verifiable).**
+<!-- As of 2026-06-10. -->
+**Trace-driven bug-fix wave landed on top of the polish wave (code green, full suite passing). A dogfood trace showed the copilot's `create_node(source=<full GLSL>)` failing on any real uniform: (1) ROOT FIX — `uniform_values` was seeded only as a `Node.render()` side effect, but create compiled-then-saved with no render, so `UINode.save` KeyError'd on the first non-engine uniform. Extracted the per-type defaulting (block→zero buffer, sampler→default Image, scalar/vector→`uniform.value`) out of render's loop into a GL-free `Node.seed_uniform_values()`; render + save both call it. `ENGINE_DRIVEN_UNIFORMS` promoted to `core.py` as the single home (three literal lists collapsed). Regression test: create-from-source scalar + sampler. (2) The bug was a MYSTERY because `registry.execute`'s `except Exception` flattened every throw to a blank `error: {name} failed` — split the boundary so `CopilotToolError` surfaces its model-authored message verbatim and an unexpected bug shows its class name. (3) Surfaced + fixed a latent 025-extraction bug: two tests referenced the dead `app._copilot_working_set` (moved to `app.session`). Two new Design-decisions bullets pin the seed-vs-render and tool-boundary invariants. Remaining before ship unchanged: lever 2 lazy-tool-catalogue; the 025 + 030 `make run` passes; the polish wave's targeting + cross-file-jump fixes still want a maintainer `make run` / dogfood confirm.**
 
 - **DONE this wave — 027 interactive dogfood (resume/dump).** `git mv scripts/dogfood.py ->
   scripts/dogfood/harness.py`; new `create(project_dir=)` resume + `dump(path)` + `reload()` (composing the
@@ -45,9 +45,9 @@ feature; brief points at the superseder).
   reviewer-audited). Tool-catalogue token cost measured (`scripts/token_probe.py`): the native `tools=` block
   re-bills in FULL every iteration BUT OpenRouter prompt-caching (~99% hit) amortizes it — run1's "halve
   every request" was overstated; lever 2 (lazy-load) remains.
-- **NEXT:** COMMIT the 027 wave (mega-review clean), then lever 2 lazy-tool-catalogue (`token_probe.py`:
-  10 shader tools = 2495 tok vs 21 = 3941) + the 025 `make run` pass. Harder dogfood missions (code-quality
-  grading, token-overflow provocation) come after, building on the obkatan `01_shape_gallery` mechanism.
+- **NEXT:** lever 2 lazy-tool-catalogue (`token_probe.py`: 10 shader tools = 2495 tok vs 21 = 3941) + the
+  025 `make run` pass. Harder dogfood missions (code-quality grading, token-overflow provocation) come
+  after, building on the `01_shape_gallery` mechanism.
 - **Still pending (separate):** copilot turn-rollback (030) awaits its own `make run` pass. The wrong-node
   TARGETING prompt fix LANDED this polish wave (`prompt.py`); a dogfood re-probe confirms it holds, and a
   confirm-gate backstop stays deferred in `todo.md` for if the prompt rule visibly fails.
