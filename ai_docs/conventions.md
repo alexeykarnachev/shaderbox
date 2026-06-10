@@ -64,6 +64,16 @@ belong in the feature spec (`ai_docs/features/NNN_*.md`). This file is not a cha
 
 ## Design decisions (we decided X; revisit if Y)
 
+- **The shader library is layered around SIGNED distance (feature 032).** Sources `SB_sd_*` return
+  an SDF (negative inside; documented exceptions like the zero-width `SB_sd_segment`); operators
+  `SB_op_*` map SDF->SDF; renderers (`SB_fill`/`SB_fill_aa`/`SB_glow`) map SDF->mask. A new public
+  helper must name its layer by prefix and take/return SDFs at the layer boundary — never a
+  one-off mask utility (that's how a library rots into an effects zoo). Non-`SB_` names are
+  library-private: catalogued nowhere, reachable transitively. Canonical seed lives in-repo at
+  `shaderbox/resources/shader_lib/`. Revisit if a needed helper genuinely can't be expressed as
+  source/op/renderer (the first candidate defines layer 4, not an exception). Spec:
+  `ai_docs/features/032_sdf_shader_library.md`.
+
 - **Three-layer UI architecture.** `app.py` = UI/glfw/imgui owner + lifecycle wrapper (windowing, GL
   context, editor sessions, popups, nav, the exporter panels) — no imgui drawing in the orchestrator
   sense, but it owns all imgui-bound state. `ui.py` = thin orchestrator owning the frame loop (`run` +

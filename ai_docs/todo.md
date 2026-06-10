@@ -54,9 +54,14 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   "guard earns its place" convention — don't add standing structure for a transient model lapse).
 
 ## [DEFERRAL] copilot machine-readable render feedback (the visual-blindness affordance)
-- **Trigger:** the first recurrence (in a DIFFERENT session) of "the agent can't tell its change had no visual
-  effect" — it reports success after a clean compile while the user sees no change (observed 2026-06-05: the
-  cyrillic text never rendered; the agent claimed it did). OR when wiring the structural shader view (020·27).
+- **Trigger: HAS FIRED (2026-06-10, feature-032 dogfood: blind 4x spacing re-edit roulette, a
+  letter-blob reported as "centered", ring-asked -> filled-disc — three instances in one session on
+  top of the 2026-06-05 cyrillic case). Next copilot feature slot: SPEC IT (large; spec before
+  building), unless the maintainer deprioritizes.**
+- Original trigger (kept for context): the first recurrence (in a DIFFERENT session) of "the agent
+  can't tell its change had no visual effect" — it reports success after a clean compile while the
+  user sees no change (observed 2026-06-05: the cyrillic text never rendered; the agent claimed it
+  did). OR when wiring the structural shader view (020·27).
 - The copilot's ONLY correctness signal is the compiler, so a clean compile with unchanged output is
   indistinguishable from success. A lightweight `inspect_render(node?)` returning a few scalars (non-background
   pixel fraction, ink bounding box, a coarse luma grid) would let the agent detect "my change didn't take" —
@@ -144,6 +149,30 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   imgui's directional nav over that layout isn't reliably row/column-spatial).
 - Honest fix is a real columns/clipper grid layout. Also parked: persisting the focused region across
   restart (transient by design today). See `ai_docs/features/019_keyboard_navigation.md` Out-of-scope.
+
+## [DEFERRAL] shader-library seed has no load mechanism (canonical copy sits in resources)
+- **Trigger:** FIRST desktop session continuing feature 032 — decide + wire it before any new lib
+  work (everything else builds on the lib being present in `app_data_dir()/shader_lib`).
+- The canonical seed is `shaderbox/resources/shader_lib/` (in-repo, ships via `build.sh`); the live
+  lib root `app_data_dir()/shader_lib` starts EMPTY on a fresh box. Interim: copy by hand (spec 032
+  `## Resume on the desktop`). Decision pending: copy-on-first-run (user edits win; updates need a
+  version/hash stamp — the shipped-default + user-sidecar convention) vs a second read-only search
+  root (015 Non-goals deferred it "until a real need surfaces" — a shipped seed IS that need).
+
+## [DEFERRAL] copilot chat renders Cyrillic replies as `??????` (ASCII sanitizer)
+- **Trigger:** first real session where the maintainer chats with the copilot in Russian and the
+  mangled replies actually annoy (the shader TEXT path is unaffected — set_uniform carries
+  codepoints fine); OR next time you touch `copilot/text_render.py` / the D2 sanitize boundaries.
+- Observed 2026-06-10 (032 dogfood exp-2): the agent's reply prose contained the word ШЕЙДЕР —
+  rendered as `??????` in chat (the D2 ASCII glyph sanitization, 020·20). The chat font DOES carry
+  the app's text; the sanitizer is the lossy step. Fix shape: allow Cyrillic through the sanitizer
+  (the font supports it) or transliterate instead of `?`-replacing.
+
+## [DEFERRAL] dogfood dump echoes an empty `last_render_path` while the PNG exists
+- **Trigger:** next dogfood run that reads `last_render_path` from the dump JSON and finds it
+  empty (the render PNG was on disk; observed 2026-06-10, exp-2 turn 1 — likely the render result
+  echo path, not the render itself). Check `harness.py::render`'s result handling + `dump`'s
+  cursor before trusting the field.
 
 ## [DEFERRAL] lib-author macro indirection for function dispatch
 - **Trigger:** first time a lib author writes `#define HASH SB_hash3` (or similar) inside a lib

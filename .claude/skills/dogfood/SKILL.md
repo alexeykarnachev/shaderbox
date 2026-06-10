@@ -54,6 +54,20 @@ via `create(project_dir=...)` with ZERO LLM calls (the conversation is NL-only-s
 already on disk). So you read turn N's JSON, think, then write turn N+1's command. No server, no background
 process, no PID.
 
+**Seeding the shader library (any mission that should exercise `SB_*` helpers):** the harness's
+tmp data dir starts with an EMPTY lib — copy the canonical seed in BEFORE turn 1 and pass the SAME
+`SHADERBOX_DATA_DIR` on every turn:
+```
+mkdir -p scripts/dogfood/runs/data-<run> \
+  && cp -r shaderbox/resources/shader_lib scripts/dogfood/runs/data-<run>/shader_lib
+env SHADERBOX_DATA_DIR=$PWD/scripts/dogfood/runs/data-<run> ... uv run ...
+```
+V3D render cost (Pi): a full-text-stack shader (`SB_sd_text`) renders ~20s at 300x300 — compile is
+fast (~1.4s), the cost is per-pixel (64-char loop x glyph switch). `h.render(size=400)` on a
+multi-text-layer shader can brush the 60s `render_op_timeout_s`; for time-sampled stills or big
+renders, load the node directly on a standalone EGL context (no timeout) instead of blaming a hang
+— 99%-CPU-for-minutes is usually an oversized canvas x heavy shader, not a deadlock.
+
 **Turn 1 (fresh project):**
 ```
 env OPENROUTER_API_KEY=… uv run python -c '

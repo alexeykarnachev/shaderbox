@@ -25,7 +25,24 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-06-10. -->
+<!-- As of 2026-06-10 (evening). -->
+**032 IN PROGRESS — the SDF shader library + copilot quality wave (practice-first, driven by live
+ad-hoc dogfooding on the Pi).** The library seed landed in-repo at `shaderbox/resources/shader_lib/`
+(~20 public fns, three layers: `SB_sd_*` sources -> `SB_op_*` operators -> `SB_fill`/`SB_glow`
+renderers; full text stack incl. NEW Cyrillic А-Я/Ё + digits + per-line-centered layout + auto-fit +
+per-char access), reviewed by a 3-agent render-verified swarm (all HIGH/MED applied). Copilot fixes:
+inline uniform defaults un-banned (array-only limit), tool-call batching nudge, `max_iterations`
+12->16, `lib_catalog` SB_-filtered, SDF-contract line in CONVENTIONS. Two dogfood experiments
+(codex-mini, ~$0.10): exp-1 found the set_uniform iteration burn + 3 visual-blindness instances
+(the `inspect_render` trigger has now FIRED — see todo); exp-2 on the polished lib: first-turn
+spinning neon Cyrillic poster, full reuse, zero compile errors. **NEXT (desktop session): decide the
+seed-loading mechanism (copy-on-first-run vs second search root — spec ## Open questions), keep
+iterating missions (typewriter / per-char jitter / THRASH), spec `inspect_render`.** Resume manual:
+spec `## Resume on the desktop`. Spec: `ai_docs/features/032_sdf_shader_library.md`.
+Earlier wave (031, still current): NEXT lever 2 lazy-tool-catalogue; the 025 + 030 `make run`
+passes; the copilot ship (020-030) stays gated on those live passes.**
+
+<!-- Previous banner (031, kept for context): -->
 **031 landed (`db39f68..aff9488`, 9 commits + doc sweep): the whole 029 smell class swept. The `.webm` reload-kill bug fixed via one `media.media_class_for` resolver (+invariant test); `RESULT_WIDGET_KINDS` derives from the Literal; template order/ids live once in `constants.py`; the dead publish `node` param dropped; the `template:` address trio joined `address.py`; 7 dead orphans deleted; `ToolArgs` base owns `extra="forbid"` (+per-tool schema invariant); `wrapped_caption` deduped (visual no-op — rides the pending `make run` pass); both bit-rotted check scripts ported to pytest (+10 tests: token redaction, gate decline + no-orphaned-tool_call, gate reopen-after-release, recover-card round-trip, finish-reason — none had regressed while dark) then deleted; `CopilotCapabilities` is now a Protocol the backend satisfies directly (`wiring.py` deleted). Post-impl 3-reviewer adversarial swarm: correctness PASS; the doc-staleness findings were fixed in the same wave (dev_flow module map, todo `needs_gl` citation, H2 drop rationale, 023/031 spec headers). NEXT: lever 2 lazy-tool-catalogue; the 025 + 030 `make run` passes + chat-polish visual confirms; the copilot ship (020-030) stays gated on those live passes.**
 
 - **DONE this wave — 027 interactive dogfood (resume/dump).** `git mv scripts/dogfood.py ->
@@ -70,6 +87,7 @@ feature; brief points at the superseder).
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 032 | sdf_shader_library | in progress | Practice-first SDF shader library seed (`shaderbox/resources/shader_lib/`, three SB_sd_*/SB_op_*/render layers, full text stack with new Cyrillic + auto-fit + per-char access) + copilot quality fixes (inline uniform defaults, tool-call batching, SB_ catalogue filter), driven by live ad-hoc dogfood experiments; seed-loading mechanism + further missions continue on the desktop. Spec: `ai_docs/features/032_sdf_shader_library.md`. |
 | 031 | parallel_structure_sweep | done | Repo-wide sweep of the 029 smell class, all 10 items landed one commit each: the .webm reload-kill bug (one media resolver), parallel maps/frozensets/template-id lists unified, dead params/code deleted, the two bit-rotted check scripts ported to pytest (redaction/gate-decline coverage restored) and removed, `CopilotCapabilities` converted to a Protocol (`wiring.py` deleted). Spec: `ai_docs/features/031_parallel_structure_sweep.md`. |
 | 029 | tool_first_class_labels | done | Per-tool labels + gate prompts became first-class `ToolDefinition` fields (`label_live`/`label_done` required, `gate_prompt` defaulted, `kw_only`), resolved through the registry (`status_for` un-stubbed, `label_for`, `definitions()`); the two parallel name-keyed dicts (`_TOOL_VERBS`, `_GATE_PROMPTS`) deleted; one invariant test pins labels + gate prompts + the analyzer's coverage list. Spec: `ai_docs/features/029_tool_first_class_labels.md`. |
 | 028 | ui_polish_wave | partial | App-wide UI/UX polish pass (maintainer-walkthrough-driven). F01-F10 landed + green (New Node modal, the compact square-bar turn snippet, Send alignment, post-modal focus restore, color contrast + human tool labels, the active-project-pointer foot-gun). F08 live-verified; F06/F09/F10 chat visuals still want a `make run` confirm. Findings log: `ai_docs/features/028_ui_polish_wave.md`. |
