@@ -16,6 +16,7 @@ from pydantic import BaseModel, ValidationError
 from shaderbox.copilot.gate import GateKind
 from shaderbox.copilot.llm.api import LLMMessage
 from shaderbox.copilot.state import (
+    RESULT_WIDGET_KINDS,
     ChatState,
     Message,
     MessageRole,
@@ -27,8 +28,6 @@ from shaderbox.copilot.state import (
 )
 
 _VERSION = 9
-
-_RESULT_WIDGET_KINDS: frozenset[str] = frozenset({"open_url", "open_path"})
 
 
 def _migrate_pre_v7(data: dict[str, object]) -> None:
@@ -59,7 +58,7 @@ def _gate_kind_or_confirm(value: str) -> GateKind:
 def _result_widget_or_none(model: "_ResultWidgetModel | None") -> ResultWidget | None:
     # Unknown widget kind or empty target drops to None instead of failing the file or
     # rendering a dead button.
-    if model is None or model.kind not in _RESULT_WIDGET_KINDS or not model.target:
+    if model is None or model.kind not in RESULT_WIDGET_KINDS or not model.target:
         return None
     return ResultWidget(
         kind=cast(ResultWidgetKind, model.kind), label=model.label, target=model.target

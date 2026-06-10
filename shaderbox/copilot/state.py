@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from enum import StrEnum, auto
-from typing import Literal
+from typing import Literal, get_args
 
 from shaderbox.copilot.config import COPILOT_CONFIG
 from shaderbox.copilot.gate import GateKind
@@ -47,6 +47,7 @@ class RecoverInfo:
 
 
 ResultWidgetKind = Literal["open_url", "open_path"]
+RESULT_WIDGET_KINDS: frozenset[str] = frozenset(get_args(ResultWidgetKind))
 
 
 @dataclass(frozen=True)

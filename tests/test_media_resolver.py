@@ -4,7 +4,7 @@ suffix, so an unresolvable advertised suffix kills the node on reload)."""
 
 import pytest
 
-from shaderbox.constants import IMAGE_EXTENSIONS, MEDIA_EXTENSIONS, VIDEO_EXTENSIONS
+from shaderbox.constants import IMAGE_EXTENSIONS, MEDIA_EXTENSIONS
 from shaderbox.media import Image, Video, media_class_for
 
 

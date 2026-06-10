@@ -19,7 +19,7 @@ from shaderbox.copilot.llm.api import (
 )
 from shaderbox.copilot.prompt import build_messages
 from shaderbox.copilot.prompt_context import CopilotContext
-from shaderbox.copilot.state import ResultWidget, TurnStats
+from shaderbox.copilot.state import RESULT_WIDGET_KINDS, ResultWidget, TurnStats
 from shaderbox.copilot.tools.registry import ToolRegistry
 from shaderbox.copilot.trace import NULL_TRACE, TraceLog
 
@@ -267,9 +267,6 @@ def _unescape_double_escaped(args: dict) -> dict:
     return out
 
 
-_RESULT_WIDGET_KINDS: frozenset[str] = frozenset({"open_url", "open_path"})
-
-
 def _widget_from_payload(payload: dict | None) -> ResultWidget | None:
     # A tool surfaces a result widget via a {"kind","label","target"} dict under payload["widget"].
     # Guard defensively (known kind + non-empty target) so a malformed entry yields no widget rather
@@ -279,7 +276,7 @@ def _widget_from_payload(payload: dict | None) -> ResultWidget | None:
         return None
     kind = spec.get("kind")
     target = spec.get("target", "")
-    if kind not in _RESULT_WIDGET_KINDS or not target:
+    if kind not in RESULT_WIDGET_KINDS or not target:
         return None
     return ResultWidget(
         kind=kind, label=str(spec.get("label", "Open")), target=str(target)
