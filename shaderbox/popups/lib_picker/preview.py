@@ -7,7 +7,12 @@ from imgui_bundle import imgui, imgui_ctx
 from shaderbox.app import App
 from shaderbox.shader_lib import ShaderLibFunction
 from shaderbox.theme import COLOR, fade
-from shaderbox.ui_primitives import draw_copyable_text, ghost_button, pill_button
+from shaderbox.ui_primitives import (
+    draw_copyable_text,
+    ghost_button,
+    pill_button,
+    wrapped_caption,
+)
 
 
 def draw_preview(app: App, selected: ShaderLibFunction | None, root: Path) -> None:
@@ -29,9 +34,7 @@ def draw_preview(app: App, selected: ShaderLibFunction | None, root: Path) -> No
 
     if selected.doc:
         imgui.spacing()
-        imgui.push_text_wrap_pos(0.0)
-        imgui.text_colored(COLOR.FG_DIM, selected.doc)
-        imgui.pop_text_wrap_pos()
+        wrapped_caption(selected.doc)
 
     imgui.spacing()
     _draw_function_tag_editor(app, selected)

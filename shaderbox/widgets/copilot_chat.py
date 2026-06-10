@@ -32,6 +32,7 @@ from shaderbox.ui_primitives import (
     revert_icon_button,
     step_squares,
     unconnected_gate,
+    wrapped_caption,
 )
 from shaderbox.util import open_in_file_manager
 
@@ -298,13 +299,6 @@ def _draw_transcript(app: App) -> None:
     imgui.unindent(float(SPACE.SM))
 
 
-def _wrapped_colored(text: str, color: tuple[float, float, float, float]) -> None:
-    # Colored + wrapped to the content region (imgui has no colored-wrapped text in one call).
-    imgui.push_style_color(imgui.Col_.text, color)
-    imgui.text_wrapped(text)
-    imgui.pop_style_color(1)
-
-
 def _draw_message(app: App, msg: Message, idx: int) -> None:
     # Sanitize at DRAW so an unrenderable glyph never reaches the atlas. Idempotent on
     # committed (already-ASCII) text; on the live streaming preview it runs on the full
@@ -325,13 +319,13 @@ def _draw_message(app: App, msg: Message, idx: int) -> None:
         _draw_bubble("copilot", COLOR.STATE_INFO, COLOR.BG_SURFACE, text, idx)
     elif role == "tool_status":
         with message_bubble(f"##bubble_{idx}", COLOR.TRANSPARENT, bordered=False):
-            _wrapped_colored(text, COLOR.FG_DIM)
+            wrapped_caption(text, COLOR.FG_DIM)
             if msg.result_widget is not None:
                 _draw_result_widget(msg.result_widget, idx)
         imgui.dummy(imgui.ImVec2(0, float(SPACE.SM)))
     elif role == "error":
         with message_bubble(f"##bubble_{idx}", COLOR.TRANSPARENT, bordered=False):
-            _wrapped_colored(text, COLOR.STATE_ERROR)
+            wrapped_caption(text, COLOR.STATE_ERROR)
         imgui.dummy(imgui.ImVec2(0, float(SPACE.SM)))
     elif role == "turn_snippet":
         _draw_turn_snippet(app, msg, idx)
@@ -389,12 +383,12 @@ def _draw_turn_snippet(app: App, msg: Message, idx: int) -> None:
         st = msg.snippet_stats
         if live:
             status = app.copilot.state.status
-            _wrapped_colored(
+            wrapped_caption(
                 sanitize_display(status) if status else "thinking...", COLOR.FG_DIM
             )
         elif st is not None:
             n = len(msg.steps)
-            _wrapped_colored(
+            wrapped_caption(
                 f"{n} tool{'s' if n != 1 else ''}  -  "
                 f"{st.reply_tokens} tok  -  ${st.cost_usd:.4f}",
                 COLOR.FG_DIM,
