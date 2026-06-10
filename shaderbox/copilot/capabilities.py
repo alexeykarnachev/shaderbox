@@ -68,6 +68,8 @@ class SetUniformResult:
     ok: bool
     error: str = ""
     type_label: str = ""
+    # Probe-render facts for the frame with the new value applied (feature 033).
+    render_facts: str = ""
 
 
 @dataclass(frozen=True)
@@ -144,6 +146,11 @@ class EditResult:
     # The honest "no standalone compile" note for a lib: edit target. Empty for a node
     # edit (which returns real errors).
     lib_note: str = ""
+    # Feature 033 enriched results: structural compile hints (range bookkeeping,
+    # initializer counts, brace balance) and the probe-render facts line on a
+    # clean compile. Both engine-computed, both ride the tool result text.
+    error_hints: tuple[str, ...] = ()
+    render_facts: str = ""
     # True when the matched span would verbatim-overwrite an interior comment the
     # whitespace-invariant match can't see — refused so author content isn't silently
     # destroyed; the model is steered to a line-addressed edit. matches==0.

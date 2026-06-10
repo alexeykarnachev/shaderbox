@@ -18,6 +18,10 @@ class CopilotConfig:
     # Headroom the history trim withholds for the per-turn working-set scratchpad, which is
     # spliced AFTER the trim runs and is otherwise invisible to it (feature 020·29 D10).
     scratchpad_reserve_tokens: int = 50_000
+    # Feature 033 enriched results: probe-render facts after clean mutations
+    # (ink/bbox/luma off a tiny offscreen render). Size is the square probe edge.
+    render_facts_enabled: bool = True
+    render_facts_size: int = 64
     # A list-arg above this count trips a BULK-policy gate (§2.3 / §F4).
     bulk_gate_threshold: int = 5
     # Worker join() timeout at shutdown; a blocking network read may outlive it

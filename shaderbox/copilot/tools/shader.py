@@ -250,8 +250,12 @@ def _applied_result(result: EditResult) -> tuple[bool, str, dict]:
         head = result.lib_note
     elif result.errors:
         head = "compiled with errors:\n" + _format_errors(result.errors)
+        if result.error_hints:
+            head += "\n" + "\n".join(result.error_hints)
     else:
         head = "ok — compiled clean"
+        if result.render_facts:
+            head += "\n" + result.render_facts
     if result.matches > 1:
         head += f" ({result.matches} regions changed)"
     return True, head, {"errors": [e.__dict__ for e in result.errors]}
@@ -357,12 +361,13 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
         result = caps.set_uniform(args["name"], args["value"], args["node"])
         if not result.ok:
             return False, f"error: {result.error}", None
-        return (
-            True,
-            f"set {args['name']} ({result.type_label}) = {args['value']} — look at the "
-            "preview to confirm (not saved until you save the project)",
-            None,
+        msg = (
+            f"set {args['name']} ({result.type_label}) = {args['value']} "
+            "(not saved until the project is saved)"
         )
+        if result.render_facts:
+            msg += "\n" + result.render_facts
+        return True, msg, None
 
     def create_node(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
         node_id, errors = caps.create_node(

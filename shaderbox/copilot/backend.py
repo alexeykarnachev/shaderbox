@@ -50,10 +50,11 @@ from shaderbox.copilot.capabilities import (
 )
 from shaderbox.copilot.checkpoint import TurnCheckpoint
 from shaderbox.copilot.config import COPILOT_CONFIG
+from shaderbox.copilot.edit_hints import compile_hints, render_facts
 from shaderbox.copilot.errors import CopilotToolError
 from shaderbox.copilot.glsl_lex import span_drops_comment, token_match
 from shaderbox.copilot.sanitize import sanitize_display
-from shaderbox.core import ENGINE_DRIVEN_UNIFORMS, Node
+from shaderbox.core import ENGINE_DRIVEN_UNIFORMS, Canvas, Node
 from shaderbox.exporters.base import (
     AuthState,
     Exporter,
@@ -284,6 +285,7 @@ class CopilotBackend:
         get_active_checkpoint: Callable[[], TurnCheckpoint | None],
     ) -> None:
         self._get_bridge = get_bridge
+        self._probe_canvas: Canvas | None = None  # lazy 033 render-facts target
         self._node_templates_dir = node_templates_dir
         self._starter_template_id = starter_template_id
         self._get_renders_dir = get_renders_dir
@@ -666,7 +668,9 @@ class CopilotBackend:
             self._capture_node(node_id)  # pre-change rollback snapshot (best-effort)
             try_to_release(target.uniform_values.get(name))
             target.uniform_values[name] = coerced
-            return SetUniformResult(ok=True, type_label=label)
+            return SetUniformResult(
+                ok=True, type_label=label, render_facts=self._render_facts_for(target)
+            )
 
         return self._bridge.run_on_main(_on_main)
 
@@ -1148,6 +1152,23 @@ class CopilotBackend:
 
         return self._bridge.run_on_main(_on_main)
 
+    def _render_facts_for(self, node: Node) -> str:
+        # Best-effort probe render -> one facts line (feature 033). Runs on the main
+        # thread (bridge-marshalled callers) with the GL context current. Never raises
+        # into the edit path — facts are advisory.
+        if not COPILOT_CONFIG.render_facts_enabled:
+            return ""
+        try:
+            size = COPILOT_CONFIG.render_facts_size
+            if self._probe_canvas is None:
+                self._probe_canvas = Canvas(size=(size, size))
+            node.render(canvas=self._probe_canvas)
+            raw = self._probe_canvas.texture.read()
+            return render_facts(raw, size, size)
+        except Exception as exc:  # — advisory channel, never break an edit
+            logger.debug(f"copilot render facts skipped: {exc}")
+            return ""
+
     def _copilot_persist_shader(
         self, node_id: str, node: Node, new_text: str
     ) -> list[CompileErrorInfo]:
@@ -1254,7 +1275,14 @@ class CopilotBackend:
             errors = self._copilot_persist_shader(tgt.node_id, tgt.node, new_text)
             self._working_set_add(tgt.ws_address)
             self._batch_mutated.add(tgt.ws_address)
-            return EditResult(matches=matches, errors=errors)
+            if errors:
+                hints = tuple(compile_hints(new_text, [e.message for e in errors]))
+                return EditResult(matches=matches, errors=errors, error_hints=hints)
+            return EditResult(
+                matches=matches,
+                errors=errors,
+                render_facts=self._render_facts_for(tgt.node),
+            )
         assert tgt.lib_path is not None
         # pre-write rollback snapshot (a brand-new lib reverses to a delete, not empty bytes)
         self._capture_lib(tgt.ws_address, tgt.source, tgt.lib_create)
