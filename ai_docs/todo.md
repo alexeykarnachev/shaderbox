@@ -211,8 +211,8 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
 - **Trigger:** when lever 2 (the lazy tool catalogue) lands — `category` goes live as the catalogue
   grouping and `needs_gl`'s fate gets decided in the same pass; OR next time a field is added to
   `ToolDefinition`.
-- Neither field has a consumer today: thread-marshalling actually happens inside the capability
-  closures (`capabilities.py`), so a wrong `needs_gl` value is uncatchable; `category` is read by
+- Neither field has a consumer today: thread-marshalling actually happens inside the backend's
+  methods (`backend.py`), so a wrong `needs_gl` value is uncatchable; `category` is read by
   nothing until the catalogue exists. Decide then: delete `needs_gl` (it documents, not enforces) or
   keep both as scaffold.
 

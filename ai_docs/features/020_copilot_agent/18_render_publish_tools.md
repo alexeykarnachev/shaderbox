@@ -345,7 +345,10 @@ catches a new-module import error ONLY if App-construction imports it (it does, 
 `build_registry`). That is NOT enough. So this wave ADDS a focused headless introspection script
 (`scripts/copilot_render_check.py` or similar; a real GL context like smoke). *(Feature 031: the
 script bit-rotted with zero wiring; H1/H3-class checks were ported into pytest —
-`tests/test_tool_registry.py` — and the script deleted.)*
+`tests/test_tool_registry.py` — and the script deleted. H2 was deliberately NOT ported: its
+components are covered by `test_render_preset.py` (FIXED_DIMS math) + `test_render_for.py`
+(render honors the target); only the declarative `backend._copilot_render_preset` builder
+stays untested.)*
 
 - **H1 — registry builds.** `build_registry(caps)` returns 13 eager specs (9 shader + 4 new); each new tool's
   `args_model.model_json_schema()` builds (catches a pydantic `Field(ge=16, le=4096)` / required-arg

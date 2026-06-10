@@ -1,11 +1,20 @@
 # 031 — Parallel-structure sweep (the 029 smell class, repo-wide)
 
-> **STATUS: PENDING — researched + adversarially verified, ready to implement in a fresh session.**
+> **STATUS: DONE — all 10 items implemented (one commit each, `db39f68..aff9488`),
+> post-impl reviewed by a 3-reviewer adversarial swarm (correctness PASS).**
 > Provenance: a 20-agent hunt workflow on top of feature 029's exemplar (7 lens-finders →
 > dedup/rank synthesis → one adversarial refuter per finding). 10 findings CONFIRMED (each
 > re-verified on a fresh read of HEAD `66b2a92`, several by execution), 2 refuted, ~8 dropped
 > at triage. The refuted/dropped list is at the bottom — do NOT re-propose those.
 > No backward-compat constraints: internal APIs change freely (maintainer's explicit call).
+>
+> Two deliberate drops at impl time: item 1's conditional `.webm` save→load round-trip test
+> (the GL fixture is NOT cheap on the display-less dev box — the pure resolver invariant in
+> `tests/test_media_resolver.py` pins the bug class); item 9 knowingly did not port the old
+> render-check's H2 render-honors-requested-size (its components are covered by
+> `test_render_preset.py` FIXED_DIMS + `test_render_for.py`; only the declarative
+> `backend._copilot_render_preset` builder stays untested — and the dead script never ran at
+> base anyway). Item 8's visual no-op confirm rides the maintainer's pending `make run` pass.
 
 Implementation order = the list order (value-to-blast ranked). Each item is independently
 committable; run `make check` + tests per item, `make smoke` after the UI-touching ones (8).

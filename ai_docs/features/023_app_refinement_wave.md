@@ -136,7 +136,9 @@ review trail.)
    test to back-import from the backend (a cycle / wrong-direction dep). Keeping it on `app.py` and
    freezing it into the backend ctor (it's a shipped, project-independent uuid) keeps the dependency
    one-way, leaves the test's import unchanged, and avoids inventing a new leaf home. The backend reads
-   `self._starter_template_id`, never the module constant.
+   `self._starter_template_id`, never the module constant. *(Feature 031 later moved the constant —
+   with `TEMPLATE_ORDER`/`NODE_TEMPLATES_DIR` — to `constants.py`, the leaf home that didn't exist as
+   an option here.)*
 
 9. **Cycle-safety is a locked invariant: one-way `app → backend`.** `backend.py` imports only leaf
    modules verified (BFS over the real import graph) to carry zero transitive `app` import:
