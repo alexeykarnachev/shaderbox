@@ -19,7 +19,7 @@ from loguru import logger
 
 from shaderbox.app import App, PopupState
 from shaderbox.commands import ActiveRegion, NodeTab
-from shaderbox.constants import RESOURCES_DIR
+from shaderbox.constants import NODE_TEMPLATES_DIR, TEMPLATE_ORDER
 from shaderbox.logging_setup import configure_logging
 from shaderbox.ui import update_and_draw
 
@@ -41,21 +41,14 @@ def _has_gpu_window() -> bool:
     return True
 
 
-_TEMPLATE_IDS: list[str] = [
-    "53724dbd-8efb-4c09-8c7d-28d626a066e7",  # UV Mango
-    "73ea2431-13f6-41e4-b923-04d846b678b0",  # Media Input
-    "f90f5ff9-29c6-4bcf-aee7-090f20542353",  # Text Rendering
-]
-
-
 def _seed_tmp_project(root: Path) -> Path:
     # A throwaway project seeded with the shipped template nodes — smoke must never read or
     # mutate the tracked projects/dev sandbox.
     project = root / "project"
     nodes = project / "nodes"
     nodes.mkdir(parents=True)
-    for tid in _TEMPLATE_IDS:
-        shutil.copytree(RESOURCES_DIR / "node_templates" / tid, nodes / tid)
+    for tid in TEMPLATE_ORDER:
+        shutil.copytree(NODE_TEMPLATES_DIR / tid, nodes / tid)
     return project
 
 

@@ -5,6 +5,17 @@ from pathlib import Path
 
 # Resource directories
 RESOURCES_DIR = Path(str(files("shaderbox.resources")))
+NODE_TEMPLATES_DIR = RESOURCES_DIR / "node_templates"
+
+# Authored display order for the template grid — filesystem ctime isn't preserved
+# through git/zip/bundle. Templates not listed sort last. The first is the procedural
+# starter seeded into an empty project on first run (no external media).
+TEMPLATE_ORDER = [
+    "53724dbd-8efb-4c09-8c7d-28d626a066e7",  # UV Mango
+    "73ea2431-13f6-41e4-b923-04d846b678b0",  # Media Input
+    "f90f5ff9-29c6-4bcf-aee7-090f20542353",  # Text Rendering
+]
+STARTER_TEMPLATE_ID = TEMPLATE_ORDER[0]
 
 # Default file paths
 DEFAULT_VS_FILE_PATH = RESOURCES_DIR / "shaders" / "default.vert.glsl"

@@ -94,7 +94,11 @@ import moderngl  # noqa: E402
 # is exactly the static t=0 frame the dogfood wants. Silence the cosmetic warning.
 glfw.set_error_callback(lambda code, desc: None)
 
-from shaderbox.constants import RESOURCES_DIR  # noqa: E402
+from shaderbox.constants import (  # noqa: E402
+    NODE_TEMPLATES_DIR,
+    STARTER_TEMPLATE_ID,
+    TEMPLATE_ORDER,
+)
 from shaderbox.copilot.capabilities import RenderResult  # noqa: E402
 from shaderbox.copilot.persistence import ConversationStore  # noqa: E402
 from shaderbox.copilot.session import CopilotSession  # noqa: E402
@@ -103,14 +107,6 @@ from shaderbox.exporters.registry import ExporterRegistry  # noqa: E402
 from shaderbox.notifications import Notifications  # noqa: E402
 from shaderbox.project_session import ProjectSession  # noqa: E402
 from shaderbox.shader_lib.file_ops import ShaderLibFileManager  # noqa: E402
-
-# Authored template order (mirror app.py's list; the first is the starter).
-_TEMPLATE_ORDER = [
-    "53724dbd-8efb-4c09-8c7d-28d626a066e7",  # UV Mango (the starter)
-    "73ea2431-13f6-41e4-b923-04d846b678b0",  # Media Input
-    "f90f5ff9-29c6-4bcf-aee7-090f20542353",  # Text Rendering
-]
-_STARTER_TEMPLATE_ID = _TEMPLATE_ORDER[0]
 
 
 class DogfoodHarness:
@@ -145,8 +141,6 @@ class DogfoodHarness:
         per-turn process keeps full state. The caller must also point `SHADERBOX_DATA_DIR` at the
         same prior data dir (command-line env — read at import), so the lib + integrations match.
         """
-        node_templates_dir = RESOURCES_DIR / "node_templates"
-
         # Create + leave-current the EGL context on THIS thread (the context owner). No
         # make_current call is needed — create_standalone_context leaves it current, and
         # Node/Canvas pick it up via moderngl.get_context(). (moderngl's stub types **kwargs
@@ -160,8 +154,8 @@ class DogfoodHarness:
         nodes_dir.mkdir(parents=True, exist_ok=True)
         # On resume the nodes already exist on disk; seeding only applies to a fresh project.
         if seed_templates and not resuming:
-            for tid in _TEMPLATE_ORDER:
-                src = node_templates_dir / tid
+            for tid in TEMPLATE_ORDER:
+                src = NODE_TEMPLATES_DIR / tid
                 if src.is_dir():
                     shutil.copytree(src, nodes_dir / tid)
 
@@ -177,9 +171,9 @@ class DogfoodHarness:
         # then the manager (closing over the session), exposed through a mutable slot.
         slot: dict[str, ShaderLibFileManager] = {}
         session = ProjectSession(
-            node_templates_dir=node_templates_dir,
-            starter_template_id=_STARTER_TEMPLATE_ID,
-            template_order=_TEMPLATE_ORDER,
+            node_templates_dir=NODE_TEMPLATES_DIR,
+            starter_template_id=STARTER_TEMPLATE_ID,
+            template_order=TEMPLATE_ORDER,
             get_exporter_registry=lambda: exporters,
             get_shader_lib_files=lambda: slot["mgr"],
             # on_* UI-reaction callbacks default to no-ops — the harness has no editor/UI.

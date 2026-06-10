@@ -13,7 +13,7 @@ from pathlib import Path
 import moderngl
 import pytest
 
-from shaderbox.app import _STARTER_TEMPLATE_ID
+from shaderbox.constants import NODE_TEMPLATES_DIR, STARTER_TEMPLATE_ID
 from shaderbox.copilot.backend import _coerce_uniform_value
 from shaderbox.core import ENGINE_DRIVEN_UNIFORMS
 from shaderbox.shader_lib.file_ops import ShaderLibFileManager
@@ -133,9 +133,7 @@ def test_create_node_from_source_does_not_touch_starter_template(
     # the SHARED starter template. The fix relies on UINode.save rebinding the path + writing
     # the source to the new node's own dir. This pins the contract: the starter file is
     # byte-unchanged, and the new dir holds the agent's source.
-    from shaderbox.constants import RESOURCES_DIR
-
-    starter = RESOURCES_DIR / "node_templates" / _STARTER_TEMPLATE_ID
+    starter = NODE_TEMPLATES_DIR / STARTER_TEMPLATE_ID
     starter_shader = starter / "shader.frag.glsl"
     before = starter_shader.read_bytes()
 
@@ -154,9 +152,7 @@ def test_create_node_compiles_and_surfaces_errors(gl_ctx: moderngl.Context) -> N
     # The compile-feedback contract (the test-exposed gap): create_node compiles the new node
     # and returns its errors, so a create-from-broken-source can't report success. Mirrors what
     # _copilot_create_node does (release_program -> compile -> read compile_unit.errors).
-    from shaderbox.constants import RESOURCES_DIR
-
-    starter = RESOURCES_DIR / "node_templates" / _STARTER_TEMPLATE_ID
+    starter = NODE_TEMPLATES_DIR / STARTER_TEMPLATE_ID
 
     # Full broken source -> compile surfaces errors.
     broken = load_node_from_dir(starter)

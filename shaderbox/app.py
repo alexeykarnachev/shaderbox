@@ -21,7 +21,12 @@ from shaderbox.commands import (
     NodeTab,
     chord_to_str,
 )
-from shaderbox.constants import RESOURCES_DIR
+from shaderbox.constants import (
+    NODE_TEMPLATES_DIR,
+    RESOURCES_DIR,
+    STARTER_TEMPLATE_ID,
+    TEMPLATE_ORDER,
+)
 from shaderbox.copilot.backend import CopilotBackend
 from shaderbox.copilot.persistence import ConversationStore
 from shaderbox.copilot.revert import RevertExecutor
@@ -58,20 +63,9 @@ from shaderbox.util import (
     pfd_block,
 )
 
-# Procedural starter seeded into an empty project on first run (no external media).
-_STARTER_TEMPLATE_ID = "53724dbd-8efb-4c09-8c7d-28d626a066e7"  # "UV Mango"
-
 # Copilot node-id shortening: 4-char prefix, grown only on an actual collision.
 _COPILOT_SHORT_ID_LEN = 4
 _COPILOT_FULL_ID_LEN = 36
-
-# Authored display order for the template grid — filesystem ctime isn't preserved
-# through git/zip/bundle. Templates not listed sort last.
-_TEMPLATE_ORDER = [
-    "53724dbd-8efb-4c09-8c7d-28d626a066e7",  # UV Mango
-    "73ea2431-13f6-41e4-b923-04d846b678b0",  # Media Input
-    "f90f5ff9-29c6-4bcf-aee7-090f20542353",  # Text Rendering
-]
 
 # Region-cycle order for the keyboard-nav command.
 _REGION_CYCLE: tuple[ActiveRegion, ...] = (
@@ -212,9 +206,9 @@ class App:
         # editor_sessions are injected (the core stays imgui-import-free); the two callbacks route
         # the UI-tail side effects the core can't own (sticky-focus reset, delete-arm clear).
         self.session = ProjectSession(
-            node_templates_dir=RESOURCES_DIR / "node_templates",
-            starter_template_id=_STARTER_TEMPLATE_ID,
-            template_order=_TEMPLATE_ORDER,
+            node_templates_dir=NODE_TEMPLATES_DIR,
+            starter_template_id=STARTER_TEMPLATE_ID,
+            template_order=TEMPLATE_ORDER,
             get_exporter_registry=lambda: self.exporter_registry,
             get_shader_lib_files=lambda: self.shader_lib_files,
             on_current_node_changed=self._on_current_node_changed,
