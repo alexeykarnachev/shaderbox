@@ -12,7 +12,7 @@ from pydantic import BaseModel, ValidationError, model_validator
 
 from shaderbox.commands import NodeTab
 from shaderbox.copilot.state import CopilotLayout
-from shaderbox.core import _NODE_SHADER_BASENAME, Node
+from shaderbox.core import _NODE_SHADER_BASENAME, ENGINE_DRIVEN_UNIFORMS, Node
 from shaderbox.media import MediaDetails, MediaWithTexture
 from shaderbox.theme import COLOR
 
@@ -92,7 +92,7 @@ class UIUniform(BaseModel):
     def valid_input_types(self) -> tuple[UIUniformInputType, ...]:
         if self.is_ubo:
             return ("buffer",)
-        if self.name in ("u_time", "u_aspect", "u_resolution"):
+        if self.name in ENGINE_DRIVEN_UNIFORMS:
             return ("auto",)
         if self.gl_type == GL_SAMPLER_2D:
             return ("texture",)
@@ -323,8 +323,9 @@ class UINode(BaseModel):
 
         # ----------------------------------------------------------------
         # Save uniforms
+        self.node.seed_uniform_values()
         for uniform in self.node.get_active_uniforms():
-            if uniform.name in ["u_time", "u_aspect", "u_resolution"]:
+            if uniform.name in ENGINE_DRIVEN_UNIFORMS:
                 continue
 
             value = self.node.uniform_values[uniform.name]

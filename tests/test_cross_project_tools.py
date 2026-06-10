@@ -14,7 +14,8 @@ import moderngl
 import pytest
 
 from shaderbox.app import _STARTER_TEMPLATE_ID
-from shaderbox.copilot.backend import _ENGINE_DRIVEN_UNIFORMS, _coerce_uniform_value
+from shaderbox.copilot.backend import _coerce_uniform_value
+from shaderbox.core import ENGINE_DRIVEN_UNIFORMS
 from shaderbox.shader_lib.file_ops import ShaderLibFileManager
 from shaderbox.shader_lib.index import ShaderLibIndex
 from shaderbox.ui_models import load_node_from_dir
@@ -55,7 +56,7 @@ def test_engine_driven_set_is_the_documented_set() -> None:
     # These are overwritten every frame by Node.render() regardless of uniform_values, so
     # set_uniform rejects them (020·16 Decision 6). Pin the set so a new engine uniform
     # added to core.py is consciously added here too.
-    assert {"u_time", "u_aspect", "u_resolution"} == _ENGINE_DRIVEN_UNIFORMS
+    assert {"u_time", "u_aspect", "u_resolution"} == ENGINE_DRIVEN_UNIFORMS
 
 
 def _lib_manager(root: Path) -> ShaderLibFileManager:

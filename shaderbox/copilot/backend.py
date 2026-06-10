@@ -46,7 +46,7 @@ from shaderbox.copilot.config import COPILOT_CONFIG
 from shaderbox.copilot.errors import CopilotToolError
 from shaderbox.copilot.glsl_lex import span_drops_comment, token_match
 from shaderbox.copilot.sanitize import sanitize_display
-from shaderbox.core import Node
+from shaderbox.core import ENGINE_DRIVEN_UNIFORMS, Node
 from shaderbox.exporters.base import (
     AuthState,
     Exporter,
@@ -250,12 +250,6 @@ def _format_uniforms(node: Node) -> list[str]:
             value = node.uniform_values.get(u.name, u.value)
             rows.append(f"{u.name} {label} = {value}")
     return rows
-
-
-# Node.render() overwrites these every frame, so set_uniform on them is a no-op (rejected).
-_ENGINE_DRIVEN_UNIFORMS: frozenset[str] = frozenset(
-    {"u_time", "u_aspect", "u_resolution"}
-)
 
 
 class CopilotBackend:
@@ -630,7 +624,7 @@ class CopilotBackend:
                     ok=False,
                     error=f"no node with id '{node}' — check the project map",
                 )
-            if name in _ENGINE_DRIVEN_UNIFORMS:
+            if name in ENGINE_DRIVEN_UNIFORMS:
                 return SetUniformResult(
                     ok=False,
                     error=f"'{name}' is engine-driven (set every frame by ShaderBox) — it "

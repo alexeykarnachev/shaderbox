@@ -36,6 +36,11 @@ from shaderbox.shader_lib import resolve_usage
 from shaderbox.shader_source import ShaderSource
 
 _NODE_SHADER_BASENAME = "shader.frag.glsl"
+# Engine-driven: Node.render() recomputes these every frame from time/canvas, so they are
+# never node-intrinsic defaults — seed_uniform_values skips them and UINode.save excludes them.
+ENGINE_DRIVEN_UNIFORMS: frozenset[str] = frozenset(
+    {"u_time", "u_aspect", "u_resolution"}
+)
 
 
 @dataclass
@@ -271,6 +276,27 @@ class Node:
         self.vbo = self._gl.buffer(np.array(FULLSCREEN_QUAD_VERTICES, dtype="f4"))
         self.vao = self._gl.vertex_array(program, [(self.vbo, "2f", "a_pos")])
 
+    def seed_uniform_values(self) -> None:
+        # Fill uniform_values with node-intrinsic defaults for any active uniform not yet
+        # present. GL-FREE: no texture.use / program binding / draw — that is render()'s job.
+        # Engine-driven uniforms are per-frame canvas/time values, valued only in render().
+        if not self.program:
+            return
+        for uniform in self.get_active_uniforms():
+            if uniform.name in ENGINE_DRIVEN_UNIFORMS:
+                continue
+            if uniform.name not in self.uniform_values:
+                self.uniform_values[uniform.name] = self._default_uniform_value(uniform)
+
+    def _default_uniform_value(
+        self, uniform: moderngl.Uniform | moderngl.UniformBlock
+    ) -> Any:
+        if isinstance(uniform, moderngl.UniformBlock):
+            return self._gl.buffer(np.zeros(uniform.size, dtype=np.int8))
+        if getattr(uniform, "gl_type", None) == GL_SAMPLER_2D:
+            return Image(self._DEFAULT_IMAGE_FILE_PATH)
+        return uniform.value
+
     def render(self, u_time: float | None = None, canvas: Canvas | None = None) -> None:
         canvas = canvas or self.canvas
 
@@ -282,22 +308,17 @@ class Node:
 
         texture_unit = 0
         time = u_time if u_time is not None else glfw.get_time()
+        self.seed_uniform_values()
         for uniform in self.get_active_uniforms():
             value = self.uniform_values.get(uniform.name)
 
             value_for_program = None
 
             if isinstance(uniform, moderngl.UniformBlock):
-                if value is None:
-                    value = self._gl.buffer(np.zeros(uniform.size, dtype=np.int8))
-
                 assert isinstance(value, moderngl.Buffer)
                 value.bind_to_uniform_block(uniform.index)
 
             elif getattr(uniform, "gl_type", None) == GL_SAMPLER_2D:
-                if value is None:
-                    value = Image(self._DEFAULT_IMAGE_FILE_PATH)
-
                 if isinstance(value, MediaWithTexture):
                     value.update(time)
                     texture = value.texture
@@ -322,10 +343,6 @@ class Node:
 
             elif uniform.name == "u_resolution":
                 value = canvas.texture.size
-                value_for_program = value
-
-            elif value is None:
-                value = uniform.value
                 value_for_program = value
 
             else:
