@@ -24,6 +24,9 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
      - **Trigger:** <a concrete observable moment — file/code touch, count threshold, user complaint with a measurable surface, a specific upstream change>
      - <context: what / why / where>
      Entries are an index of triggers, not a home for designs. Resolved → delete in the resolving commit.
+     State the CURRENT constraint, not a feature roll-call: "the observable bug is closed; the structural
+     weakness remains" — never "Feature N CLOSED X / DE-RISKED by M". The why-it's-deferred is a
+     present-tense fact, not past-tense dev history.
 -->
 
 ---
@@ -67,10 +70,10 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   prior turn and the user reports it (observed 2026-06-05: an unrequested `set_uniform(u_offset)` re-applied on a
   pure-delete turn — the "why did you touch positioning, I didn't ask" report), OR when reasoning/CoT is
   implemented for the copilot.
-- 020·28 carries the agent's assumption via its verbatim reply (fragile — model-dependent). The robust home
-  is a reasoning-notes scratchpad — a PER_TURN block member. **DE-RISKED by 020·29** (which proves the
-  PER_TURN tier + per-iteration rebuild with a real member, the working set — reasoning-notes becomes a
-  second member on the same machinery). Design: `28_prompt_tier_architecture.md ## Out of scope` +
+- The agent's assumption currently rides its verbatim reply (fragile — model-dependent). The robust home
+  is a reasoning-notes scratchpad — a PER_TURN block member. This is cheap to add: the PER_TURN tier +
+  per-iteration rebuild already exist (the working-set block is a live member), so reasoning-notes is a
+  second member on the same machinery. Design: `28_prompt_tier_architecture.md ## Out of scope` +
   `29_working_set_scratchpad.md ## Out of scope`.
 
 ## [DEFERRAL] copilot cross-shader derived-edit memory ("do the same to C")
@@ -97,8 +100,8 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   (see `conventions.md ## Known quirks` — a queued buffer never composites while the main thread blocks).
   The copilot path runs its encode inside `drain_bridge()` at the TOP of the frame (in `update_and_draw`,
   before the cue is drawn and the buffer swapped) — so the cue frame it scheduled has the same "queued,
-  never presented" problem and is probably invisible too. The 020·24/25 fixes corrected the `_render_pending` FLAG timing but
-  not this present-before-freeze requirement. Honest fix: route the copilot deferred render so its encode
+  never presented" problem and is probably invisible too. The `_render_pending` FLAG timing is correct;
+  the present-before-freeze requirement is what's still unaddressed in the copilot path. Honest fix: route the copilot deferred render so its encode
   also runs after a swap + `gl.finish()` (or have the bridge's held-op run at the same post-swap point as
   `render_request`). Deferred — needs a live copilot render to confirm it's actually invisible first.
 
@@ -108,11 +111,11 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   removed/weakened — either re-opens the window where a worker can be mid-`run_turn` when
   `reset_conversation` swaps the trace. ALSO: a maintainer notices a copilot transcript containing a
   turn that belongs to a different project.
-- Feature 022 CLOSED the observable bug for all current UI paths: the orphaned-history half is fixed
-  (the `_cancel.is_set()` guard in `_run_one_turn` skips the commit on a cancelled turn), and the
-  trace-bleed half can't fire because 020·15's `open_project` gate + the in-flight-gated clear button
-  mean the worker is always IDLE when `reset_conversation` runs (no `run_turn` holds the old
-  `TraceLog`). What REMAINS is the structural weakness, not yet hardened: `TraceLog._ensure_open` keys
+- The observable bug is CLOSED on all current UI paths (so this is a deferral, not a blocker): the
+  orphaned-history half is guarded by the `_cancel.is_set()` check in `_run_one_turn` (it skips the
+  commit on a cancelled turn), and the trace-bleed half can't fire because the `open_project` gate +
+  the in-flight-gated clear button keep the worker IDLE when `reset_conversation` runs (no `run_turn`
+  holds the old `TraceLog`). What REMAINS is the structural weakness, not yet hardened: `TraceLog._ensure_open` keys
   only on `self._fh is None`, so it cannot tell "never opened" from "closed" — if a worker ever DOES
   run past a `close()` (the trigger above), its next `tr.event` re-opens the just-closed file (append)
   and bleeds. Honest fix when triggered: a permanent-closed flag on `close()` that `_ensure_open`
@@ -141,8 +144,6 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   imgui's directional nav over that layout isn't reliably row/column-spatial).
 - Honest fix is a real columns/clipper grid layout. Also parked: persisting the focused region across
   restart (transient by design today). See `ai_docs/features/019_keyboard_navigation.md` Out-of-scope.
-  (The active-region visual cue — the accent outline + editor border — LANDED in the color/nav polish
-  wave; no longer deferred.)
 
 ## [DEFERRAL] lib-author macro indirection for function dispatch
 - **Trigger:** first time a lib author writes `#define HASH SB_hash3` (or similar) inside a lib
@@ -199,7 +200,7 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   `registry.specs_for(names)` + `eager_specs()` filter already exist) so a shader turn ships ~10 tools not
   21 (measured: 2495 vs 3941 tok). A compact plaintext menu of the long tail costs ~1714 tok and a 2-stage
   `load_tools(names)` flow was verified to work on grok-4.3. Scaffold: `11 §4` search_tools/list_tools +
-  `grow_specs_from_payload` (`16 ## Out of scope`). Spec: `20_ui_ux_polish.md` D5 + `026_dogfood_report_run1.md §5`.
+  `grow_specs_from_payload` (`16 ## Out of scope`). Spec: `20_ui_ux_polish.md` D5; re-measure via `scripts/token_probe.py`.
 
 ## [DEFERRAL] copilot agent-level error recovery — partially proven, the THRASH + edit-mismatch classes untested
 - **Trigger:** before claiming the copilot is robust to its own mistakes / shipping the copilot — run the
@@ -285,14 +286,12 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
 ## [DEFERRAL] split `ui.py` / `app.py` further
 - **Trigger:** when editing `app.py` feels painful (lost search-and-replace, unclear blast
   radius), OR when a 4th tab module needs cross-cutting `App` operations not on its public API.
-- NOT a default next-step — a 2026-05-15 parallel-agent assessment concluded extraction would
-  be premature abstraction (same shape as feature 002's reversed AppContext). Feature 023 lifted the
-  copilot backend → `copilot/backend.py`; feature 025 then lifted the whole headless project + copilot
-  CORE → `project_session.py` (`App` now owns one `ProjectSession` + forwards via `@property`). What
-  remains in `App` is genuinely UI/glfw/imgui-bound (windowing, editor sessions, popups, nav, the
-  exporter panels). The further candidates (node-CRUD, path-properties, the `shader_lib_*` picker
-  forwards) were judged net-negative — don't re-propose them without a fresh pain signal. Spec when
-  triggered.
+- NOT a default next-step — prior extractions already lifted the copilot backend
+  (`copilot/backend.py`) and the whole headless project + copilot CORE (`project_session.py`, `App`
+  owns one `ProjectSession` + forwards via `@property`) out of `App`. What remains in `App` is
+  genuinely UI/glfw/imgui-bound (windowing, editor sessions, popups, nav, exporter panels). The
+  further candidates (node-CRUD, path-properties, the `shader_lib_*` picker forwards) are net-negative
+  on current evidence — don't re-propose without a fresh pain signal. Spec when triggered.
 
 ## [DEFERRAL] adopt `hello_imgui.apply_theme()` + `imgui-knobs` during UI/UX refactor
 - **Trigger:** when starting the planned UI/UX refactor with custom themes — i.e. the moment a

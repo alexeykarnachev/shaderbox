@@ -19,7 +19,8 @@ belong in the feature spec (`ai_docs/features/NNN_*.md`). This file is not a cha
 
 ## Code rules
 
-- Full type annotations on all params and variables.
+- Full type annotations on all params and variables. Never use `from __future__ import
+  annotations` — it's noise.
 - Imports at module top only — never inside function bodies.
 - **Default to NO comment.** A comment restating what the code plainly says (`# re-focus the input`
   over `focus_pending = True`, `# send the message` over `send(...)`) is noise — delete it. The bar:
@@ -60,7 +61,6 @@ belong in the feature spec (`ai_docs/features/NNN_*.md`). This file is not a cha
 - Type checker: **pyright** (not mypy), basic mode, via `make check` — blocks on failure.
   Repo is at 0 errors; keep it that way.
 - `uv` for everything (`uv run`, `uv add`, `uv add --group dev`) — never bare `python` / `pip`.
-- Never use "from __future__ import annotations" - this is a noise.
 
 ## Design decisions (we decided X; revisit if Y)
 
@@ -70,7 +70,7 @@ belong in the feature spec (`ai_docs/features/NNN_*.md`). This file is not a cha
   `update_and_draw`). `widgets`/`popups`/`tabs` = pure draw functions taking `app: App`. (The split is
   forced by the no-`TYPE_CHECKING` rule: a draw fn annotating `app: App` while `App` imports it would
   cycle — so `App` lives in its own module.) Revisit if a 4th UI sub-package is needed. Tracked:
-  `todo.md [DEFERRAL] split ui.py`.
+  `todo.md [DEFERRAL] split ui.py / app.py further`.
 - **`ProjectSession` is the headless project + copilot core; `App` owns one and forwards to it.** The
   project lifecycle (paths, nodes, app_state, lib index + cross-project stores, integrations) and the
   whole copilot cluster (`CopilotSession`/`CopilotBackend`/`RevertExecutor` + the capability wiring)

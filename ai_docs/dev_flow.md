@@ -68,7 +68,7 @@ corrects.
    questions separate) / *Files touched* / *Manual verification* (what's verified by hand in the app) /
    *Open questions for the user*. Either self-write or spawn the built-in `Plan` agent (read-only —
    feed it the research findings + paths + `conventions.md` + every file the spec will touch, or it
-   re-derives blind). Once 2-3 specs exist, add a small "specs by shape" index to `CLAUDE.md`.
+   re-derives blind).
 
 3. **Plan-lock with the user.** Show the spec, answer open questions, get explicit sign-off. Don't
    proceed to review until locked.
@@ -109,9 +109,7 @@ corrects.
    + the late-round-fabricated-gaps warning are the canonical home of the `/review-agent-loop`
    skill (global) — don't restate them here. One hard-won rule worth repeating: at least one
    reviewer must anchor to an artifact you did NOT author (a sibling file, the running app, the
-   user's verbatim message) — an all-self-authored swarm ratifies its own contradictions (a
-   docs-audit swarm this project ran missed a spec whose Resolution block contradicted its own
-   Decisions, precisely because no reviewer cross-checked the two).
+   user's verbatim message) — an all-self-authored swarm ratifies its own contradictions.
 
 7. **Manual check** (when user-visible — most ShaderBox features). Run the app
    (`uv run python ./shaderbox/ui.py`), exercise the change, screenshot if useful. A real UX gap
@@ -166,7 +164,8 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   app_state, lib index + cross-project stores, integrations, the `CopilotSession`/`CopilotBackend`/
   `RevertExecutor` cluster). Imports no imgui/glfw, creates no window/context — a headless harness
   (feature 026) constructs it on a standalone EGL context without `App`. UI reactions ride injected
-  `on_*` callbacks. Feature 025.
+  `on_*` callbacks (the seam + why a return-value seam is wrong: `conventions.md ## Design decisions`,
+  the `ProjectSession` bullet). Feature 025.
 - **`app.py`** — `App` class: the UI/glfw/imgui owner + lifecycle wrapper (windowing, GL context,
   editor sessions, popup-state, nav, exporter panels). Owns one `self.session: ProjectSession` +
   forwards project state/ops via `@property` accessors. No UI drawing. Imported by `ui.py`, `widgets/`,
@@ -242,6 +241,10 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   `open_in_file_manager`, `format_auto_value`, …) / **`constants.py`** / **`notifications.py`** /
   **`watch.py`** (the per-frame mtime watcher: `reload_node_if_changed` / `maybe_rebuild_lib_index`,
   called from `ui.py::update_and_draw`).
+- **`templates_descriptions.py`** — `TemplateDescriptionsStore`: a user-edit sidecar
+  (`template_descriptions.json` at `app_data_dir()`) overriding a shipped template's description;
+  lookup is override-else-shipped, so "reset" = delete the key. Same posture as the shader-lib
+  favorites/tags stores. The two-tier pattern lives in `conventions.md ## Design decisions`.
 - **`copilot/`** — the in-app coding-copilot agent (feature 020, cross-project + gate-UI + render/publish +
   Telegram-connect/pack + UI/UX-polish + turn-rollback waves DONE). Mirrors `exporters/`: its own
   package + worker thread + queues + a worker→main GL `bridge`. `App` owns a `CopilotSession` handle + drains

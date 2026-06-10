@@ -32,7 +32,7 @@ Quick routing (full version → `dev_flow.md`):
 
 - Full type annotations on all params and variables. No `from __future__ import annotations`.
 - Imports at module top only — never inside function bodies.
-- Comments state what's non-obvious about the code AS IT IS NOW — never narrate development history. The "bug we hit / why we changed it" story belongs in `conventions.md ## Known quirks` / commit message / spec.
+- Comments: **default to none**; when warranted, state what's non-obvious about the code AS IT IS NOW — never narrate development history (the "bug we hit / why we changed it" story belongs in `conventions.md ## Known quirks` / commit message / spec). Full rule: `conventions.md ## Code rules`.
 - No `@staticmethod` / `@classmethod` (except genuine alternate constructors). A method that doesn't use `self` is a free function.
 - No `if TYPE_CHECKING:` — a circular import is a design bug.
 - All UI work flows through `ui_primitives.py` (button tiers + shared draw helpers) and `theme.py` (colour/size/spacing tokens). Never hand-roll `push_style_color(Col_.button, …)` at a call site.
