@@ -150,6 +150,17 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
 - Honest fix is a real columns/clipper grid layout. Also parked: persisting the focused region across
   restart (transient by design today). See `ai_docs/features/019_keyboard_navigation.md` Out-of-scope.
 
+## [DEFERRAL] copilot: a reasoning burst can eat the whole per-iteration token budget (zero actions)
+- **Trigger:** next dogfood round where a turn dies with "ran out of my per-reply token budget"
+  with NO tool calls executed (observed 2026-06-10 round 3: a debugging question made codex-mini
+  burn the full `max_tokens_per_turn=8000` on internal reasoning before the first tool call;
+  finish=length, honest cutoff surfaced, user said "continue" and it recovered). If it recurs,
+  decide: raise `max_tokens_per_turn` (reasoning models bill thinking into output tokens) or cap
+  reasoning via the OpenRouter `reasoning` param per-model.
+- ALSO: the cutoff turn's spend did NOT land in `session_cost_usd` (cost accounting skips errored
+  turns — the dump cross-check vs trace showed the gap). Fix the accounting when touching
+  `state.py`/usage fold; the trace stays authoritative meanwhile.
+
 ## [DEFERRAL] SB_sd_text cell-cull (warm-render speedup) blocked by a quad-seam artifact
 - **Trigger:** warm text-render cost becomes a real pain (live text preview on the Pi at speed, or
   a profiler shows SB_sd_text dominating on desktop) — then pick this up and crack the artifact.

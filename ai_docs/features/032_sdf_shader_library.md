@@ -63,6 +63,16 @@ tokens. Non-`SB_` names are library-private (filtered from the copilot catalogue
 - Exp 2 (spinning neon poster, fresh agent on the polished lib): first turn, 10 edits, clean
   compile, full reuse incl. `SB_rotate`/`SB_op_onion` echo, inline defaults everywhere, creative
   extras. Renders: `proj-917r1qmq` + time-sampled stills.
+- Round 3 (autonomous, typewriter + per-char wave mission, 10 turns, ~$0.18, `proj-9obha454`):
+  the doc'd typewriter SPACE-idiom was found and used; the agent self-diagnosed the 0-terminator
+  bug from a verbal "tiny + off-left" report; `SB_text_char_center` used with the canonical loop
+  AND the perf bound (doc landed); the uv-vs-local weight trap fired once and the agent derived
+  the conversion itself when hinted; 20/20 compile errors self-recovered; the BATCHING nudge
+  fired (2 set_uniforms one step); bad-node reference ("Headline") correctly questioned, gate
+  decline handled. NEW failure classes: blind over-correction (a min-clamp that defeated
+  text_fit), double-draw (block + per-char copies simultaneously — doc'd now), a reasoning burst
+  eating the full 8k iteration budget with zero actions (todo), prose/action value mismatch
+  ("0.6" said, 1.2 set). Library doc fixes landed from all of these (layout.glsl).
 
 ## Known quirks (this feature's own)
 

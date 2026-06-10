@@ -46,10 +46,12 @@ float SB_text_fit(uint text[64], float char_height, vec2 spacing, vec2 max_size)
 /// block frame as SB_sd_text with identical char_height/spacing. For per-char
 /// effects (jitter, wave, per-char rotation/color), loop chars yourself:
 ///   vec2 c = SB_text_char_center(text, i, ch, sp) + your_offset;
-///   d = min(d, SB_sd_char((uv - c) / (0.5*ch), text[i], 0.1) * (0.5*ch));
-/// (SB_sd_char weight is LOCAL: 0.1 regular.) Newline/terminator cells return 1e5.
-/// PERF: this runs two text scans per call — bound your per-char loop at the REAL
-/// text length (e.g. i < 16), never a full 64, or compile + render get very slow.
+///   d = min(d, SB_sd_char((uv - c) / (0.5*ch), text[i], w_uv / (0.5*ch)) * (0.5*ch));
+/// (SB_sd_char takes a LOCAL weight — divide your uv weight by 0.5*ch, as above, or
+/// strokes come out a different thickness than SB_sd_text's.) Draw EITHER the whole
+/// block via SB_sd_text OR per-char copies — both at once doubles every letter.
+/// Newline/terminator cells return 1e5. PERF: two text scans per call — bound your
+/// per-char loop at the REAL text length (e.g. i < 16), never a full 64.
 vec2 SB_text_char_center(uint text[64], int index, float char_height, vec2 spacing) {
     float s = 0.5 * char_height;
     float adv = (1.0 + spacing.x) * s;
@@ -104,7 +106,9 @@ vec2 SB_text_char_center(uint text[64], int index, float char_height, vec2 spaci
 /// half-width in uv units (~0.05 * char_height regular, more = bold; keep weight +
 /// spacing in balance or neighbor strokes merge). For a typewriter reveal replace
 /// hidden chars with SPACES (32u advances but draws nothing) — truncating the
-/// array re-centers the block every frame.
+/// array re-centers the block every frame. Keep the tail BEYOND your text 0u
+/// (terminator) — space-padding to 64 makes the layout treat all 64 cells as one
+/// huge line (tiny, off-center text).
 /// Typical: SB_fill(SB_sd_text(p, u_text, ch, vec2(0.35, 0.4), 0.05 * ch), 0.005).
 float SB_sd_text(vec2 uv, uint text[64], float char_height, vec2 spacing, float weight) {
     float s = 0.5 * char_height;
