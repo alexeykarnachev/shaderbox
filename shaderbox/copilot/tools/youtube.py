@@ -51,6 +51,8 @@ def youtube_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
     return [
         ToolDefinition(
             name="set_youtube_credentials",
+            label_live="Setting YouTube credentials",
+            label_done="Set YouTube credentials",
             description=_SET_YT_DESC,
             args_model=_EmptyArgs,
             handler=set_youtube_credentials,
@@ -59,6 +61,10 @@ def youtube_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             category="youtube",
             eager=True,
             gate_policy=GatePolicy.ALWAYS,
+            gate_prompt=lambda a: (
+                "Set up YouTube below: paste your client_secret JSON, then press "
+                "Connect (a browser sign-in opens). Or Cancel."
+            ),
             gate_kind=GateKind.CONFIG,
             secret_field="youtube",  # names the exporter whose draw_config_ui the card renders
             precheck=already_connected_precheck,

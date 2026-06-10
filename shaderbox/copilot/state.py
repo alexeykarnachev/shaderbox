@@ -13,38 +13,6 @@ MessageRole = Literal[
 ]
 
 
-# Human PAST-TENSE verb per tool, for the chat (the per-step hover breakdown + the verbose
-# tool_status line). A tool absent here falls back to its raw name.
-_TOOL_VERBS: dict[str, str] = {
-    "read_shader": "Read shader",
-    "edit_shader": "Edited shader",
-    "replace_lines": "Edited shader",
-    "insert_after": "Edited shader",
-    "set_uniform": "Set uniform",
-    "create_node": "Created node",
-    "delete_node": "Deleted node",
-    "switch_node": "Switched node",
-    "grep": "Searched",
-    "read_lib": "Read library",
-    "render_image": "Rendered image",
-    "render_video": "Rendered video",
-    "publish_telegram": "Published to Telegram",
-    "publish_youtube": "Published to YouTube",
-    "set_telegram_token": "Set Telegram token",
-    "telegram_connect": "Connected Telegram",
-    "list_telegram_packs": "Listed packs",
-    "select_telegram_pack": "Selected pack",
-    "create_telegram_pack": "Created pack",
-    "delete_telegram_pack": "Deleted pack",
-    "set_youtube_credentials": "Set YouTube credentials",
-}
-
-
-def tool_label(name: str) -> str:
-    """Human-readable verb for a tool name (the chat shows this, not the raw `create_node` id)."""
-    return _TOOL_VERBS.get(name, name)
-
-
 @dataclass
 class StepRecord:
     # One tool call in a turn's snippet — drives a single square in the progress bar (green ok /

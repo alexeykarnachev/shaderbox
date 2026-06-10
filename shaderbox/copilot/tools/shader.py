@@ -446,6 +446,8 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
     return [
         ToolDefinition(
             name="read_shader",
+            label_live="Reading shader",
+            label_done="Read shader",
             description=_READ_SHADER_DESC,
             args_model=_ReadShaderArgs,
             handler=read_shader,
@@ -457,6 +459,8 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
         ),
         ToolDefinition(
             name="edit_shader",
+            label_live="Editing shader",
+            label_done="Edited shader",
             description=_EDIT_SHADER_DESC,
             args_model=_EditArgs,
             handler=edit_shader,
@@ -469,6 +473,8 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
         ),
         ToolDefinition(
             name="replace_lines",
+            label_live="Editing shader",
+            label_done="Edited shader",
             description=_REPLACE_LINES_DESC,
             args_model=_ReplaceLinesArgs,
             handler=replace_lines,
@@ -481,6 +487,8 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
         ),
         ToolDefinition(
             name="insert_after",
+            label_live="Editing shader",
+            label_done="Edited shader",
             description=_INSERT_AFTER_DESC,
             args_model=_InsertAfterArgs,
             handler=insert_after,
@@ -493,6 +501,8 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
         ),
         ToolDefinition(
             name="set_uniform",
+            label_live="Setting uniform",
+            label_done="Set uniform",
             description=_SET_UNIFORM_DESC,
             args_model=_SetUniformArgs,
             handler=set_uniform,
@@ -504,6 +514,8 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
         ),
         ToolDefinition(
             name="create_node",
+            label_live="Creating node",
+            label_done="Created node",
             description=_CREATE_NODE_DESC,
             args_model=_CreateNodeArgs,
             handler=create_node,
@@ -515,6 +527,8 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
         ),
         ToolDefinition(
             name="grep",
+            label_live="Searching",
+            label_done="Searched",
             description=_GREP_DESC,
             args_model=_GrepArgs,
             handler=grep,
@@ -526,6 +540,8 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
         ),
         ToolDefinition(
             name="read_lib",
+            label_live="Reading library",
+            label_done="Read library",
             description=_READ_LIB_DESC,
             args_model=_ReadLibArgs,
             handler=read_lib,
@@ -537,6 +553,8 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
         ),
         ToolDefinition(
             name="delete_node",
+            label_live="Deleting node",
+            label_done="Deleted node",
             description=_DELETE_NODE_DESC,
             args_model=_DeleteNodeArgs,
             handler=delete_node,
@@ -545,9 +563,15 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             category="shader",
             eager=True,
             gate_policy=GatePolicy.ALWAYS,
+            gate_prompt=lambda a: (
+                f"Delete node '{a.get('node', '')}'? It moves to the project "
+                "trash (recoverable)."
+            ),
         ),
         ToolDefinition(
             name="switch_node",
+            label_live="Switching node",
+            label_done="Switched node",
             description=_SWITCH_NODE_DESC,
             args_model=_SwitchNodeArgs,
             handler=switch_node,

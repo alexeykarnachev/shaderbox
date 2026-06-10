@@ -54,6 +54,15 @@ class ToolRegistry:
     def definition_for(self, name: str) -> ToolDefinition | None:
         return self._by_name.get(name)
 
+    def definitions(self) -> list[ToolDefinition]:
+        return list(self._by_name.values())
+
+    def label_for(self, name: str) -> str:
+        # Past-tense card/hover label. Raw-name fallback: persisted StepRecords may carry a
+        # renamed/removed tool.
+        tool = self._by_name.get(name)
+        return tool.label_done if tool is not None else name
+
     def precheck(self, name: str, args: dict[str, Any]) -> str | None:
         # Pre-gate guard: a handoff message when the call can't run (e.g. publish with
         # no creds/pack), else None.
@@ -76,10 +85,11 @@ class ToolRegistry:
         return False
 
     def status_for(self, name: str, args: dict[str, Any] | None) -> str:
-        # Human phrase for the status pill; falls back to the bare tool name.
+        # Live status-pill phrase. `args` is the seam for arg-aware phrasing
+        # ("Editing gradient...", 020/11 §2.3) — unused until that lands.
         _ = args
         tool = self._by_name.get(name)
-        return tool.name if tool is not None else name
+        return tool.label_live if tool is not None else name
 
     def execute(
         self, name: str, raw_args: dict[str, Any], secret: str = ""

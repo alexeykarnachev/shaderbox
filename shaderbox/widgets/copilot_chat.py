@@ -12,8 +12,8 @@ from shaderbox.copilot.state import (
     Message,
     ResultWidget,
     context_gauge_readout,
-    tool_label,
 )
+from shaderbox.copilot.tools.registry import ToolRegistry
 from shaderbox.theme import COLOR, SIZE, SPACE, fade
 from shaderbox.ui_primitives import (
     active_region_outline,
@@ -341,11 +341,11 @@ def _draw_message(app: App, msg: Message, idx: int) -> None:
         imgui.dummy(imgui.ImVec2(0, float(SPACE.SM)))
 
 
-def _snippet_tooltip(msg: Message) -> str:
+def _snippet_tooltip(registry: ToolRegistry, msg: Message) -> str:
     # Per-step list (name + ok/fail) + the turn's token/cost total. No per-call tokens — usage is
     # billed per LLM iteration, not per tool call (F06 decision A).
     lines = [
-        f"{i + 1}. {tool_label(s.name)}{'' if s.ok else '  (failed)'}"
+        f"{i + 1}. {registry.label_for(s.name)}{'' if s.ok else '  (failed)'}"
         for i, s in enumerate(msg.steps)
     ]
     st = msg.snippet_stats
@@ -400,7 +400,7 @@ def _draw_turn_snippet(app: App, msg: Message, idx: int) -> None:
                 COLOR.FG_DIM,
             )
         if hovered:
-            imgui.set_tooltip(_snippet_tooltip(msg))
+            imgui.set_tooltip(_snippet_tooltip(app.copilot.registry, msg))
     imgui.dummy(imgui.ImVec2(0, float(SPACE.SM)))
 
 

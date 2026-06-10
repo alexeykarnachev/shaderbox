@@ -188,6 +188,15 @@ belong in the feature spec (`ai_docs/features/NNN_*.md`). This file is not a cha
   puts a terse `payload["display"]` summary that the chat shows INSTEAD of `msg` (`AgentToolCard.display`,
   feature 020·23) — the full `msg` still rides the model's context + history. Revisit if a widget needs to
   carry typed input back (then it's a gate, not a result widget) or persist live state.
+- **A static per-tool fact is a `ToolDefinition` field; a per-RESULT rendering trigger is a payload-shape
+  key.** Everything true of a tool regardless of any one call (labels, gate prompt + policy, schema,
+  precheck) lives ON the entity at its single definition site (`tools/{shader,publish,telegram,youtube}.py`)
+  and resolves through `ToolRegistry` — never a parallel name-keyed dict (feature 029 deleted the two that
+  existed, `_TOOL_VERBS` + `_GATE_PROMPTS`). What a tool's RESULT looks like in chat keys on the payload's
+  shape (`"errors"` / `"hits"` in payload — `session._tool_card_outcome`), not on the tool's name. The one
+  sanctioned name-key left: `delete_node`'s Recover affordance (n=1; a `recoverable` trait field is
+  speculation). Revisit at a second recoverable tool, or a third payload-shape trigger (then consider an
+  explicit payload contract type).
 - **The copilot replay `history` is NATURAL-LANGUAGE ONLY: user messages + one engine-derived turn-summary
   each, never tool messages.** `_commit_turn` (`session.py`) appends `user` + ONE `assistant` rendered from
   a `TurnSummary` (`agent.py` — built deterministically from the loop's `_RunLog`, no extra LLM call); the

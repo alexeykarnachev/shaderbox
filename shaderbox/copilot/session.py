@@ -35,7 +35,6 @@ from shaderbox.copilot.state import (
     Message,
     RecoverInfo,
     StepRecord,
-    tool_label,
 )
 from shaderbox.copilot.tools.base import mask_secret
 from shaderbox.copilot.tools.registry import build_registry
@@ -68,14 +67,13 @@ def _tool_card_outcome(ev: AgentToolCard) -> str:
     if "errors" in payload:
         n = len(payload.get("errors", []))
         return f"{n} compile error{'s' if n != 1 else ''}" if n else "compiled clean"
-    if ev.name == "grep":
+    if "hits" in payload:
         n = int(payload.get("hits", 0))
         return f"{n} match{'es' if n != 1 else ''}"
     return ""
 
 
-def _tool_card_line(ev: AgentToolCard) -> str:
-    verb = tool_label(ev.name)
+def _tool_card_line(ev: AgentToolCard, verb: str) -> str:
     outcome = _tool_card_outcome(ev)
     return f"{verb}  -  {outcome}" if outcome else verb
 
@@ -215,7 +213,7 @@ class CopilotSession:
                     self.state.messages.append(
                         Message(
                             role="tool_status",
-                            text=_tool_card_line(ev),
+                            text=_tool_card_line(ev, self.registry.label_for(ev.name)),
                             result_widget=ev.widget,
                         )
                     )

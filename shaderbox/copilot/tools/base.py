@@ -22,6 +22,9 @@ CredentialToolHandler = Callable[
 ]
 # A pre-gate guard (feature 020·18): args -> a guided-handoff message, or None to proceed.
 ToolPrecheck = Callable[[dict[str, Any]], str | None]
+# An ALWAYS-gated tool's confirm-card text (feature 029): args -> the arg-aware prompt the
+# engine (not the model) phrases. None on the definition => build_gate's generic line.
+GatePrompt = Callable[[dict[str, Any]], str]
 
 
 def mask_secret(s: str) -> str:
@@ -38,12 +41,17 @@ class GatePolicy(StrEnum):
     ALWAYS = auto()  # destructive ops + external publish — always confirm
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class ToolDefinition:
     name: str
     description: str
     args_model: type[BaseModel]  # pydantic — schema + validation from one definition
     handler: ToolHandler | CredentialToolHandler
+    # Display labels (feature 029): present for the in-flight status pill ("Editing shader"),
+    # past for the finished tool card + snippet hover ("Edited shader"). Display-only — `name`
+    # stays the identity key on every durable surface (trace, StepRecord, ledger).
+    label_live: str
+    label_done: str
     mutating: bool  # gates the "what I did" note + the UI confirm
     needs_gl: bool  # True => the handler's capability marshals to the main thread
     category: str  # the catalogue tree (§4); single source of truth for grouping
@@ -53,6 +61,8 @@ class ToolDefinition:
     # render/publish must not trip the edit-retry cap.
     is_edit: bool = False
     gate_policy: GatePolicy = GatePolicy.NONE
+    # Confirm-card text for a gated call; None => the generic fallback line in build_gate.
+    gate_prompt: GatePrompt | None = None
     # The gate WIDGET (feature 020·19): CONFIRM = Yes/No, CREDENTIAL = a masked secret input.
     # Orthogonal to gate_policy (WHEN to gate vs WHICH widget). A CREDENTIAL tool's handler is a
     # CredentialToolHandler (gets the secret as a 2nd arg); secret_field is its marker/grep-anchor.

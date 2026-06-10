@@ -301,31 +301,17 @@ def _tool_message(tool_call_id: str, content: str) -> LLMMessage:
     return LLMMessage(role="tool", tool_call_id=tool_call_id, content=content)
 
 
-_GATE_PROMPTS: dict[str, Callable[[dict], str]] = {
-    "delete_node": lambda a: f"Delete node '{a.get('node', '')}'? It moves to the project trash (recoverable).",
-    "render_image": lambda a: "Render an image of this shader? The app pauses while it encodes.",
-    "render_video": lambda a: f"Render a {a.get('seconds', '?')}s video of this shader? The app pauses while it encodes.",
-    "publish_telegram": lambda a: "Publish this shader to your Telegram sticker pack? This uploads the sticker (external + live).",
-    "publish_youtube": lambda a: f"Publish this shader to YouTube as '{a.get('title', '')}'? The video goes live on your channel (private; external).",
-    "set_telegram_token": lambda a: "Paste your Telegram bot token below (from @BotFather). It's stored locally; I never see it.",
-    "set_youtube_credentials": lambda a: "Set up YouTube below: paste your client_secret JSON, then press Connect (a browser sign-in opens). Or Cancel.",
-    "create_telegram_pack": lambda a: f"Create a new Telegram sticker pack '{a.get('title', '')}'?",
-    "select_telegram_pack": lambda a: f"Switch your active Telegram pack to '{a.get('set_name', '')}'?",
-    "delete_telegram_pack": lambda a: f"Delete the Telegram sticker pack '{a.get('set_name', '')}'? This removes it from Telegram (external + irreversible).",
-}
-
-
 def build_gate(registry: ToolRegistry, name: str, args: dict) -> GateRequest:
     # Engine-built gate request: the engine owns the prompt phrasing so it's accurate, not the model.
     # A CREDENTIAL tool (gate_kind) gets a secret-input gate; everything else the CONFIRM Yes/No.
-    # Falls back to a generic line for any always-gated tool without a template.
-    template = _GATE_PROMPTS.get(name)
+    # Falls back to a generic line for a gated tool without a gate_prompt (unknown names +
+    # future BULK-gated tools, whose right prompt is plausibly the count-aware generic line).
+    tool = registry.definition_for(name)
     prompt = (
-        template(args)
-        if template is not None
+        tool.gate_prompt(args)
+        if tool is not None and tool.gate_prompt is not None
         else f"Run {name}? This action will change your project."
     )
-    tool = registry.definition_for(name)
     if tool is not None and tool.gate_kind is GateKind.CREDENTIAL:
         return GateRequest(
             kind=GateKind.CREDENTIAL, prompt=prompt, secret_field=tool.secret_field

@@ -201,6 +201,20 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   21 (measured: 2495 vs 3941 tok). A compact plaintext menu of the long tail costs ~1714 tok and a 2-stage
   `load_tools(names)` flow was verified to work on grok-4.3. Scaffold: `11 §4` search_tools/list_tools +
   `grow_specs_from_payload` (`16 ## Out of scope`). Spec: `20_ui_ux_polish.md` D5; re-measure via `scripts/token_probe.py`.
+- IMPLEMENTATION NOTE: a discovery tool (`list_tools`/`load_tools`) needs registry access from inside its
+  handler, but `build_registry` constructs the `ToolRegistry` AFTER the builders run — the feature needs a
+  two-phase registration (build defs → construct registry → bind discovery handlers). The compact menu line
+  derives from `description`'s first sentence; if that proves too long, add `brief: str = ""` to
+  `ToolDefinition` then (defaulted ⇒ pure addition; resolver `d.brief or first_sentence(d.description)`).
+
+## [DEFERRAL] `ToolDefinition.needs_gl` + `.category` are dead fields (doc-only)
+- **Trigger:** when lever 2 (the lazy tool catalogue) lands — `category` goes live as the catalogue
+  grouping and `needs_gl`'s fate gets decided in the same pass; OR next time a field is added to
+  `ToolDefinition`.
+- Neither field has a consumer today: thread-marshalling actually happens inside the capability
+  closures (`capabilities.py`), so a wrong `needs_gl` value is uncatchable; `category` is read by
+  nothing until the catalogue exists. Decide then: delete `needs_gl` (it documents, not enforces) or
+  keep both as scaffold.
 
 ## [DEFERRAL] copilot agent-level error recovery — partially proven, the THRASH + edit-mismatch classes untested
 - **Trigger:** before claiming the copilot is robust to its own mistakes / shipping the copilot — run the

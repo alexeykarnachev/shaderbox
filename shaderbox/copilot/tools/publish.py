@@ -174,6 +174,8 @@ def publish_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
     return [
         ToolDefinition(
             name="render_image",
+            label_live="Rendering image",
+            label_done="Rendered image",
             description=_RENDER_IMAGE_DESC,
             args_model=_RenderImageArgs,
             handler=render_image,
@@ -182,9 +184,14 @@ def publish_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             category="render",
             eager=True,
             gate_policy=GatePolicy.ALWAYS,
+            gate_prompt=lambda a: (
+                "Render an image of this shader? The app pauses while it encodes."
+            ),
         ),
         ToolDefinition(
             name="render_video",
+            label_live="Rendering video",
+            label_done="Rendered video",
             description=_RENDER_VIDEO_DESC,
             args_model=_RenderVideoArgs,
             handler=render_video,
@@ -193,9 +200,15 @@ def publish_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             category="render",
             eager=True,
             gate_policy=GatePolicy.ALWAYS,
+            gate_prompt=lambda a: (
+                f"Render a {a.get('seconds', '?')}s video of this shader? "
+                "The app pauses while it encodes."
+            ),
         ),
         ToolDefinition(
             name="publish_telegram",
+            label_live="Publishing to Telegram",
+            label_done="Published to Telegram",
             description=_PUBLISH_TELEGRAM_DESC,
             args_model=_PublishTelegramArgs,
             handler=publish_telegram,
@@ -204,10 +217,16 @@ def publish_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             category="publish",
             eager=True,
             gate_policy=GatePolicy.ALWAYS,
+            gate_prompt=lambda a: (
+                "Publish this shader to your Telegram sticker pack? "
+                "This uploads the sticker (external + live)."
+            ),
             precheck=telegram_precheck,
         ),
         ToolDefinition(
             name="publish_youtube",
+            label_live="Publishing to YouTube",
+            label_done="Published to YouTube",
             description=_PUBLISH_YOUTUBE_DESC,
             args_model=_PublishYoutubeArgs,
             handler=publish_youtube,
@@ -216,6 +235,10 @@ def publish_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             category="publish",
             eager=True,
             gate_policy=GatePolicy.ALWAYS,
+            gate_prompt=lambda a: (
+                f"Publish this shader to YouTube as '{a.get('title', '')}'? "
+                "The video goes live on your channel (private; external)."
+            ),
             precheck=youtube_precheck,
         ),
     ]
