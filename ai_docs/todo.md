@@ -357,6 +357,32 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   the maintainer's manual test (`BUILDING.md`), not CI. If a software-GL path (Mesa/llvmpipe on
   the runner) ever makes headless smoke reliable on Windows, drop the `continue-on-error`.
 
+## [DEFERRAL] Pi GUI on hardware GL: labwc headless + wayvnc (researched 2026-06-10, unverified live)
+- **Trigger:** next session that wants the ShaderBox GUI running ON the Pi at usable speed (today it
+  only runs under xvfb -> llvmpipe at ~65ms/draw-call), OR the maintainer asks for "быстрый рендеринг
+  на Pi" again.
+- The split (verified): the standalone EGL path (dogfood/render scripts) ALREADY runs on the V3D
+  HARDWARE (`renderer: V3D 4.2.14.0`); only the glfw GUI path is software, because glfw needs a
+  display server and xvfb pins it to llvmpipe. The Pi is truly headless (HDMI disconnected) but
+  `/dev/dri/renderD128` (the V3D render node) works without any display.
+- The researched fix — a hardware-rendering virtual display, all pieces confirmed available:
+  1. `sudo apt install labwc wayvnc` (both in the raspberrypi bookworm repo: labwc 0.8.4, wayvnc 0.9.1).
+  2. `WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1 labwc &` — wlroots headless backend renders
+     via the GPU render node (verify with `WLR_RENDERER=gles2`; if it silently falls back to pixman
+     that's software again — check the labwc log line naming the renderer).
+  3. `wayvnc 0.0.0.0 &` (option `-o HEADLESS-1` if it doesn't pick the virtual output) — view/drive
+     from the desktop with any VNC client.
+  4. Run the app on Wayland + the version overrides:
+     `WAYLAND_DISPLAY=wayland-0 PYGLFW_LIBRARY_VARIANT=wayland MESA_GL_VERSION_OVERRIDE=4.6
+     MESA_GLSL_VERSION_OVERRIDE=460 make run` — pyGLFW ships the wayland lib variant
+     (`site-packages/glfw/wayland/`), the app sets no hard GL-version hints, and imgui goes through
+     `imgui_bundle.python_backends.glfw_backend` (pure pyGLFW) — so the env switch covers the whole
+     stack.
+  Alternative (heavier, reboot): force the HDMI alive (`hdmi_force_hotplug=1` /
+  `video=HDMI-A-1:1920x1080@60D`) + a real labwc session + wayvnc. Xorg+dummy rejected (glamor
+  software fallback risk). NOTE: even on hardware, Pi-class V3D is slow on heavy text-stack shaders
+  (~20s/300x300 — see 032 quirks); the GUI-path switch fixes the imgui/UI half, not shader cost.
+
 ## [DEFERRAL] headless GL on a display-less Linux box (Raspberry Pi dev sessions)
 - **Trigger:** when working on a headless Linux box with no X/Wayland (e.g. a Pi over SSH) and
   `make test` skips the GL tests, OR when building the copilot dogfood harness (feature 026 — needs a
