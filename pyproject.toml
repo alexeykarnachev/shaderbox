@@ -49,6 +49,8 @@ target-version = "py312"
 line-length = 88
 
 [tool.ruff.lint]
+# Cyrillic glyph data/docs legitimately contain Cyrillic letters (gen_glyphs.py).
+allowed-confusables = ["А", "В", "Е", "К", "М", "Н", "О", "Р", "С", "Т", "Х", "а", "е", "о", "с"]
 select = [
     "E",  # pycodestyle errors
     "F",  # pyflakes
