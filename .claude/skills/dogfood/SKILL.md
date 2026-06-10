@@ -158,6 +158,12 @@ run goal alongside the scenario's visual goal: a beautiful render that touched 5
 a rougher one that exercised 11. (`publish_*` precheck-fails in the harness — empty `ExporterRegistry` —
 so it's NOT reachable; don't count it as a missed cold tool.)
 
+**End every mission with a SWEEP turn.** The final-source audits show edit sediment in every
+multi-turn shader (dead clamps, duplicate predicates, no-op guards narrated as fixes, stale names).
+Before closing a mission, send one last turn: "sweep the shader: remove dead code, duplicate
+logic and leftovers from the editing session; change no behavior" — it both cleans the artifact
+and probes the agent's self-review.
+
 ## 2. The gotchas (hard-won — don't re-discover them)
 
 - **Threading is worker + main-thread pump — NOT a sync bridge patch.** `CopilotSession` ALWAYS spawns a
