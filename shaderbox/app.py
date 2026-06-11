@@ -23,6 +23,7 @@ from shaderbox.commands import (
 from shaderbox.constants import (
     NODE_TEMPLATES_DIR,
     RESOURCES_DIR,
+    SHADER_LIB_SEED_DIR,
     STARTER_TEMPLATE_ID,
     TEMPLATE_ORDER,
 )
@@ -38,13 +39,14 @@ from shaderbox.exporters.registry import ExporterRegistry
 from shaderbox.exporters.telegram import TelegramExporter
 from shaderbox.exporters.youtube import YouTubeExporter
 from shaderbox.notifications import Notifications
-from shaderbox.paths import ProjectPaths, app_data_dir
+from shaderbox.paths import ProjectPaths, app_data_dir, shader_lib_root
 from shaderbox.project_session import ProjectSession
 from shaderbox.render_defer import RenderDefer
 from shaderbox.shader_errors import next_error_line
 from shaderbox.shader_lib import ShaderLibIndex
 from shaderbox.shader_lib.favorites import ShaderLibFavoritesStore
 from shaderbox.shader_lib.file_ops import ShaderLibFileManager
+from shaderbox.shader_lib.seed import sync_shipped_lib
 from shaderbox.shader_lib.tags import ShaderLibTagsStore
 from shaderbox.shader_source import ShaderSource
 from shaderbox.tabs import share_state
@@ -194,6 +196,10 @@ class App:
         # session so its get_editor_sessions getter has a target to close over.
         self.editor_sessions: dict[Path, EditorSession] = {}
 
+        # Shipped-library sync BEFORE the session builds the first lib index: seeds a
+        # fresh box, follows shipped updates on pristine files, never touches edits.
+        sync_shipped_lib(SHADER_LIB_SEED_DIR, shader_lib_root())
+
         # The headless project core (feature 025): owns the pure-core project state (nodes,
         # app_state, lib index + cross-project stores, working set) AND the copilot cluster
         # (CopilotSession/CopilotBackend/RevertExecutor, built in its own __init__). App forwards
@@ -261,6 +267,8 @@ class App:
         self._palette_command_names: list[str] = []
         # CommandId currently capturing a new chord in the rebinder (None = idle).
         self.rebinding_command: CommandId | None = None
+        # Settings: the library factory-reset confirm is armed (reset on open).
+        self.lib_reset_armed: bool = False
         # Which of the three regions owns nav. Transient (reset each launch). Start on the
         # grid (the editor auto-grabs focus on first render but is defocused below).
         self.active_region: ActiveRegion = ActiveRegion.GRID
@@ -693,6 +701,7 @@ class App:
         self.template_descriptions.set(template_uuid, description)
 
     def open_settings(self) -> None:
+        self.lib_reset_armed = False
         self._open_popup(PopupState.SETTINGS)
 
     def open_emoji_picker(self, target: Callable[[str], None] | None = None) -> None:

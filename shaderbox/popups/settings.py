@@ -10,9 +10,13 @@ from shaderbox.commands import (
     chord_needs_modifier,
     chord_to_str,
 )
+from shaderbox.constants import SHADER_LIB_SEED_DIR
+from shaderbox.paths import shader_lib_root
+from shaderbox.shader_lib.seed import reset_to_shipped
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_primitives import (
     chord_row,
+    danger_button,
     ghost_button,
     label_row,
     labeled_text_input,
@@ -97,6 +101,10 @@ def _draw_body(app: App) -> bool:
         imgui.tree_pop()
 
     imgui.dummy((0.0, SPACE.MD))
+    imgui.separator_text("Library")
+    _draw_library_reset(app)
+
+    imgui.dummy((0.0, SPACE.MD))
     imgui.separator_text("Keyboard")
     _draw_keybindings(app)
 
@@ -107,6 +115,32 @@ def _draw_body(app: App) -> bool:
         is_keep_opened = False
 
     return is_keep_opened
+
+
+def _draw_library_reset(app: App) -> None:
+    # Factory reset of the shipped shader library. Armed confirm (one extra click);
+    # the index rebuild rides the mtime watcher, no explicit poke needed.
+    if not app.lib_reset_armed:
+        if danger_button("Reset library to shipped..."):
+            app.lib_reset_armed = True
+        return
+    imgui.push_text_wrap_pos(0.0)
+    imgui.text_colored(
+        COLOR.STATE_WARN,
+        "Every shipped library file returns to its factory version; your edited "
+        "copies move to .trash/ first. Files you created yourself are kept.",
+    )
+    imgui.pop_text_wrap_pos()
+    if danger_button("Confirm reset"):
+        written, trashed = reset_to_shipped(SHADER_LIB_SEED_DIR, shader_lib_root())
+        app.notifications.push(
+            f"Library reset: {written} file(s) restored, {trashed} edited "
+            "copy(ies) moved to .trash/"
+        )
+        app.lib_reset_armed = False
+    imgui.same_line()
+    if ghost_button("Cancel"):
+        app.lib_reset_armed = False
 
 
 def _draw_copilot_config(app: App) -> None:

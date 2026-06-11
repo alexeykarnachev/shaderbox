@@ -6,6 +6,7 @@ from pathlib import Path
 # Resource directories
 RESOURCES_DIR = Path(str(files("shaderbox.resources")))
 NODE_TEMPLATES_DIR = RESOURCES_DIR / "node_templates"
+SHADER_LIB_SEED_DIR = RESOURCES_DIR / "shader_lib"
 
 # Authored display order for the template grid — filesystem ctime isn't preserved
 # through git/zip/bundle. Templates not listed sort last. The first is the procedural

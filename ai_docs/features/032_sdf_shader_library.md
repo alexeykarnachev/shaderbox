@@ -97,10 +97,10 @@ tokens. Non-`SB_` names are library-private (filtered from the copilot catalogue
 
 ## Resume on the desktop (cold-start)
 
-1. The canonical library = `shaderbox/resources/shader_lib/`. No load mechanism yet — copy it:
-   `cp -r shaderbox/resources/shader_lib/* <app_data_dir>/shader_lib/` (Linux:
-   `~/.local/share/shaderbox/shader_lib/`). NEXT step is wiring the seed properly
-   (copy-on-first-run vs second search root — open question below).
+1. The canonical library = `shaderbox/resources/shader_lib/`. The APP seeds and syncs it at
+   startup (`shader_lib/seed.py`, manifest-based: pristine files follow shipped updates, edits
+   win, deletions stick; factory reset lives in Settings) — resolved 2026-06-11, details in
+   `todo.md` `[RESOLVED 2026-06-11] shader-library seed mechanism`.
 2. Dogfood missions need the lib INSIDE the run's sandbox:
    `mkdir -p scripts/dogfood/runs/data-<run> && cp -r shaderbox/resources/shader_lib
    scripts/dogfood/runs/data-<run>/shader_lib`, then pass

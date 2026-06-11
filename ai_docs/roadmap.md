@@ -35,9 +35,11 @@ black" report (cited facts + asked, vs round-3's 16-edit thrash), `read_shader` 
 addresses, torn final stream keeps cost + ledger. Residuals are model-bound (cheap codex-mini
 denies its own ledger-recorded edits, claims unverifiable "exactly") — documented in the spec
 round-6 section, NOT harness gaps. Spec: `ai_docs/features/033_copilot_robustness_wave.md`.
-**Next:** still open from 032 — the seed-loading mechanism (todo), Д glyph shape, Cyrillic chat
-replies; the VLM-judge harness pilot (todo trigger). The copilot ship (020-030) stays gated on
-the 025/030 live `make run` passes (unchanged).
+**Seed mechanism landed** (2026-06-11): manifest-based shipped-lib sync at startup + Settings
+factory reset (`shader_lib/seed.py`; todo `[RESOLVED]` entry has the design). **Next:** still
+open from 032 — Д glyph shape, Cyrillic chat replies; the VLM-judge harness pilot (todo
+trigger). The copilot ship (020-030) stays gated on the 025/030 live `make run` passes
+(unchanged).
 
 <!-- Previous banner (031, kept for context): -->
 **031 landed (`db39f68..aff9488`, 9 commits + doc sweep): the whole 029 smell class swept. The `.webm` reload-kill bug fixed via one `media.media_class_for` resolver (+invariant test); `RESULT_WIDGET_KINDS` derives from the Literal; template order/ids live once in `constants.py`; the dead publish `node` param dropped; the `template:` address trio joined `address.py`; 7 dead orphans deleted; `ToolArgs` base owns `extra="forbid"` (+per-tool schema invariant); `wrapped_caption` deduped (visual no-op — rides the pending `make run` pass); both bit-rotted check scripts ported to pytest (+10 tests: token redaction, gate decline + no-orphaned-tool_call, gate reopen-after-release, recover-card round-trip, finish-reason — none had regressed while dark) then deleted; `CopilotCapabilities` is now a Protocol the backend satisfies directly (`wiring.py` deleted). Post-impl 3-reviewer adversarial swarm: correctness PASS; the doc-staleness findings were fixed in the same wave (dev_flow module map, todo `needs_gl` citation, H2 drop rationale, 023/031 spec headers). NEXT: lever 2 lazy-tool-catalogue; the 025 + 030 `make run` passes + chat-polish visual confirms; the copilot ship (020-030) stays gated on those live passes.**

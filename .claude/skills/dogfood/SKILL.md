@@ -57,7 +57,8 @@ process, no PID.
 
 **Seeding the shader library (any mission that should exercise `SB_*` helpers):** the harness's
 tmp data dir starts with an EMPTY lib — copy the canonical seed in BEFORE turn 1 and pass the SAME
-`SHADERBOX_DATA_DIR` on every turn:
+`SHADERBOX_DATA_DIR` on every turn (the app's own startup seed-sync — `shader_lib/seed.py` — lives
+in `App.__init__`, and the harness drives `ProjectSession` directly, so it does NOT fire here):
 ```
 mkdir -p scripts/dogfood/runs/data-<run> \
   && cp -r shaderbox/resources/shader_lib scripts/dogfood/runs/data-<run>/shader_lib

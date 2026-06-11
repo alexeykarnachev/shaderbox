@@ -167,15 +167,18 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   (clamp the stroke loop count per char), screen-space-uniform AA width instead of fwidth(d) in
   SB_fill_aa, or per-row instead of per-char cull.
 
-## [DEFERRAL] shader-library seed has no load mechanism (canonical copy sits in resources)
-- **Trigger:** before the next `make run` of the APP on any box, or before any ship — decide +
-  wire it (the desktop-session plan was CANCELLED, the Pi stays primary; dogfood sandboxes seed by
-  copy per `/dogfood`, but the real app's lib root still starts empty on a fresh box).
-- The canonical seed is `shaderbox/resources/shader_lib/` (in-repo, ships via `build.sh`); the live
-  lib root `app_data_dir()/shader_lib` starts EMPTY on a fresh box. Interim: copy by hand (spec 032
-  `## Resume on the desktop`). Decision pending: copy-on-first-run (user edits win; updates need a
-  version/hash stamp — the shipped-default + user-sidecar convention) vs a second read-only search
-  root (015 Non-goals deferred it "until a real need surfaces" — a shipped seed IS that need).
+## [RESOLVED 2026-06-11] shader-library seed mechanism (was: no load mechanism)
+- Landed: manifest-based shipped-lib sync (`shader_lib/seed.py`, wired in `App.__init__` before
+  the first index build) + a "Reset library to shipped" armed-confirm in Settings. Per-file
+  semantics via `.seed_manifest.json` (sha1 of the seeded version): fresh box seeds, PRISTINE
+  files follow shipped updates, EDITED files are never touched, DELETED stay deleted, user
+  files unknown to the manifest are never touched; reset trashes edited copies to `.trash/`
+  first. The chosen design was option C of the brainstorm (copy-on-first-run + hash manifest);
+  the two-root overlay was rejected (would touch resolver/picker/watcher + needs delete
+  whiteouts). Dogfood sandboxes still seed by copy (`/dogfood` §1 — the harness drives
+  ProjectSession without App, so the App-level sync doesn't fire there).
+- Possible follow-up (no trigger yet): per-file "Reset to shipped" in the lib picker context
+  menu + a "modified vs shipped" badge — the manifest already carries the data.
 
 ## [DEFERRAL] copilot chat renders Cyrillic replies as `??????` (ASCII sanitizer)
 - **Trigger:** first real session where the maintainer chats with the copilot in Russian and the
