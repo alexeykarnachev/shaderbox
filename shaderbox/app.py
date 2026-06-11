@@ -348,11 +348,10 @@ class App:
         def key_callback(
             window: Any, key: int, scancode: int, action: int, mods: int
         ) -> None:
-            # Gate only PRESS/REPEAT. A RELEASE always passes: the job often disappears
-            # between press and release (Esc defocused the chat), and swallowing the
-            # release of a forwarded press leaves imgui's Escape logically held forever —
-            # every InputText then self-cancels on the key-repeat ticks (the
-            # caret-dies-after-one-frame bug; releasing an already-up key is a no-op).
+            # Gate only PRESS/REPEAT. A RELEASE always passes: the job can disappear
+            # between press and release, and swallowing the release of a forwarded press
+            # leaves imgui's Escape logically held — every InputText then self-cancels on
+            # the key-repeat ticks (conventions.md ## Known quirks).
             if (
                 key == glfw.KEY_ESCAPE
                 and action != glfw.RELEASE

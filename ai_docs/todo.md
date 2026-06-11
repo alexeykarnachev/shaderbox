@@ -238,6 +238,15 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   derives from `description`'s first sentence; if that proves too long, add `brief: str = ""` to
   `ToolDefinition` then (defaulted ⇒ pure addition; resolver `d.brief or first_sentence(d.description)`).
 
+## [DEFERRAL] ranged replace_lines may be dead weight (whole-file mode took its job)
+- **Trigger:** after the next dogfood mission — pull the trace's replace_lines calls: if every
+  call used WHOLE-FILE mode (no range), or ranged calls keep tripping the boundary-line check,
+  delete the ranged mode (the tool collapses to "replace the whole file": two args, no
+  coordinates, no first/last_line checksums).
+- 034 F04 reshaped the tool: whole-file mode covers full rewrites (the dominant case — 4/4 in
+  the trace that motivated it), ranged mode survives for mid-size blocks but costs four
+  arguments describing one span. The staged plan: keep ranged only if traces show real use.
+
 ## [DEFERRAL] `ToolDefinition.needs_gl` + `.category` are dead fields (doc-only)
 - **Trigger:** when lever 2 (the lazy tool catalogue) lands — `category` goes live as the catalogue
   grouping and `needs_gl`'s fate gets decided in the same pass; OR next time a field is added to
@@ -261,7 +270,9 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   still drive a real thrash to confirm the nudge FIRES and actually unsticks the model. (b) `old_str`
   mismatch recovery; (c) bad-node-id recovery; (d) malformed-args recovery. A future dogfood mission should
   drive these deliberately + inspect the `edit_giveup`/`max_iterations`/`consecutive_failed_edits`/
-  `compile_thrash_nudge` trace events (`agent.py`).
+  `compile_thrash_nudge` trace events (`agent.py`). The 034 additions belong in the same mission:
+  confirm the `clean_streak_nudge` fires + the model obeys, and that the ranged `replace_lines`
+  boundary-check reject converges in one step.
 
 ## [DEFERRAL] true in-line drag-selection of WRAPPED copilot chat prose
 - **Trigger:** the per-message Copy button (020·23 D7) proves insufficient — a user wants to select a

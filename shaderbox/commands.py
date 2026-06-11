@@ -151,9 +151,8 @@ def chord_to_str(chord: int) -> str:
 def route_flag(scope: CommandScope, chord: int) -> imgui.InputFlags_:
     # GLOBAL routes globally; scoped routes to the focused window stack so a focused
     # inner scope wins the same chord. EXCEPT: an active text input owns all keyboard
-    # keys and imgui routes only Ctrl-chords through it — so a GLOBAL Alt-chord (which
-    # can never type a character) must route ALWAYS, or it goes dead inside the chat
-    # input (Alt+S vs the working Ctrl+N).
+    # keys and imgui routes only Ctrl-chords through it — a GLOBAL Alt-chord (which can
+    # never type a character) must route ALWAYS or it is dead while any input is active.
     if scope == CommandScope.GLOBAL:
         if chord & int(imgui.Key.mod_alt):
             return imgui.InputFlags_.route_always

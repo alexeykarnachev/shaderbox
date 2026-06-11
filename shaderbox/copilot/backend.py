@@ -194,8 +194,7 @@ def _whitespace_near_match(src: str, old_str: str) -> str:
 def _comment_only_spans(src: str, old_str: str) -> list[tuple[int, int]] | None:
     # None = old_str has code tokens (the token matcher owns it). A COMMENT/whitespace-only
     # old_str is invisible to the token matcher (comments lex as trivia), so it matches by
-    # whitespace-normalized TEXT instead — comments are editable content too (the live
-    # failure: stripping `// ----` banner lines was structurally impossible).
+    # whitespace-normalized TEXT instead — comments are editable content too.
     if glsl_lex(old_str):
         return None
     norm_src, src_index = _ws_normalize(src)

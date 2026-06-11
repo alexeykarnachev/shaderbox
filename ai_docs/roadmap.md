@@ -29,8 +29,8 @@ feature; brief points at the superseder).
 **034 UI/UX POLISH WAVE 2 — ACTIVE (fix-as-we-go).** The maintainer is driving the app live on the
 desktop and reporting issues one at a time; simple ones are fixed inline (gated by `make check` +
 `make smoke` + a maintainer live pass), larger ones filed. Findings log:
-`ai_docs/features/034_ui_polish_wave_2.md` (same shape as 028). **Mid-wave incident FIXED (in
-tree, uncommitted): text-stack perf collapse on NVIDIA** — the data-driven glyph tables as
+`ai_docs/features/034_ui_polish_wave_2.md` (same shape as 028). **Mid-wave incident FIXED:
+text-stack perf collapse on NVIDIA** — the data-driven glyph tables as
 dynamically-indexed const arrays got demoted to per-thread local memory (432 ms/frame @800px on
 the maintainer's 3090, app at <1 fps; global-const scope alone still 10 ms — maintainer pushback
 caught that as 100x off). Final shape: tables are ENGINE-BOUND UNIFORM ARRAYS — `gen_glyphs.py`
@@ -38,13 +38,15 @@ emits glyphs.glsl (uniform decls) + `shaderbox/glyph_tables.py` (values), `Node.
 them, lib index/resolver learned top-level `const`/`uniform` extraction. Measured 0.133 ms/frame
 on the 3090 (3250x); V3D re-verified over SSH (warm/first-draw unchanged, compile 1557->73 ms).
 Quirk filed in `conventions.md`. Live lib self-updates via seed sync at next app start.
-**Wave F01-F12 implemented (see the findings log), awaiting the maintainer's `make run` passes:**
+**Wave F01-F13 implemented (see the findings log); F13 (the Esc-swallowed-release stuck-key bug
+killing every input click) is live-verified, the rest await itemized `make run` passes:**
 gate-card UX (node name + short prompt, markdown-lite chat, structured success-colored outcome +
 recover icon, persistence v10); empty-project panel overflow; snippet-hover run collapsing; the
 replace_lines reshape (whole-file mode + boundary-line checksums — live-validated: 3 whole-file
 rewrites, zero range errors, the checksum caught an off-by-one pre-apply); the stale live-snippet
 fix; the comment-only edit_shader fallback (comments were invisible to the token matcher); the
-render-blind clean-edit-streak nudge; the designed snippet tooltip (token in/out + cost); Alt-chord routing over an active input; Cyrillic chat pass-through (+ reply-in-user-language prompt rule); the QUEUED banner item landed — copilot agent limits in Settings with (?) hints (`CopilotIntegration.apply_limits` -> live `COPILOT_CONFIG`). **Recently landed:** 033 copilot
+render-blind clean-edit-streak nudge; the designed snippet tooltip (token in/out + cost); Alt-chord routing over an active input; Cyrillic chat pass-through (+ reply-in-user-language prompt rule); the QUEUED banner item landed — copilot agent limits in Settings with (?) hints (`CopilotIntegration.apply_limits` -> live `COPILOT_CONFIG`); the Esc key-filter release fix
+(quirk filed). **Recently landed:** 033 copilot
 robustness wave (converged through 3 dogfood rounds + 3 review cycles — compile hints, alpha-aware
 render facts, force-restore + oscillation brake, two-sided trust; residuals are model-bound, see the
 spec round-6 section) and the shader-lib seed mechanism (manifest-based shipped-lib sync at startup +

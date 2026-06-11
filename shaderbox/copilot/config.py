@@ -26,9 +26,9 @@ class CopilotConfig:
     # apply-but-broken thrash separately. Not a giveup: the model usually recovers.
     max_compile_failures: int = 5
     # Consecutive CLEAN source edits in one turn (applied, zero compile errors) before a
-    # one-time "stop and let the user look" nudge (0 = off). The model is render-blind, so nothing
-    # else brakes an unbounded aesthetic-tweak spree of individually-clean edits (live
-    # case: 16 edits / $0.51 in one turn). Not a giveup; per-turn cumulative, no reset.
+    # one-time "stop and let the user look" nudge (0 = off). The model is render-blind, so
+    # nothing else brakes an unbounded aesthetic-tweak spree of individually-clean edits.
+    # Not a giveup; per-turn cumulative, no reset.
     max_clean_edit_streak: int = 6
     # Headroom the history trim withholds for the per-turn working-set scratchpad, which is
     # spliced AFTER the trim runs and is otherwise invisible to it (feature 020·29 D10).

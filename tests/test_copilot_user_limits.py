@@ -5,7 +5,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from shaderbox.copilot.agent import AgentToolCard, AgentTurnDone, run_turn
-from shaderbox.copilot.config import COPILOT_CONFIG, CopilotConfig, apply_user_limits
+from shaderbox.copilot.config import COPILOT_CONFIG, CopilotConfig
 from shaderbox.copilot.gate import GateChannel
 from shaderbox.copilot.llm.api import LLMDone, LLMStreamEvent, LLMTextDelta
 from shaderbox.copilot.tools.registry import build_registry

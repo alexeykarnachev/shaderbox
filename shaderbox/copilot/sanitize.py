@@ -36,8 +36,8 @@ _SUBSTITUTIONS: dict[str, str] = {
 
 # ASCII (incl. tab/newline) renders verbatim; everything else must be transliterated or marked.
 _ASCII_MAX = 0x7F
-# Cyrillic renders natively (AnonymousPro carries U+0400-U+04FF; live-verified in the input
-# field) — pass it through so Russian chat isn't mangled to '?'.
+# Cyrillic renders natively (AnonymousPro carries U+0400-U+04FF) — pass it through so
+# Russian chat isn't mangled to '?'.
 _CYRILLIC_RANGE = (0x0400, 0x04FF)
 
 

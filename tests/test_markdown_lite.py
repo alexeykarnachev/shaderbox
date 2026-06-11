@@ -4,9 +4,7 @@ from shaderbox.ui_primitives import parse_markdown_lines
 
 
 def test_plain_text_single_span() -> None:
-    assert parse_markdown_lines("hello world") == [
-        (False, [("plain", "hello world")])
-    ]
+    assert parse_markdown_lines("hello world") == [(False, [("plain", "hello world")])]
 
 
 def test_bold_and_code_spans() -> None:

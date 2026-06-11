@@ -87,7 +87,8 @@ Keep entries faithful. A simple fix gets one or two lines of resolution, not a s
   `test_line_editing.py` (whole-file, checksum pass/mismatch/missing, partial range).
 
 ### F05 — snippet hover: collapse identical consecutive tool calls   [fixed — needs make run]
-- **Where:** `widgets/copilot_chat.py::_snippet_tooltip`.
+- **Where:** `widgets/copilot_chat.py` (the step-grouping now lives in `_collapsed_steps`;
+  renamed from `_snippet_tooltip` when F09 redesigned the popup).
 - **Observed:** hovering the turn-snippet squares lists every step — 10 identical "Edited shader"
   rows is noise.
 - **Resolution:** consecutive steps with the same (tool, outcome) collapse to one `4-13. Edited
