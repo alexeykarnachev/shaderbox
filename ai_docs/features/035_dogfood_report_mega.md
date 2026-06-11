@@ -43,7 +43,7 @@
 
 - `/home/akarnachev/src/shaderbox/scripts/dogfood/runs/proj-p0xamhh5/renders/Torus_Tunnel_740f_2.png` (open with Read)
 
-- **Eyeball verdicts:** 
+- **Eyeball verdicts:**
 - Neon_Ring_5cb6_0: PASS -- crisp cyan ring + glow (bg transparent; asked dark -- t3 fixed).
 - Neon_Ring_5cb6_1: FAIL -- glow 1.5 blew out the whole frame to flat blue; agent claimed navy bg + visible ring; facts (ink 99%, flat luma) contradicted it.
 - Neon_Ring_5cb6_2: PASS -- exactly as asked: thin crisp cyan ring, dark navy bg.
