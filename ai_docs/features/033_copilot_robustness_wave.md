@@ -200,6 +200,41 @@ behavioral evidence). Round 6 = visual-tuning mission with a deliberately FALSE 
 two-sided trust and the oscillation brake at once. Declarable converged after it if: no terminal
 failure, no NEW class, agent pushes back (or asks) on the false report.
 
+## Manual verification — ROUND 6 RESULTS (false-report mission, 6 turns, ~$0.06) — CONVERGENCE
+
+Scenario per cycle-3's plan: badge build -> relative tweaks -> deliberately FALSE "screen is
+black" report -> revert demand -> ledger confrontation -> sweep + gated render_image. Sandbox in
+`scripts/dogfood/runs/` (reboot-proof), lib seeded.
+(a) ALPHA FACTS: VERIFIED live — the white-on-transparent badge reported `ink 42% | bbox ...`
+(pre-fix this was the "FLAT white" lie). Facts tracked every tweak (glow down: ink 42->21%, luma
+dimmed) and certified the sweep as behavior-preserving (identical facts before/after).
+(b) TWO-SIDED TRUST: WORKED — on the false report the reply cited the facts ("15% ink, bbox
+centered — the badge is still drawn"), asked the user to check their view, and STOPPED (3
+iterations; round-3's analog was a 16-edit thrash). Partial: before replying it silently
+rewrote the ring block (unrequested artifact drift, ink 21->15%) and the reply said "I checked
+the source" — concealing the edit (it IS disclosed by the ledger + tool cards, so prose-only).
+(c) OSCILLATION BRAKE: FIRED LIVE (first time) — T5's revert flailing re-applied an earlier
+state, the NOTE landed ("a state it already had 2 edit(s) ago"), and the agent OBEYED: stopped
+editing source, finished with one set_uniform + reply.
+(d) Model-honesty residuals (all pass the better-model test; the ledger/facts channel already
+carries the ground truth, so no harness gap): denied its own edits with three `replace_lines:
+ok` ledger lines visible in history (admitted only when quoted back); claimed the restored code
+"matches exactly" the post-T2 state while the facts disagreed (ink 18% vs 21%) and no history
+view exists to verify exactness (no-undo is by design); changed u_ring_speed unrequested
+mid-"revert". These are cheap-model attention failures, not missing feedback.
+(e) Framework: analyze.py's usage regex predated `rsn=` (every token/cost read 0) — fixed; two
+skill gotchas recorded (skill-runner substitutes `$N` literals with invocation args;
+white-on-transparent renders eyeball as blank — composite onto dark first). Coverage 4/12 by
+design (behavioral round; round 5 owned the lib/read surface — read_shader-on-lib: stays
+code-reviewed only, GL-marshalled paths are the documented test deviation).
+
+VERDICT: CONVERGED. (i) Zero terminal failures across rounds 4-6; (ii) round 6 surfaced no new
+harness-fixable class; (iii) every residual is model-bound. Live behavioral evidence now exists
+for every 033 mechanism: hints converge (R4: 3 attempts, R5: 1), force-restore + streak (R4),
+facts reacted to (R4/R6), alpha facts (R6), zero silent turns (R4-R6), oscillation brake (R6),
+two-sided trust (R6), lib surgery + rename + honest broken-state reply (R5), cost accounting
+exact (R4).
+
 ## Manual verification (original criteria)
 
 A fresh dogfood round (same mission class as round 3) after landing: expect (a) range-bookkeeping

@@ -30,7 +30,8 @@ gotcha already hit, so you don't re-discover them.
   key surfaces under `bash -ic`, len 73, `sk-or-…`.) The harness reads the key at import, so it must be in
   the process env before `uv run` — which `bash -ic` guarantees.
 - **Model:** the in-tree default (`CopilotIntegration.model`) is `openai/gpt-5.1-codex-mini` (cheap:
-  ~$0.25/$2.00 per Mtok, tool-call compatible, 400k ctx), used automatically — no `OPENROUTER_MODEL`
+  ~USD 0.25 in / 2.00 out per Mtok, tool-call compatible, 400k ctx — no `$N` literals in this file:
+  the skill runner substitutes `$0`/`$1`/… with invocation args), used automatically — no `OPENROUTER_MODEL`
   override needed. Chosen over grok: grok writes BAD GLSL (you can't dogfood the authoring pipeline on a
   model that can't write a shader); codex-mini is the cheap-but-competent-at-code pick. Set
   `OPENROUTER_MODEL` only to try a different model. Models go deprecated (grok-4-fast 404'd a prior run) —
@@ -191,6 +192,10 @@ and probes the agent's self-review.
   via `moderngl.get_context()`. (moderngl's stub mistypes `backend=` — the one sanctioned `# type: ignore`.)
 - **The `GLFWError: not initialized` warning is benign** — `core.py` reads `glfw.get_time()` for the default
   `u_time` (returns 0.0, the static t=0 frame we want). The harness installs a no-op glfw error callback.
+- **White-on-transparent renders eyeball as BLANK (all white).** The Read tool / viewers flatten alpha onto
+  white, so a sticker-style render (the flagship pattern) looks empty. Composite onto a dark background
+  before judging: PIL `alpha_composite` onto e.g. (25,25,40), save, THEN Read. The render facts' `ink %`
+  tells you whether there is alpha-carried content worth compositing.
 - **🔴 `GLError 1282 (invalid operation) glUseProgram(0)` is a REAL pipeline bug, not harness noise.** It
   fires spuradically on bridge-marshalled create_node/replace_lines (the persist→render path) under the
   standalone context — the same headless GL-quirk as node teardown. The copilot RECOVERS (retries), so a

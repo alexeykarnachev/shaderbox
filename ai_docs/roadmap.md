@@ -25,24 +25,19 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-06-10 (night). -->
-**033 IN PROGRESS — copilot robustness wave, driven by the mined error inventory of the three 032
-dogfood rounds (~28 compile errors + behavioral classes; 19/20 round-3 compile errors = ONE
-mechanic, line-edit range bookkeeping).** Plan locked with the maintainer: (1) ONE generic
-enriched-tool-results mechanism — engine appends FACTS to edit results (compile-error structural
-hints: duplicate-decl line / brace delta / initializer count; clean-compile render facts: ink %,
-bbox, luma grid — the agent's "eyes"); (2) NO new tools (replace_between + inspect_render-as-tool
-rejected; VLM critique = later harness pilot); (3) force-checkpoint unstick after N failed edits
-(N in config); (4) guaranteed final no-tools reply fed by the turn ledger + reply-addresses-the-USER
-framing; (5) reasoning probe (effort:minimal is SENT but T2 burned 8k thinking tokens — verify,
-escalate param); (6) agent-facing text compression everywhere (prompt/CONVENTIONS/lib docs — terse,
-zero info loss); (7) engine/harness fixes: harness saves project between turns, errored-turn cost
-accounting, resolver errors on unknown SB_* with closest-name suggestion, sweep-turn practice.
-Spec: `ai_docs/features/033_copilot_robustness_wave.md`. **032 mostly landed** (lib seeded in-repo +
-data-driven glyphs killed the V3D 20s-per-shader codegen wall -> Pi is now the fast primary box;
-desktop continuation CANCELLED), still open from 032: the seed-loading mechanism (todo), Д glyph
-shape, Cyrillic chat replies. The copilot ship (020-030) stays gated on the 025/030 live `make run`
-passes (unchanged).**
+<!-- As of 2026-06-11. -->
+**033 LANDED + CONVERGED — copilot robustness wave.** The dogfood-round -> mega-review -> fix loop
+ran to convergence (rounds 4-6, review cycles 1-3): all mechanisms live-verified — compile hints
+converge a broken edit in 1-3 attempts (was 6-7 blind), render facts are alpha-aware (sticker
+pattern reads as ink, not "FLAT white"), zero silent turns, force-restore + oscillation brake
+fired live and the agent obeyed, two-sided trust held against a deliberately false "screen is
+black" report (cited facts + asked, vs round-3's 16-edit thrash), `read_shader` accepts `lib:`
+addresses, torn final stream keeps cost + ledger. Residuals are model-bound (cheap codex-mini
+denies its own ledger-recorded edits, claims unverifiable "exactly") — documented in the spec
+round-6 section, NOT harness gaps. Spec: `ai_docs/features/033_copilot_robustness_wave.md`.
+**Next:** still open from 032 — the seed-loading mechanism (todo), Д glyph shape, Cyrillic chat
+replies; the VLM-judge harness pilot (todo trigger). The copilot ship (020-030) stays gated on
+the 025/030 live `make run` passes (unchanged).
 
 <!-- Previous banner (031, kept for context): -->
 **031 landed (`db39f68..aff9488`, 9 commits + doc sweep): the whole 029 smell class swept. The `.webm` reload-kill bug fixed via one `media.media_class_for` resolver (+invariant test); `RESULT_WIDGET_KINDS` derives from the Literal; template order/ids live once in `constants.py`; the dead publish `node` param dropped; the `template:` address trio joined `address.py`; 7 dead orphans deleted; `ToolArgs` base owns `extra="forbid"` (+per-tool schema invariant); `wrapped_caption` deduped (visual no-op — rides the pending `make run` pass); both bit-rotted check scripts ported to pytest (+10 tests: token redaction, gate decline + no-orphaned-tool_call, gate reopen-after-release, recover-card round-trip, finish-reason — none had regressed while dark) then deleted; `CopilotCapabilities` is now a Protocol the backend satisfies directly (`wiring.py` deleted). Post-impl 3-reviewer adversarial swarm: correctness PASS; the doc-staleness findings were fixed in the same wave (dev_flow module map, todo `needs_gl` citation, H2 drop rationale, 023/031 spec headers). NEXT: lever 2 lazy-tool-catalogue; the 025 + 030 `make run` passes + chat-polish visual confirms; the copilot ship (020-030) stays gated on those live passes.**
@@ -89,7 +84,7 @@ passes (unchanged).**
 
 | # | Name | Status | Brief |
 |---|---|---|---|
-| 033 | copilot_robustness_wave | in progress | Error-analysis-driven hardening: generic enriched tool results (compile hints + render facts), force-checkpoint unstick, guaranteed final reply, reasoning suppression probe, agent-text compression, engine/harness fixes (project persistence between dogfood turns, errored-turn cost, resolver unknown-SB_* error). Spec: `ai_docs/features/033_copilot_robustness_wave.md`. |
+| 033 | copilot_robustness_wave | done | Error-analysis-driven hardening, converged via 3 dogfood rounds + 3 review cycles: generic enriched tool results (compile hints + alpha-aware render facts), force-restore + oscillation brake, guaranteed final reply, two-sided trust, lib-address reads, agent-text compression, engine/harness fixes. Spec: `ai_docs/features/033_copilot_robustness_wave.md`. |
 | 032 | sdf_shader_library | partial | Practice-first SDF shader library seed (`shaderbox/resources/shader_lib/`, three SB_sd_*/SB_op_*/render layers, full text stack with new Cyrillic + auto-fit + per-char access) + copilot quality fixes (inline uniform defaults, tool-call batching, SB_ catalogue filter), driven by live ad-hoc dogfood experiments; seed-loading mechanism + further missions continue on the desktop. Spec: `ai_docs/features/032_sdf_shader_library.md`. |
 | 031 | parallel_structure_sweep | done | Repo-wide sweep of the 029 smell class, all 10 items landed one commit each: the .webm reload-kill bug (one media resolver), parallel maps/frozensets/template-id lists unified, dead params/code deleted, the two bit-rotted check scripts ported to pytest (redaction/gate-decline coverage restored) and removed, `CopilotCapabilities` converted to a Protocol (`wiring.py` deleted). Spec: `ai_docs/features/031_parallel_structure_sweep.md`. |
 | 029 | tool_first_class_labels | done | Per-tool labels + gate prompts became first-class `ToolDefinition` fields (`label_live`/`label_done` required, `gate_prompt` defaulted, `kw_only`), resolved through the registry (`status_for` un-stubbed, `label_for`, `definitions()`); the two parallel name-keyed dicts (`_TOOL_VERBS`, `_GATE_PROMPTS`) deleted; one invariant test pins labels + gate prompts + the analyzer's coverage list. Spec: `ai_docs/features/029_tool_first_class_labels.md`. |

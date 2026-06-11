@@ -82,7 +82,7 @@ DEFAULT_MODEL_NOTE = "unknown (in-tree default)"
 
 _TS_RE = re.compile(r"copilot_.*_(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}_\d+)\.transcript")
 _SECTION_RE = re.compile(r"^### (?P<kind>\w+)\s")
-_USAGE_RE = re.compile(r"^usage: in=(\d+) out=(\d+) cost=\$([\d.]+)")
+_USAGE_RE = re.compile(r"^usage: in=(\d+) out=(\d+)(?: rsn=\d+)? cost=\$([\d.]+)")
 _INVOKE_RE = re.compile(r"^\s*-> tool_call (?P<name>\w+)\(id=(?P<id>call_\w+)\)")
 
 
