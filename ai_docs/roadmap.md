@@ -30,7 +30,10 @@ feature; brief points at the superseder).
 takes everything since v0.12.1 live: the FULL copilot stack (020-033 + waves 028/034), the SDF
 shader library + seed sync, the engine-bound glyph tables, keyboard nav, logging, and the
 structural refactors (023/025/031). The maintainer's explicit ship go supersedes the previous
-025/030 live-pass gate and waives the THRASH dogfood gate (re-armed in `todo.md`). **Pre-ship
+025/030 live-pass gate; the error-recovery dogfood gate was then CLOSED by the pre-publish mega run
+(18 turns, 11/12 tools, report: `ai_docs/features/035_dogfood_report_mega.md` — pipeline solid,
+3 model-bound findings filed in `todo.md`: the edit-giveup loop, facts-vs-narrative honesty, the
+analyzer cost gap; true compile-THRASH remains unprovokable on codex-mini). **Pre-ship
 review wave (this prep):** 4 adversarial reviewers over the full `master..dev` diff + real-gate
 runs, then 3 fixer agents + a round-2 verify pass — 15 findings fixed (torn-stream ledger/cost
 loss, non-dict conversation.json crash, error-body prompt leak, staged checkpoint-restore swap,
@@ -39,7 +42,8 @@ settings input clamps, Mesa glyph active-size trim clamp + quirk, depth-0 lib in
 Allman-poison class, seed sync fail-soft + manifest path guard), 8 LOW findings filed as todo
 deferrals, +13 regression tests (328 green). Bundle audited: shader_lib resources + glyph tables
 ship, no dev junk leaks. **Post-ship next:** the itemized 034 `make run` passes (F01-F12), the
-dogfood THRASH mission, lever 2 lazy-tool-catalogue, Д glyph shape, the VLM-judge pilot.
+edit-giveup counter fix (035 finding #1), lever 2 lazy-tool-catalogue, Д glyph shape, the VLM-judge
+pilot.
 
 <!-- Previous banner (031, kept for context): -->
 **031 landed (`db39f68..aff9488`, 9 commits + doc sweep): the whole 029 smell class swept. The `.webm` reload-kill bug fixed via one `media.media_class_for` resolver (+invariant test); `RESULT_WIDGET_KINDS` derives from the Literal; template order/ids live once in `constants.py`; the dead publish `node` param dropped; the `template:` address trio joined `address.py`; 7 dead orphans deleted; `ToolArgs` base owns `extra="forbid"` (+per-tool schema invariant); `wrapped_caption` deduped (visual no-op — rides the pending `make run` pass); both bit-rotted check scripts ported to pytest (+10 tests: token redaction, gate decline + no-orphaned-tool_call, gate reopen-after-release, recover-card round-trip, finish-reason — none had regressed while dark) then deleted; `CopilotCapabilities` is now a Protocol the backend satisfies directly (`wiring.py` deleted). Post-impl 3-reviewer adversarial swarm: correctness PASS; the doc-staleness findings were fixed in the same wave (dev_flow module map, todo `needs_gl` citation, H2 drop rationale, 023/031 spec headers). NEXT: lever 2 lazy-tool-catalogue; the 025 + 030 `make run` passes + chat-polish visual confirms; the copilot ship (020-030) stays gated on those live passes.**

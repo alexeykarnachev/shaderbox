@@ -256,24 +256,15 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   nothing until the catalogue exists. Decide then: delete `needs_gl` (it documents, not enforces) or
   keep both as scaffold.
 
-## [DEFERRAL] copilot agent-level error recovery — partially proven, the THRASH + edit-mismatch classes untested
-- **Trigger:** the next dedicated dogfood mission, OR the first user report of the copilot looping on
-  broken compiles. (The original "before shipping the copilot" condition FIRED at the v0.13.0 ship and
-  was waived by the maintainer's explicit go — the probes remain unrun; not covered by
-  `01_shape_gallery`, which only surfaces incidental single-error recoveries.)
-- PROVEN (2026-06-09): the broken-compile read→fix loop WORKS — across dogfood runs 3-4 (codex-mini) the
-  agent self-corrected applies-with-errors edits 4-5x per run, including CROSS-tool (a broken `create_node`
-  fixed by a clean `replace_lines`), confirmed by `scripts/dogfood/analyze.py`'s recovery rollup. So
-  single-error comprehension + correction is solidly confirmed.
-- STILL UNTESTED: (a) the THRASH case — MANY consecutive applies-but-compile-with-errors edits. The
-  broken-compile circuit-breaker now LANDED (`consecutive_compile_failures` + a one-time
-  `compile_thrash_nudge` at `max_compile_failures`, `agent.py`; unit-tested), but a dogfood mission must
-  still drive a real thrash to confirm the nudge FIRES and actually unsticks the model. (b) `old_str`
-  mismatch recovery; (c) bad-node-id recovery; (d) malformed-args recovery. A future dogfood mission should
-  drive these deliberately + inspect the `edit_giveup`/`max_iterations`/`consecutive_failed_edits`/
-  `compile_thrash_nudge` trace events (`agent.py`). The 034 additions belong in the same mission:
-  confirm the `clean_streak_nudge` fires + the model obeys, and that the ranged `replace_lines`
-  boundary-check reject converges in one step.
+## [DEFERRAL] copilot agent-level error recovery — probes RUN (mega run, 2026-06-11); THRASH itself never reached
+- **Trigger:** the first trace/user report of the copilot looping on broken COMPILES (the one class the
+  mega run could not provoke — codex-mini recovers every compile error in 1-2 steps, so the
+  `compile_thrash_nudge` circuit-breaker remains live-unverified beyond its unit tests).
+- The mega dogfood run (report: `ai_docs/features/035_dogfood_report_mega.md`, 18 turns, 11/12 tools)
+  closed most of this entry: compile-error recovery PASS, boundary-checksum reject PASS (every bad
+  range caught pre-apply), unknown-SB-name PASS (searched + asked, never invented), bad-node-id PASS,
+  `old_str`-mismatch PARTIAL (the hint fires; the model loops on long files instead of converging).
+  What it FOUND instead of thrash is the giveup-loop (own entry below).
 
 ## [DEFERRAL] true in-line drag-selection of WRAPPED copilot chat prose
 - **Trigger:** the per-message Copy button (020·23 D7) proves insufficient — a user wants to select a
@@ -588,3 +579,37 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   re-raise path (key/model wiped in Settings mid-turn — Settings is not in_flight-gated) still
   reaches the session fallback with an empty summary and `stats=None`. Exotic (requires the user to
   clear credentials during a running turn); same fix shape as the stream containment if it fires.
+
+## [DEFERRAL] copilot edit-giveup fires on turns whose work actually LANDED (the mega run's #1 finding)
+- **Trigger:** next time `consecutive_failed_edits` / the giveup path in `copilot/agent.py` is edited,
+  OR the next dogfood run reproducing a giveup, OR a user report of "the copilot says it failed but
+  the change is there".
+- 3 of 18 mega-run turns ended in the retry-cap error while the requested change was on disk
+  (`035_dogfood_report_mega.md` turns 12/13/18): the model BATCHES same-file mutations (as the prompt
+  encourages), the D9 batch guard + boundary-check rejects all but the first, and those PRE-APPLY
+  rejections (nothing mutated) count toward `consecutive_failed_edits` alongside real failures, while
+  applied sibling edits do not reliably reset it. Fix shapes to weigh: reset the counter on any
+  applied edit in the batch; exclude pre-apply rejects from the count; make the giveup message report
+  what DID apply this turn. Related model-bound half: codex-mini re-submits the same wrong
+  `replace_lines` range up to 9x — a sharper reject hint ("your quoted last_line matches line N") may
+  converge it.
+
+## [DEFERRAL] copilot render-facts honesty: the model ignores facts that contradict its narrative
+- **Trigger:** next time `copilot/prompt.py`'s rules section is edited, OR the next dogfood run, OR a
+  user report of "it said it looks fine and the render is blank/blown out".
+- Mega run (035 report §6): facts are present + accurate on every mutation (incl. an explicit
+  "FLAT — one uniform color" verdict), but the model claimed a full raymarched scene over a FLAT fact
+  (t7), claimed navy-bg success over ink 99%/flat-luma (t3), and said "no other nodes were touched"
+  right after its own approved delete executed (t16). Prompt-rule candidate: "if the render facts say
+  FLAT or near-uniform, you may NOT claim a visual result — report the fact instead"; post-gate
+  replies must acknowledge the gated action/decline. Also cosmetic: the chat sanitizer maps common
+  typography (en-dash, guillemets) to `?` in every Russian reply — map to ASCII equivalents instead
+  (`copilot/sanitize.py`).
+
+## [DEFERRAL] dogfood analyze.py drops tokens/cost for error-terminal turns
+- **Trigger:** next time `scripts/dogfood/analyze.py` is edited, OR the next dogfood report whose
+  per-turn table shows a $0.0000 turn.
+- Giveup/error turns report 0 ctx / $0 in the rollup (mega run: turns 12/13/18; t13 really cost
+  $0.051 per its dump) — the run total understates real spend (~$0.27 vs reported $0.16). Include
+  error-terminal turns' usage; consider a per-turn compact tool-call→result index to make trace
+  reading cheaper (the transcript embeds the full catalogue per iteration, grepping is haystack work).
