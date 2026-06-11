@@ -98,9 +98,17 @@ tokens. Non-`SB_` names are library-private (filtered from the copilot catalogue
 ## Resume on the desktop (cold-start)
 
 1. The canonical library = `shaderbox/resources/shader_lib/`. The APP seeds and syncs it at
-   startup (`shader_lib/seed.py`, manifest-based: pristine files follow shipped updates, edits
-   win, deletions stick; factory reset lives in Settings) — resolved 2026-06-11, details in
-   `todo.md` `[RESOLVED 2026-06-11] shader-library seed mechanism`.
+   startup (resolved 2026-06-11): `shader_lib/seed.py` runs in `App.__init__` before the first
+   index build, keyed on `.seed_manifest.json` (sha1 of the version each file was seeded from) —
+   a fresh box seeds, PRISTINE files follow shipped updates, EDITED files are never touched,
+   DELETED files stay deleted, files unknown to the manifest are user-owned and untouchable.
+   "Reset library to shipped" (Settings, armed confirm) force-restores everything shipped,
+   trashing edited copies to `.trash/` first; user-authored files survive both paths. Chosen
+   over a two-root shipped+overlay design (that would touch resolver/picker/watcher and needs
+   delete-whiteouts; the manifest gets the same semantics additively). Runtime resets ride the
+   mtime watcher — no explicit index rebuild. NOTE for a pre-manifest box (lib hand-copied from
+   an older seed): sync treats those files as user-owned; one Settings reset migrates them.
+   Dogfood sandboxes still seed by copy (the harness drives `ProjectSession` without `App`).
 2. Dogfood missions need the lib INSIDE the run's sandbox:
    `mkdir -p scripts/dogfood/runs/data-<run> && cp -r shaderbox/resources/shader_lib
    scripts/dogfood/runs/data-<run>/shader_lib`, then pass

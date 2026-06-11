@@ -36,10 +36,13 @@ addresses, torn final stream keeps cost + ledger. Residuals are model-bound (che
 denies its own ledger-recorded edits, claims unverifiable "exactly") — documented in the spec
 round-6 section, NOT harness gaps. Spec: `ai_docs/features/033_copilot_robustness_wave.md`.
 **Seed mechanism landed** (2026-06-11): manifest-based shipped-lib sync at startup + Settings
-factory reset (`shader_lib/seed.py`; todo `[RESOLVED]` entry has the design). **Next:** still
-open from 032 — Д glyph shape, Cyrillic chat replies; the VLM-judge harness pilot (todo
-trigger). The copilot ship (020-030) stays gated on the 025/030 live `make run` passes
-(unchanged).
+factory reset (`shader_lib/seed.py`; design in 032 spec `## Resume on the desktop` — a
+pre-manifest box needs ONE Settings reset to migrate). **Queued next (maintainer-announced):**
+copilot token budgets as Settings fields (output/context caps; today frozen constants in
+`copilot/config.py` — the persisted home is `CopilotIntegration`/integrations.json, like
+key+model). Also open from 032 — Д glyph shape, Cyrillic chat replies; the VLM-judge harness
+pilot (todo trigger). The copilot ship (020-030) stays gated on the 025/030 live `make run`
+passes (unchanged). Maintainer is testing UI/UX live on the desktop.
 
 <!-- Previous banner (031, kept for context): -->
 **031 landed (`db39f68..aff9488`, 9 commits + doc sweep): the whole 029 smell class swept. The `.webm` reload-kill bug fixed via one `media.media_class_for` resolver (+invariant test); `RESULT_WIDGET_KINDS` derives from the Literal; template order/ids live once in `constants.py`; the dead publish `node` param dropped; the `template:` address trio joined `address.py`; 7 dead orphans deleted; `ToolArgs` base owns `extra="forbid"` (+per-tool schema invariant); `wrapped_caption` deduped (visual no-op — rides the pending `make run` pass); both bit-rotted check scripts ported to pytest (+10 tests: token redaction, gate decline + no-orphaned-tool_call, gate reopen-after-release, recover-card round-trip, finish-reason — none had regressed while dark) then deleted; `CopilotCapabilities` is now a Protocol the backend satisfies directly (`wiring.py` deleted). Post-impl 3-reviewer adversarial swarm: correctness PASS; the doc-staleness findings were fixed in the same wave (dev_flow module map, todo `needs_gl` citation, H2 drop rationale, 023/031 spec headers). NEXT: lever 2 lazy-tool-catalogue; the 025 + 030 `make run` passes + chat-polish visual confirms; the copilot ship (020-030) stays gated on those live passes.**
@@ -87,7 +90,7 @@ trigger). The copilot ship (020-030) stays gated on the 025/030 live `make run` 
 | # | Name | Status | Brief |
 |---|---|---|---|
 | 033 | copilot_robustness_wave | done | Error-analysis-driven hardening, converged via 3 dogfood rounds + 3 review cycles: generic enriched tool results (compile hints + alpha-aware render facts), force-restore + oscillation brake, guaranteed final reply, two-sided trust, lib-address reads, agent-text compression, engine/harness fixes. Spec: `ai_docs/features/033_copilot_robustness_wave.md`. |
-| 032 | sdf_shader_library | partial | Practice-first SDF shader library seed (`shaderbox/resources/shader_lib/`, three SB_sd_*/SB_op_*/render layers, full text stack with new Cyrillic + auto-fit + per-char access) + copilot quality fixes (inline uniform defaults, tool-call batching, SB_ catalogue filter), driven by live ad-hoc dogfood experiments; seed-loading mechanism + further missions continue on the desktop. Spec: `ai_docs/features/032_sdf_shader_library.md`. |
+| 032 | sdf_shader_library | partial | Practice-first SDF shader library seed (`shaderbox/resources/shader_lib/`, three SB_sd_*/SB_op_*/render layers, full text stack with new Cyrillic + auto-fit + per-char access) + copilot quality fixes (inline uniform defaults, tool-call batching, SB_ catalogue filter), driven by live ad-hoc dogfood experiments; seed-loading landed (`shader_lib_seed_sync` row); still open: Д glyph shape, Cyrillic chat replies. Spec: `ai_docs/features/032_sdf_shader_library.md`. |
 | 031 | parallel_structure_sweep | done | Repo-wide sweep of the 029 smell class, all 10 items landed one commit each: the .webm reload-kill bug (one media resolver), parallel maps/frozensets/template-id lists unified, dead params/code deleted, the two bit-rotted check scripts ported to pytest (redaction/gate-decline coverage restored) and removed, `CopilotCapabilities` converted to a Protocol (`wiring.py` deleted). Spec: `ai_docs/features/031_parallel_structure_sweep.md`. |
 | 029 | tool_first_class_labels | done | Per-tool labels + gate prompts became first-class `ToolDefinition` fields (`label_live`/`label_done` required, `gate_prompt` defaulted, `kw_only`), resolved through the registry (`status_for` un-stubbed, `label_for`, `definitions()`); the two parallel name-keyed dicts (`_TOOL_VERBS`, `_GATE_PROMPTS`) deleted; one invariant test pins labels + gate prompts + the analyzer's coverage list. Spec: `ai_docs/features/029_tool_first_class_labels.md`. |
 | 028 | ui_polish_wave | partial | App-wide UI/UX polish pass (maintainer-walkthrough-driven). F01-F10 landed + green (New Node modal, the compact square-bar turn snippet, Send alignment, post-modal focus restore, color contrast + human tool labels, the active-project-pointer foot-gun). F08 live-verified; F06/F09/F10 chat visuals still want a `make run` confirm. Findings log: `ai_docs/features/028_ui_polish_wave.md`. |
@@ -120,6 +123,7 @@ trigger). The copilot ship (020-030) stays gated on the 025/030 live `make run` 
 | 003 | modelbox_removal | done | Wiped all ModelBox integration (HTTP client, settings UI, app-state fields, `requests` dep); app_state migration gen 3. Spec: `ai_docs/features/003_modelbox_removal.md`. |
 | 002 | ui_widgets_extraction | done | Three-layer split: `app.py` (state) / `ui.py` (orchestrator) / `widgets`+`popups`+`tabs` (pure draw fns); `ui.py` 1508 → 294. Spec: `ai_docs/features/002_ui_widgets_extraction.md`. |
 | 001 | exporter_refactor | done | `exporters/` subpkg — `Exporter` ABC + `RenderedArtifact` value type + registry; Telegram ported to own worker thread + asyncio loop + sticker UI. Spec: `ai_docs/features/001_exporter_refactor.md`. |
+| — | shader_lib_seed_sync | done | Manifest-based shipped-lib seeding/sync at app startup + "Reset library to shipped" in Settings (`shader_lib/seed.py`). Design: `032 ## Resume on the desktop`. Spec: commit `01c6319`. |
 | — | telegram_ipv4_fix | done | Bound the Telegram bot to IPv4 to fix uploads on IPv6-dead networks. Spec: commit `0ba11ff`. |
 | — | render_tab_refresh | done | Render sub-tab brought to the Node/Share standard (label-column rows, ghost presets, drags-not-sliders). Spec: commit `a716d24`. |
 | — | node_tab_polish | done | Node-tab uniform layout polished + text-uniform crash fix. Spec: commit `62a6644`. |

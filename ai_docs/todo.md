@@ -59,8 +59,9 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   mechanism in `033_copilot_robustness_wave.md`). The standalone `inspect_render` TOOL variant is
   REJECTED (tool count must not grow; a lazy model wouldn't call it). What remains deferred here:
   the VLM-judge variant (a vision model critiques the render in words — judges aesthetics, not just
-  presence). Trigger for THAT: after 033 lands, a harness-side pilot (driver feeds VLM verdicts back
-  as user text) catches things the scalar facts miss.
+  presence). Trigger for THAT: the next dogfood/library-quality session that needs AESTHETIC
+  judgement, not just presence facts (033 landed 2026-06-11, so the precondition is met) — pilot it
+  harness-side first: the driver feeds VLM verdicts back as user text.
 - Original trigger (kept for context): the first recurrence (in a DIFFERENT session) of "the agent
   can't tell its change had no visual effect" — it reports success after a clean compile while the
   user sees no change (observed 2026-06-05: the cyrillic text never rendered; the agent claimed it
@@ -167,18 +168,13 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   (clamp the stroke loop count per char), screen-space-uniform AA width instead of fwidth(d) in
   SB_fill_aa, or per-row instead of per-char cull.
 
-## [RESOLVED 2026-06-11] shader-library seed mechanism (was: no load mechanism)
-- Landed: manifest-based shipped-lib sync (`shader_lib/seed.py`, wired in `App.__init__` before
-  the first index build) + a "Reset library to shipped" armed-confirm in Settings. Per-file
-  semantics via `.seed_manifest.json` (sha1 of the seeded version): fresh box seeds, PRISTINE
-  files follow shipped updates, EDITED files are never touched, DELETED stay deleted, user
-  files unknown to the manifest are never touched; reset trashes edited copies to `.trash/`
-  first. The chosen design was option C of the brainstorm (copy-on-first-run + hash manifest);
-  the two-root overlay was rejected (would touch resolver/picker/watcher + needs delete
-  whiteouts). Dogfood sandboxes still seed by copy (`/dogfood` §1 — the harness drives
-  ProjectSession without App, so the App-level sync doesn't fire there).
-- Possible follow-up (no trigger yet): per-file "Reset to shipped" in the lib picker context
-  menu + a "modified vs shipped" badge — the manifest already carries the data.
+## [DEFERRAL] lib picker: per-file "Reset to shipped" + a "modified vs shipped" badge
+- **Trigger:** first time the maintainer wants to un-edit ONE shipped lib file without the
+  full Settings reset, OR next time the lib picker's context menu gains any new item — add
+  both in the same pass.
+- The seed manifest (`shader_lib/seed.py`, `.seed_manifest.json`) already carries the per-file
+  pristine/edited verdict; the picker just doesn't read it. Design + semantics live in
+  `032_sdf_shader_library.md ## Resume on the desktop`.
 
 ## [DEFERRAL] copilot chat renders Cyrillic replies as `??????` (ASCII sanitizer)
 - **Trigger:** first real session where the maintainer chats with the copilot in Russian and the
