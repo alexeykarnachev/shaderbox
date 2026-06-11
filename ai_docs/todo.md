@@ -580,36 +580,35 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   reaches the session fallback with an empty summary and `stats=None`. Exotic (requires the user to
   clear credentials during a running turn); same fix shape as the stream containment if it fires.
 
-## [DEFERRAL] copilot edit-giveup fires on turns whose work actually LANDED (the mega run's #1 finding)
-- **Trigger:** next time `consecutive_failed_edits` / the giveup path in `copilot/agent.py` is edited,
-  OR the next dogfood run reproducing a giveup, OR a user report of "the copilot says it failed but
-  the change is there".
-- 3 of 18 mega-run turns ended in the retry-cap error while the requested change was on disk
-  (`035_dogfood_report_mega.md` turns 12/13/18): the model BATCHES same-file mutations (as the prompt
-  encourages), the D9 batch guard + boundary-check rejects all but the first, and those PRE-APPLY
-  rejections (nothing mutated) count toward `consecutive_failed_edits` alongside real failures, while
-  applied sibling edits do not reliably reset it. Fix shapes to weigh: reset the counter on any
-  applied edit in the batch; exclude pre-apply rejects from the count; make the giveup message report
-  what DID apply this turn. Related model-bound half: codex-mini re-submits the same wrong
-  `replace_lines` range up to 9x — a sharper reject hint ("your quoted last_line matches line N") may
-  converge it.
+## [DEFERRAL] copilot edit-giveup counter: read tools reset it; pre-apply rejects count like real failures
+- **Trigger:** the next dogfood run reproducing a giveup AFTER the 035 fix wave (indexer alignment,
+  target naming, boundary hints, honest giveup note — those killed the observed causes), OR next time
+  `consecutive_failed_edits` in `copilot/agent.py` is edited.
+- The mega run's giveups are root-caused + fixed (035 report §7 / the fix-wave commit). What remains
+  is the counter design itself, reviewed and deliberately KEPT: the deferred tweak is that a NON-edit
+  tool (a read) resets the counter mid-loop (a 3-strikes loop stretched to 5 with zero new
+  information), and identical-args resubmissions count the same as new attempts. Only revisit on a
+  fresh giveup with the new messages in place.
 
-## [DEFERRAL] copilot render-facts honesty: the model ignores facts that contradict its narrative
-- **Trigger:** next time `copilot/prompt.py`'s rules section is edited, OR the next dogfood run, OR a
-  user report of "it said it looks fine and the render is blank/blown out".
-- Mega run (035 report §6): facts are present + accurate on every mutation (incl. an explicit
-  "FLAT — one uniform color" verdict), but the model claimed a full raymarched scene over a FLAT fact
-  (t7), claimed navy-bg success over ink 99%/flat-luma (t3), and said "no other nodes were touched"
-  right after its own approved delete executed (t16). Prompt-rule candidate: "if the render facts say
-  FLAT or near-uniform, you may NOT claim a visual result — report the fact instead"; post-gate
-  replies must acknowledge the gated action/decline. Also cosmetic: the chat sanitizer maps common
-  typography (en-dash, guillemets) to `?` in every Russian reply — map to ASCII equivalents instead
-  (`copilot/sanitize.py`).
+## [DEFERRAL] copilot render-facts honesty: residual model-bound half
+- **Trigger:** a post-035-wave dogfood run STILL showing a scene described over a FLAT fact or an
+  unacknowledged gate outcome, OR a user report of "it said it looks fine and the render is blank".
+- The engine half is FIXED (035 fix wave): FLAT now carries an in-result imperative, set_uniform's
+  "describe it" mis-cue removed, gate-decline message states NOT-done, a gate-outcome reply rule
+  added, sanitize maps guillemets/non-breaking hyphen. What remains is model-bound: a cheap model
+  claiming success against non-FLAT-but-damning facts (ink 99%/flat luma — can't be auto-escalated
+  without false-positiving legitimate full-screen effects). If it persists on a better model, the
+  VLM-judge deferral (above) is the real answer.
 
 ## [DEFERRAL] dogfood analyze.py drops tokens/cost for error-terminal turns
 - **Trigger:** next time `scripts/dogfood/analyze.py` is edited, OR the next dogfood report whose
   per-turn table shows a $0.0000 turn.
 - Giveup/error turns report 0 ctx / $0 in the rollup (mega run: turns 12/13/18; t13 really cost
-  $0.051 per its dump) — the run total understates real spend (~$0.27 vs reported $0.16). Include
-  error-terminal turns' usage; consider a per-turn compact tool-call→result index to make trace
-  reading cheaper (the transcript embeds the full catalogue per iteration, grepping is haystack work).
+  $0.051 per its dump) — the run total understates real spend (~$0.27 vs reported $0.16; real peak
+  25k@t13). Root cause: per-turn usage keys on `turn_done`, which error terminals never emit —
+  fallback-sum the per-iteration `usage:` lines. The forensic swarm's full tooling list (all S):
+  coverage counts key on history-echo ids not execution blocks (replace_lines 26 real vs 23 reported;
+  a DECLINED call counted as fired); the 🔴 glyph marks honest probe-failure turns as failed (key it
+  on the terminal kind); `rsn=` reasoning tokens dropped (t18 iter2: rsn=5504 of out=5872); no
+  `gate_approved` trace event; the resolved model isn't recorded in artifacts (report header says
+  "unknown"); a `--calls` compact per-turn tool→result index mode would kill the grep-haystack pain.
