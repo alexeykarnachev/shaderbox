@@ -257,9 +257,10 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   keep both as scaffold.
 
 ## [DEFERRAL] copilot agent-level error recovery — partially proven, the THRASH + edit-mismatch classes untested
-- **Trigger:** before claiming the copilot is robust to its own mistakes / shipping the copilot — run the
-  recovery probes through a dedicated dogfood mission (the THRASH case in particular); not yet covered by
-  `01_shape_gallery`, which only surfaces incidental single-error recoveries.
+- **Trigger:** the next dedicated dogfood mission, OR the first user report of the copilot looping on
+  broken compiles. (The original "before shipping the copilot" condition FIRED at the v0.13.0 ship and
+  was waived by the maintainer's explicit go — the probes remain unrun; not covered by
+  `01_shape_gallery`, which only surfaces incidental single-error recoveries.)
 - PROVEN (2026-06-09): the broken-compile read→fix loop WORKS — across dogfood runs 3-4 (codex-mini) the
   agent self-corrected applies-with-errors edits 4-5x per run, including CROSS-tool (a broken `create_node`
   fixed by a clean `replace_lines`), confirmed by `scripts/dogfood/analyze.py`'s recovery rollup. So
@@ -522,3 +523,68 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   `preview_box` / `status_slot` / `unconnected_gate` / `setup_steps`) that gets reused outside the
   exporter context, OR when editing it feels unwieldy. Rated KEEP in feature 017 (button tiers + draw
   helpers + `preview_cell` + labeled fields all serve one role: the shared imgui+theme primitive set).
+
+## [DEFERRAL] copilot Stop is unresponsive while an LLM stream stalls (up to the SDK's 600 s timeout)
+- **Trigger:** a user/dogfood report of "Stop does nothing / UI frozen during a turn", OR next time
+  the agent-loop stream iteration in `copilot/agent.py` is edited.
+- `cancel.is_set()` is checked at iteration top and before each tool, but not per-delta inside the
+  `for ev in client.stream(...)` loop, and the OpenRouter client rides the SDK default timeout
+  (httpx 600 s). A stalled stream keeps `in_flight=True` (editor read-only, panel frozen) until the
+  timeout fires; the turn then terminates with summary+stats preserved. Fix shape: a per-delta
+  cancel check (break/raise inside the event loop) and/or an explicit client timeout.
+
+## [DEFERRAL] `publish_youtube` mutates exporter shape state on the worker thread (bridge bypass)
+- **Trigger:** next time `backend.py`'s publish verbs are edited, OR if the Share panel ever stops
+  being `begin_disabled` during a copilot turn.
+- `backend.py` `publish_youtube` calls `exporter.set_shape(is_short)` (+ the `finally` restore)
+  directly on the worker thread; `set_shape` writes `_render_state.shape`, which the main-thread
+  Share tab reads. Benign today only because the panel is disabled while a turn runs — it's the one
+  mutation in the file that skips `run_on_main`, against the file's own marshalling invariant.
+
+## [DEFERRAL] copilot delete-gate can prompt to confirm deleting node `` `?` ``
+- **Trigger:** a trace/user report showing a gate card titled "Delete node `?`" (model emitted
+  `delete_node` with an empty/unresolvable target).
+- The ALWAYS-gate fires before the handler's resolution failure: `_node_display` falls back to `?`/
+  the raw id, so the user confirms a no-op that then errors. Fix shape: a `precheck` (like the
+  publish tools') that fails fast when the target can't resolve, skipping the gate.
+
+## [DEFERRAL] unsealed checkpoint dirs leak on quit/kill mid-turn
+- **Trigger:** next time `copilot/checkpoint.py` retention/`_rehydrate` is edited, OR a user report
+  of `copilot/checkpoints/` growing without bound.
+- Snapshots are written during the turn but `checkpoint.json` (the index) only at `seal()` on the
+  turn-end transition — never reached on quit/kill mid-turn. `_rehydrate` skips index-less dirs and
+  `prune_to` iterates only sealed ones, so an unsealed dir is invisible to retention forever; only a
+  full chat Clear removes it. Fix shape: sweep index-less dirs at store init.
+
+## [DEFERRAL] a node whose shader file vanishes from disk freezes the frame loop (pre-existing)
+- **Trigger:** first user report of "app frozen / won't close" after deleting/moving a node's
+  `shader.frag.glsl` externally, OR next time the missing-file guard at the top of
+  `ui.py::update_and_draw` is edited.
+- The guard `return`s out of `update_and_draw` for every frame the file is missing, so
+  `process_hotkeys` (which holds `glfw.poll_events()`) never runs — no repaint, no input, no OS
+  close, until the file reappears. Ships in v0.12.1 too (not a regression). Fix needs design, not
+  just `continue`: downstream draw paths assume the source file exists.
+
+## [DEFERRAL] corrupted/deleted seed manifest resurrects user-deleted shipped lib files
+- **Trigger:** next time `shader_lib/seed.py` is edited, OR a user report of deleted `SB_*` files
+  reappearing after an update.
+- `_load_manifest` fail-softs to `{}`; pristine shipped files are then re-adopted and a
+  user-DELETED shipped file is re-seeded (user EDITS still survive — they hash-mismatch and shadow).
+  Related: the shadow case (user file collides with a new shipped name) is INFO-log-only — the user
+  never learns in the UI that the shipped file was withheld.
+
+## [DEFERRAL] lib-picker inline-input Esc edges (unfocused input; tag-input 2-press close)
+- **Trigger:** a maintainer/user complaint about Esc behavior in the lib picker, OR next time
+  `inline_input_owns_esc` / the picker's Esc gate is edited.
+- Two edges of the Esc-ownership model: (a) an OPEN but UNFOCUSED inline input (user clicked another
+  row mid-rename) makes Esc a no-op — ownership is target-based, the per-input cancel is
+  focus-gated; the `x` button is the affordance. (b) Closing from a focused tag input takes an extra
+  Esc press (defocus, then close). Both cosmetic; fix shape: focus-aware ownership.
+
+## [DEFERRAL] mid-turn `CopilotConfigError` still loses the turn ledger + cost
+- **Trigger:** next time the `CopilotConfigError` carve-out in `copilot/agent.py::run_turn` or the
+  session's error fallback is edited.
+- The torn-stream containment preserves summary+stats for stream errors, but the config-error
+  re-raise path (key/model wiped in Settings mid-turn — Settings is not in_flight-gated) still
+  reaches the session fallback with an empty summary and `stats=None`. Exotic (requires the user to
+  clear credentials during a running turn); same fix shape as the stream containment if it fires.

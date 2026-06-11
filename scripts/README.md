@@ -2,8 +2,8 @@
 
 A real-time GLSL fragment-shader playground. Write a shader in the built-in editor;
 ShaderBox reads its uniforms and auto-builds the sliders, color pickers, and inputs to
-drive them. It hot-reloads as you type, and exports to images, video, or Telegram sticker
-sets.
+drive them. It hot-reloads as you type, an optional AI copilot edits your shaders in
+chat, and it exports to images, video, Telegram sticker sets, or YouTube.
 
 ## Running it
 
@@ -66,7 +66,21 @@ ShaderBox opens on a starter shader ("UV Mango") rendering live.
 5. Click **Open dir** to open the shader's folder in your file manager — edit the
    `.frag.glsl` in your own editor if you prefer; it hot-reloads on save.
 
+## The AI copilot (optional)
+
+Press **Ctrl+J** to open the copilot chat. It's an LLM agent that reads and edits your
+shaders, sees compile errors the moment they happen, creates shaders, tweaks uniforms,
+renders previews, and can publish for you — every risky action (delete, render, publish)
+waits for your confirmation, and any turn can be reverted with one click.
+
+It needs an [OpenRouter](https://openrouter.ai) API key: open **Settings** (Alt+S), paste
+the key, pick a tool-calling-capable model (the default works). You pay OpenRouter
+directly for what you use; without a key the rest of ShaderBox works as usual.
+
 ## Keyboard shortcuts
+
+All of these are rebindable in Settings; press **Ctrl+/** in the app for the full live
+cheatsheet.
 
 | Key | Action |
 |-----|--------|
@@ -74,10 +88,16 @@ ShaderBox opens on a starter shader ("UV Mango") rendering live.
 | Ctrl+N | New shader (pick a template) |
 | Ctrl+O | Open a project |
 | Ctrl+D | Delete the current shader |
+| Ctrl+P | Shader library picker |
+| Ctrl+Shift+P | Command palette |
+| Ctrl+J | Toggle the AI copilot chat |
+| Ctrl+/ | Keyboard cheatsheet |
+| Ctrl+Tab | Cycle focus region (editor / grid / panel) |
+| Ctrl+1 / 2 / 3 | Node / Render / Share tab |
+| F8 | Jump to next compile error |
 | Ctrl+Q | Quit |
 | Alt+S | Settings |
 | Esc | Unfocus the editor / close a popup |
-| ← / → | Switch between shaders (when the editor isn't focused) |
 | Ctrl+scroll | Resize the editor font (hover the editor) |
 
 ## Manual install

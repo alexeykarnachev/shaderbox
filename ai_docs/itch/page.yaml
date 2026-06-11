@@ -16,20 +16,27 @@ description: |
   ShaderBox is a real-time GLSL fragment-shader playground. Write a shader in the
   built-in editor; ShaderBox reads its uniforms and auto-builds the sliders, color
   pickers, and inputs to drive them - no boilerplate UI code. It hot-reloads as you
-  type. Export the result to an image, a video, a Telegram sticker set, or straight to
+  type. An optional AI copilot edits your shaders in chat with live compile feedback.
+  Export the result to an image, a video, a Telegram sticker set, or straight to
   your YouTube channel.
 
   Features:
   - Built-in syntax-highlighted GLSL editor - edit in-window, hit Ctrl+S to save and
     hot-reload instantly. External files also hot-reload on change.
+  - AI copilot - chat with an LLM that reads and edits your shaders, sees compile
+    errors the moment they happen, creates nodes, tweaks uniforms, renders previews,
+    and can even publish for you - every risky action waits for your confirm, and any
+    turn is one-click revertable. Bring your own OpenRouter key.
   - Automatic UI from your uniforms - ShaderBox introspects the active uniforms and
     generates the matching controls: floats, vectors, colors, textures, arrays, and text.
-  - Reusable shader library - build a personal collection of helper functions (noise,
-    SDFs, palettes...) once, then call them by name from any shader and they just work,
-    no include boilerplate. Press Ctrl+P to fuzzy-search, preview, and insert them, or
-    manage your library files right from the picker.
+  - Reusable shader library - ships with a built-in SB_* standard library (SDF shapes
+    and ops, noise, draw helpers, a full text stack) and grows with your own functions;
+    call them by name from any shader and they just work, no include boilerplate. Press
+    Ctrl+P to fuzzy-search, preview, and insert them, or manage your library files
+    right from the picker.
   - Image & video texture inputs - drop in media and sample it straight from your shader.
-  - Built-in text rendering - an SDF segment-glyph shader for drawing text in your scene.
+  - Built-in text rendering - an SDF segment-glyph shader for drawing text in your
+    scene, Latin + Cyrillic, with auto-fit and per-character access.
   - Export anywhere - render to PNG images, MP4/WebM video, publish a Telegram sticker
     set, or upload to YouTube as a video or a Short (you connect your own account).
 
