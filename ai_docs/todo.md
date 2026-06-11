@@ -612,3 +612,17 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   on the terminal kind); `rsn=` reasoning tokens dropped (t18 iter2: rsn=5504 of out=5872); no
   `gate_approved` trace event; the resolved model isn't recorded in artifacts (report header says
   "unknown"); a `--calls` compact per-turn tool→result index mode would kill the grep-haystack pain.
+
+## [DEFERRAL] night-run residuals: giveup note lists only EDIT tools; tail-range whole-file hint
+- **Trigger:** next time the giveup note builder or `_range_check_error` in `copilot/` is edited, OR
+  the next dogfood run hitting a giveup whose note shows nothing applied.
+- Night CRT run (2026-06-11, 14 turns): (a) the "What DID apply" giveup note tracks only the three
+  edit tools — a turn whose `create_node` succeeded before 3 failed edits reports nothing applied;
+  include all mutating tools. (b) THE dominant model failure shape is now precise: codex-mini
+  repeatedly submits end_line = the file's closing-brace line while quoting the PREVIOUS line's
+  content (15 identical rejects in one turn, ignoring the new "did you mean end_line=N?" hint) —
+  when the rejected end_line is the file's LAST line, the hint should also suggest whole-file mode
+  ("omit the range entirely"), which converges in one step every time it's used. (c) Hard datum for
+  the honesty entry: the model described a finished scene over a fact line that ENDED with the new
+  "NOTHING is visible: do not describe a scene" imperative — even the in-result channel is ignored
+  at reply time by this model; reply-time enforcement would need an engine-side check, not prompt text.
