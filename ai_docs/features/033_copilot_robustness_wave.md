@@ -153,6 +153,24 @@ DRIVER LESSON: the round's "upside-down" saga was a maintainer-side misread of t
 (arched П reads as U) — judge calibration matters, for humans and future VLM judges alike; the
 agent cannot push back on a false visual report (it trusts the user per prompt).
 
+## Manual verification — ROUND 5 RESULTS (library-surgery mission, 4 turns)
+
+Scenario varied per the convergence loop: lib-file surgery instead of node editing. T1 extract a
+ring-progress helper into `lib:draw/progress_arc.glsl` + refactor Countdown onto it: PASS. T2
+create a Loader node + RENAME the helper to `SB_sd_arc_sweep`: PASS — rename consistent across
+lib file + both consumers (grep-verified, zero stale references). T3 signature change (5th param
+`start_angle`) broke both consumers; the final reply honestly reported the broken NET state
+(cycle-2 nudge working as designed). T4 "continue": the cycle-2 location-enhanced brace hint
+("first unmatched '}' on line 34") -> fixed in 1 attempt (round-3 analog: 6-7 blind). End state
+both nodes clean, renders correct (Countdown digit + ring from 12 o'clock, Loader arc from 3
+o'clock; verified visually pre-reboot, PNG artifacts lost to a /tmp wipe).
+NEW findings for cycle 3: (a) `read_shader` on a `lib:` address returns "no such node(s)" — no
+redirect to the lib-read path; (b) turn-3 prose claimed "Loader now uses the new signature"
+while the file was NOT yet updated — prose/state mismatch class recurs (round 4 had an
+intentions-as-done analog; the nudge fixed the FINAL reply, mid-turn prose still drifts).
+OPS NOTE: round sandboxes lived in /tmp (harness mkdtemp default) — two Pi reboots wiped traces
+mid-loop; future rounds must set SHADERBOX_DATA_DIR under $HOME.
+
 ## Manual verification (original criteria)
 
 A fresh dogfood round (same mission class as round 3) after landing: expect (a) range-bookkeeping
