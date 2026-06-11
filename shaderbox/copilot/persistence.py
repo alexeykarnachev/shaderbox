@@ -27,7 +27,7 @@ from shaderbox.copilot.state import (
     TurnStats,
 )
 
-_VERSION = 9
+_VERSION = 10
 
 
 def _migrate_pre_v7(data: dict[str, object]) -> None:
@@ -133,6 +133,9 @@ class _MessageModel(BaseModel):
     # Defaulted so a pre-v9 file loads with an empty snippet / no stats.
     steps: list[_StepRecordModel] = []
     snippet_stats: _TurnStatsModel | None = None
+    # Resolved gate's outcome token (feature 034 F03). Defaulted so a pre-v10 file (whose
+    # outcome is baked into text) loads with no structured outcome — renders as plain text.
+    gate_outcome: str = ""
     model_config = {"extra": "forbid"}
 
 
@@ -187,6 +190,7 @@ class ConversationStore(BaseModel):
                     turn_id=m.turn_id,
                     steps=[_StepRecordModel(name=s.name, ok=s.ok) for s in m.steps],
                     snippet_stats=_stats_model(m.snippet_stats),
+                    gate_outcome=m.gate_outcome,
                 )
                 for m in state.messages
             ],
@@ -218,6 +222,7 @@ class ConversationStore(BaseModel):
                 turn_id=m.turn_id,
                 steps=[StepRecord(name=s.name, ok=s.ok) for s in m.steps],
                 snippet_stats=_stats_or_none(m.snippet_stats),
+                gate_outcome=m.gate_outcome,
             )
             for m in self.messages
         ]

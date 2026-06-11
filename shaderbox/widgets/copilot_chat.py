@@ -11,6 +11,7 @@ from shaderbox.copilot.state import (
     CopilotLayout,
     Message,
     ResultWidget,
+    StepRecord,
     context_gauge_readout,
 )
 from shaderbox.copilot.tools.registry import ToolRegistry
@@ -24,6 +25,7 @@ from shaderbox.ui_primitives import (
     ghost_button,
     labeled_text_input,
     layout_icon_button,
+    markdown_text,
     message_bubble,
     modal_window,
     open_path_button,
@@ -35,6 +37,8 @@ from shaderbox.ui_primitives import (
     wrapped_caption,
 )
 from shaderbox.util import open_in_file_manager
+
+_DBG_INPUT_ACTIVE: bool = False
 
 # Floating top-level window (NOT a tab/region), drawn after the main window so it floats on
 # top. no_nav_focus keeps it out of Ctrl+Tab (does NOT block click-to-focus); no_collapse
@@ -125,7 +129,6 @@ def draw(app: App) -> None:
             imgui.set_window_focus(None)
             app.copilot_defocus_requested = False
             app.copilot_focused = False
-
         # Focus outline on the foreground list so it covers the title bar (the content clip
         # would cut it). Skipped under a modal — foreground would render over the popup.
         if app.copilot_focused and not app.any_popup_open():
@@ -239,8 +242,13 @@ def _draw_transcript(app: App) -> None:
         # the user scrolled up even slightly, stop auto-scrolling so they can read while a turn
         # streams. On first draw scroll_max is 0 -> at-bottom -> opens pinned to the bottom.
         stick = imgui.get_scroll_y() >= imgui.get_scroll_max_y() - 1.0
+        # Only the trailing snippet may render as live: an earlier (cancelled/torn) snippet
+        # also has no stats, and the global in_flight would wrongly re-animate it.
+        last_snippet = next(
+            (m for m in reversed(state.messages) if m.role == "turn_snippet"), None
+        )
         for i, msg in enumerate(state.messages):
-            _draw_message(app, msg, i)
+            _draw_message(app, msg, i, is_last_snippet=msg is last_snippet)
         if state.streaming_text:
             _draw_message(app, Message(role="assistant", text=state.streaming_text), -1)
         # The in-flight status line now lives INSIDE the turn's snippet (the trailing turn_snippet
@@ -299,7 +307,9 @@ def _draw_transcript(app: App) -> None:
     imgui.unindent(float(SPACE.SM))
 
 
-def _draw_message(app: App, msg: Message, idx: int) -> None:
+def _draw_message(
+    app: App, msg: Message, idx: int, is_last_snippet: bool = False
+) -> None:
     # Sanitize at DRAW so an unrenderable glyph never reaches the atlas. Idempotent on
     # committed (already-ASCII) text; on the live streaming preview it runs on the full
     # accumulated string (tear-safe), not per-delta.
@@ -316,7 +326,14 @@ def _draw_message(app: App, msg: Message, idx: int) -> None:
             revert_msg=msg,
         )
     elif role == "assistant":
-        _draw_bubble("copilot", COLOR.STATE_INFO, COLOR.BG_SURFACE, text, idx)
+        _draw_bubble(
+            "copilot",
+            COLOR.STATE_INFO,
+            COLOR.BG_SURFACE,
+            text,
+            idx,
+            markdown_font=app.font_14_bold,
+        )
     elif role == "tool_status":
         with message_bubble(f"##bubble_{idx}", COLOR.TRANSPARENT, bordered=False):
             wrapped_caption(text, COLOR.FG_DIM)
@@ -328,25 +345,80 @@ def _draw_message(app: App, msg: Message, idx: int) -> None:
             wrapped_caption(text, COLOR.STATE_ERROR)
         imgui.dummy(imgui.ImVec2(0, float(SPACE.SM)))
     elif role == "turn_snippet":
-        _draw_turn_snippet(app, msg, idx)
+        _draw_turn_snippet(app, msg, idx, is_last_snippet)
     elif role == "pending_action":
         with message_bubble(f"##bubble_{idx}", COLOR.TRANSPARENT, bordered=False):
             _draw_pending_action(app, msg, idx)
         imgui.dummy(imgui.ImVec2(0, float(SPACE.SM)))
 
 
-def _snippet_tooltip(registry: ToolRegistry, msg: Message) -> str:
-    # Per-step list (name + ok/fail) + the turn's token/cost total. No per-call tokens — usage is
-    # billed per LLM iteration, not per tool call (F06 decision A).
-    lines = [
-        f"{i + 1}. {registry.label_for(s.name)}{'' if s.ok else '  (failed)'}"
-        for i, s in enumerate(msg.steps)
-    ]
-    st = msg.snippet_stats
-    if st is not None:
-        lines.append("")
-        lines.append(f"reply {st.reply_tokens} tok  -  ${st.cost_usd:.4f}")
-    return "\n".join(lines) if lines else "No tool calls."
+def _collapsed_steps(steps: list[StepRecord]) -> list[tuple[str, str, bool]]:
+    # (range_label, tool_name, ok) rows for the hover breakdown. Consecutive identical
+    # steps (same tool, same outcome) collapse into one "4-13" row (034 F05).
+    rows: list[tuple[str, str, bool]] = []
+    i = 0
+    while i < len(steps):
+        j = i
+        while (
+            j + 1 < len(steps)
+            and steps[j + 1].name == steps[i].name
+            and steps[j + 1].ok == steps[i].ok
+        ):
+            j += 1
+        nums = f"{i + 1}" if i == j else f"{i + 1}-{j + 1}"
+        rows.append((nums, steps[i].name, steps[i].ok))
+        i = j + 1
+    return rows
+
+
+def _tooltip_stat_row(label: str, value: str, label_w: float, value_color) -> None:
+    imgui.text_colored(COLOR.FG_DIM, label)
+    imgui.same_line(label_w)
+    imgui.text_colored(value_color, value)
+
+
+def _draw_snippet_tooltip(registry: ToolRegistry, msg: Message) -> None:
+    # The designed hover breakdown (034 F09): per-step rows carrying the square bar's color
+    # language (a small ok/fail swatch + the human verb), then a stats block with the token
+    # in/out split + cost. No per-call tokens — usage is billed per LLM iteration (F06
+    # decision A), so context/reply/cost are the turn totals.
+    with imgui_ctx.begin_tooltip():
+        rows = _collapsed_steps(msg.steps)
+        if not rows:
+            imgui.text_colored(COLOR.FG_DIM, "No tool calls.")
+        line_h = imgui.get_text_line_height()
+        side = line_h * 0.55
+        for nums, name, ok in rows:
+            pos = imgui.get_cursor_screen_pos()
+            color = COLOR.STATE_OK if ok else COLOR.STATE_ERROR
+            imgui.get_window_draw_list().add_rect_filled(
+                (pos.x, pos.y + (line_h - side) * 0.5),
+                (pos.x + side, pos.y + (line_h + side) * 0.5),
+                imgui.color_convert_float4_to_u32(color),
+                2.0,
+            )
+            imgui.dummy(imgui.ImVec2(side, line_h))
+            imgui.same_line(spacing=float(SPACE.SM))
+            imgui.text_colored(COLOR.FG_DIM, nums)
+            imgui.same_line(spacing=float(SPACE.SM))
+            label = registry.label_for(name)
+            if ok:
+                imgui.text_unformatted(label)
+            else:
+                imgui.text_colored(COLOR.STATE_ERROR, f"{label} (failed)")
+        st = msg.snippet_stats
+        if st is not None:
+            imgui.dummy(imgui.ImVec2(0, float(SPACE.SM)))
+            label_w = max(
+                imgui.calc_text_size(s).x for s in ("context", "reply", "cost")
+            ) + float(SPACE.LG)
+            _tooltip_stat_row(
+                "context", f"{st.context_tokens} tok in", label_w, COLOR.FG_PRIMARY
+            )
+            _tooltip_stat_row(
+                "reply", f"{st.reply_tokens} tok out", label_w, COLOR.FG_PRIMARY
+            )
+            _tooltip_stat_row("cost", f"${st.cost_usd:.4f}", label_w, COLOR.STATE_WARN)
 
 
 _SquareSpec = tuple[tuple[float, float, float, float], bool]  # (color, pulse)
@@ -367,14 +439,14 @@ def _snippet_squares(msg: Message, live: bool) -> list[_SquareSpec]:
     return squares
 
 
-def _draw_turn_snippet(app: App, msg: Message, idx: int) -> None:
+def _draw_turn_snippet(app: App, msg: Message, idx: int, is_last_snippet: bool) -> None:
     # One compact per-turn snippet: the square bar (see _snippet_squares) + a line below it that
     # self-updates to the live status WHILE running, then collapses to a mini-stat at clean
     # completion. Hover the bar -> per-step breakdown.
     #   live               = running now (in_flight, no stats) -> pulsing head + live status line.
     #   has stats          = completed cleanly -> answer square + mini-stat line.
     #   finished, no stats = error/cancel/torn (a separate message states the reason) -> bar only.
-    live = msg.snippet_stats is None and app.copilot.state.in_flight
+    live = msg.snippet_stats is None and app.copilot.state.in_flight and is_last_snippet
     squares = _snippet_squares(msg, live)
     if not squares:
         return
@@ -394,7 +466,7 @@ def _draw_turn_snippet(app: App, msg: Message, idx: int) -> None:
                 COLOR.FG_DIM,
             )
         if hovered:
-            imgui.set_tooltip(_snippet_tooltip(app.copilot.registry, msg))
+            _draw_snippet_tooltip(app.copilot.registry, msg)
     imgui.dummy(imgui.ImVec2(0, float(SPACE.SM)))
 
 
@@ -406,6 +478,7 @@ def _draw_bubble(
     idx: int,
     app: App | None = None,
     revert_msg: Message | None = None,
+    markdown_font: imgui.ImFont | None = None,
 ) -> None:
     # A chat bubble: a colored name header + wrapped text, with corner glyphs pinned top-right
     # (imgui prose isn't selectable, so copy is the affordance). A user message that has a
@@ -423,7 +496,10 @@ def _draw_bubble(
     )
     with message_bubble(f"##bubble_{idx}", bg) as origin:
         imgui.text_colored(name_color, name)
-        imgui.text_wrapped(text)
+        if markdown_font is not None:
+            markdown_text(text, markdown_font)
+        else:
+            imgui.text_wrapped(text)
         # Corner glyphs at the bubble's top-right inner corner; allow_overlap so they win clicks.
         # SPACE.SM gap from the right edge matches the top gap (the window padding).
         right = origin.x + imgui.get_content_region_avail().x - float(SPACE.SM)
@@ -463,7 +539,20 @@ def _draw_result_widget(widget: ResultWidget, idx: int) -> None:
 
 
 def _draw_pending_action(app: App, msg: Message, idx: int) -> None:
-    imgui.text_wrapped(sanitize_display(msg.text))
+    markdown_text(sanitize_display(msg.text), app.font_14_bold)
+    drew_outcome = False
+    if msg.resolved and msg.gate_outcome:
+        # The user's answer, visually distinct from the prompt (a success-colored Yes;
+        # everything else dim). Pre-v10 cards carry the outcome inside text and skip this.
+        if msg.gate_kind is GateKind.CREDENTIAL:
+            imgui.text_colored(COLOR.FG_DIM, f"You provided: {msg.gate_outcome}")
+        elif msg.gate_outcome == "Yes":
+            imgui.text_colored(COLOR.STATE_OK, "You chose: Yes")
+        elif msg.gate_outcome == "No":
+            imgui.text_colored(COLOR.FG_DIM, "You chose: No")
+        else:
+            imgui.text_colored(COLOR.FG_DIM, f"({msg.gate_outcome})")
+        drew_outcome = True
     if not msg.resolved:
         if msg.gate_kind is GateKind.CREDENTIAL:
             _draw_credential_input(app, msg, idx)
@@ -479,17 +568,26 @@ def _draw_pending_action(app: App, msg: Message, idx: int) -> None:
     recover = msg.recover
     if recover is None:
         return
+    # The recover affordance rides the outcome line ("You chose: Yes  <icon>"), its own
+    # line only on a pre-v10 card with no structured outcome.
     if recover.done:
         # Node back in ui_nodes = recovered; gone = the trash was cleared.
+        if drew_outcome:
+            imgui.same_line(spacing=float(SPACE.MD))
         caption_text(
             "Recovered" if recover.node_id in app.ui_nodes else "No longer recoverable"
         )
         return
+    if drew_outcome:
+        imgui.same_line(spacing=float(SPACE.MD))
     # Disabled while a turn runs: a recover mutates ui_nodes, which the in-flight turn owns.
-    imgui.begin_disabled(app.copilot.state.in_flight)
-    if ghost_button(f"Recover##gate_recover_{idx}"):
+    disabled = app.copilot.state.in_flight
+    imgui.begin_disabled(disabled)
+    if revert_icon_button(f"gate_recover_{idx}", float(SIZE.ICON_SM)):
         app.recover_deleted_node(msg)
     imgui.end_disabled()
+    if not disabled and imgui.is_item_hovered():
+        imgui.set_tooltip("Recover from trash")
 
 
 def _draw_config_panel(app: App, msg: Message, idx: int) -> None:

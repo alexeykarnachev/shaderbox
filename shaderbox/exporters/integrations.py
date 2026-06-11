@@ -6,6 +6,7 @@ from typing import Self
 from loguru import logger
 from pydantic import BaseModel, ValidationError
 
+from shaderbox.copilot.config import CopilotConfig, apply_user_limits
 from shaderbox.paths import app_data_dir
 
 _STORE_FILE = "integrations.json"
@@ -55,8 +56,29 @@ class YouTubeIntegration(BaseModel):
 class CopilotIntegration(BaseModel):
     openrouter_key: str = ""
     model: str = "openai/gpt-5.1-codex-mini"  # OpenRouter "provider/model-id"
+    # User-tunable agent limits (034 F12) — defaults sourced from CopilotConfig (the
+    # single source of truth); applied onto the live config via apply_user_limits.
+    max_iterations: int = CopilotConfig.max_iterations
+    max_input_tokens: int = CopilotConfig.max_input_tokens
+    max_tokens_per_turn: int = CopilotConfig.max_tokens_per_turn
+    max_edit_retries: int = CopilotConfig.max_edit_retries
+    max_compile_failures: int = CopilotConfig.max_compile_failures
+    max_clean_edit_streak: int = CopilotConfig.max_clean_edit_streak
+    auto_revert_after_failed_edits: int = CopilotConfig.auto_revert_after_failed_edits
 
     model_config = {"extra": "forbid"}
+
+    def apply_limits(self) -> None:
+        # Push these persisted values onto the live COPILOT_CONFIG (startup + Settings edit).
+        apply_user_limits(
+            max_iterations=self.max_iterations,
+            max_input_tokens=self.max_input_tokens,
+            max_tokens_per_turn=self.max_tokens_per_turn,
+            max_edit_retries=self.max_edit_retries,
+            max_compile_failures=self.max_compile_failures,
+            max_clean_edit_streak=self.max_clean_edit_streak,
+            auto_revert_after_failed_edits=self.auto_revert_after_failed_edits,
+        )
 
 
 class IntegrationsStore(BaseModel):

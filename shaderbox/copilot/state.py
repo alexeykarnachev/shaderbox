@@ -74,6 +74,9 @@ class Message:
     # is the UI-only typed-secret buffer — NEVER persisted/read by session (leaves via GateResponse.secret).
     gate_kind: GateKind = GateKind.CONFIRM
     gate_input: str = ""
+    # Resolved gate's outcome token: "Yes"/"No" (confirm), a masked echo (credential), or
+    # "cancelled". "" = unresolved, or a pre-v10 card whose outcome is baked into text.
+    gate_outcome: str = ""
     # CONFIG gate: integration whose draw_config_ui the card renders. UI-only + transient like
     # gate_input — never persists (its turn stays in_flight, so save_conversation can't run).
     gate_integration: str = ""

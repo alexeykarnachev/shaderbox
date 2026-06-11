@@ -8,6 +8,7 @@ literals).
 """
 
 from scripts.dogfood.analyze import CANONICAL_TOOLS
+from shaderbox.copilot.capabilities import NodeTreeEntry
 from shaderbox.copilot.gate import GateKind
 from shaderbox.copilot.tools.base import GatePolicy, ToolDefinition
 from shaderbox.copilot.tools.registry import ToolRegistry, build_registry
@@ -82,3 +83,24 @@ def test_publish_prechecks_hand_off_until_ready() -> None:
     no_yt = build_registry(minimal_caps())
     msg = no_yt.precheck("publish_youtube", {})
     assert msg is not None and "connect" in msg.lower()
+
+
+def test_delete_gate_prompt_shows_node_name() -> None:
+    # The confirm card asks with the node's NAME (resolved via the project map with
+    # read_shader's prefix rule), short — no trash/recover tail (034 F01).
+    registry = build_registry(
+        minimal_caps(
+            node_tree=lambda: [
+                NodeTreeEntry(
+                    node_id="a1b2", name="Blank", has_errors=False, is_current=True
+                )
+            ]
+        )
+    )
+    d = registry.definition_for("delete_node")
+    assert d is not None and d.gate_prompt is not None
+    assert d.gate_prompt({"node": "a1b2"}) == "Delete node `Blank`?"
+    # Full uuid matching the short id resolves too; an unknown id falls back raw.
+    assert d.gate_prompt({"node": "a1b2c3d4-ffff"}) == "Delete node `Blank`?"
+    assert d.gate_prompt({"node": "zzzz"}) == "Delete node `zzzz`?"
+    assert d.gate_prompt({}) == "Delete node `?`?"

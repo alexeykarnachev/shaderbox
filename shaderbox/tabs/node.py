@@ -4,6 +4,7 @@ from imgui_bundle import imgui, imgui_ctx
 from OpenGL.GL import GL_SAMPLER_2D
 
 from shaderbox.app import App
+from shaderbox.glyph_tables import TABLE_UNIFORMS
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_models import (
     UIUniform,
@@ -129,6 +130,10 @@ def draw(app: App) -> None:
     active_uniform_hashes = []
     auto_hashes = []
     for uniform in ui_node.node.get_active_uniforms():
+        if (
+            uniform.name in TABLE_UNIFORMS
+        ):  # engine glyph tables — pure machinery, no row
+            continue
         hash = get_uniform_hash(uniform)
         if hash not in ui_uniforms:
             ui_uniforms[hash] = UIUniform.from_uniform(uniform)

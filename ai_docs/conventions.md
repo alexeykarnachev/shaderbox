@@ -359,6 +359,31 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
 
 ## Known quirks (library / SDK footguns + the workaround)
 
+- **A dynamically-indexed `const` array is NOT constant storage on NVIDIA — big lookup tables
+  must be UNIFORM arrays (engine-bound).** Measured on the glyph stroke tables (RTX 3090,
+  575.xx, text stack @800px): function-local const ~432 ms/frame (re-materialized per call);
+  global const ~10 ms (still demoted to per-thread local memory); `uniform vec4 […]` ~0.13 ms
+  (true constant bank — on par with fully inlined code). Mesa/V3D is indifferent to all three
+  (~30 ms @300px) but chokes on the INLINED alternative (the pre-032 glyph switch cost ~20 s of
+  codegen), which is why tables exist at all. The plumbing: `scripts/gen_glyphs.py` emits
+  `text/glyphs.glsl` (uniform declarations + readers) together with `shaderbox/glyph_tables.py`
+  (the packed values); `Node.compile()` writes them into any program that uses them;
+  `ENGINE_DRIVEN_UNIFORMS` keeps them off save/seed/UI/set_uniform. The shader-lib index
+  extracts top-level `const`/`uniform` declarations as spliceable entries
+  (`shader_lib/parser.py::DECL_SIG_RE`, one declarator per line). Small consts (an `SB_PI`)
+  are fine as global const; it's dynamic indexing into a big table that hits the demotion. If a
+  lib/table shader is mysteriously slow on one vendor only, check WHERE its table data lives
+  first.
+- **A glfw key-filter callback must NEVER swallow RELEASE events.** The Esc filter
+  (`app.py::_install_escape_filter`) gates on `escape_has_job()`, but the job routinely
+  disappears between press and release (Esc's own handler defocused the chat) — a swallowed
+  release left imgui's Escape logically held FOREVER, so every InputText activated afterwards
+  self-cancelled on the key-repeat ticks (a caret that dies 2-3 frames after every click; F13).
+  Gate presses/repeats only; forward releases unconditionally (releasing an already-up key is a
+  no-op). Debugging this class: imgui's own debug log names every ActiveId change with its cause
+  (`ctx.debug_log_flags = imgui.internal.DebugLogFlags_.event_active_id | event_io |
+  output_to_tty`) — far better than hand-rolled focus logging; headless repros MISS this class
+  because injected io events bypass glfw callbacks.
 - **GLSL `#line N M` accepts INTEGERS ONLY for the file-id (`M`).** Outside the
   `GL_ARB_shading_language_include` extension (unreliable across drivers), no GL driver accepts
   `#line N "filename"`. The host emits `#line N <integer_id>` and keeps an `id -> Path` table

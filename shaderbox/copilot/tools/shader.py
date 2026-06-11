@@ -42,8 +42,24 @@ class _EditArgs(ToolArgs):
 
 
 class _ReplaceLinesArgs(ToolArgs):
-    start_line: int = Field(description="first line to replace (1-based, inclusive)")
-    end_line: int = Field(description="last line to replace (1-based, inclusive)")
+    start_line: int | None = Field(
+        default=None,
+        description="first line to replace (1-based, inclusive); OMIT both start_line "
+        "and end_line to replace the ENTIRE file",
+    )
+    end_line: int | None = Field(
+        default=None, description="last line to replace (1-based, inclusive)"
+    )
+    first_line: str | None = Field(
+        default=None,
+        description="ranged replace only: the exact CURRENT content of start_line, "
+        "copied verbatim from the working set — checked before applying",
+    )
+    last_line: str | None = Field(
+        default=None,
+        description="ranged replace only: the exact CURRENT content of end_line, "
+        "copied verbatim from the working set — checked before applying",
+    )
     new_text: str = Field(
         description="replacement text (no trailing newline needed); empty string deletes "
         "the range"
@@ -147,14 +163,17 @@ _EDIT_SHADER_DESC = (
 )
 
 _REPLACE_LINES_DESC = (
-    "BEST FOR replacing a whole block or function — you give the line numbers, so you never "
-    "re-type the old lines (cheaper + no exact-match risk vs a large edit_shader old_str). "
-    "Replace an inclusive range of lines [start_line, end_line] (1-based) with new_text, then "
-    "recompile. Use the line numbers from the WORKING SET block at the bottom of the conversation "
-    "— they are current for THIS step. new_text is inserted verbatim, so include the exact "
-    "indentation you want. An empty new_text deletes the range. To insert without replacing, use "
-    "insert_after. (One line-addressed edit per file per step — see HOW TO WORK.) After the edit I "
-    "recompile and return any compile errors; if there are none, it compiled clean."
+    "Replace a line range, or the WHOLE file. BEST FOR a full rewrite (replacing main() or most "
+    "of the file): OMIT start_line/end_line entirely — new_text replaces the whole file, no line "
+    "numbers to get wrong. For a RANGED replace pass [start_line, end_line] (1-based, inclusive, "
+    "from the WORKING SET block — current for THIS step) AND first_line + last_line: the exact "
+    "current content of those two boundary lines, copied verbatim from the working set. If they "
+    "don't match what is really there, NOTHING is applied and the result shows the actual lines — "
+    "fix the range and resubmit. The range must cover EVERYTHING new_text replaces. new_text is "
+    "inserted verbatim (include the indentation you want); an empty new_text deletes the range. "
+    "To insert without replacing, use insert_after. (One line-addressed edit per file per step — "
+    "see HOW TO WORK.) After the edit I recompile and return any compile errors; if there are "
+    "none, it compiled clean."
 )
 
 _INSERT_AFTER_DESC = (
@@ -345,6 +364,21 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
 
     def replace_lines(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
         start, end = args["start_line"], args["end_line"]
+        first, last = args["first_line"], args["last_line"]
+        if (start is None) != (end is None):
+            return (
+                False,
+                "error: provide BOTH start_line and end_line for a ranged replace, "
+                "or NEITHER to replace the whole file",
+                None,
+            )
+        if start is None or end is None:
+            result = caps.apply_line_edit(
+                0, 0, args["new_text"], args["target"], None, None
+            )
+            if (unresolved := _unresolved_result(result)) is not None:
+                return unresolved
+            return _applied_result(result)
         if start > end:
             return (
                 False,
@@ -352,7 +386,17 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
                 "without replacing, use insert_after",
                 None,
             )
-        result = caps.apply_line_edit(start, end, args["new_text"], args["target"])
+        if first is None or last is None:
+            return (
+                False,
+                "error: a ranged replace requires first_line AND last_line — copy the "
+                "CURRENT content of those two lines verbatim from the working set (or "
+                "omit the range entirely to replace the whole file)",
+                None,
+            )
+        result = caps.apply_line_edit(
+            start, end, args["new_text"], args["target"], first, last
+        )
         if (unresolved := _unresolved_result(result)) is not None:
             return unresolved
         if result.matches == 0:
@@ -361,7 +405,9 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
 
     def insert_after(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
         line = args["line"]
-        result = caps.apply_line_edit(line + 1, line, args["new_text"], args["target"])
+        result = caps.apply_line_edit(
+            line + 1, line, args["new_text"], args["target"], None, None
+        )
         if (unresolved := _unresolved_result(result)) is not None:
             return unresolved
         if result.matches == 0:
@@ -426,6 +472,17 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
         if missing:
             body += f"\n\n(no function found for: {', '.join(missing)})"
         return True, body, {"read": list(found)}
+
+    def _node_display(node: str) -> str:
+        # Display NAME for a gate prompt, resolved via the project map with read_shader's
+        # prefix rule. GL-free + worker-safe (node_tree is the per-iteration context read).
+        # Falls back to the raw arg — a wrong id still shows the user what was asked.
+        if not node:
+            return "?"
+        for e in caps.node_tree():
+            if e.node_id.startswith(node) or node.startswith(e.node_id):
+                return e.name
+        return node
 
     def delete_node(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
         # The gate (GatePolicy.ALWAYS) has already cleared a user Yes by the time this runs.
@@ -575,8 +632,7 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             eager=True,
             gate_policy=GatePolicy.ALWAYS,
             gate_prompt=lambda a: (
-                f"Delete node '{a.get('node', '')}'? It moves to the project "
-                "trash (recoverable)."
+                f"Delete node `{_node_display(a.get('node', ''))}`?"
             ),
         ),
         ToolDefinition(

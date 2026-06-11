@@ -106,11 +106,23 @@ def _fake_caps(edit_errors: list[list[CompileErrorInfo]]) -> CopilotCapabilities
         return EditResult(matches=len(spans), errors=errors)
 
     def apply_line(
-        start_line: int, end_line: int, new_text: str, target: str
+        start_line: int,
+        end_line: int,
+        new_text: str,
+        target: str,
+        first_line: str | None,
+        last_line: str | None,
     ) -> EditResult:
         # Faithful to App: split-on-newline list edit (§14 L2). matches==0 is the
         # out-of-range fail-soft signal the tool layer turns into the range error.
-        _ = target
+        # start == end == 0 is the whole-file sentinel; checksums are engine-side
+        # (the pure helper is unit-tested directly) and ignored here.
+        _ = target, first_line, last_line
+        if start_line == 0 and end_line == 0:
+            state["text"] = new_text
+            errors = edit_errors[state["n"]]
+            state["n"] += 1
+            return EditResult(matches=1, errors=errors)
         lines = state["text"].split("\n")
         n = len(lines)
         is_insert = end_line == start_line - 1
@@ -814,3 +826,73 @@ def test_silent_finish_after_tool_gets_final_reply_not_incompatible() -> None:
         errors = [e for e in events if isinstance(e, AgentError)]
         assert errors and "could not produce a reply" in errors[0].message
         assert not _is_incompatible_error(events)
+
+
+def test_snippet_tooltip_collapses_identical_consecutive_steps() -> None:
+    # 034 F05: a run of identical (tool, outcome) steps shows as ONE "4-13" row;
+    # an outcome flip or a different tool breaks the run; non-consecutive repeats don't merge.
+    from shaderbox.copilot.state import StepRecord
+    from shaderbox.widgets.copilot_chat import _collapsed_steps
+
+    steps = [
+        StepRecord(name="read_shader", ok=True),
+        StepRecord(name="edit_shader", ok=True),
+        StepRecord(name="edit_shader", ok=True),
+        StepRecord(name="edit_shader", ok=False),
+        StepRecord(name="edit_shader", ok=True),
+        StepRecord(name="grep", ok=True),
+        StepRecord(name="edit_shader", ok=True),
+    ]
+    assert _collapsed_steps(steps) == [
+        ("1", "read_shader", True),
+        ("2-3", "edit_shader", True),
+        ("4", "edit_shader", False),
+        ("5", "edit_shader", True),
+        ("6", "grep", True),
+        ("7", "edit_shader", True),
+    ]
+
+
+def test_clean_edit_streak_nudges_once() -> None:
+    # The render-blind spree brake (034): max_clean_edit_streak consecutive CLEAN edits in one
+    # turn splice a one-time "let the user look" nudge — never a giveup, latched per turn.
+    edit = _tool_call(
+        "cx",
+        "edit_shader",
+        '{"old_str": "vec3 p = u_pos;", "new_str": "vec3 p = u_pos;"}',
+    )
+    cap = COPILOT_CONFIG.max_clean_edit_streak
+    n_clean = cap + 4
+    scripts: list[list[LLMStreamEvent]] = [edit] * n_clean + [
+        [LLMTextDelta("Tweaked it."), LLMDone("stop")]
+    ]
+    caps = _fake_caps(edit_errors=[[]] * n_clean)
+    registry = build_registry(caps)
+
+    nudge_events: list[str] = []
+
+    class _RecordingTrace(TraceLog):
+        def __init__(self) -> None:
+            super().__init__(Path())
+
+        def event(self, kind: str, **fields: object) -> None:
+            nudge_events.append(kind)
+
+    events = list(
+        run_turn(
+            _FakeClient(scripts),
+            registry,
+            COPILOT_CONFIG,
+            _fake_context(),
+            history=[],
+            user_text="make it prettier",
+            gate=GateChannel(),
+            cancel=threading.Event(),
+            trace=_RecordingTrace(),
+        )
+    )
+
+    cards = [e for e in events if isinstance(e, AgentToolCard)]
+    assert len(cards) == n_clean and all(c.ok for c in cards)
+    assert nudge_events.count("clean_streak_nudge") == 1
+    assert isinstance(events[-1], AgentTurnDone)

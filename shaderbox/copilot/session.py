@@ -276,7 +276,7 @@ class CopilotSession:
         card = self._open_gate_card()
         if card is not None:
             card.resolved = True
-            card.text = f"{card.text}\n({outcome})"
+            card.gate_outcome = outcome
 
     def _attach_recover(self, payload: dict) -> None:
         # Attach RecoverInfo to the trailing resolved pending_action with no recover yet.
@@ -298,7 +298,7 @@ class CopilotSession:
         card = self._open_gate_card()
         if card is not None:
             card.resolved = True
-            card.text = f"{card.text}\nYou chose: {'Yes' if approved else 'No'}"
+            card.gate_outcome = "Yes" if approved else "No"
         self.gate.answer(
             GateResponse(approved=approved, option="Yes" if approved else "No")
         )
@@ -311,7 +311,7 @@ class CopilotSession:
         if card is not None:
             card.resolved = True
             card.gate_input = ""  # drop the typed buffer immediately
-            card.text = f"{card.text}\nYou provided: {mask_secret(secret)}"
+            card.gate_outcome = mask_secret(secret)
         self.gate.answer(GateResponse(approved=True, secret=secret))
 
     def _finish_turn(self) -> None:

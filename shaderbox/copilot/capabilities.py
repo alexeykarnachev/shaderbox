@@ -245,9 +245,19 @@ class CopilotCapabilities(Protocol):
 
     # Replace the 1-based inclusive line range [start, end] with new_text, recompile/write +
     # persist + refresh. An empty selection (end == start - 1) is a pure insert at `start`;
-    # for a non-existent lib: target this CREATES the file.
+    # start == end == 0 replaces the ENTIRE file (whole-file rewrite, no range bookkeeping);
+    # for a non-existent lib: target this CREATES the file. first/last_line: the caller's
+    # verbatim quotes of the range-boundary lines (None = unchecked) — a mismatch rejects
+    # the edit before anything is applied.
     def apply_line_edit(
-        self, start_line: int, end_line: int, new_text: str, target: str, /
+        self,
+        start_line: int,
+        end_line: int,
+        new_text: str,
+        target: str,
+        first_line: str | None,
+        last_line: str | None,
+        /,
     ) -> EditResult: ...
 
     # Set a uniform VALUE. node "" = current. Rejects sampler/block/engine-driven with an

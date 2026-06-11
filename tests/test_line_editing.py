@@ -9,7 +9,7 @@ Two layers, both GL-free:
 import threading
 
 from shaderbox.copilot.agent import AgentError, AgentToolCard, run_turn
-from shaderbox.copilot.backend import _number_lines
+from shaderbox.copilot.backend import _number_lines, _range_check_error
 from shaderbox.copilot.capabilities import CompileErrorInfo, EditResult
 from shaderbox.copilot.config import COPILOT_CONFIG
 from shaderbox.copilot.gate import GateChannel
@@ -158,3 +158,74 @@ def test_retry_cap_fires_on_spiraling_replace_lines() -> None:
     assert len(failed) == COPILOT_CONFIG.max_edit_retries
     assert isinstance(events[-1], AgentError)
     assert len(failed) < COPILOT_CONFIG.max_iterations
+
+
+# ---- whole-file mode + range checksums (034 wave: coordinates stop being guessed) ----
+
+
+def test_range_check_passes_on_verbatim_quotes() -> None:
+    lines = ["uniform float u;", "void main() {", "    x;", "}"]
+    assert _range_check_error(lines, 2, 4, "void main() {", "}") == ""
+    # Whitespace-stripped comparison: indentation differences don't reject.
+    assert _range_check_error(lines, 3, 3, "x;", "x;") == ""
+
+
+def test_range_check_names_the_actual_line_on_mismatch() -> None:
+    lines = ["a", "float glow = 1.0;", "c", "}"]
+    msg = _range_check_error(lines, 1, 2, "a", "}")
+    assert "end_line 2" in msg
+    assert 'is "float glow = 1.0;"' in msg
+    assert 'you quoted "}"' in msg
+    assert "nothing was applied" in msg
+
+
+def test_range_check_skips_none_sides() -> None:
+    lines = ["a", "b"]
+    assert _range_check_error(lines, 1, 2, None, None) == ""
+    assert "start_line 1" in _range_check_error(lines, 1, 2, "zzz", None)
+
+
+def test_whole_file_replace_applies_without_range() -> None:
+    events = _run(
+        [
+            _tool_call(
+                "c1", "replace_lines", '{"new_text": "// rewritten whole file"}'
+            ),
+            [LLMTextDelta("done"), LLMDone("stop")],
+        ]
+    )
+    card = next(e for e in events if isinstance(e, AgentToolCard))
+    assert card.name == "replace_lines"
+    assert card.ok is True
+
+
+def test_ranged_replace_without_checksums_rejected() -> None:
+    events = _run(
+        [
+            _tool_call(
+                "c1",
+                "replace_lines",
+                '{"start_line": 1, "end_line": 2, "new_text": "x"}',
+            ),
+            [LLMTextDelta("done"), LLMDone("stop")],
+        ]
+    )
+    card = next(e for e in events if isinstance(e, AgentToolCard))
+    assert card.ok is False
+    assert "first_line AND last_line" in card.result
+
+
+def test_partial_range_rejected() -> None:
+    events = _run(
+        [
+            _tool_call(
+                "c1",
+                "replace_lines",
+                '{"start_line": 1, "new_text": "x", "first_line": "a", "last_line": "b"}',
+            ),
+            [LLMTextDelta("done"), LLMDone("stop")],
+        ]
+    )
+    card = next(e for e in events if isinstance(e, AgentToolCard))
+    assert card.ok is False
+    assert "BOTH start_line and end_line" in card.result

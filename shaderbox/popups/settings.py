@@ -15,9 +15,11 @@ from shaderbox.paths import shader_lib_root
 from shaderbox.shader_lib.seed import reset_to_shipped
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_primitives import (
+    caption_text,
     chord_row,
     danger_button,
     ghost_button,
+    help_marker,
     label_row,
     labeled_text_input,
     modal_window,
@@ -143,6 +145,68 @@ def _draw_library_reset(app: App) -> None:
         app.lib_reset_armed = False
 
 
+# (label, field, hint, min value, input step) per user-tunable agent limit. 0 = off where
+# the floor is 0; the hint is the durable explanation surfaced via help_marker.
+_COPILOT_LIMITS: list[tuple[str, str, str, int, int]] = [
+    (
+        "Context cap (tokens)",
+        "max_input_tokens",
+        "Max input tokens per LLM request — the context gauge's budget. Older chat "
+        "history is trimmed to fit under it. Bigger = more memory, higher cost per turn.",
+        10_000,
+        5_000,
+    ),
+    (
+        "Reply cap (tokens)",
+        "max_tokens_per_turn",
+        "Max output tokens per LLM step: the visible reply + tool arguments + the "
+        "model's hidden reasoning. Too low truncates big shader rewrites mid-edit.",
+        1_000,
+        1_000,
+    ),
+    (
+        "Max steps per turn",
+        "max_iterations",
+        "Tool-call steps the agent may take for one of your messages before it is "
+        "cut off with an error reply.",
+        1,
+        1,
+    ),
+    (
+        "Failed-edit giveup",
+        "max_edit_retries",
+        "Consecutive edits that FAIL to apply (bad match / bad range) before the "
+        "turn stops and the agent reports it is stuck.",
+        1,
+        1,
+    ),
+    (
+        "Broken-compile hint after",
+        "max_compile_failures",
+        "Consecutive edits that apply but compile broken before a one-time 'stop "
+        "patching, rewrite the whole block' hint. 0 = off.",
+        0,
+        1,
+    ),
+    (
+        "Clean-edit hint after",
+        "max_clean_edit_streak",
+        "Consecutive clean edits in one turn before a one-time 'stop and let the "
+        "user look' hint — brakes blind aesthetic tweak sprees. 0 = off.",
+        0,
+        1,
+    ),
+    (
+        "Auto-restore after",
+        "auto_revert_after_failed_edits",
+        "Consecutive broken-compile edits on one file before the engine restores "
+        "its last clean-compiling state and tells the agent. 0 = off.",
+        0,
+        1,
+    ),
+]
+
+
 def _draw_copilot_config(app: App) -> None:
     field_w = float(SIZE.SETTINGS_CTRL_W) * 2.0
     cfg = app.integrations_store.copilot
@@ -154,6 +218,27 @@ def _draw_copilot_config(app: App) -> None:
         cfg.openrouter_key = new_key
         cfg.model = new_model
         app.integrations_store.save()
+
+    imgui.dummy((0.0, SPACE.SM))
+    caption_text("Agent limits")
+    changed_any = False
+    label_w = max(
+        imgui.calc_text_size(label).x for label, *_ in _COPILOT_LIMITS
+    ) + float(SPACE.LG)
+    for label, field, hint, min_v, step in _COPILOT_LIMITS:
+        imgui.text_colored(COLOR.FG_DIM, label)
+        imgui.same_line(label_w)
+        imgui.set_next_item_width(float(SIZE.SETTINGS_CTRL_W))
+        value = int(getattr(cfg, field))
+        changed, new_value = imgui.input_int(f"##cp_{field}", value, step=step)
+        if changed and max(min_v, new_value) != value:
+            setattr(cfg, field, max(min_v, new_value))
+            changed_any = True
+        imgui.same_line()
+        help_marker(hint)
+    if changed_any:
+        app.integrations_store.save()
+        cfg.apply_limits()
 
 
 def _chord_in_use(

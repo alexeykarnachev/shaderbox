@@ -26,23 +26,32 @@ feature; brief points at the superseder).
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
 <!-- As of 2026-06-11. -->
-**033 LANDED + CONVERGED — copilot robustness wave.** The dogfood-round -> mega-review -> fix loop
-ran to convergence (rounds 4-6, review cycles 1-3): all mechanisms live-verified — compile hints
-converge a broken edit in 1-3 attempts (was 6-7 blind), render facts are alpha-aware (sticker
-pattern reads as ink, not "FLAT white"), zero silent turns, force-restore + oscillation brake
-fired live and the agent obeyed, two-sided trust held against a deliberately false "screen is
-black" report (cited facts + asked, vs round-3's 16-edit thrash), `read_shader` accepts `lib:`
-addresses, torn final stream keeps cost + ledger. Residuals are model-bound (cheap codex-mini
-denies its own ledger-recorded edits, claims unverifiable "exactly") — documented in the spec
-round-6 section, NOT harness gaps. Spec: `ai_docs/features/033_copilot_robustness_wave.md`.
-**Seed mechanism landed** (2026-06-11): manifest-based shipped-lib sync at startup + Settings
-factory reset (`shader_lib/seed.py`; design in 032 spec `## Resume on the desktop` — a
-pre-manifest box needs ONE Settings reset to migrate). **Queued next (maintainer-announced):**
-copilot token budgets as Settings fields (output/context caps; today frozen constants in
-`copilot/config.py` — the persisted home is `CopilotIntegration`/integrations.json, like
-key+model). Also open from 032 — Д glyph shape, Cyrillic chat replies; the VLM-judge harness
-pilot (todo trigger). The copilot ship (020-030) stays gated on the 025/030 live `make run`
-passes (unchanged). Maintainer is testing UI/UX live on the desktop.
+**034 UI/UX POLISH WAVE 2 — ACTIVE (fix-as-we-go).** The maintainer is driving the app live on the
+desktop and reporting issues one at a time; simple ones are fixed inline (gated by `make check` +
+`make smoke` + a maintainer live pass), larger ones filed. Findings log:
+`ai_docs/features/034_ui_polish_wave_2.md` (same shape as 028). **Mid-wave incident FIXED (in
+tree, uncommitted): text-stack perf collapse on NVIDIA** — the data-driven glyph tables as
+dynamically-indexed const arrays got demoted to per-thread local memory (432 ms/frame @800px on
+the maintainer's 3090, app at <1 fps; global-const scope alone still 10 ms — maintainer pushback
+caught that as 100x off). Final shape: tables are ENGINE-BOUND UNIFORM ARRAYS — `gen_glyphs.py`
+emits glyphs.glsl (uniform decls) + `shaderbox/glyph_tables.py` (values), `Node.compile()` binds
+them, lib index/resolver learned top-level `const`/`uniform` extraction. Measured 0.133 ms/frame
+on the 3090 (3250x); V3D re-verified over SSH (warm/first-draw unchanged, compile 1557->73 ms).
+Quirk filed in `conventions.md`. Live lib self-updates via seed sync at next app start.
+**Wave F01-F12 implemented (see the findings log), awaiting the maintainer's `make run` passes:**
+gate-card UX (node name + short prompt, markdown-lite chat, structured success-colored outcome +
+recover icon, persistence v10); empty-project panel overflow; snippet-hover run collapsing; the
+replace_lines reshape (whole-file mode + boundary-line checksums — live-validated: 3 whole-file
+rewrites, zero range errors, the checksum caught an off-by-one pre-apply); the stale live-snippet
+fix; the comment-only edit_shader fallback (comments were invisible to the token matcher); the
+render-blind clean-edit-streak nudge; the designed snippet tooltip (token in/out + cost); Alt-chord routing over an active input; Cyrillic chat pass-through (+ reply-in-user-language prompt rule); the QUEUED banner item landed — copilot agent limits in Settings with (?) hints (`CopilotIntegration.apply_limits` -> live `COPILOT_CONFIG`). **Recently landed:** 033 copilot
+robustness wave (converged through 3 dogfood rounds + 3 review cycles — compile hints, alpha-aware
+render facts, force-restore + oscillation brake, two-sided trust; residuals are model-bound, see the
+spec round-6 section) and the shader-lib seed mechanism (manifest-based shipped-lib sync at startup +
+Settings factory reset, `shader_lib/seed.py`; a pre-manifest box needs ONE Settings reset to
+migrate). The queued copilot-token-budgets item LANDED as wave F12. Also open from 032 — Д glyph
+shape; the VLM-judge harness pilot (todo trigger). The copilot ship (020-030) stays gated on
+the 025/030 live `make run` passes (unchanged).
 
 <!-- Previous banner (031, kept for context): -->
 **031 landed (`db39f68..aff9488`, 9 commits + doc sweep): the whole 029 smell class swept. The `.webm` reload-kill bug fixed via one `media.media_class_for` resolver (+invariant test); `RESULT_WIDGET_KINDS` derives from the Literal; template order/ids live once in `constants.py`; the dead publish `node` param dropped; the `template:` address trio joined `address.py`; 7 dead orphans deleted; `ToolArgs` base owns `extra="forbid"` (+per-tool schema invariant); `wrapped_caption` deduped (visual no-op — rides the pending `make run` pass); both bit-rotted check scripts ported to pytest (+10 tests: token redaction, gate decline + no-orphaned-tool_call, gate reopen-after-release, recover-card round-trip, finish-reason — none had regressed while dark) then deleted; `CopilotCapabilities` is now a Protocol the backend satisfies directly (`wiring.py` deleted). Post-impl 3-reviewer adversarial swarm: correctness PASS; the doc-staleness findings were fixed in the same wave (dev_flow module map, todo `needs_gl` citation, H2 drop rationale, 023/031 spec headers). NEXT: lever 2 lazy-tool-catalogue; the 025 + 030 `make run` passes + chat-polish visual confirms; the copilot ship (020-030) stays gated on those live passes.**
@@ -89,6 +98,7 @@ passes (unchanged). Maintainer is testing UI/UX live on the desktop.
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 034 | ui_polish_wave_2 | in progress | Second app-wide UI/UX polish pass, maintainer-walkthrough-driven (live fix-as-we-go, same shape as 028). Findings log: `ai_docs/features/034_ui_polish_wave_2.md`. |
 | 033 | copilot_robustness_wave | done | Error-analysis-driven hardening, converged via 3 dogfood rounds + 3 review cycles: generic enriched tool results (compile hints + alpha-aware render facts), force-restore + oscillation brake, guaranteed final reply, two-sided trust, lib-address reads, agent-text compression, engine/harness fixes. Spec: `ai_docs/features/033_copilot_robustness_wave.md`. |
 | 032 | sdf_shader_library | partial | Practice-first SDF shader library seed (`shaderbox/resources/shader_lib/`, three SB_sd_*/SB_op_*/render layers, full text stack with new Cyrillic + auto-fit + per-char access) + copilot quality fixes (inline uniform defaults, tool-call batching, SB_ catalogue filter), driven by live ad-hoc dogfood experiments; seed-loading landed (`shader_lib_seed_sync` row); still open: Д glyph shape, Cyrillic chat replies. Spec: `ai_docs/features/032_sdf_shader_library.md`. |
 | 031 | parallel_structure_sweep | done | Repo-wide sweep of the 029 smell class, all 10 items landed one commit each: the .webm reload-kill bug (one media resolver), parallel maps/frozensets/template-id lists unified, dead params/code deleted, the two bit-rotted check scripts ported to pytest (redaction/gate-decline coverage restored) and removed, `CopilotCapabilities` converted to a Protocol (`wiring.py` deleted). Spec: `ai_docs/features/031_parallel_structure_sweep.md`. |

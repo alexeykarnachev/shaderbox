@@ -3,8 +3,9 @@
 The chat font (AnonymousPro) is loaded through imgui-bundle 1.92's dynamic atlas. It has
 em-dash / ellipsis / smart quotes / Latin-1 accents, but NOT arrows (U+2192 etc.) - and an
 LLM freely emits all of these, so an unrenderable glyph shows as the atlas fallback box. This
-leaf maps the common offenders to ASCII and replaces any still-unrenderable char with '?', so
-no glyph the font can't draw ever reaches the screen.
+leaf maps the common offenders to ASCII, passes Cyrillic through (the font carries it), and
+replaces any still-unrenderable char with '?', so no glyph the font can't draw ever reaches
+the screen.
 
 Applied at three boundaries (session.py history-commit + Message-materialize, copilot_chat.py
 draw) to CONTENT text only - never tool_calls / arguments / a GLSL payload. Idempotent.
@@ -35,17 +36,24 @@ _SUBSTITUTIONS: dict[str, str] = {
 
 # ASCII (incl. tab/newline) renders verbatim; everything else must be transliterated or marked.
 _ASCII_MAX = 0x7F
+# Cyrillic renders natively (AnonymousPro carries U+0400-U+04FF; live-verified in the input
+# field) — pass it through so Russian chat isn't mangled to '?'.
+_CYRILLIC_RANGE = (0x0400, 0x04FF)
+
+
+def _renderable(cp: int) -> bool:
+    return cp <= _ASCII_MAX or _CYRILLIC_RANGE[0] <= cp <= _CYRILLIC_RANGE[1]
 
 
 def sanitize_display(text: str) -> str:
-    # Map known glyphs to ASCII; any remaining non-ASCII char (no substitution + not in the
-    # font's renderable set) becomes '?' so it shows "something was here" instead of a blank box.
-    # Idempotent: every output char is ASCII, so a re-run is a no-op.
+    # Map known glyphs to ASCII; any remaining char the font can't draw becomes '?' so it
+    # shows "something was here" instead of a blank box. Idempotent: every output char is
+    # itself renderable, so a re-run is a no-op.
     if text.isascii():
         return text
     out: list[str] = []
     for ch in text:
-        if ord(ch) <= _ASCII_MAX:
+        if _renderable(ord(ch)):
             out.append(ch)
         elif ch in _SUBSTITUTIONS:
             out.append(_SUBSTITUTIONS[ch])

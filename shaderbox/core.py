@@ -27,6 +27,7 @@ from shaderbox.constants import (
     WEBM_CPU_USED_VALUES,
     WEBM_CRF_VALUES,
 )
+from shaderbox.glyph_tables import TABLE_UNIFORMS
 from shaderbox.media import (
     Image,
     MediaDetails,
@@ -42,10 +43,12 @@ from shaderbox.shader_lib import resolve_usage
 from shaderbox.shader_source import ShaderSource
 
 _NODE_SHADER_BASENAME = "shader.frag.glsl"
-# Engine-driven: Node.render() recomputes these every frame from time/canvas, so they are
-# never node-intrinsic defaults — seed_uniform_values skips them and UINode.save excludes them.
+# Engine-driven: never node-intrinsic defaults — seed_uniform_values skips them and
+# UINode.save excludes them. Two kinds: per-frame values Node.render() recomputes
+# from time/canvas, and the program-resident glyph tables Node.compile() writes once
+# (TABLE_UNIFORMS — render() skips those entirely).
 ENGINE_DRIVEN_UNIFORMS: frozenset[str] = frozenset(
-    {"u_time", "u_aspect", "u_resolution"}
+    {"u_time", "u_aspect", "u_resolution"} | TABLE_UNIFORMS.keys()
 )
 
 
@@ -278,6 +281,21 @@ class Node:
         self.vbo = self._gl.buffer(np.array(FULLSCREEN_QUAD_VERTICES, dtype="f4"))
         self.vao = self._gl.vertex_array(program, [(self.vbo, "2f", "a_pos")])
 
+        # Program-resident engine tables (glyph strokes): written once per program;
+        # an unused table is compiled out by the driver and simply absent. The write
+        # is guarded like render()'s uniform writes — a user shader redeclaring an
+        # SBT_* name with its own shape must not crash compile().
+        for table_name, table_data in TABLE_UNIFORMS.items():
+            try:
+                member = program[table_name]
+            except KeyError:
+                continue
+            if isinstance(member, moderngl.Uniform):
+                try:
+                    member.write(table_data)
+                except Exception as e:
+                    logger.debug(f"Failed to write engine table '{table_name}': {e}")
+
     def seed_uniform_values(self) -> None:
         # Fill uniform_values with node-intrinsic defaults for any active uniform not yet
         # present. GL-FREE: no texture.use / program binding / draw — that is render()'s job.
@@ -312,6 +330,8 @@ class Node:
         time = u_time if u_time is not None else glfw.get_time()
         self.seed_uniform_values()
         for uniform in self.get_active_uniforms():
+            if uniform.name in TABLE_UNIFORMS:  # program-resident, set at compile
+                continue
             value = self.uniform_values.get(uniform.name)
 
             value_for_program = None

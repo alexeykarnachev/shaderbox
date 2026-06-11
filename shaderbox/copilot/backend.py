@@ -53,7 +53,7 @@ from shaderbox.copilot.checkpoint import TurnCheckpoint
 from shaderbox.copilot.config import COPILOT_CONFIG
 from shaderbox.copilot.edit_hints import compile_hints, render_facts
 from shaderbox.copilot.errors import CopilotToolError
-from shaderbox.copilot.glsl_lex import span_drops_comment, token_match
+from shaderbox.copilot.glsl_lex import glsl_lex, span_drops_comment, token_match
 from shaderbox.copilot.sanitize import sanitize_display
 from shaderbox.core import ENGINE_DRIVEN_UNIFORMS, Canvas, Node
 from shaderbox.exporters.base import (
@@ -65,6 +65,7 @@ from shaderbox.exporters.base import (
 from shaderbox.exporters.registry import ExporterRegistry
 from shaderbox.exporters.telegram import NEEDS_START_ERROR, TelegramExporter
 from shaderbox.exporters.youtube import YouTubeExporter
+from shaderbox.glyph_tables import TABLE_UNIFORMS
 from shaderbox.paths import shader_lib_root
 from shaderbox.render_preset import FitPolicy, RenderPreset, ResolutionPolicy
 from shaderbox.shader_errors import ShaderError
@@ -87,6 +88,44 @@ def _to_error_infos(errors: list[ShaderError]) -> list[CompileErrorInfo]:
         )
         for e in errors
     ]
+
+
+def _trunc_line(s: str, n: int = 48) -> str:
+    s = s.strip()
+    return s if len(s) <= n else s[: n - 3] + "..."
+
+
+def _range_check_error(
+    lines: list[str],
+    start_line: int,
+    end_line: int,
+    first_line: str | None,
+    last_line: str | None,
+) -> str:
+    # "" when the caller's verbatim quotes of the range-boundary lines match the real
+    # content (whitespace-stripped). A mismatch message names the ACTUAL lines so the
+    # model corrects its range in one step instead of discovering it post-compile.
+    problems: list[str] = []
+    for idx, expected, label in (
+        (start_line, first_line, "start_line"),
+        (end_line, last_line, "end_line"),
+    ):
+        if expected is None:
+            continue
+        actual = lines[idx - 1]
+        if actual.strip() != expected.strip():
+            problems.append(
+                f'{label} {idx} is "{_trunc_line(actual)}" but you quoted '
+                f'"{_trunc_line(expected)}"'
+            )
+    if not problems:
+        return ""
+    return (
+        "line check failed — nothing was applied: "
+        + "; ".join(problems)
+        + ". Your range does not cover the block you meant — re-read the WORKING SET "
+        "block (its line numbers are current) and resubmit with the corrected range"
+    )
 
 
 def _number_lines(text: str) -> str:
@@ -150,6 +189,25 @@ def _whitespace_near_match(src: str, old_str: str) -> str:
     if first == -1 or norm_src.find(norm_old, first + 1) != -1:
         return ""  # no match, or ambiguous — no safe single hint
     return src[src_index[first] : src_index[first + len(norm_old)]]
+
+
+def _comment_only_spans(src: str, old_str: str) -> list[tuple[int, int]] | None:
+    # None = old_str has code tokens (the token matcher owns it). A COMMENT/whitespace-only
+    # old_str is invisible to the token matcher (comments lex as trivia), so it matches by
+    # whitespace-normalized TEXT instead — comments are editable content too (the live
+    # failure: stripping `// ----` banner lines was structurally impossible).
+    if glsl_lex(old_str):
+        return None
+    norm_src, src_index = _ws_normalize(src)
+    norm_old, _ = _ws_normalize(old_str)
+    if not norm_old.strip():
+        return []
+    spans: list[tuple[int, int]] = []
+    pos = norm_src.find(norm_old)
+    while pos != -1:
+        spans.append((src_index[pos], src_index[pos + len(norm_old)]))
+        pos = norm_src.find(norm_old, pos + len(norm_old))
+    return spans
 
 
 def _splice(src: str, spans: list[tuple[int, int]], new_str: str) -> str:
@@ -250,8 +308,12 @@ def _format_uniforms(node: Node) -> list[str]:
     # "name type = value" rows. Blocks have no scalar value. The shown value comes from the node's
     # uniform_values cache (the same source tabs/node.py reads) — NOT live u.value, which Node.render()
     # overwrites every frame, so a just-set_uniform value would read back stale and the agent loops.
+    # Engine glyph tables are skipped outright: their u.value is ~14KB of stroke data the agent
+    # can neither set nor learn from.
     rows: list[str] = []
     for u in node.get_active_uniforms():
+        if u.name in TABLE_UNIFORMS:
+            continue
         label = _uniform_type_label(u)
         if isinstance(u, moderngl.UniformBlock):
             rows.append(f"{u.name} {label}")
@@ -667,7 +729,7 @@ class CopilotBackend:
             if name in ENGINE_DRIVEN_UNIFORMS:
                 return SetUniformResult(
                     ok=False,
-                    error=f"'{name}' is engine-driven (set every frame by ShaderBox) — it "
+                    error=f"'{name}' is engine-owned (ShaderBox provides its value) — it "
                     "cannot be set; change the shader code if you need different behavior",
                 )
             target = self._get_ui_nodes()[node_id].node
@@ -1176,6 +1238,10 @@ class CopilotBackend:
             src = tgt.source
             spans = token_match(src, old_str)
             if not spans:
+                comment_spans = _comment_only_spans(src, old_str)
+                if comment_spans is not None:
+                    spans = comment_spans
+            if not spans:
                 return EditResult(
                     matches=0, errors=[], hint=_whitespace_near_match(src, old_str)
                 )
@@ -1459,11 +1525,19 @@ class CopilotBackend:
                 node.node.invalidate()
 
     def apply_line_edit(
-        self, start_line: int, end_line: int, new_text: str, target: str
+        self,
+        start_line: int,
+        end_line: int,
+        new_text: str,
+        target: str,
+        first_line: str | None = None,
+        last_line: str | None = None,
     ) -> EditResult:
         # Replace the 1-based inclusive range [start_line, end_line] with new_text, recompile/write +
-        # persist. end_line == start_line - 1 is the one legal empty selection (pure insert); any other
-        # start > end or out-of-range fails loud, mutates nothing. A missing lib: target is created here.
+        # persist. start == end == 0 replaces the ENTIRE file (no range bookkeeping). end_line ==
+        # start_line - 1 is the one legal empty selection (pure insert); any other start > end or
+        # out-of-range fails loud, mutates nothing. first/last_line (when given) are checked against
+        # the real boundary lines BEFORE applying. A missing lib: target is created here.
         # D9: a line edit to a target a prior edit mutated this batch is rejected (its lines shifted).
         def _on_main() -> EditResult:
             tgt = self._copilot_resolve_target(target, allow_create=True)
@@ -1478,6 +1552,8 @@ class CopilotBackend:
                     "same step — the working set refreshes next step with current numbers; "
                     "re-issue then (or use edit_shader, which matches by text not line number)",
                 )
+            if start_line == 0 and end_line == 0:
+                return self._copilot_persist_target(tgt, new_text, 1)
             lines = tgt.source.split("\n") if tgt.source else []
             n = len(lines)
             is_insert = end_line == start_line - 1
@@ -1490,6 +1566,13 @@ class CopilotBackend:
             )
             if out_of_range and not new_lib_bootstrap:
                 return EditResult(matches=0, errors=[], hint="")
+            check = _range_check_error(
+                lines, start_line, end_line, first_line, last_line
+            )
+            if check:
+                return EditResult(
+                    matches=0, errors=[], unresolved=True, unresolved_reason=check
+                )
             repl = new_text.split("\n") if new_text != "" else []
             new_lines = lines[: start_line - 1] + repl + lines[end_line:]
             new_full = "\n".join(new_lines)

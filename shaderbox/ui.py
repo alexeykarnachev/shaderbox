@@ -409,9 +409,11 @@ def _draw_app_panel(app: App) -> None:
             tint_col=(1.0, 1.0, 1.0, 1.0),
         )
     else:
+        # Same height budget as the with-node branch (incl. its gap slack) — an
+        # oversized empty-state area overflows the panel into a phantom scrollbar.
         avail = imgui.get_content_region_avail()
         image_width = avail.x
-        image_height = max(avail.y - control_panel_min_height, 400)
+        image_height = max(avail.y - control_panel_min_height - 10, 100)
 
         message = (
             f"To create a new node, press "

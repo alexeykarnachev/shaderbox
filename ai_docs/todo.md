@@ -176,15 +176,6 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   pristine/edited verdict; the picker just doesn't read it. Design + semantics live in
   `032_sdf_shader_library.md ## Resume on the desktop`.
 
-## [DEFERRAL] copilot chat renders Cyrillic replies as `??????` (ASCII sanitizer)
-- **Trigger:** first real session where the maintainer chats with the copilot in Russian and the
-  mangled replies actually annoy (the shader TEXT path is unaffected — set_uniform carries
-  codepoints fine); OR next time you touch `copilot/text_render.py` / the D2 sanitize boundaries.
-- Observed 2026-06-10 (032 dogfood exp-2): the agent's reply prose contained the word ШЕЙДЕР —
-  rendered as `??????` in chat (the D2 ASCII glyph sanitization, 020·20). The chat font DOES carry
-  the app's text; the sanitizer is the lossy step. Fix shape: allow Cyrillic through the sanitizer
-  (the font supports it) or transliterate instead of `?`-replacing.
-
 ## [DEFERRAL] lib-author macro indirection for function dispatch
 - **Trigger:** first time a lib author writes `#define HASH SB_hash3` (or similar) inside a lib
   file as a way to dispatch through the SB_-prefixed function, and finds their wrapper isn't

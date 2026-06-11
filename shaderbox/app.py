@@ -182,6 +182,7 @@ class App:
 
         self.font_12 = self.get_font(12)
         self.font_14 = self.get_font(14)
+        self.font_14_bold = self.get_font(14, bold=True)
         self.font_18 = self.get_font(18)
         self.font_emoji = self.get_emoji_font(24)
 
@@ -219,12 +220,12 @@ class App:
 
         # copilot_focus_pending: one-shot driving window + input focus, consumed at the input draw.
         self.is_copilot_open: bool = False
+        self.copilot_defocus_requested: bool = False
         self.copilot_layout: CopilotLayout = CopilotLayout.CORNER
         self.copilot_free_rect: tuple[float, float, float, float] | None = None
         self.copilot_prev_layout: CopilotLayout = CopilotLayout.CORNER
         self.copilot_focus_pending: bool = False
         self.copilot_focused: bool = False
-        self.copilot_defocus_requested: bool = False
         # The user message whose Revert glyph was clicked; drives the confirm modal. None = closed.
         self.copilot_revert_target: Message | None = None
         # True while the mouse is over the open chat window. code.py neutralizes the
@@ -347,7 +348,16 @@ class App:
         def key_callback(
             window: Any, key: int, scancode: int, action: int, mods: int
         ) -> None:
-            if key == glfw.KEY_ESCAPE and not self.escape_has_job():
+            # Gate only PRESS/REPEAT. A RELEASE always passes: the job often disappears
+            # between press and release (Esc defocused the chat), and swallowing the
+            # release of a forwarded press leaves imgui's Escape logically held forever —
+            # every InputText then self-cancels on the key-repeat ticks (the
+            # caret-dies-after-one-frame bug; releasing an already-up key is a no-op).
+            if (
+                key == glfw.KEY_ESCAPE
+                and action != glfw.RELEASE
+                and not self.escape_has_job()
+            ):
                 return  # swallow: nothing to dismiss, leave nav untouched
             renderer_cb(window, key, scancode, action, mods)
 
@@ -880,10 +890,11 @@ class App:
             )
             self.copilot.load_conversation(store)
 
-    def get_font(self, size: int) -> Any:
+    def get_font(self, size: int, bold: bool = False) -> Any:
         fonts = imgui.get_io().fonts
+        variant = "AnonymousPro-Bold.ttf" if bold else "AnonymousPro-Regular.ttf"
         return fonts.add_font_from_file_ttf(
-            str(RESOURCES_DIR / "fonts" / "Anonymous_Pro" / "AnonymousPro-Regular.ttf"),
+            str(RESOURCES_DIR / "fonts" / "Anonymous_Pro" / variant),
             size_pixels=size,
         )
 

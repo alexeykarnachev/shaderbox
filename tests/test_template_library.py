@@ -85,14 +85,14 @@ def test_grep_surfaces_template_origins(app: Any) -> None:
 
 
 def test_create_from_template_instantiates_it(app: Any) -> None:
-    nid, errors = app.copilot_backend.create_node(
+    nid, errors, _ = app.copilot_backend.create_node(
         "My Text", "", _text_handle(app), False
     )
     assert nid and not errors
 
 
 def test_create_empty_template_uses_default_starter(app: Any) -> None:
-    nid, errors = app.copilot_backend.create_node("Blank", "", "", False)
+    nid, errors, _ = app.copilot_backend.create_node("Blank", "", "", False)
     assert nid and not errors
 
 

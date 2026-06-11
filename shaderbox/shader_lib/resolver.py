@@ -104,10 +104,14 @@ def _intern(state: _ResolveState, source: ShaderSource) -> int:
 
 
 def _collect_used_lib_names(root: ShaderSource, index: ShaderLibIndex) -> set[str]:
-    # Tokens the user actually references, minus tokens they themselves define.
+    # Tokens the user actually references, minus tokens they themselves define —
+    # function defs AND const/uniform/struct/#define declarations (splicing the lib
+    # version over a user-side redefinition would be a duplicate-symbol error).
     stripped = parser.strip_comments(root.text)
     referenced = set(parser.SB_IDENT_RE.findall(stripped))
     user_defined = set(parser.USER_FN_DEF_RE.findall(stripped))
+    for m in _SB_USER_DEF_RE.finditer(stripped):
+        user_defined.add(m.group(1) or m.group(2))
     return {n for n in referenced if n not in user_defined and n in index.functions}
 
 

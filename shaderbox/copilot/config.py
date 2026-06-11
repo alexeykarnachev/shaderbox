@@ -1,10 +1,13 @@
 from dataclasses import dataclass
 
 
-@dataclass(frozen=True)
+@dataclass
 class CopilotConfig:
-    # Agent-loop limits. Not user-tuned — constants, so they avoid the UIAppState
-    # migration discipline (they live here, not on app_state).
+    # Agent-loop limits. The seven user-facing ones (caps, retry budgets, nudge
+    # thresholds) are Settings-tunable: persisted on `CopilotIntegration`
+    # (integrations.json) and applied onto the shared COPILOT_CONFIG instance via
+    # `apply_user_limits` (startup + Settings edit) — every consumer holds this
+    # instance, so a change takes effect immediately. The rest stay constants.
     max_iterations: int = 16
     max_input_tokens: int = 150_000
     # Reasoning models bill hidden thinking into the output budget; creative
@@ -18,10 +21,15 @@ class CopilotConfig:
     # best-effort within a turn, not guaranteed across turns/interleavings.
     auto_revert_after_failed_edits: int = 6
     # Consecutive applies-but-compiles-with-errors edits before a one-time "rewrite the whole
-    # block in one edit" nudge. Distinct from max_edit_retries (which counts edits that FAIL to
+    # block in one edit" nudge (0 = off). Distinct from max_edit_retries (which counts edits that FAIL to
     # apply); an edit that applies returns ok=True, so it never trips that cap — this catches the
     # apply-but-broken thrash separately. Not a giveup: the model usually recovers.
     max_compile_failures: int = 5
+    # Consecutive CLEAN source edits in one turn (applied, zero compile errors) before a
+    # one-time "stop and let the user look" nudge (0 = off). The model is render-blind, so nothing
+    # else brakes an unbounded aesthetic-tweak spree of individually-clean edits (live
+    # case: 16 edits / $0.51 in one turn). Not a giveup; per-turn cumulative, no reset.
+    max_clean_edit_streak: int = 6
     # Headroom the history trim withholds for the per-turn working-set scratchpad, which is
     # spliced AFTER the trim runs and is otherwise invisible to it (feature 020·29 D10).
     scratchpad_reserve_tokens: int = 50_000
@@ -49,3 +57,26 @@ class CopilotConfig:
 
 
 COPILOT_CONFIG = CopilotConfig()
+
+
+def apply_user_limits(
+    *,
+    max_iterations: int,
+    max_input_tokens: int,
+    max_tokens_per_turn: int,
+    max_edit_retries: int,
+    max_compile_failures: int,
+    max_clean_edit_streak: int,
+    auto_revert_after_failed_edits: int,
+) -> None:
+    # The Settings -> live-config seam. Values arrive pre-clamped by the Settings UI;
+    # a hand-edited integrations.json gets a floor here so a 0 cap can't wedge the loop.
+    COPILOT_CONFIG.max_iterations = max(1, max_iterations)
+    COPILOT_CONFIG.max_input_tokens = max(10_000, max_input_tokens)
+    COPILOT_CONFIG.max_tokens_per_turn = max(1_000, max_tokens_per_turn)
+    COPILOT_CONFIG.max_edit_retries = max(1, max_edit_retries)
+    COPILOT_CONFIG.max_compile_failures = max(0, max_compile_failures)  # 0 = off
+    COPILOT_CONFIG.max_clean_edit_streak = max(0, max_clean_edit_streak)  # 0 = off
+    COPILOT_CONFIG.auto_revert_after_failed_edits = max(
+        0, auto_revert_after_failed_edits
+    )  # 0 = off

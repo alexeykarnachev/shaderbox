@@ -1,4 +1,5 @@
 import math
+import re
 import webbrowser
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -374,6 +375,16 @@ def caption_text(
 # ---------------------------------------------------------------------------
 
 
+def help_marker(text: str) -> None:
+    """Dim '(?)' that shows a wrapped explanation on hover — the settings help affordance."""
+    imgui.text_colored(COLOR.FG_DIM, "(?)")
+    if imgui.is_item_hovered(imgui.HoveredFlags_.delay_short):
+        with imgui_ctx.begin_tooltip():
+            imgui.push_text_wrap_pos(imgui.get_font_size() * 24.0)
+            imgui.text_unformatted(text)
+            imgui.pop_text_wrap_pos()
+
+
 def labeled_text_input(
     label: str, value: str, width: float, password: bool = False
 ) -> str:
@@ -489,6 +500,99 @@ def connection_status(
         imgui.text_colored(color, "Not connected.")
     if message:
         imgui.text_colored(color, message)
+
+
+MarkdownSpan = tuple[str, str]  # (style: "plain" | "bold" | "code", text)
+MarkdownLine = tuple[bool, list[MarkdownSpan]]  # (is_code_block_line, spans)
+
+# Bold content must not start/end with whitespace (CommonMark) — keeps a math-ish
+# "2 ** 3" or a torn stream literal instead of bolding across the operators.
+_MD_INLINE_RE = re.compile(r"(\*\*(?=\S)[^*]+?(?<=\S)\*\*|`[^`]+`)")
+_MD_WORD_RE = re.compile(r"\S+\s*|\s+")
+
+
+def parse_markdown_lines(text: str) -> list[MarkdownLine]:
+    """Markdown-lite for chat prose: per line, inline `**bold**` + backtick code
+    spans; ``` fences toggle whole-line code blocks (the fence lines are dropped).
+    Unmatched markers stay literal, so a torn streaming preview renders safely."""
+    out: list[MarkdownLine] = []
+    in_block = False
+    for line in text.split("\n"):
+        if line.strip().startswith("```"):
+            in_block = not in_block
+            continue
+        if in_block:
+            out.append((True, [("code", line)]))
+            continue
+        spans: list[MarkdownSpan] = []
+        for part in _MD_INLINE_RE.split(line):
+            if not part:
+                continue
+            if part.startswith("**") and part.endswith("**") and len(part) > 4:
+                spans.append(("bold", part[2:-2]))
+            elif part.startswith("`") and part.endswith("`") and len(part) > 2:
+                spans.append(("code", part[1:-1]))
+            else:
+                spans.append(("plain", part))
+        out.append((False, spans))
+    return out
+
+
+def _code_chip(text: str) -> None:
+    # Inline-code chip: a faded CHIP_BG rect behind the text (trailing whitespace
+    # rides outside the chip). Drawn at the current cursor; caller owns line placement.
+    visible = text.rstrip()
+    pad = 2.0
+    pos = imgui.get_cursor_screen_pos()
+    size = imgui.calc_text_size(visible)
+    imgui.get_window_draw_list().add_rect_filled(
+        (pos.x - pad, pos.y),
+        (pos.x + size.x + pad, pos.y + size.y),
+        imgui.color_convert_float4_to_u32(fade(COLOR.CHIP_BG, 0.4)),
+        3.0,
+    )
+    imgui.text_colored(COLOR.FG_PRIMARY, text)
+
+
+def markdown_text(text: str, bold_font: imgui.ImFont) -> None:
+    """Chat prose with markdown-lite styling: **bold** (bold font), backtick code
+    (a chip), ``` blocks (dim code-colored lines). Mixed inline styles can't ride
+    one wrapped text item, so styled lines word-wrap manually; marker-free text
+    (the common case) takes the native-wrap fast path."""
+    if "**" not in text and "`" not in text:
+        imgui.push_text_wrap_pos(0.0)
+        imgui.text_unformatted(text)
+        imgui.pop_text_wrap_pos()
+        return
+    for is_block, spans in parse_markdown_lines(text):
+        if is_block:
+            imgui.push_text_wrap_pos(0.0)
+            imgui.text_colored(COLOR.CHIP_FG, spans[0][1] or " ")
+            imgui.pop_text_wrap_pos()
+            continue
+        if not spans:
+            imgui.text_unformatted("")
+            continue
+        first = True
+        for style, span_text in spans:
+            # A code span is ONE wrap unit (a split chip reads broken); prose splits
+            # into words so long sentences wrap normally.
+            tokens = [span_text] if style == "code" else _MD_WORD_RE.findall(span_text)
+            for tok in tokens:
+                if style == "bold":
+                    imgui.push_font(bold_font, bold_font.legacy_size)
+                width = imgui.calc_text_size(tok.rstrip()).x
+                if not first:
+                    imgui.same_line(0.0, 0.0)
+                    if imgui.get_content_region_avail().x < width:
+                        imgui.new_line()
+                if style == "code":
+                    _code_chip(tok)
+                else:
+                    imgui.text_unformatted(tok)
+                if style == "bold":
+                    imgui.pop_font()
+                first = False
 
 
 def small_caption(font: imgui.ImFont, text: str) -> None:

@@ -273,6 +273,7 @@ class ProjectSession:
             self.app_state = UIAppState.load_and_migrate(self.paths.app_state_file)
 
         self.integrations_store = IntegrationsStore.load()
+        self.integrations_store.copilot.apply_limits()
 
     def clear_conversation(self) -> None:
         # Archive the live conversation (recoverable), delete checkpoints, reset to a fresh empty

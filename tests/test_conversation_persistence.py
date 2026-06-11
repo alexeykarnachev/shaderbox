@@ -454,3 +454,41 @@ def test_pre_recover_v1_file_loads_soft(tmp_path: Path) -> None:
     msgs = ConversationStore.load_and_migrate(path).to_messages()
     assert len(msgs) == 2
     assert msgs[1].recover is None
+
+
+def test_gate_outcome_round_trip_and_pre_v10_default(tmp_path: Path) -> None:
+    # The structured outcome (034 F03) survives the round trip; a pre-v10 file
+    # (outcome baked into text) loads with gate_outcome="" and renders as plain text.
+    state = ChatState()
+    state.messages = [
+        Message(
+            role="pending_action",
+            text="Delete node `Blank`?",
+            resolved=True,
+            gate_outcome="Yes",
+        ),
+    ]
+    path = tmp_path / "conversation.json"
+    ConversationStore.from_runtime(state, []).save(path)
+    msgs = ConversationStore.load_and_migrate(path).to_messages()
+    assert msgs[0].gate_outcome == "Yes"
+
+    pre_v10 = tmp_path / "old.json"
+    pre_v10.write_text(
+        json.dumps(
+            {
+                "version": 9,
+                "messages": [
+                    {
+                        "role": "pending_action",
+                        "text": "Delete node 'x'?\nYou chose: Yes",
+                        "resolved": True,
+                    }
+                ],
+                "history": [],
+            }
+        )
+    )
+    old_msgs = ConversationStore.load_and_migrate(pre_v10).to_messages()
+    assert old_msgs[0].gate_outcome == ""
+    assert "You chose: Yes" in old_msgs[0].text

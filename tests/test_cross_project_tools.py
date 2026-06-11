@@ -53,10 +53,16 @@ def test_coerce_rejects_bool() -> None:
 
 
 def test_engine_driven_set_is_the_documented_set() -> None:
-    # These are overwritten every frame by Node.render() regardless of uniform_values, so
-    # set_uniform rejects them (020·16 Decision 6). Pin the set so a new engine uniform
-    # added to core.py is consciously added here too.
-    assert {"u_time", "u_aspect", "u_resolution"} == ENGINE_DRIVEN_UNIFORMS
+    # Engine-owned, so set_uniform rejects them (020·16 Decision 6): the per-frame
+    # values Node.render() recomputes + the glyph tables Node.compile() writes.
+    # Pin the set so a new engine uniform added to core.py is consciously added here too.
+    assert {
+        "u_time",
+        "u_aspect",
+        "u_resolution",
+        "SBT_SPANS",
+        "SBT_STROKES",
+    } == ENGINE_DRIVEN_UNIFORMS
 
 
 def _lib_manager(root: Path) -> ShaderLibFileManager:

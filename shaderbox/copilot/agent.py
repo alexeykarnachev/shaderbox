@@ -47,6 +47,12 @@ _COMPILE_THRASH_NUDGE = (
     "the whole correct version, and rewrite it in ONE edit (replace_lines over the whole range)."
 )
 
+_CLEAN_STREAK_NUDGE = (
+    "\n\n[hint] That's many clean edits in one turn that the user has not seen — and you "
+    "cannot see the visual result either. Unless something is still broken, STOP here: reply "
+    "with a short summary of what you changed and let the user look before iterating further."
+)
+
 
 def _trunc(text: str, limit: int) -> str:
     # Log-line truncation with an ASCII marker so a cut value never reads as the whole thing.
@@ -369,6 +375,10 @@ def run_turn(
     compile_nudge_sent = (
         False  # latched once the nudge fires; re-armed by a non-thrash step
     )
+    clean_edits_this_turn = (
+        0  # cumulative clean source edits (the render-blind spree brake)
+    )
+    clean_streak_nudge_sent = False  # once per turn
     first_input_tokens: int | None = None  # iter-0 context size for the usage bar
     logger.info(f"copilot turn start | user={_trunc(user_text, 80)!r}")
     logger.debug(
@@ -727,12 +737,29 @@ def run_turn(
                 consecutive_compile_failures = 0
                 compile_nudge_sent = False
             if (
-                consecutive_compile_failures >= config.max_compile_failures
+                config.max_compile_failures > 0
+                and consecutive_compile_failures >= config.max_compile_failures
                 and not compile_nudge_sent
             ):
                 msg += _COMPILE_THRASH_NUDGE
                 compile_nudge_sent = True
                 tr.event("compile_thrash_nudge", iteration=iteration)
+
+            # Render-blind spree brake: clean edits never trip either counter above, so a
+            # model iterating on AESTHETICS can stack them unbounded with the user seeing
+            # nothing. Cumulative per turn (a read/grep between edits is not user contact);
+            # one nudge per turn, while a broken compile is in flight the turn stays exempt
+            # (fixing comes first — those edits count toward the thrash nudge instead).
+            if registry.is_edit_tool(tc.name) and ok and not applied_with_errors:
+                clean_edits_this_turn += 1
+            if (
+                config.max_clean_edit_streak > 0
+                and clean_edits_this_turn >= config.max_clean_edit_streak
+                and not clean_streak_nudge_sent
+            ):
+                msg += _CLEAN_STREAK_NUDGE
+                clean_streak_nudge_sent = True
+                tr.event("clean_streak_nudge", iteration=iteration)
 
             messages.append(_tool_message(tc.id, msg))
 

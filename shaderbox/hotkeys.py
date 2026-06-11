@@ -33,7 +33,7 @@ def _dispatch_registry(app: App) -> None:
             continue
         if popup_suppresses(spec.scope) and popup_open:
             continue
-        flags = route_flag(spec.scope)
+        flags = route_flag(spec.scope, chord)
         if spec.repeat:
             flags |= imgui.InputFlags_.repeat
         if imgui.shortcut(chord, flags=flags):

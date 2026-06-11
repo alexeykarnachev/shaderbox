@@ -1,5 +1,6 @@
 """Unit tests for the 033 enriched-result facts — pure text/pixel, no GL."""
 
+from shaderbox.copilot.backend import _comment_only_spans
 from shaderbox.copilot.edit_hints import compile_hints, render_facts
 
 
@@ -173,3 +174,34 @@ def test_render_facts_bbox_and_orientation() -> None:
     top_row, _mid_row, bottom_row = grid_part.split(" / ")
     assert top_row == "0 0 0"
     assert bottom_row.startswith("9")
+
+
+# ---- comment-only edit fallback (034: comments are editable content) ----
+
+
+def test_comment_only_old_str_matches_by_text() -> None:
+    src = "// ----\n// Tunable constants\n// ----\nfloat x = 1.0;\n"
+    spans = _comment_only_spans(src, "// ----\n// Tunable constants\n// ----")
+    assert spans is not None and len(spans) == 1
+    s, e = spans[0]
+    assert src[s:e] == "// ----\n// Tunable constants\n// ----"
+
+
+def test_comment_only_finds_all_occurrences_for_replace_all() -> None:
+    src = "// ====\nfloat a;\n// ====\nfloat b;\n// ====\n"
+    spans = _comment_only_spans(src, "// ====\n")
+    assert spans is not None and len(spans) == 3
+
+
+def test_code_old_str_returns_none_token_path_owns_it() -> None:
+    assert _comment_only_spans("float x;\n", "float x;") is None
+
+
+def test_comment_only_whitespace_invariant() -> None:
+    src = "//   spaced   out comment\nfloat x;\n"
+    spans = _comment_only_spans(src, "// spaced out comment")
+    assert spans is not None and len(spans) == 1
+
+
+def test_comment_not_present_returns_empty() -> None:
+    assert _comment_only_spans("float x;\n", "// missing banner") == []

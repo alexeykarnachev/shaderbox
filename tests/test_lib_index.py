@@ -6,8 +6,10 @@ Two layers under test:
   references, emits a topo-sorted preamble + `#line` markers + SourceMap.
 """
 
+import re
 from pathlib import Path
 
+from shaderbox.glyph_tables import TABLE_UNIFORMS
 from shaderbox.shader_lib import (
     ShaderLibFunction,
     ShaderLibIndex,
@@ -466,3 +468,120 @@ def test_only_SB_prefixed_identifiers_trigger_resolve(tmp_path: Path) -> None:
     # No lib body prepended (just the user's text).
     assert "float _internal" not in flattened2
     assert len(sources2) == 1
+
+
+# ----------------------------------------------------------------------------
+# Top-level const declarations — extraction + resolution
+# ----------------------------------------------------------------------------
+
+
+def test_extracts_top_level_const(tmp_path: Path) -> None:
+    lib = tmp_path / "lib"
+    idx = _make_lib(
+        lib,
+        {
+            "tables.glsl": (
+                "/// stroke table\n"
+                "const vec4 SBT_DATA[3] = vec4[](\n"
+                "    vec4(0.0),\n"
+                "    vec4(1.0),\n"
+                "    vec4(2.0)\n"
+                ");\n"
+                "float SB_read(int i) { return SBT_DATA[i].x; }\n"
+            )
+        },
+    )
+    assert set(idx.functions) == {"SBT_DATA", "SB_read"}
+    const = idx.functions["SBT_DATA"]
+    assert const.signature == "const vec4 SBT_DATA[3]"
+    assert const.body.startswith("const vec4 SBT_DATA[3]")
+    assert const.body.rstrip().endswith(");")
+    assert "vec4(2.0)" in const.body
+    assert const.doc == "stroke table"
+    assert "SBT_DATA" in idx.functions["SB_read"].calls
+
+
+def test_const_inside_function_body_not_extracted(tmp_path: Path) -> None:
+    lib = tmp_path / "lib"
+    idx = _make_lib(
+        lib,
+        {
+            "x.glsl": (
+                "float SB_pick(int i) {\n"
+                "    const float K[2] = float[](1.0, 2.0);\n"
+                "    return K[i];\n"
+                "}\n"
+            )
+        },
+    )
+    assert set(idx.functions) == {"SB_pick"}
+
+
+def test_resolver_splices_const_before_its_reader(tmp_path: Path) -> None:
+    lib = tmp_path / "lib"
+    idx = _make_lib(
+        lib,
+        {
+            "tables.glsl": (
+                "const vec4 SBT_DATA[2] = vec4[](vec4(0.0), vec4(1.0));\n"
+                "float SB_read(int i) { return SBT_DATA[i].x; }\n"
+            )
+        },
+    )
+    root = _write(tmp_path / "root.glsl", "void main() { SB_read(0); }\n")
+    flattened, _sources, _smap, errors = resolve_usage(root, idx)
+    assert not errors
+    assert "const vec4 SBT_DATA[2]" in flattened
+    assert flattened.index("const vec4 SBT_DATA[2]") < flattened.index("float SB_read")
+
+
+def test_user_defined_const_shadows_lib_version(tmp_path: Path) -> None:
+    # A user-side `const ... SB_K = ...` must suppress the lib splice — prepending
+    # the lib version over the user's redefinition would be a duplicate symbol.
+    lib = tmp_path / "lib"
+    idx = _make_lib(lib, {"k.glsl": "const float SB_K = 1.0;\n"})
+    root = _write(
+        tmp_path / "root.glsl",
+        "const float SB_K = 2.0;\nvoid main() { float x = SB_K; }\n",
+    )
+    flattened, _sources, _smap, errors = resolve_usage(root, idx)
+    assert not errors
+    assert flattened.count("const float SB_K") == 1
+    assert "SB_K = 1.0" not in flattened
+
+
+def test_extracts_top_level_uniform_decl(tmp_path: Path) -> None:
+    # Engine-bound table shape (the glyph strokes): a lib `uniform` declaration is
+    # a spliceable entry just like a const, so readers can live in lib functions.
+    lib = tmp_path / "lib"
+    idx = _make_lib(
+        lib,
+        {
+            "tables.glsl": (
+                "uniform vec4 SBT_T[4];\n"
+                "float SB_read_t(int i) { return SBT_T[i].x; }\n"
+            )
+        },
+    )
+    assert set(idx.functions) == {"SBT_T", "SB_read_t"}
+    decl = idx.functions["SBT_T"]
+    assert decl.signature == "uniform vec4 SBT_T[4]"
+    assert decl.body == "uniform vec4 SBT_T[4];"
+    root = _write(tmp_path / "root.glsl", "void main() { SB_read_t(0); }\n")
+    flattened, _sources, _smap, errors = resolve_usage(root, idx)
+    assert not errors
+    assert flattened.index("uniform vec4 SBT_T[4];") < flattened.index(
+        "float SB_read_t"
+    )
+
+
+def test_glyph_tables_sidecar_matches_shipped_glsl() -> None:
+    # glyphs.glsl (uniform decls) and glyph_tables.py (the values Node.compile
+    # writes) are generated together — a half-regenerated pair must fail loudly.
+    glsl = (
+        Path(__file__).parent.parent / "shaderbox/resources/shader_lib/text/glyphs.glsl"
+    ).read_text(encoding="utf-8")
+    decls = dict(re.findall(r"uniform \w+4 (SBT_\w+)\[(\d+)\];", glsl))
+    assert set(decls) == set(TABLE_UNIFORMS)
+    for name, count in decls.items():
+        assert len(TABLE_UNIFORMS[name]) == int(count) * 16  # 16 bytes per (i)vec4

@@ -12,6 +12,16 @@ FN_SIG_RE = re.compile(
     re.MULTILINE,
 )
 
+# Top-level single-declarator constant `const <type> <name>[N] = ...;` or uniform
+# `uniform <type> <name>[N];` (engine-bound tables, e.g. the glyph strokes). The
+# declaration may span many lines and ends at the first `;` (GLSL initializers
+# contain no semicolons — see find_decl_end). Captures 1=const|uniform, 2=type,
+# 3=name, 4=optional array suffix. Multi-declarator lines (`const float A = 1.,
+# B = 2.;`) index only the first name — lib convention is one declarator per line.
+DECL_SIG_RE = re.compile(
+    r"^\s*(const|uniform)\s+(\w+)\s+(\w+)\s*(\[\s*\d*\s*\])?\s*[=;]",
+)
+
 # Identifier references inside a function body (used to build the call graph).
 IDENT_RE = re.compile(r"\b([A-Za-z_]\w*)\b")
 
@@ -64,6 +74,15 @@ def split_root_header(text: str) -> tuple[int, list[str], list[str]]:
     else:
         header_end = len(lines)
     return header_end, lines[:header_end], lines[header_end:]
+
+
+def find_decl_end(lines: list[str], start: int) -> int | None:
+    # `start` holds a declaration's first line; the first `;` from there ends it
+    # (GLSL has no strings and initializer expressions contain no semicolons).
+    for i in range(start, len(lines)):
+        if ";" in lines[i]:
+            return i
+    return None
 
 
 def find_body_end(lines: list[str], start: int) -> int | None:
