@@ -27,8 +27,10 @@ feature; brief points at the superseder).
 
 <!-- As of 2026-06-11. -->
 **NEXT ACTION — PUBLISH v0.13.0 to itch (maintainer, planned for 2026-06-12).** Everything is
-prepared and frozen: tag `v0.13.0` cut on `master`, both zips built + gate-verified in `dist/`
-(rebuild via `./build.sh` if stale), dev==master==origin. Remaining steps (per `/ship` §7-9):
+prepared: tag `v0.13.0` cut on `master`, both zips built + gate-verified in `dist/` (rebuild via
+`./build.sh` if stale). NOTE: `dev` is a few ai_docs-only commits AHEAD of the tag (overnight CRT
+dogfood findings) — the zips are unaffected (ai_docs never ships); publish from the existing tag,
+no re-cut. Remaining steps (per `/ship` §7-9):
 `git push origin master && git push origin v0.13.0` (if not already pushed) → `yes |
 ./upload-itch.sh` → `butler status where-is-your-keyboard/shaderbox` → sync the itch page from
 `ai_docs/itch/page.yaml` (REWRITTEN this prep: copilot + library + Cyrillic text; Save is
