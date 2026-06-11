@@ -18,8 +18,9 @@ from shaderbox.copilot.tools.base import GatePolicy, ToolArgs, ToolDefinition
 class _ReadShaderArgs(ToolArgs):
     nodes: list[str] = Field(
         default_factory=list,
-        description="node ids to read (from the project map); empty = the shader you are "
-        "currently working on. NEVER means 'all'.",
+        description="node ids (from the project map) and/or lib: addresses (from the "
+        "catalogue or grep) to read; empty = the shader you are currently working on. "
+        "NEVER means 'all'.",
     )
 
 
@@ -127,10 +128,11 @@ _READ_SHADER_DESC = (
     "Bring shader nodes into your WORKING SET — their full live source (line-numbered), uniforms, "
     "and compile errors then appear in the working-set block at the bottom of the conversation, "
     "rebuilt every step with CURRENT line numbers. Pass a list of node ids to add several at once "
-    "(e.g. to compare two shaders); leave nodes empty for the node you are currently working on "
-    "(it is already in your working set). Use this to add a DIFFERENT node before editing it. The "
-    "node you are currently working on needs no read before you edit it — its source is already in "
-    "the working set. You cannot see the rendered image — never claim a visual result."
+    "(e.g. to compare two shaders); a `lib:` address reads that library file whole the same way; "
+    "leave nodes empty for the node you are currently working on (it is already in your working "
+    "set). Use this to add a DIFFERENT node before editing it. The node you are currently working "
+    "on needs no read before you edit it — its source is already in the working set. You cannot "
+    "see the rendered image — never claim a visual result."
 )
 
 _EDIT_SHADER_DESC = (
@@ -273,7 +275,12 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
         node_ids: list[str] = list(args["nodes"])
         views = caps.read_shaders(node_ids)
         if not views:
-            return False, "error: no such node(s) — check the project map for ids", None
+            return (
+                False,
+                "error: no such node(s) — check the project map for ids "
+                "(library files: a lib: address from the catalogue or grep)",
+                None,
+            )
         # A handle is "found" if it matches a returned view's SHORT id under the resolver's
         # prefix rule (either is a prefix of the other) — a direct compare would mis-report a
         # full-id/long-prefix read as missing.

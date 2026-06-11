@@ -204,3 +204,52 @@ def test_resolve_node_id_accepts_short_full_and_rejects_unknown_ambiguous() -> N
     assert resolve("abcd") is None  # ambiguous prefix -> None
     assert resolve("abcd1") == "abcd1111"  # disambiguated prefix
     assert resolve("zzzz") is None  # no match
+
+
+def _osc_stub() -> types.SimpleNamespace:
+    # Minimal stand-in for the oscillation brake's state (pure hash bookkeeping, no GL).
+    return types.SimpleNamespace(_state_history={})
+
+
+def test_oscillation_note_fires_on_first_round_trip() -> None:
+    from shaderbox.copilot.backend import CopilotBackend
+
+    stub = _osc_stub()
+    note = CopilotBackend._oscillation_note.__get__(stub)
+    assert note("n1", "A", "B") == ""
+    assert "2 edit(s) ago" in note("n1", "B", "A")
+
+
+def test_oscillation_note_silent_on_noop_and_fresh_states() -> None:
+    from shaderbox.copilot.backend import CopilotBackend
+
+    stub = _osc_stub()
+    note = CopilotBackend._oscillation_note.__get__(stub)
+    assert note("n1", "A", "B") == ""  # fresh state
+    assert note("n1", "B", "B") == ""  # no-op edit: state unchanged
+    assert note("n1", "B", "C") == ""  # fresh again
+
+
+def test_oscillation_note_distance_uses_nearest_occurrence() -> None:
+    # A->B->A->C then back to A: the nearest A was 2 edits ago, not 4.
+    from shaderbox.copilot.backend import CopilotBackend
+
+    stub = _osc_stub()
+    note = CopilotBackend._oscillation_note.__get__(stub)
+    note("n1", "A", "B")
+    note("n1", "B", "A")
+    note("n1", "A", "C")
+    assert "2 edit(s) ago" in note("n1", "C", "A")
+
+
+def test_oscillation_history_is_bounded() -> None:
+    from shaderbox.copilot.backend import CopilotBackend
+
+    stub = _osc_stub()
+    note = CopilotBackend._oscillation_note.__get__(stub)
+    prev = "s0"
+    for i in range(1, 20):
+        note("n1", prev, f"s{i}")
+        prev = f"s{i}"
+    assert len(stub._state_history["n1"]) == 8
+    assert note("n1", prev, "s0") == ""  # the evicted original is forgotten

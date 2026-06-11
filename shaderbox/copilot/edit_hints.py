@@ -32,11 +32,13 @@ _ARRAY_INIT_RE = re.compile(
 )
 # A declaration-ish line: the FULL (closed, spec-defined) qualifier set + optional
 # layout(...), a type (with optional array suffix), then the identifier followed by
-# `=`, `;`, `[` or `(` (function defs redeclare too).
+# `=`, `;`, `[` or `(` (function defs redeclare too). The lookahead keeps a statement
+# keyword (`return weight;`) from reading as a type.
 _DECL_HEAD = (
     r"^\s*(?:layout\s*\([^)]*\)\s*)?"
     r"(?:(?:const|uniform|in|out|inout|flat|smooth|noperspective|centroid|sample|"
     r"patch|invariant|precise|highp|mediump|lowp|varying|attribute|buffer|shared)\s+)*"
+    r"(?!(?:return|else|case|default|break|continue|discard|do|while|for|if|switch)\b)"
     r"[A-Za-z_]\w*(?:\s*\[\s*\d*\s*\])?\s+"
 )
 
@@ -79,7 +81,7 @@ def compile_hints(source: str, error_messages: list[str]) -> list[str]:
                 continue
             kind = m.group(1)
             want = int(m.group(2) or m.group(3))
-            got = _count_initializer_elements(stripped, i - 1)
+            got = _count_initializer_elements(stripped, i - 1, m.end() - 1)
             if got is not None and got != want:
                 hints.append(
                     f"hint: line {i}: the initializer has {got} elements, the "
@@ -98,12 +100,15 @@ def compile_hints(source: str, error_messages: list[str]) -> list[str]:
     return hints
 
 
-def _count_initializer_elements(stripped: str, decl_line_idx: int) -> int | None:
-    # Count top-level commas inside the type[](...) initializer starting on the
-    # given line; spans multiple lines until the matching ')'.
+def _count_initializer_elements(
+    stripped: str, decl_line_idx: int, open_col: int
+) -> int | None:
+    # Count top-level commas inside the type[](...) initializer whose '(' sits at
+    # open_col on the given line (NOT the line's first paren — an earlier call on
+    # the same line would shift the count); spans lines until the matching ')'.
     text = "\n".join(stripped.splitlines()[decl_line_idx:])
-    start = text.find("(")
-    if start < 0:
+    start = open_col
+    if start >= len(text) or text[start] != "(":
         return None
     depth = 0
     count = 1
@@ -147,16 +152,17 @@ def _brace_imbalance_location(stripped: str) -> str:
 def render_facts(rgba: bytes, width: int, height: int) -> str:
     """One terse line of truth about a rendered frame.
 
-    Background = the most common corner color; ink = pixels that differ from it.
-    y follows vs_uv (0 = bottom) — GL framebuffer reads are already bottom-up.
+    Background = the most common corner color (RGBA — an alpha-shaped frame like a
+    white glyph on transparency is ink, not FLAT); luma is alpha-weighted for the
+    same reason. y follows vs_uv (0 = bottom) — GL reads are already bottom-up.
     """
     n = width * height
     if len(rgba) < n * 4:
         return ""
 
-    def at(i: int) -> tuple[int, int, int]:
+    def at(i: int) -> tuple[int, int, int, int]:
         o = i * 4
-        return (rgba[o], rgba[o + 1], rgba[o + 2])
+        return (rgba[o], rgba[o + 1], rgba[o + 2], rgba[o + 3])
 
     corners = [at(0), at(width - 1), at((height - 1) * width), at(n - 1)]
     bg = max(set(corners), key=corners.count)
@@ -169,11 +175,12 @@ def render_facts(rgba: bytes, width: int, height: int) -> str:
         row = y * width
         cell_row = (y * 3 // height) * 3
         for x in range(width):
-            r, g, b = at(row + x)
+            r, g, b, a = at(row + x)
             cell = cell_row + (x * 3 // width)
-            luma_sum[cell] += 0.2126 * r + 0.7152 * g + 0.0722 * b
+            luma_sum[cell] += (0.2126 * r + 0.7152 * g + 0.0722 * b) * (a / 255.0)
             luma_cnt[cell] += 1
-            if abs(r - bg[0]) + abs(g - bg[1]) + abs(b - bg[2]) > 24:
+            dev = abs(r - bg[0]) + abs(g - bg[1]) + abs(b - bg[2]) + abs(a - bg[3])
+            if dev > 24:
                 ink += 1
                 min_x = min(min_x, x)
                 max_x = max(max_x, x)
@@ -187,13 +194,13 @@ def render_facts(rgba: bytes, width: int, height: int) -> str:
         for y in range(height):
             row = y * width
             for x in range(width):
-                r, g, b = at(row + x)
-                dev = abs(r - bg[0]) + abs(g - bg[1]) + abs(b - bg[2])
+                r, g, b, a = at(row + x)
+                dev = abs(r - bg[0]) + abs(g - bg[1]) + abs(b - bg[2]) + abs(a - bg[3])
                 if dev > max_dev:
                     max_dev = dev
         return (
-            f"render: FLAT — one uniform color rgb({bg[0]},{bg[1]},{bg[2]}), "
-            f"max pixel deviation {max_dev}/765 (a blank OR a full-screen fill)"
+            f"render: FLAT — one uniform color rgba({bg[0]},{bg[1]},{bg[2]},{bg[3]}), "
+            f"max pixel deviation {max_dev}/1020 (a blank OR a full-screen fill)"
         )
 
     grid = [

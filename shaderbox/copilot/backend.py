@@ -423,7 +423,8 @@ class CopilotBackend:
 
     def _copilot_resolve_source(self, handle: str) -> tuple[str, str | None]:
         # read/grep addressing: `template:` -> TEMPLATE, else NODE. Returns (kind, full_id|None).
-        # lib: falls through to the node resolver (read_lib owns lib) and returns None.
+        # lib: falls through to the node resolver and returns None (read_shaders short-circuits
+        # lib addresses before calling this).
         if is_template_address(handle):
             return "template", self._copilot_resolve_template_id(handle)
         return "node", self._copilot_resolve_node_id(handle)
@@ -456,6 +457,8 @@ class CopilotBackend:
     def read_shaders(self, node_ids: list[str]) -> list[ShaderView]:
         # Marshalled (compile + uniform read are GL). Per handle: compile, read source + uniforms +
         # errors, add to the working set. Unknown handles skipped. ShaderView carries the short id.
+        # A `lib:` handle reads the library file whole (grep origins advertise lib: as a read
+        # handle — the read side honors the same address space as edit_shader).
         def _on_main() -> list[ShaderView]:
             short = self._copilot_short_ids()
             # [] -> the current node (resolved here so a concrete id is what gets stamped).
@@ -465,6 +468,22 @@ class CopilotBackend:
                 set()
             )  # dedup: two prefixes of one source resolve to the same id
             for handle in handles:
+                if is_lib_address(handle):
+                    lib_view = self._copilot_lib_working_view(handle)
+                    if lib_view is None or handle in seen:
+                        continue
+                    seen.add(handle)
+                    self._working_set_add(handle)
+                    views.append(
+                        ShaderView(
+                            node_id=lib_view.address,
+                            name=lib_view.name,
+                            listing=lib_view.listing,
+                            uniforms=[],
+                            errors=[],
+                        )
+                    )
+                    continue
                 kind, full_id = self._copilot_resolve_source(handle)
                 if full_id is None or full_id in seen:
                     continue
@@ -1169,16 +1188,21 @@ class CopilotBackend:
 
         return self._bridge.run_on_main(_on_main)
 
-    def _oscillation_note(self, node_id: str, new_text: str) -> str:
+    def _oscillation_note(self, key: str, prev_text: str, new_text: str) -> str:
         # Deterministic A->B->A detector: hash the post-edit source; if it matches
-        # any earlier state of this node (excluding the immediately previous one,
-        # which is just "no-op edit"), the agent is cycling between versions —
-        # tell it as a fact. History is bounded; clears never needed (uuid keys).
+        # any earlier state of this file, the agent is cycling between versions —
+        # tell it as a fact. The pre-edit state seeds the history so the very first
+        # A->B->A round trip is caught; a no-op edit (state unchanged) is not an
+        # oscillation. History is bounded; clears never needed (stable keys).
         h = hash(new_text)
-        hist = self._state_history.setdefault(node_id, [])
+        hist = self._state_history.setdefault(key, [])
+        if not hist:
+            hist.append(hash(prev_text))
+        if hist[-1] == h:
+            return ""
         note = ""
-        if h in hist[:-1]:
-            back = len(hist) - hist.index(h)
+        if h in hist:
+            back = hist[::-1].index(h) + 1
             note = (
                 f"NOTE: this edit returns the file to a state it already had "
                 f"{back} edit(s) ago — you are oscillating between versions. Stop "
@@ -1387,7 +1411,7 @@ class CopilotBackend:
             self._broken_streak[tgt.node_id] = 0
             self._last_clean[tgt.node_id] = new_text
             facts = self._render_facts_for(tgt.node)
-            loop_note = self._oscillation_note(tgt.node_id, new_text)
+            loop_note = self._oscillation_note(tgt.node_id, tgt.source, new_text)
             if loop_note:
                 facts = f"{facts}\n{loop_note}" if facts else loop_note
             return EditResult(
@@ -1416,6 +1440,9 @@ class CopilotBackend:
             "node that calls the function recompiles. Edit (or read) a node that uses it to "
             "confirm it is valid."
         )
+        loop_note = self._oscillation_note(tgt.ws_address, tgt.source, new_text)
+        if loop_note:
+            note = f"{note}\n{loop_note}"
         return EditResult(matches=matches, errors=[], lib_note=note)
 
     def invalidate_lib_consumers(self, lib_path: Path) -> None:

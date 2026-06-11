@@ -58,6 +58,31 @@ def test_initializer_count_hint_is_source_side() -> None:
         assert any("5 elements, the array wants 4" in x for x in hints), wording
 
 
+def test_initializer_count_ignores_earlier_call_on_the_line() -> None:
+    # The count must start at the INITIALIZER's paren, not the line's first one —
+    # an earlier call on the same line would otherwise yield a false count.
+    ok = "float t = fract(0.5); const uint A[3] = uint[](1u, 2u, 3u);\nvoid main() {}\n"
+    assert compile_hints(ok, ["too many initializers"]) == []
+    bad = "float t = fract(0.5); const uint B[4] = uint[](1u, 2u);\nvoid main() {}\n"
+    hints = compile_hints(bad, ["too many initializers"])
+    assert any("2 elements, the array wants 4" in x for x in hints)
+
+
+def test_redeclared_hint_skips_statement_keywords() -> None:
+    # `return weight;` must not be listed as a declaration of `weight`.
+    src = (
+        "float weight = 0.1;\n"
+        "float f() {\n"
+        "    return weight;\n"
+        "}\n"
+        "float weight = 0.2;\n"
+        "void main() {}\n"
+    )
+    hints = compile_hints(src, ["`weight' redeclared"])
+    assert len(hints) == 1
+    assert "'weight' is declared on lines 1, 5" in hints[0]
+
+
 def test_redeclared_hint_fires_on_other_vendor_wordings() -> None:
     src = "float w = 0.1;\nfloat w = 0.2;\nvoid main() {}\n"
     for wording in (
@@ -107,8 +132,28 @@ def test_render_facts_flat_frame_reports_color() -> None:
     raw = _frame(12, 12, lambda x, y: (255, 0, 0))
     facts = render_facts(raw, 12, 12)
     assert "FLAT" in facts
-    assert "rgb(255,0,0)" in facts
-    assert "max pixel deviation 0/765" in facts
+    assert "rgba(255,0,0,255)" in facts
+    assert "max pixel deviation 0/1020" in facts
+
+
+def test_render_facts_alpha_shape_is_ink_not_flat() -> None:
+    # The sticker pattern — constant white RGB, the shape carried by ALPHA — must
+    # report ink + bbox, not a "FLAT white fill" lie (review cycle 3).
+    w = h = 12
+    buf = bytearray(w * h * 4)
+    for y in range(h):
+        for x in range(w):
+            a = 255 if (x < 6 and y < 6) else 0
+            buf[(y * w + x) * 4 : (y * w + x) * 4 + 4] = bytes((255, 255, 255, a))
+    facts = render_facts(bytes(buf), w, h)
+    assert "FLAT" not in facts
+    assert "ink 25%" in facts
+
+
+def test_render_facts_flat_transparent_shows_alpha() -> None:
+    raw = bytes((255, 255, 255, 0)) * 144
+    facts = render_facts(raw, 12, 12)
+    assert "rgba(255,255,255,0)" in facts
 
 
 def test_render_facts_bbox_and_orientation() -> None:

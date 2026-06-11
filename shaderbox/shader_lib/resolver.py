@@ -117,6 +117,14 @@ _SB_CALL_RE = re.compile(r"\b(SB_\w+)\s*\(")
 _SB_USER_DEF_RE = re.compile(
     r"(?:#\s*define\s+(SB_\w+)|\b(?:const|uniform|struct)\b[^;{=]*?\b(SB_\w+)\s*[=;[{])"
 )
+# A user-side function PROTOTYPE (`float SB_helper(vec2 p);` — legal GLSL, body elsewhere
+# or in a later edit). The line-anchored leading type token(s) + keyword lookahead keep a
+# call STATEMENT (`SB_fill(d);`, `return SB_foo(...);`) from reading as a prototype.
+_SB_PROTO_RE = re.compile(
+    r"^[ \t]*(?!(?:return|else|case|do|while|for|if|switch|discard)\b)"
+    r"(?:\w+(?:\s*\[\s*\d*\s*\])?\s+)+(SB_\w+)\s*\([^)]*\)\s*;",
+    re.MULTILINE,
+)
 
 
 def _unknown_name_errors(
@@ -125,11 +133,12 @@ def _unknown_name_errors(
     # An SB_* name CALLED like a function but neither in the lib nor user-defined
     # would reach the driver as a cryptic "undeclared identifier" — error here with
     # the line and the closest catalogue name instead. Non-call references and any
-    # user-side definition (function/#define/const/uniform/struct) are left alone:
+    # user-side definition (function/prototype/#define/const/uniform/struct) are left alone:
     # a resolve error BLOCKS the driver compile, so false positives are worse than
     # a missed hint.
     stripped = parser.strip_comments_keep_lines(root.text)
     user_defined = set(parser.USER_FN_DEF_RE.findall(stripped))
+    user_defined.update(_SB_PROTO_RE.findall(stripped))
     for m in _SB_USER_DEF_RE.finditer(stripped):
         user_defined.add(m.group(1) or m.group(2))
     known = list(index.functions)

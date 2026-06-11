@@ -383,6 +383,35 @@ def test_user_defined_SB_function_is_not_unknown(tmp_path: Path) -> None:
     assert errors == []
 
 
+def test_user_prototype_SB_function_is_not_unknown(tmp_path: Path) -> None:
+    # A forward DECLARATION (prototype; the body lands in a later edit) is legal
+    # GLSL and must not resolve-error (review cycle 3).
+    lib = tmp_path / "lib"
+    idx = _make_lib(lib, {"x.glsl": "float SB_perlin() { return 0.0; }\n"})
+    root = _write(
+        tmp_path / "root.glsl",
+        "float SB_later(vec2 p);\n" "void main() { float x = SB_later(vec2(0.0)); }\n",
+    )
+    _flattened, _sources, _smap, errors = resolve_usage(root, idx)
+    assert errors == []
+
+
+def test_call_statement_is_not_a_prototype(tmp_path: Path) -> None:
+    # `return SB_x(...);` and a bare call statement end in `);` too — they must
+    # still count as CALLS of an unknown name, not prototypes.
+    lib = tmp_path / "lib"
+    idx = _make_lib(lib, {"x.glsl": "float SB_perlin() { return 0.0; }\n"})
+    root = _write(
+        tmp_path / "root.glsl",
+        "float f() {\n    return SB_nope(1.0);\n}\n"
+        "void main() {\n    SB_also_nope();\n}\n",
+    )
+    _flattened, _sources, _smap, errors = resolve_usage(root, idx)
+    names = " ".join(e.message for e in errors)
+    assert "SB_nope" in names
+    assert "SB_also_nope" in names
+
+
 def test_line_markers_thread_through_source_map(tmp_path: Path) -> None:
     # A driver error at "file 1, line 1" should resolve to (lib_path, 1).
     lib = tmp_path / "lib"

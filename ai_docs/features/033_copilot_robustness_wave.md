@@ -171,6 +171,35 @@ intentions-as-done analog; the nudge fixed the FINAL reply, mid-turn prose still
 OPS NOTE: round sandboxes lived in /tmp (harness mkdtemp default) — two Pi reboots wiped traces
 mid-loop; future rounds must set SHADERBOX_DATA_DIR under $HOME.
 
+## Review cycle 3 (post-round-5) — triage
+
+Three reviewers (runtime-finding verification PASS / anti-overfit + convergence CONTINUE /
+code regression sweep PARTIAL: 0 critical, 2 medium, 4 low). All cycle-2 fixes audited generic —
+zero overfits. Fixed: (1) `read_shader` resolves `lib:` addresses into the working set — the
+grep-origin docs already advertised them as read handles, the read side now honors the same
+address space as edit_shader (tool count unchanged); the not-found error names the lib: path
+too. (2) Mid-turn prose/state mismatch (round-4 intentions-as-done class at the unfixed sibling
+surface — mid-turn text IS user-visible via streaming): one prompt rule — text alongside tool
+calls is a PLAN, present/future tense. (3) render facts were ALPHA-BLIND — the flagship sticker
+pattern (white glyph on transparency) reported as "FLAT white fill"; facts are now rgba (alpha
+in ink test + verdict, alpha-weighted luma). (4) A torn no-tools final stream propagated out of
+run_turn, dropping the turn's WHOLE cost accounting + the irreversible-action ledger: now caught,
+the terminal AgentError keeps real summary + stats. (5) Oscillation brake had ZERO tests
+(checklist premise was false) + three gaps: now seeded with the pre-edit state (the first
+A->B->A is caught), a no-op edit never fires it, distance uses the NEAREST occurrence, and lib
+edits get the same brake (round-5's mission shape was lib surgery — node-only was the missing
+half). (6) Initializer count starts at the MATCHED paren, not the line's first (an earlier call
+on the line yielded a false count). (7) Declaration-hint regex excludes statement keywords
+(`return weight;` listed as a declaration). (8) Resolver whitelists SB_ function PROTOTYPES
+(legal GLSL, was a compile-blocking false positive; call statements still flagged). +11 unit
+tests. Accepted (documented): V3D `warning:` lines become ShaderErrors inside a failed compile —
+consistent with the pre-existing `_MESA_ERROR_RE` design.
+CONVERGENCE: CONTINUE (fixes above unvalidated by a fresh round; two mechanisms have zero
+behavioral evidence). Round 6 = visual-tuning mission with a deliberately FALSE driver report
+("still mirrored/too dim" against contradicting facts) + uniform-heavy relative tweaks — targets
+two-sided trust and the oscillation brake at once. Declarable converged after it if: no terminal
+failure, no NEW class, agent pushes back (or asks) on the false report.
+
 ## Manual verification (original criteria)
 
 A fresh dogfood round (same mission class as round 3) after landing: expect (a) range-bookkeeping

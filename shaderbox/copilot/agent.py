@@ -398,18 +398,25 @@ def run_turn(
         )
         buf = ""
         done: LLMDone | None = None
-        for ev in client.stream(
-            request_messages, tools=None, max_tokens=config.max_tokens_per_turn
-        ):
-            match ev:
-                case LLMTextDelta():
-                    buf += ev.text
-                    yield AgentTextDelta(ev.text)
-                case LLMDone():
-                    usage += ev.usage
-                    done = ev
-                case _:
-                    pass
+        # A torn stream must not escape run_turn: the caller's empty-reply path
+        # carries the REAL summary + stats (ledger, accumulated cost) downstream,
+        # while a propagated exception would drop both at the session boundary.
+        try:
+            for ev in client.stream(
+                request_messages, tools=None, max_tokens=config.max_tokens_per_turn
+            ):
+                match ev:
+                    case LLMTextDelta():
+                        buf += ev.text
+                        yield AgentTextDelta(ev.text)
+                    case LLMDone():
+                        usage += ev.usage
+                        done = ev
+                    case _:
+                        pass
+        except Exception as exc:
+            logger.warning(f"copilot final reply stream failed: {exc}")
+            tr.event("final_reply_stream_error", error=str(exc))
         tr.event(
             "llm_response",
             iteration=-1,

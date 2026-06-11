@@ -405,6 +405,53 @@ def test_max_iterations_streams_a_final_no_tools_reply() -> None:
     assert "nothing changed yet" in events[-1].summary.reply
 
 
+class _TornFinalClient:
+    # Scripted like _FakeClient, but the no-tools final-reply stream (tools=None)
+    # dies with a network error instead of yielding.
+    def __init__(self, scripts: list[list[LLMStreamEvent]]) -> None:
+        self._scripts = scripts
+        self._i = 0
+
+    def stream(
+        self,
+        messages: list[LLMMessage],
+        *,
+        tools: list[LLMToolSpec] | None = None,
+        max_tokens: int,
+    ) -> Iterator[LLMStreamEvent]:
+        _ = (messages, max_tokens)
+        if tools is None:
+            raise RuntimeError("connection reset")
+        script = self._scripts[self._i]
+        self._i += 1
+        return iter(script)
+
+
+def test_torn_final_stream_keeps_stats_and_summary() -> None:
+    # Review cycle 3: a network error during the forced no-tools reply must not
+    # escape run_turn — the terminal AgentError must carry the turn's real stats
+    # (cost accounting) and ledger summary, not die at the session boundary.
+    read = _tool_call("cr", "read_shader", "{}")
+    scripts: list[list[LLMStreamEvent]] = [read] * COPILOT_CONFIG.max_iterations
+    caps = _fake_caps(edit_errors=[])
+    registry = build_registry(caps)
+    events = list(
+        run_turn(
+            _TornFinalClient(scripts),
+            registry,
+            COPILOT_CONFIG,
+            _fake_context(),
+            history=[],
+            user_text="read forever",
+            gate=GateChannel(),
+            cancel=threading.Event(),
+        )
+    )
+    assert isinstance(events[-1], AgentError)
+    assert "stopped after" in events[-1].message.lower()
+    assert events[-1].stats is not None
+
+
 def test_empty_length_cutoff_gets_a_final_reply() -> None:
     # 033: a hidden-reasoning burn (finish=length, zero text, zero tools) forces the
     # same no-tools reply instead of ending the turn silent.
