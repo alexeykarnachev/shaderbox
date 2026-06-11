@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from loguru import logger
 
 from shaderbox.copilot.config import CopilotConfig
+from shaderbox.copilot.errors import CopilotConfigError
 from shaderbox.copilot.gate import GateChannel, GateKind, GateRequest
 from shaderbox.copilot.llm.api import (
     LLMClient,
@@ -464,24 +465,49 @@ def run_turn(
             tools=specs,
             max_tokens=config.max_tokens_per_turn,
         )
-        for ev in client.stream(
-            request_messages, tools=specs, max_tokens=config.max_tokens_per_turn
-        ):
-            match ev:
-                case LLMTextDelta():
-                    text_buf += ev.text
-                    yield AgentTextDelta(ev.text)
-                case LLMToolCallStarted():
-                    yield AgentStatus(registry.status_for(ev.name, None))
-                case LLMToolCallCompleted():
-                    builders[ev.index] = _ToolCallBuilder(
-                        id=ev.id, name=ev.name, arguments=ev.arguments
-                    )
-                case LLMDone():
-                    usage += ev.usage
-                    if first_input_tokens is None:
-                        first_input_tokens = ev.usage.input_tokens
-                    done = ev
+        # Same containment as stream_final_reply: a stream torn mid-turn (tools may already
+        # have run) must terminate as an error terminal CARRYING the accumulated summary +
+        # stats — a propagated exception would commit an empty ledger (re-publish risk) and
+        # drop the turn's spend. A pre-stream config reject still propagates: the session
+        # surfaces its message verbatim.
+        try:
+            for ev in client.stream(
+                request_messages, tools=specs, max_tokens=config.max_tokens_per_turn
+            ):
+                match ev:
+                    case LLMTextDelta():
+                        text_buf += ev.text
+                        yield AgentTextDelta(ev.text)
+                    case LLMToolCallStarted():
+                        yield AgentStatus(registry.status_for(ev.name, None))
+                    case LLMToolCallCompleted():
+                        builders[ev.index] = _ToolCallBuilder(
+                            id=ev.id, name=ev.name, arguments=ev.arguments
+                        )
+                    case LLMDone():
+                        usage += ev.usage
+                        if first_input_tokens is None:
+                            first_input_tokens = ev.usage.input_tokens
+                        done = ev
+        except CopilotConfigError:
+            raise
+        except Exception as exc:
+            logger.warning(f"copilot stream failed mid-turn: {exc}")
+            tr.event("stream_error", iteration=iteration, error=str(exc))
+            note = (
+                f"The model stream failed mid-turn ({type(exc).__name__}). "
+                "Any actions shown above did complete - ask me to continue or recap."
+            )
+            yield AgentError(
+                note,
+                summary=_build_turn_summary(note, ran, registry),
+                stats=TurnStats(
+                    context_tokens=first_input_tokens or 0,
+                    reply_tokens=usage.output_tokens,
+                    cost_usd=usage.cost_usd,
+                ),
+            )
+            return
 
         fr = done.finish_reason if done else "no-done-event"
         u = done.usage if done else None

@@ -222,6 +222,7 @@ class CopilotSession:
                 if ev.name == "delete_node" and ev.ok and ev.payload is not None:
                     self._attach_recover(ev.payload)
             case AgentError():
+                self.state.streaming_text = ""
                 self.state.messages.append(Message(role="error", text=ev.message))
                 self._resolve_open_gate_card("cancelled")
                 if ev.stats is not None:

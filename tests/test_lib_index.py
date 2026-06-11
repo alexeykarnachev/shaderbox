@@ -365,7 +365,7 @@ def test_unknown_name_line_survives_block_comments(tmp_path: Path) -> None:
     idx = _make_lib(lib, {"x.glsl": "float SB_perlin() { return 0.0; }\n"})
     root = _write(
         tmp_path / "root.glsl",
-        "/* one\n   two\n   three */\n" "void main() { SB_perln(); }\n",
+        "/* one\n   two\n   three */\nvoid main() { SB_perln(); }\n",
     )
     _flattened, _sources, _smap, errors = resolve_usage(root, idx)
     assert len(errors) == 1
@@ -392,7 +392,7 @@ def test_user_prototype_SB_function_is_not_unknown(tmp_path: Path) -> None:
     idx = _make_lib(lib, {"x.glsl": "float SB_perlin() { return 0.0; }\n"})
     root = _write(
         tmp_path / "root.glsl",
-        "float SB_later(vec2 p);\n" "void main() { float x = SB_later(vec2(0.0)); }\n",
+        "float SB_later(vec2 p);\nvoid main() { float x = SB_later(vec2(0.0)); }\n",
     )
     _flattened, _sources, _smap, errors = resolve_usage(root, idx)
     assert errors == []
@@ -573,6 +573,102 @@ def test_extracts_top_level_uniform_decl(tmp_path: Path) -> None:
     assert flattened.index("uniform vec4 SBT_T[4];") < flattened.index(
         "float SB_read_t"
     )
+
+
+# ----------------------------------------------------------------------------
+# Depth-0 scanning — a body the signature regex can't match must not leak
+# its interior into the index
+# ----------------------------------------------------------------------------
+
+
+_ALLMAN_TEXT: str = (
+    "float SB_allman(vec2 p)\n"
+    "{\n"
+    "    const float K = 2.0;\n"
+    "    if (p.x > 0.0) {\n"
+    "        return K;\n"
+    "    }\n"
+    "    else if (p.y > 0.0) {\n"
+    "        return -K;\n"
+    "    }\n"
+    "    return 0.0;\n"
+    "}\n"
+)
+
+
+def test_allman_style_body_yields_no_garbage_entries(tmp_path: Path) -> None:
+    # Allman braces defeat FN_SIG_RE; the scan must NOT walk into the body and
+    # index `else if (...) {` as a function named `if` or the local const `K`.
+    # The Allman function itself stays unindexed (one-declarator-per-line
+    # convention) — acceptable, as long as it poisons nothing.
+    lib = tmp_path / "lib"
+    idx = _make_lib(lib, {"allman.glsl": _ALLMAN_TEXT})
+    assert idx.functions == {}
+
+
+def test_allman_file_does_not_poison_sibling_files(tmp_path: Path) -> None:
+    # SB_ok's over-collected callee set contains `if`; pre-fix the garbage `if`
+    # entry from allman.glsl resolved against it and got spliced into EVERY
+    # shader using SB_ok.
+    lib = tmp_path / "lib"
+    idx = _make_lib(
+        lib,
+        {
+            "allman.glsl": _ALLMAN_TEXT,
+            "ok.glsl": (
+                "float SB_ok(vec2 p) {\n"
+                "    if (p.x > 0.0) { return 1.0; }\n"
+                "    return p.x;\n"
+                "}\n"
+            ),
+        },
+    )
+    assert set(idx.functions) == {"SB_ok"}
+    root = _write(tmp_path / "root.glsl", "void main() { SB_ok(vec2(0.0)); }\n")
+    flattened, _sources, _smap, errors = resolve_usage(root, idx)
+    assert errors == []
+    assert "float SB_ok(vec2 p)" in flattened
+    assert "else if" not in flattened
+
+
+def test_unterminated_body_does_not_index_interior(tmp_path: Path) -> None:
+    # Mid-edit unbalanced braces: nothing from the broken file gets indexed.
+    lib = tmp_path / "lib"
+    idx = _make_lib(
+        lib,
+        {
+            "broken.glsl": (
+                "float SB_broken(vec2 p) {\n"
+                "    const float K = 1.0;\n"
+                "    if (p.x > 0.0) {\n"
+                "        return K;\n"
+            )
+        },
+    )
+    assert idx.functions == {}
+
+
+def test_top_level_entries_after_allman_body_still_index(tmp_path: Path) -> None:
+    # Depth recovers at the body's closing brace; later top-level declarations
+    # (incl. a multi-line const initializer) index and resolve normally.
+    lib = tmp_path / "lib"
+    idx = _make_lib(
+        lib,
+        {
+            "mix.glsl": (
+                _ALLMAN_TEXT + "const vec4 SB_TABLE[2] = vec4[](\n"
+                "    vec4(0.0),\n"
+                "    vec4(1.0)\n"
+                ");\n"
+                "float SB_after(vec2 p) { return SB_TABLE[0].x; }\n"
+            )
+        },
+    )
+    assert set(idx.functions) == {"SB_TABLE", "SB_after"}
+    root = _write(tmp_path / "root.glsl", "void main() { SB_after(vec2(0.0)); }\n")
+    flattened, _sources, _smap, errors = resolve_usage(root, idx)
+    assert errors == []
+    assert flattened.index("const vec4 SB_TABLE[2]") < flattened.index("float SB_after")
 
 
 def test_glyph_tables_sidecar_matches_shipped_glsl() -> None:

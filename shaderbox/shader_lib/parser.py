@@ -101,6 +101,11 @@ def find_body_end(lines: list[str], start: int) -> int | None:
     return None
 
 
+def advance_brace_depth(depth: int, line: str) -> int:
+    # Clamped at 0 so a stray `}` mid-edit can't wedge the scan below top level.
+    return max(depth + line.count("{") - line.count("}"), 0)
+
+
 def extract_doc(lines: list[str], sig_line: int) -> str:
     # Walk backwards from `sig_line - 1` collecting contiguous `///` lines.
     doc_lines: list[str] = []

@@ -29,6 +29,19 @@ _TREE_FRAC = 0.40
 _TREE_W_MIN = 280.0
 
 
+def inline_input_owns_esc(app: App) -> bool:
+    # Esc-ownership for the in-frame Esc dispatch (hotkeys), which runs BEFORE this
+    # popup draws: picker_tag_input_focused still holds the previous frame's focus —
+    # the same value the picker's own Esc gate captures as tag_input_was_focused.
+    files = app.shader_lib_files
+    return (
+        files.file_rename.target is not None
+        or files.file_new.target is not None
+        or files.dir_new.target is not None
+        or files.picker_tag_input_focused
+    )
+
+
 def draw_lib_picker(app: App) -> None:
     if app.popup_state != PopupState.SHADER_LIB_PICKER:
         return

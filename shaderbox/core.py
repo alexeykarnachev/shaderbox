@@ -282,19 +282,24 @@ class Node:
         self.vao = self._gl.vertex_array(program, [(self.vbo, "2f", "a_pos")])
 
         # Program-resident engine tables (glyph strokes): written once per program;
-        # an unused table is compiled out by the driver and simply absent. The write
-        # is guarded like render()'s uniform writes — a user shader redeclaring an
-        # SBT_* name with its own shape must not crash compile().
+        # an unused table is compiled out by the driver and simply absent. A linker
+        # that constant-folds a glyph index may TRIM the active array to a prefix of
+        # the declaration, so the write clamps to the active size (Known quirks). The
+        # except is guarded like render()'s uniform writes — a user shader redeclaring
+        # an SBT_* name with its own shape must not crash compile().
         for table_name, table_data in TABLE_UNIFORMS.items():
             try:
                 member = program[table_name]
             except KeyError:
                 continue
             if isinstance(member, moderngl.Uniform):
+                element_size: int = getattr(
+                    member, "element_size", member.dimension * 4
+                )
                 try:
-                    member.write(table_data)
+                    member.write(table_data[: member.array_length * element_size])
                 except Exception as e:
-                    logger.debug(f"Failed to write engine table '{table_name}': {e}")
+                    logger.warning(f"Failed to write engine table '{table_name}': {e}")
 
     def seed_uniform_values(self) -> None:
         # Fill uniform_values with node-intrinsic defaults for any active uniform not yet

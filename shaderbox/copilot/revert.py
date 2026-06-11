@@ -15,6 +15,23 @@ from shaderbox.ui_models import UINode, load_node_from_dir
 # notification/persist wrappers (revert_turn / recover_deleted_node) and delegates here.
 
 
+def _swap_in_snapshot(snap: Path, dst: Path) -> None:
+    # The live dir is removed only after a COMPLETE copy of the snapshot exists beside it,
+    # so a torn/corrupt snapshot can never leave the node dir destroyed.
+    staging = dst.with_name(dst.name + ".restoring")
+    shutil.rmtree(staging, ignore_errors=True)
+    try:
+        shutil.copytree(snap, staging)
+    except Exception:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+    # Once dst teardown starts, a failure must LEAVE staging on disk — it may be the only
+    # complete copy (a retry sweeps it via the rmtree above).
+    if dst.exists():
+        shutil.rmtree(dst)
+    staging.replace(dst)
+
+
 class RevertExecutor:
     def __init__(
         self,
@@ -92,14 +109,18 @@ class RevertExecutor:
                 result.unrestorable.append(name)
                 continue
             dst = nodes_dir / node_id
-            if dst.exists():
-                shutil.rmtree(dst, ignore_errors=True)
-            shutil.copytree(snap, dst)
-            if node_id in ui_nodes:
-                self._reload_node_in_place(node_id)
-            else:
-                # A later turn deleted it -> re-create from the snapshot (decision 11).
-                ui_nodes[node_id] = load_node_from_dir(dst)
+            try:
+                _swap_in_snapshot(snap, dst)
+                if node_id in ui_nodes:
+                    self._reload_node_in_place(node_id)
+                else:
+                    # A later turn deleted it -> re-create from the snapshot (decision 11).
+                    ui_nodes[node_id] = load_node_from_dir(dst)
+            except Exception as e:
+                logger.warning(f"copilot revert: failed to restore node {node_id}: {e}")
+                result.unrestorable.append(name)
+                result.failed_restores.append(name)
+                continue
             result.restored_nodes.append(name)
         for name in cp.failed_nodes:
             if name not in result.unrestorable:
@@ -129,7 +150,8 @@ class RevertExecutor:
         if cp.pre_switch_node_id is not None and cp.pre_switch_node_id in ui_nodes:
             self._set_current_node_id(cp.pre_switch_node_id)
 
-        checkpoints.drop(turn_id)
+        if not result.failed_restores:
+            checkpoints.drop(turn_id)
         return result
 
     def _revert_lib_file(self, ws_address: str, pre_edit_source: str) -> bool:

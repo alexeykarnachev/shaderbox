@@ -373,7 +373,10 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   (`shader_lib/parser.py::DECL_SIG_RE`, one declarator per line). Small consts (an `SB_PI`)
   are fine as global const; it's dynamic indexing into a big table that hits the demotion. If a
   lib/table shader is mysteriously slow on one vendor only, check WHERE its table data lives
-  first.
+  first. Mesa's linker also constant-folds a compile-time-constant glyph index and TRIMS the
+  uniform array's ACTIVE size to a prefix of the declaration (verified on Mesa 24.2.8/V3D:
+  `array_length` reports 1, a full-size `write` raises and the table stays zero) — `Node.compile()`
+  clamps the table write to `array_length * element_size`.
 - **A glfw key-filter callback must NEVER swallow RELEASE events.** The Esc filter
   (`app.py::_install_escape_filter`) gates on `escape_has_job()`, but the job routinely
   disappears between press and release (Esc's own handler defocused the chat) — a swallowed

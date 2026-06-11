@@ -1,5 +1,7 @@
 """Shipped shader-library seeding / sync / factory reset — pure file ops, no GL."""
 
+import hashlib
+import json
 from pathlib import Path
 
 from shaderbox.shader_lib.seed import reset_to_shipped, sync_shipped_lib
@@ -139,3 +141,33 @@ def test_empty_seed_dir_is_a_noop(tmp_path: Path) -> None:
     root.mkdir()
     assert sync_shipped_lib(tmp_path / "missing", root) == 0
     assert not (root / ".seed_manifest.json").exists()
+
+
+def test_readonly_root_is_fail_soft(tmp_path: Path) -> None:
+    # A read-only lib root (PermissionError on the first write) must not raise —
+    # the app starts with whatever lib state is on disk.
+    seed, root = _roots(tmp_path, {"a.glsl": "v1\n"})
+    root.chmod(0o555)
+    try:
+        assert sync_shipped_lib(seed, root) == 0
+    finally:
+        root.chmod(0o755)
+    assert not (root / "a.glsl").exists()
+
+
+def test_corrupt_manifest_key_cannot_delete_outside_root(tmp_path: Path) -> None:
+    # `root / rel` with an absolute key resolves OUTSIDE the root (pathlib) — the
+    # stale-files sweep must skip such keys even when the hash matches.
+    seed, root = _roots(tmp_path, {"a.glsl": "a\n"})
+    outside = tmp_path / "outside.glsl"
+    outside.write_text("precious\n", encoding="utf-8")
+    manifest: dict[str, str] = {
+        str(outside): hashlib.sha1(b"precious\n").hexdigest(),
+        "../outside.glsl": hashlib.sha1(b"precious\n").hexdigest(),
+    }
+    (root / ".seed_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    sync_shipped_lib(seed, root)
+    assert outside.read_text() == "precious\n"
+    saved = json.loads((root / ".seed_manifest.json").read_text(encoding="utf-8"))
+    assert str(outside) not in saved
+    assert "../outside.glsl" not in saved

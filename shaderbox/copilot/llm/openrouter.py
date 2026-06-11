@@ -2,7 +2,7 @@ from collections.abc import Callable, Iterator
 from typing import Any
 
 from loguru import logger
-from openai import OpenAI
+from openai import APIStatusError, OpenAI
 from openai.types.chat import ChatCompletionChunk
 
 from shaderbox.copilot.errors import CopilotConfigError
@@ -50,6 +50,16 @@ def _tool_to_wire(spec: LLMToolSpec) -> dict[str, Any]:
     }
 
 
+class LLMUpstreamError(Exception):
+    """Sanitized stand-in for the SDK's APIStatusError family, whose str() embeds the full
+    response body (which echoes the prompt + the user's shader source). Status + error
+    class only, so no caller's log line or traceback can leak the body."""
+
+    def __init__(self, status_code: int, error_class: str) -> None:
+        super().__init__(f"{error_class} (HTTP {status_code})")
+        self.status_code: int = status_code
+
+
 def _log_upstream_error(exc: Exception) -> None:
     # NEVER log the response body (§J4) — OpenRouter error bodies echo the prompt, which
     # carries the user's shader source + the key context. Status/class only.
@@ -95,6 +105,11 @@ class OpenRouterLLMClient(LLMClient):
             )
         try:
             yield from self._stream_impl(messages, tools, max_tokens)
+        except APIStatusError as exc:
+            _log_upstream_error(exc)
+            # `from None`: the implicit context chain would re-expose the body-bearing
+            # original in any logged traceback.
+            raise LLMUpstreamError(exc.status_code, type(exc).__name__) from None
         except Exception as exc:
             _log_upstream_error(exc)
             raise

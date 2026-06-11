@@ -38,8 +38,6 @@ from shaderbox.ui_primitives import (
 )
 from shaderbox.util import open_in_file_manager
 
-_DBG_INPUT_ACTIVE: bool = False
-
 # Floating top-level window (NOT a tab/region), drawn after the main window so it floats on
 # top. no_nav_focus keeps it out of Ctrl+Tab (does NOT block click-to-focus); no_collapse
 # stops it collapsing into an unrecoverable title-bar strip. no_nav_inputs stops the nav
@@ -516,7 +514,7 @@ def _draw_bubble(
             disabled = app.copilot.state.in_flight
             imgui.begin_disabled(disabled)
             if revert_icon_button(f"revert_{idx}", side):
-                app.copilot_revert_target = revert_msg
+                app.open_copilot_revert(revert_msg)
             imgui.end_disabled()
             if not disabled and imgui.is_item_hovered():
                 imgui.set_tooltip("Revert this turn's changes")

@@ -51,7 +51,11 @@ def _draw_body(app: App) -> bool:
     imgui.separator_text("General")
     label_row(app.font_12, "Target FPS", ctrl_w, label_w)
     app.app_state.global_target_fps = imgui.drag_int(
-        "##global_target_fps", app.app_state.global_target_fps, v_min=30, v_max=240
+        "##global_target_fps",
+        app.app_state.global_target_fps,
+        v_min=30,
+        v_max=240,
+        flags=imgui.SliderFlags_.always_clamp,
     )[1]
     app.app_state.show_cheatsheet = imgui.checkbox(
         "Show keyboard cheatsheet", app.app_state.show_cheatsheet
@@ -74,15 +78,28 @@ def _draw_body(app: App) -> bool:
     imgui.dummy((0.0, SPACE.SM))
     label_row(app.font_12, "Font size", ctrl_w, label_w)
     settings.font_size = imgui.drag_int(
-        "##font_size", settings.font_size, v_min=8, v_max=48
+        "##font_size",
+        settings.font_size,
+        v_min=8,
+        v_max=48,
+        flags=imgui.SliderFlags_.always_clamp,
     )[1]
     label_row(app.font_12, "Tab size", ctrl_w, label_w)
     settings.tab_size = imgui.drag_int(
-        "##tab_size", settings.tab_size, v_min=1, v_max=8
+        "##tab_size",
+        settings.tab_size,
+        v_min=1,
+        v_max=8,
+        flags=imgui.SliderFlags_.always_clamp,
     )[1]
     label_row(app.font_12, "Line spacing", ctrl_w, label_w)
     settings.line_spacing = imgui.drag_float(
-        "##line_spacing", settings.line_spacing, v_min=1.0, v_max=2.0, v_speed=0.01
+        "##line_spacing",
+        settings.line_spacing,
+        v_min=1.0,
+        v_max=2.0,
+        v_speed=0.01,
+        flags=imgui.SliderFlags_.always_clamp,
     )[1]
 
     imgui.dummy((0.0, SPACE.MD))

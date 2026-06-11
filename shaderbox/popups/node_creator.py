@@ -75,7 +75,7 @@ def _draw_body(app: App, grid_h: float) -> bool:
     if imgui.begin_child("##template_grid", size=(0.0, grid_h)):
         selected = _draw_grid(app)
     imgui.end_child()
-    is_template_selected = selected != ""
+    is_template_selected = selected in app.ui_node_templates
 
     # A selection change must close any open editor — else it saves template A's text to template B.
     if (

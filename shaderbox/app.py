@@ -456,7 +456,8 @@ class App:
         if not msg.turn_id or self.copilot.state.in_flight:
             return
         result = self.revert_executor.restore_checkpoint(msg.turn_id)
-        msg.turn_id = ""
+        if not result.failed_restores:
+            msg.turn_id = ""
         self.copilot.note_revert(result.as_notice())
         if result.touched_anything:
             self.notifications.push("Reverted the assistant's changes")
@@ -692,7 +693,12 @@ class App:
         }
 
     def any_popup_open(self) -> bool:
-        return self.popup_state != PopupState.CLOSED
+        # The copilot revert confirm joins the mutex from outside PopupState (it
+        # carries its Message payload in copilot_revert_target; None = closed).
+        return (
+            self.popup_state != PopupState.CLOSED
+            or self.copilot_revert_target is not None
+        )
 
     def _open_popup(self, state: PopupState) -> None:
         # Capture chat focus BEFORE the popup steals it (the openers run in dispatch_commands,
@@ -700,6 +706,12 @@ class App:
         # open. reconcile_popup_focus restores on the close edge.
         self._chat_focused_before_popup = self.copilot_focused
         self.popup_state = state
+
+    def open_copilot_revert(self, msg: Message) -> None:
+        # Outside PopupState (the modal carries a payload) but in the popup mutex via
+        # any_popup_open; same pre-open chat-focus capture as _open_popup.
+        self._chat_focused_before_popup = self.copilot_focused
+        self.copilot_revert_target = msg
 
     def open_node_creator(self) -> None:
         self._open_popup(PopupState.NODE_CREATOR)
@@ -724,6 +736,7 @@ class App:
         self.shader_lib_files.reset_inline_state()
         self._open_popup(PopupState.SHADER_LIB_PICKER)
         self.shader_lib_files.picker_query = ""
+        self.shader_lib_files.picker_tag_input_focused = False
 
     @property
     def app_dir(self) -> Path:
@@ -851,6 +864,8 @@ class App:
         if self.is_copilot_open:
             self.focus_copilot()
         self.copilot_layout = self.app_state.copilot_layout
+        # A pending revert confirm points at the outgoing project's conversation.
+        self.copilot_revert_target = None
         # Drive imgui's tab bar to the restored tab on the first frame — set_selected only
         # fires while this one-shot is set (else imgui defaults to the first tab).
         self.node_tab_select_pending = True
@@ -1088,16 +1103,19 @@ class App:
         return dir
 
     def save(self) -> None:
-        if self._copilot_busy_blocked("Saving"):
-            return
-        self.flush_current_editor()
-
-        if self.current_node_id:
-            try:
-                self.save_ui_node(self.ui_nodes[self.current_node_id])
-            except Exception as e:
-                logger.error(f"Failed to save current node: {e}")
-                self.notifications.push(f"Save failed: {e!s}", COLOR.STATE_ERROR[:3])
+        # The busy gate covers only the node portion (the worker owns the current node
+        # mid-turn); app_state + integrations are user-owned and always persist — the
+        # quit path calls save() regardless of an in-flight turn.
+        if not self._copilot_busy_blocked("Saving"):
+            self.flush_current_editor()
+            if self.current_node_id:
+                try:
+                    self.save_ui_node(self.ui_nodes[self.current_node_id])
+                except Exception as e:
+                    logger.error(f"Failed to save current node: {e}")
+                    self.notifications.push(
+                        f"Save failed: {e!s}", COLOR.STATE_ERROR[:3]
+                    )
 
         for eid in self.exporter_registry.ids():
             exporter = self.exporter_registry.get(eid)

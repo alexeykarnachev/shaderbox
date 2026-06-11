@@ -93,16 +93,23 @@ def active() -> ShaderLibIndex:
 def _extract_functions(source: ShaderSource) -> list[ShaderLibFunction]:
     # Brace-match function bodies manually — regex can't handle nested braces.
     # Also extracts top-level `const`/`uniform` declarations (shareable lib
-    # constants + engine-bound tables like the glyph strokes): declarations
-    # INSIDE a function body are never visited because the scan jumps past the
-    # whole body.
+    # constants + engine-bound tables like the glyph strokes). Only depth-0
+    # lines are declaration candidates: a matched function's body is jumped
+    # past wholesale; an unmatched opening brace (Allman-style signature, a
+    # half-edited body) is depth-counted instead, so its interior is never
+    # indexed — the function itself just stays unindexed.
     stripped = parser.strip_comments(source.text)
     raw_lines = source.text.splitlines()
     stripped_lines = stripped.splitlines()
     functions: list[ShaderLibFunction] = []
     i = 0
+    depth = 0
     while i < len(stripped_lines):
         line = stripped_lines[i]
+        if depth > 0:
+            depth = parser.advance_brace_depth(depth, line)
+            i += 1
+            continue
         match = parser.FN_SIG_RE.match(line)
         if match is not None:
             type_, name, args = match.group(1), match.group(2), match.group(3)
@@ -111,12 +118,14 @@ def _extract_functions(source: ShaderSource) -> list[ShaderLibFunction]:
         else:
             dmatch = parser.DECL_SIG_RE.match(line)
             if dmatch is None:
+                depth = parser.advance_brace_depth(depth, line)
                 i += 1
                 continue
             kind, type_, name, arr = dmatch.groups()
             signature = f"{kind} {type_.strip()} {name}{arr or ''}"
             end = parser.find_decl_end(stripped_lines, i)
         if end is None:
+            depth = parser.advance_brace_depth(depth, line)
             i += 1
             continue
         # Body keeps original (un-stripped) lines.

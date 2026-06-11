@@ -260,6 +260,11 @@ class ConversationStore(BaseModel):
         except (OSError, json.JSONDecodeError) as e:
             logger.warning(f"Unreadable copilot conversation ({e}); starting empty")
             return cls()
+        if not isinstance(data, dict):
+            logger.warning(
+                "Incompatible copilot conversation (not a JSON object); starting empty"
+            )
+            return cls()
         _migrate_pre_v7(data)
         try:
             return cls(**data)

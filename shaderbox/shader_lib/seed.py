@@ -72,7 +72,17 @@ def sync_shipped_lib(seed_dir: Path, root: Path) -> int:
     rename/removal upstream: a still-pristine copy is deleted with it, an edited
     copy becomes user-owned (entry dropped). A file on disk that the manifest does
     not know is user-authored: adopted only if byte-identical to the shipped one.
+    Fail-soft like the index build: an OSError (e.g. a read-only lib root) logs a
+    warning and the app starts with whatever lib state is on disk.
     """
+    try:
+        return _sync_shipped_lib(seed_dir, root)
+    except OSError as e:
+        logger.warning(f"shader-lib seed: sync skipped ({e})")
+        return 0
+
+
+def _sync_shipped_lib(seed_dir: Path, root: Path) -> int:
     seed = _seed_files(seed_dir)
     if not seed:
         return 0
@@ -103,10 +113,14 @@ def sync_shipped_lib(seed_dir: Path, root: Path) -> int:
         elif disk_hash == seed_hash:
             manifest[rel] = seed_hash
     for rel in [r for r in manifest if r not in seed]:
-        stale = root / rel
-        if stale.exists() and _sha1(stale.read_bytes()) == manifest[rel]:
-            stale.unlink()
-            logger.info(f"shader-lib seed: removed stale shipped file '{rel}'")
+        rel_path = Path(rel)
+        # `root / rel` ESCAPES the root for an absolute or `..` key (pathlib
+        # semantics) — a corrupt manifest must never unlink outside the root.
+        if not rel_path.is_absolute() and ".." not in rel_path.parts:
+            stale = root / rel_path
+            if stale.exists() and _sha1(stale.read_bytes()) == manifest[rel]:
+                stale.unlink()
+                logger.info(f"shader-lib seed: removed stale shipped file '{rel}'")
         del manifest[rel]
     _save_manifest(root, manifest)
     if written:

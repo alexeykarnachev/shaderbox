@@ -8,6 +8,7 @@ from shaderbox.commands import (
     popup_suppresses,
     route_flag,
 )
+from shaderbox.popups.lib_picker import inline_input_owns_esc
 
 
 def process_hotkeys(app: App) -> None:
@@ -53,11 +54,19 @@ def _handle_escape(app: App) -> None:
     # Apply editor settings on close, not while open — avoids the modal-open FPE
     # (conventions.md ## Known quirks).
     was_settings_open = app.popup_state == PopupState.SETTINGS
-    # Esc dismisses ONE thing, most-modal first: an open popup, else the palette, else the chat
-    # focus, else the editor caret. Dismissing a popup/palette must NOT also defocus the editor or
-    # chat — App.reconcile_popup_focus restores focus to whoever the popup stole it from.
-    if app.any_popup_open():
-        app.popup_state = PopupState.CLOSED
+    # Esc dismisses ONE thing, most-modal first: the revert confirm, else an open popup, else
+    # the palette, else the chat focus, else the editor caret. Dismissing a popup/palette must
+    # NOT also defocus the editor or chat — App.reconcile_popup_focus restores focus to whoever
+    # the popup stole it from.
+    if app.copilot_revert_target is not None:
+        app.copilot_revert_target = None
+    elif app.any_popup_open():
+        # The lib picker's inline inputs (rename / new-file / new-dir / add-tag) own Esc:
+        # their per-input cancel runs later this frame — leave the picker open.
+        if app.popup_state != PopupState.SHADER_LIB_PICKER or not inline_input_owns_esc(
+            app
+        ):
+            app.popup_state = PopupState.CLOSED
     elif app.is_palette_open:
         app.is_palette_open = False
     elif app.copilot_focused:

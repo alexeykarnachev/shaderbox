@@ -86,6 +86,17 @@ def test_corrupt_file_fails_soft(tmp_path: Path) -> None:
     assert loaded.to_messages() == []
 
 
+def test_non_object_json_fails_soft(tmp_path: Path) -> None:
+    # Valid JSON that is not an object must degrade to an empty chat, not crash the
+    # pre-v7 migration shim at startup.
+    for payload in ("[1, 2, 3]", "123"):
+        path = tmp_path / "conversation.json"
+        path.write_text(payload, encoding="utf-8")
+        loaded = ConversationStore.load_and_migrate(path)  # must NOT raise
+        assert loaded.to_messages() == []
+        assert loaded.to_history() == []
+
+
 def test_incompatible_schema_fails_soft(tmp_path: Path) -> None:
     path = tmp_path / "conversation.json"
     # Valid JSON, wrong shape (extra=forbid + bad types) -> empty, not a crash.

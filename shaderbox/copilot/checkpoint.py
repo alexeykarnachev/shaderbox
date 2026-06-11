@@ -55,6 +55,9 @@ class RevertResult:
     unrestorable: list[str] = field(
         default_factory=list
     )  # nodes with no/failed snapshot
+    failed_restores: list[str] = field(
+        default_factory=list
+    )  # unrestorable subset that failed at swap time — the checkpoint is kept so a retry can succeed
 
     @property
     def touched_anything(self) -> bool:
