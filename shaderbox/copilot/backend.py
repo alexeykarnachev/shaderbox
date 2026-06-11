@@ -12,7 +12,7 @@ GL-affine verb marshals to the main thread through `self._bridge.run_on_main`.
 
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, TypeGuard
 
@@ -95,6 +95,48 @@ def _trunc_line(s: str, n: int = 48) -> str:
     return s if len(s) <= n else s[: n - 3] + "..."
 
 
+def _cross_file_note(edited_path: Path, errors: list[CompileErrorInfo]) -> str:
+    # "" unless EVERY error lives outside the edited file (a spliced lib) — then the
+    # edited file may be fine and hints computed from its text would mislead.
+    edited = edited_path.resolve()
+    foreign: list[str] = []
+    for e in errors:
+        if Path(e.path).resolve() == edited:
+            return ""
+        if e.path not in foreign:
+            foreign.append(e.path)
+    if not foreign:
+        return ""
+    root = shader_lib_root()
+    labels: list[str] = []
+    for p in foreign:
+        try:
+            labels.append(lib_address(Path(p).relative_to(root)))
+        except ValueError:
+            try:
+                labels.append(
+                    lib_address(Path(p).resolve().relative_to(root.resolve()))
+                )
+            except ValueError:
+                labels.append(p)
+    return (
+        f"the error is in {', '.join(labels)}, which this shader pulls in — the file "
+        "you edited may be fine"
+    )
+
+
+def _edit_error_hints(
+    edited_path: Path, new_text: str, errors: list[CompileErrorInfo]
+) -> tuple[str, ...]:
+    # The brace-balance hint reads the EDITED file's text; when every error is in
+    # another file it is the wrong signal — dropped in favor of the cross-file note.
+    hints = tuple(compile_hints(new_text, [e.message for e in errors]))
+    note = _cross_file_note(edited_path, errors)
+    if note:
+        hints = (note, *(h for h in hints if "'{'" not in h))
+    return hints
+
+
 def _range_check_error(
     lines: list[str],
     start_line: int,
@@ -106,18 +148,34 @@ def _range_check_error(
     # content (whitespace-stripped). A mismatch message names the ACTUAL lines so the
     # model corrects its range in one step instead of discovering it post-compile.
     problems: list[str] = []
-    for idx, expected, label in (
-        (start_line, first_line, "start_line"),
-        (end_line, last_line, "end_line"),
+    for idx, expected, line_label, quote_label in (
+        (start_line, first_line, "start_line", "first_line"),
+        (end_line, last_line, "end_line", "last_line"),
     ):
         if expected is None:
             continue
-        actual = lines[idx - 1]
-        if actual.strip() != expected.strip():
+        if "\n" in expected:
+            quoted_n = expected.count("\n") + 1
             problems.append(
-                f'{label} {idx} is "{_trunc_line(actual)}" but you quoted '
-                f'"{_trunc_line(expected)}"'
+                f"{quote_label} must be exactly ONE line — you quoted {quoted_n} lines"
             )
+            continue
+        actual = lines[idx - 1]
+        if actual.strip() == expected.strip():
+            continue
+        problem = (
+            f'{line_label} {idx} is "{_trunc_line(actual)}" but you quoted '
+            f'"{_trunc_line(expected)}"'
+        )
+        hits = [
+            i for i, ln in enumerate(lines, start=1) if ln.strip() == expected.strip()
+        ]
+        if len(hits) == 1:
+            problem += (
+                f"; your quoted {quote_label} matches line {hits[0]} — did you "
+                f"mean {line_label}={hits[0]}?"
+            )
+        problems.append(problem)
     if not problems:
         return ""
     return (
@@ -140,9 +198,11 @@ class _CopilotEditTarget:
     # A resolved edit target: a NODE (recompiles) or a LIB file (written, no standalone compile).
     # `source` is the current text to edit against ("" for a not-yet-created lib file).
     # `ws_address` is the working-set + per-batch-guard key (node full-id, or the "lib:" address).
+    # `label` names the target in result messages (EditResult.target_label).
     kind: str  # "node" | "lib"
     source: str
     ws_address: str
+    label: str = ""
     node_id: str | None = None
     node: "Node | None" = None
     lib_path: Path | None = None
@@ -789,6 +849,8 @@ class CopilotBackend:
                 new_node.node.release_program(source)
             # Compile (GL, main-thread) BEFORE save so the persisted program matches the reported errors.
             new_node.node.compile()
+            # source.path still points at the template dir here; save rebinds it.
+            pre_save_path = str(new_node.node.source.path)
             self._save_ui_node(new_node)
             self._get_ui_nodes()[new_node.id] = new_node
             cp = self._get_active_checkpoint()
@@ -797,7 +859,11 @@ class CopilotBackend:
             if switch_to:
                 self._set_current_node_id(new_node.id)
             self._working_set_add(new_node.id)
-            errors = _to_error_infos(new_node.node.compile_unit.errors)
+            persisted_path = str(new_node.node.source.path)
+            errors = [
+                replace(e, path=persisted_path) if e.path == pre_save_path else e
+                for e in _to_error_infos(new_node.node.compile_unit.errors)
+            ]
             logger.info(
                 f"copilot created node {new_node.id} (switch_to={switch_to}, "
                 f"errors={len(errors)})"
@@ -1242,7 +1308,10 @@ class CopilotBackend:
                     spans = comment_spans
             if not spans:
                 return EditResult(
-                    matches=0, errors=[], hint=_whitespace_near_match(src, old_str)
+                    matches=0,
+                    errors=[],
+                    hint=_whitespace_near_match(src, old_str),
+                    target_label=tgt.label,
                 )
             if len(spans) > 1 and not replace_all:
                 return EditResult(matches=len(spans), errors=[])
@@ -1387,13 +1456,19 @@ class CopilotBackend:
                 unresolved=True,
                 unresolved_reason="that shader no longer exists — check the project map for ids",
             )
-        node = self._get_ui_nodes()[node_id].node
+        ui_node = self._get_ui_nodes()[node_id]
+        short = self._copilot_short_ids().get(node_id, node_id[:_COPILOT_SHORT_ID_LEN])
+        label = f"node '{ui_node.ui_state.ui_name}' ({short})"
+        if not target:
+            label += " — target was empty, so this hit the CURRENT node"
+        node = ui_node.node
         return _CopilotEditTarget(
             kind="node",
             node_id=node_id,
             node=node,
             source=node.source.text,
             ws_address=node_id,
+            label=label,
         )
 
     def _copilot_resolve_lib_target(
@@ -1426,12 +1501,14 @@ class CopilotBackend:
                 source="",
                 lib_create=True,
                 ws_address=target,
+                label=target,
             )
         return _CopilotEditTarget(
             kind="lib",
             lib_path=path,
             source=path.read_text(encoding="utf-8"),
             ws_address=target,
+            label=target,
         )
 
     def _copilot_persist_target(
@@ -1460,7 +1537,7 @@ class CopilotBackend:
                     streak = self._broken_streak.get(tgt.node_id, 0) + 1
                 self._broken_streak[tgt.node_id] = streak
                 limit = COPILOT_CONFIG.auto_revert_after_failed_edits
-                hints = tuple(compile_hints(new_text, [e.message for e in errors]))
+                hints = _edit_error_hints(tgt.node.source.path, new_text, errors)
                 if limit > 0 and streak >= limit:
                     if tgt.node_id in self._last_clean:
                         return self._force_restore(
@@ -1472,7 +1549,12 @@ class CopilotBackend:
                         "known for this file this session — stop patching, rewrite "
                         "the whole shader in ONE edit",
                     )
-                return EditResult(matches=matches, errors=errors, error_hints=hints)
+                return EditResult(
+                    matches=matches,
+                    errors=errors,
+                    error_hints=hints,
+                    target_label=tgt.label,
+                )
             self._broken_streak[tgt.node_id] = 0
             self._last_clean[tgt.node_id] = new_text
             facts = self._render_facts_for(tgt.node)
@@ -1483,6 +1565,7 @@ class CopilotBackend:
                 matches=matches,
                 errors=errors,
                 render_facts=facts,
+                target_label=tgt.label,
             )
         assert tgt.lib_path is not None
         # pre-write rollback snapshot (a brand-new lib reverses to a delete, not empty bytes)
@@ -1550,6 +1633,7 @@ class CopilotBackend:
                     unresolved_reason="the line numbers shifted from an edit earlier in this "
                     "same step — the working set refreshes next step with current numbers; "
                     "re-issue then (or use edit_shader, which matches by text not line number)",
+                    target_label=tgt.label,
                 )
             if start_line == 0 and end_line == 0:
                 return self._copilot_persist_target(tgt, new_text, 1)
@@ -1564,13 +1648,17 @@ class CopilotBackend:
                 or (start_line > end_line and not is_insert)
             )
             if out_of_range and not new_lib_bootstrap:
-                return EditResult(matches=0, errors=[], hint="")
+                return EditResult(matches=0, errors=[], hint="", target_label=tgt.label)
             check = _range_check_error(
                 lines, start_line, end_line, first_line, last_line
             )
             if check:
                 return EditResult(
-                    matches=0, errors=[], unresolved=True, unresolved_reason=check
+                    matches=0,
+                    errors=[],
+                    unresolved=True,
+                    unresolved_reason=check,
+                    target_label=tgt.label,
                 )
             repl = new_text.split("\n") if new_text != "" else []
             new_lines = lines[: start_line - 1] + repl + lines[end_line:]

@@ -2,6 +2,7 @@ from typing import Any
 
 from pydantic import Field
 
+from shaderbox.copilot.address import is_lib_address
 from shaderbox.copilot.capabilities import (
     CompileErrorInfo,
     CopilotCapabilities,
@@ -192,7 +193,8 @@ _SET_UNIFORM_DESC = (
     "uniform's type and current value. Only scalar and vector uniforms can be set; samplers, "
     "uniform blocks, and engine-driven uniforms (u_time, u_aspect, u_resolution) cannot. To "
     "change the shader's LOGIC, or to add/remove a uniform, edit the SOURCE instead. The value "
-    "is in memory until the user saves the project; you cannot see the result — describe it."
+    "is in memory until the user saves the project; you cannot see the result — report the "
+    "value you set, not how it looks."
 )
 
 _CREATE_NODE_DESC = (
@@ -233,10 +235,13 @@ _SWITCH_NODE_DESC = (
     "view switches to it."
 )
 
-_OUT_OF_RANGE = (
-    "error: line number out of range — use a line number from the WORKING SET block below, "
-    "which has this file's current line numbers"
-)
+
+def _out_of_range(result: EditResult) -> str:
+    where = f" in {result.target_label}" if result.target_label else ""
+    return (
+        f"error: line number out of range{where} — use a line number from the WORKING "
+        "SET block below, which has this file's current line numbers"
+    )
 
 
 def _format_errors(errors: list[CompileErrorInfo]) -> str:
@@ -247,6 +252,10 @@ def _view_summary(view: ShaderView) -> str:
     # The terse chat line for a read: name + size + uniform count + compile state (the full
     # listing goes to the agent's context, not the chat).
     lines = view.listing.count("\n") + 1 if view.listing else 0
+    if is_lib_address(view.node_id):
+        return (
+            f"read {view.name} — {lines} lines (library file — no standalone compile)"
+        )
     state = f"{len(view.errors)} compile error(s)" if view.errors else "compiled clean"
     return f"read {view.name} — {lines} lines, {len(view.uniforms)} uniforms, {state}"
 
@@ -259,7 +268,10 @@ def _unresolved_result(result: EditResult) -> tuple[bool, str, None] | None:
     # An unresolvable reject (bad node id / lib path, read-only template, failed lib write,
     # intra-batch line-edit guard). Counts toward the edit-retry cap.
     if result.unresolved:
-        return False, f"error: {result.unresolved_reason}", None
+        msg = f"error: {result.unresolved_reason}"
+        if result.target_label:
+            msg += f" (checked {result.target_label})"
+        return False, msg, None
     return None
 
 
@@ -279,6 +291,8 @@ def _applied_result(result: EditResult) -> tuple[bool, str, dict]:
             head += "\n" + "\n".join(result.error_hints)
     else:
         head = "ok — compiled clean"
+        if result.target_label:
+            head += f" ({result.target_label})"
         if result.render_facts:
             head += "\n" + result.render_facts
     if result.matches > 1:
@@ -313,12 +327,21 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
         body = (
             f"added to your working set: {names} (their live source is shown below). "
         )
-        all_errors = [e for v in views for e in v.errors]
-        body += (
-            "compile errors:\n" + _format_errors(all_errors)
-            if all_errors
-            else "all compiled clean."
-        )
+        # Lib views carry no compile (errors=[] by construction) — kept OUT of the
+        # compiled-clean claim, which covers nodes only.
+        node_views = [v for v in views if not is_lib_address(v.node_id)]
+        lib_views = [v for v in views if is_lib_address(v.node_id)]
+        all_errors = [e for v in node_views for e in v.errors]
+        states: list[str] = []
+        if all_errors:
+            states.append("compile errors:\n" + _format_errors(all_errors))
+        elif node_views:
+            states.append("all compiled clean.")
+        if lib_views:
+            lib_names = ", ".join(v.name for v in lib_views)
+            kind = "library files" if len(lib_views) > 1 else "library file"
+            states.append(f"({lib_names}: {kind} — no standalone compile)")
+        body += " ".join(states)
         if missing:
             body += f"\n(no node found for: {', '.join(missing)})"
         payload = {
@@ -343,9 +366,10 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
                 None,
             )
         if result.matches == 0:
+            where = result.target_label or "the shader"
             base = (
-                "error: old_str not found in the shader — re-read with read_shader and copy "
-                "an exact substring"
+                f"error: old_str not found in {where} — re-read with read_shader and "
+                "copy an exact substring"
             )
             if result.hint:
                 base += (
@@ -400,7 +424,7 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
         if (unresolved := _unresolved_result(result)) is not None:
             return unresolved
         if result.matches == 0:
-            return False, _OUT_OF_RANGE, None
+            return False, _out_of_range(result), None
         return _applied_result(result)
 
     def insert_after(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
@@ -411,7 +435,7 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
         if (unresolved := _unresolved_result(result)) is not None:
             return unresolved
         if result.matches == 0:
-            return False, _OUT_OF_RANGE, None
+            return False, _out_of_range(result), None
         return _applied_result(result)
 
     def set_uniform(args: dict[str, Any]) -> tuple[bool, str, dict | None]:

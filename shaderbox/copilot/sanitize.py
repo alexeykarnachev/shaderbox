@@ -23,6 +23,7 @@ _SUBSTITUTIONS: dict[str, str] = {
     chr(0x21D2): "=>",  # rightwards double arrow
     chr(0x2014): "--",  # em-dash
     chr(0x2013): "-",  # en-dash
+    chr(0x2011): "-",  # non-breaking hyphen
     chr(0x2026): "...",  # horizontal ellipsis
     chr(0x2022): "*",  # bullet
     chr(0x00B7): ".",  # middle dot
@@ -30,6 +31,8 @@ _SUBSTITUTIONS: dict[str, str] = {
     chr(0x2019): "'",  # right single quote
     chr(0x201C): '"',  # left double quote
     chr(0x201D): '"',  # right double quote
+    chr(0x00AB): '"',  # left guillemet
+    chr(0x00BB): '"',  # right guillemet
     chr(0x00A0): " ",  # non-breaking space
     chr(0x00D7): "x",  # multiplication sign (LLMs use it for dimensions, e.g. 512x512)
 }

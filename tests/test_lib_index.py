@@ -137,6 +137,47 @@ def test_strips_block_and_line_comments_before_extraction(tmp_path: Path) -> Non
     assert set(idx.functions) == {"SB_real"}
 
 
+_BLOCK_DOC_TEXT: str = (
+    "/**\n"
+    " * Neon ring SDF.\n"
+    " * vec2 SB_neon_ring(vec2 p, float r) {\n"
+    " */\n"
+    "vec2 SB_neon_ring(vec2 p, float r) {\n"
+    "    float d = length(p) - r;\n"
+    "    return vec2(d, 1.0);\n"
+    "}\n"
+)
+
+
+def test_multiline_block_comment_above_function_keeps_alignment(tmp_path: Path) -> None:
+    # The /** */ block deletes lines under strip_comments; the indexed body must
+    # still be sliced from the RAW text at the signature line, not shifted up
+    # into the comment.
+    lib = tmp_path / "lib"
+    idx = _make_lib(lib, {"ring.glsl": _BLOCK_DOC_TEXT})
+    assert set(idx.functions) == {"SB_neon_ring"}
+    fn = idx.functions["SB_neon_ring"]
+    assert fn.line_in_file == 4
+    assert fn.body.startswith("vec2 SB_neon_ring(vec2 p, float r) {")
+    assert "return vec2(d, 1.0);" in fn.body
+    assert fn.body.rstrip().endswith("}")
+    assert "*" not in fn.body
+
+
+def test_multiline_block_comment_doc_resolves_clean_body(tmp_path: Path) -> None:
+    lib = tmp_path / "lib"
+    idx = _make_lib(lib, {"ring.glsl": _BLOCK_DOC_TEXT})
+    root = _write(
+        tmp_path / "root.glsl",
+        "void main() { vec2 r = SB_neon_ring(vec2(0.0), 1.0); }\n",
+    )
+    flattened, _sources, _smap, errors = resolve_usage(root, idx)
+    assert errors == []
+    assert "vec2 SB_neon_ring(vec2 p, float r) {" in flattened
+    assert "return vec2(d, 1.0);" in flattened
+    assert " * vec2 SB_neon_ring" not in flattened
+
+
 def test_multiple_files_indexed(tmp_path: Path) -> None:
     lib = tmp_path / "lib"
     idx = _make_lib(

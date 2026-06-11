@@ -17,6 +17,11 @@ def test_cyrillic_passes_through() -> None:
     assert sanitize_display("Ёё") == "Ёё"
 
 
+def test_guillemets_and_nb_hyphen_transliterate() -> None:
+    assert sanitize_display("«слово»") == '"слово"'
+    assert sanitize_display("non" + chr(0x2011) + "breaking") == "non-breaking"
+
+
 def test_unrenderable_becomes_question_mark() -> None:
     assert sanitize_display("ok 中") == "ok ?"
 

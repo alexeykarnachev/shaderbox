@@ -158,6 +158,10 @@ class EditResult:
     # whitespace-invariant match can't see — refused so author content isn't silently
     # destroyed; the model is steered to a line-addressed edit. matches==0.
     comment_loss: bool = False
+    # The RESOLVED target's display label ("node 'Wave' (f90f)" / "lib:a.glsl"), set once
+    # the target resolved — so a failure names WHICH file was checked (an empty target
+    # silently means the current node, the dogfooded giveup cause).
+    target_label: str = ""
 
 
 @dataclass(frozen=True)

@@ -201,6 +201,8 @@ def render_facts(rgba: bytes, width: int, height: int) -> str:
         return (
             f"render: FLAT — one uniform color rgba({bg[0]},{bg[1]},{bg[2]},{bg[3]}), "
             f"max pixel deviation {max_dev}/1020 (a blank OR a full-screen fill)"
+            " NOTHING is visible: do not describe a scene — fix it, or report the "
+            "flat frame and ask."
         )
 
     grid = [

@@ -122,7 +122,7 @@ def test_replace_lines_start_after_end_errors_not_inserts() -> None:
             _tool_call(
                 "c1",
                 "replace_lines",
-                '{"start_line": 5, "end_line": 3, ' '"new_text": "x"}',
+                '{"start_line": 5, "end_line": 3, "new_text": "x"}',
             ),
             [LLMTextDelta("done"), LLMDone("stop")],
         ]
@@ -183,6 +183,28 @@ def test_range_check_skips_none_sides() -> None:
     lines = ["a", "b"]
     assert _range_check_error(lines, 1, 2, None, None) == ""
     assert "start_line 1" in _range_check_error(lines, 1, 2, "zzz", None)
+
+
+def test_range_check_rejects_multiline_quote() -> None:
+    lines = ["a", "    return vec2(mask, glow);", "}"]
+    msg = _range_check_error(lines, 1, 2, "a", "    return vec2(mask, glow);\n}")
+    assert "last_line must be exactly ONE line — you quoted 2 lines" in msg
+    assert "nothing was applied" in msg
+
+
+def test_range_check_suggests_unique_matching_line() -> None:
+    lines = ["a", "b", "float glow = 1.0;", "d"]
+    msg = _range_check_error(lines, 1, 2, "a", "float glow = 1.0;")
+    assert "your quoted last_line matches line 3" in msg
+    assert "did you mean end_line=3?" in msg
+
+
+def test_range_check_no_suggestion_on_ambiguous_match() -> None:
+    # A bare "}" matches many lines — no single-line suggestion, just the mismatch.
+    lines = ["if (x) {", "}", "void main() {", "}", "float y;"]
+    msg = _range_check_error(lines, 5, 5, "}", None)
+    assert "start_line 5" in msg
+    assert "did you mean" not in msg
 
 
 def test_whole_file_replace_applies_without_range() -> None:

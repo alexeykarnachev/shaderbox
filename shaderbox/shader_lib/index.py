@@ -98,7 +98,7 @@ def _extract_functions(source: ShaderSource) -> list[ShaderLibFunction]:
     # past wholesale; an unmatched opening brace (Allman-style signature, a
     # half-edited body) is depth-counted instead, so its interior is never
     # indexed — the function itself just stays unindexed.
-    stripped = parser.strip_comments(source.text)
+    stripped = parser.strip_comments_keep_lines(source.text)
     raw_lines = source.text.splitlines()
     stripped_lines = stripped.splitlines()
     functions: list[ShaderLibFunction] = []

@@ -137,6 +137,20 @@ def test_render_facts_flat_frame_reports_color() -> None:
     assert "max pixel deviation 0/1020" in facts
 
 
+def test_render_facts_flat_carries_act_imperative_inked_does_not() -> None:
+    # The FLAT verdict must carry the in-result imperative (the channel the model
+    # obeys); a frame with ink must not.
+    flat = render_facts(_frame(12, 12, lambda x, y: (0, 0, 0)), 12, 12)
+    assert "NOTHING is visible" in flat
+    assert "report the flat frame and ask" in flat
+
+    def painter(x: int, y: int) -> tuple[int, int, int]:
+        return (255, 255, 255) if x < 6 else (0, 0, 0)
+
+    inked = render_facts(_frame(12, 12, painter), 12, 12)
+    assert "NOTHING is visible" not in inked
+
+
 def test_render_facts_alpha_shape_is_ink_not_flat() -> None:
     # The sticker pattern — constant white RGB, the shape carried by ALPHA — must
     # report ink + bbox, not a "FLAT white fill" lie (review cycle 3).

@@ -312,6 +312,49 @@ def test_repeated_failed_edits_stop_at_retry_cap() -> None:
     assert len(failed_cards) < COPILOT_CONFIG.max_iterations
 
 
+def test_giveup_note_reports_applied_edits_and_broken_compile() -> None:
+    # The giveup terminal must not claim total failure when an edit DID land this
+    # turn — the note carries the applied line and flags a compile left broken.
+    apply_edit = _tool_call(
+        "ca",
+        "edit_shader",
+        '{"old_str": "vec3 p = u_pos;", "new_str": "vec3 p = u_posss;"}',
+    )
+    fail_edit = _tool_call(
+        "cx", "edit_shader", '{"old_str": "never present", "new_str": "x"}'
+    )
+    scripts: list[list[LLMStreamEvent]] = [apply_edit] + [fail_edit] * (
+        COPILOT_CONFIG.max_edit_retries + 2
+    )
+    one_error = [
+        CompileErrorInfo(
+            path="node.frag.glsl", line=1, message="'u_posss' : undeclared"
+        )
+    ]
+    caps = _fake_caps(edit_errors=[one_error])
+    registry = build_registry(caps)
+
+    events = list(
+        run_turn(
+            _FakeClient(scripts),
+            registry,
+            COPILOT_CONFIG,
+            _fake_context(),
+            history=[],
+            user_text="do the thing",
+            gate=GateChannel(),
+            cancel=threading.Event(),
+        )
+    )
+
+    assert isinstance(events[-1], AgentError)
+    msg = events[-1].message
+    assert "couldn't apply" in msg
+    assert "What DID apply this turn:" in msg
+    assert "edit_shader: compiled with errors" in msg
+    assert "the current node is currently left with compile errors." in msg
+
+
 def test_applies_but_broken_thrash_nudges_not_giveup() -> None:
     # Broken-compile circuit-breaker: an edit that APPLIES but compiles WITH errors returns
     # ok=True, so it never trips the failed-edit cap (which counts edits that fail to apply).
