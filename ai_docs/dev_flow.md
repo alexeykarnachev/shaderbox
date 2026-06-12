@@ -380,14 +380,34 @@ Footguns (each cost a real failure this session):
   visible `.redactor-in` contenteditable** — the redactor does not sync editable→textarea on a
   scripted edit, so Save silently submits the OLD body. Use the HTML view or set the textarea value
   directly, then Save.
-- **Tags are a Selectize widget** with a `create` (slugify) function — add via the instance API
-  (`addOption`+`addItem` / `createItem`), not simulated typing (keystroke filtering scrambles input,
-  e.g. `glsl`→`sllg`). Custom tags are allowed but get less discovery than canonical itch tags.
+- **Tags are a Selectize widget** (`input[name="game[tags]"]`, `el.selectize`) — drive via the
+  instance API (`removeItem` / `addItem`; `sel.options` holds itch's ~626 canonical tags), not
+  simulated typing (keystroke filtering scrambles input, e.g. `glsl`→`sllg`). **Game tags must be
+  itch-canonical** — a non-canonical value (e.g. `ai`) is silently dropped by `addItem`; the AI tag
+  is `artificial-intelligence` (not `ai-generated`, which implies AI-*made* content). Max 10.
 - **Snapshot refs go stale** after any edit that re-renders — re-snapshot or use stable selectors.
-- Screenshots / cover are binary — uploaded by hand, never from `page.yaml`.
+- **Cover + screenshots ARE agent-uploadable** via the on-demand file chooser: "Replace Cover Image"
+  / "Add screenshots" → `browser_file_upload` (3 MB cap; itch makes the thumbnails). Reorder a
+  screenshot with its Move-up/down buttons; Delete fires a native confirm (`browser_handle_dialog`
+  accept). They are binary, so they live in the repo (`docs/screenshots/`, `docs/branding/`), never
+  in `page.yaml`.
 - **Never hand-edit the live page outside `page.yaml`** — the next sync diffs from `page.yaml` and
   silently reverts a manual tweak. `page.yaml` is the only authoring surface; that's what makes the
   single-source-of-truth claim hold.
+
+### Post a devlog
+A devlog is a separate itch surface from the store page (no `page.yaml` mirror — it's a one-off
+announcement). Optional, post-ship, when a release adds something worth its own write-up. Match the
+house style of the existing posts (read the latest at `…/shaderbox/devlog/…`): a lead image or two,
+a one-line intro, **bold area headers** (paragraph-level `<strong>`, not H2), flowing prose, plain
+factual register (no marketing voice — "stays crisp at any size" is the tell to cut). New post:
+`https://itch.io/dashboard/game/3722606/new-devlog` (login required; Cloudflare may interstitial).
+- **Body** is the same Redactor as the store page — set both `.redactor-in` and the backing
+  `textarea[name="post[body]"]`; insert images via the "Add image" toolbar → "Pick image" →
+  `browser_file_upload` (uploads to `img.itch.zone`, returns a CDN `<img>`); fix image order by
+  rewriting the body DOM (the second upload nests oddly). Pick post type "Major Update or Launch".
+- **Tags** here are the same Selectize but DO accept custom values (unlike game tags) via
+  `createItem`. Visibility defaults to draft; the maintainer publishes.
 
 ---
 

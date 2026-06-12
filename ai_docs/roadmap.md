@@ -26,21 +26,21 @@ feature; brief points at the superseder).
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
 <!-- As of 2026-06-12. -->
-**v0.14.0 TAGGED + PUSHED; itch upload is the only step left (maintainer, from a desktop).** The
-git side of the release is DONE this session: `v0.14.0` cut on `master` (minor bump over `v0.13.0`
-— 036 + the settings field-focus wave), both zips built + gate-verified in `dist/`, `master` + tag
-pushed, `dev`==`master`==`origin` (all at one sha). **REMAINING — run from a desktop, NOT the Pi
-(no `BUTLER_API_KEY` / no display here):** `BUTLER_API_KEY=… yes | ./upload-itch.sh` → `butler
-status where-is-your-keyboard/shaderbox` (butler IS installed at `~/.local/bin`, arm64) → sync the
-itch page via Playwright from `ai_docs/itch/page.yaml` (already describes the copilot; Save is
-review-gated, `dev_flow.md ### Sync the itch.io page`) → new screenshots by hand. **What v0.14.0
-ships over v0.13.0:** 036 anchored `replace_lines` (text locates the block, `near_line` on
-ambiguity), the Settings field-focus + maximize wave, the copilot focus-grab + russian-greeting
-fixes, README rewritten with a copilot section. **036 is dogfood-verified** (`037_dogfood_report`)
-+ a fresh logo-design dogfood drew the new brand image (`docs/branding/logo.{png,frag.glsl}`) and
-seeded scenario `02_logo_design.md`. **Open follow-ups (`todo.md`):** the no-op CLEAN-edit spree
-escapes the giveup brake; render-facts honesty stays model-bound (the VLM-judge deferral). **No
-open BLOCKERs** beyond the desktop-only itch upload.
+**v0.14.0 FULLY SHIPPED — itch build is live, store page + devlog refreshed. No release work
+pending; "what's next" is the maintainer's pick among the partial follow-ups below.** The whole
+release is closed: both itch channels live at 0.14.0 (`butler status` confirmed), `dev`==`master`
+==`origin`, tree clean. The page-refresh wave landed too (commit `assets: refresh itch page
+screenshots + logo cover`): the live store description now matches `ai_docs/itch/page.yaml` (AI
+copilot + SB_* library + SDF segment-glyph text), the page tag `gamedev`→`artificial-intelligence`,
+the cover image is the centred logo (`docs/branding/logo_cover.png`, equal top/bottom margins), the
+gallery is logo → copilot full-app (`docs/screenshots/copilot.png`) → settings
+(`docs/screenshots/settings.png`), and a new devlog "AI copilot and a shader library" is published.
+**What v0.14.0 shipped over v0.13.0:** 036 anchored `replace_lines`, the Settings field-focus +
+maximize wave, the copilot focus-grab + russian-greeting fixes, the README copilot section. **Next
+move = pick one of the partials:** 034 UI-polish-wave-2 `make run` passes, the 025 `make run` pass,
+032's Д glyph + Cyrillic chat replies. **Open model-bound follow-ups (`todo.md`):** the no-op
+CLEAN-edit spree escapes the giveup brake; render-facts honesty (the VLM-judge deferral). **No open
+BLOCKERs.**
 
 ## Features
 
