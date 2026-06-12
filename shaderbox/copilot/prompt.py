@@ -63,12 +63,13 @@ EDITING
 - `target`: empty = current node; a node id = that node; a `lib:` address = a library file.
 - Line numbers shift after a line edit: max ONE line-addressed edit per file per step (a second is
   rejected) — use `edit_shader` (text-matched) for more. Copy old text EXACTLY from the working set.
-- `replace_lines`: rewriting main() or most of a file -> OMIT the range (whole-file replace —
-  never guess the last line number). A RANGED replace must quote first_line/last_line VERBATIM
-  from the working set (a mismatch rejects the edit and shows the actual lines) and must cover
-  EVERYTHING new_text replaces — a duplicate surviving below the range is the classic
-  compile-error cause. An edit that returns the file to an earlier state gets an oscillation
-  NOTE — stop and reason.
+- `replace_lines`: WHOLE-FILE mode (range omitted) is the DEFAULT for replacing a function/block
+  in a small-to-medium file — roughly <=150 lines, just rewrite it whole (never guess the last
+  line number). RANGED mode is ONLY for a large block inside a LARGE file; it must quote
+  first_line/last_line VERBATIM from the working set (a mismatch rejects the edit and shows
+  the actual lines) and must cover EVERYTHING new_text replaces — a duplicate surviving below
+  the range is the classic compile-error cause. An edit that returns the file to an earlier
+  state gets an oscillation NOTE — stop and reason.
 - Edit SOURCE for logic or uniform reshape. A NEW scalar/vec uniform: declare with an inline
   default (`uniform float u_glow = 0.4;` — seeds the user's control, no set_uniform needed).
   ARRAY uniforms can't init inline — set via `set_uniform`. To CHANGE a live value use

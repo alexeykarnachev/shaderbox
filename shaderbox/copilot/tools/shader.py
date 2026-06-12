@@ -153,8 +153,9 @@ _READ_SHADER_DESC = (
 )
 
 _EDIT_SHADER_DESC = (
-    "BEST FOR a SMALL, localized change to a unique snippet. For replacing a whole "
-    "block/function prefer replace_lines, and for ADDING new lines prefer insert_after — "
+    "BEST FOR a SMALL, localized change to a short unique snippet — no line numbers involved "
+    "at all. For replacing a whole block/function prefer replace_lines in WHOLE-FILE mode "
+    "(ranged only when the file is large), and for ADDING new lines prefer insert_after — "
     "both let you skip re-typing a large old_str. Replace an exact substring of the source "
     "with new text, then recompile. old_str must match the file EXACTLY, including whitespace "
     "and indentation. If old_str appears more than once, the edit fails — provide a larger "
@@ -164,11 +165,14 @@ _EDIT_SHADER_DESC = (
 )
 
 _REPLACE_LINES_DESC = (
-    "Replace a line range, or the WHOLE file. BEST FOR a full rewrite (replacing main() or most "
-    "of the file): OMIT start_line/end_line entirely — new_text replaces the whole file, no line "
-    "numbers to get wrong. For a RANGED replace pass [start_line, end_line] (1-based, inclusive, "
-    "from the WORKING SET block — current for THIS step) AND first_line + last_line: the exact "
-    "current content of those two boundary lines, copied verbatim from the working set. If they "
+    "Replace a line range, or the WHOLE file. WHOLE-FILE mode is the DEFAULT for replacing a "
+    "function/block in a small-to-medium file: OMIT start_line/end_line entirely — the working "
+    "set already shows the whole file, and if it is roughly <=150 lines just rewrite it whole; "
+    "new_text replaces the whole file, no line numbers to get wrong. RANGED mode is ONLY for a "
+    "large block inside a LARGE file, where a whole-file rewrite would be wasteful: pass "
+    "[start_line, end_line] (1-based, inclusive, from the WORKING SET block — current for THIS "
+    "step) AND first_line + last_line: the exact current content of those two boundary lines, "
+    "copied verbatim from the working set. If they "
     "don't match what is really there, NOTHING is applied and the result shows the actual lines — "
     "fix the range and resubmit. The range must cover EVERYTHING new_text replaces. new_text is "
     "inserted verbatim (include the indentation you want); an empty new_text deletes the range. "

@@ -137,6 +137,13 @@ def _edit_error_hints(
     return hints
 
 
+def _is_total_range(lines: list[str], start_line: int, end_line: int) -> bool:
+    # True when [start_line, end_line] spans every content line (trailing blank lines
+    # don't count) — replacing it is a whole-file rewrite, nothing outside survives.
+    tail = next((i for i in range(len(lines), 0, -1) if lines[i - 1].strip()), 0)
+    return start_line == 1 and end_line >= tail
+
+
 def _range_check_error(
     lines: list[str],
     start_line: int,
@@ -1657,6 +1664,10 @@ class CopilotBackend:
             )
             if out_of_range and not new_lib_bootstrap:
                 return EditResult(matches=0, errors=[], hint="", target_label=tgt.label)
+            if not is_insert and _is_total_range(lines, start_line, end_line):
+                # The range covers the whole file — the boundary checksums protect the
+                # content OUTSIDE the range, and there is none; apply as whole-file.
+                return self._copilot_persist_target(tgt, new_text, 1)
             check = _range_check_error(
                 lines, start_line, end_line, first_line, last_line
             )

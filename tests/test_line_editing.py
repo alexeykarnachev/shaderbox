@@ -9,7 +9,11 @@ Two layers, both GL-free:
 import threading
 
 from shaderbox.copilot.agent import AgentError, AgentToolCard, run_turn
-from shaderbox.copilot.backend import _number_lines, _range_check_error
+from shaderbox.copilot.backend import (
+    _is_total_range,
+    _number_lines,
+    _range_check_error,
+)
 from shaderbox.copilot.capabilities import CompileErrorInfo, EditResult
 from shaderbox.copilot.config import COPILOT_CONFIG
 from shaderbox.copilot.gate import GateChannel
@@ -205,6 +209,20 @@ def test_range_check_no_suggestion_on_ambiguous_match() -> None:
     msg = _range_check_error(lines, 5, 5, "}", None)
     assert "start_line 5" in msg
     assert "did you mean" not in msg
+
+
+def test_total_range_detected_despite_trailing_blanks() -> None:
+    # [1, tail..n] spans every content line — boundary checksums protect nothing
+    # outside it, so the backend applies it as a whole-file rewrite.
+    lines = ["#version 460 core", "void main() {", "}", ""]
+    assert _is_total_range(lines, 1, 3)
+    assert _is_total_range(lines, 1, 4)
+
+
+def test_partial_range_is_not_total() -> None:
+    lines = ["#version 460 core", "void main() {", "}", ""]
+    assert not _is_total_range(lines, 2, 4)
+    assert not _is_total_range(lines, 1, 2)
 
 
 def test_range_check_tail_range_suggests_whole_file() -> None:
