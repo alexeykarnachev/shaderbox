@@ -433,12 +433,15 @@ def labeled_combo(
 def focus_field(should_focus: bool) -> None:
     """Direct keyboard focus + scroll-into-view to the NEXT-submitted item when
     `should_focus`. Call immediately before the widget. Focusing routes through the
-    nav system, so the accent nav-cursor outline lands on the field exactly as
-    arrow-nav does (/imgui-ui §8) — no extra highlight draw. The caller owns the
-    one-shot: pass True only on the frame the request should fire, then clear it."""
+    nav system, so the accent nav-cursor outline lands on the field exactly as arrow-nav
+    does (/imgui-ui §8). `set_nav_cursor_visible(True)` is required: the MOUSE click that
+    triggered this (the gate's "Open Settings") auto-HIDES the nav cursor, so without it the
+    focus is set but no outline draws — invisible on a button (a text input still shows its
+    caret). The caller owns the one-shot: pass True only on the frame the request should fire."""
     if should_focus:
         imgui.set_keyboard_focus_here()
         imgui.set_scroll_here_y()
+        imgui.set_nav_cursor_visible(True)
 
 
 def unconnected_gate(

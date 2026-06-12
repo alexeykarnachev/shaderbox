@@ -57,6 +57,7 @@ from shaderbox.ui_primitives import (
     connection_status,
     danger_button,
     draw_link,
+    focus_field,
     ghost_button,
     labeled_combo,
     labeled_drag_float,
@@ -305,12 +306,6 @@ class YouTubeExporter(Exporter):
     def draw_config_ui(self, focus: bool = False) -> None:
         full_width: float = imgui.get_content_region_avail().x
 
-        # A focus request (Settings opened straight to YouTube) reveals the paste box — the
-        # credential here is loaded, not typed, so there is no single input to land the caret on;
-        # showing the box makes the affordance visible. The section is already expanded by the caller.
-        if focus:
-            self._render_state.show_paste = True
-
         # Setup steps show only until a client key is loaded; reappear when cleared.
         have_key: bool = bool(self._yt.client_id)
         if not have_key:
@@ -347,6 +342,10 @@ class YouTubeExporter(Exporter):
         #   key, not connected -> Client loaded + Connect + Clear (no Load)
         #   connected          -> just status + Disconnect (below)
         if not connected_now and not have_key:
+            # The credential is loaded via a file pick, not typed — so a focus request lands the
+            # nav outline on the primary Load button (not the hidden paste box). focus_field
+            # (one-shot) is owned by the caller via the `focus` flag.
+            focus_field(focus)
             if primary_button("Load client_secret.json..."):
                 self._pick_client_secret()
             imgui.same_line()
