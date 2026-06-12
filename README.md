@@ -4,10 +4,8 @@ A real-time GLSL fragment shader editor with automatic uniform detection and vis
 Download on [itch.io](https://where-is-your-keyboard.itch.io/shaderbox)
 
 
-![Editor and live render](./docs/screenshots/hero.png)
-![Auto-generated uniform controls](./docs/screenshots/uniforms.png)
-![Telegram sticker export](./docs/screenshots/telegram.png)
-![Render and export](./docs/screenshots/render.png)
+![Editor, live render, and the AI copilot](./docs/screenshots/copilot.png)
+![Settings: copilot, integrations, and keyboard rebinds](./docs/screenshots/settings.png)
 
 
 ## Features:

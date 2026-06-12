@@ -43,18 +43,18 @@ description: |
   Grab the build below (Windows / Linux) and run the included launcher; see the bundled
   README for first-run notes.
 
-# Max 10, ordered by discovery value. Empty on the live page today — first sync adds them.
+# Max 10, ordered by discovery value. Must be itch canonical tags (custom game tags are rejected).
 tags:
-  - shader
+  - shaders
   - glsl
   - opengl
   - creative-tool
   - graphics
   - generative
   - live-coding
-  - procedural-generation
+  - procedural
   - python
-  - gamedev
+  - artificial-intelligence
 
 # Declared to mirror the live page; does not diff (set-once). Live state: Yes / Code.
 ai_disclosure:
