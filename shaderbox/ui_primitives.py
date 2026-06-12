@@ -386,11 +386,14 @@ def help_marker(text: str) -> None:
 
 
 def labeled_text_input(
-    label: str, value: str, width: float, password: bool = False
+    label: str, value: str, width: float, password: bool = False, focus: bool = False
 ) -> str:
-    """Caption above a single-line text input. Returns the new value."""
+    """Caption above a single-line text input. Returns the new value. `focus` keyboard-
+    focuses + scrolls to the input this frame (see `focus_field`) — the caller owns the
+    one-shot."""
     caption_text(label)
     imgui.set_next_item_width(width)
+    focus_field(focus)
     flags = imgui.InputTextFlags_.password if password else imgui.InputTextFlags_.none
     return imgui.input_text(f"##{label}", value, flags=flags)[1]
 
@@ -425,6 +428,17 @@ def labeled_combo(
     caption_text(label)
     imgui.set_next_item_width(width)
     return imgui.combo(f"##{label}", current_idx, items)
+
+
+def focus_field(should_focus: bool) -> None:
+    """Direct keyboard focus + scroll-into-view to the NEXT-submitted item when
+    `should_focus`. Call immediately before the widget. Focusing routes through the
+    nav system, so the accent nav-cursor outline lands on the field exactly as
+    arrow-nav does (/imgui-ui §8) — no extra highlight draw. The caller owns the
+    one-shot: pass True only on the frame the request should fire, then clear it."""
+    if should_focus:
+        imgui.set_keyboard_focus_here()
+        imgui.set_scroll_here_y()
 
 
 def unconnected_gate(

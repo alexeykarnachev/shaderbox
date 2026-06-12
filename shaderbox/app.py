@@ -139,6 +139,12 @@ class App:
                 "On Linux, install libgl1 + libglfw3; on Windows, update your GPU drivers."
             )
 
+        # The MAXIMIZED hint races the window manager on first map — some WMs ignore it and
+        # the window comes up un-maximized (seen on bundle cold start). An explicit maximize
+        # after creation is honored once the window exists; harmless when the hint already won.
+        if not headless:
+            glfw.maximize_window(window)
+
         glfw.make_context_current(window)
 
         imgui.create_context()
@@ -270,6 +276,9 @@ class App:
         self.rebinding_command: CommandId | None = None
         # Settings: the library factory-reset confirm is armed (reset on open).
         self.lib_reset_armed: bool = False
+        # A settings-field key (see popups.settings.SettingsField) to expand + focus when the
+        # Settings modal next opens; "" = none. Consumed one-shot by the field's focus_field call.
+        self.settings_focus: str = ""
         # Which of the three regions owns nav. Transient (reset each launch). Start on the
         # grid (the editor auto-grabs focus on first render but is defocused below).
         self.active_region: ActiveRegion = ActiveRegion.GRID
@@ -721,8 +730,11 @@ class App:
         # On-change persist of a user-edited template description to the sidecar.
         self.template_descriptions.set(template_uuid, description)
 
-    def open_settings(self) -> None:
+    def open_settings(self, focus: str = "") -> None:
+        # focus: a SettingsField key to expand-section + keyboard-focus on open (e.g. from an
+        # unconnected gate's "Open Settings" — drop the user straight on the missing key field).
         self.lib_reset_armed = False
+        self.settings_focus = focus
         self._open_popup(PopupState.SETTINGS)
 
     def open_emoji_picker(self, target: Callable[[str], None] | None = None) -> None:

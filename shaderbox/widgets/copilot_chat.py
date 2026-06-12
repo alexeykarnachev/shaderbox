@@ -15,6 +15,7 @@ from shaderbox.copilot.state import (
     context_gauge_readout,
 )
 from shaderbox.copilot.tools.registry import ToolRegistry
+from shaderbox.popups.settings import SettingsField
 from shaderbox.theme import COLOR, SIZE, SPACE, fade
 from shaderbox.ui_primitives import (
     active_region_outline,
@@ -157,7 +158,7 @@ def draw(app: App) -> None:
                 not_connected_msg="Copilot is not set up.",
                 hint="Add your OpenRouter API key in Settings to enable the copilot.",
                 action_label="Open Settings",
-                on_action=app.open_settings,
+                on_action=lambda: app.open_settings(focus=SettingsField.COPILOT_KEY),
             )
         else:
             _draw_transcript(app)

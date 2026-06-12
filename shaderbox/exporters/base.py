@@ -40,15 +40,16 @@ class OutletUiDeps:
     `glyph_font` is an `imgui.ImFont` for symbol/glyph overlays; kept as `Any`
     so this generic module doesn't depend on imgui types. `open_glyph_picker`
     opens the symbol picker, delivering the chosen glyph to the given callback.
-    `open_settings` opens the app's settings popup (for a panel that needs to
-    send the user to configure credentials). `outlet_extra_state` is a free-form
-    per-outlet scratch dict the exporter reads/writes for its own UI state — the
-    generic outlet doesn't name it.
+    `open_settings(focus)` opens the app's settings popup (for a panel that needs to
+    send the user to configure credentials); `focus` is a SettingsField key that
+    expands + focuses that field on open ("" = no specific field). `outlet_extra_state`
+    is a free-form per-outlet scratch dict the exporter reads/writes for its own UI
+    state — the generic outlet doesn't name it.
     """
 
     glyph_font: Any
     open_glyph_picker: Callable[[Callable[[str], None]], None]
-    open_settings: Callable[[], None]
+    open_settings: Callable[[str], None]
     outlet_extra_state: dict[str, Any]
 
 
@@ -150,6 +151,12 @@ class Exporter(ABC):
     def display_name(self) -> str: ...
 
     @property
+    def config_field(self) -> str:
+        # The SettingsField key (popups.settings.SettingsField) of this exporter's primary
+        # credential input — drives open_settings(focus=...) expand+focus. "" = no such field.
+        return ""
+
+    @property
     @abstractmethod
     def auth_state(self) -> AuthState: ...
 
@@ -172,7 +179,7 @@ class Exporter(ABC):
     def is_connected(self) -> bool: ...
 
     @abstractmethod
-    def draw_config_ui(self) -> None: ...
+    def draw_config_ui(self, focus: bool = False) -> None: ...
 
     @abstractmethod
     def current_settings(self) -> dict[str, Any]: ...

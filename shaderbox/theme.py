@@ -237,7 +237,7 @@ class SIZE:
 
     FPS_PANEL_W: int = 160
     SETTINGS_W: int = 780
-    SETTINGS_H: int = 484
+    SETTINGS_H: int = 968
     SETTINGS_LABEL_W: int = 92
     SETTINGS_CTRL_W: int = 120
 

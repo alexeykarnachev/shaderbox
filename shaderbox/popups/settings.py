@@ -1,3 +1,5 @@
+from enum import StrEnum
+
 from imgui_bundle import imgui
 
 from shaderbox.app import App, PopupState
@@ -24,6 +26,22 @@ from shaderbox.ui_primitives import (
     labeled_text_input,
     modal_window,
 )
+
+
+class SettingsField(StrEnum):
+    """A focusable settings field. Pass to `app.open_settings(focus=...)` to expand its
+    owning section + keyboard-focus the field on open (e.g. a gate's 'Open Settings' jumps
+    straight to the missing key). To add one: a member here, then either branch on it in the
+    owning section's draw (the Copilot key) or — for an exporter field — have that exporter
+    return this value from `Exporter.config_field` and pass `focus` to its field's
+    `focus_field` (the Integrations loop matches `config_field` and force-opens the node).
+    The string VALUES are the cross-layer contract (exporters echo them without importing this
+    enum)."""
+
+    COPILOT_KEY = "copilot.openrouter_key"
+    TELEGRAM_TOKEN = "telegram.bot_token"
+    YOUTUBE_CLIENT = "youtube.client"
+
 
 _LABEL = "Settings##popup"
 
@@ -105,19 +123,33 @@ def _draw_body(app: App) -> bool:
     imgui.dummy((0.0, SPACE.MD))
     imgui.separator_text("Integrations")
 
+    # A pending focus target (app.settings_focus) force-opens its owning section so the field
+    # is visible before focus_field scrolls to it; consumed one-shot below.
+    focus = app.settings_focus
+
     for exporter in app.exporter_registry.all():
         if exporter.is_available:
+            wants = focus != "" and focus == exporter.config_field
+            if wants:
+                imgui.set_next_item_open(True, imgui.Cond_.always)
             if imgui.tree_node(exporter.display_name):
-                exporter.draw_config_ui()
+                exporter.draw_config_ui(focus=wants)
                 imgui.tree_pop()
         else:
             imgui.text_colored(
                 COLOR.FG_DIM, f"{exporter.display_name} — {exporter.unavailable_reason}"
             )
 
+    copilot_focus = focus == SettingsField.COPILOT_KEY
+    if copilot_focus:
+        imgui.set_next_item_open(True, imgui.Cond_.always)
     if imgui.tree_node("Copilot"):
-        _draw_copilot_config(app)
+        _draw_copilot_config(app, focus=copilot_focus)
         imgui.tree_pop()
+
+    # One-shot: the focus request fired into this frame's draws; clear so it doesn't re-grab
+    # focus every frame (which a modal reads as a dismiss — /imgui-ui §8).
+    app.settings_focus = ""
 
     imgui.dummy((0.0, SPACE.MD))
     imgui.separator_text("Library")
@@ -224,11 +256,11 @@ _COPILOT_LIMITS: list[tuple[str, str, str, int, int]] = [
 ]
 
 
-def _draw_copilot_config(app: App) -> None:
+def _draw_copilot_config(app: App, focus: bool = False) -> None:
     field_w = float(SIZE.SETTINGS_CTRL_W) * 2.0
     cfg = app.integrations_store.copilot
     new_key = labeled_text_input(
-        "OpenRouter key", cfg.openrouter_key, field_w, password=True
+        "OpenRouter key", cfg.openrouter_key, field_w, password=True, focus=focus
     )
     new_model = labeled_text_input("Model", cfg.model, field_w)
     if new_key != cfg.openrouter_key or new_model != cfg.model:

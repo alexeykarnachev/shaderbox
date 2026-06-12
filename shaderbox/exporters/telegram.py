@@ -346,11 +346,17 @@ class TelegramExporter(Exporter):
         )
         return {
             _EMOJI_EXTRA_KEY: control,
-            _OPEN_SETTINGS_KEY: deps.open_settings,
+            _OPEN_SETTINGS_KEY: lambda: deps.open_settings(self.config_field),
         }
 
     # ---------------------------------------------------------------- Settings UI
-    def draw_config_ui(self) -> None:
+    @property
+    def config_field(self) -> str:
+        # Matches popups.settings.SettingsField.TELEGRAM_TOKEN (a string, not an import — keeps
+        # exporters below the popups layer; the enum there is the registry, this is the contract).
+        return "telegram.bot_token"
+
+    def draw_config_ui(self, focus: bool = False) -> None:
         full_width: float = imgui.get_content_region_avail().x
 
         have_token: bool = bool(self._tg.bot_token)
@@ -373,7 +379,7 @@ class TelegramExporter(Exporter):
         # status + Disconnect (re-link is Disconnect -> Connect).
         if not connected:
             self._tg.bot_token = labeled_text_input(
-                "Bot token", self._tg.bot_token, full_width, password=True
+                "Bot token", self._tg.bot_token, full_width, password=True, focus=focus
             )
             if primary_button("Connect"):
                 self.begin_auth()

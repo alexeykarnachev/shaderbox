@@ -265,7 +265,7 @@ class YouTubeExporter(Exporter):
         )
 
     def build_render_extras(self, deps: OutletUiDeps) -> dict[str, Any]:
-        return {_OPEN_SETTINGS_KEY: deps.open_settings}
+        return {_OPEN_SETTINGS_KEY: lambda: deps.open_settings(self.config_field)}
 
     # ---------------------------------------------------------------- Settings UI
     def _ingest_client_secret(self, raw: str) -> None:
@@ -296,8 +296,20 @@ class YouTubeExporter(Exporter):
             return
         self._ingest_client_secret(raw)
 
-    def draw_config_ui(self) -> None:
+    @property
+    def config_field(self) -> str:
+        # Matches popups.settings.SettingsField.YOUTUBE_CLIENT (a string, not an import — see the
+        # telegram exporter's note on the layering).
+        return "youtube.client"
+
+    def draw_config_ui(self, focus: bool = False) -> None:
         full_width: float = imgui.get_content_region_avail().x
+
+        # A focus request (Settings opened straight to YouTube) reveals the paste box — the
+        # credential here is loaded, not typed, so there is no single input to land the caret on;
+        # showing the box makes the affordance visible. The section is already expanded by the caller.
+        if focus:
+            self._render_state.show_paste = True
 
         # Setup steps show only until a client key is loaded; reappear when cleared.
         have_key: bool = bool(self._yt.client_id)
