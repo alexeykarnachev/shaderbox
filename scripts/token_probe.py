@@ -299,8 +299,7 @@ def q4_compact_menu(probe: Probe, registry: Any) -> None:
         in {
             "read_shader",
             "edit_shader",
-            "replace_lines",
-            "insert_after",
+            "write_shader",
             "set_uniform",
             "create_node",
             "grep",

@@ -181,6 +181,19 @@ belong in the feature spec (`ai_docs/features/NNN_*.md`). This file is not a cha
   a node the user isn't watching. Revisit the split if a real workflow needs background publish of a
   non-current node often enough that switching first is friction — then add the arg consciously, with a
   matching "you're publishing X, not the current Y" confirmation, not by default.
+- **Copilot source edits are content-addressed ONLY: `edit_shader` (old_str/new_str, token-matched)
+  + `write_shader` (whole file).** No tool addresses source by line number or by location-anchor
+  quote. The line/anchor scheme was built (020·14), re-anchored to text (036), grew five
+  deterministic guards (038), and was REMOVED by 039 after an adversarial review showed the
+  addressing class itself is unsound: any location token the model must reproduce inherits model
+  imprecision, and the engine either trusts it (silent mislocation) or second-guesses it (a guard
+  pile + false rejects). Content addressing is safe by construction — you can only replace what you
+  quoted verbatim; every failure is loud (no-match / multi-match). The whole-file silent risks are
+  covered by deterministic facts: a truncated rewrite by the removed-names note
+  (`EditResult.rewrite_note` via `parser.top_level_names`, filtered against the new text so a
+  restyled signature is never falsely claimed removed), an unbalanced LIB write by the
+  persist-seam brace warning (libs have no standalone compile to scream). Revisit ONLY per 039's Out-of-scope trigger (quoted there verbatim),
+  and then via a verified number+text checksum design, never bare anchors.
 - **A copilot tool's interactive output is a STRUCTURED entity the engine renders, never a raw value in
   the model-facing message.** A tool returns `(ok, msg, payload)`: `msg` reaches the LLM, `payload` does
   NOT. A URL / file path / button / panel a tool surfaces goes in `payload` as a structured spec the UI
@@ -358,23 +371,6 @@ The `/sanitize` noise audit deletes bullets that narrate a one-off implementatio
 mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
 
 ## Known quirks (library / SDK footguns + the workaround)
-
-- **The copilot ranged-`replace_lines` anchor resolution is FIVE composing guards that each read as
-  removable but aren't — every one closes a dogfood-observed or audit-found mis-anchor.** In
-  `backend.py::_resolve_anchored_edit`, pipeline order: `_resolve_block_close` (ambiguous bare `}` →
-  brace-match from the opener via `parser.find_body_end`, comment-stripped), the multi-line contiguous-run
-  `_locate_anchor`, `_absorb_orphan_tail` (swallow a duplicated tail — ONLY when it's a strip-invariant
-  suffix of `new_text` AND `new_text` is brace-balanced), `_range_straddles_blocks` (reject when the
-  splice DROPS a top-level block — `_top_level_blocks` count falls), and the brace-delta coherence check
-  (`_brace_delta(range) != _brace_delta(new_text)` → reject an incoherent partial). They are deliberately
-  separate because each catches a different mis-anchor the others are blind to (e.g. the top-level-count
-  guard can't see a for-block REPLACING a fn-block — the brace-delta check does). The intuition to resist:
-  "these all check braces, collapse them into one." They don't check the same thing. Full per-guard
-  rationale + the reproductions: `038_copilot_polish_wave.md` decision 5; the `test_line_editing.py`
-  regression battery (orphan-tail / multiline / cross-block / ambiguous-close / coherence) catches a
-  simplification. Brace counting is a raw comment-stripped `count` (`parser.brace_counts`), NOT a lexer —
-  correct because GLSL has no string literals (verified byte-equal to a `glsl_lex` PUNCT-filter across
-  every edge case); `parser.find_body_end` is the brace-matcher.
 
 - **A dynamically-indexed `const` array is NOT constant storage on NVIDIA — big lookup tables
   must be UNIFORM arrays (engine-bound).** Measured on the glyph stroke tables (RTX 3090,

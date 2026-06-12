@@ -43,7 +43,7 @@ fire before the run ends:
 2. **Force a shared LIBRARY helper.** When two shapes need the same crisp edge, ask the agent to factor it
    into a REUSABLE `SB_*` library function (e.g. `SB_circle_mask` / an `SB_aa_edge` antialiased step) and
    have BOTH the circle and ring nodes CALL it by name — "put the edge in the library so the ring reuses
-   the circle's edge, don't copy-paste it." The agent adds it via `insert_after` into a `lib:` address.
+   the circle's edge, don't copy-paste it." The agent adds it via `write_shader` to a `lib:` address.
    This seeds the thing the wiped agent will have to FIND.
 3. **Throwaway node to remove.** Have the agent spin up a quick extra node you don't want in the final set
    — e.g. "also make a hexagon node so we have options" — then, after eyeballing, "actually drop the
@@ -61,7 +61,7 @@ fire before the run ends:
 6. **Targeting on a non-current node.** Leave Gallery current, then ask the agent to GO WORK ON a
    DIFFERENT named node with NO target-path phrasing — *"switch over to the Triangle node and bump its
    size a touch, then stay there"* — so the only way through is a `switch_node` (a "bump the triangle's
-   size" ask the agent satisfies with a targeted `replace_lines target=<id>` and never switches — run 3
+   size" ask the agent satisfies with a targeted edit (`target=<id>`) and never switches — run 3
    showed exactly that, so phrase it as switch-and-work-there, not a targeted tweak). Watch whether it
    `switch_node`s or wrongly stays on Gallery.
 7. **Live uniform tune.** Ask to make one Gallery shape's look adjustable and then DIAL it — *"give the

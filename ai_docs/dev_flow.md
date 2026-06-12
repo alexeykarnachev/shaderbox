@@ -253,10 +253,10 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   package + worker thread + queues + a worker→main GL `bridge`. `App` owns a `CopilotSession` handle + drains
   it per frame; the chat is a floating window (`widgets/copilot_chat.py`) launched from the editor bottom bar.
   The seams (`capabilities` Protocol / `llm.api` / `bridge` / queues / `state`), the `agent` loop, the
-  `prompt`, the `trace`, and the eager tools (`tools/shader.py` — read_shader / the 3 edit tools /
-  set_uniform / create_node / grep / read_lib / delete_node / switch_node; `tools/publish.py` — render_image / render_video
+  `prompt`, the `trace`, and the eager tools (`tools/shader.py` — read_shader / edit_shader +
+  write_shader / set_uniform / create_node / grep / read_lib / delete_node / switch_node; `tools/publish.py` — render_image / render_video
   / publish_telegram / publish_youtube; `tools/telegram.py` — set_telegram_token / telegram_connect + pack
-  CRUD list/select/create/delete) are built. The node-id/edit/uniform/delete + render/publish + telegram
+  CRUD list/select/create/delete; `tools/youtube.py` — set_youtube_credentials) are built. The node-id/edit/uniform/delete + render/publish + telegram
   machinery lives in `backend.py` (`CopilotBackend` — feature 023, extracted from `App`; explicit deps +
   injected getters/callbacks, never imports `App`); `ProjectSession._build_copilot_capabilities`
   constructs it, and the backend itself satisfies the `CopilotCapabilities` Protocol (feature 031 —

@@ -66,7 +66,7 @@ class ToolDefinition:
     label_done: str
     mutating: bool  # gates the "what I did" note + the UI confirm
     eager: bool  # True => carried in eager_specs() (turn-start tools=) (§4)
-    # Shader-SOURCE edit tools only (edit_shader / replace_lines / insert_after) — drives the
+    # Shader-SOURCE edit tools only (edit_shader / write_shader) — drives the
     # consecutive-failed-edits giveup cap. Deliberately NARROWER than `mutating`: a failed
     # render/publish must not trip the edit-retry cap.
     is_edit: bool = False

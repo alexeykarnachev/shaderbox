@@ -6,7 +6,7 @@ changes the copilot's user-facing behavior contract beyond closing the specific 
 wave ALSO closes out three long-drifted features whose code already landed (034 / 025 / 032 — all
 `partial` only because of an un-runnable headless `make run` gate, not unfinished work).
 
-> **STATUS: IN PROGRESS.** Each item lands as its own green-gated commit (`make check`; `make smoke`
+> **STATUS: DONE (shipped in f4ba206; the anchor machinery of decision 5 was later removed by 039).** Each item lands as its own green-gated commit (`make check`; `make smoke`
 > for none of these — no UI/lifecycle code is touched). Items are independent; order is by ascending
 > blast radius.
 

@@ -36,8 +36,7 @@ CANONICAL_TOOLS: frozenset[str] = frozenset(
     {
         "read_shader",
         "edit_shader",
-        "replace_lines",
-        "insert_after",
+        "write_shader",
         "set_uniform",
         "create_node",
         "delete_node",
@@ -57,13 +56,15 @@ CANONICAL_TOOLS: frozenset[str] = frozenset(
         "set_youtube_credentials",
     }
 )
-# Coverage is measured against these 12 — the telegram/youtube/publish set precheck-fails on the
+# Tools that existed in PAST runs but not the live registry — recognized when parsing a
+# historical transcript (no unknown-tool warning), never part of the coverage denominator.
+HISTORICAL_TOOLS: frozenset[str] = frozenset({"replace_lines", "insert_after"})
+# Coverage is measured against these — the telegram/youtube/publish set precheck-fails on the
 # empty ExporterRegistry the harness builds, so it's excluded from the gap metric.
 REACHABLE_TOOLS: tuple[str, ...] = (
     "read_shader",
     "edit_shader",
-    "replace_lines",
-    "insert_after",
+    "write_shader",
     "set_uniform",
     "create_node",
     "delete_node",
@@ -76,13 +77,15 @@ REACHABLE_TOOLS: tuple[str, ...] = (
 # Node-mutating edit tools — a broken edit recovered by ANY later clean one of these (same turn)
 # counts as a compile-error recovery, even across tool names.
 _EDIT_TOOLS: frozenset[str] = frozenset(
-    {"edit_shader", "replace_lines", "insert_after", "create_node"}
+    {"edit_shader", "write_shader", "create_node"} | HISTORICAL_TOOLS
 )
 DEFAULT_MODEL_NOTE = "unknown (in-tree default)"
 
 _TS_RE = re.compile(r"copilot_.*_(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}_\d+)\.transcript")
 _SECTION_RE = re.compile(r"^### (?P<kind>\w+)\s")
-_USAGE_RE = re.compile(r"^usage: in=(\d+) out=(\d+)(?: rsn=\d+)? cost=\$([\d.]+)")
+_USAGE_RE = re.compile(
+    r"^usage: in=(\d+) out=(\d+)(?: rsn=\d+)?(?: cache=(\d+))? cost=\$([\d.]+)"
+)
 _INVOKE_RE = re.compile(r"^\s*-> tool_call (?P<name>\w+)\(id=(?P<id>call_\w+)\)")
 
 
@@ -103,6 +106,7 @@ class Iteration:
     finish_reason: str
     in_tokens: int
     out_tokens: int
+    cached_tokens: int
     cost_usd: float
 
 
@@ -243,6 +247,7 @@ def _parse_transcript(path: Path, turns: list[Turn], warnings: list[str]) -> Non
                     finish_reason=_as_str(cur.get("finish_reason", "")),
                     in_tokens=_as_int(cur.get("in")),
                     out_tokens=_as_int(cur.get("out")),
+                    cached_tokens=_as_int(cur.get("cache")),
                     cost_usd=_as_float(cur.get("cost")),
                 )
             )
@@ -279,10 +284,11 @@ def _parse_transcript(path: Path, turns: list[Turn], warnings: list[str]) -> Non
             continue
         usage = _USAGE_RE.match(line)
         if usage is not None:
-            cur["in"], cur["out"], cur["cost"] = (
+            cur["in"], cur["out"], cur["cache"], cur["cost"] = (
                 int(usage.group(1)),
                 int(usage.group(2)),
-                float(usage.group(3)),
+                int(usage.group(3) or 0),
+                float(usage.group(4)),
             )
             continue
         if line.startswith("result:"):
@@ -447,7 +453,7 @@ def analyze(target: Path, cli_model: str) -> RunAnalysis:
             f"{block_count} tool_call blocks (echoed id without an execution block — format drift?)"
         )
     for name in tool_counts:
-        if name not in CANONICAL_TOOLS:
+        if name not in CANONICAL_TOOLS | HISTORICAL_TOOLS:
             warnings.append(f"unknown tool invoked: {name}")
 
     reachable_used = [t for t in REACHABLE_TOOLS if t in tool_counts]
@@ -559,6 +565,18 @@ def _render_list(dumps_render: str | None) -> str:
     return f"- `{dumps_render}` (open with Read)"
 
 
+def _cache_share_line(an: RunAnalysis) -> str:
+    # Provider-cached share of all billed input — the prompt-cache hit-rate. Old traces
+    # (no cache= field) show 0; the line says so instead of implying a cold cache.
+    total_in = sum(it.in_tokens for t in an.turns for it in t.iterations)
+    cached = sum(it.cached_tokens for t in an.turns for it in t.iterations)
+    if total_in == 0:
+        return "Cache: no usage data."
+    if cached == 0:
+        return "Cache: 0 cached tokens recorded (pre-cache-telemetry trace, or cold cache)."
+    return f"Cache: {cached}/{total_in} input tokens cached ({cached / total_in:.0%})."
+
+
 def _markdown_block(an: RunAnalysis) -> str:
     cost_vals = [t.cost_usd for t in an.turns]
     cmin, cmax = (min(cost_vals), max(cost_vals)) if cost_vals else (0.0, 0.0)
@@ -588,6 +606,7 @@ Per-turn peak context: {pmin}-{pmax}. {an.growth_shape}.
 
 ### Cost
 Total **${an.total_cost_usd:.4f}** ; per-turn ${cmin:.4f}-${cmax:.4f} ; dearest turn {dearest}.
+{_cache_share_line(an)}
 Dump session_cost cross-check: {f"${an.dump_session_cost_usd:.4f}" if an.dump_session_cost_usd is not None else "n/a"} (trace authoritative).
 Recovery summary: {an.recovery_summary}.{warn}"""
 

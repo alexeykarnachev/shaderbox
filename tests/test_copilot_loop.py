@@ -16,10 +16,8 @@ from shaderbox.copilot.agent import (
     AgentTextDelta,
     AgentToolCard,
     AgentTurnDone,
-    _redact_stale_line_args,
     run_turn,
 )
-from shaderbox.copilot.backend import _resolve_anchored_edit
 from shaderbox.copilot.capabilities import (
     CompileErrorInfo,
     CopilotCapabilities,
@@ -34,7 +32,6 @@ from shaderbox.copilot.llm.api import (
     LLMMessage,
     LLMStreamEvent,
     LLMTextDelta,
-    LLMToolCall,
     LLMToolCallCompleted,
     LLMToolCallStarted,
     LLMToolSpec,
@@ -110,53 +107,13 @@ def _fake_caps(
         state["n"] += 1
         return EditResult(matches=len(spans), errors=errors)
 
-    def apply_line(
-        start_line: int,
-        end_line: int,
-        new_text: str,
-        target: str,
-    ) -> EditResult:
-        # Faithful to App: split-on-newline list edit (§14 L2). matches==0 is the
-        # out-of-range fail-soft signal the tool layer turns into the range error.
-        # start == end == 0 is the whole-file sentinel.
+    def apply_full(new_text: str, target: str) -> EditResult:
+        # Faithful to App: a whole-file rewrite replaces the live source wholesale.
         _ = target
-        if start_line == 0 and end_line == 0:
-            state["text"] = new_text
-            errors = edit_errors[state["n"]]
-            state["n"] += 1
-            return EditResult(matches=1, errors=errors)
-        lines = state["text"].split("\n")
-        n = len(lines)
-        is_insert = end_line == start_line - 1
-        if start_line < 1 or end_line > n or (start_line > end_line and not is_insert):
-            return EditResult(matches=0, errors=[])
-        repl = new_text.split("\n") if new_text != "" else []
-        state["text"] = "\n".join(lines[: start_line - 1] + repl + lines[end_line:])
+        state["text"] = new_text
         errors = edit_errors[state["n"]]
         state["n"] += 1
         return EditResult(matches=1, errors=errors)
-
-    def apply_anchored(
-        first_line: str,
-        last_line: str,
-        near_line: int | None,
-        new_text: str,
-        target: str,
-    ) -> EditResult:
-        # Faithful to the backend: the REAL anchor-resolution + splice helper drives the
-        # fake, so loop tests exercise production locating behavior.
-        _ = target
-        resolved = _resolve_anchored_edit(
-            state["text"], first_line, last_line, near_line, new_text
-        )
-        if isinstance(resolved, str):
-            return EditResult(
-                matches=0, errors=[], unresolved=True, unresolved_reason=resolved
-            )
-        state["text"], span = resolved
-        errors = edit_errors[state["n"]]
-        state["n"] += 1
-        return EditResult(matches=1, errors=errors, applied_span=span)
 
     def read_shaders(node_ids: list[str]) -> list[ShaderView]:
         return [
@@ -172,8 +129,7 @@ def _fake_caps(
     return minimal_caps(
         read_shaders=read_shaders,
         apply_shader_edit=apply_edit,
-        apply_line_edit=apply_line,
-        apply_anchored_edit=apply_anchored,
+        apply_full_rewrite=apply_full,
     )
 
 
@@ -952,97 +908,6 @@ def test_snippet_tooltip_collapses_identical_consecutive_steps() -> None:
     ]
 
 
-def _args_of(msg: LLMMessage, i: int) -> dict:
-    assert msg.tool_calls is not None
-    return json.loads(msg.tool_calls[i].arguments)
-
-
-def test_redact_stale_line_args_spares_latest_and_never_mutates() -> None:
-    # Three line-tool calls + an edit_shader: only the two OLDER line-tool calls lose their
-    # line args (one _stale marker, other fields kept); edit_shader and the latest line-tool
-    # call pass through untouched; the input messages are never mutated.
-    msgs = [
-        LLMMessage(role="user", content="go"),
-        LLMMessage(
-            role="assistant",
-            content=None,
-            tool_calls=[
-                LLMToolCall(
-                    id="c1",
-                    name="replace_lines",
-                    arguments=json.dumps(
-                        {
-                            "first_line": "a",
-                            "last_line": "b",
-                            "near_line": 5,
-                            "new_text": "x",
-                            "target": "node-2",
-                        }
-                    ),
-                )
-            ],
-        ),
-        LLMMessage(role="tool", tool_call_id="c1", content="error: range mismatch"),
-        LLMMessage(
-            role="assistant",
-            content=None,
-            tool_calls=[
-                LLMToolCall(
-                    id="c2",
-                    name="insert_after",
-                    arguments=json.dumps({"line": 3, "new_text": "y"}),
-                ),
-                LLMToolCall(
-                    id="c3",
-                    name="edit_shader",
-                    arguments=json.dumps({"old_str": "u_pos", "new_str": "u_dir"}),
-                ),
-            ],
-        ),
-        LLMMessage(role="tool", tool_call_id="c2", content="ok"),
-        LLMMessage(role="tool", tool_call_id="c3", content="ok"),
-        LLMMessage(
-            role="assistant",
-            content=None,
-            tool_calls=[
-                LLMToolCall(
-                    id="c4",
-                    name="replace_lines",
-                    arguments=json.dumps(
-                        {"first_line": "p", "last_line": "q", "new_text": "z"}
-                    ),
-                )
-            ],
-        ),
-        LLMMessage(role="tool", tool_call_id="c4", content="ok"),
-    ]
-
-    out = _redact_stale_line_args(msgs)
-
-    line_keys = (
-        "start_line",
-        "end_line",
-        "first_line",
-        "last_line",
-        "near_line",
-        "line",
-    )
-    c1 = _args_of(out[1], 0)
-    assert "_stale" in c1
-    assert not any(k in c1 for k in line_keys)
-    assert c1["target"] == "node-2" and c1["new_text"] == "x"
-    c2 = _args_of(out[3], 0)
-    assert "_stale" in c2 and "line" not in c2 and c2["new_text"] == "y"
-    # edit_shader untouched (same object), the LATEST line-tool call untouched (same message).
-    assert msgs[3].tool_calls is not None and out[3].tool_calls is not None
-    assert out[3].tool_calls[1] is msgs[3].tool_calls[1]
-    assert out[6] is msgs[6]
-    assert out[0] is msgs[0] and out[2] is msgs[2]
-    # The input messages keep their original args.
-    assert _args_of(msgs[1], 0)["first_line"] == "a"
-    assert _args_of(msgs[3], 0)["line"] == 3
-
-
 class _CapturingClient(_FakeClient):
     # _FakeClient that also keeps each stream() call's request messages.
     def __init__(self, scripts: list[list[LLMStreamEvent]]) -> None:
@@ -1058,82 +923,6 @@ class _CapturingClient(_FakeClient):
     ) -> Iterator[LLMStreamEvent]:
         self.requests.append(list(messages))
         return super().stream(messages, tools=tools, max_tokens=max_tokens)
-
-
-def _ranged_replace(call_id: str, current: str, new: str) -> list[LLMStreamEvent]:
-    args = json.dumps(
-        {
-            "first_line": current,
-            "last_line": current,
-            "new_text": new,
-        }
-    )
-    return _tool_call(call_id, "replace_lines", args)
-
-
-def test_stale_line_args_redacted_in_outgoing_request_only() -> None:
-    # Iteration N's request replays the turn's earlier tool_calls; their line args are stale
-    # against the freshly rebuilt working set. The outgoing copy must redact every line-tool
-    # call EXCEPT the just-tried one; the turn's own record (trace ledger) keeps the numbers.
-    scripts: list[list[LLMStreamEvent]] = [
-        _ranged_replace("l1", "vec3 p = u_pos;", "vec3 q = u_pos;"),
-        _ranged_replace("l2", "vec3 q = u_pos;", "vec3 r = u_pos;"),
-        [LLMTextDelta("Rewrote it twice."), LLMDone("stop")],
-    ]
-    caps = _fake_caps(edit_errors=[[], []])
-    registry = build_registry(caps)
-    client = _CapturingClient(scripts)
-
-    traced_args: list[dict] = []
-
-    class _ArgsTrace(TraceLog):
-        def __init__(self) -> None:
-            super().__init__(Path())
-
-        def event(self, kind: str, **fields: object) -> None:
-            args = fields.get("args")
-            if kind == "tool_call" and isinstance(args, dict):
-                traced_args.append(args)
-
-    events = list(
-        run_turn(
-            client,
-            registry,
-            COPILOT_CONFIG,
-            _fake_context(),
-            history=[],
-            user_text="rewrite the line twice",
-            gate=GateChannel(),
-            cancel=threading.Event(),
-            trace=_ArgsTrace(),
-        )
-    )
-    assert isinstance(events[-1], AgentTurnDone)
-    assert len(client.requests) == 3
-
-    def call_args(messages: list[LLMMessage], call_id: str) -> dict:
-        for m in messages:
-            for tc in m.tool_calls or []:
-                if tc.id == call_id:
-                    return json.loads(tc.arguments)
-        raise AssertionError(f"no tool call {call_id} in the request")
-
-    # Second request: l1 is the just-tried call — its anchors stay next to the reject/result.
-    assert call_args(client.requests[1], "l1")["first_line"] == "vec3 p = u_pos;"
-    # Third request: l1 is now stale -> redacted; l2 (just tried) keeps its anchors.
-    stale = call_args(client.requests[2], "l1")
-    assert "_stale" in stale
-    assert not any(
-        k in stale
-        for k in ("start_line", "end_line", "first_line", "last_line", "near_line")
-    )
-    assert stale["new_text"] == "vec3 q = u_pos;"
-    assert call_args(client.requests[2], "l2")["last_line"] == "vec3 q = u_pos;"
-    # The turn's persisted record keeps the real anchors.
-    assert [a["first_line"] for a in traced_args] == [
-        "vec3 p = u_pos;",
-        "vec3 q = u_pos;",
-    ]
 
 
 def test_clean_edit_streak_nudges_once() -> None:

@@ -2,7 +2,7 @@
 
 Pure text/pixel analysis — no GL, no imgui. The compiler says WHAT broke; the
 hints say WHY in terms the model can act on (the dominant dogfood failure class:
-a line edit whose new_text duplicates content that survived outside the range).
+an edit that leaves a duplicated declaration or an unbalanced brace behind).
 Render facts are the agent's only sight: scalar truths about the latest clean
 frame, computed from raw RGBA bytes the backend reads off a tiny probe canvas.
 """
@@ -67,8 +67,8 @@ def compile_hints(source: str, error_messages: list[str]) -> list[str]:
                     rows = ", ".join(str(i) for i in decl_lines)
                     hints.append(
                         f"hint: '{name}' is declared on lines {rows} — the edit "
-                        "range missed one copy; widen the range over it or delete "
-                        "the duplicate"
+                        "left a duplicate; remove one copy (rewrite the file whole "
+                        "if needed)"
                     )
         if _INITIALIZER_SMELL_RE.search(msg):
             init_smell = True
@@ -94,8 +94,9 @@ def compile_hints(source: str, error_messages: list[str]) -> list[str]:
     if opens != closes:
         loc = _brace_imbalance_location(stripped)
         hints.append(
-            f"hint: the file has {opens} '{{' vs {closes} '}}'{loc} — an orphan "
-            "tail survived below the edit range, or a brace went missing in new_text"
+            f"hint: the file has {opens} '{{' vs {closes} '}}'{loc} — the edit "
+            "left a duplicated or orphaned block tail, or a brace went missing in "
+            "the new text"
         )
     return hints
 

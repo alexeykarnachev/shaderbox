@@ -139,7 +139,7 @@ class EditResult:
     # is no unique whitespace-only near-match.
     hint: str = ""
     # Unresolvable-target reject: bad target (unknown node id / invalid lib path), a read-only
-    # template, the intra-batch line-edit guard, or a failed lib write. An argument/operation
+    # template, the intra-batch rewrite guard, or a failed lib write. An argument/operation
     # error that DOES count toward the edit-retry cap. unresolved_reason is the message. matches==0.
     unresolved: bool = False
     unresolved_reason: str = ""
@@ -156,15 +156,15 @@ class EditResult:
     restored_note: str = ""
     # True when the matched span would verbatim-overwrite an interior comment the
     # whitespace-invariant match can't see — refused so author content isn't silently
-    # destroyed; the model is steered to a line-addressed edit. matches==0.
+    # destroyed; the model is steered to re-quote including the comment. matches==0.
     comment_loss: bool = False
     # The RESOLVED target's display label ("node 'Wave' (f90f)" / "lib:a.glsl"), set once
     # the target resolved — so a failure names WHICH file was checked (an empty target
     # silently means the current node, the dogfooded giveup cause).
     target_label: str = ""
-    # The "start-end" line span an anchored ranged replace resolved to (feature 036) —
-    # echoed in the result so a mislocated anchor is visible immediately. "" otherwise.
-    applied_span: str = ""
+    # Whole-file rewrite fact (feature 039): the top-level functions/declarations the
+    # rewrite REMOVED, appended to the result so a truncated rewrite is loud. "" otherwise.
+    rewrite_note: str = ""
 
 
 @dataclass(frozen=True)
@@ -235,7 +235,7 @@ class CopilotCapabilities(Protocol):
     # The per-turn working set: every shader/lib touched this turn, rebuilt from live source
     # each iteration. read_working_set returns a compile-coherent view (bridge-marshalled —
     # uniform read + the program-is-None recompile are GL). batch_begin clears the per-batch
-    # line-edit guard's mutated-target set; run_turn calls it ONCE before each tool-call batch.
+    # rewrite guard's mutated-target set; run_turn calls it ONCE before each tool-call batch.
     def read_working_set(self) -> list[WorkingSetView]: ...
     def batch_begin(self) -> None: ...
 
@@ -250,34 +250,10 @@ class CopilotCapabilities(Protocol):
         self, old_str: str, new_str: str, replace_all: bool, target: str, /
     ) -> EditResult: ...
 
-    # Replace the 1-based inclusive line range [start, end] with new_text, recompile/write +
-    # persist + refresh. An empty selection (end == start - 1) is a pure insert at `start`;
-    # start == end == 0 replaces the ENTIRE file (whole-file rewrite, no range bookkeeping);
-    # for a non-existent lib: target this CREATES the file. Serves insert_after + whole-file
-    # replaces; a ranged replace located by text is apply_anchored_edit.
-    def apply_line_edit(
-        self,
-        start_line: int,
-        end_line: int,
-        new_text: str,
-        target: str,
-        /,
-    ) -> EditResult: ...
-
-    # Ranged replace located by boundary-line TEXT (feature 036): first/last_line are
-    # verbatim quotes of the block's first + last line, strip-matched against the target's
-    # current lines; near_line is an optional 1-based hint consulted only when an anchor
-    # matches several lines. Anchor rejects come back `unresolved`; a success carries the
-    # resolved span in applied_span.
-    def apply_anchored_edit(
-        self,
-        first_line: str,
-        last_line: str,
-        near_line: int | None,
-        new_text: str,
-        target: str,
-        /,
-    ) -> EditResult: ...
+    # Replace the target's ENTIRE source with new_text, recompile/write + persist +
+    # refresh; for a non-existent lib: target this CREATES the file. An applied rewrite
+    # carries the removed top-level names fact in rewrite_note.
+    def apply_full_rewrite(self, new_text: str, target: str, /) -> EditResult: ...
 
     # Set a uniform VALUE. node "" = current. Rejects sampler/block/engine-driven with an
     # explicit error.

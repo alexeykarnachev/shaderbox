@@ -144,10 +144,12 @@ class OpenRouterLLMClient(LLMClient):
             chunk: ChatCompletionChunk
             if chunk.usage is not None:
                 details = getattr(chunk.usage, "completion_tokens_details", None)
+                prompt_details = getattr(chunk.usage, "prompt_tokens_details", None)
                 usage = LLMUsage(
                     input_tokens=chunk.usage.prompt_tokens,
                     output_tokens=chunk.usage.completion_tokens,
                     reasoning_tokens=getattr(details, "reasoning_tokens", 0) or 0,
+                    cached_tokens=getattr(prompt_details, "cached_tokens", 0) or 0,
                     # usage.cost is OpenRouter-specific + can be None per-chunk (§J7).
                     cost_usd=getattr(chunk.usage, "cost", 0.0) or 0.0,
                 )

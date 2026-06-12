@@ -40,6 +40,9 @@ class LLMUsage:
     # Hidden thinking tokens (billed inside output_tokens). The request asks for
     # effort=minimal; this field makes any burst visible in traces/stats.
     reasoning_tokens: int = 0
+    # Provider-cached prompt tokens (inside input_tokens, charged at the cache rate) —
+    # makes the cache hit-rate visible in traces/stats.
+    cached_tokens: int = 0
     cost_usd: float = 0.0  # OpenRouter returns the charged cost on usage.cost
 
     def __add__(self, other: "LLMUsage") -> "LLMUsage":
@@ -47,6 +50,7 @@ class LLMUsage:
             input_tokens=self.input_tokens + other.input_tokens,
             output_tokens=self.output_tokens + other.output_tokens,
             reasoning_tokens=self.reasoning_tokens + other.reasoning_tokens,
+            cached_tokens=self.cached_tokens + other.cached_tokens,
             cost_usd=self.cost_usd + other.cost_usd,
         )
 

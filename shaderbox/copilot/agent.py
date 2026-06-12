@@ -2,7 +2,6 @@ import json
 import threading
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
-from typing import Any
 
 from loguru import logger
 
@@ -46,8 +45,8 @@ _FINAL_REPLY_NUDGE = (
 _COMPILE_THRASH_NUDGE = (
     "\n\n[hint] That's several edits in a row that applied but still left compile errors. "
     "Stop patching line by line: re-read the FULL function/block from the working set, work out "
-    "the whole correct version, and rewrite it in ONE edit (replace_lines — whole-file mode "
-    "unless the file is large)."
+    "the whole correct version, and rewrite it in ONE edit (write_shader, or edit_shader for "
+    "a single block in a large file)."
 )
 
 _CLEAN_STREAK_NUDGE = (
@@ -307,73 +306,6 @@ def _widget_from_payload(payload: dict | None) -> ResultWidget | None:
     )
 
 
-_LINE_EDIT_TOOLS: frozenset[str] = frozenset({"replace_lines", "insert_after"})
-_LINE_ARG_KEYS: tuple[str, ...] = (
-    "start_line",
-    "end_line",
-    "first_line",
-    "last_line",
-    "near_line",
-    "line",
-)
-_STALE_LINE_ARGS_MARKER = (
-    "stale location args dropped — the file changed in later steps; copy anchors/line "
-    "numbers from the current WORKING SET"
-)
-
-
-def _redact_line_call(call: LLMToolCall) -> LLMToolCall:
-    try:
-        args = json.loads(call.arguments or "{}")
-    except json.JSONDecodeError:
-        return call
-    if not isinstance(args, dict) or not any(k in args for k in _LINE_ARG_KEYS):
-        return call
-    kept: dict[str, Any] = {k: v for k, v in args.items() if k not in _LINE_ARG_KEYS}
-    kept["_stale"] = _STALE_LINE_ARGS_MARKER
-    return LLMToolCall(id=call.id, name=call.name, arguments=json.dumps(kept))
-
-
-def _redact_stale_line_args(messages: list[LLMMessage]) -> list[LLMMessage]:
-    # Outgoing-request copy ONLY: a prior iteration's replace_lines/insert_after args carry line
-    # numbers / anchor quotes stale against the freshly rebuilt working set, and the model anchors
-    # on them. The MOST RECENT line-tool call stays intact (the model must see what it just tried
-    # next to its result). Affected messages are rebuilt, never mutated — the durable turn list,
-    # ledger, and trace keep the original args.
-    last: tuple[int, int] | None = None
-    for mi, msg in enumerate(messages):
-        if msg.role != "assistant" or not msg.tool_calls:
-            continue
-        for ci, call in enumerate(msg.tool_calls):
-            if call.name in _LINE_EDIT_TOOLS:
-                last = (mi, ci)
-    if last is None:
-        return messages
-    out: list[LLMMessage] = []
-    for mi, msg in enumerate(messages):
-        if msg.role != "assistant" or not msg.tool_calls:
-            out.append(msg)
-            continue
-        calls: list[LLMToolCall] = [
-            _redact_line_call(c)
-            if c.name in _LINE_EDIT_TOOLS and (mi, ci) != last
-            else c
-            for ci, c in enumerate(msg.tool_calls)
-        ]
-        if all(a is b for a, b in zip(calls, msg.tool_calls, strict=True)):
-            out.append(msg)
-        else:
-            out.append(
-                LLMMessage(
-                    role=msg.role,
-                    content=msg.content,
-                    tool_call_id=msg.tool_call_id,
-                    tool_calls=calls,
-                )
-            )
-    return out
-
-
 def _assistant_message(text: str, calls: list[_ToolCallBuilder]) -> LLMMessage:
     # content="" -> None when there are tool calls (grok quirk).
     return LLMMessage(
@@ -428,7 +360,7 @@ def run_turn(
     # `trace` is the full-transcript sink (None in
     # tests). `scratchpad_render` rebuilds the live per-turn working-set block each iteration, spliced
     # onto the bottom of `messages` for the stream + trace, never into the durable list. `batch_begin`
-    # clears the App-side per-batch line-edit guard once per tool-call batch (the batch boundary is the
+    # clears the App-side per-batch rewrite guard once per tool-call batch (the batch boundary is the
     # only signal App can't see itself). Both default to no-ops (tests).
     tr = trace if trace is not None else NULL_TRACE
     render_scratchpad = (
@@ -529,7 +461,7 @@ def run_turn(
         # Rebuild the working-set scratchpad ONCE per iteration and splice it onto the bottom for
         # both the trace AND the stream (two render_scratchpad calls could diverge if a mutation
         # interleaved). The durable `messages` is never mutated.
-        request_messages = _redact_stale_line_args(messages) + render_scratchpad()
+        request_messages = messages + render_scratchpad()
         tr.event(
             "llm_request",
             iteration=iteration,
@@ -707,7 +639,7 @@ def run_turn(
 
         calls = [builders[i] for i in sorted(builders)]
         messages.append(_assistant_message(text_buf, calls))
-        begin_batch()  # reset the per-batch line-edit guard
+        begin_batch()  # reset the per-batch rewrite guard
         giveup = False
         for tc in calls:
             args = _parse_args(tc.arguments)

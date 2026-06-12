@@ -258,25 +258,18 @@ def test_current_node_unioned_into_rebuild(app: Any) -> None:
     assert any(v.is_current for v in views)
 
 
-def test_intra_batch_line_edit_guard_rejects(app: Any) -> None:
-    # D9: a line-addressed edit to a target the batch already mutated is rejected BEFORE any GL work
+def test_intra_batch_rewrite_guard_rejects(app: Any) -> None:
+    # D9: a whole-file rewrite of a target the batch already mutated is rejected BEFORE any GL work
     # (the reject path is GL-free — it never reaches the persist), mutating nothing. Pre-seed the
-    # per-batch set with the current node's full id to model "a prior edit this batch shifted its
-    # lines" (a real successful edit can't run twice headlessly: glfw context state bleeds across App
-    # instances in one process, so the post-edit rebuild-coherence is a maintainer-live-pass item —
-    # verified end-to-end on a single real App, in the spec's failed-flow re-run).
+    # per-batch set with the current node's full id to model "a prior edit this batch changed the
+    # content the rewrite was composed from".
     app.session._copilot_working_set = []
     app.copilot_backend._batch_mutated = {app.current_node_id}
-    res = app.copilot_backend.apply_line_edit(1, 0, "// shifted", "")
+    res = app.copilot_backend.apply_full_rewrite("// shifted", "")
     assert res.unresolved and "already edited earlier in this same step" in (
         res.unresolved_reason
     )
     assert res.matches == 0  # mutated nothing
-    # The anchored ranged mode is gated by the same guard.
-    res = app.copilot_backend.apply_anchored_edit("a", "b", None, "x", "")
-    assert res.unresolved and "already edited earlier in this same step" in (
-        res.unresolved_reason
-    )
     # A fresh batch clears the guard (the backend owns the set; batch_begin clears it per batch).
     app.copilot_backend.batch_begin()
     assert app.current_node_id not in app.copilot_backend._batch_mutated
@@ -299,5 +292,5 @@ def test_gone_node_skipped_in_rebuild(app: Any) -> None:
 
 def test_unknown_edit_target_rejects_as_unresolved(app: Any) -> None:
     # The resolver keeps its unresolved-target reject after the freshness guard retired (GL-free).
-    res = app.copilot_backend.apply_line_edit(1, 1, "x", "no-such-node-zzz")
+    res = app.copilot_backend.apply_full_rewrite("x", "no-such-node-zzz")
     assert res.unresolved and "no node" in res.unresolved_reason

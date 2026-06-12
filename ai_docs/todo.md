@@ -38,8 +38,8 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   change silently escapes the rollback net. ALSO: if `bind_media` lands, a media-binding turn needs
   its `media/`/`textures/` captured too (decision 9 snapshots only the two text files today).
 - The rollback feature (020·30) is the one fragility of its log-what-you-touch model: capture is
-  opt-in per mutation seam. The existing seams cover edit/replace/insert/set_uniform/create/delete/
-  switch + lib edits. A new tool that mutates durable state without a capture call leaves an
+  opt-in per mutation seam. The existing seams cover edit/write/set_uniform/create/delete/
+  switch + lib edits (039's `write_shader` rides the shared persist seam, so it captures). A new tool that mutates durable state without a capture call leaves an
   un-revertable change. Spec: `ai_docs/features/020_copilot_agent/30_turn_rollback.md` (decision 2).
 
 ## [DEFERRAL] copilot non-current-node-edit confirm-gate (the targeting structural backstop)
@@ -216,7 +216,7 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   with `scripts/token_probe.py` before AND after (it reads real specs + hits OpenRouter; the measured
   numbers, not chars/4, are what to trust).
 - MEASURED 2026-06-09 (`scripts/token_probe.py`, grok-4.3): a system+user request is ~7346 input tok —
-  +3271 system prompt (now COMPRESSED to +2725) + 3941 the native 21-tool `tools=` block. Per-tool marginal
+  +3271 system prompt (now COMPRESSED to +2725) + 3941 the native full `tools=` block (21 tools at probe time; 20 post-039). Per-tool marginal
   ~131 tok, of which the DESCRIPTION (~133/tool) dominates over name (~76 incl. block overhead) + schema
   (~47). **The native `tools=` block is re-sent + re-billed in FULL on EVERY iteration** (confirmed:
   step-1 and step-2 deltas both 3941) — `agent.py` re-passes `eager_specs()` each `client.stream`.
@@ -229,7 +229,7 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   info-preserving — reviewer-audited) — it is now POLICY-only, no longer a verbose re-walk of every tool.
 - REMAINING (lever 2): lazily load the telegram/youtube/publish tools (they carry `eager`;
   `registry.specs_for(names)` + `eager_specs()` filter already exist) so a shader turn ships ~10 tools not
-  21 (measured: 2495 vs 3941 tok). When this lands, re-add a `category` field to `ToolDefinition` as the
+  the full set (measured at probe time: 2495 vs 3941 tok). When this lands, re-add a `category` field to `ToolDefinition` as the
   catalogue grouping (it was deleted in 038 as dead scaffold — git history is the reference). A compact
   plaintext menu of the long tail costs ~1714 tok and a 2-stage
   `load_tools(names)` flow was verified to work on grok-4.3. Scaffold: `11 §4` search_tools/list_tools +
@@ -240,26 +240,27 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   derives from `description`'s first sentence; if that proves too long, add `brief: str = ""` to
   `ToolDefinition` then (defaulted ⇒ pure addition; resolver `d.brief or first_sentence(d.description)`).
 
-## [DEFERRAL] `insert_after` still locates by raw line number (no anchor text)
-- **Trigger:** a trace showing a misplaced insert (insert landed on the wrong line and the
-  compile gate didn't catch it). Then give it the 036 treatment: an `after_line` text anchor
-  through the same `_locate_anchor` seam.
-- Context: 036 re-anchored ranged `replace_lines` to boundary-line text after the 2026-06-12
-  bundle trace (codex-mini: 2/8 ranged calls failed, both `end_line = correct+1` on a blank
-  line — the Python half-open prior; 6/8 correct → the old "delete ranged mode" deferral here
-  was closed-refuted, ranged mode kept and re-anchored). `insert_after` shares the coordinate
-  fragility class but has zero observed failures, so it waits for evidence. NOTE: `insert_after` ADDS
-  (never replaces), so unlike `replace_lines` it cannot leave an orphan-brace tail — the 038
-  `_absorb_orphan_tail` fix does not apply to it. Spec:
-  `ai_docs/features/036_anchored_replace_lines.md`.
+## [DEFERRAL] copilot edit-churn brake (039 follow-up) — churn shown STOCHASTIC, do not build yet
+- **Trigger:** a third dogfood run showing a >10-iteration single-file clean-edit spree (the 039
+  gate run's turns 3/5/6/8 shape), OR a user report of the copilot "making many tiny edits".
+- Evidence (two runs, codex-mini, 2026-06-12): gate run drew micro-edit spirals (9-17 iterations per churn turn
+  per function rewrite, $0.04/turn — cost is iterations x context, NOT old_str re-quoting); the
+  same asks re-run cost $0.0025-$0.0065 with 2-4 iterations — cheaper than the line-tools
+  baseline on every shape. The existing `max_clean_edit_streak` nudge bounded the bad draw. If
+  the trigger fires, the levers (in order): a per-FILE clean-streak fact in the tool result
+  ("N edits in a row on this file — finish in ONE write_shader"), + a same-file batch steer in
+  `_EDIT_SHADER_DESC` (multiple edits per step — the engine already applies them in order).
+  Cache telemetry is in place (`LLMUsage.cached_tokens`, trace `cache=`, analyzer Cache line);
+  prefix cache already hits ~68% via the volatility-ordered prompt — little headroom there.
 
 ## [DEFERRAL] copilot agent-level error recovery — probes RUN (mega run, 2026-06-11); THRASH itself never reached
 - **Trigger:** the first trace/user report of the copilot looping on broken COMPILES (the one class the
   mega run could not provoke — codex-mini recovers every compile error in 1-2 steps, so the
   `compile_thrash_nudge` circuit-breaker remains live-unverified beyond its unit tests).
 - The mega dogfood run (report: `ai_docs/features/035_dogfood_report_mega.md`, 18 turns, 11/12 tools)
-  closed most of this entry: compile-error recovery PASS, boundary-checksum reject PASS (every bad
-  range caught pre-apply), unknown-SB-name PASS (searched + asked, never invented), bad-node-id PASS,
+  closed most of this entry: compile-error recovery PASS, bad-range rejects PASS (a mechanism 039
+  later removed with the line tools themselves), unknown-SB-name PASS (searched + asked, never
+  invented), bad-node-id PASS,
   `old_str`-mismatch PARTIAL (the hint fires; the model loops on long files instead of converging).
   What it FOUND instead of thrash is the giveup-loop (own entry below).
 
@@ -391,8 +392,8 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   GL context but not GUI rendering). NOTE: `make smoke` now self-skips on a no-GPU-window box (its
   `_has_gpu_window` probe), so it no longer crashes/crawls here — it prints SKIPPED and returns 0.
 - Two separable GL needs, very different costs: **shader COMPILE** (`node.compile()` → `gl.program`)
-  is ~3.5 ms and is all the copilot shader tools actually do (`read/edit/replace/insert/set_uniform/
-  create/delete/switch_node` — `needs_gl=True` but compile-only; only `render_image`/`render_video`
+  is ~3.5 ms and is all the copilot shader tools actually do (read/edit/write/set_uniform/
+  create/delete/switch_node — compile-only; only `render_image`/`render_video`
   in `category="render"` truly render; a 400×400 image render ≈ 2.6 ms on V3D). **Frame RENDER**
   (`glDrawElements` of the imgui UI) is ~65 ms PER draw-call on llvmpipe (~1.4 s/frame for the 3-node
   grid) — the whole reason the GUI `smoke` crawls under xvfb. So a compile-only/image-only harness
@@ -559,12 +560,9 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   failed-edit loop stretched past `max_edit_retries` because a read reset the counter between attempts.
 - The remaining tweak is the counter design, reviewed and deliberately KEPT: a NON-edit tool (a read)
   resets `consecutive_failed_edits` mid-loop, so a 3-strikes loop can stretch to 5 with zero new
-  information. RESOLVED in 038 (so dropped from this entry): what looked like a "no-op CLEAN spree"
-  (036-anchor turn 14: 3 identical `replace_lines` in a row) was root-caused to Defect A — a
-  mis-anchored ranged edit left an orphan brace and the model retried; `_absorb_orphan_tail` now fixes
-  the edit so the retries don't happen. The "oscillation" theory (source returning to a prior state)
-  was REFUTED by 6 dogfood runs (038 spec decision 5 / Review history) — no `consecutive_identical_edits`
-  brake was built because there is no oscillation to brake.
+  information. The ranged-edit retry shape cannot occur (039 removed the ranged mechanism;
+  content-addressed editing only), and there is no oscillation to brake (REFUTED by 6 dogfood
+  runs — 038 spec decision 5 / Review history), so the counter design itself is the whole entry.
 
 ## [DEFERRAL] copilot render-facts honesty: residual model-bound half
 - **Trigger:** a post-035-wave dogfood run STILL showing a scene described over a FLAT fact or an
@@ -577,12 +575,13 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   VLM-judge deferral (above) is the real answer.
 
 ## [DEFERRAL] dogfood analyze.py forensic-accuracy gaps (the cost/token half is FIXED)
-- **Trigger:** next time `scripts/dogfood/analyze.py` is edited, OR a dogfood report whose per-turn
+- **Trigger:** next SUBSTANTIVE `scripts/dogfood/analyze.py` work (parsing / coverage / report
+  logic — NOT a tool-name vocabulary touch like 039's), OR a dogfood report whose per-turn
   coverage/glyph/reasoning columns look wrong.
 - The cost/token half is RESOLVED (038: `_finalize_turn` fallback-sums per-iteration usage for
   error-terminal turns that emit no `turn_done` — cost, billed-in, reply, AND peak). What REMAINS (the
   forensic swarm's list, all S): coverage counts key on history-echo ids not execution blocks
-  (replace_lines 26 real vs 23 reported; a DECLINED call counted as fired); the 🔴 glyph marks honest
+  (mega run: 26 real edit calls vs 23 reported; a DECLINED call counted as fired); the 🔴 glyph marks honest
   probe-failure turns as failed (key it on the terminal kind); `rsn=` reasoning tokens dropped (t18
   iter2: rsn=5504 of out=5872); no `gate_approved` trace event; the resolved model isn't recorded in
   artifacts (report header says "unknown"); a `--calls` compact per-turn tool→result index mode would

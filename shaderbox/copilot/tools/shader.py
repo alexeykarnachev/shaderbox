@@ -42,40 +42,16 @@ class _EditArgs(ToolArgs):
     target: str = Field(default="", description=_TARGET_DESC)
 
 
-class _ReplaceLinesArgs(ToolArgs):
-    first_line: str | None = Field(
-        default=None,
-        description="ranged replace: the block's FIRST line, copied VERBATIM from the "
-        "working set — the text itself locates the block (no line numbers); OMIT both "
-        "first_line and last_line to replace the ENTIRE file",
-    )
-    last_line: str | None = Field(
-        default=None,
-        description="ranged replace: the block's LAST line, copied VERBATIM from the "
-        "working set",
-    )
-    near_line: int | None = Field(
-        default=None,
-        description="only when an anchor's text appears on SEVERAL lines: a 1-based "
-        "line hint — the occurrence closest to it wins",
-    )
+class _WriteShaderArgs(ToolArgs):
     new_text: str = Field(
-        description="replacement text (no trailing newline needed); empty string deletes "
-        "the block"
+        description="the file's COMPLETE new source — this replaces the whole file, "
+        "anything omitted is gone"
     )
-    target: str = Field(default="", description=_TARGET_DESC)
-
-
-class _InsertAfterArgs(ToolArgs):
-    line: int = Field(
-        description="insert after this 1-based line; 0 inserts at the top of the file"
-    )
-    new_text: str = Field(description="text to insert (no trailing newline needed)")
     target: str = Field(
         default="",
         description=_TARGET_DESC
         + " — a 'lib:<path>' that doesn't exist yet is CREATED here (the way to add a new "
-        "library function)",
+        "library file)",
     )
 
 
@@ -151,42 +127,27 @@ _READ_SHADER_DESC = (
 )
 
 _EDIT_SHADER_DESC = (
-    "BEST FOR a SMALL, localized change to a short unique snippet — no line numbers involved "
-    "at all. For replacing a whole block/function prefer replace_lines in WHOLE-FILE mode "
-    "(ranged only when the file is large), and for ADDING new lines prefer insert_after — "
-    "both let you skip re-typing a large old_str. Replace an exact substring of the source "
-    "with new text, then recompile. old_str must match the file EXACTLY, including whitespace "
-    "and indentation. If old_str appears more than once, the edit fails — provide a larger "
-    "old_str with surrounding context, or set replace_all=true. After the edit I recompile and "
-    "return any compile errors at the exact line; if there are none, the edit compiled clean. "
-    "You cannot see the rendered image — never claim a visual result, only that it compiled."
+    "THE partial-edit tool: replace an exact substring of the source, then recompile. "
+    "Works for any localized change — a statement, a block, a whole function: old_str is "
+    "the region to replace, copied VERBATIM from the working set (whitespace-tolerant "
+    "match); new_str is its replacement. To INSERT, quote a neighbor line as old_str and "
+    "re-send it plus the new lines in new_str; to DELETE a region, pass an empty new_str. "
+    "If old_str appears more than once, the edit fails — add surrounding context to make "
+    "it unique, or set replace_all=true. To rewrite a whole file (or most of it), use "
+    "write_shader instead. After the edit I recompile and return any compile errors at "
+    "the exact line; if there are none, the edit compiled clean. You cannot see the "
+    "rendered image — never claim a visual result, only that it compiled."
 )
 
-_REPLACE_LINES_DESC = (
-    "Replace one contiguous block, or the WHOLE file. WHOLE-FILE mode is the DEFAULT for "
-    "replacing a function/block in a small-to-medium file: OMIT first_line/last_line entirely — "
-    "the working set already shows the whole file, and if it is roughly <=150 lines just "
-    "rewrite it whole. RANGED mode is ONLY for a large block inside a LARGE file, where a "
-    "whole-file rewrite would be wasteful: pass first_line + last_line — the block's first and "
-    "last line, copied VERBATIM from the working set; the TEXT locates the block, there are no "
-    "line numbers to get wrong. If an anchor doesn't match exactly, or matches more than one "
-    "line, NOTHING is applied and the result says what to fix (pass near_line only when an "
-    "anchor's text appears on several lines). The block must cover EVERYTHING new_text "
-    "replaces. new_text is inserted verbatim (include the indentation you want); an empty "
-    "new_text deletes the block. The result echoes which lines were replaced — check it landed "
-    "where you meant. To insert without replacing, use insert_after. (One replace_lines/"
-    "insert_after edit per file per step — see HOW TO WORK.) After the edit I recompile and "
-    "return any compile errors; if there are none, it compiled clean."
-)
-
-_INSERT_AFTER_DESC = (
-    "BEST FOR adding new lines (a uniform, a helper function, a statement) — you quote no "
-    "anchor text at all, just the line to insert after. Insert new_text as new line(s) AFTER "
-    "the given 1-based line (use the WORKING SET block's current numbers); pass 0 to insert at the "
-    "very top, or the last line number to append at the end. new_text is inserted verbatim — "
-    "include the indentation you want. Existing lines shift down; nothing is replaced. (One "
-    "replace_lines/insert_after edit per file per step — see HOW TO WORK.) After the edit I "
-    "recompile and return any compile errors; if there are none, it compiled clean."
+_WRITE_SHADER_DESC = (
+    "Replace a file's ENTIRE source with new_text, or create a new lib: file. BEST FOR a "
+    "full-function rewrite or any broad change in a small-to-medium file (roughly <=150 "
+    "lines: just rewrite it whole — the working set already shows the full source); for "
+    "a small localized change prefer edit_shader. Send the COMPLETE file: anything you "
+    "omit is deleted — the result notes any top-level function/declaration the rewrite "
+    "removed, so check it. (One write_shader per file per step — see HOW TO WORK.) After "
+    "the write I recompile and return any compile errors; if there are none, it compiled "
+    "clean. You cannot see the rendered image — never claim a visual result."
 )
 
 _SET_UNIFORM_DESC = (
@@ -238,14 +199,6 @@ _SWITCH_NODE_DESC = (
 )
 
 
-def _out_of_range(result: EditResult) -> str:
-    where = f" in {result.target_label}" if result.target_label else ""
-    return (
-        f"error: line number out of range{where} — use a line number from the WORKING "
-        "SET block below, which has this file's current line numbers"
-    )
-
-
 def _format_errors(errors: list[CompileErrorInfo]) -> str:
     return "\n".join(f"{e.path}:{e.line}: {e.message}" for e in errors)
 
@@ -268,7 +221,7 @@ def _format_hits(hits: list[GrepHit]) -> str:
 
 def _unresolved_result(result: EditResult) -> tuple[bool, str, None] | None:
     # An unresolvable reject (bad node id / lib path, read-only template, failed lib write,
-    # intra-batch line-edit guard). Counts toward the edit-retry cap.
+    # intra-batch rewrite guard). Counts toward the edit-retry cap.
     if result.unresolved:
         msg = f"error: {result.unresolved_reason}"
         if result.target_label:
@@ -280,13 +233,8 @@ def _unresolved_result(result: EditResult) -> tuple[bool, str, None] | None:
 def _applied_result(result: EditResult) -> tuple[bool, str, dict]:
     # The shared success/compile-error message for any applied edit. A LIB edit returns the
     # "no standalone compile" note instead of a compile result; a NODE edit returns compile
-    # errors or "compiled clean". Region count only for a multi-span replace_all. An anchored
-    # replace's resolved-span echo leads (skipped on a force-restore — the edit was undone).
-    span = (
-        f"replaced lines {result.applied_span} — "
-        if result.applied_span and not result.restored_note
-        else ""
-    )
+    # errors or "compiled clean". Region count only for a multi-span replace_all; a
+    # whole-file rewrite's removed-names fact trails.
     if result.restored_note:
         head = result.restored_note
         if result.render_facts:
@@ -305,7 +253,9 @@ def _applied_result(result: EditResult) -> tuple[bool, str, dict]:
             head += "\n" + result.render_facts
     if result.matches > 1:
         head += f" ({result.matches} regions changed)"
-    return True, span + head, {"errors": [e.__dict__ for e in result.errors]}
+    if result.rewrite_note:
+        head += "\n" + result.rewrite_note
+    return True, head, {"errors": [e.__dict__ for e in result.errors]}
 
 
 def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
@@ -369,8 +319,9 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             return (
                 False,
                 "error: that region spans a comment your old_str doesn't reproduce, so "
-                "replacing it verbatim would delete the comment. Use replace_lines (anchored "
-                "to the block's first and last line) so the surrounding lines stay intact.",
+                "replacing it verbatim would delete the comment. Copy the region verbatim "
+                "INCLUDING its comment lines as old_str (or rewrite the whole file with "
+                "write_shader).",
                 None,
             )
         if result.matches == 0:
@@ -394,35 +345,10 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             )
         return _applied_result(result)
 
-    def replace_lines(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
-        first, last = args["first_line"], args["last_line"]
-        if (first is None) != (last is None):
-            return (
-                False,
-                "error: provide BOTH first_line and last_line for a ranged replace "
-                "(copied verbatim from the working set), or NEITHER to replace the "
-                "whole file",
-                None,
-            )
-        if first is None or last is None:
-            result = caps.apply_line_edit(0, 0, args["new_text"], args["target"])
-            if (unresolved := _unresolved_result(result)) is not None:
-                return unresolved
-            return _applied_result(result)
-        result = caps.apply_anchored_edit(
-            first, last, args["near_line"], args["new_text"], args["target"]
-        )
+    def write_shader(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
+        result = caps.apply_full_rewrite(args["new_text"], args["target"])
         if (unresolved := _unresolved_result(result)) is not None:
             return unresolved
-        return _applied_result(result)
-
-    def insert_after(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
-        line = args["line"]
-        result = caps.apply_line_edit(line + 1, line, args["new_text"], args["target"])
-        if (unresolved := _unresolved_result(result)) is not None:
-            return unresolved
-        if result.matches == 0:
-            return False, _out_of_range(result), None
         return _applied_result(result)
 
     def set_uniform(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
@@ -564,24 +490,12 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             gate_policy=GatePolicy.NONE,
         ),
         ToolDefinition(
-            name="replace_lines",
-            label_live="Editing shader",
-            label_done="Edited shader",
-            description=_REPLACE_LINES_DESC,
-            args_model=_ReplaceLinesArgs,
-            handler=replace_lines,
-            mutating=True,
-            is_edit=True,
-            eager=True,
-            gate_policy=GatePolicy.NONE,
-        ),
-        ToolDefinition(
-            name="insert_after",
-            label_live="Editing shader",
-            label_done="Edited shader",
-            description=_INSERT_AFTER_DESC,
-            args_model=_InsertAfterArgs,
-            handler=insert_after,
+            name="write_shader",
+            label_live="Writing shader",
+            label_done="Wrote shader",
+            description=_WRITE_SHADER_DESC,
+            args_model=_WriteShaderArgs,
+            handler=write_shader,
             mutating=True,
             is_edit=True,
             eager=True,

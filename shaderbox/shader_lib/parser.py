@@ -113,6 +113,37 @@ def brace_counts(text: str) -> tuple[int, int]:
     return stripped.count("{"), stripped.count("}")
 
 
+# Top-level `const`/`uniform` declaration for top_level_names — unlike DECL_SIG_RE
+# (the lib index's stricter contract) the array size may be a macro name, and only
+# the identifier is captured.
+_TOP_DECL_RE = re.compile(
+    r"^\s*(?:const|uniform)\s+\w+\s+(\w+)\s*(?:\[\s*\w*\s*\])?\s*[=;]"
+)
+
+
+def top_level_names(text: str) -> tuple[set[str], set[str]]:
+    # (function names, const/uniform declaration names) at brace depth 0 — the
+    # removed-names comparison for whole-file rewrites. Per-line matching: FN_SIG_RE
+    # over full text would match nested `else if (...) {` as a definition. Known
+    # residue: a signature whose `{` sits on a later line, a multi-declarator line,
+    # and arrays-of-arrays are missed (best-effort; callers must never claim a name
+    # removed while it still occurs in the text).
+    fns: set[str] = set()
+    decls: set[str] = set()
+    depth = 0
+    for line in strip_comments_keep_lines(text).split("\n"):
+        if depth == 0:
+            m = FN_SIG_RE.match(line)
+            if m:
+                fns.add(m.group(2))
+            else:
+                d = _TOP_DECL_RE.match(line)
+                if d:
+                    decls.add(d.group(1))
+        depth = advance_brace_depth(depth, line)
+    return fns, decls
+
+
 def extract_doc(lines: list[str], sig_line: int) -> str:
     # Walk backwards from `sig_line - 1` collecting contiguous `///` lines.
     doc_lines: list[str] = []

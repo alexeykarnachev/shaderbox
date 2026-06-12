@@ -127,8 +127,8 @@ keeps you honest about reading each reply.)
 
 ## 1a. Tool-coverage discipline — DELIBERATELY route through the cold tools
 
-Run 2 fired only 5 of ~12 reachable tools (`create_node` / `read_shader` / `replace_lines` /
-`insert_after` / `edit_shader`); the whole navigation/value/integration half stayed COLD (`grep`,
+Run 2 fired only 5 of ~12 reachable tools (`create_node` / `read_shader` / `edit_shader` +
+the since-removed line tools); the whole navigation/value/integration half stayed COLD (`grep`,
 `read_lib`, `set_uniform`, `switch_node`, `delete_node`, `render_image`/`render_video`). A cheap model
 takes the lazy path — it answers "what nodes exist?" from the project map instead of grepping, hard-codes a
 constant instead of adding a tunable uniform, edits the current node instead of switching. So coverage
@@ -198,9 +198,9 @@ and probes the agent's self-review.
   before judging: PIL `alpha_composite` onto e.g. (25,25,40), save, THEN Read. The render facts' `ink %`
   tells you whether there is alpha-carried content worth compositing.
 - **🔴 `GLError 1282 (invalid operation) glUseProgram(0)` is a REAL pipeline bug, not harness noise.** It
-  fires spuradically on bridge-marshalled create_node/replace_lines (the persist→render path) under the
+  fires sporadically on bridge-marshalled create_node/write_shader (the persist→render path) under the
   standalone context — the same headless GL-quirk as node teardown. The copilot RECOVERS (retries), so a
-  run still completes, but log it as a finding. (Tracked in `todo.md`.) Don't mistake it for a harness fault.
+  run still completes, but log it as a finding (a known headless-GL quirk; re-file in `todo.md` if it grows). Don't mistake it for a harness fault.
 - **Multi-file read needs an UNSOLVABLE-without-reading task.** "Merge node A and B" is solved from the
   model's own knowledge — a cheap model won't bother to `read_shader` the references. To actually exercise
   multi-file read, the task must REQUIRE the other node's content (e.g. "use the EXACT color/constant from

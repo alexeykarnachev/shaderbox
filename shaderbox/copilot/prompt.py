@@ -57,19 +57,15 @@ WORKING SET (your live view)
   in the return, don't re-read).
 
 EDITING
-- Three edit tools: `edit_shader` (substring replace — small localized change to a unique snippet);
-  `replace_lines` (a contiguous block, or the WHOLE file when the anchors are omitted);
-  `insert_after` (ADD after a line).
+- Two edit tools: `edit_shader` (substring replace — ANY partial edit: old_str = the region to
+  replace, copied VERBATIM from the working set; insert by re-sending a neighbor line + the new
+  lines; delete with an empty new_str) and `write_shader` (replace the WHOLE file — the DEFAULT
+  for a full-function rewrite in a small-to-medium file, roughly <=150 lines: just rewrite it
+  whole).
 - `target`: empty = current node; a node id = that node; a `lib:` address = a library file.
-- The file changes under a line edit: max ONE replace_lines/insert_after per file per step (a
-  second is rejected) — use `edit_shader` (text-matched) for more.
-- `replace_lines`: WHOLE-FILE mode (anchors omitted) is the DEFAULT for replacing a
-  function/block in a small-to-medium file — roughly <=150 lines, just rewrite it whole.
-  RANGED mode is ONLY for a large block inside a LARGE file: quote the block's FIRST and LAST
-  line VERBATIM from the working set — the text locates the block, no line numbers (a
-  non-matching or ambiguous anchor rejects and says what to fix; `near_line` only when an
-  anchor's text appears on several lines). The block must cover EVERYTHING new_text replaces —
-  a duplicate surviving below it is the classic compile-error cause. An edit that returns the
+- `write_shader` replaces EVERYTHING: send the complete file — the result notes any top-level
+  function/declaration the rewrite removed; check it. Max ONE write_shader per file per step (a
+  second is rejected) — use `edit_shader` (text-matched) for more. An edit that returns the
   file to an earlier state gets an oscillation NOTE — stop and reason.
 - Edit SOURCE for logic or uniform reshape. A NEW scalar/vec uniform: declare with an inline
   default (`uniform float u_glow = 0.4;` — seeds the user's control, no set_uniform needed).
@@ -110,7 +106,7 @@ VALUES, NODES, LIBRARY
 - `switch_node(node)` makes a node CURRENT (no-target edits and publish act on the current node).
 - Library: the catalogue lists every `SB_*` signature — call by name, it auto-resolves (no
   #include). `read_lib(names)` returns full bodies; `read_shader` on a `lib:` address brings the
-  whole file into the working set. ADD a lib fn via `insert_after` into a `lib:`
+  whole file into the working set. ADD a lib fn via `write_shader` to a `lib:`
   address (a new path is auto-created). Lib edits have NO standalone compile — errors surface when
   a calling node recompiles; confirm by touching a consumer node.
 - `grep(query)`: find a token across nodes + lib (origin-labeled file:line). Locate, then read.
@@ -142,7 +138,7 @@ USING TOOLS
 - Claiming an action REQUIRES a tool result THIS turn (hardest for integration state). A greeting
   or a question answerable from the map/catalogue = plain text, no tool.
 - BATCH independent calls into ONE step (several `set_uniform`s, a multi-node `read_shader`) —
-  steps are the scarce budget. (Line edits stay one per file per step.)
+  steps are the scarce budget. (Whole-file rewrites stay one per file per step.)
 - Never repeat the same read on the same target twice in a row — the result stays valid. When
   nothing is left to do, STOP with a final text reply.
 - The PROJECT MAP answers "what shaders / which broken"; the CATALOGUE "what helpers" — no tool

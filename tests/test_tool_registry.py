@@ -7,6 +7,9 @@ invariants and the publish precheck handoffs (all counts derived from the regist
 literals).
 """
 
+from pathlib import Path
+
+import shaderbox
 from scripts.dogfood.analyze import CANONICAL_TOOLS
 from shaderbox.copilot.capabilities import NodeTreeEntry
 from shaderbox.copilot.gate import GateKind
@@ -28,6 +31,22 @@ def test_every_tool_fully_carded() -> None:
         # Checks the emitted schema, so a stray non-ToolArgs args model can't sneak past.
         schema = d.args_model.model_json_schema()
         assert schema.get("additionalProperties") is False, d.name
+
+
+def test_dead_tool_names_absent_from_copilot_sources() -> None:
+    # 039 removed replace_lines/insert_after. A surviving mention anywhere in the
+    # package — a tool description, a prompt bullet, a guard/nudge/hint string, even a
+    # comment — silently steers the model into a nonexistent tool; this pins the
+    # rewording forever. (scripts/ is excluded: the dogfood analyzer's HISTORICAL_TOOLS
+    # vocabulary keeps the names to parse old transcripts.)
+    root = Path(shaderbox.__file__).parent
+    offenders = [
+        str(p.relative_to(root))
+        for p in sorted(root.rglob("*.py"))
+        if "replace_lines" in p.read_text(encoding="utf-8")
+        or "insert_after" in p.read_text(encoding="utf-8")
+    ]
+    assert offenders == []
 
 
 def test_gate_and_credential_structural_invariants() -> None:

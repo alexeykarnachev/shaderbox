@@ -72,7 +72,7 @@ Roughly this arc, but let the maintainer's feedback redirect it at any point:
   successful edit several times, or thrash whole-file rewrites that re-introduce its own brace errors,
   until the `EDIT UNDONE` circuit-breaker fires (6 broken edits → restore last clean). It DOES recover,
   but a single turn can burn 200k+ cumulative input and $0.03. **Watch the trace** for repeated
-  identical `replace_lines` and orphan-`}` rewrites; note the cost. (Another datum for the giveup-counter
+  identical edits and broken-brace rewrites; note the cost. (Another datum for the giveup-counter
   deferral — the no-op-clean case escapes the brake because each edit is ok=True.)
 - **Animation is invisible on a still (harness limit, not an agent bug).** Ask for "make it alive"
   (flicker, a highlight traveling the wave, particles) and the agent writes real `u_time` animation —
@@ -87,8 +87,8 @@ Roughly this arc, but let the maintainer's feedback redirect it at any point:
 
 ## Tool coverage (secondary here)
 
-This scenario naturally hits create_node / read_shader / edit_shader / replace_lines (ranged + whole-file)
-/ insert_after / set_uniform / read_lib + grep (to find SB_sd_text / SB_sd_box / SB_op_round / SB_fill /
+This scenario naturally hits create_node / read_shader / edit_shader / write_shader
+/ set_uniform / read_lib + grep (to find SB_sd_text / SB_sd_box / SB_op_round / SB_fill /
 SB_glow / SB_sd_segment signatures). It does NOT exercise delete_node / switch_node / publish unless you
 add a reason (a throwaway variant node to delete, a second logo node to switch between). Coverage is not
 the point of this scenario — the visual-blindness + art-direction loop is. If you want a coverage sweep,

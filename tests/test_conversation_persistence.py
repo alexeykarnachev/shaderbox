@@ -248,7 +248,7 @@ def test_turn_snippet_round_trips(tmp_path: Path) -> None:
             steps=[
                 StepRecord(name="read_shader", ok=True),
                 StepRecord(name="edit_shader", ok=False),
-                StepRecord(name="replace_lines", ok=True),
+                StepRecord(name="edit_shader", ok=True),
             ],
             snippet_stats=TurnStats(
                 context_tokens=900, reply_tokens=210, cost_usd=0.0031
@@ -263,7 +263,7 @@ def test_turn_snippet_round_trips(tmp_path: Path) -> None:
     assert [(s.name, s.ok) for s in snip.steps] == [
         ("read_shader", True),
         ("edit_shader", False),
-        ("replace_lines", True),
+        ("edit_shader", True),
     ]
     assert snip.snippet_stats is not None
     assert snip.snippet_stats.reply_tokens == 210
