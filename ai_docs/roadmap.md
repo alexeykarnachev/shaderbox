@@ -26,86 +26,27 @@ feature; brief points at the superseder).
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
 <!-- As of 2026-06-12. -->
-**PUBLISH POSTPONED — polish wave first (maintainer call, 2026-06-12).** The `v0.13.0` tag +
-gate-verified zips in `dist/` stay valid; the full publish runbook is in the previous banner
-below (unchanged — execute it when the maintainer says ship). **036 anchored replace_lines
-IMPLEMENTED + DOGFOOD-VERIFIED on the Pi (headless)**: ranged `replace_lines` now locates the
-block by first/last_line TEXT (strip-matched; `near_line` only on a multi-match) — line
-coordinates left the wire; resolved-span echo, retry-cap wiring, the D9 batch guard reworded,
-stale-arg redaction extended. `make check` clean, 368 tests green (27 GL skips); 3-reviewer swarm
-converged after one fix round; a 14-turn codex-mini dogfood (`037_dogfood_report_036anchor.md`)
-fired EVERY 036 path naturally and each reject self-corrected in one step (multi-match→near_line,
-reverse-order, span echo, ranged-in-a-large-file) — no 036 defect. **NEXT ACTION (dev box):**
-`make test` full (the GL-backed guard test only runs there) + `make smoke`, then the manual
-`make run-bundle` pass against codex-mini. **Polish wave landed so far:** copilot focus-grab fix
-(`35b7dc8`), russian-greeting drift fix (`5f7ea1e`, 7/12 → 0/12), 036 (this wave). **Dogfood
-follow-ups filed (`todo.md`):** the no-op CLEAN-edit spree escapes the giveup brake; render-facts
-honesty still model-bound (codex-mini claimed a fixed render 3× while it stayed inverted).
-**After 036 verifies:** more maintainer-found rough edges, then the publish.
-
-<!-- Previous banner (v0.13.0 publish prep — KEPT as the publish runbook, execute on "ship"): -->
-**NEXT ACTION — PUBLISH v0.13.0 to itch (maintainer).** Everything is
-prepared: tag `v0.13.0` cut on `master`, both zips built + gate-verified in `dist/` (rebuild via
-`./build.sh` if stale). NOTE: `dev` is commits AHEAD of the tag (ai_docs + polish-wave fixes) —
-ai_docs never ships, but the polish-wave code fixes are NOT in the v0.13.0 zips; decide at
-publish time whether to re-cut (likely yes if 036 lands first). Remaining steps (per `/ship`
-§7-9): `git push origin master && git push origin v0.13.0` (if not already pushed) → `yes |
-./upload-itch.sh` → `butler status where-is-your-keyboard/shaderbox` → sync the itch page from
-`ai_docs/itch/page.yaml` (REWRITTEN this prep: copilot + library + Cyrillic text; Save is
-review-gated) → **new screenshots** (the page's are pre-copilot; shoot the copilot chat + lib
-picker + text demo, upload by hand) → decide the tags swap (10/10 used; candidate: `gamedev` →
-`ai`) → land `dev`==`master`, sync this banner to shipped. **What v0.13.0 ships:** everything
-since v0.12.1 — the copilot stack (020-033 + waves 028/034), SDF shader library + seed sync,
-engine-bound glyph tables, keyboard nav, logging, refactors (023/025/031). **Quality record:**
-pre-ship review wave (15 fixes, +13 tests), mega dogfood (18 turns, 11/12 tools,
-`035_dogfood_report_mega.md`), forensic swarm over the dogfood logs → 12 more engine fixes,
-control dogfood re-verified all three live. **Post-publish next:** the itemized 034 `make run`
-passes, the dogfood-analyzer tooling wave (todo), lever 2 lazy-tool-catalogue, Д glyph shape,
-the VLM-judge pilot.
-
-- **DONE this wave — 027 interactive dogfood (resume/dump).** `git mv scripts/dogfood.py ->
-  scripts/dogfood/harness.py`; new `create(project_dir=)` resume + `dump(path)` + `reload()` (composing the
-  existing `ConversationStore`/`load_conversation`/`save_conversation` seams — no new `shaderbox/` code).
-  Consolidated `scripts/dogfood/{harness.py, analyze.py, scenarios/, runs/}` (`runs/` gitignored). 6 shallow
-  scenarios -> ONE goal-driven mission (`01_shape_gallery.md`); `analyze.py` auto-rolls coverage/cost/tokens/
-  recoveries from the trace into the report template (the human writes only the judgment + visual sections).
-  `/dogfood` skill §1 rewritten to the one-blocking-call-per-turn flow + §1a tool-coverage discipline + the
-  single-process gate rule. Folds in the driven-INTERACTIVELY + conversation-restart/gate-decline `todo.md`
-  deferrals. DOGFOODED LIVE 4 runs (codex-mini): set_uniform-loop + create_node-footgun fixed in `backend.py`
-  + re-verified, analyzer cross-tool-recovery + per-run dump filter hardened, mega-review-swarm clean. Spec:
-  `027_interactive_dogfood_server.md` (kept filename; the server is the Out-of-scope reversal record).
-- **DONE earlier — 025 ProjectSession extraction + 026 dogfood harness + prompt compression** (all landed,
-  reviewed; see their spec rows). 026 DOGFOODED live (5 scenarios, 16 turns, $0.21 on grok-4.3): pipeline
-  works end-to-end, agent compile-error self-correction proven. Prompt compressed ~20% (−678 tok/request,
-  reviewer-audited). Tool-catalogue token cost measured (`scripts/token_probe.py`): the native `tools=` block
-  re-bills in FULL every iteration BUT OpenRouter prompt-caching (~99% hit) amortizes it — run1's "halve
-  every request" was overstated; lever 2 (lazy-load) remains.
-- **NEXT:** lever 2 lazy-tool-catalogue (`token_probe.py`: 10 shader tools = 2495 tok vs 21 = 3941) + the
-  025 `make run` pass. Harder dogfood missions (code-quality grading, token-overflow provocation) come
-  after, building on the `01_shape_gallery` mechanism.
-- **Still pending (separate):** copilot turn-rollback (030) awaits its own `make run` pass. The wrong-node
-  TARGETING prompt fix LANDED this polish wave (`prompt.py`); a dogfood re-probe confirms it holds, and a
-  confirm-gate backstop stays deferred in `todo.md` for if the prompt rule visibly fails.
-- **Observed (codex-mini, 4 dogfood runs):** the model NEVER calls `switch_node` — it self-targets via
-  `read_shader` + a targeted edit; `switch_node` is effectively vestigial for it (a `todo.md` note + a
-  coverage-target decision, not a bug).
-- **THEN — ship.** `master` stays at `v0.12.1`; the full copilot stack (020-024 + 025 + 030) sits ship-shaped
-  on `dev`, unshipped, pending the 025/030 live passes. Awaiting explicit go.
-- **Deferred (each gates a FUTURE round only on a NEW failure class in a DIFFERENT session):** the lazy
-  tool-catalogue (its ~16-tool threshold FIRED), the structural shader view (020·27), reasoning-notes /
-  intent-carryover guard (DE-RISKED by 029), machine-readable render feedback, `bind_media`/`undo_edit` —
-  all in `todo.md`. (The broken-compile circuit-breaker LANDED this polish wave.)
-- **Trace-gated (NOT now):** semantic-editing (rename/outline/add_uniform), GLSL-aware grep, uniforms-in-
-  tree, eager-recompile for lib edits — each only if a trace shows the current tools struggling (none does).
-  The visual-variant-optimizer (render N variants as clickable chat boxes) is the big future feature.
-  Further `app.py` splits (node-CRUD, path-properties, picker forwards) judged net-negative — `todo.md`.
-- **No open BLOCKERs.** Cosmetic nav tails parked in `todo.md`, trigger-gated.
+**v0.14.0 TAGGED + PUSHED; itch upload is the only step left (maintainer, from a desktop).** The
+git side of the release is DONE this session: `v0.14.0` cut on `master` (minor bump over `v0.13.0`
+— 036 + the settings field-focus wave), both zips built + gate-verified in `dist/`, `master` + tag
+pushed, `dev`==`master`==`origin` (all at one sha). **REMAINING — run from a desktop, NOT the Pi
+(no `BUTLER_API_KEY` / no display here):** `BUTLER_API_KEY=… yes | ./upload-itch.sh` → `butler
+status where-is-your-keyboard/shaderbox` (butler IS installed at `~/.local/bin`, arm64) → sync the
+itch page via Playwright from `ai_docs/itch/page.yaml` (already describes the copilot; Save is
+review-gated, `dev_flow.md ### Sync the itch.io page`) → new screenshots by hand. **What v0.14.0
+ships over v0.13.0:** 036 anchored `replace_lines` (text locates the block, `near_line` on
+ambiguity), the Settings field-focus + maximize wave, the copilot focus-grab + russian-greeting
+fixes, README rewritten with a copilot section. **036 is dogfood-verified** (`037_dogfood_report`)
++ a fresh logo-design dogfood drew the new brand image (`docs/branding/logo.{png,frag.glsl}`) and
+seeded scenario `02_logo_design.md`. **Open follow-ups (`todo.md`):** the no-op CLEAN-edit spree
+escapes the giveup brake; render-facts honesty stays model-bound (the VLM-judge deferral). **No
+open BLOCKERs** beyond the desktop-only itch upload.
 
 ## Features
 
 | # | Name | Status | Brief |
 |---|---|---|---|
-| 036 | anchored_replace_lines | in progress | Ranged `replace_lines` re-anchored: the boundary-line TEXT locates the block (strip-matched, `near_line` hint on ambiguity), line coordinates leave the wire — kills the observed +1-on-blank coordinate class (codex-mini, 2/8 calls). Spec: `ai_docs/features/036_anchored_replace_lines.md`. |
+| 036 | anchored_replace_lines | done | Ranged `replace_lines` re-anchored: the boundary-line TEXT locates the block (strip-matched, `near_line` hint on ambiguity), line coordinates leave the wire — kills the observed +1-on-blank coordinate class (codex-mini, 2/8 calls); 3-reviewer swarm + a 14-turn dogfood verified every path, shipped in v0.14.0. Spec: `ai_docs/features/036_anchored_replace_lines.md`. |
 | 034 | ui_polish_wave_2 | partial | Second app-wide UI/UX polish pass, maintainer-walkthrough-driven (live fix-as-we-go, same shape as 028); F01-F13 shipped in v0.13.0, F13 live-verified, the itemized `make run` passes for the rest remain. Findings log: `ai_docs/features/034_ui_polish_wave_2.md`. |
 | 033 | copilot_robustness_wave | done | Error-analysis-driven hardening, converged via 3 dogfood rounds + 3 review cycles: generic enriched tool results (compile hints + alpha-aware render facts), force-restore + oscillation brake, guaranteed final reply, two-sided trust, lib-address reads, agent-text compression, engine/harness fixes. Spec: `ai_docs/features/033_copilot_robustness_wave.md`. |
 | 032 | sdf_shader_library | partial | Practice-first SDF shader library seed (`shaderbox/resources/shader_lib/`, three SB_sd_*/SB_op_*/render layers, full text stack with new Cyrillic + auto-fit + per-char access) + copilot quality fixes (inline uniform defaults, tool-call batching, SB_ catalogue filter), driven by live ad-hoc dogfood experiments; seed-loading landed (`shader_lib_seed_sync` row); still open: Д glyph shape, Cyrillic chat replies. Spec: `ai_docs/features/032_sdf_shader_library.md`. |

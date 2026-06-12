@@ -120,4 +120,3 @@ uniform float u_scanline_strength = 0.12;
 
         fs_color = vec4(base, 1.0);
 }
-
