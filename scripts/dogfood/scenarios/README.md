@@ -27,6 +27,7 @@ it to the maintainer.
 | File | Final goal | Pressure axes |
 |---|---|---|
 | `01_shape_gallery.md` | a 2×2 grid of 4 simple 2D shapes (circle/square/triangle/ring), built as separate nodes then COMBINED by a memory-wiped fresh agent | tool-use under a context wipe (read-from-disk vs hallucinate) · visual honesty · token-growth observation · full reachable-tool sweep (grep/read_lib/set_uniform/switch_node/delete_node/render_image) |
+| `02_logo_design.md` | a polished, maintainer-accepted brand image (logo / hero / icon) refined over many turns of art direction, saved to `docs/branding/` at 1024 | visual blindness (the hard probe — judged only by eye) · precise-diagnosis dependency · palette drift · free-brief over-reach · no-op-clean spree / EDIT UNDONE cost trap · animation-invisible-on-a-still framework gap · human-in-the-loop direction via SendUserFile |
 
 **Next (harder, later):** a composite that grades CODE QUALITY + a real token-overflow provocation +
 trickier scenes — once the mechanism is obkatan on 01. Keep 01 simple ON PURPOSE: you must be able to judge
