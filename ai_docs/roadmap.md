@@ -25,13 +25,30 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-06-11. -->
-**NEXT ACTION — PUBLISH v0.13.0 to itch (maintainer, planned for 2026-06-12).** Everything is
+<!-- As of 2026-06-12. -->
+**PUBLISH POSTPONED — polish wave first (maintainer call, 2026-06-12).** The `v0.13.0` tag +
+gate-verified zips in `dist/` stay valid; the full publish runbook is in the previous banner
+below (unchanged — execute it when the maintainer says ship). **NEXT ACTION — implement 036
+anchored replace_lines** from `ai_docs/features/036_anchored_replace_lines.md`: spec complete and
+self-contained (design table, verbatim trace fixtures, file-by-file plan); zero code landed —
+maintainer implements from the Pi (headless: backend + tools + prompt + pytest; `make smoke` +
+the manual bundle pass happen back on the dev box). **Polish wave landed so far:** copilot
+focus-grab popup-dismiss fix on cold start (`35b7dc8`: `should_grab_chat_focus` extracted + unit
+tests + the /imgui-ui §8 quirk entry); russian-greeting drift fix (`5f7ea1e`: language directive
+reworded, A/B-verified on codex-mini — 7/12 → 0/12 Cyrillic replies to English greetings).
+**Evidence behind 036:** the 2026-06-12 bundle trace — 2/8 ranged `replace_lines` calls failed,
+both `end_line = correct+1` landing on a blank line (the Python half-open prior; the model is
+bimodal, 6/8 correct), so the `todo.md` "ranged replace_lines may be dead weight" deferral is
+closed-refuted: ranged mode stays, text anchors become the locator. **After 036:** more
+maintainer-found rough edges (driven interactively), then the publish.
+
+<!-- Previous banner (v0.13.0 publish prep — KEPT as the publish runbook, execute on "ship"): -->
+**NEXT ACTION — PUBLISH v0.13.0 to itch (maintainer).** Everything is
 prepared: tag `v0.13.0` cut on `master`, both zips built + gate-verified in `dist/` (rebuild via
-`./build.sh` if stale). NOTE: `dev` is a few ai_docs-only commits AHEAD of the tag (overnight CRT
-dogfood findings) — the zips are unaffected (ai_docs never ships); publish from the existing tag,
-no re-cut. Remaining steps (per `/ship` §7-9):
-`git push origin master && git push origin v0.13.0` (if not already pushed) → `yes |
+`./build.sh` if stale). NOTE: `dev` is commits AHEAD of the tag (ai_docs + polish-wave fixes) —
+ai_docs never ships, but the polish-wave code fixes are NOT in the v0.13.0 zips; decide at
+publish time whether to re-cut (likely yes if 036 lands first). Remaining steps (per `/ship`
+§7-9): `git push origin master && git push origin v0.13.0` (if not already pushed) → `yes |
 ./upload-itch.sh` → `butler status where-is-your-keyboard/shaderbox` → sync the itch page from
 `ai_docs/itch/page.yaml` (REWRITTEN this prep: copilot + library + Cyrillic text; Save is
 review-gated) → **new screenshots** (the page's are pre-copilot; shoot the copilot chat + lib
@@ -40,14 +57,10 @@ picker + text demo, upload by hand) → decide the tags swap (10/10 used; candid
 since v0.12.1 — the copilot stack (020-033 + waves 028/034), SDF shader library + seed sync,
 engine-bound glyph tables, keyboard nav, logging, refactors (023/025/031). **Quality record:**
 pre-ship review wave (15 fixes, +13 tests), mega dogfood (18 turns, 11/12 tools,
-`035_dogfood_report_mega.md`), forensic swarm over the dogfood logs → 12 more engine fixes
-(lib-indexer block-comment alignment — a v0.12.1-era bug, edit-error target naming, boundary-hint
-upgrades, honest giveup note, FLAT imperative, gate-outcome rule), control dogfood re-verified all
-three live. **Post-publish next:** the itemized 034 `make run` passes, the dogfood-analyzer tooling
-wave (todo), lever 2 lazy-tool-catalogue, Д glyph shape, the VLM-judge pilot.
-
-<!-- Previous banner (031, kept for context): -->
-**031 landed (`db39f68..aff9488`, 9 commits + doc sweep): the whole 029 smell class swept. The `.webm` reload-kill bug fixed via one `media.media_class_for` resolver (+invariant test); `RESULT_WIDGET_KINDS` derives from the Literal; template order/ids live once in `constants.py`; the dead publish `node` param dropped; the `template:` address trio joined `address.py`; 7 dead orphans deleted; `ToolArgs` base owns `extra="forbid"` (+per-tool schema invariant); `wrapped_caption` deduped (visual no-op — rides the pending `make run` pass); both bit-rotted check scripts ported to pytest (+10 tests: token redaction, gate decline + no-orphaned-tool_call, gate reopen-after-release, recover-card round-trip, finish-reason — none had regressed while dark) then deleted; `CopilotCapabilities` is now a Protocol the backend satisfies directly (`wiring.py` deleted). Post-impl 3-reviewer adversarial swarm: correctness PASS; the doc-staleness findings were fixed in the same wave (dev_flow module map, todo `needs_gl` citation, H2 drop rationale, 023/031 spec headers). NEXT: lever 2 lazy-tool-catalogue; the 025 + 030 `make run` passes + chat-polish visual confirms; the copilot ship (020-030) stays gated on those live passes.**
+`035_dogfood_report_mega.md`), forensic swarm over the dogfood logs → 12 more engine fixes,
+control dogfood re-verified all three live. **Post-publish next:** the itemized 034 `make run`
+passes, the dogfood-analyzer tooling wave (todo), lever 2 lazy-tool-catalogue, Д glyph shape,
+the VLM-judge pilot.
 
 - **DONE this wave — 027 interactive dogfood (resume/dump).** `git mv scripts/dogfood.py ->
   scripts/dogfood/harness.py`; new `create(project_dir=)` resume + `dump(path)` + `reload()` (composing the
@@ -91,6 +104,7 @@ wave (todo), lever 2 lazy-tool-catalogue, Д glyph shape, the VLM-judge pilot.
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 036 | anchored_replace_lines | in progress | Ranged `replace_lines` re-anchored: the boundary-line TEXT locates the block (strip-matched, `near_line` hint on ambiguity), line coordinates leave the wire — kills the observed +1-on-blank coordinate class (codex-mini, 2/8 calls). Spec: `ai_docs/features/036_anchored_replace_lines.md`. |
 | 034 | ui_polish_wave_2 | partial | Second app-wide UI/UX polish pass, maintainer-walkthrough-driven (live fix-as-we-go, same shape as 028); F01-F13 shipped in v0.13.0, F13 live-verified, the itemized `make run` passes for the rest remain. Findings log: `ai_docs/features/034_ui_polish_wave_2.md`. |
 | 033 | copilot_robustness_wave | done | Error-analysis-driven hardening, converged via 3 dogfood rounds + 3 review cycles: generic enriched tool results (compile hints + alpha-aware render facts), force-restore + oscillation brake, guaranteed final reply, two-sided trust, lib-address reads, agent-text compression, engine/harness fixes. Spec: `ai_docs/features/033_copilot_robustness_wave.md`. |
 | 032 | sdf_shader_library | partial | Practice-first SDF shader library seed (`shaderbox/resources/shader_lib/`, three SB_sd_*/SB_op_*/render layers, full text stack with new Cyrillic + auto-fit + per-char access) + copilot quality fixes (inline uniform defaults, tool-call batching, SB_ catalogue filter), driven by live ad-hoc dogfood experiments; seed-loading landed (`shader_lib_seed_sync` row); still open: Д glyph shape, Cyrillic chat replies. Spec: `ai_docs/features/032_sdf_shader_library.md`. |

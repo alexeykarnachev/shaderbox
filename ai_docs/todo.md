@@ -238,14 +238,16 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   derives from `description`'s first sentence; if that proves too long, add `brief: str = ""` to
   `ToolDefinition` then (defaulted ⇒ pure addition; resolver `d.brief or first_sentence(d.description)`).
 
-## [DEFERRAL] ranged replace_lines may be dead weight (whole-file mode took its job)
-- **Trigger:** after the next dogfood mission — pull the trace's replace_lines calls: if every
-  call used WHOLE-FILE mode (no range), or ranged calls keep tripping the boundary-line check,
-  delete the ranged mode (the tool collapses to "replace the whole file": two args, no
-  coordinates, no first/last_line checksums).
-- 034 F04 reshaped the tool: whole-file mode covers full rewrites (the dominant case — 4/4 in
-  the trace that motivated it), ranged mode survives for mid-size blocks but costs four
-  arguments describing one span. The staged plan: keep ranged only if traces show real use.
+## [DEFERRAL] `insert_after` still locates by raw line number (no anchor text)
+- **Trigger:** a trace showing a misplaced insert (insert landed on the wrong line and the
+  compile gate didn't catch it). Then give it the 036 treatment: an `after_line` text anchor
+  through the same `_locate_anchor` seam.
+- Context: 036 re-anchored ranged `replace_lines` to boundary-line text after the 2026-06-12
+  bundle trace (codex-mini: 2/8 ranged calls failed, both `end_line = correct+1` on a blank
+  line — the Python half-open prior; 6/8 correct → the old "delete ranged mode" deferral here
+  was closed-refuted, ranged mode kept and re-anchored). `insert_after` shares the coordinate
+  fragility class but has zero observed failures, so it waits for evidence. Spec:
+  `ai_docs/features/036_anchored_replace_lines.md`.
 
 ## [DEFERRAL] `ToolDefinition.needs_gl` + `.category` are dead fields (doc-only)
 - **Trigger:** when lever 2 (the lazy tool catalogue) lands — `category` goes live as the catalogue
