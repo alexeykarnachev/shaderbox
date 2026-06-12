@@ -196,8 +196,8 @@ class _RunLog:
                         seen[handle] = None
         return list(seen)
 
-    def applied_edits(self, registry: ToolRegistry) -> list[_RunEntry]:
-        return [e for e in self._entries if registry.is_edit_tool(e.name) and e.ok]
+    def applied_mutations(self, registry: ToolRegistry) -> list[_RunEntry]:
+        return [e for e in self._entries if registry.is_mutating(e.name) and e.ok]
 
     def summary_lines(self, registry: ToolRegistry) -> list[str]:
         # The ledger lines for the NL turn-summary. Irreversible actions (publish/delete — gated
@@ -818,7 +818,7 @@ def run_turn(
                 "— the edit kept not applying to the shader source. I've stopped to "
                 "avoid looping. Tell me to try again, or describe the change differently."
             )
-            applied = ran.applied_edits(registry)
+            applied = ran.applied_mutations(registry)
             if applied:
                 note += "\nWhat DID apply this turn:\n" + "\n".join(
                     f"{e.name}: {e.msg}" for e in applied

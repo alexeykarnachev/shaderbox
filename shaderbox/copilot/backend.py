@@ -178,11 +178,19 @@ def _range_check_error(
         problems.append(problem)
     if not problems:
         return ""
+    tail = next((i for i in range(len(lines), 0, -1) if lines[i - 1].strip()), 0)
+    whole_file = (
+        " — or omit start_line/end_line entirely to replace the WHOLE file "
+        "(no boundary quotes to get wrong)"
+        if end_line >= tail
+        else ""
+    )
     return (
         "line check failed — nothing was applied: "
         + "; ".join(problems)
         + ". Your range does not cover the block you meant — re-read the WORKING SET "
         "block (its line numbers are current) and resubmit with the corrected range"
+        + whole_file
     )
 
 

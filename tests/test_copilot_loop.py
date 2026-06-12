@@ -355,6 +355,37 @@ def test_giveup_note_reports_applied_edits_and_broken_compile() -> None:
     assert "the current node is currently left with compile errors." in msg
 
 
+def test_giveup_note_reports_non_edit_mutations() -> None:
+    # A successful create_node before the failed edits must show in the giveup
+    # note — "what applied" covers ALL mutations, not just the edit tools.
+    create = _tool_call("cc", "create_node", '{"name": "Ring", "source": ""}')
+    fail_edit = _tool_call(
+        "cx", "edit_shader", '{"old_str": "never present", "new_str": "x"}'
+    )
+    scripts: list[list[LLMStreamEvent]] = [create] + [fail_edit] * (
+        COPILOT_CONFIG.max_edit_retries + 2
+    )
+    registry = build_registry(_fake_caps(edit_errors=[]))
+
+    events = list(
+        run_turn(
+            _FakeClient(scripts),
+            registry,
+            COPILOT_CONFIG,
+            _fake_context(),
+            history=[],
+            user_text="make a ring node",
+            gate=GateChannel(),
+            cancel=threading.Event(),
+        )
+    )
+
+    assert isinstance(events[-1], AgentError)
+    msg = events[-1].message
+    assert "What DID apply this turn:" in msg
+    assert "create_node:" in msg
+
+
 def test_applies_but_broken_thrash_nudges_not_giveup() -> None:
     # Broken-compile circuit-breaker: an edit that APPLIES but compiles WITH errors returns
     # ok=True, so it never trips the failed-edit cap (which counts edits that fail to apply).

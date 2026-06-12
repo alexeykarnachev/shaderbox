@@ -207,6 +207,18 @@ def test_range_check_no_suggestion_on_ambiguous_match() -> None:
     assert "did you mean" not in msg
 
 
+def test_range_check_tail_range_suggests_whole_file() -> None:
+    lines = ["void main() {", "    fs_color = c;", "}", ""]
+    msg = _range_check_error(lines, 1, 3, "void main() {", "    fs_color = c;")
+    assert "omit start_line/end_line entirely to replace the WHOLE file" in msg
+
+
+def test_range_check_mid_file_has_no_whole_file_suggestion() -> None:
+    lines = ["a", "b", "c", "d", "e"]
+    msg = _range_check_error(lines, 1, 2, "a", "zzz")
+    assert "WHOLE file" not in msg
+
+
 def test_whole_file_replace_applies_without_range() -> None:
     events = _run(
         [
