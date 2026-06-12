@@ -476,6 +476,19 @@ Library footguns specific to the imgui-bundle Python build (currently
   also works. To programmatically focus a window/region, use
   `set_next_window_focus()` before it — and it correctly targets a *grandchild*
   `begin_child`, not just a top-level window (spike-confirmed). Never pass a name string.
+- **A per-frame `set_next_window_focus()` on a BACKGROUND window silently DISMISSES any
+  open popup/modal.** imgui reads a non-modal window grabbing focus on top of an active
+  popup as a close request: the modal opens, draws its dim overlay, then gets force-closed
+  at end-of-frame, reopens next frame, forever. Symptom: the screen dims but no modal
+  content ever appears, and `is_popup_open(label)` reads **False every frame** despite
+  `begin_popup_modal` returning `visible=True`. So **gate any per-frame focus grab on
+  `not app.any_popup_open()`** — the modal owns focus while it's up. Caught live: the copilot
+  chat's focus-pending latch (`copilot_chat.py`) re-grabbed focus every frame on the no-key
+  gate path (its usual consumer — the transcript's `set_keyboard_focus_here` — never ran
+  without a key), so clicking "Open Settings" dimmed everything and showed nothing. The sibling
+  `active_region_outline` draw in the same window already carried this `any_popup_open()` guard;
+  the focus grab just hadn't. Diagnosing the class: a `print` of `is_popup_open(label)` next to
+  `begin_popup_modal`'s visibility — False-while-visible is the fingerprint.
 - **An `invisible_button` is NOT a keyboard-nav stop** — with `nav_enable_keyboard`
   on, nav never lands on it, so Space/Enter can't activate it (you can't reach it
   without the mouse). A `selectable` (or a real `button`) IS a nav stop. For a

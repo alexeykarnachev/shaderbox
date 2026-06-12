@@ -55,6 +55,16 @@ _WINDOW_FLAGS = (
 )
 
 
+def should_grab_chat_focus(
+    focus_pending: bool, in_flight: bool, any_popup_open: bool
+) -> bool:
+    """Whether the chat window should `set_next_window_focus()` this frame. A background
+    window grabbing focus EVERY frame while a popup is open dismisses that popup (imgui
+    reads it as a close; /imgui-ui §8) — so the focus-pending / mid-turn latch must yield
+    while any popup owns focus."""
+    return (focus_pending or in_flight) and not any_popup_open
+
+
 def _apply_layout(app: App) -> int:
     # Anchor to the editor child's screen rect, NOT the glfw window. CORNER / BOTTOM_STRIP
     # force pos+size every frame and add no_move; FREE seeds once and stays draggable.
@@ -92,7 +102,11 @@ def draw(app: App) -> None:
     # Hold focus on the chat while a turn runs: the editor steals focus when the copilot
     # creates/switches the current node (TextEditor first-render grab, /imgui-ui §8), which
     # would route a keystroke into the editor. Re-assert every frame, not just the one-shot.
-    if app.copilot_focus_pending or app.copilot.state.in_flight:
+    if should_grab_chat_focus(
+        focus_pending=app.copilot_focus_pending,
+        in_flight=app.copilot.state.in_flight,
+        any_popup_open=app.any_popup_open(),
+    ):
         imgui.set_next_window_focus()
 
     flags = _WINDOW_FLAGS | _apply_layout(app)
@@ -135,6 +149,10 @@ def draw(app: App) -> None:
         _draw_top_bar(app)
 
         if not app.integrations_store.copilot.openrouter_key:
+            # Drain the pending-focus latch the transcript would otherwise consume — the gate
+            # has no input box to focus, so left set it re-grabs focus every frame (which a modal
+            # reads as a dismiss; /imgui-ui §8).
+            app.copilot_focus_pending = False
             unconnected_gate(
                 not_connected_msg="Copilot is not set up.",
                 hint="Add your OpenRouter API key in Settings to enable the copilot.",

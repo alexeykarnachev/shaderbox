@@ -110,6 +110,20 @@ def main() -> int:
                     app.popup_state = PopupState.NODE_CREATOR
                 if frame_idx == 90:
                     app.popup_state = PopupState.CLOSED
+                # Cold-start copilot gate over an open Settings modal: the chat is open with no key
+                # (gate path) and the focus-pending latch is set, the exact state that re-grabbed
+                # focus every frame and dismissed the modal. The render must not crash; the
+                # focus-guard regression itself is asserted in tests/test_copilot_focus.py (a frame
+                # render can't read is_popup_open between frames without segfaulting). /imgui-ui §8.
+                if frame_idx == 100:
+                    app.is_copilot_open = True
+                    app.integrations_store.copilot.openrouter_key = ""
+                    app.focus_copilot()
+                if frame_idx == 102:
+                    app.open_settings()
+                if frame_idx == 113:
+                    app.popup_state = PopupState.CLOSED
+                    app.is_copilot_open = False
             app.release()
             logger.info(f"smoke: OK ({N_FRAMES} frames, {len(app.ui_nodes)} nodes)")
             return 0
