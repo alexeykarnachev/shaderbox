@@ -1,18 +1,22 @@
-"""Slice-2 line-editing tools (feature 020 · 14).
+"""Line-editing tools (features 020 · 14 + 036).
 
 Two layers, both GL-free:
-- the pure line-edit math (app.py module functions);
+- the pure line-edit math + the 036 anchor resolution (backend module functions);
 - the tool-layer behavior (replace_lines / insert_after) driven through a fake App, incl.
-  the start>end insert-vs-error disambiguation and the widened retry cap.
+  the anchored ranged mode, the span echo, and the widened retry cap.
 """
 
 import threading
+import types
+from collections.abc import Callable
 
 from shaderbox.copilot.agent import AgentError, AgentToolCard, run_turn
 from shaderbox.copilot.backend import (
-    _is_total_range,
+    CopilotBackend,
+    _CopilotEditTarget,
+    _locate_anchor,
     _number_lines,
-    _range_check_error,
+    _resolve_anchored_edit,
 )
 from shaderbox.copilot.capabilities import CompileErrorInfo, EditResult
 from shaderbox.copilot.config import COPILOT_CONFIG
@@ -23,7 +27,7 @@ from shaderbox.copilot.tools.shader import _applied_result
 from tests.test_copilot_loop import _fake_caps, _fake_context, _FakeClient, _tool_call
 
 
-# ---- the pure line-edit model (mirrors app.py::_copilot_apply_line_edit's list edit) ----
+# ---- the pure line-edit model (mirrors backend.py::_splice_lines + apply_line_edit's bounds) ----
 def _line_edit(src: str, start_line: int, end_line: int, new_text: str) -> str | None:
     lines = src.split("\n")
     n = len(lines)
@@ -102,8 +106,8 @@ def test_applied_result_compile_errors_included() -> None:
 
 
 # ---- tool-layer behavior through the loop ----
-def _run(scripts: list[list[LLMStreamEvent]]) -> list:
-    caps = _fake_caps(edit_errors=[[]] * 20)
+def _run(scripts: list[list[LLMStreamEvent]], text: str = "vec3 p = u_pos;") -> list:
+    caps = _fake_caps(edit_errors=[[]] * 20, text=text)
     return list(
         run_turn(
             _FakeClient(scripts),
@@ -116,24 +120,6 @@ def _run(scripts: list[list[LLMStreamEvent]]) -> list:
             cancel=threading.Event(),
         )
     )
-
-
-def test_replace_lines_start_after_end_errors_not_inserts() -> None:
-    # The B1 disambiguation: a user replace_lines(5,3) ERRORS at the tool layer (never
-    # reaches the capability as a spurious insert).
-    events = _run(
-        [
-            _tool_call(
-                "c1",
-                "replace_lines",
-                '{"start_line": 5, "end_line": 3, "new_text": "x"}',
-            ),
-            [LLMTextDelta("done"), LLMDone("stop")],
-        ]
-    )
-    card = next(e for e in events if isinstance(e, AgentToolCard))
-    assert card.name == "replace_lines"
-    assert card.ok is False
 
 
 def test_insert_after_applies_via_same_capability() -> None:
@@ -151,10 +137,12 @@ def test_insert_after_applies_via_same_capability() -> None:
 
 
 def test_retry_cap_fires_on_spiraling_replace_lines() -> None:
-    # D6: the widened cap counts replace_lines failures too. An always-out-of-range range
+    # D6: the widened cap counts replace_lines failures too. An anchor that never matches
     # must stop at max_edit_retries, not run to max_iterations.
     fail = _tool_call(
-        "cx", "replace_lines", '{"start_line": 99, "end_line": 100, "new_text": "x"}'
+        "cx",
+        "replace_lines",
+        '{"first_line": "no such line", "last_line": "no such line", "new_text": "x"}',
     )
     scripts: list[list[LLMStreamEvent]] = [fail] * (COPILOT_CONFIG.max_iterations + 5)
     events = _run(scripts)
@@ -164,77 +152,218 @@ def test_retry_cap_fires_on_spiraling_replace_lines() -> None:
     assert len(failed) < COPILOT_CONFIG.max_iterations
 
 
-# ---- whole-file mode + range checksums (034 wave: coordinates stop being guessed) ----
+# ---- 036 anchor resolution (text locates, numbers are hints) ----
 
 
-def test_range_check_passes_on_verbatim_quotes() -> None:
+def test_anchor_unique_match_resolves() -> None:
     lines = ["uniform float u;", "void main() {", "    x;", "}"]
-    assert _range_check_error(lines, 2, 4, "void main() {", "}") == ""
-    # Whitespace-stripped comparison: indentation differences don't reject.
-    assert _range_check_error(lines, 3, 3, "x;", "x;") == ""
+    assert _locate_anchor(lines, "void main() {", "first_line", None) == 2
+    # Whitespace-stripped comparison: indentation differences still locate.
+    assert _locate_anchor(lines, "x;", "first_line", None) == 3
+    # near_line is consulted ONLY on a multi-match — a unique match ignores even a wild hint.
+    assert _locate_anchor(lines, "void main() {", "first_line", 999) == 2
 
 
-def test_range_check_names_the_actual_line_on_mismatch() -> None:
-    lines = ["a", "float glow = 1.0;", "c", "}"]
-    msg = _range_check_error(lines, 1, 2, "a", "}")
-    assert "end_line 2" in msg
-    assert 'is "float glow = 1.0;"' in msg
-    assert 'you quoted "}"' in msg
-    assert "nothing was applied" in msg
+def test_anchor_garbled_quote_rejects_naming_the_anchor() -> None:
+    lines = ["a", "float glow = 1.0;", "c"]
+    msg = _locate_anchor(lines, "float glow = 2.0;", "last_line", None)
+    assert isinstance(msg, str)
+    assert "last_line" in msg
+    assert "does not match any line" in msg
+    assert "copy it verbatim from the working set" in msg
 
 
-def test_range_check_skips_none_sides() -> None:
-    lines = ["a", "b"]
-    assert _range_check_error(lines, 1, 2, None, None) == ""
-    assert "start_line 1" in _range_check_error(lines, 1, 2, "zzz", None)
+def test_anchor_blank_quote_rejects() -> None:
+    lines = ["a", "", "c"]
+    msg = _locate_anchor(lines, "   ", "first_line", None)
+    assert isinstance(msg, str)
+    assert "must be a content line" in msg
 
 
-def test_range_check_rejects_multiline_quote() -> None:
-    lines = ["a", "    return vec2(mask, glow);", "}"]
-    msg = _range_check_error(lines, 1, 2, "a", "    return vec2(mask, glow);\n}")
-    assert "last_line must be exactly ONE line — you quoted 2 lines" in msg
-    assert "nothing was applied" in msg
+def test_anchor_multiline_quote_rejects() -> None:
+    lines = ["a", "b", "c"]
+    msg = _locate_anchor(lines, "a\nb", "first_line", None)
+    assert isinstance(msg, str)
+    assert "first_line must be exactly ONE line — you quoted 2 lines" in msg
 
 
-def test_range_check_suggests_unique_matching_line() -> None:
-    lines = ["a", "b", "float glow = 1.0;", "d"]
-    msg = _range_check_error(lines, 1, 2, "a", "float glow = 1.0;")
-    assert "your quoted last_line matches line 3" in msg
-    assert "did you mean end_line=3?" in msg
-
-
-def test_range_check_no_suggestion_on_ambiguous_match() -> None:
-    # A bare "}" matches many lines — no single-line suggestion, just the mismatch.
+def test_anchor_ambiguous_without_hint_lists_candidates() -> None:
     lines = ["if (x) {", "}", "void main() {", "}", "float y;"]
-    msg = _range_check_error(lines, 5, 5, "}", None)
-    assert "start_line 5" in msg
-    assert "did you mean" not in msg
+    msg = _locate_anchor(lines, "}", "last_line", None)
+    assert isinstance(msg, str)
+    assert "matches lines 2, 4" in msg
+    assert "near_line" in msg
 
 
-def test_total_range_detected_despite_trailing_blanks() -> None:
-    # [1, tail..n] spans every content line — boundary checksums protect nothing
-    # outside it, so the backend applies it as a whole-file rewrite.
-    lines = ["#version 460 core", "void main() {", "}", ""]
-    assert _is_total_range(lines, 1, 3)
-    assert _is_total_range(lines, 1, 4)
+def test_anchor_ambiguous_near_line_picks_closest() -> None:
+    lines = ["if (x) {", "}", "void main() {", "}", "float y;"]
+    assert _locate_anchor(lines, "}", "last_line", 5) == 4
+    assert _locate_anchor(lines, "}", "last_line", 1) == 2
 
 
-def test_partial_range_is_not_total() -> None:
-    lines = ["#version 460 core", "void main() {", "}", ""]
-    assert not _is_total_range(lines, 2, 4)
-    assert not _is_total_range(lines, 1, 2)
+def test_anchor_near_line_tie_rejects() -> None:
+    lines = ["}", "x", "}"]
+    msg = _locate_anchor(lines, "}", "first_line", 2)
+    assert isinstance(msg, str)
+    assert "equally near near_line 2" in msg
 
 
-def test_range_check_tail_range_suggests_whole_file() -> None:
-    lines = ["void main() {", "    fs_color = c;", "}", ""]
-    msg = _range_check_error(lines, 1, 3, "void main() {", "    fs_color = c;")
-    assert "omit start_line/end_line entirely to replace the WHOLE file" in msg
+def test_anchored_edit_single_line_block() -> None:
+    # first == last quoting the same unique line: a one-line block replaces in place.
+    src = "a\nfloat glow = 1.0;\nc"
+    resolved = _resolve_anchored_edit(
+        src, "float glow = 1.0;", "float glow = 1.0;", None, "float glow = 2.0;"
+    )
+    assert resolved == ("a\nfloat glow = 2.0;\nc", "2-2")
 
 
-def test_range_check_mid_file_has_no_whole_file_suggestion() -> None:
-    lines = ["a", "b", "c", "d", "e"]
-    msg = _range_check_error(lines, 1, 2, "a", "zzz")
-    assert "WHOLE file" not in msg
+def test_anchored_edit_reversed_anchors_reject() -> None:
+    src = "a\nb\nc\nd"
+    msg = _resolve_anchored_edit(src, "c", "b", None, "x")
+    assert isinstance(msg, str)
+    assert "anchors in reverse order" in msg
+    assert "matched line 3" in msg and "matched line 2" in msg
+
+
+def test_anchored_edit_deletes_block_on_empty_new_text() -> None:
+    src = "a\nb\nc\nd"
+    assert _resolve_anchored_edit(src, "b", "c", None, "") == ("a\nd", "2-3")
+
+
+# ---- the two 2026-06-12 bundle-trace failures (the spec's regression fixtures) ----
+
+
+def _trace_like_source() -> str:
+    # Mirrors the failing trace's shape: the block sits on lines 37-43, line 44 is BLANK
+    # (the +1-on-blank coordinate class), boundary-line text is unique.
+    filler = [f"// filler {i}" for i in range(1, 37)]
+    block = [
+        "    vec3 base = mix(vec3(0.05, 0.2, 0.5), vec3(0.9, 0.6, 0.2), t);",
+        "    float radius = length(uv);",
+        "    vec3 color = base;",
+        "    color += 0.1 * glow;",
+        "    color = clamp(color, 0.0, 1.0);",
+        "    color = pow(color, vec3(0.4545));",
+        "    color *= 1.0 - 0.25 * pow(radius, 2.0);",
+    ]
+    tail = ["", "    fs_color = vec4(color, 1.0);", "}"]
+    return "\n".join(filler + block + tail)
+
+
+def test_trace_failure_1_off_by_one_now_applies() -> None:
+    # The model quoted both boundary lines perfectly but sent end_line = correct + 1
+    # (a blank line). With no numbers on the wire the text resolves 37..43 and applies.
+    src = _trace_like_source()
+    resolved = _resolve_anchored_edit(
+        src,
+        "    vec3 base = mix(vec3(0.05, 0.2, 0.5), vec3(0.9, 0.6, 0.2), t);",
+        "    color *= 1.0 - 0.25 * pow(radius, 2.0);",
+        None,
+        "    vec3 color = vec3(0.0);",
+    )
+    assert not isinstance(resolved, str)
+    new_full, span = resolved
+    assert span == "37-43"
+    lines = new_full.split("\n")
+    assert lines[36] == "    vec3 color = vec3(0.0);"
+    assert lines[37] == ""  # the blank line below the block survives
+    assert lines[38] == "    fs_color = vec4(color, 1.0);"
+
+
+def test_trace_failure_2_garbled_anchor_still_rejects() -> None:
+    # The model corrupted the quote mid-string — intent is unverifiable, must reject.
+    src = "void main() {\n    vec2 text_center_offset = vec2(0.0, 0.0);\n}"
+    msg = _resolve_anchored_edit(
+        src,
+        "    vec2 text_center_offset = vecce of code?",
+        "}",
+        None,
+        "x",
+    )
+    assert isinstance(msg, str)
+    assert "first_line" in msg
+    assert "does not match any line" in msg
+
+
+# ---- the backend method's own branches (stubbed per the test_edit_messages idiom) ----
+
+
+def _anchored_method(
+    source: str, *, lib_create: bool = False
+) -> Callable[[str, str, int | None, str, str], EditResult]:
+    tgt = _CopilotEditTarget(
+        kind="node",
+        source=source,
+        ws_address="n1",
+        label="node 'X' (n1)",
+        lib_create=lib_create,
+    )
+    stub = types.SimpleNamespace(
+        _copilot_resolve_target=lambda _target, *, allow_create: tgt,
+        _batch_mutated=set(),
+        _bridge=types.SimpleNamespace(run_on_main=lambda fn: fn()),
+        _copilot_persist_target=lambda _tgt, _new, matches: EditResult(
+            matches=matches, errors=[]
+        ),
+    )
+    return CopilotBackend.apply_anchored_edit.__get__(stub)
+
+
+def test_apply_anchored_edit_empty_source_points_at_whole_file() -> None:
+    res = _anchored_method("")("a", "b", None, "x", "")
+    assert res.unresolved
+    assert "omit first_line/last_line to write the whole file" in res.unresolved_reason
+    assert res.target_label == "node 'X' (n1)"
+    res = _anchored_method("a\nb", lib_create=True)("a", "b", None, "x", "lib:new.glsl")
+    assert res.unresolved and "omit first_line/last_line" in res.unresolved_reason
+
+
+def test_apply_anchored_edit_stamps_applied_span() -> None:
+    res = _anchored_method("a\nb\nc")("a", "b", None, "x", "")
+    assert res.applied_span == "1-2"
+
+
+# ---- tool-layer ranged mode + whole-file mode ----
+
+
+def test_anchored_replace_echoes_resolved_span() -> None:
+    # The fake's source is the single line "vec3 p = u_pos;" — the success message
+    # carries the resolved-span echo.
+    events = _run(
+        [
+            _tool_call(
+                "c1",
+                "replace_lines",
+                '{"first_line": "vec3 p = u_pos;", "last_line": "vec3 p = u_pos;", '
+                '"new_text": "vec3 p = u_dir;"}',
+            ),
+            [LLMTextDelta("done"), LLMDone("stop")],
+        ]
+    )
+    card = next(e for e in events if isinstance(e, AgentToolCard))
+    assert card.name == "replace_lines"
+    assert card.ok is True
+    assert "replaced lines 1-1" in card.result
+
+
+def test_applied_result_span_echo_leads_even_with_compile_errors() -> None:
+    err = CompileErrorInfo(path="n.frag.glsl", line=4, message="boom")
+    ok, msg, _ = _applied_result(
+        EditResult(matches=1, errors=[err], applied_span="3-5")
+    )
+    assert ok is True
+    assert msg.startswith("replaced lines 3-5 — ")
+    assert "compiled with errors" in msg
+
+
+def test_applied_result_span_echo_skipped_on_force_restore() -> None:
+    ok, msg, _ = _applied_result(
+        EditResult(
+            matches=1, errors=[], restored_note="EDIT UNDONE", applied_span="3-5"
+        )
+    )
+    assert ok is True
+    assert "replaced lines" not in msg
 
 
 def test_whole_file_replace_applies_without_range() -> None:
@@ -251,33 +380,36 @@ def test_whole_file_replace_applies_without_range() -> None:
     assert card.ok is True
 
 
-def test_ranged_replace_without_checksums_rejected() -> None:
+def test_single_anchor_rejected() -> None:
     events = _run(
         [
             _tool_call(
                 "c1",
                 "replace_lines",
-                '{"start_line": 1, "end_line": 2, "new_text": "x"}',
+                '{"first_line": "vec3 p = u_pos;", "new_text": "x"}',
             ),
             [LLMTextDelta("done"), LLMDone("stop")],
         ]
     )
     card = next(e for e in events if isinstance(e, AgentToolCard))
     assert card.ok is False
-    assert "first_line AND last_line" in card.result
+    assert "BOTH first_line and last_line" in card.result
 
 
-def test_partial_range_rejected() -> None:
+def test_reversed_anchors_rejected_through_the_loop() -> None:
+    # Two-line fake source so the anchors resolve in reverse order; the reject names both.
     events = _run(
         [
             _tool_call(
                 "c1",
                 "replace_lines",
-                '{"start_line": 1, "new_text": "x", "first_line": "a", "last_line": "b"}',
+                '{"first_line": "second", "last_line": "first", "new_text": "x"}',
             ),
             [LLMTextDelta("done"), LLMDone("stop")],
-        ]
+        ],
+        text="first\nsecond",
     )
     card = next(e for e in events if isinstance(e, AgentToolCard))
+    assert card.name == "replace_lines"
     assert card.ok is False
-    assert "BOTH start_line and end_line" in card.result
+    assert "anchors in reverse order" in card.result

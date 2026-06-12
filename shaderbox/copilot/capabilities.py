@@ -162,6 +162,9 @@ class EditResult:
     # the target resolved — so a failure names WHICH file was checked (an empty target
     # silently means the current node, the dogfooded giveup cause).
     target_label: str = ""
+    # The "start-end" line span an anchored ranged replace resolved to (feature 036) —
+    # echoed in the result so a mislocated anchor is visible immediately. "" otherwise.
+    applied_span: str = ""
 
 
 @dataclass(frozen=True)
@@ -250,17 +253,29 @@ class CopilotCapabilities(Protocol):
     # Replace the 1-based inclusive line range [start, end] with new_text, recompile/write +
     # persist + refresh. An empty selection (end == start - 1) is a pure insert at `start`;
     # start == end == 0 replaces the ENTIRE file (whole-file rewrite, no range bookkeeping);
-    # for a non-existent lib: target this CREATES the file. first/last_line: the caller's
-    # verbatim quotes of the range-boundary lines (None = unchecked) — a mismatch rejects
-    # the edit before anything is applied.
+    # for a non-existent lib: target this CREATES the file. Serves insert_after + whole-file
+    # replaces; a ranged replace located by text is apply_anchored_edit.
     def apply_line_edit(
         self,
         start_line: int,
         end_line: int,
         new_text: str,
         target: str,
-        first_line: str | None,
-        last_line: str | None,
+        /,
+    ) -> EditResult: ...
+
+    # Ranged replace located by boundary-line TEXT (feature 036): first/last_line are
+    # verbatim quotes of the block's first + last line, strip-matched against the target's
+    # current lines; near_line is an optional 1-based hint consulted only when an anchor
+    # matches several lines. Anchor rejects come back `unresolved`; a success carries the
+    # resolved span in applied_span.
+    def apply_anchored_edit(
+        self,
+        first_line: str,
+        last_line: str,
+        near_line: int | None,
+        new_text: str,
+        target: str,
         /,
     ) -> EditResult: ...
 

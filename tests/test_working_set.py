@@ -268,8 +268,15 @@ def test_intra_batch_line_edit_guard_rejects(app: Any) -> None:
     app.session._copilot_working_set = []
     app.copilot_backend._batch_mutated = {app.current_node_id}
     res = app.copilot_backend.apply_line_edit(1, 0, "// shifted", "")
-    assert res.unresolved and "shifted" in res.unresolved_reason
+    assert res.unresolved and "already edited earlier in this same step" in (
+        res.unresolved_reason
+    )
     assert res.matches == 0  # mutated nothing
+    # The anchored ranged mode is gated by the same guard.
+    res = app.copilot_backend.apply_anchored_edit("a", "b", None, "x", "")
+    assert res.unresolved and "already edited earlier in this same step" in (
+        res.unresolved_reason
+    )
     # A fresh batch clears the guard (the backend owns the set; batch_begin clears it per batch).
     app.copilot_backend.batch_begin()
     assert app.current_node_id not in app.copilot_backend._batch_mutated

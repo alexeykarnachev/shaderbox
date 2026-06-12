@@ -137,68 +137,82 @@ def _edit_error_hints(
     return hints
 
 
-def _is_total_range(lines: list[str], start_line: int, end_line: int) -> bool:
-    # True when [start_line, end_line] spans every content line (trailing blank lines
-    # don't count) — replacing it is a whole-file rewrite, nothing outside survives.
-    tail = next((i for i in range(len(lines), 0, -1) if lines[i - 1].strip()), 0)
-    return start_line == 1 and end_line >= tail
-
-
-def _range_check_error(
-    lines: list[str],
-    start_line: int,
-    end_line: int,
-    first_line: str | None,
-    last_line: str | None,
-) -> str:
-    # "" when the caller's verbatim quotes of the range-boundary lines match the real
-    # content (whitespace-stripped). A mismatch message names the ACTUAL lines so the
-    # model corrects its range in one step instead of discovering it post-compile.
-    problems: list[str] = []
-    for idx, expected, line_label, quote_label in (
-        (start_line, first_line, "start_line", "first_line"),
-        (end_line, last_line, "end_line", "last_line"),
-    ):
-        if expected is None:
-            continue
-        if "\n" in expected:
-            quoted_n = expected.count("\n") + 1
-            problems.append(
-                f"{quote_label} must be exactly ONE line — you quoted {quoted_n} lines"
-            )
-            continue
-        actual = lines[idx - 1]
-        if actual.strip() == expected.strip():
-            continue
-        problem = (
-            f'{line_label} {idx} is "{_trunc_line(actual)}" but you quoted '
-            f'"{_trunc_line(expected)}"'
+def _locate_anchor(
+    lines: list[str], quote: str, label: str, near_line: int | None
+) -> int | str:
+    # Resolve one boundary-line anchor to its 1-based line number by strip-equality, or
+    # return a reject message. near_line disambiguates a multi-match (closest wins, tie
+    # rejects); without it a multi-match rejects listing the candidates.
+    if "\n" in quote:
+        quoted_n = quote.count("\n") + 1
+        return f"{label} must be exactly ONE line — you quoted {quoted_n} lines"
+    if not quote.strip():
+        return f"{label} must be a content line — quote a non-blank line verbatim"
+    hits = [i for i, ln in enumerate(lines, start=1) if ln.strip() == quote.strip()]
+    if not hits:
+        return (
+            f'{label} "{_trunc_line(quote)}" does not match any line — copy it '
+            "verbatim from the working set"
         )
-        hits = [
-            i for i, ln in enumerate(lines, start=1) if ln.strip() == expected.strip()
-        ]
-        if len(hits) == 1:
-            problem += (
-                f"; your quoted {quote_label} matches line {hits[0]} — did you "
-                f"mean {line_label}={hits[0]}?"
-            )
-        problems.append(problem)
-    if not problems:
-        return ""
-    tail = next((i for i in range(len(lines), 0, -1) if lines[i - 1].strip()), 0)
-    whole_file = (
-        " — or omit start_line/end_line entirely to replace the WHOLE file "
-        "(no boundary quotes to get wrong)"
-        if end_line >= tail
-        else ""
-    )
-    return (
-        "line check failed — nothing was applied: "
-        + "; ".join(problems)
-        + ". Your range does not cover the block you meant — re-read the WORKING SET "
-        "block (its line numbers are current) and resubmit with the corrected range"
-        + whole_file
-    )
+    if len(hits) == 1:
+        return hits[0]
+    listed = ", ".join(str(i) for i in hits)
+    if near_line is None:
+        return (
+            f'{label} "{_trunc_line(quote)}" matches lines {listed} — add near_line '
+            "(the 1-based number of the line you mean, from the working set)"
+        )
+    best = min(hits, key=lambda i: abs(i - near_line))
+    ties = [i for i in hits if abs(i - near_line) == abs(best - near_line)]
+    if len(ties) > 1:
+        return (
+            f"{label} matches lines {listed}, and lines "
+            f"{' and '.join(str(i) for i in ties)} are equally near near_line "
+            f"{near_line} — pass a near_line closer to the line you mean"
+        )
+    return best
+
+
+def _splice_lines(
+    lines: list[str], start_line: int, end_line: int, new_text: str
+) -> str:
+    # Replace the 1-based inclusive range [start_line, end_line] with new_text;
+    # end == start - 1 is the empty selection (pure insert at start).
+    repl = new_text.split("\n") if new_text != "" else []
+    return "\n".join(lines[: start_line - 1] + repl + lines[end_line:])
+
+
+def _resolve_anchored_edit(
+    source: str,
+    first_line: str,
+    last_line: str,
+    near_line: int | None,
+    new_text: str,
+) -> tuple[str, str] | str:
+    # Locate the block by its boundary-line text and splice new_text over it. Returns
+    # (new full source, "start-end" span echo), or the reject message.
+    lines = source.split("\n")
+    start = _locate_anchor(lines, first_line, "first_line", near_line)
+    if isinstance(start, str):
+        return start
+    end = _locate_anchor(lines, last_line, "last_line", near_line)
+    if isinstance(end, str):
+        return end
+    if start > end:
+        return (
+            f"anchors in reverse order — first_line matched line {start}, last_line "
+            f"matched line {end}; first_line must be the block's FIRST line"
+        )
+    return _splice_lines(lines, start, end, new_text), f"{start}-{end}"
+
+
+# D9: one line-located edit per file per step — an earlier edit this batch changed the
+# content the later call's anchors/line numbers were copied from.
+_BATCH_GUARD_REASON = (
+    "this file was already edited earlier in this same step, so what you copied from "
+    "the working set is stale — the working set refreshes next step; re-issue then "
+    "(or use edit_shader, which re-matches the current text)"
+)
 
 
 def _number_lines(text: str) -> str:
@@ -1627,15 +1641,12 @@ class CopilotBackend:
         end_line: int,
         new_text: str,
         target: str,
-        first_line: str | None = None,
-        last_line: str | None = None,
     ) -> EditResult:
         # Replace the 1-based inclusive range [start_line, end_line] with new_text, recompile/write +
         # persist. start == end == 0 replaces the ENTIRE file (no range bookkeeping). end_line ==
         # start_line - 1 is the one legal empty selection (pure insert); any other start > end or
-        # out-of-range fails loud, mutates nothing. first/last_line (when given) are checked against
-        # the real boundary lines BEFORE applying. A missing lib: target is created here.
-        # D9: a line edit to a target a prior edit mutated this batch is rejected (its lines shifted).
+        # out-of-range fails loud, mutates nothing. A missing lib: target is created here.
+        # Ranged replaces located by boundary-line TEXT are apply_anchored_edit.
         def _on_main() -> EditResult:
             tgt = self._copilot_resolve_target(target, allow_create=True)
             if isinstance(tgt, EditResult):
@@ -1645,9 +1656,7 @@ class CopilotBackend:
                     matches=0,
                     errors=[],
                     unresolved=True,
-                    unresolved_reason="the line numbers shifted from an edit earlier in this "
-                    "same step — the working set refreshes next step with current numbers; "
-                    "re-issue then (or use edit_shader, which matches by text not line number)",
+                    unresolved_reason=_BATCH_GUARD_REASON,
                     target_label=tgt.label,
                 )
             if start_line == 0 and end_line == 0:
@@ -1664,24 +1673,57 @@ class CopilotBackend:
             )
             if out_of_range and not new_lib_bootstrap:
                 return EditResult(matches=0, errors=[], hint="", target_label=tgt.label)
-            if not is_insert and _is_total_range(lines, start_line, end_line):
-                # The range covers the whole file — the boundary checksums protect the
-                # content OUTSIDE the range, and there is none; apply as whole-file.
-                return self._copilot_persist_target(tgt, new_text, 1)
-            check = _range_check_error(
-                lines, start_line, end_line, first_line, last_line
-            )
-            if check:
+            new_full = _splice_lines(lines, start_line, end_line, new_text)
+            return self._copilot_persist_target(tgt, new_full, 1)
+
+        return self._bridge.run_on_main(_on_main)
+
+    def apply_anchored_edit(
+        self,
+        first_line: str,
+        last_line: str,
+        near_line: int | None,
+        new_text: str,
+        target: str,
+    ) -> EditResult:
+        # Ranged replace located by boundary-line TEXT (feature 036): the anchors are verbatim
+        # quotes of the block's first + last line, strip-matched against the target's current
+        # lines; no line coordinates on the wire. Anchor rejects are `unresolved` (count toward
+        # the edit-retry cap); a success carries the resolved span echo in applied_span.
+        def _on_main() -> EditResult:
+            tgt = self._copilot_resolve_target(target, allow_create=True)
+            if isinstance(tgt, EditResult):
+                return tgt
+            if tgt.ws_address in self._batch_mutated:
                 return EditResult(
                     matches=0,
                     errors=[],
                     unresolved=True,
-                    unresolved_reason=check,
+                    unresolved_reason=_BATCH_GUARD_REASON,
                     target_label=tgt.label,
                 )
-            repl = new_text.split("\n") if new_text != "" else []
-            new_lines = lines[: start_line - 1] + repl + lines[end_line:]
-            new_full = "\n".join(new_lines)
-            return self._copilot_persist_target(tgt, new_full, 1)
+            if tgt.lib_create or not tgt.source.strip():
+                return EditResult(
+                    matches=0,
+                    errors=[],
+                    unresolved=True,
+                    unresolved_reason="the file is empty — there are no lines to anchor "
+                    "to; omit first_line/last_line to write the whole file",
+                    target_label=tgt.label,
+                )
+            resolved = _resolve_anchored_edit(
+                tgt.source, first_line, last_line, near_line, new_text
+            )
+            if isinstance(resolved, str):
+                return EditResult(
+                    matches=0,
+                    errors=[],
+                    unresolved=True,
+                    unresolved_reason=resolved,
+                    target_label=tgt.label,
+                )
+            new_full, span = resolved
+            result = self._copilot_persist_target(tgt, new_full, 1)
+            return replace(result, applied_span=span)
 
         return self._bridge.run_on_main(_on_main)

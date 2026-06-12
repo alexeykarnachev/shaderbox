@@ -313,10 +313,12 @@ _LINE_ARG_KEYS: tuple[str, ...] = (
     "end_line",
     "first_line",
     "last_line",
+    "near_line",
     "line",
 )
 _STALE_LINE_ARGS_MARKER = (
-    "stale line args dropped — line numbers shift between steps; use the WORKING SET"
+    "stale location args dropped — the file changed in later steps; copy anchors/line "
+    "numbers from the current WORKING SET"
 )
 
 
@@ -334,10 +336,10 @@ def _redact_line_call(call: LLMToolCall) -> LLMToolCall:
 
 def _redact_stale_line_args(messages: list[LLMMessage]) -> list[LLMMessage]:
     # Outgoing-request copy ONLY: a prior iteration's replace_lines/insert_after args carry line
-    # numbers stale against the freshly rebuilt working set, and the model anchors on them. The
-    # MOST RECENT line-tool call stays intact (the model must see what it just tried next to its
-    # result). Affected messages are rebuilt, never mutated — the durable turn list, ledger, and
-    # trace keep the original args.
+    # numbers / anchor quotes stale against the freshly rebuilt working set, and the model anchors
+    # on them. The MOST RECENT line-tool call stays intact (the model must see what it just tried
+    # next to its result). Affected messages are rebuilt, never mutated — the durable turn list,
+    # ledger, and trace keep the original args.
     last: tuple[int, int] | None = None
     for mi, msg in enumerate(messages):
         if msg.role != "assistant" or not msg.tool_calls:

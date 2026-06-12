@@ -45,25 +45,20 @@ def test_edit_not_found_names_resolved_target() -> None:
     assert "target was empty, so this hit the CURRENT node" in msg
 
 
-def test_line_check_failure_names_checked_target() -> None:
+def test_anchor_failure_names_checked_target() -> None:
     reg = _registry(
-        apply_line_edit=lambda _s, _e, _t, _tg, _f, _l: EditResult(
+        apply_anchored_edit=lambda _f, _l, _n, _t, _tg: EditResult(
             matches=0,
             errors=[],
             unresolved=True,
-            unresolved_reason="line check failed — nothing was applied: ...",
+            unresolved_reason='first_line "a" does not match any line — copy it '
+            "verbatim from the working set",
             target_label=_LABEL,
         )
     )
     ok, msg, _ = reg.execute(
         "replace_lines",
-        {
-            "start_line": 1,
-            "end_line": 2,
-            "first_line": "a",
-            "last_line": "b",
-            "new_text": "x",
-        },
+        {"first_line": "a", "last_line": "b", "new_text": "x"},
     )
     assert ok is False
     assert f"(checked {_LABEL})" in msg
@@ -71,7 +66,7 @@ def test_line_check_failure_names_checked_target() -> None:
 
 def test_out_of_range_names_target() -> None:
     reg = _registry(
-        apply_line_edit=lambda _s, _e, _t, _tg, _f, _l: EditResult(
+        apply_line_edit=lambda _s, _e, _t, _tg: EditResult(
             matches=0, errors=[], target_label="lib:draw/neon_ring.glsl"
         )
     )

@@ -19,6 +19,7 @@ from shaderbox.copilot.agent import (
     _redact_stale_line_args,
     run_turn,
 )
+from shaderbox.copilot.backend import _resolve_anchored_edit
 from shaderbox.copilot.capabilities import (
     CompileErrorInfo,
     CopilotCapabilities,
@@ -81,12 +82,14 @@ def _fake_context() -> CopilotContext:
     )
 
 
-def _fake_caps(edit_errors: list[list[CompileErrorInfo]]) -> CopilotCapabilities:
+def _fake_caps(
+    edit_errors: list[list[CompileErrorInfo]], text: str = "vec3 p = u_pos;"
+) -> CopilotCapabilities:
     # Models the App: apply_shader_edit matches old_str against the LIVE source via the REAL
     # token matcher (not a re-rolled str.count), replaces, and (on a real match) advances the
     # source — so a second edit sees the first's result and the fake stays faithful to prod.
     # The `target` arg is accepted and ignored (the fake models the current node only).
-    state = {"text": "vec3 p = u_pos;", "n": 0}
+    state = {"text": text, "n": 0}
 
     def apply_edit(
         old_str: str, new_str: str, replace_all: bool, target: str
@@ -112,14 +115,11 @@ def _fake_caps(edit_errors: list[list[CompileErrorInfo]]) -> CopilotCapabilities
         end_line: int,
         new_text: str,
         target: str,
-        first_line: str | None,
-        last_line: str | None,
     ) -> EditResult:
         # Faithful to App: split-on-newline list edit (§14 L2). matches==0 is the
         # out-of-range fail-soft signal the tool layer turns into the range error.
-        # start == end == 0 is the whole-file sentinel; checksums are engine-side
-        # (the pure helper is unit-tested directly) and ignored here.
-        _ = target, first_line, last_line
+        # start == end == 0 is the whole-file sentinel.
+        _ = target
         if start_line == 0 and end_line == 0:
             state["text"] = new_text
             errors = edit_errors[state["n"]]
@@ -136,6 +136,28 @@ def _fake_caps(edit_errors: list[list[CompileErrorInfo]]) -> CopilotCapabilities
         state["n"] += 1
         return EditResult(matches=1, errors=errors)
 
+    def apply_anchored(
+        first_line: str,
+        last_line: str,
+        near_line: int | None,
+        new_text: str,
+        target: str,
+    ) -> EditResult:
+        # Faithful to the backend: the REAL anchor-resolution + splice helper drives the
+        # fake, so loop tests exercise production locating behavior.
+        _ = target
+        resolved = _resolve_anchored_edit(
+            state["text"], first_line, last_line, near_line, new_text
+        )
+        if isinstance(resolved, str):
+            return EditResult(
+                matches=0, errors=[], unresolved=True, unresolved_reason=resolved
+            )
+        state["text"], span = resolved
+        errors = edit_errors[state["n"]]
+        state["n"] += 1
+        return EditResult(matches=1, errors=errors, applied_span=span)
+
     def read_shaders(node_ids: list[str]) -> list[ShaderView]:
         return [
             ShaderView(
@@ -151,6 +173,7 @@ def _fake_caps(edit_errors: list[list[CompileErrorInfo]]) -> CopilotCapabilities
         read_shaders=read_shaders,
         apply_shader_edit=apply_edit,
         apply_line_edit=apply_line,
+        apply_anchored_edit=apply_anchored,
     )
 
 
@@ -949,10 +972,9 @@ def test_redact_stale_line_args_spares_latest_and_never_mutates() -> None:
                     name="replace_lines",
                     arguments=json.dumps(
                         {
-                            "start_line": 5,
-                            "end_line": 7,
                             "first_line": "a",
                             "last_line": "b",
+                            "near_line": 5,
                             "new_text": "x",
                             "target": "node-2",
                         }
@@ -987,7 +1009,7 @@ def test_redact_stale_line_args_spares_latest_and_never_mutates() -> None:
                     id="c4",
                     name="replace_lines",
                     arguments=json.dumps(
-                        {"start_line": 9, "end_line": 12, "new_text": "z"}
+                        {"first_line": "p", "last_line": "q", "new_text": "z"}
                     ),
                 )
             ],
@@ -997,7 +1019,14 @@ def test_redact_stale_line_args_spares_latest_and_never_mutates() -> None:
 
     out = _redact_stale_line_args(msgs)
 
-    line_keys = ("start_line", "end_line", "first_line", "last_line", "line")
+    line_keys = (
+        "start_line",
+        "end_line",
+        "first_line",
+        "last_line",
+        "near_line",
+        "line",
+    )
     c1 = _args_of(out[1], 0)
     assert "_stale" in c1
     assert not any(k in c1 for k in line_keys)
@@ -1010,7 +1039,7 @@ def test_redact_stale_line_args_spares_latest_and_never_mutates() -> None:
     assert out[6] is msgs[6]
     assert out[0] is msgs[0] and out[2] is msgs[2]
     # The input messages keep their original args.
-    assert _args_of(msgs[1], 0)["start_line"] == 5
+    assert _args_of(msgs[1], 0)["first_line"] == "a"
     assert _args_of(msgs[3], 0)["line"] == 3
 
 
@@ -1034,8 +1063,6 @@ class _CapturingClient(_FakeClient):
 def _ranged_replace(call_id: str, current: str, new: str) -> list[LLMStreamEvent]:
     args = json.dumps(
         {
-            "start_line": 1,
-            "end_line": 1,
             "first_line": current,
             "last_line": current,
             "new_text": new,
@@ -1091,18 +1118,22 @@ def test_stale_line_args_redacted_in_outgoing_request_only() -> None:
                     return json.loads(tc.arguments)
         raise AssertionError(f"no tool call {call_id} in the request")
 
-    # Second request: l1 is the just-tried call — its numbers stay next to the reject/result.
-    assert call_args(client.requests[1], "l1")["start_line"] == 1
-    # Third request: l1 is now stale -> redacted; l2 (just tried) keeps its numbers.
+    # Second request: l1 is the just-tried call — its anchors stay next to the reject/result.
+    assert call_args(client.requests[1], "l1")["first_line"] == "vec3 p = u_pos;"
+    # Third request: l1 is now stale -> redacted; l2 (just tried) keeps its anchors.
     stale = call_args(client.requests[2], "l1")
     assert "_stale" in stale
     assert not any(
-        k in stale for k in ("start_line", "end_line", "first_line", "last_line")
+        k in stale
+        for k in ("start_line", "end_line", "first_line", "last_line", "near_line")
     )
     assert stale["new_text"] == "vec3 q = u_pos;"
-    assert call_args(client.requests[2], "l2")["end_line"] == 1
-    # The turn's persisted record keeps the real numbers.
-    assert [a["start_line"] for a in traced_args] == [1, 1]
+    assert call_args(client.requests[2], "l2")["last_line"] == "vec3 q = u_pos;"
+    # The turn's persisted record keeps the real anchors.
+    assert [a["first_line"] for a in traced_args] == [
+        "vec3 p = u_pos;",
+        "vec3 q = u_pos;",
+    ]
 
 
 def test_clean_edit_streak_nudges_once() -> None:

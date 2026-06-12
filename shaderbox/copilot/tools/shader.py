@@ -43,27 +43,25 @@ class _EditArgs(ToolArgs):
 
 
 class _ReplaceLinesArgs(ToolArgs):
-    start_line: int | None = Field(
-        default=None,
-        description="first line to replace (1-based, inclusive); OMIT both start_line "
-        "and end_line to replace the ENTIRE file",
-    )
-    end_line: int | None = Field(
-        default=None, description="last line to replace (1-based, inclusive)"
-    )
     first_line: str | None = Field(
         default=None,
-        description="ranged replace only: the exact CURRENT content of start_line, "
-        "copied verbatim from the working set — checked before applying",
+        description="ranged replace: the block's FIRST line, copied VERBATIM from the "
+        "working set — the text itself locates the block (no line numbers); OMIT both "
+        "first_line and last_line to replace the ENTIRE file",
     )
     last_line: str | None = Field(
         default=None,
-        description="ranged replace only: the exact CURRENT content of end_line, "
-        "copied verbatim from the working set — checked before applying",
+        description="ranged replace: the block's LAST line, copied VERBATIM from the "
+        "working set",
+    )
+    near_line: int | None = Field(
+        default=None,
+        description="only when an anchor's text appears on SEVERAL lines: a 1-based "
+        "line hint — the occurrence closest to it wins",
     )
     new_text: str = Field(
         description="replacement text (no trailing newline needed); empty string deletes "
-        "the range"
+        "the block"
     )
     target: str = Field(default="", description=_TARGET_DESC)
 
@@ -165,20 +163,20 @@ _EDIT_SHADER_DESC = (
 )
 
 _REPLACE_LINES_DESC = (
-    "Replace a line range, or the WHOLE file. WHOLE-FILE mode is the DEFAULT for replacing a "
-    "function/block in a small-to-medium file: OMIT start_line/end_line entirely — the working "
-    "set already shows the whole file, and if it is roughly <=150 lines just rewrite it whole; "
-    "new_text replaces the whole file, no line numbers to get wrong. RANGED mode is ONLY for a "
-    "large block inside a LARGE file, where a whole-file rewrite would be wasteful: pass "
-    "[start_line, end_line] (1-based, inclusive, from the WORKING SET block — current for THIS "
-    "step) AND first_line + last_line: the exact current content of those two boundary lines, "
-    "copied verbatim from the working set. If they "
-    "don't match what is really there, NOTHING is applied and the result shows the actual lines — "
-    "fix the range and resubmit. The range must cover EVERYTHING new_text replaces. new_text is "
-    "inserted verbatim (include the indentation you want); an empty new_text deletes the range. "
-    "To insert without replacing, use insert_after. (One line-addressed edit per file per step — "
-    "see HOW TO WORK.) After the edit I recompile and return any compile errors; if there are "
-    "none, it compiled clean."
+    "Replace one contiguous block, or the WHOLE file. WHOLE-FILE mode is the DEFAULT for "
+    "replacing a function/block in a small-to-medium file: OMIT first_line/last_line entirely — "
+    "the working set already shows the whole file, and if it is roughly <=150 lines just "
+    "rewrite it whole. RANGED mode is ONLY for a large block inside a LARGE file, where a "
+    "whole-file rewrite would be wasteful: pass first_line + last_line — the block's first and "
+    "last line, copied VERBATIM from the working set; the TEXT locates the block, there are no "
+    "line numbers to get wrong. If an anchor doesn't match exactly, or matches more than one "
+    "line, NOTHING is applied and the result says what to fix (pass near_line only when an "
+    "anchor's text appears on several lines). The block must cover EVERYTHING new_text "
+    "replaces. new_text is inserted verbatim (include the indentation you want); an empty "
+    "new_text deletes the block. The result echoes which lines were replaced — check it landed "
+    "where you meant. To insert without replacing, use insert_after. (One replace_lines/"
+    "insert_after edit per file per step — see HOW TO WORK.) After the edit I recompile and "
+    "return any compile errors; if there are none, it compiled clean."
 )
 
 _INSERT_AFTER_DESC = (
@@ -187,8 +185,8 @@ _INSERT_AFTER_DESC = (
     "the given 1-based line (use the WORKING SET block's current numbers); pass 0 to insert at the "
     "very top, or the last line number to append at the end. new_text is inserted verbatim — "
     "include the indentation you want. Existing lines shift down; nothing is replaced. (One "
-    "line-addressed edit per file per step — see HOW TO WORK.) After the edit I recompile and "
-    "return any compile errors; if there are none, it compiled clean."
+    "replace_lines/insert_after edit per file per step — see HOW TO WORK.) After the edit I "
+    "recompile and return any compile errors; if there are none, it compiled clean."
 )
 
 _SET_UNIFORM_DESC = (
@@ -282,7 +280,13 @@ def _unresolved_result(result: EditResult) -> tuple[bool, str, None] | None:
 def _applied_result(result: EditResult) -> tuple[bool, str, dict]:
     # The shared success/compile-error message for any applied edit. A LIB edit returns the
     # "no standalone compile" note instead of a compile result; a NODE edit returns compile
-    # errors or "compiled clean". Region count only for a multi-span replace_all.
+    # errors or "compiled clean". Region count only for a multi-span replace_all. An anchored
+    # replace's resolved-span echo leads (skipped on a force-restore — the edit was undone).
+    span = (
+        f"replaced lines {result.applied_span} — "
+        if result.applied_span and not result.restored_note
+        else ""
+    )
     if result.restored_note:
         head = result.restored_note
         if result.render_facts:
@@ -301,7 +305,7 @@ def _applied_result(result: EditResult) -> tuple[bool, str, dict]:
             head += "\n" + result.render_facts
     if result.matches > 1:
         head += f" ({result.matches} regions changed)"
-    return True, head, {"errors": [e.__dict__ for e in result.errors]}
+    return True, span + head, {"errors": [e.__dict__ for e in result.errors]}
 
 
 def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
@@ -365,8 +369,8 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             return (
                 False,
                 "error: that region spans a comment your old_str doesn't reproduce, so "
-                "replacing it verbatim would delete the comment. Use replace_lines (addressed "
-                "by line number) so the surrounding lines stay intact.",
+                "replacing it verbatim would delete the comment. Use replace_lines (anchored "
+                "to the block's first and last line) so the surrounding lines stay intact.",
                 None,
             )
         if result.matches == 0:
@@ -391,51 +395,30 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
         return _applied_result(result)
 
     def replace_lines(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
-        start, end = args["start_line"], args["end_line"]
         first, last = args["first_line"], args["last_line"]
-        if (start is None) != (end is None):
+        if (first is None) != (last is None):
             return (
                 False,
-                "error: provide BOTH start_line and end_line for a ranged replace, "
-                "or NEITHER to replace the whole file",
-                None,
-            )
-        if start is None or end is None:
-            result = caps.apply_line_edit(
-                0, 0, args["new_text"], args["target"], None, None
-            )
-            if (unresolved := _unresolved_result(result)) is not None:
-                return unresolved
-            return _applied_result(result)
-        if start > end:
-            return (
-                False,
-                f"error: start_line ({start}) is after end_line ({end}) — to insert "
-                "without replacing, use insert_after",
+                "error: provide BOTH first_line and last_line for a ranged replace "
+                "(copied verbatim from the working set), or NEITHER to replace the "
+                "whole file",
                 None,
             )
         if first is None or last is None:
-            return (
-                False,
-                "error: a ranged replace requires first_line AND last_line — copy the "
-                "CURRENT content of those two lines verbatim from the working set (or "
-                "omit the range entirely to replace the whole file)",
-                None,
-            )
-        result = caps.apply_line_edit(
-            start, end, args["new_text"], args["target"], first, last
+            result = caps.apply_line_edit(0, 0, args["new_text"], args["target"])
+            if (unresolved := _unresolved_result(result)) is not None:
+                return unresolved
+            return _applied_result(result)
+        result = caps.apply_anchored_edit(
+            first, last, args["near_line"], args["new_text"], args["target"]
         )
         if (unresolved := _unresolved_result(result)) is not None:
             return unresolved
-        if result.matches == 0:
-            return False, _out_of_range(result), None
         return _applied_result(result)
 
     def insert_after(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
         line = args["line"]
-        result = caps.apply_line_edit(
-            line + 1, line, args["new_text"], args["target"], None, None
-        )
+        result = caps.apply_line_edit(line + 1, line, args["new_text"], args["target"])
         if (unresolved := _unresolved_result(result)) is not None:
             return unresolved
         if result.matches == 0:

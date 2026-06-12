@@ -1,10 +1,11 @@
 # 036 — Anchored replace_lines (text locates, numbers are hints)
 
-**Status:** specced 2026-06-12, implementation NOT started (one partial backend edit was made and
-reverted — the tree is clean). Maintainer continues from the Pi: the whole change is headless
-(backend + capabilities + tools + prompt + pytest; no GL — `make test` skips GL-backed modules
-there, `make smoke`/manual bundle pass happen back on the dev box). Everything needed is in this
-spec; the `## Implementation` section is the file-by-file plan.
+**Status:** implemented 2026-06-12 on the Pi (headless: backend + capabilities + tools + prompt +
+pytest — `make check` clean, suite green; the 27 GL-backed tests skip there). Remaining on the dev
+box: `make test` (full, incl. the GL-backed guard test), `make smoke`, and the manual
+`make run-bundle` pass against codex-mini. A 3-reviewer post-impl swarm converged after one fix
+round (its real findings: a GL-skipped test asserting the old batch-guard message; the
+`edit_shader` comment-loss reject still steering at "addressed by line number" — both fixed).
 
 ## Goal
 
@@ -89,6 +90,8 @@ Revert bound the damage. The systematic +1 class this replaces had a 25% observe
   descriptions rewritten (no line-number language in ranged mode).
 - `prompt.py` EDITING bullets: ranged `replace_lines` = quote the block's first + last line
   verbatim; `near_line` only on ambiguity.
+- `agent.py` stale-arg redaction: `near_line` joins `_LINE_ARG_KEYS`; the `_stale` marker reworded
+  to cover text anchors, not just line numbers (prior-step anchor quotes go equally stale).
 - Out of scope, noted: `insert_after` still takes a raw line number (same fragility class, zero
   observed failures, and a wrong insert is compile-gated). Trigger to revisit: a trace showing a
   misplaced insert.
