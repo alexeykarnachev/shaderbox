@@ -28,19 +28,20 @@ feature; brief points at the superseder).
 <!-- As of 2026-06-12. -->
 **PUBLISH POSTPONED — polish wave first (maintainer call, 2026-06-12).** The `v0.13.0` tag +
 gate-verified zips in `dist/` stay valid; the full publish runbook is in the previous banner
-below (unchanged — execute it when the maintainer says ship). **NEXT ACTION — implement 036
-anchored replace_lines** from `ai_docs/features/036_anchored_replace_lines.md`: spec complete and
-self-contained (design table, verbatim trace fixtures, file-by-file plan); zero code landed —
-maintainer implements from the Pi (headless: backend + tools + prompt + pytest; `make smoke` +
-the manual bundle pass happen back on the dev box). **Polish wave landed so far:** copilot
-focus-grab popup-dismiss fix on cold start (`35b7dc8`: `should_grab_chat_focus` extracted + unit
-tests + the /imgui-ui §8 quirk entry); russian-greeting drift fix (`5f7ea1e`: language directive
-reworded, A/B-verified on codex-mini — 7/12 → 0/12 Cyrillic replies to English greetings).
-**Evidence behind 036:** the 2026-06-12 bundle trace — 2/8 ranged `replace_lines` calls failed,
-both `end_line = correct+1` landing on a blank line (the Python half-open prior; the model is
-bimodal, 6/8 correct), so the `todo.md` "ranged replace_lines may be dead weight" deferral is
-closed-refuted: ranged mode stays, text anchors become the locator. **After 036:** more
-maintainer-found rough edges (driven interactively), then the publish.
+below (unchanged — execute it when the maintainer says ship). **036 anchored replace_lines
+IMPLEMENTED + DOGFOOD-VERIFIED on the Pi (headless)**: ranged `replace_lines` now locates the
+block by first/last_line TEXT (strip-matched; `near_line` only on a multi-match) — line
+coordinates left the wire; resolved-span echo, retry-cap wiring, the D9 batch guard reworded,
+stale-arg redaction extended. `make check` clean, 368 tests green (27 GL skips); 3-reviewer swarm
+converged after one fix round; a 14-turn codex-mini dogfood (`037_dogfood_report_036anchor.md`)
+fired EVERY 036 path naturally and each reject self-corrected in one step (multi-match→near_line,
+reverse-order, span echo, ranged-in-a-large-file) — no 036 defect. **NEXT ACTION (dev box):**
+`make test` full (the GL-backed guard test only runs there) + `make smoke`, then the manual
+`make run-bundle` pass against codex-mini. **Polish wave landed so far:** copilot focus-grab fix
+(`35b7dc8`), russian-greeting drift fix (`5f7ea1e`, 7/12 → 0/12), 036 (this wave). **Dogfood
+follow-ups filed (`todo.md`):** the no-op CLEAN-edit spree escapes the giveup brake; render-facts
+honesty still model-bound (codex-mini claimed a fixed render 3× while it stayed inverted).
+**After 036 verifies:** more maintainer-found rough edges, then the publish.
 
 <!-- Previous banner (v0.13.0 publish prep — KEPT as the publish runbook, execute on "ship"): -->
 **NEXT ACTION — PUBLISH v0.13.0 to itch (maintainer).** Everything is

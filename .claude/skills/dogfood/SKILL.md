@@ -207,6 +207,13 @@ and probes the agent's self-review.
   node X"). Otherwise the probe is inconclusive.
 - **`session_cost_usd` accumulates across turns**; `state.last_turn` has `context_tokens`/`reply_tokens`/
   `cost_usd` per turn. The trace's `llm_response` events have per-iteration `usage: in=/out=/cost=`.
+- **`h.render()` renders the CURRENT node only**, and `create_node(switch_to=False)` / edit-by-`target`
+  do NOT move current — so after building or editing a node in the background, `h.render()` shows the OLD
+  current node (e.g. you make Square, but the render is still Circle). To eyeball a non-current node
+  WITHOUT spending an LLM turn: `h.session.set_current_node_id("<full-uuid>")` then `h.render()` (both
+  GL-free, no `send`). The render path attr is `h._last_render_path` (underscore). NOTE: a uniform value
+  set via `set_uniform` is in-memory-only until a project save, so a between-process render shows the
+  file's inline default, not the tuned value.
 
 ## 3. Reading the trace (the context/token analysis)
 

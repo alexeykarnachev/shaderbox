@@ -582,15 +582,19 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   reaches the session fallback with an empty summary and `stats=None`. Exotic (requires the user to
   clear credentials during a running turn); same fix shape as the stream containment if it fires.
 
-## [DEFERRAL] copilot edit-giveup counter: read tools reset it; pre-apply rejects count like real failures
+## [DEFERRAL] copilot edit-giveup counter: read tools reset it; pre-apply rejects count like real failures; no-op CLEAN spree uncaught
 - **Trigger:** the next dogfood run reproducing a giveup AFTER the 035 fix wave (indexer alignment,
   target naming, boundary hints, honest giveup note — those killed the observed causes), OR next time
-  `consecutive_failed_edits` in `copilot/agent.py` is edited.
+  `consecutive_failed_edits` / `max_clean_edit_streak` in `copilot/agent.py` is edited.
 - The mega run's giveups are root-caused + fixed (035 report §7 / the fix-wave commit). What remains
   is the counter design itself, reviewed and deliberately KEPT: the deferred tweak is that a NON-edit
   tool (a read) resets the counter mid-loop (a 3-strikes loop stretched to 5 with zero new
-  information), and identical-args resubmissions count the same as new attempts. Only revisit on a
-  fresh giveup with the new messages in place.
+  information), and identical-args resubmissions count the same as new attempts. NEW datum (036-anchor
+  dogfood, 2026-06-12): a NO-OP CLEAN spree escapes BOTH guards — turn 14 issued the IDENTICAL
+  `replace_lines` 3× in a row (same args, same `replaced lines 34-55`, ok=True each), "cleaning"
+  whitespace it had itself just written, render facts unchanged; the giveup counter ignores it (edits
+  succeed) and `max_clean_edit_streak`'s nudge didn't fire (re-check its threshold vs that trace). A
+  brake that counts consecutive CLEAN edits whose render facts don't move is the candidate fix.
 
 ## [DEFERRAL] copilot render-facts honesty: residual model-bound half
 - **Trigger:** a post-035-wave dogfood run STILL showing a scene described over a FLAT fact or an
