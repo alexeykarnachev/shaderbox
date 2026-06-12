@@ -227,9 +227,11 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   (Q3 amortizes it; removing it risks tool-calling).
 - DONE this wave (lever 1): the system prompt was compressed ~20% (13530->10606 chars, -678 tok/request,
   info-preserving — reviewer-audited) — it is now POLICY-only, no longer a verbose re-walk of every tool.
-- REMAINING (lever 2): lazily load the telegram/youtube/publish tools (they carry `eager`/`category`;
+- REMAINING (lever 2): lazily load the telegram/youtube/publish tools (they carry `eager`;
   `registry.specs_for(names)` + `eager_specs()` filter already exist) so a shader turn ships ~10 tools not
-  21 (measured: 2495 vs 3941 tok). A compact plaintext menu of the long tail costs ~1714 tok and a 2-stage
+  21 (measured: 2495 vs 3941 tok). When this lands, re-add a `category` field to `ToolDefinition` as the
+  catalogue grouping (it was deleted in 038 as dead scaffold — git history is the reference). A compact
+  plaintext menu of the long tail costs ~1714 tok and a 2-stage
   `load_tools(names)` flow was verified to work on grok-4.3. Scaffold: `11 §4` search_tools/list_tools +
   `grow_specs_from_payload` (`16 ## Out of scope`). Spec: `20_ui_ux_polish.md` D5; re-measure via `scripts/token_probe.py`.
 - IMPLEMENTATION NOTE: a discovery tool (`list_tools`/`load_tools`) needs registry access from inside its
@@ -246,17 +248,10 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   bundle trace (codex-mini: 2/8 ranged calls failed, both `end_line = correct+1` on a blank
   line — the Python half-open prior; 6/8 correct → the old "delete ranged mode" deferral here
   was closed-refuted, ranged mode kept and re-anchored). `insert_after` shares the coordinate
-  fragility class but has zero observed failures, so it waits for evidence. Spec:
+  fragility class but has zero observed failures, so it waits for evidence. NOTE: `insert_after` ADDS
+  (never replaces), so unlike `replace_lines` it cannot leave an orphan-brace tail — the 038
+  `_absorb_orphan_tail` fix does not apply to it. Spec:
   `ai_docs/features/036_anchored_replace_lines.md`.
-
-## [DEFERRAL] `ToolDefinition.needs_gl` + `.category` are dead fields (doc-only)
-- **Trigger:** when lever 2 (the lazy tool catalogue) lands — `category` goes live as the catalogue
-  grouping and `needs_gl`'s fate gets decided in the same pass; OR next time a field is added to
-  `ToolDefinition`.
-- Neither field has a consumer today: thread-marshalling actually happens inside the backend's
-  methods (`backend.py`), so a wrong `needs_gl` value is uncatchable; `category` is read by
-  nothing until the catalogue exists. Decide then: delete `needs_gl` (it documents, not enforces) or
-  keep both as scaffold.
 
 ## [DEFERRAL] copilot agent-level error recovery — probes RUN (mega run, 2026-06-11); THRASH itself never reached
 - **Trigger:** the first trace/user report of the copilot looping on broken COMPILES (the one class the
@@ -526,29 +521,6 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   timeout fires; the turn then terminates with summary+stats preserved. Fix shape: a per-delta
   cancel check (break/raise inside the event loop) and/or an explicit client timeout.
 
-## [DEFERRAL] `publish_youtube` mutates exporter shape state on the worker thread (bridge bypass)
-- **Trigger:** next time `backend.py`'s publish verbs are edited, OR if the Share panel ever stops
-  being `begin_disabled` during a copilot turn.
-- `backend.py` `publish_youtube` calls `exporter.set_shape(is_short)` (+ the `finally` restore)
-  directly on the worker thread; `set_shape` writes `_render_state.shape`, which the main-thread
-  Share tab reads. Benign today only because the panel is disabled while a turn runs — it's the one
-  mutation in the file that skips `run_on_main`, against the file's own marshalling invariant.
-
-## [DEFERRAL] copilot delete-gate can prompt to confirm deleting node `` `?` ``
-- **Trigger:** a trace/user report showing a gate card titled "Delete node `?`" (model emitted
-  `delete_node` with an empty/unresolvable target).
-- The ALWAYS-gate fires before the handler's resolution failure: `_node_display` falls back to `?`/
-  the raw id, so the user confirms a no-op that then errors. Fix shape: a `precheck` (like the
-  publish tools') that fails fast when the target can't resolve, skipping the gate.
-
-## [DEFERRAL] unsealed checkpoint dirs leak on quit/kill mid-turn
-- **Trigger:** next time `copilot/checkpoint.py` retention/`_rehydrate` is edited, OR a user report
-  of `copilot/checkpoints/` growing without bound.
-- Snapshots are written during the turn but `checkpoint.json` (the index) only at `seal()` on the
-  turn-end transition — never reached on quit/kill mid-turn. `_rehydrate` skips index-less dirs and
-  `prune_to` iterates only sealed ones, so an unsealed dir is invisible to retention forever; only a
-  full chat Clear removes it. Fix shape: sweep index-less dirs at store init.
-
 ## [DEFERRAL] a node whose shader file vanishes from disk freezes the frame loop (pre-existing)
 - **Trigger:** first user report of "app frozen / won't close" after deleting/moving a node's
   `shader.frag.glsl` externally, OR next time the missing-file guard at the top of
@@ -582,19 +554,17 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   reaches the session fallback with an empty summary and `stats=None`. Exotic (requires the user to
   clear credentials during a running turn); same fix shape as the stream containment if it fires.
 
-## [DEFERRAL] copilot edit-giveup counter: read tools reset it; pre-apply rejects count like real failures; no-op CLEAN spree uncaught
-- **Trigger:** the next dogfood run reproducing a giveup AFTER the 035 fix wave (indexer alignment,
-  target naming, boundary hints, honest giveup note — those killed the observed causes), OR next time
-  `consecutive_failed_edits` / `max_clean_edit_streak` in `copilot/agent.py` is edited.
-- The mega run's giveups are root-caused + fixed (035 report §7 / the fix-wave commit). What remains
-  is the counter design itself, reviewed and deliberately KEPT: the deferred tweak is that a NON-edit
-  tool (a read) resets the counter mid-loop (a 3-strikes loop stretched to 5 with zero new
-  information), and identical-args resubmissions count the same as new attempts. NEW datum (036-anchor
-  dogfood, 2026-06-12): a NO-OP CLEAN spree escapes BOTH guards — turn 14 issued the IDENTICAL
-  `replace_lines` 3× in a row (same args, same `replaced lines 34-55`, ok=True each), "cleaning"
-  whitespace it had itself just written, render facts unchanged; the giveup counter ignores it (edits
-  succeed) and `max_clean_edit_streak`'s nudge didn't fire (re-check its threshold vs that trace). A
-  brake that counts consecutive CLEAN edits whose render facts don't move is the candidate fix.
+## [DEFERRAL] copilot edit-giveup counter: a read tool resets it mid-loop
+- **Trigger:** next time `consecutive_failed_edits` in `copilot/agent.py` is edited, OR a trace shows a
+  failed-edit loop stretched past `max_edit_retries` because a read reset the counter between attempts.
+- The remaining tweak is the counter design, reviewed and deliberately KEPT: a NON-edit tool (a read)
+  resets `consecutive_failed_edits` mid-loop, so a 3-strikes loop can stretch to 5 with zero new
+  information. RESOLVED in 038 (so dropped from this entry): what looked like a "no-op CLEAN spree"
+  (036-anchor turn 14: 3 identical `replace_lines` in a row) was root-caused to Defect A — a
+  mis-anchored ranged edit left an orphan brace and the model retried; `_absorb_orphan_tail` now fixes
+  the edit so the retries don't happen. The "oscillation" theory (source returning to a prior state)
+  was REFUTED by 6 dogfood runs (038 spec decision 5 / Review history) — no `consecutive_identical_edits`
+  brake was built because there is no oscillation to brake.
 
 ## [DEFERRAL] copilot render-facts honesty: residual model-bound half
 - **Trigger:** a post-035-wave dogfood run STILL showing a scene described over a FLAT fact or an
@@ -606,18 +576,17 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   without false-positiving legitimate full-screen effects). If it persists on a better model, the
   VLM-judge deferral (above) is the real answer.
 
-## [DEFERRAL] dogfood analyze.py drops tokens/cost for error-terminal turns
-- **Trigger:** next time `scripts/dogfood/analyze.py` is edited, OR the next dogfood report whose
-  per-turn table shows a $0.0000 turn.
-- Giveup/error turns report 0 ctx / $0 in the rollup (mega run: turns 12/13/18; t13 really cost
-  $0.051 per its dump) — the run total understates real spend (~$0.27 vs reported $0.16; real peak
-  25k@t13). Root cause: per-turn usage keys on `turn_done`, which error terminals never emit —
-  fallback-sum the per-iteration `usage:` lines. The forensic swarm's full tooling list (all S):
-  coverage counts key on history-echo ids not execution blocks (replace_lines 26 real vs 23 reported;
-  a DECLINED call counted as fired); the 🔴 glyph marks honest probe-failure turns as failed (key it
-  on the terminal kind); `rsn=` reasoning tokens dropped (t18 iter2: rsn=5504 of out=5872); no
-  `gate_approved` trace event; the resolved model isn't recorded in artifacts (report header says
-  "unknown"); a `--calls` compact per-turn tool→result index mode would kill the grep-haystack pain.
+## [DEFERRAL] dogfood analyze.py forensic-accuracy gaps (the cost/token half is FIXED)
+- **Trigger:** next time `scripts/dogfood/analyze.py` is edited, OR a dogfood report whose per-turn
+  coverage/glyph/reasoning columns look wrong.
+- The cost/token half is RESOLVED (038: `_finalize_turn` fallback-sums per-iteration usage for
+  error-terminal turns that emit no `turn_done` — cost, billed-in, reply, AND peak). What REMAINS (the
+  forensic swarm's list, all S): coverage counts key on history-echo ids not execution blocks
+  (replace_lines 26 real vs 23 reported; a DECLINED call counted as fired); the 🔴 glyph marks honest
+  probe-failure turns as failed (key it on the terminal kind); `rsn=` reasoning tokens dropped (t18
+  iter2: rsn=5504 of out=5872); no `gate_approved` trace event; the resolved model isn't recorded in
+  artifacts (report header says "unknown"); a `--calls` compact per-turn tool→result index mode would
+  kill the grep-haystack pain.
 
 ## [DEFERRAL] copilot reply-time honesty enforcement (the in-result channel is ignored at reply time)
 - **Trigger:** when designing the next copilot honesty/robustness wave, OR a user report of the

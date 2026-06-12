@@ -142,8 +142,6 @@ def telegram_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             args_model=EmptyArgs,
             handler=set_telegram_token,
             mutating=True,
-            needs_gl=False,
-            category="telegram",
             eager=True,
             gate_policy=GatePolicy.ALWAYS,
             gate_prompt=lambda a: (
@@ -161,8 +159,6 @@ def telegram_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             args_model=EmptyArgs,
             handler=telegram_connect,
             mutating=True,
-            needs_gl=False,
-            category="telegram",
             eager=True,
             gate_policy=GatePolicy.NONE,
         ),
@@ -174,8 +170,6 @@ def telegram_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             args_model=EmptyArgs,
             handler=list_telegram_packs,
             mutating=False,
-            needs_gl=False,
-            category="telegram",
             eager=True,
             gate_policy=GatePolicy.NONE,
             precheck=connected_precheck,
@@ -188,8 +182,6 @@ def telegram_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             args_model=_SetNameArgs,
             handler=select_telegram_pack,
             mutating=True,
-            needs_gl=False,
-            category="telegram",
             eager=True,
             gate_policy=GatePolicy.ALWAYS,
             gate_prompt=lambda a: (
@@ -205,8 +197,6 @@ def telegram_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             args_model=_CreatePackArgs,
             handler=create_telegram_pack,
             mutating=True,
-            needs_gl=False,
-            category="telegram",
             eager=True,
             gate_policy=GatePolicy.ALWAYS,
             gate_prompt=lambda a: (
@@ -222,8 +212,6 @@ def telegram_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             args_model=_SetNameArgs,
             handler=delete_telegram_pack,
             mutating=True,
-            needs_gl=False,
-            category="telegram",
             eager=True,
             gate_policy=GatePolicy.ALWAYS,
             gate_prompt=lambda a: (

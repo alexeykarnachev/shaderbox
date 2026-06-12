@@ -169,3 +169,50 @@ def test_cross_tool_recovery_is_counted(tmp_path: Path) -> None:
     rec = an.recoveries[0]
     assert rec.tool == "create_node" and rec.fixer == "replace_lines"
     assert an.turns[0].recovered is True
+
+
+# An edit-giveup terminal: no turn_done event, so cost/tokens must fall back to summed iterations.
+_GIVEUP_TRACE = """\
+### turn_start  ·  2026-01-01T00:00:00.000
+user_text: tidy it
+
+### llm_response  ·  2026-01-01T00:00:01.000
+iteration: 1
+finish_reason: tool_calls
+usage: in=100 out=10 cost=$0.001000
+    -> tool_call replace_lines(id=call_aaa1)
+
+### tool_call  ·  2026-01-01T00:00:01.100
+n: 1
+name: replace_lines
+ok: False
+result: error: last_line must be exactly ONE line
+
+### llm_response  ·  2026-01-01T00:00:02.000
+iteration: 2
+finish_reason: tool_calls
+usage: in=110 out=20 cost=$0.002000
+    -> tool_call replace_lines(id=call_bbb2)
+
+### tool_call  ·  2026-01-01T00:00:02.100
+n: 2
+name: replace_lines
+ok: False
+result: error: last_line must be exactly ONE line
+
+### edit_giveup  ·  2026-01-01T00:00:02.200
+consecutive_failed_edits: 3
+"""
+
+
+def test_error_terminal_turn_costs_fall_back_to_iteration_sum(tmp_path: Path) -> None:
+    # A giveup turn emits no turn_done, so the turn_done-keyed cost/token fields would stay 0 and
+    # the rollup would understate spend. The fallback sums the per-iteration usage.
+    data_dir = tmp_path / "data-giveup"
+    _write_trace(data_dir, _GIVEUP_TRACE)
+    an = analyze(data_dir, "")
+    assert abs(an.turns[0].cost_usd - 0.003) < 1e-6
+    assert an.turns[0].billed_in_tokens == 210
+    assert an.turns[0].reply_tokens == 30
+    assert an.turns[0].peak_iter_in_tokens == 110  # max per-iteration, not the sum
+    assert abs(an.total_cost_usd - 0.003) < 1e-6

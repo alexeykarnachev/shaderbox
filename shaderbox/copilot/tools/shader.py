@@ -484,16 +484,33 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             body += f"\n\n(no function found for: {', '.join(missing)})"
         return True, body, {"read": list(found)}
 
-    def _node_display(node: str) -> str:
-        # Display NAME for a gate prompt, resolved via the project map with read_shader's
-        # prefix rule. GL-free + worker-safe (node_tree is the per-iteration context read).
-        # Falls back to the raw arg — a wrong id still shows the user what was asked.
-        if not node:
-            return "?"
+    def _resolve_node_name(node: str) -> str | None:
+        # NAME for a node handle via the project map (read_shader's prefix rule). None = no match.
+        # GL-free + worker-safe (node_tree is the per-iteration context read).
         for e in caps.node_tree():
             if e.node_id.startswith(node) or node.startswith(e.node_id):
                 return e.name
-        return node
+        return None
+
+    def _node_display(node: str) -> str:
+        # Gate-prompt display name; falls back to the raw arg — a wrong id still shows the user
+        # what was asked.
+        if not node:
+            return "?"
+        return _resolve_node_name(node) or node
+
+    def delete_precheck(args: dict[str, Any]) -> str | None:
+        # Fail fast BEFORE the always-gate when the target is empty or resolves to no node, so the
+        # user never confirms a "Delete node `?`" that then errors in the handler.
+        node = str(args.get("node", ""))
+        if not node:
+            return (
+                "delete_node needs a node id from the project map — it was empty. Name the "
+                "node to delete."
+            )
+        if _resolve_node_name(node) is None:
+            return f"no node `{node}` in the project map to delete — check the map for the id."
+        return None
 
     def delete_node(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
         # The gate (GatePolicy.ALWAYS) has already cleared a user Yes by the time this runs.
@@ -531,8 +548,6 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             args_model=_ReadShaderArgs,
             handler=read_shader,
             mutating=False,
-            needs_gl=True,
-            category="shader",
             eager=True,
             gate_policy=GatePolicy.NONE,
         ),
@@ -545,8 +560,6 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             handler=edit_shader,
             mutating=True,
             is_edit=True,
-            needs_gl=True,
-            category="shader",
             eager=True,
             gate_policy=GatePolicy.NONE,
         ),
@@ -559,8 +572,6 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             handler=replace_lines,
             mutating=True,
             is_edit=True,
-            needs_gl=True,
-            category="shader",
             eager=True,
             gate_policy=GatePolicy.NONE,
         ),
@@ -573,8 +584,6 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             handler=insert_after,
             mutating=True,
             is_edit=True,
-            needs_gl=True,
-            category="shader",
             eager=True,
             gate_policy=GatePolicy.NONE,
         ),
@@ -586,8 +595,6 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             args_model=_SetUniformArgs,
             handler=set_uniform,
             mutating=True,
-            needs_gl=True,
-            category="shader",
             eager=True,
             gate_policy=GatePolicy.NONE,
         ),
@@ -599,8 +606,6 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             args_model=_CreateNodeArgs,
             handler=create_node,
             mutating=True,
-            needs_gl=True,
-            category="shader",
             eager=True,
             gate_policy=GatePolicy.NONE,
         ),
@@ -612,8 +617,6 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             args_model=_GrepArgs,
             handler=grep,
             mutating=False,
-            needs_gl=False,
-            category="shader",
             eager=True,
             gate_policy=GatePolicy.NONE,
         ),
@@ -625,8 +628,6 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             args_model=_ReadLibArgs,
             handler=read_lib,
             mutating=False,
-            needs_gl=False,
-            category="shader",
             eager=True,
             gate_policy=GatePolicy.NONE,
         ),
@@ -638,13 +639,12 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             args_model=_DeleteNodeArgs,
             handler=delete_node,
             mutating=True,
-            needs_gl=True,
-            category="shader",
             eager=True,
             gate_policy=GatePolicy.ALWAYS,
             gate_prompt=lambda a: (
                 f"Delete node `{_node_display(a.get('node', ''))}`?"
             ),
+            precheck=delete_precheck,
         ),
         ToolDefinition(
             name="switch_node",
@@ -654,8 +654,6 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             args_model=_SwitchNodeArgs,
             handler=switch_node,
             mutating=False,
-            needs_gl=True,
-            category="shader",
             eager=True,
             gate_policy=GatePolicy.NONE,
         ),

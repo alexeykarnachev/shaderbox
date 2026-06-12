@@ -180,11 +180,22 @@ def test_anchor_blank_quote_rejects() -> None:
     assert "must be a content line" in msg
 
 
-def test_anchor_multiline_quote_rejects() -> None:
+def test_anchor_multiline_quote_resolves_to_boundary_line() -> None:
+    # A multi-line quote is the model quoting a contiguous run of the block's lines; the boundary
+    # is the OUTERMOST line (first_line -> first quoted line, last_line -> last quoted line).
     lines = ["a", "b", "c"]
-    msg = _locate_anchor(lines, "a\nb", "first_line", None)
+    assert _locate_anchor(lines, "a\nb", "first_line", None) == 1
+    assert _locate_anchor(lines, "a\nb", "last_line", None) == 2
+    assert _locate_anchor(lines, "b\nc", "last_line", None) == 3
+
+
+def test_anchor_multiline_quote_not_in_file_rejects() -> None:
+    # The quoted run isn't in the source as written (stale/reversed) — reject, never fall back to
+    # locating a bare boundary line somewhere else.
+    lines = ["a", "b", "c"]
+    msg = _locate_anchor(lines, "b\na", "first_line", None)
     assert isinstance(msg, str)
-    assert "first_line must be exactly ONE line — you quoted 2 lines" in msg
+    assert "isn't in the file as quoted" in msg
 
 
 def test_anchor_ambiguous_without_hint_lists_candidates() -> None:
@@ -413,3 +424,465 @@ def test_reversed_anchors_rejected_through_the_loop() -> None:
     assert card.name == "replace_lines"
     assert card.ok is False
     assert "anchors in reverse order" in card.result
+
+
+def test_orphan_tail_absorbed_when_last_line_is_penultimate() -> None:
+    # The model anchors last_line on the final STATEMENT, not the closing brace; new_text re-sends
+    # the whole block. The duplicated "}" tail (a suffix of new_text) is absorbed into the range.
+    source = "void main() {\n    x = 1.0;\n}\n"
+    new_text = "void main() {\n    x = 2.0;\n}"
+    result = _resolve_anchored_edit(source, "void main() {", "x = 1.0;", None, new_text)
+    assert isinstance(result, tuple)
+    new_full, span = result
+    assert new_full.count("}") == 1
+    assert span == "1-3"
+
+
+def test_orphan_tail_absorbed_when_last_line_is_opening_brace() -> None:
+    # The wide miss: last_line on the block's OPENING brace, new_text re-sends the whole block.
+    # The entire original body+brace tail (a suffix of new_text) is absorbed.
+    source = "void main() {\n    a;\n    fs_color = vec4(0.0);\n}\n"
+    new_text = "void main() {\n    a;\n    fs_color = vec4(0.0);\n}"
+    result = _resolve_anchored_edit(
+        source, "void main() {", "void main() {", None, new_text
+    )
+    assert isinstance(result, tuple)
+    new_full, span = result
+    assert new_full.count("}") == 1
+    assert span == "1-4"
+
+
+def test_orphan_tail_absorbed_in_multi_function_shader() -> None:
+    # The Grid-shape case (churn repro): helper functions before main, first_line=#version,
+    # last_line on main's opening brace, new_text re-sends the whole shader.
+    source = (
+        "#version 460 core\nfloat grid() {\n    return 1.0;\n}\n"
+        "void main() {\n    a;\n    fs_color = vec4(0.0);\n}\n"
+    )
+    new_text = (
+        "#version 460 core\nfloat grid() {\n    return 1.0;\n}\n"
+        "void main() {\n    a;\n    fs_color = vec4(0.0);\n}"
+    )
+    result = _resolve_anchored_edit(
+        source, "#version 460 core", "void main() {", None, new_text
+    )
+    assert isinstance(result, tuple)
+    new_full, _ = result
+    assert new_full.count("{") == new_full.count("}")  # balanced, no orphan
+
+
+def test_orphan_tail_not_absorbed_for_a_bare_statement_new_text() -> None:
+    # new_text is a fragment INSIDE a function (no braces of its own), replacing a statement range.
+    # The tail below (fs_color + the function "}") is NOT a duplicate of new_text — never absorbed.
+    source = (
+        "void main() {\n    vec3 base = mix(a, b, t);\n    color *= 1.0;\n"
+        "    fs_color = vec4(color, 1.0);\n}\n"
+    )
+    new_text = "    vec3 color = vec3(0.0);"
+    result = _resolve_anchored_edit(
+        source, "    vec3 base = mix(a, b, t);", "    color *= 1.0;", None, new_text
+    )
+    assert isinstance(result, tuple)
+    new_full, span = result
+    assert span == "2-3"
+    assert "fs_color = vec4(color, 1.0);" in new_full  # kept, not over-absorbed
+
+
+def test_orphan_tail_does_not_eat_a_following_function() -> None:
+    # Mis-anchor on foo's opening, but new_text only re-sends foo — bar() below must stay intact.
+    source = "void foo() {\n    a;\n}\n\nvoid bar() {\n    b;\n}\n"
+    new_text = "void foo() {\n    a;\n}"
+    result = _resolve_anchored_edit(
+        source, "void foo() {", "void foo() {", None, new_text
+    )
+    assert isinstance(result, tuple)
+    new_full, _ = result
+    assert "void bar()" in new_full
+    assert new_full.count("{") == new_full.count("}")
+
+
+def test_orphan_tail_not_absorbed_when_new_text_unbalanced() -> None:
+    # A deliberate brace-changing edit (new_text leaves a block open) is left alone — the splice's
+    # imbalance is the model's intent, not a duplicated tail.
+    source = "if (a) {\n    x;\n}\nrest;\n"
+    new_text = "if (a) {\n    y;"
+    result = _resolve_anchored_edit(source, "if (a) {", "x;", None, new_text)
+    assert isinstance(result, tuple)
+    _, span = result
+    assert span == "1-2"
+
+
+def test_orphan_tail_not_absorbed_when_tail_diverges_rejects() -> None:
+    # last_line on the opener (range = the opener line only, delta +1) with a balanced new_text whose
+    # body DIFFERS from the tail below — absorb can't prove the tail is a duplicate (not a suffix), so
+    # it doesn't extend. The range then opens a brace new_text re-supplies but doesn't account for the
+    # original tail "}" — the brace-delta coherence guard rejects rather than apply a broken splice.
+    source = "void foo() {\n    a;\n}\n"
+    new_text = "void foo() {\n    DIFFERENT;\n}"
+    result = _resolve_anchored_edit(
+        source, "void foo() {", "void foo() {", None, new_text
+    )
+    assert isinstance(result, str)
+    assert "new_text doesn't balance" in result
+
+
+def test_orphan_tail_absorbed_when_tail_brace_is_re_indented() -> None:
+    # The duplicated closing brace below the range is indented differently than new_text's brace.
+    # A byte-exact suffix test would miss it and leave a doubled brace; the strip-invariant compare
+    # (matching the anchor matcher) absorbs it.
+    source = "void main() {\n    x = 1.0;\n    }\n"  # original close is indented
+    new_text = "void main() {\n    x = 2.0;\n}"  # new close is flush
+    result = _resolve_anchored_edit(source, "void main() {", "x = 1.0;", None, new_text)
+    assert isinstance(result, tuple)
+    new_full, span = result
+    assert span == "1-3"
+    assert new_full.count("}") == 1
+
+
+def test_orphan_tail_not_absorbed_when_new_text_unbalanced_collides() -> None:
+    # An unbalanced new_text (a deliberate structural change) must NEVER have a coincidental brace
+    # below it eaten, even when that brace would rebalance the splice. The new_text-balance guard.
+    source = "{\n{\n}\n"
+    new_text = "{"  # unbalanced (+1)
+    result = _resolve_anchored_edit(source, "{", "{", 1, new_text)
+    assert isinstance(result, tuple)
+    _, span = result
+    assert span == "1-1"  # no absorb — the unbalanced new_text is left alone
+
+
+def test_orphan_tail_absorbed_in_nested_block() -> None:
+    # A re-sent block whose body itself nests braces (if/for) — the whole duplicated tail, inner
+    # braces included, is absorbed when last_line anchors on the outer opening brace.
+    source = (
+        "void main() {\n    if (a) {\n        x;\n    }\n    fs_color = vec4(0.0);\n}\n"
+    )
+    new_text = (
+        "void main() {\n    if (a) {\n        x;\n    }\n    fs_color = vec4(0.0);\n}"
+    )
+    result = _resolve_anchored_edit(
+        source, "void main() {", "void main() {", None, new_text
+    )
+    assert isinstance(result, tuple)
+    new_full, _ = result
+    assert new_full.count("{") == new_full.count("}")  # balanced, no orphan
+
+
+def test_orphan_tail_brace_in_comment_does_not_fool_balance() -> None:
+    # A "}" inside a comment must not register as a real brace in the balance check.
+    source = "void main() {\n    x = 1.0; // close }\n}\n"
+    new_text = "void main() {\n    x = 2.0; // a }\n}"
+    result = _resolve_anchored_edit(
+        source, "void main() {", "x = 1.0; // close }", None, new_text
+    )
+    assert isinstance(result, tuple)
+    new_full, _ = result
+    assert new_full.count("}") == 2  # one real brace + one in the comment
+
+
+# ---- multi-line boundary-anchor resolution (the 2026-06-12 T6 giveup fixture) ----
+
+
+def test_multiline_last_line_resolves_to_closing_brace() -> None:
+    # The T6 bug verbatim: last_line quotes the final statement + the closing brace as TWO lines;
+    # new_text re-sends the whole block. The run "return total;\n}" locates the real block end (the
+    # "}"), so the range ends there, the splice is balanced, and absorb NO-OPs.
+    source = (
+        "float fbm(vec2 p) {\n    float total = 0.0;\n    for (int i = 0; i < 6; ++i) {\n"
+        "        total += noise(p);\n    }\n    return total;\n}\n"
+    )
+    new_text = (
+        "float fbm(vec2 p) {\n    float total = 0.0;\n    for (int i = 0; i < 8; ++i) {\n"
+        "        total += noise(p);\n        p = rotate2d(p, 0.3);\n    }\n    return total;\n}"
+    )
+    result = _resolve_anchored_edit(
+        source, "float fbm(vec2 p) {", "    return total;\n}", 1, new_text
+    )
+    assert isinstance(result, tuple)
+    new_full, span = result
+    assert span == "1-7"  # last_line's last line ("}") is the block end at line 7
+    assert new_full.count("{") == new_full.count("}")  # balanced — absorb no-ops
+    assert "for (int i = 0; i < 8" in new_full
+
+
+def test_multiline_last_line_partial_run_absorbs_tail() -> None:
+    # The model under-quotes last_line (stops before the "}") as a multi-line run that DOES match
+    # the source; new_text carries the full block, so absorb still swallows the duplicated "}".
+    source = "void main() {\n    a;\n    b;\n    c;\n}\n"
+    new_text = "void main() {\n    a;\n    b;\n    c;\n}"
+    result = _resolve_anchored_edit(
+        source, "void main() {", "    a;\n    b;", None, new_text
+    )
+    assert isinstance(result, tuple)
+    new_full, span = result
+    assert new_full.count("{") == new_full.count("}")
+    assert span == "1-5"
+
+
+def test_multiline_anchor_ambiguous_run_uses_near_line() -> None:
+    # The same run appears twice; near_line disambiguates by the boundary line's position.
+    source = "void f() {\n    x;\n}\nvoid g() {\n    x;\n}\n"
+    msg = _resolve_anchored_edit(
+        source, "void f() {", "    x;\n}", None, "void f() {\n    x;\n}"
+    )
+    assert isinstance(msg, str)
+    assert "matches lines 3, 6" in msg  # the "}" boundary candidates listed
+    result = _resolve_anchored_edit(
+        source, "void f() {", "    x;\n}", 3, "void f() {\n    y;\n}"
+    )
+    assert isinstance(result, tuple)
+    _, span = result
+    assert span == "1-3"
+
+
+def test_cross_block_span_rejected_not_silently_deleted() -> None:
+    # The worst corner of multi-line anchoring: first_line in block f, last_line a run UNIQUE to a
+    # LATER block g. The span would straddle both, a balanced new_text would clean-compile, and g
+    # would be SILENTLY deleted. The straddle guard rejects instead of guessing.
+    source = "void f() {\n    a();\n}\n\nvoid g() {\n    b();\n}\n\nvoid h() {\n    c();\n}\n"
+    # last_line "    b();\n}" is unique (g's body+close) and lands the boundary in block g.
+    msg = _resolve_anchored_edit(
+        source, "void f() {", "    b();\n}", None, "void f() {\n    a2();\n}"
+    )
+    assert isinstance(msg, str)
+    assert "DIFFERENT blocks" in msg
+
+
+def test_cross_block_span_with_unbalanced_tail_also_rejected() -> None:
+    # The straddle guard fires regardless of brace balance — a run ending on the NEXT block's
+    # opening line straddles too.
+    source = "void f() {\n    a();\n}\n\nvoid g() {\n    b();\n}\n"
+    msg = _resolve_anchored_edit(
+        source, "void f() {", "}\n\nvoid g() {", None, "void f() {\n    a2();\n}"
+    )
+    assert isinstance(msg, str)
+    assert "DIFFERENT blocks" in msg
+
+
+def test_multiblock_whole_file_resend_is_not_a_straddle() -> None:
+    # A legit whole-file resend spans multiple blocks (first_line at file top, last_line on a later
+    # block's opener) yet deletes nothing — new_text re-supplies every line the range covers. The
+    # straddle guard must NOT reject it; only an UNRECOVERABLE multi-block span (new_text dropping
+    # content) is the cross-block deletion corner.
+    source = (
+        "#version 460 core\nfloat grid() {\n    return 1.0;\n}\n"
+        "void main() {\n    a;\n    fs_color = vec4(0.0);\n}\n"
+    )
+    new_text = (
+        "#version 460 core\nfloat grid() {\n    return 2.0;\n}\n"
+        "void main() {\n    a;\n    fs_color = vec4(0.0);\n}"
+    )
+    result = _resolve_anchored_edit(
+        source, "#version 460 core", "void main() {", None, new_text
+    )
+    assert isinstance(result, tuple)
+    new_full, _ = result
+    assert new_full.count("{") == new_full.count("}")
+    assert "return 2.0;" in new_full  # the edit landed
+    assert "void main()" in new_full  # nothing deleted
+
+
+def test_nested_block_range_is_not_a_straddle() -> None:
+    # A legit edit of a function whose body nests (for/if) returns to depth 0 only ONCE, at the
+    # function's own close — the straddle guard must NOT fire.
+    source = (
+        "float fbm(vec2 p) {\n    float t = 0.0;\n    for (int i = 0; i < 8; ++i) {\n"
+        "        t += 1.0;\n    }\n    return t;\n}\n"
+    )
+    result = _resolve_anchored_edit(
+        source,
+        "float fbm(vec2 p) {",
+        "    return t;\n}",
+        None,
+        "float fbm(vec2 p) {\n    return 9.0;\n}",
+    )
+    assert isinstance(result, tuple)
+    new_full, _ = result
+    assert new_full.count("{") == new_full.count("}")
+
+
+# ---- bare-"}" last_line resolved by brace-matching the opener (the 2026-06-12 T6-rerun bug) ----
+
+
+def _fbm_in_multi_function_source() -> str:
+    # The live-trace shape: noise2d (closes line 8), then fbm (opens 11, NESTED for-loop closes 16,
+    # fbm's own close 18), then a later function. A bare "}" last_line strip-matches lines 8, 16, 18.
+    return (
+        "float noise2d(vec2 p) {\n"  # 1
+        "    vec2 i = floor(p);\n"  # 2
+        "    vec2 f = fract(p);\n"  # 3
+        "    return i.x + f.y;\n"  # 4
+        "}\n"  # 5  (noise2d close)
+        "\n"  # 6
+        "\n"  # 7
+        "// fbm\n"  # 8
+        "// detail\n"  # 9
+        "\n"  # 10
+        "float fbm(vec2 p) {\n"  # 11  (opener)
+        "    float total = 0.0;\n"  # 12
+        "    for (int i = 0; i < 6; ++i) {\n"  # 13
+        "        total += noise2d(p);\n"  # 14
+        "        p *= 2.0;\n"  # 15
+        "    }\n"  # 16  (NESTED for close)
+        "    return total;\n"  # 17
+        "}\n"  # 18  (fbm close)
+        "\n"  # 19
+        "float sd_circle(vec2 p, float r) {\n"  # 20
+        "    return length(p) - r;\n"  # 21
+        "}\n"  # 22
+    )
+
+
+def test_bare_brace_last_line_brace_matches_the_opener() -> None:
+    # The T6-rerun bug: last_line="}" + near_line on the block START. near_line picks the PREVIOUS
+    # function's close (line 5, |5-11|=6 < |18-11|=7) -> reverse-order reject. The fix brace-matches
+    # fbm's opener and lands the real close (line 18), ignoring the misleading near_line.
+    source = _fbm_in_multi_function_source()
+    new_text = (
+        "float fbm(vec2 p) {\n    float total = 0.0;\n"
+        "    for (int i = 0; i < 8; ++i) {\n        total += noise2d(p);\n"
+        "        p = p * 2.0 + 0.1;\n    }\n    return total;\n}"
+    )
+    result = _resolve_anchored_edit(source, "float fbm(vec2 p) {", "}", 11, new_text)
+    assert isinstance(result, tuple)
+    new_full, span = result
+    assert (
+        span == "11-18"
+    )  # fbm's OWN close, not line 5 (prev fn) nor line 16 (nested for)
+    assert new_full.count("{") == new_full.count("}")  # balanced; absorb no-ops
+    assert "float sd_circle(vec2 p, float r) {" in new_full  # later fn intact
+    assert "float noise2d(vec2 p) {" in new_full  # earlier fn intact
+    assert "i < 8" in new_full  # the edit landed
+
+
+def test_bare_brace_last_line_ignores_nested_inner_close() -> None:
+    # near_line points INSIDE the block (past the nested for) — nearest-among-hits would pick the
+    # nested for's "}" (line 16); brace-matching from the opener still resolves fbm's own close (18).
+    source = _fbm_in_multi_function_source()
+    new_text = "float fbm(vec2 p) {\n    return 0.0;\n}"
+    result = _resolve_anchored_edit(source, "float fbm(vec2 p) {", "}", 14, new_text)
+    assert isinstance(result, tuple)
+    _, span = result
+    assert span == "11-18"
+
+
+def test_bare_brace_last_line_unique_close_defers_to_plain_path() -> None:
+    # Only ONE "}" in the file: the brace-match disambiguator must NOT engage (nothing to
+    # disambiguate); the plain single-match anchor path resolves it.
+    source = "void main() {\n    x = 1.0;\n}\n"
+    result = _resolve_anchored_edit(
+        source, "void main() {", "}", None, "void main() {\n    x = 2.0;\n}"
+    )
+    assert isinstance(result, tuple)
+    _, span = result
+    assert span == "1-3"
+
+
+def test_bare_brace_last_line_non_opener_first_line_defers() -> None:
+    # first_line is NOT a brace opener (a plain statement), so brace-matching is impossible — the
+    # bare "}" falls back to the near_line path and resolves the nearest closer as before. new_text
+    # re-sends the closer so the block count is preserved (no straddle).
+    source = "void f() {\n    a;\n}\nvoid g() {\n    b;\n}\n"
+    # first_line="    a;" (line 2, not an opener); near_line=3 -> nearest "}" is line 3.
+    result = _resolve_anchored_edit(source, "    a;", "}", 3, "    a2;\n}")
+    assert isinstance(result, tuple)
+    _, span = result
+    assert span == "2-3"
+
+
+def test_bare_brace_last_line_truncated_block_defers_then_reverse_rejects() -> None:
+    # The opener's block never closes (a malformed/truncated source with no matching "}" forward) —
+    # brace-match can't resolve, so it defers to the near_line path, which keeps its existing
+    # behavior (here, the only "}" above start -> reverse-order reject).
+    source = "}\nfloat fbm(vec2 p) {\n    return 0.0;\n"  # fbm never closes; one "}" at line 1
+    msg = _resolve_anchored_edit(
+        source, "float fbm(vec2 p) {", "}", 2, "float fbm(vec2 p) {\n    return 1.0;\n}"
+    )
+    assert isinstance(msg, str)
+    assert "reverse order" in msg
+
+
+def test_bare_brace_near_line_on_inner_close_partial_new_text_rejects() -> None:
+    # Regression (the silent-corruption corner): first_line is the OUTER fbm opener, last_line a bare
+    # "}", near_line points AT the nested for-loop's close (line 16), and new_text re-sends ONLY the
+    # inner for-loop (a partial edit). Brace-matching to fbm's whole close (18) and splicing the
+    # partial there would DELETE fbm's signature and "return total;", leaving a dangling top-level
+    # for-block (brace-balanced, top-level count preserved -> straddle guard blind) and report SUCCESS.
+    # near_line ON an inner closer defers to the near_line path, which stops at line 16; splicing 11-16
+    # drops fbm's block -> the straddle guard rejects. A safe corrective reject, never a silent edit.
+    source = _fbm_in_multi_function_source()
+    partial = "    for (int i = 0; i < 8; ++i) {\n        total += noise2d(p);\n    }"
+    msg = _resolve_anchored_edit(source, "float fbm(vec2 p) {", "}", 16, partial)
+    assert isinstance(msg, str)
+    assert "DIFFERENT blocks" in msg
+
+
+def test_bare_brace_partial_inner_edit_via_inner_opener_brace_matches_for() -> None:
+    # The supported partial inner-block edit: first_line is the INNER for opener, last_line a bare "}".
+    # find_body_end from the for's opener brace-matches the for's OWN close (16), NOT fbm's close (18) —
+    # so the partial edit applies to the loop only, fbm's body and signature untouched.
+    source = _fbm_in_multi_function_source()
+    new_text = (
+        "    for (int i = 0; i < 8; ++i) {\n        total += noise2d(p);\n"
+        "        p = p * 2.0 + 0.1;\n    }"
+    )
+    result = _resolve_anchored_edit(
+        source, "    for (int i = 0; i < 6; ++i) {", "}", 13, new_text
+    )
+    assert isinstance(result, tuple)
+    new_full, span = result
+    assert span == "13-16"  # the for's own close, not fbm's close at 18
+    assert "    return total;" in new_full  # fbm tail preserved
+    assert "float fbm(vec2 p) {" in new_full  # fbm signature preserved
+    assert "i < 8" in new_full
+
+
+def test_range_opening_more_braces_than_new_text_rejects() -> None:
+    # The brace-delta coherence guard catches the partial-corruption shape the straddle guard is
+    # blind to: a single-function file where the range opens the fn + an inner block but last_line
+    # lands on the inner close, and a partial new_text (one balanced inner block) would replace
+    # signature+open — the spliced for-block REPLACES the fn as the lone top-level block (count
+    # 1->1, straddle blind), brace-balanced, silently dropping the signature. The range/new_text
+    # brace-delta mismatch (+1 vs 0) rejects it.
+    source = (
+        "float fbm(vec2 p) {\n    float total = 0.0;\n    for (int i = 0; i < 6; ++i) {\n"
+        "        total += 1.0;\n    }\n    return total;\n}\n"
+    )
+    partial = "    for (int i = 0; i < 8; ++i) {\n        total += 2.0;\n    }"
+    msg = _resolve_anchored_edit(source, "float fbm(vec2 p) {", "}", 5, partial)
+    assert isinstance(msg, str)
+    assert "new_text doesn't balance" in msg
+
+
+def test_bare_brace_comment_brace_does_not_overshoot() -> None:
+    # find_body_end counts braces raw; an unbalanced "{" in a body comment between the opener and its
+    # real close would derail the depth walk and overshoot to a LATER function's "}". The brace-match
+    # runs over comment-stripped lines, so the stray comment brace is invisible and the close resolves
+    # to fbm's own "}" — a bare-"}" edit on a function whose comment carries a brace still succeeds.
+    source = (
+        "float fbm(vec2 p) {\n"  # 1
+        "    // handle the { edge case\n"  # 2  (unbalanced brace in a comment)
+        "    return 0.0;\n"  # 3
+        "}\n"  # 4  (fbm's real close)
+        "\n"  # 5
+        "float tail() {\n"  # 6
+        "    return 1.0;\n"  # 7
+        "}\n"  # 8
+    )
+    new_text = "float fbm(vec2 p) {\n    // handle the { edge case\n    return 2.0;\n}"
+    result = _resolve_anchored_edit(source, "float fbm(vec2 p) {", "}", 1, new_text)
+    assert isinstance(result, tuple)
+    new_full, span = result
+    assert span == "1-4"  # fbm's own close, NOT tail's close at line 8
+    assert "float tail() {" in new_full  # tail intact
+    assert "return 2.0;" in new_full
+
+
+def test_bare_brace_no_near_line_auto_resolves_block_close() -> None:
+    # No near_line at all: the bare-"}" disambiguator still resolves via brace-matching (it needs no
+    # hint), so the edit lands without the old "add near_line" reject. Strictly better than rejecting.
+    source = _fbm_in_multi_function_source()
+    new_text = "float fbm(vec2 p) {\n    return 0.0;\n}"
+    result = _resolve_anchored_edit(source, "float fbm(vec2 p) {", "}", None, new_text)
+    assert isinstance(result, tuple)
+    _, span = result
+    assert span == "11-18"

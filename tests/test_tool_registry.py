@@ -104,3 +104,23 @@ def test_delete_gate_prompt_shows_node_name() -> None:
     assert d.gate_prompt({"node": "a1b2c3d4-ffff"}) == "Delete node `Blank`?"
     assert d.gate_prompt({"node": "zzzz"}) == "Delete node `zzzz`?"
     assert d.gate_prompt({}) == "Delete node `?`?"
+
+
+def test_delete_precheck_fails_fast_on_empty_or_unknown_target() -> None:
+    # The precheck short-circuits BEFORE the always-gate so the user never confirms a
+    # "Delete node `?`" that then errors in the handler.
+    registry = build_registry(
+        minimal_caps(
+            node_tree=lambda: [
+                NodeTreeEntry(
+                    node_id="a1b2", name="Blank", has_errors=False, is_current=True
+                )
+            ]
+        )
+    )
+    empty = registry.precheck("delete_node", {"node": ""})
+    assert empty is not None and "empty" in empty
+    unknown = registry.precheck("delete_node", {"node": "zzzz"})
+    assert unknown is not None and "zzzz" in unknown
+    # A resolvable target passes the precheck (None) so the gate proceeds.
+    assert registry.precheck("delete_node", {"node": "a1b2"}) is None

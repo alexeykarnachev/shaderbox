@@ -174,8 +174,6 @@ def publish_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             args_model=_RenderImageArgs,
             handler=render_image,
             mutating=True,
-            needs_gl=True,
-            category="render",
             eager=True,
             gate_policy=GatePolicy.ALWAYS,
             gate_prompt=lambda a: (
@@ -190,8 +188,6 @@ def publish_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             args_model=_RenderVideoArgs,
             handler=render_video,
             mutating=True,
-            needs_gl=True,
-            category="render",
             eager=True,
             gate_policy=GatePolicy.ALWAYS,
             gate_prompt=lambda a: (
@@ -207,8 +203,6 @@ def publish_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             args_model=_PublishTelegramArgs,
             handler=publish_telegram,
             mutating=True,
-            needs_gl=False,
-            category="publish",
             eager=True,
             gate_policy=GatePolicy.ALWAYS,
             gate_prompt=lambda a: (
@@ -225,8 +219,6 @@ def publish_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             args_model=_PublishYoutubeArgs,
             handler=publish_youtube,
             mutating=True,
-            needs_gl=False,
-            category="publish",
             eager=True,
             gate_policy=GatePolicy.ALWAYS,
             gate_prompt=lambda a: (

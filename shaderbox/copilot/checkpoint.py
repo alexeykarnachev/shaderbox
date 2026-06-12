@@ -265,6 +265,8 @@ class CheckpointStore:
 
     def _rehydrate(self) -> dict[str, TurnCheckpoint]:
         # Load persisted checkpoints from disk on session init, so Revert works after a restart.
+        # An index-less dir is a turn killed before seal() — it's unreferenced by construction (the
+        # index IS the reference) and invisible to prune_to, so sweep it here at init.
         out: dict[str, TurnCheckpoint] = {}
         if not self._root.is_dir():
             return out
@@ -274,6 +276,8 @@ class CheckpointStore:
             cp = TurnCheckpoint.load(turn_dir, self._root)
             if cp is not None:
                 out[cp.turn_id] = cp
+            else:
+                shutil.rmtree(turn_dir, ignore_errors=True)
         return out
 
     def open(self, turn_id: str, user_excerpt: str) -> None:

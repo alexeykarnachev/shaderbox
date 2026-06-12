@@ -65,8 +65,6 @@ class ToolDefinition:
     label_live: str
     label_done: str
     mutating: bool  # gates the "what I did" note + the UI confirm
-    needs_gl: bool  # True => the handler's capability marshals to the main thread
-    category: str  # the catalogue tree (§4); single source of truth for grouping
     eager: bool  # True => carried in eager_specs() (turn-start tools=) (§4)
     # Shader-SOURCE edit tools only (edit_shader / replace_lines / insert_after) — drives the
     # consecutive-failed-edits giveup cap. Deliberately NARROWER than `mutating`: a failed

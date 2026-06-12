@@ -51,8 +51,6 @@ def youtube_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             args_model=EmptyArgs,
             handler=set_youtube_credentials,
             mutating=True,
-            needs_gl=False,
-            category="youtube",
             eager=True,
             gate_policy=GatePolicy.ALWAYS,
             gate_prompt=lambda a: (

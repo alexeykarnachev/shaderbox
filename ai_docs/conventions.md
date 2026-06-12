@@ -359,6 +359,23 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
 
 ## Known quirks (library / SDK footguns + the workaround)
 
+- **The copilot ranged-`replace_lines` anchor resolution is FIVE composing guards that each read as
+  removable but aren't — every one closes a dogfood-observed or audit-found mis-anchor.** In
+  `backend.py::_resolve_anchored_edit`, pipeline order: `_resolve_block_close` (ambiguous bare `}` →
+  brace-match from the opener via `parser.find_body_end`, comment-stripped), the multi-line contiguous-run
+  `_locate_anchor`, `_absorb_orphan_tail` (swallow a duplicated tail — ONLY when it's a strip-invariant
+  suffix of `new_text` AND `new_text` is brace-balanced), `_range_straddles_blocks` (reject when the
+  splice DROPS a top-level block — `_top_level_blocks` count falls), and the brace-delta coherence check
+  (`_brace_delta(range) != _brace_delta(new_text)` → reject an incoherent partial). They are deliberately
+  separate because each catches a different mis-anchor the others are blind to (e.g. the top-level-count
+  guard can't see a for-block REPLACING a fn-block — the brace-delta check does). The intuition to resist:
+  "these all check braces, collapse them into one." They don't check the same thing. Full per-guard
+  rationale + the reproductions: `038_copilot_polish_wave.md` decision 5; the `test_line_editing.py`
+  regression battery (orphan-tail / multiline / cross-block / ambiguous-close / coherence) catches a
+  simplification. Brace counting is a raw comment-stripped `count` (`parser.brace_counts`), NOT a lexer —
+  correct because GLSL has no string literals (verified byte-equal to a `glsl_lex` PUNCT-filter across
+  every edge case); `parser.find_body_end` is the brace-matcher.
+
 - **A dynamically-indexed `const` array is NOT constant storage on NVIDIA — big lookup tables
   must be UNIFORM arrays (engine-bound).** Measured on the glyph stroke tables (RTX 3090,
   575.xx, text stack @800px): function-local const ~432 ms/frame (re-materialized per call);

@@ -90,7 +90,7 @@ def compile_hints(source: str, error_messages: list[str]) -> list[str]:
                     "skip const arrays entirely: uniform uint u_text[64] + "
                     "set_uniform"
                 )
-    opens, closes = stripped.count("{"), stripped.count("}")
+    opens, closes = parser.brace_counts(source)
     if opens != closes:
         loc = _brace_imbalance_location(stripped)
         hints.append(

@@ -204,9 +204,21 @@ def _parse_transcript(path: Path, turns: list[Turn], warnings: list[str]) -> Non
     cur: dict[str, object] = {}
     cur_turn: Turn | None = None
 
+    def _finalize_turn(t: Turn | None) -> None:
+        # An error terminal (giveup / stream_error / truncated / model_incompatible) never emits a
+        # turn_done, so the turn_done-keyed cost/token fields stay at their 0 defaults and the rollup
+        # understates spend. Fall back to summing the per-iteration usage the turn already parsed.
+        if t is None or t.cost_usd != 0.0 or not t.iterations:
+            return
+        t.cost_usd = sum(it.cost_usd for it in t.iterations)
+        t.reply_tokens = sum(it.out_tokens for it in t.iterations)
+        t.billed_in_tokens = sum(it.in_tokens for it in t.iterations)
+        t.peak_iter_in_tokens = max(it.in_tokens for it in t.iterations)
+
     def _close_section() -> None:
         nonlocal cur_turn
         if kind == "turn_start":
+            _finalize_turn(cur_turn)
             cur_turn = Turn(
                 user_text=_as_str(cur.get("user_text", "")),
                 iterations=[],
@@ -303,6 +315,7 @@ def _parse_transcript(path: Path, turns: list[Turn], warnings: list[str]) -> Non
                 cur[key] = val.strip()
                 pending_key = ""
     _close_section()
+    _finalize_turn(cur_turn)
 
 
 def _scan_invocations(transcripts: list[Path]) -> dict[str, str]:

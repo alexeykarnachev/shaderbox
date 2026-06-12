@@ -106,6 +106,13 @@ def advance_brace_depth(depth: int, line: str) -> int:
     return max(depth + line.count("{") - line.count("}"), 0)
 
 
+def brace_counts(text: str) -> tuple[int, int]:
+    # Comment-safe ('{'/'}') count over the whole text. GLSL has no string literals, so a raw
+    # count over comment-stripped source is exact (no brace can hide in a string).
+    stripped = strip_comments_keep_lines(text)
+    return stripped.count("{"), stripped.count("}")
+
+
 def extract_doc(lines: list[str], sig_line: int) -> str:
     # Walk backwards from `sig_line - 1` collecting contiguous `///` lines.
     doc_lines: list[str] = []

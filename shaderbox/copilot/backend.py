@@ -69,7 +69,7 @@ from shaderbox.glyph_tables import TABLE_UNIFORMS
 from shaderbox.paths import shader_lib_root
 from shaderbox.render_preset import FitPolicy, RenderPreset, ResolutionPolicy
 from shaderbox.shader_errors import ShaderError
-from shaderbox.shader_lib import ShaderLibIndex
+from shaderbox.shader_lib import ShaderLibIndex, parser
 from shaderbox.shader_lib.file_ops import ShaderLibFileManager
 from shaderbox.tabs import share_state
 from shaderbox.ui_models import UINode, load_node_from_dir
@@ -137,15 +137,32 @@ def _edit_error_hints(
     return hints
 
 
-def _locate_anchor(
+def _pick_nearest(hits: list[int], label: str, near_line: int | None) -> int | str:
+    # Resolve a multi-hit list to one line: near_line picks the closest (tie rejects);
+    # without it, reject listing the candidates.
+    listed = ", ".join(str(i) for i in hits)
+    if near_line is None:
+        return (
+            f'{label} "{_trunc_line(str(hits))}" matches lines {listed} — add near_line '
+            "(the 1-based number of the line you mean, from the working set)"
+        )
+    best = min(hits, key=lambda i: abs(i - near_line))
+    ties = [i for i in hits if abs(i - near_line) == abs(best - near_line)]
+    if len(ties) > 1:
+        return (
+            f"{label} matches lines {listed}, and lines "
+            f"{' and '.join(str(i) for i in ties)} are equally near near_line "
+            f"{near_line} — pass a near_line closer to the line you mean"
+        )
+    return best
+
+
+def _locate_line(
     lines: list[str], quote: str, label: str, near_line: int | None
 ) -> int | str:
     # Resolve one boundary-line anchor to its 1-based line number by strip-equality, or
     # return a reject message. near_line disambiguates a multi-match (closest wins, tie
     # rejects); without it a multi-match rejects listing the candidates.
-    if "\n" in quote:
-        quoted_n = quote.count("\n") + 1
-        return f"{label} must be exactly ONE line — you quoted {quoted_n} lines"
     if not quote.strip():
         return f"{label} must be a content line — quote a non-blank line verbatim"
     hits = [i for i, ln in enumerate(lines, start=1) if ln.strip() == quote.strip()]
@@ -162,15 +179,73 @@ def _locate_anchor(
             f'{label} "{_trunc_line(quote)}" matches lines {listed} — add near_line '
             "(the 1-based number of the line you mean, from the working set)"
         )
-    best = min(hits, key=lambda i: abs(i - near_line))
-    ties = [i for i in hits if abs(i - near_line) == abs(best - near_line)]
-    if len(ties) > 1:
-        return (
-            f"{label} matches lines {listed}, and lines "
-            f"{' and '.join(str(i) for i in ties)} are equally near near_line "
-            f"{near_line} — pass a near_line closer to the line you mean"
-        )
-    return best
+    return _pick_nearest(hits, label, near_line)
+
+
+def _locate_anchor(
+    lines: list[str], quote: str, label: str, near_line: int | None
+) -> int | str:
+    # The boundary of a block is its OUTERMOST line: first_line's first line, last_line's last
+    # line. Models quote a contiguous run of the block's lines (top-to-bottom, copied from the
+    # numbered working set) but the wire schema wants ONE boundary line; rather than reject a
+    # multi-line quote that carries full, unambiguous boundary info (the bug: last_line
+    # "return total;\n}" rejected three times -> giveup), match the run against the source and
+    # return the boundary line's number. A multi-line quote must locate the run contiguously: if
+    # the quoted block isn't in the file as written (a stale or reversed quote), reject rather
+    # than fall back to the bare boundary line — a bare-boundary fallback could silently locate
+    # the wrong place. Single-line quotes keep the original strip-match path verbatim.
+    if "\n" not in quote:
+        return _locate_line(lines, quote, label, near_line)
+    parts = quote.split("\n")
+    run = [p.strip() for p in parts]
+    span = len(run)
+    starts = [
+        i
+        for i in range(1, len(lines) - span + 2)
+        if [ln.strip() for ln in lines[i - 1 : i - 1 + span]] == run
+    ]
+    boundary_at = (lambda s: s) if label == "first_line" else (lambda s: s + span - 1)
+    if len(starts) == 1:
+        return boundary_at(starts[0])
+    if len(starts) > 1:
+        return _pick_nearest([boundary_at(s) for s in starts], label, near_line)
+    return (
+        f"{label} spans {span} lines but that block isn't in the file as quoted — "
+        "quote a single boundary line, or copy the block's lines verbatim from the working set"
+    )
+
+
+def _top_level_blocks(text: str) -> int:
+    # Count complete top-level brace blocks (each "}" that returns depth to 0). Comment-stripped so
+    # a brace in a comment can't trip it.
+    body = parser.strip_comments_keep_lines(text)
+    depth = 0
+    closes = 0
+    for ch in body:
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                closes += 1
+    return closes
+
+
+def _range_straddles_blocks(
+    lines: list[str], start: int, end: int, new_text: str
+) -> bool:
+    # The cross-block silent-deletion corner: the model's two anchors land in DIFFERENT functions
+    # (a multi-line last_line whose run is unique to a later block makes `end` jump there), so the
+    # range spans more than one top-level block and a balanced new_text clean-compiles while a whole
+    # function between is deleted. The reliable signal is the splice's effect on STRUCTURE: a
+    # dangerous edit DROPS a complete top-level block (the file ends with fewer functions than it
+    # started). A legitimate whole-file resend (first_line at the file top, last_line on a later
+    # block's opener, new_text re-sending every block) preserves the count, so it is NOT flagged.
+    # Checked on the post-absorb end so an opening-brace mis-anchor (which absorb already heals by
+    # swallowing the duplicated tail) is judged on its healed result, not its transient over-close.
+    # Same brace-balance idiom absorb uses; never blocks a structure-preserving edit.
+    spliced = _splice_lines(lines, start, end, new_text)
+    return _top_level_blocks(spliced) < _top_level_blocks("\n".join(lines))
 
 
 def _splice_lines(
@@ -180,6 +255,77 @@ def _splice_lines(
     # end == start - 1 is the empty selection (pure insert at start).
     repl = new_text.split("\n") if new_text != "" else []
     return "\n".join(lines[: start_line - 1] + repl + lines[end_line:])
+
+
+def _brace_delta(text: str) -> int:
+    opens, closes = parser.brace_counts(text)
+    return opens - closes
+
+
+def _absorb_orphan_tail(lines: list[str], start: int, end: int, new_text: str) -> int:
+    # The model anchors last_line inside/at the start of a block (its final statement, or the
+    # block's OPENING brace) while new_text re-sends the whole block — so the original block tail
+    # survives just below the range and the splice DUPLICATES it. Absorb that tail ONLY when it is a
+    # suffix of new_text (the lines new_text already carries, compared strip-invariant like the
+    # anchors) AND swallowing it rebalances a splice the unabsorbed range would otherwise leave
+    # brace-unbalanced. Both conditions are required: the suffix match proves the tail is a duplicate
+    # (not unique code the edit meant to keep), the rebalance proves the absorption is needed.
+    # new_text must itself be brace-balanced — an unbalanced new_text is a deliberate structural
+    # change, not a re-sent block, so a coincidental brace below must not be eaten. Deterministic;
+    # never eats code new_text doesn't already contain.
+    if _brace_delta(new_text) != 0:
+        return end
+    repl = new_text.split("\n") if new_text != "" else []
+    base = _brace_delta("\n".join(lines[: start - 1] + repl))
+    if base + _brace_delta("\n".join(lines[end:])) == 0:
+        return end  # the splice is already balanced — no orphan
+    repl_stripped = [ln.strip() for ln in repl]
+    for new_end in range(end + 1, len(lines) + 1):
+        absorbed = [ln.strip() for ln in lines[end:new_end]]
+        is_suffix = absorbed == repl_stripped[len(repl_stripped) - len(absorbed) :]
+        if is_suffix and base + _brace_delta("\n".join(lines[new_end:])) == 0:
+            return new_end
+    return end
+
+
+def _resolve_block_close(
+    lines: list[str], start: int, last_line: str, near_line: int | None
+) -> int | None:
+    # The ambiguous-bare-`}` case: last_line is a lone "}" that strip-matches EVERY closing brace,
+    # so near_line (which the model points at the block START) picks the wrong one — the prior
+    # function's close lands ABOVE start (reverse-order reject) or the block's own NESTED "}" lands
+    # below it (wrong end). The only deterministic disambiguator is the brace structure: the "}" that
+    # CLOSES the block first_line opens. Returns that line, or None to defer to the near_line path.
+    # Fires ONLY when the disambiguation is needed and safe: last_line is a bare "}" matching more
+    # than one line, start's line net-OPENS a brace block, and find_body_end lands on a real "}" hit
+    # at-or-after start. Any miss falls through to the existing near_line/reject path (safety: never
+    # silently locate the wrong block).
+    #
+    # near_line, when given, can land ON an inner "}" line the model means as its boundary (a partial
+    # inner-block edit, first_line shallow). Honoring the brace-matched whole-block close there would
+    # over-extend and silently delete the surrounding signature, so a near_line that IS an inner closer
+    # line defers to the near_line path (which stops at that inner "}"). A near_line on a body statement
+    # or at/after the real close still brace-matches to the whole-block close.
+    if last_line.strip() != "}":
+        return None
+    closers = [i for i, ln in enumerate(lines, start=1) if ln.strip() == "}"]
+    if len(closers) < 2:
+        return None  # unique "}" — the plain anchor path already resolves it
+    opener = lines[start - 1]
+    if opener.count("{") - opener.count("}") <= 0:
+        return None  # start isn't a block opener — can't brace-match
+    # Brace-match over comment-stripped lines (newline-preserving, so indices stay aligned) — a
+    # stray brace in a body comment must not derail find_body_end's depth walk.
+    stripped_lines = parser.strip_comments_keep_lines("\n".join(lines)).split("\n")
+    body_end = parser.find_body_end(stripped_lines, start - 1)
+    if body_end is None:
+        return None  # the block never closes — defer
+    close = body_end + 1  # 1-based
+    if close < start or close not in closers:
+        return None
+    if near_line in closers and start <= near_line < close:
+        return None  # near_line points AT an inner "}" — defer so it owns the boundary
+    return close
 
 
 def _resolve_anchored_edit(
@@ -195,13 +341,35 @@ def _resolve_anchored_edit(
     start = _locate_anchor(lines, first_line, "first_line", near_line)
     if isinstance(start, str):
         return start
-    end = _locate_anchor(lines, last_line, "last_line", near_line)
+    end: int | str | None = _resolve_block_close(lines, start, last_line, near_line)
+    if end is None:
+        end = _locate_anchor(lines, last_line, "last_line", near_line)
     if isinstance(end, str):
         return end
     if start > end:
         return (
             f"anchors in reverse order — first_line matched line {start}, last_line "
             f"matched line {end}; first_line must be the block's FIRST line"
+        )
+    end = _absorb_orphan_tail(lines, start, end, new_text)
+    if _range_straddles_blocks(lines, start, end, new_text):
+        return (
+            f"first_line (line {start}) and last_line (line {end}) are in DIFFERENT blocks — the "
+            "range between them spans more than one function/block. Anchor both lines inside the "
+            "SAME block, or omit the anchors to rewrite the whole file"
+        )
+    # The replaced range and new_text must have the SAME net brace delta — otherwise the splice
+    # changes the file's brace nesting and leaves a structure new_text doesn't close (the anchors
+    # bound an incoherent edit: e.g. first_line opens a block but last_line lands on an INNER "}",
+    # and a partial new_text replaces signature+open with a balanced fragment, silently dropping the
+    # signature with a clean-compiling result). A coherent block edit replaces a balanced region with
+    # balanced text, or an open-tail with an equal open-tail (the absorb cases keep this at 0).
+    range_text = "\n".join(lines[start - 1 : end])
+    if _brace_delta(range_text) != _brace_delta(new_text):
+        return (
+            f"the range first_line (line {start}) to last_line (line {end}) opens or closes braces "
+            "that new_text doesn't balance — last_line landed inside a block. Quote last_line as the "
+            "block's matching close, or omit the anchors to rewrite the whole file"
         )
     return _splice_lines(lines, start, end, new_text), f"{start}-{end}"
 
@@ -1130,11 +1298,19 @@ class CopilotBackend:
             return PublishResult(
                 ok=False, error="YouTube exporter unavailable", kind="youtube"
             )
-        # Drive the shape from the arg so preset + is_short agree; restore the user's Share-tab shape after.
-        prior_short: bool = exporter.current_is_short()
-        exporter.set_shape(is_short)
+
+        # Drive the shape from the arg so preset + is_short agree; restore the user's Share-tab
+        # shape after. set_shape writes _render_state.shape, which the main-thread Share tab reads —
+        # so the shape mutations marshal to main (the publish itself does its own bridge ops).
+        def _set_shape_read_preset(shape: bool) -> tuple[bool, RenderPreset]:
+            prior = exporter.current_is_short()
+            exporter.set_shape(shape)
+            return prior, exporter.render_preset()
+
+        prior_short, preset = self._bridge.run_on_main(
+            lambda: _set_shape_read_preset(is_short)
+        )
         try:
-            preset = exporter.render_preset()
             settings: dict[str, Any] = {
                 "title": title,
                 "description": description,
@@ -1143,7 +1319,7 @@ class CopilotBackend:
             }
             return self._copilot_publish(exporter, "youtube", preset, settings)
         finally:
-            exporter.set_shape(prior_short)
+            self._bridge.run_on_main(lambda: exporter.set_shape(prior_short))
 
     def has_current_node(self) -> bool:
         return self._get_current_node_id() in self._get_ui_nodes()
