@@ -34,11 +34,13 @@ smoke (C4), and docs + the dogfood determinism check + GL-integration test (C5).
 per-tick body-only Python script (`nodes/<id>/scripts/u_<name>.py`, `out.set(...)`); errors freeze
 last-good as data, `(path,mtime)` hot-reloads, `ctx.t`-pure scripts are live==export deterministic. Verified
 on the Pi's V3D: the scripted value animates across `t` and reaches the GPU; a broken script froze without
-crashing. **POST-IMPL REVIEW still owed** (HIGH-blast floor: 3 parallel agents — code-correctness /
-architecture-conventions / spec-fidelity, per the spec's Review sizing + `review-agent-loop`). After
-review: **next feature is 041** (system-input `u_mouse` + the in-app script editor — the visual
-"script-driven" indicator + attach/edit affordance), then 042 state scripts → 043 copilot write-behavior.
-**No open BLOCKERs.**
+crashing. **POST-IMPL REVIEW DONE + CONVERGED** (HIGH-blast floor: 3 parallel agents — code-correctness /
+architecture-conventions / spec-fidelity — then a round-2 focused re-check; all 12 decisions landed
+faithfully). Three real findings fixed in `034db20`: a committed dogfood file failed `make check` ruff-format;
+the `ui.py` live tick scope missed the render gate's `frame_idx==0` clause; the `ctx.uniforms`-integrator
+export double-tick documented as a 042-deferred limitation (`ctx.t`-pure scripts are immune). **Next feature
+is 041** (system-input `u_mouse` + the in-app script editor — the visual "script-driven" indicator +
+attach/edit affordance), then 042 state scripts → 043 copilot write-behavior. **No open BLOCKERs.**
 
 ## Features
 

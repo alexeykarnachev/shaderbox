@@ -1,8 +1,11 @@
 # Feature 040 — CPU-script engine (uniform-compute scripts)
 
-> Status: LOCKED (2026-06-13) — design only, implementation not started. v1 = the engine ONLY,
-> headless, no in-app UI. Scripts are hand-placed on disk + hot-reloaded; verified headless + via
-> `make run`. The five plan-lock open questions are resolved inline in the Design decisions below.
+> Status: IMPLEMENTED (2026-06-13) — landed in 5 commits on `dev` (`9924d58`..`c5c2d0a`) + a
+> post-impl review-fix commit (`034db20`); NOT yet shipped (last release is v0.15.0). v1 = the engine
+> ONLY, headless, no in-app UI. Scripts are hand-placed on disk + hot-reloaded; verified by pure-CPU
+> unit tests + a GL-integration test + a headless dogfood determinism check (all green on the Pi's
+> V3D). Post-impl review CONVERGED (see Review history). The five plan-lock open questions are
+> resolved inline in the Design decisions below.
 
 ## Goal
 
@@ -144,6 +147,11 @@ NEW tests (mirror the `tests/*.py` + `scripts/` patterns):
 - **Verdict after fixes:** the three would-be blockers are resolved in-spec (no redesign — all were spec-precision gaps, not design faults).
 
 **Pre-impl review round 2 (2026-06-13, 2 adversarial agents, against the patched spec + the updated proto).** Both confirmed all six round-1 fixes RESOLVED, and both independently found ONE new flaw introduced by the round-1 patch wording: decision 4 said "`render()` (or the export loop) invokes the hook," which would DOUBLE-TICK the live frame (ui.py `session.tick` + a hook inside `render()`). One reviewer also flagged the tick SCOPE was unspecified (current node vs all rendered nodes). Both ACCEPTED + fixed: the `on_pre_render` hook fires ONLY from the export loop, NEVER from `Node.render()` (live ticks once via ui.py); tick scope = exactly the nodes the live frame renders (same gate as ui.py:135-141). A residual §4↔Files-touched contradiction (smoke asserting `errors`-empty vs "move correctness to unit test") was reconciled: smoke owns "doesn't crash," the unit test owns correctness. No other new findings; the proto was updated to the `out.set()` shape and re-run (live↔export determinism, `out.set`/no-set/error-as-data all confirmed). **Converged — design sound, ready for implementation.**
+
+**Post-impl review (2026-06-13, 3 adversarial agents — code-correctness / architecture-conventions / spec-fidelity — then a round-2 focused convergence re-check).** Implementation landed in 5 commits (`9924d58`..`c5c2d0a`). All 12 decisions audited COVERED (decision 12's `exec()` suppression resolved faithfully: ruff `S102` isn't in this repo's `select` and pyright basic is clean, so NO marker was needed — outcome recorded in `conventions.md`). THREE real findings, all fixed in `034db20`:
+- **`make check` red on the committed tree** — `scripts/dogfood/verify_script_engine.py` failed the pinned ruff-format hook (the format-on-save reflow ran after the commit). Fixed: reformatted.
+- **`ui.py` live tick scope inexact** — missed the render gate's `frame_idx==0` render-all clause (a non-current scripted node rendered un-ticked on frame 0 when "render all" is off). Fixed: `renders_all = is_render_all_nodes or frame_idx == 0`. (The companion round-1 claim "ticks the current node under a popup where render skips it" was confirmed a FALSE POSITIVE — the current node's preview render is NOT popup-gated, so ticking it always is correct.)
+- **`ctx.uniforms`-integrator export double-tick** — the top-of-frame live `session.tick` advances an integrator by one wall-clock `dt` on the same frame a deferred export runs, poisoning the export's frame-0 start. `ctx.t`-pure scripts (the only v1-GUARANTEED kind) are provably IMMUNE (the export tick fully overwrites). Documented (not code-fixed) as a 042-deferred limitation in `todo.md` — the clean per-export engine-state isolation is 042's state work; building it now is gold-plating deferred scope. **Round-2 verdict: CONVERGED** (all three fixes PASS, no regression, 391 tests green + the dogfood determinism check exits 0; the only residual is the already-filed ruff-pin version drift).
 
 ## Plan-lock resolution log (2026-06-13)
 
