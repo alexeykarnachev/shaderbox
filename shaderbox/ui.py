@@ -99,9 +99,10 @@ def update_and_draw(app: App) -> None:
 
     # ----------------------------------------------------------------
     # Tick the CPU-script engine (feature 040) BEFORE render: hot-reload changed scripts, then
-    # compute scripted uniform values for exactly the nodes this frame renders (current node's
-    # preview always; all nodes when is_render_all_nodes and no popup) — the same set the render
-    # block below drives, so a scripted uniform animates identically live and in export.
+    # compute scripted uniform values for exactly the nodes this frame renders — the current
+    # node's preview renders unconditionally (above), and the node-render block renders all nodes
+    # when is_render_all_nodes or frame_idx==0 (and no popup). Matching that set keeps a scripted
+    # uniform animating identically live and in export.
     app.session.reload_scripts()
     now = glfw.get_time()
     dt = (
@@ -111,7 +112,8 @@ def update_and_draw(app: App) -> None:
     )
     app.last_tick_time = now
     tick_nodes = [app.current_node_id] if app.current_node_id in app.ui_nodes else []
-    if not app.any_popup_open() and app.app_state.is_render_all_nodes:
+    renders_all = app.app_state.is_render_all_nodes or app.frame_idx == 0
+    if not app.any_popup_open() and renders_all:
         tick_nodes = list(app.ui_nodes.keys())
     app.session.tick(tick_nodes, now, dt, app.frame_idx)
 

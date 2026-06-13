@@ -64,20 +64,31 @@ def main() -> int:
     p_b = h.render_at(1.5708, "scripted")
     luma_a, luma_b = _mean_luma(p_a), _mean_luma(p_b)
     print(f"  luma @t=0: {luma_a:.1f}  @t=pi/2: {luma_b:.1f}")
-    assert abs(luma_a - luma_b) > 20, "scripted uniform did NOT animate between two t values"
+    assert (
+        abs(luma_a - luma_b) > 20
+    ), "scripted uniform did NOT animate between two t values"
 
     # Same t -> same value (ctx.t-pure determinism).
     p_a2 = h.render_at(0.0, "scripted")
-    assert abs(_mean_luma(p_a) - _mean_luma(p_a2)) < 0.5, "ctx.t-pure render not deterministic"
+    assert (
+        abs(_mean_luma(p_a) - _mean_luma(p_a2)) < 0.5
+    ), "ctx.t-pure render not deterministic"
 
     # Break the script -> the frame must still render (frozen, non-crashing) + record an error.
-    _seed_scripted_node(h.project_dir, "out.set(1.0 / 0.0)")  # ZeroDivisionError at runtime
+    _seed_scripted_node(
+        h.project_dir, "out.set(1.0 / 0.0)"
+    )  # ZeroDivisionError at runtime
     h.session.reload_scripts()
     p_broken = h.render_at(3.0, "scripted")
     assert p_broken, "a broken script crashed the render instead of freezing"
-    assert ("scripted", "u_wave") in h.session.script_engine.errors, "no ScriptError recorded"
+    assert (
+        "scripted",
+        "u_wave",
+    ) in h.session.script_engine.errors, "no ScriptError recorded"
 
-    print("  PASS: animated across t, deterministic at fixed t, broken script froze + recorded")
+    print(
+        "  PASS: animated across t, deterministic at fixed t, broken script froze + recorded"
+    )
     return 0
 
 

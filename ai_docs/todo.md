@@ -64,6 +64,14 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   `ScriptEngine.state` is the shared phase-A scratchpad, and `tick` has the two-phase comment.
   `u_mouse` (system input) wires at 041. Spec: `ai_docs/features/040_uniform_script_engine.md`
   decisions 1 + Out-of-scope.
+- KNOWN (post-impl review): a `ctx.uniforms`-reading INTEGRATOR (the runnable-today path-dependent
+  pattern) gets an EXTRA live `session.tick` when you Render — `ui.py`'s top-of-frame tick fires on
+  the same frame the deferred export encode runs, so the export's frame-0 starting value is advanced
+  by one wall-clock `dt` step. `ctx.t`-pure scripts are IMMUNE (the export tick fully overwrites — the
+  determinism guarantee, decision 1). This is the same path-dependence decision 1 already accepts for
+  integrators; when 042 makes stateful scripts first-class, the export entry must tick from a clean
+  per-export engine state for that node (don't inherit the live frame's tick) to make integrator
+  export reproducible.
 
 ## [DEFERRAL] copilot non-current-node-edit confirm-gate (the targeting structural backstop)
 - **Trigger:** a trace shows the agent STILL mis-targeting a node by name-association AFTER the
