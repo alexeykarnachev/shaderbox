@@ -372,6 +372,7 @@ class ScriptEngine:
         # bindings write LAST so a u_<name>.py overrides the brain's same-named slot. Splitting the
         # passes is the guarantee — NOT behaviors-dict insertion order (a reload can perturb it).
         brain = behaviors.get(_BRAIN_FILE)
+        brain_driven: set[str] = set()
         if brain is not None:
             driven, skipped = self._apply_behavior(
                 node_id,
@@ -384,6 +385,10 @@ class ScriptEngine:
                 errors,
                 last_driven,
                 warned,
+                set(),  # the brain's own pass protects nothing
+            )
+            brain_driven = (
+                driven  # per-uniform freezes yield back to these brain-owned slots
             )
             # An omitted-after-failing key's stale error: clear any key TOUCHED last frame (a real
             # driven key OR a bad/skipped key that recorded a soft error) but NOT touched this frame
@@ -411,6 +416,7 @@ class ScriptEngine:
                 errors,
                 set(),
                 warned,
+                brain_driven,
             )
 
     def _apply_behavior(
@@ -425,6 +431,7 @@ class ScriptEngine:
         errors: dict[tuple[str, str], ScriptError],
         last_driven: set[str],
         warned: set[str],
+        brain_driven: set[str],
     ) -> tuple[set[str], set[str]]:
         # Run ONE behavior + write each (name, raw) pair it yields. Returns (driven, touched): `driven`
         # = names of REAL scriptable uniforms the brain targeted (what script_driven_uniforms reports);
@@ -435,20 +442,27 @@ class ScriptEngine:
         # (=update) is called ONCE to fan out, BEFORE the per-name is_scriptable gate — so a per-uniform
         # script's state still advances during the brief reload→tick window its uniform is inactive
         # (the value freezes; only `self.*` ticks). Inherent to the shared fan-out, not a regression.
+        # `brain_driven` = slots the brain WROTE this frame (empty for the brain's own pass): a per-uniform
+        # binding that FREEZES on such a slot yields it back to the brain's live value instead of freezing
+        # over it (a broken `u_x.py` override lets the brain's base behavior show through — decision: a
+        # healthy brain wins when its conflicting per-uniform is frozen).
         behavior_key = (node_id, binding_key)
         drove_last = {binding_key} if binding_key != _BRAIN_FILE else set(last_driven)
+        freeze = (
+            drove_last - brain_driven
+        )  # don't freeze over a slot the brain owns this frame
         if (
             behavior.error is not None
         ):  # cached compile error — freeze, recorded at reload
             errors[behavior_key] = behavior.error
-            _freeze(drove_last, node, last_good)
+            _freeze(freeze, node, last_good)
             return set(), set()
         try:
             raw = behavior.run(ctx)
             pairs = list(_resolved_pairs(binding_key, raw))
         except _RuntimeScriptError as e:  # no instance — authored message
             errors[behavior_key] = e.error
-            _freeze(drove_last, node, last_good)
+            _freeze(freeze, node, last_good)
             return set(), set()
         except (
             Exception
@@ -459,7 +473,7 @@ class ScriptEngine:
                 f"{type(e).__name__}: {e}",
                 _user_error_line(behavior.label, e),
             )
-            _freeze(drove_last, node, last_good)
+            _freeze(freeze, node, last_good)
             return set(), set()
         errors.pop(
             behavior_key, None
@@ -473,7 +487,14 @@ class ScriptEngine:
         skipped: set[str] = set()
         for name, value in pairs:
             key = (node_id, name)
-            frozen = last_good.get(name, node.uniform_values.get(name))
+            # A per-uniform binding that freezes on a brain-owned slot yields to the brain's live
+            # write (already in uniform_values from the brain pass), not its own stale last-good —
+            # the conflict-freeze-fallback decision (a broken override lets the base behavior show).
+            frozen = (
+                node.uniform_values.get(name)
+                if name in brain_driven
+                else last_good.get(name, node.uniform_values.get(name))
+            )
             uniform = active.get(name)
             if binding_key == _BRAIN_FILE:
                 # A brain key validates LAZILY at tick (its keys are dynamic) through the SAME

@@ -135,11 +135,17 @@ belong in the feature spec (`ai_docs/features/NNN_*.md`). This file is not a cha
   the 1-entry case, a brain is `run().items()`. **Cardinality is dispatched by FILENAME** (`script.py`
   vs `u_*.py`), decided once at discovery, NEVER by sniffing the return type. **Conflict (both files
   drive one slot) = an explicit two-pass write order: the brain writes first, `u_<name>.py` writes last
-  and wins** (explicit > general; lets a uniform migrate out of the brain). Freeze granularity: a per-KEY
-  coercion mismatch freezes only that key (records `(node_id, name)`); a raw brain throw / non-dict
-  return is behavior-level — freezes every name it drove last frame, records under the sentinel key
-  `(node_id, "script.py")`. Revisit for cross-SCRIPT shared state (still 041's deferral) or cross-NODE
-  state (the mini-game milestone — `todo.md`). Spec: `ai_docs/features/044_node_brain_script.md`.
+  and wins** (explicit > general; lets a uniform migrate out of the brain) — BUT a `u_<name>.py` that is
+  BROKEN (errors/freezes) on a slot the brain also drove this frame yields the slot back to the brain's
+  live value, NOT a stale freeze (a broken override lets the base behavior show through; the override's
+  error is still surfaced). Freeze granularity: a per-KEY coercion mismatch freezes only that key (records
+  `(node_id, name)`); a raw brain throw / non-dict return is behavior-level — freezes every name it drove
+  last frame, records under the sentinel key `(node_id, "script.py")`. A brain key naming an engine-owned
+  (`u_time`…), orphan/typo, or sampler/block uniform is rejected at tick (same `_binding_reject` the
+  per-uniform path uses at reload) — a soft `(node_id, name)` error + skip, NOT script-owned. NaN/Inf are
+  frozen-as-data like a shape error (not written to the GPU). Revisit for cross-SCRIPT shared state (still
+  041's deferral) or cross-NODE state (the mini-game milestone — `todo.md`). Spec:
+  `ai_docs/features/044_node_brain_script.md`.
 - **`tabs/*.py`: free `draw(app: App)` + optional `update(app: App)`.** `draw()` does imgui calls
   only; `update()` runs *before* imgui draws, for GL/canvas/mtime work outside the frame body. Tab
   state goes on `App` directly; a state-only sibling module (e.g. `tabs/share_state.py`) may hold

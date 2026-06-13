@@ -1114,6 +1114,76 @@ def test_conflict_per_uniform_overrides_brain(tmp_path: Path) -> None:
     assert node.uniform_values["u_y"] == 0.2  # brain owns its own slot
 
 
+def test_conflict_broken_per_uniform_yields_to_brain(tmp_path: Path) -> None:
+    # The conflict-freeze-fallback decision: when a u_x.py that conflicts with a brain on u_x is
+    # BROKEN, the slot shows the brain's live value (a broken override lets the base behavior show
+    # through), NOT a freeze that clobbers it — and the per-uniform error is still recorded.
+    _write(  # u_x.py raises every tick
+        tmp_path,
+        "u_x",
+        "class Behavior(ScriptBehavior):\n"
+        "    def update(self, ctx: Ctx) -> float:\n"
+        "        raise ValueError('boom')\n",
+    )
+    _write_brain(
+        tmp_path,
+        "class Behavior(ScriptBehavior):\n"
+        "    def __init__(self) -> None:\n"
+        "        self.v = 0.0\n"
+        "    def update(self, ctx: Ctx) -> dict:\n"
+        "        self.v += 0.1\n"
+        "        return {'u_x': self.v}\n",
+    )
+    node = _FakeNode([_u("u_x")])
+    eng = _engine(tmp_path, node)
+    eng.tick("n0", node, _ctx(0.0))
+    assert (
+        abs(node.uniform_values["u_x"] - 0.1) < 1e-9
+    )  # brain's live value, not frozen
+    eng.tick("n0", node, _ctx(0.1))
+    assert (
+        abs(node.uniform_values["u_x"] - 0.2) < 1e-9
+    )  # brain still advances, not stuck
+    assert eng.errors[("n0", "u_x")].kind == "runtime"  # the u_x.py error IS surfaced
+
+
+def test_conflict_broken_per_uniform_yields_even_after_success(tmp_path: Path) -> None:
+    # The determinism point: the outcome must NOT depend on whether u_x.py ever succeeded. A per-
+    # uniform that worked, then breaks, still yields the slot to the brain (no stale-last-good freeze).
+    path = _write(  # u_x.py works at first
+        tmp_path,
+        "u_x",
+        "class Behavior(ScriptBehavior):\n"
+        "    def update(self, ctx: Ctx) -> float:\n"
+        "        return 0.77\n",
+    )
+    _write_brain(
+        tmp_path,
+        "class Behavior(ScriptBehavior):\n"
+        "    def __init__(self) -> None:\n"
+        "        self.v = 0.0\n"
+        "    def update(self, ctx: Ctx) -> dict:\n"
+        "        self.v += 0.5\n"
+        "        return {'u_x': self.v}\n",
+    )
+    node = _FakeNode([_u("u_x")])
+    eng = _engine(tmp_path, node)
+    eng.tick("n0", node, _ctx(0.0))
+    assert node.uniform_values["u_x"] == 0.77  # per-uniform wins while healthy
+    time.sleep(0.01)
+    path.write_text(  # now u_x.py breaks
+        "class Behavior(ScriptBehavior):\n"
+        "    def update(self, ctx: Ctx) -> float:\n"
+        "        raise ValueError('boom')\n",
+        encoding="utf-8",
+    )
+    eng.reload("n0", tmp_path / "scripts", node)
+    eng.tick("n0", node, _ctx(0.1))
+    assert (
+        abs(node.uniform_values["u_x"] - 1.0) < 1e-9
+    )  # brain shows through, NOT frozen at 0.77
+
+
 def test_brain_script_driven_uniforms_reports_driven_names(tmp_path: Path) -> None:
     # script_driven_uniforms returns the brain's driven uniform names (NOT "script.py"); partial
     # (empty) before the first tick since the driven set is only known after a tick (decision 10).

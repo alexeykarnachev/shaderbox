@@ -417,3 +417,26 @@ cardinality a pure function of the key), and the unknown-key write-instead-of-sk
 writes `None`). The designs' fancier "one shared `update_map` method" framing was DOWNGRADED by their own
 critiques to interface-sharing not logic-sharing — the spec keeps the honest shared atoms (`run` +
 `coerce_one` + the per-name freeze body) and synthesizes per-uniform's 1-entry map in `_resolved_pairs`.
+
+**Post-impl dogfood hardening (2026-06-13, direct-engine workflow — 4 creative scenes + 3 edge sweeps on
+the Pi's V3D, no copilot).** The engine was confirmed crash-free + state-isolated on every adversarial path;
+the dogfood surfaced failure-VISIBILITY gaps (not correctness), all fixed in the follow-up commit:
+- **Engine-owned brain guard (was a BUG).** The brain's per-key gate now routes through the SAME
+  `_binding_reject` the per-uniform path uses at reload, so a brain key naming `u_time`/`u_aspect`/
+  `u_resolution` (or an orphan/typo, or a sampler/block) is rejected at tick: a soft `(node_id, name)`
+  `ScriptError` + skip, and it does NOT enter `last_driven` (so `script_driven_uniforms` no longer falsely
+  claims ownership — the false claim would have made the copilot `set_uniform` reject refuse a real user set).
+- **NaN/Inf frozen-as-data.** `coerce_one` rejects a non-finite coerced value (records a runtime
+  `ScriptError` + freezes), instead of writing it to the GPU silently (a black frame + poisoned last-good).
+  Shared atom → covers both paths.
+- **Typo'd-key soft error.** A brain key naming no active scriptable uniform records a soft `(node_id, name)`
+  error (not loguru-only) so 042's UI surfaces it; cleared zombie-free when the key stops being returned.
+- **Conflict-freeze-fallback decision (variant B, maintainer-approved).** When a `u_<name>.py` that conflicts
+  with a brain on one slot is BROKEN, the slot yields to the brain's live value (a broken override lets the
+  base behavior show through) rather than freezing over the brain's write — making the outcome deterministic
+  regardless of whether the per-uniform ever succeeded. The per-uniform's error is still surfaced. Threaded
+  via a `brain_driven` set into the per-uniform pass's freeze. Recorded in `conventions.md`'s script bullet.
+- **DX papercuts folded:** friendly `import` message (`__import__` shim), `chr`/`ord` in the script globals,
+  an `Array`-of-nested-tuples flatten hint. **Accepted limitation (not a bug):** a coercion/non-dict error
+  reports `ScriptError.line == -1` (the mismatch is detected outside the user's `update` frame; the message
+  names the contract). 042 may tag the return-statement line if it proves worth it.

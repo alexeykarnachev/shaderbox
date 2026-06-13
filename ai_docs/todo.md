@@ -56,22 +56,6 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   owns the full affordance (and the "this uniform is script-driven" row indicator). Spec:
   `ai_docs/features/041_stateful_script_engine.md ## Out of scope`.
 
-## [DEFERRAL] script-engine residual papercuts surfaced by the 044 dogfood (feature 042)
-- **Trigger:** feature 042 (the script UI) — when it renders `eng.errors`, OR a maintainer hits one of
-  these. (The three load-bearing findings — the engine-owned brain guard, the NaN/Inf freeze, and the
-  typo'd-key soft error — were FIXED in the 044 dogfood-fix commit, along with the friendly `import`
-  message, `chr`/`ord` in the script globals, and the `Array`-nested-tuple flatten hint.)
-- **`line=-1` on coercion / non-dict errors.** A shape mismatch is detected in `coerce_one` and a
-  non-dict brain return in `_resolved_pairs` — both OUTSIDE the user's `update()` frame, so the recorded
-  `ScriptError.line` is -1 (runtime exceptions in user code DO carry the line). The message names the
-  contract, so it's a papercut, not a blocker; 042 could tag the user's return-statement line.
-- **conflict-freeze-fallback semantics need a design call.** When a `u_<name>.py` that conflicts with a
-  brain on the same slot RAISES, the displayed value flips on whether that per-uniform EVER succeeded:
-  never → `last_good` is None → the brain's same-frame write shows through; once-succeeded → freezes at
-  the per-uniform's stale last-good and silently clobbers the brain's live writes. Same topology, opposite
-  outcomes, only feedback is the bare per-uniform error. Decide whether a healthy brain should win when its
-  conflicting per-uniform is frozen — file the decision when 042 surfaces conflicts in the UI.
-
 ## [DEFERRAL] script-engine cross-uniform shared state + compute-order guarantee (feature 042+)
 - **Trigger:** a real workflow needs TWO scripts to share mutable state (one writes, another reads —
   e.g. a pong physics script writes the ball position, a render script reads it), OR a script depends on
