@@ -15,7 +15,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, TypeGuard
+from typing import Any
 
 import glfw
 import moderngl
@@ -74,7 +74,11 @@ from shaderbox.shader_lib import ShaderLibIndex, parser
 from shaderbox.shader_lib.file_ops import ShaderLibFileManager
 from shaderbox.tabs import share_state
 from shaderbox.ui_models import UINode, load_node_from_dir
-from shaderbox.util import str_to_unicode, try_to_release
+from shaderbox.uniform_coerce import (
+    coerce_uniform_value,
+    uniform_shape_hint,
+)
+from shaderbox.util import try_to_release
 
 # Node-id prefix shown to the agent; _copilot_short_ids grows it past the floor only on collision.
 _COPILOT_SHORT_ID_LEN = 4
@@ -248,75 +252,6 @@ def _uniform_type_label(u: moderngl.Uniform | moderngl.UniformBlock) -> str:
     base = "uint" if gl_type == GL_UNSIGNED_INT else "float"
     scalar = base if u.dimension == 1 else f"vec{u.dimension}"
     return f"{scalar}[{u.array_length}]" if u.array_length > 1 else scalar
-
-
-def _is_number(v: object) -> TypeGuard[int | float]:
-    return isinstance(v, int | float) and not isinstance(v, bool)
-
-
-def _coerce_uniform_value(
-    value: object, uniform: moderngl.Uniform
-) -> float | int | list[int] | tuple[float, ...] | list[tuple[float, ...]] | None:
-    # Coerce a value to the exact shape moderngl's Uniform write wants (probe-pinned): scalar -> number;
-    # vecN -> tuple of N; dim==1 array -> flat list of array_length; vecN[M] -> array_length nested
-    # dim-tuples. None on any mismatch (caller errors). Bools rejected.
-    dim = uniform.dimension
-    n = uniform.array_length
-    if n > 1:
-        return _coerce_array(value, uniform, dim, n)
-    if dim == 1:
-        return value if _is_number(value) else None
-    if not isinstance(value, list | tuple) or len(value) != dim:
-        return None
-    if not all(_is_number(v) for v in value):
-        return None
-    return tuple(float(v) for v in value)
-
-
-def _coerce_array(
-    value: object, uniform: moderngl.Uniform, dim: int, n: int
-) -> list[int] | tuple[float, ...] | list[tuple[float, ...]] | None:
-    # uint[N] TEXT array: a str (-> codepoints) or int list, truncated/null-padded to N. Numeric array:
-    # exact length, NO padding (padding numeric data is silent corruption).
-    gl_type = uniform.gl_type  # type: ignore
-    if dim == 1 and gl_type == GL_UNSIGNED_INT:
-        if isinstance(value, str):
-            return str_to_unicode(value, n)
-        if isinstance(value, list | tuple) and all(_is_number(v) for v in value):
-            ints = [int(v) for v in value][:n]
-            return ints + [0] * (n - len(ints))
-        return None
-    # numeric array. A str is never valid here.
-    if not isinstance(value, list | tuple) or not all(_is_number(v) for v in value):
-        return None
-    if dim == 1:  # float[N] -> flat list of exactly N
-        return tuple(float(v) for v in value) if len(value) == n else None
-    if len(value) != n * dim:  # vecN[M] -> N rows of `dim`
-        return None
-    flat = [float(v) for v in value]
-    return [tuple(flat[i : i + dim]) for i in range(0, n * dim, dim)]
-
-
-def _set_uniform_shape_hint(name: str, uniform: moderngl.Uniform, label: str) -> str:
-    # The shape-mismatch feedback: the exact shape `name` expects.
-    dim = uniform.dimension
-    n = uniform.array_length
-    gl_type = uniform.gl_type  # type: ignore
-    if n > 1 and dim == 1 and gl_type == GL_UNSIGNED_INT:
-        return (
-            f"value does not match {label} (a text array) — pass the text as a string e.g. "
-            f'"Hello\\nWorld", or a list of up to {n} codepoint ints'
-        )
-    if n > 1 and dim == 1:
-        return f"value does not match {label} — provide a list of exactly {n} numbers"
-    if n > 1:
-        return (
-            f"value does not match {label} — provide a list of {n * dim} numbers "
-            f"({n} groups of {dim})"
-        )
-    if dim > 1:
-        return f"value does not match {label} — provide a list of {dim} numbers for a vector"
-    return f"value does not match {label} — provide a number"
 
 
 def _format_uniforms(node: Node) -> list[str]:
@@ -764,10 +699,10 @@ class CopilotBackend:
                     error=f"'{name}' is a {label} — only scalar/vector uniforms can be set "
                     "to a value; samplers and uniform blocks are not settable",
                 )
-            coerced = _coerce_uniform_value(value, uniform)
+            coerced = coerce_uniform_value(value, uniform)
             if coerced is None:
                 return SetUniformResult(
-                    ok=False, error=_set_uniform_shape_hint(name, uniform, label)
+                    ok=False, error=uniform_shape_hint(name, uniform, label)
                 )
             self._capture_node(node_id)  # pre-change rollback snapshot (best-effort)
             try_to_release(target.uniform_values.get(name))

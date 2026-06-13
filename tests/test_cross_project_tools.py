@@ -14,11 +14,11 @@ import moderngl
 import pytest
 
 from shaderbox.constants import NODE_TEMPLATES_DIR, STARTER_TEMPLATE_ID
-from shaderbox.copilot.backend import _coerce_uniform_value
 from shaderbox.core import ENGINE_DRIVEN_UNIFORMS
 from shaderbox.shader_lib.file_ops import ShaderLibFileManager
 from shaderbox.shader_lib.index import ShaderLibIndex
 from shaderbox.ui_models import load_node_from_dir
+from shaderbox.uniform_coerce import coerce_uniform_value
 
 
 def _uniform(dimension: int) -> types.SimpleNamespace:
@@ -28,28 +28,28 @@ def _uniform(dimension: int) -> types.SimpleNamespace:
 
 
 def test_coerce_scalar() -> None:
-    assert _coerce_uniform_value(0.5, _uniform(1)) == 0.5
-    assert _coerce_uniform_value(3, _uniform(1)) == 3
+    assert coerce_uniform_value(0.5, _uniform(1)) == 0.5
+    assert coerce_uniform_value(3, _uniform(1)) == 3
 
 
 def test_coerce_vector() -> None:
-    assert _coerce_uniform_value([1, 0, 0], _uniform(3)) == (1.0, 0.0, 0.0)
-    assert _coerce_uniform_value([0.5, 0.5], _uniform(2)) == (0.5, 0.5)
+    assert coerce_uniform_value([1, 0, 0], _uniform(3)) == (1.0, 0.0, 0.0)
+    assert coerce_uniform_value([0.5, 0.5], _uniform(2)) == (0.5, 0.5)
 
 
 def test_coerce_shape_mismatch_is_none() -> None:
     # A scalar for a vec3, a vec2 for a vec3, a non-number — all reject (the handler turns
     # None into an explicit error, never the silent render-time pop).
-    assert _coerce_uniform_value(0.5, _uniform(3)) is None
-    assert _coerce_uniform_value([1, 0], _uniform(3)) is None
-    assert _coerce_uniform_value("red", _uniform(3)) is None
-    assert _coerce_uniform_value(["a", "b", "c"], _uniform(3)) is None
+    assert coerce_uniform_value(0.5, _uniform(3)) is None
+    assert coerce_uniform_value([1, 0], _uniform(3)) is None
+    assert coerce_uniform_value("red", _uniform(3)) is None
+    assert coerce_uniform_value(["a", "b", "c"], _uniform(3)) is None
 
 
 def test_coerce_rejects_bool() -> None:
     # JSON true/false is not a shader number, even though bool is an int subclass.
-    assert _coerce_uniform_value(True, _uniform(1)) is None
-    assert _coerce_uniform_value([True, False, True], _uniform(3)) is None
+    assert coerce_uniform_value(True, _uniform(1)) is None
+    assert coerce_uniform_value([True, False, True], _uniform(3)) is None
 
 
 def test_engine_driven_set_is_the_documented_set() -> None:
