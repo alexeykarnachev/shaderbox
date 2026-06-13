@@ -53,26 +53,6 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   model ignores the prompt. Only build it if the prompt rule visibly fails in a fresh trace (per the
   "guard earns its place" convention — don't add standing structure for a transient model lapse).
 
-## [DEFERRAL] copilot machine-readable render feedback (the visual-blindness affordance)
-- **Trigger: FIRED and RESOLVED INTO 033** — the maintainer picked the ambient variant (render
-  FACTS appended to every clean-compile edit result: ink %, bbox, luma grid; the enriched-results
-  mechanism in `033_copilot_robustness_wave.md`). The standalone `inspect_render` TOOL variant is
-  REJECTED (tool count must not grow; a lazy model wouldn't call it). What remains deferred here:
-  the VLM-judge variant (a vision model critiques the render in words — judges aesthetics, not just
-  presence). Trigger for THAT: the next dogfood/library-quality session that needs AESTHETIC
-  judgement, not just presence facts (033 landed 2026-06-11, so the precondition is met) — pilot it
-  harness-side first: the driver feeds VLM verdicts back as user text.
-- Original trigger (kept for context): the first recurrence (in a DIFFERENT session) of "the agent
-  can't tell its change had no visual effect" — it reports success after a clean compile while the
-  user sees no change (observed 2026-06-05: the cyrillic text never rendered; the agent claimed it
-  did). OR when wiring the structural shader view (020·27).
-- The copilot's ONLY correctness signal is the compiler, so a clean compile with unchanged output is
-  indistinguishable from success. A lightweight `inspect_render(node?)` returning a few scalars (non-background
-  pixel fraction, ink bounding box, a coarse luma grid) would let the agent detect "my change didn't take" —
-  the one HONEST fix for the hallucinated-success class (the prompt-side ledger/honesty guards were CUT as
-  overfit; this is the pipeline-intrinsic version). Large; spec before building. Source: the overfit-tribunal
-  audit (visual-blindness lens).
-
 ## [DEFERRAL] copilot reasoning-notes scratchpad (the second PER_TURN block) — also the intent-carryover guard
 - **Trigger:** the CORRECTION/COORDINATE intent regresses in practice (the agent's stated assumption is lost
   because it wasn't in its reply prose `text_buf`), OR the agent runs an UNREQUESTED action carried over from a
@@ -571,21 +551,19 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   "describe it" mis-cue removed, gate-decline message states NOT-done, a gate-outcome reply rule
   added, sanitize maps guillemets/non-breaking hyphen. What remains is model-bound: a cheap model
   claiming success against non-FLAT-but-damning facts (ink 99%/flat luma — can't be auto-escalated
-  without false-positiving legitimate full-screen effects). If it persists on a better model, the
-  VLM-judge deferral (above) is the real answer.
+  without false-positiving legitimate full-screen effects). No clean engine fix without
+  false-positives; left model-bound until a better default model makes it moot.
 
-## [DEFERRAL] dogfood analyze.py forensic-accuracy gaps (the cost/token half is FIXED)
-- **Trigger:** next SUBSTANTIVE `scripts/dogfood/analyze.py` work (parsing / coverage / report
-  logic — NOT a tool-name vocabulary touch like 039's), OR a dogfood report whose per-turn
-  coverage/glyph/reasoning columns look wrong.
-- The cost/token half is RESOLVED (038: `_finalize_turn` fallback-sums per-iteration usage for
-  error-terminal turns that emit no `turn_done` — cost, billed-in, reply, AND peak). What REMAINS (the
-  forensic swarm's list, all S): coverage counts key on history-echo ids not execution blocks
-  (mega run: 26 real edit calls vs 23 reported; a DECLINED call counted as fired); the 🔴 glyph marks honest
-  probe-failure turns as failed (key it on the terminal kind); `rsn=` reasoning tokens dropped (t18
-  iter2: rsn=5504 of out=5872); no `gate_approved` trace event; the resolved model isn't recorded in
-  artifacts (report header says "unknown"); a `--calls` compact per-turn tool→result index mode would
-  kill the grep-haystack pain.
+## [DEFERRAL] dogfood analyze.py: a `--calls` compact per-turn tool→result index mode
+- **Trigger:** next time reading a run means grepping the raw transcript for "which call returned
+  what" (the haystack pain), OR next substantive `scripts/dogfood/analyze.py` work.
+- The forensic-accuracy half is RESOLVED: cost/token rollup (038); coverage now keys on executed
+  `### tool_call` blocks not history-echo ids (a declined/precheck call no longer counts as fired);
+  the result glyph keys on the terminal event kind (a handled probe-failure is ✅, only a hard-fail
+  terminal is 🔴); `rsn=` reasoning tokens captured + a reasoning-share line; `gate_approved` traced +
+  parsed (gate approvals/declines counted per turn); the resolved model recorded at `turn_start` and
+  read back (no more "unknown" header). What REMAINS is the one convenience: a `--calls` mode emitting
+  a compact per-turn tool→result index so a reviewer never has to grep the raw transcript.
 
 ## [DEFERRAL] copilot reply-time honesty enforcement (the in-result channel is ignored at reply time)
 - **Trigger:** when designing the next copilot honesty/robustness wave, OR a user report of the
@@ -594,4 +572,4 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   ENDED with the "NOTHING is visible: do not describe a scene" imperative — even the in-result
   channel is ignored at reply time by a cheap model. Enforcement would need an engine-side check
   (e.g. the session inspecting the last facts line and flagging a contradicting reply), not more
-  prompt text. Design work, not a hotfix; weigh against the VLM-judge deferral.
+  prompt text. Design work, not a hotfix.

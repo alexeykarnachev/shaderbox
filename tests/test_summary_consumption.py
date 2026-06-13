@@ -22,6 +22,9 @@ from tests.test_copilot_loop import _tool_call
 
 class _CapturingClient:
     # Records the `messages` of every stream() call so a later turn can assert what it received.
+    # `model` mirrors the real client — the session records it at turn_start.
+    model = "test-model"
+
     def __init__(self, scripts: list[list[LLMStreamEvent]]) -> None:
         self._scripts = scripts
         self._i = 0

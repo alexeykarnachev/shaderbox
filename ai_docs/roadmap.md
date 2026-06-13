@@ -25,18 +25,19 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-06-12. -->
-**039 content-addressed editing DONE + final-swarm-hardened + mega-dogfooded — ready on `dev`.**
-Line/anchor edit tools are gone (56-finding adversarial review proved the addressing class
-unsound); editing is `edit_shader` + `write_shader` (removed-names fact, filtered against the new
-text after a live false-positive; lib writes get a brace warning; CRLF/lone-CR normalized). A
-7-finder pre-commit swarm (engine/conventions/hygiene PASS) found 30 items — all fixed same-wave
-(see spec Review history). Two gate runs + a 16-turn MEGA run (scenario 01, context wipe): 10/11
-tool coverage, the wiped agent's reads were load-bearing, zero giveups/corruption, $0.0547, 67%
-cache (telemetry now first-class: `LLMUsage.cached_tokens` → trace `cache=` → analyzer). 362
-tests green. Reports: `039_dogfood_report_gate.md` + `_mega.md`. **Next move:** the maintainer's
-pick — edit-churn brake (todo, trigger armed), dogfood analyzer forensic gaps, or render-facts
-VLM-judge honesty. **No open BLOCKERs.**
+<!-- As of 2026-06-13. -->
+**Dogfood analyzer forensic-accuracy gaps CLOSED — ready on `dev`.** `scripts/dogfood/analyze.py`
+now: keys coverage on EXECUTED `### tool_call` blocks not history-echo ids (a declined/precheck call
+no longer inflates coverage); the result glyph keys on the terminal event kind (a handled
+probe-failure is ✅, only a hard-fail terminal 🔴; report splits "failed turns" vs
+"unrecovered-in-turn attempts"); captures `rsn=` reasoning tokens + a reasoning-share line; parses a
+new `gate_approved` trace event (approvals/declines counted per turn); records the resolved model at
+`turn_start` and reads it back (no more "unknown" header). Engine touch was minimal — one trace
+event, one `turn_start` field, a `client.model` property threaded session→`run_turn`. VLM-judge
+direction DROPPED from the docs (not pursuing). 395 tests green, `make check`/`make smoke` clean.
+**Next move:** the maintainer's pick — the `--calls` compact tool→result index (todo, the last
+analyzer convenience), the 039 edit-churn brake (parked: trigger armed, churn shown stochastic), or
+a fresh dogfood run now that the analyzer is honest. **No open BLOCKERs.**
 
 ## Features
 

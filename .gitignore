@@ -16,6 +16,7 @@ tg_state.json
 projects/*/media/
 projects/*/renders/
 projects/*/copilot/archive/
+projects/*/copilot/checkpoints/
 
 # Dogfood run artifacts (project dirs, data dir, JSON dumps, traces, PNGs) — regenerable junk
 scripts/dogfood/runs/

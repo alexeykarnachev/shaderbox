@@ -356,6 +356,7 @@ def run_turn(
     trace: TraceLog | None = None,
     scratchpad_render: Callable[[], list[LLMMessage]] | None = None,
     batch_begin: Callable[[], None] | None = None,
+    model: str = "",
 ) -> Iterator[AgentEvent]:
     # `trace` is the full-transcript sink (None in
     # tests). `scratchpad_render` rebuilds the live per-turn working-set block each iteration, spliced
@@ -390,7 +391,13 @@ def run_turn(
         f"copilot turn detail | history_msgs={len(history)} "
         f"eager_tools={[s.name for s in specs]}"
     )
-    tr.event("turn_start", user_text=user_text, history=history, eager_tools=specs)
+    tr.event(
+        "turn_start",
+        model=model or "(unset)",
+        user_text=user_text,
+        history=history,
+        eager_tools=specs,
+    )
 
     final_reply_text: list[str] = []
 
@@ -720,6 +727,7 @@ def run_turn(
                         )
                     )
                     continue
+                tr.event("gate_approved", name=tc.name)
                 secret = resp.secret
             ok, msg, payload = registry.execute(tc.name, args, secret)
             total_tool_calls += 1

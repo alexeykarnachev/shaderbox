@@ -52,7 +52,10 @@ def _tool_call(call_id: str, name: str, args: str) -> list[LLMStreamEvent]:
 
 
 class _FakeClient:
-    # One scripted event-list per stream() call.
+    # One scripted event-list per stream() call. `model` mirrors the real client — the session
+    # records it at turn_start.
+    model = "test-model"
+
     def __init__(self, scripts: list[list[LLMStreamEvent]]) -> None:
         self._scripts = scripts
         self._i = 0
@@ -557,6 +560,8 @@ def test_stale_shutdown_sentinel_does_not_strand_turn(tmp_path: Path) -> None:
     from shaderbox.copilot.session import _SHUTDOWN, CopilotSession
 
     class _PlainClient:
+        model = "test-model"
+
         def stream(
             self,
             messages: list[LLMMessage],

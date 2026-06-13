@@ -55,7 +55,7 @@ Roughly this arc, but let the maintainer's feedback redirect it at any point:
   **Watch:** does the prose over-claim a look it can't see? Cross-check the PNG. The honest signal: when
   the same render-facts line repeats across N edits, NOTHING changed — the agent should notice and
   usually doesn't. Feeding back the facts verbatim ("luma is identical across your last 3 edits, so the
-  image didn't change") is what unsticks it. This is the live demonstration of the `todo.md` VLM-judge /
+  image didn't change") is what unsticks it. This is the live demonstration of the `todo.md`
   render-facts-honesty deferral — every run here is another datum for it.
 - **Precise-diagnosis dependency.** The agent is GOOD when handed an exact defect ("the SDF sign is
   wrong: length(p)*sign(p.y) is not negative-inside" / "letter advance is (1+spacing.x)*0.5*char_height,

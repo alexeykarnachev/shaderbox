@@ -372,6 +372,7 @@ class CopilotSession:
                     self.caps.read_working_set()
                 ),
                 batch_begin=self.caps.batch_begin,
+                model=self.client.model,
             ):
                 if isinstance(ev, AgentError):
                     error_text = ev.message

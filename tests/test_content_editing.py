@@ -501,9 +501,7 @@ def test_write_shader_arg_order_pinned_through_loop() -> None:
         run_turn(
             _FakeClient(
                 [
-                    _tool_call(
-                        "c1", "write_shader", '{"new_text": "// sentinel-039"}'
-                    ),
+                    _tool_call("c1", "write_shader", '{"new_text": "// sentinel-039"}'),
                     [LLMTextDelta("done"), LLMDone("stop")],
                 ]
             ),

@@ -84,6 +84,10 @@ class OpenRouterLLMClient(LLMClient):
         self._get_api_key = get_api_key
         self._get_model = get_model
 
+    @property
+    def model(self) -> str:
+        return self._get_model()
+
     def _client(self) -> OpenAI:
         return OpenAI(
             base_url=_OPENROUTER_BASE_URL,

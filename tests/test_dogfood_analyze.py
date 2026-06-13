@@ -236,8 +236,9 @@ def test_trace_usage_line_round_trips_through_analyzer() -> None:
     )
     m = _USAGE_RE.match("usage: " + _render_usage(u))
     assert m is not None
-    assert (m.group(1), m.group(2), m.group(3)) == ("100", "20", "64")
-    assert float(m.group(4)) == 0.001
+    # groups: in, out, rsn, cache, cost
+    assert (m.group(1), m.group(2), m.group(3), m.group(4)) == ("100", "20", "2", "64")
+    assert float(m.group(5)) == 0.001
     total = u + LLMUsage(input_tokens=1, cached_tokens=6)
     assert total.cached_tokens == 70
 
@@ -265,3 +266,225 @@ def test_cache_share_parsed_and_reported(tmp_path: Path) -> None:
     an = analyze(data_dir, "")
     assert an.turns[0].iterations[0].cached_tokens == 80
     assert "80/100" in _cache_share_line(an) and "80%" in _cache_share_line(an)
+
+
+# A gate-declined call: the model EMITTED render_image (echoed in the next iteration's history) but
+# the user declined, so execute() never ran and no ### tool_call block was written. Coverage must key
+# on the execution block, so render_image must NOT count as used.
+_DECLINED_TRACE = """\
+### turn_start  ·  2026-01-01T00:00:00.000
+model: x-ai/grok-4-fast
+user_text: render it
+
+### llm_response  ·  2026-01-01T00:00:01.000
+iteration: 1
+finish_reason: tool_calls
+usage: in=100 out=10 cost=$0.001000
+    -> tool_call render_image(id=call_aaa1)
+
+### gate_open  ·  2026-01-01T00:00:01.050
+name: render_image
+prompt: Render the current node?
+
+### gate_declined  ·  2026-01-01T00:00:01.100
+name: render_image
+
+### llm_response  ·  2026-01-01T00:00:02.000
+iteration: 2
+finish_reason: stop
+usage: in=110 out=10 cost=$0.001100
+    -> tool_call render_image(id=call_aaa1)
+
+### turn_done  ·  2026-01-01T00:00:02.100
+iterations: 2
+tool_calls: 0
+reply: ok, not rendered
+usage: in=210 out=20 cost=$0.002100
+"""
+
+
+def test_declined_call_is_not_counted_as_used(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data-decl"
+    _write_trace(data_dir, _DECLINED_TRACE)
+    an = analyze(data_dir, "")
+    # render_image was emitted + echoed but never executed -> not in coverage.
+    assert "render_image" not in an.tool_counts
+    assert "render_image" not in an.reachable_used
+    assert an.turns[0].gate_declines == 1
+    # the echo (1 deduped id) is fully explained by the 1 decline -> no drift warning.
+    assert not any("invocation/block mismatch" in w for w in an.warnings)
+    # model echo wins over the absent integrations.json default.
+    assert an.model == "x-ai/grok-4-fast"
+
+
+# An approved gate that executes: the ### tool_call block IS written, so it counts; the gate_approved
+# event is recorded on the turn.
+_APPROVED_TRACE = """\
+### turn_start  ·  2026-01-01T00:00:00.000
+model: x-ai/grok-4-fast
+user_text: render it
+
+### llm_response  ·  2026-01-01T00:00:01.000
+iteration: 1
+finish_reason: tool_calls
+usage: in=100 out=10 cost=$0.001000
+    -> tool_call render_image(id=call_aaa1)
+
+### gate_open  ·  2026-01-01T00:00:01.050
+name: render_image
+prompt: Render the current node?
+
+### gate_approved  ·  2026-01-01T00:00:01.080
+name: render_image
+
+### tool_call  ·  2026-01-01T00:00:01.100
+n: 1
+name: render_image
+ok: True
+result: ok — rendered 400x400
+
+### llm_response  ·  2026-01-01T00:00:02.000
+iteration: 2
+finish_reason: stop
+usage: in=110 out=10 cost=$0.001100
+
+### turn_done  ·  2026-01-01T00:00:02.100
+iterations: 2
+tool_calls: 1
+reply: rendered
+usage: in=210 out=20 cost=$0.002100
+"""
+
+
+def test_approved_gate_executes_and_is_counted(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data-appr"
+    _write_trace(data_dir, _APPROVED_TRACE)
+    an = analyze(data_dir, "")
+    assert an.tool_counts.get("render_image") == 1
+    assert "render_image" in an.reachable_used
+    assert an.turns[0].gate_approvals == 1
+    assert an.turns[0].gate_declines == 0
+
+
+# A probe turn: an attempt deliberately fails (bad node id) and the agent answers WITHOUT re-editing,
+# ending on a clean turn_done. That is a PASS (✅), not a failed turn — the old glyph marked it 🔴.
+_PROBE_TRACE = """\
+### turn_start  ·  2026-01-01T00:00:00.000
+user_text: edit node zzzz
+
+### llm_response  ·  2026-01-01T00:00:01.000
+iteration: 1
+finish_reason: tool_calls
+usage: in=100 out=10 cost=$0.001000
+    -> tool_call edit_shader(id=call_aaa1)
+
+### tool_call  ·  2026-01-01T00:00:01.100
+n: 1
+name: edit_shader
+ok: False
+result: error: no node with id 'zzzz'
+
+### llm_response  ·  2026-01-01T00:00:02.000
+iteration: 2
+finish_reason: stop
+usage: in=110 out=10 cost=$0.001100
+
+### turn_done  ·  2026-01-01T00:00:02.100
+iterations: 2
+tool_calls: 1
+reply: there is no node zzzz — which node did you mean?
+usage: in=210 out=20 cost=$0.002100
+"""
+
+
+def test_handled_probe_failure_is_a_pass_not_red(tmp_path: Path) -> None:
+    from scripts.dogfood.analyze import _result_glyph
+
+    data_dir = tmp_path / "data-probe"
+    _write_trace(data_dir, _PROBE_TRACE)
+    an = analyze(data_dir, "")
+    turn = an.turns[0]
+    assert turn.terminal_kind == "turn_done"
+    assert _result_glyph(turn) == "✅"  # clean terminal — NOT 🔴
+    # the attempt still counts as errored-unrecovered-in-turn (no later clean edit), but that is an
+    # attempt-level stat, not a turn failure.
+    assert turn.errored is True and turn.recovered is False
+    assert "0 failed turns" in an.recovery_summary
+
+
+def test_giveup_terminal_is_red(tmp_path: Path) -> None:
+    from scripts.dogfood.analyze import _result_glyph
+
+    data_dir = tmp_path / "data-giveup-glyph"
+    _write_trace(data_dir, _GIVEUP_TRACE)
+    an = analyze(data_dir, "")
+    assert an.turns[0].terminal_kind == "edit_giveup"
+    assert _result_glyph(an.turns[0]) == "🔴"
+    assert "1 failed turns" in an.recovery_summary
+
+
+_REASONING_TRACE = """\
+### turn_start  ·  2026-01-01T00:00:00.000
+user_text: think hard
+
+### llm_response  ·  2026-01-01T00:00:01.000
+iteration: 1
+finish_reason: stop
+usage: in=100 out=200 rsn=180 cache=0 cost=$0.001000
+
+### turn_done  ·  2026-01-01T00:00:02.000
+iterations: 1
+usage: in=100 out=200 cost=$0.001000
+"""
+
+
+def test_reasoning_share_parsed_and_reported(tmp_path: Path) -> None:
+    from scripts.dogfood.analyze import _reasoning_share_line
+
+    data_dir = tmp_path / "data-rsn"
+    _write_trace(data_dir, _REASONING_TRACE)
+    an = analyze(data_dir, "")
+    assert an.turns[0].iterations[0].reasoning_tokens == 180
+    line = _reasoning_share_line(an)
+    assert "180/200" in line and "90%" in line
+
+
+def test_trace_turn_start_and_gate_events_round_trip(tmp_path: Path) -> None:
+    # The trace PRODUCER (TraceLog.event) and the analyzer PARSER are one contract for the new
+    # turn_start `model` field and the gate_approved event — render with the real producer, parse
+    # with the real consumer.
+    from shaderbox.copilot.trace import TraceLog
+
+    data_dir = tmp_path / "data-rt"
+    traces = data_dir / "copilot_traces"
+    traces.mkdir(parents=True)
+    tr = TraceLog(traces / "copilot_test_2026-01-01_00-00-00_000001.transcript")
+    tr.event(
+        "turn_start",
+        model="x-ai/grok-4-fast",
+        user_text="go",
+        history=[],
+        eager_tools=[],
+    )
+    tr.event(
+        "llm_response", iteration=1, finish_reason="tool_calls", text="", tool_calls=[]
+    )
+    # usage rendered by the producer is exercised elsewhere; emit a minimal usage line by hand-free
+    # path: the analyzer reads iterations from llm_response sections, cost from the usage line.
+    tr.event("gate_approved", name="render_image")
+    tr.event(
+        "tool_call",
+        n=1,
+        name="render_image",
+        args={},
+        ok=True,
+        result="ok — rendered",
+        payload={},
+    )
+    tr.event("turn_done", iterations=1, tool_calls=1, reply="done")
+    tr.close()
+
+    an = analyze(data_dir, "")
+    assert an.model == "x-ai/grok-4-fast"
+    assert an.turns[0].gate_approvals == 1
+    assert an.tool_counts.get("render_image") == 1

@@ -80,11 +80,26 @@ _EDIT_TOOLS: frozenset[str] = frozenset(
     {"edit_shader", "write_shader", "create_node"} | HISTORICAL_TOOLS
 )
 DEFAULT_MODEL_NOTE = "unknown (in-tree default)"
+# The trace event kinds that END a turn. A clean turn closes on turn_done; the rest are failure
+# terminals that emit no turn_done. The result glyph keys on which of these closed the turn — NOT
+# on whether some mid-turn attempt errored (an attempt the agent recovered from is not a failure).
+_TERMINAL_KINDS: frozenset[str] = frozenset(
+    {
+        "turn_done",
+        "edit_giveup",
+        "stream_error",
+        "turn_truncated",
+        "model_incompatible",
+    }
+)
+_HARD_FAIL_TERMINALS: frozenset[str] = frozenset(
+    {"edit_giveup", "stream_error", "model_incompatible"}
+)
 
 _TS_RE = re.compile(r"copilot_.*_(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}_\d+)\.transcript")
 _SECTION_RE = re.compile(r"^### (?P<kind>\w+)\s")
 _USAGE_RE = re.compile(
-    r"^usage: in=(\d+) out=(\d+)(?: rsn=\d+)?(?: cache=(\d+))? cost=\$([\d.]+)"
+    r"^usage: in=(\d+) out=(\d+)(?: rsn=(\d+))?(?: cache=(\d+))? cost=\$([\d.]+)"
 )
 _INVOKE_RE = re.compile(r"^\s*-> tool_call (?P<name>\w+)\(id=(?P<id>call_\w+)\)")
 
@@ -107,12 +122,14 @@ class Iteration:
     in_tokens: int
     out_tokens: int
     cached_tokens: int
+    reasoning_tokens: int
     cost_usd: float
 
 
 @dataclass
 class Turn:
     user_text: str
+    model: str
     iterations: list[Iteration]
     tool_attempts: list[ToolAttempt]
     iterations_count: int
@@ -124,6 +141,13 @@ class Turn:
     reply_tokens: int
     cost_usd: float
     segment: str
+    # The trace event kind that ENDED the turn (turn_done / edit_giveup / stream_error /
+    # turn_truncated / model_incompatible / "" if none seen). A real failure glyph keys on
+    # THIS, not on whether some attempt errored — an attempt the agent handled is not a
+    # failed turn.
+    terminal_kind: str
+    gate_approvals: int
+    gate_declines: int
     errored: bool
     recovered: bool
 
@@ -225,6 +249,7 @@ def _parse_transcript(path: Path, turns: list[Turn], warnings: list[str]) -> Non
             _finalize_turn(cur_turn)
             cur_turn = Turn(
                 user_text=_as_str(cur.get("user_text", "")),
+                model=_as_str(cur.get("model", "")),
                 iterations=[],
                 tool_attempts=[],
                 iterations_count=0,
@@ -236,6 +261,9 @@ def _parse_transcript(path: Path, turns: list[Turn], warnings: list[str]) -> Non
                 reply_tokens=0,
                 cost_usd=0.0,
                 segment=path.name,
+                terminal_kind="",
+                gate_approvals=0,
+                gate_declines=0,
                 errored=False,
                 recovered=False,
             )
@@ -248,6 +276,7 @@ def _parse_transcript(path: Path, turns: list[Turn], warnings: list[str]) -> Non
                     in_tokens=_as_int(cur.get("in")),
                     out_tokens=_as_int(cur.get("out")),
                     cached_tokens=_as_int(cur.get("cache")),
+                    reasoning_tokens=_as_int(cur.get("rsn")),
                     cost_usd=_as_float(cur.get("cost")),
                 )
             )
@@ -262,7 +291,13 @@ def _parse_transcript(path: Path, turns: list[Turn], warnings: list[str]) -> Non
                     applied_with_errors="compiled with errors" in head.lower(),
                 )
             )
-        elif kind == "turn_done" and cur_turn is not None:
+        elif kind == "gate_approved" and cur_turn is not None:
+            cur_turn.gate_approvals += 1
+        elif kind == "gate_declined" and cur_turn is not None:
+            cur_turn.gate_declines += 1
+        elif kind in _TERMINAL_KINDS and cur_turn is not None:
+            cur_turn.terminal_kind = kind
+        if kind == "turn_done" and cur_turn is not None:
             cur_turn.iterations_count = _as_int(cur.get("iterations"))
             cur_turn.tool_calls_count = _as_int(cur.get("tool_calls"))
             cur_turn.reply = _as_str(cur.get("reply", ""))
@@ -284,11 +319,12 @@ def _parse_transcript(path: Path, turns: list[Turn], warnings: list[str]) -> Non
             continue
         usage = _USAGE_RE.match(line)
         if usage is not None:
-            cur["in"], cur["out"], cur["cache"], cur["cost"] = (
+            cur["in"], cur["out"], cur["rsn"], cur["cache"], cur["cost"] = (
                 int(usage.group(1)),
                 int(usage.group(2)),
                 int(usage.group(3) or 0),
-                float(usage.group(4)),
+                int(usage.group(4) or 0),
+                float(usage.group(5)),
             )
             continue
         if line.startswith("result:"):
@@ -309,6 +345,7 @@ def _parse_transcript(path: Path, turns: list[Turn], warnings: list[str]) -> Non
             key = key.strip()
             if key in {
                 "user_text",
+                "model",
                 "iteration",
                 "finish_reason",
                 "n",
@@ -336,6 +373,18 @@ def _scan_invocations(transcripts: list[Path]) -> dict[str, str]:
 
 def _count_tool_blocks(turns: list[Turn]) -> int:
     return sum(len(t.tool_attempts) for t in turns)
+
+
+def _count_precheck_handoffs(transcripts: list[Path]) -> int:
+    # A precheck handoff (no creds / no pack) emits its own ### section and never executes, so it
+    # echoes in history without an execution block — counted here to explain that echo/block gap.
+    n = 0
+    for path in transcripts:
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            m = _SECTION_RE.match(line)
+            if m is not None and m.group("kind") == "tool_precheck_handoff":
+                n += 1
+    return n
 
 
 def _find_recoveries(turns: list[Turn]) -> tuple[list[Recovery], list[ToolAttempt]]:
@@ -378,9 +427,19 @@ def _find_recoveries(turns: list[Turn]) -> tuple[list[Recovery], list[ToolAttemp
     return recoveries, errored
 
 
-def _resolve_model(target: Path, cli_model: str, warnings: list[str]) -> str:
+def _resolve_model(
+    target: Path, cli_model: str, turns: list[Turn], warnings: list[str]
+) -> str:
     if cli_model:
         return cli_model
+    # The model the API actually resolved is recorded per turn at turn_start (the authoritative source
+    # on a wiped/multi-process run, where integrations.json may not reflect what was billed). Take the
+    # last non-empty/non-placeholder one; a turn from before this trace field shows "".
+    traced = next(
+        (t.model for t in reversed(turns) if t.model and t.model != "(unset)"), ""
+    )
+    if traced:
+        return traced
     integ = (target / "integrations.json") if target.is_dir() else None
     if integ is not None and integ.exists():
         try:
@@ -390,7 +449,9 @@ def _resolve_model(target: Path, cli_model: str, warnings: list[str]) -> str:
                 return str(model)
         except (OSError, json.JSONDecodeError):
             pass
-    warnings.append("model not in integrations.json/CLI; using in-tree-default note")
+    warnings.append(
+        "model not in trace/integrations.json/CLI; using in-tree-default note"
+    )
     return DEFAULT_MODEL_NOTE
 
 
@@ -439,22 +500,33 @@ def analyze(target: Path, cli_model: str) -> RunAnalysis:
     for path in transcripts:
         _parse_transcript(path, turns, warnings)
 
+    # Coverage keys on EXECUTED tool_call blocks (emitted only after execute() ran), not on the
+    # history-echo id scan: an echo fires for a call the model EMITTED, which includes a gate-declined
+    # or precheck-handoff call that never executed (mega run: a declined call inflated coverage). The
+    # echo scan is kept as a cross-check below.
+    tool_counts: dict[str, int] = dict(
+        Counter(a.name for t in turns for a in t.tool_attempts)
+    )
     invocations = _scan_invocations(transcripts)
-    tool_counts = dict(Counter(invocations.values()))
     block_count = _count_tool_blocks(turns)
-    deduped = sum(tool_counts.values())
-    # The id-echoes live in the [assistant] history replayed by the NEXT iteration's llm_request, so a
-    # turn that ends on a tool call (the max_iterations cutoff) leaves its final call un-echoed: blocks
-    # then exceed deduped ids by exactly the count of such turns. That's expected, not drift. Only the
-    # other direction (an echoed id with no execution block) is a real anomaly worth a warning.
-    if deduped > block_count:
+    deduped = len(invocations)
+    # echo vs execution reconcile: an echoed id with NO execution block is a call the model emitted
+    # that never reached execute — a gate decline or a precheck handoff (both recorded on the turn) —
+    # OR the un-echoed-final-call case (a max_iterations turn ends ON a tool call, so its echo lands in
+    # no later iteration: that goes the OTHER way, blocks > echoes). Account for the known causes; warn
+    # only on an unexplained residual.
+    declined = sum(t.gate_declines for t in turns)
+    handoffs = _count_precheck_handoffs(transcripts)
+    explained_gap = declined + handoffs
+    if deduped > block_count + explained_gap:
         warnings.append(
-            f"invocation/block mismatch: {deduped} deduped ids vs "
-            f"{block_count} tool_call blocks (echoed id without an execution block — format drift?)"
+            f"invocation/block mismatch: {deduped} echoed ids vs {block_count} execution "
+            f"blocks + {explained_gap} declined/handoff (unexplained echo without execution — "
+            "format drift?)"
         )
     for name in tool_counts:
         if name not in CANONICAL_TOOLS | HISTORICAL_TOOLS:
-            warnings.append(f"unknown tool invoked: {name}")
+            warnings.append(f"unknown tool executed: {name}")
 
     reachable_used = [t for t in REACHABLE_TOOLS if t in tool_counts]
     reachable_gap = [t for t in REACHABLE_TOOLS if t not in tool_counts]
@@ -482,11 +554,18 @@ def analyze(target: Path, cli_model: str) -> RunAnalysis:
     peak = max(peaks, default=0)
     peak_idx = (peaks.index(peak) + 1) if peaks else 0
 
-    giveup = sum(1 for t in turns if t.errored and not t.recovered)
+    # Two distinct failure notions, kept separate so the report doesn't conflate them:
+    #  - unrecovered_attempts: an attempt broke and no later clean edit fixed it IN THE SAME TURN.
+    #    This is NOT a failed turn — it includes a deliberate bad-id/bad-range probe the agent
+    #    correctly answered without re-editing (which ends on a clean turn_done, so glyph ✅).
+    #  - failed_turns: the turn ended on a hard-fail terminal (giveup / stream error / incompatible).
+    unrecovered_attempts = sum(1 for t in turns if t.errored and not t.recovered)
+    failed_turns = sum(1 for t in turns if t.terminal_kind in _HARD_FAIL_TERMINALS)
     glerr = sum(1 for a in errored if "GLError 1282" in a.result_head)
     recovery_summary = (
-        f"{len(recoveries)} compile-error recoveries; {giveup} errored-no-recovery; "
-        f"{glerr} GLError 1282; {len(errored)} total failed attempts"
+        f"{len(recoveries)} compile-error recoveries; {failed_turns} failed turns; "
+        f"{unrecovered_attempts} unrecovered-in-turn attempts; {glerr} GLError 1282; "
+        f"{len(errored)} total failed attempts"
     )
 
     if (
@@ -502,7 +581,7 @@ def analyze(target: Path, cli_model: str) -> RunAnalysis:
 
     return RunAnalysis(
         data_dir=str(target),
-        model=_resolve_model(target, cli_model, warnings),
+        model=_resolve_model(target, cli_model, turns, warnings),
         segments=[p.name for p in transcripts],
         turns=turns,
         invocations=invocations,
@@ -526,9 +605,13 @@ def analyze(target: Path, cli_model: str) -> RunAnalysis:
 
 
 def _result_glyph(turn: Turn) -> str:
-    if turn.errored and not turn.recovered:
+    # 🔴 = the TURN failed (a hard-fail terminal: giveup / stream error / model-incompatible). NOT a
+    # mid-turn attempt error the agent handled — a turn that deliberately probes a bad-id/bad-range
+    # path and ends on a clean turn_done is a PASS, not a failure. ⚠️ = recovered or degraded
+    # (recovered-from-error, or truncated-but-replied).
+    if turn.terminal_kind in _HARD_FAIL_TERMINALS:
         return "🔴"
-    if turn.recovered:
+    if turn.recovered or turn.terminal_kind == "turn_truncated":
         return "⚠️"
     return "✅"
 
@@ -577,6 +660,18 @@ def _cache_share_line(an: RunAnalysis) -> str:
     return f"Cache: {cached}/{total_in} input tokens cached ({cached / total_in:.0%})."
 
 
+def _reasoning_share_line(an: RunAnalysis) -> str:
+    # Reasoning (hidden CoT) share of billed OUTPUT — a reasoning model bills thinking into the output
+    # budget, so a turn's `out` can be ~all rsn with little visible reply. Old traces (no rsn=) read 0.
+    total_out = sum(it.out_tokens for t in an.turns for it in t.iterations)
+    rsn = sum(it.reasoning_tokens for t in an.turns for it in t.iterations)
+    if total_out == 0:
+        return "Reasoning: no usage data."
+    if rsn == 0:
+        return "Reasoning: 0 reasoning tokens recorded (non-reasoning model, or pre-rsn-telemetry trace)."
+    return f"Reasoning: {rsn}/{total_out} output tokens were hidden reasoning ({rsn / total_out:.0%})."
+
+
 def _markdown_block(an: RunAnalysis) -> str:
     cost_vals = [t.cost_usd for t in an.turns]
     cmin, cmax = (min(cost_vals), max(cost_vals)) if cost_vals else (0.0, 0.0)
@@ -607,6 +702,7 @@ Per-turn peak context: {pmin}-{pmax}. {an.growth_shape}.
 ### Cost
 Total **${an.total_cost_usd:.4f}** ; per-turn ${cmin:.4f}-${cmax:.4f} ; dearest turn {dearest}.
 {_cache_share_line(an)}
+{_reasoning_share_line(an)}
 Dump session_cost cross-check: {f"${an.dump_session_cost_usd:.4f}" if an.dump_session_cost_usd is not None else "n/a"} (trace authoritative).
 Recovery summary: {an.recovery_summary}.{warn}"""
 

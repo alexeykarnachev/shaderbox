@@ -331,6 +331,8 @@ def test_drop_turn_skips_commit_but_stop_does_not(tmp_path: Path) -> None:
     from shaderbox.copilot.session import CopilotSession
 
     class _OneTextClient:
+        model = "test-model"
+
         def stream(
             self,
             messages: list[LLMMessage],
