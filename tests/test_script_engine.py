@@ -14,7 +14,15 @@ from pathlib import Path
 
 import pytest
 
-from shaderbox.scripting import EngineContext, ScriptEngine, is_scriptable, stub_for
+from shaderbox.scripting import (
+    EXPORT_MOUSE,
+    EngineContext,
+    MouseState,
+    ScriptEngine,
+    brain_stub_for,
+    is_scriptable,
+    stub_for,
+)
 
 _GL_FLOAT = 0x1406
 _GL_UNSIGNED_INT = 0x1405
@@ -1411,3 +1419,110 @@ def test_export_isolation_interleave_both_paths(
     eng.tick_behaviors("n0", export_node, _ctx(0.0, dt=1.0, frame=0), fresh)
     assert export_node.uniform_values[read] == 1.0  # cold start, NOT the live 10.0
     assert export_node.uniform_values[read] != live
+
+
+# ---- feature 042: brain_stub_for / _stub_kind / ctx.mouse ----
+
+
+def test_brain_stub_for_compiles_and_runs(tmp_path: Path) -> None:
+    # The load-bearing trap (044 OOS / 041 decision 12): the brain stub must annotate bare `-> dict`,
+    # NEVER `dict[str, Any]` (Any is absent from the exec globals -> permanent compile-freeze). The
+    # only honest check is to compile + tick the emitted text in the real engine and assert no error.
+
+    uniforms = [_u("u_a"), _u("u_b", dim=3), _u("u_n", n=4)]
+    body = brain_stub_for(uniforms)
+    _write_brain(tmp_path, body)
+    node = _FakeNode(uniforms)
+    eng = _engine(tmp_path, node)
+    assert eng.errors == {}  # the brain compiled clean (no sentinel error)
+    eng.tick("n0", node, _ctx(0.0))
+    assert eng.errors == {}  # and ran clean (no per-key coercion error)
+    # Every seeded uniform got a coercion-valid value (the stub defaults coerce).
+    assert "u_a" in node.uniform_values
+    assert len(node.uniform_values["u_b"]) == 3
+
+
+def test_brain_stub_for_empty_when_no_scriptable(tmp_path: Path) -> None:
+    # A node whose only uniform is a sampler (not scriptable) still emits a valid empty-dict brain.
+
+    _GL_SAMPLER_2D = 0x8B5E
+    sampler = _u("u_tex", gl_type=_GL_SAMPLER_2D)
+    body = brain_stub_for([sampler])
+    _write_brain(tmp_path, body)
+    node = _FakeNode([sampler])
+    eng = _engine(tmp_path, node)
+    eng.tick("n0", node, _ctx(0.0))
+    assert eng.errors == {}  # an empty-{} brain compiles + runs, drives nothing
+
+
+def test_brain_stub_for_skips_non_scriptable(tmp_path: Path) -> None:
+    # brain_stub_for pre-lists ONLY the scriptable uniforms — a sampler is omitted from the dict.
+
+    _GL_SAMPLER_2D = 0x8B5E
+    body = brain_stub_for([_u("u_ok"), _u("u_tex", gl_type=_GL_SAMPLER_2D)])
+    assert "u_ok" in body
+    assert "u_tex" not in body
+
+
+def test_ctx_mouse_default_is_export_center() -> None:
+    # EngineContext.mouse defaults to the fixed export value (center) so the bare-clock construct
+    # sites compile AND an export with no live mouse is deterministic.
+
+    assert MouseState(0.5, 0.5) == EXPORT_MOUSE
+    assert _ctx(0.0).mouse == EXPORT_MOUSE
+
+
+def test_ctx_mouse_reaches_script(tmp_path: Path) -> None:
+    # A script reads ctx.mouse.x/.y; the live tick threads the passed-in mouse, an export tick
+    # (no mouse) freezes at center.
+
+    body = (
+        "class Behavior(ScriptBehavior):\n"
+        "    def update(self, ctx: Ctx) -> Vec2:\n"
+        "        return Vec2(ctx.mouse.x, ctx.mouse.y)\n"
+    )
+    _write(tmp_path, "u_p", body)
+    node = _FakeNode([_u("u_p", dim=2)])
+    eng = _engine(tmp_path, node)
+
+    eng.tick(
+        "n0", node, EngineContext(t=0.0, dt=1 / 60, frame=0, mouse=MouseState(0.2, 0.7))
+    )
+    assert tuple(node.uniform_values["u_p"]) == pytest.approx((0.2, 0.7))
+
+    # An export tick (fresh instances, default-mouse ctx) freezes at center.
+    fresh = eng.fresh_behaviors_for("n0")
+    export_node = _FakeNode([_u("u_p", dim=2)])
+    eng.tick_behaviors(
+        "n0", export_node, EngineContext(t=0.0, dt=1 / 60, frame=0), fresh
+    )
+    assert tuple(export_node.uniform_values["u_p"]) == pytest.approx((0.5, 0.5))
+
+
+def test_brain_status_reports_soft_errors(tmp_path: Path) -> None:
+    # brain_status surfaces the sentinel-clear case: a driven count + a homeless soft-key error for a
+    # typo'd key (names no real uniform). The real-uniform key it drives is NOT in soft_errors.
+    body = (
+        "class Behavior(ScriptBehavior):\n"
+        "    def update(self, ctx: Ctx) -> dict:\n"
+        "        return {'u_real': 1.0, 'u_typo': 2.0}\n"
+    )
+    _write_brain(tmp_path, body)
+    node = _FakeNode([_u("u_real")])  # u_typo names no active uniform
+    eng = _engine(tmp_path, node)
+    eng.tick("n0", node, _ctx(0.0))
+    status = eng.brain_status("n0")
+    assert status is not None
+    assert status.sentinel_error is None
+    assert status.driven_count == 1  # u_real
+    soft_keys = [k for k, _ in status.soft_errors]
+    assert "u_typo" in soft_keys
+    assert "u_real" not in soft_keys
+
+
+def test_brain_status_none_without_brain(tmp_path: Path) -> None:
+    _write(tmp_path, "u_x", _SCALAR.replace("u_wave", "u_x"))
+    node = _FakeNode([_u("u_x")])
+    eng = _engine(tmp_path, node)
+    eng.tick("n0", node, _ctx(0.0))
+    assert eng.brain_status("n0") is None

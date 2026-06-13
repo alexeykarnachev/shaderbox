@@ -12,6 +12,7 @@ The engine imports no imgui/glfw/App and no concrete `Node` type — it works ag
 """
 
 from collections.abc import Iterable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, TypeGuard
 
@@ -28,6 +29,17 @@ from shaderbox.scripting.behavior import (
 from shaderbox.scripting.context import EngineContext
 from shaderbox.scripting.errors import ScriptError
 from shaderbox.uniform_coerce import is_text_array
+
+
+@dataclass(frozen=True)
+class BrainStatus:
+    # The node-brain's UI-facing state (feature 042's strip). sentinel_error is the brain's
+    # compile/run failure (it drives nothing when set); soft_errors are (key, error) for homeless
+    # keys (typo/orphan/engine-owned) that name no real uniform row.
+    sentinel_error: "ScriptError | None"
+    driven_count: int
+    soft_errors: list[tuple[str, "ScriptError"]]
+
 
 _SCRIPT_GLOB = "u_*.py"
 # A node-brain script: one stateful class whose update returns a dict driving many uniforms. The
@@ -103,43 +115,86 @@ class NodeScripts:
         self.warned: set[str] = set()
 
 
-def stub_for(uniform: moderngl.Uniform) -> str:
-    # The ready-to-edit script a freshly-attached uniform gets: the right return type for the
-    # uniform's shape + a docstring of the ctx fields + a body returning a coercion-valid default,
-    # so a new script compiles + runs immediately (showing the default, not an error). Used by
-    # 042's "Add script".
-    name = uniform.name
+def _stub_kind(uniform: moderngl.Uniform) -> tuple[str, str]:
+    # The (annotation, coercion-valid default expression) a stub uses for one uniform's shape.
+    # Shared by stub_for (the per-uniform return) and brain_stub_for (each dict value) so the two
+    # generated forms agree on defaults.
     dim = uniform.dimension
     n = uniform.array_length
     gl_type = getattr(uniform, "gl_type", None)
 
     if is_text_array(uniform):
-        ann, default = "Text", 'Text("")'
-    elif n > 1:
-        ann, default = "Array", f"Array([0.0] * {n * dim})"
-    elif dim == 2:
-        ann, default = "Vec2", "Vec2(0.0, 0.0)"
-    elif dim == 3:
-        ann, default = "Vec3", "Vec3(0.0, 0.0, 0.0)"
-    elif dim == 4:
-        ann, default = "Vec4", "Vec4(0.0, 0.0, 0.0, 0.0)"
-    elif gl_type in (GL_INT, GL_UNSIGNED_INT):
-        ann, default = "int", "0"  # a scalar int/uint stub returns an int, not 0.0
-    else:
-        ann, default = "float", "0.0"
+        return "Text", 'Text("")'
+    if n > 1:
+        return "Array", f"Array([0.0] * {n * dim})"
+    if dim == 2:
+        return "Vec2", "Vec2(0.0, 0.0)"
+    if dim == 3:
+        return "Vec3", "Vec3(0.0, 0.0, 0.0)"
+    if dim == 4:
+        return "Vec4", "Vec4(0.0, 0.0, 0.0, 0.0)"
+    if gl_type in (GL_INT, GL_UNSIGNED_INT):
+        return "int", "0"  # a scalar int/uint stub returns an int, not 0.0
+    return "float", "0.0"
 
+
+_CTX_DOC = (
+    "    ctx.t  elapsed seconds | ctx.dt  delta seconds | ctx.frame  frame index\n"
+    "    ctx.mouse.x / ctx.mouse.y  cursor over the canvas, 0..1, y-up (0.5,0.5 on export)\n"
+)
+_MATH_DOC = (
+    "    Math is pre-loaded — call sin/cos/sqrt/clamp/lerp(=mix)/... or math.* "
+    "directly (no import).\n"
+)
+
+
+def stub_for(uniform: moderngl.Uniform) -> str:
+    # The ready-to-edit script a freshly-attached uniform gets: the right return type for the
+    # uniform's shape + a docstring of the ctx fields + a body returning a coercion-valid default,
+    # so a new script compiles + runs immediately (showing the default, not an error). Used by
+    # 042's "Make scriptable".
+    ann, default = _stub_kind(uniform)
     return (
         f"class Behavior(ScriptBehavior):\n"
-        f'    """Drive {name} each frame.\n'
-        f"    ctx.t  elapsed seconds | ctx.dt  delta seconds | ctx.frame  frame index\n"
+        f'    """Drive {uniform.name} each frame.\n'
+        f"{_CTX_DOC}"
         f"    Return {ann}. Keep state on self (persists across frames).\n"
-        f"    Math is pre-loaded — call sin/cos/sqrt/clamp/lerp(=mix)/... or math.* "
-        f"directly (no import).\n"
+        f"{_MATH_DOC}"
         f'    """\n'
         f"    def __init__(self) -> None:\n"
         f"        pass\n\n"
         f"    def update(self, ctx: Ctx) -> {ann}:\n"
         f"        return {default}\n"
+    )
+
+
+def brain_stub_for(uniforms: Iterable[moderngl.Uniform]) -> str:
+    # The ready-to-edit node-brain (feature 044): one stateful class whose update returns a dict
+    # driving MANY uniforms. Pre-seeds the dict with each scriptable uniform at its coercion-valid
+    # default, so it compiles + runs immediately. The annotation is BARE `-> dict` — NEVER
+    # `dict[str, Any]`: `Any` is absent from the exec globals, so the eager annotation eval would
+    # permanently compile-freeze the brain (041 decision 12 / 044 out-of-scope). A node with no
+    # scriptable uniform still emits a valid empty-dict body. 042's "New node-brain".
+    scriptable = [u for u in uniforms if is_scriptable(u)]
+    if scriptable:
+        entries = "".join(
+            f"            {name!r}: {default},  # {ann}\n"
+            for name, (ann, default) in ((u.name, _stub_kind(u)) for u in scriptable)
+        )
+        body = f"        return {{\n{entries}        }}\n"
+    else:
+        body = "        return {}\n"
+    return (
+        f"class Behavior(ScriptBehavior):\n"
+        f'    """Drive many uniforms from one object each frame (node-brain).\n'
+        f"{_CTX_DOC}"
+        f"    Return a dict mapping uniform name -> value. Keep state on self.\n"
+        f"{_MATH_DOC}"
+        f'    """\n'
+        f"    def __init__(self) -> None:\n"
+        f"        pass\n\n"
+        f"    def update(self, ctx: Ctx) -> dict:\n"
+        f"{body}"
     )
 
 
@@ -163,6 +218,28 @@ class ScriptEngine:
         names = set(node.behaviors) | node.last_driven
         names.discard(_BRAIN_FILE)
         return names
+
+    def brain_status(self, node_id: str) -> "BrainStatus | None":
+        # The node-brain's UI status (feature 042), or None when the node has no script.py. Reads
+        # the engine-owned state the 042 strip needs WITHOUT exposing _nodes: whether a brain is
+        # bound, its sentinel compile/run error (drives zero rows when set), the count of real
+        # uniforms it drove last tick, and its HOMELESS soft-key errors (typo/orphan/engine-owned
+        # keys that name no row, from last_skipped). A real-uniform key it drove surfaces on that
+        # uniform's own row, never here.
+        node = self._nodes.get(node_id)
+        if node is None or _BRAIN_FILE not in node.behaviors:
+            return None
+        sentinel = self.errors.get((node_id, _BRAIN_FILE))
+        soft = [
+            (name, err)
+            for name in sorted(node.last_skipped)
+            if (err := self.errors.get((node_id, name))) is not None
+        ]
+        return BrainStatus(
+            sentinel_error=sentinel,
+            driven_count=len(node.last_driven),
+            soft_errors=soft,
+        )
 
     def script_file_for(self, node_id: str, name: str) -> str | None:
         # The scripts/ filename that drives `name`, or None if nothing does. A u_<name>.py wins over

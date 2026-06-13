@@ -17,7 +17,7 @@ from typing import Any, Protocol, TypeGuard
 
 import moderngl
 
-from shaderbox.scripting.context import EngineContext
+from shaderbox.scripting.context import EngineContext, MouseState
 from shaderbox.scripting.errors import ScriptError
 from shaderbox.scripting.outputs import Array, Text, Vec2, Vec3, Vec4, normalize_output
 from shaderbox.uniform_coerce import (
@@ -141,6 +141,7 @@ def _build_globals(uniform_name: str) -> dict[str, Any]:
         "__name__": f"<u:{uniform_name}>",
         "ScriptBehavior": ScriptBehavior,
         "Ctx": EngineContext,
+        "MouseState": MouseState,
         "Vec2": Vec2,
         "Vec3": Vec3,
         "Vec4": Vec4,

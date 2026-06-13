@@ -12,9 +12,22 @@ from shaderbox.ui_models import (
     load_node_from_dir,
     sort_uniform_hashes,
 )
-from shaderbox.ui_primitives import button, ghost_button, small_caption
+from shaderbox.ui_primitives import (
+    button,
+    caption_text,
+    confirm_delete_popup,
+    danger_button,
+    ghost_button,
+    notice_strip,
+    reset_state_button,
+    small_caption,
+)
 from shaderbox.util import format_auto_value, get_resolution_str, get_uniform_hash
 from shaderbox.widgets.uniform import draw_ui_uniform, uniform_name_label
+
+_MAX_BRAIN_SOFT = (
+    3  # cap the soft-key list so a typo-spewing brain can't blow the panel height
+)
 
 
 def _section_break() -> None:
@@ -122,6 +135,13 @@ def draw(app: App) -> None:
             )
             app.ui_node_templates[dir.name] = load_node_from_dir(dir)
             app.notifications.push("New template created")
+        if popup:
+            has_brain = app.session.get_brain_status(app.current_node_id) is not None
+            if imgui.menu_item_simple(
+                "New node-brain script",
+                enabled=not has_brain and not app.copilot_turn_active,
+            ) and not (has_brain or app.copilot_turn_active):
+                app.create_script_for(app.current_node_id, None)
 
     _section_break()
 
@@ -164,6 +184,11 @@ def draw(app: App) -> None:
 
     imgui.dummy((0, SPACE.MD))
 
+    _draw_brain_strip(app)
+
+    small_caption(app.font_12, "Right-click a uniform for script actions")
+    imgui.dummy((0, SPACE.SM))
+
     sorted_hashes = sort_uniform_hashes(
         active_uniform_hashes,
         ui_uniforms,
@@ -178,3 +203,47 @@ def draw(app: App) -> None:
         for hash in sorted_hashes:
             draw_ui_uniform(app, ui_uniforms[hash])
             imgui.dummy((0, SPACE.SM))
+
+
+def _draw_brain_strip(app: App) -> None:
+    # The node-level node-brain banner (feature 042): the ONLY home for a brain's compile error
+    # (it drives zero rows) + its homeless soft-key errors (typo/orphan/engine-owned keys that
+    # name no uniform row). Drawn only when the node has a script.py; a real uniform the brain
+    # drives surfaces the brain chip on its own row, not here.
+    status = app.session.get_brain_status(app.current_node_id)
+    if status is None:
+        return
+    if status.sentinel_error is not None:
+        # A broken brain drives ZERO rows, so this strip is its ONLY home — Detach must be reachable
+        # here (the exact case a user wants to remove it).
+        notice_strip(
+            "brain_sentinel",
+            status.sentinel_error.message,
+            tone="error",
+            line=status.sentinel_error.line,
+            on_click=lambda: app.open_script_file(app.current_node_id, "script.py"),
+        )
+    else:
+        small_caption(
+            app.font_12, f"node-brain  ·  drives {status.driven_count} uniforms"
+        )
+        imgui.same_line()
+        if reset_state_button("brain_reset"):
+            app.session.reset_script(app.current_node_id, "script.py")
+        if imgui.is_item_hovered():
+            imgui.set_tooltip("Restart the node-brain (re-run __init__)")
+    imgui.begin_disabled(app.copilot_turn_active)
+    if danger_button("Detach node-brain##brain_detach"):
+        imgui.open_popup("brain_detach_confirm")
+    imgui.end_disabled()
+    confirm_delete_popup(
+        "brain_detach_confirm",
+        "Detach the node-brain? It drives all its uniforms.",
+        lambda: app.detach_script(app.current_node_id, "script.py"),
+    )
+    for key, err in status.soft_errors[:_MAX_BRAIN_SOFT]:
+        notice_strip(f"brain_soft_{key}", f"{key}: {err.message}", tone="warn")
+    extra = len(status.soft_errors) - _MAX_BRAIN_SOFT
+    if extra > 0:
+        caption_text(f"+{extra} more brain key issues")
+    imgui.dummy((0, SPACE.MD))

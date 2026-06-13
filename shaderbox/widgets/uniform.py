@@ -16,8 +16,18 @@ from shaderbox.media import MediaWithTexture, Video, media_class_for
 from shaderbox.shader_errors import find_uniform_declaration_line
 from shaderbox.theme import SIZE, SPACE
 from shaderbox.ui_models import UIUniform
-from shaderbox.ui_primitives import button, caption_text, chip_button, clickable_label
+from shaderbox.ui_primitives import (
+    button,
+    caption_text,
+    chip_button,
+    clickable_label,
+    confirm_delete_popup,
+    context_menu_style,
+    notice_strip,
+    script_chip,
+)
 from shaderbox.util import (
+    format_auto_value,
     get_resolution_str,
     pfd_block,
     str_to_unicode,
@@ -107,6 +117,68 @@ def draw_input_type_selector(ui_uniform: UIUniform) -> None:
         ui_uniform.input_type = valid[(current_idx + 1) % len(valid)]
 
 
+def _script_actions_menu(app: App, name: str, script_file: str | None) -> None:
+    # The per-row right-click menu (feature 042), anchored to the name cell (the last item). Verbs
+    # by state: undriven+scriptable -> Make scriptable; a u_<name>.py -> Open/Restart/Detach; a
+    # node-brain -> Open (restart/detach are node-level, in the brain strip). File-write verbs are
+    # gated on `not copilot_turn_active` (a write mid-turn races the reload). A non-scriptable
+    # undriven row has no verbs, so its menu is suppressed (no empty popup).
+    node_id = app.current_node_id
+    if script_file is None and not app.is_uniform_scriptable(node_id, name):
+        return
+    detach_confirm = f"detach_confirm_{name}"
+    with context_menu_style():
+        if imgui.begin_popup_context_item(f"##uctx_{name}"):
+            if script_file is None:
+                if (
+                    imgui.menu_item_simple(
+                        "Make scriptable", enabled=not app.copilot_turn_active
+                    )
+                    and not app.copilot_turn_active
+                ):
+                    app.create_script_for(node_id, name)
+            elif script_file == "script.py":
+                if imgui.menu_item_simple("Open node-brain"):
+                    app.open_script_file(node_id, script_file)
+                imgui.text_disabled("Restart / Detach: see the brain strip")
+            else:
+                if imgui.menu_item_simple("Open script"):
+                    app.open_script_file(node_id, script_file)
+                if imgui.menu_item_simple("Restart script"):
+                    app.session.reset_script(node_id, name)
+                if (
+                    imgui.menu_item_simple(
+                        "Detach script", enabled=not app.copilot_turn_active
+                    )
+                    and not app.copilot_turn_active
+                ):
+                    imgui.open_popup(detach_confirm)
+            imgui.end_popup()
+    if script_file is not None and script_file != "script.py":
+        confirm_delete_popup(
+            detach_confirm,
+            f"Detach {script_file}?",
+            lambda: app.detach_script(node_id, script_file),
+        )
+
+
+def _draw_row_error(app: App, name: str, script_file: str) -> None:
+    # The per-uniform script error line (feature 042): surfaces errors[(node_id, name)] in the
+    # shader-strip idiom, click-to-open the offending script. Reserved only on a row that HAS an
+    # error (fixed-height when drawn; the transition jitter is accepted — errors appear on save).
+    err = app.session.script_engine.errors.get((app.current_node_id, name))
+    if err is None:
+        return
+    imgui.set_cursor_pos_x(_CTRL_X)
+    notice_strip(
+        f"scripterr_{name}",
+        err.message,
+        tone="error",
+        line=err.line,
+        on_click=lambda: app.open_script_file(app.current_node_id, script_file),
+    )
+
+
 def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
     if not (ui_node := app.ui_nodes.get(app.current_node_id)):
         return
@@ -116,8 +188,30 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
     name = ui_uniform.name
     hidden = f"##{name}"
 
+    script_file = app.session.get_script_file_for(app.current_node_id, name)
+    if script_file is not None:
+        # A script drives this uniform: the chip shows the driver, the value is read-only (the
+        # engine writes it each tick — a live control would fight the tick), and the row's error
+        # line surfaces a compile/coercion failure. The write-back below is SKIPPED by returning.
+        chip_state = "brain" if script_file == "script.py" else "per_uniform"
+        chip_tip = (
+            "script.py (node-brain)"
+            if script_file == "script.py"
+            else f"{script_file} — click to open"
+        )
+        if script_chip(chip_state, name, tooltip=chip_tip):
+            app.open_script_file(app.current_node_id, script_file)
+        imgui.same_line(_NAME_X)
+        uniform_name_label(app, name, SIZE.UNIFORM_NAME_W)
+        _script_actions_menu(app, name, script_file)
+        imgui.same_line(_CTRL_X)
+        caption_text(format_auto_value(current_value))
+        _draw_row_error(app, name, script_file)
+        return
+
     draw_input_type_selector(ui_uniform)
     _begin_ctrl(app, name)
+    _script_actions_menu(app, name, None)
 
     if ui_uniform.input_type == "auto":
         if isinstance(current_value, float | int):

@@ -8,10 +8,12 @@ from shaderbox.scripting.behavior import (
     ScriptBehavior,
     coerce_one,
 )
-from shaderbox.scripting.context import Ctx, EngineContext
+from shaderbox.scripting.context import EXPORT_MOUSE, Ctx, EngineContext, MouseState
 from shaderbox.scripting.engine import (
+    BrainStatus,
     EngineNode,
     ScriptEngine,
+    brain_stub_for,
     is_scriptable,
     stub_for,
 )
@@ -19,11 +21,14 @@ from shaderbox.scripting.errors import ScriptError
 from shaderbox.scripting.outputs import Array, Text, Vec2, Vec3, Vec4
 
 __all__ = [
+    "EXPORT_MOUSE",
     "Array",
     "Behavior",
+    "BrainStatus",
     "Ctx",
     "EngineContext",
     "EngineNode",
+    "MouseState",
     "PythonBehavior",
     "ScriptBehavior",
     "ScriptEngine",
@@ -32,6 +37,7 @@ __all__ = [
     "Vec2",
     "Vec3",
     "Vec4",
+    "brain_stub_for",
     "coerce_one",
     "is_scriptable",
     "stub_for",

@@ -31,7 +31,16 @@ from shaderbox.core import ENGINE_DRIVEN_UNIFORMS, Node
 from shaderbox.exporters.integrations import IntegrationsStore
 from shaderbox.exporters.registry import ExporterRegistry
 from shaderbox.paths import ProjectPaths, shader_lib_root
-from shaderbox.scripting import EngineContext, ScriptEngine
+from shaderbox.scripting import (
+    EXPORT_MOUSE,
+    BrainStatus,
+    EngineContext,
+    MouseState,
+    ScriptEngine,
+    brain_stub_for,
+    is_scriptable,
+    stub_for,
+)
 from shaderbox.shader_lib import ShaderLibIndex
 from shaderbox.shader_lib import set_active as set_active_lib_index
 from shaderbox.shader_lib.favorites import ShaderLibFavoritesStore
@@ -329,6 +338,8 @@ class ProjectSession:
             behaviors = self.script_engine.fresh_behaviors_for(node_id)
 
             def _export_pre_render(t: float, dt: float, frame: int) -> None:
+                # EXPORT_MOUSE (the EngineContext default) freezes the cursor at center so an
+                # exported render is deterministic regardless of the live cursor position.
                 self.script_engine.tick_behaviors(
                     node_id, node, EngineContext(t=t, dt=dt, frame=frame), behaviors
                 )
@@ -352,20 +363,78 @@ class ProjectSession:
             )
             self._wire_node_hooks(node_id, ui_node.node)
 
-    def tick(self, node_ids: list[str], t: float, dt: float, frame: int) -> None:
+    def tick(
+        self,
+        node_ids: list[str],
+        t: float,
+        dt: float,
+        frame: int,
+        *,
+        mouse: MouseState = EXPORT_MOUSE,
+    ) -> None:
         # The live per-frame tick: tick exactly the nodes this frame will render (the ui.py render
-        # gate), so a scripted uniform animates identically live and in export.
+        # gate), so a scripted uniform animates identically live and in export. `mouse` is the live
+        # cursor App passes in (headless callers omit it → EXPORT_MOUSE, deterministic).
         for node_id in node_ids:
             ui_node = self.ui_nodes.get(node_id)
             if ui_node is None:
                 continue
             self.script_engine.tick(
-                node_id, ui_node.node, EngineContext(t=t, dt=dt, frame=frame)
+                node_id,
+                ui_node.node,
+                EngineContext(t=t, dt=dt, frame=frame, mouse=mouse),
             )
 
     def reset_script(self, node_id: str, name: str) -> None:
-        # Re-run a live behavior's __init__ (the manual "restart" the 042 UI button wires).
+        # Re-run a live behavior's __init__ (the manual "restart" the 042 UI restart wires).
         self.script_engine.reset(node_id, name)
+
+    def is_uniform_scriptable(self, node_id: str, name: str) -> bool:
+        # True if a uniform can carry a script (a scalar/vector/array — not a sampler/block); the
+        # gate the 042 "Make scriptable" affordance reads (the twin of create_script's lookup).
+        ui_node = self.ui_nodes.get(node_id)
+        if ui_node is None:
+            return False
+        return any(
+            u.name == name and is_scriptable(u)
+            for u in ui_node.node.get_active_uniforms()
+        )
+
+    def get_brain_status(self, node_id: str) -> BrainStatus | None:
+        # The node-brain's UI status for 042's strip (sentinel error + driven count + homeless
+        # soft-key errors), or None when the node has no script.py.
+        return self.script_engine.brain_status(node_id)
+
+    def create_script(self, node_id: str, name: str | None) -> Path:
+        # Write a new script file + return its path; the next reload_scripts binds it (042). `name`
+        # is a uniform name for a per-uniform u_<name>.py, or None for the node-brain script.py.
+        # The skeleton is the engine's stub (showing a coercion-valid default, so it runs at once).
+        ui_node = self.ui_nodes[node_id]
+        scripts_dir = self.paths.scripts_dir_for(node_id)
+        scripts_dir.mkdir(parents=True, exist_ok=True)
+        uniforms = [u for u in ui_node.node.get_active_uniforms() if is_scriptable(u)]
+        if name is None:
+            path = scripts_dir / "script.py"
+            path.write_text(brain_stub_for(uniforms), encoding="utf-8")
+        else:
+            uniform = next(u for u in uniforms if u.name == name)
+            path = scripts_dir / f"{name}.py"
+            path.write_text(stub_for(uniform), encoding="utf-8")
+        return path
+
+    def detach_script(self, node_id: str, filename: str) -> None:
+        # Trash a node's script file (recoverable); the next reload_scripts drops the binding and
+        # clears its error (042). Trashes to a node-scoped subdir so a bare u_<name>.py can't
+        # collide across nodes or pollute the node-recovery trash namespace.
+        src = self.paths.scripts_dir_for(node_id) / filename
+        if not src.is_file():
+            return
+        dest_dir = self.paths.trash_dir / "scripts" / node_id
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest = dest_dir / filename
+        if dest.exists():
+            dest = dest_dir / f"{src.stem}_{int(time.time() * 1000)}{src.suffix}"
+        shutil.move(src, dest)
 
     def get_script_driven_uniforms(self, node_id: str) -> set[str]:
         # The uniform names a script drives on `node_id` (a u_<name>.py OR the node-brain's last-tick

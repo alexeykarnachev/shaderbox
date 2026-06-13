@@ -42,6 +42,7 @@ from shaderbox.notifications import Notifications
 from shaderbox.paths import ProjectPaths, app_data_dir, shader_lib_root
 from shaderbox.project_session import ProjectSession
 from shaderbox.render_defer import RenderDefer
+from shaderbox.scripting import EXPORT_MOUSE, MouseState
 from shaderbox.shader_errors import next_error_line
 from shaderbox.shader_lib import ShaderLibIndex
 from shaderbox.shader_lib.favorites import ShaderLibFavoritesStore
@@ -60,6 +61,7 @@ from shaderbox.ui_models import (
     load_node_from_dir,
 )
 from shaderbox.util import (
+    open_file_in_default_app,
     open_in_file_manager,
     pfd_block,
 )
@@ -856,6 +858,11 @@ class App:
         self.frame_idx = 0
         # Wall-clock of the previous script-engine tick (feature 040), for the per-frame dt.
         self.last_tick_time = 0.0
+        # The live cursor over the current node's preview, fed into the script tick as ctx.mouse
+        # (feature 042). Updated from the preview hit-test in ui.py; defaults to center (the
+        # export value) until the preview is hovered. One frame stale by construction (tick runs
+        # before the preview draws) — harmless, like dt.
+        self.script_mouse: MouseState = EXPORT_MOUSE
 
         # Project load (GL-free): paths, lib index, nodes + templates, app_state, integrations.
         self.session.load(project_dir)
@@ -1057,6 +1064,38 @@ class App:
                 "Failed to open directory", color=COLOR.STATE_ERROR[:3]
             )
             logger.error(f"Failed to open directory {node_dir}: {e}")
+
+    # --- Script UI (feature 042): thin App-side wrappers over the headless ProjectSession ---
+    def is_uniform_scriptable(self, node_id: str, name: str) -> bool:
+        return self.session.is_uniform_scriptable(node_id, name)
+
+    def create_script_for(self, node_id: str, name: str | None) -> None:
+        # Write a new per-uniform (name set) or node-brain (name None) script + open it in the OS
+        # editor; the next reload_scripts binds it. Wave-1 editing is the OS editor (no in-app pane).
+        try:
+            path = self.session.create_script(node_id, name)
+            open_file_in_default_app(path)
+            self.notifications.push(f"Created {path.name}")
+        except Exception as e:
+            self.notifications.push(
+                "Failed to create script", color=COLOR.STATE_ERROR[:3]
+            )
+            logger.error(f"create_script failed for {node_id}/{name}: {e}")
+
+    def open_script_file(self, node_id: str, filename: str) -> None:
+        # Open a script in the OS editor (wave 1 — no in-app Python editor yet).
+        path = self.paths.scripts_dir_for(node_id) / filename
+        if not path.is_file():
+            self.notifications.push(
+                "Script file not found", color=COLOR.STATE_ERROR[:3]
+            )
+            return
+        open_file_in_default_app(path)
+
+    def detach_script(self, node_id: str, filename: str) -> None:
+        # Trash a script (recoverable); the next reload drops the binding + clears its error.
+        self.session.detach_script(node_id, filename)
+        self.notifications.push(f"Detached {filename}")
 
     # App-side editor-session cleanup, reached back into from ShaderLibFileManager when it
     # trashes/renames a lib file (the picker UI drives the CRUD on the manager directly).

@@ -17,6 +17,7 @@ from shaderbox.popups.emoji_picker import draw_emoji_picker
 from shaderbox.popups.lib_picker import draw_lib_picker
 from shaderbox.popups.node_creator import draw_node_creator
 from shaderbox.popups.settings import draw_settings
+from shaderbox.scripting import MouseState
 from shaderbox.tabs import code as code_tab
 from shaderbox.tabs import node as node_tab
 from shaderbox.tabs import render as render_tab
@@ -25,6 +26,7 @@ from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_primitives import (
     active_region_outline,
     fps_overlay,
+    item_normalized_mouse,
     rendering_overlay,
     toggle_button,
 )
@@ -115,7 +117,7 @@ def update_and_draw(app: App) -> None:
     renders_all = app.app_state.is_render_all_nodes or app.frame_idx == 0
     if not app.any_popup_open() and renders_all:
         tick_nodes = list(app.ui_nodes.keys())
-    app.session.tick(tick_nodes, now, dt, app.frame_idx)
+    app.session.tick(tick_nodes, now, dt, app.frame_idx, mouse=app.script_mouse)
 
     # ----------------------------------------------------------------
     # Render previews
@@ -421,6 +423,7 @@ def _draw_app_panel(app: App) -> None:
 
         # On compile failure the last-good program stays bound — kept bright; the error
         # surfaces in the editor pane strip.
+        img_min = imgui.get_cursor_screen_pos()
         imgui.image_with_bg(
             imgui.ImTextureRef(ui_node.node.canvas.texture.glo),
             image_size=(image_width, image_height),
@@ -428,6 +431,14 @@ def _draw_app_panel(app: App) -> None:
             uv1=(1, 0),
             tint_col=(1.0, 1.0, 1.0, 1.0),
         )
+        # Feed the cursor over the preview into the script tick as ctx.mouse (feature 042).
+        # image_with_bg submits no interactive item, so hit-test the captured rect explicitly.
+        hit = item_normalized_mouse(
+            img_min,
+            imgui.ImVec2(img_min.x + image_width, img_min.y + image_height),
+        )
+        if hit is not None and hit[2]:
+            app.script_mouse = MouseState(hit[0], hit[1])
     else:
         # Same height budget as the with-node branch (incl. its gap slack) — an
         # oversized empty-state area overflows the panel into a phantom scrollbar.

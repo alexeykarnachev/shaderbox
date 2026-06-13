@@ -4,6 +4,7 @@ import webbrowser
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
+from typing import Literal
 
 import pyperclip
 from imgui_bundle import imgui, imgui_ctx
@@ -128,14 +129,20 @@ def pill_button(
     active: bool,
     text_color: tuple[float, float, float, float] = COLOR.BG_APP,
     inactive_alpha: float = 0.4,
+    width: float = 0.0,
 ) -> bool:
     """A small filled pill whose `color` is the role (a tag, a favs toggle, a reset
     action). `active` fills it solid; otherwise a faded variant signals "off". Use
-    when `chip_button`'s fixed palette doesn't fit (e.g. blue tags, yellow favs)."""
+    when `chip_button`'s fixed palette doesn't fit (e.g. blue tags, yellow favs).
+    `width=0` is content-width (`small_button`); a fixed `width` aligns into a column."""
     fill = color if active else fade(color, inactive_alpha)
     imgui.push_style_color(imgui.Col_.button, fill)
     imgui.push_style_color(imgui.Col_.text, text_color)
-    clicked: bool = imgui.small_button(label)
+    clicked: bool = (
+        imgui.small_button(label)
+        if width == 0.0
+        else imgui.button(label, size=(width, 0.0))
+    )
     imgui.pop_style_color(2)
     return clicked
 
@@ -171,6 +178,28 @@ def chip_button(
         imgui.end_disabled()
     imgui.pop_style_color(4)
     imgui.pop_style_var()
+    return clicked
+
+
+ScriptChipState = Literal["none", "per_uniform", "brain"]
+
+
+def script_chip(state: ScriptChipState, id_: str, *, tooltip: str = "") -> bool:
+    """The script-driven row indicator (feature 042): a small filled pill in the row's chip
+    slot whose colour is the driver — `per_uniform` (accent, a `u_<name>.py`) or `brain`
+    (info, the node-brain). `none` draws nothing (the input-type chip owns that slot). Returns
+    True on click (open the script). Built on `pill_button` so it can take the `brain` role
+    colour `chip_button`'s fixed palette can't express; rounded to match the sibling chip."""
+    if state == "none":
+        return False
+    color = COLOR.ACCENT_PRIMARY if state == "per_uniform" else COLOR.STATE_INFO
+    imgui.push_style_var(imgui.StyleVar_.frame_rounding, float(SIZE.CHIP_ROUNDING))
+    clicked = pill_button(
+        f"py##script_chip_{id_}", color=color, active=True, width=SIZE.CHIP_W
+    )
+    imgui.pop_style_var()
+    if tooltip and imgui.is_item_hovered():
+        imgui.set_tooltip(tooltip)
     return clicked
 
 
@@ -360,6 +389,93 @@ def status_slot(id_: str, width: float) -> Iterator[None]:
         ),
     ):
         yield
+
+
+NoticeTone = Literal["info", "ok", "warn", "error"]
+
+_NOTICE_COLOR: dict[str, tuple[float, float, float, float]] = {
+    "info": COLOR.STATE_INFO,
+    "ok": COLOR.STATE_OK,
+    "warn": COLOR.STATE_WARN,
+    "error": COLOR.STATE_ERROR,
+}
+
+
+def notice_strip(
+    id_: str,
+    text: str,
+    *,
+    tone: NoticeTone,
+    on_click: Callable[[], None] | None = None,
+    line: int | None = None,
+) -> None:
+    """A one-frame-tall inline banner (feature 042): the ONE script error/status surface, shared
+    by the per-uniform error row, the node-brain strip's sentinel error, and the soft-key list.
+    `tone` picks the `STATE_*` colour; `line` (when >= 0) renders the shader-strip idiom
+    ('Line N · message'); `on_click` (a selectable) opens the offending script. Wraps so a long
+    message doesn't clip. Fixed-height when drawn — reserve it only on a row that HAS a notice."""
+    color = _NOTICE_COLOR[tone]
+    label = text if line is None or line < 0 else f"Line {line + 1}  ·  {text}"
+    with status_slot(id_, 0.0):
+        imgui.push_style_color(imgui.Col_.text, color)
+        if on_click is not None:
+            if imgui.selectable(f"{label}##{id_}", False)[0]:
+                on_click()
+        else:
+            imgui.push_text_wrap_pos(0.0)
+            imgui.text_unformatted(label)
+            imgui.pop_text_wrap_pos()
+        imgui.pop_style_color(1)
+
+
+def confirm_delete_popup(id_: str, label: str, on_confirm: Callable[[], None]) -> None:
+    """A FPE-safe `begin_popup` destructive-confirm gate (feature 042 detach): a danger button
+    + a ghost Cancel. The caller opens it with `imgui.open_popup(id_)`; on confirm it fires
+    `on_confirm` and closes. The inline (non-modal, non-grid) sibling of `cell_delete_confirm`."""
+    with imgui_ctx.begin_popup(id_) as popup:
+        if not popup:
+            return
+        imgui.text_colored(COLOR.FG_PRIMARY, label)
+        if danger_button(f"Delete##{id_}_yes"):
+            on_confirm()
+            imgui.close_current_popup()
+        imgui.same_line()
+        if ghost_button(f"Cancel##{id_}_no"):
+            imgui.close_current_popup()
+
+
+def reset_state_button(id_: str) -> bool:
+    """The restart affordance (feature 042): reuses `revert_icon_button`'s drawn CCW-undo arc
+    (no new glyph) at icon size. Returns True on click (re-run a behavior's __init__)."""
+    return revert_icon_button(id_, float(SIZE.ICON_SM))
+
+
+def item_normalized_mouse(
+    rect_min: imgui.ImVec2,
+    rect_max: imgui.ImVec2,
+    *,
+    flip_y: bool = True,
+) -> tuple[float, float, bool] | None:
+    """Hit-test the mouse against an EXPLICIT screen rect (the canvas preview), returning
+    (nx, ny, inside) normalized 0..1 — `flip_y` gives y-up (GLSL). The rect is passed in (not
+    'the last item') because `image_with_bg` submits no interactive item. Popup-blocking is
+    honoured by ANDing `is_window_hovered(child_windows)` (`is_mouse_hovering_rect` alone ignores
+    it). Returns None when the mouse pos is invalid; clamps to the rect edge when outside it."""
+    w = rect_max.x - rect_min.x
+    h = rect_max.y - rect_min.y
+    if w <= 0.0 or h <= 0.0:
+        return None
+    pos = imgui.get_mouse_pos()
+    if pos.x < 0.0 or pos.y < 0.0:  # imgui's "no valid mouse" sentinel (-FLT_MAX)
+        return None
+    inside = imgui.is_mouse_hovering_rect(
+        rect_min, rect_max
+    ) and imgui.is_window_hovered(imgui.HoveredFlags_.child_windows)
+    nx = min(max((pos.x - rect_min.x) / w, 0.0), 1.0)
+    ny = min(max((pos.y - rect_min.y) / h, 0.0), 1.0)
+    if flip_y:
+        ny = 1.0 - ny
+    return nx, ny, inside
 
 
 def caption_text(
