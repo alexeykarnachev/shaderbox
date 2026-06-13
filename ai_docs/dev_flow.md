@@ -165,7 +165,18 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   `RevertExecutor` cluster). Imports no imgui/glfw, creates no window/context — a headless harness
   (feature 026) constructs it on a standalone EGL context without `App`. UI reactions ride injected
   `on_*` callbacks (the seam + why a return-value seam is wrong: `conventions.md ## Design decisions`,
-  the `ProjectSession` bullet). Feature 025.
+  the `ProjectSession` bullet). Feature 025. Owns the `ScriptEngine` (feature 040) + drives its
+  `tick`/`reload_scripts`.
+- **`scripting/`** — the headless CPU-script engine (feature 040): a uniform carries a per-tick
+  body-only Python script (`nodes/<id>/scripts/u_<name>.py`, `out.set(...)`). `context.py`
+  (`EngineContext`), `errors.py` (`ScriptError`), `behavior.py` (`Behavior` protocol + `PythonBehavior`
+  + `UniformOut` + the math namespace + the verbatim `exec` seam), `engine.py` (`ScriptEngine`: per-node
+  registry, `(path,mtime)` cache, resolve/orphan-warn, the two-phase `tick`). Imports no imgui/glfw/App
+  and no concrete `Node` (works against the `EngineNode` protocol). `ProjectSession` owns it; `ui.py`
+  ticks live, the export path ticks via `Node.on_pre_render`.
+- **`uniform_coerce.py`** — leaf: shapes a Python value to a `moderngl.Uniform`'s `(dim, array_length,
+  gl_type)` (`coerce_uniform_value`/`is_number`/`coerce_array`/`uniform_shape_hint`). Shared by
+  `copilot/backend.py::set_uniform` + `scripting/behavior.py::UniformOut.set` (feature 040 hoist).
 - **`app.py`** — `App` class: the UI/glfw/imgui owner + lifecycle wrapper (windowing, GL context,
   editor sessions, popup-state, nav, exporter panels). Owns one `self.session: ProjectSession` +
   forwards project state/ops via `@property` accessors. No UI drawing. Imported by `ui.py`, `widgets/`,
@@ -333,8 +344,9 @@ failure** — the repo is currently at 0 pyright errors; keep it that way.
 
 ### `make smoke`
 Headless smoke test (`scripts/smoke.py`) — runs ~200 frames of `update_and_draw` against a THROWAWAY
-tmp project (seeded with the shipped template nodes; never `projects/dev/`) in an invisible glfw window,
-asserts popup-mutex + `current_node_id` invariants. ~1.5s; catches import errors, callback dispatch
+tmp project (seeded with the shipped template nodes + one script-driven-uniform node so the feature-040
+engine ticks in the loop; never `projects/dev/`) in an invisible glfw window, asserts popup-mutex +
+`current_node_id` invariants. ~1.5s; catches import errors, callback dispatch
 failures, popup state-machine crashes, released-texture binding errors. Doesn't catch visual bugs. Run
 after any refactor in `ui.py` / `app.py` / `widgets/` / `popups/` / `tabs/` / `hotkeys.py` before
 declaring done; **not** wired into `make check` (needs a real GL context). It does NOT touch the user's
