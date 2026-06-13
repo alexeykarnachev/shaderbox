@@ -26,18 +26,15 @@ feature; brief points at the superseder).
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
 <!-- As of 2026-06-13. -->
-**Dogfood analyzer forensic-accuracy gaps CLOSED — ready on `dev`.** `scripts/dogfood/analyze.py`
-now: keys coverage on EXECUTED `### tool_call` blocks not history-echo ids (a declined/precheck call
-no longer inflates coverage); the result glyph keys on the terminal event kind (a handled
-probe-failure is ✅, only a hard-fail terminal 🔴; report splits "failed turns" vs
-"unrecovered-in-turn attempts"); captures `rsn=` reasoning tokens + a reasoning-share line; parses a
-new `gate_approved` trace event (approvals/declines counted per turn); records the resolved model at
-`turn_start` and reads it back (no more "unknown" header). Engine touch was minimal — one trace
-event, one `turn_start` field, a `client.model` property threaded session→`run_turn`. VLM-judge
-direction DROPPED from the docs (not pursuing). 395 tests green, `make check`/`make smoke` clean.
-**Next move:** the maintainer's pick — the `--calls` compact tool→result index (todo, the last
-analyzer convenience), the 039 edit-churn brake (parked: trigger armed, churn shown stochastic), or
-a fresh dogfood run now that the analyzer is honest. **No open BLOCKERs.**
+**SHIPPED v0.15.0 to itch.io (both channels live) — `dev`==`master` clean.** This release bundles
+039 content-addressed editing (copilot line/anchor tools gone → `edit_shader`/`write_shader`), the
+038 polish wave, the honest dogfood-analyzer forensics (coverage from executed tool_call blocks,
+terminal-kind glyph, `rsn=`/`gate_approved`/resolved-model telemetry), the refreshed itch
+screenshots, and the GPL-3.0-or-later relicense. 395 tests green; gated build + butler upload
+verified at 0.15.0. VLM-judge direction dropped from the docs (not pursuing). **Next move:** the
+maintainer's pick — the `--calls` compact tool→result index (todo, the last analyzer convenience),
+the 039 edit-churn brake (parked: trigger armed, churn shown stochastic), or a fresh dogfood run now
+that the analyzer is honest. **No open BLOCKERs.**
 
 ## Features
 
