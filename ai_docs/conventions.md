@@ -109,8 +109,9 @@ belong in the feature spec (`ai_docs/features/NNN_*.md`). This file is not a cha
   against the `EngineNode` protocol — the `uniform_values` dict + `get_active_uniforms()`), so it stays
   in the 025 headless core. **Binding is by FILENAME** (stateless — no `node.json` entry, no `UIUniform`
   field). **The body is `exec`'d VERBATIM** (no AST surgery; the file IS a class def — the exec globals
-  carry the curated math vocab + `__build_class__` + the base + `Ctx` + ALL output types, since method
-  annotations evaluate eagerly), so an error's lineno points at the user source (the 039 ghost removed
+  are the real Python builtins (a script is plain Python — `import math` and the stdlib work, feature
+  045) plus the base + `Ctx` + ALL output types, since method annotations evaluate eagerly), so an
+  error's lineno points at the user source (the 039 ghost removed
   by construction). A broken script is **error-as-data**: the uniform freezes at last-good + records a
   `ScriptError`, never raising into the frame loop (mirrors `shader_errors.ShaderError`). **Determinism
   is SCOPED**: a `ctx.t`-pure `update` is identical live vs export; a stateful integrator is
@@ -497,11 +498,11 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   - `moderngl.Uniform.gl_type` — not in moderngl's stub (`uniform_coerce.py`, `core.py`,
     `copilot/backend.py`). NOTE: the script-engine `exec()` seam (feature 041, redesigning 040) needs
     NO suppression — ruff's `S102` (flake8-bandit) isn't in this repo's `select`, and pyright's basic
-    mode flags no `Any`-flow on the curated-namespace `exec`. The exec globals are NOT empty-`__builtins__`
-    (040's body-only trick): the class statement needs `__build_class__` + `__name__`, and method
-    annotations evaluate eagerly (no `from __future__ import annotations`), so every output-type name
-    (`Ctx`/`Vec2..4`/`Array`/`Text`) plus `float`/`int`/`bool` must live in the exec globals — a curated
-    set, still no full builtins.
+    mode flags no `Any`-flow on the namespaced `exec`. The exec globals are the REAL builtins
+    (feature 045 — a script is plain Python, `import math` works) plus the injected top-level names
+    the eager method annotations resolve against (`Ctx`/`MouseState`/`Vec2..4`/`Array`/`Text`); the
+    `ScriptBehavior` base is injected too. `__build_class__` is in the real builtins (the class
+    statement is satisfied), so no curated `__builtins__` dict is needed.
   - `@model_validator(mode="after")` on a method returning `Self` — pydantic's decorator stub
     mistypes the wrapped method.
   - `moderngl.create_standalone_context(backend="egl")` — the stub types `**kwargs` as a single

@@ -6,9 +6,10 @@ the same protocol over a `.so`.
 
 `PythonBehavior` compiles the file VERBATIM (no rewrite — an error's lineno points at the user's
 real source, the 039 ghost stays dead), resolves the `ScriptBehavior` subclass, instantiates it
-ONCE, and calls `.update(ctx)` each tick. The exec namespace seeds the curated math vocab, the base,
-the `Ctx` alias, and ALL output types (method annotations evaluate eagerly — every type name a stub
-can annotate must be resolvable at class-def time)."""
+ONCE, and calls `.update(ctx)` each tick. The exec namespace is the real builtins (a script is plain
+Python — `import math` and the stdlib work) plus the base, the `Ctx` alias, and ALL output types
+(method annotations evaluate eagerly — every type name a stub can annotate must be resolvable at
+class-def time)."""
 
 import inspect
 import math
@@ -49,95 +50,14 @@ class ScriptBehavior:
         raise NotImplementedError
 
 
-def _no_import(*_args: Any, **_kwargs: Any) -> Any:
-    # The curated exec namespace omits __import__, so a bare `import math` would raise the cryptic
-    # "__import__ not found". Seed this instead so the message tells the author what to do.
-    raise ImportError(
-        "imports are not available in a script — the math vocab "
-        "(sin/cos/sqrt/clamp/lerp/.../pi/tau) and math.* are pre-loaded; just use them"
-    )
-
-
 def _build_globals(uniform_name: str) -> dict[str, Any]:
-    # The names a script body + its eager method annotations resolve against. `__builtins__`
-    # carries `__build_class__` (the `class` statement needs it) — NOT emptied (040's trick fails
-    # for the class model); the curated math vocab + the base + Ctx + ALL output types are
-    # top-level globals (annotations like `-> Vec2` evaluate at class-def time against this dict).
-    # No sandbox (a personal IDE; locked posture) — we expose a curated set, not full builtins.
-    builtins_ns: dict[str, Any] = {
-        "__build_class__": __build_class__,
-        "__import__": _no_import,
-        "__name__": f"<u:{uniform_name}>",
-        # The scalar return annotation `-> float` / `-> int` resolves these at class-def time
-        # (annotations eval eagerly — no `from __future__ import annotations`), so the builtin
-        # number types must be in scope alongside the math vocab.
-        "float": float,
-        "int": int,
-        "bool": bool,
-        # Common exception types so a user `raise ValueError(...)` is its real error, not a
-        # misleading NameError from the curated (no-full-builtins) namespace.
-        "Exception": Exception,
-        "ValueError": ValueError,
-        "TypeError": TypeError,
-        "RuntimeError": RuntimeError,
-        "KeyError": KeyError,
-        "IndexError": IndexError,
-        "ZeroDivisionError": ZeroDivisionError,
-        # `super` makes the engine's own subclass-init idiom (`super().__init__()`) work; the
-        # containers + iteration helpers are what a real stateful script reaches for (a history
-        # buffer, a smoothing window). No safety lost — the raw exec already runs the file.
-        "super": super,
-        "object": object,
-        "list": list,
-        "dict": dict,
-        "tuple": tuple,
-        "set": set,
-        "frozenset": frozenset,
-        "str": str,
-        "bytes": bytes,
-        "chr": chr,
-        "ord": ord,
-        "sum": sum,
-        "sorted": sorted,
-        "reversed": reversed,
-        "zip": zip,
-        "map": map,
-        "filter": filter,
-        "isinstance": isinstance,
-        "all": all,
-        "any": any,
-        "print": print,
-        "sin": math.sin,
-        "cos": math.cos,
-        "tan": math.tan,
-        "asin": math.asin,
-        "acos": math.acos,
-        "atan": math.atan,
-        "atan2": math.atan2,
-        "sqrt": math.sqrt,
-        "exp": math.exp,
-        "log": math.log,
-        "floor": math.floor,
-        "ceil": math.ceil,
-        "fmod": math.fmod,
-        "hypot": math.hypot,
-        "pi": math.pi,
-        "tau": math.tau,
-        "abs": abs,
-        "min": min,
-        "max": max,
-        "round": round,
-        "pow": pow,
-        "len": len,
-        "range": range,
-        "enumerate": enumerate,
-        "clamp": lambda x, lo, hi: max(lo, min(hi, x)),
-        "lerp": lambda a, b, k: a + (b - a) * k,
-        "mix": lambda a, b, k: a + (b - a) * k,  # GLSL spelling of lerp (muscle memory)
-        "math": math,
-    }
+    # The names a script body + its eager method annotations resolve against. A script is a plain
+    # Python file: the real builtins are in scope (so `import math` and the whole stdlib work), and
+    # the only injected top-level globals are the class base + Ctx + the output types — method
+    # annotations (`-> Vec2`) evaluate at class-def time against this dict. No sandbox (a personal
+    # IDE; locked posture) — the raw exec already runs the file.
     return {
-        "__builtins__": builtins_ns,
+        "__builtins__": __builtins__,
         "__name__": f"<u:{uniform_name}>",
         "ScriptBehavior": ScriptBehavior,
         "Ctx": EngineContext,

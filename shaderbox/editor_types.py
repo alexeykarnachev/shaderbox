@@ -1,9 +1,25 @@
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 from imgui_bundle import imgui_color_text_edit as text_edit
 
 from shaderbox.shader_source import ShaderSource
+
+EditorTabKind = Literal["shader", "node_script", "uniform_script", "lib"]
+
+
+@dataclass(frozen=True)
+class EditorTab:
+    # One open file in the code-editor's tab bar (feature 045). `path` is the on-disk file (the
+    # EditorSession key). `kind` drives the semantic label (shader / node script / script · <name> /
+    # lib filename) and whether the active/inactive toggle shows. For a script, `node_id` + `name`
+    # (a uniform name, or None for the node-brain) address its engine binding; both are "" / None
+    # for shader + lib tabs.
+    path: Path
+    kind: EditorTabKind
+    node_id: str = ""
+    name: str | None = None
 
 
 @dataclass(frozen=True)

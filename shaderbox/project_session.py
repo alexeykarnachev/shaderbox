@@ -37,6 +37,7 @@ from shaderbox.scripting import (
     EngineContext,
     MouseState,
     ScriptEngine,
+    ScriptState,
     brain_stub_for,
     is_scriptable,
     stub_for,
@@ -385,10 +386,6 @@ class ProjectSession:
                 EngineContext(t=t, dt=dt, frame=frame, mouse=mouse),
             )
 
-    def reset_script(self, node_id: str, name: str) -> None:
-        # Re-run a live behavior's __init__ (the manual "restart" the 042 UI restart wires).
-        self.script_engine.reset(node_id, name)
-
     def is_uniform_scriptable(self, node_id: str, name: str) -> bool:
         # True if a uniform can carry a script (a scalar/vector/array — not a sampler/block); the
         # gate the 042 "Make scriptable" affordance reads (the twin of create_script's lookup).
@@ -413,12 +410,11 @@ class ProjectSession:
         scripts_dir = self.paths.scripts_dir_for(node_id)
         scripts_dir.mkdir(parents=True, exist_ok=True)
         uniforms = [u for u in ui_node.node.get_active_uniforms() if is_scriptable(u)]
+        path = self.script_path_for(node_id, name)
         if name is None:
-            path = scripts_dir / "script.py"
             path.write_text(brain_stub_for(uniforms), encoding="utf-8")
         else:
             uniform = next(u for u in uniforms if u.name == name)
-            path = scripts_dir / f"{name}.py"
             path.write_text(stub_for(uniform), encoding="utf-8")
         return path
 
@@ -429,12 +425,41 @@ class ProjectSession:
         src = self.paths.scripts_dir_for(node_id) / filename
         if not src.is_file():
             return
+        # Drop a stale inactive marker too, so a later re-create doesn't resurrect as inactive.
+        src.with_name(src.name + ".disabled").unlink(missing_ok=True)
         dest_dir = self.paths.trash_dir / "scripts" / node_id
         dest_dir.mkdir(parents=True, exist_ok=True)
         dest = dest_dir / filename
         if dest.exists():
             dest = dest_dir / f"{src.stem}_{int(time.time() * 1000)}{src.suffix}"
         shutil.move(src, dest)
+
+    def script_path_for(self, node_id: str, name: str | None) -> Path:
+        # The scripts/ path for a per-uniform (name set) or node-brain (name None) script — the
+        # binding-by-filename convention (041/044) in one place.
+        filename = "script.py" if name is None else f"{name}.py"
+        return self.paths.scripts_dir_for(node_id) / filename
+
+    def script_state_for(self, node_id: str, name: str | None) -> ScriptState:
+        # The UI pill's three states (045), read off the disk (NOT the live engine binding, so it is
+        # correct the instant a toggle/create lands, before the next reload poll): no file -> absent;
+        # a `<file>.disabled` sibling -> inactive; else active.
+        path = self.script_path_for(node_id, name)
+        if not path.is_file():
+            return "absent"
+        if path.with_name(path.name + ".disabled").is_file():
+            return "inactive"
+        return "active"
+
+    def set_script_active(self, node_id: str, name: str | None, active: bool) -> None:
+        # Toggle a script's active/inactive bit by creating/removing its `<file>.disabled` sibling
+        # marker (045). The next reload_scripts binds (active) or drops (inactive) it.
+        path = self.script_path_for(node_id, name)
+        marker = path.with_name(path.name + ".disabled")
+        if active:
+            marker.unlink(missing_ok=True)
+        elif path.is_file() and not marker.exists():
+            marker.write_text("", encoding="utf-8")
 
     def get_script_driven_uniforms(self, node_id: str) -> set[str]:
         # The uniform names a script drives on `node_id` (a u_<name>.py OR the node-brain's last-tick

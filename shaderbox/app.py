@@ -33,7 +33,13 @@ from shaderbox.copilot.revert import RevertExecutor
 from shaderbox.copilot.session import CopilotSession
 from shaderbox.copilot.state import CopilotLayout, Message
 from shaderbox.core import Canvas
-from shaderbox.editor_types import EditorSession, HoverMark, InlineInput, JumpRequest
+from shaderbox.editor_types import (
+    EditorSession,
+    EditorTab,
+    HoverMark,
+    InlineInput,
+    JumpRequest,
+)
 from shaderbox.exporters.integrations import IntegrationsStore
 from shaderbox.exporters.registry import ExporterRegistry
 from shaderbox.exporters.telegram import TelegramExporter
@@ -61,7 +67,6 @@ from shaderbox.ui_models import (
     load_node_from_dir,
 )
 from shaderbox.util import (
-    open_file_in_default_app,
     open_in_file_manager,
     pfd_block,
 )
@@ -325,13 +330,12 @@ class App:
         self.splitter_dragging: bool = False
         self._splitter_press_on_splitter: bool = False
 
-        # When non-None, the editor pane shows this file instead of the current
-        # node's shader. Set by `open_shader_lib_file` / cleared by `show_node_editor`.
-        self._explicit_editor_path: Path | None = None
-        # The most recently viewed lib file (kept so the code pane can offer a
-        # "back to lib" shortcut while showing the node shader). Set by
-        # `open_shader_lib_file`; never cleared by `show_node_editor`.
-        self.last_shader_lib_path: Path | None = None
+        # The code editor's open tabs (feature 045): an ordered list + the active index. The active
+        # tab's path is what the editor shows (`current_editor_path`). Node shader, node-brain /
+        # per-uniform scripts, and lib files are all closable tabs — no pinned first tab. Selecting a
+        # node ensures its shader tab. Empty list = no file open.
+        self.editor_tabs: list[EditorTab] = []
+        self.active_tab_index: int = 0
 
         # shader_lib_index + the cross-project stores (favorites/tags/template-descriptions)
         # live on self.session (feature 025); App reaches them via the @property forwarders.
@@ -423,6 +427,8 @@ class App:
         # Switching nodes invalidates the "user has been typing" sticky bit — the new node's
         # session starts fresh; insertions would land at (0,0) until the user clicks into it.
         self.editor_was_ever_focused = False
+        if new_id:
+            self.ensure_shader_tab(new_id)
 
     def _on_node_source_synced(self, node_id: str, source: str) -> None:
         # The mtime watcher rebuilt a node's source on disk; push the new text into its live
@@ -437,9 +443,13 @@ class App:
         session.saved_undo = session.editor.get_undo_index()
 
     def _on_node_deleted(self, node_id: str, source_path: Path) -> None:
-        # A node's dir was trashed by the core; drop its editor session + clear a pending
-        # delete-arm if it matched.
+        # A node's dir was trashed by the core; drop its editor session + close any of its open
+        # tabs (the shader + its scripts) + clear a pending delete-arm if it matched.
         self.editor_sessions.pop(source_path, None)
+        self.editor_tabs = [
+            t for t in self.editor_tabs if t.node_id != node_id or t.kind == "lib"
+        ]
+        self.active_tab_index = min(self.active_tab_index, len(self.editor_tabs) - 1)
         if node_id == self.node_delete_armed:
             self.node_delete_armed = ""
 
@@ -944,40 +954,92 @@ class App:
 
     @property
     def current_editor_path(self) -> Path | None:
-        # An explicit override (set by `open_shader_lib_file` when a lib tab is active)
-        # wins; otherwise fall back to the current node's shader path.
-        if self._explicit_editor_path is not None:
-            return self._explicit_editor_path
-        node_id = self.current_node_id
-        if not node_id or node_id not in self.ui_nodes:
+        # The active tab's path (feature 045), or None when no tab is open.
+        if not (0 <= self.active_tab_index < len(self.editor_tabs)):
             return None
-        return self.ui_nodes[node_id].node.source.path
+        return self.editor_tabs[self.active_tab_index].path
+
+    @property
+    def active_tab(self) -> EditorTab | None:
+        if not (0 <= self.active_tab_index < len(self.editor_tabs)):
+            return None
+        return self.editor_tabs[self.active_tab_index]
+
+    def _focus_or_add_tab(self, tab: EditorTab) -> None:
+        # Focus the tab with this path if already open, else append + focus it. Path is the tab's
+        # identity (one tab per file), so reopening an open file just re-focuses it.
+        for i, existing in enumerate(self.editor_tabs):
+            if existing.path == tab.path:
+                self.active_tab_index = i
+                self.editor_was_ever_focused = False
+                return
+        self.editor_tabs.append(tab)
+        self.active_tab_index = len(self.editor_tabs) - 1
+        self.editor_was_ever_focused = False
+
+    def ensure_shader_tab(self, node_id: str) -> None:
+        # On node-select: focus (or open) the node's shader tab so selecting a node shows its
+        # shader, the pre-045 default. Other open tabs (scripts / libs / other nodes' shaders) stay.
+        if node_id not in self.ui_nodes:
+            return
+        path = self.ui_nodes[node_id].node.source.path
+        self._focus_or_add_tab(EditorTab(path=path, kind="shader", node_id=node_id))
+
+    def set_active_tab(self, index: int) -> None:
+        if 0 <= index < len(self.editor_tabs):
+            self.active_tab_index = index
+            self.editor_was_ever_focused = False
+
+    def close_tab(self, index: int) -> None:
+        # Remove a tab from the open list (the EditorSession is kept — reopening re-focuses it).
+        # Clamp the active index so it stays valid (or -1-equivalent when the list empties).
+        if not (0 <= index < len(self.editor_tabs)):
+            return
+        self.editor_tabs.pop(index)
+        self.active_tab_index = min(self.active_tab_index, len(self.editor_tabs) - 1)
 
     def open_shader_lib_file(self, path: Path) -> EditorSession:
-        # Lazy-create or focus a session on a lib file path; switch the editor to show it.
+        # Open (or focus) a lib file as a tab; return its session.
         source = ShaderSource.load(path)
         session = self.get_session(source)
-        if self._explicit_editor_path != source.path:
-            # Target changed — the sticky "user was typing" bit no longer applies.
-            self.editor_was_ever_focused = False
-        self._explicit_editor_path = source.path
-        # Remember the lib for the "back to lib" shortcut in node-editor mode.
-        self.last_shader_lib_path = source.path
+        self._focus_or_add_tab(EditorTab(path=source.path, kind="lib"))
         return session
 
-    def show_node_editor(self) -> None:
-        # Drop the lib-file override so the editor falls back to the current node's shader.
-        if self._explicit_editor_path is not None:
-            self.editor_was_ever_focused = False
-        self._explicit_editor_path = None
+    def open_script_for(self, node_id: str, name: str | None) -> None:
+        # Open a uniform's script (name set) or the node-brain (name None) in a tab, lazily creating
+        # the file first if absent (045 — replaces the OS-editor launch). The next reload_scripts
+        # binds a fresh file. Frozen mid-copilot-turn (a script write races the reload).
+        if self.copilot_turn_active:
+            return
+        try:
+            if self.session.script_state_for(node_id, name) == "absent":
+                self.session.create_script(node_id, name)
+            path = self.session.script_path_for(node_id, name)
+        except Exception as e:
+            self.notifications.push(
+                "Failed to open script", color=COLOR.STATE_ERROR[:3]
+            )
+            logger.error(f"open_script_for failed for {node_id}/{name}: {e}")
+            return
+        self.get_session(ShaderSource.load(path))
+        kind = "node_script" if name is None else "uniform_script"
+        self._focus_or_add_tab(
+            EditorTab(path=path, kind=kind, node_id=node_id, name=name)
+        )
 
     def get_session(self, source: ShaderSource) -> EditorSession:
         # Lazy-create a session bound to this source's path (the stable identity);
-        # `source.text` is the initial buffer text.
+        # `source.text` is the initial buffer text. The language is suffix-aware (045): a `.py`
+        # script gets Python highlighting, everything else GLSL.
         session = self.editor_sessions.get(source.path)
         if session is None:
             editor = text_edit.TextEditor()
-            editor.set_language(text_edit.TextEditor.Language.glsl())
+            language = (
+                text_edit.TextEditor.Language.python()
+                if source.path.suffix == ".py"
+                else text_edit.TextEditor.Language.glsl()
+            )
+            editor.set_language(language)
             editor.set_palette(text_edit.TextEditor.get_dark_palette())
             editor.set_text(source.text)
             session = EditorSession(
@@ -986,6 +1048,11 @@ class App:
             self.editor_sessions[source.path] = session
             self._apply_editor_settings_to(editor)
         return session
+
+    def get_session_for_path(self, path: Path) -> EditorSession:
+        # Re-create (or fetch) a session for a tab whose session was evicted — load the file off
+        # disk; `get_session` is suffix-aware for the language.
+        return self.get_session(ShaderSource.load(path))
 
     def get_current_session(self) -> EditorSession | None:
         node_id = self.current_node_id
@@ -1036,12 +1103,13 @@ class App:
             # the imgui renderer's restore (GLError 1281).
             node.render()
         else:
-            # Saving a lib file: write to disk. The mtime watcher detects the change next
-            # frame, rebuilds the lib index, and invalidates every dependent node.
+            # Saving a lib file OR a uniform/node-brain script: write to disk. The mtime watcher
+            # picks it up next frame — a lib rebuilds the index + invalidates dependents; a script
+            # is re-bound by reload_scripts.
             try:
                 session.source.path.write_text(text, encoding="utf-8")
             except OSError as e:
-                logger.error(f"Failed to write lib file {session.source.path}: {e}")
+                logger.error(f"Failed to write {session.source.path}: {e}")
                 return
         session.saved_undo = session.editor.get_undo_index()
 
@@ -1069,28 +1137,12 @@ class App:
     def is_uniform_scriptable(self, node_id: str, name: str) -> bool:
         return self.session.is_uniform_scriptable(node_id, name)
 
-    def create_script_for(self, node_id: str, name: str | None) -> None:
-        # Write a new per-uniform (name set) or node-brain (name None) script + open it in the OS
-        # editor; the next reload_scripts binds it. Wave-1 editing is the OS editor (no in-app pane).
-        try:
-            path = self.session.create_script(node_id, name)
-            open_file_in_default_app(path)
-            self.notifications.push(f"Created {path.name}")
-        except Exception as e:
-            self.notifications.push(
-                "Failed to create script", color=COLOR.STATE_ERROR[:3]
-            )
-            logger.error(f"create_script failed for {node_id}/{name}: {e}")
-
-    def open_script_file(self, node_id: str, filename: str) -> None:
-        # Open a script in the OS editor (wave 1 — no in-app Python editor yet).
-        path = self.paths.scripts_dir_for(node_id) / filename
-        if not path.is_file():
-            self.notifications.push(
-                "Script file not found", color=COLOR.STATE_ERROR[:3]
-            )
+    def set_script_active(self, node_id: str, name: str | None, active: bool) -> None:
+        # The editor toggle's action (045): flip a script's active/inactive bit (the engine binds or
+        # drops it on the next reload). Frozen mid-copilot-turn (a marker write races the reload).
+        if self.copilot_turn_active:
             return
-        open_file_in_default_app(path)
+        self.session.set_script_active(node_id, name, active)
 
     def detach_script(self, node_id: str, filename: str) -> None:
         # Trash a script (recoverable); the next reload drops the binding + clears its error.
@@ -1099,14 +1151,17 @@ class App:
 
     # App-side editor-session cleanup, reached back into from ShaderLibFileManager when it
     # trashes/renames a lib file (the picker UI drives the CRUD on the manager directly).
+    def _close_tab_for_path(self, path: Path) -> None:
+        for i, tab in enumerate(self.editor_tabs):
+            if tab.path == path:
+                self.close_tab(i)
+                return
+
     def _on_shader_lib_paths_removed(self, paths: list[Path]) -> None:
-        # Drop editor sessions + selections pointing at trashed lib paths.
+        # Drop editor sessions + close any open tab pointing at trashed lib paths.
         for path in paths:
             self.editor_sessions.pop(path, None)
-            if self._explicit_editor_path == path:
-                self.show_node_editor()
-            if self.last_shader_lib_path == path:
-                self.last_shader_lib_path = None
+            self._close_tab_for_path(path)
             if (
                 self.editor_jump_request is not None
                 and self.editor_jump_request.path == path
@@ -1114,16 +1169,16 @@ class App:
                 self.editor_jump_request = None
 
     def _on_shader_lib_path_renamed(self, old: Path, new: Path) -> None:
-        # Re-key the open EditorSession (if any) so future writes target the new path;
+        # Re-key the open EditorSession + its tab (if any) so future writes target the new path;
         # the editor's text is untouched.
         session = self.editor_sessions.pop(old, None)
         if session is not None:
             session.source = replace(session.source, path=new)
             self.editor_sessions[new] = session
-        if self._explicit_editor_path == old:
-            self._explicit_editor_path = new
-        if self.last_shader_lib_path == old:
-            self.last_shader_lib_path = new
+        self.editor_tabs = [
+            replace(tab, path=new) if tab.path == old else tab
+            for tab in self.editor_tabs
+        ]
         if (
             self.editor_jump_request is not None
             and self.editor_jump_request.path == old

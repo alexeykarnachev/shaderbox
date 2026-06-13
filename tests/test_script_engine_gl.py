@@ -68,9 +68,10 @@ def _pixel(node: Node) -> tuple[int, int, int, int]:
 
 
 _WAVE = (
+    "import math\n"
     "class Behavior(ScriptBehavior):\n"
     "    def update(self, ctx: Ctx) -> float:\n"
-    "        return 0.5 + 0.5 * sin(ctx.t)\n"
+    "        return 0.5 + 0.5 * math.sin(ctx.t)\n"
 )
 _OFFSET = (
     "class Behavior(ScriptBehavior):\n"

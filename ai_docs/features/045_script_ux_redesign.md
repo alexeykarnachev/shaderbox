@@ -1,271 +1,260 @@
-# 045 — script UX redesign (DRAFT)
+# 045 — script UX redesign
 
-> **STATUS: SPEC DRAFT — NOT plan-locked.** Captured verbatim from the maintainer's design voice message
-> (foo chat, 2026-06-13). The current 042 script UI/UX was judged poor; this is the redesign wave.
-> **FIRST step when work resumes: a LARGE review swarm** that collects all the concrete requirements +
-> code details from the codebase (the exact widgets, files, current behavior this changes), THEN the
-> usual dev flow (plan-lock → pre-impl review → implement → post-impl review → sanitize). This draft is
-> written to be implementable from a HEADLESS box (no display during implementation) — so it is
-> deliberately exhaustive about exact widgets, layout, files, and the current code each change touches.
-> Nothing from the source message is dropped; the maintainer's "надо подумать" items are preserved as
-> OPEN QUESTIONS, not silently resolved.
+Builds on 042 (the headless script engine surface + management verbs behind a placeholder UI the
+maintainer judged poor). 045 rebuilds that UI: a discoverable in-app scripting UX — attach/edit a
+script from a visible per-row control, edit ALL scripts inside ShaderBox's own tabbed code editor,
+a mirrored node-header control for the node-brain, script errors shown exactly like shader errors,
+and the Python script behaves like a normal file (no curated sandbox globals). All engine verbs
+already exist (`create_script` / `detach_script` / `reset_script` / `get_brain_status` /
+`get_script_file_for` / `is_uniform_scriptable` / `stub_for` / `brain_stub_for` on `ProjectSession`).
 
-Builds on 042 (which shipped the headless engine surface + the management verbs as MACHINERY behind a
-weak placeholder UI). 045 is a UI/UX rebuild over that done machinery + two small backend changes (the
-stub docstring shape; removing the curated `exec` globals). All the engine verbs already exist:
-`create_script` / `detach_script` / `reset_script` / `get_brain_status` / `get_script_file_for` /
-`is_uniform_scriptable` / `stub_for` / `brain_stub_for` on `ProjectSession` (see 042 spec + dev_flow
-`scripting/` map). The redesign REPLACES the 042 affordances (chips/context-menu/strip) and the OS-editor
-launch — it does not add a parallel system.
+The design was captured from the maintainer's voice messages (foo chat, 2026-06-13) and locked in a
+plan discussion the same day; the open questions the draft carried are resolved in **Design
+decisions** below.
 
 ## Goal
 
-A discoverable, intuitive, in-app scripting UX: attach/edit/disable a script from a clearly-visible
-per-row control (no hidden right-click), edit ALL scripts INSIDE ShaderBox's own code editor with a
-tab bar for multiple open scripts, and a node-level control mirroring the per-uniform one for the
-node-brain. The Python script behaves like a normal Python file (no curated sandbox globals).
+One visible per-row affordance (a text pill) to create/open/edit a uniform's script; the same pill
+mirrored in the node header for the node-brain; ALL scripts edited in our own code editor behind a
+multi-tab bar; a single **active/inactive** toggle (in the editor) that decides whether a present
+script is applied; the value widget disabled while a script is active (the type pill stays live);
+script errors rendered through the SAME mechanism as shader errors; and a plain-Python script body
+(strip the curated math globals — the user `import math`s themselves).
 
----
+## Out of scope
 
-## Part A — Remove the 042 affordances that are wrong
+- **Docstring-generation opt-out setting** (a future Settings toggle to skip the generated
+  docstrings). Not this wave. **Trigger:** a maintainer wants to create a script with no docstring
+  boilerplate.
+- **The three-dots (`...##node_actions`) mechanism removal + "Save as template" relocation.** The
+  three-dots is acknowledged-temporary; this wave only removes its "New node-brain script" item.
+  **Trigger:** the maintainer decides where "Save as template" should live instead.
+- **Detach / trash a script from the UI.** 045 collapses the script lifecycle to one toggle
+  (active/inactive); there is no UI "detach" anymore (the file stays on disk, inactive). Removing the
+  file is a manual on-disk delete, which the engine already auto-handles (the binding drops, the
+  uniform returns to manual). **Trigger:** a real need to delete a script's file from inside the app
+  surfaces (then add a delete affordance to the editor's script tab, mirroring the toggle).
+- **Per-uniform "Restart script" (re-run `__init__`).** 042 carried it in the right-click menu; the
+  redesign drops the menu and does not re-home it (a save already re-instantiates; the node-brain
+  keeps no separate restart either). **Trigger:** a workflow needs to re-run `__init__` without a
+  source edit.
 
-A1. **Remove the per-row right-click context menu entirely.** The "Right-click a uniform for script
-actions" menu (`widgets/uniform.py::_script_actions_menu` + the "Right-click a uniform for script
-actions" hint line in `tabs/node.py::draw`) is unintuitive — the maintainer did not find the option on
-the first try. DELETE the context menu, its hint line, and the per-row `confirm_delete_popup` wired to it.
-The verbs it carried (Make scriptable / Open / Restart / Detach script) move to the new per-row control
-(Part B) and the editor (Part C).
+## Design decisions
 
-A2. **Remove the yellow `py` pill (the `script_chip`).** The current driven-row indicator
-(`ui_primitives.py::script_chip`, the `pill_button`-based "py" pill in `widgets/uniform.py`'s driven
-branch) goes away — "не будет такого пила". The new per-row script control (Part B) replaces it. (Decide
-during impl whether `script_chip` the primitive is deleted or repurposed — see Part B.)
+Locked. (1)–(8) resolve the draft's eight open questions; (9)–(12) lock the mechanics.
 
-A3. **Remove "New node-brain script" from the three-dots (`...`) node-actions popup.** In
-`tabs/node.py` the `node_actions_popup` (opened by the `...##node_actions` ghost button) currently has
-"Save as template" + "New node-brain script". REMOVE the "New node-brain script" item. Leave ONLY "Save
-as template" in the popup for now. (Maintainer note: the three-dots mechanism itself is a temporary
-solution — "Save as template" will later move elsewhere and the three-dots removed — but that is NOT this
-wave; this wave only removes the brain-script item.) Brain-script CREATION moves to a prominent place
-(Part D).
+1. **One state machine: a script is ACTIVE or INACTIVE — nothing else.** A uniform/node either has no
+   script (the pill reads "+ script" / "+ brain") or has one that is being applied (active) or not
+   (inactive). There is no separate "attached vs disabled" axis and no detach: an inactive script
+   still exists on disk and reopens instantly. The *file's existence* is an implementation detail the
+   user never reasons about — it is created lazily on first open and never deleted by the redesign.
+   The active/inactive bit is the only state the user sees.
 
-A4. **Scripts are opened in OUR code editor, NOT the OS.** Remove the `open_in_file_manager` /
-`open_file_in_default_app` launch path for scripts (`App.open_script_file` / `App.create_script_for`
-currently call `open_file_in_default_app`). We do NOT open the scripts folder and do NOT hand the user off
-to their OS text editor — everything is done inside ShaderBox's own editor (Part C). (The
-`open_file_in_default_app` util helper added in 042 may become unused — check + remove if so.)
+2. **The per-row affordance is a TEXT PILL, not an icon** (no glyph to draw/maintain). Three captions:
+   `+ script` (no script) · `script` accent-filled (active) · `script` muted/faded (inactive). The
+   accent fill on the active state is the at-a-glance "which uniforms are script-driven" cue in the
+   uniform list. Clicking the pill in ANY state opens (creating first if absent) the script in the
+   editor — it never toggles. Built on the existing `pill_button`; the new wrapper is ONE shared
+   primitive used by both the per-uniform row and the node header (decision 9).
 
-A5. **Remove the curated math globals from the script `exec` namespace.** In
-`scripting/behavior.py::_build_globals`, the curated math vocab (`sin`/`cos`/`sqrt`/`clamp`/`lerp`/`mix`/
-`pi`/`tau`/`math`/…) and the `_no_import` shim (which blocks `import` with a friendly message) are REMOVED.
-The maintainer is explicit: a script is a normal Python file — the user can `import math` (or anything)
-themselves and call `math.sin(...)` etc. No safety/sandbox concerns (single local user writing their own
-code); the "pre-loaded math" convenience is an over-complication to delete. **CONSEQUENCE the swarm must
-catch:** the current `stub_for` / `brain_stub_for` output AND any shipped example/docstring AND the smoke
-seed (`scripts/smoke.py` `u_wave.py` uses bare `sin(ctx.t)`) AND the dogfood scenarios use bare
-`sin/clamp/lerp` with NO import — removing the globals BREAKS them all. The migration must rewrite every
-stub/example to `import math` + `math.sin(...)` (or whatever the maintainer prefers) so a freshly-created
-script still compiles + runs. The exec globals likely keep ONLY what the class machinery needs
-(`__build_class__`, `__name__`, the base `ScriptBehavior`, `Ctx`, the output types `Vec2/3/4`/`Array`/
-`Text`/`MouseState`, and the builtin types annotations resolve against) — the swarm must enumerate the
-MINIMUM globals that keep `class Behavior(ScriptBehavior)` + eager method annotations working once the
-math vocab is gone, since `exec` with a custom globals dict does NOT auto-populate `__builtins__` the way
-a normal module does. (Check: does removing `_no_import` mean `__import__` must be restored to real
-builtins so `import math` works? Almost certainly yes — the user needs real `import`.)
+3. **Enable/disable lives in the EDITOR, not the row.** Toggling active/inactive is a rare operation,
+   so it is a single well-visible button at the **top-right of the editor pane, above the tab bar**,
+   shown only when the active tab is a node/uniform script. It uses the existing `toggle_button`
+   primitive (filled-accent when active, bordered-ghost when inactive). The row pill only opens; the
+   editor button only toggles — the two gestures never conflict (the draft's central failure).
 
----
+4. **Tab labels are SEMANTIC, not file paths.** The user never sees a path (everything is
+   project-relative and path-irrelevant). Labels: `shader` (the node's `shader.frag.glsl`), `node
+   script` (the node-brain `script.py`), `script · <uniform>` (a `u_<name>.py`). Lib files keep their
+   filename (`SB_foo.glsl`) — they are genuinely path-named resources.
 
-## Part B — The per-uniform script control (the new visible affordance)
+5. **The editor holds an ORDERED LIST of open tabs; everything opened in the editor is a tab.** Node
+   shader, node-brain, per-uniform scripts, and lib files all become closable tabs (an `x` per tab,
+   reopen via the originating affordance). No pinned/permanent tab, no special first tab — uniform
+   treatment. This supersedes the single-slot `_explicit_editor_path` + the `< back to node` /
+   `back to lib >` chrome. Closing the last tab leaves the editor empty (a "no file open" caption).
 
-B1. **Row layout (unchanged spine + a new trailing control).** The per-uniform row in
-`widgets/uniform.py::draw_ui_uniform` keeps its current spine and ORDER:
-`[ type pill ] [ uniform name ] [ the control widget ]`, then ADD a new **script button/control AFTER
-the control widget** (trailing, end of the row). The type pill (drag / color / …) stays exactly as it is.
-The script control is the visible, discoverable entry point that replaces the right-click menu + the `py`
-pill.
+6. **Disabled persistence is a by-filename sibling marker** (`<script>.disabled` next to the `.py`).
+   Presence of the marker = inactive. It is by-filename (preserves the 041 stateless-by-filename
+   invariant), survives reload + restart, and is EXTERNAL to the script body so export-isolation
+   (`fresh_behaviors_for` / `tick_behaviors`) honors it for free (a disabled binding is never compiled
+   into the fresh export set). The engine skips a marked binding at reload (it is not discovered, the
+   uniform returns to manual). This is a real engine change (B4).
 
-B2. **The maintainer's mental model for the control (a starting image, not a lock):** a grey
-"tools"-style icon, looking un-pressed/inactive by default. Click it → the script opens (in our editor,
-Part C) and you can edit it. Click the icon again → the script becomes DISABLED (inactive). So the
-control is conceptually a toggle: attach/enable ↔ disable, with "click opens the editor."
+7. **Script errors render through the SHADER-ERROR mechanism, in one place — the editor's bottom error
+   strip.** 042's per-row `notice_strip` + the node-brain strip are REMOVED. When a script tab is
+   open, the active script's `ScriptError` (compile/coercion/runtime, with its line) is shown in the
+   editor's bottom error strip — the same `_draw_error_strip` visual the shader uses, click-to-jump to
+   the offending line. Script errors and shader errors look identical and live in the same spot. The
+   node-brain's homeless soft-key errors (typo/orphan keys that name no uniform row) surface the same
+   way when its tab is open.
 
-B3. **OPEN QUESTION (maintainer: "надо подумать", explicitly unresolved — do NOT pick silently):** the
-icon-toggle is insufficient as a state machine. Two cases it doesn't cover:
-  - How do I **view a script while it is INACTIVE** (disabled but I want to read/edit it)?
-  - How do I **hide/disable a script while it is ACTIVE** without losing the ability to reopen it?
-  A single icon-toggle conflates "open in editor" with "enable/disable." The maintainer suspects an icon
-  may not be the right widget here. **This is the central design problem of the wave — the swarm + the
-  plan-lock must produce the full state machine** (states: no-script / script-present-active /
-  script-present-inactive; transitions: create, open-in-editor, enable, disable, detach; and which gesture
-  drives each). Candidate shapes to weigh at plan time: a split control (an open affordance + a separate
-  enable/disable toggle), a pill with a state + a context affordance, a small two-part button. Decide with
-  concrete imgui mockups; this is exactly where 042's single-gesture design failed.
+8. **The text/array char-count moves into the uniform NAME.** The `{len}/{cap}` caption (text uniform)
+   and the array branch's `{len}/{cap}` / `[...]  ({cap})` captions vacate the trailing column (now
+   the pill's home). The count moves to the name cell as `u_label (46/64)`.
 
-B4. **"Disabled script" semantics (NEW — a script can exist but be inactive).** 042 has no notion of an
-inactive-but-present script (a file either drives a uniform or doesn't). 045 introduces a DISABLED state:
-the `.py` exists on disk + is openable/editable, but the engine does NOT tick it (the uniform returns to
-manual control). The swarm must design the persistence: how "disabled" is recorded (a sibling marker? a
-rename like `u_x.py.disabled`? a per-node manifest? a field — but binding is by-filename and stateless per
-041, so a marker file or a disabled/ subdir is more in keeping). It must survive reload + restart, and the
-engine's `reload`/`tick` must skip a disabled binding. This is a real engine change, not just UI.
+9. **ONE shared script-pill primitive, ONE shared toggle.** Per the reuse mandate: a single
+   `script_pill(...)` in `ui_primitives.py` draws the row/header pill (three states), and the editor's
+   active/inactive control reuses the existing `toggle_button`. No per-surface duplicate widgets. The
+   `script_chip` primitive (the old "py" pill) is deleted (no longer used).
 
-B5. **When a script is ACTIVE, disable the uniform's value widget BUT allow changing its TYPE.** This is
-the 042 read-only behavior, refined: while a script drives a uniform, the value widget (slider / color
-palette / text box / etc.) is DISABLED — the user cannot set the value by hand (the script owns it). BUT
-the **type pill stays enabled** — the user can still switch the input type (e.g. drag ↔ color), because
-the type is only a VIEW of the uniform; the script's values are then displayed/interpreted through the
-chosen view. (042 currently shows a read-only `format_auto_value` readout and skips the whole control
-branch — 045 instead draws the real widget but `begin_disabled`'d, so the live value shows through the
-widget itself, and the type pill remains clickable.)
+10. **Active = the value widget is `begin_disabled`'d but the type pill stays live.** 042 skipped the
+    whole control branch and drew a read-only `format_auto_value` readout; 045 instead draws the REAL
+    widget inside `begin_disabled` (the live script value shows through it), and `draw_input_type_selector`
+    (the type pill) is drawn OUTSIDE the disabled scope so the user can still switch the view type. An
+    INACTIVE script's row is fully normal (manual control, widget live).
 
-B6. **Uniform Text: move the char-count out of the script column.** The text-uniform branch
-(`widgets/uniform.py`, the `input_type == "text"` path) currently draws a `caption_text(f"{len(text)}/{cap}")`
-char-counter (e.g. "46/64") in the trailing column — exactly where the new script control goes. MOVE the
-count OUT of that column: put it in the uniform NAME (in parentheses, e.g. the name cell shows
-`u_label (46/64)`), or similar. The maintainer: "не очень важно [where exactly], но оттуда надо это
-убрать." (Also check the `array` branch's `{len}/{cap}` and `[...]  ({cap})` captions on lines near it —
-same column-collision risk; the swarm should confirm whether they need the same move.)
+11. **The exec globals keep only the class machinery; the math vocab + the `_no_import` shim go; real
+    `import` is restored.** `behavior._build_globals` drops `sin/cos/.../pi/tau/clamp/lerp/mix/math`
+    and `_no_import`; `__builtins__` becomes the real builtins module (so `import math` works and the
+    user has the full standard library). The injected top-level globals stay (`ScriptBehavior` / `Ctx`
+    / `MouseState` / `Vec2/3/4` / `Array` / `Text` — eager annotations resolve against them). Real
+    builtins subsume the formerly-curated `float/int/bool/super/list/...`, so those explicit entries go
+    too. **CONSEQUENCE:** every bare-math usage (stubs, `scripts/smoke.py` seed,
+    `scripts/dogfood/verify_script_engine.py`, on-disk dev-sandbox scripts) must migrate to `import
+    math` + `math.sin(...)` or it raises `NameError` at tick (not compile). The stub generators emit
+    the `import math` pattern.
 
----
+12. **Stub docstrings are scoped correctly (E1).** The `ctx` field reference (`ctx.t/dt/frame/
+    mouse.x/y`) moves into the `update` method docstring; the class docstring carries the high-level
+    "what this drives"; the `__init__` docstring states it may do work and runs ONCE (app start /
+    before render / on reload). The `_MATH_DOC` line is replaced by an `import math` hint.
 
-## Part C — In-app code editor for scripts (tabbed, multi-file)
+## Part A — remove the wrong 042 affordances
 
-C1. **Edit scripts in ShaderBox's own code editor.** Reuse the existing goossens `TextEditor` pane
-(`tabs/code.py`, `app.editor_sessions: dict[Path, EditorSession]`, path-keyed). A `.py` path is opened
-INSIDE the app, not in the OS. (The binding supports `Language.python()` — verified present in
-imgui_color_text_edit — so the editor can syntax-highlight Python; `get_session` currently hardcodes
-`set_language(Language.glsl())`, which must become suffix-aware.)
+- **A1.** Delete `widgets/uniform.py::_script_actions_menu` (the right-click context menu) + its
+  `confirm_delete_popup` + the `tabs/node.py` "Right-click a uniform for script actions" hint line.
+- **A2.** Delete the `script_chip` driven-row branch + the `script_chip` primitive (decision 9).
+- **A3.** Remove the "New node-brain script" item from `node_actions_popup` (keep only "Save as
+  template"). Brain creation moves to the header pill (Part D).
+- **A4.** Remove the OS-editor launch for scripts (`App.open_script_file` / `App.create_script_for`
+  stop calling `open_file_in_default_app`; they route into the editor). `open_file_in_default_app`
+  (util.py) becomes unused → delete it (its only two callers are these).
+- **A5.** Strip the curated math vocab + `_no_import` from `behavior._build_globals`; restore real
+  builtins/import (decision 11).
 
-C2. **Multiple open scripts → a TAB BAR at the top of the editor pane.** This is a new capability: today
-the code pane shows ONE file at a time (the node shader OR one lib file, via the `_explicit_editor_path`
-override + the `< back to node` chrome in `code.py::draw_chrome`). 045 needs MANY open files with a tab bar
-across the top of the editor area. The user switches between: the node's shader, a uniform's script, the
-node-brain script (and presumably open lib files too — confirm scope at plan time).
+## Part B — the per-uniform script pill
 
-C3. **Tab labels = the file path relative to the project root dir.** Since everything is relative to the
-project directory, a tab's label can be the relative path of the file from the project root (e.g.
-`nodes/<id>/scripts/u_color2.py`), or something of that shape. Maintainer: "или что-нибудь вроде того...
-тут тоже надо подумать" — so the exact label format is an OPEN QUESTION (full relative path may be too long
-for a tab; consider `<node-name>/u_color2.py` or just the filename with a tooltip showing the full path).
+- **B1.** Row spine unchanged `[type pill][name][control]`; ADD the `script_pill` trailing (end of
+  row), drawn before the existing early-return path collapses.
+- **B2/B3.** The pill is the open affordance (decision 2); the toggle lives in the editor (decision 3).
+- **B4.** The inactive (disabled-but-present) state (decisions 1, 6) — a real engine change.
+- **B5/decision 10.** Active → value widget `begin_disabled`, type pill stays live.
+- **B6/decision 8.** Char-count → the name cell.
 
-C4. **The editor open-set is now a list, not a single override.** This supersedes the
-`_explicit_editor_path: Path | None` single-slot model + the `< back to node` chrome. The swarm must design:
-the open-tabs list (ordered), the active tab, open/close/switch operations, what closing the last tab does,
-whether the node shader is a permanent/pinned first tab, and how this interacts with the existing
-`editor_sessions` cache + the FPE-behind-modal guard (`tabs/code.py` skips drawing the editor while any
-popup is open — `conventions.md ## Known quirks`). NOTE: this is the long-deferred "multi-file editor —
-tab bar / file tree / split" from `todo.md` (decision 8 of `015_shader_include_library.md`) — 045 finally
-triggers it. Reconcile with that deferral.
+## Part C — the tabbed multi-file editor
 
-C5. **Opening a script** (from the per-uniform control B2 or the node control D) switches the editor to
-that `.py`'s tab (creating the tab + the `EditorSession` if not already open), with Python highlighting.
-Save (Ctrl+S, the existing editor save path) writes the file; the engine's `reload_scripts` mtime poll
-picks it up and re-instantiates (existing 041 hot-reload — no change needed there).
+- **C1.** `App.get_session` becomes suffix-aware: `.py → Language.python()`, else `Language.glsl()`.
+- **C2–C5/decision 5.** An ordered open-tabs list + active index replaces `_explicit_editor_path`; a
+  tab bar atop the editor (`tabs/code.py`); open/close/switch ops; semantic labels (decision 4); the
+  FPE-behind-modal guard still gates the WHOLE pane (tab bar + editor) — `tabs/code.py::draw` returns
+  early when `any_popup_open()`, before drawing either. Opening a script switches/creates its tab +
+  `EditorSession`; Ctrl+S + the mtime hot-reload are unchanged.
 
----
+## Part D — the node-brain header pill
 
-## Part D — The node-brain control (mirror of the per-uniform one)
+- **D1–D4.** The same `script_pill` (states `+ brain` / `brain` active / `brain` inactive) in the node
+  header row (`tabs/node.py`, beside node-name / resolution / `...`). Click opens/creates `script.py`
+  in a tab; the editor toggle enables/disables it. The brain's errors render via decision 7 (the
+  editor error strip when its tab is open) — the separate `_draw_brain_strip` is REMOVED.
 
-D1. **A node-level script control, same shape as the per-uniform one.** The node-brain (whole-node script)
-gets a control built the SAME way as the per-uniform control (Part B) — whatever final shape that takes
-(pill / tools-icon / button — same OPEN QUESTION as B3). It mirrors the per-uniform affordance but acts on
-the node's `script.py`.
+## Part E — stub / docstring rework
 
-D2. **Placement: the node header row.** Draw the node-brain control in the node's header, where
-`node name / resolution / [...]` currently live (`tabs/node.py::draw`, the row with the node-name input +
-the resolution combo + the `...` ghost button). The brain control sits up there with them.
+- **E1/decision 12** + **E3** (bodies compile under the stripped globals — current literal defaults
+  already do; the docstring shows the `import math` pattern).
 
-D3. **Brain creation moves to a prominent place (out of the three-dots).** Since A3 removes "New node-brain
-script" from the `...` popup, creation now lives on this visible node-header control (e.g. the control in
-its no-script state IS the "create brain" affordance, mirroring how the per-uniform control creates a
-per-uniform script). Exact gesture = the B3 state-machine decision applied to the node.
+## Files touched
 
-D4. **The brain's active/disabled/error states reuse the per-uniform state machine + the engine
-accessors** (`get_brain_status` already returns the sentinel error + driven count + soft-key errors — 042).
-Where the brain's error / driven-count / soft-key list renders in the new design (a strip? attached to the
-header control? a tooltip?) is an OPEN QUESTION the swarm must place — 042's separate "brain strip" may or
-may not survive the redesign.
+- `scripting/behavior.py` — `_build_globals` (strip math + `_no_import`, restore real builtins);
+  delete `_no_import`.
+- `scripting/engine.py` — the DISABLED marker: `reload`/`_reload_brain` skip a `<file>.disabled`-marked
+  binding; new verbs to set/clear the marker + query active/inactive; `stub_for`/`brain_stub_for`
+  docstrings + `import math` hint (replace `_MATH_DOC`).
+- `project_session.py` — wrappers for the new enable/disable + script-state query; `create_script`
+  now also the lazy-create-on-open seam.
+- `app.py` — the open-tabs list replacing `_explicit_editor_path`; `get_session` suffix-aware;
+  `open_script_file` / `create_script_for` route into the editor (no OS launch); tab open/close/switch
+  + the active/inactive toggle wiring; delete the `open_file_in_default_app` import.
+- `widgets/uniform.py` — remove `_script_actions_menu` + `_draw_row_error` + the `script_chip` branch;
+  add the trailing `script_pill`; `begin_disabled` the value widget when active (type pill outside);
+  move the char-count into the name cell.
+- `tabs/node.py` — remove the hint line + the "New node-brain script" item + `_draw_brain_strip`; add
+  the header `script_pill`.
+- `tabs/code.py` — the tab bar + the per-tab editor render + the active/inactive toggle button; the
+  script-error feed into `_draw_error_strip`; replace `draw_chrome`'s single-file logic.
+- `ui_primitives.py` — add `script_pill`; delete `script_chip` (+ `ScriptChipState`). `notice_strip` /
+  `confirm_delete_popup` lose their script callers (keep them — still used elsewhere; confirm at impl).
+- `util.py` — delete `open_file_in_default_app`.
+- `scripts/smoke.py`, `scripts/dogfood/verify_script_engine.py`, `projects/dev/nodes/*/scripts/*.py` —
+  migrate bare-math → `import math`.
 
----
+## Manual verification
 
-## Part E — The script stub / docstring rework
+(Headless impl; the maintainer runs `make run` and checks.) — Per-uniform: a non-scripted row shows
+`+ script`; click → a `script · u_x` tab opens with Python highlighting + a default that renders;
+the row pill goes accent-filled, the value widget greys out, the type pill still switches. The
+editor toggle (top-right) flips the pill to muted + restores the live widget; flip back. A syntax
+error shows in the bottom error strip (same look as a shader error), click jumps to the line. The
+node-brain header pill mirrors all of it. Open several tabs, switch/close them, reopen. A freshly
+created script compiles + runs without any `import`-less math NameError. Restart the app — an inactive
+script stays inactive.
 
-E1. **Docstrings must be proper Python docstrings, owned by the right scope.**
-  - The **`update` method docstring** carries the per-frame context reference: `ctx.t` (elapsed seconds),
-    `ctx.dt` (delta seconds), `ctx.frame`, `ctx.mouse.x`/`ctx.mouse.y` — this CONTEXT info belongs in the
-    `update` method's docstring, NOT the class docstring (042's `stub_for` puts it in the class docstring —
-    wrong).
-  - The **class docstring** carries something higher-level: what this behavior does (e.g. "Drive u_color2
-    each frame"), maybe a bit more — but NOT the ctx field reference.
-  - The **`__init__` docstring**: state whether `__init__` may do work (it may — "наверное разрешаем"), and
-    that whatever runs in `__init__` runs ONCE — at app start, before rendering, on reload, etc. Write that
-    in the `__init__` docstring.
+## Open questions for the user
 
-E2. **Later: an opt-out for docstring generation.** A future setting (Settings panel) to NOT generate these
-docstrings when creating a script. NOT this wave — "потом всё сделаем, потом оптимизируем." Note it as a
-follow-up deferral; do not build the toggle now.
+None — all eight draft questions resolved in Design decisions, signed off in the 2026-06-13 plan
+discussion.
 
-E3. **Stub bodies must work WITHOUT the curated globals (ties to A5).** Once A5 removes the math vocab,
-`stub_for` / `brain_stub_for` must emit working bodies — either using only literals/`self` (the current
-defaults like `Vec3(0,0,0)` already do) or showing the `import math` pattern in a comment/example so the
-user sees how to reach math. Ensure a freshly-stubbed script compiles + runs with the new (minimal) globals.
+## Review history
 
----
+**Pre-impl swarm (2 adversarial reviewers, 2026-06-13).** Reviewer 2 returned FAIL but on a false
+premise — it reviewed the un-written engine code as if it should already exist; its real value is
+the precise locations + the complete bare-math list, adopted as impl targets (not pre-existing bugs).
+Reviewer 1 surfaced genuine spec-precision gaps, all resolved here as locked impl decisions (robust
+defaults, no escalation — none was a "should not land"):
 
-## Backend changes summary (the non-UI surface 045 touches)
+- **Tab model.** An `EditorTab` (path + kind) ordered list + active index on `App` replaces
+  `_explicit_editor_path`. `current_editor_path` returns the active tab's path (None when empty).
+  `open_shader_lib_file` / `show_node_editor` / `_on_shader_lib_paths_removed` /
+  `_on_shader_lib_path_renamed` / `detach_script` cleanup all re-expressed over the tab list;
+  `draw_chrome`'s `is_lib` check becomes the active tab's kind.
+- **FPE guard.** The guard is for `TextEditor.render` only (not generic imgui). The tab bar draws
+  ABOVE the render guard (tabs stay visible while a modal is open); only `editor.render()` + the
+  error strip are gated by `any_popup_open()`.
+- **Script errors in the strip.** `_draw_error_strip` stays `list[ShaderError]`; when a script tab
+  is active, `code.py` adapts the active script's `ScriptError` → a `ShaderError(path=<script
+  file>, line, message)` so the existing click-to-jump works unchanged (no union, no new strip).
+- **Disabled-widget write-back guard.** `begin_disabled` blocks interaction, so the value widget
+  returns its unchanged value — but the write-back `if new_value is not None` would still fire.
+  Guard: skip the write-back when the script is ACTIVE (the engine owns the value).
+- **`script_pill` signature.** `script_pill(id_: str, label: str, state: Literal["absent",
+  "active", "inactive"]) -> bool` in `ui_primitives.py` (built on `pill_button`; absent/inactive
+  faded, active accent-filled). One primitive, both surfaces.
+- **`get_session` suffix path.** `open_script_file` builds a `ShaderSource` from the script path
+  and routes through `get_session`, which picks `Language.python()` for a `.py` suffix.
+- **Engine disabled state.** The skip goes in `reload` (per-uniform: a `<file>.disabled` sibling →
+  don't `found.add`, so the drop loop clears behaviors/mtimes/sources/errors — same as a vanish)
+  and `_reload_brain` (`script.py.disabled` → return without `found.add`). Export isolation honors
+  it BY CONSTRUCTION once the skip is in (a dropped binding leaves `scripts.sources`, so
+  `fresh_behaviors_for` can't recompile it). New `ProjectSession` verbs: `set_script_active` /
+  `is_script_active`. The conventions.md script-engine bullet + the Known-quirks exec-globals note
+  are updated in the same wave (the curated-math-vocab claim goes stale).
+- **`reset_script` orphan.** Revised at post-impl (see below): the dead `ProjectSession.reset_script`
+  wrapper is REMOVED; the engine primitive `ScriptEngine.reset` stays (3 test callers exercise it as a
+  documented engine capability a future restart affordance would reuse).
 
-- `scripting/behavior.py::_build_globals` — strip the curated math vocab + `_no_import`; restore real
-  `import` (the minimum globals that keep the class form + eager annotations working). (Part A5.)
-- `scripting/engine.py` `stub_for` / `brain_stub_for` — rework docstrings (method/class/init scoping) +
-  ensure bodies compile under the new globals. (Parts E1, E3.)
-- `scripting/engine.py` reload/tick + `ProjectSession` — the new DISABLED-but-present script state (skip
-  ticking a disabled binding; persist the disabled marker; survive reload/restart). (Part B4 — a real
-  engine change.)
-- The migration of every bare-`sin/clamp/lerp` usage (stubs, `scripts/smoke.py` seed, dogfood scenarios,
-  any shipped example) to explicit `import math`. (Part A5 consequence.)
+**Post-impl swarm (3 adversarial reviewers, 2026-06-13).** Round 1: spec-fidelity PASS (all 9 verbatim
+requirements + 12 decisions covered), code-correctness PASS (tab-index -1 sentinel safe, disabled-marker
+lifecycle correct, write-back guard + begin_disabled balance verified, FPE gate placement correct,
+strip-height capped), architecture PARTIAL. Triage of the PARTIAL:
 
-## UI surface 045 touches
+- **REAL — dead code (fixed).** `notice_strip` / `confirm_delete_popup` / `reset_state_button` (+
+  `NoticeTone` / `_NOTICE_COLOR`) lost their only callers when the right-click menu + brain strip went;
+  the spec's "keep, confirm at impl" resolved to delete. `ProjectSession.reset_script` likewise had no
+  caller — removed (the engine `reset` + its tests stay).
+- **FALSE POSITIVE — `Language.python()` unverified.** The reviewer couldn't run the dep; verified
+  present in the installed `imgui_color_text_edit` (`Language.python()` returns a real Language object).
+- **MINOR (fixed) — row/header pill clickable-but-no-op mid-copilot-turn.** The editor toggle was
+  `begin_disabled`'d but the pills weren't; wrapped both in `begin_disabled(copilot_turn_active)` so the
+  freeze reads visually, matching the toggle.
 
-- `widgets/uniform.py` — remove the context menu + `py` chip + driven-row read-only branch; add the
-  trailing per-row script control (B); disable the value widget but keep the type pill when active (B5);
-  move the text char-count out of the script column (B6).
-- `tabs/node.py` — remove the "New node-brain script" three-dots item (A3) + the right-click hint (A1);
-  add the node-header brain control (D); place brain error/status in the new design (D4).
-- `tabs/code.py` + `app.py` — the multi-tab editor (C): suffix-aware `set_language` (Python),
-  the open-tabs list replacing `_explicit_editor_path`, the tab bar, open/close/switch. Supersedes the
-  `< back to node` chrome.
-- `app.py` — remove the OS-editor launch for scripts (A4); the open-script-in-editor path (C5); check/remove
-  now-unused `open_file_in_default_app`.
-- `ui_primitives.py` — the new per-row/node script control primitive (shape TBD per B3); likely retire/
-  repurpose `script_chip`; possibly retire `notice_strip`/`confirm_delete_popup` if the redesign drops them
-  (confirm at plan time — they may still be used).
-
-## OPEN QUESTIONS (maintainer's explicit "надо подумать" — resolve at plan-lock, do NOT silently pick)
-
-1. **The script-control state machine (B3) — THE central problem.** States no-script / active / inactive;
-   how to view an inactive script, how to disable an active one without losing reopen — a single icon-toggle
-   is insufficient. Produce the full state machine + the concrete widget(s) with imgui mockups.
-2. **The exact widget for the script control (B2, D1)** — tools-icon vs pill vs button, for both the
-   per-uniform row and the node header. The maintainer is unsure an icon fits.
-3. **Where "create script" lives prominently (D3)** now that it's out of the three-dots + the right-click.
-4. **Tab label format (C3)** — full relative path vs node-name/filename vs filename+tooltip.
-5. **Tab-editor scope (C2/C4)** — does the tab bar also hold open lib files + the node shader as tabs, or
-   only scripts? Is the node shader a pinned first tab? What does closing the last tab do?
-6. **Disabled-script persistence (B4)** — marker file / `disabled/` subdir / rename / manifest; must be
-   stateless-by-filename-compatible (041) and survive reload+restart.
-7. **Where the brain error/status renders (D4)** — keep 042's brain strip, or fold into the header control?
-8. **Text char-count new home (B6)** — in the name parens vs elsewhere (low importance, but must leave the
-   script column).
-
-## Follow-ups (NOT this wave)
-
-- Docstring-generation opt-out setting (E2).
-- The three-dots (`...`) mechanism removal + "Save as template" relocation (A3 note) — temporary, future.
-
-## NOT in this draft (to be collected by the resume-time review swarm)
-
-This draft captures the maintainer's stated requirements. It deliberately does NOT yet enumerate: the exact
-current line-level behavior of every touched widget, the full `editor_sessions`/`current_editor_path`
-mechanics, the complete list of bare-math usages to migrate, the FPE-modal interaction with a tab bar, or
-the imgui tab-bar API specifics. **The first resume step is a large review swarm to collect all of that from
-the code**, then plan-lock with the OPEN QUESTIONS answered, then the usual dev flow.
+`make check` + 467 tests green after the fixes.

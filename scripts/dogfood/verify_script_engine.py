@@ -55,9 +55,10 @@ def _mean_luma(path: str) -> float:
 
 # A ctx.t-pure scalar: animates with t, identical at the same t (the determinism guarantee).
 _PURE = (
+    "import math\n"
     "class Behavior(ScriptBehavior):\n"
     "    def update(self, ctx: Ctx) -> float:\n"
-    "        return 0.5 + 0.45 * sin(ctx.t)\n"
+    "        return 0.5 + 0.45 * math.sin(ctx.t)\n"
 )
 # A STATEFUL integrator: only possible with per-instance state — used for export isolation.
 _INTEGRATOR = (

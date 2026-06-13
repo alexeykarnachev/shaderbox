@@ -125,18 +125,6 @@ def open_in_file_manager(path: Path) -> None:
         subprocess.Popen(["xdg-open", str(target)], start_new_session=True)
 
 
-def open_file_in_default_app(path: Path) -> None:
-    # Open a FILE in its default app (e.g. a .py in the OS text editor), distinct from
-    # open_in_file_manager which reveals the folder. Used by the script-UI Open/Make-scriptable.
-    system = platform.system()
-    if system == "Windows":
-        subprocess.Popen(["explorer", str(path)], start_new_session=True)
-    elif system == "Darwin":
-        subprocess.Popen(["open", str(path)], start_new_session=True)
-    else:
-        subprocess.Popen(["xdg-open", str(path)], start_new_session=True)
-
-
 def format_auto_value(value: object) -> str:
     if isinstance(value, float | int):
         return f"{value:.3f}"

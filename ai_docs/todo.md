@@ -31,17 +31,6 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
 
 ---
 
-## [DEFERRAL] feature 045 — script UX redesign (SPEC DRAFT written, not plan-locked)
-- **Trigger:** the NEXT scripting work, before anything else — the maintainer judged 042's UX poor. Pick
-  this up before 043 (copilot write-behavior) or any further script work.
-- The maintainer's full design vision is captured in `ai_docs/features/045_script_ux_redesign.md` (a
-  detailed DRAFT from a design voice message). 042 shipped the MACHINERY (engine accessors + verbs); 045
-  rebuilds the UI over it + two backend changes (stub docstrings; strip the curated math `exec` globals).
-  **FIRST resume step: a LARGE review swarm to collect all code requirements/details** (the draft's
-  closing section lists what it deliberately left for the swarm), THEN plan-lock the 8 open questions
-  (central: the script-control state machine — view-while-inactive / disable-while-active), THEN the usual
-  dev flow. The implementation will happen HEADLESS, so the spec is written exhaustively.
-
 ## [DEFERRAL] copilot turn-rollback: a NEW mutating tool must register with the checkpoint
 - **Trigger:** before plan-locking any feature that adds a new MUTATING copilot tool (one that
   writes a node / lib / uniform / creates / deletes) — it MUST capture into the active checkpoint
@@ -60,13 +49,13 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
 - **Trigger:** a maintainer wants MORE than a visible error after changing a scripted uniform's TYPE in
   the shader (`vec2 u_x` -> `vec3 u_x`) — i.e. an automated "the type changed, re-stub the return shape"
   affordance, not just the error line + manual fix.
-- The ORPHAN half (deleting a scripted uniform) is RESOLVED by 042's Detach (the per-row context menu /
-  the brain strip trash the stale file; the next reload drops the binding). The TYPE-CHANGE half is
-  SURFACED but not auto-resolved: the binding stays live (the file still matches a real active uniform),
-  so every tick records a coercion `ScriptError` frozen at last-good — 042 now shows it on the uniform's
-  per-row error line (was loguru-only), and the user fixes the return shape by hand (Open script) or
-  Detaches. An automated type-aware re-stub is deliberately out of 042's scope. Spec:
-  `ai_docs/features/042_script_ui.md ## Out of scope`.
+- The ORPHAN half (deleting a scripted uniform) self-resolves: the orphan `u_<name>.py` no longer
+  matches an active uniform, so reload drops the binding (and 045 lets the user disable/delete the file
+  via the editor). The TYPE-CHANGE half is SURFACED but not auto-resolved: the binding stays live (the
+  file still matches a real active uniform), so every tick records a coercion `ScriptError` frozen at
+  last-good — 045 shows it in the editor's bottom error strip when the script tab is open (the same
+  surface as shader errors), and the user fixes the return shape by hand. An automated type-aware
+  re-stub is deliberately out of scope. Spec: `ai_docs/features/042_script_ui.md ## Out of scope`.
 
 ## [DEFERRAL] script-engine cross-uniform shared state + compute-order guarantee (feature 042+)
 - **Trigger:** a real workflow needs TWO scripts to share mutable state (one writes, another reads —
@@ -222,13 +211,6 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
 - Today the only way to add a function is `Ctrl+P` → "New library file" → paste manually.
   Spec when triggered.
 
-## [DEFERRAL] multi-file editor — tab bar / file tree / split
-- **Trigger:** when "back to node" + Ctrl+P feels insufficient — i.e., the user keeps 3+ lib
-  files open in rotation and wants to switch between them without re-opening via the picker.
-- Today the code pane shows ONE file at a time (the node's shader or one lib file). Design
-  shape (pinned node-shader tab + closable lib tabs) is in `015_shader_include_library.md`
-  decision 8.
-
 ## [DEFERRAL] sticker render is always t=0..N (no loop-offset / "which 3s")
 - **Trigger:** first time a shader's interesting motion isn't at the start (a user wants a 3s
   window other than the first), OR when you next touch the render path in `tabs/share_state.py`
@@ -323,10 +305,10 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
 - The bug (NOT fixable from Python — it's a div-by-zero inside imgui-bundle's C++
   `TextEditor::Render`, by `glyphSize.x/.y` from `ImGui::GetFontSize()` + the 1.92 dynamic font
   atlas, when the editor window isn't focused). Two triggers, two guards:
-  1. Rendering the editor on a frame a popup is active → `tabs/code.py` simply does NOT draw the
-     editor while `any_popup_open()` (the left pane is empty until the popup closes). Earlier a
-     plain-text snapshot stood in here; removed as needless workaround complexity (user preferred
-     it just disappear).
+  1. Rendering the editor on a frame a popup is active → `tabs/code.py::draw` does NOT call
+     `editor.render()` while `any_popup_open()` (the tab bar still draws — it's plain imgui; only the
+     TextEditor disappears until the popup closes). Earlier a plain-text snapshot stood in here;
+     removed as needless workaround complexity (user preferred it just disappear).
   2. Calling the editor's `set_*()` setters while a modal is open corrupts its glyph metrics →
      next render FPEs. The editor options live in `popups/settings.py` and apply ONLY on close
      (Close button + `hotkeys.py` Esc path), never live. **Lost feature:** no live-preview while

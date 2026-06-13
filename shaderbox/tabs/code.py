@@ -4,13 +4,87 @@ from imgui_bundle import imgui
 from imgui_bundle import imgui_color_text_edit as text_edit
 
 from shaderbox.app import App
-from shaderbox.editor_types import HoverMark, JumpRequest
+from shaderbox.editor_types import EditorTab, HoverMark, JumpRequest
 from shaderbox.shader_errors import ShaderError
 from shaderbox.theme import COLOR, EDITOR_UNFOCUSED_ALPHA, SIZE, SPACE, fade
-from shaderbox.ui_primitives import draw_copyable_text
+from shaderbox.ui_primitives import draw_copyable_text, ghost_button, toggle_button
 from shaderbox.util import format_auto_value
 
 _MAX_ERROR_ROWS = 3
+
+
+def _tab_label(app: App, tab: EditorTab) -> str:
+    # The semantic, path-free label (045): node shader / node script / script · <uniform> / a lib
+    # file's own name (libs are genuinely path-named resources).
+    if tab.kind == "shader":
+        return "shader"
+    if tab.kind == "node_script":
+        return "node script"
+    if tab.kind == "uniform_script":
+        return f"script . {tab.name}"
+    return tab.path.name
+
+
+def _draw_tab_bar(app: App) -> None:
+    # The editor's tab bar (045): one button per open file, the active one accent-filled, each with
+    # a close `x`. FPE-safe (plain imgui, no TextEditor.render), so it draws even behind a modal.
+    close_index: int | None = None
+    for i, tab in enumerate(app.editor_tabs):
+        if i > 0:
+            imgui.same_line(spacing=float(SPACE.XS))
+        if toggle_button(
+            f"{_tab_label(app, tab)}##tab_{i}", active=i == app.active_tab_index
+        ):
+            app.set_active_tab(i)
+        imgui.same_line(spacing=0.0)
+        if ghost_button(f"x##tabclose_{i}"):
+            close_index = i
+    if close_index is not None:
+        app.close_tab(close_index)
+
+
+def _draw_script_toggle(app: App) -> None:
+    # The active/inactive control (045): top-right of the editor, shown only for a script tab. The
+    # one place enable/disable lives — the row/header pill only opens. Frozen mid-copilot-turn.
+    tab = app.active_tab
+    if tab is None or tab.kind not in ("node_script", "uniform_script"):
+        return
+    active = app.session.script_state_for(tab.node_id, tab.name) == "active"
+    label = "active" if active else "inactive"
+    width = SIZE.BTN_SM_W * 1.4
+    imgui.same_line(imgui.get_content_region_avail().x - width)
+    imgui.begin_disabled(app.copilot_turn_active)
+    if toggle_button(f"{label}##script_toggle", active=active, width=width):
+        app.set_script_active(tab.node_id, tab.name, not active)
+    imgui.end_disabled()
+    if imgui.is_item_hovered():
+        imgui.set_tooltip(
+            "Script is applied — click to disable"
+            if active
+            else "Script is off — click to apply"
+        )
+
+
+def _script_errors_for(app: App, tab: EditorTab) -> list[ShaderError]:
+    # Adapt the active script tab's engine errors into the shader-error shape so they render through
+    # the SAME bottom strip as compile errors (045 decision 7), click-to-jump into the script file.
+    # A per-uniform tab shows its one (node_id, name) error; a node-brain tab shows its sentinel +
+    # every homeless soft-key error (typo/orphan keys that name no uniform row).
+    engine = app.session.script_engine
+    out: list[ShaderError] = []
+    if tab.kind == "uniform_script" and tab.name is not None:
+        err = engine.errors.get((tab.node_id, tab.name))
+        if err is not None:
+            out.append(ShaderError(tab.path, err.line, err.message))
+    elif tab.kind == "node_script":
+        status = app.session.get_brain_status(tab.node_id)
+        if status is not None:
+            if status.sentinel_error is not None:
+                e = status.sentinel_error
+                out.append(ShaderError(tab.path, e.line, e.message))
+            for key, e in status.soft_errors:
+                out.append(ShaderError(tab.path, e.line, f"{key}: {e.message}"))
+    return out
 
 
 def _apply_markers(
@@ -74,22 +148,15 @@ def _draw_error_strip(
 
 
 def draw_chrome(app: App) -> None:
-    # The editor's status chrome — file path + dirty/compiled state + nav links.
+    # The editor's status chrome — the active tab's file + dirty/compiled state + Open dir.
+    tab = app.active_tab
+    if tab is None:
+        imgui.text_colored(COLOR.FG_DIM, "No file open")
+        return
     if not (ui_node := app.ui_nodes.get(app.current_node_id)):
         imgui.text_colored(COLOR.FG_DIM, "No node selected")
         return
-    current_path = app.current_editor_path
-    if current_path is None:
-        imgui.text_colored(COLOR.FG_DIM, "No file open")
-        return
-    is_lib = current_path != ui_node.node.source.path
-
-    if is_lib:
-        imgui.text_colored(COLOR.FG_DIM, str(current_path.name))
-        imgui.same_line(spacing=float(SPACE.LG))
-        if imgui.button("< back to node", size=(SIZE.BTN_SM_W * 1.5, 0)):
-            app.show_node_editor()
-    else:
+    if tab.kind == "shader":
         full_file_path = ui_node.node.source.path
         local_file_path = full_file_path.relative_to(app.project_dir)
         if draw_copyable_text(str(local_file_path), copy_value=str(full_file_path)):
@@ -103,27 +170,27 @@ def draw_chrome(app: App) -> None:
         imgui.same_line(spacing=float(SPACE.LG))
         if imgui.button("Open dir", size=(SIZE.BTN_SM_W, 0)):
             app.open_current_node_dir()
-        if app.last_shader_lib_path is not None and app.last_shader_lib_path.exists():
+    else:
+        imgui.text_colored(COLOR.FG_DIM, _tab_label(app, tab))
+        if app.is_current_editor_dirty():
             imgui.same_line()
-            if imgui.button(
-                f"back to {app.last_shader_lib_path.name} >",
-                size=(SIZE.BTN_SM_W * 1.8, 0),
-            ):
-                app.open_shader_lib_file(app.last_shader_lib_path)
+            imgui.text_colored(COLOR.STATE_WARN, "(unsaved)")
 
 
 def draw(app: App) -> None:
     app.code_hovered_uniform = ""
-    if not (ui_node := app.ui_nodes.get(app.current_node_id)):
-        app.editor_focused = False
-        return
+    ui_node = app.ui_nodes.get(app.current_node_id)
 
-    # The editor shows the node's shader OR a lib file the user opened.
+    # The tab bar + the script-toggle are plain imgui (no TextEditor.render), so they draw even
+    # behind a modal — only the editor render + error strip are FPE-gated below.
+    _draw_tab_bar(app)
+    _draw_script_toggle(app)
+
+    tab = app.active_tab
     current_path = app.current_editor_path
-    if current_path is None:
+    if tab is None or current_path is None or ui_node is None:
         app.editor_focused = False
         return
-    is_lib = current_path != ui_node.node.source.path
 
     # render() FPEs while a popup is open (conventions.md ## Known quirks) — skip drawing it.
     if app.any_popup_open():
@@ -133,15 +200,22 @@ def draw(app: App) -> None:
     session = app.editor_sessions.get(current_path)
     if session is None:
         session = (
-            app.open_shader_lib_file(current_path)
-            if is_lib
-            else app.get_session(ui_node.node.source)
+            app.get_session(ui_node.node.source)
+            if tab.kind == "shader"
+            else app.open_shader_lib_file(current_path)
+            if tab.kind == "lib"
+            else app.get_session_for_path(current_path)
         )
     editor = session.editor
     settings = app.app_state.editor_settings
 
-    # Markers come from the active node's compile unit, filtered by path in _apply_markers.
-    errors = ui_node.node.compile_unit.errors
+    # The error strip shows the active tab's errors in ONE place + style: a shader/lib tab's
+    # compile errors, or a script tab's engine errors adapted to the same shape (045 decision 7).
+    errors = (
+        _script_errors_for(app, tab)
+        if tab.kind in ("node_script", "uniform_script")
+        else ui_node.node.compile_unit.errors
+    )
     _apply_markers(editor, errors, app.editor_hover_line, current_path)
     app.editor_hover_line = None
     strip_height = 0.0

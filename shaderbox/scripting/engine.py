@@ -14,7 +14,7 @@ The engine imports no imgui/glfw/App and no concrete `Node` type — it works ag
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol, TypeGuard
+from typing import Any, Literal, Protocol, TypeGuard
 
 import moderngl
 from loguru import logger
@@ -46,6 +46,20 @@ _SCRIPT_GLOB = "u_*.py"
 # dot keeps the filename out of _SCRIPT_GLOB and out of any GLSL identifier (so the sentinel error
 # KEY (node_id, "script.py") can never collide with a per-uniform key). Feature 044.
 _BRAIN_FILE = "script.py"
+# A sibling marker (045): `<file>.disabled` next to a script means INACTIVE — present on disk +
+# editable, but the engine never binds/ticks it (the uniform returns to manual). By-filename (the
+# 041 stateless invariant holds), survives reload+restart, and external to the body so export
+# isolation skips it by construction (a never-bound script is never in scripts.sources).
+_DISABLED_SUFFIX = ".disabled"
+
+
+def _is_disabled(script_path: Path) -> bool:
+    return script_path.with_name(script_path.name + _DISABLED_SUFFIX).is_file()
+
+
+# The per-row / node-header script pill's three states (045): no file / present+ticking /
+# present+toggled-off. Read off disk by ProjectSession.script_state_for.
+ScriptState = Literal["absent", "active", "inactive"]
 
 
 def _resolved_pairs(binding_key: str, raw: object) -> Iterable[tuple[str, object]]:
@@ -138,32 +152,35 @@ def _stub_kind(uniform: moderngl.Uniform) -> tuple[str, str]:
     return "float", "0.0"
 
 
-_CTX_DOC = (
-    "    ctx.t  elapsed seconds | ctx.dt  delta seconds | ctx.frame  frame index\n"
-    "    ctx.mouse.x / ctx.mouse.y  cursor over the canvas, 0..1, y-up (0.5,0.5 on export)\n"
+# Scoped docstrings (045 E1): the per-frame ctx reference lives on the `update` method (it is what
+# each tick gets); the class docstring carries the high-level "what this drives"; __init__ states it
+# runs once. A script is plain Python — `import math` (or any stdlib) at the top to reach math.*.
+_UPDATE_DOC = (
+    '        """Compute this frame\'s value.\n'
+    "        ctx.t  elapsed seconds | ctx.dt  delta seconds | ctx.frame  frame index\n"
+    "        ctx.mouse.x / ctx.mouse.y  cursor over the canvas, 0..1, y-up (0.5,0.5 on export)\n"
+    '        """\n'
 )
-_MATH_DOC = (
-    "    Math is pre-loaded — call sin/cos/sqrt/clamp/lerp(=mix)/... or math.* "
-    "directly (no import).\n"
+_INIT_DOC = (
+    '        """Set up state (runs ONCE — at app start, before the first render, and on'
+    ' reload)."""\n'
 )
 
 
 def stub_for(uniform: moderngl.Uniform) -> str:
     # The ready-to-edit script a freshly-attached uniform gets: the right return type for the
-    # uniform's shape + a docstring of the ctx fields + a body returning a coercion-valid default,
-    # so a new script compiles + runs immediately (showing the default, not an error). Used by
-    # 042's "Make scriptable".
+    # uniform's shape + scoped docstrings + a body returning a coercion-valid default, so a new
+    # script compiles + runs immediately (showing the default, not an error).
     ann, default = _stub_kind(uniform)
     return (
+        f"import math\n\n"
         f"class Behavior(ScriptBehavior):\n"
-        f'    """Drive {uniform.name} each frame.\n'
-        f"{_CTX_DOC}"
-        f"    Return {ann}. Keep state on self (persists across frames).\n"
-        f"{_MATH_DOC}"
-        f'    """\n'
+        f'    """Drive {uniform.name} each frame. Keep state on self (persists across frames)."""\n'
         f"    def __init__(self) -> None:\n"
+        f"{_INIT_DOC}"
         f"        pass\n\n"
         f"    def update(self, ctx: Ctx) -> {ann}:\n"
+        f"{_UPDATE_DOC}"
         f"        return {default}\n"
     )
 
@@ -174,7 +191,7 @@ def brain_stub_for(uniforms: Iterable[moderngl.Uniform]) -> str:
     # default, so it compiles + runs immediately. The annotation is BARE `-> dict` — NEVER
     # `dict[str, Any]`: `Any` is absent from the exec globals, so the eager annotation eval would
     # permanently compile-freeze the brain (041 decision 12 / 044 out-of-scope). A node with no
-    # scriptable uniform still emits a valid empty-dict body. 042's "New node-brain".
+    # scriptable uniform still emits a valid empty-dict body.
     scriptable = [u for u in uniforms if is_scriptable(u)]
     if scriptable:
         entries = "".join(
@@ -185,15 +202,14 @@ def brain_stub_for(uniforms: Iterable[moderngl.Uniform]) -> str:
     else:
         body = "        return {}\n"
     return (
+        f"import math\n\n"
         f"class Behavior(ScriptBehavior):\n"
-        f'    """Drive many uniforms from one object each frame (node-brain).\n'
-        f"{_CTX_DOC}"
-        f"    Return a dict mapping uniform name -> value. Keep state on self.\n"
-        f"{_MATH_DOC}"
-        f'    """\n'
+        f'    """Drive many uniforms from one object each frame (node-brain). Keep state on self."""\n'
         f"    def __init__(self) -> None:\n"
+        f"{_INIT_DOC}"
         f"        pass\n\n"
         f"    def update(self, ctx: Ctx) -> dict:\n"
+        f"{_UPDATE_DOC}"
         f"{body}"
     )
 
@@ -272,6 +288,11 @@ class ScriptEngine:
         if scripts_dir.is_dir():
             for path in sorted(scripts_dir.glob(_SCRIPT_GLOB)):
                 name = path.stem
+                # Inactive (045): a `<file>.disabled` sibling means the user toggled it off — leave it
+                # out of `found` so the drop loop below tears down any live binding (the uniform
+                # returns to manual). It is NOT an orphan, so no warn.
+                if _is_disabled(path):
+                    continue
                 # Resolve against the live uniforms FIRST — only a real, scriptable binding counts as
                 # "found" (so a uniform that goes inactive is reclaimed by the drop loop below).
                 if check_active:
@@ -333,7 +354,9 @@ class ScriptEngine:
     ) -> None:
         # Discover + (re)compile nodes/<id>/scripts/script.py keyed by the _BRAIN_FILE sentinel,
         # mtime-cached like a per-uniform binding. Its error records under (node_id, "script.py").
-        if not path.is_file():
+        # A `script.py.disabled` sibling (045) means inactive — skip discovery so the drop loop
+        # tears down a live brain binding.
+        if not path.is_file() or _is_disabled(path):
             return
         found.add(_BRAIN_FILE)
         try:

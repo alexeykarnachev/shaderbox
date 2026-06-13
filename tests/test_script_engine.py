@@ -78,9 +78,10 @@ def _engine(tmp: Path, node: _FakeNode, name: str = "n0") -> ScriptEngine:
 
 # A scalar class body returning a bare float each frame.
 _SCALAR = (
+    "import math\n"
     "class Behavior(ScriptBehavior):\n"
     "    def update(self, ctx: Ctx) -> float:\n"
-    "        return 0.5 + 0.3 * sin(ctx.t)\n"
+    "        return 0.5 + 0.3 * math.sin(ctx.t)\n"
 )
 # A stateful integrator — only possible with per-instance state.
 _INTEGRATOR = (
@@ -313,8 +314,7 @@ def test_reset_recovers_a_once_failing_init(tmp_path: Path) -> None:
 
 
 def test_user_raised_builtin_exception_is_its_real_error(tmp_path: Path) -> None:
-    # A user `raise ValueError(...)` must surface as its real error, not a NameError from the
-    # curated namespace (the common builtin exceptions are seeded).
+    # A user `raise ValueError(...)` surfaces as its real error (real builtins are in scope).
     _write(
         tmp_path,
         "u_x",
@@ -401,9 +401,10 @@ def test_t_pure_script_is_deterministic(tmp_path: Path) -> None:
     _write(
         tmp_path,
         "u_x",
+        "import math\n"
         "class Behavior(ScriptBehavior):\n"
         "    def update(self, ctx: Ctx) -> float:\n"
-        "        return sin(ctx.t)\n",
+        "        return math.sin(ctx.t)\n",
     )
     node = _FakeNode([_u("u_x")])
     eng = _engine(tmp_path, node)
@@ -1048,26 +1049,26 @@ def test_per_uniform_nan_freezes(tmp_path: Path) -> None:
     assert eng.errors[("n0", "u_x")].kind == "runtime"
 
 
-def test_import_gives_actionable_message(tmp_path: Path) -> None:
-    # A reflexive `import math` must not leak CPython's cryptic "__import__ not found" — the curated
-    # namespace seeds a friendly ImportError pointing at the pre-loaded math vocab.
+def test_import_math_works(tmp_path: Path) -> None:
+    # A script is plain Python (feature 045): `import math` succeeds and `math.*` drives the value —
+    # no curated vocab, no _no_import shim.
     _write(
         tmp_path,
         "u_x",
         "import math\n"
         "class Behavior(ScriptBehavior):\n"
         "    def update(self, ctx: Ctx) -> float:\n"
-        "        return 0.5\n",
+        "        return math.cos(0.0)\n",  # 1.0
     )
     node = _FakeNode([_u("u_x")])
     eng = _engine(tmp_path, node)
-    err = eng.errors[("n0", "u_x")]
-    assert err.kind == "compile"
-    assert "pre-loaded" in err.message and "__import__ not found" not in err.message
+    eng.tick("n0", node, _ctx(0.0))
+    assert ("n0", "u_x") not in eng.errors
+    assert abs(node.uniform_values["u_x"] - 1.0) < 1e-9
 
 
 def test_chr_ord_available_for_codepoint_text(tmp_path: Path) -> None:
-    # chr/ord are in the curated globals so text can be built by codepoint.
+    # chr/ord are real builtins so text can be built by codepoint.
     _write(
         tmp_path,
         "u_t",
@@ -1526,3 +1527,85 @@ def test_brain_status_none_without_brain(tmp_path: Path) -> None:
     eng = _engine(tmp_path, node)
     eng.tick("n0", node, _ctx(0.0))
     assert eng.brain_status("n0") is None
+
+
+# ---- disabled (inactive) script state (feature 045) ----
+
+
+def test_disabled_marker_skips_per_uniform_binding(tmp_path: Path) -> None:
+    # A `<file>.disabled` sibling means inactive: the script is never bound, so its uniform stays
+    # under manual control (the dict value the test sets is untouched).
+    path = _write(tmp_path, "u_x", _SCALAR.replace("u_wave", "u_x"))
+    path.with_name(path.name + ".disabled").write_text("", encoding="utf-8")
+    node = _FakeNode([_u("u_x")])
+    node.uniform_values["u_x"] = 0.123  # manual value
+    eng = _engine(tmp_path, node)
+    eng.tick("n0", node, _ctx(0.0))
+    assert node.uniform_values["u_x"] == 0.123  # not driven
+    assert eng.script_driven_uniforms("n0") == set()
+
+
+def test_enabling_a_disabled_binding_rebinds_on_reload(tmp_path: Path) -> None:
+    # Removing the marker re-binds on the next reload — the script drives the uniform again.
+    path = _write(tmp_path, "u_x", _SCALAR.replace("u_wave", "u_x"))
+    marker = path.with_name(path.name + ".disabled")
+    marker.write_text("", encoding="utf-8")
+    node = _FakeNode([_u("u_x")])
+    eng = _engine(tmp_path, node)
+    eng.tick("n0", node, _ctx(0.0))
+    assert eng.script_driven_uniforms("n0") == set()  # disabled
+    marker.unlink()
+    eng.reload("n0", tmp_path / "scripts", node)
+    eng.tick("n0", node, _ctx(0.0))
+    assert abs(node.uniform_values["u_x"] - 0.5) < 1e-9  # driven again
+
+
+def test_disabling_a_live_binding_drops_it(tmp_path: Path) -> None:
+    # A binding that becomes disabled (marker added between reloads) is dropped — it stops ticking
+    # and its uniform returns to manual, like a vanished file.
+    path = _write(tmp_path, "u_x", _SCALAR.replace("u_wave", "u_x"))
+    node = _FakeNode([_u("u_x")])
+    eng = _engine(tmp_path, node)
+    eng.tick("n0", node, _ctx(0.0))
+    assert "u_x" in eng.script_driven_uniforms("n0")
+    path.with_name(path.name + ".disabled").write_text("", encoding="utf-8")
+    eng.reload("n0", tmp_path / "scripts", node)
+    assert eng.script_driven_uniforms("n0") == set()
+
+
+def test_disabled_marker_skips_node_brain(tmp_path: Path) -> None:
+    # The node-brain honors the marker too (script.py.disabled): no brain binding, no status.
+    brain = _write_brain(
+        tmp_path,
+        "class Behavior(ScriptBehavior):\n"
+        "    def update(self, ctx: Ctx) -> dict:\n"
+        "        return {'u_x': 0.7}\n",
+    )
+    brain.with_name(brain.name + ".disabled").write_text("", encoding="utf-8")
+    node = _FakeNode([_u("u_x")])
+    node.uniform_values["u_x"] = 0.2
+    eng = _engine(tmp_path, node)
+    eng.tick("n0", node, _ctx(0.0))
+    assert node.uniform_values["u_x"] == 0.2  # brain inactive
+    assert eng.brain_status("n0") is None
+
+
+def test_disabled_binding_excluded_from_export_set(tmp_path: Path) -> None:
+    # Export isolation honors disabled by construction: a never-bound script is not in the cached
+    # source dict, so fresh_behaviors_for can't recompile it.
+    path = _write(tmp_path, "u_x", _SCALAR.replace("u_wave", "u_x"))
+    path.with_name(path.name + ".disabled").write_text("", encoding="utf-8")
+    node = _FakeNode([_u("u_x")])
+    eng = _engine(tmp_path, node)
+    assert eng.fresh_behaviors_for("n0") == {}
+
+
+def test_fresh_stub_compiles_and_runs_under_stripped_globals(tmp_path: Path) -> None:
+    # A freshly-generated stub (045 — `import math`, no curated vocab) must compile + run with no
+    # error, returning its coercion-valid default.
+    _write(tmp_path, "u_x", stub_for(_u("u_x")))
+    node = _FakeNode([_u("u_x")])
+    eng = _engine(tmp_path, node)
+    eng.tick("n0", node, _ctx(0.0))
+    assert ("n0", "u_x") not in eng.errors
+    assert node.uniform_values["u_x"] == 0.0

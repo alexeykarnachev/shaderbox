@@ -21,13 +21,9 @@ from shaderbox.ui_primitives import (
     caption_text,
     chip_button,
     clickable_label,
-    confirm_delete_popup,
-    context_menu_style,
-    notice_strip,
-    script_chip,
+    script_pill,
 )
 from shaderbox.util import (
-    format_auto_value,
     get_resolution_str,
     pfd_block,
     str_to_unicode,
@@ -94,14 +90,19 @@ def _locate_uniform_declaration(app: App, name: str) -> tuple[Path, int] | None:
     return None
 
 
-def _begin_ctrl(app: App, name: str) -> None:
+def _begin_ctrl(app: App, name: str, count_suffix: str = "") -> None:
     """Lay out a uniform row: chip (already drawn) -> clickable name -> control.
 
     Call after the chip; positions the cursor at the control column and sets
     the next item's width. The control's own imgui label must be hidden (##).
+    `count_suffix` (text/array `len/cap`) renders dim in the name column (045 B6 —
+    out of the trailing column the script pill now owns).
     """
     imgui.same_line(_NAME_X)
     uniform_name_label(app, name, SIZE.UNIFORM_NAME_W)
+    if count_suffix:
+        imgui.same_line(spacing=float(SPACE.SM))
+        caption_text(count_suffix)
     imgui.same_line(_CTRL_X)
     imgui.set_next_item_width(SIZE.UNIFORM_CTRL_W)
 
@@ -117,66 +118,40 @@ def draw_input_type_selector(ui_uniform: UIUniform) -> None:
         ui_uniform.input_type = valid[(current_idx + 1) % len(valid)]
 
 
-def _script_actions_menu(app: App, name: str, script_file: str | None) -> None:
-    # The per-row right-click menu (feature 042), anchored to the name cell (the last item). Verbs
-    # by state: undriven+scriptable -> Make scriptable; a u_<name>.py -> Open/Restart/Detach; a
-    # node-brain -> Open (restart/detach are node-level, in the brain strip). File-write verbs are
-    # gated on `not copilot_turn_active` (a write mid-turn races the reload). A non-scriptable
-    # undriven row has no verbs, so its menu is suppressed (no empty popup).
+def _count_suffix(ui_uniform: UIUniform, current_value: UniformValue) -> str:
+    # The text/array len/cap caption (045 B6): shown dim in the name column now the trailing column
+    # is the script pill's. Empty for every other input type.
+    cap = ui_uniform.array_length
+    if ui_uniform.input_type == "text" and isinstance(current_value, Sequence):
+        text = unicode_to_str([int(c) for c in current_value])
+        return f"({len(text[:cap])}/{cap})"
+    if ui_uniform.input_type == "array" and isinstance(current_value, Sequence):
+        py_type = {GL_FLOAT: float, GL_UNSIGNED_INT: int}.get(ui_uniform.gl_type)
+        if py_type is not None:
+            return f"({len(current_value)}/{cap})"
+        return f"({cap})"
+    return ""
+
+
+def _draw_script_pill(app: App, ui_uniform: UIUniform) -> None:
+    # The trailing per-row script affordance (045): one text pill that creates+opens (absent),
+    # opens (active/inactive) the uniform's script. Drawn only for a scriptable uniform; the
+    # accent fill on `active` is the at-a-glance "this row is script-driven" cue.
+    name = ui_uniform.name
     node_id = app.current_node_id
-    if script_file is None and not app.is_uniform_scriptable(node_id, name):
+    if not app.is_uniform_scriptable(node_id, name):
         return
-    detach_confirm = f"detach_confirm_{name}"
-    with context_menu_style():
-        if imgui.begin_popup_context_item(f"##uctx_{name}"):
-            if script_file is None:
-                if (
-                    imgui.menu_item_simple(
-                        "Make scriptable", enabled=not app.copilot_turn_active
-                    )
-                    and not app.copilot_turn_active
-                ):
-                    app.create_script_for(node_id, name)
-            elif script_file == "script.py":
-                if imgui.menu_item_simple("Open node-brain"):
-                    app.open_script_file(node_id, script_file)
-                imgui.text_disabled("Restart / Detach: see the brain strip")
-            else:
-                if imgui.menu_item_simple("Open script"):
-                    app.open_script_file(node_id, script_file)
-                if imgui.menu_item_simple("Restart script"):
-                    app.session.reset_script(node_id, name)
-                if (
-                    imgui.menu_item_simple(
-                        "Detach script", enabled=not app.copilot_turn_active
-                    )
-                    and not app.copilot_turn_active
-                ):
-                    imgui.open_popup(detach_confirm)
-            imgui.end_popup()
-    if script_file is not None and script_file != "script.py":
-        confirm_delete_popup(
-            detach_confirm,
-            f"Detach {script_file}?",
-            lambda: app.detach_script(node_id, script_file),
-        )
-
-
-def _draw_row_error(app: App, name: str, script_file: str) -> None:
-    # The per-uniform script error line (feature 042): surfaces errors[(node_id, name)] in the
-    # shader-strip idiom, click-to-open the offending script. Reserved only on a row that HAS an
-    # error (fixed-height when drawn; the transition jitter is accepted — errors appear on save).
-    err = app.session.script_engine.errors.get((app.current_node_id, name))
-    if err is None:
-        return
-    imgui.set_cursor_pos_x(_CTRL_X)
-    notice_strip(
-        f"scripterr_{name}",
-        err.message,
-        tone="error",
-        line=err.line,
-        on_click=lambda: app.open_script_file(app.current_node_id, script_file),
-    )
+    state = app.session.script_state_for(node_id, name)
+    tooltip = {
+        "absent": "Create + open a script for this uniform",
+        "active": "Script active — click to open (toggle on/off in the editor)",
+        "inactive": "Script inactive — click to open",
+    }[state]
+    imgui.same_line()
+    imgui.begin_disabled(app.copilot_turn_active)
+    if script_pill(f"u_{name}", "script", state, tooltip=tooltip):
+        app.open_script_for(node_id, name)
+    imgui.end_disabled()
 
 
 def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
@@ -188,30 +163,15 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
     name = ui_uniform.name
     hidden = f"##{name}"
 
-    script_file = app.session.get_script_file_for(app.current_node_id, name)
-    if script_file is not None:
-        # A script drives this uniform: the chip shows the driver, the value is read-only (the
-        # engine writes it each tick — a live control would fight the tick), and the row's error
-        # line surfaces a compile/coercion failure. The write-back below is SKIPPED by returning.
-        chip_state = "brain" if script_file == "script.py" else "per_uniform"
-        chip_tip = (
-            "script.py (node-brain)"
-            if script_file == "script.py"
-            else f"{script_file} — click to open"
-        )
-        if script_chip(chip_state, name, tooltip=chip_tip):
-            app.open_script_file(app.current_node_id, script_file)
-        imgui.same_line(_NAME_X)
-        uniform_name_label(app, name, SIZE.UNIFORM_NAME_W)
-        _script_actions_menu(app, name, script_file)
-        imgui.same_line(_CTRL_X)
-        caption_text(format_auto_value(current_value))
-        _draw_row_error(app, name, script_file)
-        return
+    # A script ACTIVELY driving this uniform owns its value — the engine writes it each tick. The
+    # type pill stays live (the type is only a VIEW), but the value widget is disabled (a live
+    # control would fight the tick) and the write-back is skipped. An INACTIVE/absent script row
+    # is fully manual.
+    active = app.session.script_state_for(app.current_node_id, name) == "active"
 
     draw_input_type_selector(ui_uniform)
-    _begin_ctrl(app, name)
-    _script_actions_menu(app, name, None)
+    _begin_ctrl(app, name, _count_suffix(ui_uniform, current_value))
+    imgui.begin_disabled(active)
 
     if ui_uniform.input_type == "auto":
         if isinstance(current_value, float | int):
@@ -241,15 +201,13 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
         if py_type is not None:
             value_str = ", ".join(map(str, current_value))
             is_changed, value_str = imgui.input_text(hidden, value_str)
-            imgui.same_line()
-            caption_text(f"{len(current_value)}/{cap}")
             if is_changed:
                 with contextlib.suppress(Exception):
                     parsed = [py_type(x.strip()) for x in value_str.split(",")]
                     new_value = parsed[:cap]
         else:
             value_str = ", ".join(f"{v:.3f}" for v in current_value)
-            caption_text(f"[{value_str}]  ({cap})")
+            caption_text(f"[{value_str}]")
 
     elif ui_uniform.input_type == "text":
         assert isinstance(current_value, Sequence)
@@ -259,9 +217,6 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
             hidden, text, size=(SIZE.UNIFORM_CTRL_W, SIZE.UNIFORM_TEXT_H)
         )
         text = text[:cap]
-
-        imgui.same_line()
-        caption_text(f"{len(text)}/{cap}")
 
         if is_changed:
             new_value = str_to_unicode(text, ui_uniform.array_length)
@@ -328,6 +283,10 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
             fn = getattr(imgui, f"drag_float{ui_uniform.dimension}")
             new_value = fn(hidden, list(current_value), change_speed)[1]
 
-    if new_value is not None:
+    imgui.end_disabled()
+    _draw_script_pill(app, ui_uniform)
+
+    # An active script owns the value (the widget was disabled); never write its unchanged return.
+    if new_value is not None and not active:
         try_to_release(current_value)
         ui_node.node.uniform_values[ui_uniform.name] = new_value

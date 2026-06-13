@@ -99,15 +99,16 @@ def _seed_tmp_project(root: Path) -> Path:
     scripts_dir = scripted / "scripts"
     scripts_dir.mkdir()
     (scripts_dir / "u_wave.py").write_text(
+        "import math\n"
         "class Behavior(ScriptBehavior):\n"
         "    def update(self, ctx: Ctx) -> float:\n"
-        "        return 0.5 + 0.3 * sin(ctx.t)\n",
+        "        return 0.5 + 0.3 * math.sin(ctx.t)\n",
         encoding="utf-8",
     )
 
     # A node-brain node (feature 044): one script.py drives many uniforms + a typo'd homeless key,
-    # so 042's brain strip + brain chip + soft-key list all draw under smoke (the per-uniform path
-    # above only exercises the per_uniform chip + per-row error).
+    # so the brain pill + the node-script tab's error strip (045) exercise the engine's brain path
+    # under smoke (the per-uniform path above only exercises the per-uniform pill + script tab).
     brain = nodes / "brain"
     brain.mkdir()
     (brain / "shader.frag.glsl").write_text(_BRAIN_SHADER, encoding="utf-8")
@@ -115,9 +116,10 @@ def _seed_tmp_project(root: Path) -> Path:
     brain_scripts = brain / "scripts"
     brain_scripts.mkdir()
     (brain_scripts / "script.py").write_text(
+        "import math\n"
         "class Behavior(ScriptBehavior):\n"
         "    def update(self, ctx: Ctx) -> dict:\n"
-        "        return {'u_a': 0.5 + 0.3 * sin(ctx.t), 'u_b': ctx.mouse.x,"
+        "        return {'u_a': 0.5 + 0.3 * math.sin(ctx.t), 'u_b': ctx.mouse.x,"
         " 'u_typo': 1.0}\n",
         encoding="utf-8",
     )
