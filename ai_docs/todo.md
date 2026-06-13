@@ -66,6 +66,26 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   old-040 `ctx.state` shared dict + phase-A/B split was REMOVED (instance state replaced it). When this
   fires, add a deliberate shared channel (NOT a dict smuggled back into `ctx`) with an explicit
   read/write phase order. Spec: `ai_docs/features/041_stateful_script_engine.md ## Out of scope`.
+- **NOTE (044):** the node-brain path (`scripts/script.py` → `update` returns a dict driving many
+  uniforms from ONE instance) does NOT fire this trigger — it is the SANCTIONED "one object, many uniforms"
+  case (state in ONE brain, no shared CHANNEL), and its brain-vs-`u_*.py` conflict rule is write-precedence
+  (both WRITE a slot, neither READS the other's same-frame output), not the read-dependency this trigger
+  guards. This trigger still fires only for TWO scripts sharing mutable state with a read dependency.
+
+## [DEFERRAL] node-brain `stub_for` — a generated `script.py` skeleton (feature 042)
+- **Trigger:** feature 042's "Add script" / "New node-brain" UI work — when a generated brain skeleton is
+  wanted (v1 brain scripts are hand-written, as 041 shipped per-uniform stubs into 042).
+- 044 ships `stub_for` for per-uniform only. A brain stub must list the node's scriptable uniforms in a
+  `return {...}` and MUST NOT annotate `-> dict[str, Any]` (`Any` is not in the exec-globals → a permanent
+  compile-freeze per 041 decision 12); use `-> dict` bare or seed `Any`. Spec:
+  `ai_docs/features/044_node_brain_script.md ## Out of scope`.
+
+## [DEFERRAL] node-brain cross-NODE state (object A sees object B) — the mini-game milestone
+- **Trigger:** a real two-object-interaction workflow (object A's brain must read object B's state —
+  collision, targeting, a shared score) — the mini-game milestone.
+- 044's brain is NODE-scoped: its `self` is ONE node's object. Two objects seeing each other needs a
+  cross-node channel, strictly larger than the cross-SCRIPT channel above (which is within one node). Spec:
+  `ai_docs/features/044_node_brain_script.md ## Out of scope`.
 
 ## [DEFERRAL] copilot non-current-node-edit confirm-gate (the targeting structural backstop)
 - **Trigger:** a trace shows the agent STILL mis-targeting a node by name-association AFTER the

@@ -55,10 +55,16 @@ instance per render** so an exported integrator starts from a clean state (resol
   shared dict is REMOVED — instance state (`self.*`) covers per-uniform state, which is the pong-ball
   case (the physics lives in ONE behavior). Trigger: a real workflow needs two scripts to share mutable
   state (then a shared channel returns as a deliberate design, with the read/write ordering invariant —
-  NOT a `dict` smuggled back into `ctx`).
+  NOT a `dict` smuggled back into `ctx`). NOTE (feature **044**): the "one object, many uniforms" intent
+  here is the SANCTIONED resolution — a node-brain (`scripts/script.py`, `update -> dict`) puts the
+  shared state in ONE brain instance driving many uniforms; that did NOT fire this trigger (it adds NO
+  cross-SCRIPT channel — see 044).
 - **Cross-uniform compute order guarantees.** v1 ticks a node's bindings in a stable order (sorted by
   name) but makes NO promise that binding A's `update` runs before B's. Trigger: a script depends on
-  another's same-frame output (needs the shared-state channel above + an explicit phase order).
+  another's same-frame OUTPUT — a READ dependency (needs the shared-state channel above + an explicit
+  phase order). Feature **044** added a SCOPED within-node write-precedence exception (a node-brain and a
+  `u_<name>.py` may both WRITE one slot — the per-uniform file wins via a locked two-pass order); that is
+  NOT a read dependency, so it did not fire this trigger.
 
 ## Design decisions (numbered; lock-in only)
 
@@ -197,7 +203,10 @@ instance per render** so an exported integrator starts from a clean state (resol
    `ScriptError` and freezes the export uniform at its seeded default, NEVER crashing the encode.** This
    resolve+instantiate happens once per (path, mtime) live / once per export; the per-tick path only
    calls `.update`. Revisit if multiple behaviors per file is ever wanted (it isn't — one file = one
-   uniform = one class).
+   uniform = one class). **AMENDED by feature 044:** "one file = one uniform = one class" is now FALSE
+   for the node-brain file `scripts/script.py` (one class, `update -> dict`, many uniforms); it stays
+   true for `u_<name>.py`. The resolver itself is shared verbatim (a brain is the same
+   `class Behavior(ScriptBehavior)`); only the file's cardinality differs. See 044.
 
 9. **`ScriptError` shape UNCHANGED; the freeze-as-data contract UNCHANGED.** The 040 `ScriptError`
    (`uniform_name`, `kind: compile|runtime`, `message`, `line`) and the engine's `errors[(node_id,
@@ -205,7 +214,12 @@ instance per render** so an exported integrator starts from a clean state (resol
    `__init__` / `SyntaxError`) freezes permanently until the file changes; a runtime error (`update`
    raises, output coercion returns None) is caught per-tick. EITHER way the uniform freezes at last-good
    and the frame continues — never raises into the loop. This is 040's decision 8, intact. Revisit only
-   if a third error kind earns a UI distinction (042's call, not the engine's).
+   if a third error kind earns a UI distinction (042's call, not the engine's). **AMENDED by feature
+   044:** the `ScriptError` dataclass is still unchanged, but the error-KEY shape gains a node-level
+   SENTINEL: a node-brain's behavior-level failure (a raw `update` throw / a non-dict return / a compile
+   error) records under `(node_id, "script.py")`, distinct from a per-uniform key `(node_id, name)`. A
+   per-KEY coercion mismatch inside a brain still keys on `(node_id, name)`. 042's UI must learn to
+   render the sentinel key as a node-level error. See 044.
 
 10. **Package shape: redesign `behavior.py` + `engine.py`; `context.py` slims; ADD `outputs.py`.**
     - `scripting/context.py` — `EngineContext` slimmed to `t/dt/frame` (drop `mouse`/`state`/`uniforms`;

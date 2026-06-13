@@ -122,10 +122,24 @@ belong in the feature spec (`ai_docs/features/NNN_*.md`). This file is not a cha
   context manager, the same shape as `on_pre_render`). The **live path ticks once** (`session.tick` in
   `ui.py`); the factory swaps `Node.on_pre_render` to the fresh set for the export's duration (NEVER from
   `Node.render()` — that would double-tick the live frame). A future C
-  backend implements the same `Behavior.compute` protocol over a `.so` with no engine-loop change. Spec:
+  backend implements the same `Behavior.run` protocol over a `.so` with no engine-loop change. Spec:
   `ai_docs/features/041_stateful_script_engine.md` (040 is the origin, contract superseded). Revisit
   `ctx` when a script needs cross-uniform shared state (a deliberate channel, not a dict in `ctx`) or
   system input (`u_mouse` wires at 042).
+  **A SECOND scripting path is native beside per-uniform (feature 044): the node-brain.** A node may
+  carry one `nodes/<id>/scripts/script.py` whose `update(self, ctx) -> dict[str, value]` drives MANY
+  uniforms from ONE stateful instance (the "one object, many uniforms" case — kills the physics-copy-
+  paste across per-uniform files). It is NOT a parallel implementation: `PythonBehavior.compute` was
+  split into `run(ctx)` (cardinality-agnostic raw value) + a free `coerce_one` (the shared coercion
+  atom), and the engine fans every behavior into a `(uniform_name, raw)` PAIR STREAM — per-uniform is
+  the 1-entry case, a brain is `run().items()`. **Cardinality is dispatched by FILENAME** (`script.py`
+  vs `u_*.py`), decided once at discovery, NEVER by sniffing the return type. **Conflict (both files
+  drive one slot) = an explicit two-pass write order: the brain writes first, `u_<name>.py` writes last
+  and wins** (explicit > general; lets a uniform migrate out of the brain). Freeze granularity: a per-KEY
+  coercion mismatch freezes only that key (records `(node_id, name)`); a raw brain throw / non-dict
+  return is behavior-level — freezes every name it drove last frame, records under the sentinel key
+  `(node_id, "script.py")`. Revisit for cross-SCRIPT shared state (still 041's deferral) or cross-NODE
+  state (the mini-game milestone — `todo.md`). Spec: `ai_docs/features/044_node_brain_script.md`.
 - **`tabs/*.py`: free `draw(app: App)` + optional `update(app: App)`.** `draw()` does imgui calls
   only; `update()` runs *before* imgui draws, for GL/canvas/mtime work outside the frame body. Tab
   state goes on `App` directly; a state-only sibling module (e.g. `tabs/share_state.py`) may hold

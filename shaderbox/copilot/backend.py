@@ -289,6 +289,7 @@ class CopilotBackend:
         get_current_node_id: Callable[[], str],
         get_is_cancelled: Callable[[], bool],
         get_script_driven_uniforms: Callable[[str], set[str]],
+        get_script_file_for: Callable[[str, str], str | None],
         set_current_node_id: Callable[[str], None],
         save_ui_node: Callable[[UINode], object],
         sync_editor_from_disk: Callable[[str, str], None],
@@ -318,6 +319,7 @@ class CopilotBackend:
         self._get_current_node_id = get_current_node_id
         self._get_is_cancelled = get_is_cancelled
         self._get_script_driven_uniforms = get_script_driven_uniforms
+        self._get_script_file_for = get_script_file_for
         self._set_current_node_id = set_current_node_id
         self._save_ui_node = save_ui_node
         self._sync_editor_from_disk = sync_editor_from_disk
@@ -685,11 +687,17 @@ class CopilotBackend:
                     "cannot be set; change the shader code if you need different behavior",
                 )
             if name in self._get_script_driven_uniforms(node_id):
+                script_file = self._get_script_file_for(node_id, name) or f"{name}.py"
+                where = (
+                    "the node-brain script"
+                    if script_file == "script.py"
+                    else "the script"
+                )
                 return SetUniformResult(
                     ok=False,
                     error=f"'{name}' is script-driven (a behavior script computes its value "
-                    "each frame) — a set here would be overwritten next tick; edit the script "
-                    f"at nodes/{node_id}/scripts/{name}.py instead",
+                    f"each frame) — a set here would be overwritten next tick; edit {where} "
+                    f"at nodes/{node_id}/scripts/{script_file} instead",
                 )
             target = self._get_ui_nodes()[node_id].node
             uniform = next(

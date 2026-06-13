@@ -2,7 +2,12 @@
 stateful behavior class (`update(self, ctx) -> <typed output>`). Public surface the headless
 ProjectSession drives."""
 
-from shaderbox.scripting.behavior import Behavior, PythonBehavior, ScriptBehavior
+from shaderbox.scripting.behavior import (
+    Behavior,
+    PythonBehavior,
+    ScriptBehavior,
+    coerce_one,
+)
 from shaderbox.scripting.context import Ctx, EngineContext
 from shaderbox.scripting.engine import (
     EngineNode,
@@ -27,6 +32,7 @@ __all__ = [
     "Vec2",
     "Vec3",
     "Vec4",
+    "coerce_one",
     "is_scriptable",
     "stub_for",
 ]

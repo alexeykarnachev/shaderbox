@@ -147,6 +147,7 @@ class ProjectSession:
             get_current_node_id=lambda: self.current_node_id,
             get_is_cancelled=lambda: self.copilot.is_cancelled(),
             get_script_driven_uniforms=self.get_script_driven_uniforms,
+            get_script_file_for=self.get_script_file_for,
             set_current_node_id=self.set_current_node_id,
             save_ui_node=self.save_ui_node,
             sync_editor_from_disk=self.sync_editor_from_disk,
@@ -367,9 +368,15 @@ class ProjectSession:
         self.script_engine.reset(node_id, name)
 
     def get_script_driven_uniforms(self, node_id: str) -> set[str]:
-        # The set of uniform names with a u_<name>.py file on `node_id` — the copilot set_uniform
-        # reject (040 decision 5) queries this so it won't no-op a script-driven uniform.
+        # The uniform names a script drives on `node_id` (a u_<name>.py OR the node-brain's last-tick
+        # keys) — the copilot set_uniform reject queries this so it won't no-op a script-driven
+        # uniform (040 decision 5; 044 added the brain keys).
         return self.script_engine.script_driven_uniforms(node_id)
+
+    def get_script_file_for(self, node_id: str, name: str) -> str | None:
+        # The scripts/ filename driving `name` (u_<name>.py or script.py) — the set_uniform reject
+        # points the agent at the right file to edit (044).
+        return self.script_engine.script_file_for(node_id, name)
 
     def clear_conversation(self) -> None:
         # Archive the live conversation (recoverable), delete checkpoints, reset to a fresh empty

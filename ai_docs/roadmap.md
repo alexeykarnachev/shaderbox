@@ -25,26 +25,25 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-06-13 (041 shipped to `dev`). -->
-**041 STATEFUL-CLASS script engine COMMITTED + PUSHED to `dev` (NOT yet released — last release is still
-v0.15.0).** 041 REDESIGNED the 040 engine contract before 040 ever shipped: a script is now a
-user-finalized CLASS (`class Behavior(ScriptBehavior)` with `update(self, ctx) -> <typed output>`), so
-per-instance STATE (`self.*`) persists across frames — the reason CPU scripting exists (stateless work
-belongs in the shader). Outputs are direct GLSL pairs (bare number for a scalar; `Vec2/3/4`/`Array`/`Text`
-for the shaped kinds; integer uniforms round to int), validated via `uniform_coerce`. Export ticks a FRESH
-per-export instance — STRUCTURAL: `Node.render_media` enters an injected `export_isolation` factory, so no
-export caller can bypass it. Body `exec`'d verbatim (errors point at the user line); broken script freezes
-last-good as data. Converged through pre/post-impl review + two `ultracode` review swarms (the 2nd a
-convergence pass, 101→10 findings, "functionally sound" — real bugs fixed, e.g. integer-uniforms-never-
-reached-GPU). Verified on the Pi's V3D (CPU + GL tests, smoke, dogfood); `make check` clean. **Next is 042** (the script
-UI + system-input `u_mouse`: the script-driven row indicator + chip, attach/edit/detach in the code editor,
-the manual state-reset button, surfaced `ScriptError`, live mouse), then 043 copilot write-behavior. **No
-open BLOCKERs.**
+<!-- As of 2026-06-13 (044 implemented + reviewed on `dev`; next is 042). -->
+**044 NODE-BRAIN script engine DONE on `dev`** (unreleased; last release v0.15.0). A node may now carry one
+`nodes/<id>/scripts/script.py` whose `update(self, ctx) -> dict[str, value]` drives MANY uniforms from ONE
+stateful instance — the fix for the physics-copy-paste the dogfood exposed (a spring pendulum no longer
+duplicates its integrator into 4 per-uniform files). It's NATIVE, not bolted-on: `PythonBehavior.compute`
+split into `run(ctx)` + a free `coerce_one`, and the engine fans every behavior into a `(uniform_name, raw)`
+PAIR STREAM — per-uniform is the 1-entry case, a brain is `dict.items()`; dispatch by FILENAME, conflict =
+two-pass write order (brain first, `u_<name>.py` wins). Verified on the Pi's V3D (77 CPU+GL tests incl. the
+parametrized both-paths invariants + a node-brain pendulum dogfood render with cold export), `make check`
+clean; converged through a 3-agent post-impl review (2 real findings fixed: a zombie per-key error on brain
+removal + an export warn-set leak). **NEXT: 042** — the script UI + `u_mouse`, now covering BOTH per-uniform
+AND the node-brain (the node-level error indicator for the `(node_id, "script.py")` sentinel key). Then 043
+copilot write-behavior. **No open BLOCKERs.**
 
 ## Features
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 044 | node_brain_script | done | A SECOND, parallel scripting path beside 041's per-uniform script: one file `nodes/<id>/scripts/script.py` whose `update(self, ctx) -> dict[str, <typed output>]` drives MANY uniforms from ONE stateful instance (kills the physics-copy-paste across per-uniform files; models a game object — the dogfood spring-pendulum needed its Verlet step duplicated into 4 files). Shares the 041 core NATIVELY via a value-map seam: `PythonBehavior.compute` split into `run(ctx)` (cardinality-agnostic) + a free `coerce_one`; the engine fans out to a `(uniform_name, raw)` pair stream — per-uniform is the 1-entry case, node-brain is `dict.items()`. Dispatch by FILENAME (`script.py` vs `u_*.py`), conflict = TWO-PASS write order (brain first, `u_<name>.py` overwrites). Headless engine only (UI is 042); verified on the Pi's V3D (77 CPU+GL tests + a pendulum dogfood render, cold export) + a 3-agent post-impl review. Spec: `ai_docs/features/044_node_brain_script.md`. |
 | 041 | stateful_script_engine | done | Redesigned the 040 engine contract (before 040 shipped) to a STATEFUL CLASS: a script is `class Behavior(ScriptBehavior)` with `update(self, ctx) -> <typed output>`, so per-instance state (`self.*`) persists across frames — the reason CPU scripting exists. Outputs are direct GLSL pairs (bare number for a scalar; `Vec2/3/4`/`Array`/`Text` for the shaped kinds, new `scripting/outputs.py` leaf) validated via `uniform_coerce`; `ctx` is `t/dt/frame` (no more `out.set`, `ctx.state`, `ctx.uniforms`). Export ticks a FRESH per-export instance (structural — `Node.render_media` enters an injected `export_isolation` factory, bypass-proof) so a live-warmed integrator's export starts clean, folding in old-042 state-scripts + resolving the 040 export double-tick. Body `exec`'d verbatim (errors at the user line); broken → freeze last-good as data. Converged through pre/post-impl review + two ultracode review swarms; verified on the Pi's V3D (pure-CPU + GL tests, smoke, dogfood determinism + export-isolation interleave). Spec: `ai_docs/features/041_stateful_script_engine.md`. |
 | 040 | uniform_script_engine | superseded | First step toward a mini game-engine: a uniform gained a per-tick CPU behavior script — the headless engine on `ProjectSession` (new `shaderbox/scripting/` package, coercion hoisted to `uniform_coerce.py`, the export `Node.on_pre_render` tick hook, live `session.tick`, `set_uniform` reject). The `out.set(...)` body-only CONTRACT was superseded by 041's stateful-class model before shipping; the architecture (headless ownership, filename binding, error-as-data, coercion hoist, `Behavior` seam) is retained by 041. Spec: `ai_docs/features/040_uniform_script_engine.md`. |
 | 039 | content_addressed_editing | done | The copilot's line/anchor edit tools (`replace_lines`/`insert_after`) + the whole 036/038 anchor-guard machinery removed after an adversarial 56-finding review proved location addressing structurally unsound; editing is content-addressed only — `edit_shader` (old_str/new_str) + new `write_shader` (whole file, removed-names fact); dogfood gate passed (report: `ai_docs/features/039_dogfood_report_gate.md`). Spec: `ai_docs/features/039_content_addressed_editing.md`. |

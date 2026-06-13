@@ -283,3 +283,60 @@ def test_int_uniforms_reach_gpu_not_popped(
 
     with contextlib.suppress(Exception):
         node.release()
+
+
+# ---- node-brain (feature 044): one class drives many uniforms, reaches the GPU, export-cold ----
+
+
+def _write_brain(scripts_dir: Path, body: str) -> None:
+    scripts_dir.mkdir(parents=True, exist_ok=True)
+    (scripts_dir / "script.py").write_text(body, encoding="utf-8")
+
+
+# A stateful brain ramp driving BOTH u_wave (the integrator) and u_offset from ONE instance.
+_BRAIN_RAMP = (
+    "class Behavior(ScriptBehavior):\n"
+    "    def __init__(self) -> None:\n"
+    "        self.v = 0.0\n"
+    "    def update(self, ctx: Ctx) -> dict:\n"
+    "        self.v += ctx.dt\n"
+    "        return {'u_wave': self.v % 1.0, 'u_offset': Vec2(0.25, 0.75)}\n"
+)
+
+
+def test_brain_drives_two_uniforms_to_gpu_and_export_clean(
+    gl_ctx: moderngl.Context, tmp_path: Path
+) -> None:
+    # One node-brain drives a float + a vec2 from a single stateful instance: both reach the GPU,
+    # the scripted u_wave changes the rendered pixel, and a FRESH export set renders cold (the
+    # headline 044 goal — no per-uniform copy-paste, export-isolated).
+    scripts_dir = tmp_path / "scripts"
+    _write_brain(scripts_dir, _BRAIN_RAMP)
+    node = _node(gl_ctx)
+    eng = ScriptEngine()
+    eng.reload("n", scripts_dir, node)
+
+    # Cold-start reference: a fresh set, one tick at frame 0.
+    cold = eng.fresh_behaviors_for("n")
+    eng.tick_behaviors("n", node, EngineContext(t=0.0, dt=1 / 60, frame=0), cold)
+    assert node.uniform_values["u_offset"] == (0.25, 0.75)  # both driven from one brain
+    node.render(u_time=0.0)
+    px_cold = _pixel(node)
+
+    # Warm the LIVE instance past the ramp wrap.
+    for i in range(120):
+        eng.tick("n", node, EngineContext(t=i / 60, dt=1 / 60, frame=i))
+    live_wave = node.uniform_values["u_wave"]
+    node.render(u_time=2.0)
+    px_warm = _pixel(node)
+    assert px_warm[0] != px_cold[0], "scripted u_wave did not reach the GPU"
+
+    # A fresh export set reproduces the cold pixel, NOT the warmed value.
+    fresh = eng.fresh_behaviors_for("n")
+    eng.tick_behaviors("n", node, EngineContext(t=0.0, dt=1 / 60, frame=0), fresh)
+    node.render(u_time=0.0)
+    assert _pixel(node) == px_cold
+    assert node.uniform_values["u_wave"] != live_wave
+
+    with contextlib.suppress(Exception):
+        node.release()

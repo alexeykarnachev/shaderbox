@@ -48,6 +48,16 @@ def _write(tmp: Path, name: str, body: str) -> Path:
     return path
 
 
+def _write_brain(tmp: Path, body: str) -> Path:
+    # The node-brain file (feature 044): nodes/<id>/scripts/script.py — one class driving many
+    # uniforms via a dict return. The dot keeps it out of the u_*.py glob.
+    scripts_dir = tmp / "scripts"
+    scripts_dir.mkdir(exist_ok=True)
+    path = scripts_dir / "script.py"
+    path.write_text(body, encoding="utf-8")
+    return path
+
+
 def _ctx(t: float, dt: float = 1 / 60, frame: int = 0) -> EngineContext:
     return EngineContext(t=t, dt=dt, frame=frame)
 
@@ -810,3 +820,376 @@ def test_tick_is_cheap(tmp_path: Path) -> None:
         eng.tick("n0", node, _ctx(i / 60))
     per_tick_us = (time.perf_counter() - start) / 1000 * 1e6
     assert per_tick_us < 500  # generous ceiling
+
+
+# ============================================================================
+# Node-brain script (feature 044): one stateful class drives MANY uniforms via a dict return.
+# Per-uniform is the 1-entry case of the same value-map pipeline. These cover the brain-only
+# decisions (per-key vs behavior-level freeze, the unknown-key skip, the conflict apply-order,
+# the dynamic driven set) + the cardinality-agnostic invariants parametrized over both paths.
+# ============================================================================
+
+# A brain integrator that drives TWO uniforms from ONE accumulator (the headline goal — the
+# physics-copy-paste is gone). Mirrors _INTEGRATOR's accumulation on a per-uniform binding.
+_BRAIN_INTEGRATOR = (
+    "class Behavior(ScriptBehavior):\n"
+    "    def __init__(self) -> None:\n"
+    "        self.v = 0.0\n"
+    "    def update(self, ctx: Ctx) -> dict:\n"
+    "        self.v += ctx.dt\n"
+    "        return {'u_x': self.v, 'u_y': self.v * 2.0}\n"
+)
+
+
+def test_brain_drives_multiple_uniforms_one_tick(tmp_path: Path) -> None:
+    _write_brain(
+        tmp_path,
+        "class Behavior(ScriptBehavior):\n"
+        "    def update(self, ctx: Ctx) -> dict:\n"
+        "        return {'u_a': 0.25, 'u_b': 0.75}\n",
+    )
+    node = _FakeNode([_u("u_a"), _u("u_b")])
+    eng = _engine(tmp_path, node)
+    eng.tick("n0", node, _ctx(0.0))
+    assert node.uniform_values["u_a"] == 0.25
+    assert node.uniform_values["u_b"] == 0.75
+
+
+def test_brain_per_key_shape_mismatch_freezes_only_that_key(tmp_path: Path) -> None:
+    # The is-it-native falsifier: a per-KEY coercion mismatch freezes ONLY that key; siblings still
+    # write (matches the per-uniform path's granular freeze, not a behavior-level all-or-nothing).
+    _write_brain(
+        tmp_path,
+        "class Behavior(ScriptBehavior):\n"
+        "    def update(self, ctx: Ctx) -> dict:\n"
+        "        return {'u_a': 0.4, 'u_b': Vec3(1.0, 2.0, 3.0)}\n",  # vec3 into a scalar
+    )
+    node = _FakeNode([_u("u_a"), _u("u_b")])
+    node.uniform_values["u_b"] = 0.0
+    eng = _engine(tmp_path, node)
+    eng.tick("n0", node, _ctx(0.0))
+    assert node.uniform_values["u_a"] == 0.4  # sibling wrote
+    assert node.uniform_values["u_b"] == 0.0  # frozen
+    assert (
+        eng.errors[("n0", "u_b")].kind == "runtime"
+    )  # per-KEY error, not the sentinel
+    assert ("n0", "script.py") not in eng.errors
+
+
+def test_brain_non_dict_return_is_clean_error_under_sentinel(tmp_path: Path) -> None:
+    # A brain that returns a non-dict is a behavior-level failure under the sentinel key — not a crash.
+    _write_brain(
+        tmp_path,
+        "class Behavior(ScriptBehavior):\n"
+        "    def update(self, ctx: Ctx) -> dict:\n"
+        "        return 0.5\n",  # a bare float, not a dict
+    )
+    node = _FakeNode([_u("u_a")])
+    eng = _engine(tmp_path, node)
+    eng.tick("n0", node, _ctx(0.0))  # must NOT raise
+    err = eng.errors[("n0", "script.py")]
+    assert err.kind == "runtime"
+    assert ("n0", "u_a") not in eng.errors
+
+
+def test_brain_raw_exception_freezes_all_and_records_user_line(tmp_path: Path) -> None:
+    # The decision-11 falsifier: a raw update() exception freezes EVERY name the brain drove last
+    # frame (one object = one coherent state) AND records the error under the sentinel with the
+    # CORRECT user line (fails if _user_error_line still hardcodes <u:name> for the brain).
+    path = _write_brain(
+        tmp_path,
+        "class Behavior(ScriptBehavior):\n"
+        "    def update(self, ctx: Ctx) -> dict:\n"
+        "        return {'u_x': 0.3, 'u_y': 0.6}\n",
+    )
+    node = _FakeNode([_u("u_x"), _u("u_y")])
+    eng = _engine(tmp_path, node)
+    eng.tick("n0", node, _ctx(0.0))  # establish last-good for both
+    assert node.uniform_values["u_x"] == 0.3 and node.uniform_values["u_y"] == 0.6
+
+    time.sleep(0.01)
+    path.write_text(
+        "class Behavior(ScriptBehavior):\n"
+        "    def update(self, ctx: Ctx) -> dict:\n"
+        "        x = 1\n"
+        "        raise ValueError('boom')\n",  # line 4
+        encoding="utf-8",
+    )
+    eng.reload("n0", tmp_path / "scripts", node)
+    eng.tick("n0", node, _ctx(0.1))
+    assert node.uniform_values["u_x"] == 0.3  # both frozen together
+    assert node.uniform_values["u_y"] == 0.6
+    err = eng.errors[("n0", "script.py")]
+    assert err.kind == "runtime" and "ValueError" in err.message
+    assert err.line == 4  # the real user line, NOT -1
+
+
+def test_brain_unknown_key_warns_once_and_skips_no_none_pollution(
+    tmp_path: Path,
+) -> None:
+    # A key naming no active scriptable uniform is warn-once + SKIPPED — never a None write
+    # (decision 5: frozen is None for a never-bound name, and writing it would pollute).
+    _write_brain(
+        tmp_path,
+        "class Behavior(ScriptBehavior):\n"
+        "    def update(self, ctx: Ctx) -> dict:\n"
+        "        return {'u_a': 0.5, 'u_ghost': 0.9}\n",  # u_ghost not on the node
+    )
+    node = _FakeNode([_u("u_a")])
+    eng = _engine(tmp_path, node)
+    eng.tick("n0", node, _ctx(0.0))
+    assert node.uniform_values["u_a"] == 0.5
+    assert "u_ghost" not in node.uniform_values  # NOT written as None
+    assert ("n0", "u_ghost") not in eng.errors
+    assert "u_ghost" in eng._nodes["n0"].warned
+    eng.tick("n0", node, _ctx(0.1))  # second tick: no re-warn (warn-once)
+    assert eng._nodes["n0"].warned == {"u_ghost"}
+
+
+def test_conflict_per_uniform_overrides_brain(tmp_path: Path) -> None:
+    # The conflict rule (decision 7): when u_x.py AND script.py both target u_x, BOTH run but the
+    # per-uniform value wins (two-pass write order: brain first, u_x.py last). Written so a naive
+    # insertion-order apply would invert (the brain file is created AFTER u_x.py here).
+    _write(tmp_path, "u_x", _SCALAR)  # u_x.py: returns 0.5 at t=0
+    _write_brain(
+        tmp_path,
+        "class Behavior(ScriptBehavior):\n"
+        "    def update(self, ctx: Ctx) -> dict:\n"
+        "        return {'u_x': 9.9, 'u_y': 0.2}\n",
+    )
+    node = _FakeNode([_u("u_x"), _u("u_y")])
+    eng = _engine(tmp_path, node)
+    eng.tick("n0", node, _ctx(0.0))
+    assert (
+        abs(node.uniform_values["u_x"] - 0.5) < 1e-9
+    )  # u_x.py wins, NOT the brain's 9.9
+    assert node.uniform_values["u_y"] == 0.2  # brain owns its own slot
+
+
+def test_brain_script_driven_uniforms_reports_driven_names(tmp_path: Path) -> None:
+    # script_driven_uniforms returns the brain's driven uniform names (NOT "script.py"); partial
+    # (empty) before the first tick since the driven set is only known after a tick (decision 10).
+    _write_brain(
+        tmp_path,
+        "class Behavior(ScriptBehavior):\n"
+        "    def update(self, ctx: Ctx) -> dict:\n"
+        "        return {'u_a': 0.1, 'u_b': 0.2}\n",
+    )
+    node = _FakeNode([_u("u_a"), _u("u_b")])
+    eng = _engine(tmp_path, node)
+    assert eng.script_driven_uniforms("n0") == set()  # cold start: no keys yet
+    eng.tick("n0", node, _ctx(0.0))
+    assert eng.script_driven_uniforms("n0") == {"u_a", "u_b"}
+    assert "script.py" not in eng.script_driven_uniforms("n0")  # never the sentinel
+
+
+def test_brain_partial_dict_leaves_others_default(tmp_path: Path) -> None:
+    # The dict is NON-exhaustive: a brain drives 2 of 3, the 3rd keeps its seeded value.
+    _write_brain(
+        tmp_path,
+        "class Behavior(ScriptBehavior):\n"
+        "    def update(self, ctx: Ctx) -> dict:\n"
+        "        return {'u_a': 0.1, 'u_b': 0.2}\n",
+    )
+    node = _FakeNode([_u("u_a"), _u("u_b"), _u("u_c")])
+    node.uniform_values["u_c"] = 0.77  # its slider/default
+    eng = _engine(tmp_path, node)
+    eng.tick("n0", node, _ctx(0.0))
+    assert node.uniform_values["u_a"] == 0.1
+    assert node.uniform_values["u_b"] == 0.2
+    assert node.uniform_values["u_c"] == 0.77  # untouched
+
+
+def test_brain_omitted_key_keeps_last_value_and_clears_error(tmp_path: Path) -> None:
+    # A key driven on frame N then omitted on frame N+1 keeps its last WRITTEN value (NOT frozen-as-
+    # error) AND any stale error for it is cleared — no zombie error (decision 8).
+    path = _write_brain(
+        tmp_path,
+        "class Behavior(ScriptBehavior):\n"
+        "    def update(self, ctx: Ctx) -> dict:\n"
+        "        return {'u_a': 0.4, 'u_b': Vec3(1.0, 2.0, 3.0)}\n",  # u_b errors (vec3->scalar)
+    )
+    node = _FakeNode([_u("u_a"), _u("u_b")])
+    node.uniform_values["u_b"] = 0.0
+    eng = _engine(tmp_path, node)
+    eng.tick("n0", node, _ctx(0.0))
+    assert eng.errors[("n0", "u_b")].kind == "runtime"  # u_b errored
+
+    time.sleep(0.01)
+    path.write_text(  # now the brain only drives u_a (u_b omitted)
+        "class Behavior(ScriptBehavior):\n"
+        "    def update(self, ctx: Ctx) -> dict:\n"
+        "        return {'u_a': 0.9}\n",
+        encoding="utf-8",
+    )
+    eng.reload("n0", tmp_path / "scripts", node)
+    eng.tick("n0", node, _ctx(0.1))
+    assert node.uniform_values["u_a"] == 0.9
+    assert node.uniform_values["u_b"] == 0.0  # last value kept (not corrupted)
+    assert ("n0", "u_b") not in eng.errors  # zombie error cleared
+    assert eng.script_driven_uniforms("n0") == {"u_a"}  # u_b no longer driven
+
+
+def test_brain_compile_error_under_sentinel(tmp_path: Path) -> None:
+    # A raising __init__ declares ZERO keys (it never ticks) yet must surface a compile error under
+    # the sentinel — the gap the per-uniform compile tests don't transfer (no uniform name to key on).
+    _write_brain(
+        tmp_path,
+        "class Behavior(ScriptBehavior):\n"
+        "    def __init__(self) -> None:\n"
+        "        raise ValueError('boom')\n"
+        "    def update(self, ctx: Ctx) -> dict:\n"
+        "        return {}\n",
+    )
+    node = _FakeNode([_u("u_a")])
+    eng = _engine(tmp_path, node)
+    assert eng.errors[("n0", "script.py")].kind == "compile"
+
+
+def test_brain_removed_clears_per_key_errors(tmp_path: Path) -> None:
+    # On brain removal the drop loop must clear the per-KEY errors of its driven uniforms (a
+    # coercion-failed key records under (node_id, name), not the sentinel) — no zombie error.
+    path = _write_brain(
+        tmp_path,
+        "class Behavior(ScriptBehavior):\n"
+        "    def update(self, ctx: Ctx) -> dict:\n"
+        "        return {'u_a': 0.4, 'u_b': Vec3(1.0, 2.0, 3.0)}\n",  # u_b errors
+    )
+    node = _FakeNode([_u("u_a"), _u("u_b")])
+    node.uniform_values["u_b"] = 0.0
+    eng = _engine(tmp_path, node)
+    eng.tick("n0", node, _ctx(0.0))
+    assert eng.errors[("n0", "u_b")].kind == "runtime"  # per-key error recorded
+    path.unlink()
+    eng.reload("n0", tmp_path / "scripts", node)
+    assert ("n0", "u_b") not in eng.errors  # cleared on removal, not a zombie
+    assert ("n0", "script.py") not in eng.errors
+
+
+def test_brain_export_tick_does_not_warn_into_live(tmp_path: Path) -> None:
+    # The export tick path's warn-once set is a throwaway — an unknown brain key seen ONLY during an
+    # export must NOT leak into the live `warned` set (the structural-isolation contract, decision 11).
+    _write_brain(
+        tmp_path,
+        "class Behavior(ScriptBehavior):\n"
+        "    def update(self, ctx: Ctx) -> dict:\n"
+        "        return {'u_a': 0.5, 'u_ghost': 0.9}\n",  # u_ghost not on the node
+    )
+    node = _FakeNode([_u("u_a")])
+    eng = _engine(tmp_path, node)
+    fresh = eng.fresh_behaviors_for("n0")
+    eng.tick_behaviors("n0", node, _ctx(0.0), fresh)
+    assert (
+        eng._nodes["n0"].warned == set()
+    )  # live warn set UNTOUCHED by the export tick
+
+
+def test_brain_removed_clears_driven_set(tmp_path: Path) -> None:
+    path = _write_brain(
+        tmp_path,
+        "class Behavior(ScriptBehavior):\n"
+        "    def update(self, ctx: Ctx) -> dict:\n"
+        "        return {'u_a': 0.1}\n",
+    )
+    node = _FakeNode([_u("u_a")])
+    eng = _engine(tmp_path, node)
+    eng.tick("n0", node, _ctx(0.0))
+    assert eng.script_driven_uniforms("n0") == {"u_a"}
+    path.unlink()
+    eng.reload("n0", tmp_path / "scripts", node)
+    assert eng.script_driven_uniforms("n0") == set()
+
+
+# ---- cardinality-agnostic invariants: SAME behavior, both paths ----
+
+_PARAM_PER_UNIFORM = ("per_uniform", _INTEGRATOR, "u_x")
+_PARAM_NODE_BRAIN = ("node_brain", _BRAIN_INTEGRATOR, "u_x")
+
+
+def _setup_path(tmp: Path, kind: str, body: str) -> "tuple[Path, _FakeNode]":
+    if kind == "per_uniform":
+        path = _write(tmp, "u_x", body)
+        node = _FakeNode([_u("u_x")])
+    else:
+        path = _write_brain(tmp, body)
+        node = _FakeNode([_u("u_x"), _u("u_y")])
+    return path, node
+
+
+@pytest.mark.parametrize(
+    ("kind", "body", "read"),
+    [_PARAM_PER_UNIFORM, _PARAM_NODE_BRAIN],
+    ids=["per_uniform", "node_brain"],
+)
+def test_state_accumulates_both_paths(
+    tmp_path: Path, kind: str, body: str, read: str
+) -> None:
+    _, node = _setup_path(tmp_path, kind, body)
+    eng = _engine(tmp_path, node)
+    for i in range(5):
+        eng.tick("n0", node, _ctx(0.0, dt=1.0, frame=i))
+    assert node.uniform_values[read] == 5.0  # 5 ticks of dt=1.0 on the ONE accumulator
+
+
+@pytest.mark.parametrize(
+    ("kind", "body", "read"),
+    [_PARAM_PER_UNIFORM, _PARAM_NODE_BRAIN],
+    ids=["per_uniform", "node_brain"],
+)
+def test_reset_clears_state_both_paths(
+    tmp_path: Path, kind: str, body: str, read: str
+) -> None:
+    _, node = _setup_path(tmp_path, kind, body)
+    eng = _engine(tmp_path, node)
+    for i in range(4):
+        eng.tick("n0", node, _ctx(0.0, dt=1.0, frame=i))
+    assert node.uniform_values[read] == 4.0
+    key = "u_x" if kind == "per_uniform" else "script.py"
+    eng.reset("n0", key)
+    eng.tick("n0", node, _ctx(0.0, dt=1.0, frame=0))
+    assert node.uniform_values[read] == 1.0  # fresh instance, +1 dt
+
+
+@pytest.mark.parametrize(
+    ("kind", "body", "read"),
+    [_PARAM_PER_UNIFORM, _PARAM_NODE_BRAIN],
+    ids=["per_uniform", "node_brain"],
+)
+def test_recompile_on_edit_resets_both_paths(
+    tmp_path: Path, kind: str, body: str, read: str
+) -> None:
+    path, node = _setup_path(tmp_path, kind, body)
+    eng = _engine(tmp_path, node)
+    for i in range(3):
+        eng.tick("n0", node, _ctx(0.0, dt=1.0, frame=i))
+    assert node.uniform_values[read] == 3.0
+    time.sleep(0.01)
+    path.write_text(body + "        # edited\n", encoding="utf-8")
+    eng.reload("n0", tmp_path / "scripts", node)
+    eng.tick("n0", node, _ctx(0.0, dt=1.0, frame=0))
+    assert node.uniform_values[read] == 1.0  # fresh instance: +1 dt
+
+
+@pytest.mark.parametrize(
+    ("kind", "body", "read"),
+    [_PARAM_PER_UNIFORM, _PARAM_NODE_BRAIN],
+    ids=["per_uniform", "node_brain"],
+)
+def test_export_isolation_interleave_both_paths(
+    tmp_path: Path, kind: str, body: str, read: str
+) -> None:
+    # The export-isolation falsifier: warm the LIVE instance, then a FRESH export set ticks cold.
+    # Assert the EXTRACTED per-key value is cold (a dict is truthy and would mask a coercion fail —
+    # we read node.uniform_values[read], not the raw run() return).
+    _, node = _setup_path(tmp_path, kind, body)
+    eng = _engine(tmp_path, node)
+    for i in range(10):
+        eng.tick("n0", node, _ctx(0.0, dt=1.0, frame=i))
+    live = node.uniform_values[read]
+    assert live == 10.0
+
+    fresh = eng.fresh_behaviors_for("n0")
+    export_node = _FakeNode([_u("u_x"), _u("u_y")])
+    eng.tick_behaviors("n0", export_node, _ctx(0.0, dt=1.0, frame=0), fresh)
+    assert export_node.uniform_values[read] == 1.0  # cold start, NOT the live 10.0
+    assert export_node.uniform_values[read] != live

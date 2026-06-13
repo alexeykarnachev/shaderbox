@@ -1,7 +1,7 @@
 """Uniform-value coercion — the single home for shaping a Python value into the exact
 form a `moderngl.Uniform` write wants, shared by the copilot `set_uniform` path and the
-CPU-script engine's behavior output (feature 041 — `PythonBehavior.compute` validates an
-`update` return against the live uniform via this). A leaf module: it imports only
+CPU-script engine's behavior output (feature 041/044 — `scripting.coerce_one` validates a
+script's `update` return against the live uniform via this). A leaf module: it imports only
 `moderngl` + the unicode helper, so both `copilot/backend.py` and `scripting/` can pull
 it in without a cycle.
 """

@@ -27,11 +27,12 @@ from shaderbox.uniform_coerce import (
 )
 
 
-def _user_error_line(uniform_name: str, exc: BaseException) -> int:
+def _user_error_line(marker_name: str, exc: BaseException) -> int:
     # Recover the deepest line in the USER's source from a traceback — the script is compiled with
-    # filename "<u:name>", so a frame from that file is a user line (vs an engine frame). -1 when the
-    # error didn't reach the user's code (unmappable).
-    marker = f"<u:{uniform_name}>"
+    # filename "<u:name>" (per-uniform: the uniform name; node-brain: "script.py"), so a frame from
+    # that file is a user line (vs an engine frame). -1 when the error didn't reach the user's code
+    # (unmappable). `marker_name` is UNWRAPPED — this builds the `<u:...>` itself.
+    marker = f"<u:{marker_name}>"
     line = -1
     for frame in traceback.extract_tb(exc.__traceback__):
         if frame.filename == marker and frame.lineno is not None:
@@ -168,7 +169,13 @@ def _resolve_behavior_class(ns: dict[str, Any]) -> type[ScriptBehavior] | None:
 
 
 class Behavior(Protocol):
-    def compute(self, ctx: EngineContext, uniform: moderngl.Uniform) -> Any: ...
+    def run(self, ctx: EngineContext) -> Any:
+        # The raw value(s) this behavior produces this frame — cardinality-agnostic. A per-uniform
+        # behavior's `run` returns a single typed value (the engine wraps it as one (name, value)
+        # pair); a node-brain's `run` returns a `dict[str, value]` driving many uniforms. Coercion
+        # against the live uniform is the ENGINE's job (`coerce_one`), so a future C backend produces
+        # raw values without re-implementing the shape coercion.
+        ...
 
     @property
     def error(self) -> ScriptError | None: ...
@@ -181,35 +188,37 @@ class PythonBehavior:
     override / a raising `__init__`) cache a `ScriptError` and freeze permanently until the
     file changes; runtime + shape failures are caught per-tick by the engine."""
 
-    def __init__(self, uniform_name: str, body: str) -> None:
-        self._uniform_name = uniform_name
+    def __init__(self, label: str, body: str) -> None:
+        # `label` is the binding KEY: a uniform name for per-uniform, the sentinel "script.py" for a
+        # node-brain. It is the compile-marker name AND the name a compile error records under.
+        self.label = label
         self._error: ScriptError | None = None
         self._instance: ScriptBehavior | None = None
         self._cls: type[ScriptBehavior] | None = None
         try:
-            code = compile(body, f"<u:{uniform_name}>", "exec")
+            code = compile(body, f"<u:{label}>", "exec")
         except SyntaxError as e:
             self._error = ScriptError(
-                uniform_name, "compile", e.msg or "syntax error", e.lineno or -1
+                label, "compile", e.msg or "syntax error", e.lineno or -1
             )
             return
 
-        ns = _build_globals(uniform_name)
+        ns = _build_globals(label)
         try:
             exec(code, ns)  # raw exec of the user file — no sandbox (locked posture)
         except Exception as e:
             self._error = ScriptError(
-                uniform_name,
+                label,
                 "compile",
                 f"{type(e).__name__}: {e}",
-                _user_error_line(uniform_name, e),
+                _user_error_line(label, e),
             )
             return
 
         cls = _resolve_behavior_class(ns)
         if cls is None:
             self._error = ScriptError(
-                uniform_name,
+                label,
                 "compile",
                 "no ScriptBehavior subclass found — keep the "
                 "`class Behavior(ScriptBehavior)` line",
@@ -217,7 +226,7 @@ class PythonBehavior:
             return
         if cls.update is ScriptBehavior.update:
             self._error = ScriptError(
-                uniform_name,
+                label,
                 "compile",
                 f"class {cls.__name__} does not implement update(self, ctx)",
             )
@@ -225,7 +234,7 @@ class PythonBehavior:
         arity_error = _check_update_arity(cls)
         if arity_error is not None:
             self._error = ScriptError(
-                uniform_name,
+                label,
                 "compile",
                 arity_error,
                 cls.update.__code__.co_firstlineno,
@@ -245,10 +254,10 @@ class PythonBehavior:
             self._error = None
         except Exception as e:
             self._error = ScriptError(
-                self._uniform_name,
+                self.label,
                 "compile",
                 f"__init__ raised: {type(e).__name__}: {e}",
-                _user_error_line(self._uniform_name, e),
+                _user_error_line(self.label, e),
             )
             self._instance = None
 
@@ -261,30 +270,37 @@ class PythonBehavior:
         # _instantiate no-ops when there's no resolved class (an unrecoverable compile failure).
         self._instantiate()
 
-    def compute(self, ctx: EngineContext, uniform: moderngl.Uniform) -> Any:
-        # Call the user's update, normalize the typed return, and shape it against the live
-        # uniform via the shared coercion. Returns the coerced value, or raises a ScriptError
-        # the engine catches + records (freezing last-good). None coercion = a shape mismatch.
+    def run(self, ctx: EngineContext) -> Any:
+        # The raw value(s) the user's update produced this frame — cardinality-agnostic, NOT yet
+        # coerced (the engine fans this out into (name, value) pairs and coerces each via coerce_one):
+        # a per-uniform script returns a single typed value, a node-brain a dict[str, value].
         if self._instance is None:
             raise _RuntimeScriptError(
-                ScriptError(self._uniform_name, "runtime", "no behavior instance")
+                ScriptError(self.label, "runtime", "no behavior instance")
             )
-        result = self._instance.update(ctx)
-        value = normalize_output(result)
-        coerced = coerce_uniform_value(value, uniform)
-        if coerced is None:
-            raise _RuntimeScriptError(
-                ScriptError(
-                    self._uniform_name,
-                    "runtime",
-                    uniform_shape_hint(uniform, gl_type_label(uniform), value),
-                )
+        return self._instance.update(ctx)
+
+
+def coerce_one(value: object, uniform: moderngl.Uniform, error_name: str) -> object:
+    # Normalize a raw script value + shape it against the live uniform via the shared coercion. The
+    # one coercion atom for BOTH paths (per-uniform's single value, a node-brain's per-key value).
+    # `error_name` is the uniform NAME a shape mismatch records under (the GLSL-type label for the
+    # hint is derived internally). Raises _RuntimeScriptError on a mismatch; the engine freezes.
+    normalized = normalize_output(value)
+    coerced = coerce_uniform_value(normalized, uniform)
+    if coerced is None:
+        raise _RuntimeScriptError(
+            ScriptError(
+                error_name,
+                "runtime",
+                uniform_shape_hint(uniform, gl_type_label(uniform), normalized),
             )
-        return coerced
+        )
+    return coerced
 
 
 class _RuntimeScriptError(Exception):
-    # Carries a ready ScriptError out of compute() so the engine records it verbatim
+    # Carries a ready ScriptError out of coerce_one() so the engine records it verbatim
     # (a shape mismatch's authored message), distinct from a raw exception in the user body.
     def __init__(self, error: ScriptError) -> None:
         super().__init__(error.message)
