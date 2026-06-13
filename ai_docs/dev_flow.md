@@ -172,13 +172,15 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   `class Behavior(ScriptBehavior)` with `update(self, ctx) -> <output>`; per-instance `self.*` state
   persists across frames). A SECOND path (044): one `nodes/<id>/scripts/script.py` (a node-brain) whose
   `update -> dict[str, value]` drives MANY uniforms from ONE instance — same base class, dispatched by
-  FILENAME. `context.py` (`EngineContext`/`Ctx`, `t/dt/frame`), `errors.py` (`ScriptError`), `outputs.py`
+  FILENAME. `context.py` (`EngineContext`/`Ctx`, `t/dt/frame` + `mouse: MouseState` — feature 042,
+  `EXPORT_MOUSE`-frozen on export), `errors.py` (`ScriptError`), `outputs.py`
   (the typed returns: `Vec2/3/4` tuple-subclasses + `Array`/`Text` + `normalize_output` → coercion),
   `behavior.py` (`ScriptBehavior` base + `Behavior` protocol + `PythonBehavior` — the curated-globals
   `exec` seam, subclass resolve, instance hold, `run`; + the free `coerce_one` coercion atom),
   `engine.py` (`ScriptEngine`: per-node registry, `(path,mtime)` cache + cached source, resolve/orphan-
   warn, the `(name, raw)` PAIR-STREAM fan-out `_resolved_pairs`, `tick`/`tick_behaviors`, `reset`,
-  `fresh_behaviors_for`, `stub_for`, `is_scriptable`). Imports no imgui/glfw/App and no concrete `Node`
+  `fresh_behaviors_for`, `stub_for`/`brain_stub_for`, `brain_status`, `is_scriptable`; the 042 UI reads
+  these via `ProjectSession`). Imports no imgui/glfw/App and no concrete `Node`
   (works against the `EngineNode` protocol). `ProjectSession` owns it; `ui.py` ticks live; export ticks
   a FRESH per-export instance — structurally, via the injected `Node.export_isolation` factory that
   `Node.render_media` enters around every export (no per-caller opt-in to forget).

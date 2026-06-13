@@ -31,6 +31,19 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
 
 ---
 
+## [DEFERRAL] script UI/UX is a PLACEHOLDER — the affordance design is the next wave (post-042)
+- **Trigger:** the NEXT scripting feature, before anything else — the maintainer flagged the 042 UX as
+  "absolutely awful". Pick this up before 043 (copilot write-behavior) or any further script work.
+- 042 shipped the MACHINERY (engine accessors, the 5 reusable primitives, create/detach/reset/mouse
+  wiring) behind a deliberately-minimal, weak UI. The known discoverability gap: an undriven uniform has
+  NO visible affordance — "Make scriptable" hides behind a right-click on the name cell (with only a dim
+  hint line), and `script_chip`'s `none` state draws nothing (042 decision 5 parked it as "reserved for a
+  future explicit affordance"). The maintainer has a concrete redesign vision (incoming). The primitives
+  to reshape: `script_chip` (an always-visible attach affordance?), the per-row context menu vs an inline
+  control, the brain strip layout, the error surfacing. ALL the back-end verbs already exist — this wave is
+  pure UI/UX over the done machinery. Spec: `ai_docs/features/042_script_ui.md` (the cut/`could` items +
+  the open-question defaults are the starting point); reshape there or open a 042b/045 spec.
+
 ## [DEFERRAL] copilot turn-rollback: a NEW mutating tool must register with the checkpoint
 - **Trigger:** before plan-locking any feature that adds a new MUTATING copilot tool (one that
   writes a node / lib / uniform / creates / deletes) — it MUST capture into the active checkpoint
@@ -45,16 +58,17 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   durable file the checkpoint does NOT snapshot today — it must `_capture_node`-equivalent the script
   file (or a new `_capture_script` seam) into the active checkpoint, else a script write escapes undo.
 
-## [DEFERRAL] script-engine type-change / orphan cleanup UI (feature 042)
-- **Trigger:** feature 042 (the in-app script editor) — that's where the detach/cleanup affordance
-  lands. OR a maintainer reports a stuck per-tick `ScriptError` after changing a scripted uniform's
-  TYPE in the shader (`vec2 u_x` -> `vec3 u_x`) or deleting it, and wants more than the logged warning.
-- Binding is by FILENAME, so changing a scripted uniform's type keeps the file bound but the script's
-  returned `update` value no longer fits the new shape -> a coercion `ScriptError` every tick (value
-  frozen at last-good); deleting the uniform leaves an orphan script that `reload` warns about (logged)
-  and ignores. v1 (041) resolves + WARNS only — no UI to detach/delete a stale script. The editor at 042
-  owns the full affordance (and the "this uniform is script-driven" row indicator). Spec:
-  `ai_docs/features/041_stateful_script_engine.md ## Out of scope`.
+## [DEFERRAL] script-engine type-change error: surfaced in-app, not auto-resolved (feature 042 residual)
+- **Trigger:** a maintainer wants MORE than a visible error after changing a scripted uniform's TYPE in
+  the shader (`vec2 u_x` -> `vec3 u_x`) — i.e. an automated "the type changed, re-stub the return shape"
+  affordance, not just the error line + manual fix.
+- The ORPHAN half (deleting a scripted uniform) is RESOLVED by 042's Detach (the per-row context menu /
+  the brain strip trash the stale file; the next reload drops the binding). The TYPE-CHANGE half is
+  SURFACED but not auto-resolved: the binding stays live (the file still matches a real active uniform),
+  so every tick records a coercion `ScriptError` frozen at last-good — 042 now shows it on the uniform's
+  per-row error line (was loguru-only), and the user fixes the return shape by hand (Open script) or
+  Detaches. An automated type-aware re-stub is deliberately out of 042's scope. Spec:
+  `ai_docs/features/042_script_ui.md ## Out of scope`.
 
 ## [DEFERRAL] script-engine cross-uniform shared state + compute-order guarantee (feature 042+)
 - **Trigger:** a real workflow needs TWO scripts to share mutable state (one writes, another reads —
@@ -71,14 +85,6 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   case (state in ONE brain, no shared CHANNEL), and its brain-vs-`u_*.py` conflict rule is write-precedence
   (both WRITE a slot, neither READS the other's same-frame output), not the read-dependency this trigger
   guards. This trigger still fires only for TWO scripts sharing mutable state with a read dependency.
-
-## [DEFERRAL] node-brain `stub_for` — a generated `script.py` skeleton (feature 042)
-- **Trigger:** feature 042's "Add script" / "New node-brain" UI work — when a generated brain skeleton is
-  wanted (v1 brain scripts are hand-written, as 041 shipped per-uniform stubs into 042).
-- 044 ships `stub_for` for per-uniform only. A brain stub must list the node's scriptable uniforms in a
-  `return {...}` and MUST NOT annotate `-> dict[str, Any]` (`Any` is not in the exec-globals → a permanent
-  compile-freeze per 041 decision 12); use `-> dict` bare or seed `Any`. Spec:
-  `ai_docs/features/044_node_brain_script.md ## Out of scope`.
 
 ## [DEFERRAL] node-brain cross-NODE state (object A sees object B) — the mini-game milestone
 - **Trigger:** a real two-object-interaction workflow (object A's brain must read object B's state —

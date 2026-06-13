@@ -359,4 +359,28 @@ needs-changes (no blocker that should-not-land; all findings folded into the dec
   `util.format_auto_value` (not the inline auto-branch); the 043 rollback-capture deferral is confirmed
   unfired.
 
-(Post-impl review populated after implementation.)
+**Post-implementation review (2026-06-13, 3 adversarial agents: code-correctness + architecture +
+spec-fidelity).** Verdict: pass / needs-changes / needs-changes — no blocker, no should-not-land. All
+findings fixed:
+- **SHOULD (2 reviewers, independently) — a broken node-brain could not be detached** (the Detach button
+  drew only in the healthy branch; a sentinel-error brain drives zero rows so it had no in-app removal).
+  Fixed: `_draw_brain_strip` draws Detach in BOTH branches.
+- **SHOULD — per-uniform "Detach script" was not confirm-gated** (diverged from locked decision 12).
+  Fixed: the row menu now `open_popup`s a per-row `confirm_delete_popup`.
+- **NIT — empty context menu on a non-scriptable row.** Fixed: `_script_actions_menu` early-returns before
+  opening the popup when the row has no verbs.
+- **NIT — `script_chip` had no driver tooltip + square corners** (decision 5 specified a tooltip; the
+  sibling chip is rounded). Fixed: tooltip param + `CHIP_ROUNDING` push in `script_chip`.
+- **NIT — `is_uniform_scriptable` logic lived on App.** Fixed: moved to `ProjectSession`, App forwards.
+- **NIT — "Open" revealed the folder, not the file.** Fixed: new `util.open_file_in_default_app` opens
+  the `.py` in the OS editor; create/open use it.
+- **Recorded divergences (no code change):** decision 8's "fixed height across states" defers to decision
+  7's "fixed WHEN PRESENT" (variable strip height across states is accepted — transitions happen on save,
+  not on interaction). The `pill_button` `width` param + the four App-side wrapper methods are shipped
+  surface (noted here rather than re-tabling).
+
+**Maintainer feedback (2026-06-13, post-merge):** the UI/UX is poor — the visible affordances are too weak
+(undriven uniforms have no discoverable "make scriptable" entry; the chip/menu/strip layout needs rework).
+The MACHINERY is done and reviewed; the affordance REDESIGN is the next wave (status `partial`). The cut
+`could` items + the open-question defaults below are the starting point. Tracked: `todo.md "[DEFERRAL]
+script UI/UX is a PLACEHOLDER"`.
