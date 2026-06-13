@@ -197,6 +197,13 @@ and probes the agent's self-review.
   white, so a sticker-style render (the flagship pattern) looks empty. Composite onto a dark background
   before judging: PIL `alpha_composite` onto e.g. (25,25,40), save, THEN Read. The render facts' `ink %`
   tells you whether there is alpha-carried content worth compositing.
+- **Large canvas + many renders WITHOUT a per-frame `texture.read()` goes blank on V3D.** A Mesa/V3D
+  driver quirk (NOT a script-engine or harness bug): rendering to a ≥256px canvas hundreds of times and
+  reading the FBO only AT THE END yields a near-empty framebuffer (mean alpha ~7). The engine wrote every
+  uniform correctly throughout — it's the accumulated GPU frame that's lost. Fix in a direct-engine driver:
+  call `node.canvas.texture.read()` (or a flush) EACH frame, not just on the frames you keep (mean alpha
+  jumps to 255). Cheap at the sizes dogfood uses; just don't batch the reads. (Found 2026-06-13 hudgame
+  scene, 512px × 330 frames.)
 - **🔴 `GLError 1282 (invalid operation) glUseProgram(0)` is a REAL pipeline bug, not harness noise.** It
   fires sporadically on bridge-marshalled create_node/write_shader (the persist→render path) under the
   standalone context — the same headless GL-quirk as node teardown. The copilot RECOVERS (retries), so a

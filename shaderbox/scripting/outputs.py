@@ -32,7 +32,14 @@ class Array:
     For `vecN[M]` pass the components flattened row by row; coercion chunks them by `dim`."""
 
     def __init__(self, values: Sequence[float]) -> None:
-        self.values: list[float] = [float(v) for v in values]
+        try:
+            self.values: list[float] = [float(v) for v in values]
+        except (TypeError, ValueError) as e:
+            # The common vecN[M] mistake is a list of tuples/lists; the float() error is cryptic.
+            raise TypeError(
+                "Array takes a FLAT sequence of numbers — for a vecN[M] uniform pass the "
+                "components flattened row by row (e.g. [x0,y0, x1,y1, ...]), not a list of tuples"
+            ) from e
 
 
 class Text:

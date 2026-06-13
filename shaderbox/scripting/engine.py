@@ -94,6 +94,10 @@ class NodeScripts:
         # cached for script_driven_uniforms + the behavior-level freeze (decision 6/10). Persists
         # across reset() so a reset-time __init__ failure can still freeze the prior frame's names.
         self.last_driven: set[str] = set()
+        # Bad brain keys (typo/orphan/engine-owned) that recorded a soft (node,name) error on the last
+        # tick — tracked separately from last_driven (a bad key must NOT claim ownership in
+        # script_driven_uniforms) so the stale-clear can pop its error once the key stops being returned.
+        self.last_skipped: set[str] = set()
         # Orphan/unsupported-binding names already warned, so reload (per-frame) logs once on the
         # transition, not every frame.
         self.warned: set[str] = set()
@@ -237,14 +241,15 @@ class ScriptEngine:
                 scripts.last_good.pop(name, None)
                 self.errors.pop((node_id, name), None)
                 if name == _BRAIN_FILE:
-                    # Free each driven uniform's last-good + its per-KEY error (a coercion-failed key
-                    # records under (node_id, name), not the sentinel — so popping the sentinel above
-                    # isn't enough), and clear the cached driven set so script_driven_uniforms reports
-                    # nothing for the removed brain.
-                    for driven in scripts.last_driven:
-                        scripts.last_good.pop(driven, None)
-                        self.errors.pop((node_id, driven), None)
+                    # Free each driven/skipped uniform's last-good + its per-KEY error (a coercion-failed
+                    # key OR a bad-key soft error records under (node_id, name), not the sentinel — so
+                    # popping the sentinel above isn't enough), and clear the cached sets so
+                    # script_driven_uniforms reports nothing for the removed brain.
+                    for stale in scripts.last_driven | scripts.last_skipped:
+                        scripts.last_good.pop(stale, None)
+                        self.errors.pop((node_id, stale), None)
                     scripts.last_driven = set()
+                    scripts.last_skipped = set()
 
     def _reload_brain(
         self, path: Path, node_id: str, scripts: "NodeScripts", found: set[str]
@@ -329,6 +334,7 @@ class ScriptEngine:
             scripts.last_good,
             self.errors,
             scripts.last_driven,
+            scripts.last_skipped,
             scripts.warned,
         )
 
@@ -340,10 +346,10 @@ class ScriptEngine:
         behaviors: dict[str, PythonBehavior],
     ) -> None:
         # Tick an EXTERNAL behavior set (the export's fresh instances) against the node. EVERY sink —
-        # last-good, errors, driven-set AND the warn-once set — is a per-call throwaway, so an export
-        # never touches the live binding's recorded error, driven cache, or warn dedup (the export is
-        # structurally isolated; decision 11), and it ticks each frame fresh with no live state.
-        self._tick_behaviors(node_id, node, ctx, behaviors, {}, {}, set(), set())
+        # last-good, errors, driven-set, skipped-set AND the warn-once set — is a per-call throwaway, so
+        # an export never touches the live binding's recorded error, caches, or warn dedup (the export
+        # is structurally isolated; decision 11), and it ticks each frame fresh with no live state.
+        self._tick_behaviors(node_id, node, ctx, behaviors, {}, {}, set(), set(), set())
 
     def _tick_behaviors(
         self,
@@ -354,6 +360,7 @@ class ScriptEngine:
         last_good: dict[str, Any],
         errors: dict[tuple[str, str], ScriptError],
         last_driven: set[str],
+        last_skipped: set[str],
         warned: set[str],
     ) -> None:
         if (
@@ -366,7 +373,7 @@ class ScriptEngine:
         # passes is the guarantee — NOT behaviors-dict insertion order (a reload can perturb it).
         brain = behaviors.get(_BRAIN_FILE)
         if brain is not None:
-            driven = self._apply_behavior(
+            driven, skipped = self._apply_behavior(
                 node_id,
                 _BRAIN_FILE,
                 brain,
@@ -378,12 +385,18 @@ class ScriptEngine:
                 last_driven,
                 warned,
             )
-            # An omitted-after-failing key's stale error: clear any key the brain drove last frame
-            # but NOT this frame (decision 8 — no zombie error; an omitted key keeps its last value).
-            for name in last_driven - driven:
+            # An omitted-after-failing key's stale error: clear any key TOUCHED last frame (a real
+            # driven key OR a bad/skipped key that recorded a soft error) but NOT touched this frame
+            # (decision 8 — no zombie error; an omitted real key keeps its last value). last_driven
+            # tracks the REAL driven uniforms only (skipped keys must not claim ownership in
+            # script_driven_uniforms); last_skipped tracks the bad keys for their own stale-clear.
+            touched = driven | skipped
+            for name in (last_driven | last_skipped) - touched:
                 errors.pop((node_id, name), None)
             last_driven.clear()
             last_driven.update(driven)
+            last_skipped.clear()
+            last_skipped.update(skipped)
         for name, behavior in behaviors.items():
             if name == _BRAIN_FILE:
                 continue
@@ -412,14 +425,16 @@ class ScriptEngine:
         errors: dict[tuple[str, str], ScriptError],
         last_driven: set[str],
         warned: set[str],
-    ) -> set[str]:
-        # Run ONE behavior + write each (name, raw) pair it yields; returns the names it successfully
-        # drove this frame. A behavior-level failure (compile error / raw throw / non-dict brain
-        # return) freezes EVERY name it drove last frame (`last_driven`; for per-uniform that's its
-        # one same-named slot) and returns empty (decision 6). NOTE: `run` (=update) is called ONCE
-        # to fan out, BEFORE the per-name is_scriptable gate — so a per-uniform script's state still
-        # advances during the brief reload→tick window its uniform is inactive (the value freezes;
-        # only `self.*` ticks). An inherent cost of the shared fan-out, not a per-uniform regression.
+    ) -> tuple[set[str], set[str]]:
+        # Run ONE behavior + write each (name, raw) pair it yields. Returns (driven, touched): `driven`
+        # = names of REAL scriptable uniforms the brain targeted (what script_driven_uniforms reports);
+        # `touched` = driven UNION the bad keys (typo/orphan/engine-owned) that recorded a per-key
+        # error this frame, so the caller can clear a stale (node,name) error of any key no longer
+        # returned (decision 8 — no zombie). A behavior-level failure (compile error / raw throw /
+        # non-dict brain return) freezes EVERY name it drove last frame and returns empty. NOTE: `run`
+        # (=update) is called ONCE to fan out, BEFORE the per-name is_scriptable gate — so a per-uniform
+        # script's state still advances during the brief reload→tick window its uniform is inactive
+        # (the value freezes; only `self.*` ticks). Inherent to the shared fan-out, not a regression.
         behavior_key = (node_id, binding_key)
         drove_last = {binding_key} if binding_key != _BRAIN_FILE else set(last_driven)
         if (
@@ -427,14 +442,14 @@ class ScriptEngine:
         ):  # cached compile error — freeze, recorded at reload
             errors[behavior_key] = behavior.error
             _freeze(drove_last, node, last_good)
-            return set()
+            return set(), set()
         try:
             raw = behavior.run(ctx)
             pairs = list(_resolved_pairs(binding_key, raw))
         except _RuntimeScriptError as e:  # no instance — authored message
             errors[behavior_key] = e.error
             _freeze(drove_last, node, last_good)
-            return set()
+            return set(), set()
         except (
             Exception
         ) as e:  # a raw throw (or non-dict brain return) is behavior-level
@@ -445,34 +460,48 @@ class ScriptEngine:
                 _user_error_line(behavior.label, e),
             )
             _freeze(drove_last, node, last_good)
-            return set()
+            return set(), set()
         errors.pop(
             behavior_key, None
         )  # the run itself succeeded; clear a stale behavior-level error
         # `driven` = every key the brain TARGETED at a real scriptable uniform this frame (a per-key
-        # coercion failure still counts — the key IS driven, it just froze). The caller clears the
-        # stale error of any key driven last frame but NOT this frame, so an omitted key (decision 8)
-        # leaves no zombie error, and script_driven_uniforms reports a persistently-erroring key.
+        # coercion failure still counts — the key IS driven, it just froze). `skipped` = bad keys
+        # (typo/orphan/engine-owned) that recorded a soft error but name no real uniform. The caller
+        # clears the stale error of any TOUCHED key (driven|skipped) no longer returned (decision 8 —
+        # no zombie); script_driven_uniforms reports `driven` only (a bad key must NOT claim ownership).
         driven: set[str] = set()
+        skipped: set[str] = set()
         for name, value in pairs:
             key = (node_id, name)
             frozen = last_good.get(name, node.uniform_values.get(name))
             uniform = active.get(name)
-            if not is_scriptable(uniform):
-                # A brain key naming a non-active/non-scriptable uniform: warn-once + SKIP with NO
-                # write (frozen is None for a never-bound name — writing it would pollute with None;
-                # decision 5). A per-uniform binding's name went inactive between reload and tick —
-                # freeze it to last-good (it WAS a real binding).
-                if binding_key == _BRAIN_FILE:
+            if binding_key == _BRAIN_FILE:
+                # A brain key validates LAZILY at tick (its keys are dynamic) through the SAME
+                # _binding_reject the per-uniform path uses at reload: engine-owned (u_time…), orphan
+                # (typo / inactive), or sampler/block all get a reason. Record a soft ScriptError under
+                # (node,name) so the UI surfaces it (NOT loguru-only), warn-once, SKIP with NO write
+                # (frozen is None for a never-bound name; decision 5). It goes in `skipped` NOT `driven`
+                # — it names no scriptable uniform, so script_driven_uniforms must not claim ownership
+                # (the engine-owned-u_time false-ownership bug).
+                reason = self._binding_reject(name, active)
+                if reason is not None:
+                    errors[key] = ScriptError(name, "runtime", reason)
+                    skipped.add(name)
                     if name not in warned:
                         logger.warning(
-                            f"Node-brain script on node {node_id}: key '{name}' is not an "
-                            "active scriptable uniform — skipped"
+                            f"Node-brain script on node {node_id}: key {reason} — skipped"
                         )
                         warned.add(name)
                     continue
+            elif not is_scriptable(uniform):
+                # A per-uniform binding's name went inactive between reload and tick — freeze it to
+                # last-good (it WAS a real binding; per-uniform orphans/engine-owned are rejected at
+                # reload, so they never reach the tick).
                 node.uniform_values[name] = frozen
                 continue
+            assert is_scriptable(
+                uniform
+            )  # _binding_reject(None) implies a scriptable uniform
             driven.add(name)
             try:
                 coerced = coerce_one(value, uniform, name)
@@ -485,7 +514,7 @@ class ScriptEngine:
             errors.pop(key, None)
             last_good[name] = coerced
             node.uniform_values[name] = coerced
-        return driven
+        return driven, skipped
 
     def drop_node(self, node_id: str) -> None:
         self._nodes.pop(node_id, None)

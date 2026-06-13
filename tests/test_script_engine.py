@@ -924,11 +924,12 @@ def test_brain_raw_exception_freezes_all_and_records_user_line(tmp_path: Path) -
     assert err.line == 4  # the real user line, NOT -1
 
 
-def test_brain_unknown_key_warns_once_and_skips_no_none_pollution(
+def test_brain_unknown_key_warns_skips_and_records_soft_error(
     tmp_path: Path,
 ) -> None:
-    # A key naming no active scriptable uniform is warn-once + SKIPPED — never a None write
-    # (decision 5: frozen is None for a never-bound name, and writing it would pollute).
+    # A key naming no active scriptable uniform is warn-once + SKIPPED (never a None write —
+    # decision 5) AND records a SOFT ScriptError under (node, name) so the UI surfaces the typo
+    # (NOT loguru-only). The bad key must NOT claim ownership in script_driven_uniforms.
     _write_brain(
         tmp_path,
         "class Behavior(ScriptBehavior):\n"
@@ -940,10 +941,157 @@ def test_brain_unknown_key_warns_once_and_skips_no_none_pollution(
     eng.tick("n0", node, _ctx(0.0))
     assert node.uniform_values["u_a"] == 0.5
     assert "u_ghost" not in node.uniform_values  # NOT written as None
-    assert ("n0", "u_ghost") not in eng.errors
+    err = eng.errors[("n0", "u_ghost")]
+    assert err.kind == "runtime" and "orphan" in err.message  # soft error surfaced
+    assert "u_ghost" not in eng.script_driven_uniforms(
+        "n0"
+    )  # bad key claims no ownership
     assert "u_ghost" in eng._nodes["n0"].warned
     eng.tick("n0", node, _ctx(0.1))  # second tick: no re-warn (warn-once)
     assert eng._nodes["n0"].warned == {"u_ghost"}
+
+
+def test_brain_unknown_key_error_clears_when_key_fixed(tmp_path: Path) -> None:
+    # The typo'd-key soft error is a zombie-free: once the bad key stops being returned (the user
+    # fixes the typo), its (node, name) error is cleared on the next tick (decision 8, generalized).
+    path = _write_brain(
+        tmp_path,
+        "class Behavior(ScriptBehavior):\n"
+        "    def update(self, ctx: Ctx) -> dict:\n"
+        "        return {'u_a': 0.5, 'u_ghost': 0.9}\n",
+    )
+    node = _FakeNode([_u("u_a")])
+    eng = _engine(tmp_path, node)
+    eng.tick("n0", node, _ctx(0.0))
+    assert ("n0", "u_ghost") in eng.errors
+    time.sleep(0.01)
+    path.write_text(  # typo fixed: u_ghost gone
+        "class Behavior(ScriptBehavior):\n"
+        "    def update(self, ctx: Ctx) -> dict:\n"
+        "        return {'u_a': 0.5}\n",
+        encoding="utf-8",
+    )
+    eng.reload("n0", tmp_path / "scripts", node)
+    eng.tick("n0", node, _ctx(0.1))
+    assert ("n0", "u_ghost") not in eng.errors  # zombie cleared
+
+
+def test_brain_engine_owned_key_rejected_no_false_ownership(tmp_path: Path) -> None:
+    # The BUG fix: a brain naming an engine-owned uniform (u_time) must NOT be reported as
+    # script-owned (render() would clobber the write — a guaranteed no-op) — it records a soft
+    # error + is excluded from script_driven_uniforms (parity with the per-uniform reject).
+    _write_brain(
+        tmp_path,
+        "class Behavior(ScriptBehavior):\n"
+        "    def update(self, ctx: Ctx) -> dict:\n"
+        "        return {'u_a': 0.5, 'u_time': 9.0}\n",
+    )
+    node = _FakeNode([_u("u_a"), _u("u_time")])
+    eng = ScriptEngine(engine_driven=frozenset({"u_time"}))
+    eng.reload("n0", tmp_path / "scripts", node)
+    eng.tick("n0", node, _ctx(0.0))
+    assert node.uniform_values["u_a"] == 0.5
+    assert "u_time" not in eng.script_driven_uniforms("n0")  # no false ownership
+    assert "engine-owned" in eng.errors[("n0", "u_time")].message
+
+
+def test_brain_nan_freezes_and_records(tmp_path: Path) -> None:
+    # The NaN/Inf fix: a non-finite value is no longer written silently (a black-frame footgun that
+    # also poisons last-good) — it freezes the uniform at last-good + records a runtime ScriptError,
+    # folding into the normal frozen-uniform path.
+    path = _write_brain(
+        tmp_path,
+        "class Behavior(ScriptBehavior):\n"
+        "    def update(self, ctx: Ctx) -> dict:\n"
+        "        return {'u_a': 0.3}\n",
+    )
+    node = _FakeNode([_u("u_a")])
+    eng = _engine(tmp_path, node)
+    eng.tick("n0", node, _ctx(0.0))
+    assert node.uniform_values["u_a"] == 0.3  # good last value
+    time.sleep(0.01)
+    path.write_text(
+        "class Behavior(ScriptBehavior):\n"
+        "    def update(self, ctx: Ctx) -> dict:\n"
+        "        return {'u_a': float('inf')}\n",  # non-finite
+        encoding="utf-8",
+    )
+    eng.reload("n0", tmp_path / "scripts", node)
+    eng.tick("n0", node, _ctx(0.1))
+    assert node.uniform_values["u_a"] == 0.3  # frozen at last-good, NOT inf
+    err = eng.errors[("n0", "u_a")]
+    assert err.kind == "runtime" and "finite" in err.message
+
+
+def test_per_uniform_nan_freezes(tmp_path: Path) -> None:
+    # The NaN guard is in the shared coerce_one, so it covers the per-uniform path too.
+    _write(
+        tmp_path,
+        "u_x",
+        "class Behavior(ScriptBehavior):\n"
+        "    def update(self, ctx: Ctx) -> float:\n"
+        "        return float('nan')\n",
+    )
+    node = _FakeNode([_u("u_x")])
+    node.uniform_values["u_x"] = 0.0
+    eng = _engine(tmp_path, node)
+    eng.tick("n0", node, _ctx(0.0))
+    assert node.uniform_values["u_x"] == 0.0  # frozen
+    assert eng.errors[("n0", "u_x")].kind == "runtime"
+
+
+def test_import_gives_actionable_message(tmp_path: Path) -> None:
+    # A reflexive `import math` must not leak CPython's cryptic "__import__ not found" — the curated
+    # namespace seeds a friendly ImportError pointing at the pre-loaded math vocab.
+    _write(
+        tmp_path,
+        "u_x",
+        "import math\n"
+        "class Behavior(ScriptBehavior):\n"
+        "    def update(self, ctx: Ctx) -> float:\n"
+        "        return 0.5\n",
+    )
+    node = _FakeNode([_u("u_x")])
+    eng = _engine(tmp_path, node)
+    err = eng.errors[("n0", "u_x")]
+    assert err.kind == "compile"
+    assert "pre-loaded" in err.message and "__import__ not found" not in err.message
+
+
+def test_chr_ord_available_for_codepoint_text(tmp_path: Path) -> None:
+    # chr/ord are in the curated globals so text can be built by codepoint.
+    _write(
+        tmp_path,
+        "u_t",
+        "class Behavior(ScriptBehavior):\n"
+        "    def update(self, ctx: Ctx) -> Text:\n"
+        "        return Text(chr(65) + chr(66))\n",  # 'AB'
+    )
+    node = _FakeNode([_u("u_t", dim=1, n=8, gl_type=_GL_UNSIGNED_INT)])
+    eng = _engine(tmp_path, node)
+    eng.tick("n0", node, _ctx(0.0))
+    val = node.uniform_values["u_t"]
+    assert val[0] == ord("A") and val[1] == ord("B")
+    assert ("n0", "u_t") not in eng.errors
+
+
+def test_array_nested_tuples_gives_flatten_hint(tmp_path: Path) -> None:
+    # The vecN[M] footgun (a list of tuples) raises a clear flatten hint, not the cryptic
+    # "float() argument must be ... not 'tuple'". A raise in update() is caught as a runtime error.
+    _write(
+        tmp_path,
+        "u_pts",
+        "class Behavior(ScriptBehavior):\n"
+        "    def update(self, ctx: Ctx) -> Array:\n"
+        "        return Array([(0.0, 1.0), (2.0, 3.0)])\n",  # nested, wrong
+    )
+    node = _FakeNode([_u("u_pts", dim=2, n=2)])
+    node.uniform_values["u_pts"] = [(0.0, 0.0), (0.0, 0.0)]
+    eng = _engine(tmp_path, node)
+    eng.tick("n0", node, _ctx(0.0))
+    err = eng.errors[("n0", "u_pts")]
+    assert err.kind == "runtime"
+    assert "flattened" in err.message and "float()" not in err.message
 
 
 def test_conflict_per_uniform_overrides_brain(tmp_path: Path) -> None:

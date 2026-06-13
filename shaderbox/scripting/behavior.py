@@ -49,6 +49,15 @@ class ScriptBehavior:
         raise NotImplementedError
 
 
+def _no_import(*_args: Any, **_kwargs: Any) -> Any:
+    # The curated exec namespace omits __import__, so a bare `import math` would raise the cryptic
+    # "__import__ not found". Seed this instead so the message tells the author what to do.
+    raise ImportError(
+        "imports are not available in a script — the math vocab "
+        "(sin/cos/sqrt/clamp/lerp/.../pi/tau) and math.* are pre-loaded; just use them"
+    )
+
+
 def _build_globals(uniform_name: str) -> dict[str, Any]:
     # The names a script body + its eager method annotations resolve against. `__builtins__`
     # carries `__build_class__` (the `class` statement needs it) — NOT emptied (040's trick fails
@@ -57,6 +66,7 @@ def _build_globals(uniform_name: str) -> dict[str, Any]:
     # No sandbox (a personal IDE; locked posture) — we expose a curated set, not full builtins.
     builtins_ns: dict[str, Any] = {
         "__build_class__": __build_class__,
+        "__import__": _no_import,
         "__name__": f"<u:{uniform_name}>",
         # The scalar return annotation `-> float` / `-> int` resolves these at class-def time
         # (annotations eval eagerly — no `from __future__ import annotations`), so the builtin
@@ -85,6 +95,8 @@ def _build_globals(uniform_name: str) -> dict[str, Any]:
         "frozenset": frozenset,
         "str": str,
         "bytes": bytes,
+        "chr": chr,
+        "ord": ord,
         "sum": sum,
         "sorted": sorted,
         "reversed": reversed,
@@ -281,6 +293,15 @@ class PythonBehavior:
         return self._instance.update(ctx)
 
 
+def _all_finite(coerced: object) -> bool:
+    # coerce_uniform_value yields a number, a tuple/list of numbers, or a list of dim-tuples.
+    if isinstance(coerced, int | float):
+        return math.isfinite(coerced)
+    if isinstance(coerced, list | tuple):
+        return all(_all_finite(v) for v in coerced)
+    return True
+
+
 def coerce_one(value: object, uniform: moderngl.Uniform, error_name: str) -> object:
     # Normalize a raw script value + shape it against the live uniform via the shared coercion. The
     # one coercion atom for BOTH paths (per-uniform's single value, a node-brain's per-key value).
@@ -294,6 +315,16 @@ def coerce_one(value: object, uniform: moderngl.Uniform, error_name: str) -> obj
                 error_name,
                 "runtime",
                 uniform_shape_hint(uniform, gl_type_label(uniform), normalized),
+            )
+        )
+    # NaN/Inf are valid floats to coerce_uniform_value but corrupt the render silently (a black
+    # frame, no error) and would poison last-good. Fold them into the normal frozen-uniform path.
+    if not _all_finite(coerced):
+        raise _RuntimeScriptError(
+            ScriptError(
+                error_name,
+                "runtime",
+                "value is not finite (NaN/Inf) — check for divide-by-zero or an integrator blow-up",
             )
         )
     return coerced
