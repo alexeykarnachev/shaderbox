@@ -8,6 +8,7 @@ released-texture binding errors. Doesn't catch visual bugs.
 Usage: `uv run python scripts/smoke.py` (exit 0 on success, non-zero on failure).
 """
 
+import json
 import shutil
 import sys
 import tempfile
@@ -41,6 +42,23 @@ def _has_gpu_window() -> bool:
     return True
 
 
+_SCRIPTED_SHADER = """#version 460 core
+in vec2 vs_uv;
+uniform float u_wave;
+out vec4 fs_color;
+void main() { fs_color = vec4(vec3(u_wave), 1.0); }
+"""
+
+_SCRIPTED_NODE_JSON = {
+    "canvas_size": [256, 256],
+    "uniforms": {},
+    "ui_state": {
+        "ui_name": "Scripted Wave",
+        "description": "smoke: a script-driven uniform",
+    },
+}
+
+
 def _seed_tmp_project(root: Path) -> Path:
     # A throwaway project seeded with the shipped template nodes — smoke must never read or
     # mutate the tracked projects/dev sandbox.
@@ -49,6 +67,21 @@ def _seed_tmp_project(root: Path) -> Path:
     nodes.mkdir(parents=True)
     for tid in TEMPLATE_ORDER:
         shutil.copytree(NODE_TEMPLATES_DIR / tid, nodes / tid)
+
+    # A node carrying a script-driven uniform (feature 040): the engine ticks it every frame, so
+    # 200 clean frames prove the App-with-a-scripted-node loop doesn't crash. (Engine-correctness
+    # — values/freeze/determinism — is the pure-CPU unit test's job, not smoke's.)
+    scripted = nodes / "scripted"
+    scripted.mkdir()
+    (scripted / "shader.frag.glsl").write_text(_SCRIPTED_SHADER, encoding="utf-8")
+    (scripted / "node.json").write_text(
+        json.dumps(_SCRIPTED_NODE_JSON), encoding="utf-8"
+    )
+    scripts_dir = scripted / "scripts"
+    scripts_dir.mkdir()
+    (scripts_dir / "u_wave.py").write_text(
+        "out.set(0.5 + 0.3 * sin(ctx.t))", encoding="utf-8"
+    )
     return project
 
 

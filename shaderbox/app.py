@@ -854,6 +854,8 @@ class App:
         self.preview_canvas = Canvas()
 
         self.frame_idx = 0
+        # Wall-clock of the previous script-engine tick (feature 040), for the per-frame dt.
+        self.last_tick_time = 0.0
 
         # Project load (GL-free): paths, lib index, nodes + templates, app_state, integrations.
         self.session.load(project_dir)

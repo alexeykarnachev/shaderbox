@@ -12,9 +12,6 @@ import os
 from collections.abc import Iterator
 from pathlib import Path
 
-os.environ.setdefault("MESA_GL_VERSION_OVERRIDE", "4.6")
-os.environ.setdefault("MESA_GLSL_VERSION_OVERRIDE", "460")
-
 import moderngl
 import pytest
 
@@ -34,6 +31,10 @@ void main() {
 
 @pytest.fixture(scope="module")
 def gl_ctx() -> Iterator[moderngl.Context]:
+    # The MESA overrides give the display-less box's V3D driver #version 460 — read at context
+    # creation, so set them here before create_standalone_context (no effect on a desktop driver).
+    os.environ.setdefault("MESA_GL_VERSION_OVERRIDE", "4.6")
+    os.environ.setdefault("MESA_GLSL_VERSION_OVERRIDE", "460")
     ctx = None
     for kwargs in ({"backend": "egl"}, {}):
         try:
@@ -80,7 +81,9 @@ def test_scripted_value_reaches_gpu(gl_ctx: moderngl.Context, tmp_path: Path) ->
     px_a = _pixel(node)
 
     # A different t -> a different u_wave -> a different rendered red channel.
-    eng.tick("n", node, EngineContext(t=1.5708, dt=0.0, frame=1))  # sin(pi/2)=1 -> u_wave≈1.0
+    eng.tick(
+        "n", node, EngineContext(t=1.5708, dt=0.0, frame=1)
+    )  # sin(pi/2)=1 -> u_wave≈1.0
     node.render(u_time=1.5708)
     px_b = _pixel(node)
     assert px_a[0] != px_b[0], "scripted u_wave did not reach the GPU"
@@ -89,7 +92,9 @@ def test_scripted_value_reaches_gpu(gl_ctx: moderngl.Context, tmp_path: Path) ->
         node.release()
 
 
-def test_shape_mismatch_freezes_and_records(gl_ctx: moderngl.Context, tmp_path: Path) -> None:
+def test_shape_mismatch_freezes_and_records(
+    gl_ctx: moderngl.Context, tmp_path: Path
+) -> None:
     scripts_dir = tmp_path / "scripts"
     _write(scripts_dir, "u_wave", "out.set(0.1, 0.2, 0.3)")  # vec3 into a float uniform
     node = _node(gl_ctx)

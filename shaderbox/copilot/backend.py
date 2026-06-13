@@ -684,6 +684,13 @@ class CopilotBackend:
                     error=f"'{name}' is engine-owned (ShaderBox provides its value) — it "
                     "cannot be set; change the shader code if you need different behavior",
                 )
+            if name in self._get_script_driven_uniforms(node_id):
+                return SetUniformResult(
+                    ok=False,
+                    error=f"'{name}' is script-driven (a behavior script computes its value "
+                    "each frame) — a set here would be overwritten next tick; edit the script "
+                    f"at nodes/{node_id}/scripts/{name}.py instead",
+                )
             target = self._get_ui_nodes()[node_id].node
             uniform = next(
                 (u for u in target.get_active_uniforms() if u.name == name), None
