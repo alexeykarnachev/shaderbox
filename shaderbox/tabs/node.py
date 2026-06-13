@@ -198,6 +198,7 @@ def _draw_brain_pill(app: App) -> None:
         "absent": "Create + open a node-brain script (drives many uniforms)",
         "active": "Node-brain active — click to open (toggle on/off in the editor)",
         "inactive": "Node-brain inactive — click to open",
+        "error": "Node-brain error — click to open and fix",
     }[state]
     imgui.begin_disabled(app.copilot_turn_active)
     if script_pill("brain", "brain", state, tooltip=tooltip):

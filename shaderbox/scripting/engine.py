@@ -57,9 +57,10 @@ def _is_disabled(script_path: Path) -> bool:
     return script_path.with_name(script_path.name + _DISABLED_SUFFIX).is_file()
 
 
-# The per-row / node-header script pill's three states (045): no file / present+ticking /
-# present+toggled-off. Read off disk by ProjectSession.script_state_for.
-ScriptState = Literal["absent", "active", "inactive"]
+# The per-row / node-header script pill's states (045): no script / driving the slot /
+# present-but-toggled-off / present-but-erroring. Resolved by ProjectSession.script_state_for
+# (disk presence + the engine's brain-driven set + recorded errors).
+ScriptState = Literal["absent", "active", "inactive", "error"]
 
 
 def _resolved_pairs(binding_key: str, raw: object) -> Iterable[tuple[str, object]]:

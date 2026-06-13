@@ -33,9 +33,10 @@ TABBED, Python-highlighted code editor (an `EditorTab` list replaced the single-
 active = value widget disabled / type pill live; inactive persists via a by-filename `<file>.disabled` marker
 the engine skips; script errors render through the SAME shader-error strip. The curated math `exec` globals
 were stripped (a script is plain Python — `import math`); stub docstrings re-scoped. Pre+post adversarial
-review swarms converged; `make check` + 467 tests green (smoke self-skips headless on the Pi). The dead
-042 affordances (`script_chip`/`notice_strip`/`confirm_delete_popup`/`reset_state_button` + the right-click
-menu + brain strip + OS-editor launch) are gone.
+review swarms + a 31-agent ultracode UX-gap audit converged — the audit caught (and the same wave fixed) a
+brain-driven-row regression (a uniform the node-brain drives now shows an active/error pill + a locked
+widget, not a misleading `+ script` over a live-fighting slider), a `flush_current_editor` crash, and a
+tab-bar overflow. `make check` + 475 tests green (smoke self-skips headless on the Pi).
 **NEXT: feature 043 — copilot WRITE-BEHAVIOR** (the agent authors `u_*.py`/`script.py` scripts). Before
 plan-locking it, fold the `todo.md` checkpoint deferral: a script-write tool must capture into the active
 turn-rollback checkpoint (a `_capture_script` seam) or the write escapes undo. **No open BLOCKERs.** 045's

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from imgui_bundle import imgui
+from imgui_bundle import imgui, imgui_ctx
 from imgui_bundle import imgui_color_text_edit as text_edit
 
 from shaderbox.app import App
@@ -25,42 +25,66 @@ def _tab_label(app: App, tab: EditorTab) -> str:
     return tab.path.name
 
 
-def _draw_tab_bar(app: App) -> None:
-    # The editor's tab bar (045): one button per open file, the active one accent-filled, each with
-    # a close `x`. FPE-safe (plain imgui, no TextEditor.render), so it draws even behind a modal.
-    close_index: int | None = None
-    for i, tab in enumerate(app.editor_tabs):
-        if i > 0:
-            imgui.same_line(spacing=float(SPACE.XS))
-        if toggle_button(
-            f"{_tab_label(app, tab)}##tab_{i}", active=i == app.active_tab_index
-        ):
-            app.set_active_tab(i)
-        imgui.same_line(spacing=0.0)
-        if ghost_button(f"x##tabclose_{i}"):
-            close_index = i
-    if close_index is not None:
-        app.close_tab(close_index)
+def _draw_tab_row(app: App) -> None:
+    # The editor's tab row (045): a horizontally-scrolling strip of file tabs on the left + the
+    # active script's enable/disable toggle pinned right. The tabs live in a scroll child so a long
+    # open-set (the spring-pendulum workflow opens 10+) never clips a tab's close `x` off-screen.
+    # FPE-safe (plain imgui, no TextEditor.render), so it draws even behind a modal.
+    toggle_w = _script_toggle_width(app)
+    strip_w = max(0.0, imgui.get_content_region_avail().x - toggle_w)
+    with imgui_ctx.begin_child(
+        "##editor_tabs",
+        size=imgui.ImVec2(strip_w, imgui.get_frame_height()),
+        window_flags=imgui.WindowFlags_.horizontal_scrollbar
+        | imgui.WindowFlags_.no_scroll_with_mouse,
+    ):
+        close_index: int | None = None
+        for i, tab in enumerate(app.editor_tabs):
+            if i > 0:
+                imgui.same_line(spacing=float(SPACE.XS))
+            if toggle_button(
+                f"{_tab_label(app, tab)}##tab_{i}", active=i == app.active_tab_index
+            ):
+                app.set_active_tab(i)
+            imgui.same_line(spacing=0.0)
+            if ghost_button(f"x##tabclose_{i}"):
+                close_index = i
+        if close_index is not None:
+            app.close_tab(close_index)
+    if toggle_w > 0.0:
+        imgui.same_line()
+        _draw_script_toggle(app)
+
+
+def _script_toggle_width(app: App) -> float:
+    # The width the enable/disable toggle reserves at the right of the tab row — 0 when the active
+    # tab isn't a script (no toggle drawn).
+    tab = app.active_tab
+    if tab is None or tab.kind not in ("node_script", "uniform_script"):
+        return 0.0
+    return SIZE.BTN_SM_W * 1.4 + float(SPACE.SM)
 
 
 def _draw_script_toggle(app: App) -> None:
-    # The active/inactive control (045): top-right of the editor, shown only for a script tab. The
-    # one place enable/disable lives — the row/header pill only opens. Frozen mid-copilot-turn.
+    # The active/inactive control (045): pinned right of the tab row, shown only for a script tab.
+    # The one place enable/disable lives — the row/header pill only opens. Frozen mid-copilot-turn.
     tab = app.active_tab
     if tab is None or tab.kind not in ("node_script", "uniform_script"):
         return
-    active = app.session.script_state_for(tab.node_id, tab.name) == "active"
-    label = "active" if active else "inactive"
-    width = SIZE.BTN_SM_W * 1.4
-    imgui.same_line(imgui.get_content_region_avail().x - width)
+    # Enabled = applied (active or error-frozen, both have NO `.disabled` marker); only `inactive`
+    # is off. An erroring script is still ON — the toggle mustn't read it as disabled.
+    enabled = app.session.script_state_for(tab.node_id, tab.name) != "inactive"
+    label = "active" if enabled else "inactive"
     imgui.begin_disabled(app.copilot_turn_active)
-    if toggle_button(f"{label}##script_toggle", active=active, width=width):
-        app.set_script_active(tab.node_id, tab.name, not active)
+    if toggle_button(
+        f"{label}##script_toggle", active=enabled, width=SIZE.BTN_SM_W * 1.4
+    ):
+        app.set_script_active(tab.node_id, tab.name, not enabled)
     imgui.end_disabled()
     if imgui.is_item_hovered():
         imgui.set_tooltip(
             "Script is applied — click to disable"
-            if active
+            if enabled
             else "Script is off — click to apply"
         )
 
@@ -181,10 +205,9 @@ def draw(app: App) -> None:
     app.code_hovered_uniform = ""
     ui_node = app.ui_nodes.get(app.current_node_id)
 
-    # The tab bar + the script-toggle are plain imgui (no TextEditor.render), so they draw even
+    # The tab row (tabs + the script-toggle) is plain imgui (no TextEditor.render), so it draws even
     # behind a modal — only the editor render + error strip are FPE-gated below.
-    _draw_tab_bar(app)
-    _draw_script_toggle(app)
+    _draw_tab_row(app)
 
     tab = app.active_tab
     current_path = app.current_editor_path

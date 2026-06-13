@@ -185,12 +185,24 @@ def script_pill(id_: str, label: str, state: ScriptState, *, tooltip: str = "") 
     """The one shared script affordance (feature 045) — the per-uniform row's trailing control
     AND the node-header node-brain control. A text pill (no icon): `absent` is a bordered ghost
     (`+ {label}`), `active` is accent-filled (the at-a-glance "this is script-driven" cue),
-    `inactive` is the same pill faded. Click ALWAYS opens (creating first if absent) the script in
-    the editor — it never toggles; enable/disable lives on the editor's tab. Returns True on click."""
-    text = f"+ {label}" if state == "absent" else label
+    `inactive` is the same pill faded, `error` is filled the error colour (the script is bound but
+    a compile/run failure froze it — surfaced on the row, not only inside the editor). Click ALWAYS
+    opens (creating first if absent) the script in the editor — it never toggles; enable/disable
+    lives on the editor's tab. Returns True on click."""
+    text = (
+        f"+ {label}"
+        if state == "absent"
+        else f"! {label}"
+        if state == "error"
+        else label
+    )
     imgui.push_style_var(imgui.StyleVar_.frame_rounding, float(SIZE.CHIP_ROUNDING))
     if state == "absent":
         clicked = toggle_button(f"{text}##script_pill_{id_}", active=False)
+    elif state == "error":
+        clicked = pill_button(
+            f"{text}##script_pill_{id_}", color=COLOR.STATE_ERROR, active=True
+        )
     else:
         clicked = pill_button(
             f"{text}##script_pill_{id_}",

@@ -441,15 +441,43 @@ class ProjectSession:
         return self.paths.scripts_dir_for(node_id) / filename
 
     def script_state_for(self, node_id: str, name: str | None) -> ScriptState:
-        # The UI pill's three states (045), read off the disk (NOT the live engine binding, so it is
-        # correct the instant a toggle/create lands, before the next reload poll): no file -> absent;
-        # a `<file>.disabled` sibling -> inactive; else active.
+        # The state of THIS script file (the node-brain when name is None, else `u_<name>.py`) for the
+        # node-header brain pill + the editor toggle. Disk presence (so a toggle/create lands instantly,
+        # before the next reload) + the engine's recorded error for this file: no file -> absent; a
+        # `.disabled` sibling -> inactive; a compile/run error on the binding -> error; else active.
         path = self.script_path_for(node_id, name)
         if not path.is_file():
             return "absent"
         if path.with_name(path.name + ".disabled").is_file():
             return "inactive"
+        key = (node_id, "script.py" if name is None else name)
+        if key in self.script_engine.errors:
+            return "error"
         return "active"
+
+    def uniform_pill_state(self, node_id: str, name: str) -> ScriptState:
+        # The per-uniform ROW pill's state. An own `u_<name>.py` (active/inactive/error) is the user's
+        # explicit per-uniform intent, so it ALWAYS shows — even an inactive override shadowing a brain
+        # reads "inactive" (the user sees their disabled file, can re-open it; `is_uniform_script_owned`
+        # separately keeps the widget locked since the brain still owns the value). Only an ABSENT own
+        # file falls through to the brain: if the brain drives the name the pill reads "active" (or
+        # "error" if that key froze). A brain-driven row is NEVER "absent" — that was the 045 regression.
+        own = self.script_state_for(node_id, name)
+        if own != "absent":
+            return own
+        if name in self.script_engine.script_driven_uniforms(node_id):
+            return "error" if (node_id, name) in self.script_engine.errors else "active"
+        return "absent"
+
+    def is_uniform_script_owned(self, node_id: str, name: str) -> bool:
+        # Whether a script (own file OR the node-brain) currently owns this uniform's value, so the
+        # row must disable the value widget + skip the manual write-back (the engine writes it each
+        # tick). An ACTIVE/error own file owns it; so does the brain whenever it drives the name —
+        # even under an inactive own override (the override is off, the brain has the slot).
+        own = self.script_state_for(node_id, name)
+        if own in ("active", "error"):
+            return True
+        return name in self.script_engine.script_driven_uniforms(node_id)
 
     def set_script_active(self, node_id: str, name: str | None, active: bool) -> None:
         # Toggle a script's active/inactive bit by creating/removing its `<file>.disabled` sibling

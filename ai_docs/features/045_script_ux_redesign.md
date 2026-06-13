@@ -257,4 +257,28 @@ strip-height capped), architecture PARTIAL. Triage of the PARTIAL:
   `begin_disabled`'d but the pills weren't; wrapped both in `begin_disabled(copilot_turn_active)` so the
   freeze reads visually, matching the toggle.
 
-`make check` + 467 tests green after the fixes.
+`make check` + 467 tests green after the fixes. Shipped as commit e2dffd0.
+
+**Ultracode UX-gap audit (31 agents, 2026-06-13, post-commit e2dffd0).** A second, deeper swarm hunted the
+specific class the maintainer flagged — UI/UX holes 045 might be deferring the way 042 did. It found the
+redesign HAD reintroduced that class, and a fix wave closed it (re-review swarm PASS):
+
+- **Shared-root regression (the main one): the per-row pill was blind to brain-driven + error.** The pill
+  read the disk-only own-file state, so a uniform driven by the NODE-BRAIN (no own file — the DEFAULT the
+  instant a brain is created, since `brain_stub_for` seeds every scriptable uniform) showed a misleading
+  `+ script` pill AND kept its value widget editable (the brain rewrote it each tick → user drags snapped
+  back). The engine already knew the truth (`script_driven_uniforms` includes brain keys; `errors`); the UI
+  never asked. Fix: a brain+error-aware `ProjectSession.uniform_pill_state` + `is_uniform_script_owned` (the
+  pill reflects the own-file intent incl. inactive; the widget-lock independently respects the brain) + an
+  `"error"` state on `script_pill` / `ScriptState` (a broken script/brain shows a red `! script` / `! brain`
+  pill on the row + header, not only inside the editor — replacing 042's deleted per-row error line + brain
+  strip, the discoverability 045 had dropped).
+- **`flush_current_editor` KeyError (crash):** `ui_nodes[current_node_id]` was unguarded — Ctrl+S/quit with
+  a dirty lib/script tab while all nodes are deleted (`current_node_id == ""`) crashed. Guarded with the
+  sibling `ui_nodes.get` pattern.
+- **Editor tab-bar overflow:** the flat `same_line` strip clipped tabs (+ their close `x`) off-screen past
+  ~3-4 tabs. Wrapped in a horizontal-scroll child with the enable/disable toggle pinned right.
+- **Audited clean:** the rest of the tab lifecycle, `ensure_shader_tab` coverage, the `__builtins__` exec
+  semantics, the disable→enable mtime race, and the bare-math migration (100%) — all verified solid.
+- 8 new `test_uniform_pill_state.py` tests pin the brain-driven / error / inactive-shadow row states;
+  `make check` + 475 tests green.

@@ -13,6 +13,7 @@ from shaderbox.constants import MEDIA_EXTENSIONS
 from shaderbox.core import UniformValue
 from shaderbox.editor_types import HoverMark, JumpRequest
 from shaderbox.media import MediaWithTexture, Video, media_class_for
+from shaderbox.scripting import ScriptState
 from shaderbox.shader_errors import find_uniform_declaration_line
 from shaderbox.theme import SIZE, SPACE
 from shaderbox.ui_models import UIUniform
@@ -133,19 +134,21 @@ def _count_suffix(ui_uniform: UIUniform, current_value: UniformValue) -> str:
     return ""
 
 
-def _draw_script_pill(app: App, ui_uniform: UIUniform) -> None:
-    # The trailing per-row script affordance (045): one text pill that creates+opens (absent),
-    # opens (active/inactive) the uniform's script. Drawn only for a scriptable uniform; the
-    # accent fill on `active` is the at-a-glance "this row is script-driven" cue.
+def _draw_script_pill(app: App, ui_uniform: UIUniform, state: ScriptState) -> None:
+    # The trailing per-row script affordance (045): one text pill keyed on the uniform's full row
+    # state (its own `u_<name>.py` OR — when it has none — the node-brain that drives it). Drawn only
+    # for a scriptable uniform; the accent/error fill is the at-a-glance "this row is script-driven"
+    # cue. Click opens the OWN script (creating it if absent), even for a brain-driven row (the user
+    # can attach a per-uniform override — it wins over the brain per the 044 conflict rule).
     name = ui_uniform.name
     node_id = app.current_node_id
     if not app.is_uniform_scriptable(node_id, name):
         return
-    state = app.session.script_state_for(node_id, name)
     tooltip = {
         "absent": "Create + open a script for this uniform",
-        "active": "Script active — click to open (toggle on/off in the editor)",
+        "active": "Script-driven — click to open (toggle on/off in the editor)",
         "inactive": "Script inactive — click to open",
+        "error": "Script error — click to open and fix",
     }[state]
     imgui.same_line()
     imgui.begin_disabled(app.copilot_turn_active)
@@ -163,15 +166,17 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
     name = ui_uniform.name
     hidden = f"##{name}"
 
-    # A script ACTIVELY driving this uniform owns its value — the engine writes it each tick. The
-    # type pill stays live (the type is only a VIEW), but the value widget is disabled (a live
-    # control would fight the tick) and the write-back is skipped. An INACTIVE/absent script row
-    # is fully manual.
-    active = app.session.script_state_for(app.current_node_id, name) == "active"
+    # The row's script state for the pill + whether a script OWNS the value (own `u_<name>.py` OR the
+    # node-brain). An owned slot is written each tick, so the value widget is disabled (a live control
+    # would fight the tick) and the write-back skipped — the type pill stays live (the type is only a
+    # VIEW). Owned and pill-state are separate queries: a disabled own override shadowing an active
+    # brain shows the "inactive" pill (the user's choice) but stays locked (the brain owns the value).
+    state = app.session.uniform_pill_state(app.current_node_id, name)
+    owned = app.session.is_uniform_script_owned(app.current_node_id, name)
 
     draw_input_type_selector(ui_uniform)
     _begin_ctrl(app, name, _count_suffix(ui_uniform, current_value))
-    imgui.begin_disabled(active)
+    imgui.begin_disabled(owned)
 
     if ui_uniform.input_type == "auto":
         if isinstance(current_value, float | int):
@@ -284,9 +289,9 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
             new_value = fn(hidden, list(current_value), change_speed)[1]
 
     imgui.end_disabled()
-    _draw_script_pill(app, ui_uniform)
+    _draw_script_pill(app, ui_uniform, state)
 
-    # An active script owns the value (the widget was disabled); never write its unchanged return.
-    if new_value is not None and not active:
+    # A script owns the value (the widget was disabled); never write its unchanged return.
+    if new_value is not None and not owned:
         try_to_release(current_value)
         ui_node.node.uniform_values[ui_uniform.name] = new_value

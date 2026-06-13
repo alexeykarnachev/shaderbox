@@ -1093,9 +1093,13 @@ class App:
         if session is None or not self.is_current_editor_dirty():
             return
         node_id = self.current_node_id
-        node = self.ui_nodes[node_id].node
         text = session.editor.get_text()
-        if session.source.path == node.source.path:
+        # The shader-save branch only applies when the active tab IS the current node's shader. A
+        # lib / script tab (or no current node — all nodes deleted, id "") falls to the disk-write
+        # else (no `ui_nodes[node_id]` lookup, which would KeyError on the empty id).
+        ui_node = self.ui_nodes.get(node_id)
+        if ui_node is not None and session.source.path == ui_node.node.source.path:
+            node = ui_node.node
             # Saving the node's own shader: replace its source, drop the program; the next
             # render's compile() picks up the new text + re-resolves.
             node.release_program(text)
