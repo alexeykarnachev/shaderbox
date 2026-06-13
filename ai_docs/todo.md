@@ -31,18 +31,16 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
 
 ---
 
-## [DEFERRAL] script UI/UX is a PLACEHOLDER — the affordance design is the next wave (post-042)
-- **Trigger:** the NEXT scripting feature, before anything else — the maintainer flagged the 042 UX as
-  "absolutely awful". Pick this up before 043 (copilot write-behavior) or any further script work.
-- 042 shipped the MACHINERY (engine accessors, the 5 reusable primitives, create/detach/reset/mouse
-  wiring) behind a deliberately-minimal, weak UI. The known discoverability gap: an undriven uniform has
-  NO visible affordance — "Make scriptable" hides behind a right-click on the name cell (with only a dim
-  hint line), and `script_chip`'s `none` state draws nothing (042 decision 5 parked it as "reserved for a
-  future explicit affordance"). The maintainer has a concrete redesign vision (incoming). The primitives
-  to reshape: `script_chip` (an always-visible attach affordance?), the per-row context menu vs an inline
-  control, the brain strip layout, the error surfacing. ALL the back-end verbs already exist — this wave is
-  pure UI/UX over the done machinery. Spec: `ai_docs/features/042_script_ui.md` (the cut/`could` items +
-  the open-question defaults are the starting point); reshape there or open a 042b/045 spec.
+## [DEFERRAL] feature 045 — script UX redesign (SPEC DRAFT written, not plan-locked)
+- **Trigger:** the NEXT scripting work, before anything else — the maintainer judged 042's UX poor. Pick
+  this up before 043 (copilot write-behavior) or any further script work.
+- The maintainer's full design vision is captured in `ai_docs/features/045_script_ux_redesign.md` (a
+  detailed DRAFT from a design voice message). 042 shipped the MACHINERY (engine accessors + verbs); 045
+  rebuilds the UI over it + two backend changes (stub docstrings; strip the curated math `exec` globals).
+  **FIRST resume step: a LARGE review swarm to collect all code requirements/details** (the draft's
+  closing section lists what it deliberately left for the swarm), THEN plan-lock the 8 open questions
+  (central: the script-control state machine — view-while-inactive / disable-while-active), THEN the usual
+  dev flow. The implementation will happen HEADLESS, so the spec is written exhaustively.
 
 ## [DEFERRAL] copilot turn-rollback: a NEW mutating tool must register with the checkpoint
 - **Trigger:** before plan-locking any feature that adds a new MUTATING copilot tool (one that

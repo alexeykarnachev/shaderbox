@@ -25,26 +25,28 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-06-13 (042 MACHINERY done + reviewed + pushed on `dev`; next is the script UI/UX redesign). -->
+<!-- As of 2026-06-13 (042 machinery done+pushed; 045 SPEC DRAFT written; next = 045 review swarm). -->
 **042 SCRIPT UI machinery DONE + pushed on `dev`** (unreleased; last release v0.15.0). The headless script
-engine (041 per-uniform + 044 node-brain) is now surfaced in the Node tab: script-driven uniform rows show a
-chip + read-only live value + a per-row error line; a node-brain strip carries the `(node_id, "script.py")`
-sentinel error + the homeless soft-key errors; creation (`stub_for` / new `brain_stub_for` — the one engine
-gap 044 left), restart (`reset_script`), and detach-to-trash are wired; `ctx.mouse` reads the cursor over the
-preview live + freezes at `EXPORT_MOUSE` on export. 5 reusable primitives added (`script_chip`, `notice_strip`,
-`confirm_delete_popup`, `reset_state_button`, `item_normalized_mouse`). Converged through brainstorm-swarm →
-2-agent pre-impl → 3-agent post-impl review (all findings fixed: broken-brain detach, per-uniform detach
-confirm-gate, empty-menu suppress, chip tooltip, Open-in-editor); `make check` clean, `make smoke` green
-(brain node seeded), all script-engine tests pass. **BUT the UI/UX is a deliberate PLACEHOLDER and the
-maintainer flagged it as poor** — the visible affordances are weak (an undriven uniform's "Make scriptable"
-hides behind a right-click; `script_chip none` draws nothing). **NEXT: the script UI/UX REDESIGN** (the
-maintainer has a concrete vision incoming) — pure UI over the done machinery; see `todo.md` "[DEFERRAL]
-script UI/UX is a PLACEHOLDER". Then 043 copilot write-behavior. **No open BLOCKERs.**
+engine (041 per-uniform + 044 node-brain) is surfaced in the Node tab (chips + per-row error + node-brain
+strip + creation/restart/detach + `ctx.mouse`); reviewed (brainstorm → pre/post-impl swarms, all findings
+fixed); `make check`/`make smoke`/tests green. **The UI/UX is a deliberate PLACEHOLDER the maintainer
+judged poor** — so it ships `partial` and the redesign is the next wave.
+**NEXT: feature 045 — script UX REDESIGN.** A detailed SPEC DRAFT exists
+(`ai_docs/features/045_script_ux_redesign.md`), captured from the maintainer's design voice message:
+remove the right-click menu + the `py` chip + the OS-editor launch + the three-dots brain item; add a
+VISIBLE per-row script control (after the uniform widget) + a mirrored node-header brain control; edit ALL
+scripts in OUR code editor with a multi-TAB bar; when a script is active disable the value widget but keep
+the type pill; add a DISABLED-but-present script state; rework stub docstrings (method/class/init scoping);
+STRIP the curated math globals so a script is plain Python (`import math`). **045 is NOT plan-locked — its
+FIRST step on resume is a LARGE review swarm to collect code requirements, THEN the usual dev flow.** It
+carries 8 OPEN QUESTIONS (central one: the script-control state machine — view-while-inactive /
+disable-while-active). Then 043 copilot write-behavior. **No open BLOCKERs.**
 
 ## Features
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 045 | script_ux_redesign | pending | The script UX redesign over 042's machinery (maintainer judged 042's UI poor). Removes the right-click menu + `py` chip + OS-editor launch + the three-dots brain item; adds a visible per-row script control (after the uniform widget) + a mirrored node-header brain control; edits all scripts in OUR code editor with a multi-tab bar; disables the value widget but keeps the type pill when a script is active; adds a DISABLED-but-present script state; reworks stub docstrings; strips the curated math `exec` globals (script = plain Python, `import math`). **SPEC DRAFT, not plan-locked** — first step is a large review swarm to collect code requirements, then the dev flow; 8 open questions (central: the script-control state machine). Spec: `ai_docs/features/045_script_ux_redesign.md`. |
 | 042 | script_ui | partial | Surfaces the headless script engine (041/044) in the Node tab: script-driven rows get a chip + read-only live value + a per-row error line; a node-level node-brain strip carries the `(node_id, "script.py")` sentinel error + the homeless soft-key errors; creation (`stub_for` + new engine `brain_stub_for`), restart (`reset_script`), detach-to-trash, and `ctx.mouse` (live over the preview, `EXPORT_MOUSE`-frozen on export) are all wired; 5 reusable ui_primitives added. Machinery DONE + reviewed (brainstorm-swarm → pre/post-impl review, all findings fixed) + `make check`/`make smoke`/tests green. **partial:** the UI/UX is a deliberate placeholder (weak discoverability — flagged poor); the affordance REDESIGN is the next wave (`todo.md` "[DEFERRAL] script UI/UX is a PLACEHOLDER"). Spec: `ai_docs/features/042_script_ui.md`. |
 | 044 | node_brain_script | done | A SECOND, parallel scripting path beside 041's per-uniform script: one file `nodes/<id>/scripts/script.py` whose `update(self, ctx) -> dict[str, <typed output>]` drives MANY uniforms from ONE stateful instance (kills the physics-copy-paste across per-uniform files; models a game object — the dogfood spring-pendulum needed its Verlet step duplicated into 4 files). Shares the 041 core NATIVELY via a value-map seam: `PythonBehavior.compute` split into `run(ctx)` (cardinality-agnostic) + a free `coerce_one`; the engine fans out to a `(uniform_name, raw)` pair stream — per-uniform is the 1-entry case, node-brain is `dict.items()`. Dispatch by FILENAME (`script.py` vs `u_*.py`), conflict = TWO-PASS write order (brain first, `u_<name>.py` overwrites). Headless engine only (UI is 042); verified on the Pi's V3D (77 CPU+GL tests + a pendulum dogfood render, cold export) + a 3-agent post-impl review. Spec: `ai_docs/features/044_node_brain_script.md`. |
 | 041 | stateful_script_engine | done | Redesigned the 040 engine contract (before 040 shipped) to a STATEFUL CLASS: a script is `class Behavior(ScriptBehavior)` with `update(self, ctx) -> <typed output>`, so per-instance state (`self.*`) persists across frames — the reason CPU scripting exists. Outputs are direct GLSL pairs (bare number for a scalar; `Vec2/3/4`/`Array`/`Text` for the shaped kinds, new `scripting/outputs.py` leaf) validated via `uniform_coerce`; `ctx` is `t/dt/frame` (no more `out.set`, `ctx.state`, `ctx.uniforms`). Export ticks a FRESH per-export instance (structural — `Node.render_media` enters an injected `export_isolation` factory, bypass-proof) so a live-warmed integrator's export starts clean, folding in old-042 state-scripts + resolving the 040 export double-tick. Body `exec`'d verbatim (errors at the user line); broken → freeze last-good as data. Converged through pre/post-impl review + two ultracode review swarms; verified on the Pi's V3D (pure-CPU + GL tests, smoke, dogfood determinism + export-isolation interleave). Spec: `ai_docs/features/041_stateful_script_engine.md`. |
