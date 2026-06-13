@@ -45,33 +45,27 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   durable file the checkpoint does NOT snapshot today — it must `_capture_node`-equivalent the script
   file (or a new `_capture_script` seam) into the active checkpoint, else a script write escapes undo.
 
-## [DEFERRAL] script-engine type-change / orphan cleanup UI (feature 040)
-- **Trigger:** feature 041 (the in-app script editor) — that's where the detach/cleanup affordance
+## [DEFERRAL] script-engine type-change / orphan cleanup UI (feature 042)
+- **Trigger:** feature 042 (the in-app script editor) — that's where the detach/cleanup affordance
   lands. OR a maintainer reports a stuck per-tick `ScriptError` after changing a scripted uniform's
   TYPE in the shader (`vec2 u_x` -> `vec3 u_x`) or deleting it, and wants more than the logged warning.
-- Binding is by FILENAME (decision 6), so changing a scripted uniform's type keeps the file bound but
-  the script's value no longer fits the new shape -> a coercion `ScriptError` every tick (value frozen
-  at last-good); deleting the uniform leaves an orphan script that `reload` warns about (logged) and
-  ignores. v1 resolves + WARNS only — no UI to detach/delete a stale script. The editor at 041 owns the
-  full affordance (and the "this uniform is script-driven" slider indicator deferred from decision 5).
-  Spec: `ai_docs/features/040_uniform_script_engine.md ## Out of scope`.
+- Binding is by FILENAME, so changing a scripted uniform's type keeps the file bound but the script's
+  returned `update` value no longer fits the new shape -> a coercion `ScriptError` every tick (value
+  frozen at last-good); deleting the uniform leaves an orphan script that `reload` warns about (logged)
+  and ignores. v1 (041) resolves + WARNS only — no UI to detach/delete a stale script. The editor at 042
+  owns the full affordance (and the "this uniform is script-driven" row indicator). Spec:
+  `ai_docs/features/041_stateful_script_engine.md ## Out of scope`.
 
-## [DEFERRAL] script-engine phase-A (state scripts) + the A->B ordering invariant (feature 042)
-- **Trigger:** feature 042 (state-evolution scripts -> enables pong). Before 042 lands, the
-  phase-A->B ordering invariant must be documented: phase A mutates `ctx.state`; phase B reads it;
-  BOTH run before `Node.render`. v1 runs phase B only (A is a stub, no state objects).
-- The engine shape already reserves it: `EngineContext.state`/`mouse`/`uniforms` exist (v1-empty),
-  `ScriptEngine.state` is the shared phase-A scratchpad, and `tick` has the two-phase comment.
-  `u_mouse` (system input) wires at 041. Spec: `ai_docs/features/040_uniform_script_engine.md`
-  decisions 1 + Out-of-scope.
-- KNOWN (post-impl review): a `ctx.uniforms`-reading INTEGRATOR (the runnable-today path-dependent
-  pattern) gets an EXTRA live `session.tick` when you Render — `ui.py`'s top-of-frame tick fires on
-  the same frame the deferred export encode runs, so the export's frame-0 starting value is advanced
-  by one wall-clock `dt` step. `ctx.t`-pure scripts are IMMUNE (the export tick fully overwrites — the
-  determinism guarantee, decision 1). This is the same path-dependence decision 1 already accepts for
-  integrators; when 042 makes stateful scripts first-class, the export entry must tick from a clean
-  per-export engine state for that node (don't inherit the live frame's tick) to make integrator
-  export reproducible.
+## [DEFERRAL] script-engine cross-uniform shared state + compute-order guarantee (feature 042+)
+- **Trigger:** a real workflow needs TWO scripts to share mutable state (one writes, another reads —
+  e.g. a pong physics script writes the ball position, a render script reads it), OR a script depends on
+  another binding's SAME-FRAME output and the stable-by-name tick order isn't enough.
+- 041 made per-instance state (`self.*`) first-class, which covers the per-uniform case (a pong ball's
+  physics lives in ONE behavior). There is NO shared channel and NO cross-binding order guarantee: a
+  node's bindings tick in a stable name-sorted order, but binding A is not promised to run before B. The
+  old-040 `ctx.state` shared dict + phase-A/B split was REMOVED (instance state replaced it). When this
+  fires, add a deliberate shared channel (NOT a dict smuggled back into `ctx`) with an explicit
+  read/write phase order. Spec: `ai_docs/features/041_stateful_script_engine.md ## Out of scope`.
 
 ## [DEFERRAL] copilot non-current-node-edit confirm-gate (the targeting structural backstop)
 - **Trigger:** a trace shows the agent STILL mis-targeting a node by name-association AFTER the

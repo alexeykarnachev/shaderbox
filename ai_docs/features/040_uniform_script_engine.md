@@ -1,5 +1,15 @@
 # Feature 040 — CPU-script engine (uniform-compute scripts)
 
+> **CONTRACT SUPERSEDED by feature 041 (2026-06-13).** The engine CONTRACT here — body-only Python with
+> `out.set(...)` — was replaced by 041's STATEFUL-CLASS model (`class Behavior(ScriptBehavior)` with
+> `update(self, ctx) -> <typed output>`; per-instance state) before 040 ever shipped publicly (last
+> release v0.15.0). The `out.set()` body design is gone. The surrounding ARCHITECTURE is RETAINED by 041:
+> headless `ProjectSession` ownership, binding-by-filename, error-as-data freeze, export-routes-through-the-tick,
+> the `Behavior`-backend language seam, and the `uniform_coerce` hoist. 040 is the origin spec; read
+> `ai_docs/features/041_stateful_script_engine.md` for the live contract. The "feature 041 (= the in-app
+> editor/UI)" references below now mean feature **042** (the UI was renumbered when 041 became the engine
+> redesign). This document is kept for the design history; the decisions still in force are re-stated in 041.
+
 > Status: IMPLEMENTED (2026-06-13) — landed in 5 commits on `dev` (`9924d58`..`c5c2d0a`) + a
 > post-impl review-fix commit (`034db20`); NOT yet shipped (last release is v0.15.0). v1 = the engine
 > ONLY, headless, no in-app UI. Scripts are hand-placed on disk + hot-reloaded; verified by pure-CPU

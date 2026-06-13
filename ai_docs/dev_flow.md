@@ -165,18 +165,24 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   `RevertExecutor` cluster). Imports no imgui/glfw, creates no window/context — a headless harness
   (feature 026) constructs it on a standalone EGL context without `App`. UI reactions ride injected
   `on_*` callbacks (the seam + why a return-value seam is wrong: `conventions.md ## Design decisions`,
-  the `ProjectSession` bullet). Feature 025. Owns the `ScriptEngine` (feature 040) + drives its
-  `tick`/`reload_scripts`.
-- **`scripting/`** — the headless CPU-script engine (feature 040): a uniform carries a per-tick
-  body-only Python script (`nodes/<id>/scripts/u_<name>.py`, `out.set(...)`). `context.py`
-  (`EngineContext`), `errors.py` (`ScriptError`), `behavior.py` (`Behavior` protocol + `PythonBehavior`
-  + `UniformOut` + the math namespace + the verbatim `exec` seam), `engine.py` (`ScriptEngine`: per-node
-  registry, `(path,mtime)` cache, resolve/orphan-warn, the two-phase `tick`). Imports no imgui/glfw/App
-  and no concrete `Node` (works against the `EngineNode` protocol). `ProjectSession` owns it; `ui.py`
-  ticks live, the export path ticks via `Node.on_pre_render`.
+  the `ProjectSession` bullet). Feature 025. Owns the `ScriptEngine` (feature 041) + drives its
+  `tick`/`reload_scripts`/`reset_script` + injects each Node's `export_isolation` factory.
+- **`scripting/`** — the headless CPU-script engine (feature 041, redesigning 040): a uniform carries a
+  per-tick STATEFUL behavior CLASS (`nodes/<id>/scripts/u_<name>.py` = `class Behavior(ScriptBehavior)`
+  with `update(self, ctx) -> <output>`; per-instance `self.*` state persists across frames). `context.py`
+  (`EngineContext`/`Ctx`, `t/dt/frame`), `errors.py` (`ScriptError`), `outputs.py` (the typed returns:
+  `Vec2/3/4` tuple-subclasses + `Array`/`Text` + `normalize_output` → coercion), `behavior.py`
+  (`ScriptBehavior` base + `Behavior` protocol + `PythonBehavior` — the curated-globals `exec` seam,
+  subclass resolve, instance hold, `compute`) , `engine.py` (`ScriptEngine`: per-node registry,
+  `(path,mtime)` cache + cached source, resolve/orphan-warn, `tick`/`tick_behaviors`, `reset`,
+  `fresh_behaviors_for`, `stub_for`, `is_scriptable`). Imports no imgui/glfw/App and no concrete `Node`
+  (works against the `EngineNode` protocol). `ProjectSession` owns it; `ui.py` ticks live; export ticks
+  a FRESH per-export instance — structurally, via the injected `Node.export_isolation` factory that
+  `Node.render_media` enters around every export (no per-caller opt-in to forget).
 - **`uniform_coerce.py`** — leaf: shapes a Python value to a `moderngl.Uniform`'s `(dim, array_length,
   gl_type)` (`coerce_uniform_value`/`is_number`/`coerce_array`/`uniform_shape_hint`). Shared by
-  `copilot/backend.py::set_uniform` + `scripting/behavior.py::UniformOut.set` (feature 040 hoist).
+  `copilot/backend.py::set_uniform` + `scripting/behavior.py::PythonBehavior.compute` (the script
+  `update` return is coerced against the live uniform; feature 040 hoist).
 - **`app.py`** — `App` class: the UI/glfw/imgui owner + lifecycle wrapper (windowing, GL context,
   editor sessions, popup-state, nav, exporter panels). Owns one `self.session: ProjectSession` +
   forwards project state/ops via `@property` accessors. No UI drawing. Imported by `ui.py`, `widgets/`,
