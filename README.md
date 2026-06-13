@@ -33,3 +33,6 @@ Every action that touches the outside world or destroys something (a delete, a T
 - Install uv: https://docs.astral.sh/uv/
 - Run: `uv sync`
 - Run: `uv run python ./shaderbox/ui.py`
+
+## License
+ShaderBox is free software licensed under the GNU General Public License v3.0 or later (GPL-3.0-or-later). You may use, study, share, and modify it; any distributed derivative must remain under the same license with source available. See [LICENSE](./LICENSE) for the full text.
