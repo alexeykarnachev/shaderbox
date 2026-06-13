@@ -25,31 +25,27 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-06-13 (041 impl). -->
-**041 STATEFUL-CLASS script engine IMPLEMENTED on `dev` (NOT yet shipped — last release is still v0.15.0).**
-041 REDESIGNED the 040 engine contract before 040 ever shipped: a script is now a user-finalized CLASS
-(`class Behavior(ScriptBehavior)` with `update(self, ctx) -> <typed output>`), so per-instance STATE
-(`self.*`) persists across frames — the reason CPU scripting exists (stateless work belongs in the
-shader). Outputs are direct GLSL pairs (bare number for a scalar; `Vec2/3/4`/`Array`/`Text` for the
-shaped kinds), validated against the live uniform via `uniform_coerce`. Export ticks a FRESH per-export
-instance (structural — `Node.render_media` enters an injected `export_isolation` factory, so no export
-caller can bypass it) so a live-warmed integrator's export starts clean — folding in
-the old-042 state-scripts model AND resolving the 040 `ctx.uniforms`-export double-tick. The body is
-`exec`'d verbatim (errors point at the user line); a broken script freezes last-good as data. Verified
-on the Pi's V3D: 28 CPU + 4 GL tests, smoke (200 frames), and the dogfood determinism + export-isolation
-interleave all green; `make check` clean. **Pre-impl review CONVERGED** (2 agents x 2 rounds — a BLOCKER:
-empty `__builtins__` breaks `class` exec). **POST-IMPL REVIEW CONVERGED** (3 agents x 2 rounds — a BLOCKER:
-the GUI Render/Share export paths weren't bracketed for the fresh-per-export instance, + 3 bugs; all
-fixed, round 2 PASS). **Next is 042**
-(the script UI + system-input `u_mouse`: the script-driven row indicator + chip, attach/edit/detach in the
-code editor, the manual state-reset button, surfaced `ScriptError`, live mouse), then 043 copilot
-write-behavior. **No open BLOCKERs.**
+<!-- As of 2026-06-13 (041 shipped to `dev`). -->
+**041 STATEFUL-CLASS script engine COMMITTED + PUSHED to `dev` (NOT yet released — last release is still
+v0.15.0).** 041 REDESIGNED the 040 engine contract before 040 ever shipped: a script is now a
+user-finalized CLASS (`class Behavior(ScriptBehavior)` with `update(self, ctx) -> <typed output>`), so
+per-instance STATE (`self.*`) persists across frames — the reason CPU scripting exists (stateless work
+belongs in the shader). Outputs are direct GLSL pairs (bare number for a scalar; `Vec2/3/4`/`Array`/`Text`
+for the shaped kinds; integer uniforms round to int), validated via `uniform_coerce`. Export ticks a FRESH
+per-export instance — STRUCTURAL: `Node.render_media` enters an injected `export_isolation` factory, so no
+export caller can bypass it. Body `exec`'d verbatim (errors point at the user line); broken script freezes
+last-good as data. Converged through pre/post-impl review + two `ultracode` review swarms (the 2nd a
+convergence pass, 101→10 findings, "functionally sound" — real bugs fixed, e.g. integer-uniforms-never-
+reached-GPU). Verified on the Pi's V3D (CPU + GL tests, smoke, dogfood); `make check` clean. **Next is 042** (the script
+UI + system-input `u_mouse`: the script-driven row indicator + chip, attach/edit/detach in the code editor,
+the manual state-reset button, surfaced `ScriptError`, live mouse), then 043 copilot write-behavior. **No
+open BLOCKERs.**
 
 ## Features
 
 | # | Name | Status | Brief |
 |---|---|---|---|
-| 041 | stateful_script_engine | done | Redesigned the 040 engine contract (before 040 shipped) to a STATEFUL CLASS: a script is `class Behavior(ScriptBehavior)` with `update(self, ctx) -> <typed output>`, so per-instance state (`self.*`) persists across frames — the reason CPU scripting exists. Outputs are direct GLSL pairs (bare number for a scalar; `Vec2/3/4`/`Array`/`Text` for the shaped kinds, new `scripting/outputs.py` leaf) validated via `uniform_coerce`; `ctx` is `t/dt/frame` (no more `out.set`, `ctx.state`, `ctx.uniforms`). Export ticks a FRESH per-export instance (structural — `Node.render_media` enters an injected `export_isolation` factory, bypass-proof) so a live-warmed integrator's export starts clean, folding in old-042 state-scripts + resolving the 040 export double-tick. Body `exec`'d verbatim (errors at the user line); broken → freeze last-good as data. Verified on the Pi's V3D (28 CPU + 4 GL tests, smoke, dogfood determinism + export-isolation interleave). Spec: `ai_docs/features/041_stateful_script_engine.md`. |
+| 041 | stateful_script_engine | done | Redesigned the 040 engine contract (before 040 shipped) to a STATEFUL CLASS: a script is `class Behavior(ScriptBehavior)` with `update(self, ctx) -> <typed output>`, so per-instance state (`self.*`) persists across frames — the reason CPU scripting exists. Outputs are direct GLSL pairs (bare number for a scalar; `Vec2/3/4`/`Array`/`Text` for the shaped kinds, new `scripting/outputs.py` leaf) validated via `uniform_coerce`; `ctx` is `t/dt/frame` (no more `out.set`, `ctx.state`, `ctx.uniforms`). Export ticks a FRESH per-export instance (structural — `Node.render_media` enters an injected `export_isolation` factory, bypass-proof) so a live-warmed integrator's export starts clean, folding in old-042 state-scripts + resolving the 040 export double-tick. Body `exec`'d verbatim (errors at the user line); broken → freeze last-good as data. Converged through pre/post-impl review + two ultracode review swarms; verified on the Pi's V3D (pure-CPU + GL tests, smoke, dogfood determinism + export-isolation interleave). Spec: `ai_docs/features/041_stateful_script_engine.md`. |
 | 040 | uniform_script_engine | superseded | First step toward a mini game-engine: a uniform gained a per-tick CPU behavior script — the headless engine on `ProjectSession` (new `shaderbox/scripting/` package, coercion hoisted to `uniform_coerce.py`, the export `Node.on_pre_render` tick hook, live `session.tick`, `set_uniform` reject). The `out.set(...)` body-only CONTRACT was superseded by 041's stateful-class model before shipping; the architecture (headless ownership, filename binding, error-as-data, coercion hoist, `Behavior` seam) is retained by 041. Spec: `ai_docs/features/040_uniform_script_engine.md`. |
 | 039 | content_addressed_editing | done | The copilot's line/anchor edit tools (`replace_lines`/`insert_after`) + the whole 036/038 anchor-guard machinery removed after an adversarial 56-finding review proved location addressing structurally unsound; editing is content-addressed only — `edit_shader` (old_str/new_str) + new `write_shader` (whole file, removed-names fact); dogfood gate passed (report: `ai_docs/features/039_dogfood_report_gate.md`). Spec: `ai_docs/features/039_content_addressed_editing.md`. |
 | 038 | copilot_polish_wave | done | Filed-deferral sweep (delete-precheck, analyze.py error-turn cost, checkpoint-dir leak, publish_youtube main-thread set_shape, dead `needs_gl`/`category` fields, `parser.brace_counts` consolidation) + a deterministic engine-side fix for the ranged-`replace_lines` anchor-resolution bug CLASS (orphan-brace absorb / multi-line `last_line` / cross-block silent-deletion / ambiguous bare-`}` / incoherent-range corruption — all found by dogfood, verified live, the filed "oscillation" refuted; the anchor machinery itself was removed by 039). Spec: `ai_docs/features/038_copilot_polish_wave.md`. |

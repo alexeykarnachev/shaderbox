@@ -1,7 +1,7 @@
 # Feature 041 — stateful-class script engine (040 redesign)
 
 > Status: IMPLEMENTED + post-impl-review CONVERGED (2026-06-13) — headless engine landed on `dev`;
-> `make check` + 28 CPU + 4 GL tests + smoke + the dogfood determinism/export-isolation check all green
+> `make check` + 47 CPU + 5 GL tests + smoke + the dogfood determinism/export-isolation check all green
 > on the Pi's V3D. Post-impl review: 3 agents x 2 rounds, a BLOCKER (GUI export paths un-bracketed) + 3
 > bugs fixed, round 2 PASS. This SUPERSEDES the feature-040 engine contract
 > (`out.set()` body-only scripts) before 040 ever shipped publicly (last release is v0.15.0, 040 is on
