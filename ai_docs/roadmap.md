@@ -32,12 +32,16 @@ stateful instance — the fix for the physics-copy-paste the dogfood exposed (a 
 duplicates its integrator into 4 per-uniform files). It's NATIVE, not bolted-on: `PythonBehavior.compute`
 split into `run(ctx)` + a free `coerce_one`, and the engine fans every behavior into a `(uniform_name, raw)`
 PAIR STREAM — per-uniform is the 1-entry case, a brain is `dict.items()`; dispatch by FILENAME, conflict =
-two-pass write order (brain first, `u_<name>.py` wins). Verified on the Pi's V3D (77 CPU+GL tests incl. the
-parametrized both-paths invariants + a node-brain pendulum dogfood render with cold export), `make check`
-clean; converged through a 3-agent post-impl review (2 real findings fixed: a zombie per-key error on brain
-removal + an export warn-set leak). **NEXT: 042** — the script UI + `u_mouse`, now covering BOTH per-uniform
-AND the node-brain (the node-level error indicator for the `(node_id, "script.py")` sentinel key). Then 043
-copilot write-behavior. **No open BLOCKERs.**
+two-pass write order (brain first, `u_<name>.py` wins; a BROKEN override yields the slot back to the brain).
+Verified on the Pi's V3D (script-engine CPU+GL tests incl. the parametrized both-paths invariants + creative
+scenes: orbits / harmonograph / spring-cloth / HUD-game + a short mp4 export, all cold-export-isolated),
+`make check` clean; converged through a 3-agent post-impl review THEN a direct-engine dogfood
+(workflow, no copilot) whose failure-visibility findings were all fixed: engine-owned brain guard, NaN/Inf
+frozen-as-data, typo'd-key soft errors, the conflict broken-override fallback, + DX papercuts (friendly
+`import`, `chr`/`ord`, Array flatten hint). **NEXT: 042** — the script UI + `u_mouse`, now covering BOTH
+per-uniform AND the node-brain: the node-level error indicator for the `(node_id, "script.py")` sentinel key
++ the per-key soft errors 044 now records (a typo'd / engine-owned / orphan brain key). Then 043 copilot
+write-behavior. **No open BLOCKERs.**
 
 ## Features
 
