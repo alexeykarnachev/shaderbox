@@ -14,7 +14,9 @@ from shaderbox.scripting import EngineContext, ScriptEngine, UniformOut
 _GL_FLOAT = 0x1406
 
 
-def _u(name: str, dim: int = 1, n: int = 1, gl_type: int = _GL_FLOAT) -> types.SimpleNamespace:
+def _u(
+    name: str, dim: int = 1, n: int = 1, gl_type: int = _GL_FLOAT
+) -> types.SimpleNamespace:
     return types.SimpleNamespace(
         name=name, dimension=dim, array_length=n, gl_type=gl_type, value=0.0
     )
@@ -149,7 +151,9 @@ def test_runtime_error_freezes_last_good(tmp_path: Path) -> None:
     assert node.uniform_values["u_x"] == 0.7
 
     time.sleep(0.01)
-    path.write_text("out.set(1.0 / 0.0)", encoding="utf-8")  # ZeroDivisionError at runtime
+    path.write_text(
+        "out.set(1.0 / 0.0)", encoding="utf-8"
+    )  # ZeroDivisionError at runtime
     eng.reload("n0", tmp_path / "scripts", node)
     eng.tick("n0", node, _ctx(0.1))
     assert node.uniform_values["u_x"] == 0.7  # frozen at last-good
@@ -208,7 +212,9 @@ def test_integrator_diverges_by_design(tmp_path: Path) -> None:
 
     # node_a: two steps of dt=0.5 (variable-dt live path) to elapse 1.0s of sim.
     for _i in range(2):
-        ctx = EngineContext(t=0.0, dt=0.5, frame=0, uniforms=dict(node_a.uniform_values))
+        ctx = EngineContext(
+            t=0.0, dt=0.5, frame=0, uniforms=dict(node_a.uniform_values)
+        )
         eng.tick("a", node_a, ctx)
     # node_b: one step of dt=1.0 (a coarser fixed-dt export path) over the same 1.0s.
     ctx = EngineContext(t=0.0, dt=1.0, frame=0, uniforms=dict(node_b.uniform_values))
@@ -228,7 +234,9 @@ def test_cache_no_recompile_when_mtime_unchanged(tmp_path: Path) -> None:
     eng.reload("n0", tmp_path / "scripts", node)
     behavior_first = eng._nodes["n0"].behaviors["u_x"]
     eng.reload("n0", tmp_path / "scripts", node)  # nothing changed
-    assert eng._nodes["n0"].behaviors["u_x"] is behavior_first  # same object, not recompiled
+    assert (
+        eng._nodes["n0"].behaviors["u_x"] is behavior_first
+    )  # same object, not recompiled
 
 
 def test_cache_recompiles_on_mtime_change(tmp_path: Path) -> None:

@@ -92,7 +92,10 @@ class ScriptEngine:
                     mtime = path.stat().st_mtime
                 except OSError:
                     continue
-                if scripts.behaviors.get(name) is not None and scripts.mtimes.get(name) == mtime:
+                if (
+                    scripts.behaviors.get(name) is not None
+                    and scripts.mtimes.get(name) == mtime
+                ):
                     continue
                 body = path.read_text(encoding="utf-8")
                 behavior = PythonBehavior(name, body)
@@ -124,7 +127,9 @@ class ScriptEngine:
         for name, behavior in scripts.behaviors.items():
             key = (node_id, name)
             frozen = scripts.last_good.get(name, node.uniform_values.get(name))
-            if behavior.error is not None:  # cached compile error — freeze, already recorded
+            if (
+                behavior.error is not None
+            ):  # cached compile error — freeze, already recorded
                 node.uniform_values[name] = frozen
                 continue
             uniform = active.get(name)
@@ -134,8 +139,12 @@ class ScriptEngine:
             out = UniformOut(uniform)
             try:
                 behavior.compute(ctx, out)
-            except Exception as e:  # any script failure freezes, never crashes the frame
-                self.errors[key] = ScriptError(name, "runtime", f"{type(e).__name__}: {e}")
+            except (
+                Exception
+            ) as e:  # any script failure freezes, never crashes the frame
+                self.errors[key] = ScriptError(
+                    name, "runtime", f"{type(e).__name__}: {e}"
+                )
                 node.uniform_values[name] = frozen
                 continue
             if out.error is not None:  # shape mismatch from out.set

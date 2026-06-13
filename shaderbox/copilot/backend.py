@@ -288,6 +288,7 @@ class CopilotBackend:
         get_shader_lib_files: Callable[[], ShaderLibFileManager],
         get_current_node_id: Callable[[], str],
         get_is_cancelled: Callable[[], bool],
+        get_script_driven_uniforms: Callable[[str], set[str]],
         set_current_node_id: Callable[[str], None],
         save_ui_node: Callable[[UINode], object],
         sync_editor_from_disk: Callable[[str, str], None],
@@ -316,6 +317,7 @@ class CopilotBackend:
         self._get_shader_lib_files = get_shader_lib_files
         self._get_current_node_id = get_current_node_id
         self._get_is_cancelled = get_is_cancelled
+        self._get_script_driven_uniforms = get_script_driven_uniforms
         self._set_current_node_id = set_current_node_id
         self._save_ui_node = save_ui_node
         self._sync_editor_from_disk = sync_editor_from_disk

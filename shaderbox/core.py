@@ -1,7 +1,7 @@
 import base64
 import contextlib
 import json
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
@@ -134,6 +134,10 @@ class Node:
         self.canvas = Canvas(size=canvas_size, gl=self._gl)
 
         self.uniform_values: dict[str, Any] = {}
+        # The CPU-script engine tick (feature 040), injected by ProjectSession at load. Fired
+        # ONLY from the export loops below (per frame), NEVER from render() — the live path ticks
+        # once via session.tick() in ui.py, so firing it in render() would double-tick the frame.
+        self.on_pre_render: Callable[[float, float, int], None] | None = None
         self.compile_unit: CompileUnit = CompileUnit.empty(self.source)
         self.program: moderngl.Program | None = None
         self.vbo: moderngl.Buffer | None = None
@@ -402,7 +406,10 @@ class Node:
         self, details: MediaDetails, canvas: "Canvas", u_time: float | None = 0.0
     ) -> MediaDetails:
         file_path = Path(details.file_details.path)
-        self.render(u_time=u_time, canvas=canvas)
+        t = u_time if u_time is not None else 0.0
+        if self.on_pre_render is not None:
+            self.on_pre_render(t, 0.0, 0)
+        self.render(u_time=t, canvas=canvas)
 
         pil_image = texture_to_pil(canvas.texture)
         if canvas.texture.size != (
@@ -488,7 +495,10 @@ class Node:
 
         self.restart_video_uniforms()
         n_frames = int(details.duration * details.fps)
+        dt = 1.0 / details.fps
         for i in range(n_frames):
+            if self.on_pre_render is not None:
+                self.on_pre_render(i / details.fps, dt, i)
             self.render(i / details.fps, canvas=canvas)
 
             texture_data = canvas.texture.read()

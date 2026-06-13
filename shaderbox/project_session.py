@@ -29,6 +29,7 @@ from shaderbox.copilot.session import CopilotSession
 from shaderbox.exporters.integrations import IntegrationsStore
 from shaderbox.exporters.registry import ExporterRegistry
 from shaderbox.paths import ProjectPaths, shader_lib_root
+from shaderbox.scripting import EngineContext, ScriptEngine
 from shaderbox.shader_lib import ShaderLibIndex
 from shaderbox.shader_lib import set_active as set_active_lib_index
 from shaderbox.shader_lib.favorites import ShaderLibFavoritesStore
@@ -107,6 +108,10 @@ class ProjectSession:
         # Working set: every node/lib address the agent touched this turn, reset per turn.
         self._copilot_working_set: list[str] = []
 
+        # The CPU-script engine (feature 040): per-node uniform-compute behaviors, ticked once
+        # per frame before render. Populated per project by _resolve_scripts in load().
+        self.script_engine = ScriptEngine()
+
         # Built LAST: _build_copilot_capabilities reads the project-state fields above. The
         # client reads the key/model LIVE through getters — _load reassigns integrations_store,
         # so capturing it here would go stale. project_dir isn't set until _load -> the trace
@@ -139,6 +144,7 @@ class ProjectSession:
             get_shader_lib_files=self._get_shader_lib_files,
             get_current_node_id=lambda: self.current_node_id,
             get_is_cancelled=lambda: self.copilot.is_cancelled(),
+            get_script_driven_uniforms=self.get_script_driven_uniforms,
             set_current_node_id=self.set_current_node_id,
             save_ui_node=self.save_ui_node,
             sync_editor_from_disk=self.sync_editor_from_disk,
@@ -274,6 +280,59 @@ class ProjectSession:
 
         self.integrations_store = IntegrationsStore.load()
         self.integrations_store.copilot.apply_limits()
+
+        self._resolve_scripts()
+
+    def _resolve_scripts(self) -> None:
+        # Per project (feature 040): reset the engine, resolve each node's scripts/u_*.py against
+        # its active uniforms, and inject the per-frame export tick hook onto each Node. The live
+        # path re-polls mtimes via reload_scripts() in ui.py; export ticks the resolved behaviors.
+        self.script_engine = ScriptEngine()
+        for node_id, ui_node in self.ui_nodes.items():
+            self.script_engine.reload(
+                node_id, self.paths.scripts_dir_for(node_id), ui_node.node
+            )
+            ui_node.node.on_pre_render = self._make_pre_render(node_id)
+
+    def _make_pre_render(self, node_id: str) -> Callable[[float, float, int], None]:
+        def _pre_render(t: float, dt: float, frame: int) -> None:
+            self._tick_node(node_id, t, dt, frame)
+
+        return _pre_render
+
+    def _tick_node(self, node_id: str, t: float, dt: float, frame: int) -> None:
+        ui_node = self.ui_nodes.get(node_id)
+        if ui_node is None:
+            return
+        # uniforms snapshots the ticked node's own values (an integrator reads its prev value);
+        # mouse/state are 041/042 reserved (state is the shared phase-A scratchpad).
+        ctx = EngineContext(
+            t=t,
+            dt=dt,
+            frame=frame,
+            state=self.script_engine.state,
+            uniforms=dict(ui_node.node.uniform_values),
+        )
+        self.script_engine.tick(node_id, ui_node.node, ctx)
+
+    def reload_scripts(self) -> None:
+        # The live hot-reload poll (decision 9): re-stat each node's scripts dir, recompiling only
+        # changed files. Invoked from ui.py::update_and_draw before the live tick.
+        for node_id, ui_node in self.ui_nodes.items():
+            self.script_engine.reload(
+                node_id, self.paths.scripts_dir_for(node_id), ui_node.node
+            )
+
+    def tick(self, node_ids: list[str], t: float, dt: float, frame: int) -> None:
+        # The live per-frame tick (decision 4): tick exactly the nodes this frame will render
+        # (the ui.py render gate), so a scripted uniform animates identically live and in export.
+        for node_id in node_ids:
+            self._tick_node(node_id, t, dt, frame)
+
+    def get_script_driven_uniforms(self, node_id: str) -> set[str]:
+        # The set of uniform names with a u_<name>.py file on `node_id` — the copilot set_uniform
+        # reject (decision 5) queries this so it won't no-op a script-driven uniform.
+        return self.script_engine.script_driven_uniforms(node_id)
 
     def clear_conversation(self) -> None:
         # Archive the live conversation (recoverable), delete checkpoints, reset to a fresh empty

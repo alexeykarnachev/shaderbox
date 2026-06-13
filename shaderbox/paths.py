@@ -84,3 +84,8 @@ class ProjectPaths:
             copilot_conversation_path=copilot_dir / "conversation.json",
             copilot_checkpoints_dir=copilot_dir / "checkpoints",
         )
+
+    def scripts_dir_for(self, node_id: str) -> Path:
+        # The CPU-script engine's per-node behavior scripts (feature 040): nodes/<id>/scripts/.
+        # LAZY — globbed-if-exists at load, created on first write (041/043). Not eagerly mkdir'd.
+        return self.nodes_dir / node_id / "scripts"

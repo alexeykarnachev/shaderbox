@@ -71,7 +71,9 @@ class UniformOut:
             self.error = ScriptError(
                 self._uniform.name,
                 "runtime",
-                uniform_shape_hint(self._uniform.name, self._uniform, self._uniform.name),
+                uniform_shape_hint(
+                    self._uniform.name, self._uniform, self._uniform.name
+                ),
             )
             return
         self.value = coerced
