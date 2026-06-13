@@ -68,9 +68,11 @@ def _seed_tmp_project(root: Path) -> Path:
     for tid in TEMPLATE_ORDER:
         shutil.copytree(NODE_TEMPLATES_DIR / tid, nodes / tid)
 
-    # A node carrying a script-driven uniform (feature 040): the engine ticks it every frame, so
-    # 200 clean frames prove the App-with-a-scripted-node loop doesn't crash. (Engine-correctness
-    # — values/freeze/determinism — is the pure-CPU unit test's job, not smoke's.)
+    # A node carrying a script-driven uniform (feature 041): the engine ticks the class-form
+    # behavior every frame, so 200 clean frames prove the App-with-a-scripted-node loop doesn't
+    # crash. (Engine-correctness — values/freeze/determinism — is the pure-CPU unit test's job, not
+    # smoke's. The body must be a valid scalar return: smoke only asserts no-crash, so a shape
+    # mismatch would silently freeze + pass.)
     scripted = nodes / "scripted"
     scripted.mkdir()
     (scripted / "shader.frag.glsl").write_text(_SCRIPTED_SHADER, encoding="utf-8")
@@ -80,7 +82,10 @@ def _seed_tmp_project(root: Path) -> Path:
     scripts_dir = scripted / "scripts"
     scripts_dir.mkdir()
     (scripts_dir / "u_wave.py").write_text(
-        "out.set(0.5 + 0.3 * sin(ctx.t))", encoding="utf-8"
+        "class Behavior(ScriptBehavior):\n"
+        "    def update(self, ctx: Ctx) -> float:\n"
+        "        return 0.5 + 0.3 * sin(ctx.t)\n",
+        encoding="utf-8",
     )
     return project
 

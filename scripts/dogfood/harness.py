@@ -303,6 +303,30 @@ class DogfoodHarness:
         self._last_render_path = str(out_path)
         return str(out_path)
 
+    def export_at(self, t: float, node_id: str = "", *, size: int = 400) -> str:
+        """Render a node at `t` through the EXPORT-ISOLATION seam (feature 041): entering the node's
+        `export_isolation()` (the same factory Node.render_media enters) swaps on_pre_render to a FRESH
+        per-export behavior set, so a stateful script starts from a clean __init__ regardless of how
+        long the live preview ran. Unlike `render_at` (the LIVE tick path), this proves export-state
+        isolation. GL on THIS (context-owning) thread."""
+        target = node_id or self.session.current_node_id
+        ui_node = self.session.ui_nodes.get(target)
+        if ui_node is None:
+            print(f"    [export_at FAILED: no node '{target}']")
+            return ""
+        node = ui_node.node
+        node.canvas.set_size((size, size))
+        with node.export_isolation():
+            if node.on_pre_render is not None:
+                node.on_pre_render(t, 1.0 / 60.0, 0)
+            node.render(u_time=t)
+        out_path = self.session.paths.renders_dir / f"{target}_export_t{t:.3f}.png"
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        texture_to_pil(node.canvas.texture).save(out_path)
+        print(f"    [exported {target} @t={t:.3f} -> {out_path}]")
+        self._last_render_path = str(out_path)
+        return str(out_path)
+
     def _latest_render_on_disk(self) -> str:
         # The truthful render pointer: harness renders set _last_render_path, but
         # AGENT-initiated render_image never did (and a bridge-timeout could lose it

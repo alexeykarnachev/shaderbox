@@ -1,6 +1,6 @@
-"""Script failure as data — mirrors `shader_errors.ShaderError` (feature 040). A broken
+"""Script failure as data — mirrors `shader_errors.ShaderError` (feature 040/041). A broken
 script never raises into the frame loop; it freezes the uniform at last-good and records
-one of these for 041's UI to surface."""
+one of these for 042's UI to surface."""
 
 from dataclasses import dataclass
 from typing import Literal

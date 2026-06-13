@@ -1,17 +1,32 @@
-"""The CPU-script engine (feature 040) — a uniform becomes a first-class object with a
-per-tick behavior script. Public surface the headless ProjectSession drives."""
+"""The CPU-script engine (feature 041) — a uniform becomes a first-class object with a per-tick
+stateful behavior class (`update(self, ctx) -> <typed output>`). Public surface the headless
+ProjectSession drives."""
 
-from shaderbox.scripting.behavior import Behavior, PythonBehavior, UniformOut
-from shaderbox.scripting.context import EngineContext
-from shaderbox.scripting.engine import EngineNode, ScriptEngine
+from shaderbox.scripting.behavior import Behavior, PythonBehavior, ScriptBehavior
+from shaderbox.scripting.context import Ctx, EngineContext
+from shaderbox.scripting.engine import (
+    EngineNode,
+    ScriptEngine,
+    is_scriptable,
+    stub_for,
+)
 from shaderbox.scripting.errors import ScriptError
+from shaderbox.scripting.outputs import Array, Text, Vec2, Vec3, Vec4
 
 __all__ = [
+    "Array",
     "Behavior",
+    "Ctx",
     "EngineContext",
     "EngineNode",
     "PythonBehavior",
+    "ScriptBehavior",
     "ScriptEngine",
     "ScriptError",
-    "UniformOut",
+    "Text",
+    "Vec2",
+    "Vec3",
+    "Vec4",
+    "is_scriptable",
+    "stub_for",
 ]

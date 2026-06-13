@@ -13,9 +13,10 @@ current on the constructing thread before any node load (Node/Canvas do
 `self._gl = gl or moderngl.get_context()`).
 """
 
+import contextlib
 import shutil
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 from loguru import logger
@@ -26,6 +27,7 @@ from shaderbox.copilot.llm.openrouter import OpenRouterLLMClient
 from shaderbox.copilot.persistence import archive_conversation
 from shaderbox.copilot.revert import RevertExecutor
 from shaderbox.copilot.session import CopilotSession
+from shaderbox.core import ENGINE_DRIVEN_UNIFORMS, Node
 from shaderbox.exporters.integrations import IntegrationsStore
 from shaderbox.exporters.registry import ExporterRegistry
 from shaderbox.paths import ProjectPaths, shader_lib_root
@@ -108,9 +110,9 @@ class ProjectSession:
         # Working set: every node/lib address the agent touched this turn, reset per turn.
         self._copilot_working_set: list[str] = []
 
-        # The CPU-script engine (feature 040): per-node uniform-compute behaviors, ticked once
+        # The CPU-script engine (feature 041): per-node uniform-compute behaviors, ticked once
         # per frame before render. Populated per project by _resolve_scripts in load().
-        self.script_engine = ScriptEngine()
+        self.script_engine = ScriptEngine(ENGINE_DRIVEN_UNIFORMS)
 
         # Built LAST: _build_copilot_capabilities reads the project-state fields above. The
         # client reads the key/model LIVE through getters — _load reassigns integrations_store,
@@ -208,6 +210,9 @@ class ProjectSession:
         # are path-keyed). The on_node_deleted handler drops the editor session + delete-arm.
         path = self.ui_nodes[node_id].node.source.path
         self.ui_nodes.pop(node_id).node.release()
+        self.script_engine.drop_node(
+            node_id
+        )  # free its behaviors + stale errors (feature 041)
         if node_id in self._copilot_working_set:
             self._copilot_working_set.remove(node_id)
         self._on_node_deleted(node_id, path)
@@ -284,54 +289,86 @@ class ProjectSession:
         self._resolve_scripts()
 
     def _resolve_scripts(self) -> None:
-        # Per project (feature 040): reset the engine, resolve each node's scripts/u_*.py against
-        # its active uniforms, and inject the per-frame export tick hook onto each Node. The live
-        # path re-polls mtimes via reload_scripts() in ui.py; export ticks the resolved behaviors.
-        self.script_engine = ScriptEngine()
+        # Per project (feature 041): reset the engine, resolve each node's scripts/u_*.py against its
+        # active uniforms, and wire each Node's script hooks. The live path re-polls mtimes + re-wires
+        # any newly-inserted node via reload_scripts() in ui.py.
+        self.script_engine = ScriptEngine(ENGINE_DRIVEN_UNIFORMS)
         for node_id, ui_node in self.ui_nodes.items():
             self.script_engine.reload(
                 node_id, self.paths.scripts_dir_for(node_id), ui_node.node
             )
-            ui_node.node.on_pre_render = self._make_pre_render(node_id)
+            self._wire_node_hooks(node_id, ui_node.node)
 
-    def _make_pre_render(self, node_id: str) -> Callable[[float, float, int], None]:
-        def _pre_render(t: float, dt: float, frame: int) -> None:
-            self._tick_node(node_id, t, dt, frame)
+    def _wire_node_hooks(self, node_id: str, node: Node) -> None:
+        # Inject the export-isolation factory (Node.render_media enters it around every export, so an
+        # exported integrator starts from a clean per-export instance). Wired ONCE on first sight —
+        # called from reload_scripts each frame, so a node inserted AFTER load (copilot create /
+        # template / revert-replace) gets it too. The live preview path does NOT ride on_pre_render
+        # (ui.py ticks via session.tick); on_pre_render is the swap target the isolation factory uses.
+        if node.export_isolation is not contextlib.nullcontext:
+            return  # already wired (the factory never resets it, so this sentinel is unambiguous)
+        node.export_isolation = self._make_export_isolation(node_id)
 
-        return _pre_render
+    def _make_export_isolation(
+        self, node_id: str
+    ) -> Callable[[], contextlib.AbstractContextManager[None]]:
+        # The factory Node.render_media enters around EVERY export (feature 041). It swaps the node's
+        # on_pre_render to tick a FRESH behavior set (recompiled from cached source, independent of the
+        # live instances) so an exported integrator starts from a clean __init__ regardless of how long
+        # the live preview ran, and restores the live hook in finally. Because render_media itself
+        # enters it, no export caller can forget to isolate.
+        @contextlib.contextmanager
+        def _isolation() -> Iterator[None]:
+            ui_node = self.ui_nodes.get(node_id)
+            if ui_node is None:
+                yield
+                return
+            node = ui_node.node
+            live_hook = node.on_pre_render
+            behaviors = self.script_engine.fresh_behaviors_for(node_id)
 
-    def _tick_node(self, node_id: str, t: float, dt: float, frame: int) -> None:
-        ui_node = self.ui_nodes.get(node_id)
-        if ui_node is None:
-            return
-        # uniforms snapshots the ticked node's own values (an integrator reads its prev value);
-        # mouse/state are 041/042 reserved (state is the shared phase-A scratchpad).
-        ctx = EngineContext(
-            t=t,
-            dt=dt,
-            frame=frame,
-            state=self.script_engine.state,
-            uniforms=dict(ui_node.node.uniform_values),
-        )
-        self.script_engine.tick(node_id, ui_node.node, ctx)
+            def _export_pre_render(t: float, dt: float, frame: int) -> None:
+                self.script_engine.tick_behaviors(
+                    node_id, node, EngineContext(t=t, dt=dt, frame=frame), behaviors
+                )
+
+            node.on_pre_render = _export_pre_render
+            try:
+                yield
+            finally:
+                node.on_pre_render = live_hook
+
+        return _isolation
 
     def reload_scripts(self) -> None:
-        # The live hot-reload poll (decision 9): re-stat each node's scripts dir, recompiling only
-        # changed files. Invoked from ui.py::update_and_draw before the live tick.
+        # The live hot-reload poll: re-stat each node's scripts dir, recompiling only changed files
+        # (a recompile makes a fresh instance — state resets on edit), and re-wire hooks so a node
+        # inserted after load (copilot create / template / revert) is covered. Invoked from
+        # ui.py::update_and_draw before the live tick.
         for node_id, ui_node in self.ui_nodes.items():
             self.script_engine.reload(
                 node_id, self.paths.scripts_dir_for(node_id), ui_node.node
             )
+            self._wire_node_hooks(node_id, ui_node.node)
 
     def tick(self, node_ids: list[str], t: float, dt: float, frame: int) -> None:
-        # The live per-frame tick (decision 4): tick exactly the nodes this frame will render
-        # (the ui.py render gate), so a scripted uniform animates identically live and in export.
+        # The live per-frame tick: tick exactly the nodes this frame will render (the ui.py render
+        # gate), so a scripted uniform animates identically live and in export.
         for node_id in node_ids:
-            self._tick_node(node_id, t, dt, frame)
+            ui_node = self.ui_nodes.get(node_id)
+            if ui_node is None:
+                continue
+            self.script_engine.tick(
+                node_id, ui_node.node, EngineContext(t=t, dt=dt, frame=frame)
+            )
+
+    def reset_script(self, node_id: str, name: str) -> None:
+        # Re-run a live behavior's __init__ (the manual "restart" the 042 UI button wires).
+        self.script_engine.reset(node_id, name)
 
     def get_script_driven_uniforms(self, node_id: str) -> set[str]:
         # The set of uniform names with a u_<name>.py file on `node_id` — the copilot set_uniform
-        # reject (decision 5) queries this so it won't no-op a script-driven uniform.
+        # reject (040 decision 5) queries this so it won't no-op a script-driven uniform.
         return self.script_engine.script_driven_uniforms(node_id)
 
     def clear_conversation(self) -> None:

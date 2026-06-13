@@ -134,10 +134,18 @@ class Node:
         self.canvas = Canvas(size=canvas_size, gl=self._gl)
 
         self.uniform_values: dict[str, Any] = {}
-        # The CPU-script engine tick (feature 040), injected by ProjectSession at load. Fired
+        # The CPU-script engine tick (feature 041), injected by ProjectSession at load. Fired
         # ONLY from the export loops below (per frame), NEVER from render() — the live path ticks
         # once via session.tick() in ui.py, so firing it in render() would double-tick the frame.
         self.on_pre_render: Callable[[float, float, int], None] | None = None
+        # Export-time script isolation (feature 041), injected by ProjectSession at load. render_media
+        # enters it around EVERY export so a stateful script ticks from a FRESH per-export instance
+        # (not the live-warmed one) — structural, so no export caller can forget to isolate. Default
+        # nullcontext when no session injects it (a bare Node / no scripts). Node stays engine-free:
+        # it only enters an opaque injected context manager (same shape as on_pre_render).
+        self.export_isolation: Callable[[], contextlib.AbstractContextManager[None]] = (
+            contextlib.nullcontext
+        )
         self.compile_unit: CompileUnit = CompileUnit.empty(self.source)
         self.program: moderngl.Program | None = None
         self.vbo: moderngl.Buffer | None = None
@@ -521,20 +529,23 @@ class Node:
     def render_media(
         self, details: MediaDetails, preset: RenderPreset | None = None
     ) -> MediaDetails:
-        if preset is None or preset.fit is FitPolicy.SCALE_DISTORT:
-            canvas = self.canvas
-            return self._render_media_into(details, canvas)
+        # Every export funnels through here (Render tab / Share scratch / copilot tools), so the
+        # script-isolation bracket lives here ONCE — no export caller can bypass it (feature 041).
+        with self.export_isolation():
+            if preset is None or preset.fit is FitPolicy.SCALE_DISTORT:
+                canvas = self.canvas
+                return self._render_media_into(details, canvas)
 
-        target_w, target_h = resolve_dims(preset, self.canvas.texture.size)
-        details = details.model_copy(deep=True)
-        details.resolution_details.width = target_w
-        details.resolution_details.height = target_h
+            target_w, target_h = resolve_dims(preset, self.canvas.texture.size)
+            details = details.model_copy(deep=True)
+            details.resolution_details.width = target_w
+            details.resolution_details.height = target_h
 
-        target = Canvas(gl=self._gl, size=(target_w, target_h))
-        try:
-            return self._render_media_into(details, target)
-        finally:
-            target.release()
+            target = Canvas(gl=self._gl, size=(target_w, target_h))
+            try:
+                return self._render_media_into(details, target)
+            finally:
+                target.release()
 
     def _render_media_into(
         self, details: MediaDetails, canvas: "Canvas"

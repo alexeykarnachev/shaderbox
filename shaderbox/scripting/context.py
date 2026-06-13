@@ -1,17 +1,15 @@
-"""The one object every behavior script receives — the read-only world (feature 040)."""
+"""The one read-only object every behavior's `update` receives (feature 041)."""
 
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import dataclass
 
 
-@dataclass
+@dataclass(frozen=True)
 class EngineContext:
-    # The clock is the only field v1 populates (live: glfw.get_time; export: i/fps).
-    # mouse/state/uniforms are RESERVED for 041 (system input) / 042 (state scripts) —
-    # present so the Behavior protocol is stable across those features, left empty in v1.
+    # The clock — all v1 carries. mouse is feature 042 (system input); state lives in the
+    # behavior instance (self.*), not here. `Ctx` is the name in scope inside a script.
     t: float
     dt: float
     frame: int
-    mouse: tuple[float, float] = (0.0, 0.0)
-    state: dict[str, Any] = field(default_factory=dict)
-    uniforms: dict[str, Any] = field(default_factory=dict)
+
+
+Ctx = EngineContext

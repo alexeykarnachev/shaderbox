@@ -711,7 +711,7 @@ class CopilotBackend:
             coerced = coerce_uniform_value(value, uniform)
             if coerced is None:
                 return SetUniformResult(
-                    ok=False, error=uniform_shape_hint(name, uniform, label)
+                    ok=False, error=uniform_shape_hint(uniform, label, value)
                 )
             self._capture_node(node_id)  # pre-change rollback snapshot (best-effort)
             try_to_release(target.uniform_values.get(name))
