@@ -26,25 +26,25 @@ feature; brief points at the superseder).
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
 <!-- As of 2026-06-13. -->
-**040 CPU-script engine SPEC LOCKED on `dev` — design only, implementation not started.** Last
-shipped is v0.15.0 (039 content-addressed editing + 038 polish + honest dogfood forensics + GPL-3.0
-relicense; `dev`==`master` at the time). The new direction: evolve ShaderBox toward a mini
-game-engine — a uniform becomes a first-class object you attach a behavior SCRIPT to
-(`nodes/<id>/scripts/u_<name>.py`, body-only Python; the user writes the body and hands the value
-back via a passed-in `out.set(...)`, with `ctx` the read-only clock/world). v1 = the headless engine
-ONLY on `ProjectSession` (no UI), language a swappable `Behavior` backend (Python now, C later), no
-sandbox (personal IDE). A standalone prototype (`/tmp/sb_engine_proto/`) validated the shape; the
-spec passed a 2-round adversarial pre-impl review (converged). Decomposition: 040 engine → 041
-system-input (`u_mouse`) + in-app editor → 042 state scripts (enables pong) → 043 copilot
-write-behavior tool. **Next move:** implement 040 per `ai_docs/features/040_uniform_script_engine.md`
-(feature flow step 5 — the HIGH-blast export-routing tick→render seam is the lynchpin). **No open
-BLOCKERs.**
+**040 CPU-script engine IMPLEMENTED on `dev` (NOT yet shipped — last release is still v0.15.0).** The
+headless v1 landed in 5 green commits: a shared `uniform_coerce.py` leaf (C1), the `shaderbox/scripting/`
+package + pure-CPU unit tests (C2), the `ProjectSession.tick` / `paths.scripts_dir_for` / `core.py`
+`on_pre_render` export hook (C3, HIGH-blast), the `ui.py` live tick + `set_uniform` script-driven reject +
+smoke (C4), and docs + the dogfood determinism check + GL-integration test (C5). A uniform now carries a
+per-tick body-only Python script (`nodes/<id>/scripts/u_<name>.py`, `out.set(...)`); errors freeze
+last-good as data, `(path,mtime)` hot-reloads, `ctx.t`-pure scripts are live==export deterministic. Verified
+on the Pi's V3D: the scripted value animates across `t` and reaches the GPU; a broken script froze without
+crashing. **POST-IMPL REVIEW still owed** (HIGH-blast floor: 3 parallel agents — code-correctness /
+architecture-conventions / spec-fidelity, per the spec's Review sizing + `review-agent-loop`). After
+review: **next feature is 041** (system-input `u_mouse` + the in-app script editor — the visual
+"script-driven" indicator + attach/edit affordance), then 042 state scripts → 043 copilot write-behavior.
+**No open BLOCKERs.**
 
 ## Features
 
 | # | Name | Status | Brief |
 |---|---|---|---|
-| 040 | uniform_script_engine | pending | First step toward a mini game-engine: a uniform becomes a first-class object with a per-tick CPU behavior SCRIPT (`nodes/<id>/scripts/u_<name>.py`, body-only Python writing via `out.set(...)`); v1 = the headless engine on `ProjectSession` only (no UI), `Behavior` backend abstraction (Python now / C later), no sandbox; spec locked + 2-round pre-impl reviewed, implementation not started. Spec: `ai_docs/features/040_uniform_script_engine.md`. |
+| 040 | uniform_script_engine | done | First step toward a mini game-engine: a uniform becomes a first-class object with a per-tick CPU behavior SCRIPT (`nodes/<id>/scripts/u_<name>.py`, body-only Python writing via `out.set(...)`); v1 = the headless engine on `ProjectSession` only (no UI) — new `shaderbox/scripting/` package (`EngineContext`/`ScriptError`/`Behavior`+`PythonBehavior`/`ScriptEngine`), coercion hoisted to a shared `uniform_coerce.py` leaf, the export `Node.on_pre_render` tick hook, live `session.tick` in `ui.py`, `set_uniform` script-driven reject; error-as-data freeze, `(path,mtime)` hot-reload, scoped `ctx.t`-determinism; verified by pure-CPU + GL-integration tests + a headless determinism check (animated across t, deterministic at fixed t, broken script froze). Spec: `ai_docs/features/040_uniform_script_engine.md`. |
 | 039 | content_addressed_editing | done | The copilot's line/anchor edit tools (`replace_lines`/`insert_after`) + the whole 036/038 anchor-guard machinery removed after an adversarial 56-finding review proved location addressing structurally unsound; editing is content-addressed only — `edit_shader` (old_str/new_str) + new `write_shader` (whole file, removed-names fact); dogfood gate passed (report: `ai_docs/features/039_dogfood_report_gate.md`). Spec: `ai_docs/features/039_content_addressed_editing.md`. |
 | 038 | copilot_polish_wave | done | Filed-deferral sweep (delete-precheck, analyze.py error-turn cost, checkpoint-dir leak, publish_youtube main-thread set_shape, dead `needs_gl`/`category` fields, `parser.brace_counts` consolidation) + a deterministic engine-side fix for the ranged-`replace_lines` anchor-resolution bug CLASS (orphan-brace absorb / multi-line `last_line` / cross-block silent-deletion / ambiguous bare-`}` / incoherent-range corruption — all found by dogfood, verified live, the filed "oscillation" refuted; the anchor machinery itself was removed by 039). Spec: `ai_docs/features/038_copilot_polish_wave.md`. |
 | 036 | anchored_replace_lines | superseded | Ranged `replace_lines` re-anchored to boundary-line TEXT (kills the observed +1-on-blank coordinate class); superseded by 039 — the whole line/anchor addressing scheme (and the tool) was removed in favor of content-addressed editing. Spec: `ai_docs/features/036_anchored_replace_lines.md`. |

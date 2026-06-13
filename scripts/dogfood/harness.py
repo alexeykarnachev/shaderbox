@@ -104,6 +104,7 @@ from shaderbox.copilot.persistence import ConversationStore  # noqa: E402
 from shaderbox.copilot.session import CopilotSession  # noqa: E402
 from shaderbox.copilot.state import Message  # noqa: E402
 from shaderbox.exporters.registry import ExporterRegistry  # noqa: E402
+from shaderbox.media import texture_to_pil  # noqa: E402
 from shaderbox.notifications import Notifications  # noqa: E402
 from shaderbox.project_session import ProjectSession  # noqa: E402
 from shaderbox.shader_lib.file_ops import ShaderLibFileManager  # noqa: E402
@@ -279,6 +280,28 @@ class DogfoodHarness:
         print(f"    [rendered {result.width}x{result.height} -> {result.path}]")
         self._last_render_path = result.path
         return result.path
+
+    def render_at(self, t: float, node_id: str = "", *, size: int = 400) -> str:
+        """Tick the CPU-script engine to `t`, then render the node at that `t` to a PNG (feature
+        040 determinism check). Unlike `render` (the copilot tool, fixed at the exporter's t=0),
+        this advances the engine clock so a scripted uniform animates — the seam decision 4 needs.
+        GL runs on THIS (context-owning) thread; no bridge marshalling (no copilot worker involved).
+        """
+        target = node_id or self.session.current_node_id
+        ui_node = self.session.ui_nodes.get(target)
+        if ui_node is None:
+            print(f"    [render_at FAILED: no node '{target}']")
+            return ""
+        node = ui_node.node
+        node.canvas.set_size((size, size))
+        self.session.tick([target], t, 1.0 / 60.0, 0)
+        node.render(u_time=t)
+        out_path = self.session.paths.renders_dir / f"{target}_t{t:.3f}.png"
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        texture_to_pil(node.canvas.texture).save(out_path)
+        print(f"    [rendered {target} @t={t:.3f} -> {out_path}]")
+        self._last_render_path = str(out_path)
+        return str(out_path)
 
     def _latest_render_on_disk(self) -> str:
         # The truthful render pointer: harness renders set _last_render_path, but

@@ -13,19 +13,25 @@ from shaderbox.copilot.backend import CopilotBackend
 class _SyncBridge:
     # run_on_main runs the op inline on the calling thread (the production bridge marshals it to
     # the main thread + blocks); the reject path returns before touching GL, so inline is faithful.
-    def run_on_main(self, fn: Any, timeout: float | None = None, defer: bool = False) -> Any:
+    def run_on_main(
+        self, fn: Any, timeout: float | None = None, defer: bool = False
+    ) -> Any:
         return fn()
 
 
 def _stub(script_driven: set[str]) -> Any:
-    ui_nodes = {"n0": object()}  # the node only needs to EXIST; the reject returns before .node
+    ui_nodes = {
+        "n0": object()
+    }  # the node only needs to EXIST; the reject returns before .node
     stub = types.SimpleNamespace(
         _bridge=_SyncBridge(),
         _get_ui_nodes=lambda: ui_nodes,
         _get_current_node_id=lambda: "n0",
         _get_script_driven_uniforms=lambda node_id: script_driven,
     )
-    stub._copilot_resolve_node_id = CopilotBackend._copilot_resolve_node_id.__get__(stub)
+    stub._copilot_resolve_node_id = CopilotBackend._copilot_resolve_node_id.__get__(
+        stub
+    )
     return stub
 
 
@@ -42,7 +48,9 @@ def test_set_uniform_does_not_reject_a_non_script_uniform() -> None:
     # A name absent from the script-driven set passes the reject branch and reaches the normal
     # path; with no matching active uniform it returns the ordinary "no active uniform" error,
     # NOT the script-driven one — proving the reject is scoped to the script set.
-    node = types.SimpleNamespace(node=types.SimpleNamespace(get_active_uniforms=lambda: []))
+    node = types.SimpleNamespace(
+        node=types.SimpleNamespace(get_active_uniforms=lambda: [])
+    )
     stub = _stub({"u_wave"})  # u_wave is script-driven; u_x is not
     stub._get_ui_nodes = lambda: {"n0": node}
     set_uniform = CopilotBackend.set_uniform.__get__(stub)

@@ -41,6 +41,29 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   opt-in per mutation seam. The existing seams cover edit/write/set_uniform/create/delete/
   switch + lib edits (039's `write_shader` rides the shared persist seam, so it captures). A new tool that mutates durable state without a capture call leaves an
   un-revertable change. Spec: `ai_docs/features/020_copilot_agent/30_turn_rollback.md` (decision 2).
+  SPECIFICALLY for 043 (the copilot write-behavior tool): it writes `nodes/<id>/scripts/u_*.py`, a
+  durable file the checkpoint does NOT snapshot today — it must `_capture_node`-equivalent the script
+  file (or a new `_capture_script` seam) into the active checkpoint, else a script write escapes undo.
+
+## [DEFERRAL] script-engine type-change / orphan cleanup UI (feature 040)
+- **Trigger:** feature 041 (the in-app script editor) — that's where the detach/cleanup affordance
+  lands. OR a maintainer reports a stuck per-tick `ScriptError` after changing a scripted uniform's
+  TYPE in the shader (`vec2 u_x` -> `vec3 u_x`) or deleting it, and wants more than the logged warning.
+- Binding is by FILENAME (decision 6), so changing a scripted uniform's type keeps the file bound but
+  the script's value no longer fits the new shape -> a coercion `ScriptError` every tick (value frozen
+  at last-good); deleting the uniform leaves an orphan script that `reload` warns about (logged) and
+  ignores. v1 resolves + WARNS only — no UI to detach/delete a stale script. The editor at 041 owns the
+  full affordance (and the "this uniform is script-driven" slider indicator deferred from decision 5).
+  Spec: `ai_docs/features/040_uniform_script_engine.md ## Out of scope`.
+
+## [DEFERRAL] script-engine phase-A (state scripts) + the A->B ordering invariant (feature 042)
+- **Trigger:** feature 042 (state-evolution scripts -> enables pong). Before 042 lands, the
+  phase-A->B ordering invariant must be documented: phase A mutates `ctx.state`; phase B reads it;
+  BOTH run before `Node.render`. v1 runs phase B only (A is a stub, no state objects).
+- The engine shape already reserves it: `EngineContext.state`/`mouse`/`uniforms` exist (v1-empty),
+  `ScriptEngine.state` is the shared phase-A scratchpad, and `tick` has the two-phase comment.
+  `u_mouse` (system input) wires at 041. Spec: `ai_docs/features/040_uniform_script_engine.md`
+  decisions 1 + Out-of-scope.
 
 ## [DEFERRAL] copilot non-current-node-edit confirm-gate (the targeting structural backstop)
 - **Trigger:** a trace shows the agent STILL mis-targeting a node by name-association AFTER the

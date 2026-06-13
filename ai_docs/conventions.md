@@ -97,6 +97,25 @@ belong in the feature spec (`ai_docs/features/NNN_*.md`). This file is not a cha
   mutation whose UI reaction touches imgui state adds an `on_*` callback (default no-op), never a direct
   imgui import. Spec: `ai_docs/features/025_project_session_extraction.md`. Revisit if a core op needs a
   UI reaction that a fire-and-forget callback can't express (e.g. it needs a return value App reads).
+- **The CPU-script engine is headless `ProjectSession` code; scripts are project DATA; a new script
+  LANGUAGE is a `Behavior` backend, not an engine-loop change (feature 040).** A uniform can carry a
+  per-tick behavior SCRIPT (`nodes/<id>/scripts/u_<name>.py`, body-only Python) that computes its
+  value each frame. The engine (`shaderbox/scripting/`) is repo code owned by `ProjectSession`, imports
+  no imgui/glfw and no concrete `Node` type (it works against the `EngineNode` protocol — the
+  `uniform_values` dict + `get_active_uniforms()`), so it stays in the 025 headless core. **Binding is
+  by FILENAME** (stateless — no `node.json` entry, no `UIUniform` field). **The script value is handed
+  back via `out.set(...)`, NOT a last-expression rewrite** — the body is `exec`'d VERBATIM (no AST
+  surgery), so an error's lineno points at the user source (the 039 ghost removed by construction). A
+  broken script is **error-as-data**: the uniform freezes at last-good + records a `ScriptError`, never
+  raising into the frame loop (mirrors `shader_errors.ShaderError`). **Determinism is SCOPED**: a
+  `ctx.t`-pure script is identical live vs export; a `ctx.dt`/`ctx.uniforms` integrator is
+  frame-rate-dependent by design. The **live path ticks once** (`session.tick` in `ui.py`), **export
+  ticks once per frame** via the `Node.on_pre_render` hook the session injects (NEVER from
+  `Node.render()` — that would double-tick the live frame). A future C backend implements the same
+  `Behavior.compute(ctx, out)` protocol over a `.so` with no engine-loop change. Spec:
+  `ai_docs/features/040_uniform_script_engine.md`. Revisit the context fields when 042's pong needs
+  state a `dict[str, Any]` can't carry; the v1 stubs (phase A, `ctx.mouse`/`ctx.state`) wire up at
+  041/042.
 - **`tabs/*.py`: free `draw(app: App)` + optional `update(app: App)`.** `draw()` does imgui calls
   only; `update()` runs *before* imgui draws, for GL/canvas/mtime work outside the frame body. Tab
   state goes on `App` directly; a state-only sibling module (e.g. `tabs/share_state.py`) may hold
@@ -445,7 +464,10 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   has exactly these exceptions — all are missing/wrong annotations in third-party stubs, never our
   own type errors. New markers outside this list are a design smell; fix the design, don't add to
   the list. Re-audit when bumping `moderngl` / `pydantic`.
-  - `moderngl.Uniform.gl_type` — not in moderngl's stub.
+  - `moderngl.Uniform.gl_type` — not in moderngl's stub (`uniform_coerce.py`, `core.py`,
+    `copilot/backend.py`). NOTE: the feature-040 `exec()` engine seam needed NO suppression — ruff's
+    `S102` (flake8-bandit) isn't in this repo's `select`, and pyright's basic mode flags no `Any`-flow
+    on the curated-namespace `exec` (decision 12's feared marker never materialized).
   - `@model_validator(mode="after")` on a method returning `Self` — pydantic's decorator stub
     mistypes the wrapped method.
   - `moderngl.create_standalone_context(backend="egl")` — the stub types `**kwargs` as a single
