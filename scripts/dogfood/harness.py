@@ -107,7 +107,13 @@ from shaderbox.exporters.registry import ExporterRegistry  # noqa: E402
 from shaderbox.media import texture_to_pil  # noqa: E402
 from shaderbox.notifications import Notifications  # noqa: E402
 from shaderbox.project_session import ProjectSession  # noqa: E402
+from shaderbox.render_preset import (  # noqa: E402
+    FitPolicy,
+    RenderPreset,
+    ResolutionPolicy,
+)
 from shaderbox.shader_lib.file_ops import ShaderLibFileManager  # noqa: E402
+from shaderbox.tabs.share_state import render_to  # noqa: E402
 
 
 class DogfoodHarness:
@@ -321,6 +327,49 @@ class DogfoodHarness:
         )
         self._last_render_path = result.path
         return result.path
+
+    def render_video_mp4(
+        self,
+        node_id: str = "",
+        *,
+        seconds: float = 3.0,
+        fps: int = 24,
+        size: int = 240,
+    ) -> str:
+        """Render a short H.264 MP4 (for players that don't open WebM — iOS/iPad). GL on THIS
+        (context-owning) thread via share_state.render_to, which keys the codec off the .mp4 suffix
+        (libx264/yuv420p) and animates the CPU-script engine frame by frame from t=0 through the
+        export-isolation seam (a stateful brain accumulates from a clean __init__). No bridge — unlike
+        the copilot render_video (which is webm-only). Keep seconds/size small on V3D.
+        """
+        target = node_id or self.session.current_node_id
+        ui_node = self.session.ui_nodes.get(target)
+        if ui_node is None:
+            print(f"    [render_video_mp4 FAILED: no node '{target}']")
+            return ""
+        ui_node.node.canvas.set_size((size, size))
+        # FIXED_DIMS + RENDER_AT_TARGET so (size, size) drives the output (a FREE preset leaves
+        # resolution_details at 0 -> ffmpeg gets a stray `-s 0x0` and the pipe breaks).
+        preset = RenderPreset(
+            is_video=True,
+            fps=fps,
+            target_w=size,
+            target_h=size,
+            container=".mp4",
+            resolution_policy=ResolutionPolicy.FIXED_DIMS,
+            fit=FitPolicy.RENDER_AT_TARGET,
+        )
+        out = self.session.paths.renders_dir / f"{target}.mp4"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        art = render_to(ui_node.node, preset, seconds, out)
+        if art is None:
+            print("    [render_video_mp4 FAILED: render error]")
+            return ""
+        print(
+            f"    [rendered {art.size[0]}x{art.size[1]} {art.duration:.1f}s mp4 -> {art.path}]"
+        )
+        self._last_render_path = str(art.path)
+        return str(art.path)
 
     def render_at(self, t: float, node_id: str = "", *, size: int = 400) -> str:
         """Tick the CPU-script engine to `t`, then render the node at that `t` to a PNG (feature
