@@ -22,7 +22,7 @@ from shaderbox.ui_primitives import (
     caption_text,
     chip_button,
     clickable_label,
-    script_pill,
+    script_glyph,
 )
 from shaderbox.util import (
     get_resolution_str,
@@ -97,12 +97,17 @@ def _begin_ctrl(app: App, name: str, count_suffix: str = "") -> None:
     Call after the chip; positions the cursor at the control column and sets
     the next item's width. The control's own imgui label must be hidden (##).
     `count_suffix` (text/array `len/cap`) renders dim in the name column (045 B6 —
-    out of the trailing column the script pill now owns).
+    out of the trailing column the script glyph now owns).
     """
     imgui.same_line(_NAME_X)
     uniform_name_label(app, name, SIZE.UNIFORM_NAME_W)
     if count_suffix:
-        imgui.same_line(spacing=float(SPACE.SM))
+        # Right-anchor the caption against the control column (047 F13), so it never overlaps the
+        # input: a long name used to push a flowed caption past _CTRL_X (same_line to a smaller
+        # offset is a no-op), so the control drew over it. Placing it caption-width left of _CTRL_X
+        # keeps it dim in the name column's tail and clear of the control.
+        caption_w = imgui.calc_text_size(count_suffix).x
+        imgui.same_line(_CTRL_X - caption_w - float(SPACE.SM))
         caption_text(count_suffix)
     imgui.same_line(_CTRL_X)
     imgui.set_next_item_width(SIZE.UNIFORM_CTRL_W)
@@ -134,25 +139,25 @@ def _count_suffix(ui_uniform: UIUniform, current_value: UniformValue) -> str:
     return ""
 
 
-def _draw_script_pill(app: App, ui_uniform: UIUniform, state: ScriptState) -> None:
-    # The trailing per-row script affordance (045): one text pill keyed on the uniform's full row
-    # state (its own `u_<name>.py` OR — when it has none — the node-brain that drives it). Drawn only
-    # for a scriptable uniform; the accent/error fill is the at-a-glance "this row is script-driven"
-    # cue. Click opens the OWN script (creating it if absent), even for a brain-driven row (the user
-    # can attach a per-uniform override — it wins over the brain per the 044 conflict rule).
+def _draw_script_glyph(app: App, ui_uniform: UIUniform, state: ScriptState) -> None:
+    # The trailing per-row script affordance (047): a small `</>` glyph keyed on the uniform's full
+    # row state (its own `u_<name>__<tag>.py` OR — when it has none — the node-brain that drives it).
+    # Drawn only for a scriptable uniform; the accent/error colour is the at-a-glance "this row is
+    # script-driven" cue. Click opens the OWN script (creating it if absent), even for a brain-driven
+    # row (the user can attach a per-uniform override — it wins over the brain per the 044 conflict).
     name = ui_uniform.name
     node_id = app.current_node_id
     if not app.is_uniform_scriptable(node_id, name):
         return
     tooltip = {
         "absent": "Create + open a script for this uniform",
-        "active": "Script-driven — click to open (toggle on/off in the editor)",
+        "active": "Script-driven — click to open (activate in the editor)",
         "inactive": "Script inactive — click to open",
         "error": "Script error — click to open and fix",
     }[state]
     imgui.same_line()
     imgui.begin_disabled(app.copilot_turn_active)
-    if script_pill(f"u_{name}", "script", state, tooltip=tooltip):
+    if script_glyph(f"u_{name}", state, tooltip=tooltip):
         app.open_script_for(node_id, name)
     imgui.end_disabled()
 
@@ -166,17 +171,16 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
     name = ui_uniform.name
     hidden = f"##{name}"
 
-    # The row's script state for the pill + whether a script OWNS the value (own `u_<name>.py` OR the
-    # node-brain). An owned slot is written each tick, so the value widget is disabled (a live control
-    # would fight the tick) and the write-back skipped — the type pill stays live (the type is only a
-    # VIEW). Owned and pill-state are separate queries: a disabled own override shadowing an active
-    # brain shows the "inactive" pill (the user's choice) but stays locked (the brain owns the value).
+    # The row's script state for the glyph + whether a script OWNS the value (own
+    # `u_<name>__<tag>.py` OR the node-brain). The value widget stays EDITABLE even when owned (F11):
+    # the user can drag it, but the script's next tick overwrites a driven slot (it snaps back) —
+    # that snap-back is the "the script owns this" cue. The write-back is still skipped for an owned
+    # slot so a manual edit applies this frame and the tick wins next frame.
     state = app.session.uniform_pill_state(app.current_node_id, name)
     owned = app.session.is_uniform_script_owned(app.current_node_id, name)
 
     draw_input_type_selector(ui_uniform)
     _begin_ctrl(app, name, _count_suffix(ui_uniform, current_value))
-    imgui.begin_disabled(owned)
 
     if ui_uniform.input_type == "auto":
         if isinstance(current_value, float | int):
@@ -288,10 +292,10 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
             fn = getattr(imgui, f"drag_float{ui_uniform.dimension}")
             new_value = fn(hidden, list(current_value), change_speed)[1]
 
-    imgui.end_disabled()
-    _draw_script_pill(app, ui_uniform, state)
+    _draw_script_glyph(app, ui_uniform, state)
 
-    # A script owns the value (the widget was disabled); never write its unchanged return.
+    # A script owns the value; a manual edit applies this frame but the tick overwrites it next
+    # frame (F11) — so never write an owned slot's unchanged return back.
     if new_value is not None and not owned:
         try_to_release(current_value)
         ui_node.node.uniform_values[ui_uniform.name] = new_value

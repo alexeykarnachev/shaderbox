@@ -181,35 +181,26 @@ def chip_button(
     return clicked
 
 
-def script_pill(id_: str, label: str, state: ScriptState, *, tooltip: str = "") -> bool:
-    """The one shared script affordance (feature 045) — the per-uniform row's trailing control
-    AND the node-header node-brain control. A text pill (no icon): `absent` is a bordered ghost
-    (`+ {label}`), `active` is accent-filled (the at-a-glance "this is script-driven" cue),
-    `inactive` is the same pill faded, `error` is filled the error colour (the script is bound but
-    a compile/run failure froze it — surfaced on the row, not only inside the editor). Click ALWAYS
-    opens (creating first if absent) the script in the editor — it never toggles; enable/disable
-    lives on the editor's tab. Returns True on click."""
-    text = (
-        f"+ {label}"
-        if state == "absent"
-        else f"! {label}"
-        if state == "error"
-        else label
-    )
-    imgui.push_style_var(imgui.StyleVar_.frame_rounding, float(SIZE.CHIP_ROUNDING))
-    if state == "absent":
-        clicked = toggle_button(f"{text}##script_pill_{id_}", active=False)
-    elif state == "error":
-        clicked = pill_button(
-            f"{text}##script_pill_{id_}", color=COLOR.STATE_ERROR, active=True
-        )
-    else:
-        clicked = pill_button(
-            f"{text}##script_pill_{id_}",
-            color=COLOR.ACCENT_PRIMARY,
-            active=state == "active",
-        )
-    imgui.pop_style_var()
+_SCRIPT_GLYPH_COLOR: dict[ScriptState, tuple[float, float, float, float]] = {
+    "absent": COLOR.FG_DIM,
+    "active": COLOR.ACCENT_PRIMARY,
+    "inactive": fade(COLOR.ACCENT_PRIMARY, 0.45),
+    "error": COLOR.STATE_ERROR,
+}
+
+
+def script_glyph(id_: str, state: ScriptState, *, tooltip: str = "") -> bool:
+    """The one shared script affordance (feature 047) — the per-uniform row's trailing control AND
+    the node-header node-brain control. A small `</>` text glyph, theme-coloured by state: dim grey
+    when `absent`, accent when `active`, faded accent when `inactive`, error red when `error`. Click
+    ALWAYS opens (creating first if absent) the script in the editor — it never toggles; activation
+    lives on the editor's script-local bar. Returns True on click."""
+    imgui.push_style_color(imgui.Col_.button, COLOR.TRANSPARENT)
+    imgui.push_style_color(imgui.Col_.button_hovered, COLOR.BG_FRAME)
+    imgui.push_style_color(imgui.Col_.button_active, COLOR.BG_FRAME)
+    imgui.push_style_color(imgui.Col_.text, _SCRIPT_GLYPH_COLOR[state])
+    clicked: bool = imgui.small_button(f"</>##script_glyph_{id_}")
+    imgui.pop_style_color(4)
     if tooltip and imgui.is_item_hovered():
         imgui.set_tooltip(tooltip)
     return clicked

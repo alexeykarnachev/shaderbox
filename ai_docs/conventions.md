@@ -102,6 +102,19 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   agents agreeing is NOT evidence (one code-grounded contrarian overturned three on 027). When a
   majority converges on a design resting on a "state is expensive" / "this is slow" premise, require a
   code-grounded devil's-advocate that checks the premise against the runtime. Revisit: never (a law).
+- **A model flag whose ROW is created lazily-on-draw cannot be set programmatically — the writer must
+  eager-create.** When per-entity state lives on an object created lazily inside a DRAW loop (the
+  `UIUniform` row born only in `tabs/node.py`'s uniform loop; feature 047's `is_script_active`), any
+  programmatic or HEADLESS mutation that runs before that draw silently no-ops — the lookup returns
+  None and the write is skipped. The bug is latent because the interactive path always draws the row
+  first (the click that mutates is itself in the drawn UI), so it only bites smoke/dogfood/copilot/any
+  off-draw caller. Fix at the WRITE seam: `setdefault` the row from the live source before reading or
+  writing the flag (`_ui_uniform_for` now `setdefault`s `UIUniform.from_uniform(u)`), so activation is
+  independent of a prior draw. The general rule: if model state is keyed by a lazily-drawn row, the
+  setter owns the row's creation — never assume "drawn at least once". The verification that catches it
+  is a HEADLESS one that exercises the consumer, not the producer (047's smoke tick-canary + the
+  dogfood harness were the falsifiers — both were silently red until the eager-create). Revisit if row
+  creation ever moves to an eager load-time pass (then the trap can't fire).
 
 - **The shader library is layered around SIGNED distance (feature 032).** Sources `SB_sd_*` return
   an SDF (negative inside; documented exceptions like the zero-width `SB_sd_segment`); operators
@@ -146,8 +159,17 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   validated against the live uniform via the shared `uniform_coerce`. The engine (`shaderbox/scripting/`)
   is repo code owned by `ProjectSession`, imports no imgui/glfw and no concrete `Node` type (it works
   against the `EngineNode` protocol — the `uniform_values` dict + `get_active_uniforms()`), so it stays
-  in the 025 headless core. **Binding is by FILENAME** (stateless — no `node.json` entry, no `UIUniform`
-  field). **The body is `exec`'d VERBATIM** (no AST surgery; the file IS a class def — the exec globals
+  in the 025 headless core. **Binding is by FILENAME**, and the filename encodes the uniform's TYPE TAG
+  (feature 047): a per-uniform script is `u_<name>__<tag>.py` (`vec2`/`vec3`/`float`/`array`/`text`/…),
+  so the engine binds only when both name AND type match — a shader-side retype is lossless+reversible
+  (the old-tag file is left untouched), a delete-readd rebinds. The internal binding/error key stays the
+  BARE uniform name (the tag is a discovery match-gate, never a dict key); the brain stays `script.py`.
+  **ACTIVE-INTENT is a MODEL FLAG, not a filesystem marker (feature 047, replacing 045's `.disabled`):**
+  `is_script_active` on `UIUniform` / `is_brain_active` on `UINodeState`, persisted in `node.json`, born
+  `False`. `ProjectSession.reload_scripts` builds an `active_scripts: set[str]` of activated filenames
+  from the flags and passes it to `ScriptEngine.reload` (the headless boundary holds — the engine never
+  learns `UIUniform`, intent flows through a param like `engine_driven`); discovery skips any file not in
+  it. **The body is `exec`'d VERBATIM** (no AST surgery; the file IS a class def — the exec globals
   are the real Python builtins (a script is plain Python — `import math` and the stdlib work, feature
   045) plus the base + `Ctx` + ALL output types, since method annotations evaluate eagerly), so an
   error's lineno points at the user source (the 039 ghost removed

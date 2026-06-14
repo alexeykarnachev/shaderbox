@@ -519,6 +519,21 @@ Library footguns specific to the imgui-bundle Python build (currently
     `is_window_appearing`) — `frame_border_size==0` rules out a frame border; an outline that
     survives typing rules out the plain nav cursor; `is_window_appearing` on the flash frame
     fingers NavInit. (ShaderBox `widgets/copilot_chat.py`.)
+- **A native `begin_tab_bar` is READ-BACK-ONLY by default — a PROGRAMMATIC tab switch silently
+  reverts unless you DRIVE the selection.** imgui owns the selected tab; it does NOT auto-select a
+  newly-submitted tab when the bar already has a selection, and it IGNORES a model-side "active index"
+  change. So if your draw loop only reads imgui's selected tab back into your model (`if opened and i
+  != active: set_active(i)`), then opening/focusing a tab from code (a button elsewhere, a node
+  select, a jump-to-file) appears to do nothing: the bar shows the new tab but imgui keeps reporting
+  the OLD one as opened, and your read-back writes the old index straight back, so the editor/body
+  never switches. The fix is a one-shot select-pending flag: set it wherever you assign the active
+  index PROGRAMMATICALLY (never on the read-back path), read it into a `select_target` BEFORE the loop
+  (so a mid-loop read-back can't clobber it), pass `TabItemFlags_.set_selected` to the target tab's
+  `begin_tab_item`, clear the flag after the loop, and gate the read-back to `select_target is None`
+  (genuine user clicks only). The selection takes effect the FOLLOWING frame. This is invisible to a
+  paper/text review — it's frame-timing + draw-order behavior; only running the app (or an agent that
+  executes the imgui frame) catches it. (ShaderBox: `App.tab_select_pending` consumed in
+  `tabs/code.py::_draw_tab_row`, mirroring the older `ui.py` node-settings bar that already did this.)
 
 ---
 

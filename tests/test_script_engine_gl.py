@@ -18,6 +18,7 @@ import pytest
 from shaderbox.core import Node
 from shaderbox.media import MediaDetails, ResolutionDetails
 from shaderbox.scripting import EngineContext, ScriptEngine
+from shaderbox.util import get_uniform_hash
 
 _SRC = """#version 460 core
 in vec2 vs_uv;
@@ -57,9 +58,17 @@ def _node(gl: moderngl.Context) -> Node:
     return node
 
 
-def _write(scripts_dir: Path, name: str, body: str) -> None:
+def _write(scripts_dir: Path, name: str, body: str, tag: str = "float") -> None:
+    # Per-uniform script under the 047 tagged scheme `u_<name>__<tag>.py`.
     scripts_dir.mkdir(parents=True, exist_ok=True)
-    (scripts_dir / f"{name}.py").write_text(body, encoding="utf-8")
+    (scripts_dir / f"{name}__{tag}.py").write_text(body, encoding="utf-8")
+
+
+def _active(scripts_dir: Path) -> set[str]:
+    # Every on-disk script activated (047) — the GL tests don't exercise the active flag itself.
+    if not scripts_dir.is_dir():
+        return set()
+    return {p.name for p in scripts_dir.glob("*.py")}
 
 
 def _pixel(node: Node) -> tuple[int, int, int, int]:
@@ -92,10 +101,10 @@ _RAMP = (
 def test_scripted_value_reaches_gpu(gl_ctx: moderngl.Context, tmp_path: Path) -> None:
     scripts_dir = tmp_path / "scripts"
     _write(scripts_dir, "u_wave", _WAVE)
-    _write(scripts_dir, "u_offset", _OFFSET)
+    _write(scripts_dir, "u_offset", _OFFSET, tag="vec2")
     node = _node(gl_ctx)
     eng = ScriptEngine()
-    eng.reload("n", scripts_dir, node)
+    eng.reload("n", scripts_dir, node, _active(scripts_dir))
 
     eng.tick("n", node, EngineContext(t=0.0, dt=0.0, frame=0))
     assert abs(node.uniform_values["u_wave"] - 0.5) < 1e-6
@@ -130,7 +139,7 @@ def test_shape_mismatch_freezes_and_records(
     node.seed_uniform_values()
     seeded = node.uniform_values.get("u_wave")
     eng = ScriptEngine()
-    eng.reload("n", scripts_dir, node)
+    eng.reload("n", scripts_dir, node, _active(scripts_dir))
     eng.tick("n", node, EngineContext(t=0.0, dt=0.0, frame=0))
     assert node.uniform_values.get("u_wave") == seeded  # frozen, not corrupted
     assert eng.errors[("n", "u_wave")].kind == "runtime"
@@ -148,7 +157,7 @@ def test_fresh_export_instance_renders_clean(
     _write(scripts_dir, "u_wave", _RAMP)
     node = _node(gl_ctx)
     eng = ScriptEngine()
-    eng.reload("n", scripts_dir, node)
+    eng.reload("n", scripts_dir, node, _active(scripts_dir))
 
     # Cold-start reference: a fresh set, one tick at frame 0.
     cold = eng.fresh_behaviors_for("n")
@@ -184,7 +193,7 @@ def test_render_media_auto_enters_export_isolation(
     _write(scripts_dir, "u_wave", _RAMP)
     node = _node(gl_ctx)
     eng = ScriptEngine()
-    eng.reload("n", scripts_dir, node)
+    eng.reload("n", scripts_dir, node, _active(scripts_dir))
 
     entered = {"count": 0}
 
@@ -253,6 +262,7 @@ def test_int_uniforms_reach_gpu_not_popped(
         "class Behavior(ScriptBehavior):\n"
         "    def update(self, ctx: Ctx) -> int:\n"
         "        return 2.7\n",  # a float -> must round to int(3)
+        tag="int",
     )
     _write(
         scripts_dir,
@@ -260,6 +270,7 @@ def test_int_uniforms_reach_gpu_not_popped(
         "class Behavior(ScriptBehavior):\n"
         "    def update(self, ctx: Ctx) -> int:\n"
         "        return 4.2\n",
+        tag="int",
     )
     _write(
         scripts_dir,
@@ -267,13 +278,14 @@ def test_int_uniforms_reach_gpu_not_popped(
         "class Behavior(ScriptBehavior):\n"
         "    def update(self, ctx: Ctx) -> Vec2:\n"
         "        return Vec2(1.6, 2.4)\n",
+        tag="vec2",
     )
     node = Node(gl=gl_ctx)
     node.release_program(_INT_SRC)
     node.compile()
     node.render(u_time=0.0)
     eng = ScriptEngine()
-    eng.reload("n", scripts_dir, node)
+    eng.reload("n", scripts_dir, node, _active(scripts_dir))
     eng.tick("n", node, EngineContext(t=0.0, dt=0.0, frame=0))
     node.render(u_time=0.0)
     # If the write raised, render's except pops the value — these reads would be missing.
@@ -315,7 +327,7 @@ def test_brain_drives_two_uniforms_to_gpu_and_export_clean(
     _write_brain(scripts_dir, _BRAIN_RAMP)
     node = _node(gl_ctx)
     eng = ScriptEngine()
-    eng.reload("n", scripts_dir, node)
+    eng.reload("n", scripts_dir, node, _active(scripts_dir))
 
     # Cold-start reference: a fresh set, one tick at frame 0.
     cold = eng.fresh_behaviors_for("n")
@@ -341,3 +353,28 @@ def test_brain_drives_two_uniforms_to_gpu_and_export_clean(
 
     with contextlib.suppress(Exception):
         node.release()
+
+
+def test_uniform_hash_distinguishes_retype(gl_ctx: moderngl.Context) -> None:
+    # The born-inactive-on-retype guarantee (047 decision 14) rests on a retyped uniform hashing to a
+    # DIFFERENT bucket (so it gets a fresh default-False UIUniform). get_uniform_hash keys a real
+    # moderngl.Uniform on (name, array_length, dimension, gl_type), so vec2 u_x and vec3 u_x must
+    # differ. (Drop the dimension/gl_type components and this goes green-on-regression.)
+    def _hash_of(decl: str) -> int:
+        # u_x must be USED or the GLSL compiler prunes it; `.x` is shape-agnostic (vec2/vec3).
+        src = (
+            "#version 460 core\nin vec2 vs_uv;\nuniform "
+            + decl
+            + ";\nout vec4 fs_color;\nvoid main() { fs_color = vec4(u_x.x, 0.0, 0.0, 1.0); }\n"
+        )
+        node = Node(gl=gl_ctx)
+        node.release_program(src)
+        node.compile()
+        node.render(u_time=0.0)
+        u = next(u for u in node.get_active_uniforms() if u.name == "u_x")
+        h = get_uniform_hash(u)
+        with contextlib.suppress(Exception):
+            node.release()
+        return h
+
+    assert _hash_of("vec2 u_x") != _hash_of("vec3 u_x")

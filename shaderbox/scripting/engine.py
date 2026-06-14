@@ -12,6 +12,7 @@ The engine imports no imgui/glfw/App and no concrete `Node` type — it works ag
 """
 
 from collections.abc import Iterable
+from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, Protocol, TypeGuard
@@ -41,23 +42,31 @@ class BrainStatus:
     soft_errors: list[tuple[str, "ScriptError"]]
 
 
-_SCRIPT_GLOB = "u_*.py"
+# A per-uniform script's on-disk filename encodes the uniform's type tag (feature 047):
+# `u_<name>__<tag>.py`, where <tag> is the coercion signature (_uniform_tag). The glob matches only
+# the tagged form, so the binding is keyed by (name, type): a retype looks for a different tag and
+# can't corrupt the old script; a delete-readd rebinds. The tag is a MATCH GATE — every internal key
+# (behaviors/errors/last_good/...) stays the BARE uniform name parsed from the filename.
+_SCRIPT_GLOB = "u_*__*.py"
 # A node-brain script: one stateful class whose update returns a dict driving many uniforms. The
 # dot keeps the filename out of _SCRIPT_GLOB and out of any GLSL identifier (so the sentinel error
 # KEY (node_id, "script.py") can never collide with a per-uniform key). Feature 044.
 _BRAIN_FILE = "script.py"
-# A sibling marker (045): `<file>.disabled` next to a script means INACTIVE — present on disk +
-# editable, but the engine never binds/ticks it (the uniform returns to manual). By-filename (the
-# 041 stateless invariant holds), survives reload+restart, and external to the body so export
-# isolation skips it by construction (a never-bound script is never in scripts.sources).
-_DISABLED_SUFFIX = ".disabled"
 
 
-def _is_disabled(script_path: Path) -> bool:
-    return script_path.with_name(script_path.name + _DISABLED_SUFFIX).is_file()
+def parse_script_filename(filename: str) -> tuple[str, str] | None:
+    # `u_<name>__<tag>.py` -> (uniform_name, tag), or None for a non-conforming name. The name may
+    # itself contain underscores; the LAST `__` separates name from tag.
+    if not filename.endswith(".py"):
+        return None
+    stem = filename[:-3]
+    sep = stem.rfind("__")
+    if sep <= 0 or sep + 2 >= len(stem):
+        return None
+    return stem[:sep], stem[sep + 2 :]
 
 
-# The per-row / node-header script pill's states (045): no script / driving the slot /
+# The per-row / node-header script glyph's states (045): no script / driving the slot /
 # present-but-toggled-off / present-but-erroring. Resolved by ProjectSession.script_state_for
 # (disk presence + the engine's brain-driven set + recorded errors).
 ScriptState = Literal["absent", "active", "inactive", "error"]
@@ -115,6 +124,10 @@ class NodeScripts:
         self.behaviors: dict[str, PythonBehavior] = {}
         self.mtimes: dict[str, float] = {}
         self.sources: dict[str, str] = {}
+        # Bare uniform name -> the binding's on-disk filename `u_<name>__<tag>.py` (feature 047), so
+        # script_file_for can report the tagged name the copilot/UI must edit. The brain isn't here
+        # (it's always `script.py`).
+        self.filenames: dict[str, str] = {}
         self.last_good: dict[str, Any] = {}
         # The uniform names the node-brain (script.py) drove on its last tick (every key it targeted
         # at a real scriptable uniform, a coercion-failed key included) — dynamic (the dict keys),
@@ -153,13 +166,31 @@ def _stub_kind(uniform: moderngl.Uniform) -> tuple[str, str]:
     return "float", "0.0"
 
 
+def uniform_tag(uniform: moderngl.Uniform) -> str:
+    # The filename type tag for a uniform (feature 047): the lowercased coercion signature
+    # `_stub_kind` already computes, so the filename builder + the discovery matcher share ONE source
+    # and can never disagree. `Vec2`->`vec2`, `Array`->`array`, `Text`->`text`, `float`/`int` as-is.
+    ann, _ = _stub_kind(uniform)
+    return ann.lower()
+
+
+def per_uniform_filename(uniform: moderngl.Uniform) -> str:
+    # The on-disk filename binding a per-uniform script to `uniform` (feature 047): `u_<name>__<tag>.py`.
+    # The ONE home for the assembly, so the builder (ProjectSession) and the discovery glob never drift.
+    return f"{uniform.name}__{uniform_tag(uniform)}.py"
+
+
 # Scoped docstrings (045 E1): the per-frame ctx reference lives on the `update` method (it is what
 # each tick gets); the class docstring carries the high-level "what this drives"; __init__ states it
 # runs once. A script is plain Python — `import math` (or any stdlib) at the top to reach math.*.
 _UPDATE_DOC = (
     '        """Compute this frame\'s value.\n'
-    "        ctx.t  elapsed seconds | ctx.dt  delta seconds | ctx.frame  frame index\n"
-    "        ctx.mouse.x / ctx.mouse.y  cursor over the canvas, 0..1, y-up (0.5,0.5 on export)\n"
+    "\n"
+    "        Args:\n"
+    "            ctx.t: Elapsed seconds since start.\n"
+    "            ctx.dt: Delta seconds since the previous frame.\n"
+    "            ctx.frame: Frame index.\n"
+    "            ctx.mouse: Cursor over the canvas (x, y in 0..1, y-up; 0.5,0.5 on export).\n"
     '        """\n'
 )
 _INIT_DOC = (
@@ -177,6 +208,7 @@ def stub_for(uniform: moderngl.Uniform) -> str:
         f"import math\n\n"
         f"class Behavior(ScriptBehavior):\n"
         f'    """Drive {uniform.name} each frame. Keep state on self (persists across frames)."""\n'
+        f"\n"
         f"    def __init__(self) -> None:\n"
         f"{_INIT_DOC}"
         f"        pass\n\n"
@@ -206,6 +238,7 @@ def brain_stub_for(uniforms: Iterable[moderngl.Uniform]) -> str:
         f"import math\n\n"
         f"class Behavior(ScriptBehavior):\n"
         f'    """Drive many uniforms from one object each frame (node-brain). Keep state on self."""\n'
+        f"\n"
         f"    def __init__(self) -> None:\n"
         f"{_INIT_DOC}"
         f"        pass\n\n"
@@ -259,23 +292,32 @@ class ScriptEngine:
         )
 
     def script_file_for(self, node_id: str, name: str) -> str | None:
-        # The scripts/ filename that drives `name`, or None if nothing does. A u_<name>.py wins over
-        # the brain (the conflict rule: per-uniform overrides), so it's reported when both exist.
+        # The scripts/ filename that drives `name`, or None if nothing does. A u_<name>__<tag>.py
+        # wins over the brain (the conflict rule: per-uniform overrides), so it's reported when both
+        # exist. The per-uniform name is the discovered tagged filename (feature 047), not f"{name}.py".
         node = self._nodes.get(node_id)
         if node is None:
             return None
         if name in node.behaviors:
-            return f"{name}.py"
+            return node.filenames.get(name)
         if name in node.last_driven:
             return _BRAIN_FILE
         return None
 
-    def reload(self, node_id: str, scripts_dir: Path, node: EngineNode) -> None:
+    def reload(
+        self,
+        node_id: str,
+        scripts_dir: Path,
+        node: EngineNode,
+        active_scripts: AbstractSet[str] = frozenset(),
+    ) -> None:
         # Glob the node's scripts dir, (re)compile only files whose mtime changed (a recompile
         # makes a FRESH instance — state resets on edit), drop removed files, and resolve each
         # binding against the node's active uniforms — warning ONCE (on the transition) on an orphan
         # (no such uniform) or an engine-owned/unscriptable target. Cheap when nothing changed: a
-        # stat per file, no recompile.
+        # stat per file, no recompile. `active_scripts` (feature 047) holds the on-disk filenames
+        # the user has activated (`u_<name>__<tag>.py`, `script.py`) — built by ProjectSession from
+        # the model flags; a file not in it is skipped (the inactive case, replacing the 045 marker).
         scripts = self._nodes.get(node_id)
         if scripts is None or scripts.scripts_dir != scripts_dir:
             scripts = NodeScripts(scripts_dir)
@@ -288,16 +330,20 @@ class ScriptEngine:
         found: set[str] = set()
         if scripts_dir.is_dir():
             for path in sorted(scripts_dir.glob(_SCRIPT_GLOB)):
-                name = path.stem
-                # Inactive (045): a `<file>.disabled` sibling means the user toggled it off — leave it
-                # out of `found` so the drop loop below tears down any live binding (the uniform
-                # returns to manual). It is NOT an orphan, so no warn.
-                if _is_disabled(path):
+                parsed = parse_script_filename(path.name)
+                if parsed is None:
+                    continue  # a non-conforming `u_*__*.py` (no name/tag split)
+                name, tag = parsed
+                # Inactive (047): the user hasn't activated this file — leave it out of `found` so
+                # the drop loop below tears down any live binding (the uniform returns to manual).
+                # It is NOT an orphan, so no warn.
+                if path.name not in active_scripts:
                     continue
-                # Resolve against the live uniforms FIRST — only a real, scriptable binding counts as
-                # "found" (so a uniform that goes inactive is reclaimed by the drop loop below).
+                # Resolve against the live uniforms FIRST — only a real, scriptable binding whose TYPE
+                # TAG still matches the live uniform counts as "found" (so a retyped uniform's old-tag
+                # script is reclaimed by the drop loop, leaving the file on disk for a retype-back).
                 if check_active:
-                    reason = self._binding_reject(name, active)
+                    reason = self._binding_reject(name, active, tag)
                     if reason is not None:
                         if name not in scripts.warned:
                             logger.warning(
@@ -307,6 +353,7 @@ class ScriptEngine:
                         continue
                 found.add(name)
                 scripts.warned.discard(name)
+                scripts.filenames[name] = path.name
                 try:
                     mtime = path.stat().st_mtime
                     body = path.read_text(encoding="utf-8")
@@ -327,9 +374,10 @@ class ScriptEngine:
                     self.errors.pop(key, None)
 
             # The node-brain is a SEPARATE discovery branch — `script.py` has a dot, so _SCRIPT_GLOB
-            # (u_*.py) never matches it (decision 1). It binds lazily (its keys validate per-tick),
-            # so no _binding_reject here; found.add keeps it past the drop loop below.
-            self._reload_brain(scripts_dir / _BRAIN_FILE, node_id, scripts, found)
+            # never matches it (decision 1). It binds lazily (its keys validate per-tick), so no
+            # _binding_reject here; found.add keeps it past the drop loop below.
+            if _BRAIN_FILE in active_scripts:
+                self._reload_brain(scripts_dir / _BRAIN_FILE, node_id, scripts, found)
 
         # Drop bindings whose file disappeared OR whose uniform went inactive/unscriptable.
         for name in list(scripts.behaviors):
@@ -337,6 +385,7 @@ class ScriptEngine:
                 scripts.behaviors.pop(name, None)
                 scripts.mtimes.pop(name, None)
                 scripts.sources.pop(name, None)
+                scripts.filenames.pop(name, None)
                 scripts.last_good.pop(name, None)
                 self.errors.pop((node_id, name), None)
                 if name == _BRAIN_FILE:
@@ -355,9 +404,9 @@ class ScriptEngine:
     ) -> None:
         # Discover + (re)compile nodes/<id>/scripts/script.py keyed by the _BRAIN_FILE sentinel,
         # mtime-cached like a per-uniform binding. Its error records under (node_id, "script.py").
-        # A `script.py.disabled` sibling (045) means inactive — skip discovery so the drop loop
-        # tears down a live brain binding.
-        if not path.is_file() or _is_disabled(path):
+        # The caller only reaches here when `script.py` is active (feature 047); an inactive brain is
+        # left out of `found`, so the drop loop tears down a live binding.
+        if not path.is_file():
             return
         found.add(_BRAIN_FILE)
         try:
@@ -378,9 +427,16 @@ class ScriptEngine:
             self.errors.pop(key, None)
 
     def _binding_reject(
-        self, name: str, active: dict[str, moderngl.Uniform | moderngl.UniformBlock]
+        self,
+        name: str,
+        active: dict[str, moderngl.Uniform | moderngl.UniformBlock],
+        tag: str | None = None,
     ) -> str | None:
-        # Why a script can't bind to `name` (None = it can). Drives the warn-once message.
+        # Why a script can't bind to `name` (None = it can). Drives the warn-once message. The
+        # per-uniform reload path still rejects an engine-owned name here (defence-in-depth against a
+        # hand-created `u_time__float.py` clobbering the renderer). The BRAIN never reaches this branch
+        # for an engine-owned key — _apply_behavior drops it SILENTLY upstream (decision 5), so no
+        # "engine-owned" soft error ever surfaces.
         if name in self._engine_driven:
             return f"'{name}' is engine-owned (its value is set by the renderer)"
         uniform = active.get(name)
@@ -388,6 +444,11 @@ class ScriptEngine:
             return f"no active uniform '{name}' (orphan script)"
         if not is_scriptable(uniform):
             return f"'{name}' is a sampler/block — not a scriptable value"
+        # The per-uniform reload passes the file's type tag (feature 047): a tag that no longer
+        # matches the live uniform means the uniform was retyped — drop the binding (the file stays
+        # on disk for a retype-back), not a coercion error.
+        if tag is not None and uniform_tag(uniform) != tag:
+            return f"'{name}' is now {uniform_tag(uniform)}, script is {tag} (retyped)"
         return None
 
     def reset(self, node_id: str, name: str) -> None:
@@ -598,13 +659,18 @@ class ScriptEngine:
             )
             uniform = active.get(name)
             if binding_key == _BRAIN_FILE:
+                # An engine-owned key (u_time…) is SILENTLY dropped (feature 047 decision 5): no error,
+                # no skip-record, no warn — the renderer owns that slot and a brain can't be expected to
+                # avoid naming it. It can't reach a per-uniform binding (engine-owned aren't scriptable),
+                # only a brain dict, so this is the one place it's filtered.
+                if name in self._engine_driven:
+                    continue
                 # A brain key validates LAZILY at tick (its keys are dynamic) through the SAME
-                # _binding_reject the per-uniform path uses at reload: engine-owned (u_time…), orphan
-                # (typo / inactive), or sampler/block all get a reason. Record a soft ScriptError under
-                # (node,name) so the UI surfaces it (NOT loguru-only), warn-once, SKIP with NO write
-                # (frozen is None for a never-bound name; decision 5). It goes in `skipped` NOT `driven`
-                # — it names no scriptable uniform, so script_driven_uniforms must not claim ownership
-                # (the engine-owned-u_time false-ownership bug).
+                # _binding_reject the per-uniform path uses at reload: orphan (typo / inactive) or
+                # sampler/block get a reason. Record a soft ScriptError under (node,name) so the UI
+                # surfaces it (NOT loguru-only), warn-once, SKIP with NO write (frozen is None for a
+                # never-bound name; decision 5). It goes in `skipped` NOT `driven` — it names no
+                # scriptable uniform, so script_driven_uniforms must not claim ownership.
                 reason = self._binding_reject(name, active)
                 if reason is not None:
                     errors[key] = ScriptError(name, "runtime", reason)

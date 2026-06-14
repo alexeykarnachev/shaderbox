@@ -98,7 +98,8 @@ def _seed_tmp_project(root: Path) -> Path:
     )
     scripts_dir = scripted / "scripts"
     scripts_dir.mkdir()
-    (scripts_dir / "u_wave.py").write_text(
+    # The 047 tagged filename: `u_<name>__<tag>.py`. u_wave is a float, so the tag is "float".
+    (scripts_dir / "u_wave__float.py").write_text(
         "import math\n"
         "class Behavior(ScriptBehavior):\n"
         "    def update(self, ctx: Ctx) -> float:\n"
@@ -162,6 +163,10 @@ def main() -> int:
         project = _seed_tmp_project(Path(tmp))
         try:
             app = App(project_dir=project, headless=True)
+            # Activate the seeded scripts (047 — born inactive): the per-uniform u_wave script + the
+            # node-brain, so the engine actually ticks them in the loop below.
+            app.set_script_active("scripted", "u_wave", True)
+            app.set_script_active("brain", None, True)
             if app.ui_nodes:
                 app.set_current_node_id(next(iter(app.ui_nodes)))
             # Feature 019: nav_enable_keyboard is set in __init__, before any frame —
@@ -198,6 +203,13 @@ def main() -> int:
                 if frame_idx == 113:
                     app.popup_state = PopupState.CLOSED
                     app.is_copilot_open = False
+            # Canary (047): the renamed `u_wave__float.py` must have actually BOUND + ticked — a
+            # builder-vs-matcher tag disagreement would leave it undiscovered and green-wash smoke.
+            driven = app.session.script_engine.script_driven_uniforms("scripted")
+            assert "u_wave" in driven, (
+                f"smoke: the u_wave__float.py script did not bind/tick (driven={driven}) — "
+                "the 047 filename scheme didn't match the discovery matcher"
+            )
             app.release()
             logger.info(f"smoke: OK ({N_FRAMES} frames, {len(app.ui_nodes)} nodes)")
             return 0

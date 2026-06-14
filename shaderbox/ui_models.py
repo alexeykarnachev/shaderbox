@@ -39,6 +39,10 @@ class UIUniform(BaseModel):
     dimension: int = -1
     array_length: int = -1
     input_type: UIUniformInputType = "auto"
+    # The per-uniform script's active-intent (feature 047): the engine binds + ticks the uniform's
+    # `u_<name>__<tag>.py` only when this is True. Born False (a fresh script is inactive); the
+    # script-local bar's Activate button is the one place it flips.
+    is_script_active: bool = False
 
     model_config = {"arbitrary_types_allowed": True}
 
@@ -134,6 +138,10 @@ class UINodeState(BaseModel):
 
     video_to_video_smoothing_window: int = 5
     video_to_video_smoothing_sigma: float = 1.0
+
+    # The node-brain script's active-intent (feature 047): the engine binds + ticks `script.py` only
+    # when True. Born False; independent of every per-uniform flag (nothing cascades).
+    is_brain_active: bool = False
 
 
 class EditorSettings(BaseModel):

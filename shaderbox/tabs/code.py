@@ -1,92 +1,116 @@
 from pathlib import Path
 
-from imgui_bundle import imgui, imgui_ctx
+from imgui_bundle import imgui
 from imgui_bundle import imgui_color_text_edit as text_edit
 
 from shaderbox.app import App
 from shaderbox.editor_types import EditorTab, HoverMark, JumpRequest
 from shaderbox.shader_errors import ShaderError
 from shaderbox.theme import COLOR, EDITOR_UNFOCUSED_ALPHA, SIZE, SPACE, fade
-from shaderbox.ui_primitives import draw_copyable_text, ghost_button, toggle_button
+from shaderbox.ui_primitives import draw_copyable_text, primary_button
 from shaderbox.util import format_auto_value
 
 _MAX_ERROR_ROWS = 3
 
 
-def _tab_label(app: App, tab: EditorTab) -> str:
-    # The semantic, path-free label (045): node shader / node script / script · <uniform> / a lib
-    # file's own name (libs are genuinely path-named resources).
-    if tab.kind == "shader":
-        return "shader"
-    if tab.kind == "node_script":
-        return "node script"
-    if tab.kind == "uniform_script":
-        return f"script . {tab.name}"
-    return tab.path.name
+def _is_script_tab(tab: EditorTab | None) -> bool:
+    return tab is not None and tab.kind in ("node_script", "uniform_script")
 
 
 def _draw_tab_row(app: App) -> None:
-    # The editor's tab row (045): a horizontally-scrolling strip of file tabs on the left + the
-    # active script's enable/disable toggle pinned right. The tabs live in a scroll child so a long
-    # open-set (the spring-pendulum workflow opens 10+) never clips a tab's close `x` off-screen.
-    # FPE-safe (plain imgui, no TextEditor.render), so it draws even behind a modal.
-    toggle_w = _script_toggle_width(app)
-    strip_w = max(0.0, imgui.get_content_region_avail().x - toggle_w)
-    with imgui_ctx.begin_child(
-        "##editor_tabs",
-        size=imgui.ImVec2(strip_w, imgui.get_frame_height()),
-        window_flags=imgui.WindowFlags_.horizontal_scrollbar
-        | imgui.WindowFlags_.no_scroll_with_mouse,
-    ):
-        close_index: int | None = None
+    # The editor's tab row (047): a native imgui tab bar — drag-reorder, x-close, unsaved dot, an
+    # error-tinted tab, and overflow scroll + a ▾ list popup. Tab labels are the bare on-disk
+    # filename. FPE-safe (plain imgui, no TextEditor.render), so it draws even behind a modal.
+    # A genuine click is read back into active_tab_index; a PROGRAMMATIC switch (glyph open /
+    # node-select / lib-jump / close) DRIVES imgui's selection via set_selected — imgui ignores a
+    # model-side index change otherwise and reverts to the old tab. The target is read BEFORE the
+    # loop so the mid-loop read-back can't clobber it (the ui.py node-settings-bar pattern).
+    select_target = app.active_tab_index if app.tab_select_pending else None
+    app.tab_select_pending = False
+    flags = (
+        imgui.TabBarFlags_.reorderable.value
+        | imgui.TabBarFlags_.fitting_policy_scroll.value
+        | imgui.TabBarFlags_.tab_list_popup_button.value
+        | imgui.TabBarFlags_.draw_selected_overline.value
+    )
+    close_index: int | None = None
+    if imgui.begin_tab_bar("##editor_tabs", flags):
         for i, tab in enumerate(app.editor_tabs):
-            if i > 0:
-                imgui.same_line(spacing=float(SPACE.XS))
-            if toggle_button(
-                f"{_tab_label(app, tab)}##tab_{i}", active=i == app.active_tab_index
-            ):
-                app.set_active_tab(i)
-            imgui.same_line(spacing=0.0)
-            if ghost_button(f"x##tabclose_{i}"):
+            item_flags = 0
+            if app.is_tab_dirty(tab):
+                item_flags |= imgui.TabItemFlags_.unsaved_document.value
+            if i == select_target:
+                item_flags |= imgui.TabItemFlags_.set_selected.value
+            tinted = _is_script_tab(tab) and _tab_has_error(app, tab)
+            if tinted:
+                imgui.push_style_color(imgui.Col_.tab, COLOR.STATE_ERROR)
+                imgui.push_style_color(imgui.Col_.tab_hovered, COLOR.STATE_ERROR)
+                imgui.push_style_color(imgui.Col_.tab_selected, COLOR.STATE_ERROR)
+            opened, keep = imgui.begin_tab_item(
+                f"{tab.path.name}##tab{i}", True, item_flags
+            )
+            if keep is not None and not keep:
                 close_index = i
-        if close_index is not None:
-            app.close_tab(close_index)
-    if toggle_w > 0.0:
-        imgui.same_line()
-        _draw_script_toggle(app)
+            if opened:
+                # Read back a genuine user click — but NOT while we're driving a programmatic
+                # switch (imgui still reports the old tab opened on the drive frame).
+                if select_target is None and i != app.active_tab_index:
+                    app.set_active_tab(i)
+                imgui.end_tab_item()
+            if tinted:
+                imgui.pop_style_color(3)
+        imgui.end_tab_bar()
+    if close_index is not None:
+        app.close_tab(close_index)
 
 
-def _script_toggle_width(app: App) -> float:
-    # The width the enable/disable toggle reserves at the right of the tab row — 0 when the active
-    # tab isn't a script (no toggle drawn).
+def _tab_has_error(app: App, tab: EditorTab) -> bool:
+    return app.session.script_state_for(tab.node_id, tab.name) == "error"
+
+
+def _draw_script_bar(app: App) -> None:
+    # The script-local control bar (047 F3 + F14): a thin bar under the tab bar, drawn ONLY for a
+    # script tab. The Activate/Deactivate button (the one place the active flag flips) + (per-uniform
+    # only) the copy-content selector. Frozen mid-copilot-turn.
     tab = app.active_tab
-    if tab is None or tab.kind not in ("node_script", "uniform_script"):
-        return 0.0
-    return SIZE.BTN_SM_W * 1.4 + float(SPACE.SM)
-
-
-def _draw_script_toggle(app: App) -> None:
-    # The active/inactive control (045): pinned right of the tab row, shown only for a script tab.
-    # The one place enable/disable lives — the row/header pill only opens. Frozen mid-copilot-turn.
-    tab = app.active_tab
-    if tab is None or tab.kind not in ("node_script", "uniform_script"):
+    if not _is_script_tab(tab):
         return
-    # Enabled = applied (active or error-frozen, both have NO `.disabled` marker); only `inactive`
-    # is off. An erroring script is still ON — the toggle mustn't read it as disabled.
-    enabled = app.session.script_state_for(tab.node_id, tab.name) != "inactive"
-    label = "active" if enabled else "inactive"
+    assert tab is not None
+    # A per-uniform tab whose live uniform was retyped/removed is STALE: the open file
+    # (u_x__vec2.py) no longer matches what the current (name, type) resolves to, so the bar's
+    # activation would act on a different (absent) file. Surface it instead of mislabeling — the
+    # vec2 file persists on disk; recover its code via Copy-content on the fresh tab.
+    if tab.kind == "uniform_script" and tab.name is not None:
+        live_path = app.session.script_path_for(tab.node_id, tab.name)
+        if live_path != tab.path:
+            imgui.text_colored(
+                COLOR.STATE_WARN,
+                "This uniform was retyped or removed — its script is detached.",
+            )
+            return
+    active = app.session.script_state_for(tab.node_id, tab.name) != "inactive"
     imgui.begin_disabled(app.copilot_turn_active)
-    if toggle_button(
-        f"{label}##script_toggle", active=enabled, width=SIZE.BTN_SM_W * 1.4
-    ):
-        app.set_script_active(tab.node_id, tab.name, not enabled)
+    label = "Deactivate script" if active else "Activate script"
+    if primary_button(f"{label}##script_activate"):
+        app.set_script_active(tab.node_id, tab.name, not active)
+    if tab.kind == "uniform_script" and tab.name is not None:
+        imgui.same_line(spacing=float(SPACE.MD))
+        _draw_copy_content_selector(app, tab.node_id, tab.name)
     imgui.end_disabled()
-    if imgui.is_item_hovered():
-        imgui.set_tooltip(
-            "Script is applied — click to disable"
-            if enabled
-            else "Script is off — click to apply"
-        )
+
+
+def _draw_copy_content_selector(app: App, node_id: str, name: str) -> None:
+    # A dropdown of every OTHER per-uniform script of the SAME type across the project (047 F14):
+    # picking one copies its body into the editor buffer (NOT a re-bind). Disabled when none exists.
+    candidates = app.session.same_type_scripts(node_id, name)
+    imgui.set_next_item_width(SIZE.UNIFORM_CTRL_W)
+    imgui.begin_disabled(not candidates)
+    if imgui.begin_combo("##copy_content", "Copy content from…"):
+        for label, path in candidates:
+            if imgui.selectable(f"{label}##copy_{path}", False)[0]:
+                app.copy_into_current_editor(app.session.copy_script_body(path))
+        imgui.end_combo()
+    imgui.end_disabled()
 
 
 def _script_errors_for(app: App, tab: EditorTab) -> list[ShaderError]:
@@ -145,6 +169,11 @@ def _consume_jump(app: App, editor: text_edit.TextEditor, current_path: Path) ->
     return True
 
 
+def _visible_error_rows(app: App, n: int) -> int:
+    # How many error rows the strip shows: all of them when expanded (047 F6), else capped.
+    return n if app.errors_expanded else min(n, _MAX_ERROR_ROWS)
+
+
 def _draw_error_strip(
     app: App, errors: list[ShaderError], height: float, current_path: Path
 ) -> None:
@@ -153,7 +182,8 @@ def _draw_error_strip(
         n = len(errors)
         if n > 1:
             imgui.text_colored(COLOR.FG_DIM, f"{n} errors  (F8: next)")
-        for i, err in enumerate(errors[:_MAX_ERROR_ROWS]):
+        shown = _visible_error_rows(app, n)
+        for i, err in enumerate(errors[:shown]):
             label = (
                 err.message
                 if err.line < 0
@@ -164,9 +194,15 @@ def _draw_error_strip(
             imgui.pop_style_color(1)
             if clicked and err.line >= 0:
                 app.editor_jump_request = JumpRequest(err.path, err.line, 0)
-        extra = n - _MAX_ERROR_ROWS
-        if extra > 0:
-            imgui.text_colored(COLOR.FG_DIM, f"+{extra} more")
+        if n > _MAX_ERROR_ROWS:
+            # Clickable toggle (F6): expand to all errors / collapse back to the cap.
+            extra = n - _MAX_ERROR_ROWS
+            more = "show less" if app.errors_expanded else f"+{extra} more"
+            imgui.push_style_color(imgui.Col_.text, COLOR.FG_DIM)
+            toggled = imgui.selectable(f"{more}##errmore", False)[0]
+            imgui.pop_style_color(1)
+            if toggled:
+                app.errors_expanded = not app.errors_expanded
     imgui.end_child()
     imgui.pop_style_color(1)
 
@@ -195,7 +231,7 @@ def draw_chrome(app: App) -> None:
         if imgui.button("Open dir", size=(SIZE.BTN_SM_W, 0)):
             app.open_current_node_dir()
     else:
-        imgui.text_colored(COLOR.FG_DIM, _tab_label(app, tab))
+        imgui.text_colored(COLOR.FG_DIM, tab.path.name)
         if app.is_current_editor_dirty():
             imgui.same_line()
             imgui.text_colored(COLOR.STATE_WARN, "(unsaved)")
@@ -205,9 +241,10 @@ def draw(app: App) -> None:
     app.code_hovered_uniform = ""
     ui_node = app.ui_nodes.get(app.current_node_id)
 
-    # The tab row (tabs + the script-toggle) is plain imgui (no TextEditor.render), so it draws even
+    # The tab row + the script-local bar are plain imgui (no TextEditor.render), so they draw even
     # behind a modal — only the editor render + error strip are FPE-gated below.
     _draw_tab_row(app)
+    _draw_script_bar(app)
 
     tab = app.active_tab
     current_path = app.current_editor_path
@@ -244,8 +281,10 @@ def draw(app: App) -> None:
     strip_height = 0.0
     if errors:
         n = len(errors)
-        # capped rows + "+N more" line + "N errors" header
-        rows = min(n, _MAX_ERROR_ROWS) + (n > _MAX_ERROR_ROWS) + (n > 1)
+        # The rows actually drawn: the "N errors" header (n>1) + the visible error rows (capped or
+        # all when expanded) + the "+N more"/"show less" toggle (n>_MAX). Matches _draw_error_strip
+        # exactly, so no dead trailing row (047 F5).
+        rows = (n > 1) + _visible_error_rows(app, n) + (n > _MAX_ERROR_ROWS)
         # Measure in the strip's own font (font_12), not the ambient UI font.
         imgui.push_font(app.font_12, app.font_12.legacy_size)
         strip_height = (

@@ -21,7 +21,10 @@ from shaderbox.scripting import (
     ScriptEngine,
     brain_stub_for,
     is_scriptable,
+    parse_script_filename,
+    per_uniform_filename,
     stub_for,
+    uniform_tag,
 )
 
 _GL_FLOAT = 0x1406
@@ -48,22 +51,38 @@ class _FakeNode:
         return self._uniforms
 
 
-def _write(tmp: Path, name: str, body: str) -> Path:
+def _write(tmp: Path, name: str, body: str, tag: str = "float") -> Path:
+    # Write a per-uniform script under the 047 tagged scheme `u_<name>__<tag>.py`. `tag` defaults to
+    # "float" (the common scalar case); a test with a vec/array/text uniform passes the matching tag.
     scripts_dir = tmp / "scripts"
     scripts_dir.mkdir(exist_ok=True)
-    path = scripts_dir / f"{name}.py"
+    path = scripts_dir / f"{name}__{tag}.py"
     path.write_text(body, encoding="utf-8")
     return path
 
 
 def _write_brain(tmp: Path, body: str) -> Path:
     # The node-brain file (feature 044): nodes/<id>/scripts/script.py — one class driving many
-    # uniforms via a dict return. The dot keeps it out of the u_*.py glob.
+    # uniforms via a dict return. The dot keeps it out of the u_*__*.py glob.
     scripts_dir = tmp / "scripts"
     scripts_dir.mkdir(exist_ok=True)
     path = scripts_dir / "script.py"
     path.write_text(body, encoding="utf-8")
     return path
+
+
+def _all_active(tmp: Path) -> set[str]:
+    # Every script file on disk is active (047) — the default for tests that don't exercise the
+    # active/inactive flag itself. A test of inactive behavior passes a restricted set instead.
+    scripts_dir = tmp / "scripts"
+    if not scripts_dir.is_dir():
+        return set()
+    return {p.name for p in scripts_dir.glob("*.py")}
+
+
+def _reload(eng: ScriptEngine, name: str, tmp: Path, node: _FakeNode) -> None:
+    # reload with every on-disk script activated (047) — the test default.
+    eng.reload(name, tmp / "scripts", node, _all_active(tmp))
 
 
 def _ctx(t: float, dt: float = 1 / 60, frame: int = 0) -> EngineContext:
@@ -72,7 +91,7 @@ def _ctx(t: float, dt: float = 1 / 60, frame: int = 0) -> EngineContext:
 
 def _engine(tmp: Path, node: _FakeNode, name: str = "n0") -> ScriptEngine:
     eng = ScriptEngine()
-    eng.reload(name, tmp / "scripts", node)
+    _reload(eng, name, tmp, node)
     return eng
 
 
@@ -112,6 +131,7 @@ def test_vec2_output(tmp_path: Path) -> None:
         "class Behavior(ScriptBehavior):\n"
         "    def update(self, ctx: Ctx) -> Vec2:\n"
         "        return Vec2(0.3, 0.7)\n",
+        tag="vec2",
     )
     node = _FakeNode([_u("u_off", dim=2)])
     eng = _engine(tmp_path, node)
@@ -126,6 +146,7 @@ def test_vec3_output(tmp_path: Path) -> None:
         "class Behavior(ScriptBehavior):\n"
         "    def update(self, ctx: Ctx) -> Vec3:\n"
         "        return Vec3(0.1, 0.2, 0.3)\n",
+        tag="vec3",
     )
     node = _FakeNode([_u("u_color", dim=3)])
     eng = _engine(tmp_path, node)
@@ -140,6 +161,7 @@ def test_array_output(tmp_path: Path) -> None:
         "class Behavior(ScriptBehavior):\n"
         "    def update(self, ctx: Ctx) -> Array:\n"
         "        return Array([1.0, 2.0, 3.0, 4.0])\n",
+        tag="array",
     )
     node = _FakeNode([_u("u_vals", dim=1, n=4)])
     eng = _engine(tmp_path, node)
@@ -154,6 +176,7 @@ def test_array_wrong_length_freezes(tmp_path: Path) -> None:
         "class Behavior(ScriptBehavior):\n"
         "    def update(self, ctx: Ctx) -> Array:\n"
         "        return Array([1.0, 2.0])\n",  # 2 for a float[4]
+        tag="array",
     )
     node = _FakeNode([_u("u_vals", dim=1, n=4)])
     node.uniform_values["u_vals"] = (0.0, 0.0, 0.0, 0.0)
@@ -170,6 +193,7 @@ def test_text_output(tmp_path: Path) -> None:
         "class Behavior(ScriptBehavior):\n"
         "    def update(self, ctx: Ctx) -> Text:\n"
         '        return Text("Hi")\n',
+        tag="text",
     )
     node = _FakeNode([_u("u_text", dim=1, n=8, gl_type=_GL_UNSIGNED_INT)])
     eng = _engine(tmp_path, node)
@@ -202,7 +226,7 @@ def test_state_resets_on_edit(tmp_path: Path) -> None:
 
     time.sleep(0.01)
     path.write_text(_INTEGRATOR + "        # edited\n", encoding="utf-8")
-    eng.reload("n0", tmp_path / "scripts", node)
+    _reload(eng, "n0", tmp_path, node)
     eng.tick("n0", node, _ctx(0.0, dt=1.0, frame=0))
     assert node.uniform_values["u_x"] == 1.0  # fresh instance: self.v was 0, +1 dt
 
@@ -344,7 +368,7 @@ def test_runtime_error_freezes_last_good(tmp_path: Path) -> None:
         "        return 1.0 / 0.0\n",  # ZeroDivisionError at runtime
         encoding="utf-8",
     )
-    eng.reload("n0", tmp_path / "scripts", node)
+    _reload(eng, "n0", tmp_path, node)
     eng.tick("n0", node, _ctx(0.1))
     assert node.uniform_values["u_x"] == good  # frozen at last-good
     assert eng.errors[("n0", "u_x")].kind == "runtime"
@@ -390,7 +414,7 @@ def test_orphan_script_warns_once_and_is_ignored(tmp_path: Path) -> None:
     assert "u_ghost" not in eng.script_driven_uniforms("n0")
     # warn-once dedup: the orphan is recorded so a per-frame reload doesn't re-log it.
     assert eng._nodes["n0"].warned == {"u_ghost"}
-    eng.reload("n0", tmp_path / "scripts", node)  # second poll
+    _reload(eng, "n0", tmp_path, node)  # second poll
     assert eng._nodes["n0"].warned == {"u_ghost"}  # unchanged, not re-warned
 
 
@@ -431,8 +455,8 @@ def test_integrator_diverges_by_design(tmp_path: Path) -> None:
     node_a = _FakeNode([_u("u_x")])
     node_b = _FakeNode([_u("u_x")])
     eng = ScriptEngine()
-    eng.reload("a", tmp_path / "scripts", node_a)
-    eng.reload("b", tmp_path / "scripts", node_b)
+    _reload(eng, "a", tmp_path, node_a)
+    _reload(eng, "b", tmp_path, node_b)
 
     for _i in range(2):  # two steps of dt=0.5 (variable-dt live path) over 1.0s
         eng.tick("a", node_a, EngineContext(t=0.0, dt=0.5, frame=0))
@@ -450,7 +474,7 @@ def test_cache_no_recompile_when_mtime_unchanged(tmp_path: Path) -> None:
     node = _FakeNode([_u("u_x")])
     eng = _engine(tmp_path, node)
     first = eng._nodes["n0"].behaviors["u_x"]
-    eng.reload("n0", tmp_path / "scripts", node)  # nothing changed
+    _reload(eng, "n0", tmp_path, node)  # nothing changed
     assert eng._nodes["n0"].behaviors["u_x"] is first  # same object, not recompiled
 
 
@@ -461,7 +485,7 @@ def test_cache_recompiles_on_mtime_change(tmp_path: Path) -> None:
     first = eng._nodes["n0"].behaviors["u_x"]
     time.sleep(0.01)
     path.write_text(_SCALAR + "        # changed\n", encoding="utf-8")
-    eng.reload("n0", tmp_path / "scripts", node)
+    _reload(eng, "n0", tmp_path, node)
     assert eng._nodes["n0"].behaviors["u_x"] is not first  # recompiled
 
 
@@ -471,7 +495,7 @@ def test_removed_script_drops_binding(tmp_path: Path) -> None:
     eng = _engine(tmp_path, node)
     assert "u_x" in eng.script_driven_uniforms("n0")
     path.unlink()
-    eng.reload("n0", tmp_path / "scripts", node)
+    _reload(eng, "n0", tmp_path, node)
     assert "u_x" not in eng.script_driven_uniforms("n0")
 
 
@@ -498,10 +522,10 @@ def test_stub_for_each_kind_compiles_and_runs(tmp_path: Path) -> None:
     ]
     for name, uniform in cases:
         body = stub_for(uniform)  # type: ignore[arg-type]
-        _write(tmp_path, name, body)
+        _write(tmp_path, name, body, tag=uniform_tag(uniform))  # type: ignore[arg-type]
         node = _FakeNode([uniform])
         eng = ScriptEngine()
-        eng.reload(name, tmp_path / "scripts", node)
+        _reload(eng, name, tmp_path, node)
         assert (name, name) not in eng.errors, f"stub for {name} failed to compile"
         eng.tick(name, node, _ctx(0.0))
         assert (name, name) not in eng.errors, f"stub for {name} errored on tick"
@@ -520,6 +544,7 @@ def test_int_scalar_output_rounds_to_int(tmp_path: Path) -> None:
         "class Behavior(ScriptBehavior):\n"
         "    def update(self, ctx: Ctx) -> int:\n"
         "        return 2.7\n",
+        tag="int",
     )
     node = _FakeNode([_u("u_n", gl_type=_GL_INT)])
     eng = _engine(tmp_path, node)
@@ -536,6 +561,7 @@ def test_uint_scalar_output_rounds_to_int(tmp_path: Path) -> None:
         "class Behavior(ScriptBehavior):\n"
         "    def update(self, ctx: Ctx) -> int:\n"
         "        return 3.9\n",
+        tag="int",
     )
     node = _FakeNode([_u("u_count", gl_type=_GL_UNSIGNED_INT)])
     eng = _engine(tmp_path, node)
@@ -551,6 +577,7 @@ def test_ivec2_output_rounds_components(tmp_path: Path) -> None:
         "class Behavior(ScriptBehavior):\n"
         "    def update(self, ctx: Ctx) -> Vec2:\n"
         "        return Vec2(1.4, 2.6)\n",
+        tag="vec2",
     )
     node = _FakeNode([_u("u_iv", dim=2, gl_type=_GL_INT_VEC2)])
     eng = _engine(tmp_path, node)
@@ -566,6 +593,7 @@ def test_int_array_rounds_and_exact_length(tmp_path: Path) -> None:
         "class Behavior(ScriptBehavior):\n"
         "    def update(self, ctx: Ctx) -> Array:\n"
         "        return Array([1.4, 2.6, 3.5])\n",
+        tag="array",
     )
     node = _FakeNode([_u("u_arr", dim=1, n=3, gl_type=_GL_INT)])
     eng = _engine(tmp_path, node)
@@ -576,7 +604,7 @@ def test_int_array_rounds_and_exact_length(tmp_path: Path) -> None:
 def test_stub_for_int_scalar_returns_int(tmp_path: Path) -> None:
     body = stub_for(_u("u_n", gl_type=_GL_INT))  # type: ignore[arg-type]
     assert "-> int" in body and "return 0\n" in body
-    _write(tmp_path, "u_n", body)
+    _write(tmp_path, "u_n", body, tag="int")
     node = _FakeNode([_u("u_n", gl_type=_GL_INT)])
     eng = _engine(tmp_path, node)
     eng.tick("n0", node, _ctx(0.0))
@@ -594,6 +622,7 @@ def test_vec2_array_chunks_into_rows(tmp_path: Path) -> None:
         "class Behavior(ScriptBehavior):\n"
         "    def update(self, ctx: Ctx) -> Array:\n"
         "        return Array([0.0, 1.0, 2.0, 3.0, 4.0, 5.0])\n",  # vec2[3]
+        tag="array",
     )
     node = _FakeNode([_u("u_pts", dim=2, n=3)])
     eng = _engine(tmp_path, node)
@@ -608,6 +637,7 @@ def test_vec2_array_wrong_flat_length_freezes(tmp_path: Path) -> None:
         "class Behavior(ScriptBehavior):\n"
         "    def update(self, ctx: Ctx) -> Array:\n"
         "        return Array([0.0, 1.0, 2.0])\n",  # 3 for a vec2[3] (needs 6)
+        tag="array",
     )
     node = _FakeNode([_u("u_pts", dim=2, n=3)])
     node.uniform_values["u_pts"] = [(0.0, 0.0)] * 3
@@ -699,10 +729,15 @@ def test_runtime_error_in_helper_records_deepest_user_line(tmp_path: Path) -> No
 def test_non_utf8_file_does_not_crash_reload(tmp_path: Path) -> None:
     scripts_dir = tmp_path / "scripts"
     scripts_dir.mkdir()
-    (scripts_dir / "u_x.py").write_bytes(b"\xff\xfe not utf-8")
+    # Tagged name (047) so it matches the glob + is actually read — the read-guard only fires if the
+    # file reaches read_text(encoding="utf-8"); an untagged name would skip the read entirely and the
+    # assert would pass vacuously.
+    (scripts_dir / "u_x__float.py").write_bytes(b"\xff\xfe not utf-8")
     node = _FakeNode([_u("u_x")])
     eng = ScriptEngine()
-    eng.reload("n0", scripts_dir, node)  # must NOT raise
+    eng.reload(
+        "n0", scripts_dir, node, _all_active(scripts_dir.parent)
+    )  # must NOT raise
     assert "u_x" not in eng.script_driven_uniforms("n0")
 
 
@@ -713,7 +748,7 @@ def test_engine_driven_uniform_rejected(tmp_path: Path) -> None:
     _write(tmp_path, "u_time", _SCALAR)
     node = _FakeNode([_u("u_time")])
     eng = ScriptEngine(engine_driven=frozenset({"u_time"}))
-    eng.reload("n0", tmp_path / "scripts", node)
+    _reload(eng, "n0", tmp_path, node)
     assert "u_time" not in eng.script_driven_uniforms("n0")
 
 
@@ -728,7 +763,7 @@ def test_uniform_gone_inactive_drops_binding(tmp_path: Path) -> None:
     eng = _engine(tmp_path, node)
     assert "u_x" in eng.script_driven_uniforms("n0")
     node._uniforms = [_u("u_keep")]  # u_x removed; u_keep still active
-    eng.reload("n0", tmp_path / "scripts", node)
+    _reload(eng, "n0", tmp_path, node)
     assert "u_x" not in eng.script_driven_uniforms("n0")
 
 
@@ -740,7 +775,7 @@ def test_empty_active_set_keeps_binding_no_false_orphan(tmp_path: Path) -> None:
     eng = _engine(tmp_path, node)
     assert "u_x" in eng.script_driven_uniforms("n0")
     node._uniforms = []  # program invalidated this frame
-    eng.reload("n0", tmp_path / "scripts", node)
+    _reload(eng, "n0", tmp_path, node)
     assert "u_x" in eng.script_driven_uniforms("n0")  # kept, not falsely orphaned
 
 
@@ -924,7 +959,7 @@ def test_brain_raw_exception_freezes_all_and_records_user_line(tmp_path: Path) -
         "        raise ValueError('boom')\n",  # line 4
         encoding="utf-8",
     )
-    eng.reload("n0", tmp_path / "scripts", node)
+    _reload(eng, "n0", tmp_path, node)
     eng.tick("n0", node, _ctx(0.1))
     assert node.uniform_values["u_x"] == 0.3  # both frozen together
     assert node.uniform_values["u_y"] == 0.6
@@ -980,15 +1015,15 @@ def test_brain_unknown_key_error_clears_when_key_fixed(tmp_path: Path) -> None:
         "        return {'u_a': 0.5}\n",
         encoding="utf-8",
     )
-    eng.reload("n0", tmp_path / "scripts", node)
+    _reload(eng, "n0", tmp_path, node)
     eng.tick("n0", node, _ctx(0.1))
     assert ("n0", "u_ghost") not in eng.errors  # zombie cleared
 
 
-def test_brain_engine_owned_key_rejected_no_false_ownership(tmp_path: Path) -> None:
-    # The BUG fix: a brain naming an engine-owned uniform (u_time) must NOT be reported as
-    # script-owned (render() would clobber the write — a guaranteed no-op) — it records a soft
-    # error + is excluded from script_driven_uniforms (parity with the per-uniform reject).
+def test_brain_engine_owned_key_dropped_silently(tmp_path: Path) -> None:
+    # Feature 047 decision 5: a brain naming an engine-owned uniform (u_time) SILENTLY drops the key
+    # — no false ownership AND no soft error (the renderer owns that slot; a brain can't be expected
+    # to avoid naming it). The renderer's u_time value is untouched.
     _write_brain(
         tmp_path,
         "class Behavior(ScriptBehavior):\n"
@@ -996,12 +1031,14 @@ def test_brain_engine_owned_key_rejected_no_false_ownership(tmp_path: Path) -> N
         "        return {'u_a': 0.5, 'u_time': 9.0}\n",
     )
     node = _FakeNode([_u("u_a"), _u("u_time")])
+    node.uniform_values["u_time"] = 1.23  # the renderer's value
     eng = ScriptEngine(engine_driven=frozenset({"u_time"}))
-    eng.reload("n0", tmp_path / "scripts", node)
+    _reload(eng, "n0", tmp_path, node)
     eng.tick("n0", node, _ctx(0.0))
     assert node.uniform_values["u_a"] == 0.5
     assert "u_time" not in eng.script_driven_uniforms("n0")  # no false ownership
-    assert "engine-owned" in eng.errors[("n0", "u_time")].message
+    assert ("n0", "u_time") not in eng.errors  # silently dropped, no soft error
+    assert node.uniform_values["u_time"] == 1.23  # renderer value untouched
 
 
 def test_brain_nan_freezes_and_records(tmp_path: Path) -> None:
@@ -1025,7 +1062,7 @@ def test_brain_nan_freezes_and_records(tmp_path: Path) -> None:
         "        return {'u_a': float('inf')}\n",  # non-finite
         encoding="utf-8",
     )
-    eng.reload("n0", tmp_path / "scripts", node)
+    _reload(eng, "n0", tmp_path, node)
     eng.tick("n0", node, _ctx(0.1))
     assert node.uniform_values["u_a"] == 0.3  # frozen at last-good, NOT inf
     err = eng.errors[("n0", "u_a")]
@@ -1075,6 +1112,7 @@ def test_chr_ord_available_for_codepoint_text(tmp_path: Path) -> None:
         "class Behavior(ScriptBehavior):\n"
         "    def update(self, ctx: Ctx) -> Text:\n"
         "        return Text(chr(65) + chr(66))\n",  # 'AB'
+        tag="text",
     )
     node = _FakeNode([_u("u_t", dim=1, n=8, gl_type=_GL_UNSIGNED_INT)])
     eng = _engine(tmp_path, node)
@@ -1093,6 +1131,7 @@ def test_array_nested_tuples_gives_flatten_hint(tmp_path: Path) -> None:
         "class Behavior(ScriptBehavior):\n"
         "    def update(self, ctx: Ctx) -> Array:\n"
         "        return Array([(0.0, 1.0), (2.0, 3.0)])\n",  # nested, wrong
+        tag="array",
     )
     node = _FakeNode([_u("u_pts", dim=2, n=2)])
     node.uniform_values["u_pts"] = [(0.0, 0.0), (0.0, 0.0)]
@@ -1186,7 +1225,7 @@ def test_conflict_broken_per_uniform_yields_even_after_success(tmp_path: Path) -
         "        raise ValueError('boom')\n",
         encoding="utf-8",
     )
-    eng.reload("n0", tmp_path / "scripts", node)
+    _reload(eng, "n0", tmp_path, node)
     eng.tick("n0", node, _ctx(0.1))
     assert (
         abs(node.uniform_values["u_x"] - 1.0) < 1e-9
@@ -1249,7 +1288,7 @@ def test_brain_omitted_key_keeps_last_value_and_clears_error(tmp_path: Path) -> 
         "        return {'u_a': 0.9}\n",
         encoding="utf-8",
     )
-    eng.reload("n0", tmp_path / "scripts", node)
+    _reload(eng, "n0", tmp_path, node)
     eng.tick("n0", node, _ctx(0.1))
     assert node.uniform_values["u_a"] == 0.9
     assert node.uniform_values["u_b"] == 0.0  # last value kept (not corrupted)
@@ -1288,7 +1327,7 @@ def test_brain_removed_clears_per_key_errors(tmp_path: Path) -> None:
     eng.tick("n0", node, _ctx(0.0))
     assert eng.errors[("n0", "u_b")].kind == "runtime"  # per-key error recorded
     path.unlink()
-    eng.reload("n0", tmp_path / "scripts", node)
+    _reload(eng, "n0", tmp_path, node)
     assert ("n0", "u_b") not in eng.errors  # cleared on removal, not a zombie
     assert ("n0", "script.py") not in eng.errors
 
@@ -1323,7 +1362,7 @@ def test_brain_removed_clears_driven_set(tmp_path: Path) -> None:
     eng.tick("n0", node, _ctx(0.0))
     assert eng.script_driven_uniforms("n0") == {"u_a"}
     path.unlink()
-    eng.reload("n0", tmp_path / "scripts", node)
+    _reload(eng, "n0", tmp_path, node)
     assert eng.script_driven_uniforms("n0") == set()
 
 
@@ -1392,7 +1431,7 @@ def test_recompile_on_edit_resets_both_paths(
     assert node.uniform_values[read] == 3.0
     time.sleep(0.01)
     path.write_text(body + "        # edited\n", encoding="utf-8")
-    eng.reload("n0", tmp_path / "scripts", node)
+    _reload(eng, "n0", tmp_path, node)
     eng.tick("n0", node, _ctx(0.0, dt=1.0, frame=0))
     assert node.uniform_values[read] == 1.0  # fresh instance: +1 dt
 
@@ -1482,7 +1521,7 @@ def test_ctx_mouse_reaches_script(tmp_path: Path) -> None:
         "    def update(self, ctx: Ctx) -> Vec2:\n"
         "        return Vec2(ctx.mouse.x, ctx.mouse.y)\n"
     )
-    _write(tmp_path, "u_p", body)
+    _write(tmp_path, "u_p", body, tag="vec2")
     node = _FakeNode([_u("u_p", dim=2)])
     eng = _engine(tmp_path, node)
 
@@ -1529,74 +1568,71 @@ def test_brain_status_none_without_brain(tmp_path: Path) -> None:
     assert eng.brain_status("n0") is None
 
 
-# ---- disabled (inactive) script state (feature 045) ----
+# ---- inactive (not in active_scripts) script state (feature 047) ----
 
 
-def test_disabled_marker_skips_per_uniform_binding(tmp_path: Path) -> None:
-    # A `<file>.disabled` sibling means inactive: the script is never bound, so its uniform stays
-    # under manual control (the dict value the test sets is untouched).
-    path = _write(tmp_path, "u_x", _SCALAR.replace("u_wave", "u_x"))
-    path.with_name(path.name + ".disabled").write_text("", encoding="utf-8")
+def test_inactive_script_skips_per_uniform_binding(tmp_path: Path) -> None:
+    # A file absent from active_scripts means inactive: never bound, so its uniform stays under
+    # manual control (the dict value the test sets is untouched).
+    _write(tmp_path, "u_x", _SCALAR.replace("u_wave", "u_x"))
     node = _FakeNode([_u("u_x")])
     node.uniform_values["u_x"] = 0.123  # manual value
-    eng = _engine(tmp_path, node)
+    eng = ScriptEngine()
+    eng.reload("n0", tmp_path / "scripts", node, set())  # nothing active
     eng.tick("n0", node, _ctx(0.0))
     assert node.uniform_values["u_x"] == 0.123  # not driven
     assert eng.script_driven_uniforms("n0") == set()
 
 
-def test_enabling_a_disabled_binding_rebinds_on_reload(tmp_path: Path) -> None:
-    # Removing the marker re-binds on the next reload — the script drives the uniform again.
-    path = _write(tmp_path, "u_x", _SCALAR.replace("u_wave", "u_x"))
-    marker = path.with_name(path.name + ".disabled")
-    marker.write_text("", encoding="utf-8")
+def test_activating_an_inactive_binding_rebinds_on_reload(tmp_path: Path) -> None:
+    # Adding the file to active_scripts re-binds on the next reload — the script drives again.
+    _write(tmp_path, "u_x", _SCALAR.replace("u_wave", "u_x"))
     node = _FakeNode([_u("u_x")])
-    eng = _engine(tmp_path, node)
+    eng = ScriptEngine()
+    eng.reload("n0", tmp_path / "scripts", node, set())
     eng.tick("n0", node, _ctx(0.0))
-    assert eng.script_driven_uniforms("n0") == set()  # disabled
-    marker.unlink()
-    eng.reload("n0", tmp_path / "scripts", node)
+    assert eng.script_driven_uniforms("n0") == set()  # inactive
+    eng.reload("n0", tmp_path / "scripts", node, {"u_x__float.py"})
     eng.tick("n0", node, _ctx(0.0))
     assert abs(node.uniform_values["u_x"] - 0.5) < 1e-9  # driven again
 
 
-def test_disabling_a_live_binding_drops_it(tmp_path: Path) -> None:
-    # A binding that becomes disabled (marker added between reloads) is dropped — it stops ticking
-    # and its uniform returns to manual, like a vanished file.
-    path = _write(tmp_path, "u_x", _SCALAR.replace("u_wave", "u_x"))
+def test_deactivating_a_live_binding_drops_it(tmp_path: Path) -> None:
+    # A binding removed from active_scripts between reloads is dropped — it stops ticking and its
+    # uniform returns to manual, like a vanished file.
+    _write(tmp_path, "u_x", _SCALAR.replace("u_wave", "u_x"))
     node = _FakeNode([_u("u_x")])
-    eng = _engine(tmp_path, node)
+    eng = _engine(tmp_path, node)  # active by default
     eng.tick("n0", node, _ctx(0.0))
     assert "u_x" in eng.script_driven_uniforms("n0")
-    path.with_name(path.name + ".disabled").write_text("", encoding="utf-8")
-    eng.reload("n0", tmp_path / "scripts", node)
+    eng.reload("n0", tmp_path / "scripts", node, set())  # deactivated
     assert eng.script_driven_uniforms("n0") == set()
 
 
-def test_disabled_marker_skips_node_brain(tmp_path: Path) -> None:
-    # The node-brain honors the marker too (script.py.disabled): no brain binding, no status.
-    brain = _write_brain(
+def test_inactive_node_brain_skips_binding(tmp_path: Path) -> None:
+    # The node-brain honors active_scripts too: script.py absent from the set means no brain binding.
+    _write_brain(
         tmp_path,
         "class Behavior(ScriptBehavior):\n"
         "    def update(self, ctx: Ctx) -> dict:\n"
         "        return {'u_x': 0.7}\n",
     )
-    brain.with_name(brain.name + ".disabled").write_text("", encoding="utf-8")
     node = _FakeNode([_u("u_x")])
     node.uniform_values["u_x"] = 0.2
-    eng = _engine(tmp_path, node)
+    eng = ScriptEngine()
+    eng.reload("n0", tmp_path / "scripts", node, set())  # brain inactive
     eng.tick("n0", node, _ctx(0.0))
     assert node.uniform_values["u_x"] == 0.2  # brain inactive
     assert eng.brain_status("n0") is None
 
 
-def test_disabled_binding_excluded_from_export_set(tmp_path: Path) -> None:
-    # Export isolation honors disabled by construction: a never-bound script is not in the cached
+def test_inactive_binding_excluded_from_export_set(tmp_path: Path) -> None:
+    # Export isolation honors inactivity by construction: a never-bound script is not in the cached
     # source dict, so fresh_behaviors_for can't recompile it.
-    path = _write(tmp_path, "u_x", _SCALAR.replace("u_wave", "u_x"))
-    path.with_name(path.name + ".disabled").write_text("", encoding="utf-8")
+    _write(tmp_path, "u_x", _SCALAR.replace("u_wave", "u_x"))
     node = _FakeNode([_u("u_x")])
-    eng = _engine(tmp_path, node)
+    eng = ScriptEngine()
+    eng.reload("n0", tmp_path / "scripts", node, set())
     assert eng.fresh_behaviors_for("n0") == {}
 
 
@@ -1609,3 +1645,91 @@ def test_fresh_stub_compiles_and_runs_under_stripped_globals(tmp_path: Path) -> 
     eng.tick("n0", node, _ctx(0.0))
     assert ("n0", "u_x") not in eng.errors
     assert node.uniform_values["u_x"] == 0.0
+
+
+# ---- (name, type) filename key — the 047 retype/rename invariants (F14 core) ----
+
+
+def test_retype_drops_old_tag_binding_without_corruption(tmp_path: Path) -> None:
+    # The headline F14 invariant: a script written for vec2 u_x, when the live uniform becomes vec3,
+    # must DROP the binding (tag mismatch) — NO coercion error, the value left under manual control,
+    # the vec2 file untouched on disk for a retype-back. (Neuter the tag check in engine._binding_reject
+    # and this goes red — it's the only guard against the pre-047 retype-corruption class.)
+    _write(
+        tmp_path,
+        "u_x",
+        "class Behavior(ScriptBehavior):\n"
+        "    def update(self, ctx: Ctx) -> Vec2:\n"
+        "        return Vec2(1.0, 2.0)\n",
+        tag="vec2",
+    )
+    vec2_node = _FakeNode([_u("u_x", dim=2)])
+    eng = _engine(tmp_path, vec2_node)
+    eng.tick("n0", vec2_node, _ctx(0.0))
+    assert vec2_node.uniform_values["u_x"] == (1.0, 2.0)  # bound
+
+    # Retype to vec3: same name, different tag -> looks for u_x__vec3.py (absent) -> drop.
+    vec3_node = _FakeNode([_u("u_x", dim=3)])
+    vec3_node.uniform_values["u_x"] = (0.0, 0.0, 0.0)  # manual value
+    eng.reload("n0", tmp_path / "scripts", vec3_node, {"u_x__vec2.py"})
+    eng.tick("n0", vec3_node, _ctx(0.0))
+    assert "u_x" not in eng.script_driven_uniforms("n0")  # binding dropped
+    assert ("n0", "u_x") not in eng.errors  # NO coercion error
+    assert vec3_node.uniform_values["u_x"] == (0.0, 0.0, 0.0)  # manual value untouched
+    assert (tmp_path / "scripts" / "u_x__vec2.py").is_file()  # old-tag file safe
+
+
+def test_retype_back_rebinds_original_script(tmp_path: Path) -> None:
+    # Retyping back to vec2 finds u_x__vec2.py still on disk and rebinds it (lossless + reversible).
+    _write(
+        tmp_path,
+        "u_x",
+        "class Behavior(ScriptBehavior):\n"
+        "    def update(self, ctx: Ctx) -> Vec2:\n"
+        "        return Vec2(1.0, 2.0)\n",
+        tag="vec2",
+    )
+    eng = ScriptEngine()
+    # vec3 (no binding) -> vec2 (rebinds).
+    eng.reload(
+        "n0", tmp_path / "scripts", _FakeNode([_u("u_x", dim=3)]), {"u_x__vec2.py"}
+    )
+    assert "u_x" not in eng.script_driven_uniforms("n0")
+    vec2_node = _FakeNode([_u("u_x", dim=2)])
+    eng.reload("n0", tmp_path / "scripts", vec2_node, {"u_x__vec2.py"})
+    eng.tick("n0", vec2_node, _ctx(0.0))
+    assert vec2_node.uniform_values["u_x"] == (1.0, 2.0)  # rebound, code intact
+
+
+def test_delete_readd_rebinds(tmp_path: Path) -> None:
+    # Deleting u_x (script strands) then re-adding it rebinds the original script.
+    _write(tmp_path, "u_x", _SCALAR.replace("u_wave", "u_x"))
+    eng = ScriptEngine()
+    # u_x absent (only u_keep live): the script is an orphan, dropped.
+    eng.reload("n0", tmp_path / "scripts", _FakeNode([_u("u_keep")]), {"u_x__float.py"})
+    assert "u_x" not in eng.script_driven_uniforms("n0")
+    # Re-add u_x: the stranded u_x__float.py rebinds.
+    readd = _FakeNode([_u("u_x"), _u("u_keep")])
+    eng.reload("n0", tmp_path / "scripts", readd, {"u_x__float.py"})
+    eng.tick("n0", readd, _ctx(0.0))
+    assert "u_x" in eng.script_driven_uniforms("n0")
+
+
+def test_parse_script_filename_round_trip_and_edges() -> None:
+    # parse_script_filename is the discovery matcher's name/tag splitter (047); per_uniform_filename
+    # is its inverse. The LAST `__` separates name from tag, so a name with its own underscores
+    # round-trips. Boundary/malformed names return None (not a crash, not a mis-split).
+    assert parse_script_filename("u_x__vec2.py") == ("u_x", "vec2")
+    # A name containing `__` must round-trip (rfind, not find).
+    u = types.SimpleNamespace(
+        name="u_a__b", dimension=2, array_length=1, gl_type=_GL_FLOAT
+    )
+    fn = per_uniform_filename(u)
+    assert fn == "u_a__b__vec2.py"
+    assert parse_script_filename(fn) == ("u_a__b", "vec2")
+    # Malformed / boundary names -> None.
+    assert parse_script_filename("script.py") is None  # no `__`
+    assert parse_script_filename("u_x.py") is None  # untagged (pre-047)
+    assert parse_script_filename("__vec2.py") is None  # empty name
+    assert parse_script_filename("u_x__.py") is None  # empty tag
+    assert parse_script_filename("u_x__vec2.txt") is None  # not .py

@@ -40,6 +40,8 @@ from shaderbox.scripting import (
     ScriptState,
     brain_stub_for,
     is_scriptable,
+    parse_script_filename,
+    per_uniform_filename,
     stub_for,
 )
 from shaderbox.shader_lib import ShaderLibIndex
@@ -51,10 +53,11 @@ from shaderbox.templates_descriptions import TemplateDescriptionsStore
 from shaderbox.ui_models import (
     UIAppState,
     UINode,
+    UIUniform,
     load_node_from_dir,
     load_nodes_from_dir,
 )
-from shaderbox.util import select_next_value
+from shaderbox.util import get_uniform_hash, select_next_value
 
 
 def _noop_current_node_changed(old_id: str, new_id: str) -> None:
@@ -306,7 +309,10 @@ class ProjectSession:
         self.script_engine = ScriptEngine(ENGINE_DRIVEN_UNIFORMS)
         for node_id, ui_node in self.ui_nodes.items():
             self.script_engine.reload(
-                node_id, self.paths.scripts_dir_for(node_id), ui_node.node
+                node_id,
+                self.paths.scripts_dir_for(node_id),
+                ui_node.node,
+                self._active_scripts_for(node_id),
             )
             self._wire_node_hooks(node_id, ui_node.node)
 
@@ -360,9 +366,68 @@ class ProjectSession:
         # ui.py::update_and_draw before the live tick.
         for node_id, ui_node in self.ui_nodes.items():
             self.script_engine.reload(
-                node_id, self.paths.scripts_dir_for(node_id), ui_node.node
+                node_id,
+                self.paths.scripts_dir_for(node_id),
+                ui_node.node,
+                self._active_scripts_for(node_id),
             )
             self._wire_node_hooks(node_id, ui_node.node)
+
+    def _ui_uniform_for(self, node_id: str, name: str) -> UIUniform | None:
+        # The UIUniform carrying `name`'s state (incl. is_script_active) on this node, keyed by the
+        # live uniform's hash. Created on demand (the Node-tab draw loop is NOT the only creator — a
+        # programmatic/headless activation must work before any row is drawn). A retyped uniform has a
+        # different hash, so it gets a FRESH default-False UIUniform — the "born inactive on retype"
+        # guarantee holds. None only if the uniform isn't live on this node.
+        ui_node = self.ui_nodes.get(node_id)
+        if ui_node is None:
+            return None
+        ui_uniforms = ui_node.ui_state.ui_uniforms
+        for uniform in ui_node.node.get_active_uniforms():
+            if uniform.name == name:
+                return ui_uniforms.setdefault(
+                    get_uniform_hash(uniform), UIUniform.from_uniform(uniform)
+                )
+        return None
+
+    def _script_filename(self, node_id: str, name: str | None) -> str | None:
+        # The on-disk filename for a per-uniform (`u_<name>__<tag>.py`) or node-brain (`script.py`)
+        # script. The per-uniform tag is derived from the LIVE uniform (feature 047), so a retyped
+        # uniform addresses a different file. None when `name` names no live scriptable uniform.
+        if name is None:
+            return "script.py"
+        ui_node = self.ui_nodes.get(node_id)
+        if ui_node is None:
+            return None
+        for uniform in ui_node.node.get_active_uniforms():
+            if uniform.name == name and is_scriptable(uniform):
+                return per_uniform_filename(uniform)
+        return None
+
+    def _active_scripts_for(self, node_id: str) -> set[str]:
+        # The on-disk filenames the user has activated on this node (feature 047), built from the
+        # model flags: each scriptable uniform whose is_script_active flag is True AND whose tagged
+        # file exists on disk, plus `script.py` when the node's is_brain_active is True and it exists.
+        # The "file exists" gate keeps a stale True flag (e.g. left on a retyped uniform's prior
+        # UIUniform) from arming a non-existent file.
+        ui_node = self.ui_nodes.get(node_id)
+        if ui_node is None:
+            return set()
+        scripts_dir = self.paths.scripts_dir_for(node_id)
+        active: set[str] = set()
+        ui_uniforms = ui_node.ui_state.ui_uniforms
+        for uniform in ui_node.node.get_active_uniforms():
+            if not is_scriptable(uniform):
+                continue
+            ui_uniform = ui_uniforms.get(get_uniform_hash(uniform))
+            if ui_uniform is None or not ui_uniform.is_script_active:
+                continue
+            filename = per_uniform_filename(uniform)
+            if (scripts_dir / filename).is_file():
+                active.add(filename)
+        if ui_node.ui_state.is_brain_active and (scripts_dir / "script.py").is_file():
+            active.add("script.py")
+        return active
 
     def tick(
         self,
@@ -403,9 +468,10 @@ class ProjectSession:
         return self.script_engine.brain_status(node_id)
 
     def create_script(self, node_id: str, name: str | None) -> Path:
-        # Write a new script file + return its path; the next reload_scripts binds it (042). `name`
-        # is a uniform name for a per-uniform u_<name>.py, or None for the node-brain script.py.
-        # The skeleton is the engine's stub (showing a coercion-valid default, so it runs at once).
+        # Write a new script file + return its path; the next reload_scripts binds it once the user
+        # activates it (047 — born inactive). `name` is a uniform name for a per-uniform
+        # `u_<name>__<tag>.py`, or None for the node-brain `script.py`. The skeleton is the engine's
+        # stub (showing a coercion-valid default, so it runs at once).
         ui_node = self.ui_nodes[node_id]
         scripts_dir = self.paths.scripts_dir_for(node_id)
         scripts_dir.mkdir(parents=True, exist_ok=True)
@@ -420,13 +486,11 @@ class ProjectSession:
 
     def detach_script(self, node_id: str, filename: str) -> None:
         # Trash a node's script file (recoverable); the next reload_scripts drops the binding and
-        # clears its error (042). Trashes to a node-scoped subdir so a bare u_<name>.py can't
-        # collide across nodes or pollute the node-recovery trash namespace.
+        # clears its error (042). Trashes to a node-scoped subdir so a bare filename can't collide
+        # across nodes or pollute the node-recovery trash namespace.
         src = self.paths.scripts_dir_for(node_id) / filename
         if not src.is_file():
             return
-        # Drop a stale inactive marker too, so a later re-create doesn't resurrect as inactive.
-        src.with_name(src.name + ".disabled").unlink(missing_ok=True)
         dest_dir = self.paths.trash_dir / "scripts" / node_id
         dest_dir.mkdir(parents=True, exist_ok=True)
         dest = dest_dir / filename
@@ -435,25 +499,40 @@ class ProjectSession:
         shutil.move(src, dest)
 
     def script_path_for(self, node_id: str, name: str | None) -> Path:
-        # The scripts/ path for a per-uniform (name set) or node-brain (name None) script — the
-        # binding-by-filename convention (041/044) in one place.
-        filename = "script.py" if name is None else f"{name}.py"
+        # The scripts/ path for a per-uniform (`u_<name>__<tag>.py`, the tag from the live uniform)
+        # or node-brain (`script.py`) script — the binding-by-filename convention (041/044/047) in
+        # one place. Falls back to `u_<name>.py` (no tag) when `name` names no live uniform — only an
+        # unreachable edge (every caller queries a live row), kept so the return is always a Path.
+        filename = self._script_filename(node_id, name) or (
+            "script.py" if name is None else f"{name}.py"
+        )
         return self.paths.scripts_dir_for(node_id) / filename
 
     def script_state_for(self, node_id: str, name: str | None) -> ScriptState:
-        # The state of THIS script file (the node-brain when name is None, else `u_<name>.py`) for the
-        # node-header brain pill + the editor toggle. Disk presence (so a toggle/create lands instantly,
-        # before the next reload) + the engine's recorded error for this file: no file -> absent; a
-        # `.disabled` sibling -> inactive; a compile/run error on the binding -> error; else active.
+        # The state of THIS script file (the node-brain when name is None, else the uniform's tagged
+        # file) for the glyph + the script-local bar. Disk presence (so a create lands instantly,
+        # before the next reload) + the active flag + the engine's recorded error: no file -> absent;
+        # flag off -> inactive; a compile/run error on the binding -> error; else active.
         path = self.script_path_for(node_id, name)
         if not path.is_file():
             return "absent"
-        if path.with_name(path.name + ".disabled").is_file():
+        if not self._is_script_active(node_id, name):
             return "inactive"
         key = (node_id, "script.py" if name is None else name)
         if key in self.script_engine.errors:
             return "error"
         return "active"
+
+    def _is_script_active(self, node_id: str, name: str | None) -> bool:
+        # The model flag for this script (047): the node-brain's is_brain_active, or the per-uniform
+        # UIUniform's is_script_active. A name with no live UIUniform reads inactive (born False).
+        ui_node = self.ui_nodes.get(node_id)
+        if ui_node is None:
+            return False
+        if name is None:
+            return ui_node.ui_state.is_brain_active
+        ui_uniform = self._ui_uniform_for(node_id, name)
+        return ui_uniform is not None and ui_uniform.is_script_active
 
     def uniform_pill_state(self, node_id: str, name: str) -> ScriptState:
         # The per-uniform ROW pill's state. An own `u_<name>.py` (active/inactive/error) is the user's
@@ -480,14 +559,54 @@ class ProjectSession:
         return name in self.script_engine.script_driven_uniforms(node_id)
 
     def set_script_active(self, node_id: str, name: str | None, active: bool) -> None:
-        # Toggle a script's active/inactive bit by creating/removing its `<file>.disabled` sibling
-        # marker (045). The next reload_scripts binds (active) or drops (inactive) it.
-        path = self.script_path_for(node_id, name)
-        marker = path.with_name(path.name + ".disabled")
-        if active:
-            marker.unlink(missing_ok=True)
-        elif path.is_file() and not marker.exists():
-            marker.write_text("", encoding="utf-8")
+        # Flip a script's active flag on the model (047): is_brain_active for the node-brain, else the
+        # uniform's UIUniform.is_script_active. The next reload_scripts binds (active) or drops
+        # (inactive) it; the flag persists in node.json on the next save.
+        ui_node = self.ui_nodes.get(node_id)
+        if ui_node is None:
+            return
+        if name is None:
+            ui_node.ui_state.is_brain_active = active
+            return
+        ui_uniform = self._ui_uniform_for(node_id, name)
+        if ui_uniform is not None:
+            ui_uniform.is_script_active = active
+
+    def same_type_scripts(self, node_id: str, name: str) -> list[tuple[str, Path]]:
+        # Every OTHER per-uniform script across the whole project whose type tag matches the current
+        # uniform's tag (047 copy-content selector source). Returns (label, path) pairs — label is
+        # `<node ui_name> / <uniform>` so duplicates are distinguishable. Excludes the current file.
+        # Empty when the current uniform has no live tag (a removed row) or no sibling of its type.
+        current = self._script_filename(node_id, name)
+        if current is None:
+            return []
+        current_parsed = parse_script_filename(current)
+        if current_parsed is None:
+            return []
+        current_tag = current_parsed[1]
+        out: list[tuple[str, Path]] = []
+        for other_id, ui_node in self.ui_nodes.items():
+            scripts_dir = self.paths.scripts_dir_for(other_id)
+            if not scripts_dir.is_dir():
+                continue
+            for path in sorted(scripts_dir.glob("u_*__*.py")):
+                if other_id == node_id and path.name == current:
+                    continue
+                parsed = parse_script_filename(path.name)
+                if parsed is None or parsed[1] != current_tag:
+                    continue
+                node_label = ui_node.ui_state.ui_name or other_id
+                out.append((f"{node_label} / {parsed[0]}", path))
+        return out
+
+    def copy_script_body(self, src_path: Path) -> str:
+        # The body of a script chosen in the copy-content selector (047), to drop into the current
+        # editor buffer. Returns "" on a read failure (the UI keeps the buffer untouched).
+        try:
+            return src_path.read_text(encoding="utf-8")
+        except OSError as e:
+            logger.error(f"Failed to read script body {src_path}: {e}")
+            return ""
 
     def get_script_driven_uniforms(self, node_id: str) -> set[str]:
         # The uniform names a script drives on `node_id` (a u_<name>.py OR the node-brain's last-tick

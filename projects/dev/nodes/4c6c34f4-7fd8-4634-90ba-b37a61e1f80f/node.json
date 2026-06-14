@@ -223,7 +223,8 @@
                 "gl_type": 5126,
                 "dimension": 1,
                 "array_length": 1,
-                "input_type": "drag"
+                "input_type": "drag",
+                "is_script_active": true
             },
             "80095550164095980361933239405151150287": {
                 "name": "u_color1",
@@ -231,7 +232,8 @@
                 "gl_type": 35665,
                 "dimension": 3,
                 "array_length": 1,
-                "input_type": "color"
+                "input_type": "color",
+                "is_script_active": true
             },
             "76969990998764601917502867526207907310": {
                 "name": "u_color2",
@@ -239,7 +241,8 @@
                 "gl_type": 35665,
                 "dimension": 3,
                 "array_length": 1,
-                "input_type": "drag"
+                "input_type": "drag",
+                "is_script_active": true
             },
             "97838950114833910403340285333946524094": {
                 "name": "u_spacing",
@@ -247,7 +250,8 @@
                 "gl_type": 35664,
                 "dimension": 2,
                 "array_length": 1,
-                "input_type": "drag"
+                "input_type": "drag",
+                "is_script_active": true
             },
             "156594663549593977381279390677210931629": {
                 "name": "u_weight",
@@ -261,6 +265,7 @@
         "uniform_sort_key": "code",
         "uniform_sort_desc": false,
         "video_to_video_smoothing_window": 5,
-        "video_to_video_smoothing_sigma": 1.0
+        "video_to_video_smoothing_sigma": 1.0,
+        "is_brain_active": true
     }
 }

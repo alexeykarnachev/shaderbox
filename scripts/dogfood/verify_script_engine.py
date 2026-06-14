@@ -44,7 +44,8 @@ def _seed_scripted_node(project_dir: Path, body: str) -> None:
     )
     scripts = node / "scripts"
     scripts.mkdir(exist_ok=True)
-    (scripts / "u_wave.py").write_text(body, encoding="utf-8")
+    # The 047 tagged filename (u_wave is a float). The script is born inactive — main() activates it.
+    (scripts / "u_wave__float.py").write_text(body, encoding="utf-8")
 
 
 def _mean_luma(path: str) -> float:
@@ -82,6 +83,10 @@ def main() -> int:
     _seed_scripted_node(h.project_dir, _PURE)
     h.session.load(h.project_dir)
     h.session.set_current_node_id("scripted")
+    # Activate the per-uniform script (047 — born inactive). set_script_active eager-creates the
+    # UIUniform, so this works headlessly without a Node-tab draw; reload binds it.
+    h.session.set_script_active("scripted", "u_wave", True)
+    h.session.reload_scripts()
 
     driven = h.session.get_script_driven_uniforms("scripted")
     assert driven == {"u_wave"}, f"expected u_wave script-driven, got {driven}"

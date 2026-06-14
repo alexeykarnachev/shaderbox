@@ -41,6 +41,22 @@ re-asserts); and key per-uniform scripts by `(name, type)` so retype/delete-read
 - Per-file "modified vs shipped" lib badges, and the other open `todo.md` scripting deferrals not named
   here. The existing `todo.md` "script-engine type-change error" deferral is RESOLVED by F14 (the
   `(name, type)` key removes the corruption it described) — delete that entry in the impl commit.
+- **No copilot-reachable durable mutation (the turn-rollback deferral does not fire).** 047 adds
+  `set_script_active` (a UI-bar flag flip, frozen mid-turn) and `copy_script_body` (a write into the live
+  `TextEditor` buffer, not durable disk — the user saves to persist). The copilot has NO script-writing
+  tool today (043 is out of scope). So the `todo.md` "copilot turn-rollback: a NEW mutating tool"
+  deferral's trigger does NOT fire here — it fires for 043. Stated explicitly so the negative is provable.
+
+## One-time migration (impl-commit, not deferred)
+
+The `_SCRIPT_GLOB` change `u_*.py` → `u_*__*.py` (decision 13) means EXISTING on-disk per-uniform scripts
+no longer match — they go undiscovered (not even orphan-warned; they never enter the glob loop), so their
+uniforms silently revert to manual on first launch. This affects the live dev sandbox: the four scripts in
+`projects/dev/nodes/4c6c34f4-…/scripts/` (`u_char_height.py` / `u_color1.py` / `u_color2.py` /
+`u_spacing.py`). The impl commit RENAMES them to the tagged scheme (e.g. `u_color1__vec3.py`) and re-saves
+the node's `node.json` flags in the same `git add projects/dev` sandbox-sync wave the hard rules already
+mandate. The `script.py` brain is unaffected (separate discovery branch). Verified by the F14-migration
+manual check below.
 
 ## Design decisions (locked)
 
@@ -52,12 +68,20 @@ re-asserts); and key per-uniform scripts by `(name, type)` so retype/delete-read
    the single source of truth, persisted in `node.json`.
 
 2. **The engine reads active-intent via an explicit param, not the node model.** `ScriptEngine.reload`
-   gains an `active_scripts: set[str]` arg (active filenames: `"u_<name>.py"`, `"script.py"`).
+   gains an `active_scripts: set[str]` arg (active filenames: `"u_<name>__<tag>.py"`, `"script.py"`).
    `ProjectSession.reload_scripts` builds it from the flags on `ui_node` (it owns the UI model) and
    passes it in. The engine never imports/learns `UIUniform` — the headless boundary (041) holds;
    intent flows through a param exactly as `engine_driven` already does. Discovery skips any script
    whose filename isn't in `active_scripts` (replacing the `_is_disabled` skip); the drop loop then
-   tears down a binding that just went inactive (same as today).
+   tears down a binding that just went inactive (same as today). **The skip is the active-flag's only
+   READER — verified by the F2-wire check** (manual-verification): set the flag false out-of-app, the
+   driven value must stop snapping back; if discovery ignores `active_scripts` the value keeps snapping
+   back (the dead-mechanism failure dev_flow step 7 warns about). **`active_scripts` is the keyed gate,
+   not a default-on:** `reload` takes it as a required arg from the two live callers
+   (`project_session.py:308` `_resolve_scripts`, `:362` `reload_scripts`). The ~34 test call sites
+   (`tests/test_script_engine.py` 28×, `tests/test_script_engine_gl.py` 6×) need it too — give it a
+   default `frozenset()` ONLY if a per-test helper passes the active set explicitly; the 6 `.disabled`
+   tests are deleted and replaced with active-set tests (see Files touched).
 
 3. **Born inactive (F2).** Because the flags default `False`, a freshly-created script is inactive with
    zero extra code — `create_script` writes only the file. Opening a script (pill/glyph click) creates
@@ -76,7 +100,13 @@ re-asserts); and key per-uniform scripts by `(name, type)` so retype/delete-read
    filter them out), and the brain SILENTLY drops any engine-owned key it returns — no error, no
    "engine-owned" soft-error class. The whole "engine-owned" branch of the bad-key error path is
    removed: an engine-owned key can no longer reach the brain (not in the stub) and is dropped if
-   hand-added. **Node UI is UNCHANGED** — engine-owned uniforms still render as the blue read-only rows
+   hand-added. **This touches the BRAIN TICK path, not just the stub (pre-impl review A5/B):** the
+   engine-owned reason in `_binding_reject` (`engine.py:384`) is consulted at TWO sites — per-uniform
+   reload (now moot: an engine-owned key can't be a per-uniform filename) AND the brain's per-key lazy
+   validation at tick (`engine.py:608`), which today records a SOFT error + skips the key. Decision 5
+   changes the brain branch to `continue` SILENTLY (no `errors`/`soft_errors`/`skipped` record) for an
+   engine-owned key — a behavior change to `_apply_behavior`'s brain branch + `BrainStatus.soft_errors`,
+   not merely deleting line 384. **Node UI is UNCHANGED** — engine-owned uniforms still render as the blue read-only rows
    at the top of the node tab (they are driven by the renderer; that display is correct). "Hidden from
    the user" here means only that they are not script-targetable; a user who wants a controllable time
    declares their own uniform (e.g. `u_my_time`) and scripts that.
@@ -106,7 +136,8 @@ re-asserts); and key per-uniform scripts by `(name, type)` so retype/delete-read
    | tab_list_popup_button | draw_selected_overline`), per-tab `p_open` close, `unsaved_document` flag for
    the dirty dot, and `STATE_ERROR`-tinted tab for an erroring script tab (push `Col_.tab*` around its
    `begin_tab_item`). Tab labels are the **bare file name** (`u_position.py`, `script.py`,
-   `shader.frag.glsl`, a lib's filename) — delete `_tab_label`'s semantic-alias branching entirely.
+   `shader.frag.glsl`, a lib's filename) — delete `_tab_label`'s semantic-alias branching entirely
+   (it has a SECOND caller, `draw_chrome` at `code.py:198` — switch it to `tab.path.name` too).
    NOTE: a per-uniform script's on-disk filename now encodes the type tag (decision 13), so its bare
    filename label reads e.g. `u_position__vec2.py`; acceptable (it IS the file). The tab bar no longer
    hosts the active toggle (it moved to the script-local bar, decision 6). Spike validated in
@@ -153,19 +184,38 @@ re-asserts); and key per-uniform scripts by `(name, type)` so retype/delete-read
     - **Rename strands the old file** (engine can't distinguish rename from delete+add) — recovered via the
       copy-content selector (decision 15), NOT an auto-rebind.
     The node-brain (`script.py`) is UNCHANGED — it's name-agnostic (returns a dict, validated per key
-    per tick), so it keeps its single filename and by-key behavior. This change ripples through every
-    per-uniform `f"{name}.py"` / `script_path_for` / `script_state_for` / glob (`_SCRIPT_GLOB` →
-    `u_*__*.py`) / error-key path: a per-uniform binding is now keyed by `(name, tag)`, the error key by
-    `(node_id, "u_<name>__<tag>.py")` or an equivalent stable key. The type-tag derivation has ONE home (a
-    helper beside `_stub_kind`) shared by the filename builder and the discovery matcher, so the two never
-    disagree. The existing `todo.md` "type-change error" deferral is resolved by this — delete it.
+    per tick), so it keeps its single filename and by-key behavior.
+    **FILENAME-tag vs internal-KEY — the load-bearing distinction (pre-impl review A1/B):** the `__<tag>`
+    lives ONLY in the on-disk filename and the tab label. Every INTERNAL key stays the **bare uniform
+    name** (`u_x`, not `u_x__vec2`). Today `reload` does `name = path.stem` (`engine.py:291`) and keys
+    `behaviors[name]` / `mtimes[name]` / `sources[name]` / `last_good[name]` / `errors[(node_id, name)]` /
+    the `found` set / the drop loop / `script_driven_uniforms` by that stem, AND `_binding_reject(name,
+    active)` looks the name up in the live-uniform map. If the stem becomes `u_x__vec2` every one of those
+    lookups false-orphans. So discovery PARSES the filename into `(uniform_name, tag)`, validates `tag`
+    against the live uniform's tag, and then keys all internal state by `uniform_name` — **the tag is a
+    match gate, never a dict key.** Two shared helpers beside `_stub_kind` (the ONE home, so builder and
+    matcher never disagree): `_uniform_tag(uniform) -> str` (the lowercased coercion-signature tag) and
+    `_parse_script_filename(filename) -> tuple[str, str] | None` (`u_x__vec2.py` → `("u_x", "vec2")`,
+    `None` for a non-conforming name). The error key stays `(node_id, "u_x")` (bare), so
+    `script_state_for` / `is_uniform_script_owned` / `uniform_pill_state` — which key by bare uniform name
+    — keep working unchanged. `script_file_for` (`engine.py:261`) + its copilot consumer
+    (`backend.py:690`, the `f"{name}.py"` fallback) must reconstruct the tagged filename (the engine stores
+    the discovered filename alongside the binding, or `script_file_for` re-derives the tag from the live
+    uniform). This change ripples through `_SCRIPT_GLOB` (→ `u_*__*.py`), `script_path_for` /
+    `create_script` (build the tagged name), and `script_file_for`. The existing `todo.md` "type-change
+    error" deferral is resolved by this — delete it in the impl commit.
 
 14. **`active_scripts` keying follows the new filename (F14 ↔ decision 2).** Since the per-uniform file is
     now `u_<name>__<tag>.py`, the `active_scripts` set decision 2 passes to `reload` holds those full
     filenames (plus `script.py` for the brain). The `is_script_active` flag on `UIUniform` is keyed to the
     uniform (name+type live on the uniform itself), so the session builds the active filename for a uniform
-    from its live `(name, tag)` — a uniform that retypes gets a fresh flag-default-False script, consistent
-    with decision 3 (born inactive).
+    from its live `(name, tag)`. **Retype must not leak the old active flag onto the fresh file
+    (pre-impl review B):** one `UIUniform` named `u_x` carries ONE `is_script_active` flag; after
+    `vec2`→`vec3` that same flag (possibly still `True` from the vec2 era) would otherwise mark the brand-new
+    `u_x__vec3.py` active, contradicting decision 3 (born inactive). The gate: `reload_scripts` adds
+    `u_x__<currenttag>.py` to `active_scripts` ONLY when (`is_script_active` is True) AND (that exact tagged
+    file exists on disk). A retyped uniform's vec3 file is absent → not added → born inactive even with a
+    stale `True` flag; retyping back to vec2 finds `u_x__vec2.py` again and (flag still True) re-arms it.
 
 15. **"Copy content from another script of the same type" selector (F14 UI).** In the script-local bar
     (decision 6), for a per-uniform script tab, a dropdown lists every OTHER per-uniform script across the
@@ -184,10 +234,24 @@ re-asserts); and key per-uniform scripts by `(name, type)` so retype/delete-read
 
 - `shaderbox/ui_models.py` — `is_script_active` on `UIUniform`; `is_brain_active` on `UINodeState`.
 - `shaderbox/scripting/engine.py` — delete `_DISABLED_SUFFIX`/`_is_disabled` + the two skip gates;
-  `reload(active_scripts=…)`; drop the engine-owned bad-key error branch; rewrite `_UPDATE_DOC` +
+  `reload(active_scripts=…)`; drop the engine-owned per-uniform reject branch AND make the brain tick
+  (`_apply_behavior` at `engine.py:608`) drop an engine-owned key SILENTLY (no `soft_errors` record — F4,
+  decision 5); rewrite `_UPDATE_DOC` +
   the stub blank-line (F7/F8); confirm stubs exclude engine-owned uniforms (F4); the `(name, type)`
-  filename key (F14 decision 13): `_SCRIPT_GLOB` → `u_*__*.py`, a shared type-tag helper beside
-  `_stub_kind`, discovery matches `(name, tag)`, per-uniform error keys re-keyed.
+  filename key (F14 decision 13): `_SCRIPT_GLOB` → `u_*__*.py`, two shared helpers beside `_stub_kind`
+  (`_uniform_tag` + `_parse_script_filename`), discovery parses `(name, tag)` from the filename and keys
+  internal state by the BARE name (the tag is a match gate, not a key), `script_file_for` (`engine.py:261`)
+  reconstructs the tagged filename.
+- `shaderbox/copilot/backend.py` — the `f"{name}.py"` fallback at `backend.py:690` becomes the tagged
+  filename (rides `script_file_for`; the fallback string updates to the new scheme).
+- `ai_docs/conventions.md` — the 041 Design-decision bullet says "Binding is by FILENAME (stateless — no
+  `node.json` entry, no `UIUniform` field)" (`conventions.md ## Design decisions`, the scripting bullet).
+  047 makes the second clause false: the BINDING stays filename-based, but ACTIVE-INTENT now lives on a
+  persisted `UIUniform`/`UINodeState` flag. Update the clause to that nuance (add active-intent-on-model;
+  keep binding-by-filename) — same-wave per "docs are living".
+- `tests/test_script_engine.py` / `tests/test_script_engine_gl.py` — ~34 `reload(...)` call sites gain the
+  `active_scripts` arg; the per-uniform test fixtures adopt the `u_<name>__<tag>.py` filename; the 6
+  `.disabled` tests (the deleted marker mechanism) are removed and replaced with active-set tests.
 - `shaderbox/project_session.py` — `reload_scripts` builds `active_scripts` from the flags;
   `set_script_active` flips the model flag (not a marker); `script_state_for` reads the flag;
   `create_script`/`script_path_for` build the `u_<name>__<tag>.py` name (F14); `detach_script` drop the
@@ -209,16 +273,30 @@ Per dev_flow step 7, each check falsifiable + names the consumer:
 - **F1 glyph** — every scriptable uniform row + the node header show a small `</>`; grey when no script,
   accent when active, faded when inactive, red on a known-broken script. Falsifier: a broken script shows
   red, a fresh one grey.
-- **F2/F12 born-inactive + independence** — create a uniform script → it is inactive (value still
-  hand-editable, no snap-back). Activate the brain → the uniform script stays inactive. Falsifier:
-  activating the brain must NOT turn the uniform glyph accent.
+- **F2/F12 born-inactive + independence** — create a uniform script → its glyph reads `inactive`
+  (faded accent), NOT `absent` (grey) — proving the file was discovered-but-flag-off, not silently
+  undiscovered — and the value stays hand-editable with no snap-back. Activate the brain → the uniform
+  script stays inactive. Falsifier: activating the brain must NOT turn the uniform glyph accent; a GREY
+  (absent) glyph on a just-created script means discovery never found it (the glob/migration bug), not
+  born-inactive.
+- **F2-wire (the flag's only consumer)** — with a uniform script ACTIVE and visibly driving its value,
+  edit `node.json` to set `is_script_active: false` out-of-app, reload → the value STOPS snapping back
+  (the engine dropped the binding via the `active_scripts` skip). Falsifier: the value keeps snapping
+  back = `active_scripts` is built but the discovery skip never reads it (the flag defined-but-unwired —
+  the exact dead-mechanism failure dev_flow step 7 names).
+- **F3-freeze** — start a copilot turn; the Activate/Deactivate button + the copy-content selector in the
+  script bar are disabled (greyed) until the turn ends. Falsifier: clicking Activate mid-turn flips the
+  flag (the `copilot_turn_active` freeze was dropped in the tab-row→bar rewrite).
 - **F3 script-local bar** — a thin bar appears under the tab bar ONLY for a script tab, holding the
   Activate/Deactivate button + (per-uniform only) the copy-content selector; it does NOT appear for a
   shader/lib tab. Activate label flips Activate↔Deactivate and toggles the glyph/snap-back. Falsifier:
   switch to a shader tab — the bar vanishes.
 - **F4** — activate a brain whose stub drives only real uniforms → NO "engine-owned" error in the strip.
-  Hand-add `"u_time": ...` to the brain dict → it is silently dropped, no error. Falsifier: the strip
-  stays empty.
+  Hand-add `"u_time": ...` to the brain dict → it is silently dropped, no error AND `u_time`'s blue
+  read-only row in the Node tab still ADVANCES (renderer-driven), proving a silent drop, not a freeze or a
+  takeover. The Node tab still shows `u_time`/`u_resolution`/`u_aspect` as blue read-only rows (decision 5
+  "Node UI is UNCHANGED"). Falsifier: an "engine-owned" error appears in the strip, OR `u_time`'s blue row
+  stops moving (the brain captured it), OR the blue rows vanish from the Node tab.
 - **F5/F6** — an erroring script with >3 errors shows no blank trailing row; "+N more" is clickable and
   expands to all errors; clicking an error jumps. Falsifier: count rows — no empty last row.
 - **F7/F8** — open a fresh script → the `update` docstring is a clean Google-style block (no `|` pipes);
@@ -238,17 +316,131 @@ Per dev_flow step 7, each check falsifiable + names the consumer:
   lists the stranded `u_x` script (same tag); pick it → its body lands in the editor. A script from
   ANOTHER node of the same type also appears. Falsifier: the selector lists only same-type scripts and
   excludes the current file.
-- **`make check` + `make smoke` green** (smoke seeds a script-driven node — the flag-model + `(name,type)`
-  filename reload must not crash it; update the smoke seed's script filename to the new scheme).
+- **F14 migration** — `make run` against `projects/dev/` → the brain node's `u_char_height` / `u_color1` /
+  `u_color2` / `u_spacing` rows still show the ACTIVE-or-INACTIVE glyph (their renamed `u_*__<tag>.py`
+  scripts rebound), NOT grey/absent. Falsifier: a grey (absent) glyph on any of the four = the impl-commit
+  rename was skipped and the scripts went undiscovered under the new glob.
+- **`make check` + `make smoke` green, AND smoke proves the renamed seed actually TICKED** — the smoke seed
+  is a script-driven node; rename its seed file to the new scheme and add an assertion that
+  `app.session.script_engine.script_driven_uniforms(<scripted_node_id>)` contains the seeded uniform after
+  the run. Falsifier: an empty driven-set passes smoke green = the new `u_*__<tag>.py` filename didn't match
+  the discovery matcher (a builder-vs-matcher tag disagreement) and smoke green-washed it. Without this
+  canary, smoke only proves "didn't crash", not "the new filename scheme binds".
 
 ## Open questions for the user
 
-- F3 button label wording: `Activate script`/`Deactivate script` vs `Script inactive`/`Script active`
-  (settled at impl unless you have a preference).
-- F14 type-tag spelling in the filename: `u_x__vec2.py` (double-underscore separator) — flagging the
-  exact on-disk name since it becomes the tab label too. Change if you dislike the look.
+Both settled at the pre-impl review (see Review history → Open-question resolutions); change either if you
+disagree:
+- F3 button label → `Activate script` / `Deactivate script`.
+- F14 filename separator → `u_x__vec2.py` (double underscore). This is the on-disk name AND the tab label.
 - None blocking.
 
 ## Review history
 
-(empty — to be filled at pre/post-impl review.)
+### Pre-impl review (2026-06-14, 2 adversarial agents — correctness/design + verification/blast-radius)
+
+High-blast-radius wave (deletes a mechanism, changes an on-disk filename scheme, touches conventions), so
+2 reviewers per dev_flow step 4. Both returned non-PASS (PARTIAL / FAIL) with code-anchored findings; the
+two highest-stakes were independently re-verified against the live source before folding. All findings were
+REAL (none manufactured — this was round 1). Resolutions, folded into the decisions above:
+
+- **Binding-key collision (CRITICAL, verified at `engine.py:291`).** `reload` does `name = path.stem`, so a
+  tagged filename `u_x__vec2.py` would key `behaviors`/`errors`/`_binding_reject` by `u_x__vec2` and
+  false-orphan every lookup. → Decision 13 rewritten: the tag lives only in the filename + tab label;
+  internal keys stay the bare uniform name; two shared helpers (`_uniform_tag`, `_parse_script_filename`);
+  the tag is a match gate, not a key. `script_file_for` + `backend.py:690` named as ripple sites.
+- **Retype leaks the active flag (verified — one `UIUniform`, one flag).** → Decision 14 gains the gate:
+  add to `active_scripts` only when flag True AND the exact tagged file exists, so a retyped uniform's fresh
+  file is born inactive even with a stale True flag.
+- **`reload(active_scripts)` ripples to 2 live callers + ~34 test sites (verified by grep).** → Decision 2 +
+  Files touched name `project_session.py:308/362`, both test files, and the 6 deleted `.disabled` tests.
+- **Engine-owned drop touches the BRAIN tick path, not just the stub (verified at `engine.py:608`).** →
+  Decision 5 + Files touched: `_apply_behavior` brain branch drops an engine-owned key silently.
+- **`conventions.md` "no `UIUniform` field" clause goes stale (verified at the scripting Design-decision
+  bullet).** → added to Files touched (update the active-intent nuance, keep binding-by-filename).
+- **Dev-sandbox one-time orphan (verified: the 4 `u_*.py` files don't match `u_*__*.py`).** → new
+  "One-time migration" section + the F14-migration manual check.
+- **Verification gaps (all folded into Manual verification):** the active-flag had no consumer-side check
+  (the dead-mechanism risk) → F2-wire; smoke couldn't detect a dead script → smoke tick-canary; the
+  "Frozen mid-copilot-turn" freeze was unverified → F3-freeze; F4 passed for >1 reason and didn't verify
+  "Node UI unchanged" → strengthened; born-inactive couldn't be told from never-discovered → F2 split
+  (inactive-faded vs absent-grey).
+- **No-spec-change (acknowledged, no edit):** deleting the "type-change error" todo entry is correct and
+  loses no live info (both halves dead after 047) — already specced to happen in the impl commit; the
+  copilot-rollback deferral does not fire (047 adds no copilot-reachable durable mutation) — now stated
+  explicitly in Out of scope.
+
+Convergence: round 1 surfaced real systemic gaps in the binding-key + verification layers; all patched in
+the spec. The spec is now implementable as written. No "should not land" finding — no escalation to the
+user beyond the two settled open questions below.
+
+### Open-question resolutions (settled at this review)
+
+- F3 button label: `Activate script` / `Deactivate script` (the spec's first option; clearer than the
+  state-as-label phrasing).
+- F14 type-tag separator: `u_x__vec2.py` (double underscore) — kept; it reads cleanly as a tab label and
+  the double-underscore can't collide with a single-underscore uniform name segment.
+
+### Post-impl review (2026-06-14, 3 adversarial agents + 1 convergence pass)
+
+High-blast-radius diff → 3 reviewers (code-correctness, architecture/conventions, spec-fidelity) in one
+batch. Verdicts: spec-fidelity PASS (all 15 decisions LANDED, with independent live F14-retype + F4
+silent-drop proofs); architecture PASS (one minor duplication smell); code-correctness FAIL — one real,
+empirically-verified bug.
+
+- **FAIL → fixed: copy-content was silently unsaveable.** `App.copy_into_current_editor` did
+  `editor.set_text(body)`, but `TextEditor.set_text` resets the undo index to 0, and a fresh script
+  session has `saved_undo == 0`, so `is_current_editor_dirty()` read False → the copied body never
+  flushed. Fix: `session.saved_undo = -1` after `set_text` (a sentinel `get_undo_index()` ≥ 0 can never
+  match, re-baselined on the next save). Re-verified independently: `set_text` does keep the index at 0.
+- **Smell → consolidated: filename assembly was duplicated.** `f"{name}__{tag}.py"` lived in two
+  `project_session.py` sites. Lifted to `engine.py::per_uniform_filename(uniform)` (the ONE home beside
+  `uniform_tag`), exported, both sites routed through it. (The `script.py` brain literal + the one-off
+  `u_*__*.py` glob in `same_type_scripts` left as-is — stable, never-computed strings, no drift risk.)
+
+A focused convergence pass re-verified both fixes against running behavior (the `saved_undo` read/write
+audit + the `per_uniform_filename`↔`parse_script_filename` round-trip + 104 green script tests) → PASS,
+no regression. `make check` 0 errors; `make smoke` skips on the display-less dev box (its 047 tick-canary
+is wired and the equivalent binding proven headlessly). The maintainer `make run` checks below still pend.
+
+### Ultra-review (2026-06-14, mega adversarial swarm — 6 dimensions × 3-skeptic verify, 52 agents)
+
+A maintainer-requested ultracode swarm (6 parallel finders → each finding voted by 3 skeptics with
+distinct lenses incl. one that RUNS the code, ≥2/3 to confirm) found **14 real defects the 3 text-only
+review rounds missed** — because the swarm executed code (`uv run`) and traced imgui draw-order, which a
+text trace can't. Two ROOT causes + clusters; all fixed:
+
+- **ROOT 1 (CRITICAL) — the native tab bar was read-back-only.** `_draw_tab_row` only READ imgui's
+  selected tab into `active_tab_index`; it never DROVE imgui's selection, so a programmatic switch
+  (glyph open / node-select / lib-jump / re-focus) silently reverted — the editor stayed on the prior
+  file. Empirically reproduced on imgui-bundle 1.92.801. Fix: a one-shot `App.tab_select_pending` set at
+  every programmatic `active_tab_index` assignment (`_focus_or_add_tab`/`close_tab`/`_remove_tabs_for_node`),
+  consumed in `_draw_tab_row` as `TabItemFlags_.set_selected` on the target tab, read-back gated to genuine
+  clicks — the exact pattern the working `ui.py` node-settings bar already used. (Decision 8 was a no-op as
+  shipped.)
+- **ROOT 2 (HIGH) — `set_script_active` silently no-op'd before a row was drawn.** `is_script_active` lives
+  on a `UIUniform` created lazily ONLY in the Node-tab draw loop, so `_ui_uniform_for` returned None and the
+  flag write was skipped for any programmatic/headless activation. This made the 047 smoke tick-canary a
+  guaranteed FALSE-RED on its first GPU run AND broke the canonical `scripts/dogfood/verify_script_engine.py`
+  (empirically red). Fix: `_ui_uniform_for` now `setdefault`s `UIUniform.from_uniform(u)` for the matched
+  live uniform — activation works without a prior draw; the born-inactive-on-retype guarantee holds (a
+  retyped uniform has a different hash → fresh False row). Verified by the now-green dogfood harness end to end.
+- **ROOT 3 (medium+low) — a script tab went stale on a shader-side retype.** The script-local bar resolved
+  state by the LIVE uniform's current tag, not the tab's open file, so after a retype it mislabeled
+  Activate/Deactivate over an absent file. Fix: the bar detects `script_path_for(node) != tab.path` and
+  shows "this uniform was retyped or removed — its script is detached" instead of acting on the wrong file.
+- **Coverage holes (high+medium+low) — fixed:** `test_non_utf8_file_does_not_crash_reload` passed vacuously
+  (untagged name skipped the read) → retagged; added falsifiable tests for retype-drop + retype-back +
+  delete-readd, `parse_script_filename` (incl. the underscore-in-name `rfind` edge), `same_type_scripts` /
+  `copy_script_body`, and a real-GL `get_uniform_hash` retype-distinguishes test — each confirmed RED under
+  the regression it guards.
+- **Stragglers (low) — fixed:** the dogfood harness migrated to the tagged scheme + activation; the copilot
+  `set_uniform` reject's dead `f"{name}.py"` fallback removed (spec decision 13 straggler); two stale
+  marker-era comments rewritten.
+- **Refuted (1/15):** a claim that mutating `per_uniform_filename` to a single underscore leaves the suite
+  green — all 3 skeptics ran it and `test_uniform_pill_state` failed, falsifying the trigger.
+
+After all fixes: `make check` 0 errors, full suite 483 passed / 27 skipped (+8 new), the dogfood harness
+green end to end. ROOT 1's frame behavior + the F1/F3/F9/F11/F14 falsifiers below still need the maintainer
+`make run` (imgui selection can't be judged headless). **Durable lessons filed:** the read-back-tab-bar trap
++ the lazy-model-row activation trap → `/imgui-ui` skill (§ native tab bar) + `conventions.md`.

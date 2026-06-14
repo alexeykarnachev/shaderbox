@@ -16,7 +16,10 @@ from shaderbox.scripting.engine import (
     ScriptState,
     brain_stub_for,
     is_scriptable,
+    parse_script_filename,
+    per_uniform_filename,
     stub_for,
+    uniform_tag,
 )
 from shaderbox.scripting.errors import ScriptError
 from shaderbox.scripting.outputs import Array, Text, Vec2, Vec3, Vec4
@@ -42,5 +45,8 @@ __all__ = [
     "brain_stub_for",
     "coerce_one",
     "is_scriptable",
+    "parse_script_filename",
+    "per_uniform_filename",
     "stub_for",
+    "uniform_tag",
 ]

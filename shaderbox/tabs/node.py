@@ -15,7 +15,7 @@ from shaderbox.ui_models import (
 from shaderbox.ui_primitives import (
     button,
     ghost_button,
-    script_pill,
+    script_glyph,
     small_caption,
 )
 from shaderbox.util import format_auto_value, get_resolution_str, get_uniform_hash
@@ -116,7 +116,7 @@ def draw(app: App) -> None:
         )
 
     imgui.same_line()
-    _draw_brain_pill(app)
+    _draw_brain_glyph(app)
 
     imgui.same_line()
     if ghost_button("...##node_actions"):
@@ -188,19 +188,19 @@ def draw(app: App) -> None:
             imgui.dummy((0, SPACE.SM))
 
 
-def _draw_brain_pill(app: App) -> None:
-    # The node-header node-brain affordance (045): the same text pill as the per-uniform rows, here
+def _draw_brain_glyph(app: App) -> None:
+    # The node-header node-brain affordance (047): the same `</>` glyph as the per-uniform rows, here
     # acting on the node's script.py. Click creates+opens (absent) or opens (active/inactive); the
-    # active/inactive toggle + the brain's errors live on its editor tab.
+    # Activate button + the brain's errors live on its editor tab.
     node_id = app.current_node_id
     state = app.session.script_state_for(node_id, None)
     tooltip = {
         "absent": "Create + open a node-brain script (drives many uniforms)",
-        "active": "Node-brain active — click to open (toggle on/off in the editor)",
+        "active": "Node-brain active — click to open (activate in the editor)",
         "inactive": "Node-brain inactive — click to open",
         "error": "Node-brain error — click to open and fix",
     }[state]
     imgui.begin_disabled(app.copilot_turn_active)
-    if script_pill("brain", "brain", state, tooltip=tooltip):
+    if script_glyph("brain", state, tooltip=tooltip):
         app.open_script_for(node_id, None)
     imgui.end_disabled()

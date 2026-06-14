@@ -336,6 +336,15 @@ class App:
         # node ensures its shader tab. Empty list = no file open.
         self.editor_tabs: list[EditorTab] = []
         self.active_tab_index: int = 0
+        # A one-shot consumed by the native tab bar (047): when active_tab_index is set
+        # PROGRAMMATICALLY (glyph open / node-select / lib-jump / close), the tab bar must DRIVE
+        # imgui's selection via TabItemFlags_.set_selected — imgui ignores a model-side index change
+        # and otherwise reports the old tab, reverting the switch. A genuine user click reads back
+        # without setting this. Mirrors the node-settings bar's node_tab_select_pending (ui.py).
+        self.tab_select_pending: bool = False
+        # The error strip's "+N more" expand state (047 F6), reset whenever the active tab changes
+        # (an expanded strip on one script shouldn't carry to the next).
+        self.errors_expanded: bool = False
 
         # shader_lib_index + the cross-project stores (favorites/tags/template-descriptions)
         # live on self.session (feature 025); App reaches them via the @property forwarders.
@@ -450,6 +459,7 @@ class App:
             t for t in self.editor_tabs if t.node_id != node_id or t.kind == "lib"
         ]
         self.active_tab_index = min(self.active_tab_index, len(self.editor_tabs) - 1)
+        self.tab_select_pending = True
         if node_id == self.node_delete_armed:
             self.node_delete_armed = ""
 
@@ -971,10 +981,12 @@ class App:
         for i, existing in enumerate(self.editor_tabs):
             if existing.path == tab.path:
                 self.active_tab_index = i
+                self.tab_select_pending = True
                 self.editor_was_ever_focused = False
                 return
         self.editor_tabs.append(tab)
         self.active_tab_index = len(self.editor_tabs) - 1
+        self.tab_select_pending = True
         self.editor_was_ever_focused = False
 
     def ensure_shader_tab(self, node_id: str) -> None:
@@ -987,6 +999,8 @@ class App:
 
     def set_active_tab(self, index: int) -> None:
         if 0 <= index < len(self.editor_tabs):
+            if index != self.active_tab_index:
+                self.errors_expanded = False
             self.active_tab_index = index
             self.editor_was_ever_focused = False
 
@@ -997,6 +1011,7 @@ class App:
             return
         self.editor_tabs.pop(index)
         self.active_tab_index = min(self.active_tab_index, len(self.editor_tabs) - 1)
+        self.tab_select_pending = True
 
     def open_shader_lib_file(self, path: Path) -> EditorSession:
         # Open (or focus) a lib file as a tab; return its session.
@@ -1080,6 +1095,14 @@ class App:
             return False
         return session.editor.get_undo_index() != session.saved_undo
 
+    def is_tab_dirty(self, tab: EditorTab) -> bool:
+        # Per-tab unsaved state for the native tab bar's dirty dot (047) — reads the tab's own
+        # session (not the active one). A tab whose session was evicted reads clean.
+        session = self.editor_sessions.get(tab.path)
+        if session is None:
+            return False
+        return session.editor.get_undo_index() != session.saved_undo
+
     def get_current_session_if_exists(self) -> EditorSession | None:
         # Non-creating variant — for callers that read state but mustn't spawn a session as
         # a side effect (e.g. the dirty-check during render).
@@ -1142,8 +1165,8 @@ class App:
         return self.session.is_uniform_scriptable(node_id, name)
 
     def set_script_active(self, node_id: str, name: str | None, active: bool) -> None:
-        # The editor toggle's action (045): flip a script's active/inactive bit (the engine binds or
-        # drops it on the next reload). Frozen mid-copilot-turn (a marker write races the reload).
+        # The script-local bar's Activate action (047): flip the model active flag (the engine binds
+        # or drops it on the next reload). Frozen mid-copilot-turn (a flag flip races the reload poll).
         if self.copilot_turn_active:
             return
         self.session.set_script_active(node_id, name, active)
@@ -1152,6 +1175,20 @@ class App:
         # Trash a script (recoverable); the next reload drops the binding + clears its error.
         self.session.detach_script(node_id, filename)
         self.notifications.push(f"Detached {filename}")
+
+    def copy_into_current_editor(self, body: str) -> None:
+        # Drop a chosen script's body into the active editor buffer (047 copy-content selector): a
+        # plain text copy, marking the buffer dirty (the user saves to persist) — NOT a re-bind.
+        # Frozen mid-copilot-turn. `set_text` resets the editor's undo index to 0, so force the
+        # buffer dirty via a saved_undo sentinel get_undo_index() (always >= 0) can never match —
+        # else a fresh session (saved_undo 0) reads clean and the copy never flushes.
+        if self.copilot_turn_active or not body:
+            return
+        session = self.get_current_session_if_exists()
+        if session is None:
+            return
+        session.editor.set_text(body)
+        session.saved_undo = -1
 
     # App-side editor-session cleanup, reached back into from ShaderLibFileManager when it
     # trashes/renames a lib file (the picker UI drives the CRUD on the manager directly).

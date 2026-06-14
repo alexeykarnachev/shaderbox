@@ -687,17 +687,24 @@ class CopilotBackend:
                     "cannot be set; change the shader code if you need different behavior",
                 )
             if name in self._get_script_driven_uniforms(node_id):
-                script_file = self._get_script_file_for(node_id, name) or f"{name}.py"
-                where = (
-                    "the node-brain script"
-                    if script_file == "script.py"
-                    else "the script"
-                )
+                script_file = self._get_script_file_for(node_id, name)
+                # script_file is the discovered tagged filename (047) — always present for a driven
+                # uniform. The None branch is defensive (a future behaviors/filenames desync): point
+                # the agent generically rather than at a fabricated path under the new glob.
+                if script_file is None:
+                    where_at = "the behavior script driving it"
+                else:
+                    where = (
+                        "the node-brain script"
+                        if script_file == "script.py"
+                        else "the script"
+                    )
+                    where_at = f"{where} at nodes/{node_id}/scripts/{script_file}"
                 return SetUniformResult(
                     ok=False,
                     error=f"'{name}' is script-driven (a behavior script computes its value "
-                    f"each frame) — a set here would be overwritten next tick; edit {where} "
-                    f"at nodes/{node_id}/scripts/{script_file} instead",
+                    f"each frame) — a set here would be overwritten next tick; edit {where_at} "
+                    "instead",
                 )
             target = self._get_ui_nodes()[node_id].node
             uniform = next(

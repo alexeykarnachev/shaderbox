@@ -11,11 +11,10 @@ EditorTabKind = Literal["shader", "node_script", "uniform_script", "lib"]
 
 @dataclass(frozen=True)
 class EditorTab:
-    # One open file in the code-editor's tab bar (feature 045). `path` is the on-disk file (the
-    # EditorSession key). `kind` drives the semantic label (shader / node script / script · <name> /
-    # lib filename) and whether the active/inactive toggle shows. For a script, `node_id` + `name`
-    # (a uniform name, or None for the node-brain) address its engine binding; both are "" / None
-    # for shader + lib tabs.
+    # One open file in the code-editor's tab bar (feature 045; 047). `path` is the on-disk file (the
+    # EditorSession key) and the bare-filename tab label. `kind` selects whether the script-local bar
+    # shows (script tabs only) and the error tint. For a script, `node_id` + `name` (a uniform name,
+    # or None for the node-brain) address its engine binding; both are "" / None for shader + lib tabs.
     path: Path
     kind: EditorTabKind
     node_id: str = ""
