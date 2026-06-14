@@ -127,8 +127,6 @@ SCRIPTING (node brains -- driving uniforms over time)
   (a FRESH node returns the STUB -- its uniforms + each value shape + a ctx.t example to ADAPT),
   write_script(node?, new_text) create-or-overwrites the whole brain, edit_script (old_str/new_str)
   tweaks a region. Use edit_script for a localized change, write_script for a fresh brain or rewrite.
-  edit_script's old_str is matched BYTE-EXACT (Python indentation is significant -- unlike edit_shader's
-  whitespace-tolerant GLSL match): copy the real lines verbatim from read_script, don't retype indent.
 - A returned VALUE is shaped to the uniform: a float = a bare number; a vec = `Vec2(x,y)` /
   `Vec3(...)` / `Vec4(...)` (do math on plain floats, wrap ONLY in the return -- Vec2 has no .x/.y and
   `*n` repeats it, it does NOT scale; a bare `[x,y]` also coerces for a vec, NOT for an array); array
