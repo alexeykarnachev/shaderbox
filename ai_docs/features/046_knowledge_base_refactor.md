@@ -58,26 +58,13 @@ canonical home (## Status maps item → home), not here (one-canonical-home).
 plan. Default action per row: write the durable rule at the proposed home; if it's already partly
 filed, extend the existing bullet rather than add a new one.)
 
-### B1. The big one — decide first: a `copilot/LLM-agent-design` skill
-The single highest-leverage lift (report TL;DR + "Every LLM-facing lesson is a corollary of one
-actor-model"). LLM-agent design knowledge is scattered across ~12 specs (020.04/11/13/16/19/28/29,
-033, 036/038/039, dogfood 035/037) with no home. **Decision for the maintainer:** create one skill
-that states the actor model ONCE — *the model reliably (a) copies text verbatim and (b) is blind to
-anything outside its token stream* — and hangs every corollary off it:
-- prefix-cache strata (least-volatile→most-volatile; never volatile state in system; frozen block
-  write-only; tools serialized sorted; a stale verbatim copy is worse than none) — 020.04/11/16/28/29
-- fact/hint/guard taxonomy + facts-on-the-existing-channel over new opt-in tools + tool-count
-  discipline + the better-model babysitter test + the trace-patch stopping rule — 020.29, 033/039, df 037
-- content-addressed edit contract (address = content; loud no-match/multi-match by construction;
-  token-stream match but don't advertise invariance; detect degenerate inputs + truthful error) —
-  020.13, 036/038/039, ui 034, df 035/037
-- secret on its OWN typed channel end-to-end (dedicated `GateResponse.secret`; separate
-  `execute(secret=)`; redacted echo; never persist the buffer) — 020.19
-- agent cost measurement (billed=SUM across iterations; fullness=iteration-0; cache-hit dominates
-  re-run cost → never gate on a cold sample; a viz must answer ONE named question) — 025/028, report
-  "Token-cost was redesigned…"
-If the skill is too heavy, the fallback is `conventions.md ## Design decisions` sub-sections + a
-pointer from the `claude-api` skill's caching section.
+### B1. The big one (RESOLVED) — a dedicated LLM-agent-design skill
+The single highest-leverage lift: LLM-agent design knowledge was scattered across ~12 specs with no
+home. RESOLVED — a dedicated skill that states the actor model ONCE (*the model reliably copies text
+verbatim and is blind to anything outside its token stream*) and hangs every corollary off it
+(prefix-cache strata, fact/hint/guard taxonomy + tool-count discipline + the better-model test +
+stopping rule, content-addressed edit contract, secret-on-own-channel, agent cost measurement). Lives
+at `.claude/skills/copilot-llm-agent-design/SKILL.md`.
 
 ### B2. → `conventions.md ## Design decisions` (lift-full or extend existing bullet)
 - **Structural impossibility over guard-piles** (the deepest emergent law, report "The one design
@@ -183,9 +170,7 @@ spec is the pointer of record (one-canonical-home — the durable rule lives at 
   reality + a new revisit trigger).
 - **A2** (row 020 worklog) → `roadmap.md` row 020 collapsed to one dense brief.
 - **B1** (the skill) → `.claude/skills/copilot-llm-agent-design/SKILL.md` (decision: a dedicated skill,
-  not the conventions-fallback). The audit's "pointer from the `claude-api` skill's caching section" is
-  a NON-ACTION: `claude-api` is a Claude Code BUILT-IN skill (not a repo/user-owned file), so it can't be
-  edited — the new skill is reachable on its own via its description triggers.
+  not the conventions-fallback).
 - **B2** → `conventions.md ## Design decisions`: four emergent LAWS lead the section
   (structural-impossibility, speculative-machinery, funnel-not-per-caller, stateless-rebuild); the
   latch bullet extended with the one-primitive + teardown recipe; four concrete patterns added
