@@ -1,0 +1,155 @@
+{
+    "canvas_size": [
+        1280,
+        960
+    ],
+    "uniforms": {
+        "u_base_color": [
+            0.05999999865889549,
+            0.07000000029802322,
+            0.10000000149011612
+        ],
+        "u_flash": 0.0,
+        "u_grid_density": 2,
+        "u_orbit_pos": [
+            -0.10370622757751381,
+            -0.5909695578975629
+        ],
+        "u_orbit_radius": 0.15468992108649124,
+        "u_pulse": 0.01920642978535675,
+        "u_spin": 248.15557149533333,
+        "u_swirl": 33.459819625539374,
+        "u_tint": [
+            1.0,
+            0.55,
+            0.7491982785039947
+        ],
+        "u_wave_offset": [
+            -0.20745866863499918,
+            0.0388818666743089
+        ],
+        "u_zoom": 1.0
+    },
+    "ui_state": {
+        "ui_name": "Script Showcase",
+        "description": "048 single-script demo: u_zoom/u_base_color/u_grid_density are MANUAL; the node script drives u_pulse/u_swirl/u_wave_offset/u_tint/u_orbit_* from one stateful object.",
+        "render_media_details": {
+            "is_video": true,
+            "file_details": {
+                "path": "",
+                "size": 0
+            },
+            "resolution_details": {
+                "width": 1280,
+                "height": 960
+            },
+            "quality": 0,
+            "fps": 30,
+            "duration": 1.0
+        },
+        "ui_uniforms": {
+            "260085533400259490348506664942395818974": {
+                "name": "u_aspect",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "auto"
+            },
+            "267680718224853742075709778964749924733": {
+                "name": "u_base_color",
+                "is_ubo": false,
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "color"
+            },
+            "332253959492618921162971337016406391743": {
+                "name": "u_flash",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "331510303597557244823307851441371510766": {
+                "name": "u_grid_density",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "323805392035441045667372716209375257897": {
+                "name": "u_orbit_pos",
+                "is_ubo": false,
+                "gl_type": 35664,
+                "dimension": 2,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "106344552241392792958169534701476298890": {
+                "name": "u_orbit_radius",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "214286550012788499011917667150080788051": {
+                "name": "u_pulse",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "281560315248574001875378134720763885095": {
+                "name": "u_spin",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "282704345826589163225198641217278470453": {
+                "name": "u_swirl",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "299861199390716326886071896826339694367": {
+                "name": "u_tint",
+                "is_ubo": false,
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "275454829163764873528365581561451775614": {
+                "name": "u_wave_offset",
+                "is_ubo": false,
+                "gl_type": 35664,
+                "dimension": 2,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "317084605124924620152590287831490133912": {
+                "name": "u_zoom",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            }
+        },
+        "uniform_sort_key": "code",
+        "uniform_sort_desc": false,
+        "video_to_video_smoothing_window": 5,
+        "video_to_video_smoothing_sigma": 1.0,
+        "stopped_uniforms": [],
+        "all_stopped": false
+    }
+}

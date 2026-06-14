@@ -50,6 +50,8 @@
         "uniform_sort_key": "code",
         "uniform_sort_desc": false,
         "video_to_video_smoothing_window": 5,
-        "video_to_video_smoothing_sigma": 1.0
+        "video_to_video_smoothing_sigma": 1.0,
+        "stopped_uniforms": [],
+        "all_stopped": false
     }
 }
