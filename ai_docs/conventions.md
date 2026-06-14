@@ -279,9 +279,11 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   More generally: a blocking worker↔main round-trip is ONE primitive shape — `CopilotBridge`
   (worker→main-GL) and `GateChannel` (worker→UI-confirm) are mirror DIRECTIONS of it, not two designs
   (the mirror-the-sibling default produced both AND the dropped-`reopen()` bug). Its teardown contract:
-  `cancel_all()` to release every blocked waiter BEFORE `join(timeout)`; the worker thread is
-  **non-daemon** so it isn't killed mid-op; on a join timeout you ABANDON the survivor rather than block
-  shutdown forever. A new such primitive carries the whole bundle, not just the happy-path round-trip.
+  `cancel_all()` to release every blocked waiter BEFORE `join(timeout)`; on a join timeout you ABANDON the
+  survivor rather than block shutdown forever — so the worker thread is **daemon** (a non-daemon worker
+  blocked in a stalled stream past the join timeout would be re-joined by interpreter `_shutdown` and hang
+  the process forever, the 043 headless hang; the cancel-before-join already tells it to stop, so abandoning
+  it is safe). A new such primitive carries the whole bundle, not just the happy-path round-trip.
 - **The "current node" is a first-class subject; how a copilot tool addresses a node scales with the
   side effect's reversibility.** The app has exactly one selected node (`App.current_node_id`); the UI
   shows it, the editor binds to it; `switch_node` is the one tool whose job is to change it. A NEW
@@ -325,9 +327,22 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   `values_sink` that leaves the live node byte-identical. The MOTION verdict is the value-diff across t
   (GL-free, exact — catches a pulse/color-cycle a pixel-bbox misses) + ONE corroborating render for the
   "visible / FLAT" honesty case a value-diff can't see. A script write captures into the turn checkpoint
-  (`_capture_script`) like any mutating tool. Revisit if a second script LANGUAGE lands (the dry-tick is
-  language-agnostic via the `Behavior` protocol) or if the agent needs play/stop control (a `stop_uniform`
-  pair, deferred). Spec: `ai_docs/features/043_copilot_scripting.md`.
+  (`_capture_script`) like any mutating tool.
+  **THE ROOT LAW the bug-density taught (read this before adding any HEADLESS reader of the script
+  engine): the engine's per-frame bookkeeping SELF-HEALS — `errors` clears on a good tick, `last_driven`
+  re-warms each live tick, `u_time` is real wall-clock matching the live frame. A multi-frame HEADLESS
+  probe (the copilot's `dry_run`, a dogfood driver) is the first consumer that reads BETWEEN ticks, where
+  none of that self-healing runs — so the probe MUST own its own ACCUMULATED, CLOCK-COHERENT copy and never
+  fall through to the live bookkeeping. Concretely: `dry_run` accumulates "did it EVER fail across the
+  window" (not the final-frame snapshot of the self-healing `errors`); it STASHES its driven set into
+  `last_driven` so the working-set marker + the `set_uniform` reject (which read `script_driven_uniforms`)
+  agree with the write verdict in a tick-less path; the corroborating render takes its `u_time` from the
+  SAME sample the values came from (`_render_facts_for(node, t=mid[0])`), so the rendered frame is the one
+  the values describe. Every 043 bug (the swallowed transient raise, the phantom-numeric driven row, the
+  wall-clock-at-t=0 render, even C1's un-captured `scripts/`) was one instance of this class — a live
+  self-healing fact leaking into a headless probe context.** Revisit if a second script LANGUAGE lands
+  (the dry-tick is language-agnostic via the `Behavior` protocol) or if the agent needs play/stop control
+  (a `stop_uniform` pair, deferred). Spec: `ai_docs/features/043_copilot_scripting.md`.
 - **A copilot tool's interactive output is a STRUCTURED entity the engine renders, never a raw value in
   the model-facing message.** A tool returns `(ok, msg, payload)`: `msg` reaches the LLM, `payload` does
   NOT. A URL / file path / button / panel a tool surfaces goes in `payload` as a structured spec the UI

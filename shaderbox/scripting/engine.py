@@ -419,6 +419,13 @@ class ScriptEngine:
         driven: set[str] = set()
         skipped: set[str] = set()
         samples: list[tuple[float, dict[str, Any]]] = []
+        # The probe reports "did this EVER fail across the window", not the final-frame snapshot: the
+        # live engine's `errors` dict SELF-HEALS (a good tick pops a key), so a TRANSIENT raise/coercion/
+        # orphan that recovers before the last sampled frame would be lost. Accumulate each category
+        # right after each tick, before the next one can pop it.
+        seen_driven: set[str] = set()
+        seen_skipped: set[str] = set()
+        worst: dict[tuple[str, str], ScriptError] = {}
         for frame in range(max_frame + 1):
             ctx = EngineContext(t=frame * dt, dt=dt, frame=frame)
             self._tick_brain(
@@ -434,6 +441,10 @@ class ScriptEngine:
                 frozenset(),
                 values_sink=sink,
             )
+            seen_driven |= driven
+            seen_skipped |= skipped
+            for key, err in errors.items():
+                worst.setdefault(key, err)  # first failure across the window wins
             if frame in want:
                 samples.append(
                     (want[frame], {name: sink[name] for name in driven if name in sink})
@@ -441,20 +452,32 @@ class ScriptEngine:
 
         per_key = [
             (name, err)
-            for name in sorted(driven)
-            if (err := errors.get((node_id, name))) is not None
+            for name in sorted(seen_driven)
+            if (err := worst.get((node_id, name))) is not None
         ]
         orphan = [
             (name, err)
-            for name in sorted(skipped)
-            if (err := errors.get((node_id, name))) is not None
+            for name in sorted(seen_skipped)
+            if (err := worst.get((node_id, name))) is not None
         ]
-        # A behavior-level error recorded during the dry-tick = `update` raised / returned a non-dict at
-        # some frame (the script compiled but CRASHES at runtime). Surface it so the verdict isn't a
-        # false ANIMATING off the frozen-None values the crash leaves in the sink.
-        runtime_error = errors.get((node_id, _BRAIN_FILE))
+        # A behavior-level error seen at ANY frame = `update` raised / returned a non-dict at some point
+        # (the script compiled but CRASHES at runtime). Surface it so the verdict isn't a false ANIMATING
+        # off the values a recovered-by-the-last-frame crash leaves in the sink.
+        runtime_error = worst.get((node_id, _BRAIN_FILE))
+        # The probe is the SINGLE source of truth for the driven set in the headless/copilot path, where
+        # no live tick warms NodeScripts.last_driven. Stash it there so script_driven_uniforms (the
+        # working-set marker + the set_uniform reject) agrees with this write's verdict. Safe: last_driven
+        # is metadata, the next live tick overwrites it; the byte-identical invariant covers uniform_values.
+        scripts = self._nodes.get(node_id)
+        if scripts is not None:
+            scripts.last_driven = set(seen_driven)
         return ScriptProbe(
-            None, set(driven), per_key, orphan, samples, runtime_error=runtime_error
+            None,
+            set(seen_driven),
+            per_key,
+            orphan,
+            samples,
+            runtime_error=runtime_error,
         )
 
     def _tick_brain(

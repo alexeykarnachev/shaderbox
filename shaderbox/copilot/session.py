@@ -328,8 +328,12 @@ class CopilotSession:
     def _ensure_worker(self) -> None:
         if self._worker is not None and self._worker.is_alive():
             return
+        # daemon=True so a worker blocked in a stalled stream past release()'s join timeout is ABANDONED
+        # (the convention's stated teardown intent), not joined forever by interpreter _shutdown — that
+        # join is what hung the headless/dogfood process (043). release() already cancels the bridge +
+        # gate + sets _cancel before the join, so the worker has been told to stop before we abandon it.
         self._worker = threading.Thread(
-            target=self._run_worker, name="copilot-worker", daemon=False
+            target=self._run_worker, name="copilot-worker", daemon=True
         )
         self._worker.start()
 

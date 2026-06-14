@@ -175,6 +175,67 @@ def test_dry_run_runtime_raise_surfaces(tmp_path: Path) -> None:
     assert "ValueError" in probe.runtime_error.message
 
 
+def test_dry_run_transient_runtime_raise_surfaces(tmp_path: Path) -> None:
+    # A TRANSIENT crash: update raises only at frame 3, then recovers. The live errors dict self-heals
+    # (a good tick pops the key), so a final-frame snapshot would SWALLOW it. The probe must accumulate
+    # "did it EVER fail across the window". Falsifier: runtime_error is None -> the transient is lost.
+    _write_brain(
+        tmp_path,
+        _brain(
+            init_body="        self.n = 0\n",
+            update_body=(
+                "        self.n += 1\n"
+                "        if self.n == 3:\n"
+                "            raise ValueError('blip')\n"
+                "        return {'u_x': float(self.n)}\n"
+            ),
+        ),
+    )
+    node = _FakeNode([_u("u_x")])
+    eng = _engine(tmp_path, node)
+
+    probe = eng.dry_run("n0", node, _SAMPLE_TIMES, _FPS)
+
+    assert probe.runtime_error is not None  # the transient raise was NOT swallowed
+    assert "ValueError" in probe.runtime_error.message
+
+
+def test_dry_run_transient_per_key_error_surfaces(tmp_path: Path) -> None:
+    # u_v (a vec2) gets a bad bare-float ONLY at frame 3, then a valid vec2 after. The per-key error
+    # must survive to the probe (accumulated), not be popped by the recovering tick.
+    _write_brain(
+        tmp_path,
+        _brain(
+            init_body="        self.n = 0\n",
+            update_body=(
+                "        self.n += 1\n"
+                "        v = 0.5 if self.n == 3 else (0.1, 0.2)\n"
+                "        return {'u_v': v}\n"
+            ),
+        ),
+    )
+    node = _FakeNode([_u("u_v", dim=2)])
+    eng = _engine(tmp_path, node)
+
+    probe = eng.dry_run("n0", node, _SAMPLE_TIMES, _FPS)
+
+    assert any(
+        name == "u_v" for name, _ in probe.per_key_errors
+    )  # transient bad shape kept
+
+
+def test_dry_run_colliding_sample_times_keeps_earliest(tmp_path: Path) -> None:
+    # Two sample times rounding to the SAME frame must not drop a sample; setdefault keeps the
+    # earliest. Falsifier: the first sample's t is 0.04 (a dict-comp would keep the last).
+    _write_brain(tmp_path, _brain(update_body="        return {'u_x': ctx.t}\n"))
+    node = _FakeNode([_u("u_x")])
+    eng = _engine(tmp_path, node)
+
+    probe = eng.dry_run("n0", node, (0.0, 0.04, 0.08), 12)  # frames [0, 0, 1]
+
+    assert probe.samples[0][0] == 0.0  # earliest of the colliding pair, not 0.04
+
+
 def test_dry_run_empty_dict_drives_nothing(tmp_path: Path) -> None:
     _write_brain(tmp_path, _brain(update_body="        return {}\n"))
     node = _FakeNode([_u("u_x")])

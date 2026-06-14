@@ -1406,10 +1406,12 @@ class CopilotBackend:
             render_facts=facts,
         )
 
-    def _render_facts_for(self, node: Node) -> str:
+    def _render_facts_for(self, node: Node, t: float | None = None) -> str:
         # Best-effort probe render -> one facts line (feature 033). Runs on the main
         # thread (bridge-marshalled callers) with the GL context current. Never raises
-        # into the edit path — facts are advisory.
+        # into the edit path — facts are advisory. `t` is the render clock (default
+        # glfw.get_time() — 0 headless): ONE source for both node.render(u_time=) AND the stamp,
+        # so a script-probe caller passing its sample time can't disagree with the rendered frame.
         if not COPILOT_CONFIG.render_facts_enabled:
             return ""
         try:
@@ -1422,13 +1424,17 @@ class CopilotBackend:
                 self._probe_canvas = Canvas(size=(size, h))
             else:
                 self._probe_canvas.set_size((size, h))
-            t = glfw.get_time()
-            node.render(u_time=t, canvas=self._probe_canvas)
+            render_t = glfw.get_time() if t is None else t
+            node.render(u_time=render_t, canvas=self._probe_canvas)
             raw = self._probe_canvas.texture.read()
             facts = render_facts(raw, size, h)
             # Stamp the sample time: an animated shader's facts change with phase,
             # which otherwise reads as an edit effect.
-            return facts.replace("render:", f"render@t={t:.1f}s:", 1) if facts else ""
+            return (
+                facts.replace("render:", f"render@t={render_t:.1f}s:", 1)
+                if facts
+                else ""
+            )
         except Exception as exc:  # — advisory channel, never break an edit
             logger.debug(f"copilot render facts skipped: {exc}")
             return ""
@@ -1436,26 +1442,25 @@ class CopilotBackend:
     def _script_render_line(
         self, node: Node, samples: list[tuple[float, dict[str, object]]]
     ) -> str:
-        # ONE corroborating render (feature 043): render the mid sample's driven values to answer
-        # "did the values produce visible ink, or is it FLAT / off-screen / a uniform the shader
-        # ignores?" — the honesty case a value-diff alone misses. Rebinds node.uniform_values to a
-        # merged copy for the render (the live dict OBJECT is never mutated, so the dry_run
-        # no-corruption guarantee holds), restores it in finally. Advisory — never raises.
+        # ONE corroborating render (feature 043): render the mid sample's driven values AT the mid
+        # sample's TIME to answer "did the values produce visible ink, or is it FLAT / off-screen / a
+        # uniform the shader ignores?" — the honesty case a value-diff alone misses. The render clock IS
+        # mid[0] (not wall-clock), so a u_time-reading shader renders the frame the values came from.
+        # Rebinds node.uniform_values to a merged copy (the live dict OBJECT is never mutated; sampler/
+        # Video values are shared and may advance a frame, same as the 033 facts probe), restores it in
+        # finally. Advisory — never raises.
         if not samples or not COPILOT_CONFIG.render_facts_enabled:
             return ""
         mid = samples[len(samples) // 2]
         saved = node.uniform_values
         try:
             node.uniform_values = {**saved, **mid[1]}
-            line = self._render_facts_for(node)
+            return self._render_facts_for(node, t=mid[0])
         except Exception as exc:
             logger.debug(f"copilot script render facts skipped: {exc}")
-            line = ""
+            return ""
         finally:
             node.uniform_values = saved
-        return (
-            line.replace("render@t=", f"render@t={mid[0]:.1f}s ", 1) if line else line
-        )
 
     def read_script(self, node: str, /) -> ScriptView:
         def _on_main() -> ScriptView:

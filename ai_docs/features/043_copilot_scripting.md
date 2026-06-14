@@ -450,8 +450,9 @@ in the verify loop.
 - `shaderbox/copilot/backend.py` — implement `read_script`/`write_script`/`get_script_working_view`
   (the whole script probe marshals through `run_on_main(..., timeout=render_op_timeout_s)` — `dry_run` reads
   the GL program for active uniforms, so it is NOT worker-safe, decision 5); the motion-facts builder
-  (value-diff verdict from `ScriptProbe.samples` + ONE backend-owned `render_facts` line via the dict-rebind
-  render at the mid sample, decision 9 — NOT `_render_facts_for`, which renders un-ticked at t=0); populate
+  (value-diff verdict from `ScriptProbe.samples` + ONE backend-owned render line via the dict-rebind render
+  at the mid sample, decision 9 — `_script_render_line` reuses `_render_facts_for` with an explicit sample-time
+  `t=mid[0]` so the render clock matches the sampled values, ONE stamp, no wall-clock-at-t=0 drift); populate
   `WorkingSetView.script_*` in BOTH `_copilot_node_working_view` and confirm `_copilot_lib_working_view`
   constructs the new defaulted fields. The script-driven uniforms-row marker (decision 7a) changes
   `_format_uniforms(node)` → `_format_uniforms(node, driven: set[str])` (it is a free function with no

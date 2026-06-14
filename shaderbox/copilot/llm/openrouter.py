@@ -1,6 +1,7 @@
 from collections.abc import Callable, Iterator
 from typing import Any
 
+import httpx
 from loguru import logger
 from openai import APIStatusError, OpenAI
 from openai.types.chat import ChatCompletionChunk
@@ -90,12 +91,17 @@ class OpenRouterLLMClient(LLMClient):
         return self._get_model()
 
     def _client(self) -> OpenAI:
-        # An explicit timeout: the SDK default is 600s, so a stalled stream would block the
-        # non-daemon worker for ~10 min and hang interpreter shutdown (043 dogfood hang).
+        # Bound the TOTAL wait, not one attempt (043 hang). The SDK default is 600s AND it silently
+        # RETRIES (max_retries=2 -> x3) — a bare-float timeout also clobbers the 5s connect default to
+        # the full value. So: an explicit httpx.Timeout (small connect, llm_request_timeout_s for
+        # read/write/pool) + max_retries=0 (a copilot turn wants a fast-fail stream_error, not three
+        # silent slow retries the per-delta cancel can't interrupt mid-create()).
+        timeout = httpx.Timeout(COPILOT_CONFIG.llm_request_timeout_s, connect=5.0)
         return OpenAI(
             base_url=_OPENROUTER_BASE_URL,
             api_key=self._get_api_key(),
-            timeout=COPILOT_CONFIG.llm_request_timeout_s,
+            timeout=timeout,
+            max_retries=0,
         )
 
     def stream(
