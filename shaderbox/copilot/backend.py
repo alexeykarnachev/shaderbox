@@ -402,6 +402,11 @@ class CopilotBackend:
         # the last source text that compiled clean (the restore target).
         self._broken_streak: dict[str, int] = {}
         self._last_clean: dict[str, str] = {}
+        # The script analog of the shader force-restore (033): N consecutive broken-compile/runtime
+        # script writes on ONE node -> revert to its last clean-probing source. A script has TWO failure
+        # modes (compile + runtime), so it is at least as prone to a broken-edit loop as a shader.
+        self._script_broken_streak: dict[str, int] = {}
+        self._script_last_clean: dict[str, str] = {}
         # Oscillation brake (review cycle 2): recent source-state hashes per node —
         # an edit that returns the file to an earlier state is flagged as a fact.
         self._state_history: dict[str, list[int]] = {}
@@ -1508,17 +1513,20 @@ class CopilotBackend:
         self._working_set_add(node_id)  # so the script rides the working set next step
         self._capture_script(node_id)
         probe = self._write_script_source(node_id, new_text)
-        if probe.compile_error is not None:
-            return ScriptWriteResult(
-                ok=True, compile_error=_format_script_error(probe.compile_error)
+        broken = (
+            _format_script_error(probe.compile_error)
+            if probe.compile_error
+            else (
+                "ran, then " + _format_script_error(probe.runtime_error)
+                if probe.runtime_error
+                else ""
             )
-        if probe.runtime_error is not None:
-            # The script compiled but `update` raised / returned a non-dict at runtime — surface it as
-            # the error (NOT a motion verdict off the crash-frozen values).
-            return ScriptWriteResult(
-                ok=True,
-                compile_error="ran, then " + _format_script_error(probe.runtime_error),
-            )
+        )
+        if broken:
+            return self._script_broken_write(node_id, broken)
+        # A clean probe: reset the streak, snapshot the source as the restore target.
+        self._script_broken_streak[node_id] = 0
+        self._script_last_clean[node_id] = new_text
         render_line = self._script_render_line(
             self._get_ui_nodes()[node_id].node, probe.samples
         )
@@ -1533,6 +1541,30 @@ class CopilotBackend:
                 probe, render_line, COPILOT_CONFIG.motion_value_eps
             ),
         )
+
+    def _script_broken_write(self, node_id: str, error: str) -> ScriptWriteResult:
+        # A broken script write/edit (compile OR runtime). After N in a row, restore the last clean
+        # source + tell the agent (the 033 force-restore, ported to scripts). Mirrors the shader path.
+        streak = self._script_broken_streak.get(node_id, 0) + 1
+        self._script_broken_streak[node_id] = streak
+        limit = COPILOT_CONFIG.auto_revert_after_failed_edits
+        if limit > 0 and streak >= limit and node_id in self._script_last_clean:
+            clean = self._script_last_clean[node_id]
+            restore = self._write_script_source(node_id, clean)
+            self._script_broken_streak[node_id] = 0
+            logger.info(f"copilot script force-restore | node={node_id} after {streak}")
+            note = (
+                f"SCRIPT RESTORED — {streak} broken script edits in a row, so the script was "
+                "reverted to its last clean-running state (now in the working set). Re-read it and "
+                "rewrite the whole brain in ONE write_script."
+            )
+            if restore.compile_error is not None or restore.runtime_error is not None:
+                note = (
+                    f"{streak} broken edits in a row; the restore target also no longer runs "
+                    "(likely a shader/uniform change) -- re-read and rewrite the whole brain."
+                )
+            return ScriptWriteResult(ok=True, compile_error=note)
+        return ScriptWriteResult(ok=True, compile_error=error)
 
     def write_script(self, new_text: str, node: str, /) -> ScriptWriteResult:
         def _on_main() -> ScriptWriteResult:

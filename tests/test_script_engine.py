@@ -366,6 +366,38 @@ def test_no_subclass_is_compile_error(tmp_path: Path) -> None:
     assert eng.errors[("n0", "script.py")].kind == "compile"
 
 
+def test_wrong_import_of_injected_type_steers_to_scripting_module(
+    tmp_path: Path,
+) -> None:
+    # A wrong `from shaderbox import ScriptBehavior` (the module names the symbol but the raw
+    # ImportError points at the wrong module + never names shaderbox.scripting) must append the
+    # canonical-import steer, so the agent self-corrects instead of grepping fruitlessly (043 dogfood).
+    _write_brain(
+        tmp_path,
+        "from shaderbox import ScriptBehavior\n"
+        "class Behavior(ScriptBehavior):\n"
+        "    def update(self, ctx):\n        return {}\n",
+    )
+    node = _FakeNode([_u("u_x")])
+    eng = _engine(tmp_path, node)
+    msg = eng.errors[("n0", "script.py")].message
+    assert "shaderbox.scripting" in msg
+    assert "engine injects them" in msg
+
+
+def test_unrelated_import_error_does_not_get_the_steer(tmp_path: Path) -> None:
+    # The steer must NOT false-fire on an import unrelated to the injected scripting types.
+    _write_brain(
+        tmp_path,
+        "from os import notathing\n"
+        "class Behavior(ScriptBehavior):\n"
+        "    def update(self, ctx):\n        return {}\n",
+    )
+    node = _FakeNode([_u("u_x")])
+    eng = _engine(tmp_path, node)
+    assert "shaderbox.scripting" not in eng.errors[("n0", "script.py")].message
+
+
 def test_no_update_override_is_compile_error(tmp_path: Path) -> None:
     _write_brain(tmp_path, "class Behavior(ScriptBehavior):\n    pass\n")
     node = _FakeNode([_u("u_x")])

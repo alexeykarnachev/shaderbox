@@ -315,6 +315,46 @@ def test_persist_force_restores_after_streak_on_real_path() -> None:
     assert stub._broken_streak["n1"] == 0  # fresh budget after the restore
 
 
+def test_script_force_restores_after_streak() -> None:
+    # The 033 unstick ported to SCRIPTS (043 dogfood gap): N consecutive broken script
+    # writes/edits restore the last clean source + reset the streak. A script breaks two ways
+    # (compile + runtime); both count.
+    from shaderbox.scripting import ScriptError, ScriptProbe
+
+    writes: list[str] = []
+    clean = "from shaderbox.scripting import ScriptBehavior\nclass Behavior...\n"
+
+    def write_script_source(_node_id: str, text: str) -> ScriptProbe:
+        writes.append(text)
+        if text == clean:
+            return ScriptProbe(None, {"u_x"}, [], [], [(0.0, {"u_x": 0.0})])
+        # a compile error for every model edit
+        return ScriptProbe(
+            ScriptError("script.py", "compile", "SyntaxError", 1), set(), [], [], []
+        )
+
+    stub = types.SimpleNamespace(
+        _working_set_add=lambda _a: None,
+        _capture_script=lambda _id: None,
+        _write_script_source=write_script_source,
+        _script_render_line=lambda _n, _s: "",
+        _get_ui_nodes=lambda: {},
+        _script_broken_streak={},
+        _script_last_clean={"n1": clean},  # a prior clean state exists to restore to
+    )
+    stub._script_broken_write = CopilotBackend._script_broken_write.__get__(stub)
+    apply = CopilotBackend._apply_script_text.__get__(stub)
+    limit = COPILOT_CONFIG.auto_revert_after_failed_edits
+
+    for _ in range(limit - 1):
+        res = apply("n1", "broken(")
+        assert "RESTORED" not in (res.compile_error or "")
+    res = apply("n1", "broken(")  # the limit-th broken edit
+    assert "SCRIPT RESTORED" in (res.compile_error or "")
+    assert writes[-1] == clean  # the restore re-wrote the last clean state
+    assert stub._script_broken_streak["n1"] == 0  # fresh budget after the restore
+
+
 # ---- the REAL apply_shader_edit: deletion by quotation (the restored 038 contract) ----
 
 

@@ -50,6 +50,31 @@ class ScriptBehavior:
         raise NotImplementedError
 
 
+# The scripting types the engine INJECTS into every script's globals (the fallback for a missing
+# import). Used to steer a wrong-import compile error toward the canonical line.
+_INJECTED_NAMES = frozenset(
+    {"ScriptBehavior", "Ctx", "MouseState", "Vec2", "Vec3", "Vec4", "Array", "Text"}
+)
+
+
+def _import_hint(exc: Exception) -> str:
+    # When a script's import/name error names a type the engine ALREADY injects, append the canonical
+    # import (so a wrong `from shaderbox import ScriptBehavior` self-corrects instead of sending the
+    # agent grepping — the error message names the wrong module + never the right one). "" otherwise.
+    if not isinstance(exc, ImportError | NameError):
+        return ""
+    # `ImportError.name` for `from shaderbox import ScriptBehavior` is the MODULE ("shaderbox"), not the
+    # symbol — so match against the message text too, where the bad symbol always appears.
+    bad = getattr(exc, "name", None)
+    if bad in _INJECTED_NAMES or any(n in str(exc) for n in _INJECTED_NAMES):
+        return (
+            " -- scripting types come from `shaderbox.scripting` "
+            "(`from shaderbox.scripting import ScriptBehavior, Ctx, Vec3, ...`), "
+            "or omit the import: the engine injects them."
+        )
+    return ""
+
+
 def _build_globals(uniform_name: str) -> dict[str, Any]:
     # The names a script body + its eager method annotations resolve against. A script is a plain
     # Python file: the real builtins are in scope (so `import math`, the whole stdlib, AND a real
@@ -143,7 +168,7 @@ class PythonBehavior:
             self._error = ScriptError(
                 label,
                 "compile",
-                f"{type(e).__name__}: {e}",
+                f"{type(e).__name__}: {e}{_import_hint(e)}",
                 _user_error_line(label, e),
             )
             return
