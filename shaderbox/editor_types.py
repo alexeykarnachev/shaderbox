@@ -6,19 +6,18 @@ from imgui_bundle import imgui_color_text_edit as text_edit
 
 from shaderbox.shader_source import ShaderSource
 
-EditorTabKind = Literal["shader", "node_script", "uniform_script", "lib"]
+EditorTabKind = Literal["shader", "script", "lib"]
 
 
 @dataclass(frozen=True)
 class EditorTab:
-    # One open file in the code-editor's tab bar (feature 045; 047). `path` is the on-disk file (the
-    # EditorSession key) and the bare-filename tab label. `kind` selects whether the script-local bar
-    # shows (script tabs only) and the error tint. For a script, `node_id` + `name` (a uniform name,
-    # or None for the node-brain) address its engine binding; both are "" / None for shader + lib tabs.
+    # One open file in the code-editor's tab bar (feature 045; 048 collapsed to one script per node).
+    # `path` is the on-disk file (the EditorSession key); the tab LABEL is derived from the node name
+    # (tab_label), but the imgui `##id` keys on the stable path/index. `kind` selects the semantic
+    # label + the error tint. For a script/shader tab, `node_id` addresses the node; "" for lib tabs.
     path: Path
     kind: EditorTabKind
     node_id: str = ""
-    name: str | None = None
 
 
 @dataclass(frozen=True)

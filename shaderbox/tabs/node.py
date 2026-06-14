@@ -15,6 +15,7 @@ from shaderbox.ui_models import (
 from shaderbox.ui_primitives import (
     button,
     ghost_button,
+    play_stop_toggle,
     script_glyph,
     small_caption,
 )
@@ -116,7 +117,7 @@ def draw(app: App) -> None:
         )
 
     imgui.same_line()
-    _draw_brain_glyph(app)
+    _draw_script_controls(app)
 
     imgui.same_line()
     if ghost_button("...##node_actions"):
@@ -188,19 +189,34 @@ def draw(app: App) -> None:
             imgui.dummy((0, SPACE.SM))
 
 
-def _draw_brain_glyph(app: App) -> None:
-    # The node-header node-brain affordance (047): the same `</>` glyph as the per-uniform rows, here
-    # acting on the node's script.py. Click creates+opens (absent) or opens (active/inactive); the
-    # Activate button + the brain's errors live on its editor tab.
+def _draw_script_controls(app: App) -> None:
+    # The node-header script affordances (048): an OPEN-SCRIPT glyph (navigation — click creates +
+    # opens the node's script.py) and, when a script exists, a whole-node PLAY/STOP toggle (execution
+    # — freeze/resume every driven uniform at once; the brain keeps ticking either way). Frozen
+    # mid-copilot-turn.
     node_id = app.current_node_id
-    state = app.session.script_state_for(node_id, None)
-    tooltip = {
-        "absent": "Create + open a node-brain script (drives many uniforms)",
-        "active": "Node-brain active — click to open (activate in the editor)",
-        "inactive": "Node-brain inactive — click to open",
-        "error": "Node-brain error — click to open and fix",
-    }[state]
+    present = app.session.has_script(node_id)
+    error = present and app.session.script_has_error(node_id)
+    tooltip = (
+        "Node script error — click to open and fix"
+        if error
+        else "Open the node script (drives many uniforms)"
+        if present
+        else "Create + open a node script (drives many uniforms)"
+    )
     imgui.begin_disabled(app.copilot_turn_active)
-    if script_glyph("brain", state, tooltip=tooltip):
-        app.open_script_for(node_id, None)
+    if script_glyph("brain", present=present, error=error, tooltip=tooltip):
+        app.open_script_for(node_id)
+    if present:
+        imgui.same_line()
+        state = app.current_node_ui_state_or_default
+        playing = not state.all_stopped
+        if play_stop_toggle(
+            "node",
+            playing,
+            tooltip="Stop the whole script (freeze all uniforms)"
+            if playing
+            else "Resume the whole script",
+        ):
+            app.set_node_all_stopped(node_id, playing)
     imgui.end_disabled()

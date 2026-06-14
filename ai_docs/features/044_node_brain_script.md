@@ -1,5 +1,13 @@
 # Feature 044 — node-brain script (one stateful class drives many uniforms)
 
+> **PROMOTED to the SOLE scripting path by 048 (`ai_docs/features/048_single_script_play_stop.md`).** The
+> node-brain (`script.py` → `update -> dict`) this spec introduced is now the ONLY script per node — 048
+> deleted the per-uniform `u_*.py` path it was a sibling to. So 044's brain-vs-per-uniform CONFLICT rule
+> (the two-pass write order, the broken-override-yields-to-brain fallback) is GONE (there is no per-uniform
+> script left to conflict). Everything else (the stateful class, the dict return, freeze-as-data, the
+> per-key vs sentinel error granularity, export isolation) carries forward as the live model. Read 048 for
+> the current shape; this spec is the history of the brain's introduction.
+
 > Status: SPEC — plan-locked with the maintainer (2026-06-13), pre-impl review pending. A SECOND,
 > parallel scripting path beside 041's per-uniform script, sharing the SAME engine core + flow. NOT
 > shipped (last release v0.15.0; 041 itself is unshipped on `dev`) — so NO migration burden, the

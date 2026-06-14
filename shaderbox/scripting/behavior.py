@@ -52,10 +52,11 @@ class ScriptBehavior:
 
 def _build_globals(uniform_name: str) -> dict[str, Any]:
     # The names a script body + its eager method annotations resolve against. A script is a plain
-    # Python file: the real builtins are in scope (so `import math` and the whole stdlib work), and
-    # the only injected top-level globals are the class base + Ctx + the output types — method
-    # annotations (`-> Vec2`) evaluate at class-def time against this dict. No sandbox (a personal
-    # IDE; locked posture) — the raw exec already runs the file.
+    # Python file: the real builtins are in scope (so `import math`, the whole stdlib, AND a real
+    # `from shaderbox.scripting import Vec2, …` all work — __builtins__ carries __import__). The 048
+    # stub emits that explicit import so the available types are VISIBLE; these injected names are the
+    # FALLBACK so a user who deletes the import line still resolves `Vec2`/`Ctx`/… instead of an
+    # opaque eager-annotation-eval compile-freeze. No sandbox (a personal IDE; locked posture).
     return {
         "__builtins__": __builtins__,
         "__name__": f"<u:{uniform_name}>",

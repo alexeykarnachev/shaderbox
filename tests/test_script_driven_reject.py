@@ -19,17 +19,15 @@ class _SyncBridge:
         return fn()
 
 
-def _stub(script_driven: set[str], script_files: dict[str, str] | None = None) -> Any:
+def _stub(script_driven: set[str]) -> Any:
     ui_nodes = {
         "n0": object()
     }  # the node only needs to EXIST; the reject returns before .node
-    files = script_files or {n: f"{n}.py" for n in script_driven}
     stub = types.SimpleNamespace(
         _bridge=_SyncBridge(),
         _get_ui_nodes=lambda: ui_nodes,
         _get_current_node_id=lambda: "n0",
         _get_script_driven_uniforms=lambda node_id: script_driven,
-        _get_script_file_for=lambda node_id, name: files.get(name),
     )
     stub._copilot_resolve_node_id = CopilotBackend._copilot_resolve_node_id.__get__(
         stub
@@ -38,23 +36,13 @@ def _stub(script_driven: set[str], script_files: dict[str, str] | None = None) -
 
 
 def test_set_uniform_rejects_script_driven() -> None:
+    # One script per node (048): a driven uniform's reject always points at scripts/script.py.
     stub = _stub({"u_wave"})
     set_uniform = CopilotBackend.set_uniform.__get__(stub)
     result = set_uniform("u_wave", 0.5, "n0")
     assert not result.ok
     assert "script-driven" in result.error
-    assert "scripts/u_wave.py" in result.error
-
-
-def test_set_uniform_reject_points_at_node_brain() -> None:
-    # A brain-driven uniform's reject points at scripts/script.py (the node-brain), not u_<name>.py.
-    stub = _stub({"u_pos"}, {"u_pos": "script.py"})
-    set_uniform = CopilotBackend.set_uniform.__get__(stub)
-    result = set_uniform("u_pos", 0.5, "n0")
-    assert not result.ok
-    assert "script-driven" in result.error
     assert "scripts/script.py" in result.error
-    assert "node-brain" in result.error
 
 
 def test_set_uniform_does_not_reject_a_non_script_uniform() -> None:

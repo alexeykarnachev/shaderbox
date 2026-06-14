@@ -149,65 +149,56 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   mutation whose UI reaction touches imgui state adds an `on_*` callback (default no-op), never a direct
   imgui import. Spec: `ai_docs/features/025_project_session_extraction.md`. Revisit if a core op needs a
   UI reaction that a fire-and-forget callback can't express (e.g. it needs a return value App reads).
-- **The CPU-script engine is headless `ProjectSession` code; scripts are project DATA; a script is a
-  STATEFUL class; a new script LANGUAGE is a `Behavior` backend, not an engine-loop change (feature 041,
-  redesigning 040).** A uniform can carry a per-tick behavior SCRIPT (`nodes/<id>/scripts/u_<name>.py`)
-  that computes its value each frame. The script is a user-finalized CLASS subclassing `ScriptBehavior`
-  with `update(self, ctx) -> <output>`; **per-instance state (`self.*`) persists across frames — the
-  reason CPU scripting exists** (a stateless `sin(t)` belongs in the shader). The value is RETURNED
-  (a bare number for a scalar; `Vec2/3/4`/`Array`/`Text` for the shaped kinds — direct GLSL pairs),
-  validated against the live uniform via the shared `uniform_coerce`. The engine (`shaderbox/scripting/`)
-  is repo code owned by `ProjectSession`, imports no imgui/glfw and no concrete `Node` type (it works
-  against the `EngineNode` protocol — the `uniform_values` dict + `get_active_uniforms()`), so it stays
-  in the 025 headless core. **Binding is by FILENAME**, and the filename encodes the uniform's TYPE TAG
-  (feature 047): a per-uniform script is `u_<name>__<tag>.py` (`vec2`/`vec3`/`float`/`array`/`text`/…),
-  so the engine binds only when both name AND type match — a shader-side retype is lossless+reversible
-  (the old-tag file is left untouched), a delete-readd rebinds. The internal binding/error key stays the
-  BARE uniform name (the tag is a discovery match-gate, never a dict key); the brain stays `script.py`.
-  **ACTIVE-INTENT is a MODEL FLAG, not a filesystem marker (feature 047, replacing 045's `.disabled`):**
-  `is_script_active` on `UIUniform` / `is_brain_active` on `UINodeState`, persisted in `node.json`, born
-  `False`. `ProjectSession.reload_scripts` builds an `active_scripts: set[str]` of activated filenames
-  from the flags and passes it to `ScriptEngine.reload` (the headless boundary holds — the engine never
-  learns `UIUniform`, intent flows through a param like `engine_driven`); discovery skips any file not in
-  it. **The body is `exec`'d VERBATIM** (no AST surgery; the file IS a class def — the exec globals
-  are the real Python builtins (a script is plain Python — `import math` and the stdlib work, feature
-  045) plus the base + `Ctx` + ALL output types, since method annotations evaluate eagerly), so an
-  error's lineno points at the user source (the 039 ghost removed
-  by construction). A broken script is **error-as-data**: the uniform freezes at last-good + records a
-  `ScriptError`, never raising into the frame loop (mirrors `shader_errors.ShaderError`). **Determinism
-  is SCOPED**: a `ctx.t`-pure `update` is identical live vs export; a stateful integrator is
-  frame-rate-dependent live by design BUT its EXPORT is reproducible — **export ticks a FRESH per-export
-  instance**, recompiled from cached source, so live state never poisons an exported render. The isolation
-  is STRUCTURAL: `Node.render_media` enters an injected `Node.export_isolation` factory around its whole
-  body, so EVERY export (Render tab / Share scratch / copilot tools all funnel through `render_media`) is
-  isolated with no per-caller opt-in to forget; `Node` stays engine-free (it enters an opaque injected
-  context manager, the same shape as `on_pre_render`). The **live path ticks once** (`session.tick` in
-  `ui.py`); the factory swaps `Node.on_pre_render` to the fresh set for the export's duration (NEVER from
-  `Node.render()` — that would double-tick the live frame). A future C
-  backend implements the same `Behavior.run` protocol over a `.so` with no engine-loop change. Spec:
-  `ai_docs/features/041_stateful_script_engine.md` (040 is the origin, contract superseded). Revisit
-  `ctx` when a script needs cross-uniform shared state (a deliberate channel, not a dict in `ctx`) or
-  system input (`u_mouse` wires at 042).
-  **A SECOND scripting path is native beside per-uniform (feature 044): the node-brain.** A node may
-  carry one `nodes/<id>/scripts/script.py` whose `update(self, ctx) -> dict[str, value]` drives MANY
-  uniforms from ONE stateful instance (the "one object, many uniforms" case — kills the physics-copy-
-  paste across per-uniform files). It is NOT a parallel implementation: `PythonBehavior.compute` was
-  split into `run(ctx)` (cardinality-agnostic raw value) + a free `coerce_one` (the shared coercion
-  atom), and the engine fans every behavior into a `(uniform_name, raw)` PAIR STREAM — per-uniform is
-  the 1-entry case, a brain is `run().items()`. **Cardinality is dispatched by FILENAME** (`script.py`
-  vs `u_*.py`), decided once at discovery, NEVER by sniffing the return type. **Conflict (both files
-  drive one slot) = an explicit two-pass write order: the brain writes first, `u_<name>.py` writes last
-  and wins** (explicit > general; lets a uniform migrate out of the brain) — BUT a `u_<name>.py` that is
-  BROKEN (errors/freezes) on a slot the brain also drove this frame yields the slot back to the brain's
-  live value, NOT a stale freeze (a broken override lets the base behavior show through; the override's
-  error is still surfaced). Freeze granularity: a per-KEY coercion mismatch freezes only that key (records
-  `(node_id, name)`); a raw brain throw / non-dict return is behavior-level — freezes every name it drove
-  last frame, records under the sentinel key `(node_id, "script.py")`. A brain key naming an engine-owned
-  (`u_time`…), orphan/typo, or sampler/block uniform is rejected at tick (same `_binding_reject` the
-  per-uniform path uses at reload) — a soft `(node_id, name)` error + skip, NOT script-owned. NaN/Inf are
-  frozen-as-data like a shape error (not written to the GPU). Revisit for cross-SCRIPT shared state (still
-  041's deferral) or cross-NODE state (the mini-game milestone — `todo.md`). Spec:
-  `ai_docs/features/044_node_brain_script.md`.
+- **The CPU-script engine is headless `ProjectSession` code; scripts are project DATA; a node has ONE
+  STATEFUL-class script; a new script LANGUAGE is a `Behavior` backend, not an engine-loop change (feature
+  041→048).** A node carries at most ONE script, `nodes/<id>/scripts/script.py` (the node-brain), a
+  user-finalized CLASS subclassing `ScriptBehavior` with `update(self, ctx) -> dict[str, value]` driving
+  MANY uniforms from one instance (feature 048 collapsed the 044/047 second per-uniform path — `u_*.py`,
+  the `(name,type)` tag binding, the copy-content selector, the two-pass brain-vs-per-uniform override — to
+  this single path; per-uniform private HELPER METHODS inside `update` cover the per-value case). **Per-
+  instance state (`self.*`) persists across frames — the reason CPU scripting exists** (a stateless
+  `sin(t)` belongs in the shader). Each dict value is validated against the live uniform via the shared
+  `uniform_coerce` (a bare number for a scalar; `Vec2/3/4`/`Array`/`Text` for the shaped kinds). The engine
+  (`shaderbox/scripting/`) is repo code owned by `ProjectSession`, imports no imgui/glfw and no concrete
+  `Node` type (it works against the `EngineNode` protocol — `uniform_values` + `get_active_uniforms()`), so
+  it stays in the 025 headless core. **Binding is by EXISTENCE**: `script.py` on disk IS the binding — no
+  active flag, no activate step (`is_script_active`/`is_brain_active` retired in 048). **The body is `exec`'d
+  VERBATIM** (no AST surgery; the file IS a class def). A script is plain Python — `import math`, the stdlib,
+  AND a real `from shaderbox.scripting import Vec2, Vec3, …` all work (the exec `__builtins__` carries
+  `__import__`); the 048 stub EMITS that explicit import so the available types are visible, and
+  `behavior.py::_build_globals` ALSO injects the same names (base + `Ctx` + output types) as a FALLBACK so a
+  deleted import line degrades gracefully instead of an opaque eager-annotation-eval freeze. An error's
+  lineno points at the user source (the 039 ghost removed by construction). A broken script is
+  **error-as-data**: the uniform freezes at last-good + records a `ScriptError`, never raising into the
+  frame loop (mirrors `shader_errors.ShaderError`). Freeze granularity: a per-KEY coercion mismatch freezes
+  only that key (`(node_id, name)`); a raw throw / non-dict return is behavior-level — freezes every name it
+  drove last frame, records under the sentinel `(node_id, "script.py")`. A key naming an engine-owned
+  (`u_time`…) uniform is dropped SILENTLY; an orphan/typo/sampler key records a soft `(node_id, name)` error
+  + skip. NaN/Inf is frozen-as-data like a shape error.
+  **PLAY/STOP is node-scoped + name-keyed model state, NOT a per-`UIUniform` flag (feature 048).** A uniform
+  the dict returns PLAYS (the engine writes it each tick); the user STOPS it to edit by hand. STOP state is
+  `UINodeState.stopped_uniforms: list[str]` + a node-wide `all_stopped: bool` (stored as a LIST, not a set —
+  `UINode.save`→`model_dump()`→`json.dump` raises on a Python set; coerced to a set per-frame). Node-scoped
+  name-keyed state survives a retype (the name is stable) and is reachable before any row draws — this is
+  the deliberate avoidance of the lazy-row law (a per-`UIUniform` flag would re-trip the 047 ROOT-2 trap).
+  The engine learns STOP via a fresh per-frame `tick(stopped=…)` param (`ProjectSession._stopped_for` builds
+  it; the headless boundary holds — the engine never learns `UINodeState`, intent flows through a param like
+  `engine_driven`): a stopped name STILL ticks the brain (state advances) + STILL counts as driven (so its
+  play button shows), but its WRITE is skipped — `driven.add(name)` precedes the coerce/write, and BOTH the
+  success-write and the coercion-failure-freeze are guarded `if name not in stopped` so a stopped uniform's
+  manual value is never clobbered. Node-STOP freezes WRITES, NOT ticking (else a later node-PLAY would resume
+  from stale `self.*`); the UI auto-STOPs a playing uniform when the user grabs its widget
+  (`is_item_activated()`, gated on PLAYING). **Determinism is SCOPED**: a `ctx.t`-pure `update` is identical
+  live vs export; a stateful integrator is frame-rate-dependent live by design BUT its EXPORT is reproducible
+  — **export ticks a FRESH per-export instance** (`fresh_behavior_for` + `tick_export`, recompiled from
+  cached source, NO stopped set — an export always plays), so live state never poisons an exported render.
+  The isolation is STRUCTURAL: `Node.render_media` enters an injected `Node.export_isolation` factory around
+  its whole body, so EVERY export (Render tab / Share scratch / copilot tools all funnel through
+  `render_media`) is isolated with no per-caller opt-in to forget; `Node` stays engine-free. The **live path
+  ticks once** (`session.tick` in `ui.py`). A future C backend implements the same `Behavior.run` protocol
+  over a `.so` with no engine-loop change. Spec: `ai_docs/features/048_single_script_play_stop.md` (041 the
+  origin, 044/047's per-uniform half superseded). Revisit `ctx` when a script needs cross-NODE state (the
+  mini-game milestone — `todo.md`).
 - **`tabs/*.py`: free `draw(app: App)` + optional `update(app: App)`.** `draw()` does imgui calls
   only; `update()` runs *before* imgui draws, for GL/canvas/mtime work outside the frame body. Tab
   state goes on `App` directly; a state-only sibling module (e.g. `tabs/share_state.py`) may hold
@@ -246,15 +237,16 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
 - **Inline editor state lives on `App`; disk is the source of truth; one `TextEditor` per opened
   FILE.** The editor is a TAB BAR (feature 045): an ordered `editor_tabs: list[EditorTab]` +
   `active_tab_index`, over a path-keyed `editor_sessions: dict[Path, EditorSession]` (the lazily-built
-  `TextEditor` + its dirty baseline, one per on-disk file). A tab's `kind` (`shader` / `node_script` /
-  `uniform_script` / `lib`) drives its semantic label + whether the active/inactive script toggle
-  shows; the same file is never opened twice (`_focus_or_add_tab` focuses the existing tab). Editing
+  `TextEditor` + its dirty baseline, one per on-disk file). A tab's `kind` (`shader` / `script` / `lib`,
+  feature 048) drives its node-derived display label (`tab_label`: `<node> (shader)` / `(script)` /
+  `library - <file>`) + the error tint; the imgui `##id` keys on the stable path/index, never the mutable
+  label. The same file is never opened twice (`_focus_or_add_tab` focuses the existing tab). Editing
   acts on the ACTIVE tab: `flush_current_editor()` flushes its dirty editor before any save; the mtime
   watcher re-syncs every open session from disk on external change (disk wins). A node's editors close
   with the node (lib tabs survive); a renamed file re-keys its session in place. Editor per-instance
   footguns (palette, FPE-while-modal, cursor, font sizing) live in `## Known quirks`. Revisit if a tab
   needs durable per-tab state beyond its open files (e.g. persisting the open-tab set across restart) or
-  a 5th editable `kind` lands.
+  a 4th editable `kind` lands.
 - **`InlineInput` dataclass for mutually-exclusive inline editors.** A picker / panel hosting
   multiple inline text-input affordances (rename / new-file / new-dir) uses one `InlineInput`
   instance per kind — `target: Path | None`, `buf: str`, `needs_focus: bool` with

@@ -7,14 +7,27 @@ from shaderbox.app import App
 from shaderbox.editor_types import EditorTab, HoverMark, JumpRequest
 from shaderbox.shader_errors import ShaderError
 from shaderbox.theme import COLOR, EDITOR_UNFOCUSED_ALPHA, SIZE, SPACE, fade
-from shaderbox.ui_primitives import draw_copyable_text, primary_button
+from shaderbox.ui_primitives import draw_copyable_text
 from shaderbox.util import format_auto_value
 
 _MAX_ERROR_ROWS = 3
 
 
 def _is_script_tab(tab: EditorTab | None) -> bool:
-    return tab is not None and tab.kind in ("node_script", "uniform_script")
+    return tab is not None and tab.kind == "script"
+
+
+def tab_label(app: App, tab: EditorTab) -> str:
+    # The display label for a tab (048): node-derived so two nodes' tabs are distinguishable
+    # ("<node> (shader)" / "<node> (script)"), a lib by "library - <file>". The on-disk filename is
+    # the same constant for every node, so the bare name can't tell tabs apart. Falls back to a short
+    # id slice when the node has no name. The imgui ##id keys on the stable path/index, NOT this label.
+    if tab.kind == "lib":
+        return f"library - {tab.path.stem}"
+    ui_node = app.ui_nodes.get(tab.node_id)
+    node_name = (ui_node.ui_state.ui_name if ui_node else "") or tab.node_id[:8]
+    suffix = "script" if tab.kind == "script" else "shader"
+    return f"{node_name} ({suffix})"
 
 
 def _draw_tab_row(app: App) -> None:
@@ -47,7 +60,7 @@ def _draw_tab_row(app: App) -> None:
                 imgui.push_style_color(imgui.Col_.tab_hovered, COLOR.STATE_ERROR)
                 imgui.push_style_color(imgui.Col_.tab_selected, COLOR.STATE_ERROR)
             opened, keep = imgui.begin_tab_item(
-                f"{tab.path.name}##tab{i}", True, item_flags
+                f"{tab_label(app, tab)}##tab{i}", True, item_flags
             )
             if keep is not None and not keep:
                 close_index = i
@@ -65,73 +78,22 @@ def _draw_tab_row(app: App) -> None:
 
 
 def _tab_has_error(app: App, tab: EditorTab) -> bool:
-    return app.session.script_state_for(tab.node_id, tab.name) == "error"
-
-
-def _draw_script_bar(app: App) -> None:
-    # The script-local control bar (047 F3 + F14): a thin bar under the tab bar, drawn ONLY for a
-    # script tab. The Activate/Deactivate button (the one place the active flag flips) + (per-uniform
-    # only) the copy-content selector. Frozen mid-copilot-turn.
-    tab = app.active_tab
-    if not _is_script_tab(tab):
-        return
-    assert tab is not None
-    # A per-uniform tab whose live uniform was retyped/removed is STALE: the open file
-    # (u_x__vec2.py) no longer matches what the current (name, type) resolves to, so the bar's
-    # activation would act on a different (absent) file. Surface it instead of mislabeling — the
-    # vec2 file persists on disk; recover its code via Copy-content on the fresh tab.
-    if tab.kind == "uniform_script" and tab.name is not None:
-        live_path = app.session.script_path_for(tab.node_id, tab.name)
-        if live_path != tab.path:
-            imgui.text_colored(
-                COLOR.STATE_WARN,
-                "This uniform was retyped or removed — its script is detached.",
-            )
-            return
-    active = app.session.script_state_for(tab.node_id, tab.name) != "inactive"
-    imgui.begin_disabled(app.copilot_turn_active)
-    label = "Deactivate script" if active else "Activate script"
-    if primary_button(f"{label}##script_activate"):
-        app.set_script_active(tab.node_id, tab.name, not active)
-    if tab.kind == "uniform_script" and tab.name is not None:
-        imgui.same_line(spacing=float(SPACE.MD))
-        _draw_copy_content_selector(app, tab.node_id, tab.name)
-    imgui.end_disabled()
-
-
-def _draw_copy_content_selector(app: App, node_id: str, name: str) -> None:
-    # A dropdown of every OTHER per-uniform script of the SAME type across the project (047 F14):
-    # picking one copies its body into the editor buffer (NOT a re-bind). Disabled when none exists.
-    candidates = app.session.same_type_scripts(node_id, name)
-    imgui.set_next_item_width(SIZE.UNIFORM_CTRL_W)
-    imgui.begin_disabled(not candidates)
-    if imgui.begin_combo("##copy_content", "Copy content from…"):
-        for label, path in candidates:
-            if imgui.selectable(f"{label}##copy_{path}", False)[0]:
-                app.copy_into_current_editor(app.session.copy_script_body(path))
-        imgui.end_combo()
-    imgui.end_disabled()
+    return app.session.script_has_error(tab.node_id)
 
 
 def _script_errors_for(app: App, tab: EditorTab) -> list[ShaderError]:
     # Adapt the active script tab's engine errors into the shader-error shape so they render through
     # the SAME bottom strip as compile errors (045 decision 7), click-to-jump into the script file.
-    # A per-uniform tab shows its one (node_id, name) error; a node-brain tab shows its sentinel +
-    # every homeless soft-key error (typo/orphan keys that name no uniform row).
-    engine = app.session.script_engine
+    # The node-brain shows its sentinel + every homeless soft-key error (typo/orphan keys that name
+    # no uniform row).
     out: list[ShaderError] = []
-    if tab.kind == "uniform_script" and tab.name is not None:
-        err = engine.errors.get((tab.node_id, tab.name))
-        if err is not None:
-            out.append(ShaderError(tab.path, err.line, err.message))
-    elif tab.kind == "node_script":
-        status = app.session.get_brain_status(tab.node_id)
-        if status is not None:
-            if status.sentinel_error is not None:
-                e = status.sentinel_error
-                out.append(ShaderError(tab.path, e.line, e.message))
-            for key, e in status.soft_errors:
-                out.append(ShaderError(tab.path, e.line, f"{key}: {e.message}"))
+    status = app.session.get_brain_status(tab.node_id)
+    if status is not None:
+        if status.sentinel_error is not None:
+            e = status.sentinel_error
+            out.append(ShaderError(tab.path, e.line, e.message))
+        for key, e in status.soft_errors:
+            out.append(ShaderError(tab.path, e.line, f"{key}: {e.message}"))
     return out
 
 
@@ -231,7 +193,7 @@ def draw_chrome(app: App) -> None:
         if imgui.button("Open dir", size=(SIZE.BTN_SM_W, 0)):
             app.open_current_node_dir()
     else:
-        imgui.text_colored(COLOR.FG_DIM, tab.path.name)
+        imgui.text_colored(COLOR.FG_DIM, tab_label(app, tab))
         if app.is_current_editor_dirty():
             imgui.same_line()
             imgui.text_colored(COLOR.STATE_WARN, "(unsaved)")
@@ -241,10 +203,9 @@ def draw(app: App) -> None:
     app.code_hovered_uniform = ""
     ui_node = app.ui_nodes.get(app.current_node_id)
 
-    # The tab row + the script-local bar are plain imgui (no TextEditor.render), so they draw even
-    # behind a modal — only the editor render + error strip are FPE-gated below.
+    # The tab row is plain imgui (no TextEditor.render), so it draws even behind a modal — only the
+    # editor render + error strip are FPE-gated below.
     _draw_tab_row(app)
-    _draw_script_bar(app)
 
     tab = app.active_tab
     current_path = app.current_editor_path
@@ -273,7 +234,7 @@ def draw(app: App) -> None:
     # compile errors, or a script tab's engine errors adapted to the same shape (045 decision 7).
     errors = (
         _script_errors_for(app, tab)
-        if tab.kind in ("node_script", "uniform_script")
+        if tab.kind == "script"
         else ui_node.node.compile_unit.errors
     )
     _apply_markers(editor, errors, app.editor_hover_line, current_path)

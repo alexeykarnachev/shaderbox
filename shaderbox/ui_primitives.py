@@ -9,7 +9,6 @@ import pyperclip
 from imgui_bundle import imgui, imgui_ctx
 from loguru import logger
 
-from shaderbox.scripting import ScriptState
 from shaderbox.theme import COLOR, OVERLAY_ALPHA, SIZE, SPACE, fade
 
 _REGION_OUTLINE_THICKNESS: float = 2.0
@@ -181,25 +180,41 @@ def chip_button(
     return clicked
 
 
-_SCRIPT_GLYPH_COLOR: dict[ScriptState, tuple[float, float, float, float]] = {
-    "absent": COLOR.FG_DIM,
-    "active": COLOR.ACCENT_PRIMARY,
-    "inactive": fade(COLOR.ACCENT_PRIMARY, 0.45),
-    "error": COLOR.STATE_ERROR,
-}
-
-
-def script_glyph(id_: str, state: ScriptState, *, tooltip: str = "") -> bool:
-    """The one shared script affordance (feature 047) — the per-uniform row's trailing control AND
-    the node-header node-brain control. A small `</>` text glyph, theme-coloured by state: dim grey
-    when `absent`, accent when `active`, faded accent when `inactive`, error red when `error`. Click
-    ALWAYS opens (creating first if absent) the script in the editor — it never toggles; activation
-    lives on the editor's script-local bar. Returns True on click."""
+def script_glyph(
+    id_: str, *, present: bool, error: bool = False, tooltip: str = ""
+) -> bool:
+    """The node-header open-script affordance (feature 048) — a small `</>` text glyph. Dim grey when
+    no script exists, accent when one does, error red when the brain is broken. Click opens (creating
+    first if absent) the node's `script.py` in the editor. Returns True on click."""
+    color = (
+        COLOR.STATE_ERROR
+        if error
+        else COLOR.ACCENT_PRIMARY
+        if present
+        else COLOR.FG_DIM
+    )
     imgui.push_style_color(imgui.Col_.button, COLOR.TRANSPARENT)
     imgui.push_style_color(imgui.Col_.button_hovered, COLOR.BG_FRAME)
     imgui.push_style_color(imgui.Col_.button_active, COLOR.BG_FRAME)
-    imgui.push_style_color(imgui.Col_.text, _SCRIPT_GLYPH_COLOR[state])
+    imgui.push_style_color(imgui.Col_.text, color)
     clicked: bool = imgui.small_button(f"</>##script_glyph_{id_}")
+    imgui.pop_style_color(4)
+    if tooltip and imgui.is_item_hovered():
+        imgui.set_tooltip(tooltip)
+    return clicked
+
+
+def play_stop_toggle(id_: str, playing: bool, *, tooltip: str = "") -> bool:
+    """The per-uniform / whole-node play/stop control (feature 048). A small word button — `stop`
+    (accent) when the script is driving the slot, `play` (dim) when stopped — clearer than an
+    ambiguous icon (/imgui-ui §1: use words for icon-ambiguous controls). Returns True on click; the
+    caller flips the stopped state. SAME slot for both states; the label + colour carry the state."""
+    label, color = ("stop", COLOR.ACCENT_PRIMARY) if playing else ("play", COLOR.FG_DIM)
+    imgui.push_style_color(imgui.Col_.button, COLOR.TRANSPARENT)
+    imgui.push_style_color(imgui.Col_.button_hovered, COLOR.BG_FRAME)
+    imgui.push_style_color(imgui.Col_.button_active, COLOR.BG_FRAME)
+    imgui.push_style_color(imgui.Col_.text, color)
+    clicked: bool = imgui.small_button(f"{label}##play_stop_{id_}")
     imgui.pop_style_color(4)
     if tooltip and imgui.is_item_hovered():
         imgui.set_tooltip(tooltip)

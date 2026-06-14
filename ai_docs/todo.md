@@ -41,26 +41,24 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   opt-in per mutation seam. The existing seams cover edit/write/set_uniform/create/delete/
   switch + lib edits (039's `write_shader` rides the shared persist seam, so it captures). A new tool that mutates durable state without a capture call leaves an
   un-revertable change. Spec: `ai_docs/features/020_copilot_agent/30_turn_rollback.md` (decision 2).
-  SPECIFICALLY for 043 (the copilot write-behavior tool): it writes `nodes/<id>/scripts/u_*.py`, a
-  durable file the checkpoint does NOT snapshot today — it must `_capture_node`-equivalent the script
-  file (or a new `_capture_script` seam) into the active checkpoint, else a script write escapes undo.
+  SPECIFICALLY for 043 (the copilot write-behavior tool): it writes `nodes/<id>/scripts/script.py` (one
+  script per node, feature 048), a durable file the checkpoint does NOT snapshot today — it must
+  `_capture_node`-equivalent the script file (or a new `_capture_script` seam) into the active checkpoint,
+  else a script write escapes undo.
 
 
 ## [DEFERRAL] script-engine cross-uniform shared state + compute-order guarantee (feature 042+)
 - **Trigger:** a real workflow needs TWO scripts to share mutable state (one writes, another reads —
   e.g. a pong physics script writes the ball position, a render script reads it), OR a script depends on
   another binding's SAME-FRAME output and the stable-by-name tick order isn't enough.
-- 041 made per-instance state (`self.*`) first-class, which covers the per-uniform case (a pong ball's
-  physics lives in ONE behavior). There is NO shared channel and NO cross-binding order guarantee: a
-  node's bindings tick in a stable name-sorted order, but binding A is not promised to run before B. The
-  old-040 `ctx.state` shared dict + phase-A/B split was REMOVED (instance state replaced it). When this
-  fires, add a deliberate shared channel (NOT a dict smuggled back into `ctx`) with an explicit
-  read/write phase order. Spec: `ai_docs/features/041_stateful_script_engine.md ## Out of scope`.
-- **NOTE (044):** the node-brain path (`scripts/script.py` → `update` returns a dict driving many
-  uniforms from ONE instance) does NOT fire this trigger — it is the SANCTIONED "one object, many uniforms"
-  case (state in ONE brain, no shared CHANNEL), and its brain-vs-`u_*.py` conflict rule is write-precedence
-  (both WRITE a slot, neither READS the other's same-frame output), not the read-dependency this trigger
-  guards. This trigger still fires only for TWO scripts sharing mutable state with a read dependency.
+- 041 made per-instance state (`self.*`) first-class; 048 collapsed scripting to ONE node-brain
+  (`scripts/script.py` → `update` returns a dict driving many uniforms from ONE instance) — the SANCTIONED
+  "one object, many uniforms" case (all the node's state lives in that one brain, no shared CHANNEL). So
+  WITHIN a node there is no cross-script sharing to guard. This trigger now fires only for TWO scripts on
+  DIFFERENT nodes sharing mutable state with a read dependency (object A's brain reads object B's state) —
+  which is strictly the cross-NODE deferral below (the mini-game milestone). When it fires, add a
+  deliberate shared channel (NOT a dict smuggled back into `ctx`) with an explicit read/write phase order.
+  Spec: `ai_docs/features/041_stateful_script_engine.md ## Out of scope`.
 
 ## [DEFERRAL] node-brain cross-NODE state (object A sees object B) — the mini-game milestone
 - **Trigger:** a real two-object-interaction workflow (object A's brain must read object B's state —
@@ -349,6 +347,19 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   evaluate replacing `drag_float` widgets in `widgets/uniform.py` when drag UX feels
   insufficient. Both rejected from feature 004 scope to keep blast radius bounded; both
   available with no new dependency since `imgui-bundle` already bundles them.
+
+## [DEFERRAL] full `pytest tests/` crashes mid-run on a V3D box (cross-test GL-context flake)
+- **Trigger:** next time you run the WHOLE suite as one `pytest tests/` invocation on a box with a real
+  V3D/EGL context (the Pi-class dev box) and it exits non-zero / truncates around ~78%, OR before relying
+  on a single full-suite run as a CI gate on such a box.
+- Pre-existing on the pre-048 baseline (stash-verified) — NOT a 048 regression. The standalone-context GL
+  test files (`test_render_for.py`, `test_uniform_arrays.py`, `test_script_engine_gl.py`) each create +
+  release their own module-scoped `moderngl.create_standalone_context()`; on V3D, releasing one EGL
+  context while another module's still lives, then creating a third, segfaults the driver mid-run.
+  Manifests only on a box with a real V3D EGL context; the maintainer's desktop + CI complete fine. Every
+  048-relevant file passes individually and in groups (`make check` green; the no-GL-script subset = 458
+  passed). Run the GL files in isolation here until cracked; the honest fix is one shared session-scoped
+  GL context fixture (a `conftest.py` fixture) all GL tests reuse instead of per-module contexts.
 
 ## [DEFERRAL] headless smoke may not run on Windows CI
 - **Trigger:** next time you touch `.github/workflows/ci.yml`, OR the first time the

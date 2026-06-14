@@ -1,5 +1,14 @@
 # 047 — Scripting UX refinement wave
 
+> **SUPERSEDED IN PART by 048 (`ai_docs/features/048_single_script_play_stop.md`).** The per-uniform-script
+> half of this wave is removed: the `(name,type)` type-tag binding (F14, decisions 13–15), the copy-content
+> selector, the small `</>` glyph as a per-row affordance, the script-local Activate/Deactivate bar, and the
+> `is_script_active`/`is_brain_active` MODEL FLAGS (decisions 1–6) are all DELETED — a node now has ONE
+> script (the brain), bound by existence, with a play/stop model. What SURVIVES from 047: the native imgui
+> tab bar (decision 8, now with node-derived labels), the editable-widget-with-snap-back idea (decision 9,
+> recast as auto-stop), the error-strip tidy (decision 10), the docstring fixes (decision 11), and the
+> engine-owned-uniform hiding (decision 5). Read 048 for the current model; this spec is the history.
+
 A maintainer-walkthrough-driven UI/UX + behavior refinement of the scripting feature (041/042/044/045),
 same shape as 028/034. Driven by two voice walkthroughs (foo msgs 1868/1869, 2026-06-14). Fourteen
 findings (F1–F14) in scope.

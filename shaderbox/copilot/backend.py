@@ -289,7 +289,6 @@ class CopilotBackend:
         get_current_node_id: Callable[[], str],
         get_is_cancelled: Callable[[], bool],
         get_script_driven_uniforms: Callable[[str], set[str]],
-        get_script_file_for: Callable[[str, str], str | None],
         set_current_node_id: Callable[[str], None],
         save_ui_node: Callable[[UINode], object],
         sync_editor_from_disk: Callable[[str, str], None],
@@ -319,7 +318,6 @@ class CopilotBackend:
         self._get_current_node_id = get_current_node_id
         self._get_is_cancelled = get_is_cancelled
         self._get_script_driven_uniforms = get_script_driven_uniforms
-        self._get_script_file_for = get_script_file_for
         self._set_current_node_id = set_current_node_id
         self._save_ui_node = save_ui_node
         self._sync_editor_from_disk = sync_editor_from_disk
@@ -687,24 +685,12 @@ class CopilotBackend:
                     "cannot be set; change the shader code if you need different behavior",
                 )
             if name in self._get_script_driven_uniforms(node_id):
-                script_file = self._get_script_file_for(node_id, name)
-                # script_file is the discovered tagged filename (047) — always present for a driven
-                # uniform. The None branch is defensive (a future behaviors/filenames desync): point
-                # the agent generically rather than at a fabricated path under the new glob.
-                if script_file is None:
-                    where_at = "the behavior script driving it"
-                else:
-                    where = (
-                        "the node-brain script"
-                        if script_file == "script.py"
-                        else "the script"
-                    )
-                    where_at = f"{where} at nodes/{node_id}/scripts/{script_file}"
+                # One script per node (048): a driven uniform is always computed by the node-brain.
                 return SetUniformResult(
                     ok=False,
-                    error=f"'{name}' is script-driven (a behavior script computes its value "
-                    f"each frame) — a set here would be overwritten next tick; edit {where_at} "
-                    "instead",
+                    error=f"'{name}' is script-driven (the node script computes its value each "
+                    f"frame) — a set here would be overwritten next tick; edit the node script "
+                    f"at nodes/{node_id}/scripts/script.py instead",
                 )
             target = self._get_ui_nodes()[node_id].node
             uniform = next(

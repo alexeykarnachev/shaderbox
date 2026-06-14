@@ -39,10 +39,6 @@ class UIUniform(BaseModel):
     dimension: int = -1
     array_length: int = -1
     input_type: UIUniformInputType = "auto"
-    # The per-uniform script's active-intent (feature 047): the engine binds + ticks the uniform's
-    # `u_<name>__<tag>.py` only when this is True. Born False (a fresh script is inactive); the
-    # script-local bar's Activate button is the one place it flips.
-    is_script_active: bool = False
 
     model_config = {"arbitrary_types_allowed": True}
 
@@ -139,9 +135,14 @@ class UINodeState(BaseModel):
     video_to_video_smoothing_window: int = 5
     video_to_video_smoothing_sigma: float = 1.0
 
-    # The node-brain script's active-intent (feature 047): the engine binds + ticks `script.py` only
-    # when True. Born False; independent of every per-uniform flag (nothing cascades).
-    is_brain_active: bool = False
+    # Play/stop (feature 048): the uniform NAMES the user has STOPPED — frozen for manual edit. A
+    # stopped uniform's script value is not applied (the brain still ticks; the manual value sticks).
+    # Stored as a LIST, not a set: UINode.save serializes via model_dump() -> json.dump, which raises
+    # on a Python set. Coerced to a set per-frame in ProjectSession.tick.
+    stopped_uniforms: list[str] = []
+    # Node-level stop: freezes EVERY driven uniform's write at once (the brain keeps ticking, so a
+    # later node-play resumes from advanced state, not stale state). Born False.
+    all_stopped: bool = False
 
 
 class EditorSettings(BaseModel):

@@ -13,16 +13,15 @@ from shaderbox.constants import MEDIA_EXTENSIONS
 from shaderbox.core import UniformValue
 from shaderbox.editor_types import HoverMark, JumpRequest
 from shaderbox.media import MediaWithTexture, Video, media_class_for
-from shaderbox.scripting import ScriptState
 from shaderbox.shader_errors import find_uniform_declaration_line
-from shaderbox.theme import SIZE, SPACE
+from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_models import UIUniform
 from shaderbox.ui_primitives import (
     button,
     caption_text,
     chip_button,
     clickable_label,
-    script_glyph,
+    play_stop_toggle,
 )
 from shaderbox.util import (
     get_resolution_str,
@@ -91,16 +90,22 @@ def _locate_uniform_declaration(app: App, name: str) -> tuple[Path, int] | None:
     return None
 
 
-def _begin_ctrl(app: App, name: str, count_suffix: str = "") -> None:
+def _begin_ctrl(
+    app: App, name: str, count_suffix: str = "", *, playing: bool = False
+) -> None:
     """Lay out a uniform row: chip (already drawn) -> clickable name -> control.
 
     Call after the chip; positions the cursor at the control column and sets
     the next item's width. The control's own imgui label must be hidden (##).
     `count_suffix` (text/array `len/cap`) renders dim in the name column (045 B6 —
-    out of the trailing column the script glyph now owns).
+    out of the trailing column the play/stop button now owns). `playing` colours the
+    name `STATE_INFO` blue — the at-a-glance "the script drives this" cue (048).
     """
     imgui.same_line(_NAME_X)
-    uniform_name_label(app, name, SIZE.UNIFORM_NAME_W)
+    name_color = COLOR.STATE_INFO if playing else None
+    uniform_name_label(
+        app, name, SIZE.UNIFORM_NAME_W, text_color=name_color, accent=name_color
+    )
     if count_suffix:
         # Right-anchor the caption against the control column (047 F13), so it never overlaps the
         # input: a long name used to push a flowed caption past _CTRL_X (same_line to a smaller
@@ -139,26 +144,22 @@ def _count_suffix(ui_uniform: UIUniform, current_value: UniformValue) -> str:
     return ""
 
 
-def _draw_script_glyph(app: App, ui_uniform: UIUniform, state: ScriptState) -> None:
-    # The trailing per-row script affordance (047): a small `</>` glyph keyed on the uniform's full
-    # row state (its own `u_<name>__<tag>.py` OR — when it has none — the node-brain that drives it).
-    # Drawn only for a scriptable uniform; the accent/error colour is the at-a-glance "this row is
-    # script-driven" cue. Click opens the OWN script (creating it if absent), even for a brain-driven
-    # row (the user can attach a per-uniform override — it wins over the brain per the 044 conflict).
-    name = ui_uniform.name
-    node_id = app.current_node_id
-    if not app.is_uniform_scriptable(node_id, name):
+def _draw_play_stop(app: App, name: str, *, driven: bool, playing: bool) -> None:
+    # The trailing per-row play/stop affordance (048): drawn ONLY for a uniform the script TARGETS
+    # (driven — playing OR stopped); a never-scripted MANUAL uniform shows nothing. `stop` (accent)
+    # when playing, `play` (dim) when stopped — the toggle flips the node-scoped stopped state.
+    if not driven:
         return
-    tooltip = {
-        "absent": "Create + open a script for this uniform",
-        "active": "Script-driven — click to open (activate in the editor)",
-        "inactive": "Script inactive — click to open",
-        "error": "Script error — click to open and fix",
-    }[state]
+    node_id = app.current_node_id
     imgui.same_line()
     imgui.begin_disabled(app.copilot_turn_active)
-    if script_glyph(f"u_{name}", state, tooltip=tooltip):
-        app.open_script_for(node_id, name)
+    tooltip = (
+        "Stop the script driving this uniform (edit it by hand)"
+        if playing
+        else "Resume the script driving this uniform"
+    )
+    if play_stop_toggle(f"u_{name}", playing, tooltip=tooltip):
+        app.set_uniform_stopped(node_id, name, playing)
     imgui.end_disabled()
 
 
@@ -171,16 +172,15 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
     name = ui_uniform.name
     hidden = f"##{name}"
 
-    # The row's script state for the glyph + whether a script OWNS the value (own
-    # `u_<name>__<tag>.py` OR the node-brain). The value widget stays EDITABLE even when owned (F11):
-    # the user can drag it, but the script's next tick overwrites a driven slot (it snaps back) —
-    # that snap-back is the "the script owns this" cue. The write-back is still skipped for an owned
-    # slot so a manual edit applies this frame and the tick wins next frame.
-    state = app.session.uniform_pill_state(app.current_node_id, name)
-    owned = app.session.is_uniform_script_owned(app.current_node_id, name)
+    # Play/stop state (048): a uniform the script TARGETS is `driven` (playing OR stopped); PLAYING =
+    # driven and not stopped (the engine writes it each tick). The value widget stays EDITABLE while
+    # playing — grabbing it AUTO-STOPS (below), so the manual edit sticks instead of snapping back.
+    node_id = app.current_node_id
+    driven = app.session.uniform_is_driven(node_id, name)
+    playing = driven and not app.session.is_uniform_stopped(node_id, name)
 
     draw_input_type_selector(ui_uniform)
-    _begin_ctrl(app, name, _count_suffix(ui_uniform, current_value))
+    _begin_ctrl(app, name, _count_suffix(ui_uniform, current_value), playing=playing)
 
     if ui_uniform.input_type == "auto":
         if isinstance(current_value, float | int):
@@ -292,10 +292,19 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
             fn = getattr(imgui, f"drag_float{ui_uniform.dimension}")
             new_value = fn(hidden, list(current_value), change_speed)[1]
 
-    _draw_script_glyph(app, ui_uniform, state)
+    # Auto-stop on grab (048 D6): `is_item_activated()` fires ONCE when the user grabs the value
+    # widget (not per drag-frame). Gated on `playing` — only a PLAYING uniform auto-stops, which
+    # defuses the per-branch trailing-item hazard (a texture is non-scriptable → never playing). The
+    # manual edit then applies + sticks (the slot is no longer written by the tick).
+    if playing and imgui.is_item_activated():
+        app.set_uniform_stopped(node_id, name, True)
+        playing = False
 
-    # A script owns the value; a manual edit applies this frame but the tick overwrites it next
-    # frame (F11) — so never write an owned slot's unchanged return back.
-    if new_value is not None and not owned:
+    _draw_play_stop(app, name, driven=driven, playing=playing)
+
+    # A PLAYING uniform's value is owned by the script's tick — but a manual edit auto-stopped it
+    # above (playing is now False), so this write applies + sticks. A still-playing slot is never
+    # written back here (the tick wins); a stopped/manual slot's edit always applies.
+    if new_value is not None and not playing:
         try_to_release(current_value)
         ui_node.node.uniform_values[ui_uniform.name] = new_value

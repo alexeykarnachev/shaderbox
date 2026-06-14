@@ -1,21 +1,26 @@
-"""The CPU-script engine (feature 041) — repo code owned by the headless ProjectSession.
+"""The CPU-script engine (feature 041, redesigned by 048 to ONE script per node) — repo code owned
+by the headless ProjectSession.
 
-Per node it resolves `scripts/u_<name>.py` against the node's active uniforms, compiles a
-`Behavior` per binding (cached by `(path, mtime)`, each holding its own state instance), and on
-each `tick` calls the behavior's `update` and writes the value into `node.uniform_values` BEFORE
-`Node.render()` reads them. A broken script never raises into the frame loop: the uniform freezes
-at last-good and a `ScriptError` is recorded.
+Per node it resolves a single `nodes/<id>/scripts/script.py` (the node-brain) whose
+`update(self, ctx) -> dict[str, value]` drives MANY uniforms from ONE stateful instance. The engine
+compiles it once (cached by `(path, mtime)`, holding its own state instance), and on each `tick` calls
+`update`, fans the returned dict into `(name, value)` pairs, coerces each against the live uniform, and
+writes it into `node.uniform_values` BEFORE `Node.render()` reads them. A broken script never raises
+into the frame loop: the uniform freezes at last-good and a `ScriptError` is recorded.
 
-The engine imports no imgui/glfw/App and no concrete `Node` type — it works against the
-`EngineNode` protocol (the `uniform_values` dict + `get_active_uniforms()`), so it stays in the
-025 headless core.
+Play/stop (048): the live tick takes a `stopped: set[str]` of uniform NAMES the user has frozen for
+manual edit — a stopped name still ticks the brain (state advances, the name stays "driven") but its
+WRITE is skipped, so the manual value sticks. Export ticks a fresh per-export instance with NO stopped
+set (an export always plays the script).
+
+The engine imports no imgui/glfw/App and no concrete `Node` type — it works against the `EngineNode`
+protocol (the `uniform_values` dict + `get_active_uniforms()`), so it stays in the 025 headless core.
 """
 
 from collections.abc import Iterable
-from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, Protocol, TypeGuard
+from typing import Any, Protocol, TypeGuard
 
 import moderngl
 from loguru import logger
@@ -31,67 +36,26 @@ from shaderbox.scripting.context import EngineContext
 from shaderbox.scripting.errors import ScriptError
 from shaderbox.uniform_coerce import is_text_array
 
+# The single node-brain script: one stateful class whose update returns a dict driving many uniforms.
+# One script per node (048 — the per-uniform `u_<name>__<tag>.py` scheme of 044/047 is removed). The
+# error key is `(node_id, _BRAIN_FILE)`.
+_BRAIN_FILE = "script.py"
+
 
 @dataclass(frozen=True)
 class BrainStatus:
     # The node-brain's UI-facing state (feature 042's strip). sentinel_error is the brain's
     # compile/run failure (it drives nothing when set); soft_errors are (key, error) for homeless
-    # keys (typo/orphan/engine-owned) that name no real uniform row.
+    # keys (typo/orphan) that name no real uniform row.
     sentinel_error: "ScriptError | None"
     driven_count: int
     soft_errors: list[tuple[str, "ScriptError"]]
 
 
-# A per-uniform script's on-disk filename encodes the uniform's type tag (feature 047):
-# `u_<name>__<tag>.py`, where <tag> is the coercion signature (_uniform_tag). The glob matches only
-# the tagged form, so the binding is keyed by (name, type): a retype looks for a different tag and
-# can't corrupt the old script; a delete-readd rebinds. The tag is a MATCH GATE — every internal key
-# (behaviors/errors/last_good/...) stays the BARE uniform name parsed from the filename.
-_SCRIPT_GLOB = "u_*__*.py"
-# A node-brain script: one stateful class whose update returns a dict driving many uniforms. The
-# dot keeps the filename out of _SCRIPT_GLOB and out of any GLSL identifier (so the sentinel error
-# KEY (node_id, "script.py") can never collide with a per-uniform key). Feature 044.
-_BRAIN_FILE = "script.py"
-
-
-def parse_script_filename(filename: str) -> tuple[str, str] | None:
-    # `u_<name>__<tag>.py` -> (uniform_name, tag), or None for a non-conforming name. The name may
-    # itself contain underscores; the LAST `__` separates name from tag.
-    if not filename.endswith(".py"):
-        return None
-    stem = filename[:-3]
-    sep = stem.rfind("__")
-    if sep <= 0 or sep + 2 >= len(stem):
-        return None
-    return stem[:sep], stem[sep + 2 :]
-
-
-# The per-row / node-header script glyph's states (045): no script / driving the slot /
-# present-but-toggled-off / present-but-erroring. Resolved by ProjectSession.script_state_for
-# (disk presence + the engine's brain-driven set + recorded errors).
-ScriptState = Literal["absent", "active", "inactive", "error"]
-
-
-def _resolved_pairs(binding_key: str, raw: object) -> Iterable[tuple[str, object]]:
-    # Fan a behavior's raw run() result into (uniform_name, value) pairs — the 1->N seam (decision
-    # 3/4): a node-brain (keyed by the sentinel) yields its dict's items; a per-uniform binding is
-    # the 1-entry case (its key IS the uniform name). Cardinality is decided by the KEY, never by
-    # sniffing the return type. A non-dict brain return is a behavior-level error (the caller's
-    # except records it under the sentinel; decision 6).
-    if binding_key != _BRAIN_FILE:
-        return [(binding_key, raw)]
-    if not isinstance(raw, dict):
-        raise TypeError(
-            f"a node-brain update must return a dict[str, value], got {type(raw).__name__}"
-        )
-    return list(raw.items())
-
-
 def is_scriptable(uniform: object) -> TypeGuard[moderngl.Uniform]:
     # A scalar/vector/array uniform the engine can drive — NOT a UniformBlock (no scalar value)
     # and not a sampler (a texture, not a script value). Duck-typed on the shape attrs the
-    # coercion reads, so a test stand-in passes alongside a real moderngl.Uniform. (042's
-    # Add-script gate + the stub generator both call this.)
+    # coercion reads, so a test stand-in passes alongside a real moderngl.Uniform.
     return (
         not isinstance(uniform, moderngl.UniformBlock)
         and getattr(uniform, "gl_type", None) != GL_SAMPLER_2D
@@ -116,37 +80,31 @@ def _freeze(names: set[str], node: EngineNode, last_good: dict[str, Any]) -> Non
 
 
 class NodeScripts:
-    # One node's compiled bindings + their (path, mtime) cache + the raw source per binding
-    # (a fresh export behavior recompiles from this cached source, never a fresh disk read) +
-    # per-uniform last-good.
+    # One node's compiled brain + its (path, mtime) cache + the raw source (a fresh export behavior
+    # recompiles from this cached source, never a fresh disk read) + per-uniform last-good.
     def __init__(self, scripts_dir: Path) -> None:
         self.scripts_dir = scripts_dir
-        self.behaviors: dict[str, PythonBehavior] = {}
-        self.mtimes: dict[str, float] = {}
-        self.sources: dict[str, str] = {}
-        # Bare uniform name -> the binding's on-disk filename `u_<name>__<tag>.py` (feature 047), so
-        # script_file_for can report the tagged name the copilot/UI must edit. The brain isn't here
-        # (it's always `script.py`).
-        self.filenames: dict[str, str] = {}
+        self.brain: PythonBehavior | None = None
+        self.mtime: float | None = None
+        self.source: str | None = None
         self.last_good: dict[str, Any] = {}
-        # The uniform names the node-brain (script.py) drove on its last tick (every key it targeted
-        # at a real scriptable uniform, a coercion-failed key included) — dynamic (the dict keys),
-        # cached for script_driven_uniforms + the behavior-level freeze (decision 6/10). Persists
-        # across reset() so a reset-time __init__ failure can still freeze the prior frame's names.
+        # The uniform names the brain drove on its last tick (every key it targeted at a real
+        # scriptable uniform, a coercion-failed key included) — dynamic (the dict keys), cached for
+        # script_driven_uniforms + the behavior-level freeze. Persists across reset() so a reset-time
+        # __init__ failure can still freeze the prior frame's names.
         self.last_driven: set[str] = set()
-        # Bad brain keys (typo/orphan/engine-owned) that recorded a soft (node,name) error on the last
-        # tick — tracked separately from last_driven (a bad key must NOT claim ownership in
+        # Bad brain keys (typo/orphan) that recorded a soft (node,name) error on the last tick —
+        # tracked separately from last_driven (a bad key must NOT claim ownership in
         # script_driven_uniforms) so the stale-clear can pop its error once the key stops being returned.
         self.last_skipped: set[str] = set()
-        # Orphan/unsupported-binding names already warned, so reload (per-frame) logs once on the
+        # Orphan/unsupported-key names already warned, so reload (per-frame) logs once on the
         # transition, not every frame.
         self.warned: set[str] = set()
 
 
 def _stub_kind(uniform: moderngl.Uniform) -> tuple[str, str]:
-    # The (annotation, coercion-valid default expression) a stub uses for one uniform's shape.
-    # Shared by stub_for (the per-uniform return) and brain_stub_for (each dict value) so the two
-    # generated forms agree on defaults.
+    # The (output-type name, coercion-valid default expression) for one uniform's shape. Drives the
+    # brain stub's commented example lines + the explicit-import set.
     dim = uniform.dimension
     n = uniform.array_length
     gl_type = getattr(uniform, "gl_type", None)
@@ -166,25 +124,16 @@ def _stub_kind(uniform: moderngl.Uniform) -> tuple[str, str]:
     return "float", "0.0"
 
 
-def uniform_tag(uniform: moderngl.Uniform) -> str:
-    # The filename type tag for a uniform (feature 047): the lowercased coercion signature
-    # `_stub_kind` already computes, so the filename builder + the discovery matcher share ONE source
-    # and can never disagree. `Vec2`->`vec2`, `Array`->`array`, `Text`->`text`, `float`/`int` as-is.
-    ann, _ = _stub_kind(uniform)
-    return ann.lower()
-
-
-def per_uniform_filename(uniform: moderngl.Uniform) -> str:
-    # The on-disk filename binding a per-uniform script to `uniform` (feature 047): `u_<name>__<tag>.py`.
-    # The ONE home for the assembly, so the builder (ProjectSession) and the discovery glob never drift.
-    return f"{uniform.name}__{uniform_tag(uniform)}.py"
-
-
-# Scoped docstrings (045 E1): the per-frame ctx reference lives on the `update` method (it is what
-# each tick gets); the class docstring carries the high-level "what this drives"; __init__ states it
-# runs once. A script is plain Python — `import math` (or any stdlib) at the top to reach math.*.
+# Scoped docstrings (045 E1; 048 documents the dict contract + play/stop). The per-frame ctx reference
+# lives on `update`; the class docstring carries the high-level "what this drives"; __init__ states it
+# runs once. A script is plain Python — import what you need at the top.
 _UPDATE_DOC = (
-    '        """Compute this frame\'s value.\n'
+    '        """Compute this frame\'s uniform values.\n'
+    "\n"
+    "        Return a dict mapping uniform NAME -> value. A uniform you return is DRIVEN by the\n"
+    "        script (it PLAYS); a uniform you omit (or map to None) stays MANUAL — you edit it by\n"
+    "        hand in the panel. Stop a playing uniform (its row's stop button, or just drag it) to\n"
+    "        edit it by hand without deleting it from the dict.\n"
     "\n"
     "        Args:\n"
     "            ctx.t: Elapsed seconds since start.\n"
@@ -199,43 +148,42 @@ _INIT_DOC = (
 )
 
 
-def stub_for(uniform: moderngl.Uniform) -> str:
-    # The ready-to-edit script a freshly-attached uniform gets: the right return type for the
-    # uniform's shape + scoped docstrings + a body returning a coercion-valid default, so a new
-    # script compiles + runs immediately (showing the default, not an error).
-    ann, default = _stub_kind(uniform)
-    return (
-        f"import math\n\n"
-        f"class Behavior(ScriptBehavior):\n"
-        f'    """Drive {uniform.name} each frame. Keep state on self (persists across frames)."""\n'
-        f"\n"
-        f"    def __init__(self) -> None:\n"
-        f"{_INIT_DOC}"
-        f"        pass\n\n"
-        f"    def update(self, ctx: Ctx) -> {ann}:\n"
-        f"{_UPDATE_DOC}"
-        f"        return {default}\n"
-    )
+def _brain_import_line(annotations: Iterable[str]) -> str:
+    # The explicit import line atop the stub (048 decision 8): `ScriptBehavior` + `Ctx` always, plus
+    # only the output types the node's uniforms reference. Visible so the user sees what's available;
+    # the engine also injects these names as a fallback (behavior.py::_build_globals).
+    names = ["ScriptBehavior", "Ctx"]
+    for ann in annotations:
+        if ann in ("Vec2", "Vec3", "Vec4", "Array", "Text") and ann not in names:
+            names.append(ann)
+    return f"from shaderbox.scripting import {', '.join(names)}\n"
 
 
 def brain_stub_for(uniforms: Iterable[moderngl.Uniform]) -> str:
-    # The ready-to-edit node-brain (feature 044): one stateful class whose update returns a dict
-    # driving MANY uniforms. Pre-seeds the dict with each scriptable uniform at its coercion-valid
-    # default, so it compiles + runs immediately. The annotation is BARE `-> dict` — NEVER
-    # `dict[str, Any]`: `Any` is absent from the exec globals, so the eager annotation eval would
-    # permanently compile-freeze the brain (041 decision 12 / 044 out-of-scope). A node with no
-    # scriptable uniform still emits a valid empty-dict body.
+    # The ready-to-edit node-brain (044; 048): one stateful class whose update returns a dict driving
+    # MANY uniforms. update returns an EMPTY dict by default (a fresh script drives nothing — every
+    # uniform stays manual); the node's scriptable uniforms are listed as COMMENTED examples so the
+    # user sees what's available + the shape to return. The annotation is BARE `-> dict` (never
+    # `dict[str, Any]`: `Any` isn't in the exec globals, so the eager annotation eval would freeze it).
     scriptable = [u for u in uniforms if is_scriptable(u)]
-    if scriptable:
-        entries = "".join(
-            f"            {name!r}: {default},  # {ann}\n"
-            for name, (ann, default) in ((u.name, _stub_kind(u)) for u in scriptable)
+    kinds = [(u.name, *_stub_kind(u)) for u in scriptable]
+    import_line = _brain_import_line(ann for _, ann, _ in kinds)
+    if kinds:
+        examples = "".join(
+            f"            # {name!r}: {default},  # {ann}\n"
+            for name, ann, default in kinds
         )
-        body = f"        return {{\n{entries}        }}\n"
+        body = (
+            "        return {\n"
+            "            # Uncomment a line + replace the value to drive that uniform:\n"
+            f"{examples}"
+            "        }\n"
+        )
     else:
         body = "        return {}\n"
     return (
         f"import math\n\n"
+        f"{import_line}\n"
         f"class Behavior(ScriptBehavior):\n"
         f'    """Drive many uniforms from one object each frame (node-brain). Keep state on self."""\n'
         f"\n"
@@ -251,33 +199,28 @@ def brain_stub_for(uniforms: Iterable[moderngl.Uniform]) -> str:
 class ScriptEngine:
     def __init__(self, engine_driven: frozenset[str] = frozenset()) -> None:
         self._nodes: dict[str, NodeScripts] = {}
-        # (node_id, uniform_name) -> the most recent error, for 042's UI to surface.
+        # (node_id, name) -> the most recent error, for the UI to surface. The brain's
+        # compile/run error keys on (node_id, _BRAIN_FILE); a per-key shape/orphan error on
+        # (node_id, uniform_name).
         self.errors: dict[tuple[str, str], ScriptError] = {}
-        # Engine-owned uniform names (u_time/u_aspect/u_resolution) — render() hardcodes these, so a
-        # script on one would silently no-op. Passed in by ProjectSession (NOT imported from core,
-        # which pulls in glfw — the headless boundary). Empty in a bare test engine.
+        # Engine-owned uniform names (u_time/u_aspect/u_resolution + table uniforms) — render()
+        # hardcodes these, so a script on one would silently no-op. Passed in by ProjectSession (NOT
+        # imported from core, which pulls in glfw — the headless boundary). Empty in a bare test engine.
         self._engine_driven = engine_driven
 
     def script_driven_uniforms(self, node_id: str) -> set[str]:
-        # The per-uniform stems (static) UNION the brain's last-frame driven keys (dynamic), minus
-        # the sentinel — a brain's driven set is only known after a tick (decision 10). Used solely
-        # by the copilot set_uniform reject (a courtesy; coercion is the real gate).
+        # The uniform names the brain drove on its last tick (decision 10 — only known after a tick).
+        # Used by the copilot set_uniform reject + the UI's play/stop button gate (a name here is
+        # script-targeted: playing or stopped).
         node = self._nodes.get(node_id)
-        if node is None:
-            return set()
-        names = set(node.behaviors) | node.last_driven
-        names.discard(_BRAIN_FILE)
-        return names
+        return set(node.last_driven) if node is not None else set()
 
     def brain_status(self, node_id: str) -> "BrainStatus | None":
-        # The node-brain's UI status (feature 042), or None when the node has no script.py. Reads
-        # the engine-owned state the 042 strip needs WITHOUT exposing _nodes: whether a brain is
-        # bound, its sentinel compile/run error (drives zero rows when set), the count of real
-        # uniforms it drove last tick, and its HOMELESS soft-key errors (typo/orphan/engine-owned
-        # keys that name no row, from last_skipped). A real-uniform key it drove surfaces on that
-        # uniform's own row, never here.
+        # The node-brain's UI status (feature 042), or None when the node has no script.py. Whether a
+        # brain is bound, its sentinel compile/run error (drives zero rows when set), the count of real
+        # uniforms it drove last tick, and its HOMELESS soft-key errors (typo/orphan keys naming no row).
         node = self._nodes.get(node_id)
-        if node is None or _BRAIN_FILE not in node.behaviors:
+        if node is None or node.brain is None:
             return None
         sentinel = self.errors.get((node_id, _BRAIN_FILE))
         soft = [
@@ -291,418 +234,242 @@ class ScriptEngine:
             soft_errors=soft,
         )
 
-    def script_file_for(self, node_id: str, name: str) -> str | None:
-        # The scripts/ filename that drives `name`, or None if nothing does. A u_<name>__<tag>.py
-        # wins over the brain (the conflict rule: per-uniform overrides), so it's reported when both
-        # exist. The per-uniform name is the discovered tagged filename (feature 047), not f"{name}.py".
+    def has_script(self, node_id: str) -> bool:
+        # True when the node has a bound brain (script.py exists + compiled, error or not).
         node = self._nodes.get(node_id)
-        if node is None:
-            return None
-        if name in node.behaviors:
-            return node.filenames.get(name)
-        if name in node.last_driven:
-            return _BRAIN_FILE
-        return None
+        return node is not None and node.brain is not None
 
-    def reload(
-        self,
-        node_id: str,
-        scripts_dir: Path,
-        node: EngineNode,
-        active_scripts: AbstractSet[str] = frozenset(),
-    ) -> None:
-        # Glob the node's scripts dir, (re)compile only files whose mtime changed (a recompile
-        # makes a FRESH instance — state resets on edit), drop removed files, and resolve each
-        # binding against the node's active uniforms — warning ONCE (on the transition) on an orphan
-        # (no such uniform) or an engine-owned/unscriptable target. Cheap when nothing changed: a
-        # stat per file, no recompile. `active_scripts` (feature 047) holds the on-disk filenames
-        # the user has activated (`u_<name>__<tag>.py`, `script.py`) — built by ProjectSession from
-        # the model flags; a file not in it is skipped (the inactive case, replacing the 045 marker).
+    def reload(self, node_id: str, scripts_dir: Path, node: EngineNode) -> None:
+        # Discover + (re)compile the node's `script.py` if its mtime changed (a recompile makes a
+        # FRESH instance — state resets on edit), drop it if the file vanished. The brain binds by
+        # EXISTENCE (048 — no active flag; the file IS the binding). Cheap when nothing changed: a stat.
         scripts = self._nodes.get(node_id)
         if scripts is None or scripts.scripts_dir != scripts_dir:
             scripts = NodeScripts(scripts_dir)
             self._nodes[node_id] = scripts
 
-        active = {u.name: u for u in node.get_active_uniforms()}
-        # An empty active set means the program is mid-invalidation (a lib edit dropped it); skip the
-        # orphan check this poll so a live binding isn't briefly mis-flagged as a false orphan.
-        check_active = bool(active)
-        found: set[str] = set()
-        if scripts_dir.is_dir():
-            for path in sorted(scripts_dir.glob(_SCRIPT_GLOB)):
-                parsed = parse_script_filename(path.name)
-                if parsed is None:
-                    continue  # a non-conforming `u_*__*.py` (no name/tag split)
-                name, tag = parsed
-                # Inactive (047): the user hasn't activated this file — leave it out of `found` so
-                # the drop loop below tears down any live binding (the uniform returns to manual).
-                # It is NOT an orphan, so no warn.
-                if path.name not in active_scripts:
-                    continue
-                # Resolve against the live uniforms FIRST — only a real, scriptable binding whose TYPE
-                # TAG still matches the live uniform counts as "found" (so a retyped uniform's old-tag
-                # script is reclaimed by the drop loop, leaving the file on disk for a retype-back).
-                if check_active:
-                    reason = self._binding_reject(name, active, tag)
-                    if reason is not None:
-                        if name not in scripts.warned:
-                            logger.warning(
-                                f"Script {path.name} on node {node_id}: {reason} — ignored"
-                            )
-                            scripts.warned.add(name)
-                        continue
-                found.add(name)
-                scripts.warned.discard(name)
-                scripts.filenames[name] = path.name
-                try:
-                    mtime = path.stat().st_mtime
-                    body = path.read_text(encoding="utf-8")
-                except (OSError, ValueError):
-                    # A vanished / half-saved / non-UTF8 file mid-edit — keep the cached behavior,
-                    # never raise into the frame loop (ValueError covers UnicodeDecodeError).
-                    continue
-                if scripts.mtimes.get(name) == mtime:
-                    continue
-                behavior = PythonBehavior(name, body)
-                scripts.behaviors[name] = behavior
-                scripts.mtimes[name] = mtime
-                scripts.sources[name] = body
-                key = (node_id, name)
-                if behavior.error is not None:
-                    self.errors[key] = behavior.error
-                else:
-                    self.errors.pop(key, None)
-
-            # The node-brain is a SEPARATE discovery branch — `script.py` has a dot, so _SCRIPT_GLOB
-            # never matches it (decision 1). It binds lazily (its keys validate per-tick), so no
-            # _binding_reject here; found.add keeps it past the drop loop below.
-            if _BRAIN_FILE in active_scripts:
-                self._reload_brain(scripts_dir / _BRAIN_FILE, node_id, scripts, found)
-
-        # Drop bindings whose file disappeared OR whose uniform went inactive/unscriptable.
-        for name in list(scripts.behaviors):
-            if name not in found:
-                scripts.behaviors.pop(name, None)
-                scripts.mtimes.pop(name, None)
-                scripts.sources.pop(name, None)
-                scripts.filenames.pop(name, None)
-                scripts.last_good.pop(name, None)
-                self.errors.pop((node_id, name), None)
-                if name == _BRAIN_FILE:
-                    # Free each driven/skipped uniform's last-good + its per-KEY error (a coercion-failed
-                    # key OR a bad-key soft error records under (node_id, name), not the sentinel — so
-                    # popping the sentinel above isn't enough), and clear the cached sets so
-                    # script_driven_uniforms reports nothing for the removed brain.
-                    for stale in scripts.last_driven | scripts.last_skipped:
-                        scripts.last_good.pop(stale, None)
-                        self.errors.pop((node_id, stale), None)
-                    scripts.last_driven = set()
-                    scripts.last_skipped = set()
-
-    def _reload_brain(
-        self, path: Path, node_id: str, scripts: "NodeScripts", found: set[str]
-    ) -> None:
-        # Discover + (re)compile nodes/<id>/scripts/script.py keyed by the _BRAIN_FILE sentinel,
-        # mtime-cached like a per-uniform binding. Its error records under (node_id, "script.py").
-        # The caller only reaches here when `script.py` is active (feature 047); an inactive brain is
-        # left out of `found`, so the drop loop tears down a live binding.
+        path = scripts_dir / _BRAIN_FILE
         if not path.is_file():
+            if scripts.brain is not None:
+                self._drop_brain(node_id, scripts)
             return
-        found.add(_BRAIN_FILE)
+
         try:
             mtime = path.stat().st_mtime
             body = path.read_text(encoding="utf-8")
         except (OSError, ValueError):
+            # A vanished / half-saved / non-UTF8 file mid-edit — keep the cached brain, never raise
+            # into the frame loop (ValueError covers UnicodeDecodeError).
             return
-        if scripts.mtimes.get(_BRAIN_FILE) == mtime:
+        if scripts.mtime == mtime:
             return
         behavior = PythonBehavior(_BRAIN_FILE, body)
-        scripts.behaviors[_BRAIN_FILE] = behavior
-        scripts.mtimes[_BRAIN_FILE] = mtime
-        scripts.sources[_BRAIN_FILE] = body
+        scripts.brain = behavior
+        scripts.mtime = mtime
+        scripts.source = body
         key = (node_id, _BRAIN_FILE)
         if behavior.error is not None:
             self.errors[key] = behavior.error
         else:
             self.errors.pop(key, None)
 
+    def _drop_brain(self, node_id: str, scripts: "NodeScripts") -> None:
+        # Tear down a removed brain: free its last-good + every per-key error (a coercion-failed key
+        # or a bad-key soft error records under (node_id, name), so popping the sentinel isn't enough)
+        # and clear the cached sets so script_driven_uniforms reports nothing.
+        scripts.brain = None
+        scripts.mtime = None
+        scripts.source = None
+        self.errors.pop((node_id, _BRAIN_FILE), None)
+        for stale in scripts.last_driven | scripts.last_skipped:
+            scripts.last_good.pop(stale, None)
+            self.errors.pop((node_id, stale), None)
+        scripts.last_driven = set()
+        scripts.last_skipped = set()
+        scripts.warned = set()
+
     def _binding_reject(
         self,
         name: str,
         active: dict[str, moderngl.Uniform | moderngl.UniformBlock],
-        tag: str | None = None,
     ) -> str | None:
-        # Why a script can't bind to `name` (None = it can). Drives the warn-once message. The
-        # per-uniform reload path still rejects an engine-owned name here (defence-in-depth against a
-        # hand-created `u_time__float.py` clobbering the renderer). The BRAIN never reaches this branch
-        # for an engine-owned key — _apply_behavior drops it SILENTLY upstream (decision 5), so no
-        # "engine-owned" soft error ever surfaces.
-        if name in self._engine_driven:
-            return f"'{name}' is engine-owned (its value is set by the renderer)"
+        # Why a brain key can't bind to `name` (None = it can). An engine-owned key (u_time…) is
+        # dropped SILENTLY upstream (decision 5), so it never reaches this — this covers orphan/typo
+        # and sampler/block keys.
         uniform = active.get(name)
         if uniform is None:
-            return f"no active uniform '{name}' (orphan script)"
+            return f"no active uniform '{name}' (orphan key)"
         if not is_scriptable(uniform):
             return f"'{name}' is a sampler/block — not a scriptable value"
-        # The per-uniform reload passes the file's type tag (feature 047): a tag that no longer
-        # matches the live uniform means the uniform was retyped — drop the binding (the file stays
-        # on disk for a retype-back), not a coercion error.
-        if tag is not None and uniform_tag(uniform) != tag:
-            return f"'{name}' is now {uniform_tag(uniform)}, script is {tag} (retyped)"
         return None
 
-    def reset(self, node_id: str, name: str) -> None:
-        # Re-instantiate one live binding (re-run __init__) without recompiling — the manual
-        # "restart" the 042 UI button wires. Sync the engine's recorded error to the behavior's
-        # post-reset state (a recovered __init__ clears it; a still-raising one re-records) so a
-        # consumer reading `errors` off-tick sees the truth immediately, not next frame.
+    def reset(self, node_id: str) -> None:
+        # Re-instantiate the live brain (re-run __init__) without recompiling — the manual "restart".
+        # Sync the engine's recorded error to the behavior's post-reset state (a recovered __init__
+        # clears it; a still-raising one re-records) so a consumer reading `errors` off-tick sees the
+        # truth immediately.
         scripts = self._nodes.get(node_id)
-        if scripts is None:
+        if scripts is None or scripts.brain is None:
             return
-        behavior = scripts.behaviors.get(name)
-        if behavior is None:
-            return
-        behavior.reset()
-        if behavior.error is not None:
-            self.errors[(node_id, name)] = behavior.error
+        scripts.brain.reset()
+        key = (node_id, _BRAIN_FILE)
+        if scripts.brain.error is not None:
+            self.errors[key] = scripts.brain.error
         else:
-            self.errors.pop((node_id, name), None)
+            self.errors.pop(key, None)
 
-    def fresh_behaviors_for(self, node_id: str) -> dict[str, PythonBehavior]:
-        # A NEW behavior set for the node, independent of the live registry's instances —
-        # recompiled from the live registry's CACHED source (not a fresh disk read, so an
-        # export never sees a half-saved mid-edit file). The export path ticks THIS set so an
-        # exported integrator starts from a clean __init__ regardless of live state.
+    def fresh_behavior_for(self, node_id: str) -> PythonBehavior | None:
+        # A NEW brain instance, independent of the live registry's instance — recompiled from the
+        # live registry's CACHED source (not a fresh disk read, so an export never sees a half-saved
+        # mid-edit file). The export path ticks THIS so an exported integrator starts from a clean
+        # __init__ regardless of live state.
         scripts = self._nodes.get(node_id)
-        if scripts is None:
-            return {}
-        return {
-            name: PythonBehavior(name, source)
-            for name, source in scripts.sources.items()
-        }
+        if scripts is None or scripts.source is None:
+            return None
+        return PythonBehavior(_BRAIN_FILE, scripts.source)
 
-    def tick(self, node_id: str, node: EngineNode, ctx: EngineContext) -> None:
-        # Tick the LIVE bindings: each writes node.uniform_values[name] before Node.render()
-        # reads it. A runtime/shape error freezes the uniform at last-good and records a
-        # ScriptError into the shared `errors`; the frame always continues.
+    def tick(
+        self,
+        node_id: str,
+        node: EngineNode,
+        ctx: EngineContext,
+        stopped: frozenset[str] = frozenset(),
+    ) -> None:
+        # Tick the LIVE brain: it writes node.uniform_values[name] before Node.render() reads it. A
+        # name in `stopped` (the user froze it for manual edit, 048) still ticks the brain + counts as
+        # driven, but its WRITE is skipped so the manual value sticks. A runtime/shape error freezes
+        # the uniform at last-good and records a ScriptError; the frame always continues.
         scripts = self._nodes.get(node_id)
-        if scripts is None:
+        if scripts is None or scripts.brain is None:
             return
-        self._tick_behaviors(
+        self._tick_brain(
             node_id,
             node,
             ctx,
-            scripts.behaviors,
+            scripts.brain,
             scripts.last_good,
             self.errors,
             scripts.last_driven,
             scripts.last_skipped,
             scripts.warned,
+            stopped,
         )
 
-    def tick_behaviors(
-        self,
-        node_id: str,
-        node: EngineNode,
-        ctx: EngineContext,
-        behaviors: dict[str, PythonBehavior],
+    def tick_export(
+        self, node_id: str, node: EngineNode, ctx: EngineContext, brain: PythonBehavior
     ) -> None:
-        # Tick an EXTERNAL behavior set (the export's fresh instances) against the node. EVERY sink —
-        # last-good, errors, driven-set, skipped-set AND the warn-once set — is a per-call throwaway, so
-        # an export never touches the live binding's recorded error, caches, or warn dedup (the export
-        # is structurally isolated; decision 11), and it ticks each frame fresh with no live state.
-        self._tick_behaviors(node_id, node, ctx, behaviors, {}, {}, set(), set(), set())
+        # Tick an EXTERNAL brain (the export's fresh instance) against the node. EVERY sink is a
+        # per-call throwaway, so an export never touches the live brain's recorded error/caches/warn
+        # dedup (structurally isolated). NO stopped set — an export always plays the script.
+        self._tick_brain(
+            node_id, node, ctx, brain, {}, {}, set(), set(), set(), frozenset()
+        )
 
-    def _tick_behaviors(
+    def _tick_brain(
         self,
         node_id: str,
         node: EngineNode,
         ctx: EngineContext,
-        behaviors: dict[str, PythonBehavior],
+        brain: PythonBehavior,
         last_good: dict[str, Any],
         errors: dict[tuple[str, str], ScriptError],
         last_driven: set[str],
         last_skipped: set[str],
         warned: set[str],
+        stopped: frozenset[str],
     ) -> None:
-        if (
-            not behaviors
-        ):  # scriptless node — skip the per-frame active-uniform dict build
-            return
         active = {u.name: u for u in node.get_active_uniforms()}
-        # TWO-PASS write order (decision 7): the brain writes its slots FIRST, then per-uniform
-        # bindings write LAST so a u_<name>.py overrides the brain's same-named slot. Splitting the
-        # passes is the guarantee — NOT behaviors-dict insertion order (a reload can perturb it).
-        brain = behaviors.get(_BRAIN_FILE)
-        brain_driven: set[str] = set()
-        if brain is not None:
-            driven, skipped = self._apply_behavior(
-                node_id,
-                _BRAIN_FILE,
-                brain,
-                node,
-                ctx,
-                active,
-                last_good,
-                errors,
-                last_driven,
-                warned,
-                set(),  # the brain's own pass protects nothing
-            )
-            brain_driven = (
-                driven  # per-uniform freezes yield back to these brain-owned slots
-            )
-            # An omitted-after-failing key's stale error: clear any key TOUCHED last frame (a real
-            # driven key OR a bad/skipped key that recorded a soft error) but NOT touched this frame
-            # (decision 8 — no zombie error; an omitted real key keeps its last value). last_driven
-            # tracks the REAL driven uniforms only (skipped keys must not claim ownership in
-            # script_driven_uniforms); last_skipped tracks the bad keys for their own stale-clear.
-            touched = driven | skipped
-            for name in (last_driven | last_skipped) - touched:
-                errors.pop((node_id, name), None)
-            last_driven.clear()
-            last_driven.update(driven)
-            last_skipped.clear()
-            last_skipped.update(skipped)
-        for name, behavior in behaviors.items():
-            if name == _BRAIN_FILE:
-                continue
-            self._apply_behavior(
-                node_id,
-                name,
-                behavior,
-                node,
-                ctx,
-                active,
-                last_good,
-                errors,
-                set(),
-                warned,
-                brain_driven,
-            )
+        behavior_key = (node_id, _BRAIN_FILE)
+        drove_last = set(last_driven)
 
-    def _apply_behavior(
-        self,
-        node_id: str,
-        binding_key: str,
-        behavior: PythonBehavior,
-        node: EngineNode,
-        ctx: EngineContext,
-        active: dict[str, moderngl.Uniform | moderngl.UniformBlock],
-        last_good: dict[str, Any],
-        errors: dict[tuple[str, str], ScriptError],
-        last_driven: set[str],
-        warned: set[str],
-        brain_driven: set[str],
-    ) -> tuple[set[str], set[str]]:
-        # Run ONE behavior + write each (name, raw) pair it yields. Returns (driven, touched): `driven`
-        # = names of REAL scriptable uniforms the brain targeted (what script_driven_uniforms reports);
-        # `touched` = driven UNION the bad keys (typo/orphan/engine-owned) that recorded a per-key
-        # error this frame, so the caller can clear a stale (node,name) error of any key no longer
-        # returned (decision 8 — no zombie). A behavior-level failure (compile error / raw throw /
-        # non-dict brain return) freezes EVERY name it drove last frame and returns empty. NOTE: `run`
-        # (=update) is called ONCE to fan out, BEFORE the per-name is_scriptable gate — so a per-uniform
-        # script's state still advances during the brief reload→tick window its uniform is inactive
-        # (the value freezes; only `self.*` ticks). Inherent to the shared fan-out, not a regression.
-        # `brain_driven` = slots the brain WROTE this frame (empty for the brain's own pass): a per-uniform
-        # binding that FREEZES on such a slot yields it back to the brain's live value instead of freezing
-        # over it (a broken `u_x.py` override lets the brain's base behavior show through — decision: a
-        # healthy brain wins when its conflicting per-uniform is frozen).
-        behavior_key = (node_id, binding_key)
-        drove_last = {binding_key} if binding_key != _BRAIN_FILE else set(last_driven)
-        freeze = (
-            drove_last - brain_driven
-        )  # don't freeze over a slot the brain owns this frame
-        if (
-            behavior.error is not None
-        ):  # cached compile error — freeze, recorded at reload
-            errors[behavior_key] = behavior.error
-            _freeze(freeze, node, last_good)
-            return set(), set()
+        if brain.error is not None:  # cached compile error — freeze, recorded at reload
+            errors[behavior_key] = brain.error
+            _freeze(drove_last, node, last_good)
+            return
         try:
-            raw = behavior.run(ctx)
-            pairs = list(_resolved_pairs(binding_key, raw))
+            raw = brain.run(ctx)
         except _RuntimeScriptError as e:  # no instance — authored message
             errors[behavior_key] = e.error
-            _freeze(freeze, node, last_good)
-            return set(), set()
-        except (
-            Exception
-        ) as e:  # a raw throw (or non-dict brain return) is behavior-level
+            _freeze(drove_last, node, last_good)
+            return
+        except Exception as e:  # a raw throw is behavior-level
             errors[behavior_key] = ScriptError(
-                binding_key,
+                _BRAIN_FILE,
                 "runtime",
                 f"{type(e).__name__}: {e}",
-                _user_error_line(behavior.label, e),
+                _user_error_line(brain.label, e),
             )
-            _freeze(freeze, node, last_good)
-            return set(), set()
+            _freeze(drove_last, node, last_good)
+            return
+        if not isinstance(raw, dict):
+            errors[behavior_key] = ScriptError(
+                _BRAIN_FILE,
+                "runtime",
+                f"update must return a dict[str, value], got {type(raw).__name__}",
+            )
+            _freeze(drove_last, node, last_good)
+            return
         errors.pop(
             behavior_key, None
-        )  # the run itself succeeded; clear a stale behavior-level error
-        # `driven` = every key the brain TARGETED at a real scriptable uniform this frame (a per-key
-        # coercion failure still counts — the key IS driven, it just froze). `skipped` = bad keys
-        # (typo/orphan/engine-owned) that recorded a soft error but name no real uniform. The caller
-        # clears the stale error of any TOUCHED key (driven|skipped) no longer returned (decision 8 —
-        # no zombie); script_driven_uniforms reports `driven` only (a bad key must NOT claim ownership).
+        )  # the run succeeded; clear a stale behavior-level error
+
         driven: set[str] = set()
         skipped: set[str] = set()
-        for name, value in pairs:
+        for name, value in raw.items():
             key = (node_id, name)
-            # A per-uniform binding that freezes on a brain-owned slot yields to the brain's live
-            # write (already in uniform_values from the brain pass), not its own stale last-good —
-            # the conflict-freeze-fallback decision (a broken override lets the base behavior show).
-            frozen = (
-                node.uniform_values.get(name)
-                if name in brain_driven
-                else last_good.get(name, node.uniform_values.get(name))
-            )
+            frozen = last_good.get(name, node.uniform_values.get(name))
             uniform = active.get(name)
-            if binding_key == _BRAIN_FILE:
-                # An engine-owned key (u_time…) is SILENTLY dropped (feature 047 decision 5): no error,
-                # no skip-record, no warn — the renderer owns that slot and a brain can't be expected to
-                # avoid naming it. It can't reach a per-uniform binding (engine-owned aren't scriptable),
-                # only a brain dict, so this is the one place it's filtered.
-                if name in self._engine_driven:
-                    continue
-                # A brain key validates LAZILY at tick (its keys are dynamic) through the SAME
-                # _binding_reject the per-uniform path uses at reload: orphan (typo / inactive) or
-                # sampler/block get a reason. Record a soft ScriptError under (node,name) so the UI
-                # surfaces it (NOT loguru-only), warn-once, SKIP with NO write (frozen is None for a
-                # never-bound name; decision 5). It goes in `skipped` NOT `driven` — it names no
-                # scriptable uniform, so script_driven_uniforms must not claim ownership.
-                reason = self._binding_reject(name, active)
-                if reason is not None:
-                    errors[key] = ScriptError(name, "runtime", reason)
-                    skipped.add(name)
-                    if name not in warned:
-                        logger.warning(
-                            f"Node-brain script on node {node_id}: key {reason} — skipped"
-                        )
-                        warned.add(name)
-                    continue
-            elif not is_scriptable(uniform):
-                # A per-uniform binding's name went inactive between reload and tick — freeze it to
-                # last-good (it WAS a real binding; per-uniform orphans/engine-owned are rejected at
-                # reload, so they never reach the tick).
-                node.uniform_values[name] = frozen
+            # An engine-owned key (u_time…) is SILENTLY dropped (decision 5): the renderer owns that
+            # slot and a brain can't be expected to avoid naming it.
+            if name in self._engine_driven:
+                continue
+            reason = self._binding_reject(name, active)
+            if reason is not None:
+                # An orphan/typo/sampler key: record a soft error under (node,name) so the UI surfaces
+                # it, warn-once, SKIP with no write. It goes in `skipped` NOT `driven` (it names no
+                # scriptable uniform, so script_driven_uniforms must not claim ownership).
+                errors[key] = ScriptError(name, "runtime", reason)
+                skipped.add(name)
+                if name not in warned:
+                    logger.warning(
+                        f"Node-brain on node {node_id}: key {reason} — skipped"
+                    )
+                    warned.add(name)
                 continue
             assert is_scriptable(
                 uniform
             )  # _binding_reject(None) implies a scriptable uniform
-            driven.add(name)
+            driven.add(
+                name
+            )  # driven BEFORE coerce/write, so a stopped/failed key still counts
             try:
                 coerced = coerce_one(value, uniform, name)
             except (
                 _RuntimeScriptError
             ) as e:  # per-KEY shape mismatch — freeze ONLY this key
                 errors[key] = e.error
-                node.uniform_values[name] = frozen
+                # A STOPPED key keeps the user's manual value (don't clobber it with stale last-good);
+                # a playing key freezes at last-good, the freeze-as-data behavior.
+                if name not in stopped:
+                    node.uniform_values[name] = frozen
                 continue
             errors.pop(key, None)
             last_good[name] = coerced
-            node.uniform_values[name] = coerced
-        return driven, skipped
+            # Play/stop (048): a STOPPED uniform's value is NOT written (the manual value sticks); the
+            # brain still ran + the name still counts as driven (so the row keeps its play/stop button).
+            if name not in stopped:
+                node.uniform_values[name] = coerced
+
+        # An omitted-after-failing key's stale error: clear any key TOUCHED last frame (driven OR a
+        # bad/skipped key) but NOT touched this frame (decision 8 — no zombie; an omitted real key
+        # keeps its last value).
+        touched = driven | skipped
+        for name in (last_driven | last_skipped) - touched:
+            errors.pop((node_id, name), None)
+        last_driven.clear()
+        last_driven.update(driven)
+        last_skipped.clear()
+        last_skipped.update(skipped)
 
     def drop_node(self, node_id: str) -> None:
         self._nodes.pop(node_id, None)

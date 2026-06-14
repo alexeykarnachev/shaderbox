@@ -44,8 +44,9 @@ def _seed_scripted_node(project_dir: Path, body: str) -> None:
     )
     scripts = node / "scripts"
     scripts.mkdir(exist_ok=True)
-    # The 047 tagged filename (u_wave is a float). The script is born inactive — main() activates it.
-    (scripts / "u_wave__float.py").write_text(body, encoding="utf-8")
+    # One script per node (048): the node-brain `script.py` drives u_wave via a dict return. Binds by
+    # existence (no activate step).
+    (scripts / "script.py").write_text(body, encoding="utf-8")
 
 
 def _mean_luma(path: str) -> float:
@@ -54,27 +55,30 @@ def _mean_luma(path: str) -> float:
     return sum(px) / len(px)
 
 
-# A ctx.t-pure scalar: animates with t, identical at the same t (the determinism guarantee).
+# A ctx.t-pure brain: animates with t, identical at the same t (the determinism guarantee).
 _PURE = (
     "import math\n"
+    "from shaderbox.scripting import ScriptBehavior, Ctx\n\n"
     "class Behavior(ScriptBehavior):\n"
-    "    def update(self, ctx: Ctx) -> float:\n"
-    "        return 0.5 + 0.45 * math.sin(ctx.t)\n"
+    "    def update(self, ctx: Ctx) -> dict:\n"
+    "        return {'u_wave': 0.5 + 0.45 * math.sin(ctx.t)}\n"
 )
 # A STATEFUL integrator: only possible with per-instance state — used for export isolation.
 _INTEGRATOR = (
+    "from shaderbox.scripting import ScriptBehavior, Ctx\n\n"
     "class Behavior(ScriptBehavior):\n"
     "    def __init__(self) -> None:\n"
     "        self.v = 0.0\n"
-    "    def update(self, ctx: Ctx) -> float:\n"
+    "    def update(self, ctx: Ctx) -> dict:\n"
     "        self.v += ctx.dt\n"
-    "        return self.v % 1.0\n"
+    "        return {'u_wave': self.v % 1.0}\n"
 )
 # A broken body: a runtime error every tick -> freeze last-good, never crash.
 _BROKEN = (
+    "from shaderbox.scripting import ScriptBehavior, Ctx\n\n"
     "class Behavior(ScriptBehavior):\n"
-    "    def update(self, ctx: Ctx) -> float:\n"
-    "        return 1.0 / 0.0\n"
+    "    def update(self, ctx: Ctx) -> dict:\n"
+    "        return {'u_wave': 1.0 / 0.0}\n"
 )
 
 
@@ -83,10 +87,11 @@ def main() -> int:
     _seed_scripted_node(h.project_dir, _PURE)
     h.session.load(h.project_dir)
     h.session.set_current_node_id("scripted")
-    # Activate the per-uniform script (047 — born inactive). set_script_active eager-creates the
-    # UIUniform, so this works headlessly without a Node-tab draw; reload binds it.
-    h.session.set_script_active("scripted", "u_wave", True)
+    # One script per node (048): the brain binds by existence — no activate step. The driven set is
+    # the brain's LAST-TICK keys (dynamic), so tick once before reading it (the live frame order:
+    # tick -> read; the engine knows nothing it drove until the first tick).
     h.session.reload_scripts()
+    h.session.tick(["scripted"], t=0.0, dt=1 / 60, frame=0)
 
     driven = h.session.get_script_driven_uniforms("scripted")
     assert driven == {"u_wave"}, f"expected u_wave script-driven, got {driven}"
@@ -139,14 +144,17 @@ def main() -> int:
     # re-resolve so the rest of the check (broken-script) has a live binding again.
     h.session.reload_scripts()
 
-    # Break the script -> the frame must still render (frozen, non-crashing) + record an error.
+    # Break the script -> the frame must still render (frozen, non-crashing) + record an error. The
+    # raw throw fires inside update() before the dict is built, so it is a behavior-level error under
+    # the sentinel key (node, "script.py") — not a per-key (node, "u_wave") shape error (048: one
+    # object, one coherent failure).
     _seed_scripted_node(h.project_dir, _BROKEN)
     h.session.reload_scripts()
     p_broken = h.render_at(3.0, "scripted")
     assert p_broken, "a broken script crashed the render instead of freezing"
     assert (
         "scripted",
-        "u_wave",
+        "script.py",
     ) in h.session.script_engine.errors, "no ScriptError recorded"
 
     print(

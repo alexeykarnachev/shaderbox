@@ -896,6 +896,17 @@ class App:
         if seed_starter and not self.ui_nodes:
             self.session.seed_starter_node(self.set_current_node_id)
 
+        # load() restores current_node_id by direct field assignment (not set_current_node_id), so
+        # _on_current_node_changed never fires for the restored node and its shader tab is never
+        # opened — the editor stays blank until a node switch. Open it here. A stale pointer at a
+        # deleted node reselects a live one (else a permanent blank with no recovery).
+        if self.current_node_id and self.current_node_id in self.ui_nodes:
+            self.ensure_shader_tab(self.current_node_id)
+        elif self.ui_nodes:
+            # No (or a stale) current node, but the project has nodes: select one so the editor
+            # opens its shader tab instead of staying blank (set_current_node_id fires the tab open).
+            self.set_current_node_id(next(iter(self.ui_nodes)))
+
         # app_state was just replaced, so the effective binding map is recomputed per project.
         self._merge_effective_bindings()
         # Restore persisted layout prefs into the live attrs (save() mirrors them back).
@@ -1020,27 +1031,23 @@ class App:
         self._focus_or_add_tab(EditorTab(path=source.path, kind="lib"))
         return session
 
-    def open_script_for(self, node_id: str, name: str | None) -> None:
-        # Open a uniform's script (name set) or the node-brain (name None) in a tab, lazily creating
-        # the file first if absent (045 — replaces the OS-editor launch). The next reload_scripts
-        # binds a fresh file. Frozen mid-copilot-turn (a script write races the reload).
+    def open_script_for(self, node_id: str) -> None:
+        # Open the node's `script.py` in a tab, lazily creating it if absent (048 — one script per
+        # node). The next reload_scripts binds it. Frozen mid-copilot-turn (a write races the reload).
         if self.copilot_turn_active:
             return
         try:
-            if self.session.script_state_for(node_id, name) == "absent":
-                self.session.create_script(node_id, name)
-            path = self.session.script_path_for(node_id, name)
+            if not self.session.has_script(node_id):
+                self.session.create_script(node_id)
+            path = self.session.script_path_for(node_id)
         except Exception as e:
             self.notifications.push(
                 "Failed to open script", color=COLOR.STATE_ERROR[:3]
             )
-            logger.error(f"open_script_for failed for {node_id}/{name}: {e}")
+            logger.error(f"open_script_for failed for {node_id}: {e}")
             return
         self.get_session(ShaderSource.load(path))
-        kind = "node_script" if name is None else "uniform_script"
-        self._focus_or_add_tab(
-            EditorTab(path=path, kind=kind, node_id=node_id, name=name)
-        )
+        self._focus_or_add_tab(EditorTab(path=path, kind="script", node_id=node_id))
 
     def get_session(self, source: ShaderSource) -> EditorSession:
         # Lazy-create a session bound to this source's path (the stable identity);
@@ -1160,35 +1167,20 @@ class App:
             )
             logger.error(f"Failed to open directory {node_dir}: {e}")
 
-    # --- Script UI (feature 042): thin App-side wrappers over the headless ProjectSession ---
-    def is_uniform_scriptable(self, node_id: str, name: str) -> bool:
-        return self.session.is_uniform_scriptable(node_id, name)
-
-    def set_script_active(self, node_id: str, name: str | None, active: bool) -> None:
-        # The script-local bar's Activate action (047): flip the model active flag (the engine binds
-        # or drops it on the next reload). Frozen mid-copilot-turn (a flag flip races the reload poll).
+    # --- Script UI (feature 048): thin App-side wrappers over the headless ProjectSession ---
+    def set_uniform_stopped(self, node_id: str, name: str, stopped: bool) -> None:
+        # The per-uniform play/stop toggle + the auto-stop-on-manual-edit (048): freeze/resume the
+        # script's write to this uniform. Frozen mid-copilot-turn (a flag flip races the reload poll).
         if self.copilot_turn_active:
             return
-        self.session.set_script_active(node_id, name, active)
+        self.session.set_uniform_stopped(node_id, name, stopped)
 
-    def detach_script(self, node_id: str, filename: str) -> None:
-        # Trash a script (recoverable); the next reload drops the binding + clears its error.
-        self.session.detach_script(node_id, filename)
-        self.notifications.push(f"Detached {filename}")
-
-    def copy_into_current_editor(self, body: str) -> None:
-        # Drop a chosen script's body into the active editor buffer (047 copy-content selector): a
-        # plain text copy, marking the buffer dirty (the user saves to persist) — NOT a re-bind.
-        # Frozen mid-copilot-turn. `set_text` resets the editor's undo index to 0, so force the
-        # buffer dirty via a saved_undo sentinel get_undo_index() (always >= 0) can never match —
-        # else a fresh session (saved_undo 0) reads clean and the copy never flushes.
-        if self.copilot_turn_active or not body:
+    def set_node_all_stopped(self, node_id: str, stopped: bool) -> None:
+        # The whole-node play/stop toggle (048): freeze/resume every driven uniform at once. Frozen
+        # mid-copilot-turn.
+        if self.copilot_turn_active:
             return
-        session = self.get_current_session_if_exists()
-        if session is None:
-            return
-        session.editor.set_text(body)
-        session.saved_undo = -1
+        self.session.set_node_all_stopped(node_id, stopped)
 
     # App-side editor-session cleanup, reached back into from ShaderLibFileManager when it
     # trashes/renames a lib file (the picker UI drives the CRUD on the manager directly).
