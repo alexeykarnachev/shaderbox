@@ -1001,9 +1001,13 @@ def test_brain_stub_emits_explicit_import_for_referenced_types(tmp_path: Path) -
     # The stub's import line names ScriptBehavior + Ctx always, plus only the output types the
     # node's uniforms reference. Falsifier: a referenced type missing, or an unreferenced one emitted.
     body = brain_stub_for([_u("u_v3", dim=3)])  # type: ignore[arg-type]
-    assert "from shaderbox.scripting import" in body
-    assert "ScriptBehavior" in body and "Ctx" in body and "Vec3" in body
-    assert "Vec2" not in body and "Text" not in body  # not referenced
+    # Scope the assertion to the IMPORT line (the docstring prose mentions Vec2/Vec3/Vec4 generically).
+    import_line = next(
+        line for line in body.splitlines() if "from shaderbox.scripting import" in line
+    )
+    assert "ScriptBehavior" in import_line and "Ctx" in import_line
+    assert "Vec3" in import_line
+    assert "Vec2" not in import_line and "Text" not in import_line  # not referenced
 
 
 # ---- ctx is frozen ----
