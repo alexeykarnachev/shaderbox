@@ -116,6 +116,23 @@ corrects.
    found here is a FAIL, not pass-with-caveat. (See `## Recipes` for what the app needs to run and
    what *can't* be exercised without secrets — e.g. the Telegram share tab.)
 
+   **Verification design — make each check falsifiable, and verify the CONSUMER not the producer:**
+   - **Each manual-check / test step fails for EXACTLY ONE reason.** Prefer a measured assert, a named
+     canary, or a disk-readback over "feels responsive" / "looks right" — a step that can pass for two
+     different reasons verifies neither.
+   - **Name the FALSIFIER per invariant.** For every guarantee, state the input that SHOULD break it
+     and confirm the test goes red under the bug — a test that passes whether or not the bug exists is
+     theater. (For a divergence bug: accumulate the divergence on the LIVE object, then assert.)
+   - **An unwired / dead / commented-out mechanism counts as ABSENT — name the line that READS it and
+     the test that fails if the wire is cut.** This is the cheapest guard against the corpus's most
+     expensive recurring mistake: a spec'd safety (a flag, a per-turn save, a retry cap) shipped as a
+     no-op — named, commented, even given config, but never CONNECTED, and it passes paper review every
+     time (001 file-lifecycle promises; 020·12 `max_edit_retries` read nowhere; 020·15 editor-lock flag
+     read by nothing; 022 the headline per-turn save never wired). "Defined" ≠ "wired". It's
+     mechanically greppable: grep the symbol for a READER, not just its definition. Make this an
+     explicit line in the spec's Manual-verification section — for each safety guarantee, the call site
+     that reads it + the test that exercises that consumer.
+
 8. **Sanitization sweep** — the `/sanitize` skill. Separate commit (or its own line in the commit
    message).
 

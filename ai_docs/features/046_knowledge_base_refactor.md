@@ -7,13 +7,13 @@ beyond possibly adding one new skill file. Maintainer-owned: the audit pre-appli
 doc fixes + the 5 small B-block fixes (see roadmap); THIS spec is the judgment-call remainder the
 maintainer reviews and lands deliberately.
 
-**Source of truth for the full findings (cite, don't re-paraphrase): `ai_docs/_audit_2026-06-13/report.md`**
-(the raw per-cluster structured output + the synthesizer's report). Every insight/mistake/lift row
-below points back to a report section; the report carries the verbatim instances + grep-able phrases.
-The audit workflow that produced it: `ai_docs/_audit_2026-06-13/audit_workflow.js` (re-runnable).
+**Source of the full findings:** the 2026-06-13 nightly audit — `ai_docs/_audit_2026-06-13/report.md`
+(the raw per-cluster output + the synthesizer's report) and `audit_workflow.js` (the re-runnable
+workflow). Both were deleted once this wave filed every item (see ## Status); retrieve them from git
+history at commit `4b0f379` if you need the verbatim instances + grep-able phrases the rows below cite.
 
-This spec is the WORK LIST. It is intentionally not a second copy of the report — when you file an
-item, the canonical home gets the durable rule and this spec's row becomes a pointer (one-canonical-home).
+This spec was the WORK LIST and is now the pointer-of-record: each item's durable rule lives at its
+canonical home (## Status maps item → home), not here (one-canonical-home).
 
 ---
 
@@ -174,10 +174,33 @@ Ranked:
 
 ## Status
 
-- Spec drafted from the audit report 2026-06-14. NOT yet executed — this is the work list the
-  maintainer lands deliberately from the desktop.
-- Cold-start reachability: the `roadmap.md ## Active context` banner names 046 as OPEN + links this
-  spec + the report, so a fresh agent inherits it on cold-start step 2.
-- The full report `ai_docs/_audit_2026-06-13/report.md` + the workflow `audit_workflow.js` stay in
-  the repo as the durable source until 046 is executed; delete the `_audit_2026-06-13/` dir in the
-  commit that finishes filing every item (resolved-entries-get-deleted).
+DONE (2026-06-14). The work list above is filed; each item now lives at its canonical home, and this
+spec is the pointer of record (one-canonical-home — the durable rule lives at its home, not here).
+
+**Where each item landed:**
+- **A1** (045 tabbed-editor) → `conventions.md ## Design decisions`, the "Inline editor state lives on
+  `App`; one `TextEditor` per opened FILE" bullet (rewritten to the `editor_tabs`/`active_tab_index`
+  reality + a new revisit trigger).
+- **A2** (row 020 worklog) → `roadmap.md` row 020 collapsed to one dense brief.
+- **B1** (the skill) → `.claude/skills/copilot-llm-agent-design/SKILL.md` (decision: a dedicated skill,
+  not the conventions-fallback). The audit's "pointer from the `claude-api` skill's caching section" is
+  a NON-ACTION: `claude-api` is a Claude Code BUILT-IN skill (not a repo/user-owned file), so it can't be
+  edited — the new skill is reachable on its own via its description triggers.
+- **B2** → `conventions.md ## Design decisions`: four emergent LAWS lead the section
+  (structural-impossibility, speculative-machinery, funnel-not-per-caller, stateless-rebuild); the
+  latch bullet extended with the one-primitive + teardown recipe; four concrete patterns added
+  (worker/thread-affinity, persistence posture, name-keyed-dict drift, snapshot/restore correctness).
+- **B3** → `conventions.md ## Known quirks`: the v3d-codegen-at-first-draw reason + the
+  `MESA_*`/`SHADERBOX_DATA_DIR` module-top-before-import rule.
+- **B4** → `dev_flow.md` step 7: the verification-design rule (one-reason steps + named falsifier +
+  "unwired = absent: name the reader + the wired test").
+- **C** (10 recurring-mistake classes) — self-critique, not separately filed; the cheapest guardrails
+  that graduate are B4 (#1, unwired=absent), B2 structural-impossibility (#5), B2 funnel (#7), and the
+  better-model test in the skill (#9). The full instance lists stay in this spec + the report's git
+  history.
+- **D** → `roadmap.md`: header softened (banner is authoritative "what's next"; a row appears once a
+  spec exists); long rows 045/027/041/044/025 trimmed; 028/005 already flipped `partial`→`done` by the
+  audit's B-block commit (`83f9439`); the 043 pending-row question resolved by the header soften.
+
+The `_audit_2026-06-13/` report + workflow are deleted in this commit (durable source until filed,
+then resolved-entries-get-deleted; git history retains them).

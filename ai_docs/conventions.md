@@ -64,6 +64,45 @@ belong in the feature spec (`ai_docs/features/NNN_*.md`). This file is not a cha
 
 ## Design decisions (we decided X; revisit if Y)
 
+*(The first cluster below are cross-cutting design LAWS — how to shape a decision — re-derived under a
+dozen names across features; read them at spec-review time. The rest are concrete architecture
+decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refactor.md`.)*
+
+- **Structural impossibility over guard-piles — the first question of any validation-heavy review.**
+  If you find yourself adding a SECOND wave of guards to second-guess what an actor (a model, a caller,
+  a migration) MEANT, the CONTRACT is unsound — redesign so the unsafe outcome can't be EXPRESSED, then
+  delete the guards. The repo keeps converging on this: `extra='forbid'` makes a bad migration LOUD
+  instead of silently dropping keys; gate on actual-rendered-size, not stamped intent; pick the
+  dirty-signal the success path CLEARS (`node.program is None`), not a derived value a reset keeps
+  coherent; content-addressed edits make silent mislocation impossible by construction. The canonical
+  counter-example is the five 038 brace-structure guards, ALL deleted by 039 (the 020·14→036→038→039
+  arc — two wasted guard waves). When a spec's decision section is mostly validation logic, ask this
+  first. Revisit: never — a guard pile that keeps growing IS the trigger.
+- **Speculative machinery: the test is "is REMOVING it churn?"** Two rules coexist — "cut speculative
+  API surface at design review" (AppContext deleted 002, `ctx.state` deleted 041) AND "keep latent
+  machinery dormant if cheap and reversible" (010 FitPolicy enums kept). The reconciling axis: surface
+  you must TEACH or MAINTAIN — an ABC method, a model-visible enum, a curated namespace whose every
+  omission is a NameError — gets CUT; inert latent code with zero teach/maintain cost AND a named
+  near-future consumer stays dormant. Don't abstract from N=1 (write the second real consumer's full
+  field list — <30% lands inside ⇒ wrong axis); DO generalize when a simplicity constraint forces
+  copy-paste of the feature's own essence (044's Verlet step across 4 files → the brain). Re-litigated
+  from scratch in 002/010/041 for want of this bullet. Revisit if a third reconciling axis appears.
+- **A cross-cutting guarantee is enforced at the single FUNNEL, not per-caller.** When an invariant
+  must hold on EVERY path of a fan-out, put the bracket at the one shared funnel (or lift the fact ONTO
+  the entity) + ONE invariant test asserting coverage across all paths — never a per-call-site bracket
+  that a sibling silently misses. The per-caller bracket is a KNOWN dead-end (041 did it 3× before the
+  `Node.render_media` funnel; 028's pointer clobber fixed in smoke then re-clobbered by the fixture →
+  real fix one gate in `App.__init__`; the `.trash/` filter on one glob but not the watcher's). A
+  SECOND fix of the same bug at a sibling site is the trigger to move to the funnel. This is the
+  in-repo instance of the global blast-radius rule (`~/.claude/CLAUDE.md` — fix at the shared root).
+- **Stateless-rebuild over stateful-daemon; consensus is not evidence.** Before building a daemon to
+  hold expensive state, check whether that state is ALREADY cheaply serialized — if a code-read shows
+  the rebuild is ~1 s (027: the conversation is a free NL-only replay; the EGL+worker rebuild it'd
+  protect is trivial), the daemon is solving a non-problem. Corollary, hard-won: a MAJORITY of design
+  agents agreeing is NOT evidence (one code-grounded contrarian overturned three on 027). When a
+  majority converges on a design resting on a "state is expensive" / "this is slow" premise, require a
+  code-grounded devil's-advocate that checks the premise against the runtime. Revisit: never (a law).
+
 - **The shader library is layered around SIGNED distance (feature 032).** Sources `SB_sd_*` return
   an SDF (negative inside; documented exceptions like the zero-width `SB_sd_segment`); operators
   `SB_op_*` map SDF->SDF; renderers (`SB_fill`/`SB_fill_aa`/`SB_glow`) map SDF->mask. A new public
@@ -182,11 +221,18 @@ belong in the feature spec (`ai_docs/features/NNN_*.md`). This file is not a cha
   (`popup_state != CLOSED`) is the render-gate question. The command palette (`is_palette_open`) stays
   a separate bool — non-modal, coexists with any modal. No popup classes. Revisit if a popup grows
   internal state that doesn't belong on `App`.
-- **Inline editor state lives on `App`; disk is the source of truth.** One `TextEditor` per node
-  (+ a parallel dirty-baseline dict), created lazily; `app.save()` flushes the dirty editor before
-  writing the file; the mtime watcher re-syncs from disk on external change (disk wins). Editor
-  per-instance footguns (palette, FPE-while-modal, cursor, font sizing) live in `## Known quirks`.
-  Revisit if multi-file-per-node editing lands.
+- **Inline editor state lives on `App`; disk is the source of truth; one `TextEditor` per opened
+  FILE.** The editor is a TAB BAR (feature 045): an ordered `editor_tabs: list[EditorTab]` +
+  `active_tab_index`, over a path-keyed `editor_sessions: dict[Path, EditorSession]` (the lazily-built
+  `TextEditor` + its dirty baseline, one per on-disk file). A tab's `kind` (`shader` / `node_script` /
+  `uniform_script` / `lib`) drives its semantic label + whether the active/inactive script toggle
+  shows; the same file is never opened twice (`_focus_or_add_tab` focuses the existing tab). Editing
+  acts on the ACTIVE tab: `flush_current_editor()` flushes its dirty editor before any save; the mtime
+  watcher re-syncs every open session from disk on external change (disk wins). A node's editors close
+  with the node (lib tabs survive); a renamed file re-keys its session in place. Editor per-instance
+  footguns (palette, FPE-while-modal, cursor, font sizing) live in `## Known quirks`. Revisit if a tab
+  needs durable per-tab state beyond its open files (e.g. persisting the open-tab set across restart) or
+  a 5th editable `kind` lands.
 - **`InlineInput` dataclass for mutually-exclusive inline editors.** A picker / panel hosting
   multiple inline text-input affordances (rename / new-file / new-dir) uses one `InlineInput`
   instance per kind — `target: Path | None`, `buf: str`, `needs_focus: bool` with
@@ -216,6 +262,12 @@ belong in the feature spec (`ai_docs/features/NNN_*.md`). This file is not a cha
   `cancel_turn`/`reset_conversation` use `reusable=True` (no latch), so only the release path needs the
   re-arm. A NEW such primitive must mirror this: `reopen()` + a call beside the existing two in
   `enqueue_turn`. Revisit if the latch model changes (e.g. a per-primitive ready flag replaces `_shutdown`).
+  More generally: a blocking worker↔main round-trip is ONE primitive shape — `CopilotBridge`
+  (worker→main-GL) and `GateChannel` (worker→UI-confirm) are mirror DIRECTIONS of it, not two designs
+  (the mirror-the-sibling default produced both AND the dropped-`reopen()` bug). Its teardown contract:
+  `cancel_all()` to release every blocked waiter BEFORE `join(timeout)`; the worker thread is
+  **non-daemon** so it isn't killed mid-op; on a join timeout you ABANDON the survivor rather than block
+  shutdown forever. A new such primitive carries the whole bundle, not just the happy-path round-trip.
 - **The "current node" is a first-class subject; how a copilot tool addresses a node scales with the
   side effect's reversibility.** The app has exactly one selected node (`App.current_node_id`); the UI
   shows it, the editor binds to it; `switch_node` is the one tool whose job is to change it. A NEW
@@ -409,6 +461,44 @@ belong in the feature spec (`ai_docs/features/NNN_*.md`). This file is not a cha
   an int texture-unit). `ENGINE_DRIVEN_UNIFORMS` (in `core.py`) is the one home for the
   `u_time/u_aspect/u_resolution` skip set — never re-list the three names. Revisit if uniform defaulting
   needs a value the GL default can't express.
+- **Thread/GL affinity is enforced by METHOD ownership, not import boundaries; cross-thread reactions
+  are injected callbacks.** GL objects live with the render thread; a worker thread never touches
+  moderngl — affinity is a property of WHICH method runs where (the `Exporter` ABC's render-thread vs
+  worker-thread split), checked by review, not by what a module can import. Free lunches the repo
+  reuses: the mtime watcher already marshals work to the main thread, so a worker that must touch GL
+  after a file write rides the watcher rather than inventing a queue. A worker→main reaction returns
+  NOTHING — it fires an injected `on_*` callback (the `ProjectSession` idiom), because the consumer
+  (`App`) is off the call stack mid-turn. Persist a project split at the QUIESCENT between-turns
+  boundary (the worker is idle — no lock needed; 022's save gate). Classify a constructor's deps by
+  VOLATILITY: project-dependent state comes through getters (it changes when the project switches),
+  only build-time-shipped values are frozen into the instance. Revisit if a worker genuinely needs a
+  synchronous return from main (then it's a blocking primitive — see the latch bullet, not a callback).
+- **Persistence-evolution posture: additive is fail-soft + defaulted; an intentional reset DROPS
+  fields so `extra='forbid'` REJECTS.** `extra='forbid'` on a persisted model is the VERIFIABILITY
+  primitive — it makes a stale/foreign key LOUD instead of silently dropped, so it's the default for
+  any state read back by the app (`UIAppState`). Adding a field is backward-compatible: make it
+  defaulted + loose-typed-optional + fail-soft on load + bump only the provenance/version stamp (no
+  migration). A field whose meaning intentionally CHANGED is the opposite move — actively drop the old
+  key so `extra='forbid'` rejects an old file into the fail-soft path, rather than silently
+  reinterpreting it. An unknown enum member / message role degrades to a plain-text fallback, never a
+  hard load failure (a future-written file must still open). Revisit if a model needs a true ordered
+  migration chain (then a real `load_and_migrate` ladder, not field-by-field defaults).
+- **Two parallel name-keyed dicts that must stay in lockstep are a drift smell — lift the fact ONTO
+  the entity + pin it with ONE invariant test.** When two `dict[name, X]` and `dict[name, Y]` are
+  keyed by the same identifier and a new entity must be added to BOTH, a caller WILL forget one (029
+  found `_TOOL_VERBS` + `_GATE_PROMPTS`; the 031 sweep found 10 instances repo-wide). The remedy is
+  structural, not vigilance: make the facts FIELDS on the one entity (`ToolDefinition`), resolved
+  through one registry, and add a single test asserting every entity carries every fact. Revisit only
+  if a fact genuinely can't live on the entity (then it's a different concern, not a parallel dict).
+- **Snapshot/restore: serialize the LIVE object, restore by reload-and-replace across EVERY live
+  surface; a serialize routine must not MUTATE what it serializes; capture is best-effort.** Disk is
+  NOT live state — a blind dir-copy captures a stale `node.json`, so a snapshot serializes the live
+  in-memory object. Restore replaces the live object on every surface that holds a reference (not just
+  the one you're looking at), via reload-and-replace. A serialize path that mutates as a side effect
+  (rebinding `source.path` while writing) is LATENT CORRUPTION — give it a no-rebind/pure mode.
+  Capture is BEST-EFFORT: it must never fail the operation it's guarding (a checkpoint that can't
+  snapshot logs and proceeds, it doesn't abort the user's edit). Revisit if a restore must be
+  transactional (all-or-nothing across surfaces) rather than best-effort.
 - **The copilot tool boundary (`registry.execute`) splits domain-reject from bug.** A `CopilotToolError`
   is a DELIBERATE reject whose message is authored for the model — surfaced verbatim, logged at warning.
   Any other exception is an unexpected bug — only its class name reaches the model (message/traceback
@@ -439,7 +529,22 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   first. Mesa's linker also constant-folds a compile-time-constant glyph index and TRIMS the
   uniform array's ACTIVE size to a prefix of the declaration (verified on Mesa 24.2.8/V3D:
   `array_length` reports 1, a full-size `write` raises and the table stays zero) — `Node.compile()`
-  clamps the table write to `array_length * element_size`.
+  clamps the table write to `array_length * element_size`. The deeper reason tables beat branches here:
+  V3D defers final GPU codegen to the FIRST DRAW (it benchmarks up to ~13 register-allocation
+  strategies then), so a big branchy `switch`/`if`-ladder pays its whole codegen as a one-time
+  first-draw stall (the pre-032 inlined glyph switch: ~20 s) — a flat data-table lookup doesn't. Prefer
+  data TABLES over branchy GLSL on any V3D path.
+- **A `MESA_*` / `SHADERBOX_DATA_DIR` env override must be a MODULE-TOP side-effect set BEFORE the first
+  `shaderbox` import, and fail LOUD if it can't be.** `MESA_GL_VERSION_OVERRIDE` /
+  `MESA_GLSL_VERSION_OVERRIDE` (lifting the reported GL version to 4.6/460 so `#version 460` compiles on
+  a v3d/llvmpipe context that reports ≤4.5) are read by the driver AT context creation;
+  `SHADERBOX_DATA_DIR` is read by `paths.app_data_dir()` AT import time. So a harness/script that needs
+  them sets them at the very top of its entry module, before importing anything under `shaderbox` (the
+  worked pattern: `scripts/dogfood/harness.py`'s module-top `os.environ.setdefault(...)` block, then
+  `import glfw  # noqa: E402`). Set too late, the context is already created / the path already resolved
+  and the override silently no-ops — which reads as "the engine is broken" (a version-error compile, or
+  state landing in the wrong dir), not as the config mistake it is. Never bury such an override inside a
+  function.
 - **A glfw key-filter callback must NEVER swallow RELEASE events.** The Esc filter
   (`app.py::_install_escape_filter`) gates on `escape_has_job()`, but the job routinely
   disappears between press and release (Esc's own handler defocused the chat) — a swallowed
