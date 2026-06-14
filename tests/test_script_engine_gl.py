@@ -118,6 +118,33 @@ def test_brain_value_reaches_gpu(gl_ctx: moderngl.Context, tmp_path: Path) -> No
         node.release()
 
 
+_UTIME_SRC = """#version 460 core
+in vec2 vs_uv;
+uniform float u_time;
+out vec4 fs_color;
+void main() {
+    fs_color = vec4(0.5 + 0.5 * sin(u_time), 0.0, 0.0, 1.0);
+}
+"""
+
+
+def test_render_clock_honors_passed_u_time(gl_ctx: moderngl.Context) -> None:
+    # The 043 polish render-clock invariant (the consumer side of _render_facts_for(node, t=mid[0])):
+    # a u_time-reading shader rendered at an EXPLICIT t produces the frame for THAT t, not wall-clock 0.
+    # The corroborating script-probe render passes t=mid[0]; if Node.render ignored it (or the caller
+    # rendered at wall-clock 0 while injecting t=0.5 values), the agent would get a frame that never
+    # existed. Falsifier: px at t=pi/2 == px at t=0 -> u_time didn't reach the GPU at the passed t.
+    node = _node(gl_ctx, _UTIME_SRC)
+    node.render(u_time=0.0)
+    px_t0 = _pixel(node)
+    node.render(u_time=1.5708)  # sin(pi/2)=1 -> red channel ~255
+    px_half = _pixel(node)
+    assert px_t0[0] != px_half[0], "Node.render ignored the passed u_time"
+    assert px_half[0] > px_t0[0]  # brighter at the later phase
+    with contextlib.suppress(Exception):
+        node.release()
+
+
 def test_brain_shape_mismatch_freezes_and_records(
     gl_ctx: moderngl.Context, tmp_path: Path
 ) -> None:
