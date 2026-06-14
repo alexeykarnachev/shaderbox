@@ -37,6 +37,13 @@ class CopilotConfig:
     # (ink/bbox/luma off a tiny offscreen render). Size is the square probe edge.
     render_facts_enabled: bool = True
     render_facts_size: int = 64
+    # Feature 043 script-write motion probe: the sample times (seconds) the dry-run captures
+    # driven values at (the value-diff motion verdict), the fps the dry-tick steps at (pinned to
+    # the export clock so an integrator accumulates the same way render_video will), and the
+    # epsilon below which two sampled values count as unchanged (the static/animating threshold).
+    motion_sample_times: tuple[float, ...] = (0.0, 0.5, 1.0)
+    motion_fps: int = 12
+    motion_value_eps: float = 1e-4
     # A list-arg above this count trips a BULK-policy gate (§2.3 / §F4).
     bulk_gate_threshold: int = 5
     # Worker join() timeout at shutdown; a blocking network read may outlive it

@@ -39,13 +39,23 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   its `media/`/`textures/` captured too (decision 9 snapshots only the two text files today).
 - The rollback feature (020·30) is the one fragility of its log-what-you-touch model: capture is
   opt-in per mutation seam. The existing seams cover edit/write/set_uniform/create/delete/
-  switch + lib edits (039's `write_shader` rides the shared persist seam, so it captures). A new tool that mutates durable state without a capture call leaves an
-  un-revertable change. Spec: `ai_docs/features/020_copilot_agent/30_turn_rollback.md` (decision 2).
-  SPECIFICALLY for 043 (the copilot write-behavior tool): it writes `nodes/<id>/scripts/script.py` (one
-  script per node, feature 048), a durable file the checkpoint does NOT snapshot today — it must
-  `_capture_node`-equivalent the script file (or a new `_capture_script` seam) into the active checkpoint,
-  else a script write escapes undo.
+  switch + lib edits (039's `write_shader` rides the shared persist seam, so it captures) + script
+  writes (043's `_capture_script` seam: a pre-existing `script.py` rides the node snapshot dir, a
+  created one gets a `created_scripts` marker → delete on revert). A new tool that mutates durable
+  state without a capture call leaves an un-revertable change. Spec:
+  `ai_docs/features/020_copilot_agent/30_turn_rollback.md` (decision 2).
 
+
+## [DEFERRAL] copilot scripting follow-ons (043): edit_script + render_video pixel-facts
+- **Trigger (edit_script):** a dogfood/user trace shows the agent thrashing on whole-file
+  `write_script` rewrites of a brain grown past trivial (it can't make a one-line tweak cleanly).
+  Then add `edit_script` (old_str/new_str, the `edit_shader` contract reused) — dropped from 043 as
+  pure per-iteration tool tax on a ~30-line file `write_script` already covers.
+- **Trigger (render_video pixel-facts):** a dogfood run where the agent renders a video and can't
+  tell if the deliverable is right (the `write_script` value-diff motion verdict proved insufficient
+  because the clip's interesting window isn't at t=0). Then attach a first/last-frame `render_facts`
+  pair to `render_video`'s result. The copilot `render_video` also inherits the t=0-only render
+  window (the sticker-render deferral below).
 
 ## [DEFERRAL] script-engine cross-uniform shared state + compute-order guarantee (feature 042+)
 - **Trigger:** a real workflow needs TWO scripts to share mutable state (one writes, another reads —

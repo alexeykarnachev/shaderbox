@@ -19,10 +19,12 @@ import time
 from collections.abc import Callable, Iterator
 from pathlib import Path
 
+import moderngl
 from loguru import logger
 
 from shaderbox.copilot.backend import CopilotBackend
 from shaderbox.copilot.capabilities import CopilotCapabilities
+from shaderbox.copilot.config import COPILOT_CONFIG
 from shaderbox.copilot.llm.openrouter import OpenRouterLLMClient
 from shaderbox.copilot.persistence import archive_conversation
 from shaderbox.copilot.revert import RevertExecutor
@@ -37,6 +39,7 @@ from shaderbox.scripting import (
     EngineContext,
     MouseState,
     ScriptEngine,
+    ScriptProbe,
     brain_stub_for,
     is_scriptable,
 )
@@ -53,6 +56,17 @@ from shaderbox.ui_models import (
     load_nodes_from_dir,
 )
 from shaderbox.util import select_next_value
+
+# Prepended to the engine stub when the COPILOT reads a script-less node (feature 043). The actor
+# copies verbatim, so a no-op commented stub teaches the binding but not MOTION — this gives one
+# concrete ctx.t-driven pattern to adapt (a reference, not a body to save back unchanged).
+_AGENT_STUB_EXAMPLE = (
+    "# EXAMPLE -- a uniform animated over ctx.t (adapt the names + math, don't save this verbatim):\n"
+    "#     pulse = 0.2 + 0.1 * math.sin(ctx.t * 2.0)        # a float oscillates\n"
+    "#     cx = 0.5 + 0.3 * math.sin(ctx.t)                 # a Vec2 drifts\n"
+    "#     cy = 0.5 + 0.3 * math.sin(ctx.t * 2.0)\n"
+    "#     return {'u_radius': pulse, 'u_center': Vec2(cx, cy)}\n\n"
+)
 
 
 def _noop_current_node_changed(old_id: str, new_id: str) -> None:
@@ -156,6 +170,9 @@ class ProjectSession:
             get_is_cancelled=lambda: self.copilot.is_cancelled(),
             get_script_driven_uniforms=self.get_script_driven_uniforms,
             get_script_path=self.script_path_for,
+            get_script_source_view=self.script_source_view,
+            read_script_source=self.read_script_source,
+            write_script_source=self.write_script_source,
             set_current_node_id=self.set_current_node_id,
             save_ui_node=self.save_ui_node,
             sync_editor_from_disk=self.sync_editor_from_disk,
@@ -420,27 +437,68 @@ class ProjectSession:
         # Whether the node's brain has a recorded compile/run error (the open-script glyph error tint).
         return (node_id, "script.py") in self.script_engine.errors
 
+    def _scriptable_uniforms_for(self, node_id: str) -> list[moderngl.Uniform]:
+        # The uniforms a brain can drive: scriptable + not engine-owned. The engine silently drops a
+        # brain key naming an engine uniform, so listing one as a stub example invites a silent no-op
+        # (the legibility gap 048 targets).
+        return [
+            u
+            for u in self.ui_nodes[node_id].node.get_active_uniforms()
+            if is_scriptable(u) and u.name not in ENGINE_DRIVEN_UNIFORMS
+        ]
+
     def create_script(self, node_id: str) -> Path:
         # Write the node-brain `script.py` + return its path; the next reload_scripts binds it (048 —
         # the file's existence IS the binding, no activate step). The skeleton is the engine's stub
         # (explicit imports + an empty-dict body + the node's uniforms as commented examples).
-        ui_node = self.ui_nodes[node_id]
         scripts_dir = self.paths.scripts_dir_for(node_id)
         scripts_dir.mkdir(parents=True, exist_ok=True)
-        # Exclude engine-owned uniforms: the engine silently drops a brain key naming one, so listing
-        # them as commented stub examples would invite a silent no-op (the legibility gap 048 targets).
-        uniforms = [
-            u
-            for u in ui_node.node.get_active_uniforms()
-            if is_scriptable(u) and u.name not in ENGINE_DRIVEN_UNIFORMS
-        ]
         path = self.script_path_for(node_id)
-        path.write_text(brain_stub_for(uniforms), encoding="utf-8")
+        path.write_text(
+            brain_stub_for(self._scriptable_uniforms_for(node_id)), encoding="utf-8"
+        )
         return path
 
     def script_path_for(self, node_id: str) -> Path:
         # The scripts/ path for the node-brain `script.py` (048 — one script per node).
         return self.paths.scripts_dir_for(node_id) / "script.py"
+
+    def read_script_source(self, node_id: str) -> tuple[str, bool]:
+        # The copilot read_script source (feature 043): the live scripts/script.py text, or — when the
+        # node has no brain — the AGENT stub (the engine stub + one un-commented math.sin(ctx.t)
+        # example, so the actor has a concrete animating pattern to copy). The stub is NOT persisted;
+        # returns (text, is_stub).
+        path = self.script_path_for(node_id)
+        if path.is_file():
+            return path.read_text(encoding="utf-8"), False
+        stub = brain_stub_for(self._scriptable_uniforms_for(node_id))
+        return _AGENT_STUB_EXAMPLE + stub, True
+
+    def write_script_source(self, node_id: str, new_text: str) -> ScriptProbe:
+        # The copilot write_script (feature 043): overwrite (or create) scripts/script.py, reload so
+        # the compile verdict is live, then dry-run for the tick-gated facts. Returns the probe; the
+        # backend renders it into the tool result + the motion facts.
+        path = self.script_path_for(node_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(new_text, encoding="utf-8")
+        ui_node = self.ui_nodes[node_id]
+        self.script_engine.reload(
+            node_id, self.paths.scripts_dir_for(node_id), ui_node.node
+        )
+        return self.script_engine.dry_run(
+            node_id,
+            ui_node.node,
+            COPILOT_CONFIG.motion_sample_times,
+            COPILOT_CONFIG.motion_fps,
+        )
+
+    def script_source_view(self, node_id: str) -> tuple[str, BrainStatus | None]:
+        # The working-set script sub-view (feature 043): the live script source ("" = no brain) + its
+        # brain status (sentinel error for the working-set error line). GL-free reads.
+        path = self.script_path_for(node_id)
+        if not path.is_file():
+            return "", None
+        return path.read_text(encoding="utf-8"), self.get_brain_status(node_id)
 
     def uniform_is_driven(self, node_id: str, name: str) -> bool:
         # Whether the brain TARGETS this uniform (playing OR stopped) — the gate for showing the row's

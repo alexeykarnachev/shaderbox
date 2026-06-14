@@ -13,6 +13,7 @@ from shaderbox.scripting.engine import (
     BrainStatus,
     EngineNode,
     ScriptEngine,
+    ScriptProbe,
     brain_stub_for,
     is_scriptable,
 )
@@ -32,6 +33,7 @@ __all__ = [
     "ScriptBehavior",
     "ScriptEngine",
     "ScriptError",
+    "ScriptProbe",
     "Text",
     "Vec2",
     "Vec3",

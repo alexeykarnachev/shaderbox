@@ -22,6 +22,8 @@ from shaderbox.copilot.capabilities import (
     NodeTreeEntry,
     PublishResult,
     RenderResult,
+    ScriptView,
+    ScriptWriteResult,
     SetUniformResult,
     ShaderView,
     SwitchNodeResult,
@@ -46,6 +48,8 @@ class _FakeCaps:
     apply_shader_edit: Callable[[str, str, bool, str], EditResult]
     apply_full_rewrite: Callable[[str, str], EditResult]
     set_uniform: Callable[[str, object, str], SetUniformResult]
+    read_script: Callable[[str], ScriptView]
+    write_script: Callable[[str, str], ScriptWriteResult]
     create_node: Callable[
         [str, str, str, bool], tuple[str, list[CompileErrorInfo], str]
     ]
@@ -81,6 +85,8 @@ def minimal_caps(**overrides: Any) -> CopilotCapabilities:
         "apply_shader_edit": lambda _o, _n, _r, _t: EditResult(matches=0, errors=[]),
         "apply_full_rewrite": lambda _t, _tg: EditResult(matches=1, errors=[]),
         "set_uniform": lambda _n, _v, _node: SetUniformResult(ok=True),
+        "read_script": lambda _node: ScriptView("n0", "node", "", [], is_stub=True),
+        "write_script": lambda _t, _node: ScriptWriteResult(ok=True),
         "create_node": lambda _n, _s, _t, _sw: ("node-new", [], ""),
         "delete_node": lambda _n: DeleteNodeResult(ok=True),
         "switch_node": lambda _n: SwitchNodeResult(ok=True),

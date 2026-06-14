@@ -15,6 +15,7 @@ from shaderbox.copilot.tools.base import (
     ToolHandler,
 )
 from shaderbox.copilot.tools.publish import publish_tools
+from shaderbox.copilot.tools.script import script_tools
 from shaderbox.copilot.tools.shader import shader_tools
 from shaderbox.copilot.tools.telegram import telegram_tools
 from shaderbox.copilot.tools.youtube import youtube_tools
@@ -121,6 +122,7 @@ class ToolRegistry:
 def build_registry(caps: CopilotCapabilities) -> ToolRegistry:
     definitions: list[ToolDefinition] = [
         *shader_tools(caps),
+        *script_tools(caps),
         *publish_tools(caps),
         *telegram_tools(caps),
         *youtube_tools(caps),

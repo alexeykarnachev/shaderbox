@@ -111,6 +111,33 @@ VALUES, NODES, LIBRARY
   a calling node recompiles; confirm by touching a consumer node.
 - `grep(query)`: find a token across nodes + lib (origin-labeled file:line). Locate, then read.
 
+SCRIPTING (node brains -- driving uniforms over time)
+- A node can have ONE Python brain at nodes/<id>/scripts/script.py: its `update(self, ctx)` returns
+  a dict {uniform_name: value} that drives those uniforms EVERY frame. Omitted (or None) keys stay
+  MANUAL. self.* persists across frames; ctx gives t (seconds), dt, frame, mouse.
+- WHICH tool sets a value -- pick by what the user wants:
+    "make it pulse / drift / animate / react over time"   -> write_script (value from ctx.t)
+    "make it brighter / bigger / slower" (one fixed value) -> set_uniform
+    "add a u_glow uniform"        -> edit_shader to declare it, THEN write_script to drive it
+    "change what the shader DOES with a value" (logic)    -> edit_shader (source)
+  A script is for VALUES THAT CHANGE; set_uniform / an inline default is for a value that sits.
+- write_script(node?, new_text) create-or-overwrites the whole brain; read_script(node?) returns it
+  line-numbered. A FRESH node returns the STUB -- its uniforms + each one's value shape (float /
+  Vec2 / Vec3 / Array / Text) + an example to ADAPT (don't save it unchanged).
+- A script-DRIVEN uniform is NOT set_uniform-able (a set is overwritten next tick and rejected,
+  pointing at scripts/script.py). To change a driven value, edit update -- not set_uniform, not the
+  shader default. The brain writes VALUES only: it cannot add a uniform or change a control's look.
+  Declare a new uniform in the SHADER first (inline default is fine -- once driven, the default only
+  seeds the initial value), then drive it.
+- ctx.mouse is FROZEN at center (0.5, 0.5) on export and in the headless motion probe -- a
+  mouse-driven uniform reads STATIC in the motion facts even when correct. For AUTONOMOUS animation
+  drive from ctx.t; reserve ctx.mouse for live-only interactive motion.
+- You SEE a node's script live in the WORKING SET (its own SCRIPT sub-section, rebuilt every step) --
+  no separate read for the current node. A write returns the compile verdict, the uniforms it now
+  drives (a write that drives 0 uniforms animates NOTHING -- a loud fact, not silence), and a motion
+  verdict (which values change across t: ANIMATING / STATIC). Fix a script compile error the same as
+  a shader one.
+
 RENDER & PUBLISH (each user-confirmed)
 - `render_image(node?, width?, height?)` -> PNG; `render_video(node?, seconds, fps?, width?,
   height?)` -> WebM, ALWAYS from t=0. node optional (omit = current; any node renders without
@@ -219,10 +246,19 @@ def _render_working_set_member(view: WorkingSetView) -> str:
     mark = " [current]" if view.is_current else ""
     uniforms = "\n".join(view.uniforms) if view.uniforms else "(none)"
     errors = _format_compile_errors(view.errors) if view.errors else "none"
-    return (
+    member = (
         f"=== {view.name} (id: {view.address}){mark} ===\n{view.listing}\n"
         f"uniforms:\n{uniforms}\nerrors:\n{errors}"
     )
+    if view.script_listing:
+        script_errors = (
+            _format_compile_errors(view.script_errors) if view.script_errors else "none"
+        )
+        member += (
+            f"\n=== {view.name} SCRIPT (scripts/script.py) ===\n{view.script_listing}\n"
+            f"script errors:\n{script_errors}"
+        )
+    return member
 
 
 def _format_compile_errors(errors: list[CompileErrorInfo]) -> str:

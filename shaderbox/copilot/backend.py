@@ -41,6 +41,8 @@ from shaderbox.copilot.capabilities import (
     NodeTreeEntry,
     PublishResult,
     RenderResult,
+    ScriptView,
+    ScriptWriteResult,
     SetUniformResult,
     ShaderView,
     SwitchNodeResult,
@@ -69,6 +71,7 @@ from shaderbox.exporters.youtube import YouTubeExporter
 from shaderbox.glyph_tables import TABLE_UNIFORMS
 from shaderbox.paths import shader_lib_root
 from shaderbox.render_preset import FitPolicy, RenderPreset, ResolutionPolicy
+from shaderbox.scripting import BrainStatus, ScriptError, ScriptProbe
 from shaderbox.shader_errors import ShaderError
 from shaderbox.shader_lib import ShaderLibIndex, parser
 from shaderbox.shader_lib.file_ops import ShaderLibFileManager
@@ -93,6 +96,25 @@ def _to_error_infos(errors: list[ShaderError]) -> list[CompileErrorInfo]:
         )
         for e in errors
     ]
+
+
+def _script_error_info(err: ScriptError) -> CompileErrorInfo:
+    # ScriptError.line is 1-based already (the user source line; -1 = unmapped). Report 0 for unmapped.
+    return CompileErrorInfo(
+        path="script.py", line=err.line if err.line > 0 else 0, message=err.message
+    )
+
+
+def _no_node_error(handle: str) -> CompileErrorInfo:
+    where = f"'{handle}'" if handle else "the current node (none selected)"
+    return CompileErrorInfo(path="", line=0, message=f"no node found for {where}")
+
+
+def _format_script_error(err: ScriptError) -> str:
+    # The agent-facing compile/runtime error line for a script write (feature 043), mirroring the
+    # shader "path:line: message" shape; omit the :line when unmapped.
+    loc = f"script.py:{err.line}" if err.line > 0 else "script.py"
+    return f"{loc}: {err.message}"
 
 
 def _cross_file_note(edited_path: Path, errors: list[CompileErrorInfo]) -> str:
@@ -254,12 +276,14 @@ def _uniform_type_label(u: moderngl.Uniform | moderngl.UniformBlock) -> str:
     return f"{scalar}[{u.array_length}]" if u.array_length > 1 else scalar
 
 
-def _format_uniforms(node: Node) -> list[str]:
+def _format_uniforms(node: Node, driven: set[str]) -> list[str]:
     # "name type = value" rows. Blocks have no scalar value. The shown value comes from the node's
     # uniform_values cache (the same source tabs/node.py reads) — NOT live u.value, which Node.render()
     # overwrites every frame, so a just-set_uniform value would read back stale and the agent loops.
     # Engine glyph tables are skipped outright: their u.value is ~14KB of stroke data the agent
-    # can neither set nor learn from.
+    # can neither set nor learn from. A `driven` uniform shows a marker, not a phantom value: the
+    # copilot path never ticks the brain, so its uniform_values entry is the stale manual default —
+    # showing it as a number contradicts the write that said the script drives it (feature 043).
     rows: list[str] = []
     for u in node.get_active_uniforms():
         if u.name in TABLE_UNIFORMS:
@@ -267,10 +291,66 @@ def _format_uniforms(node: Node) -> list[str]:
         label = _uniform_type_label(u)
         if isinstance(u, moderngl.UniformBlock):
             rows.append(f"{u.name} {label}")
+        elif u.name in driven:
+            rows.append(f"{u.name} {label} = <driven by script.py>")
         else:
             value = node.uniform_values.get(u.name, u.value)
             rows.append(f"{u.name} {label} = {value}")
     return rows
+
+
+def _values_differ(a: object, b: object, eps: float) -> bool:
+    # Recursive epsilon compare over the shapes coerce_one emits (scalar / tuple / list / nested),
+    # structurally like behavior.py::_all_finite. A shape mismatch counts as differ. Used to tell a
+    # driven uniform's value moving across sample times (motion) from a constant (static).
+    if isinstance(a, int | float) and isinstance(b, int | float):
+        return abs(a - b) > eps
+    if isinstance(a, list | tuple) and isinstance(b, list | tuple):
+        if len(a) != len(b):
+            return True
+        return any(_values_differ(x, y, eps) for x, y in zip(a, b, strict=False))
+    return a != b
+
+
+def _uniform_changes(
+    name: str, samples: list[tuple[float, dict[str, object]]], eps: float
+) -> bool:
+    # True when `name`'s value differs by > eps between ANY pair of samples (it animates over t).
+    vals = [s.get(name) for _t, s in samples if name in s]
+    return any(_values_differ(vals[0], v, eps) for v in vals[1:])
+
+
+def _motion_verdict(probe: ScriptProbe, render_line: str, eps: float) -> str:
+    # The value-diff motion signal (feature 043): which driven uniforms change across t (exact,
+    # GL-free) + ONE render line for the "is it visible / FLAT" honesty case the value-diff misses.
+    if not probe.driven:
+        return (
+            "drives 0 uniforms (update returned an empty dict / only orphan keys). Nothing "
+            "animates and every uniform stays manual. Return {name: value} to drive one."
+        )
+    lines = [
+        "values@t={:.1f}: {}".format(
+            t, " ".join(f"{n}={s[n]}" for n in sorted(s)) or "(none)"
+        )
+        for t, s in probe.samples
+    ]
+    changing = sorted(
+        n for n in probe.driven if _uniform_changes(n, probe.samples, eps)
+    )
+    constant = sorted(probe.driven - set(changing))
+    if render_line:
+        lines.append(render_line)
+    if changing:
+        verdict = f"{', '.join(changing)} CHANGE across t (ANIMATING)"
+        if constant:
+            verdict += f"; {', '.join(constant)} constant"
+    else:
+        verdict = (
+            "values UNCHANGED across t (STATIC) -- the script drives these uniforms with values "
+            "that do not vary over ctx.t. If you meant motion, vary a value by ctx.t."
+        )
+    lines.append(f"-> {verdict}")
+    return "\n".join(lines)
 
 
 class CopilotBackend:
@@ -290,6 +370,9 @@ class CopilotBackend:
         get_is_cancelled: Callable[[], bool],
         get_script_driven_uniforms: Callable[[str], set[str]],
         get_script_path: Callable[[str], Path],
+        get_script_source_view: Callable[[str], tuple[str, BrainStatus | None]],
+        read_script_source: Callable[[str], tuple[str, bool]],
+        write_script_source: Callable[[str, str], ScriptProbe],
         set_current_node_id: Callable[[str], None],
         save_ui_node: Callable[[UINode], object],
         sync_editor_from_disk: Callable[[str, str], None],
@@ -320,6 +403,9 @@ class CopilotBackend:
         self._get_is_cancelled = get_is_cancelled
         self._get_script_driven_uniforms = get_script_driven_uniforms
         self._get_script_path = get_script_path
+        self._get_script_source_view = get_script_source_view
+        self._read_script_source = read_script_source
+        self._write_script_source = write_script_source
         self._set_current_node_id = set_current_node_id
         self._save_ui_node = save_ui_node
         self._sync_editor_from_disk = sync_editor_from_disk
@@ -532,12 +618,17 @@ class CopilotBackend:
                 text = node.source.text
                 if kind == "node":
                     self._working_set_add(full_id)
+                driven = (
+                    self._get_script_driven_uniforms(full_id)
+                    if kind == "node"
+                    else set()
+                )
                 views.append(
                     ShaderView(
                         node_id=view_id,
                         name=ui_node.ui_state.ui_name,
                         listing=_number_lines(text),
-                        uniforms=_format_uniforms(node),
+                        uniforms=_format_uniforms(node, driven),
                         errors=_to_error_infos(node.compile_unit.errors),
                     )
                 )
@@ -579,14 +670,20 @@ class CopilotBackend:
         node = ui_node.node
         if node.program is None:
             node.compile()
+        script_text, status = self._get_script_source_view(full_id)
+        script_errors: list[CompileErrorInfo] = []
+        if status is not None and status.sentinel_error is not None:
+            script_errors = [_script_error_info(status.sentinel_error)]
         return WorkingSetView(
             address=short.get(full_id, full_id),
             name=ui_node.ui_state.ui_name,
             listing=_number_lines(node.source.text),
             is_current=(full_id == current),
             is_lib=False,
-            uniforms=_format_uniforms(node),
+            uniforms=_format_uniforms(node, self._get_script_driven_uniforms(full_id)),
             errors=_to_error_infos(node.compile_unit.errors),
+            script_listing=_number_lines(script_text) if script_text else "",
+            script_errors=script_errors,
         )
 
     def _copilot_lib_working_view(self, address: str) -> WorkingSetView | None:
@@ -1335,6 +1432,93 @@ class CopilotBackend:
         except Exception as exc:  # — advisory channel, never break an edit
             logger.debug(f"copilot render facts skipped: {exc}")
             return ""
+
+    def _script_render_line(
+        self, node: Node, samples: list[tuple[float, dict[str, object]]]
+    ) -> str:
+        # ONE corroborating render (feature 043): render the mid sample's driven values to answer
+        # "did the values produce visible ink, or is it FLAT / off-screen / a uniform the shader
+        # ignores?" — the honesty case a value-diff alone misses. Rebinds node.uniform_values to a
+        # merged copy for the render (the live dict OBJECT is never mutated, so the dry_run
+        # no-corruption guarantee holds), restores it in finally. Advisory — never raises.
+        if not samples or not COPILOT_CONFIG.render_facts_enabled:
+            return ""
+        mid = samples[len(samples) // 2]
+        saved = node.uniform_values
+        try:
+            node.uniform_values = {**saved, **mid[1]}
+            line = self._render_facts_for(node)
+        except Exception as exc:
+            logger.debug(f"copilot script render facts skipped: {exc}")
+            line = ""
+        finally:
+            node.uniform_values = saved
+        return (
+            line.replace("render@t=", f"render@t={mid[0]:.1f}s ", 1) if line else line
+        )
+
+    def read_script(self, node: str, /) -> ScriptView:
+        def _on_main() -> ScriptView:
+            node_id = self._resolve_node_or_current(node)
+            if node_id is None:
+                return ScriptView("", "", "", [_no_node_error(node)], is_stub=False)
+            text, is_stub = self._read_script_source(node_id)
+            _text, status = self._get_script_source_view(node_id)
+            errors = (
+                [_script_error_info(status.sentinel_error)]
+                if status is not None and status.sentinel_error is not None
+                else []
+            )
+            return ScriptView(
+                node_id=self._copilot_short_ids().get(node_id, node_id),
+                name=self._get_ui_nodes()[node_id].ui_state.ui_name,
+                listing=_number_lines(text),
+                errors=errors,
+                is_stub=is_stub,
+            )
+
+        return self._bridge.run_on_main(_on_main)
+
+    def write_script(self, new_text: str, node: str, /) -> ScriptWriteResult:
+        def _on_main() -> ScriptWriteResult:
+            node_id = self._resolve_node_or_current(node)
+            if node_id is None:
+                return ScriptWriteResult(ok=False, error=_no_node_error(node).message)
+            self._capture_script(node_id)
+            probe = self._write_script_source(node_id, new_text)
+            if probe.compile_error is not None:
+                return ScriptWriteResult(
+                    ok=True, compile_error=_format_script_error(probe.compile_error)
+                )
+            render_line = self._script_render_line(
+                self._get_ui_nodes()[node_id].node, probe.samples
+            )
+            return ScriptWriteResult(
+                ok=True,
+                driven=sorted(probe.driven),
+                per_key_errors=[
+                    f"{name}: {err.message}" for name, err in probe.per_key_errors
+                ],
+                orphan_keys=[
+                    f"{name}: {err.message}" for name, err in probe.orphan_keys
+                ],
+                motion_facts=_motion_verdict(
+                    probe, render_line, COPILOT_CONFIG.motion_value_eps
+                ),
+            )
+
+        return self._bridge.run_on_main(
+            _on_main, timeout=COPILOT_CONFIG.render_op_timeout_s
+        )
+
+    def _resolve_node_or_current(self, node: str) -> str | None:
+        # A node-id handle (or "" = current) -> full id, or None when it resolves to no live node.
+        # Scripts address only nodes (one script per node), never lib/template handles.
+        if not node:
+            cur = self._get_current_node_id()
+            return cur if cur and cur in self._get_ui_nodes() else None
+        kind, full_id = self._copilot_resolve_source(node)
+        return full_id if kind == "node" and full_id is not None else None
 
     def _copilot_persist_shader(
         self, node_id: str, node: Node, new_text: str

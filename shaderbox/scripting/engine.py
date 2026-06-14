@@ -52,6 +52,20 @@ class BrainStatus:
     soft_errors: list[tuple[str, "ScriptError"]]
 
 
+@dataclass(frozen=True)
+class ScriptProbe:
+    # The synchronous feedback a copilot write_script reads back (feature 043). compile_error is the
+    # live reload verdict (None = clean). The rest come from an ISOLATED dry-tick (the live node + the
+    # live engine state are untouched): driven = the real uniforms the brain drove; per_key_errors =
+    # shape/coercion failures on real uniforms; orphan_keys = keys naming no active uniform (typo);
+    # samples = (t, {name: value}) at each sample time — the motion signal (values differ across t).
+    compile_error: "ScriptError | None"
+    driven: set[str]
+    per_key_errors: list[tuple[str, "ScriptError"]]
+    orphan_keys: list[tuple[str, "ScriptError"]]
+    samples: list[tuple[float, dict[str, Any]]]
+
+
 def is_scriptable(uniform: object) -> TypeGuard[moderngl.Uniform]:
     # A scalar/vector/array uniform the engine can drive — NOT a UniformBlock (no scalar value)
     # and not a sampler (a texture, not a script value). Duck-typed on the shape attrs the
@@ -73,10 +87,17 @@ class EngineNode(Protocol):
     ) -> list[moderngl.Uniform | moderngl.UniformBlock]: ...
 
 
-def _freeze(names: set[str], node: EngineNode, last_good: dict[str, Any]) -> None:
+def _freeze(
+    names: set[str],
+    node: EngineNode,
+    last_good: dict[str, Any],
+    sink: dict[str, Any] | None = None,
+) -> None:
     # Hold each name at its last-good value (a behavior-level failure freezes its whole slot set).
+    # A dry-run passes a `sink`: writes (and the fallback read) land there, never on the live node.
+    target = node.uniform_values if sink is None else sink
     for name in names:
-        node.uniform_values[name] = last_good.get(name, node.uniform_values.get(name))
+        target[name] = last_good.get(name, node.uniform_values.get(name))
 
 
 class NodeScripts:
@@ -365,6 +386,64 @@ class ScriptEngine:
             node_id, node, ctx, brain, {}, {}, set(), set(), set(), frozenset()
         )
 
+    def dry_run(
+        self,
+        node_id: str,
+        node: EngineNode,
+        sample_times: tuple[float, ...],
+        fps: int,
+    ) -> ScriptProbe:
+        # Synchronous copilot feedback (043): compile verdict from the ALREADY-LIVE state (the caller
+        # reloaded the file at write time — no reload here, which would mutate live state), then an
+        # ISOLATED dry-tick. ONE fresh brain is stepped CONTINUOUSLY through the export-clock frames so
+        # self.* accumulates (an integrator animates correctly); every write lands in a per-call sink,
+        # so the live node + live engine state are byte-identical afterward. Returns the driven set,
+        # per-key + orphan errors, and the driven uniforms' VALUES at each sample time.
+        compile_error = self.errors.get((node_id, _BRAIN_FILE))
+        brain = self.fresh_behavior_for(node_id)
+        if brain is None or compile_error is not None:
+            return ScriptProbe(compile_error, set(), [], [], [])
+
+        dt = 1.0 / fps
+        max_frame = max((round(t * fps) for t in sample_times), default=0)
+        want = {round(t * fps): t for t in sample_times}
+        sink: dict[str, Any] = {}
+        errors: dict[tuple[str, str], ScriptError] = {}
+        driven: set[str] = set()
+        skipped: set[str] = set()
+        samples: list[tuple[float, dict[str, Any]]] = []
+        for frame in range(max_frame + 1):
+            ctx = EngineContext(t=frame * dt, dt=dt, frame=frame)
+            self._tick_brain(
+                node_id,
+                node,
+                ctx,
+                brain,
+                {},
+                errors,
+                driven,
+                skipped,
+                set(),
+                frozenset(),
+                values_sink=sink,
+            )
+            if frame in want:
+                samples.append(
+                    (want[frame], {name: sink[name] for name in driven if name in sink})
+                )
+
+        per_key = [
+            (name, err)
+            for name in sorted(driven)
+            if (err := errors.get((node_id, name))) is not None
+        ]
+        orphan = [
+            (name, err)
+            for name in sorted(skipped)
+            if (err := errors.get((node_id, name))) is not None
+        ]
+        return ScriptProbe(None, set(driven), per_key, orphan, samples)
+
     def _tick_brain(
         self,
         node_id: str,
@@ -377,20 +456,24 @@ class ScriptEngine:
         last_skipped: set[str],
         warned: set[str],
         stopped: frozenset[str],
+        values_sink: dict[str, Any] | None = None,
     ) -> None:
+        # `values_sink` (the dry-run path): every uniform-value WRITE lands there + the freeze-fallback
+        # READ consults it, so the LIVE node is never written. None = the live tick (write the node).
+        write_target = node.uniform_values if values_sink is None else values_sink
         active = {u.name: u for u in node.get_active_uniforms()}
         behavior_key = (node_id, _BRAIN_FILE)
         drove_last = set(last_driven)
 
         if brain.error is not None:  # cached compile error — freeze, recorded at reload
             errors[behavior_key] = brain.error
-            _freeze(drove_last, node, last_good)
+            _freeze(drove_last, node, last_good, values_sink)
             return
         try:
             raw = brain.run(ctx)
         except _RuntimeScriptError as e:  # no instance — authored message
             errors[behavior_key] = e.error
-            _freeze(drove_last, node, last_good)
+            _freeze(drove_last, node, last_good, values_sink)
             return
         except Exception as e:  # a raw throw is behavior-level
             errors[behavior_key] = ScriptError(
@@ -399,7 +482,7 @@ class ScriptEngine:
                 f"{type(e).__name__}: {e}",
                 _user_error_line(brain.label, e),
             )
-            _freeze(drove_last, node, last_good)
+            _freeze(drove_last, node, last_good, values_sink)
             return
         if not isinstance(raw, dict):
             errors[behavior_key] = ScriptError(
@@ -407,7 +490,7 @@ class ScriptEngine:
                 "runtime",
                 f"update must return a dict[str, value], got {type(raw).__name__}",
             )
-            _freeze(drove_last, node, last_good)
+            _freeze(drove_last, node, last_good, values_sink)
             return
         errors.pop(
             behavior_key, None
@@ -417,7 +500,9 @@ class ScriptEngine:
         skipped: set[str] = set()
         for name, value in raw.items():
             key = (node_id, name)
-            frozen = last_good.get(name, node.uniform_values.get(name))
+            frozen = write_target.get(
+                name, last_good.get(name, node.uniform_values.get(name))
+            )
             uniform = active.get(name)
             # An engine-owned key (u_time…) is SILENTLY dropped (decision 5): the renderer owns that
             # slot and a brain can't be expected to avoid naming it.
@@ -451,14 +536,14 @@ class ScriptEngine:
                 # A STOPPED key keeps the user's manual value (don't clobber it with stale last-good);
                 # a playing key freezes at last-good, the freeze-as-data behavior.
                 if name not in stopped:
-                    node.uniform_values[name] = frozen
+                    write_target[name] = frozen
                 continue
             errors.pop(key, None)
             last_good[name] = coerced
             # Play/stop (048): a STOPPED uniform's value is NOT written (the manual value sticks); the
             # brain still ran + the name still counts as driven (so the row keeps its play/stop button).
             if name not in stopped:
-                node.uniform_values[name] = coerced
+                write_target[name] = coerced
 
         # An omitted-after-failing key's stale error: clear any key TOUCHED last frame (driven OR a
         # bad/skipped key) but NOT touched this frame (decision 8 — no zombie; an omitted real key

@@ -154,10 +154,11 @@ _SET_UNIFORM_DESC = (
     "Change a uniform's runtime VALUE — for tweaking a number/vector the user controls live "
     "(brightness, speed, a color), WITHOUT editing code. Read the node first so you know the "
     "uniform's type and current value. Only scalar and vector uniforms can be set; samplers, "
-    "uniform blocks, and engine-driven uniforms (u_time, u_aspect, u_resolution) cannot. To "
-    "change the shader's LOGIC, or to add/remove a uniform, edit the SOURCE instead. The value "
-    "is in memory until the user saves the project; you cannot see the result — report the "
-    "value you set, not how it looks."
+    "uniform blocks, and engine-driven uniforms (u_time, u_aspect, u_resolution) cannot. A "
+    "SCRIPT-DRIVEN uniform also cannot be set — the node brain (script.py) overwrites it every "
+    "tick; change it in write_script instead. To change the shader's LOGIC, or to add/remove a "
+    "uniform, edit the SOURCE instead. The value is in memory until the user saves the project; "
+    "you cannot see the result — report the value you set, not how it looks."
 )
 
 _CREATE_NODE_DESC = (

@@ -310,6 +310,24 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   restyled signature is never falsely claimed removed), an unbalanced LIB write by the
   persist-seam brace warning (libs have no standalone compile to scream). Revisit ONLY per 039's Out-of-scope trigger (quoted there verbatim),
   and then via a verified number+text checksum design, never bare anchors.
+- **A copilot SCRIPT-authoring tool is a SEPARATE pair from the shader edit tools, fed SYNCHRONOUSLY
+  by an isolated dry-tick (feature 043).** The copilot drives a node's Python brain
+  (`scripts/script.py`) via `read_script`/`write_script` — NOT a `target:"script:"` overload of the
+  shader tools. The split is structural, not symmetry: a script is a different LANGUAGE (Python, not
+  GLSL → a different content matcher), a different result type (`ScriptError{compile|runtime}` not
+  `CompileErrorInfo`), and carries a "drives uniforms" concept with no GLSL analogue — overloading
+  would force a union return + a matcher-language branch (the guard-pile the structural-impossibility
+  law forbids). The `target:"lib:"` precedent does NOT generalize (it overloads the SAME artifact kind,
+  GLSL). Feedback is the make-or-break: a script's facts are TICK-GATED (the compile verdict comes from
+  `reload`, but the driven set / coercion errors / values need `update` to RUN, and headless has no
+  frame loop), so `ScriptEngine.dry_run` reads the live compile verdict then steps ONE fresh brain
+  CONTINUOUSLY through the export-clock frames (so `self.*` accumulates — an integrator animates) into a
+  `values_sink` that leaves the live node byte-identical. The MOTION verdict is the value-diff across t
+  (GL-free, exact — catches a pulse/color-cycle a pixel-bbox misses) + ONE corroborating render for the
+  "visible / FLAT" honesty case a value-diff can't see. A script write captures into the turn checkpoint
+  (`_capture_script`) like any mutating tool. Revisit if a second script LANGUAGE lands (the dry-tick is
+  language-agnostic via the `Behavior` protocol) or if the agent needs play/stop control (a `stop_uniform`
+  pair, deferred). Spec: `ai_docs/features/043_copilot_scripting.md`.
 - **A copilot tool's interactive output is a STRUCTURED entity the engine renders, never a raw value in
   the model-facing message.** A tool returns `(ok, msg, payload)`: `msg` reaches the LLM, `payload` does
   NOT. A URL / file path / button / panel a tool surfaces goes in `payload` as a structured spec the UI

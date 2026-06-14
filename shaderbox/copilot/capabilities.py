@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol
 
 # The only app surface the copilot package imports: a Protocol the backend
@@ -126,6 +126,11 @@ class WorkingSetView:
     is_lib: bool
     uniforms: list[str]  # "name type = value" rows (node only; [] for a lib)
     errors: list[CompileErrorInfo]
+    # The node's scripts/script.py live source (cat -n; "" = no brain) + its compile/run error
+    # (feature 043). Appended (defaulted) so existing constructors stay valid; a lib view leaves both
+    # at default. Rendered as a "=== <node> SCRIPT ===" sub-section only when script_listing is set.
+    script_listing: str = ""
+    script_errors: list[CompileErrorInfo] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -165,6 +170,34 @@ class EditResult:
     # Whole-file rewrite fact (feature 039): the top-level functions/declarations the
     # rewrite REMOVED, appended to the result so a truncated rewrite is loud. "" otherwise.
     rewrite_note: str = ""
+
+
+@dataclass(frozen=True)
+class ScriptView:
+    # read_script result (feature 043): the node's scripts/script.py source line-numbered + its
+    # compile/run error. is_stub = the node had no brain, so `listing` is the generated stub (not
+    # persisted) the agent adapts; node_id resolves the node it belongs to.
+    node_id: str
+    name: str
+    listing: str  # cat -n style
+    errors: list[CompileErrorInfo]
+    is_stub: bool
+
+
+@dataclass(frozen=True)
+class ScriptWriteResult:
+    # write_script result (feature 043). ok=False + error for an unresolvable target. On ok=True the
+    # compile/motion facts are the synchronous feedback: compile_error (a Python SyntaxError/etc., the
+    # tool fixes it like a shader compile), driven (the uniforms it now drives — empty = the loud
+    # no-op fact), per_key_errors/orphan_keys (named + why), motion_facts (the value-diff verdict +
+    # the one ink/FLAT render line — the headless "is it animating" signal).
+    ok: bool
+    error: str = ""
+    compile_error: str = ""
+    driven: list[str] = field(default_factory=list)
+    per_key_errors: list[str] = field(default_factory=list)
+    orphan_keys: list[str] = field(default_factory=list)
+    motion_facts: str = ""
 
 
 @dataclass(frozen=True)
@@ -260,6 +293,14 @@ class CopilotCapabilities(Protocol):
     def set_uniform(
         self, name: str, value: object, node: str, /
     ) -> SetUniformResult: ...
+
+    # ---- scripting (feature 043): the node-brain authoring surface ----
+    # read_script returns the node's scripts/script.py source (a fresh node returns the generated
+    # stub, unpersisted). write_script create-or-overwrites the whole brain, recompiles, dry-runs it,
+    # and returns the compile + motion facts. Both marshal main-thread (the dry-tick reads the GL
+    # program for active uniforms). node "" = current.
+    def read_script(self, node: str, /) -> ScriptView: ...
+    def write_script(self, new_text: str, node: str, /) -> ScriptWriteResult: ...
 
     # Create a node, then COMPILE it and return its errors. `template` = a template id from
     # template_catalog ("" = the default starter); `source` overrides the template body when

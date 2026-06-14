@@ -26,29 +26,27 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-06-14 (048 single-script + play/stop IMPLEMENTED on `dev`; validation + pre/post-impl + convergence + polish swarms converged; maintainer make-run pends). -->
-**048 SINGLE-SCRIPT + PLAY/STOP — IMPLEMENTED, maintainer `make run` pends** (unreleased; last release v0.15.0).
-A maintainer-walkthrough-driven redesign (foo msg 1870) that REVERSES the per-uniform half of 044/047:
-the two-script-kinds model was too confusing. Now a node has ONE script — `scripts/script.py` (the brain),
-`update -> dict[str,value]`, bound by EXISTENCE (the `is_script_active`/`is_brain_active` flags + the
-`u_<name>__<tag>.py` tag binding + the copy-content selector all DELETED; per-value cases use private helper
-methods). A uniform the dict returns PLAYS (name shown blue, a stop button); STOP (its button, or just
-grabbing the widget — auto-stop) freezes it for manual edit; node-level play/stop freezes all WRITES while
-the brain keeps ticking. Stop state is node-scoped `UINodeState.stopped_uniforms`/`all_stopped` (NOT a
-per-`UIUniform` flag — sidesteps the 047 ROOT-2 lazy-row trap). Tab labels are node-derived
-(`<node> (shader)`/`(script)`); the stub emits explicit `from shaderbox.scripting import …` (injection kept
-as fallback). Plus the startup-blank-editor bug fixed (in the same wave). No migration code (unreleased —
-the dev sandbox was hand-fixed). Net −1300 lines. `make check` 0 errors; 458 tests green; dogfood verify PASS;
-validation + pre/post-impl + convergence + polish swarms converged. Example "Script Showcase" node rebuilt
-for the new model. **REMAINING:** the maintainer `make run` visual checks (the spec's Manual-verification
-falsifiers — play/stop, auto-stop, blue names, node-derived tabs — can't be judged headless).
-**NEXT: feature 043 — copilot WRITE-BEHAVIOR** (the agent authors `script.py`; the checkpoint-capture
-deferral now covers ONE path, `todo.md`). **No open BLOCKERs.**
+<!-- As of 2026-06-14 (043 copilot scripting IMPLEMENTED on `dev` through the full brainstorm→review→pre-impl→post-impl pipeline; driver dogfood + maintainer make-run pend). -->
+**043 COPILOT SCRIPTING — IMPLEMENTED, driver dogfood + maintainer `make run` pend** (unreleased; last release v0.15.0).
+The copilot now authors a node's Python brain (`scripts/script.py`) the way it authors GLSL — so it can build an
+ANIMATION end to end and SEE headlessly whether it moves. Two new tools `read_script`/`write_script` (a separate
+pair, NOT a `target:"script:"` overload — Python≠GLSL forces a different matcher + result type). The make-or-break
+is synchronous feedback: a script's facts are tick-gated, so `ScriptEngine.dry_run` reads the live compile verdict
+then steps ONE fresh brain CONTINUOUSLY through the export clock (integrator-safe) into a `values_sink` that leaves
+the live node byte-identical; the MOTION verdict is the value-diff across t (GL-free, exact — catches a pulse/color
+cycle a pixel-bbox misses) + ONE corroborating render for the visible/FLAT case. The script rides the working set
+live; a script write is checkpoint-captured (`_capture_script`, landed first as commit C1 — it fixed a live
+data-loss bug where revert DELETED an edited script). `edit_script` dropped as tool tax. `make check` 0 errors;
+448 tests green (the GL-context subset skips headless). **REMAINING:** the driver dogfood (drive the agent to a
+figure-8 pulsing circle, send the maintainer the small video + frames) + the maintainer `make run` visual checks.
+**048 SINGLE-SCRIPT + PLAY/STOP also pends its maintainer `make run`** (play/stop, auto-stop, blue names,
+node-derived tabs — un-judgeable headless). **No open BLOCKERs.**
 
 ## Features
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 043 | copilot_scripting | done | The copilot authors a node's Python brain (`scripts/script.py`) like it authors GLSL — a separate `read_script`/`write_script` pair (NOT a `target:"script:"` overload — Python≠GLSL → different matcher + result type). Synchronous feedback is the make-or-break: a script's facts are tick-gated, so `ScriptEngine.dry_run` reads the live compile verdict then steps ONE fresh brain continuously through the export clock (integrator-safe) into a `values_sink` leaving the live node byte-identical; the motion verdict is value-diff across t (GL-free, catches a pulse/color-cycle bbox misses) + ONE corroborating render for visible/FLAT. Script lives in the working set; a write is checkpoint-captured (`_capture_script`, landed first as C1 — fixed a live data-loss bug where revert DELETED an edited script). `edit_script` dropped as tool tax. Full brainstorm→review(4+devil)→pre-impl(2) pipeline. Spec: `ai_docs/features/043_copilot_scripting.md`. |
 | 048 | single_script_play_stop | done | Maintainer-walkthrough redesign reversing the per-uniform half of 044/047 (two script kinds were too confusing). ONE script per node — `scripts/script.py` (the brain, `update -> dict`), bound by EXISTENCE; per-uniform `u_*.py` + the `(name,type)` tag binding + copy-content + the `is_script_active`/`is_brain_active` flags all DELETED (per-value cases use private helper methods). Play/stop replaces active/inactive: a returned uniform PLAYS (name blue + stop button); STOP (button or grabbing the widget = auto-stop) freezes it for manual edit; node-level play/stop freezes all writes while the brain keeps ticking. Stop state is node-scoped `stopped_uniforms`/`all_stopped` (not a per-`UIUniform` flag — sidesteps the 047 lazy-row trap). Node-derived tab labels; explicit `from shaderbox.scripting import …` in the stub (injection kept as fallback). Startup-blank-editor bug fixed; no migration code (unreleased — dev sandbox hand-fixed). Net −1300 lines. Spec: `ai_docs/features/048_single_script_play_stop.md`. |
 | 047 | scripting_ux_refinement | done | Maintainer-walkthrough UI/UX + behavior wave over scripting (041/042/044/045), 14 findings. Active/inactive is a model flag (`is_script_active`/`is_brain_active`; the 045 `.disabled` marker deleted); a per-uniform script binds by `(name, type)` (filename `u_<name>__<tag>.py` → lossless retype + auto delete-readd rebind; rename-recovery via a whole-project copy-content selector). Pills → small `</>` glyph; new script-local bar (Activate + copy-from-same-type-script); native imgui tab bar with bare-filename labels; script-driven widgets stay editable (tick re-asserts); engine-owned uniforms off the script; error-strip + docstring tidy. Pre/post-impl review converged. **Per-uniform half superseded by 048** (the tab bar + error-strip + docstring fixes survive). Spec: `ai_docs/features/047_scripting_ux_refinement.md`. |
 | 046 | knowledge_base_refactor | done | Docs/process-only knowledge-lift wave from the 2026-06-13 nightly audit: filed the audit's durable knowledge into its canonical homes (conventions `## Design decisions` emergent laws + concrete patterns + v3d/env quirks, `dev_flow.md` step-7 verification-design rule, the new `copilot-llm-agent-design` skill) + fixed the two HIGH stale live-docs (045 tabbed-editor bullet, row 020 collapsed). No code change. The audit report + workflow were the durable source until filed, then deleted. Spec: `ai_docs/features/046_knowledge_base_refactor.md`. |

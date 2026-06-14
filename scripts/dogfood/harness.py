@@ -281,6 +281,47 @@ class DogfoodHarness:
         self._last_render_path = result.path
         return result.path
 
+    def render_video(
+        self,
+        node_id: str = "",
+        *,
+        seconds: float = 2.0,
+        fps: int = 24,
+        size: int = 200,
+    ) -> str:
+        """Render a SHORT low-res WebM (the deliverable a scripted animation produces) and return its
+        path so the driver can send it to the maintainer. Uses the REAL `render_video` capability — it
+        animates the CPU-script engine frame by frame from t=0 (the same path the agent's render_video
+        rides), so a brain-driven node moves across the clip. Off-thread + bridge drain like `render`.
+        Keep `seconds`/`size` small — a video freezes the loop and large frames are slow on V3D.
+        """
+        target = node_id or self.session.current_node_id
+        out: dict[str, RenderResult] = {}
+
+        def _do() -> None:
+            out["result"] = self.session.copilot_backend.render_video(
+                target, seconds, fps, size, size
+            )
+
+        worker = threading.Thread(target=_do, name="dogfood-video", daemon=True)
+        worker.start()
+        while worker.is_alive():
+            self.session.copilot.drain_bridge()
+            time.sleep(0.01)
+        worker.join()
+
+        result = out.get("result")
+        if result is None or not result.ok:
+            err = result.error if result is not None else "no result"
+            print(f"    [render_video FAILED: {err}]")
+            return ""
+        print(
+            f"    [rendered {result.width}x{result.height} {result.duration:.1f}s "
+            f"video -> {result.path}]"
+        )
+        self._last_render_path = result.path
+        return result.path
+
     def render_at(self, t: float, node_id: str = "", *, size: int = 400) -> str:
         """Tick the CPU-script engine to `t`, then render the node at that `t` to a PNG (feature
         040 determinism check). Unlike `render` (the copilot tool, fixed at the exporter's t=0),
