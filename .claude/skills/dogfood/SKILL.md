@@ -221,6 +221,20 @@ and probes the agent's self-review.
   GL-free, no `send`). The render path attr is `h._last_render_path` (underscore). NOTE: a uniform value
   set via `set_uniform` is in-memory-only until a project save, so a between-process render shows the
   file's inline default, not the tuned value.
+- **🔴 ALWAYS wrap a turn process in `timeout` (`... timeout 300 uv run python -c …`).** A stalled LLM
+  stream could leave the non-daemon copilot worker blocked, and interpreter `_shutdown` then hangs
+  joining it — a process that never exits, never dumps. The per-delta stream cancel + the 120s client
+  timeout (committed 2026-06-14) bound this to ~2 min, but `timeout 300` on the command is the belt — a
+  turn that exceeds it is a finding, not a wait. Diagnose a hang with `py-spy dump --pid <pid>` (the
+  `_shutdown`/worker-in-`get()` stack pins it instantly — far better than guessing).
+- **MP4 for iOS/iPad (WebM won't open there): `h.render_video_mp4(seconds=, fps=, size=)`.** Renders
+  H.264 directly via `share_state.render_to` through the export-isolation seam (a stateful brain
+  animates from a clean __init__). The webm `h.render_video()` is the other deliverable; both set
+  `_last_render_path`. Keep `seconds`/`size` small on V3D. (A FREE `RenderPreset` yields a stray ffmpeg
+  `-s 0x0` broken-pipe — the method uses FIXED_DIMS; don't hand-roll a bare preset.)
+- **A sample-frame STRIP is the cheapest visual motion check** — loop `h.render_at(t)` over a few t,
+  `PIL.alpha_composite` each onto a dark bg into one horizontal sheet, Read it. One glance shows whether
+  a scripted thing actually moves/flickers across t, far better than scrubbing a video frame by frame.
 
 ## 3. Reading the trace (the context/token analysis)
 
