@@ -111,6 +111,44 @@ def test_write_script_runtime_error_is_surfaced() -> None:
     assert "ran, then" in msg and "ValueError: boom" in msg
 
 
+def test_edit_script_routes_through_apply_and_formats_like_write() -> None:
+    # edit_script produces the SAME ScriptWriteResult shape as write_script -> identical agent message.
+    reg = _registry(
+        apply_script_edit=lambda _o, _n, _r, _node: ScriptWriteResult(
+            ok=True,
+            driven=["u_radius"],
+            motion_facts="-> u_radius CHANGE across t (ANIMATING)",
+        )
+    )
+    ok, msg, payload = reg.execute("edit_script", {"old_str": "0.3", "new_str": "0.5"})
+    assert ok is True
+    assert "drives u_radius" in msg and "ANIMATING" in msg
+    assert payload == {"driven": ["u_radius"]}
+
+
+def test_edit_script_not_found_is_error() -> None:
+    reg = _registry(
+        apply_script_edit=lambda _o, _n, _r, _node: ScriptWriteResult(
+            ok=False, error="old_str not found in the script -- re-read it"
+        )
+    )
+    ok, msg, _ = reg.execute("edit_script", {"old_str": "nope", "new_str": "x"})
+    assert ok is False
+    assert "old_str not found" in msg
+
+
+def test_edit_script_compile_error_surfaces() -> None:
+    # An edit that breaks the script returns the compile error the same as write_script.
+    reg = _registry(
+        apply_script_edit=lambda _o, _n, _r, _node: ScriptWriteResult(
+            ok=True, compile_error="script.py:4: SyntaxError: invalid syntax"
+        )
+    )
+    ok, msg, _ = reg.execute("edit_script", {"old_str": "a", "new_str": "b("})
+    assert ok is True
+    assert "compiled with errors" in msg and "SyntaxError" in msg
+
+
 def test_write_script_unresolved_node_is_error() -> None:
     reg = _registry(
         write_script=lambda _t, _node: ScriptWriteResult(

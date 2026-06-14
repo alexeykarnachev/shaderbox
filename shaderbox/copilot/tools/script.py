@@ -31,6 +31,19 @@ class _WriteScriptArgs(ToolArgs):
     node: str = Field(default="", description=_NODE_DESC)
 
 
+class _EditScriptArgs(ToolArgs):
+    old_str: str = Field(
+        description="exact substring of the script.py source to replace (copied VERBATIM "
+        "from read_script / the working set)"
+    )
+    new_str: str = Field(description="the replacement text (empty deletes the region)")
+    replace_all: bool = Field(
+        default=False,
+        description="replace every occurrence (resolves a non-unique old_str)",
+    )
+    node: str = Field(default="", description=_NODE_DESC)
+
+
 _READ_SCRIPT_DESC = (
     "Read a node's Python brain script (nodes/<id>/scripts/script.py) — the `update(self, ctx)` "
     "that drives uniforms over time. Returns the source line-numbered. A node with NO brain yet "
@@ -42,17 +55,57 @@ _READ_SCRIPT_DESC = (
 _WRITE_SCRIPT_DESC = (
     "Create or replace a node's Python brain (script.py): a `class Behavior(ScriptBehavior)` whose "
     "`update(self, ctx) -> dict` returns {uniform_name: value} to DRIVE those uniforms every frame "
-    "(use it for ANIMATION / state over time — ctx.t/dt/frame; self.* persists). Send the COMPLETE "
-    "script. After the write I compile it and probe it: I return the compile error (fix it like a "
-    "shader compile), the uniforms it now drives (drives 0 = it animates NOTHING — a real problem to "
-    "fix, not success), and a MOTION verdict (which values change across t: ANIMATING / STATIC). "
-    "ctx.mouse is frozen in the probe — drive from ctx.t to verify motion. You cannot see the image "
-    "beyond these facts."
+    "(use it for ANIMATION / state over time — ctx.t/dt/frame; self.* persists). BEST FOR a fresh "
+    "brain or a full rewrite; for a localized change prefer edit_script. Send the COMPLETE script. "
+    "After the write I compile it and probe it: I return the compile error (fix it like a shader "
+    "compile), the uniforms it now drives (drives 0 = it animates NOTHING — a real problem to fix, not "
+    "success), and a MOTION verdict (which values change across t: ANIMATING / STATIC). ctx.mouse is "
+    "frozen in the probe — drive from ctx.t to verify motion. You cannot see the image beyond facts."
+)
+
+_EDIT_SCRIPT_DESC = (
+    "THE partial-edit tool for a script — the exact mirror of edit_shader, for script.py instead of "
+    "GLSL. Replace an exact substring (old_str = the region copied VERBATIM from read_script / the "
+    "working set; new_str = its replacement; empty new_str deletes). If old_str appears more than once "
+    "the edit fails — add context or set replace_all=true. Use for a localized tweak (a constant, a "
+    "line of the update math); use write_script for a fresh brain or a full rewrite. After the edit I "
+    "re-compile + probe and return the SAME facts as write_script (compile error / drives / MOTION "
+    "verdict). You cannot see the image beyond those facts."
 )
 
 
 def _fmt_errors(errors: list[CompileErrorInfo]) -> str:
     return "\n".join(f"{e.path}:{e.line}: {e.message}" for e in errors)
+
+
+def _format_write_result(result: ScriptWriteResult) -> tuple[bool, str, dict | None]:
+    # The shared agent-facing message for a write_script OR edit_script result (identical feedback).
+    if not result.ok:
+        return False, f"error: {result.error}", None
+    if result.compile_error:
+        return (
+            True,
+            f"compiled with errors:\n{result.compile_error}\n-> fix the compile "
+            "first (no uniforms driven, no motion probe). Same as a shader compile.",
+            None,
+        )
+    if not result.driven:
+        return True, f"ok -- {result.motion_facts}", None
+    head = f"ok -- script compiled clean, drives {', '.join(result.driven)}"
+    tail: list[str] = [result.motion_facts]
+    for line in result.per_key_errors:
+        tail.append(f"-> 1 key skipped: {line}")
+    for line in result.orphan_keys:
+        name = line.split(":", 1)[0]
+        tail.append(
+            f"-> '{name}' is not an active uniform -- declare it in the SHADER first "
+            "(edit_shader), or fix the name."
+        )
+    return (
+        True,
+        head + "\n" + "\n".join(t for t in tail if t),
+        {"driven": result.driven},
+    )
 
 
 def script_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
@@ -78,32 +131,13 @@ def script_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
         return True, body, {"node": view.node_id, "is_stub": view.is_stub}
 
     def write_script(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
-        result: ScriptWriteResult = caps.write_script(args["new_text"], args["node"])
-        if not result.ok:
-            return False, f"error: {result.error}", None
-        if result.compile_error:
-            return (
-                True,
-                f"compiled with errors:\n{result.compile_error}\n-> fix the compile "
-                "first (no uniforms driven, no motion probe). Same as a shader compile.",
-                None,
+        return _format_write_result(caps.write_script(args["new_text"], args["node"]))
+
+    def edit_script(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
+        return _format_write_result(
+            caps.apply_script_edit(
+                args["old_str"], args["new_str"], args["replace_all"], args["node"]
             )
-        if not result.driven:
-            return True, f"ok -- {result.motion_facts}", None
-        head = f"ok -- script compiled clean, drives {', '.join(result.driven)}"
-        tail: list[str] = [result.motion_facts]
-        for line in result.per_key_errors:
-            tail.append(f"-> 1 key skipped: {line}")
-        for line in result.orphan_keys:
-            name = line.split(":", 1)[0]
-            tail.append(
-                f"-> '{name}' is not an active uniform -- declare it in the SHADER first "
-                "(edit_shader), or fix the name."
-            )
-        return (
-            True,
-            head + "\n" + "\n".join(t for t in tail if t),
-            {"driven": result.driven},
         )
 
     return [
@@ -125,6 +159,18 @@ def script_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             description=_WRITE_SCRIPT_DESC,
             args_model=_WriteScriptArgs,
             handler=write_script,
+            mutating=True,
+            is_edit=True,
+            eager=True,
+            gate_policy=GatePolicy.NONE,
+        ),
+        ToolDefinition(
+            name="edit_script",
+            label_live="Editing script",
+            label_done="Edited script",
+            description=_EDIT_SCRIPT_DESC,
+            args_model=_EditScriptArgs,
+            handler=edit_script,
             mutating=True,
             is_edit=True,
             eager=True,

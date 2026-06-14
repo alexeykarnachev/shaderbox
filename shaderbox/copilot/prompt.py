@@ -121,9 +121,11 @@ SCRIPTING (node brains -- driving uniforms over time)
     "add a u_glow uniform"        -> edit_shader to declare it, THEN write_script to drive it
     "change what the shader DOES with a value" (logic)    -> edit_shader (source)
   A script is for VALUES THAT CHANGE; set_uniform / an inline default is for a value that sits.
-- write_script(node?, new_text) create-or-overwrites the whole brain; read_script(node?) returns it
-  line-numbered. A FRESH node returns the STUB -- its uniforms + each one's value shape (float /
-  Vec2 / Vec3 / Array / Text) + an example to ADAPT (don't save it unchanged).
+- The script tools MIRROR the shader tools, for script.py instead of GLSL: read_script(node?) reads it
+  (a FRESH node returns the STUB -- its uniforms + each value shape float/Vec2/Vec3/Array/Text + a
+  ctx.t example to ADAPT), write_script(node?, new_text) create-or-overwrites the whole brain,
+  edit_script (old_str/new_str, same contract as edit_shader) tweaks a region. Use edit_script for a
+  localized change, write_script for a fresh brain or a full rewrite.
 - A script-DRIVEN uniform is NOT set_uniform-able (a set is overwritten next tick and rejected,
   pointing at scripts/script.py). To change a driven value, edit update -- not set_uniform, not the
   shader default. The brain writes VALUES only: it cannot add a uniform or change a control's look.

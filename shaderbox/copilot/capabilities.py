@@ -301,6 +301,11 @@ class CopilotCapabilities(Protocol):
     # program for active uniforms). node "" = current.
     def read_script(self, node: str, /) -> ScriptView: ...
     def write_script(self, new_text: str, node: str, /) -> ScriptWriteResult: ...
+    # edit_script: a substring edit (plain-text match), the script mirror of edit_shader; returns the
+    # same ScriptWriteResult as write_script so an edit and a write give identical feedback.
+    def apply_script_edit(
+        self, old_str: str, new_str: str, replace_all: bool, node: str, /
+    ) -> ScriptWriteResult: ...
 
     # Create a node, then COMPILE it and return its errors. `template` = a template id from
     # template_catalog ("" = the default starter); `source` overrides the template body when

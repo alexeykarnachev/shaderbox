@@ -251,6 +251,20 @@ def _comment_only_spans(src: str, old_str: str) -> list[tuple[int, int]] | None:
     return spans
 
 
+def _plain_text_spans(src: str, old_str: str) -> list[tuple[int, int]]:
+    # All non-overlapping occurrences of old_str (exact substring) — the plain-text analog of the GLSL
+    # token_match, for a script (Python, not lexable as GLSL). Empty old_str matches nothing.
+    if not old_str:
+        return []
+    spans: list[tuple[int, int]] = []
+    start = src.find(old_str)
+    while start != -1:
+        end = start + len(old_str)
+        spans.append((start, end))
+        start = src.find(old_str, end)
+    return spans
+
+
 def _splice(src: str, spans: list[tuple[int, int]], new_str: str) -> str:
     # Replace each non-overlapping (start, end) span with new_str. Offset-stable: spans don't overlap.
     out: list[str] = []
@@ -1487,44 +1501,76 @@ class CopilotBackend:
 
         return self._bridge.run_on_main(_on_main)
 
+    def _apply_script_text(self, node_id: str, new_text: str) -> ScriptWriteResult:
+        # The shared write tail: capture, persist+reload+dry-run, render the probe into a
+        # ScriptWriteResult. write_script (whole file) and edit_script (after a splice) both end here, so
+        # an edit and a write give IDENTICAL feedback. Runs on the main thread (the caller marshals).
+        self._working_set_add(node_id)  # so the script rides the working set next step
+        self._capture_script(node_id)
+        probe = self._write_script_source(node_id, new_text)
+        if probe.compile_error is not None:
+            return ScriptWriteResult(
+                ok=True, compile_error=_format_script_error(probe.compile_error)
+            )
+        if probe.runtime_error is not None:
+            # The script compiled but `update` raised / returned a non-dict at runtime — surface it as
+            # the error (NOT a motion verdict off the crash-frozen values).
+            return ScriptWriteResult(
+                ok=True,
+                compile_error="ran, then " + _format_script_error(probe.runtime_error),
+            )
+        render_line = self._script_render_line(
+            self._get_ui_nodes()[node_id].node, probe.samples
+        )
+        return ScriptWriteResult(
+            ok=True,
+            driven=sorted(probe.driven),
+            per_key_errors=[
+                f"{name}: {err.message}" for name, err in probe.per_key_errors
+            ],
+            orphan_keys=[f"{name}: {err.message}" for name, err in probe.orphan_keys],
+            motion_facts=_motion_verdict(
+                probe, render_line, COPILOT_CONFIG.motion_value_eps
+            ),
+        )
+
     def write_script(self, new_text: str, node: str, /) -> ScriptWriteResult:
         def _on_main() -> ScriptWriteResult:
             node_id = self._resolve_node_or_current(node)
             if node_id is None:
                 return ScriptWriteResult(ok=False, error=_no_node_error(node).message)
-            self._working_set_add(
-                node_id
-            )  # so the script rides the working set next step
-            self._capture_script(node_id)
-            probe = self._write_script_source(node_id, new_text)
-            if probe.compile_error is not None:
+            return self._apply_script_text(node_id, new_text)
+
+        return self._bridge.run_on_main(
+            _on_main, timeout=COPILOT_CONFIG.render_op_timeout_s
+        )
+
+    def apply_script_edit(
+        self, old_str: str, new_str: str, replace_all: bool, node: str, /
+    ) -> ScriptWriteResult:
+        # The script analog of apply_shader_edit (mirror of edit_shader). Plain-TEXT match (a script is
+        # Python, not GLSL — the glsl_lex token matcher does NOT apply), same 0/1/N-match contract, the
+        # shared _splice, then the same write tail so an edit and a write give identical feedback.
+        def _on_main() -> ScriptWriteResult:
+            node_id = self._resolve_node_or_current(node)
+            if node_id is None:
+                return ScriptWriteResult(ok=False, error=_no_node_error(node).message)
+            src, _is_stub = self._read_script_source(node_id)
+            spans = _plain_text_spans(src, old_str)
+            if not spans:
                 return ScriptWriteResult(
-                    ok=True, compile_error=_format_script_error(probe.compile_error)
+                    ok=False,
+                    error="old_str not found in the script -- re-read it with read_script "
+                    "and copy an exact substring",
                 )
-            if probe.runtime_error is not None:
-                # The script compiled but `update` raised / returned a non-dict at runtime — surface it
-                # as the error (NOT a motion verdict off the crash-frozen values).
+            if len(spans) > 1 and not replace_all:
                 return ScriptWriteResult(
-                    ok=True,
-                    compile_error="ran, then "
-                    + _format_script_error(probe.runtime_error),
+                    ok=False,
+                    error=f"old_str is not unique ({len(spans)} matches) -- add "
+                    "surrounding context to make it unique, or set replace_all=true",
                 )
-            render_line = self._script_render_line(
-                self._get_ui_nodes()[node_id].node, probe.samples
-            )
-            return ScriptWriteResult(
-                ok=True,
-                driven=sorted(probe.driven),
-                per_key_errors=[
-                    f"{name}: {err.message}" for name, err in probe.per_key_errors
-                ],
-                orphan_keys=[
-                    f"{name}: {err.message}" for name, err in probe.orphan_keys
-                ],
-                motion_facts=_motion_verdict(
-                    probe, render_line, COPILOT_CONFIG.motion_value_eps
-                ),
-            )
+            new_text = _splice(src, spans, new_str)
+            return self._apply_script_text(node_id, new_text)
 
         return self._bridge.run_on_main(
             _on_main, timeout=COPILOT_CONFIG.render_op_timeout_s

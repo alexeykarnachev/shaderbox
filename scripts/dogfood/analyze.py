@@ -40,6 +40,7 @@ CANONICAL_TOOLS: frozenset[str] = frozenset(
         "set_uniform",
         "read_script",
         "write_script",
+        "edit_script",
         "create_node",
         "delete_node",
         "switch_node",
@@ -70,6 +71,7 @@ REACHABLE_TOOLS: tuple[str, ...] = (
     "set_uniform",
     "read_script",
     "write_script",
+    "edit_script",
     "create_node",
     "delete_node",
     "switch_node",
@@ -81,7 +83,8 @@ REACHABLE_TOOLS: tuple[str, ...] = (
 # Node-mutating edit tools — a broken edit recovered by ANY later clean one of these (same turn)
 # counts as a compile-error recovery, even across tool names.
 _EDIT_TOOLS: frozenset[str] = frozenset(
-    {"edit_shader", "write_shader", "write_script", "create_node"} | HISTORICAL_TOOLS
+    {"edit_shader", "write_shader", "write_script", "edit_script", "create_node"}
+    | HISTORICAL_TOOLS
 )
 DEFAULT_MODEL_NOTE = "unknown (in-tree default)"
 # The trace event kinds that END a turn. A clean turn closes on turn_done; the rest are failure

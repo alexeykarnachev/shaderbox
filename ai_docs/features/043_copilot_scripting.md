@@ -58,10 +58,15 @@ in the verify loop.
   (no separate `create_script` tool), so no standalone create. **Trigger:** first dogfood/user scenario
   where the agent genuinely needs to STOP a uniform it drives (a "leave this one manual" ask) — add a
   `stop_uniform`/`play_uniform` pair then, mirroring the UI affordance.
-- **`edit_script` (a substring edit tool).** Dropped from this wave (decision 1) — `write_script`
-  whole-file covers a ~30-line brain, and an `edit_script` description is permanent per-iteration tool tax
-  that earns nothing (it even resets `self.*` identically). **Trigger:** a dogfood run shows the agent
-  thrashing on whole-file rewrites of a brain grown past trivial.
+- **`edit_script` (a substring edit tool) — ADDED 2026-06-14 on the maintainer's full-symmetry call**
+  (reversing the original drop below). The script surface now MIRRORS the shader surface exactly:
+  `read_script`/`write_script`/`edit_script` ↔ `read_shader`/`write_shader`/`edit_shader`. `edit_script`
+  reuses the shared `_splice` + the 0/1/N-match contract, but matches PLAIN TEXT (`_plain_text_spans`),
+  not the GLSL `token_match` (a script is Python). It routes through the same write tail
+  (`_apply_script_text`) so an edit and a write give IDENTICAL feedback (compile / drives / motion).
+  (It was briefly dropped as per-iteration tool tax; the maintainer's symmetry argument — asymmetry is
+  itself a cost, an agent can't tweak a grown brain cleanly — overruled it. Decision 1 below retains the
+  original drop rationale for the record; this bullet is the live decision.)
 - **A scripts library / cross-node script reuse for the agent.** Same trigger as 048's: a script picker
   when whole-node reuse is wanted. Not now.
 - **`render_video`/`render_image` returning pixel facts.** The motion fact lives on the `write_script`

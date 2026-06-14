@@ -50,6 +50,7 @@ class _FakeCaps:
     set_uniform: Callable[[str, object, str], SetUniformResult]
     read_script: Callable[[str], ScriptView]
     write_script: Callable[[str, str], ScriptWriteResult]
+    apply_script_edit: Callable[[str, str, bool, str], ScriptWriteResult]
     create_node: Callable[
         [str, str, str, bool], tuple[str, list[CompileErrorInfo], str]
     ]
@@ -87,6 +88,7 @@ def minimal_caps(**overrides: Any) -> CopilotCapabilities:
         "set_uniform": lambda _n, _v, _node: SetUniformResult(ok=True),
         "read_script": lambda _node: ScriptView("n0", "node", "", [], is_stub=True),
         "write_script": lambda _t, _node: ScriptWriteResult(ok=True),
+        "apply_script_edit": lambda _o, _n, _r, _node: ScriptWriteResult(ok=True),
         "create_node": lambda _n, _s, _t, _sw: ("node-new", [], ""),
         "delete_node": lambda _n: DeleteNodeResult(ok=True),
         "switch_node": lambda _n: SwitchNodeResult(ok=True),

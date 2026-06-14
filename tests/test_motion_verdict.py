@@ -5,6 +5,8 @@ corroborating pixel render (the visible/FLAT case) is GL and exercised live in t
 
 from shaderbox.copilot.backend import (
     _motion_verdict,
+    _plain_text_spans,
+    _splice,
     _uniform_changes,
     _values_differ,
 )
@@ -76,3 +78,20 @@ def test_verdict_carries_the_render_line() -> None:
     verdict = _motion_verdict(_probe({"u_x"}, samples), render, _EPS)
     assert "FLAT" in verdict
     assert "ANIMATING" in verdict  # both facts present for the agent to reconcile
+
+
+# ---- the edit_script plain-text matcher + splice (feature 043 symmetry with edit_shader) ----
+
+
+def test_plain_text_spans_finds_all_non_overlapping() -> None:
+    src = "a = 1\nb = 1\nc = 2\n"
+    assert _plain_text_spans(src, "= 1") == [(2, 5), (8, 11)]
+    assert _plain_text_spans(src, "= 2") == [(14, 17)]
+    assert _plain_text_spans(src, "nope") == []
+    assert _plain_text_spans(src, "") == []  # empty matches nothing (no match-anything)
+
+
+def test_edit_splice_replaces_the_span() -> None:
+    src = "radius = 0.3\n"
+    spans = _plain_text_spans(src, "0.3")
+    assert _splice(src, spans, "0.5") == "radius = 0.5\n"

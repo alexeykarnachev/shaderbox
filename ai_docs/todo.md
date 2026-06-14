@@ -46,11 +46,7 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   `ai_docs/features/020_copilot_agent/30_turn_rollback.md` (decision 2).
 
 
-## [DEFERRAL] copilot scripting follow-ons (043): edit_script + render_video pixel-facts
-- **Trigger (edit_script):** a dogfood/user trace shows the agent thrashing on whole-file
-  `write_script` rewrites of a brain grown past trivial (it can't make a one-line tweak cleanly).
-  Then add `edit_script` (old_str/new_str, the `edit_shader` contract reused) — dropped from 043 as
-  pure per-iteration tool tax on a ~30-line file `write_script` already covers.
+## [DEFERRAL] copilot scripting follow-on (043): render_video pixel-facts
 - **Trigger (render_video pixel-facts):** a dogfood run where the agent renders a video and can't
   tell if the deliverable is right (the `write_script` value-diff motion verdict proved insufficient
   because the clip's interesting window isn't at t=0). Then attach a first/last-frame `render_facts`
