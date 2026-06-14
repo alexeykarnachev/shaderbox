@@ -81,7 +81,7 @@ def _freeze(names: set[str], node: EngineNode, last_good: dict[str, Any]) -> Non
 
 class NodeScripts:
     # One node's compiled brain + its (path, mtime) cache + the raw source (a fresh export behavior
-    # recompiles from this cached source, never a fresh disk read) + per-uniform last-good.
+    # recompiles from this cached source, never a fresh disk read) + per-uniform-name last-good.
     def __init__(self, scripts_dir: Path) -> None:
         self.scripts_dir = scripts_dir
         self.brain: PythonBehavior | None = None

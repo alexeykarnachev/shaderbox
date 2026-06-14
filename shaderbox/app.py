@@ -331,8 +331,8 @@ class App:
         self._splitter_press_on_splitter: bool = False
 
         # The code editor's open tabs (feature 045): an ordered list + the active index. The active
-        # tab's path is what the editor shows (`current_editor_path`). Node shader, node-brain /
-        # per-uniform scripts, and lib files are all closable tabs — no pinned first tab. Selecting a
+        # tab's path is what the editor shows (`current_editor_path`). Node shader, the node script
+        # (`script.py`), and lib files are all closable tabs — no pinned first tab. Selecting a
         # node ensures its shader tab. Empty list = no file open.
         self.editor_tabs: list[EditorTab] = []
         self.active_tab_index: int = 0

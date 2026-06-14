@@ -30,9 +30,9 @@ from shaderbox.uniform_coerce import (
 
 def _user_error_line(marker_name: str, exc: BaseException) -> int:
     # Recover the deepest line in the USER's source from a traceback — the script is compiled with
-    # filename "<u:name>" (per-uniform: the uniform name; node-brain: "script.py"), so a frame from
-    # that file is a user line (vs an engine frame). -1 when the error didn't reach the user's code
-    # (unmappable). `marker_name` is UNWRAPPED — this builds the `<u:...>` itself.
+    # filename "<u:script.py>", so a frame from that file is a user line (vs an engine frame). -1 when
+    # the error didn't reach the user's code (unmappable). `marker_name` is UNWRAPPED — this builds the
+    # `<u:...>` itself.
     marker = f"<u:{marker_name}>"
     line = -1
     for frame in traceback.extract_tb(exc.__traceback__):
@@ -104,11 +104,10 @@ def _resolve_behavior_class(ns: dict[str, Any]) -> type[ScriptBehavior] | None:
 
 class Behavior(Protocol):
     def run(self, ctx: EngineContext) -> Any:
-        # The raw value(s) this behavior produces this frame — cardinality-agnostic. A per-uniform
-        # behavior's `run` returns a single typed value (the engine wraps it as one (name, value)
-        # pair); a node-brain's `run` returns a `dict[str, value]` driving many uniforms. Coercion
-        # against the live uniform is the ENGINE's job (`coerce_one`), so a future C backend produces
-        # raw values without re-implementing the shape coercion.
+        # The raw `dict[str, value]` this behavior produces this frame (the node-brain's `update`
+        # return), NOT yet coerced. Coercion against each live uniform is the ENGINE's job
+        # (`coerce_one`), so a future C backend produces raw values without re-implementing the shape
+        # coercion.
         ...
 
     @property
@@ -123,8 +122,8 @@ class PythonBehavior:
     file changes; runtime + shape failures are caught per-tick by the engine."""
 
     def __init__(self, label: str, body: str) -> None:
-        # `label` is the binding KEY: a uniform name for per-uniform, the sentinel "script.py" for a
-        # node-brain. It is the compile-marker name AND the name a compile error records under.
+        # `label` is the binding KEY (the node-brain's "script.py"): the compile-marker name AND the
+        # name a compile error records under.
         self.label = label
         self._error: ScriptError | None = None
         self._instance: ScriptBehavior | None = None
@@ -205,9 +204,9 @@ class PythonBehavior:
         self._instantiate()
 
     def run(self, ctx: EngineContext) -> Any:
-        # The raw value(s) the user's update produced this frame — cardinality-agnostic, NOT yet
-        # coerced (the engine fans this out into (name, value) pairs and coerces each via coerce_one):
-        # a per-uniform script returns a single typed value, a node-brain a dict[str, value].
+        # The raw dict the user's update produced this frame (name -> value), NOT yet coerced — the
+        # engine fans it into (name, value) pairs and coerces each against the live uniform via
+        # coerce_one. A future non-Python backend implements this same protocol over a .so.
         if self._instance is None:
             raise _RuntimeScriptError(
                 ScriptError(self.label, "runtime", "no behavior instance")
@@ -226,7 +225,7 @@ def _all_finite(coerced: object) -> bool:
 
 def coerce_one(value: object, uniform: moderngl.Uniform, error_name: str) -> object:
     # Normalize a raw script value + shape it against the live uniform via the shared coercion. The
-    # one coercion atom for BOTH paths (per-uniform's single value, a node-brain's per-key value).
+    # one coercion atom, called per key of the node-brain's returned dict.
     # `error_name` is the uniform NAME a shape mismatch records under (the GLSL-type label for the
     # hint is derived internally). Raises _RuntimeScriptError on a mismatch; the engine freezes.
     normalized = normalize_output(value)
