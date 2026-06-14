@@ -166,7 +166,7 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   (feature 026) constructs it on a standalone EGL context without `App`. UI reactions ride injected
   `on_*` callbacks (the seam + why a return-value seam is wrong: `conventions.md ## Design decisions`,
   the `ProjectSession` bullet). Feature 025. Owns the `ScriptEngine` (feature 041) + drives its
-  `tick`/`reload_scripts`/`reset_script` + injects each Node's `export_isolation` factory.
+  `tick`/`reload_scripts`/`reset` + injects each Node's `export_isolation` factory.
 - **`scripting/`** — the headless CPU-script engine (feature 041, redesigning 040; 044 added the
   node-brain): a uniform carries a per-tick STATEFUL behavior CLASS (`nodes/<id>/scripts/u_<name>.py` =
   `class Behavior(ScriptBehavior)` with `update(self, ctx) -> <output>`; per-instance `self.*` state
@@ -253,9 +253,10 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   helper both the node grid and the node-creator template grid call), `uniform.py`,
   `cheatsheet.py` (the floating bottom-right keyboard-cheatsheet overlay — own top-level window,
   scope-filtered rows, opt-out via `UIAppState.show_cheatsheet`).
-- **`popups/`** — popup `draw(app: App)` free functions. Open/closed state on `App` as
-  `is_node_creator_open` / `is_settings_open` / `is_emoji_picker_open` / `is_shader_lib_picker_open`
-  (helpers `app.open_*()` enforce mutual exclusion; `scripts/smoke.py` asserts ≤1 open).
+- **`popups/`** — popup `draw(app: App)` free functions. Open/closed state on `App` as a single
+  `PopupState` enum field (`app.popup_state`); the `app.open_*()` helpers set it, `any_popup_open()`
+  gates rendering, and `scripts/smoke.py` asserts it's a `PopupState`. Model owned by
+  `conventions.md ## Design decisions` (the `popups/*.py` bullet).
   `node_creator.py`, `settings.py` (global target FPS + inline-editor visual options + the
   **Integrations** credential blocks), `emoji_data.py` + `emoji_picker.py` (monochrome glyph grid),
   `lib_picker/` (package: `__init__` entry+orchestrator, `tree`, `preview`, `search`, `filtering` —

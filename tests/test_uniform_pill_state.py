@@ -27,7 +27,12 @@ def _stub(
     )
     paths = types.SimpleNamespace(scripts_dir_for=lambda node_id: scripts_dir)
     stub = types.SimpleNamespace(script_engine=engine, paths=paths)
-    for meth in ("script_path_for", "script_state_for", "uniform_pill_state", "is_uniform_script_owned"):
+    for meth in (
+        "script_path_for",
+        "script_state_for",
+        "uniform_pill_state",
+        "is_uniform_script_owned",
+    ):
         setattr(stub, meth, getattr(ProjectSession, meth).__get__(stub))
     return stub
 
@@ -53,7 +58,9 @@ def test_brain_driven_uniform_with_error_reads_error(tmp_path: Path) -> None:
     err = ScriptError("u_color", "runtime", "boom")
     stub = _stub(tmp_path, driven={"u_color"}, errors={("n0", "u_color"): err})
     assert stub.uniform_pill_state("n0", "u_color") == "error"
-    assert stub.is_uniform_script_owned("n0", "u_color") is True  # broken still owns the slot
+    assert (
+        stub.is_uniform_script_owned("n0", "u_color") is True
+    )  # broken still owns the slot
 
 
 def test_own_file_wins_over_brain(tmp_path: Path) -> None:
@@ -68,7 +75,9 @@ def test_own_inactive_file_no_brain_reads_inactive_manual(tmp_path: Path) -> Non
     _write_script(tmp_path, "u_x", disabled=True)
     stub = _stub(tmp_path, driven=set())
     assert stub.uniform_pill_state("n0", "u_x") == "inactive"
-    assert stub.is_uniform_script_owned("n0", "u_x") is False  # disabled, nothing drives -> manual
+    assert (
+        stub.is_uniform_script_owned("n0", "u_x") is False
+    )  # disabled, nothing drives -> manual
 
 
 def test_inactive_own_override_shadowing_brain_stays_locked(tmp_path: Path) -> None:

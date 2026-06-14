@@ -575,15 +575,20 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   content-addressed editing only), and there is no oscillation to brake (REFUTED by 6 dogfood
   runs — 038 spec decision 5 / Review history), so the counter design itself is the whole entry.
 
-## [DEFERRAL] copilot render-facts honesty: residual model-bound half
-- **Trigger:** a post-035-wave dogfood run STILL showing a scene described over a FLAT fact or an
-  unacknowledged gate outcome, OR a user report of "it said it looks fine and the render is blank".
+## [DEFERRAL] copilot render-facts honesty (two residual halves: model-bound + reply-time enforcement)
+- **Trigger:** a post-035-wave dogfood run OR a user report showing the copilot describing a scene
+  over a FLAT/blank frame (or an unacknowledged gate outcome) — "it said it looks fine and the render
+  is blank". Worse on cheap models (codex-mini); a recurrence on a BETTER model is the stronger signal.
 - The engine half is FIXED (035 fix wave): FLAT now carries an in-result imperative, set_uniform's
   "describe it" mis-cue removed, gate-decline message states NOT-done, a gate-outcome reply rule
-  added, sanitize maps guillemets/non-breaking hyphen. What remains is model-bound: a cheap model
-  claiming success against non-FLAT-but-damning facts (ink 99%/flat luma — can't be auto-escalated
-  without false-positiving legitimate full-screen effects). No clean engine fix without
-  false-positives; left model-bound until a better default model makes it moot.
+  added, sanitize maps guillemets/non-breaking hyphen. Two halves remain on the same trigger:
+  - **model-bound:** a cheap model claiming success against non-FLAT-but-damning facts (ink 99%/flat
+    luma — can't be auto-escalated without false-positiving legitimate full-screen effects). No clean
+    engine fix without false-positives; left model-bound until a better default model makes it moot.
+  - **reply-time enforcement:** the in-result imperative channel is IGNORED at reply time by a cheap
+    model (CRT run 2026-06-11: described a finished scene over a fact line that ENDED with "NOTHING is
+    visible: do not describe a scene"). Enforcement needs an engine-side check (the session inspecting
+    the last facts line + flagging a contradicting reply), not more prompt text. Design work, not a hotfix.
 
 ## [DEFERRAL] dogfood analyze.py: a `--calls` compact per-turn tool→result index mode
 - **Trigger:** next time reading a run means grepping the raw transcript for "which call returned
@@ -595,12 +600,3 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   parsed (gate approvals/declines counted per turn); the resolved model recorded at `turn_start` and
   read back (no more "unknown" header). What REMAINS is the one convenience: a `--calls` mode emitting
   a compact per-turn tool→result index so a reviewer never has to grep the raw transcript.
-
-## [DEFERRAL] copilot reply-time honesty enforcement (the in-result channel is ignored at reply time)
-- **Trigger:** when designing the next copilot honesty/robustness wave, OR a user report of the
-  copilot describing a scene over a FLAT frame on a BETTER model than codex-mini.
-- Night CRT run datum (2026-06-11): the model described a finished scene over a fact line that
-  ENDED with the "NOTHING is visible: do not describe a scene" imperative — even the in-result
-  channel is ignored at reply time by a cheap model. Enforcement would need an engine-side check
-  (e.g. the session inspecting the last facts line and flagging a contradicting reply), not more
-  prompt text. Design work, not a hotfix.
