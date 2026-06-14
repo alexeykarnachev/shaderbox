@@ -289,6 +289,7 @@ class CopilotBackend:
         get_current_node_id: Callable[[], str],
         get_is_cancelled: Callable[[], bool],
         get_script_driven_uniforms: Callable[[str], set[str]],
+        get_script_path: Callable[[str], Path],
         set_current_node_id: Callable[[str], None],
         save_ui_node: Callable[[UINode], object],
         sync_editor_from_disk: Callable[[str, str], None],
@@ -318,6 +319,7 @@ class CopilotBackend:
         self._get_current_node_id = get_current_node_id
         self._get_is_cancelled = get_is_cancelled
         self._get_script_driven_uniforms = get_script_driven_uniforms
+        self._get_script_path = get_script_path
         self._set_current_node_id = set_current_node_id
         self._save_ui_node = save_ui_node
         self._sync_editor_from_disk = sync_editor_from_disk
@@ -344,6 +346,8 @@ class CopilotBackend:
 
     def _capture_node(self, node_id: str) -> None:
         # Serialize the LIVE node (not the stale on-disk dir — set_uniform never writes node.json).
+        # Also carry the node's scripts/script.py into the snapshot dir: UINode.save omits scripts/,
+        # so without this a node-restore swap would DELETE an existing brain.
         cp = self._get_active_checkpoint()
         node = self._get_ui_nodes().get(node_id)
         if cp is None or node is None:
@@ -351,6 +355,19 @@ class CopilotBackend:
         cp.snapshot_node(
             node_id, node, lambda n, dest: n.save(dest.parent, dest.name, rebind=False)
         )
+        cp.snapshot_script(node_id, self._get_script_path(node_id))
+
+    def _capture_script(self, node_id: str) -> None:
+        # Pre-write capture for a script-mutating tool (043): snapshot a pre-existing script.py into
+        # the node snapshot dir (restored by the node's full-dir swap), or mark a created-this-turn
+        # script for delete-on-revert. Best-effort, runs main-thread before the write.
+        cp = self._get_active_checkpoint()
+        if cp is None:
+            return
+        if self._get_script_path(node_id).is_file():
+            self._capture_node(node_id)
+        else:
+            cp.mark_created_script(node_id)
 
     def _capture_lib(
         self, ws_address: str, pre_edit_source: str, lib_create: bool

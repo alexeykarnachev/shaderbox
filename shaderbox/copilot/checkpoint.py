@@ -52,6 +52,9 @@ class RevertResult:
         default_factory=list
     )  # names of reverted-deletes
     reverted_libs: list[str] = field(default_factory=list)  # addresses
+    removed_scripts: list[str] = field(
+        default_factory=list
+    )  # node names whose created script.py was deleted on revert
     unrestorable: list[str] = field(
         default_factory=list
     )  # nodes with no/failed snapshot
@@ -66,6 +69,7 @@ class RevertResult:
             or self.deleted_nodes
             or self.recovered_nodes
             or self.reverted_libs
+            or self.removed_scripts
         )
 
     def as_notice(self) -> str:
@@ -81,6 +85,8 @@ class RevertResult:
             parts.append(f"removed {', '.join(self.deleted_nodes)}")
         if self.reverted_libs:
             parts.append(f"reverted library {', '.join(self.reverted_libs)}")
+        if self.removed_scripts:
+            parts.append(f"removed script from {', '.join(self.removed_scripts)}")
         notice = (
             "Reverted that turn's changes: " + "; ".join(parts) + "." if parts else ""
         )
@@ -113,6 +119,10 @@ class TurnCheckpoint:
     snapshotted_libs: dict[str, str] = field(default_factory=dict)
     # lib ws_addresses this turn CREATED (reverse = delete the file; no pre-edit bytes exist).
     created_libs: list[str] = field(default_factory=list)
+    # node ids whose scripts/script.py this turn CREATED (reverse = delete the file; the node had
+    # none before). A pre-existing script is captured INTO the node snapshot dir instead, so the
+    # full-dir swap restores it — only the create case needs an explicit reverse.
+    created_scripts: list[str] = field(default_factory=list)
     # The current-node id before this turn's first switch_node (reverse = switch back). "" = unset.
     pre_switch_node_id: str | None = None
     # NAMES of nodes whose capture FAILED (decision 10) — Revert reports them un-restorable.
@@ -129,6 +139,7 @@ class TurnCheckpoint:
             or self.deleted_nodes
             or self.snapshotted_libs
             or self.created_libs
+            or self.created_scripts
             or self.failed_nodes
             or self.pre_switch_node_id is not None
         )
@@ -156,6 +167,33 @@ class TurnCheckpoint:
     def mark_created(self, node_id: str) -> None:
         if node_id not in self.created_nodes:
             self.created_nodes.append(node_id)
+
+    def snapshot_script(self, node_id: str, script_path: Path) -> None:
+        # Capture a node's pre-edit scripts/script.py INTO its node snapshot dir
+        # (turn_dir/<node_id>/scripts/script.py), so the node's full-dir restore swap carries it
+        # back. Skip when the node was created this turn (the whole node reverts to deletion) or
+        # the script doesn't exist yet (a write creating it is handled by mark_created_script).
+        # Best-effort, first-touch-wins (a script edit after a captured script edit re-snapshots
+        # nothing — the dest already holds the pre-turn bytes).
+        if node_id in self.created_nodes or node_id in self.created_scripts:
+            return
+        dest = self.turn_dir / node_id / "scripts" / "script.py"
+        if dest.exists() or not script_path.is_file():
+            return
+        try:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(script_path, dest)
+        except Exception as e:
+            logger.warning(
+                f"copilot checkpoint: failed to snapshot script {node_id}: {e}"
+            )
+
+    def mark_created_script(self, node_id: str) -> None:
+        # A script this turn created on a node that had none (reverse = delete the file). Skip when
+        # the node itself was created this turn (the node-delete revert removes scripts/ with it).
+        if node_id in self.created_nodes or node_id in self.created_scripts:
+            return
+        self.created_scripts.append(node_id)
 
     def record_deleted(self, node_id: str, trash_name: str) -> None:
         # A node this turn created-then-deleted nets to "create" (reverse = stay deleted); else
@@ -211,6 +249,7 @@ class TurnCheckpoint:
                 "deleted_nodes": self.deleted_nodes,
                 "snapshotted_libs": self.snapshotted_libs,
                 "created_libs": self.created_libs,
+                "created_scripts": self.created_scripts,
                 "pre_switch_node_id": self.pre_switch_node_id,
                 "failed_nodes": self.failed_nodes,
             }
@@ -239,6 +278,7 @@ class TurnCheckpoint:
                 deleted_nodes=dict(data.get("deleted_nodes", {})),
                 snapshotted_libs=dict(data.get("snapshotted_libs", {})),
                 created_libs=list(data.get("created_libs", [])),
+                created_scripts=list(data.get("created_scripts", [])),
                 pre_switch_node_id=data.get("pre_switch_node_id"),
                 failed_nodes=list(data.get("failed_nodes", [])),
             )

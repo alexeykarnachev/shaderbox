@@ -147,12 +147,27 @@ class RevertExecutor:
             if self._revert_created_lib(address):
                 result.reverted_libs.append(address)
 
+        for node_id in cp.created_scripts:
+            if node_id in ui_nodes and self._revert_created_script(node_id):
+                result.removed_scripts.append(ui_nodes[node_id].ui_state.ui_name)
+
         if cp.pre_switch_node_id is not None and cp.pre_switch_node_id in ui_nodes:
             self._set_current_node_id(cp.pre_switch_node_id)
 
         if not result.failed_restores:
             checkpoints.drop(turn_id)
         return result
+
+    def _revert_created_script(self, node_id: str) -> bool:
+        # Reverse a scripts/script.py the turn CREATED on a node that had none: delete the file +
+        # reload the node so the live engine drops the brain (binding is by file existence, 048).
+        # Path-absent-graceful — a node also snapshotted this turn already restored to no-script.
+        path = self._get_nodes_dir() / node_id / "scripts" / "script.py"
+        if not path.exists():
+            return False
+        path.unlink()
+        self._reload_node_in_place(node_id)
+        return True
 
     def _revert_lib_file(self, ws_address: str, pre_edit_source: str) -> bool:
         # Rewrite a lib file to its pre-turn bytes AND invalidate consumer nodes (a byte-only

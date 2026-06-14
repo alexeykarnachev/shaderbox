@@ -155,6 +155,7 @@ class ProjectSession:
             get_current_node_id=lambda: self.current_node_id,
             get_is_cancelled=lambda: self.copilot.is_cancelled(),
             get_script_driven_uniforms=self.get_script_driven_uniforms,
+            get_script_path=self.script_path_for,
             set_current_node_id=self.set_current_node_id,
             save_ui_node=self.save_ui_node,
             sync_editor_from_disk=self.sync_editor_from_disk,

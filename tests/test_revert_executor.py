@@ -71,3 +71,68 @@ def test_restore_node_from_trash_recovers(app: Any) -> None:
 
 def test_restore_node_from_trash_missing_is_false(app: Any) -> None:
     assert not app.revert_executor.restore_node_from_trash("nope", "nope")
+
+
+def _capture_node_with_script(app: Any, node_id: str) -> None:
+    # Mirror the backend's pre-write capture for a node that already has a script (043): snapshot
+    # the node AND carry its scripts/script.py into the snapshot dir.
+    cp = app.copilot.checkpoints.active
+    cp.snapshot_node(
+        node_id,
+        app.ui_nodes[node_id],
+        lambda n, dest: n.save(dest.parent, dest.name, rebind=False),
+    )
+    cp.snapshot_script(node_id, app.session.script_path_for(node_id))
+
+
+def test_revert_restores_an_edited_script(app: Any) -> None:
+    node_id = app.current_node_id
+    script_path = app.session.script_path_for(node_id)
+    script_path.parent.mkdir(parents=True, exist_ok=True)
+    original = "# pre-turn brain\nVALUE = 1\n"
+    script_path.write_text(original, encoding="utf-8")
+
+    app.copilot.checkpoints.open("turn_edit_script", "edit the script")
+    _capture_node_with_script(app, node_id)
+
+    # The copilot edit lands: overwrite the script on disk.
+    script_path.write_text("# copilot rewrote it\nVALUE = 2\n", encoding="utf-8")
+    app.copilot.checkpoints.seal()
+
+    result = app.revert_executor.restore_checkpoint("turn_edit_script")
+
+    assert app.ui_nodes[node_id].ui_state.ui_name in result.restored_nodes
+    assert script_path.read_text(encoding="utf-8") == original
+
+
+def test_revert_deletes_a_created_script(app: Any) -> None:
+    node_id = app.current_node_id
+    script_path = app.session.script_path_for(node_id)
+    assert not script_path.is_file()  # the node starts with no brain
+
+    app.copilot.checkpoints.open("turn_create_script", "write a script")
+    cp = app.copilot.checkpoints.active
+    cp.mark_created_script(node_id)  # the backend marks a create BEFORE the write
+
+    # The write lands: the script.py now exists.
+    script_path.parent.mkdir(parents=True, exist_ok=True)
+    script_path.write_text("# brand new brain\n", encoding="utf-8")
+    app.copilot.checkpoints.seal()
+
+    result = app.revert_executor.restore_checkpoint("turn_create_script")
+
+    assert app.ui_nodes[node_id].ui_state.ui_name in result.removed_scripts
+    assert not script_path.is_file()  # GONE on revert
+
+
+def test_revert_of_script_on_created_node_does_not_double_revert(app: Any) -> None:
+    # A node created this turn AND given a script this turn: the node-delete revert removes the whole
+    # dir (incl. scripts/), so the script must NOT also be marked a standalone create.
+    app.copilot.checkpoints.open("turn_new_node", "new node with a script")
+    cp = app.copilot.checkpoints.active
+    new_id = "deadbeef-0000-0000-0000-000000000043"
+    cp.mark_created(new_id)
+    cp.mark_created_script(new_id)  # must be a no-op: the node is created this turn
+
+    assert new_id not in cp.created_scripts  # the guard fired
+    assert new_id in cp.created_nodes
