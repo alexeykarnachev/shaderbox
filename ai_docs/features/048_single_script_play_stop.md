@@ -49,34 +49,20 @@ startup-blank-editor bug fix.
   at all) — NOT an empty-dict `update` return (that still ticks every frame, it just writes nothing).
   **Trigger:** a brain's per-frame cost becomes a real pain in practice.
 
-## One-time migration (impl-commit, not deferred)
+## No migration (unreleased)
 
-Deleting per-uniform scripts orphans every existing `nodes/<id>/scripts/u_*.py` on disk — under the new
-single-`script.py` discovery they match nothing and silently drive nothing. This affects the live dev
-sandbox: the 047 Script Showcase node (`projects/dev/nodes/1d4f8a20-…000047/scripts/`) carries four
-(`u_pulse__float.py`, `u_swirl__float.py`, `u_wave_offset__vec2.py`, `u_tint__vec3.py`). **Never silent.**
+The per-uniform-script scheme (`u_*.py`, the type tags, the active flags) only ever existed on
+unreleased `dev` (last release v0.15.0 predates all of 041/044/047/048), so NO real user has any of it —
+there is nothing to migrate and no migration code ships. The dev sandbox's own per-uniform scripts +
+stale flags are cleaned by hand in the same `git add projects/dev` sandbox-sync wave the hard rules
+already mandate (the Script Showcase node rebuilt for the single-brain model; node `4c6c34f4`'s `u_*.py`
+deleted; all `node.json`s re-saved clean).
 
-The impl commit ships a one-time migration as a **`ProjectSession.load` post-step scoped to
-`self.paths.nodes_dir` ONLY** — NEVER in `load_node_from_dir`, which also runs on the read-only shipped
-templates dir (`project_session.py` loads templates through the same function) and must not be mutated.
-For each node dir with `u_*.py` files: concatenate their bodies as a COMMENTED block prepended to that
-node's `scripts/script.py` (creating `script.py` if absent), then `detach_script` each `u_*.py` (trashed,
-recoverable, reusing `detach_script`'s existing collision-rename). A loud per-node INFO log names what
-moved. **Idempotency = "no `u_*.py` left on disk"** (the migration's own teardown is the marker — no
-separate flag); re-running `load` finds no `u_*.py` and no-ops. The user manually merges the commented
-bodies into `update`/helpers.
-
-**Dev-sandbox sequencing (avoid a stale double-prepend):** both dev nodes currently carry BOTH a
-`script.py` AND `u_*.py` files. The example node is rebuilt by hand for the new single-brain model in the
-finalization sandbox-sync wave; that rebuild must DELETE the node's `u_*.py` files BEFORE the auto-migration
-runs against the sandbox, so the migration never prepends a stale commented block into the hand-authored
-`script.py`. The auto-migration is then verified by a real run on any *other* node that still carries
-`u_*.py`, not just unit-tested.
-
-Dropped model fields: `UIUniform.is_script_active` + `UINodeState.is_brain_active` change meaning and are
-DROPPED (decision 8 of conventions persistence-evolution: an intentional reset drops the key).
-`load_node_from_dir` already filters unknown keys + logs them (fail-soft) — so a 047 `node.json` loads
-clean, the stale flags ignored. `is_brain_active=True` intent is harmless to lose (the brain auto-binds now).
+Dropped model fields need no migration either: `UIUniform.is_script_active` + `UINodeState.is_brain_active`
+are simply removed — `load_node_from_dir` already filters unknown keys + logs them (fail-soft), so any
+lingering `dev`-era `node.json` loads clean with the stale flags ignored (decision 8 of conventions
+persistence-evolution: an intentional reset drops the key). `is_brain_active=True` intent is harmless to
+lose (the brain auto-binds by existence now).
 
 ## Design decisions (locked)
 
@@ -269,8 +255,9 @@ clean, the stale flags ignored. `is_brain_active=True` intent is harmless to los
   (reads `last_driven`); `script_driven_uniforms` keeps working (brain-only now); `script_file_for` always
   `script.py`.
 - `shaderbox/ui_models.py` — DROP `UIUniform.is_script_active` + `UINodeState.is_brain_active`; ADD
-  `UINodeState.stopped_uniforms: set[str]` + `all_stopped: bool` (both defaulted, pydantic-serialized); the
-  one-time `u_*.py`→`script.py` migration in `load_node_from_dir` (or a `ProjectSession.load` post-step).
+  `UINodeState.stopped_uniforms: list[str]` + `all_stopped: bool` (both defaulted, pydantic-serialized).
+  No migration code (unreleased — see "No migration" above); the dropped flags ride the existing
+  unknown-key filter in `load_node_from_dir`.
 - `shaderbox/widgets/uniform.py` — DELETE `_draw_script_glyph`; draw the play/stop primitive only for a
   driven uniform; auto-stop on `is_item_activated()` captured before the trailing button; name color
   `STATE_INFO` when PLAYING; write-back skip follows PLAYING.
@@ -359,9 +346,6 @@ Per dev_flow step 7, each check falsifiable + names the consumer:
 - **D16/D17 stub** — open a fresh node's script → an empty-dict `update` body, commented example lines naming
   the node's uniforms, the explicit import line, and a clean docstring documenting ctx + play/stop. Falsifier:
   the stub drives uniforms by default (non-empty dict) or hides the available types.
-- **Migration** — `make run` against a project carrying old `u_*.py` files (the dev sandbox before rebuild)
-  → each affected node's `script.py` gains a commented block with the old bodies + a log names them; the
-  `u_*.py` files are trashed. Falsifier: the `u_*.py` bodies are silently lost OR still drive nothing-visible.
 - **Copilot reject still fires** — `set_uniform` on a PLAYING uniform via the copilot is rejected with a
   one-line "driven by script.py, edit the script" message. Falsifier: the set_uniform silently no-ops or the
   message names a per-uniform file.
@@ -386,11 +370,6 @@ Per dev_flow step 7, each check falsifiable + names the consumer:
    value.** DEFAULT: grab (one-shot, no per-frame spam). The alternative (only on an actual value change) lets
    a click-to-focus NOT stop, but a vec3's first component change would stop before you set the rest — grab is
    the cleaner "I'm taking manual control" signal.
-5. **Auto-migration concatenates old `u_*.py` bodies as a COMMENTED block into `script.py` (then trashes the
-   files).** DEFAULT: yes — preserves your work for manual merge, never silent, recoverable from trash. The
-   alternative (warn-and-leave the files) keeps them on disk driving nothing, which is the confusing state
-   we're removing.
-
 ## Review history
 
 ### Validation swarm (2026-06-14, ultracode — 4 lenses + devil's-advocate + synthesis)

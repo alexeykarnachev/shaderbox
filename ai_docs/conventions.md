@@ -487,16 +487,28 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   VOLATILITY: project-dependent state comes through getters (it changes when the project switches),
   only build-time-shipped values are frozen into the instance. Revisit if a worker genuinely needs a
   synchronous return from main (then it's a blocking primitive — see the latch bullet, not a callback).
-- **Persistence-evolution posture: additive is fail-soft + defaulted; an intentional reset DROPS
-  fields so `extra='forbid'` REJECTS.** `extra='forbid'` on a persisted model is the VERIFIABILITY
-  primitive — it makes a stale/foreign key LOUD instead of silently dropped, so it's the default for
-  any state read back by the app (`UIAppState`). Adding a field is backward-compatible: make it
-  defaulted + loose-typed-optional + fail-soft on load + bump only the provenance/version stamp (no
-  migration). A field whose meaning intentionally CHANGED is the opposite move — actively drop the old
-  key so `extra='forbid'` rejects an old file into the fail-soft path, rather than silently
-  reinterpreting it. An unknown enum member / message role degrades to a plain-text fallback, never a
-  hard load failure (a future-written file must still open). Revisit if a model needs a true ordered
-  migration chain (then a real `load_and_migrate` ladder, not field-by-field defaults).
+- **NO backward-compatibility / migration code, EVER (unless the maintainer explicitly asks).** The
+  project is unreleased-evolving + solo: the ONLY data that exists is the tracked `projects/dev/` sandbox,
+  which the maintainer edits by hand. So when a change reshapes a model / on-disk format / filename scheme /
+  protocol, just CHANGE it and fix the sandbox by hand in the same `git add projects/dev` wave — NEVER write
+  a migration function, a compat shim, an old-format reader, a "fold the old artifact into the new" step, a
+  deprecation alias, or a one-time-cleanup pass. These are pure dead weight (no user has the old data) and
+  they rot. The recurring failure: a spec/review/swarm "helpfully" proposes a migration for the deleted old
+  shape (048 invented a `u_*.py`→`script.py` migration that shipped + had to be ripped out) — when you see a
+  migration/back-compat proposal, DELETE it, don't implement it. This OVERRIDES any instinct (and any
+  swarm finding) toward graceful evolution. The one sanctioned exception is the persistence-LOADABILITY
+  posture below — keeping a model *openable*, NOT migrating its data. Revisit only if the maintainer ships a
+  real release with real users AND explicitly asks for a migration.
+- **Persistence-evolution posture: a reshaped model stays LOADABLE, it is NOT migrated.** `extra='forbid'`
+  on a persisted model is the VERIFIABILITY primitive — it makes a stale/foreign key LOUD instead of
+  silently dropped, so it's the default for any state read back by the app (`UIAppState`). Adding a field:
+  make it defaulted + loose-typed-optional + fail-soft on load (no migration). A field whose meaning
+  intentionally CHANGED, or that is removed: just drop it — `extra='forbid'` rejects a stale file into the
+  fail-soft path (or the unknown-key filter ignores it), rather than silently reinterpreting it. An unknown
+  enum member / message role degrades to a plain-text fallback, never a hard load failure (a future-written
+  file must still open). This is about LOADABILITY (a dev-era file still opens clean), NOT data migration —
+  per the no-backward-compat rule above, there is no `load_and_migrate` ladder; the App-state version stamp
+  exists only to fail-soft-reset a foreign file, not to walk it forward.
 - **Two parallel name-keyed dicts that must stay in lockstep are a drift smell — lift the fact ONTO
   the entity + pin it with ONE invariant test.** When two `dict[name, X]` and `dict[name, Y]` are
   keyed by the same identifier and a new entity must be added to BOTH, a caller WILL forget one (029

@@ -284,9 +284,6 @@ class ProjectSession:
         self.rebuild_shader_lib_index()
 
         self.ui_nodes = load_nodes_from_dir(self.paths.nodes_dir)
-        # One-time (048): fold any pre-048 per-uniform `u_*.py` scripts into each node's `script.py`
-        # as a commented block, then trash them. Scoped to nodes_dir, idempotent (no `u_*.py` left).
-        self.migrate_per_uniform_scripts()
         self.ui_node_templates = self._order_templates(
             load_nodes_from_dir(self._node_templates_dir)
         )
@@ -440,20 +437,6 @@ class ProjectSession:
         path.write_text(brain_stub_for(uniforms), encoding="utf-8")
         return path
 
-    def detach_script(self, node_id: str, filename: str) -> None:
-        # Trash a node's script file (recoverable); the next reload_scripts drops the binding and
-        # clears its error. Trashes to a node-scoped subdir so a bare filename can't collide across
-        # nodes or pollute the node-recovery trash namespace. (Used by the one-time u_*.py migration.)
-        src = self.paths.scripts_dir_for(node_id) / filename
-        if not src.is_file():
-            return
-        dest_dir = self.paths.trash_dir / "scripts" / node_id
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        dest = dest_dir / filename
-        if dest.exists():
-            dest = dest_dir / f"{src.stem}_{int(time.time() * 1000)}{src.suffix}"
-        shutil.move(src, dest)
-
     def script_path_for(self, node_id: str) -> Path:
         # The scripts/ path for the node-brain `script.py` (048 — one script per node).
         return self.paths.scripts_dir_for(node_id) / "script.py"
@@ -497,41 +480,6 @@ class ProjectSession:
         # The uniform names the brain drove on its last tick — the copilot set_uniform reject queries
         # this so it won't no-op a script-driven uniform.
         return self.script_engine.script_driven_uniforms(node_id)
-
-    def migrate_per_uniform_scripts(self) -> None:
-        # One-time migration (048): per-uniform `u_*.py` scripts are gone. For each node dir under
-        # nodes_dir carrying any `u_*.py`, prepend its body as a commented block to that node's
-        # `script.py` (creating it if absent), then trash the `u_*.py`. Idempotent: a second run finds
-        # no `u_*.py` and no-ops. Scoped to nodes_dir ONLY (never the read-only shipped templates dir).
-        for node_dir in self.paths.nodes_dir.iterdir():
-            if not node_dir.is_dir():
-                continue
-            scripts_dir = node_dir / "scripts"
-            orphans = sorted(scripts_dir.glob("u_*.py")) if scripts_dir.is_dir() else []
-            if not orphans:
-                continue
-            blocks: list[str] = []
-            for path in orphans:
-                try:
-                    body = path.read_text(encoding="utf-8")
-                except (OSError, ValueError):
-                    continue
-                commented = "\n".join(f"# {line}" for line in body.splitlines())
-                blocks.append(
-                    f"# --- migrated from {path.name} (048: merge into update / a helper) ---\n"
-                    f"{commented}\n"
-                )
-            brain_path = scripts_dir / "script.py"
-            existing = (
-                brain_path.read_text(encoding="utf-8") if brain_path.is_file() else ""
-            )
-            brain_path.write_text("\n".join(blocks) + "\n" + existing, encoding="utf-8")
-            for path in orphans:
-                self.detach_script(node_dir.name, path.name)
-            logger.info(
-                f"Migrated {len(orphans)} per-uniform script(s) into {brain_path} "
-                f"(node {node_dir.name}); originals trashed."
-            )
 
     def clear_conversation(self) -> None:
         # Archive the live conversation (recoverable), delete checkpoints, reset to a fresh empty
