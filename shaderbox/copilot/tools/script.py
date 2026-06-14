@@ -72,7 +72,9 @@ def script_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
                 if view.errors
                 else "compiles clean"
             )
-            body = f"read {view.name}'s script.py — {lines} lines, {state}\n{view.listing}"
+            body = (
+                f"read {view.name}'s script.py — {lines} lines, {state}\n{view.listing}"
+            )
         return True, body, {"node": view.node_id, "is_stub": view.is_stub}
 
     def write_script(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
@@ -93,10 +95,14 @@ def script_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
         for line in result.per_key_errors:
             tail.append(f"-> 1 key skipped: {line}")
         for line in result.orphan_keys:
-            tail.append(f"-> '{line.split(':', 1)[0]}' is not an active uniform ({line})")
-        return True, head + "\n" + "\n".join(t for t in tail if t), {
-            "driven": result.driven
-        }
+            tail.append(
+                f"-> '{line.split(':', 1)[0]}' is not an active uniform ({line})"
+            )
+        return (
+            True,
+            head + "\n" + "\n".join(t for t in tail if t),
+            {"driven": result.driven},
+        )
 
     return [
         ToolDefinition(

@@ -29,7 +29,11 @@ def test_read_script_stub_is_flagged() -> None:
 def test_read_script_no_node_is_error() -> None:
     reg = _registry(
         read_script=lambda _node: ScriptView(
-            "", "", "", [type("E", (), {"path": "", "line": 0, "message": "no node found"})()], is_stub=False  # noqa: E501
+            "",
+            "",
+            "",
+            [type("E", (), {"path": "", "line": 0, "message": "no node found"})()],
+            is_stub=False,
         )
     )
     ok, msg, _ = reg.execute("read_script", {"node": "bad"})

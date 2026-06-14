@@ -37,7 +37,7 @@ the live node byte-identical; the MOTION verdict is the value-diff across t (GL-
 cycle a pixel-bbox misses) + ONE corroborating render for the visible/FLAT case. The script rides the working set
 live; a script write is checkpoint-captured (`_capture_script`, landed first as commit C1 — it fixed a live
 data-loss bug where revert DELETED an edited script). `edit_script` dropped as tool tax. `make check` 0 errors;
-448 tests green (the GL-context subset skips headless). **REMAINING:** the driver dogfood (drive the agent to a
+the test suite green (the GL-context subset skips headless). **REMAINING:** the driver dogfood (drive the agent to a
 figure-8 pulsing circle, send the maintainer the small video + frames) + the maintainer `make run` visual checks.
 **048 SINGLE-SCRIPT + PLAY/STOP also pends its maintainer `make run`** (play/stop, auto-stop, blue names,
 node-derived tabs — un-judgeable headless). **No open BLOCKERs.**

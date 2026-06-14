@@ -113,6 +113,44 @@ def test_render_working_set_node_and_lib() -> None:
     assert "lib:glow.glsl" in body and "no standalone compile" in body
 
 
+def test_render_working_set_carries_script_section() -> None:
+    # A scripted node renders a SCRIPT sub-section + its error line; a driven uniform row shows the
+    # marker, not a phantom value (feature 043 D6/D7a). The marker itself is built backend-side
+    # (_format_uniforms); here we verify the working-set RENDER carries the script fields it's given.
+    scripted = WorkingSetView(
+        address="7f3a",
+        name="Drift",
+        listing="1  void main(){}",
+        is_current=True,
+        is_lib=False,
+        uniforms=["u_center vec2 = <driven by script.py>", "u_glow float = 0.7"],
+        errors=[],
+        script_listing="1  class Behavior(ScriptBehavior):\n2    def update(self, ctx):",
+        script_errors=[CompileErrorInfo(path="script.py", line=2, message="bad")],
+    )
+    body = (render_working_set([scripted])[0].content) or ""
+    assert "Drift SCRIPT (scripts/script.py)" in body
+    assert "class Behavior(ScriptBehavior)" in body
+    assert "script.py:2: bad" in body
+    assert "u_center vec2 = <driven by script.py>" in body
+
+
+def test_render_working_set_no_script_adds_zero_bytes() -> None:
+    # A script-LESS node (script_listing="") must add NO SCRIPT sub-section — the gate that keeps the
+    # 4-of-5-nodes-unscripted case from bloating the context (feature 043 D6).
+    plain = WorkingSetView(
+        address="7f3a",
+        name="Plain",
+        listing="1  void main(){}",
+        is_current=True,
+        is_lib=False,
+        uniforms=["u_speed float = 1.5"],
+        errors=[],
+    )
+    body = (render_working_set([plain])[0].content) or ""
+    assert "SCRIPT" not in body  # zero script bytes for an unscripted node
+
+
 # ---- D11 + the live per-iteration splice (recording fake client) ----
 
 

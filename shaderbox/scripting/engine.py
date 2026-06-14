@@ -406,7 +406,11 @@ class ScriptEngine:
 
         dt = 1.0 / fps
         max_frame = max((round(t * fps) for t in sample_times), default=0)
-        want = {round(t * fps): t for t in sample_times}
+        # frame -> the first sample time landing on it; setdefault keeps the earliest so two close
+        # times rounding to one frame don't silently drop a sample (the dict-comp would keep the last).
+        want: dict[int, float] = {}
+        for t in sample_times:
+            want.setdefault(round(t * fps), t)
         sink: dict[str, Any] = {}
         errors: dict[tuple[str, str], ScriptError] = {}
         driven: set[str] = set()

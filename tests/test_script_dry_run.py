@@ -116,7 +116,9 @@ def test_dry_run_closed_form_motion_captured(tmp_path: Path) -> None:
 
 def test_dry_run_compile_error_no_tick(tmp_path: Path) -> None:
     # A syntax error: dry_run returns the live compile verdict with NO tick (driven empty, no samples).
-    _write_brain(tmp_path, "class Behavior(ScriptBehavior)\n    pass\n")  # missing colon
+    _write_brain(
+        tmp_path, "class Behavior(ScriptBehavior)\n    pass\n"
+    )  # missing colon
     node = _FakeNode([_u("u_x")])
     eng = _engine(tmp_path, node)
 
@@ -134,9 +136,7 @@ def test_dry_run_orphan_and_per_key_errors(tmp_path: Path) -> None:
     _write_brain(
         tmp_path,
         _brain(
-            update_body=(
-                "        return {'u_x': 0.5, 'u_typo': 1.0, 'u_v': 0.3}\n"
-            )
+            update_body=("        return {'u_x': 0.5, 'u_typo': 1.0, 'u_v': 0.3}\n")
         ),
     )
     node = _FakeNode([_u("u_x"), _u("u_v", dim=2)])
