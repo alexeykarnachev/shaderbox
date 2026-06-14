@@ -37,3 +37,4 @@ shaderbox-design-handoff-*.tar.gz
 
 # Claude Code runtime state (the scheduler lock under the tracked .claude/ dir)
 .claude/scheduled_tasks.lock
+tabbar_spike.ini

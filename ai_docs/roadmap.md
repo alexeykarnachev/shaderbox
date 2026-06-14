@@ -26,25 +26,26 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-06-14 (046 knowledge-lift filed on `dev`; 045 done; next = 043 copilot write-behavior). -->
-**046 KNOWLEDGE-LIFT FILED on `dev`** (unreleased; last release v0.15.0). The 2026-06-13 nightly-audit's
-durable knowledge is now in its canonical homes so a cold agent inherits it through the cold-start chain:
-conventions `## Design decisions` gained the four emergent design LAWS (structural-impossibility-over-guards,
-speculative-machinery-disambiguated, funnel-not-per-caller, stateless-rebuild-over-daemon) + the concrete
-pattern lifts (worker/thread-affinity, persistence posture, name-keyed-dict drift, snapshot correctness) +
-the v3d/env known-quirks; `dev_flow.md` step 7 gained the verification-design rule ("unwired = absent"); a
-new `copilot-llm-agent-design` skill states the actor-model once. Stale live-docs fixed (the 045 tabbed-editor
-conventions bullet; row 020 collapsed). The `_audit_2026-06-13/` report + workflow are deleted (filed).
-**045 SCRIPT UX REDESIGN also DONE** — its manual `make run` confirm still pends the maintainer (headless Pi
-can't drive glfw). `make check` + 502 tests green.
-**NEXT: feature 043 — copilot WRITE-BEHAVIOR** (the agent authors `u_*.py`/`script.py`). Before plan-locking,
-fold the `todo.md` checkpoint deferral: a script-write tool must capture into the active turn-rollback
-checkpoint (`_capture_script` seam) or the write escapes undo. **No open BLOCKERs.**
+<!-- As of 2026-06-14 (047 scripting-UX-refinement spec LOCKED on `dev`, pre-impl review pending; 046/045 done). -->
+**047 SCRIPTING UX REFINEMENT — SPEC LOCKED, pre-impl review pending** (unreleased; last release v0.15.0).
+A maintainer-walkthrough-driven UI/UX + behavior wave over the scripting feature (041/042/044/045),
+14 findings. Two architectural spines: (1) active/inactive becomes a MODEL FLAG (`is_script_active` on
+`UIUniform`, `is_brain_active` on `UINodeState`) — the 045 `.disabled` marker mechanism is DELETED; (2) a
+per-uniform script binds by `(name, type)` (filename encodes the type tag), so a shader-side retype is
+lossless+reversible and delete-readd rebinds automatically (F14). UI: pills → small `</>` glyph; a new
+script-local bar under the tab bar (Activate button + whole-project "copy content from same-type script"
+selector); native imgui tab bar with bare-filename labels; script-driven uniform widgets stay editable
+(tick re-asserts); engine-owned uniforms off the script surface; error-strip + docstring tidy.
+Spec: `ai_docs/features/047_scripting_ux_refinement.md`. Resolves the `todo.md` type-change deferral on impl.
+**NEXT after 047: feature 043 — copilot WRITE-BEHAVIOR** (the agent authors `u_*.py`/`script.py`); before
+plan-locking 043, fold the `todo.md` checkpoint deferral (a script-write tool must capture into the
+turn-rollback checkpoint). **No open BLOCKERs.** 045's manual `make run` confirm still pends the maintainer.
 
 ## Features
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 047 | scripting_ux_refinement | spec | Maintainer-walkthrough UI/UX + behavior wave over scripting (041/042/044/045), 14 findings. Active/inactive becomes a model flag (`is_script_active`/`is_brain_active`; the 045 `.disabled` marker deleted); a per-uniform script binds by `(name, type)` (filename encodes the type tag → lossless retype + auto delete-readd rebind; rename-recovery via a whole-project copy-content selector). Pills → small `</>` glyph; new script-local bar (Activate + copy-from-same-type-script); native imgui tab bar with bare-filename labels; script-driven widgets stay editable (tick re-asserts); engine-owned uniforms off the script; error-strip + docstring tidy. Spec: `ai_docs/features/047_scripting_ux_refinement.md`. |
 | 046 | knowledge_base_refactor | done | Docs/process-only knowledge-lift wave from the 2026-06-13 nightly audit: filed the audit's durable knowledge into its canonical homes (conventions `## Design decisions` emergent laws + concrete patterns + v3d/env quirks, `dev_flow.md` step-7 verification-design rule, the new `copilot-llm-agent-design` skill) + fixed the two HIGH stale live-docs (045 tabbed-editor bullet, row 020 collapsed). No code change. The audit report + workflow were the durable source until filed, then deleted. Spec: `ai_docs/features/046_knowledge_base_refactor.md`. |
 | 045 | script_ux_redesign | done | The script UX rebuild over 042's machinery (042's UI was a placeholder the maintainer judged poor). ONE active/inactive state per script, toggled in the editor; a `script_pill` on the per-uniform row + node header lazily opens the script in our own TABBED suffix-aware code editor (an `EditorTab` list replacing the single-slot `_explicit_editor_path`); inactive persists via a `<file>.disabled` marker the engine skips at reload; errors render through the shared shader-error strip; the curated math `exec` globals stripped (a script is plain Python). Spec: `ai_docs/features/045_script_ux_redesign.md`. |
 | 042 | script_ui | superseded | First surface of the headless script engine (041/044) in the Node tab — chips + read-only live value + per-row error line + a node-brain strip + the engine verbs (`create`/`detach`/`reset`/`brain_status`) + `ctx.mouse`. Shipped as MACHINERY behind a deliberate placeholder UI the maintainer judged poor; the affordance layer was fully replaced by 045 (the chip/menu/strip removed). The engine accessors it added remain the live surface. Spec: `ai_docs/features/042_script_ui.md`. |

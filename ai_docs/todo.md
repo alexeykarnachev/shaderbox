@@ -46,16 +46,18 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   file (or a new `_capture_script` seam) into the active checkpoint, else a script write escapes undo.
 
 ## [DEFERRAL] script-engine type-change error: surfaced in-app, not auto-resolved (feature 042 residual)
-- **Trigger:** a maintainer wants MORE than a visible error after changing a scripted uniform's TYPE in
-  the shader (`vec2 u_x` -> `vec3 u_x`) — i.e. an automated "the type changed, re-stub the return shape"
-  affordance, not just the error line + manual fix.
+- **Trigger:** RESOLVED BY DESIGN in feature 047 (locked, not yet implemented) — delete this entry in
+  the 047 implementation commit. 047's `(name, type)` per-uniform filename key (decision 13) makes a
+  retype lossless: a retyped uniform binds a fresh script (no coercion error), the old-type script stays
+  on disk, and the change is reversible; rename recovery comes via 047's copy-content selector. Until the
+  047 impl lands, the CURRENT behavior is the residual below.
 - The ORPHAN half (deleting a scripted uniform) self-resolves: the orphan `u_<name>.py` no longer
   matches an active uniform, so reload drops the binding (and 045 lets the user disable/delete the file
   via the editor). The TYPE-CHANGE half is SURFACED but not auto-resolved: the binding stays live (the
   file still matches a real active uniform), so every tick records a coercion `ScriptError` frozen at
   last-good — 045 shows it in the editor's bottom error strip when the script tab is open (the same
-  surface as shader errors), and the user fixes the return shape by hand. An automated type-aware
-  re-stub is deliberately out of scope. Spec: `ai_docs/features/042_script_ui.md ## Out of scope`.
+  surface as shader errors), and the user fixes the return shape by hand. Spec for the fix:
+  `ai_docs/features/047_scripting_ux_refinement.md` decision 13.
 
 ## [DEFERRAL] script-engine cross-uniform shared state + compute-order guarantee (feature 042+)
 - **Trigger:** a real workflow needs TWO scripts to share mutable state (one writes, another reads —
