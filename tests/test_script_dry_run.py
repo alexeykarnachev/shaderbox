@@ -149,6 +149,32 @@ def test_dry_run_orphan_and_per_key_errors(tmp_path: Path) -> None:
     assert any(name == "u_typo" for name, _ in probe.orphan_keys)  # no such uniform
 
 
+def test_dry_run_runtime_raise_surfaces(tmp_path: Path) -> None:
+    # A script that COMPILES but `update` raises at a later frame (an integrator blow-up): the probe
+    # must carry the runtime_error, NOT report a false ANIMATING off the crash-frozen values. Falsifier:
+    # runtime_error is None -> the crash is swallowed and the verdict lies.
+    _write_brain(
+        tmp_path,
+        _brain(
+            init_body="        self.n = 0\n",
+            update_body=(
+                "        self.n += 1\n"
+                "        if self.n >= 3:\n"
+                "            raise ValueError('boom')\n"
+                "        return {'u_x': float(self.n)}\n"
+            ),
+        ),
+    )
+    node = _FakeNode([_u("u_x")])
+    eng = _engine(tmp_path, node)
+
+    probe = eng.dry_run("n0", node, _SAMPLE_TIMES, _FPS)
+
+    assert probe.compile_error is None  # it DID compile
+    assert probe.runtime_error is not None  # but it crashes at runtime
+    assert "ValueError" in probe.runtime_error.message
+
+
 def test_dry_run_empty_dict_drives_nothing(tmp_path: Path) -> None:
     _write_brain(tmp_path, _brain(update_body="        return {}\n"))
     node = _FakeNode([_u("u_x")])

@@ -56,14 +56,17 @@ class BrainStatus:
 class ScriptProbe:
     # The synchronous feedback a copilot write_script reads back (feature 043). compile_error is the
     # live reload verdict (None = clean). The rest come from an ISOLATED dry-tick (the live node + the
-    # live engine state are untouched): driven = the real uniforms the brain drove; per_key_errors =
-    # shape/coercion failures on real uniforms; orphan_keys = keys naming no active uniform (typo);
-    # samples = (t, {name: value}) at each sample time — the motion signal (values differ across t).
+    # live engine state are untouched): runtime_error = the brain RAN but `update` raised / returned a
+    # non-dict at some frame (the uniform freezes from there — distinct from a compile error and from a
+    # per-key shape error); driven = the real uniforms the brain drove; per_key_errors = shape/coercion
+    # failures on real uniforms; orphan_keys = keys naming no active uniform (typo); samples =
+    # (t, {name: value}) at each sample time — the motion signal (values differ across t).
     compile_error: "ScriptError | None"
     driven: set[str]
     per_key_errors: list[tuple[str, "ScriptError"]]
     orphan_keys: list[tuple[str, "ScriptError"]]
     samples: list[tuple[float, dict[str, Any]]]
+    runtime_error: "ScriptError | None" = None
 
 
 def is_scriptable(uniform: object) -> TypeGuard[moderngl.Uniform]:
@@ -446,7 +449,13 @@ class ScriptEngine:
             for name in sorted(skipped)
             if (err := errors.get((node_id, name))) is not None
         ]
-        return ScriptProbe(None, set(driven), per_key, orphan, samples)
+        # A behavior-level error recorded during the dry-tick = `update` raised / returned a non-dict at
+        # some frame (the script compiled but CRASHES at runtime). Surface it so the verdict isn't a
+        # false ANIMATING off the frozen-None values the crash leaves in the sink.
+        runtime_error = errors.get((node_id, _BRAIN_FILE))
+        return ScriptProbe(
+            None, set(driven), per_key, orphan, samples, runtime_error=runtime_error
+        )
 
     def _tick_brain(
         self,

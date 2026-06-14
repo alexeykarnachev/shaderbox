@@ -95,8 +95,10 @@ def script_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
         for line in result.per_key_errors:
             tail.append(f"-> 1 key skipped: {line}")
         for line in result.orphan_keys:
+            name = line.split(":", 1)[0]
             tail.append(
-                f"-> '{line.split(':', 1)[0]}' is not an active uniform ({line})"
+                f"-> '{name}' is not an active uniform -- declare it in the SHADER first "
+                "(edit_shader), or fix the name."
             )
         return (
             True,

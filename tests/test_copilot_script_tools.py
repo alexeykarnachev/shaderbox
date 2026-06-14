@@ -97,6 +97,18 @@ def test_write_script_surfaces_orphan_and_per_key() -> None:
     assert ok is True
     assert "u_v: expected a vec2" in msg
     assert "u_typo" in msg
+    assert "declare it in the SHADER first" in msg  # the orphan steer
+
+
+def test_write_script_runtime_error_is_surfaced() -> None:
+    reg = _registry(
+        write_script=lambda _t, _node: ScriptWriteResult(
+            ok=True, compile_error="ran, then script.py:5: ValueError: boom"
+        )
+    )
+    ok, msg, _ = reg.execute("write_script", {"new_text": "..."})
+    assert ok is True
+    assert "ran, then" in msg and "ValueError: boom" in msg
 
 
 def test_write_script_unresolved_node_is_error() -> None:

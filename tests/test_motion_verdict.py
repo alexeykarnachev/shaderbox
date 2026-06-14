@@ -13,7 +13,9 @@ from shaderbox.scripting import ScriptProbe
 _EPS = 1e-4
 
 
-def _probe(driven: set[str], samples: list[tuple[float, dict[str, object]]]) -> ScriptProbe:
+def _probe(
+    driven: set[str], samples: list[tuple[float, dict[str, object]]]
+) -> ScriptProbe:
     return ScriptProbe(
         compile_error=None,
         driven=driven,

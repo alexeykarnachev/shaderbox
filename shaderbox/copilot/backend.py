@@ -1462,6 +1462,9 @@ class CopilotBackend:
             node_id = self._resolve_node_or_current(node)
             if node_id is None:
                 return ScriptView("", "", "", [_no_node_error(node)], is_stub=False)
+            self._working_set_add(
+                node_id
+            )  # so its SCRIPT sub-section rides the working set
             text, is_stub = self._read_script_source(node_id)
             _text, status = self._get_script_source_view(node_id)
             errors = (
@@ -1484,11 +1487,22 @@ class CopilotBackend:
             node_id = self._resolve_node_or_current(node)
             if node_id is None:
                 return ScriptWriteResult(ok=False, error=_no_node_error(node).message)
+            self._working_set_add(
+                node_id
+            )  # so the script rides the working set next step
             self._capture_script(node_id)
             probe = self._write_script_source(node_id, new_text)
             if probe.compile_error is not None:
                 return ScriptWriteResult(
                     ok=True, compile_error=_format_script_error(probe.compile_error)
+                )
+            if probe.runtime_error is not None:
+                # The script compiled but `update` raised / returned a non-dict at runtime — surface it
+                # as the error (NOT a motion verdict off the crash-frozen values).
+                return ScriptWriteResult(
+                    ok=True,
+                    compile_error="ran, then "
+                    + _format_script_error(probe.runtime_error),
                 )
             render_line = self._script_render_line(
                 self._get_ui_nodes()[node_id].node, probe.samples
