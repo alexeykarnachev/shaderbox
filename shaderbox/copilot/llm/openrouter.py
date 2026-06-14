@@ -5,6 +5,7 @@ from loguru import logger
 from openai import APIStatusError, OpenAI
 from openai.types.chat import ChatCompletionChunk
 
+from shaderbox.copilot.config import COPILOT_CONFIG
 from shaderbox.copilot.errors import CopilotConfigError
 from shaderbox.copilot.llm.api import (
     LLMClient,
@@ -89,9 +90,12 @@ class OpenRouterLLMClient(LLMClient):
         return self._get_model()
 
     def _client(self) -> OpenAI:
+        # An explicit timeout: the SDK default is 600s, so a stalled stream would block the
+        # non-daemon worker for ~10 min and hang interpreter shutdown (043 dogfood hang).
         return OpenAI(
             base_url=_OPENROUTER_BASE_URL,
             api_key=self._get_api_key(),
+            timeout=COPILOT_CONFIG.llm_request_timeout_s,
         )
 
     def stream(

@@ -534,15 +534,6 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   exporter context, OR when editing it feels unwieldy. Rated KEEP in feature 017 (button tiers + draw
   helpers + `preview_cell` + labeled fields all serve one role: the shared imgui+theme primitive set).
 
-## [DEFERRAL] copilot Stop is unresponsive while an LLM stream stalls (up to the SDK's 600 s timeout)
-- **Trigger:** a user/dogfood report of "Stop does nothing / UI frozen during a turn", OR next time
-  the agent-loop stream iteration in `copilot/agent.py` is edited.
-- `cancel.is_set()` is checked at iteration top and before each tool, but not per-delta inside the
-  `for ev in client.stream(...)` loop, and the OpenRouter client rides the SDK default timeout
-  (httpx 600 s). A stalled stream keeps `in_flight=True` (editor read-only, panel frozen) until the
-  timeout fires; the turn then terminates with summary+stats preserved. Fix shape: a per-delta
-  cancel check (break/raise inside the event loop) and/or an explicit client timeout.
-
 ## [DEFERRAL] a node whose shader file vanishes from disk freezes the frame loop (pre-existing)
 - **Trigger:** first user report of "app frozen / won't close" after deleting/moving a node's
   `shader.frag.glsl` externally, OR next time the missing-file guard at the top of

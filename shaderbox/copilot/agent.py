@@ -485,6 +485,12 @@ def run_turn(
             for ev in client.stream(
                 request_messages, tools=specs, max_tokens=config.max_tokens_per_turn
             ):
+                if cancel.is_set():
+                    # Per-delta cancel: a Stop / release during a SLOW stream is responsive here,
+                    # not only at the iteration top — else the worker rides the request timeout
+                    # (043 hang). The partial text/tool-calls are discarded; the loop's top-of-
+                    # iteration cancel check below returns the cancelled terminal.
+                    break
                 match ev:
                     case LLMTextDelta():
                         text_buf += ev.text
@@ -512,6 +518,20 @@ def run_turn(
             yield AgentError(
                 note,
                 summary=_build_turn_summary(note, ran, registry),
+                stats=TurnStats(
+                    context_tokens=first_input_tokens or 0,
+                    reply_tokens=usage.output_tokens,
+                    cost_usd=usage.cost_usd,
+                ),
+            )
+            return
+
+        if cancel.is_set():
+            # The stream broke out on a mid-delta cancel (043) — terminate the turn now with the
+            # accumulated summary + spend, before executing any partial tool calls.
+            tr.event("turn_cancelled", iteration=iteration)
+            yield AgentCancelled(
+                _build_turn_summary(text_buf.strip(), ran, registry),
                 stats=TurnStats(
                     context_tokens=first_input_tokens or 0,
                     reply_tokens=usage.output_tokens,

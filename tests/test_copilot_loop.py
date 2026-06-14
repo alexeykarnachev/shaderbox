@@ -11,6 +11,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 from shaderbox.copilot.agent import (
+    AgentCancelled,
     AgentError,
     AgentEvent,
     AgentTextDelta,
@@ -973,3 +974,55 @@ def test_clean_edit_streak_nudges_once() -> None:
     assert len(cards) == n_clean and all(c.ok for c in cards)
     assert nudge_events.count("clean_streak_nudge") == 1
     assert isinstance(events[-1], AgentTurnDone)
+
+
+class _CancellingClient:
+    # Streams text deltas, but sets `cancel` partway through the FIRST stream — models a Stop /
+    # release landing mid-stream on a slow response (043 hang). The agent's per-delta cancel must
+    # break the stream and terminate the turn WITHOUT firing the tool call that follows.
+    model = "test-model"
+
+    def __init__(self, cancel: threading.Event) -> None:
+        self._cancel = cancel
+
+    def stream(
+        self,
+        messages: list[LLMMessage],
+        *,
+        tools: list[LLMToolSpec] | None = None,
+        max_tokens: int,
+    ) -> Iterator[LLMStreamEvent]:
+        _ = (messages, tools, max_tokens)
+        yield LLMTextDelta("thinking")
+        self._cancel.set()  # Stop pressed mid-stream
+        yield LLMTextDelta(
+            " more"
+        )  # the per-delta check fires before this is processed
+        # a tool call the turn must NOT execute once cancelled
+        yield LLMToolCallStarted(index=0, id="c1", name="edit_shader")
+        yield LLMToolCallCompleted(
+            index=0,
+            id="c1",
+            name="edit_shader",
+            arguments='{"old_str":"a","new_str":"b"}',
+        )
+        yield LLMDone(finish_reason="tool_calls", usage=LLMUsage())
+
+
+def test_mid_stream_cancel_terminates_without_firing_tools() -> None:
+    cancel = threading.Event()
+    events = list(
+        run_turn(
+            _CancellingClient(cancel),
+            build_registry(minimal_caps()),
+            COPILOT_CONFIG,
+            _fake_context(),
+            history=[],
+            user_text="do a slow thing",
+            gate=GateChannel(),
+            cancel=cancel,
+        )
+    )
+    # The turn ended cancelled, and NO tool card was emitted (the partial tool call was discarded).
+    assert isinstance(events[-1], AgentCancelled)
+    assert not [e for e in events if isinstance(e, AgentToolCard)]

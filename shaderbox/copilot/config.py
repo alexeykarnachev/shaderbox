@@ -61,6 +61,11 @@ class CopilotConfig:
     publish_poll_interval_s: float = 0.2
     # Telegram connect-await (feature 020·19): bounds the poll for auth_state to leave LINKING.
     telegram_connect_timeout_s: float = 30.0
+    # Per-request LLM stream timeout. The OpenAI/httpx default is 600s, so a stalled socket
+    # blocks the worker (non-daemon) for ~10 min and hangs interpreter shutdown (a dogfood hang,
+    # 043). A bounded timeout fails the stream fast; the agent loop catches it as a stream_error
+    # terminal that preserves the turn's summary + spend.
+    llm_request_timeout_s: float = 120.0
 
 
 COPILOT_CONFIG = CopilotConfig()
