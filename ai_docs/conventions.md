@@ -312,11 +312,17 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   restyled signature is never falsely claimed removed), an unbalanced LIB write by the
   persist-seam brace warning (libs have no standalone compile to scream). Revisit ONLY per 039's Out-of-scope trigger (quoted there verbatim),
   and then via a verified number+text checksum design, never bare anchors.
-- **A copilot SCRIPT-authoring tool is a SEPARATE pair from the shader edit tools, fed SYNCHRONOUSLY
-  by an isolated dry-tick (feature 043).** The copilot drives a node's Python brain
-  (`scripts/script.py`) via `read_script`/`write_script` — NOT a `target:"script:"` overload of the
-  shader tools. The split is structural, not symmetry: a script is a different LANGUAGE (Python, not
-  GLSL → a different content matcher), a different result type (`ScriptError{compile|runtime}` not
+- **The copilot SCRIPT-authoring tools MIRROR the shader tools exactly, fed SYNCHRONOUSLY by an isolated
+  dry-tick (feature 043).** `read_script`/`write_script`/`edit_script` ↔
+  `read_shader`/`write_shader`/`edit_shader` — a SEPARATE trio, NOT a `target:"script:"` overload. The
+  split is structural, not symmetry: a script is a different LANGUAGE (Python, not GLSL → `edit_script`
+  matches PLAIN TEXT via `_plain_text_spans`, NOT the GLSL `token_match` — Python indentation is
+  semantic, so whitespace-tolerance is unsafe; `comment_loss`/the near-match hint are correctly omitted
+  for the same reason — under exact-match the risks they defend can't occur). The GENERIC resilience
+  ports: `edit_script`/`write_script` share the 0/1/N-match contract, the `_splice`, the same write tail
+  (`_apply_script_text` — an edit and a write give identical feedback), and the 033 force-restore (N
+  broken edits → revert to last clean; a script has TWO failure modes, compile + runtime, so it is at
+  least as loop-prone as a shader). A different result type (`ScriptError{compile|runtime}` not
   `CompileErrorInfo`), and carries a "drives uniforms" concept with no GLSL analogue — overloading
   would force a union return + a matcher-language branch (the guard-pile the structural-impossibility
   law forbids). The `target:"lib:"` precedent does NOT generalize (it overloads the SAME artifact kind,
