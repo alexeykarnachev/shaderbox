@@ -42,6 +42,14 @@ from shaderbox.uniform_coerce import is_text_array
 _BRAIN_FILE = "script.py"
 
 
+def normalize_script_tabs(text: str) -> str:
+    # Tabs in a script are banned at the boundary: every tab -> 4 spaces (the project standard), so the
+    # on-disk script + the copilot's old_str both live in a spaces-only world (Python indentation is
+    # significant; mixed tabs/spaces break the indent-aware edit matcher + are a footgun in general).
+    # Also normalize CRLF/CR -> LF so an edit's old_str can't miss on a line-ending mismatch.
+    return text.replace("\t", "    ").replace("\r\n", "\n").replace("\r", "\n")
+
+
 @dataclass(frozen=True)
 class BrainStatus:
     # The node-brain's UI-facing state (feature 042's strip). sentinel_error is the brain's

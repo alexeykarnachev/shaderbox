@@ -42,6 +42,7 @@ from shaderbox.scripting import (
     ScriptProbe,
     brain_stub_for,
     is_scriptable,
+    normalize_script_tabs,
 )
 from shaderbox.shader_lib import ShaderLibIndex
 from shaderbox.shader_lib import set_active as set_active_lib_index
@@ -480,7 +481,7 @@ class ProjectSession:
         # backend renders it into the tool result + the motion facts.
         path = self.script_path_for(node_id)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(new_text, encoding="utf-8")
+        path.write_text(normalize_script_tabs(new_text), encoding="utf-8")
         ui_node = self.ui_nodes[node_id]
         self.script_engine.reload(
             node_id, self.paths.scripts_dir_for(node_id), ui_node.node

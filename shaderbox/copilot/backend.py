@@ -71,7 +71,12 @@ from shaderbox.exporters.youtube import YouTubeExporter
 from shaderbox.glyph_tables import TABLE_UNIFORMS
 from shaderbox.paths import shader_lib_root
 from shaderbox.render_preset import FitPolicy, RenderPreset, ResolutionPolicy
-from shaderbox.scripting import BrainStatus, ScriptError, ScriptProbe
+from shaderbox.scripting import (
+    BrainStatus,
+    ScriptError,
+    ScriptProbe,
+    normalize_script_tabs,
+)
 from shaderbox.shader_errors import ShaderError
 from shaderbox.shader_lib import ShaderLibIndex, parser
 from shaderbox.shader_lib.file_ops import ShaderLibFileManager
@@ -251,18 +256,92 @@ def _comment_only_spans(src: str, old_str: str) -> list[tuple[int, int]] | None:
     return spans
 
 
-def _plain_text_spans(src: str, old_str: str) -> list[tuple[int, int]]:
-    # All non-overlapping occurrences of old_str (exact substring) — the plain-text analog of the GLSL
-    # token_match, for a script (Python, not lexable as GLSL). Empty old_str matches nothing.
+def _indent_levels(lines: list[str]) -> tuple[tuple[int, str], ...]:
+    # The structural KEY of a Python block, indent-ABSOLUTE-agnostic: each non-blank line as
+    # (indent LEVEL, stripped content), where level = the rank of its indent among the DISTINCT
+    # indents in the block. So a 6-space block (indents {6,12} → levels {0,1}) and an 8-space block
+    # ({8,16} → {0,1}) share a key — the agent's re-typed indent is forgiven — while a real nesting
+    # difference (if-body vs flat sibling) changes the level pattern and does NOT match. Tabs are
+    # already 4 spaces by the time source reaches disk (normalize_script_tabs); old_str is normalized
+    # at the call site, so this is a spaces-only world.
+    raw = [len(ln) - len(ln.lstrip()) for ln in lines if ln.strip()]
+    rank = {ind: r for r, ind in enumerate(sorted(set(raw)))}
+    return tuple(
+        (rank[len(ln) - len(ln.lstrip())], ln.strip()) for ln in lines if ln.strip()
+    )
+
+
+def _script_match_spans(src: str, old_str: str) -> list[tuple[int, int, int]]:
+    # Match old_str against the script source, returning (start, end, indent_shift) per occurrence.
+    # FAST PATH: an exact substring (the common case — most edits are verbatim). FALLBACK: the
+    # indent-aware structural match, so a re-typed leading indent still lands (the 043 breakout
+    # 6-vs-8-space miss). `indent_shift` = the matched region's leading indent minus old_str's, so the
+    # splice can re-indent new_str onto the real column. Empty old_str matches nothing.
     if not old_str:
         return []
-    spans: list[tuple[int, int]] = []
+    exact: list[tuple[int, int, int]] = []
     start = src.find(old_str)
     while start != -1:
-        end = start + len(old_str)
-        spans.append((start, end))
-        start = src.find(old_str, end)
+        exact.append((start, start + len(old_str), 0))
+        start = src.find(old_str, start + len(old_str))
+    if exact:
+        return exact
+    # structural fallback: scan line windows, compare the indent-level key
+    old_lines = old_str.rstrip("\n").split("\n")
+    old_key = _indent_levels(old_lines)
+    if not old_key:
+        return []
+    old_indent = next((len(ln) - len(ln.lstrip()) for ln in old_lines if ln.strip()), 0)
+    src_lines = src.split("\n")
+    offsets: list[int] = []
+    pos = 0
+    for ln in src_lines:
+        offsets.append(pos)
+        pos += len(ln) + 1
+    n = len(old_lines)
+    spans: list[tuple[int, int, int]] = []
+    for i in range(len(src_lines) - n + 1):
+        window = src_lines[i : i + n]
+        if _indent_levels(window) != old_key:
+            continue
+        first = next((ln for ln in window if ln.strip()), "")
+        win_indent = len(first) - len(first.lstrip())
+        start = offsets[i] + (
+            len(window[0]) - len(window[0].lstrip()) if window[0].strip() else 0
+        )
+        end = offsets[i + n - 1] + len(window[n - 1])
+        spans.append((start, end, win_indent - old_indent))
     return spans
+
+
+def _reindent(text: str, shift: int) -> str:
+    # Shift every non-blank line's leading indent by `shift` columns (>=0 add, <0 remove). Used to
+    # re-indent new_str onto the absolute column of a structurally-matched (indent-shifted) region.
+    if shift == 0:
+        return text
+    out: list[str] = []
+    for ln in text.split("\n"):
+        if not ln.strip():
+            out.append(ln)
+        elif shift > 0:
+            out.append(" " * shift + ln)
+        else:
+            cut = min(-shift, len(ln) - len(ln.lstrip()))
+            out.append(ln[cut:])
+    return "\n".join(out)
+
+
+def _splice_script(src: str, spans: list[tuple[int, int, int]], new_str: str) -> str:
+    # Replace each (start, end, indent_shift) span with new_str, re-indented by the span's shift so a
+    # structural (indent-forgiven) match lands the replacement at the right column. Offset-stable.
+    out: list[str] = []
+    cursor = 0
+    for start, end, shift in spans:
+        out.append(src[cursor:start])
+        out.append(_reindent(new_str, shift))
+        cursor = end
+    out.append(src[cursor:])
+    return "".join(out)
 
 
 def _splice(src: str, spans: list[tuple[int, int]], new_str: str) -> str:
@@ -1581,14 +1660,19 @@ class CopilotBackend:
         self, old_str: str, new_str: str, replace_all: bool, node: str, /
     ) -> ScriptWriteResult:
         # The script analog of apply_shader_edit (mirror of edit_shader). Plain-TEXT match (a script is
-        # Python, not GLSL — the glsl_lex token matcher does NOT apply), same 0/1/N-match contract, the
-        # shared _splice, then the same write tail so an edit and a write give identical feedback.
+        # Python, not GLSL — the glsl_lex token matcher does NOT apply. INDENT-AWARE match (exact
+        # substring first, then an indent-level structural fallback that forgives a re-typed leading
+        # indent + re-indents new_str onto the real column), same 0/1/N-match contract, then the same
+        # write tail so an edit and a write give identical feedback. old_str/new_str are tab-normalized
+        # to match the spaces-only on-disk source.
         def _on_main() -> ScriptWriteResult:
             node_id = self._resolve_node_or_current(node)
             if node_id is None:
                 return ScriptWriteResult(ok=False, error=_no_node_error(node).message)
+            old_norm = normalize_script_tabs(old_str)
+            new_norm = normalize_script_tabs(new_str)
             src, _is_stub = self._read_script_source(node_id)
-            spans = _plain_text_spans(src, old_str)
+            spans = _script_match_spans(src, old_norm)
             if not spans:
                 return ScriptWriteResult(
                     ok=False,
@@ -1601,7 +1685,7 @@ class CopilotBackend:
                     error=f"old_str is not unique ({len(spans)} matches) -- add "
                     "surrounding context to make it unique, or set replace_all=true",
                 )
-            new_text = _splice(src, spans, new_str)
+            new_text = _splice_script(src, spans, new_norm)
             return self._apply_script_text(node_id, new_text)
 
         return self._bridge.run_on_main(

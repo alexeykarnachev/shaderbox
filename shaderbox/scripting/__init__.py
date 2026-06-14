@@ -16,6 +16,7 @@ from shaderbox.scripting.engine import (
     ScriptProbe,
     brain_stub_for,
     is_scriptable,
+    normalize_script_tabs,
 )
 from shaderbox.scripting.errors import ScriptError
 from shaderbox.scripting.outputs import Array, Text, Vec2, Vec3, Vec4
@@ -39,6 +40,7 @@ __all__ = [
     "Vec3",
     "Vec4",
     "brain_stub_for",
+    "normalize_script_tabs",
     "coerce_one",
     "is_scriptable",
 ]

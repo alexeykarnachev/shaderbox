@@ -5,12 +5,13 @@ corroborating pixel render (the visible/FLAT case) is GL and exercised live in t
 
 from shaderbox.copilot.backend import (
     _motion_verdict,
-    _plain_text_spans,
-    _splice,
+    _reindent,
+    _script_match_spans,
+    _splice_script,
     _uniform_changes,
     _values_differ,
 )
-from shaderbox.scripting import ScriptProbe
+from shaderbox.scripting import ScriptProbe, normalize_script_tabs
 
 _EPS = 1e-4
 
@@ -80,18 +81,61 @@ def test_verdict_carries_the_render_line() -> None:
     assert "ANIMATING" in verdict  # both facts present for the agent to reconcile
 
 
-# ---- the edit_script plain-text matcher + splice (feature 043 symmetry with edit_shader) ----
+# ---- the edit_script indent-aware matcher + splice (feature 043) ----
 
 
-def test_plain_text_spans_finds_all_non_overlapping() -> None:
+def test_exact_match_fast_path() -> None:
     src = "a = 1\nb = 1\nc = 2\n"
-    assert _plain_text_spans(src, "= 1") == [(2, 5), (8, 11)]
-    assert _plain_text_spans(src, "= 2") == [(14, 17)]
-    assert _plain_text_spans(src, "nope") == []
-    assert _plain_text_spans(src, "") == []  # empty matches nothing (no match-anything)
+    spans = _script_match_spans(src, "= 1")
+    assert [(s, e) for s, e, _ in spans] == [(2, 5), (8, 11)]  # all occurrences
+    assert _script_match_spans(src, "nope") == []
+    assert _script_match_spans(src, "") == []  # empty matches nothing
 
 
-def test_edit_splice_replaces_the_span() -> None:
-    src = "radius = 0.3\n"
-    spans = _plain_text_spans(src, "0.3")
-    assert _splice(src, spans, "0.5") == "radius = 0.5\n"
+def test_indent_forgiving_match_8_vs_6_spaces() -> None:
+    # The real breakout miss: source at 8/12 spaces, the agent's old_str re-typed at 6/8 (NOT a verbatim
+    # substring, so the exact path fails). The structural fallback must match AND re-indent the
+    # replacement onto the real source column.
+    src = (
+        "        for c in cols:\n"
+        "            if hit:\n"
+        "                self.b[c] = 0.0\n"
+        "        paddle = 1\n"
+    )
+    old = (
+        "      if hit:\n          self.b[c] = 0.0\n"  # 6-vs-8 step, NOT in src verbatim
+    )
+    assert old.rstrip("\n") not in src  # the exact path can't find it
+    spans = _script_match_spans(src, old)
+    assert len(spans) == 1
+    new = "      if hit:\n          self.b[c] = 1.0\n"
+    out = _splice_script(src, spans, new)
+    # the replacement landed at the source's real 12/16-space columns, not the agent's 6/8
+    assert "            if hit:\n                self.b[c] = 1.0\n" in out
+
+
+def test_structural_match_rejects_different_nesting() -> None:
+    # Same content, DIFFERENT relative nesting must NOT match (Python indentation is semantic). Use a
+    # form that is NOT a verbatim substring so only the structural path can (wrongly) fire.
+    src = "for i in x:\n  a = 1\n  b = 2\n"  # a, b at the SAME 2-space level
+    old = "a = 1\n      b = 2\n"  # b nested deeper than a -> different structure; not a substring
+    assert old.rstrip("\n") not in src
+    assert _script_match_spans(src, old) == []
+
+
+def test_duplicate_structural_form_is_multi_match() -> None:
+    # Two blocks with the same relative form, neither a verbatim substring of the same-indent kind,
+    # surface as >1 (loud reject upstream), never a silent wrong-region edit.
+    src = "if a:\n    x = 1\nif b:\n        x = 1\n"  # x at 4 and at 8 spaces
+    old = "  x = 1\n"  # 2-space — not verbatim at either site -> structural path, both forms match
+    assert len(_script_match_spans(src, old)) == 2
+
+
+def test_normalize_tabs() -> None:
+    assert normalize_script_tabs("\tx = 1\r\n\t\ty\r") == "    x = 1\n        y\n"
+
+
+def test_reindent_shifts_block() -> None:
+    assert _reindent("a\n    b\n", 4) == "    a\n        b\n"
+    assert _reindent("        a\n            b\n", -4) == "    a\n        b\n"
+    assert _reindent("a\n\nb\n", 2) == "  a\n\n  b\n"  # blank lines untouched
