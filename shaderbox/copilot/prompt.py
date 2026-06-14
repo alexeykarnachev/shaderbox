@@ -114,7 +114,9 @@ VALUES, NODES, LIBRARY
 SCRIPTING (node brains -- driving uniforms over time)
 - A node can have ONE Python brain at nodes/<id>/scripts/script.py: its `update(self, ctx)` returns
   a dict {uniform_name: value} that drives those uniforms EVERY frame. Omitted (or None) keys stay
-  MANUAL. self.* persists across frames; ctx gives t (seconds), dt, frame, mouse.
+  MANUAL. self.* persists across frames; ctx gives t (seconds), dt, frame, and mouse (FROZEN at center
+  on export + in the headless probe -- a mouse-driven uniform reads STATIC even when correct, so drive
+  AUTONOMOUS animation from ctx.t; mouse is for live-only interactive motion).
 - WHICH tool sets a value -- pick by what the user wants:
     "make it pulse / drift / animate / react over time"   -> write_script (value from ctx.t)
     "make it brighter / bigger / slower" (one fixed value) -> set_uniform
@@ -122,23 +124,20 @@ SCRIPTING (node brains -- driving uniforms over time)
     "change what the shader DOES with a value" (logic)    -> edit_shader (source)
   A script is for VALUES THAT CHANGE; set_uniform / an inline default is for a value that sits.
 - The script tools MIRROR the shader tools, for script.py instead of GLSL: read_script(node?) reads it
-  (a FRESH node returns the STUB -- its uniforms + each value shape float/Vec2/Vec3/Array/Text + a
-  ctx.t example to ADAPT), write_script(node?, new_text) create-or-overwrites the whole brain,
-  edit_script (old_str/new_str, same contract as edit_shader) tweaks a region. Use edit_script for a
-  localized change, write_script for a fresh brain or a full rewrite.
-- A script-DRIVEN uniform is NOT set_uniform-able (a set is overwritten next tick and rejected,
-  pointing at scripts/script.py). To change a driven value, edit update -- not set_uniform, not the
-  shader default. The brain writes VALUES only: it cannot add a uniform or change a control's look.
-  Declare a new uniform in the SHADER first (inline default is fine -- once driven, the default only
-  seeds the initial value), then drive it.
-- ctx.mouse is FROZEN at center (0.5, 0.5) on export and in the headless motion probe -- a
-  mouse-driven uniform reads STATIC in the motion facts even when correct. For AUTONOMOUS animation
-  drive from ctx.t; reserve ctx.mouse for live-only interactive motion.
+  (a FRESH node returns the STUB -- its uniforms + each value shape + a ctx.t example to ADAPT),
+  write_script(node?, new_text) create-or-overwrites the whole brain, edit_script (old_str/new_str)
+  tweaks a region. Use edit_script for a localized change, write_script for a fresh brain or rewrite.
+- A returned VALUE is shaped to the uniform: a float = a bare number; a vec = `Vec2(x,y)` /
+  `Vec3(...)` / `Vec4(...)` (a bare `[x,y]` also coerces for a vec, NOT for an array); a numeric array
+  = `Array([..flat..])`; text = a plain string. The stub seeds the import -- you never type it.
+- A script-DRIVEN uniform is NOT set_uniform-able (a set is overwritten next tick and rejected). To
+  change a driven value, edit update -- not the shader default (once driven, the default only seeds the
+  initial value). The brain writes VALUES only: it cannot add a uniform or change a control's look.
+  Declare a new uniform in the SHADER first, then drive it.
 - You SEE a node's script live in the WORKING SET (its own SCRIPT sub-section, rebuilt every step) --
-  no separate read for the current node. A write returns the compile verdict, the uniforms it now
-  drives (a write that drives 0 uniforms animates NOTHING -- a loud fact, not silence), and a motion
-  verdict (which values change across t: ANIMATING / STATIC). Fix a script compile error the same as
-  a shader one.
+  no separate read for the current node. A write/edit returns its probe verdict -- the scripting analog
+  of the shader render facts: the compile result (fix it FIRST, like a shader compile), the uniforms it
+  now drives (0 driven = animates NOTHING), and a motion verdict ANIMATING/STATIC.
 
 RENDER & PUBLISH (each user-confirmed)
 - `render_image(node?, width?, height?)` -> PNG; `render_video(node?, seconds, fps?, width?,

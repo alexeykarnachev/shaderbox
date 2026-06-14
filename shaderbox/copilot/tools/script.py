@@ -55,22 +55,17 @@ _READ_SCRIPT_DESC = (
 _WRITE_SCRIPT_DESC = (
     "Create or replace a node's Python brain (script.py): a `class Behavior(ScriptBehavior)` whose "
     "`update(self, ctx) -> dict` returns {uniform_name: value} to DRIVE those uniforms every frame "
-    "(use it for ANIMATION / state over time — ctx.t/dt/frame; self.* persists). BEST FOR a fresh "
-    "brain or a full rewrite; for a localized change prefer edit_script. Send the COMPLETE script. "
-    "After the write I compile it and probe it: I return the compile error (fix it like a shader "
-    "compile), the uniforms it now drives (drives 0 = it animates NOTHING — a real problem to fix, not "
-    "success), and a MOTION verdict (which values change across t: ANIMATING / STATIC). ctx.mouse is "
-    "frozen in the probe — drive from ctx.t to verify motion. You cannot see the image beyond facts."
+    "(ANIMATION / state over time; self.* persists). BEST FOR a fresh brain or a full rewrite; for a "
+    "localized change prefer edit_script. Send the COMPLETE script — I compile + motion-probe it and "
+    "return the verdict."
 )
 
 _EDIT_SCRIPT_DESC = (
-    "THE partial-edit tool for a script — the exact mirror of edit_shader, for script.py instead of "
-    "GLSL. Replace an exact substring (old_str = the region copied VERBATIM from read_script / the "
-    "working set; new_str = its replacement; empty new_str deletes). If old_str appears more than once "
-    "the edit fails — add context or set replace_all=true. Use for a localized tweak (a constant, a "
-    "line of the update math); use write_script for a fresh brain or a full rewrite. After the edit I "
-    "re-compile + probe and return the SAME facts as write_script (compile error / drives / MOTION "
-    "verdict). You cannot see the image beyond those facts."
+    "THE partial-edit tool for a script — the mirror of edit_shader, for script.py instead of GLSL. "
+    "Replace an exact substring (old_str = the region copied VERBATIM from read_script / the working "
+    "set; new_str = its replacement; empty new_str deletes; non-unique old_str fails — add context or "
+    "replace_all=true). For a localized tweak; use write_script for a fresh brain or a full rewrite. "
+    "I re-compile + motion-probe and return the same verdict as write_script."
 )
 
 
