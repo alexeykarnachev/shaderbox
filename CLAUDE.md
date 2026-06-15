@@ -46,6 +46,7 @@ Full design decisions, library quirks, and the sanctioned type-ignore allowlist 
 - `/sanitize` — closing-out sweep (run before "done").
 - `/imgui-ui` — read at the START of ANY UI work. Single source of truth for imgui patterns (button tiers, jitter, modals, context menus, imgui-bundle quirks).
 - `/dogfood` — run the headless copilot dogfood harness (drive the real engine on the Pi, render + eyeball, produce a findings report). The operating manual for feature 026 + every gotcha already hit.
+- `/shader-lab` — iterative step-by-step shader-effect development (build an effect as versioned steps the user watches evolve live or via MP4), to mine reusable techniques for the copilot/lib/app. Lab projects live gitignored in `projects/_lab/`.
 - `/ship` — release-to-itch.io procedure. Maintainer-triggered only.
 
 ## Two meta-rules

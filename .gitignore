@@ -18,6 +18,10 @@ projects/*/renders/
 projects/*/copilot/archive/
 projects/*/copilot/checkpoints/
 
+# shader-lab scratch: iterative-experiment projects live here, gitignored. A worthwhile
+# one is promoted by hand (move out of _lab/ + git add) at the end of a session.
+projects/_lab/
+
 # Dogfood run artifacts (project dirs, data dir, JSON dumps, traces, PNGs) — regenerable junk
 scripts/dogfood/runs/
 

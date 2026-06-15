@@ -31,6 +31,22 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
 
 ---
 
+## [DEFERRAL] node-dir live auto-sync (the proper fix behind the Reload-nodes-from-disk stopgap)
+- **Trigger:** the manual `Ctrl+Shift+R` / File→"Reload nodes from disk" proves too clumsy in real use
+  (a `shader-lab` session where the user has to keep pressing reload because nodes are added/removed on
+  disk mid-session), OR next time you touch `watch.py` / `ui.py::update_and_draw`'s node-watch loop.
+- `ProjectSession` builds `ui_nodes` ONCE at project open; the per-frame watcher
+  (`watch.py::reload_node_if_changed`) only re-reads the shader TEXT of nodes already loaded — it sees
+  neither node dirs ADDED/REMOVED on disk nor `node.json` edits. The shipped stopgap is a manual
+  rescan command (`App.reload_nodes_from_disk` → `ProjectSession.reload_nodes_from_disk`, releases +
+  re-`load_nodes_from_dir` + re-resolves scripts + fixes the current-node pointer; the `on_nodes_reloaded`
+  callback resets the editor tabs/sessions). The proper fix is a live directory listener (per-frame
+  glob diff of `nodes/`, or a watchdog) + a `node.json` mtime watch, so external add/remove/edit syncs
+  automatically like shader text already does. **The race to handle:** the app re-saves the in-memory
+  current node on exit/save/switch — an auto-sync must not fight that (a node loaded-then-edited-on-disk
+  must not be clobbered by the stale in-memory copy at shutdown). Today the watcher keeps memory in sync
+  while running, so the clobber only bites a node that was edited OUTSIDE the app's known set.
+
 ## [DEFERRAL] copilot turn-rollback: a NEW mutating tool must register with the checkpoint
 - **Trigger:** before plan-locking any feature that adds a new MUTATING copilot tool (one that
   writes a node / lib / uniform / creates / deletes) — it MUST capture into the active checkpoint
