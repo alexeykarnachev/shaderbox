@@ -150,13 +150,18 @@ def _draw_play_stop(app: App, name: str, *, driven: bool, playing: bool) -> None
     # The trailing per-row play/stop affordance (048): drawn ONLY for a uniform the script TARGETS
     # (driven — playing OR stopped); a never-scripted MANUAL uniform shows nothing. `stop` (accent)
     # when playing, `play` (dim) when stopped — the toggle flips the node-scoped stopped state.
+    # Disabled while the whole node is stopped: a per-uniform play is meaningless then (nothing
+    # writes), and a full stop->play resets every uniform to playing anyway.
     if not driven:
         return
     node_id = app.current_node_id
+    node_stopped = app.current_node_ui_state_or_default.all_stopped
     imgui.same_line()
-    imgui.begin_disabled(app.copilot_turn_active)
+    imgui.begin_disabled(app.copilot_turn_active or node_stopped)
     tooltip = (
-        "Stop the script driving this uniform (edit it by hand)"
+        "Can't play a single uniform while the whole script is stopped"
+        if node_stopped
+        else "Stop the script driving this uniform (edit it by hand)"
         if playing
         else "Resume the script driving this uniform"
     )

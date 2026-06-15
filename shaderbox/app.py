@@ -402,6 +402,7 @@ class App:
             CommandId.SAVE: self.save,
             CommandId.NEW_NODE: self.open_node_creator,
             CommandId.DELETE_NODE: self.delete_current_node,
+            CommandId.TOGGLE_NODE_PLAY: self.toggle_current_node_play,
             CommandId.OPEN_SETTINGS: self.open_settings,
             CommandId.OPEN_LIB_PICKER: self.open_shader_lib_picker,
             CommandId.OPEN_PALETTE: self.open_palette,
@@ -1197,6 +1198,15 @@ class App:
         if self.copilot_turn_active:
             return
         self.session.set_node_all_stopped(node_id, stopped)
+
+    def toggle_current_node_play(self) -> None:
+        # The hotkey mirror of the node-tab play/stop toggle — a no-op when the current node has no
+        # script (matching the button, which only renders for a present script).
+        node_id = self.current_node_id
+        if not self.session.has_script(node_id):
+            return
+        playing = not self.current_node_ui_state_or_default.all_stopped
+        self.set_node_all_stopped(node_id, playing)
 
     # App-side editor-session cleanup, reached back into from ShaderLibFileManager when it
     # trashes/renames a lib file (the picker UI drives the CRUD on the manager directly).

@@ -26,17 +26,19 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-06-15 (SHIPPED v0.16.0 — scripting 040-048 + 049 entry-points; then a utility-cleanup pass, the brain->script rename, and a hotkeys polish wave; no feature queued, unshipped). -->
+<!-- As of 2026-06-15 (SHIPPED v0.16.0 — scripting 040-048 + 049 entry-points; then a utility-cleanup pass, the brain->script rename, and a hotkeys+script-play polish wave; no feature queued, unshipped). -->
 **NEXT: UNQUEUED** — no feature spec is open. **v0.16.0 SHIPPED to itch** (both channels live), carrying the entire
 CPU-scripting subsystem (040-048: the stateful headless script engine, the node-script model, copilot scripting 043, the
 script-UX evolution to one-script-per-node) plus 049 NODE ENTRY-POINTS. Three post-ship waves then landed on `dev` (NOT yet
 shipped): a **utility-cleanup pass** (`5718143` — dep/ruff bumps, two unused deps dropped, `load_and_migrate` ladders removed);
-the **"brain"→"script"** rename sweep; and a **hotkeys polish wave** — `CommandSpec` gained a `category` field so the cheatsheet
-overlay + Settings rebinder cluster commands by category, divided by a faint rule (`faint_hline`), no titles. New commands: Open
-shader `Ctrl+E` / Open script `Ctrl+R`; Cycle code tab `Ctrl+Tab` (Cycle region → `Ctrl+`` ` ``); Close code tab `Ctrl+W` /
-Cycle copilot layout → `Ctrl+H`. The last two share-by-focus via a new `CommandScope.COPILOT` beside `EDITOR`, each gated on its
-own focus flag — one chord, different meaning per focused region, no double-dispatch. The next feature is unqueued — draw it from
-a `todo.md` trigger or maintainer steer.
+the **"brain"→"script"** rename sweep; and a **hotkeys + script-play polish wave** — `CommandSpec` gained a `category` field so the
+cheatsheet overlay + Settings rebinder cluster commands by category, divided by a faint rule (`faint_hline`), no titles. New
+commands: Open shader `Ctrl+E` / Open script `Ctrl+R`; Cycle code tab `Ctrl+Tab` (Cycle region → `Ctrl+`` ` ``); Close code tab
+`Ctrl+W` / Cycle copilot layout → `Ctrl+H`; **Play/stop node script `Ctrl+Space`** (mirrors the node-tab toggle, no-op without a
+script). The COPILOT/EDITOR pair share-by-focus via `CommandScope.COPILOT` beside `EDITOR`, each gated on its own focus flag — one
+chord, different meaning per focused region, no double-dispatch. Same wave refined the per-uniform play/stop: it's **disabled while
+the node is fully stopped** (hint tooltip via `allow_when_disabled`), and a full node stop→play **clears every per-uniform stop** so
+the round trip returns the node to playing. The next feature is unqueued — draw it from a `todo.md` trigger or maintainer steer.
 
 **Just shipped (context):** v0.16.0. 043 COPILOT SCRIPTING — the copilot authors a node's Python script (`scripts/script.py`)
 EXACTLY like GLSL (the `read_script`/`write_script`/`edit_script` trio; `dry_run` synchronous feedback; motion verdict); a

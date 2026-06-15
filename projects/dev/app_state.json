@@ -21,7 +21,7 @@
     },
     "copilot_input_h": 66.0,
     "active_node_tab": "node",
-    "is_copilot_open": true,
+    "is_copilot_open": false,
     "copilot_layout": "corner",
     "key_bindings": {},
     "show_cheatsheet": true

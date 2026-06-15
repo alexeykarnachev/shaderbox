@@ -531,10 +531,13 @@ class ProjectSession:
     def set_node_all_stopped(self, node_id: str, stopped: bool) -> None:
         # The whole-node play/stop: freeze/resume every driven uniform's write at once. The script keeps
         # ticking either way (stop freezes WRITES, not ticking — so a later play resumes from advanced
-        # state). Node-play clears ONLY this blanket, never explicit per-uniform stops.
+        # state). Node-play also CLEARS every explicit per-uniform stop, so a full stop->play cycle
+        # returns the whole node to playing (a uniform stopped mid-play doesn't survive the round trip).
         ui_node = self.ui_nodes.get(node_id)
         if ui_node is not None:
             ui_node.ui_state.all_stopped = stopped
+            if not stopped:
+                ui_node.ui_state.stopped_uniforms.clear()
 
     def get_script_driven_uniforms(self, node_id: str) -> set[str]:
         # The uniform names the script drove on its last tick — the copilot set_uniform reject queries

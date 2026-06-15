@@ -5,8 +5,8 @@
     ],
     "uniforms": {
         "u_ball_pos": [
-            0.0,
-            -0.19174179434776306
+            0.47971417338396366,
+            0.7070259459994207
         ],
         "u_ball_radius": 0.11500000208616257,
         "u_ball_vel": [
@@ -356,16 +356,7 @@
         "uniform_sort_desc": false,
         "video_to_video_smoothing_window": 5,
         "video_to_video_smoothing_sigma": 1.0,
-        "stopped_uniforms": [
-            "u_trail_count",
-            "u_score_right",
-            "u_paddle_right_y",
-            "u_paddle_half_width",
-            "u_paddle_half_height",
-            "u_paddle_left_y",
-            "u_ball_radius",
-            "u_score_left"
-        ],
-        "all_stopped": true
+        "stopped_uniforms": [],
+        "all_stopped": false
     }
 }

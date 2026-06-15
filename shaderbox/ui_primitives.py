@@ -207,7 +207,7 @@ def play_stop_toggle(id_: str, playing: bool, *, tooltip: str = "") -> bool:
     imgui.push_style_color(imgui.Col_.text, color)
     clicked: bool = imgui.small_button(f"{label}##play_stop_{id_}")
     imgui.pop_style_color(4)
-    if tooltip and imgui.is_item_hovered():
+    if tooltip and imgui.is_item_hovered(imgui.HoveredFlags_.allow_when_disabled):
         imgui.set_tooltip(tooltip)
     return clicked
 

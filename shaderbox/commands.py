@@ -18,6 +18,7 @@ class CommandId(StrEnum):
     SAVE = auto()
     NEW_NODE = auto()
     DELETE_NODE = auto()
+    TOGGLE_NODE_PLAY = auto()
     OPEN_SETTINGS = auto()
     OPEN_LIB_PICKER = auto()
     OPEN_PALETTE = auto()
@@ -116,6 +117,12 @@ COMMAND_SPECS: list[CommandSpec] = [
     CommandSpec(CommandId.QUIT, "Quit", _chord(K.q, K.mod_ctrl), C.FILE),
     CommandSpec(CommandId.NEW_NODE, "New node", _chord(K.n, K.mod_ctrl), C.NODE),
     CommandSpec(CommandId.DELETE_NODE, "Delete node", _chord(K.d, K.mod_ctrl), C.NODE),
+    CommandSpec(
+        CommandId.TOGGLE_NODE_PLAY,
+        "Play/stop node script",
+        _chord(K.space, K.mod_ctrl),
+        C.NODE,
+    ),
     CommandSpec(
         CommandId.OPEN_SHADER, "Open shader", _chord(K.e, K.mod_ctrl), C.EDITOR
     ),
