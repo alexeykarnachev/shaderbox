@@ -141,8 +141,10 @@ lose (the brain auto-binds by existence now).
    Node-STOP must NOT stop the brain ticking — if it did, `self.*` would freeze and node-PLAY would resume
    from stale state, not "resume from script" (the maintainer's words). So node-STOP adds every driven name
    to the per-frame `stopped` set (decision 5) while the brain still runs; node-PLAY clears `all_stopped`.
-   A per-uniform stop coexists (the union). Node-play does NOT clear per-uniform `stopped_uniforms` (those
-   are explicit user intent); it only clears the `all_stopped` blanket. (Open question 1 — default chosen.)
+   A per-uniform stop coexists (the union). Node-play CLEARS every per-uniform `stopped_uniforms` too, so a
+   full stop->play cycle returns the whole node to playing (a uniform stopped mid-play doesn't survive the
+   round trip — superseded the original "explicit user intent persists" default). The per-uniform play/stop
+   buttons are disabled while `all_stopped` (a single-uniform play is meaningless when nothing writes).
 
 8. **Explicit imports in the stub, injection kept as a fallback.** The script object's available types must
    be VISIBLE (the maintainer: "никто не знает есть ли у меня Vec3"). `brain_stub_for` emits a real
