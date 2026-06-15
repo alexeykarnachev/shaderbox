@@ -5,8 +5,8 @@
     ],
     "uniforms": {},
     "ui_state": {
-        "ui_name": "UV Mango",
-        "description": "The default blank-canvas starter: a minimal shader that colours the screen by UV coordinate + time. Start here for a shader from scratch.",
+        "ui_name": "Fire (hand)",
+        "description": "Hand-authored fire, post-research attempt: domain-warped noise field, proper flame envelope, embers, smoke, CPU-script-driven flicker/wind. A/B against Fire (codex).",
         "render_media_details": {
             "is_video": true,
             "file_details": {
@@ -29,14 +29,6 @@
                 "dimension": 1,
                 "array_length": 1,
                 "input_type": "auto"
-            },
-            "28817900879564012086563967923611592100": {
-                "name": "u_zoomout",
-                "is_ubo": false,
-                "gl_type": 5126,
-                "dimension": 1,
-                "array_length": 1,
-                "input_type": "drag"
             },
             "37154164850612245702881750831795076973": {
                 "name": "u_time",

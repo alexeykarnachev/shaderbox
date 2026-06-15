@@ -1,0 +1,13 @@
+{
+    "canvas_size": [1280, 960],
+    "uniforms": {},
+    "ui_state": {
+        "ui_name": "Fire (hand v2)",
+        "description": "Hand attempt v2 post-research: domain-warp field, fuel-envelope shape (triangle-ish), glow, embers, flat smoke, CPU-script wind/flicker. Kept for comparison.",
+        "render_media_details": {"is_video": true, "file_details": {"path": "", "size": 0}, "resolution_details": {"width": 1280, "height": 960}, "quality": 0, "fps": 30, "duration": 1.0},
+        "ui_uniforms": {},
+        "uniform_sort_key": "code", "uniform_sort_desc": false,
+        "video_to_video_smoothing_window": 5, "video_to_video_smoothing_sigma": 1.0,
+        "stopped_uniforms": [], "all_stopped": false
+    }
+}
