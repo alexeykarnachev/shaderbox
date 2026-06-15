@@ -228,7 +228,7 @@ and probes the agent's self-review.
   turn that exceeds it is a finding, not a wait. Diagnose a hang with `py-spy dump --pid <pid>` (the
   `_shutdown`/worker-in-`get()` stack pins it instantly — far better than guessing).
 - **MP4 for iOS/iPad (WebM won't open there): `h.render_video_mp4(seconds=, fps=, size=)`.** Renders
-  H.264 directly via `share_state.render_to` through the export-isolation seam (a stateful brain
+  H.264 directly via `share_state.render_to` through the export-isolation seam (a stateful script
   animates from a clean __init__). The webm `h.render_video()` is the other deliverable; both set
   `_last_render_path`. Keep `seconds`/`size` small on V3D. (A FREE `RenderPreset` yields a stray ffmpeg
   `-s 0x0` broken-pipe — the method uses FIXED_DIMS; don't hand-roll a bare preset.)
