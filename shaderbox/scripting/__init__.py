@@ -40,7 +40,7 @@ __all__ = [
     "Vec3",
     "Vec4",
     "brain_stub_for",
-    "normalize_script_tabs",
     "coerce_one",
     "is_scriptable",
+    "normalize_script_tabs",
 ]

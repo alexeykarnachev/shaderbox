@@ -1,7 +1,7 @@
 """On-disk persistence for a copilot conversation.
 
 Durable per-project state in the project dir. Owns the versioned `ConversationStore`
-pydantic model + load/save/archive (`extra="forbid"`, fail-soft `load_and_migrate`), and
+pydantic model + load/save/archive (`extra="forbid"`, fail-soft `load`), and
 maps the runtime dataclasses (`Message` / `LLMMessage` / `TurnStats`) to/from their
 persisted shape so `state.py` stays free of disk concerns.
 """
@@ -28,22 +28,6 @@ from shaderbox.copilot.state import (
 )
 
 _VERSION = 10
-
-
-def _migrate_pre_v7(data: dict[str, object]) -> None:
-    # In place: pre-v7 stored a cumulative `usage` block + a `last_turn_usage` (input/output/cost).
-    # v7 keeps only the running cost (`session_cost_usd`) + a `last_turn` (context/reply/cost). The
-    # model forbids extra keys, so remap the old keys before construction or the file is rejected.
-    old_usage = data.pop("usage", None)
-    if isinstance(old_usage, dict) and "session_cost_usd" not in data:
-        data["session_cost_usd"] = old_usage.get("cost_usd", 0.0)
-    old_last = data.pop("last_turn_usage", None)
-    if isinstance(old_last, dict) and "last_turn" not in data:
-        data["last_turn"] = {
-            "context_tokens": old_last.get("input_tokens", 0),
-            "reply_tokens": old_last.get("output_tokens", 0),
-            "cost_usd": old_last.get("cost_usd", 0.0),
-        }
 
 
 def _gate_kind_or_confirm(value: str) -> GateKind:
@@ -249,7 +233,7 @@ class ConversationStore(BaseModel):
             json.dump(self.model_dump(), f, indent=2)
 
     @classmethod
-    def load_and_migrate(cls, file_path: Path) -> Self:
+    def load(cls, file_path: Path) -> Self:
         # Fail-soft: a missing file is a first-use empty chat; an unreadable / incompatible
         # one degrades to empty + a WARNING, never a crash and never a lost project.
         if not file_path.exists():
@@ -265,7 +249,6 @@ class ConversationStore(BaseModel):
                 "Incompatible copilot conversation (not a JSON object); starting empty"
             )
             return cls()
-        _migrate_pre_v7(data)
         try:
             return cls(**data)
         except ValidationError as e:

@@ -736,9 +736,9 @@ def test_terminal_carries_nl_summary_not_tool_tail() -> None:
     done = next(e for e in events if isinstance(e, AgentTurnDone))
     assert done.summary.reply == "Read it."
     assert done.summary.ledger == [], "a non-mutating read must add no ledger line"
-    assert (
-        "abcd" in done.summary.nodes
-    ), "the read node must be referenced for cross-turn binding"
+    assert "abcd" in done.summary.nodes, (
+        "the read node must be referenced for cross-turn binding"
+    )
 
 
 class _AlwaysDeclineGate(GateChannel):
@@ -810,9 +810,9 @@ def test_declined_gates_no_giveup_no_orphaned_tool_calls() -> None:
     )
 
     errors = [e for e in events if isinstance(e, AgentError)]
-    assert (
-        not errors
-    ), f"a declined delete tripped a giveup: {[e.message for e in errors]}"
+    assert not errors, (
+        f"a declined delete tripped a giveup: {[e.message for e in errors]}"
+    )
     assert isinstance(events[-1], AgentTurnDone)
 
     open_ids: set[str] = set()

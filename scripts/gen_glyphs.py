@@ -257,9 +257,9 @@ def _stroke_payload(st: Stroke) -> tuple[float, float, float, float]:
     return (cx, cy, r, 0.0)
 
 
-def build_tables() -> (
-    tuple[list[tuple[int, int, int, int]], list[tuple[float, float, float, float]]]
-):
+def build_tables() -> tuple[
+    list[tuple[int, int, int, int]], list[tuple[float, float, float, float]]
+]:
     # (spans, strokes): one ivec4-shaped span per ORDER entry (offset, segs, arcs,
     # (tall<<8)|dots), one vec4-shaped stroke row per stroke of each UNIQUE glyph.
     spans: dict[str, tuple[int, int, int, int, int]] = {}
@@ -286,7 +286,7 @@ def build_tables() -> (
 
 
 def generate() -> str:
-    span_rows_v, data_v = build_tables()
+    _span_rows_v, data_v = build_tables()
     n = len(data_v)
 
     return f"""// Segment-glyph face, DATA-DRIVEN: glyph geometry lives in engine-bound uniform

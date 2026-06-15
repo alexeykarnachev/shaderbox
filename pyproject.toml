@@ -8,25 +8,23 @@ license = "GPL-3.0-or-later"
 license-files = ["LICENSE"]
 requires-python = ">=3.12"
 dependencies = [
-    "glfw>=2.8.0",
-    "imageio[ffmpeg]>=2.37.0",
+    "glfw>=2.10.0",
+    "imageio[ffmpeg]>=2.37.3",
     "loguru>=0.7.3",
     "moderngl>=5.12.0",
-    "numpy>=2.2.4",
-    "pillow>=11.1.0",
-    "platformdirs>=4.3.7",
-    "pydantic-settings>=2.9.1",
-    "pydantic>=2.11.4",
-    "python-telegram-bot>=22.0",
-    "more-itertools>=10.7.0",
-    "pyperclip>=1.9.0",
+    "numpy>=2.4.6",
+    "pillow>=12.2.0",
+    "platformdirs>=4.10.0",
+    "pydantic>=2.13.4",
+    "python-telegram-bot>=22.8",
+    "pyperclip>=1.11.0",
     "imgui-bundle>=1.92.801",
     "pyopengl>=3.1.10",
     "imageio-ffmpeg>=0.6.0",
     "opencv-python-headless>=4.11.0.86",
-    "google-api-python-client>=2.196.0",
+    "google-api-python-client>=2.197.0",
     "google-auth-oauthlib>=1.4.0",
-    "openai>=2.38.0",
+    "openai>=2.41.1",
 ]
 
 [build-system]
@@ -39,10 +37,10 @@ include = ["shaderbox/resources/**/*"]
 
 [dependency-groups]
 dev = [
-    "pyright>=1.1.397",
-    "pre-commit>=3.7.0",
-    "ruff>=0.3.4",
-    "pytest>=9.0.3",
+    "pyright>=1.1.410",
+    "pre-commit>=4.6.0",
+    "ruff==0.15.17",
+    "pytest>=9.1.0",
     "pytest-forked>=1.6.0",
 ]
 

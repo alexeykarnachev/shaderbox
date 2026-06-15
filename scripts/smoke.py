@@ -102,9 +102,9 @@ def _seed_tmp_project(root: Path) -> Path:
 def _check_invariants(app: App, frame_idx: int) -> None:
     # The "at most one modal popup open" mutex is now structural — popup_state is a single
     # PopupState value, so two modals can't be open at once by construction (feature 023).
-    assert isinstance(
-        app.popup_state, PopupState
-    ), f"frame {frame_idx}: popup_state is not a PopupState ({app.popup_state!r})"
+    assert isinstance(app.popup_state, PopupState), (
+        f"frame {frame_idx}: popup_state is not a PopupState ({app.popup_state!r})"
+    )
     assert app.current_node_id == "" or app.current_node_id in app.ui_nodes, (
         f"frame {frame_idx}: current_node_id={app.current_node_id!r} not in "
         f"ui_nodes={list(app.ui_nodes.keys())}"
@@ -113,12 +113,12 @@ def _check_invariants(app: App, frame_idx: int) -> None:
     # cheatsheet overlay draws here too, exercising its no-assert path headlessly).
     assert app.effective_bindings, f"frame {frame_idx}: effective_bindings empty"
     # Feature 019: nav focus model stays in valid enum states.
-    assert (
-        app.active_region in ActiveRegion
-    ), f"frame {frame_idx}: bad active_region={app.active_region!r}"
-    assert (
-        app.active_node_tab in NodeTab
-    ), f"frame {frame_idx}: bad active_node_tab={app.active_node_tab!r}"
+    assert app.active_region in ActiveRegion, (
+        f"frame {frame_idx}: bad active_region={app.active_region!r}"
+    )
+    assert app.active_node_tab in NodeTab, (
+        f"frame {frame_idx}: bad active_node_tab={app.active_node_tab!r}"
+    )
 
 
 def main() -> int:
@@ -192,12 +192,12 @@ def main() -> int:
             b_before = brain_node.uniform_values["u_b"]
             app.session.set_uniform_stopped("brain", "u_a", True)
             app.session.tick(["brain"], t=1.0, dt=0.5, frame=999)
-            assert (
-                brain_node.uniform_values["u_a"] == -999.0
-            ), "smoke: a stopped uniform was overwritten — the tick(stopped=) skip is unwired"
-            assert (
-                "u_a" in engine.script_driven_uniforms("brain")
-            ), "smoke: a stopped uniform fell out of the driven set (its play button would vanish)"
+            assert brain_node.uniform_values["u_a"] == -999.0, (
+                "smoke: a stopped uniform was overwritten — the tick(stopped=) skip is unwired"
+            )
+            assert "u_a" in engine.script_driven_uniforms("brain"), (
+                "smoke: a stopped uniform fell out of the driven set (its play button would vanish)"
+            )
             assert brain_node.uniform_values["u_b"] != b_before, (
                 "smoke: the un-stopped u_b did not advance while u_a was stopped — the stop is "
                 "freezing the whole brain, not just the one uniform"

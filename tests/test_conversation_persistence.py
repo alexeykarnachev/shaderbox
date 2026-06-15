@@ -45,7 +45,7 @@ def test_round_trip_messages_history_stats(tmp_path: Path) -> None:
     path = tmp_path / "copilot" / "conversation.json"
     ConversationStore.from_runtime(state, history).save(path)
 
-    loaded = ConversationStore.load_and_migrate(path)
+    loaded = ConversationStore.load(path)
     msgs = loaded.to_messages()
     assert [(m.role, m.text) for m in msgs] == [
         ("user", "add a uniform"),
@@ -72,7 +72,7 @@ def test_save_creates_parent_dir(tmp_path: Path) -> None:
 
 
 def test_missing_file_is_empty_chat(tmp_path: Path) -> None:
-    loaded = ConversationStore.load_and_migrate(tmp_path / "nope.json")
+    loaded = ConversationStore.load(tmp_path / "nope.json")
     assert loaded.to_messages() == []
     assert loaded.to_history() == []
     assert loaded.to_last_turn() is None
@@ -82,17 +82,16 @@ def test_missing_file_is_empty_chat(tmp_path: Path) -> None:
 def test_corrupt_file_fails_soft(tmp_path: Path) -> None:
     path = tmp_path / "conversation.json"
     path.write_text("{ this is not valid json", encoding="utf-8")
-    loaded = ConversationStore.load_and_migrate(path)  # must NOT raise
+    loaded = ConversationStore.load(path)  # must NOT raise
     assert loaded.to_messages() == []
 
 
 def test_non_object_json_fails_soft(tmp_path: Path) -> None:
-    # Valid JSON that is not an object must degrade to an empty chat, not crash the
-    # pre-v7 migration shim at startup.
+    # Valid JSON that is not an object must degrade to an empty chat, not crash at load.
     for payload in ("[1, 2, 3]", "123"):
         path = tmp_path / "conversation.json"
         path.write_text(payload, encoding="utf-8")
-        loaded = ConversationStore.load_and_migrate(path)  # must NOT raise
+        loaded = ConversationStore.load(path)  # must NOT raise
         assert loaded.to_messages() == []
         assert loaded.to_history() == []
 
@@ -103,7 +102,7 @@ def test_incompatible_schema_fails_soft(tmp_path: Path) -> None:
     path.write_text(
         json.dumps({"messages": "not a list", "bogus": 1}), encoding="utf-8"
     )
-    loaded = ConversationStore.load_and_migrate(path)
+    loaded = ConversationStore.load(path)
     assert loaded.to_messages() == []
 
 
@@ -127,15 +126,14 @@ def test_pre_v5_tool_paired_store_fails_soft_to_empty(tmp_path: Path) -> None:
                     },
                     {"role": "tool", "content": "...source...", "tool_call_id": "c1"},
                 ],
-                "usage": {"input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0},
             }
         ),
         encoding="utf-8",
     )
-    loaded = ConversationStore.load_and_migrate(path)  # must NOT raise
-    assert (
-        loaded.to_history() == []
-    ), "a pre-v5 tool-paired store must reset, not load tool messages"
+    loaded = ConversationStore.load(path)  # must NOT raise
+    assert loaded.to_history() == [], (
+        "a pre-v5 tool-paired store must reset, not load tool messages"
+    )
 
 
 def test_unknown_role_survives_round_trip(tmp_path: Path) -> None:
@@ -147,12 +145,11 @@ def test_unknown_role_survives_round_trip(tmp_path: Path) -> None:
                 "version": 1,
                 "messages": [{"role": "future_role", "text": "hi", "resolved": False}],
                 "history": [],
-                "usage": {"input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0},
             }
         ),
         encoding="utf-8",
     )
-    loaded = ConversationStore.load_and_migrate(path)
+    loaded = ConversationStore.load(path)
     msgs = loaded.to_messages()
     assert msgs[0].role == "future_role"  # passed through, not dropped
 
@@ -174,7 +171,7 @@ def test_result_widget_round_trips(tmp_path: Path) -> None:
     ]
     path = tmp_path / "conversation.json"
     ConversationStore.from_runtime(state, []).save(path)
-    msgs = ConversationStore.load_and_migrate(path).to_messages()
+    msgs = ConversationStore.load(path).to_messages()
     assert msgs[0].result_widget == ResultWidget(
         kind="open_url", label="Open in YouTube", target="https://studio.youtube.com/x"
     )
@@ -190,12 +187,11 @@ def test_v3_message_without_widget_loads_as_none(tmp_path: Path) -> None:
                 "version": 3,
                 "messages": [{"role": "tool_status", "text": "render_image: ok"}],
                 "history": [],
-                "usage": {"input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0},
             }
         ),
         encoding="utf-8",
     )
-    msgs = ConversationStore.load_and_migrate(path).to_messages()
+    msgs = ConversationStore.load(path).to_messages()
     assert msgs[0].result_widget is None
 
 
@@ -228,12 +224,11 @@ def test_unknown_widget_kind_fails_soft(tmp_path: Path) -> None:
                     },
                 ],
                 "history": [],
-                "usage": {"input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0},
             }
         ),
         encoding="utf-8",
     )
-    msgs = ConversationStore.load_and_migrate(path).to_messages()
+    msgs = ConversationStore.load(path).to_messages()
     assert msgs[0].result_widget is None  # unknown kind
     assert msgs[1].result_widget is None  # empty target
 
@@ -257,7 +252,7 @@ def test_turn_snippet_round_trips(tmp_path: Path) -> None:
     ]
     path = tmp_path / "conversation.json"
     ConversationStore.from_runtime(state, []).save(path)
-    msgs = ConversationStore.load_and_migrate(path).to_messages()
+    msgs = ConversationStore.load(path).to_messages()
     snip = msgs[1]
     assert snip.role == "turn_snippet"
     assert [(s.name, s.ok) for s in snip.steps] == [
@@ -288,7 +283,7 @@ def test_pre_v9_snippet_fields_default(tmp_path: Path) -> None:
         ),
         encoding="utf-8",
     )
-    msgs = ConversationStore.load_and_migrate(path).to_messages()
+    msgs = ConversationStore.load(path).to_messages()
     assert msgs[1].role == "tool_status"
     assert msgs[1].steps == []
     assert msgs[1].snippet_stats is None
@@ -399,7 +394,7 @@ def test_session_save_then_load_restores(tmp_path: Path) -> None:
     sess.release()
 
     fresh = _mk()
-    fresh.load_conversation(ConversationStore.load_and_migrate(path))
+    fresh.load_conversation(ConversationStore.load(path))
     assert [(m.role, m.text) for m in fresh.state.messages] == [
         ("user", "hi"),
         ("assistant", "yo"),
@@ -431,7 +426,7 @@ def test_recover_card_survives_round_trip(tmp_path: Path) -> None:
     ]
     path = tmp_path / "conversation.json"
     ConversationStore.from_runtime(state, []).save(path)
-    msgs = ConversationStore.load_and_migrate(path).to_messages()
+    msgs = ConversationStore.load(path).to_messages()
 
     assert len(msgs) == 3
     card = msgs[1]
@@ -460,11 +455,10 @@ def test_pre_recover_v1_file_loads_soft(tmp_path: Path) -> None:
                     },
                 ],
                 "history": [],
-                "usage": {"input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0},
             }
         )
     )
-    msgs = ConversationStore.load_and_migrate(path).to_messages()
+    msgs = ConversationStore.load(path).to_messages()
     assert len(msgs) == 2
     assert msgs[1].recover is None
 
@@ -483,7 +477,7 @@ def test_gate_outcome_round_trip_and_pre_v10_default(tmp_path: Path) -> None:
     ]
     path = tmp_path / "conversation.json"
     ConversationStore.from_runtime(state, []).save(path)
-    msgs = ConversationStore.load_and_migrate(path).to_messages()
+    msgs = ConversationStore.load(path).to_messages()
     assert msgs[0].gate_outcome == "Yes"
 
     pre_v10 = tmp_path / "old.json"
@@ -502,6 +496,6 @@ def test_gate_outcome_round_trip_and_pre_v10_default(tmp_path: Path) -> None:
             }
         )
     )
-    old_msgs = ConversationStore.load_and_migrate(pre_v10).to_messages()
+    old_msgs = ConversationStore.load(pre_v10).to_messages()
     assert old_msgs[0].gate_outcome == ""
     assert "You chose: Yes" in old_msgs[0].text

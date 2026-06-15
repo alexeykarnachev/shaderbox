@@ -4,11 +4,9 @@ import platform
 import subprocess
 from collections.abc import Iterable, Sequence
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any
 
 import moderngl
-
-K = TypeVar("K")
 
 
 def adjust_size(
@@ -50,7 +48,7 @@ def adjust_size(
         return size
 
 
-def select_next_value(
+def select_next_value[K](
     values: Sequence[K],
     current_value: K | None,
     default_value: K,

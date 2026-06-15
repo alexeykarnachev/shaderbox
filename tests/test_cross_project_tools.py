@@ -164,9 +164,9 @@ def test_create_node_compiles_and_surfaces_errors(gl_ctx: moderngl.Context) -> N
     broken = load_node_from_dir(starter)
     broken.node.release_program("void main() { this is not glsl }\n")
     broken.node.compile()
-    assert (
-        broken.node.compile_unit.errors
-    ), "broken source should produce compile errors"
+    assert broken.node.compile_unit.errors, (
+        "broken source should produce compile errors"
+    )
 
     # Empty source -> the starter's own (clean) program compiles clean.
     starter_node = load_node_from_dir(starter)

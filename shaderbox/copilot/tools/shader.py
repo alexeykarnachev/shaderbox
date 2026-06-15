@@ -556,9 +556,7 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             mutating=True,
             eager=True,
             gate_policy=GatePolicy.ALWAYS,
-            gate_prompt=lambda a: (
-                f"Delete node `{_node_display(a.get('node', ''))}`?"
-            ),
+            gate_prompt=lambda a: f"Delete node `{_node_display(a.get('node', ''))}`?",
             precheck=delete_precheck,
         ),
         ToolDefinition(

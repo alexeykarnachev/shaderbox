@@ -308,7 +308,7 @@ class ProjectSession:
         )
 
         if self.paths.app_state_file.exists():
-            self.app_state = UIAppState.load_and_migrate(self.paths.app_state_file)
+            self.app_state = UIAppState.load(self.paths.app_state_file)
 
         self.integrations_store = IntegrationsStore.load()
         self.integrations_store.copilot.apply_limits()

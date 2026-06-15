@@ -192,23 +192,10 @@ class UIAppState(BaseModel):
             json.dump(app_state_dict, f, indent=4)
 
     @classmethod
-    def load_and_migrate(cls, file_path: str | Path) -> Self:
-        """Load app state with one-shot key migrations.
-
-        Four migration generations, all idempotent:
-          1. tg_* keys → share_provider_configs.telegram.* (legacy)
-          2. share_provider_configs → exporter_settings;
-             active_share_provider → active_exporter_id (feature 001)
-          3. drop modelbox_url, media_model_idx (feature 003)
-          4. drop text_editor_cmd (feature 006 — external editor removed)
-
-        key_bindings / show_cheatsheet (feature 018) are additive optional fields
-        — an old state lacking them gets the pydantic defaults; no transform.
-
-        Telegram credentials live in the global integrations.json (feature 009),
-        populated only by a real Connect — no migration from the old per-project
-        shape (no backward-compat requirement).
-        """
+    def load(cls, file_path: str | Path) -> Self:
+        # Fail-soft: an unreadable / incompatible file degrades to defaults + a WARNING.
+        # A future build's unknown key is dropped (not a hard fail under extra="forbid");
+        # only a genuinely bad typed value falls through to the defaults.
         try:
             with Path(file_path).open("r") as f:
                 data = json.load(f)
@@ -216,35 +203,6 @@ class UIAppState(BaseModel):
             logger.warning(f"Unreadable app_state ({e}); falling back to defaults")
             return cls()
 
-        if any(key.startswith("tg_") for key in data):
-            telegram_config: dict[str, Any] = {}
-
-            if "tg_bot_token" in data:
-                telegram_config["bot_token"] = data.pop("tg_bot_token")
-            if "tg_user_id" in data:
-                telegram_config["user_id"] = data.pop("tg_user_id")
-            if "tg_sticker_set_name" in data:
-                telegram_config["sticker_set_name"] = data.pop("tg_sticker_set_name")
-
-            data.pop("tg_sticker_video_details", None)
-
-            if telegram_config:
-                data.setdefault("share_provider_configs", {})
-                data["share_provider_configs"]["telegram"] = telegram_config
-                data.setdefault("active_share_provider", "telegram")
-
-        if "share_provider_configs" in data:
-            data["exporter_settings"] = data.pop("share_provider_configs")
-        if "active_share_provider" in data:
-            data["active_exporter_id"] = data.pop("active_share_provider")
-
-        data.pop("modelbox_url", None)
-        data.pop("media_model_idx", None)
-        data.pop("text_editor_cmd", None)
-
-        # Drop unknown keys (e.g. a field a newer build wrote) so they don't trip
-        # extra="forbid" and discard the user's real settings; only a genuinely
-        # bad typed value falls through to the defaults.
         unknown = [k for k in data if k not in cls.model_fields]
         if unknown:
             logger.warning(f"Ignoring unknown app_state keys: {unknown}")

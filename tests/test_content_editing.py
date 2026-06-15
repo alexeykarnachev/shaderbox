@@ -119,8 +119,7 @@ def test_rewrite_note_lists_removed_functions_and_declarations() -> None:
     _stub, rewrite = _rewrite_method(_SRC)
     res = rewrite("void main() {\n    fs_color = vec4(1.0);\n}", "")
     assert res.rewrite_note == (
-        "note: this rewrite removed function(s): helper; "
-        "declaration(s): u_glow, u_text"
+        "note: this rewrite removed function(s): helper; declaration(s): u_glow, u_text"
     )
 
 
@@ -151,8 +150,8 @@ def test_rewrite_batch_guard_rejects_before_persist() -> None:
     calls: list[str] = []
     stub, rewrite = _rewrite_method(_SRC)
     inner = stub._copilot_persist_target
-    stub._copilot_persist_target = lambda tgt, new, m: calls.append(new) or inner(
-        tgt, new, m
+    stub._copilot_persist_target = lambda tgt, new, m: (
+        calls.append(new) or inner(tgt, new, m)
     )
     stub._batch_mutated.add("n1")
     res = rewrite("void main() { }", "")
@@ -247,8 +246,9 @@ def test_persist_normalizes_crlf() -> None:
     )
     stub = types.SimpleNamespace(
         _capture_node=lambda _id: None,
-        _copilot_persist_shader=lambda _id, _node, text: captured.update(text=text)
-        or [],
+        _copilot_persist_shader=lambda _id, _node, text: (
+            captured.update(text=text) or []
+        ),
         _working_set_add=lambda _a: None,
         _batch_mutated=set(),
         _broken_streak={},
@@ -366,8 +366,9 @@ def _edit_method(source: str) -> tuple[dict[str, str], "types.FunctionType"]:
     stub = types.SimpleNamespace(
         _copilot_resolve_target=lambda _target, *, allow_create: tgt,
         _bridge=types.SimpleNamespace(run_on_main=lambda fn: fn()),
-        _copilot_persist_target=lambda _tgt, new, matches: captured.update(text=new)
-        or EditResult(matches=matches, errors=[]),
+        _copilot_persist_target=lambda _tgt, new, matches: (
+            captured.update(text=new) or EditResult(matches=matches, errors=[])
+        ),
     )
     return captured, CopilotBackend.apply_shader_edit.__get__(stub)
 
@@ -519,8 +520,9 @@ def test_persist_normalizes_lone_cr() -> None:
     )
     stub = types.SimpleNamespace(
         _capture_node=lambda _id: None,
-        _copilot_persist_shader=lambda _id, _node, text: captured.update(text=text)
-        or [],
+        _copilot_persist_shader=lambda _id, _node, text: (
+            captured.update(text=text) or []
+        ),
         _working_set_add=lambda _a: None,
         _batch_mutated=set(),
         _broken_streak={},

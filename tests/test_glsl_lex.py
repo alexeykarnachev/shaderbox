@@ -193,9 +193,7 @@ def test_comments_in_extracts_normalized() -> None:
 # old_str), allow a deliberate rewrite (comment quoted in old_str). The bug this fixes: the
 # old guard rejected ANY span-with-a-comment, blocking legitimate rewrites (real trace case).
 _SRC = (
-    "uv.y /= u_aspect;\n\n"
-    "// center-based polar coordinates\n"
-    "vec2 p = uv * 2.0 - 1.0;"
+    "uv.y /= u_aspect;\n\n// center-based polar coordinates\nvec2 p = uv * 2.0 - 1.0;"
 )
 
 

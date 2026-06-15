@@ -571,9 +571,7 @@ class DogfoodHarness:
         # NL-only history + chat messages + cost. Both message cursors count the restored chat as
         # already-seen so the next drive/dump reports only NEW messages.
         cop = self._copilot
-        store = ConversationStore.load_and_migrate(
-            self.session.paths.copilot_conversation_path
-        )
+        store = ConversationStore.load(self.session.paths.copilot_conversation_path)
         cop.load_conversation(store)
         # A gate dumped mid-turn persists an unresolved pending_action, but no worker is parked on
         # it after a resume (the gated turn died with its process) — mark it resolved so it doesn't

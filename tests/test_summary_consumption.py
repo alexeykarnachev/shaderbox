@@ -81,12 +81,12 @@ def test_second_turn_receives_first_turn_summary(tmp_path: Path) -> None:
     # The LAST request is turn 2's prompt. It must contain the NL summary of turn 1 — NO tool messages,
     # but the target name + new value carried in an assistant message.
     turn2 = client.requests[-1]
-    assert all(
-        m.role != "tool" for m in turn2
-    ), "a tool message leaked into NL-only history"
-    assert all(
-        m.tool_calls is None for m in turn2
-    ), "a tool_call leaked into NL-only history"
+    assert all(m.role != "tool" for m in turn2), (
+        "a tool message leaked into NL-only history"
+    )
+    assert all(m.tool_calls is None for m in turn2), (
+        "a tool_call leaked into NL-only history"
+    )
     blob = "\n".join(m.content or "" for m in turn2)
     assert "u_speed" in blob and "2.5" in blob, "turn-1 summary not visible to turn 2"
     assert "ab" in blob, "turn-1 referenced node not visible to turn 2"

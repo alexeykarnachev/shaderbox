@@ -101,15 +101,15 @@ def main() -> int:
     p_b = h.render_at(1.5708, "scripted")
     luma_a, luma_b = _mean_luma(p_a), _mean_luma(p_b)
     print(f"  luma @t=0: {luma_a:.1f}  @t=pi/2: {luma_b:.1f}")
-    assert (
-        abs(luma_a - luma_b) > 20
-    ), "scripted uniform did NOT animate between two t values"
+    assert abs(luma_a - luma_b) > 20, (
+        "scripted uniform did NOT animate between two t values"
+    )
 
     # Same t -> same value (ctx.t-pure determinism).
     p_a2 = h.render_at(0.0, "scripted")
-    assert (
-        abs(_mean_luma(p_a) - _mean_luma(p_a2)) < 0.5
-    ), "ctx.t-pure render not deterministic"
+    assert abs(_mean_luma(p_a) - _mean_luma(p_a2)) < 0.5, (
+        "ctx.t-pure render not deterministic"
+    )
 
     # Export-state isolation: warm a stateful integrator on the LIVE instance, then export — the
     # export frame must match a cold-start export, NOT the warmed live value (the fresh-per-export
@@ -127,16 +127,16 @@ def main() -> int:
         f"  export isolation: cold {luma_cold:.1f}  live-warmed value {live_wave:.3f}  "
         f"export {luma_export:.1f}"
     )
-    assert (
-        abs(luma_cold - luma_export) < 0.5
-    ), "export inherited live state (no fresh-per-export instance)"
+    assert abs(luma_cold - luma_export) < 0.5, (
+        "export inherited live state (no fresh-per-export instance)"
+    )
 
     # Post-load hook wiring: a node's export_isolation must be wired (not the bare nullcontext) after
     # reload_scripts — this is what covers a node inserted AFTER load (copilot create / revert).
     node = h.session.ui_nodes["scripted"].node
-    assert (
-        node.export_isolation is not contextlib.nullcontext
-    ), "node export_isolation not wired (post-load insertions would export frozen)"
+    assert node.export_isolation is not contextlib.nullcontext, (
+        "node export_isolation not wired (post-load insertions would export frozen)"
+    )
 
     # drop_node frees engine state: delete + assert the binding + its registry entry are gone.
     h.session.script_engine.drop_node("scripted")

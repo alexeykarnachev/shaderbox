@@ -82,7 +82,7 @@ def test_decorate_short_no_duplicate_when_present_in_title() -> None:
 
 
 def test_decorate_short_no_duplicate_when_present_in_description() -> None:
-    title, desc = decorate_short("clip", "body #Shorts")
+    _title, desc = decorate_short("clip", "body #Shorts")
     assert desc == "body #Shorts"
 
 

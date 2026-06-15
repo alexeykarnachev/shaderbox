@@ -435,16 +435,6 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   Pi (only `glfw.init()`/window/context creation fail), so a transitive imgui import (e.g. via
   `CopilotBackend`→exporter classes) does NOT block headless construction.
 
-## [DEFERRAL] pre-commit ruff hook is pinned older than the resolved ruff
-- **Trigger:** next time you bump `ruff` in `pyproject.toml`, OR the first time `make check`
-  passes but `uv run ruff check .` fails (a lint the pinned hook is too old to emit). Bump the
-  `.pre-commit-config.yaml` ruff `rev` to match in the same pass.
-- `.pre-commit-config.yaml` pins `astral-sh/ruff-pre-commit` at `rev: v0.3.4`, but the project dep
-  resolves a much newer ruff (0.11.x). So `make check` (→ pre-commit) lints with stale ruff and can
-  green code a current ruff would flag (feature 011 hit this: new `# noqa: BLE001` markers were inert
-  + would `RUF100`/`SIM105` under 0.11.x). Bumping the rev may surface new lints repo-wide — its own
-  bounded change, not to be done mid-feature.
-
 ## [DEFERRAL] code-sign the Windows launcher (SmartScreen)
 - **Trigger:** first user report that SmartScreen blocks them despite the bundled README's
   "More info → Run anyway" note, OR a paid (non name-your-own-price) release.
@@ -487,7 +477,7 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   `UIUniform.snap_input_type()` (called each frame in `tabs/node.py`) covers the in-app
   `input_type` case, but only AFTER load — a value bad enough to fail pydantic construction never
   reaches it. `UINodeState` has no `model_config`/value-level fallback (unlike `UIAppState`'s
-  deliberate `extra="forbid"` + `load_and_migrate`). If robustness parity is wanted, add a
+  deliberate `extra="forbid"` + fail-soft `load`). If robustness parity is wanted, add a
   validator that resets out-of-range values to defaults instead of raising.
 
 ## [DEFERRAL] Telegram egress is pinned to IPv4 (breaks a genuinely IPv6-only client)

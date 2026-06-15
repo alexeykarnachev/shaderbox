@@ -951,9 +951,7 @@ class App:
         # integrations_store live, so no re-wire. Guarded for the first _init.
         if hasattr(self, "copilot"):
             self.copilot.reset_conversation()
-            store = ConversationStore.load_and_migrate(
-                self.paths.copilot_conversation_path
-            )
+            store = ConversationStore.load(self.paths.copilot_conversation_path)
             self.copilot.load_conversation(store)
 
     def get_font(self, size: int, bold: bool = False) -> Any:

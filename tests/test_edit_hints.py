@@ -5,12 +5,7 @@ from shaderbox.copilot.edit_hints import compile_hints, render_facts
 
 
 def test_redeclared_hint_lists_both_declaration_lines() -> None:
-    src = (
-        "float weight = 0.1;\n"
-        "float x = 1.0;\n"
-        "float weight = 0.2;\n"
-        "void main() {}\n"
-    )
+    src = "float weight = 0.1;\nfloat x = 1.0;\nfloat weight = 0.2;\nvoid main() {}\n"
     hints = compile_hints(src, ["`weight' redeclared"])
     assert len(hints) == 1
     assert "'weight' is declared on lines 1, 3" in hints[0]
