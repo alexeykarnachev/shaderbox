@@ -147,6 +147,10 @@ def test_dry_run_orphan_and_per_key_errors(tmp_path: Path) -> None:
     assert "u_x" in probe.driven and "u_v" in probe.driven
     assert any(name == "u_v" for name, _ in probe.per_key_errors)  # bad shape
     assert any(name == "u_typo" for name, _ in probe.orphan_keys)  # no such uniform
+    # The probe surfaces orphans via the RETURN value, never the console: it ticks the brain across
+    # ~N frames, so a console warning would spam once per frame (the pong-brain regression). warn=False
+    # on the probe path means it never touches the live warn-dedup set.
+    assert eng._nodes["n0"].warned == set()
 
 
 def test_dry_run_runtime_raise_surfaces(tmp_path: Path) -> None:

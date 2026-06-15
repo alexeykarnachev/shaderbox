@@ -126,8 +126,11 @@ def open_in_file_manager(path: Path) -> None:
 
 
 def format_auto_value(value: object) -> str:
+    # Render a scalar / vecN / array-of-vecN uniform value for the read-only auto display. Recurses so
+    # a nested iterable (an array of vec2 — a tuple of tuples) renders as nested brackets instead of
+    # crashing on `f"{tuple:.3f}"`. A non-numeric leaf falls back to str().
     if isinstance(value, float | int):
         return f"{value:.3f}"
     if isinstance(value, Iterable):
-        return "[" + ", ".join(f"{v:.3f}" for v in value) + "]"
+        return "[" + ", ".join(format_auto_value(v) for v in value) + "]"
     return str(value)

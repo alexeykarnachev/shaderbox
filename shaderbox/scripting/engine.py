@@ -398,7 +398,17 @@ class ScriptEngine:
         # per-call throwaway, so an export never touches the live brain's recorded error/caches/warn
         # dedup (structurally isolated). NO stopped set — an export always plays the script.
         self._tick_brain(
-            node_id, node, ctx, brain, {}, {}, set(), set(), set(), frozenset()
+            node_id,
+            node,
+            ctx,
+            brain,
+            {},
+            {},
+            set(),
+            set(),
+            set(),
+            frozenset(),
+            warn=False,
         )
 
     def dry_run(
@@ -452,6 +462,7 @@ class ScriptEngine:
                 set(),
                 frozenset(),
                 values_sink=sink,
+                warn=False,
             )
             seen_driven |= driven
             seen_skipped |= skipped
@@ -505,6 +516,7 @@ class ScriptEngine:
         warned: set[str],
         stopped: frozenset[str],
         values_sink: dict[str, Any] | None = None,
+        warn: bool = True,
     ) -> None:
         # `values_sink` (the dry-run path): every uniform-value WRITE lands there + the freeze-fallback
         # READ consults it, so the LIVE node is never written. None = the live tick (write the node).
@@ -563,7 +575,7 @@ class ScriptEngine:
                 # scriptable uniform, so script_driven_uniforms must not claim ownership).
                 errors[key] = ScriptError(name, "runtime", reason)
                 skipped.add(name)
-                if name not in warned:
+                if warn and name not in warned:
                     logger.warning(
                         f"Node-brain on node {node_id}: key {reason} — skipped"
                     )

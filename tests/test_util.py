@@ -151,6 +151,15 @@ def test_format_auto_value_scalar_and_vector() -> None:
     assert format_auto_value((0.5, 0.5)) == "[0.500, 0.500]"
 
 
+def test_format_auto_value_nested_array_of_vecs() -> None:
+    # A brain-driven array-of-vec2 uniform is a tuple of tuples; the auto readout must recurse, not
+    # crash on f"{tuple:.3f}" (the pong-brain spam regression).
+    assert (
+        format_auto_value(((1.0, 2.0), (3.0, 4.0)))
+        == "[[1.000, 2.000], [3.000, 4.000]]"
+    )
+
+
 def test_format_auto_value_non_numeric_falls_back_to_str() -> None:
     assert format_auto_value(None) == "None"
 

@@ -1,5 +1,5 @@
 import contextlib
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from pathlib import Path
 
 import moderngl
@@ -24,6 +24,7 @@ from shaderbox.ui_primitives import (
     play_stop_toggle,
 )
 from shaderbox.util import (
+    format_auto_value,
     get_resolution_str,
     pfd_block,
     str_to_unicode,
@@ -183,13 +184,7 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
     _begin_ctrl(app, name, _count_suffix(ui_uniform, current_value), playing=playing)
 
     if ui_uniform.input_type == "auto":
-        if isinstance(current_value, float | int):
-            caption_text(f"{current_value:.3f}")
-        elif isinstance(current_value, Iterable):
-            value_str = ", ".join(f"{v:.3f}" for v in current_value)
-            caption_text(f"[{value_str}]")
-        else:
-            caption_text(str(current_value))
+        caption_text(format_auto_value(current_value))
 
     elif ui_uniform.input_type == "buffer":
         assert isinstance(current_value, moderngl.Buffer)
@@ -215,8 +210,7 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
                     parsed = [py_type(x.strip()) for x in value_str.split(",")]
                     new_value = parsed[:cap]
         else:
-            value_str = ", ".join(f"{v:.3f}" for v in current_value)
-            caption_text(f"[{value_str}]")
+            caption_text(format_auto_value(current_value))
 
     elif ui_uniform.input_type == "text":
         assert isinstance(current_value, Sequence)
