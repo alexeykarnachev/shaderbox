@@ -32,6 +32,8 @@ def _dispatch_registry(app: App) -> None:
             continue
         if spec.scope == CommandScope.EDITOR and not app.editor_focused:
             continue
+        if spec.scope == CommandScope.COPILOT and not app.copilot_focused:
+            continue
         if popup_suppresses(spec.scope) and popup_open:
             continue
         flags = route_flag(spec.scope, chord)

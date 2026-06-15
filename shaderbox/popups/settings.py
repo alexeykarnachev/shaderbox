@@ -4,6 +4,7 @@ from imgui_bundle import imgui
 
 from shaderbox.app import App, PopupState
 from shaderbox.commands import (
+    CATEGORY_ORDER,
     COMMAND_SPECS,
     SPEC_BY_ID,
     CommandId,
@@ -20,6 +21,7 @@ from shaderbox.ui_primitives import (
     caption_text,
     chord_row,
     danger_button,
+    faint_hline,
     ghost_button,
     help_marker,
     label_row,
@@ -290,15 +292,33 @@ def _draw_copilot_config(app: App, focus: bool = False) -> None:
         cfg.apply_limits()
 
 
+def _scopes_overlap(a: CommandScope, b: CommandScope) -> bool:
+    # Two commands can fire on the same press iff their eligibility windows overlap: GLOBAL is
+    # always eligible (so it clashes with any scope); two focus-scoped commands clash only when
+    # they share the scope (only one focus flag is true at a time).
+    return a == CommandScope.GLOBAL or b == CommandScope.GLOBAL or a == b
+
+
 def _chord_in_use(
     app: App, chord: int, scope: CommandScope, exclude: CommandId
 ) -> bool:
     return any(
         spec.id != exclude
-        and spec.scope == scope
+        and _scopes_overlap(spec.scope, scope)
         and app.effective_bindings.get(spec.id, 0) == chord
         for spec in COMMAND_SPECS
     )
+
+
+def _faint_group_rule() -> None:
+    # A keybinding sub-group divider, lighter than the section-level separator_text: a thin faint
+    # rule between groups (drawn before all but the first group, which sits under the parent
+    # "Keyboard" separator). No caption — the rule alone segments the categories.
+    imgui.dummy((0.0, SPACE.SM))
+    pos = imgui.get_cursor_screen_pos()
+    avail = imgui.get_content_region_avail().x
+    faint_hline(imgui.get_window_draw_list(), pos.x, pos.x + avail, pos.y, alpha=0.5)
+    imgui.dummy((0.0, SPACE.SM))
 
 
 def _draw_keybindings(app: App) -> None:
@@ -326,18 +346,26 @@ def _draw_keybindings(app: App) -> None:
             app.rebinding_command = None
 
     label_w = float(SIZE.SETTINGS_W) * 0.4
-    for spec in COMMAND_SPECS:
-        capturing = app.rebinding_command == spec.id
-        chord_str = (
-            "press a key..."
-            if capturing
-            else chord_to_str(app.effective_bindings.get(spec.id, 0))
-        )
-        chord_row(spec.label, chord_str, label_w, highlight=capturing)
-        imgui.same_line(label_w + float(SIZE.UNIFORM_CTRL_W) * 0.5)
-        if not spec.rebindable:
-            imgui.begin_disabled()
-        if ghost_button(f"Rebind##{spec.id.value}", width=float(SIZE.BTN_SM_W)):
-            app.rebinding_command = spec.id
-        if not spec.rebindable:
-            imgui.end_disabled()
+    drawn_a_group = False
+    for category in CATEGORY_ORDER:
+        specs = [spec for spec in COMMAND_SPECS if spec.category == category]
+        if not specs:
+            continue
+        if drawn_a_group:
+            _faint_group_rule()
+        drawn_a_group = True
+        for spec in specs:
+            capturing = app.rebinding_command == spec.id
+            chord_str = (
+                "press a key..."
+                if capturing
+                else chord_to_str(app.effective_bindings.get(spec.id, 0))
+            )
+            chord_row(spec.label, chord_str, label_w, highlight=capturing)
+            imgui.same_line(label_w + float(SIZE.UNIFORM_CTRL_W) * 0.5)
+            if not spec.rebindable:
+                imgui.begin_disabled()
+            if ghost_button(f"Rebind##{spec.id.value}", width=float(SIZE.BTN_SM_W)):
+                app.rebinding_command = spec.id
+            if not spec.rebindable:
+                imgui.end_disabled()

@@ -414,6 +414,10 @@ class App:
             CommandId.FOCUS_TAB_SHARE: lambda: self.focus_node_tab(NodeTab.SHARE),
             CommandId.TOGGLE_COPILOT: self.toggle_copilot,
             CommandId.CYCLE_COPILOT_LAYOUT: self.cycle_copilot_layout,
+            CommandId.OPEN_SHADER: lambda: self.ensure_shader_tab(self.current_node_id),
+            CommandId.OPEN_SCRIPT: lambda: self.open_script_for(self.current_node_id),
+            CommandId.CYCLE_CODE_TAB: self.cycle_code_tab,
+            CommandId.CLOSE_CODE_TAB: self.close_active_tab,
         }
 
     # ---- copilot-cluster forwarders (feature 025) ----
@@ -633,6 +637,20 @@ class App:
     def cycle_region(self) -> None:
         idx = _REGION_CYCLE.index(self.active_region)
         self._set_region(_REGION_CYCLE[(idx + 1) % len(_REGION_CYCLE)])
+
+    def cycle_code_tab(self) -> None:
+        # Forward-only cycle through the open editor tabs (set_active_tab drives imgui's
+        # selection via tab_select_pending). No-op with 0/1 tabs.
+        if len(self.editor_tabs) < 2:
+            return
+        self.set_active_tab((self.active_tab_index + 1) % len(self.editor_tabs))
+        self.tab_select_pending = True
+
+    def close_active_tab(self) -> None:
+        # Close the focused editor tab (the Ctrl+W / tab-bar-x path share close_tab). No-op
+        # with no tabs open; only fires while the editor is focused (CommandScope.EDITOR gate).
+        if self.editor_tabs:
+            self.close_tab(self.active_tab_index)
 
     def focus_node_tab(self, tab: NodeTab) -> None:
         self.active_node_tab = tab

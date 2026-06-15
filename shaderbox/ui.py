@@ -49,7 +49,7 @@ _MAIN_WINDOW_FLAGS = (
     | imgui.WindowFlags_.no_scroll_with_mouse
     | imgui.WindowFlags_.menu_bar
     # Skip imgui's Ctrl+Tab window-cycle (would pop a 1-item switcher + 2nd outline);
-    # also frees Ctrl+Tab for our CYCLE_REGION command.
+    # also frees Ctrl+Tab for our Cycle code tab command.
     | imgui.WindowFlags_.no_nav_focus
     # Don't z-order this full-screen window above the floating copilot chat on focus —
     # the chat must stay visible while open. It's submitted after this window to stay on top.

@@ -59,6 +59,16 @@ def _ellipsize(text: str, max_width: float) -> str:
     return ellipsis if imgui.calc_text_size(ellipsis).x <= max_width else ""
 
 
+def faint_hline(
+    dl: imgui.ImDrawList, x0: float, x1: float, y: float, alpha: float = 1.0
+) -> None:
+    """A thin horizontal rule in the faded border colour, drawn onto the given draw list.
+    Caller picks the list (window vs foreground) + coords + alpha, so it serves both a
+    layout-flow divider and an absolute foreground overlay."""
+    col = imgui.color_convert_float4_to_u32(fade(COLOR.BORDER, alpha))
+    dl.add_line((x0, y), (x1, y), col)
+
+
 # ---------------------------------------------------------------------------
 # Button system — pick by the action's role, never by how it looks:
 #   primary_button — the ONE call-to-action of a section (filled accent).
