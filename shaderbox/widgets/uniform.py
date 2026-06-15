@@ -21,6 +21,7 @@ from shaderbox.ui_primitives import (
     caption_text,
     chip_button,
     clickable_label,
+    clipped_caption,
     play_stop_toggle,
 )
 from shaderbox.util import (
@@ -184,7 +185,7 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
     _begin_ctrl(app, name, _count_suffix(ui_uniform, current_value), playing=playing)
 
     if ui_uniform.input_type == "auto":
-        caption_text(format_auto_value(current_value))
+        clipped_caption(format_auto_value(current_value), SIZE.UNIFORM_CTRL_W)
 
     elif ui_uniform.input_type == "buffer":
         assert isinstance(current_value, moderngl.Buffer)
@@ -210,7 +211,7 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
                     parsed = [py_type(x.strip()) for x in value_str.split(",")]
                     new_value = parsed[:cap]
         else:
-            caption_text(format_auto_value(current_value))
+            clipped_caption(format_auto_value(current_value), SIZE.UNIFORM_CTRL_W)
 
     elif ui_uniform.input_type == "text":
         assert isinstance(current_value, Sequence)

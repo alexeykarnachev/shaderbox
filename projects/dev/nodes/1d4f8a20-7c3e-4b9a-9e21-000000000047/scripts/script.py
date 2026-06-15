@@ -156,14 +156,7 @@ class Behavior(ScriptBehavior):
 
         return {
             "u_ball_pos": Vec2(self.ball_x, self.ball_y),
-            "u_ball_vel": Vec2(self.vx, self.vy),
-            "u_ball_radius": self.ball_radius,
-            "u_trail": self._trail_uniform(),
-            "u_trail_count": float(self.trail_count),
-            "u_paddle_left_y": self.left_y,
-            "u_paddle_right_y": self.right_y,
-            "u_paddle_half_height": self.paddle_half_h,
-            "u_paddle_half_width": self.paddle_half_w,
+
             "u_score_left": float(self.left_score),
             "u_score_right": float(self.right_score),
             "u_hit_flash": self.flash,

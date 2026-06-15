@@ -188,19 +188,28 @@ def draw(app: App) -> None:
             imgui.dummy((0, SPACE.SM))
 
 
-def _active_tab_tick(active: bool) -> None:
-    # A thin accent vertical tick at the row's left edge, marking which entry-point is the editor's
-    # active tab (049). Drawn INSET (inside the row rect, draw-list) so its presence never shifts
-    # layout — a selection cue must change colour/presence, never size (/imgui-ui §3).
+# The Shader/Script label column: a tick gutter + the widest label, so both `open` buttons align.
+_ENTRY_TICK_W = float(SPACE.MD)
+_ENTRY_LABEL_W = 64.0
+
+
+def _entry_row_label(active: bool, label: str) -> None:
+    # One entry-point row label: an inset accent tick (049) marking the editor's active tab, then the
+    # label in a fixed-width column so the `open` buttons line up across rows. align_text_to_frame_
+    # padding centres the text on the button's row height (the font mix used to float it high). The tick
+    # is a draw-list line (presence/colour only, never size — /imgui-ui §3) drawn over the gutter.
+    imgui.align_text_to_frame_padding()
     pos = imgui.get_cursor_screen_pos()
     if active:
-        h = imgui.get_text_line_height()
+        h = imgui.get_frame_height()
         col = imgui.color_convert_float4_to_u32(COLOR.ACCENT_PRIMARY)
         imgui.get_window_draw_list().add_line(
-            (pos.x, pos.y + 1.0), (pos.x, pos.y + h - 1.0), col, 2.0
+            (pos.x, pos.y + 2.0), (pos.x, pos.y + h - 2.0), col, 2.0
         )
-    imgui.dummy((SPACE.SM, 0))
+    imgui.dummy((_ENTRY_TICK_W, 0))
     imgui.same_line()
+    imgui.text_colored(COLOR.FG_DIM, label)
+    imgui.same_line(_ENTRY_TICK_W + _ENTRY_LABEL_W)
 
 
 def _draw_entry_points(app: App) -> None:
@@ -224,17 +233,13 @@ def _draw_entry_points(app: App) -> None:
     imgui.begin_disabled(app.copilot_turn_active)
     small_caption(app.font_12, "Entry points")
 
-    _active_tab_tick(shader_active)
-    small_caption(app.font_12, "Shader")
-    imgui.same_line()
+    _entry_row_label(shader_active, "Shader")
     if ghost_button("open##entry_shader"):
         app.ensure_shader_tab(node_id)
     if imgui.is_item_hovered():
         imgui.set_tooltip("Open the fragment shader (GPU)")
 
-    _active_tab_tick(script_active)
-    small_caption(app.font_12, "Script")
-    imgui.same_line()
+    _entry_row_label(script_active, "Script")
     open_tooltip = (
         "Node script error — click to open and fix"
         if error

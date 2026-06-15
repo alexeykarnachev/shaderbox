@@ -1,11 +1,11 @@
 # 049 — Node entry-point header (shader / script controls, unified)
 
-> **Status: DONE (2026-06-15).** Implemented to Option C below (design locked after a brainstorm +
-> voice-note review). Supersedes the earlier DRAFT, which framed this narrowly as "reopen the closed
-> shader tab" — that is one *symptom* of the real gap (see ## Goal). Pends the maintainer `make run`
-> visual check (UI/nav is un-headless-able per `/imgui-ui` §0; the no-crash/stack-balance pass ran
-> headless across every branch). Wording defaults ("Entry points" / "open") are live; adjust on the
-> visual pass without a re-lock.
+> **Status: DONE (2026-06-15, maintainer-verified live).** Implemented to Option C below (design locked
+> after a brainstorm + voice-note review). Supersedes the earlier DRAFT, which framed this narrowly as
+> "reopen the closed shader tab" — that is one *symptom* of the real gap (see ## Goal). A post-impl
+> visual pass fixed two layout bugs (entry-row label/button misalignment from a font-size mix; a
+> vec-array uniform value overflowing its row and hiding the trailing `stop` — now `clipped_caption`
+> ellipsizes to the control column). Wording defaults ("Entry points" / "open") are live.
 
 Filed from a maintainer observation (2026-06-15) while reasoning about the post-048 tabbed editor,
 then re-scoped after a design brainstorm.

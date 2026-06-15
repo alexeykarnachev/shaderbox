@@ -38,7 +38,7 @@ asymmetry, orphaned stop button). The next feature is unqueued — draw it from 
 feedback; motion verdict). A fresh self-playing-Tetris dogfood (2026-06-15) PASSED and surfaced one durable finding (left
 UNFILED per maintainer): the agent has no "render at t=N" affordance, so it can't see its own animation past the
 export-pinned t=0 — a brain/shader coordinate-seam bug (inverted gravity) was invisible to every check the agent has.
-`make check` 0 errors; suite green (GL subset on V3D). **043 + 048 + 049 still pend their maintainer `make run` visual checks.**
+`make check` 0 errors; suite green (GL subset on V3D). **049 maintainer-verified live; 043 + 048 still pend their `make run` visual checks.**
 **No open BLOCKERs.**
 
 ## Features

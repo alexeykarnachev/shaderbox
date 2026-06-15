@@ -4,31 +4,126 @@
         960
     ],
     "uniforms": {
-        "u_base_color": [
-            0.05999999865889549,
-            0.07000000029802322,
-            0.10000000149011612
+        "u_ball_pos": [
+            -0.5892705328651737,
+            -0.0015518203522390081
         ],
-        "u_flash": 0.0,
-        "u_grid_density": 2,
-        "u_orbit_pos": [
-            -0.10370622757751381,
-            -0.5909695578975629
+        "u_ball_radius": 0.11500000208616257,
+        "u_ball_vel": [
+            -1.846246600151062,
+            0.1177862286567688
         ],
-        "u_orbit_radius": 0.15468992108649124,
-        "u_pulse": 0.01920642978535675,
-        "u_spin": 248.15557149533333,
-        "u_swirl": 33.459819625539374,
-        "u_tint": [
-            1.0,
-            0.55,
-            0.7491982785039947
+        "u_bg_color": [
+            0.029999999329447746,
+            0.03999999910593033,
+            0.07000000029802322
         ],
-        "u_wave_offset": [
-            -0.20745866863499918,
-            0.0388818666743089
+        "u_hit_flash": 0.6687294255999974,
+        "u_paddle_half_height": 0.2199999988079071,
+        "u_paddle_half_width": 1.2879999876022339,
+        "u_paddle_left_y": -0.12767881155014038,
+        "u_paddle_right_y": -0.6269999742507935,
+        "u_score_left": 0.0,
+        "u_score_right": 0.0,
+        "u_trail": [
+            [
+                -0.32698559863461873,
+                0.5154195458585201
+            ],
+            [
+                -0.2959064118654228,
+                0.5134367662341879
+            ],
+            [
+                -0.23433550106256248,
+                0.509508685737806
+            ],
+            [
+                -0.20331238664802478,
+                0.5075294833989135
+            ],
+            [
+                -0.1722987416321324,
+                0.5055508851855672
+            ],
+            [
+                -0.11066557908735687,
+                0.501618833173252
+            ],
+            [
+                -0.07971075548726658,
+                0.4996439876290342
+            ],
+            [
+                -0.048696392281470366,
+                0.4976653435968473
+            ],
+            [
+                0.012856942254037988,
+                0.49373838442532614
+            ],
+            [
+                0.043868129915729706,
+                0.4917599429854462
+            ],
+            [
+                0.07494598923364193,
+                0.4897772480494096
+            ],
+            [
+                0.13647690848949307,
+                0.4858517189204474
+            ],
+            [
+                0.16750002475028403,
+                0.4838725164637681
+            ],
+            [
+                0.1980569231341865,
+                0.48192305762019105
+            ],
+            [
+                0.2600879222753333,
+                0.47796562456097275
+            ],
+            [
+                0.2910859295827381,
+                0.4759880239969534
+            ],
+            [
+                0.32155357856110356,
+                0.4740442590572772
+            ],
+            [
+                0.3525812365884705,
+                0.47206476684648396
+            ],
+            [
+                0.41464932866946513,
+                0.4681049673442218
+            ],
+            [
+                0.4451961650095695,
+                0.4661561504355695
+            ],
+            [
+                0.47622459661422895,
+                0.46417660887234935
+            ],
+            [
+                0.5382506496607998,
+                0.4602194913624283
+            ],
+            [
+                0.5688102989520994,
+                0.4582698570173757
+            ],
+            [
+                0.599806790491094,
+                0.45629235315584543
+            ]
         ],
-        "u_zoom": 1.0
+        "u_trail_count": 20.0
     },
     "ui_state": {
         "ui_name": "Script Showcase",
@@ -143,13 +238,134 @@
                 "dimension": 1,
                 "array_length": 1,
                 "input_type": "drag"
+            },
+            "252963141333948263365695130656740289135": {
+                "name": "u_ball_pos",
+                "is_ubo": false,
+                "gl_type": 35664,
+                "dimension": 2,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "131811276246977740327116429722010690342": {
+                "name": "u_ball_radius",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "312827928626543104589349512462389335538": {
+                "name": "u_ball_vel",
+                "is_ubo": false,
+                "gl_type": 35664,
+                "dimension": 2,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "192685526414793153757400600008725386024": {
+                "name": "u_bg_color",
+                "is_ubo": false,
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "color"
+            },
+            "274264140159373980461477063555065735973": {
+                "name": "u_hit_flash",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "52660342461834108785651267503016715107": {
+                "name": "u_paddle_half_height",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "293324934692623583638209667057889635027": {
+                "name": "u_paddle_half_width",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "159331054130947413935904781769618681108": {
+                "name": "u_paddle_left_y",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "106716728017797621483950188672485090501": {
+                "name": "u_paddle_right_y",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "143080385188792215867530381530861734747": {
+                "name": "u_score_left",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "332014635133988430155973852844796825875": {
+                "name": "u_score_right",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "37154164850612245702881750831795076973": {
+                "name": "u_time",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "auto"
+            },
+            "2135203728651100772647664959566240715": {
+                "name": "u_trail",
+                "is_ubo": false,
+                "gl_type": 35664,
+                "dimension": 2,
+                "array_length": 24,
+                "input_type": "array"
+            },
+            "211732337855029851250212726993115151942": {
+                "name": "u_trail_count",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
             }
         },
         "uniform_sort_key": "code",
         "uniform_sort_desc": false,
         "video_to_video_smoothing_window": 5,
         "video_to_video_smoothing_sigma": 1.0,
-        "stopped_uniforms": [],
+        "stopped_uniforms": [
+            "u_trail_count",
+            "u_score_right",
+            "u_paddle_right_y",
+            "u_score_left",
+            "u_paddle_half_width",
+            "u_paddle_half_height",
+            "u_paddle_left_y",
+            "u_ball_radius"
+        ],
         "all_stopped": false
     }
 }

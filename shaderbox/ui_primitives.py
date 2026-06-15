@@ -425,6 +425,18 @@ def caption_text(
     imgui.text_colored(color or COLOR.FG_DIM, text)
 
 
+def clipped_caption(
+    text: str, max_width: float, color: tuple[float, float, float, float] | None = None
+) -> None:
+    """A `caption_text` bounded to `max_width` — ellipsizes when it would overflow, full value on
+    hover. For read-only value readouts in a fixed column (a vec-array uniform's `[[...], ...]` would
+    otherwise overflow the row and shove trailing controls off-screen)."""
+    shown = _ellipsize(text, max_width)
+    imgui.text_colored(color or COLOR.FG_DIM, shown)
+    if shown != text and imgui.is_item_hovered():
+        imgui.set_tooltip(text)
+
+
 # ---------------------------------------------------------------------------
 # Labelled fields — a dim caption on its own line above the control. One primitive
 # per control type, used by the exporter panels.
