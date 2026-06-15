@@ -1,4 +1,4 @@
-"""Command chord routing (034 F10) — pure, no App."""
+"""Command chord routing (`commands.route_flag`) — pure, no App."""
 
 from imgui_bundle import imgui
 
@@ -19,6 +19,13 @@ def test_global_alt_chord_routes_always() -> None:
     assert route_flag(CommandScope.GLOBAL, chord) == imgui.InputFlags_.route_always
 
 
-def test_scoped_chord_routes_focused() -> None:
-    chord = int(K.f8)
-    assert route_flag(CommandScope.EDITOR, chord) == imgui.InputFlags_.route_focused
+def test_scoped_ctrl_chord_routes_global() -> None:
+    # A scoped (EDITOR/COPILOT) non-Alt chord still routes GLOBAL — the per-scope eligibility is
+    # enforced by the dispatcher's focus-flag gate, not by the route flag (route_flag docstring).
+    chord = int(K.w) | int(K.mod_ctrl)
+    assert route_flag(CommandScope.EDITOR, chord) == imgui.InputFlags_.route_global
+
+
+def test_scoped_alt_chord_routes_always() -> None:
+    chord = int(K.f8) | int(K.mod_alt)
+    assert route_flag(CommandScope.EDITOR, chord) == imgui.InputFlags_.route_always
