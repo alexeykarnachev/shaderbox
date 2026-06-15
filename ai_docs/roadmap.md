@@ -26,20 +26,19 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-06-15 (049 node-entry-points DONE; 043 scripting DONE+dogfooded; no feature queued — pick the next from todo triggers or maintainer steer). -->
-**NEXT: UNQUEUED** — no feature spec is open. 049 NODE ENTRY-POINTS just landed (the node panel grew an **Entry points**
-zone — Shader / Script rows, each with an `open` summoner + an active-tab accent tick; the node-level play/stop moved
-onto the Script row where it has an owner; the `</>` glyph was folded into `ghost_button` and deleted). It re-scoped the
-"reopen shader tab" report to its shared root and closed all three symptoms (dead-end shader tab, open-affordance
-asymmetry, orphaned stop button). The next feature is unqueued — draw it from a `todo.md` trigger or maintainer steer.
+<!-- As of 2026-06-15 (SHIPPED v0.16.0 — the whole scripting subsystem 040-048 + 049 node-entry-points; no feature queued). -->
+**NEXT: UNQUEUED** — no feature spec is open. **v0.16.0 just SHIPPED to itch** (both channels live), carrying the entire
+CPU-scripting subsystem (040-048: the stateful headless script engine, the node-brain model, copilot scripting 043, the
+script-UX evolution to one-script-per-node) plus 049 NODE ENTRY-POINTS (the node panel's **Entry points** zone — Shader /
+Script rows, each with an `open` summoner + active-tab tick; node-level play/stop relocated to the Script row; `</>` glyph
+folded into `ghost_button`). The next feature is unqueued — draw it from a `todo.md` trigger or maintainer steer.
 
-**Just shipped (context):** 043 COPILOT SCRIPTING is DONE — the copilot authors a node's Python brain
-(`scripts/script.py`) EXACTLY like GLSL (the `read_script`/`write_script`/`edit_script` trio; `dry_run` synchronous
-feedback; motion verdict). A fresh self-playing-Tetris dogfood (2026-06-15) PASSED and surfaced one durable finding (left
-UNFILED per maintainer): the agent has no "render at t=N" affordance, so it can't see its own animation past the
-export-pinned t=0 — a brain/shader coordinate-seam bug (inverted gravity) was invisible to every check the agent has.
-`make check` 0 errors; suite green (GL subset on V3D). **049 maintainer-verified live; 043 + 048 still pend their `make run` visual checks.**
-**No open BLOCKERs.**
+**Just shipped (context):** v0.16.0. 043 COPILOT SCRIPTING — the copilot authors a node's Python brain (`scripts/script.py`)
+EXACTLY like GLSL (the `read_script`/`write_script`/`edit_script` trio; `dry_run` synchronous feedback; motion verdict); a
+fresh self-playing-Tetris dogfood (2026-06-15) PASSED. One durable finding left UNFILED per maintainer: the agent has no
+"render at t=N" affordance, so it can't see its own animation past the export-pinned t=0 (a brain/shader coordinate-seam
+bug was invisible to every check the agent has). `make check` 0 errors; suite green (GL subset on V3D). 049 maintainer-
+verified live. **No open BLOCKERs.**
 
 ## Features
 
