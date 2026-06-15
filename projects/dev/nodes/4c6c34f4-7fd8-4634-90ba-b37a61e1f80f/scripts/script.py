@@ -65,7 +65,7 @@
 import math
 
 class Behavior(ScriptBehavior):
-    """Drive many uniforms from one object each frame (node-brain). Keep state on self."""
+    """Drive many uniforms from one object each frame (node script). Keep state on self."""
     def __init__(self) -> None:
         """Set up state (runs ONCE — at app start, before the first render, and on reload)."""
         pass

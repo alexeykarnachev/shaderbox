@@ -84,10 +84,10 @@ def _tab_has_error(app: App, tab: EditorTab) -> bool:
 def _script_errors_for(app: App, tab: EditorTab) -> list[ShaderError]:
     # Adapt the active script tab's engine errors into the shader-error shape so they render through
     # the SAME bottom strip as compile errors (045 decision 7), click-to-jump into the script file.
-    # The node-brain shows its sentinel + every homeless soft-key error (typo/orphan keys that name
+    # The node script shows its sentinel + every homeless soft-key error (typo/orphan keys that name
     # no uniform row).
     out: list[ShaderError] = []
-    status = app.session.get_brain_status(tab.node_id)
+    status = app.session.get_script_status(tab.node_id)
     if status is not None:
         if status.sentinel_error is not None:
             e = status.sentinel_error

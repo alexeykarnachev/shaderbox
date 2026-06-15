@@ -1,5 +1,5 @@
-"""GL-integration test for the CPU-script engine (feature 041, redesigned by 048 to ONE node-brain):
-a brain drives a scalar + a vec2 (one stateful class, dict return), then renders on a real GL context,
+"""GL-integration test for the CPU-script engine (feature 041, redesigned by 048 to ONE node script):
+a script drives a scalar + a vec2 (one stateful class, dict return), then renders on a real GL context,
 asserting the computed values reach node.uniform_values, that the rendered pixel CHANGES between two t
 values (the value reaches the GPU), that a shape-mismatch freezes + records a ScriptError, that int
 uniforms reach the GPU (not popped on a failed write), and that a FRESH export instance renders cold
@@ -59,8 +59,8 @@ def _node(gl: moderngl.Context, src: str = _SRC) -> Node:
     return node
 
 
-def _write_brain(scripts_dir: Path, body: str) -> None:
-    # The node-brain file (048): nodes/<id>/scripts/script.py — the only script on a node.
+def _write_script(scripts_dir: Path, body: str) -> None:
+    # The node script file (048): nodes/<id>/scripts/script.py — the only script on a node.
     scripts_dir.mkdir(parents=True, exist_ok=True)
     (scripts_dir / "script.py").write_text(body, encoding="utf-8")
 
@@ -70,8 +70,8 @@ def _pixel(node: Node) -> tuple[int, int, int, int]:
     return tuple(data[:4])  # type: ignore[return-value]
 
 
-# A brain driving a t-pure scalar + a constant vec2 from ONE instance.
-_WAVE_BRAIN = (
+# A script driving a t-pure scalar + a constant vec2 from ONE instance.
+_WAVE_SCRIPT = (
     "import math\n"
     "class Behavior(ScriptBehavior):\n"
     "    def update(self, ctx: Ctx) -> dict:\n"
@@ -81,7 +81,7 @@ _WAVE_BRAIN = (
     "        }\n"
 )
 # A stateful ramp driving BOTH u_wave (the integrator) and u_offset from ONE instance.
-_RAMP_BRAIN = (
+_RAMP_SCRIPT = (
     "class Behavior(ScriptBehavior):\n"
     "    def __init__(self) -> None:\n"
     "        self.v = 0.0\n"
@@ -91,12 +91,12 @@ _RAMP_BRAIN = (
 )
 
 
-def test_brain_value_reaches_gpu(gl_ctx: moderngl.Context, tmp_path: Path) -> None:
-    # One brain drives a float + a vec2: both reach node.uniform_values AND the scripted u_wave
+def test_script_value_reaches_gpu(gl_ctx: moderngl.Context, tmp_path: Path) -> None:
+    # One script drives a float + a vec2: both reach node.uniform_values AND the scripted u_wave
     # changes the rendered pixel between two t values. Falsifier: px_a[0] == px_b[0] (u_wave never
     # reached the GPU) or the uniforms aren't written.
     scripts_dir = tmp_path / "scripts"
-    _write_brain(scripts_dir, _WAVE_BRAIN)
+    _write_script(scripts_dir, _WAVE_SCRIPT)
     node = _node(gl_ctx)
     eng = ScriptEngine()
     eng.reload("n", scripts_dir, node)
@@ -145,14 +145,14 @@ def test_render_clock_honors_passed_u_time(gl_ctx: moderngl.Context) -> None:
         node.release()
 
 
-def test_brain_shape_mismatch_freezes_and_records(
+def test_script_shape_mismatch_freezes_and_records(
     gl_ctx: moderngl.Context, tmp_path: Path
 ) -> None:
     # A vec3 into a float uniform: the per-key coercion mismatch freezes the uniform at its seeded
     # value + records a (node, name) runtime error — never corrupts the GPU write. Falsifier: u_wave
     # changes off the seed, or no error recorded.
     scripts_dir = tmp_path / "scripts"
-    _write_brain(
+    _write_script(
         scripts_dir,
         "class Behavior(ScriptBehavior):\n"
         "    def update(self, ctx: Ctx) -> dict:\n"
@@ -178,7 +178,7 @@ def test_fresh_export_instance_renders_clean(
     # the export's frame-0 pixel must match a cold-start render, NOT the warmed live value.
     # Falsifier: px_export != px_cold (the export inherited live state).
     scripts_dir = tmp_path / "scripts"
-    _write_brain(scripts_dir, _RAMP_BRAIN)
+    _write_script(scripts_dir, _RAMP_SCRIPT)
     node = _node(gl_ctx)
     eng = ScriptEngine()
     eng.reload("n", scripts_dir, node)
@@ -217,7 +217,7 @@ def test_render_media_auto_enters_export_isolation(
     # exactly once AND the export pre-render fired a FRESH instance (not the warmed live one).
     # Falsifier: entered != 1, or the exported frame-0 value equals the warmed live value.
     scripts_dir = tmp_path / "scripts"
-    _write_brain(scripts_dir, _RAMP_BRAIN)
+    _write_script(scripts_dir, _RAMP_SCRIPT)
     node = _node(gl_ctx)
     eng = ScriptEngine()
     eng.reload("n", scripts_dir, node)
@@ -275,15 +275,15 @@ void main() {
 """
 
 
-def test_brain_int_uniforms_reach_gpu_not_popped(
+def test_script_int_uniforms_reach_gpu_not_popped(
     gl_ctx: moderngl.Context, tmp_path: Path
 ) -> None:
-    # The review-swarm bug: a brain returning a float for an int/uint/ivec uniform passed coercion
+    # The review-swarm bug: a script returning a float for an int/uint/ivec uniform passed coercion
     # but moderngl raised on write, render swallowed it, and uniform_values.pop'd the value EVERY
     # frame — silently. A naive "didn't raise" check passes while broken; assert the value is RETAINED
     # in uniform_values after render() (NOT popped). Falsifier: a value missing post-render.
     scripts_dir = tmp_path / "scripts"
-    _write_brain(
+    _write_script(
         scripts_dir,
         "class Behavior(ScriptBehavior):\n"
         "    def update(self, ctx: Ctx) -> dict:\n"
@@ -307,15 +307,15 @@ def test_brain_int_uniforms_reach_gpu_not_popped(
         node.release()
 
 
-def test_brain_drives_two_uniforms_to_gpu_and_export_clean(
+def test_script_drives_two_uniforms_to_gpu_and_export_clean(
     gl_ctx: moderngl.Context, tmp_path: Path
 ) -> None:
-    # One node-brain drives a float + a vec2 from a single stateful instance: both reach the GPU,
+    # One node script drives a float + a vec2 from a single stateful instance: both reach the GPU,
     # the scripted u_wave changes the rendered pixel, and a FRESH export instance renders cold (the
     # headline 048 goal — one script per node, export-isolated). Falsifier: px_warm == px_cold (the
     # value never reached the GPU) or the export inherited live state.
     scripts_dir = tmp_path / "scripts"
-    _write_brain(scripts_dir, _RAMP_BRAIN)
+    _write_script(scripts_dir, _RAMP_SCRIPT)
     node = _node(gl_ctx)
     eng = ScriptEngine()
     eng.reload("n", scripts_dir, node)
@@ -324,7 +324,10 @@ def test_brain_drives_two_uniforms_to_gpu_and_export_clean(
     cold = eng.fresh_behavior_for("n")
     assert cold is not None
     eng.tick_export("n", node, EngineContext(t=0.0, dt=1 / 60, frame=0), cold)
-    assert node.uniform_values["u_offset"] == (0.25, 0.75)  # both driven from one brain
+    assert node.uniform_values["u_offset"] == (
+        0.25,
+        0.75,
+    )  # both driven from one script
     node.render(u_time=0.0)
     px_cold = _pixel(node)
 

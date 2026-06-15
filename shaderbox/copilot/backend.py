@@ -72,9 +72,9 @@ from shaderbox.glyph_tables import TABLE_UNIFORMS
 from shaderbox.paths import shader_lib_root
 from shaderbox.render_preset import FitPolicy, RenderPreset, ResolutionPolicy
 from shaderbox.scripting import (
-    BrainStatus,
     ScriptError,
     ScriptProbe,
+    ScriptStatus,
     normalize_script_tabs,
 )
 from shaderbox.shader_errors import ShaderError
@@ -375,7 +375,7 @@ def _format_uniforms(node: Node, driven: set[str]) -> list[str]:
     # overwrites every frame, so a just-set_uniform value would read back stale and the agent loops.
     # Engine glyph tables are skipped outright: their u.value is ~14KB of stroke data the agent
     # can neither set nor learn from. A `driven` uniform shows a marker, not a phantom value: the
-    # copilot path never ticks the brain, so its uniform_values entry is the stale manual default —
+    # copilot path never ticks the script, so its uniform_values entry is the stale manual default —
     # showing it as a number contradicts the write that said the script drives it (feature 043).
     rows: list[str] = []
     for u in node.get_active_uniforms():
@@ -463,7 +463,7 @@ class CopilotBackend:
         get_is_cancelled: Callable[[], bool],
         get_script_driven_uniforms: Callable[[str], set[str]],
         get_script_path: Callable[[str], Path],
-        get_script_source_view: Callable[[str], tuple[str, BrainStatus | None]],
+        get_script_source_view: Callable[[str], tuple[str, ScriptStatus | None]],
         read_script_source: Callable[[str], tuple[str, bool]],
         write_script_source: Callable[[str, str], ScriptProbe],
         set_current_node_id: Callable[[str], None],
@@ -531,7 +531,7 @@ class CopilotBackend:
     def _capture_node(self, node_id: str) -> None:
         # Serialize the LIVE node (not the stale on-disk dir — set_uniform never writes node.json).
         # Also carry the node's scripts/script.py into the snapshot dir: UINode.save omits scripts/,
-        # so without this a node-restore swap would DELETE an existing brain.
+        # so without this a node-restore swap would DELETE an existing script.
         cp = self._get_active_checkpoint()
         node = self._get_ui_nodes().get(node_id)
         if cp is None or node is None:
@@ -897,7 +897,7 @@ class CopilotBackend:
                     "cannot be set; change the shader code if you need different behavior",
                 )
             if name in self._get_script_driven_uniforms(node_id):
-                # One script per node (048): a driven uniform is always computed by the node-brain.
+                # One script per node (048): a driven uniform is always computed by the node script.
                 return SetUniformResult(
                     ok=False,
                     error=f"'{name}' is script-driven (the node script computes its value each "
@@ -1635,12 +1635,12 @@ class CopilotBackend:
             note = (
                 f"SCRIPT RESTORED — {streak} broken script edits in a row, so the script was "
                 "reverted to its last clean-running state (now in the working set). Re-read it and "
-                "rewrite the whole brain in ONE write_script."
+                "rewrite the whole script in ONE write_script."
             )
             if restore.compile_error is not None or restore.runtime_error is not None:
                 note = (
                     f"{streak} broken edits in a row; the restore target also no longer runs "
-                    "(likely a shader/uniform change) -- re-read and rewrite the whole brain."
+                    "(likely a shader/uniform change) -- re-read and rewrite the whole script."
                 )
             return ScriptWriteResult(ok=True, compile_error=note)
         return ScriptWriteResult(ok=True, compile_error=error)

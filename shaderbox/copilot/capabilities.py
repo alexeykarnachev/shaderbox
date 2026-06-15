@@ -126,7 +126,7 @@ class WorkingSetView:
     is_lib: bool
     uniforms: list[str]  # "name type = value" rows (node only; [] for a lib)
     errors: list[CompileErrorInfo]
-    # The node's scripts/script.py live source (cat -n; "" = no brain) + its compile/run error
+    # The node's scripts/script.py live source (cat -n; "" = no script) + its compile/run error
     # (feature 043). Appended (defaulted) so existing constructors stay valid; a lib view leaves both
     # at default. Rendered as a "=== <node> SCRIPT ===" sub-section only when script_listing is set.
     script_listing: str = ""
@@ -175,7 +175,7 @@ class EditResult:
 @dataclass(frozen=True)
 class ScriptView:
     # read_script result (feature 043): the node's scripts/script.py source line-numbered + its
-    # compile/run error. is_stub = the node had no brain, so `listing` is the generated stub (not
+    # compile/run error. is_stub = the node had no script, so `listing` is the generated stub (not
     # persisted) the agent adapts; node_id resolves the node it belongs to.
     node_id: str
     name: str
@@ -294,9 +294,9 @@ class CopilotCapabilities(Protocol):
         self, name: str, value: object, node: str, /
     ) -> SetUniformResult: ...
 
-    # ---- scripting (feature 043): the node-brain authoring surface ----
+    # ---- scripting (feature 043): the node script authoring surface ----
     # read_script returns the node's scripts/script.py source (a fresh node returns the generated
-    # stub, unpersisted). write_script create-or-overwrites the whole brain, recompiles, dry-runs it,
+    # stub, unpersisted). write_script create-or-overwrites the whole script, recompiles, dry-runs it,
     # and returns the compile + motion facts. Both marshal main-thread (the dry-tick reads the GL
     # program for active uniforms). node "" = current.
     def read_script(self, node: str, /) -> ScriptView: ...

@@ -44,7 +44,7 @@ def _seed_scripted_node(project_dir: Path, body: str) -> None:
     )
     scripts = node / "scripts"
     scripts.mkdir(exist_ok=True)
-    # One script per node (048): the node-brain `script.py` drives u_wave via a dict return. Binds by
+    # One script per node (048): the node script `script.py` drives u_wave via a dict return. Binds by
     # existence (no activate step).
     (scripts / "script.py").write_text(body, encoding="utf-8")
 
@@ -55,7 +55,7 @@ def _mean_luma(path: str) -> float:
     return sum(px) / len(px)
 
 
-# A ctx.t-pure brain: animates with t, identical at the same t (the determinism guarantee).
+# A ctx.t-pure script: animates with t, identical at the same t (the determinism guarantee).
 _PURE = (
     "import math\n"
     "from shaderbox.scripting import ScriptBehavior, Ctx\n\n"
@@ -87,8 +87,8 @@ def main() -> int:
     _seed_scripted_node(h.project_dir, _PURE)
     h.session.load(h.project_dir)
     h.session.set_current_node_id("scripted")
-    # One script per node (048): the brain binds by existence — no activate step. The driven set is
-    # the brain's LAST-TICK keys (dynamic), so tick once before reading it (the live frame order:
+    # One script per node (048): the script binds by existence — no activate step. The driven set is
+    # the script's LAST-TICK keys (dynamic), so tick once before reading it (the live frame order:
     # tick -> read; the engine knows nothing it drove until the first tick).
     h.session.reload_scripts()
     h.session.tick(["scripted"], t=0.0, dt=1 / 60, frame=0)

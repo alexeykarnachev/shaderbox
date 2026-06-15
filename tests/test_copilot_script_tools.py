@@ -22,7 +22,7 @@ def test_read_script_stub_is_flagged() -> None:
     )
     ok, msg, payload = reg.execute("read_script", {"node": ""})
     assert ok is True
-    assert "no brain yet" in msg and "STUB" in msg
+    assert "no script yet" in msg and "STUB" in msg
     assert payload == {"node": "f90f", "is_stub": True}
 
 

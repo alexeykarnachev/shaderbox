@@ -89,7 +89,7 @@ def test_revert_restores_an_edited_script(app: Any) -> None:
     node_id = app.current_node_id
     script_path = app.session.script_path_for(node_id)
     script_path.parent.mkdir(parents=True, exist_ok=True)
-    original = "# pre-turn brain\nVALUE = 1\n"
+    original = "# pre-turn script\nVALUE = 1\n"
     script_path.write_text(original, encoding="utf-8")
 
     app.copilot.checkpoints.open("turn_edit_script", "edit the script")
@@ -108,7 +108,7 @@ def test_revert_restores_an_edited_script(app: Any) -> None:
 def test_revert_deletes_a_created_script(app: Any) -> None:
     node_id = app.current_node_id
     script_path = app.session.script_path_for(node_id)
-    assert not script_path.is_file()  # the node starts with no brain
+    assert not script_path.is_file()  # the node starts with no script
 
     app.copilot.checkpoints.open("turn_create_script", "write a script")
     cp = app.copilot.checkpoints.active
@@ -116,7 +116,7 @@ def test_revert_deletes_a_created_script(app: Any) -> None:
 
     # The write lands: the script.py now exists.
     script_path.parent.mkdir(parents=True, exist_ok=True)
-    script_path.write_text("# brand new brain\n", encoding="utf-8")
+    script_path.write_text("# brand new script\n", encoding="utf-8")
     app.copilot.checkpoints.seal()
 
     result = app.revert_executor.restore_checkpoint("turn_create_script")

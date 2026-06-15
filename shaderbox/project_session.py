@@ -35,14 +35,14 @@ from shaderbox.exporters.registry import ExporterRegistry
 from shaderbox.paths import ProjectPaths, shader_lib_root
 from shaderbox.scripting import (
     EXPORT_MOUSE,
-    BrainStatus,
     EngineContext,
     MouseState,
     ScriptEngine,
     ScriptProbe,
-    brain_stub_for,
+    ScriptStatus,
     is_scriptable,
     normalize_script_tabs,
+    script_stub_for,
 )
 from shaderbox.shader_lib import ShaderLibIndex
 from shaderbox.shader_lib import set_active as set_active_lib_index
@@ -354,8 +354,8 @@ class ProjectSession:
                 return
             node = ui_node.node
             live_hook = node.on_pre_render
-            brain = self.script_engine.fresh_behavior_for(node_id)
-            if brain is None:
+            behavior = self.script_engine.fresh_behavior_for(node_id)
+            if behavior is None:
                 yield
                 return
 
@@ -363,7 +363,7 @@ class ProjectSession:
                 # EXPORT_MOUSE (the EngineContext default) freezes the cursor at center so an
                 # exported render is deterministic. No stopped set — an export always plays the script.
                 self.script_engine.tick_export(
-                    node_id, node, EngineContext(t=t, dt=dt, frame=frame), brain
+                    node_id, node, EngineContext(t=t, dt=dt, frame=frame), behavior
                 )
 
             node.on_pre_render = _export_pre_render
@@ -424,10 +424,10 @@ class ProjectSession:
             stopped |= self.script_engine.script_driven_uniforms(node_id)
         return frozenset(stopped)
 
-    def get_brain_status(self, node_id: str) -> BrainStatus | None:
-        # The node-brain's UI status for 042's strip (sentinel error + driven count + homeless
+    def get_script_status(self, node_id: str) -> ScriptStatus | None:
+        # The node script's UI status for 042's strip (sentinel error + driven count + homeless
         # soft-key errors), or None when the node has no script.py.
-        return self.script_engine.brain_status(node_id)
+        return self.script_engine.script_status(node_id)
 
     def has_script(self, node_id: str) -> bool:
         # Whether the node's `script.py` exists on disk (the open-script glyph state + the play/stop
@@ -435,12 +435,12 @@ class ProjectSession:
         return (self.paths.scripts_dir_for(node_id) / "script.py").is_file()
 
     def script_has_error(self, node_id: str) -> bool:
-        # Whether the node's brain has a recorded compile/run error (the open-script glyph error tint).
+        # Whether the node's script has a recorded compile/run error (the open-script glyph error tint).
         return (node_id, "script.py") in self.script_engine.errors
 
     def _scriptable_uniforms_for(self, node_id: str) -> list[moderngl.Uniform]:
-        # The uniforms a brain can drive: scriptable + not engine-owned. The engine silently drops a
-        # brain key naming an engine uniform, so listing one as a stub example invites a silent no-op
+        # The uniforms a script can drive: scriptable + not engine-owned. The engine silently drops a
+        # script key naming an engine uniform, so listing one as a stub example invites a silent no-op
         # (the legibility gap 048 targets).
         return [
             u
@@ -449,30 +449,30 @@ class ProjectSession:
         ]
 
     def create_script(self, node_id: str) -> Path:
-        # Write the node-brain `script.py` + return its path; the next reload_scripts binds it (048 —
+        # Write the node script `script.py` + return its path; the next reload_scripts binds it (048 —
         # the file's existence IS the binding, no activate step). The skeleton is the engine's stub
         # (explicit imports + an empty-dict body + the node's uniforms as commented examples).
         scripts_dir = self.paths.scripts_dir_for(node_id)
         scripts_dir.mkdir(parents=True, exist_ok=True)
         path = self.script_path_for(node_id)
         path.write_text(
-            brain_stub_for(self._scriptable_uniforms_for(node_id)), encoding="utf-8"
+            script_stub_for(self._scriptable_uniforms_for(node_id)), encoding="utf-8"
         )
         return path
 
     def script_path_for(self, node_id: str) -> Path:
-        # The scripts/ path for the node-brain `script.py` (048 — one script per node).
+        # The scripts/ path for the node script `script.py` (048 — one script per node).
         return self.paths.scripts_dir_for(node_id) / "script.py"
 
     def read_script_source(self, node_id: str) -> tuple[str, bool]:
         # The copilot read_script source (feature 043): the live scripts/script.py text, or — when the
-        # node has no brain — the AGENT stub (the engine stub + one un-commented math.sin(ctx.t)
+        # node has no script — the AGENT stub (the engine stub + one un-commented math.sin(ctx.t)
         # example, so the actor has a concrete animating pattern to copy). The stub is NOT persisted;
         # returns (text, is_stub).
         path = self.script_path_for(node_id)
         if path.is_file():
             return path.read_text(encoding="utf-8"), False
-        stub = brain_stub_for(self._scriptable_uniforms_for(node_id))
+        stub = script_stub_for(self._scriptable_uniforms_for(node_id))
         return _AGENT_STUB_EXAMPLE + stub, True
 
     def write_script_source(self, node_id: str, new_text: str) -> ScriptProbe:
@@ -493,16 +493,16 @@ class ProjectSession:
             COPILOT_CONFIG.motion_fps,
         )
 
-    def script_source_view(self, node_id: str) -> tuple[str, BrainStatus | None]:
-        # The working-set script sub-view (feature 043): the live script source ("" = no brain) + its
-        # brain status (sentinel error for the working-set error line). GL-free reads.
+    def script_source_view(self, node_id: str) -> tuple[str, ScriptStatus | None]:
+        # The working-set script sub-view (feature 043): the live script source ("" = no script) + its
+        # script status (sentinel error for the working-set error line). GL-free reads.
         path = self.script_path_for(node_id)
         if not path.is_file():
             return "", None
-        return path.read_text(encoding="utf-8"), self.get_brain_status(node_id)
+        return path.read_text(encoding="utf-8"), self.get_script_status(node_id)
 
     def uniform_is_driven(self, node_id: str, name: str) -> bool:
-        # Whether the brain TARGETS this uniform (playing OR stopped) — the gate for showing the row's
+        # Whether the script TARGETS this uniform (playing OR stopped) — the gate for showing the row's
         # play/stop button at all (a never-scripted MANUAL uniform shows nothing). Reads the engine's
         # last-tick driven set (decision 4/10).
         return name in self.script_engine.script_driven_uniforms(node_id)
@@ -529,7 +529,7 @@ class ProjectSession:
             names.remove(name)
 
     def set_node_all_stopped(self, node_id: str, stopped: bool) -> None:
-        # The whole-node play/stop: freeze/resume every driven uniform's write at once. The brain keeps
+        # The whole-node play/stop: freeze/resume every driven uniform's write at once. The script keeps
         # ticking either way (stop freezes WRITES, not ticking — so a later play resumes from advanced
         # state). Node-play clears ONLY this blanket, never explicit per-uniform stops.
         ui_node = self.ui_nodes.get(node_id)
@@ -537,7 +537,7 @@ class ProjectSession:
             ui_node.ui_state.all_stopped = stopped
 
     def get_script_driven_uniforms(self, node_id: str) -> set[str]:
-        # The uniform names the brain drove on its last tick — the copilot set_uniform reject queries
+        # The uniform names the script drove on its last tick — the copilot set_uniform reject queries
         # this so it won't no-op a script-driven uniform.
         return self.script_engine.script_driven_uniforms(node_id)
 

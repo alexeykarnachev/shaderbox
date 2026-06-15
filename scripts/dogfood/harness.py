@@ -298,7 +298,7 @@ class DogfoodHarness:
         """Render a SHORT low-res WebM (the deliverable a scripted animation produces) and return its
         path so the driver can send it to the maintainer. Uses the REAL `render_video` capability — it
         animates the CPU-script engine frame by frame from t=0 (the same path the agent's render_video
-        rides), so a brain-driven node moves across the clip. Off-thread + bridge drain like `render`.
+        rides), so a script-driven node moves across the clip. Off-thread + bridge drain like `render`.
         Keep `seconds`/`size` small — a video freezes the loop and large frames are slow on V3D.
         """
         target = node_id or self.session.current_node_id
@@ -339,7 +339,7 @@ class DogfoodHarness:
         """Render a short H.264 MP4 (for players that don't open WebM — iOS/iPad). GL on THIS
         (context-owning) thread via share_state.render_to, which keys the codec off the .mp4 suffix
         (libx264/yuv420p) and animates the CPU-script engine frame by frame from t=0 through the
-        export-isolation seam (a stateful brain accumulates from a clean __init__). No bridge — unlike
+        export-isolation seam (a stateful script accumulates from a clean __init__). No bridge — unlike
         the copilot render_video (which is webm-only). Keep seconds/size small on V3D.
         """
         target = node_id or self.session.current_node_id

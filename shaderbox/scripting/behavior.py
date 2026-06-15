@@ -129,7 +129,7 @@ def _resolve_behavior_class(ns: dict[str, Any]) -> type[ScriptBehavior] | None:
 
 class Behavior(Protocol):
     def run(self, ctx: EngineContext) -> Any:
-        # The raw `dict[str, value]` this behavior produces this frame (the node-brain's `update`
+        # The raw `dict[str, value]` this behavior produces this frame (the node script's `update`
         # return), NOT yet coerced. Coercion against each live uniform is the ENGINE's job
         # (`coerce_one`), so a future C backend produces raw values without re-implementing the shape
         # coercion.
@@ -147,7 +147,7 @@ class PythonBehavior:
     file changes; runtime + shape failures are caught per-tick by the engine."""
 
     def __init__(self, label: str, body: str) -> None:
-        # `label` is the binding KEY (the node-brain's "script.py"): the compile-marker name AND the
+        # `label` is the binding KEY (the node script's "script.py"): the compile-marker name AND the
         # name a compile error records under.
         self.label = label
         self._error: ScriptError | None = None
@@ -250,7 +250,7 @@ def _all_finite(coerced: object) -> bool:
 
 def coerce_one(value: object, uniform: moderngl.Uniform, error_name: str) -> object:
     # Normalize a raw script value + shape it against the live uniform via the shared coercion. The
-    # one coercion atom, called per key of the node-brain's returned dict.
+    # one coercion atom, called per key of the node script's returned dict.
     # `error_name` is the uniform NAME a shape mismatch records under (the GLSL-type label for the
     # hint is derived internally). Raises _RuntimeScriptError on a mismatch; the engine freezes.
     normalized = normalize_output(value)

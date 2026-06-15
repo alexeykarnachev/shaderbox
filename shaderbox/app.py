@@ -1135,7 +1135,7 @@ class App:
             # the imgui renderer's restore (GLError 1281).
             node.render()
         else:
-            # Saving a lib file OR a uniform/node-brain script: write to disk. The mtime watcher
+            # Saving a lib file OR a node script: write to disk. The mtime watcher
             # picks it up next frame — a lib rebuilds the index + invalidates dependents; a script
             # is re-bound by reload_scripts.
             try:

@@ -160,7 +160,7 @@ class RevertExecutor:
 
     def _revert_created_script(self, node_id: str) -> bool:
         # Reverse a scripts/script.py the turn CREATED on a node that had none: delete the file +
-        # reload the node so the live engine drops the brain (binding is by file existence, 048).
+        # reload the node so the live engine drops the script (binding is by file existence, 048).
         # Path-absent-graceful — a node also snapshotted this turn already restored to no-script.
         path = self._get_nodes_dir() / node_id / "scripts" / "script.py"
         if not path.exists():

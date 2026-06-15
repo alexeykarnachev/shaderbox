@@ -213,11 +213,11 @@ def _entry_row_label(active: bool, label: str) -> None:
 
 
 def _draw_entry_points(app: App) -> None:
-    # The node's two entry-points (049): SHADER (GPU) and SCRIPT (CPU brain), each with an `open`
+    # The node's two entry-points (049): SHADER (GPU) and SCRIPT (CPU script), each with an `open`
     # action that summons its tab into the editor (the node panel is "about this node"; the tab bar is
     # the editor's own state — `open` is a summoner, not a duplicate). The whole-node PLAY/STOP toggle
     # lives on the Script row (its true owner — it freezes/resumes the script's driven uniforms; the
-    # brain keeps ticking). An accent tick marks whichever entry-point is the editor's active tab.
+    # script keeps ticking). An accent tick marks whichever entry-point is the editor's active tab.
     # Frozen mid-copilot-turn (a write races the reload).
     node_id = app.current_node_id
     present = app.session.has_script(node_id)

@@ -85,7 +85,7 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   omission is a NameError — gets CUT; inert latent code with zero teach/maintain cost AND a named
   near-future consumer stays dormant. Don't abstract from N=1 (write the second real consumer's full
   field list — <30% lands inside ⇒ wrong axis); DO generalize when a simplicity constraint forces
-  copy-paste of the feature's own essence (044's Verlet step across 4 files → the brain). Re-litigated
+  copy-paste of the feature's own essence (044's Verlet step across 4 files → the node script). Re-litigated
   from scratch in 002/010/041 for want of this bullet. Revisit if a third reconciling axis appears.
 - **A cross-cutting guarantee is enforced at the single FUNNEL, not per-caller.** When an invariant
   must hold on EVERY path of a fan-out, put the bracket at the one shared funnel (or lift the fact ONTO
@@ -151,10 +151,10 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   UI reaction that a fire-and-forget callback can't express (e.g. it needs a return value App reads).
 - **The CPU-script engine is headless `ProjectSession` code; scripts are project DATA; a node has ONE
   STATEFUL-class script; a new script LANGUAGE is a `Behavior` backend, not an engine-loop change (feature
-  041→048).** A node carries at most ONE script, `nodes/<id>/scripts/script.py` (the node-brain), a
+  041→048).** A node carries at most ONE script, `nodes/<id>/scripts/script.py` (the node script), a
   user-finalized CLASS subclassing `ScriptBehavior` with `update(self, ctx) -> dict[str, value]` driving
   MANY uniforms from one instance (feature 048 collapsed the 044/047 second per-uniform path — `u_*.py`,
-  the `(name,type)` tag binding, the copy-content selector, the two-pass brain-vs-per-uniform override — to
+  the `(name,type)` tag binding, the copy-content selector, the two-pass script-vs-per-uniform override — to
   this single path; per-uniform private HELPER METHODS inside `update` cover the per-value case). **Per-
   instance state (`self.*`) persists across frames — the reason CPU scripting exists** (a stateless
   `sin(t)` belongs in the shader). Each dict value is validated against the live uniform via the shared
@@ -183,7 +183,7 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   the deliberate avoidance of the lazy-row law (a per-`UIUniform` flag would re-trip the 047 ROOT-2 trap).
   The engine learns STOP via a fresh per-frame `tick(stopped=…)` param (`ProjectSession._stopped_for` builds
   it; the headless boundary holds — the engine never learns `UINodeState`, intent flows through a param like
-  `engine_driven`): a stopped name STILL ticks the brain (state advances) + STILL counts as driven (so its
+  `engine_driven`): a stopped name STILL ticks the script (state advances) + STILL counts as driven (so its
   play button shows), but its WRITE is skipped — `driven.add(name)` precedes the coerce/write, and BOTH the
   success-write and the coercion-failure-freeze are guarded `if name not in stopped` so a stopped uniform's
   manual value is never clobbered. Node-STOP freezes WRITES, NOT ticking (else a later node-PLAY would resume
@@ -328,7 +328,7 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   law forbids). The `target:"lib:"` precedent does NOT generalize (it overloads the SAME artifact kind,
   GLSL). Feedback is the make-or-break: a script's facts are TICK-GATED (the compile verdict comes from
   `reload`, but the driven set / coercion errors / values need `update` to RUN, and headless has no
-  frame loop), so `ScriptEngine.dry_run` reads the live compile verdict then steps ONE fresh brain
+  frame loop), so `ScriptEngine.dry_run` reads the live compile verdict then steps ONE fresh script instance
   CONTINUOUSLY through the export-clock frames (so `self.*` accumulates — an integrator animates) into a
   `values_sink` that leaves the live node byte-identical. The MOTION verdict is the value-diff across t
   (GL-free, exact — catches a pulse/color-cycle a pixel-bbox misses) + ONE corroborating render for the

@@ -10,7 +10,7 @@ from shaderbox.copilot.capabilities import (
 )
 from shaderbox.copilot.tools.base import GatePolicy, ToolArgs, ToolDefinition
 
-# The node-brain authoring surface (feature 043): read_script / write_script. Mirrors shader_tools —
+# The node script authoring surface (feature 043): read_script / write_script. Mirrors shader_tools —
 # thin handlers calling a capability closure that owns the bridge round-trip + the dry-run probe.
 
 _NODE_DESC = (
@@ -24,7 +24,7 @@ class _ReadScriptArgs(ToolArgs):
 
 class _WriteScriptArgs(ToolArgs):
     new_text: str = Field(
-        description="the brain's COMPLETE new source — this replaces the whole script.py "
+        description="the script's COMPLETE new source — this replaces the whole script.py "
         "(a `class Behavior(ScriptBehavior)` with `update(self, ctx) -> dict`). Anything "
         "omitted is gone."
     )
@@ -45,17 +45,17 @@ class _EditScriptArgs(ToolArgs):
 
 
 _READ_SCRIPT_DESC = (
-    "Read a node's Python brain script (nodes/<id>/scripts/script.py) — the `update(self, ctx)` "
-    "that drives uniforms over time. Returns the source line-numbered. A node with NO brain yet "
+    "Read a node's Python script (nodes/<id>/scripts/script.py) — the `update(self, ctx)` "
+    "that drives uniforms over time. Returns the source line-numbered. A node with NO script yet "
     "returns a STUB (the node's drivable uniforms + their value shapes + one ctx.t example to "
     "ADAPT) — read it, then write_script a real body. Read this before editing a script you did "
     "not just write."
 )
 
 _WRITE_SCRIPT_DESC = (
-    "Create or replace a node's Python brain (script.py): a `class Behavior(ScriptBehavior)` whose "
+    "Create or replace a node's Python script (script.py): a `class Behavior(ScriptBehavior)` whose "
     "`update(self, ctx) -> dict` returns {uniform_name: value} to DRIVE those uniforms every frame "
-    "(ANIMATION / state over time; self.* persists). BEST FOR a fresh brain or a full rewrite; for a "
+    "(ANIMATION / state over time; self.* persists). BEST FOR a fresh script or a full rewrite; for a "
     "localized change prefer edit_script. Send the COMPLETE script — I compile + motion-probe it and "
     "return the verdict."
 )
@@ -64,7 +64,7 @@ _EDIT_SCRIPT_DESC = (
     "THE partial-edit tool for a script — the mirror of edit_shader, for script.py instead of GLSL. "
     "Replace an exact substring (old_str = the region copied VERBATIM from read_script / the working "
     "set; new_str = its replacement; empty new_str deletes; non-unique old_str fails — add context or "
-    "replace_all=true). For a localized tweak; use write_script for a fresh brain or a full rewrite. "
+    "replace_all=true). For a localized tweak; use write_script for a fresh script or a full rewrite. "
     "I re-compile + motion-probe and return the same verdict as write_script."
 )
 
@@ -111,7 +111,7 @@ def script_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
         lines = view.listing.count("\n") + 1 if view.listing else 0
         if view.is_stub:
             body = (
-                f"{view.name} has no brain yet — here is the STUB to adapt + write_script "
+                f"{view.name} has no script yet — here is the STUB to adapt + write_script "
                 f"(its drivable uniforms + one ctx.t example):\n{view.listing}"
             )
         else:

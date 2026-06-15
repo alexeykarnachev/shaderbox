@@ -1,11 +1,11 @@
 """CPU-script engine (feature 041, redesigned by 048 to ONE script per node) — pure, no GL. A
 SimpleNamespace stands in for moderngl.Uniform (the coercion/shape logic is GL-free; the GL write
-reaching the GPU is verified in test_script_engine_gl.py). Covers the single-node-brain contract:
+reaching the GPU is verified in test_script_engine_gl.py). Covers the single-node script contract:
 state accumulates, state resets on edit + manual reset, export-instance isolation (live state never
 poisons the export, the live instance is not poisoned), the typed outputs (bare scalar / Vec*/Array/
 Text) coercing, errors-as-data at the user line, the (path, mtime) cache, scoped determinism, the
-soft (node,name) skip for orphan/sampler keys, the silent engine-owned-key drop, brain_status, and
-the 048 play/stop model (a stopped uniform's WRITE is skipped while the brain keeps ticking; export
+soft (node,name) skip for orphan/sampler keys, the silent engine-owned-key drop, script_status, and
+the 048 play/stop model (a stopped uniform's WRITE is skipped while the script keeps ticking; export
 always plays).
 """
 
@@ -19,8 +19,8 @@ import pytest
 from shaderbox.scripting import (
     EngineContext,
     ScriptEngine,
-    brain_stub_for,
     is_scriptable,
+    script_stub_for,
 )
 
 _GL_FLOAT = 0x1406
@@ -48,8 +48,8 @@ class _FakeNode:
         return self._uniforms
 
 
-def _write_brain(tmp: Path, body: str) -> Path:
-    # The node-brain file (048): nodes/<id>/scripts/script.py — ONE class driving many uniforms
+def _write_script(tmp: Path, body: str) -> Path:
+    # The node script file (048): nodes/<id>/scripts/script.py — ONE class driving many uniforms
     # via a dict return. There is no per-uniform file anymore; this is the only script on a node.
     scripts_dir = tmp / "scripts"
     scripts_dir.mkdir(exist_ok=True)
@@ -68,23 +68,23 @@ def _engine(tmp: Path, node: _FakeNode, node_id: str = "n0") -> ScriptEngine:
     return eng
 
 
-def _brain(*, update_body: str, init_body: str = "") -> str:
-    # Assemble a brain class body. `update_body` is the (already-indented-by-8) body of `update`;
+def _script(*, update_body: str, init_body: str = "") -> str:
+    # Assemble a script class body. `update_body` is the (already-indented-by-8) body of `update`;
     # `init_body` (indented-by-8) is an optional __init__ body.
     head = "class Behavior(ScriptBehavior):\n"
     init = f"    def __init__(self) -> None:\n{init_body}" if init_body else ""
     return f"{head}{init}    def update(self, ctx: Ctx) -> dict:\n{update_body}"
 
 
-# A brain returning a single bare float — exercises bare-scalar coercion.
-_SCALAR = _brain(update_body="        return {'u_x': 0.5}\n")
+# A script returning a single bare float — exercises bare-scalar coercion.
+_SCALAR = _script(update_body="        return {'u_x': 0.5}\n")
 # A stateful integrator on ONE uniform — only possible with per-instance self.* state.
-_INTEGRATOR = _brain(
+_INTEGRATOR = _script(
     init_body="        self.v = 0.0\n",
     update_body="        self.v += ctx.dt\n        return {'u_x': self.v}\n",
 )
 # A two-uniform integrator: one accumulator drives both u_x and u_y (the headline 048 goal).
-_TWO_INTEGRATOR = _brain(
+_TWO_INTEGRATOR = _script(
     init_body="        self.v = 0.0\n",
     update_body=(
         "        self.v += ctx.dt\n"
@@ -97,7 +97,7 @@ _TWO_INTEGRATOR = _brain(
 
 
 def test_scalar_output_coerces(tmp_path: Path) -> None:
-    _write_brain(tmp_path, _SCALAR)
+    _write_script(tmp_path, _SCALAR)
     node = _FakeNode([_u("u_x")])
     eng = _engine(tmp_path, node)
     eng.tick("n0", node, _ctx(0.0))
@@ -106,9 +106,9 @@ def test_scalar_output_coerces(tmp_path: Path) -> None:
 
 
 def test_vec2_output_coerces(tmp_path: Path) -> None:
-    _write_brain(
+    _write_script(
         tmp_path,
-        _brain(update_body="        return {'u_off': Vec2(0.3, 0.7)}\n"),
+        _script(update_body="        return {'u_off': Vec2(0.3, 0.7)}\n"),
     )
     node = _FakeNode([_u("u_off", dim=2)])
     eng = _engine(tmp_path, node)
@@ -118,9 +118,9 @@ def test_vec2_output_coerces(tmp_path: Path) -> None:
 
 
 def test_vec3_output_coerces(tmp_path: Path) -> None:
-    _write_brain(
+    _write_script(
         tmp_path,
-        _brain(update_body="        return {'u_color': Vec3(0.1, 0.2, 0.3)}\n"),
+        _script(update_body="        return {'u_color': Vec3(0.1, 0.2, 0.3)}\n"),
     )
     node = _FakeNode([_u("u_color", dim=3)])
     eng = _engine(tmp_path, node)
@@ -130,9 +130,9 @@ def test_vec3_output_coerces(tmp_path: Path) -> None:
 
 
 def test_vec4_output_coerces(tmp_path: Path) -> None:
-    _write_brain(
+    _write_script(
         tmp_path,
-        _brain(update_body="        return {'u_q': Vec4(0.1, 0.2, 0.3, 0.4)}\n"),
+        _script(update_body="        return {'u_q': Vec4(0.1, 0.2, 0.3, 0.4)}\n"),
     )
     node = _FakeNode([_u("u_q", dim=4)])
     eng = _engine(tmp_path, node)
@@ -142,9 +142,9 @@ def test_vec4_output_coerces(tmp_path: Path) -> None:
 
 
 def test_array_output_coerces(tmp_path: Path) -> None:
-    _write_brain(
+    _write_script(
         tmp_path,
-        _brain(update_body="        return {'u_vals': Array([1.0, 2.0, 3.0, 4.0])}\n"),
+        _script(update_body="        return {'u_vals': Array([1.0, 2.0, 3.0, 4.0])}\n"),
     )
     node = _FakeNode([_u("u_vals", dim=1, n=4)])
     eng = _engine(tmp_path, node)
@@ -154,9 +154,9 @@ def test_array_output_coerces(tmp_path: Path) -> None:
 
 
 def test_text_output_coerces(tmp_path: Path) -> None:
-    _write_brain(
+    _write_script(
         tmp_path,
-        _brain(update_body="        return {'u_text': Text(\"Hi\")}\n"),
+        _script(update_body="        return {'u_text': Text(\"Hi\")}\n"),
     )
     node = _FakeNode([_u("u_text", dim=1, n=8, gl_type=_GL_UNSIGNED_INT)])
     eng = _engine(tmp_path, node)
@@ -168,9 +168,9 @@ def test_text_output_coerces(tmp_path: Path) -> None:
 
 
 def test_vec2_array_chunks_into_rows(tmp_path: Path) -> None:
-    _write_brain(
+    _write_script(
         tmp_path,
-        _brain(
+        _script(
             update_body="        return {'u_pts': Array([0.0, 1.0, 2.0, 3.0, 4.0, 5.0])}\n"
         ),  # vec2[3]
     )
@@ -185,7 +185,7 @@ def test_vec2_array_chunks_into_rows(tmp_path: Path) -> None:
 
 
 def test_int_scalar_rounds(tmp_path: Path) -> None:
-    _write_brain(tmp_path, _brain(update_body="        return {'u_n': 2.7}\n"))
+    _write_script(tmp_path, _script(update_body="        return {'u_n': 2.7}\n"))
     node = _FakeNode([_u("u_n", gl_type=_GL_INT)])
     eng = _engine(tmp_path, node)
     eng.tick("n0", node, _ctx(0.0))
@@ -196,7 +196,7 @@ def test_int_scalar_rounds(tmp_path: Path) -> None:
 
 
 def test_uint_scalar_rounds(tmp_path: Path) -> None:
-    _write_brain(tmp_path, _brain(update_body="        return {'u_count': 3.9}\n"))
+    _write_script(tmp_path, _script(update_body="        return {'u_count': 3.9}\n"))
     node = _FakeNode([_u("u_count", gl_type=_GL_UNSIGNED_INT)])
     eng = _engine(tmp_path, node)
     eng.tick("n0", node, _ctx(0.0))
@@ -206,9 +206,9 @@ def test_uint_scalar_rounds(tmp_path: Path) -> None:
 
 
 def test_ivec2_rounds_components(tmp_path: Path) -> None:
-    _write_brain(
+    _write_script(
         tmp_path,
-        _brain(update_body="        return {'u_iv': Vec2(1.4, 2.6)}\n"),
+        _script(update_body="        return {'u_iv': Vec2(1.4, 2.6)}\n"),
     )
     node = _FakeNode([_u("u_iv", dim=2, gl_type=_GL_INT_VEC2)])
     eng = _engine(tmp_path, node)
@@ -219,9 +219,9 @@ def test_ivec2_rounds_components(tmp_path: Path) -> None:
 
 
 def test_int_array_rounds_each(tmp_path: Path) -> None:
-    _write_brain(
+    _write_script(
         tmp_path,
-        _brain(update_body="        return {'u_arr': Array([1.4, 2.6, 3.5])}\n"),
+        _script(update_body="        return {'u_arr': Array([1.4, 2.6, 3.5])}\n"),
     )
     node = _FakeNode([_u("u_arr", dim=1, n=3, gl_type=_GL_INT)])
     eng = _engine(tmp_path, node)
@@ -234,7 +234,7 @@ def test_int_array_rounds_each(tmp_path: Path) -> None:
 
 
 def test_state_accumulates(tmp_path: Path) -> None:
-    _write_brain(tmp_path, _INTEGRATOR)
+    _write_script(tmp_path, _INTEGRATOR)
     node = _FakeNode([_u("u_x")])
     eng = _engine(tmp_path, node)
     for i in range(5):
@@ -246,7 +246,7 @@ def test_state_accumulates(tmp_path: Path) -> None:
 def test_state_resets_on_edit(tmp_path: Path) -> None:
     # Accumulate, then edit the file -> mtime change -> a recompile makes a FRESH instance ->
     # state back to baseline. Falsifier: u_x stays at the accumulated 3.0 (no fresh instance).
-    path = _write_brain(tmp_path, _INTEGRATOR)
+    path = _write_script(tmp_path, _INTEGRATOR)
     node = _FakeNode([_u("u_x")])
     eng = _engine(tmp_path, node)
     for i in range(3):
@@ -261,9 +261,9 @@ def test_state_resets_on_edit(tmp_path: Path) -> None:
 
 
 def test_manual_reset_clears_state(tmp_path: Path) -> None:
-    # reset(node_id) re-runs __init__ on the live brain (no recompile). Falsifier: u_x stays at
+    # reset(node_id) re-runs __init__ on the live script (no recompile). Falsifier: u_x stays at
     # the accumulated 4.0 (reset didn't re-instantiate).
-    _write_brain(tmp_path, _INTEGRATOR)
+    _write_script(tmp_path, _INTEGRATOR)
     node = _FakeNode([_u("u_x")])
     eng = _engine(tmp_path, node)
     for i in range(4):
@@ -280,7 +280,7 @@ def test_manual_reset_clears_state(tmp_path: Path) -> None:
 def test_export_instance_isolated_from_live(tmp_path: Path) -> None:
     # Accumulate on the LIVE instance, then a FRESH export instance ticks from a clean __init__ —
     # the export value must NOT inherit live state. Falsifier: export == live (== 10.0).
-    _write_brain(tmp_path, _INTEGRATOR)
+    _write_script(tmp_path, _INTEGRATOR)
     node = _FakeNode([_u("u_x")])
     eng = _engine(tmp_path, node)
     for i in range(10):
@@ -300,7 +300,7 @@ def test_export_does_not_poison_live_instance(tmp_path: Path) -> None:
     # The mirror guarantee: ticking the export instance must NOT advance the LIVE one. Tick the
     # export several times; the live instance keeps its own state. Falsifier: the live value jumps
     # after the export ticks (a shared instance).
-    _write_brain(tmp_path, _INTEGRATOR)
+    _write_script(tmp_path, _INTEGRATOR)
     node = _FakeNode([_u("u_x")])
     eng = _engine(tmp_path, node)
     for i in range(3):
@@ -322,9 +322,9 @@ def test_export_does_not_poison_live_instance(tmp_path: Path) -> None:
 def test_export_tick_does_not_touch_live_errors(tmp_path: Path) -> None:
     # A live binding has a recorded shape error; ticking a FRESH export instance (which writes to a
     # throwaway errors sink) must NOT clear the live error. Falsifier: the live error vanishes.
-    _write_brain(
+    _write_script(
         tmp_path,
-        _brain(
+        _script(
             update_body="        return {'u_x': Vec3(1.0, 2.0, 3.0)}\n"
         ),  # vec3->scalar
     )
@@ -342,11 +342,11 @@ def test_export_tick_does_not_touch_live_errors(tmp_path: Path) -> None:
     assert ("n0", "u_x") in eng.errors  # live error UNTOUCHED
 
 
-# ---- errors as data (a broken brain never raises into the tick) ----
+# ---- errors as data (a broken script never raises into the tick) ----
 
 
 def test_compile_error_keys_on_sentinel(tmp_path: Path) -> None:
-    _write_brain(
+    _write_script(
         tmp_path,
         "class Behavior(ScriptBehavior):\n"
         "    def update(self, ctx: Ctx) -> dict:\n"
@@ -360,7 +360,7 @@ def test_compile_error_keys_on_sentinel(tmp_path: Path) -> None:
 
 
 def test_no_subclass_is_compile_error(tmp_path: Path) -> None:
-    _write_brain(tmp_path, "x = 1\n")  # no ScriptBehavior subclass at all
+    _write_script(tmp_path, "x = 1\n")  # no ScriptBehavior subclass at all
     node = _FakeNode([_u("u_x")])
     eng = _engine(tmp_path, node)
     assert eng.errors[("n0", "script.py")].kind == "compile"
@@ -372,7 +372,7 @@ def test_wrong_import_of_injected_type_steers_to_scripting_module(
     # A wrong `from shaderbox import ScriptBehavior` (the module names the symbol but the raw
     # ImportError points at the wrong module + never names shaderbox.scripting) must append the
     # canonical-import steer, so the agent self-corrects instead of grepping fruitlessly (043 dogfood).
-    _write_brain(
+    _write_script(
         tmp_path,
         "from shaderbox import ScriptBehavior\n"
         "class Behavior(ScriptBehavior):\n"
@@ -387,7 +387,7 @@ def test_wrong_import_of_injected_type_steers_to_scripting_module(
 
 def test_unrelated_import_error_does_not_get_the_steer(tmp_path: Path) -> None:
     # The steer must NOT false-fire on an import unrelated to the injected scripting types.
-    _write_brain(
+    _write_script(
         tmp_path,
         "from os import notathing\n"
         "class Behavior(ScriptBehavior):\n"
@@ -399,14 +399,14 @@ def test_unrelated_import_error_does_not_get_the_steer(tmp_path: Path) -> None:
 
 
 def test_no_update_override_is_compile_error(tmp_path: Path) -> None:
-    _write_brain(tmp_path, "class Behavior(ScriptBehavior):\n    pass\n")
+    _write_script(tmp_path, "class Behavior(ScriptBehavior):\n    pass\n")
     node = _FakeNode([_u("u_x")])
     eng = _engine(tmp_path, node)
     assert eng.errors[("n0", "script.py")].kind == "compile"
 
 
 def test_update_missing_self_is_compile_error(tmp_path: Path) -> None:
-    _write_brain(
+    _write_script(
         tmp_path,
         "class Behavior(ScriptBehavior):\n"
         "    def update(ctx) -> dict:\n"  # forgot self
@@ -419,9 +419,9 @@ def test_update_missing_self_is_compile_error(tmp_path: Path) -> None:
 
 
 def test_raising_init_is_compile_error(tmp_path: Path) -> None:
-    _write_brain(
+    _write_script(
         tmp_path,
-        _brain(
+        _script(
             init_body="        raise ValueError('boom')\n",
             update_body="        return {}\n",
         ),
@@ -434,7 +434,7 @@ def test_raising_init_is_compile_error(tmp_path: Path) -> None:
 
 def test_reset_recovers_a_once_failing_init(tmp_path: Path) -> None:
     # A raising __init__ freezes; after the cause clears, reset() must re-instantiate AND clear the
-    # stale sentinel error so the brain unfreezes. A class var raises on the FIRST construct only.
+    # stale sentinel error so the script unfreezes. A class var raises on the FIRST construct only.
     body = (
         "class Behavior(ScriptBehavior):\n"
         "    _seen = False\n"
@@ -445,7 +445,7 @@ def test_reset_recovers_a_once_failing_init(tmp_path: Path) -> None:
         "    def update(self, ctx: Ctx) -> dict:\n"
         "        return {'u_x': 0.7}\n"
     )
-    _write_brain(tmp_path, body)
+    _write_script(tmp_path, body)
     node = _FakeNode([_u("u_x")])
     node.uniform_values["u_x"] = 0.0
     eng = _engine(tmp_path, node)
@@ -458,12 +458,12 @@ def test_reset_recovers_a_once_failing_init(tmp_path: Path) -> None:
 
 
 def test_raw_runtime_throw_freezes_all_at_last_good(tmp_path: Path) -> None:
-    # A raw update() exception freezes EVERY name the brain drove last frame (one object = one
+    # A raw update() exception freezes EVERY name the script drove last frame (one object = one
     # coherent state) AND records under the sentinel at the CORRECT user line. Falsifier: a name
     # advances past last-good, or the error isn't keyed on the sentinel at the user line.
-    path = _write_brain(
+    path = _write_script(
         tmp_path,
-        _brain(update_body="        return {'u_x': 0.3, 'u_y': 0.6}\n"),
+        _script(update_body="        return {'u_x': 0.3, 'u_y': 0.6}\n"),
     )
     node = _FakeNode([_u("u_x"), _u("u_y")])
     eng = _engine(tmp_path, node)
@@ -487,7 +487,7 @@ def test_raw_runtime_throw_freezes_all_at_last_good(tmp_path: Path) -> None:
 
 
 def test_runtime_error_records_deepest_user_line(tmp_path: Path) -> None:
-    _write_brain(
+    _write_script(
         tmp_path,
         "class Behavior(ScriptBehavior):\n"
         "    def _bad(self):\n"
@@ -505,7 +505,7 @@ def test_runtime_error_records_deepest_user_line(tmp_path: Path) -> None:
 
 def test_user_raised_builtin_exception_keeps_its_real_error(tmp_path: Path) -> None:
     # A user `raise ValueError(...)` surfaces as its real error (real builtins are in scope).
-    _write_brain(
+    _write_script(
         tmp_path,
         "class Behavior(ScriptBehavior):\n"
         "    def update(self, ctx: Ctx) -> dict:\n"
@@ -519,9 +519,9 @@ def test_user_raised_builtin_exception_keeps_its_real_error(tmp_path: Path) -> N
 
 
 def test_non_dict_return_is_clean_sentinel_error(tmp_path: Path) -> None:
-    # A brain that returns a non-dict is a behavior-level failure under the sentinel — not a crash.
+    # A script that returns a non-dict is a behavior-level failure under the sentinel — not a crash.
     # Falsifier: tick raises, or the error keys per-uniform instead of the sentinel.
-    _write_brain(tmp_path, _brain(update_body="        return 0.5\n"))  # a bare float
+    _write_script(tmp_path, _script(update_body="        return 0.5\n"))  # a bare float
     node = _FakeNode([_u("u_x")])
     eng = _engine(tmp_path, node)
     eng.tick("n0", node, _ctx(0.0))  # must NOT raise
@@ -532,7 +532,7 @@ def test_non_dict_return_is_clean_sentinel_error(tmp_path: Path) -> None:
 
 def test_none_value_freezes(tmp_path: Path) -> None:
     # A key mapped to None -> coercion rejects -> freeze at last-good, not a silent hold.
-    path = _write_brain(tmp_path, _brain(update_body="        return {'u_x': 0.4}\n"))
+    path = _write_script(tmp_path, _script(update_body="        return {'u_x': 0.4}\n"))
     node = _FakeNode([_u("u_x")])
     eng = _engine(tmp_path, node)
     eng.tick("n0", node, _ctx(0.0))
@@ -540,7 +540,7 @@ def test_none_value_freezes(tmp_path: Path) -> None:
 
     time.sleep(0.01)
     path.write_text(
-        _brain(update_body="        return {'u_x': None}\n"), encoding="utf-8"
+        _script(update_body="        return {'u_x': None}\n"), encoding="utf-8"
     )
     eng.reload("n0", tmp_path / "scripts", node)
     eng.tick("n0", node, _ctx(0.1))
@@ -551,9 +551,9 @@ def test_none_value_freezes(tmp_path: Path) -> None:
 def test_per_key_shape_mismatch_freezes_only_that_key(tmp_path: Path) -> None:
     # A per-KEY coercion mismatch freezes ONLY that key; siblings still write. Falsifier: the
     # sibling u_a is also frozen, or the error keys on the sentinel instead of (node, u_b).
-    _write_brain(
+    _write_script(
         tmp_path,
-        _brain(
+        _script(
             update_body="        return {'u_a': 0.4, 'u_b': Vec3(1.0, 2.0, 3.0)}\n"
         ),  # vec3 into a scalar
     )
@@ -568,9 +568,9 @@ def test_per_key_shape_mismatch_freezes_only_that_key(tmp_path: Path) -> None:
 
 
 def test_array_wrong_length_freezes(tmp_path: Path) -> None:
-    _write_brain(
+    _write_script(
         tmp_path,
-        _brain(
+        _script(
             update_body="        return {'u_vals': Array([1.0, 2.0])}\n"
         ),  # 2 for float[4]
     )
@@ -586,7 +586,7 @@ def test_nan_inf_freezes_and_records(tmp_path: Path) -> None:
     # A non-finite value is no longer written silently (a black-frame footgun that also poisons
     # last-good) — it freezes at last-good + records a runtime ScriptError. Falsifier: inf is
     # written, or no error recorded.
-    path = _write_brain(tmp_path, _brain(update_body="        return {'u_x': 0.3}\n"))
+    path = _write_script(tmp_path, _script(update_body="        return {'u_x': 0.3}\n"))
     node = _FakeNode([_u("u_x")])
     eng = _engine(tmp_path, node)
     eng.tick("n0", node, _ctx(0.0))
@@ -594,7 +594,7 @@ def test_nan_inf_freezes_and_records(tmp_path: Path) -> None:
 
     time.sleep(0.01)
     path.write_text(
-        _brain(update_body="        return {'u_x': float('inf')}\n"), encoding="utf-8"
+        _script(update_body="        return {'u_x': float('inf')}\n"), encoding="utf-8"
     )
     eng.reload("n0", tmp_path / "scripts", node)
     eng.tick("n0", node, _ctx(0.1))
@@ -605,13 +605,13 @@ def test_nan_inf_freezes_and_records(tmp_path: Path) -> None:
 
 def test_array_nested_tuples_gives_flatten_hint(tmp_path: Path) -> None:
     # The vecN[M] footgun (a list of tuples) surfaces a clear flatten hint, not the cryptic
-    # "float() argument must be ... not 'tuple'". NOTE (brain change vs the 044 per-uniform world):
-    # `Array(...)` raises its TypeError inside `update()` BEFORE the dict returns, so the whole brain
+    # "float() argument must be ... not 'tuple'". NOTE (script change vs the 044 per-uniform world):
+    # `Array(...)` raises its TypeError inside `update()` BEFORE the dict returns, so the whole script
     # freezes at the SENTINEL key — not a per-key (node, u_pts) error. The hint is still surfaced.
     # Falsifier: no flatten hint, or the cryptic float() message leaks.
-    _write_brain(
+    _write_script(
         tmp_path,
-        _brain(
+        _script(
             update_body="        return {'u_pts': Array([(0.0, 1.0), (2.0, 3.0)])}\n"
         ),  # nested, wrong
     )
@@ -632,9 +632,9 @@ def test_orphan_key_warns_skips_and_records_soft_error(tmp_path: Path) -> None:
     # A key naming no active scriptable uniform is warn-once + SKIPPED (never a None write) AND
     # records a SOFT ScriptError under (node, name). It must NOT claim ownership in
     # script_driven_uniforms. Falsifier: u_ghost written, or driven, or no soft error.
-    _write_brain(
+    _write_script(
         tmp_path,
-        _brain(update_body="        return {'u_a': 0.5, 'u_ghost': 0.9}\n"),
+        _script(update_body="        return {'u_a': 0.5, 'u_ghost': 0.9}\n"),
     )
     node = _FakeNode([_u("u_a")])
     eng = _engine(tmp_path, node)
@@ -652,9 +652,9 @@ def test_orphan_key_warns_skips_and_records_soft_error(tmp_path: Path) -> None:
 def test_sampler_key_records_soft_error_and_is_skipped(tmp_path: Path) -> None:
     # A key naming a sampler (non-scriptable) records a soft (node,name) error + is skipped (not
     # driven). Falsifier: the sampler is driven, or no soft error.
-    _write_brain(
+    _write_script(
         tmp_path,
-        _brain(update_body="        return {'u_a': 0.5, 'u_tex': 0.1}\n"),
+        _script(update_body="        return {'u_a': 0.5, 'u_tex': 0.1}\n"),
     )
     node = _FakeNode([_u("u_a"), _u("u_tex", gl_type=_GL_SAMPLER_2D)])
     eng = _engine(tmp_path, node)
@@ -668,9 +668,9 @@ def test_sampler_key_records_soft_error_and_is_skipped(tmp_path: Path) -> None:
 def test_orphan_key_error_clears_when_key_fixed(tmp_path: Path) -> None:
     # Once the bad key stops being returned (the user fixes the typo), its (node, name) soft error
     # is cleared on the next tick. Falsifier: the zombie error persists.
-    path = _write_brain(
+    path = _write_script(
         tmp_path,
-        _brain(update_body="        return {'u_a': 0.5, 'u_ghost': 0.9}\n"),
+        _script(update_body="        return {'u_a': 0.5, 'u_ghost': 0.9}\n"),
     )
     node = _FakeNode([_u("u_a")])
     eng = _engine(tmp_path, node)
@@ -679,7 +679,7 @@ def test_orphan_key_error_clears_when_key_fixed(tmp_path: Path) -> None:
 
     time.sleep(0.01)
     path.write_text(
-        _brain(update_body="        return {'u_a': 0.5}\n"), encoding="utf-8"
+        _script(update_body="        return {'u_a': 0.5}\n"), encoding="utf-8"
     )
     eng.reload("n0", tmp_path / "scripts", node)
     eng.tick("n0", node, _ctx(0.1))
@@ -690,12 +690,12 @@ def test_orphan_key_error_clears_when_key_fixed(tmp_path: Path) -> None:
 
 
 def test_engine_owned_key_dropped_silently(tmp_path: Path) -> None:
-    # A brain naming an engine-owned uniform (u_time) SILENTLY drops the key — no false ownership
+    # A script naming an engine-owned uniform (u_time) SILENTLY drops the key — no false ownership
     # AND no soft error (the renderer owns that slot). Falsifier: u_time is driven, a soft error
     # appears, or the renderer's value is overwritten.
-    _write_brain(
+    _write_script(
         tmp_path,
-        _brain(update_body="        return {'u_a': 0.5, 'u_time': 9.0}\n"),
+        _script(update_body="        return {'u_a': 0.5, 'u_time': 9.0}\n"),
     )
     node = _FakeNode([_u("u_a"), _u("u_time")])
     node.uniform_values["u_time"] = 1.23  # the renderer's value
@@ -712,41 +712,41 @@ def test_engine_owned_key_dropped_silently(tmp_path: Path) -> None:
 
 
 def test_cache_no_recompile_when_mtime_unchanged(tmp_path: Path) -> None:
-    _write_brain(tmp_path, _SCALAR)
+    _write_script(tmp_path, _SCALAR)
     node = _FakeNode([_u("u_x")])
     eng = _engine(tmp_path, node)
-    first = eng._nodes["n0"].brain
+    first = eng._nodes["n0"].behavior
     eng.reload("n0", tmp_path / "scripts", node)  # nothing changed
-    # Falsifier: a fresh brain object means an unnecessary recompile.
-    assert eng._nodes["n0"].brain is first
+    # Falsifier: a fresh script object means an unnecessary recompile.
+    assert eng._nodes["n0"].behavior is first
 
 
 def test_cache_recompiles_on_mtime_change(tmp_path: Path) -> None:
-    path = _write_brain(tmp_path, _SCALAR)
+    path = _write_script(tmp_path, _SCALAR)
     node = _FakeNode([_u("u_x")])
     eng = _engine(tmp_path, node)
-    first = eng._nodes["n0"].brain
+    first = eng._nodes["n0"].behavior
     time.sleep(0.01)
     path.write_text(_SCALAR + "        # changed\n", encoding="utf-8")
     eng.reload("n0", tmp_path / "scripts", node)
-    assert eng._nodes["n0"].brain is not first  # recompiled
+    assert eng._nodes["n0"].behavior is not first  # recompiled
 
 
 # ---- binding by existence (the file IS the binding; no active flag) ----
 
 
-def test_brain_binds_by_existence(tmp_path: Path) -> None:
-    _write_brain(tmp_path, _SCALAR)
+def test_script_binds_by_existence(tmp_path: Path) -> None:
+    _write_script(tmp_path, _SCALAR)
     node = _FakeNode([_u("u_x")])
     eng = _engine(tmp_path, node)
     eng.tick("n0", node, _ctx(0.0))
-    # Falsifier: the brain didn't bind despite script.py existing on disk.
+    # Falsifier: the script didn't bind despite script.py existing on disk.
     assert eng.has_script("n0")
     assert "u_x" in eng.script_driven_uniforms("n0")
 
 
-def test_removed_script_drops_brain(tmp_path: Path) -> None:
-    path = _write_brain(tmp_path, _SCALAR)
+def test_removed_script_drops_script(tmp_path: Path) -> None:
+    path = _write_script(tmp_path, _SCALAR)
     node = _FakeNode([_u("u_x")])
     eng = _engine(tmp_path, node)
     eng.tick("n0", node, _ctx(0.0))
@@ -774,7 +774,7 @@ def test_no_script_file_is_no_op_tick(tmp_path: Path) -> None:
 def test_t_pure_script_is_deterministic(tmp_path: Path) -> None:
     # A ctx.t-pure update is identical across dt (the scoped-determinism guarantee). Falsifier: a
     # different dt at the same t yields a different value.
-    _write_brain(
+    _write_script(
         tmp_path,
         "import math\n"
         "class Behavior(ScriptBehavior):\n"
@@ -801,7 +801,7 @@ def test_integrator_diverges_by_design(tmp_path: Path) -> None:
         "        self.prev = self.prev + self.prev * ctx.dt\n"
         "        return {'u_x': self.prev}\n"
     )
-    _write_brain(tmp_path, body)
+    _write_script(tmp_path, body)
     node_a = _FakeNode([_u("u_x")])
     node_b = _FakeNode([_u("u_x")])
     eng = ScriptEngine()
@@ -816,51 +816,53 @@ def test_integrator_diverges_by_design(tmp_path: Path) -> None:
     assert node_a.uniform_values["u_x"] != node_b.uniform_values["u_x"]
 
 
-# ---- brain_status (sentinel + soft errors + driven_count) ----
+# ---- script_status (sentinel + soft errors + driven_count) ----
 
 
-def test_brain_status_reflects_driven_count(tmp_path: Path) -> None:
-    _write_brain(tmp_path, _TWO_INTEGRATOR)
+def test_script_status_reflects_driven_count(tmp_path: Path) -> None:
+    _write_script(tmp_path, _TWO_INTEGRATOR)
     node = _FakeNode([_u("u_x"), _u("u_y")])
     eng = _engine(tmp_path, node)
     eng.tick("n0", node, _ctx(0.0, dt=1.0, frame=0))
-    status = eng.brain_status("n0")
+    status = eng.script_status("n0")
     assert status is not None
-    # Falsifier: a wrong driven_count, or a phantom sentinel/soft error on a clean brain.
+    # Falsifier: a wrong driven_count, or a phantom sentinel/soft error on a clean script.
     assert status.driven_count == 2
     assert status.sentinel_error is None
     assert status.soft_errors == []
 
 
-def test_brain_status_reflects_sentinel_and_soft_errors(tmp_path: Path) -> None:
-    # A brain with an orphan key: driven_count counts only the real driven uniform; the orphan
+def test_script_status_reflects_sentinel_and_soft_errors(tmp_path: Path) -> None:
+    # A script with an orphan key: driven_count counts only the real driven uniform; the orphan
     # surfaces in soft_errors. Falsifier: the orphan inflates driven_count or is missing from soft.
-    _write_brain(
+    _write_script(
         tmp_path,
-        _brain(update_body="        return {'u_a': 0.5, 'u_ghost': 0.9}\n"),
+        _script(update_body="        return {'u_a': 0.5, 'u_ghost': 0.9}\n"),
     )
     node = _FakeNode([_u("u_a")])
     eng = _engine(tmp_path, node)
     eng.tick("n0", node, _ctx(0.0))
-    status = eng.brain_status("n0")
+    status = eng.script_status("n0")
     assert status is not None
     assert status.driven_count == 1  # only u_a
     assert status.sentinel_error is None
     assert [name for name, _ in status.soft_errors] == ["u_ghost"]
 
 
-def test_brain_status_none_without_script(tmp_path: Path) -> None:
+def test_script_status_none_without_script(tmp_path: Path) -> None:
     (tmp_path / "scripts").mkdir(exist_ok=True)
     node = _FakeNode([_u("u_x")])
     eng = _engine(tmp_path, node)
-    assert eng.brain_status("n0") is None
+    assert eng.script_status("n0") is None
 
 
 # ---- drop_node clears state ----
 
 
 def test_drop_node_clears_state_and_errors(tmp_path: Path) -> None:
-    _write_brain(tmp_path, "class Behavior(ScriptBehavior):\n    pass\n")  # compile err
+    _write_script(
+        tmp_path, "class Behavior(ScriptBehavior):\n    pass\n"
+    )  # compile err
     node = _FakeNode([_u("u_x")])
     eng = _engine(tmp_path, node)
     assert ("n0", "script.py") in eng.errors
@@ -883,25 +885,25 @@ def test_non_utf8_file_does_not_crash_reload(tmp_path: Path) -> None:
     assert "u_x" not in eng.script_driven_uniforms("n0")
 
 
-def test_unreadable_rewrite_mid_edit_keeps_cached_brain(tmp_path: Path) -> None:
-    # A reload that races a half-saved / non-UTF8 rewrite at a changed mtime keeps the prior brain
-    # rather than crashing the frame loop. Falsifier: reload raises, or the cached brain is dropped.
-    path = _write_brain(tmp_path, _SCALAR)
+def test_unreadable_rewrite_mid_edit_keeps_cached_script(tmp_path: Path) -> None:
+    # A reload that races a half-saved / non-UTF8 rewrite at a changed mtime keeps the prior script
+    # rather than crashing the frame loop. Falsifier: reload raises, or the cached script is dropped.
+    path = _write_script(tmp_path, _SCALAR)
     node = _FakeNode([_u("u_x")])
     eng = _engine(tmp_path, node)
-    first = eng._nodes["n0"].brain
+    first = eng._nodes["n0"].behavior
     assert first is not None
     time.sleep(0.01)
     path.write_bytes(b"\xff\xfe still here but unreadable")
     eng.reload("n0", tmp_path / "scripts", node)  # must NOT raise
-    assert eng._nodes["n0"].brain is first  # cached brain kept
+    assert eng._nodes["n0"].behavior is first  # cached script kept
 
 
 # ---- namespace: imports, super, builtins (the engine's own idioms resolve) ----
 
 
 def test_import_math_works(tmp_path: Path) -> None:
-    _write_brain(
+    _write_script(
         tmp_path,
         "import math\n"
         "class Behavior(ScriptBehavior):\n"
@@ -918,7 +920,7 @@ def test_import_math_works(tmp_path: Path) -> None:
 def test_explicit_import_line_resolves(tmp_path: Path) -> None:
     # 048 decision 8: the stub emits a real `from shaderbox.scripting import ...`; it must RESOLVE
     # inside the exec'd script. Falsifier: the import raises an opaque compile-freeze.
-    _write_brain(
+    _write_script(
         tmp_path,
         "from shaderbox.scripting import ScriptBehavior, Ctx, Vec2\n"
         "class Behavior(ScriptBehavior):\n"
@@ -933,7 +935,7 @@ def test_explicit_import_line_resolves(tmp_path: Path) -> None:
 
 
 def test_super_and_containers_resolve(tmp_path: Path) -> None:
-    _write_brain(
+    _write_script(
         tmp_path,
         "class Behavior(ScriptBehavior):\n"
         "    def __init__(self) -> None:\n"
@@ -951,7 +953,7 @@ def test_super_and_containers_resolve(tmp_path: Path) -> None:
 
 
 def test_chr_ord_available_for_codepoint_text(tmp_path: Path) -> None:
-    _write_brain(
+    _write_script(
         tmp_path,
         "class Behavior(ScriptBehavior):\n"
         "    def update(self, ctx: Ctx) -> dict:\n"
@@ -965,7 +967,7 @@ def test_chr_ord_available_for_codepoint_text(tmp_path: Path) -> None:
     assert ("n0", "u_t") not in eng.errors
 
 
-# ---- is_scriptable + brain_stub_for ----
+# ---- is_scriptable + script_stub_for ----
 
 
 def test_is_scriptable_gate() -> None:
@@ -975,7 +977,9 @@ def test_is_scriptable_gate() -> None:
     assert not is_scriptable(object())  # no shape attrs
 
 
-def test_brain_stub_compiles_runs_and_drives_nothing_by_default(tmp_path: Path) -> None:
+def test_script_stub_compiles_runs_and_drives_nothing_by_default(
+    tmp_path: Path,
+) -> None:
     # The 048 stub: an empty-dict default (a fresh script drives nothing) with commented examples.
     # It must compile + run without error AND drive no uniform. Falsifier: the stub errors, or it
     # drives a uniform by default (a non-empty live body).
@@ -987,8 +991,8 @@ def test_brain_stub_compiles_runs_and_drives_nothing_by_default(tmp_path: Path) 
         _u("u_arr", dim=1, n=4),
         _u("u_txt", dim=1, n=8, gl_type=_GL_UNSIGNED_INT),
     ]
-    body = brain_stub_for(uniforms)  # type: ignore[arg-type]
-    _write_brain(tmp_path, body)
+    body = script_stub_for(uniforms)  # type: ignore[arg-type]
+    _write_script(tmp_path, body)
     node = _FakeNode(uniforms)
     eng = _engine(tmp_path, node)
     eng.tick("n0", node, _ctx(0.0))
@@ -997,10 +1001,10 @@ def test_brain_stub_compiles_runs_and_drives_nothing_by_default(tmp_path: Path) 
     assert node.uniform_values == {}
 
 
-def test_brain_stub_emits_explicit_import_for_referenced_types(tmp_path: Path) -> None:
+def test_script_stub_emits_explicit_import_for_referenced_types(tmp_path: Path) -> None:
     # The stub's import line names ScriptBehavior + Ctx always, plus only the output types the
     # node's uniforms reference. Falsifier: a referenced type missing, or an unreferenced one emitted.
-    body = brain_stub_for([_u("u_v3", dim=3)])  # type: ignore[arg-type]
+    body = script_stub_for([_u("u_v3", dim=3)])  # type: ignore[arg-type]
     # Scope the assertion to the IMPORT line (the docstring prose mentions Vec2/Vec3/Vec4 generically).
     import_line = next(
         line for line in body.splitlines() if "from shaderbox.scripting import" in line
@@ -1023,7 +1027,7 @@ def test_ctx_is_immutable() -> None:
 
 
 def test_tick_is_cheap(tmp_path: Path) -> None:
-    _write_brain(tmp_path, _SCALAR)
+    _write_script(tmp_path, _SCALAR)
     node = _FakeNode([_u("u_x")])
     eng = _engine(tmp_path, node)
     start = time.perf_counter()
@@ -1034,7 +1038,7 @@ def test_tick_is_cheap(tmp_path: Path) -> None:
 
 
 # ============================================================================
-# Play/stop (048 decisions 4-7): a STOPPED uniform's WRITE is skipped, but the brain still ticks
+# Play/stop (048 decisions 4-7): a STOPPED uniform's WRITE is skipped, but the script still ticks
 # (state advances + the name stays driven); the export path forwards NO stopped set (always plays).
 # ============================================================================
 
@@ -1045,9 +1049,9 @@ def test_stopped_uniform_write_skipped_but_still_driven_and_sibling_advances(
     # The core stopped-skip canary (decision 4/5): tick with stopped={'u_x'} ->
     #   - u_x is NOT written (stays the pre-tick manual value),
     #   - u_x IS still in script_driven_uniforms (last_driven — keeps its PLAY button),
-    #   - the brain's OTHER driven uniform u_y IS written (the brain ticked, it just skipped one write).
+    #   - the script's OTHER driven uniform u_y IS written (the script ticked, it just skipped one write).
     # Falsifier: u_x changed, OR u_x absent from driven, OR u_y not advanced.
-    _write_brain(tmp_path, _TWO_INTEGRATOR)
+    _write_script(tmp_path, _TWO_INTEGRATOR)
     node = _FakeNode([_u("u_x"), _u("u_y")])
     node.uniform_values["u_x"] = 0.42  # the user's frozen manual value
     eng = _engine(tmp_path, node)
@@ -1061,11 +1065,11 @@ def test_stopped_uniform_write_skipped_but_still_driven_and_sibling_advances(
     )  # sibling advanced (self.v*2 with self.v==1.0)
 
 
-def test_stopped_brain_keeps_ticking_then_resumes_advanced(tmp_path: Path) -> None:
-    # Decision 5: the brain keeps TICKING while a uniform is stopped, so on resume the value jumps
+def test_stopped_script_keeps_ticking_then_resumes_advanced(tmp_path: Path) -> None:
+    # Decision 5: the script keeps TICKING while a uniform is stopped, so on resume the value jumps
     # to the value the integrator reached WHILE stopped — NOT the value at stop time. Falsifier: the
-    # resumed value equals the stop-instant value (the brain stopped advancing).
-    _write_brain(tmp_path, _INTEGRATOR)
+    # resumed value equals the stop-instant value (the script stopped advancing).
+    _write_script(tmp_path, _INTEGRATOR)
     node = _FakeNode([_u("u_x")])
     eng = _engine(tmp_path, node)
     eng.tick("n0", node, _ctx(0.0, dt=1.0, frame=0))
@@ -1085,7 +1089,7 @@ def test_export_always_plays_a_live_stopped_uniform(tmp_path: Path) -> None:
     # Decision 5 + export-isolation: tick_export forwards NO stopped set, so an export writes the
     # SCRIPT value even for a uniform stopped in the live preview. Falsifier: the export freezes the
     # stopped manual value (tick_export leaked the live stopped set).
-    _write_brain(tmp_path, _INTEGRATOR)
+    _write_script(tmp_path, _INTEGRATOR)
     node = _FakeNode([_u("u_x")])
     eng = _engine(tmp_path, node)
     eng.tick("n0", node, _ctx(0.0, dt=1.0, frame=0))

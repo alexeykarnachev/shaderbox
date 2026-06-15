@@ -136,11 +136,11 @@ class UINodeState(BaseModel):
     video_to_video_smoothing_sigma: float = 1.0
 
     # Play/stop (feature 048): the uniform NAMES the user has STOPPED — frozen for manual edit. A
-    # stopped uniform's script value is not applied (the brain still ticks; the manual value sticks).
+    # stopped uniform's script value is not applied (the script still ticks; the manual value sticks).
     # Stored as a LIST, not a set: UINode.save serializes via model_dump() -> json.dump, which raises
     # on a Python set. Coerced to a set per-frame in ProjectSession.tick.
     stopped_uniforms: list[str] = []
-    # Node-level stop: freezes EVERY driven uniform's write at once (the brain keeps ticking, so a
+    # Node-level stop: freezes EVERY driven uniform's write at once (the script keeps ticking, so a
     # later node-play resumes from advanced state, not stale state). Born False.
     all_stopped: bool = False
 

@@ -45,16 +45,6 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   state without a capture call leaves an un-revertable change. Spec:
   `ai_docs/features/020_copilot_agent/30_turn_rollback.md` (decision 2).
 
-## [DEFERRAL] rename "brain" everywhere (the maintainer dislikes the word)
-- **Trigger:** the maintainer picks the replacement word for "brain" — then rename every occurrence in
-  ONE sweep (`grep -rn brain shaderbox/ ai_docs/`): the user-facing tooltips ("drives many uniforms"
-  copy is fine; the literal "brain" is not), the `_BRAIN_FILE`/`fresh_behavior_for` engine internals,
-  the `script_glyph`-era ids if any survive, the docs. The 049 UI surface uses neutral "Shader" /
-  "Script" labels already, so no user-facing "brain" string is shown — this is internal-identifier +
-  doc cleanup awaiting the chosen name.
-- Deferred on purpose: doing it piecemeal drifts; one rename wave once the name is decided is correct.
-  Source: 049 design decision 8 (`ai_docs/features/049_reopen_shader_tab.md`).
-
 ## [DEFERRAL] copilot scripting follow-on (043): render_video pixel-facts
 - **Trigger (render_video pixel-facts):** a dogfood run where the agent renders a video and can't
   tell if the deliverable is right (the `write_script` value-diff motion verdict proved insufficient
@@ -66,19 +56,19 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
 - **Trigger:** a real workflow needs TWO scripts to share mutable state (one writes, another reads —
   e.g. a pong physics script writes the ball position, a render script reads it), OR a script depends on
   another binding's SAME-FRAME output and the stable-by-name tick order isn't enough.
-- 041 made per-instance state (`self.*`) first-class; 048 collapsed scripting to ONE node-brain
+- 041 made per-instance state (`self.*`) first-class; 048 collapsed scripting to ONE node script
   (`scripts/script.py` → `update` returns a dict driving many uniforms from ONE instance) — the SANCTIONED
-  "one object, many uniforms" case (all the node's state lives in that one brain, no shared CHANNEL). So
+  "one object, many uniforms" case (all the node's state lives in that one script, no shared CHANNEL). So
   WITHIN a node there is no cross-script sharing to guard. This trigger now fires only for TWO scripts on
-  DIFFERENT nodes sharing mutable state with a read dependency (object A's brain reads object B's state) —
+  DIFFERENT nodes sharing mutable state with a read dependency (object A's script reads object B's state) —
   which is strictly the cross-NODE deferral below (the mini-game milestone). When it fires, add a
   deliberate shared channel (NOT a dict smuggled back into `ctx`) with an explicit read/write phase order.
   Spec: `ai_docs/features/041_stateful_script_engine.md ## Out of scope`.
 
-## [DEFERRAL] node-brain cross-NODE state (object A sees object B) — the mini-game milestone
-- **Trigger:** a real two-object-interaction workflow (object A's brain must read object B's state —
+## [DEFERRAL] node-script cross-NODE state (object A sees object B) — the mini-game milestone
+- **Trigger:** a real two-object-interaction workflow (object A's script must read object B's state —
   collision, targeting, a shared score) — the mini-game milestone.
-- 044's brain is NODE-scoped: its `self` is ONE node's object. Two objects seeing each other needs a
+- 044's node script is NODE-scoped: its `self` is ONE node's object. Two objects seeing each other needs a
   cross-node channel, strictly larger than the cross-SCRIPT channel above (which is within one node). Spec:
   `ai_docs/features/044_node_brain_script.md ## Out of scope`.
 

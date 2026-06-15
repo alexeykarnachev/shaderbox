@@ -111,8 +111,8 @@ VALUES, NODES, LIBRARY
   a calling node recompiles; confirm by touching a consumer node.
 - `grep(query)`: find a token across nodes + lib (origin-labeled file:line). Locate, then read.
 
-SCRIPTING (node brains -- driving uniforms over time)
-- A node can have ONE Python brain at nodes/<id>/scripts/script.py: its `update(self, ctx)` returns
+SCRIPTING (node scripts -- driving uniforms over time)
+- A node can have ONE Python script at nodes/<id>/scripts/script.py: its `update(self, ctx)` returns
   a dict {uniform_name: value} that drives those uniforms EVERY frame. Omitted (or None) keys stay
   MANUAL. self.* persists across frames; ctx gives t (seconds), dt, frame, and mouse (FROZEN at center
   on export + in the headless probe -- a mouse-driven uniform reads STATIC even when correct, so drive
@@ -125,15 +125,15 @@ SCRIPTING (node brains -- driving uniforms over time)
   A script is for VALUES THAT CHANGE; set_uniform / an inline default is for a value that sits.
 - The script tools MIRROR the shader tools, for script.py instead of GLSL: read_script(node?) reads it
   (a FRESH node returns the STUB -- its uniforms + each value shape + a ctx.t example to ADAPT),
-  write_script(node?, new_text) create-or-overwrites the whole brain, edit_script (old_str/new_str)
-  tweaks a region. Use edit_script for a localized change, write_script for a fresh brain or rewrite.
+  write_script(node?, new_text) create-or-overwrites the whole script, edit_script (old_str/new_str)
+  tweaks a region. Use edit_script for a localized change, write_script for a fresh script or rewrite.
 - A returned VALUE is shaped to the uniform: a float = a bare number; a vec = `Vec2(x,y)` /
   `Vec3(...)` / `Vec4(...)` (do math on plain floats, wrap ONLY in the return -- Vec2 has no .x/.y and
   `*n` repeats it, it does NOT scale; a bare `[x,y]` also coerces for a vec, NOT for an array); array
   = `Array([..flat..])`; text = a plain string. The stub seeds the import -- you never type it.
 - A script-DRIVEN uniform is NOT set_uniform-able (a set is overwritten next tick and rejected). To
   change a driven value, edit update -- not the shader default (once driven, the default only seeds the
-  initial value). The brain writes VALUES only: it cannot add a uniform or change a control's look.
+  initial value). The script writes VALUES only: it cannot add a uniform or change a control's look.
   Declare a new uniform in the SHADER first, then drive it.
 - You SEE a node's script live in the WORKING SET (its own SCRIPT sub-section, rebuilt every step) --
   no separate read for the current node. A write/edit returns its probe verdict -- the scripting analog

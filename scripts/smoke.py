@@ -42,7 +42,7 @@ def _has_gpu_window() -> bool:
     return True
 
 
-_BRAIN_SHADER = """#version 460 core
+_SCRIPT_SHADER = """#version 460 core
 in vec2 vs_uv;
 uniform float u_a;
 uniform float u_b;
@@ -50,20 +50,20 @@ out vec4 fs_color;
 void main() { fs_color = vec4(u_a, u_b, 0.0, 1.0); }
 """
 
-_BRAIN_NODE_JSON = {
+_SCRIPT_NODE_JSON = {
     "canvas_size": [256, 256],
     "uniforms": {},
     "ui_state": {
-        "ui_name": "Node Brain",
-        "description": "smoke: a node-brain driving many uniforms",
+        "ui_name": "Scripted Node",
+        "description": "smoke: a node script driving many uniforms",
     },
 }
 
-# The seeded brain: TWO stateful integrators (u_a, u_b both accumulate) + a typo'd homeless key
-# (u_typo) so the brain's drive/skip/soft-error paths all run under smoke. Both keys integrate (NOT
+# The seeded script: TWO stateful integrators (u_a, u_b both accumulate) + a typo'd homeless key
+# (u_typo) so the script's drive/skip/soft-error paths all run under smoke. Both keys integrate (NOT
 # ctx.mouse, which is frozen at 0.5 headless) so the stopped-skip canary is falsifiable: a stopped u_a
 # must STAY frozen while the un-stopped u_b keeps ADVANCING.
-_BRAIN_SCRIPT = (
+_SCRIPT_SOURCE = (
     "from shaderbox.scripting import ScriptBehavior, Ctx\n\n"
     "class Behavior(ScriptBehavior):\n"
     "    def __init__(self) -> None:\n"
@@ -85,17 +85,19 @@ def _seed_tmp_project(root: Path) -> Path:
     for tid in TEMPLATE_ORDER:
         shutil.copytree(NODE_TEMPLATES_DIR / tid, nodes / tid)
 
-    # A node-brain node (048 — one script per node): the engine ticks it every frame, so 200 clean
+    # A node script node (048 — one script per node): the engine ticks it every frame, so 200 clean
     # frames prove the App-with-a-scripted-node loop doesn't crash. (Engine-correctness — values/
     # freeze/determinism/play-stop — is the pure-CPU unit test's job; smoke proves the App loop +
     # the binding + the stopped-skip wire.)
-    brain = nodes / "brain"
-    brain.mkdir()
-    (brain / "shader.frag.glsl").write_text(_BRAIN_SHADER, encoding="utf-8")
-    (brain / "node.json").write_text(json.dumps(_BRAIN_NODE_JSON), encoding="utf-8")
-    brain_scripts = brain / "scripts"
-    brain_scripts.mkdir()
-    (brain_scripts / "script.py").write_text(_BRAIN_SCRIPT, encoding="utf-8")
+    script_node = nodes / "script_node"
+    script_node.mkdir()
+    (script_node / "shader.frag.glsl").write_text(_SCRIPT_SHADER, encoding="utf-8")
+    (script_node / "node.json").write_text(
+        json.dumps(_SCRIPT_NODE_JSON), encoding="utf-8"
+    )
+    script_dir = script_node / "scripts"
+    script_dir.mkdir()
+    (script_dir / "script.py").write_text(_SCRIPT_SOURCE, encoding="utf-8")
     return project
 
 
@@ -177,30 +179,30 @@ def main() -> int:
                 if frame_idx == 113:
                     app.popup_state = PopupState.CLOSED
                     app.is_copilot_open = False
-            # Canary (048): the brain must have BOUND + ticked (binding is by `script.py` existence).
+            # Canary (048): the script must have BOUND + ticked (binding is by `script.py` existence).
             engine = app.session.script_engine
-            driven = engine.script_driven_uniforms("brain")
+            driven = engine.script_driven_uniforms("script_node")
             assert "u_a" in driven and "u_b" in driven, (
-                f"smoke: the node brain did not bind/tick (driven={driven}) — script.py wasn't "
+                f"smoke: the node script did not bind/tick (driven={driven}) — script.py wasn't "
                 "discovered/bound"
             )
             # Stopped-skip wire (048): stop u_a, tick once; its WRITE must be skipped (the manual
             # value sticks) while u_a stays driven AND the un-stopped u_b still advances. A dead
             # `stopped` wire would keep writing u_a and green-wash the play/stop model.
-            brain_node = app.ui_nodes["brain"].node
-            brain_node.uniform_values["u_a"] = -999.0
-            b_before = brain_node.uniform_values["u_b"]
-            app.session.set_uniform_stopped("brain", "u_a", True)
-            app.session.tick(["brain"], t=1.0, dt=0.5, frame=999)
-            assert brain_node.uniform_values["u_a"] == -999.0, (
+            script_node_obj = app.ui_nodes["script_node"].node
+            script_node_obj.uniform_values["u_a"] = -999.0
+            b_before = script_node_obj.uniform_values["u_b"]
+            app.session.set_uniform_stopped("script_node", "u_a", True)
+            app.session.tick(["script_node"], t=1.0, dt=0.5, frame=999)
+            assert script_node_obj.uniform_values["u_a"] == -999.0, (
                 "smoke: a stopped uniform was overwritten — the tick(stopped=) skip is unwired"
             )
-            assert "u_a" in engine.script_driven_uniforms("brain"), (
+            assert "u_a" in engine.script_driven_uniforms("script_node"), (
                 "smoke: a stopped uniform fell out of the driven set (its play button would vanish)"
             )
-            assert brain_node.uniform_values["u_b"] != b_before, (
+            assert script_node_obj.uniform_values["u_b"] != b_before, (
                 "smoke: the un-stopped u_b did not advance while u_a was stopped — the stop is "
-                "freezing the whole brain, not just the one uniform"
+                "freezing the whole script, not just the one uniform"
             )
             app.release()
             logger.info(f"smoke: OK ({N_FRAMES} frames, {len(app.ui_nodes)} nodes)")
