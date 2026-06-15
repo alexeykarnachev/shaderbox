@@ -26,12 +26,15 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-06-15 (SHIPPED v0.16.0 — the whole scripting subsystem 040-048 + 049 node-entry-points; no feature queued). -->
-**NEXT: UNQUEUED** — no feature spec is open. **v0.16.0 just SHIPPED to itch** (both channels live), carrying the entire
+<!-- As of 2026-06-15 (SHIPPED v0.16.0 — scripting subsystem 040-048 + 049 node-entry-points; then a utility-cleanup pass; no feature queued). -->
+**NEXT: UNQUEUED** — no feature spec is open. **v0.16.0 SHIPPED to itch** (both channels live), carrying the entire
 CPU-scripting subsystem (040-048: the stateful headless script engine, the node-brain model, copilot scripting 043, the
 script-UX evolution to one-script-per-node) plus 049 NODE ENTRY-POINTS (the node panel's **Entry points** zone — Shader /
 Script rows, each with an `open` summoner + active-tab tick; node-level play/stop relocated to the Script row; `</>` glyph
-folded into `ghost_button`). The next feature is unqueued — draw it from a `todo.md` trigger or maintainer steer.
+folded into `ghost_button`). A post-ship **utility-cleanup pass** then landed (commit `5718143`): dep version bumps + ruff
+pinned to `==0.15.17`, two unused deps dropped (pydantic-settings, more-itertools), and the `load_and_migrate` migration
+ladders removed (now a plain fail-soft `load()` — code realigned to the no-backward-compat rule). The next feature is
+unqueued — draw it from a `todo.md` trigger or maintainer steer.
 
 **Just shipped (context):** v0.16.0. 043 COPILOT SCRIPTING — the copilot authors a node's Python brain (`scripts/script.py`)
 EXACTLY like GLSL (the `read_script`/`write_script`/`edit_script` trio; `dry_run` synchronous feedback; motion verdict); a
