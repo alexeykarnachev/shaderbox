@@ -45,6 +45,17 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   state without a capture call leaves an un-revertable change. Spec:
   `ai_docs/features/020_copilot_agent/30_turn_rollback.md` (decision 2).
 
+## [DEFERRAL] no way to re-open a node's shader tab once closed (feature 049)
+- **Trigger:** next time you touch the editor tab flow (`tabs/code.py`, or `App.ensure_shader_tab`/
+  `open_script_for`/`close_tab` in `app.py`) — or when 049 is picked up. Also fires on the first
+  maintainer complaint of "I closed the shader tab and can't get it back".
+- Post-048 the editor is tabbed (a node has a shader tab + an optional script tab). The script has an
+  explicit re-open affordance (the header `</>` glyph → `open_script_for`); the SHADER has none —
+  `ensure_shader_tab` is called ONLY from `_on_current_node_changed`, so once the shader tab is
+  closed, reselecting the SAME node is a no-op and the shader is unreachable except via a side trip
+  through another node. UI-affordance gap only; the tab machinery is sound. Design is NOT yet locked.
+  Spec (problem only): `ai_docs/features/049_reopen_shader_tab.md`.
+
 
 ## [DEFERRAL] copilot scripting follow-on (043): render_video pixel-facts
 - **Trigger (render_video pixel-facts):** a dogfood run where the agent renders a video and can't

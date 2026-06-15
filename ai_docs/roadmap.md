@@ -26,28 +26,28 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-06-14 (043 copilot scripting IMPLEMENTED + DOGFOODED + POLISHED on `dev`; full review→dogfood→ultracode-polish pipeline done; only maintainer make-run pends). -->
-**043 COPILOT SCRIPTING — DONE, only maintainer `make run` pends** (unreleased; last release v0.15.0).
-The copilot now authors a node's Python brain (`scripts/script.py`) EXACTLY the way it authors GLSL — a SEPARATE trio
-`read_script`/`write_script`/`edit_script` mirroring `read_shader`/`write_shader`/`edit_shader` (NOT a `target:"script:"`
-overload — Python≠GLSL: `edit_script` matches PLAIN TEXT, indentation is semantic; the GENERIC resilience — 0/1/N-match,
-`_splice`, the shared write tail, the 033 force-restore — ports). The make-or-break is synchronous feedback: a script's
-facts are tick-gated, so `ScriptEngine.dry_run` reads the live compile verdict then steps ONE fresh brain CONTINUOUSLY
-through the export clock (integrator-safe) into a `values_sink` leaving the live node byte-identical; the MOTION verdict
-is value-diff across t (GL-free, catches a pulse/color-cycle a pixel-bbox misses) + ONE corroborating render (same clock)
-for visible/FLAT. Script rides the working set live; a write is checkpoint-captured. Two driver dogfoods PASS (figure-8
-circle + stateful-ember flame + a 5-turn all-edit-tools mission). An ultracode review found the bug-density's SHARED
-ROOT (the engine self-heals per live frame; the headless probe reads between ticks — recorded as a convention law) +
-optimized the prompt (-140 tok/turn, vec-syntax gap fixed). Fixed along the way, OUTSIDE 043: a copilot hang (stalled
-stream → daemon-worker + bounded timeout) and an mp4-render preset bug. `make check` 0 errors; suite green (GL subset
-on V3D). **REMAINING:** the maintainer `make run` visual checks. Dogfood: `043_dogfood_report_scripting.md`.
-**048 SINGLE-SCRIPT + PLAY/STOP also pends its maintainer `make run`** (play/stop, auto-stop, blue names,
-node-derived tabs — un-judgeable headless). **No open BLOCKERs.**
+<!-- As of 2026-06-15 (043 scripting DONE+dogfooded; a fresh Tetris dogfood passed; next queued = 049 reopen-shader-tab DRAFT). -->
+**NEXT: 049 REOPEN-SHADER-TAB** — a DRAFT spec, problem only, no solution committed. Post-048 the editor is tabbed
+(shader tab + script tab per node); the node header can OPEN the script (`</>` glyph → `open_script_for`) but NOTHING
+re-opens the SHADER once its tab is closed — `ensure_shader_tab` is reachable only via the node-selection-changed event,
+so reselecting the SAME node is a no-op and the shader is stranded (recovery is a bad-UX side trip via another node).
+It's a UI-affordance gap only; the tab machinery is sound. Pick it up by LOCKING the design first (button vs toggle vs
+auto-reopen, where it lives, new `ui_primitives` glyph?), then the normal feature flow. Spec:
+`ai_docs/features/049_reopen_shader_tab.md`; todo trigger filed.
+
+**Just shipped (context):** 043 COPILOT SCRIPTING is DONE — the copilot authors a node's Python brain
+(`scripts/script.py`) EXACTLY like GLSL (the `read_script`/`write_script`/`edit_script` trio; `dry_run` synchronous
+feedback; motion verdict). A fresh self-playing-Tetris dogfood (2026-06-15) PASSED and surfaced one durable finding (left
+UNFILED per maintainer): the agent has no "render at t=N" affordance, so it can't see its own animation past the
+export-pinned t=0 — a brain/shader coordinate-seam bug (inverted gravity) was invisible to every check the agent has.
+`make check` 0 errors; suite green (GL subset on V3D). **043 + 048 still pend their maintainer `make run` visual checks.**
+**No open BLOCKERs.**
 
 ## Features
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 049 | reopen_shader_tab | spec | DRAFT (problem only, no solution committed). Post-048 tabbed editor has an asymmetry: the node header can OPEN the script (`</>` glyph → `open_script_for`) but nothing re-opens the SHADER once its tab is closed — `ensure_shader_tab` is reachable only via the node-selection-changed event, so reselecting the SAME node does nothing. Recovery is a bad-UX side trip (select another node, select back). Fix is a UI-affordance gap only (tab machinery is sound); design left open. Spec: `ai_docs/features/049_reopen_shader_tab.md`. |
 | 043 | copilot_scripting | done | The copilot authors a node's Python brain (`scripts/script.py`) EXACTLY like it authors GLSL — a separate `read_script`/`write_script`/`edit_script` trio mirroring the shader tools (NOT a `target:"script:"` overload — Python≠GLSL → `edit_script` matches plain text, indentation is semantic; the generic resilience ports — 0/1/N-match, `_splice`, shared write tail, 033 force-restore). Synchronous feedback is the make-or-break: a script's facts are tick-gated, so `ScriptEngine.dry_run` reads the live compile verdict then steps ONE fresh brain continuously through the export clock (integrator-safe) into a `values_sink` leaving the live node byte-identical; the motion verdict is value-diff across t (GL-free, catches a pulse/color-cycle bbox misses) + ONE corroborating render (same clock) for visible/FLAT. Script lives in the working set; a write is checkpoint-captured (`_capture_script`, landed first as C1 — fixed a live data-loss bug where revert DELETED an edited script). Full brainstorm→review→pre/post-impl→post-post→convergence→2 driver dogfoods→ultracode-polish pipeline; the polish wave found the bug-density's shared root (headless probe vs self-healing live engine — a convention law) + cut the prompt ~140 tok/turn; fixed a copilot-hang + an mp4 bug along the way. Spec: `ai_docs/features/043_copilot_scripting.md`; dogfood: `ai_docs/features/043_dogfood_report_scripting.md`. |
 | 048 | single_script_play_stop | done | Maintainer-walkthrough redesign reversing the per-uniform half of 044/047 (two script kinds were too confusing). ONE script per node — `scripts/script.py` (the brain, `update -> dict`), bound by EXISTENCE; per-uniform `u_*.py` + the `(name,type)` tag binding + copy-content + the `is_script_active`/`is_brain_active` flags all DELETED (per-value cases use private helper methods). Play/stop replaces active/inactive: a returned uniform PLAYS (name blue + stop button); STOP (button or grabbing the widget = auto-stop) freezes it for manual edit; node-level play/stop freezes all writes while the brain keeps ticking. Stop state is node-scoped `stopped_uniforms`/`all_stopped` (not a per-`UIUniform` flag — sidesteps the 047 lazy-row trap). Node-derived tab labels; explicit `from shaderbox.scripting import …` in the stub (injection kept as fallback). Startup-blank-editor bug fixed; no migration code (unreleased — dev sandbox hand-fixed). Net −1300 lines. Spec: `ai_docs/features/048_single_script_play_stop.md`. |
 | 047 | scripting_ux_refinement | done | Maintainer-walkthrough UI/UX + behavior wave over scripting (041/042/044/045), 14 findings. Active/inactive is a model flag (`is_script_active`/`is_brain_active`; the 045 `.disabled` marker deleted); a per-uniform script binds by `(name, type)` (filename `u_<name>__<tag>.py` → lossless retype + auto delete-readd rebind; rename-recovery via a whole-project copy-content selector). Pills → small `</>` glyph; new script-local bar (Activate + copy-from-same-type-script); native imgui tab bar with bare-filename labels; script-driven widgets stay editable (tick re-asserts); engine-owned uniforms off the script; error-strip + docstring tidy. Pre/post-impl review converged. **Per-uniform half superseded by 048** (the tab bar + error-strip + docstring fixes survive). Spec: `ai_docs/features/047_scripting_ux_refinement.md`. |
