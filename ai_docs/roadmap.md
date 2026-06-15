@@ -26,17 +26,20 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-06-15 (SHIPPED v0.17.0 — the hotkeys + script-play polish wave on top of v0.16.0's scripting subsystem; no feature queued). -->
-**NEXT: UNQUEUED** — no feature spec is open. **v0.17.0 SHIPPED to itch** (both channels uploaded; builds processing).
-v0.17.0 is a polish release on top of v0.16.0's CPU-scripting subsystem (040-048 + 049 node entry-points): a **utility-cleanup
-pass** (`5718143` — dep/ruff bumps, two unused deps dropped, `load_and_migrate` ladders removed), the **"brain"→"script"** internal
-rename sweep, and a **hotkeys + script-play polish wave**. The hotkeys wave gave `CommandSpec` a `category` field so the cheatsheet
-overlay + Settings rebinder cluster commands by category (faint-rule dividers, no titles) and added commands: Open shader `Ctrl+E`
-/ Open script `Ctrl+R`; Cycle code tab `Ctrl+Tab` (Cycle region → `Ctrl+`` ` ``); Close code tab `Ctrl+W` / Cycle copilot layout →
-`Ctrl+H`; **Play/stop node script `Ctrl+Space`** (mirrors the node-tab toggle, no-op without a script). The COPILOT/EDITOR pair
-share-by-focus via `CommandScope.COPILOT` beside `EDITOR`. The same wave refined per-uniform play/stop: it's **disabled while the
-node is fully stopped** (hint tooltip via `allow_when_disabled`), and a full node stop→play **clears every per-uniform stop** so the
-round trip returns the node to playing. The next feature is unqueued — draw it from a `todo.md` trigger or maintainer steer.
+<!-- As of 2026-06-15 (a copilot-quality investigation + the shader-lab skill; on top of SHIPPED v0.17.0). -->
+**ACTIVE: the `shader-lab` workflow + a copilot-quality investigation.** No release pending; this is dev work on `dev`.
+A bad copilot session (the `gpt-5.3-codex` "fire tutorial" — reference trace
+`~/.local/share/shaderbox/copilot_traces/copilot_dev_2026-06-15_21-26-29_*.transcript`, DO NOT DELETE) seeded
+**feature 050** (spec drafted, NOT plan-locked): the duplicate-comment edit-spiral (matcher + `comment_loss` guard), the
+too-weak `clean_streak_nudge`, and the probe-render clock being live wall-clock not t=0. Headline finding from hand-rebuilding
+the effect: the copilot is **render-blind**, so it can't tell a flame from a blob. That produced the **`/shader-lab` skill** —
+iterative step-by-step shader dev: an effect built as **versioned** steps the user watches live (or via MP4 offscreen), logging
+user verdicts + web findings (never the agent's own visual conclusions) in a per-project NOTES.md, to mine reusable techniques.
+Lab projects live gitignored in `projects/_lab/`. Also shipped: a **"Reload nodes from disk"** command (`Ctrl+Shift+R`), the
+stopgap for the app not seeing externally-added/edited node dirs (auto-sync deferred). **NEXT:** run a `/shader-lab` session
+(maintainer-driven), or plan-lock 050.
+
+**Just shipped (context):** v0.17.0 — hotkeys + script-play polish on v0.16.0's CPU-scripting subsystem (040-048 + 049).
 
 **Just shipped (context):** v0.16.0. 043 COPILOT SCRIPTING — the copilot authors a node's Python script (`scripts/script.py`)
 EXACTLY like GLSL (the `read_script`/`write_script`/`edit_script` trio; `dry_run` synchronous feedback; motion verdict); a
@@ -49,6 +52,8 @@ verified live. **No open BLOCKERs.**
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 050 | copilot_edit_churn_and_probe_honesty | spec | Copilot-quality wave seeded by a real bad session (the `gpt-5.3-codex` "fire tutorial", reference trace preserved): the duplicate-comment edit-spiral (the token matcher is blind to comment trivia + the `comment_loss` guard refuses cleaning duplicates), the once-fired advisory `clean_streak_nudge` (the `todo.md` edit-churn-brake trigger has now fired), and the probe-render clock being live wall-clock not t=0 (so the render-blind agent's facts are uncorrelated with what the user sees). Spec drafted, NOT plan-locked. Spec: `ai_docs/features/050_copilot_edit_churn_and_probe_honesty.md`. |
+| — | reload_nodes_from_disk | done | A "Reload nodes from disk" command (File menu + `Ctrl+Shift+R` + palette) — rescans `nodes/` so node dirs added/removed/edited OUTSIDE the app appear (the per-frame watcher only re-reads loaded nodes' shader text); the stopgap behind a deferred proper auto-sync. Spec: commit `7d934e7`. |
 | 049 | node_entry_points | done | Re-scoped from "reopen the closed shader tab" to the shared root: a node-panel **Entry points** zone (two compact rows — Shader / Script) where each entry-point's `open` ghost-button summons its tab into the editor (tab bar untouched — `open` is a summoner, not a duplicate), with an inset accent tick marking the editor's active tab. Solves all three symptoms at once: the closed-shader dead end (Shader `open` → `ensure_shader_tab`), the script/shader open-affordance asymmetry, and the orphaned node-level `stop` (the play/stop toggle moves onto the Script row — its true owner). The `</>` `script_glyph` folded into `ghost_button` (deleted); error-tint rides the Script `open` via a new `ghost_button(text_color=)`. The "brain" internal naming was later renamed to "script" in one sweep (`BrainStatus`→`ScriptStatus`, `_BRAIN_FILE`→`_SCRIPT_FILE`, `script_status`/`get_script_status`/`script_stub_for`/`_tick_script`/`_drop_script`, the `.behavior` attr, comments + docs). Spec: `ai_docs/features/049_reopen_shader_tab.md`. |
 | 043 | copilot_scripting | done | The copilot authors a node's Python script (`scripts/script.py`) EXACTLY like it authors GLSL — a separate `read_script`/`write_script`/`edit_script` trio mirroring the shader tools (NOT a `target:"script:"` overload — Python≠GLSL → `edit_script` matches plain text, indentation is semantic; the generic resilience ports — 0/1/N-match, `_splice`, shared write tail, 033 force-restore). Synchronous feedback is the make-or-break: a script's facts are tick-gated, so `ScriptEngine.dry_run` reads the live compile verdict then steps ONE fresh script instance continuously through the export clock (integrator-safe) into a `values_sink` leaving the live node byte-identical; the motion verdict is value-diff across t (GL-free, catches a pulse/color-cycle bbox misses) + ONE corroborating render (same clock) for visible/FLAT. Script lives in the working set; a write is checkpoint-captured (`_capture_script`, landed first as C1 — fixed a live data-loss bug where revert DELETED an edited script). Full brainstorm→review→pre/post-impl→post-post→convergence→2 driver dogfoods→ultracode-polish pipeline; the polish wave found the bug-density's shared root (headless probe vs self-healing live engine — a convention law) + cut the prompt ~140 tok/turn; fixed a copilot-hang + an mp4 bug along the way. Spec: `ai_docs/features/043_copilot_scripting.md`; dogfood: `ai_docs/features/043_dogfood_report_scripting.md`. |
 | 048 | single_script_play_stop | done | Maintainer-walkthrough redesign reversing the per-uniform half of 044/047 (two script kinds were too confusing). ONE script per node — `scripts/script.py` (the brain, `update -> dict`), bound by EXISTENCE; per-uniform `u_*.py` + the `(name,type)` tag binding + copy-content + the `is_script_active`/`is_brain_active` flags all DELETED (per-value cases use private helper methods). Play/stop replaces active/inactive: a returned uniform PLAYS (name blue + stop button); STOP (button or grabbing the widget = auto-stop) freezes it for manual edit; node-level play/stop freezes all writes while the brain keeps ticking. Stop state is node-scoped `stopped_uniforms`/`all_stopped` (not a per-`UIUniform` flag — sidesteps the 047 lazy-row trap). Node-derived tab labels; explicit `from shaderbox.scripting import …` in the stub (injection kept as fallback). Startup-blank-editor bug fixed; no migration code (unreleased — dev sandbox hand-fixed). Net −1300 lines. Spec: `ai_docs/features/048_single_script_play_stop.md`. |
