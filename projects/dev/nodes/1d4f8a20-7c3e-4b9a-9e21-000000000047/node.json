@@ -5,8 +5,8 @@
     ],
     "uniforms": {
         "u_ball_pos": [
-            -0.07390999345389067,
-            -0.8550074168244477
+            0.0,
+            -0.19174179434776306
         ],
         "u_ball_radius": 0.11500000208616257,
         "u_ball_vel": [
@@ -360,12 +360,12 @@
             "u_trail_count",
             "u_score_right",
             "u_paddle_right_y",
-            "u_score_left",
             "u_paddle_half_width",
             "u_paddle_half_height",
             "u_paddle_left_y",
-            "u_ball_radius"
+            "u_ball_radius",
+            "u_score_left"
         ],
-        "all_stopped": false
+        "all_stopped": true
     }
 }

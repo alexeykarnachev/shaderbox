@@ -15,13 +15,13 @@
         "show_whitespace": false,
         "show_line_numbers": true,
         "show_matching_brackets": true,
-        "font_size": 14,
+        "font_size": 18,
         "tab_size": 4,
         "line_spacing": 1.0
     },
-    "copilot_input_h": 89.0,
+    "copilot_input_h": 66.0,
     "active_node_tab": "node",
-    "is_copilot_open": false,
+    "is_copilot_open": true,
     "copilot_layout": "corner",
     "key_bindings": {},
     "show_cheatsheet": true
