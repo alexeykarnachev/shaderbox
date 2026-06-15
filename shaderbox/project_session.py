@@ -82,6 +82,10 @@ def _noop_node_deleted(node_id: str, source_path: Path) -> None:
     pass
 
 
+def _noop_nodes_reloaded() -> None:
+    pass
+
+
 class ProjectSession:
     def __init__(
         self,
@@ -99,6 +103,7 @@ class ProjectSession:
         ] = _noop_current_node_changed,
         on_node_source_synced: Callable[[str, str], None] = _noop_node_source_synced,
         on_node_deleted: Callable[[str, Path], None] = _noop_node_deleted,
+        on_nodes_reloaded: Callable[[], None] = _noop_nodes_reloaded,
     ) -> None:
         self._node_templates_dir = node_templates_dir
         self._starter_template_id = starter_template_id
@@ -112,6 +117,7 @@ class ProjectSession:
         self._on_current_node_changed = on_current_node_changed
         self._on_node_source_synced = on_node_source_synced
         self._on_node_deleted = on_node_deleted
+        self._on_nodes_reloaded = on_nodes_reloaded
 
         # ---- per-project state, (re)populated by _load ----
         self.paths: ProjectPaths
@@ -327,6 +333,24 @@ class ProjectSession:
                 ui_node.node,
             )
             self._wire_node_hooks(node_id, ui_node.node)
+
+    def reload_nodes_from_disk(self) -> None:
+        # Re-scan nodes/ from disk: pick up node dirs ADDED or REMOVED externally and re-read every
+        # node's node.json + shader (the per-frame mtime watcher only updates the shader TEXT of
+        # nodes already loaded — it sees neither new dirs nor node.json edits). A blunt full reload,
+        # not a diff: release the live nodes' GL, rebuild ui_nodes, re-resolve scripts. The owner's
+        # on_nodes_reloaded handler resets the editor UI (its sessions/tabs point at released nodes).
+        # NOTE: this DISCARDS unsaved in-app edits to the current node — it's a load-from-disk, so a
+        # caller that wants to keep in-app work must save first.
+        for ui_node in self.ui_nodes.values():
+            ui_node.node.release()
+        self.ui_nodes = load_nodes_from_dir(self.paths.nodes_dir)
+        self._resolve_scripts()
+        # Keep the current node if it survived; else fall back to any node (or none).
+        if self.current_node_id not in self.ui_nodes:
+            self.set_current_node_id(next(iter(self.ui_nodes), ""))
+        self._on_nodes_reloaded()
+        logger.info(f"Reloaded {len(self.ui_nodes)} nodes from disk")
 
     def _wire_node_hooks(self, node_id: str, node: Node) -> None:
         # Inject the export-isolation factory (Node.render_media enters it around every export, so an

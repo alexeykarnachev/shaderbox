@@ -229,6 +229,7 @@ class App:
             on_current_node_changed=self._on_current_node_changed,
             on_node_source_synced=self._on_node_source_synced,
             on_node_deleted=self._on_node_deleted,
+            on_nodes_reloaded=self._on_nodes_reloaded,
         )
 
         # copilot_focus_pending: one-shot driving window + input focus, consumed at the input draw.
@@ -399,6 +400,7 @@ class App:
     def _build_command_callbacks(self) -> None:
         self.command_callbacks = {
             CommandId.OPEN_PROJECT: self.open_project,
+            CommandId.RELOAD_NODES: self.reload_nodes_from_disk,
             CommandId.SAVE: self.save,
             CommandId.NEW_NODE: self.open_node_creator,
             CommandId.DELETE_NODE: self.delete_current_node,
@@ -467,6 +469,21 @@ class App:
         self.tab_select_pending = True
         if node_id == self.node_delete_armed:
             self.node_delete_armed = ""
+
+    def _on_nodes_reloaded(self) -> None:
+        # The core rebuilt ui_nodes from disk (reload_nodes_from_disk); the node editor sessions +
+        # tabs point at released Node objects now. Drop every NODE session/tab (keep lib tabs — lib
+        # files weren't touched), then reopen the current node's shader tab fresh.
+        node_paths = {t.path for t in self.editor_tabs if t.kind != "lib"}
+        for path in node_paths:
+            self.editor_sessions.pop(path, None)
+        self.editor_tabs = [t for t in self.editor_tabs if t.kind == "lib"]
+        self.active_tab_index = max(
+            0, min(self.active_tab_index, len(self.editor_tabs) - 1)
+        )
+        self.node_delete_armed = ""
+        if self.current_node_id:
+            self.ensure_shader_tab(self.current_node_id)
 
     def recover_deleted_node(self, msg: Message) -> None:
         # MAIN THREAD (the chat's Recover button). Restore the node, flip the card's
@@ -1346,6 +1363,22 @@ class App:
         )
         if project_dir:
             self._init(project_dir)
+
+    def reload_nodes_from_disk(self) -> None:
+        # Re-scan nodes/ so dirs added/removed/edited OUTSIDE the app show up (the per-frame watcher
+        # only re-reads loaded nodes' shader text). Save the current node first so in-app edits to it
+        # are on disk before the reload re-reads everything (reload is load-from-disk — it discards
+        # unsaved in-memory state otherwise).
+        if self._copilot_busy_blocked("Reloading nodes"):
+            return
+        self.flush_current_editor()
+        if self.current_node_id and self.current_node_id in self.ui_nodes:
+            try:
+                self.save_ui_node(self.ui_nodes[self.current_node_id])
+            except Exception as e:
+                logger.error(f"Failed to save current node before reload: {e}")
+        self.session.reload_nodes_from_disk()
+        self.notifications.push(f"Reloaded {len(self.ui_nodes)} nodes from disk")
 
     def delete_current_node(self) -> None:
         self.delete_node(self.current_node_id)

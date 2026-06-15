@@ -351,6 +351,10 @@ def _draw_menu_bar(app: App) -> None:
                     "Open project...", _hint(app, CommandId.OPEN_PROJECT), False
                 )[0]:
                     app.open_project()
+                if imgui.menu_item(
+                    "Reload nodes from disk", _hint(app, CommandId.RELOAD_NODES), False
+                )[0]:
+                    app.reload_nodes_from_disk()
                 imgui.separator()
                 if imgui.menu_item("Quit", _hint(app, CommandId.QUIT), False)[0]:
                     glfw.set_window_should_close(app.window, True)
