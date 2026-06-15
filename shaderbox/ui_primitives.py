@@ -84,11 +84,16 @@ def button(label: str, width: float = 0.0) -> bool:
     return imgui.button(label, size=(width, 0.0))
 
 
-def ghost_button(label: str, width: float = 0.0) -> bool:
+def ghost_button(
+    label: str,
+    width: float = 0.0,
+    *,
+    text_color: tuple[float, float, float, float] = COLOR.FG_SECONDARY,
+) -> bool:
     imgui.push_style_color(imgui.Col_.button, COLOR.TRANSPARENT)
     imgui.push_style_color(imgui.Col_.button_hovered, COLOR.BG_FRAME)
     imgui.push_style_color(imgui.Col_.button_active, COLOR.BORDER)
-    imgui.push_style_color(imgui.Col_.text, COLOR.FG_SECONDARY)
+    imgui.push_style_color(imgui.Col_.text, text_color)
     clicked: bool = imgui.button(label, size=(width, 0.0))
     imgui.pop_style_color(4)
     return clicked
@@ -177,30 +182,6 @@ def chip_button(
         imgui.end_disabled()
     imgui.pop_style_color(4)
     imgui.pop_style_var()
-    return clicked
-
-
-def script_glyph(
-    id_: str, *, present: bool, error: bool = False, tooltip: str = ""
-) -> bool:
-    """The node-header open-script affordance (feature 048) — a small `</>` text glyph. Dim grey when
-    no script exists, accent when one does, error red when the brain is broken. Click opens (creating
-    first if absent) the node's `script.py` in the editor. Returns True on click."""
-    color = (
-        COLOR.STATE_ERROR
-        if error
-        else COLOR.ACCENT_PRIMARY
-        if present
-        else COLOR.FG_DIM
-    )
-    imgui.push_style_color(imgui.Col_.button, COLOR.TRANSPARENT)
-    imgui.push_style_color(imgui.Col_.button_hovered, COLOR.BG_FRAME)
-    imgui.push_style_color(imgui.Col_.button_active, COLOR.BG_FRAME)
-    imgui.push_style_color(imgui.Col_.text, color)
-    clicked: bool = imgui.small_button(f"</>##script_glyph_{id_}")
-    imgui.pop_style_color(4)
-    if tooltip and imgui.is_item_hovered():
-        imgui.set_tooltip(tooltip)
     return clicked
 
 

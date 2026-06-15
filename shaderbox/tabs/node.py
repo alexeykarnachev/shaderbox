@@ -16,7 +16,6 @@ from shaderbox.ui_primitives import (
     button,
     ghost_button,
     play_stop_toggle,
-    script_glyph,
     small_caption,
 )
 from shaderbox.util import format_auto_value, get_resolution_str, get_uniform_hash
@@ -117,9 +116,6 @@ def draw(app: App) -> None:
         )
 
     imgui.same_line()
-    _draw_script_controls(app)
-
-    imgui.same_line()
     if ghost_button("...##node_actions"):
         imgui.open_popup("node_actions_popup")
     with imgui_ctx.begin_popup("node_actions_popup") as popup:
@@ -131,6 +127,9 @@ def draw(app: App) -> None:
             )
             app.ui_node_templates[dir.name] = load_node_from_dir(dir)
             app.notifications.push("New template created")
+
+    imgui.dummy((0, SPACE.MD))
+    _draw_entry_points(app)
 
     _section_break()
 
@@ -189,28 +188,68 @@ def draw(app: App) -> None:
             imgui.dummy((0, SPACE.SM))
 
 
-def _draw_script_controls(app: App) -> None:
-    # The node-header script affordances (048): an OPEN-SCRIPT glyph (navigation — click creates +
-    # opens the node's script.py) and, when a script exists, a whole-node PLAY/STOP toggle (execution
-    # — freeze/resume every driven uniform at once; the brain keeps ticking either way). Frozen
-    # mid-copilot-turn.
+def _active_tab_tick(active: bool) -> None:
+    # A thin accent vertical tick at the row's left edge, marking which entry-point is the editor's
+    # active tab (049). Drawn INSET (inside the row rect, draw-list) so its presence never shifts
+    # layout — a selection cue must change colour/presence, never size (/imgui-ui §3).
+    pos = imgui.get_cursor_screen_pos()
+    if active:
+        h = imgui.get_text_line_height()
+        col = imgui.color_convert_float4_to_u32(COLOR.ACCENT_PRIMARY)
+        imgui.get_window_draw_list().add_line(
+            (pos.x, pos.y + 1.0), (pos.x, pos.y + h - 1.0), col, 2.0
+        )
+    imgui.dummy((SPACE.SM, 0))
+    imgui.same_line()
+
+
+def _draw_entry_points(app: App) -> None:
+    # The node's two entry-points (049): SHADER (GPU) and SCRIPT (CPU brain), each with an `open`
+    # action that summons its tab into the editor (the node panel is "about this node"; the tab bar is
+    # the editor's own state — `open` is a summoner, not a duplicate). The whole-node PLAY/STOP toggle
+    # lives on the Script row (its true owner — it freezes/resumes the script's driven uniforms; the
+    # brain keeps ticking). An accent tick marks whichever entry-point is the editor's active tab.
+    # Frozen mid-copilot-turn (a write races the reload).
     node_id = app.current_node_id
     present = app.session.has_script(node_id)
     error = present and app.session.script_has_error(node_id)
-    tooltip = (
+    active = app.active_tab
+    shader_active = (
+        active is not None and active.kind == "shader" and active.node_id == node_id
+    )
+    script_active = (
+        active is not None and active.kind == "script" and active.node_id == node_id
+    )
+
+    imgui.begin_disabled(app.copilot_turn_active)
+    small_caption(app.font_12, "Entry points")
+
+    _active_tab_tick(shader_active)
+    small_caption(app.font_12, "Shader")
+    imgui.same_line()
+    if ghost_button("open##entry_shader"):
+        app.ensure_shader_tab(node_id)
+    if imgui.is_item_hovered():
+        imgui.set_tooltip("Open the fragment shader (GPU)")
+
+    _active_tab_tick(script_active)
+    small_caption(app.font_12, "Script")
+    imgui.same_line()
+    open_tooltip = (
         "Node script error — click to open and fix"
         if error
         else "Open the node script (drives many uniforms)"
         if present
         else "Create + open a node script (drives many uniforms)"
     )
-    imgui.begin_disabled(app.copilot_turn_active)
-    if script_glyph("brain", present=present, error=error, tooltip=tooltip):
+    open_color = COLOR.STATE_ERROR if error else COLOR.FG_SECONDARY
+    if ghost_button("open##entry_script", text_color=open_color):
         app.open_script_for(node_id)
+    if imgui.is_item_hovered():
+        imgui.set_tooltip(open_tooltip)
     if present:
         imgui.same_line()
-        state = app.current_node_ui_state_or_default
-        playing = not state.all_stopped
+        playing = not app.current_node_ui_state_or_default.all_stopped
         if play_stop_toggle(
             "node",
             playing,
