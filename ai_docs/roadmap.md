@@ -26,18 +26,21 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-06-16 (feature 050 landed + dogfood-confirmed + reviewed + committed on dev; on top of SHIPPED v0.17.0). -->
-**ACTIVE: feature 050 DONE on `dev` (committed `18b1e8f`), a SHIP candidate.** A copilot edit-engine
-correctness wave sourced from one bad real session (the `gpt-5.3-codex` "fire tutorial" — reference trace
-`~/.local/share/shaderbox/copilot_traces/copilot_dev_2026-06-15_21-26-29_*.transcript`, DO NOT DELETE). Four findings, all
-fixed + post-impl-reviewed + dogfood-confirmed live: **F1** the duplicate-comment spiral — ROOT was the comment-blind
-`token_match` excluding a leading comment from the splice span (NOT the matcher/guard theory the spec first chased; re-derived
-via a real-code repro + swarm) → fix grows the span over `old_str`'s edge comments; **F2** a per-FILE churn brake (soft
-escalating fact + hard force-end, two Settings-tunable thresholds); **F3** the probe-render clock pinned to t=0 (was live
-wall-clock) PLUS a new ungated `probe_render(node, t)` tool — this also DELIVERS the long-deferred "render at t=N" affordance
-the agent lacked; **F4** a cause-aware forced-turn-end nudge (kills the "you're right to pause now" misattribution). `make
-check` + `make smoke` green; suite passing. Spec: `ai_docs/features/050_*`; dogfood: `050_dogfood_report_stress.md`.
-**NEXT:** ship (maintainer call — promotes dev→master, public itch.io build), OR run a `/shader-lab` session. **No open BLOCKERs.**
+<!-- As of 2026-06-16 (feature 050 SHIPPED in v0.18.0; tree clean on dev==master). -->
+**ACTIVE: nothing in flight — v0.18.0 just shipped; pick the next thread.** No release pending; `dev`
+== `master`, tree clean. The last wave (050, in v0.18.0) was a copilot edit-engine correctness wave from
+one bad real session (the `gpt-5.3-codex` "fire tutorial"): F1 the duplicate-comment spiral (ROOT = the
+comment-blind `token_match` excluding a leading comment from the splice span; fix grows the span over
+`old_str`'s edge comments), F2 a per-FILE churn brake (soft escalating + hard force-end, two Settings
+thresholds), F3 the probe clock pinned to t=0 + the new ungated `probe_render(node, t)` tool (also delivers
+the long-deferred "render at t=N" affordance), F4 a cause-aware forced-turn-end nudge. Post-impl-reviewed +
+dogfood-confirmed.
+**NEXT (maintainer's pick, no default):** run a `/shader-lab` session (mine reusable shader techniques),
+OR pick from `todo.md` (the node-dir live auto-sync behind the Reload stopgap; the copilot lazy
+tool-catalogue cost lever; etc.). **No open BLOCKERs.**
+
+**Just shipped (context):** v0.18.0 — feature 050 copilot edit-engine correctness (comment-dup span fix, churn brake,
+probe clock t=0 + `probe_render` tool, honest forced-turn-end) + the reload-nodes-from-disk command + the shader-lab skill.
 
 **Just shipped (context):** v0.17.0 — hotkeys + script-play polish on v0.16.0's CPU-scripting subsystem (040-048 + 049).
 
