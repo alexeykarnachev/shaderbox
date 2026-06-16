@@ -26,22 +26,26 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-06-16 (node-dir live auto-sync landed on dev, unreleased; tree dirty pre-commit). -->
-**ACTIVE: node-dir live auto-sync landed (unreleased) — pick the next thread or ship.** Just built:
-the project's `nodes/` is now reconciled to disk EVERY frame (`ProjectSession.sync_nodes_from_disk`,
-called from `ui.py::update_and_draw`, gated off while a copilot turn is in flight) — a node dir
-ADDED / REMOVED / its `node.json` EDITED outside the app now syncs automatically (disk is the source
-of truth — even the current node is force-reloaded). Mirrors the existing `maybe_rebuild_lib_index`
-glob-diff; shader TEXT + `script.py` still ride their existing per-frame watchers. The manual
-"Reload nodes from disk" feature (command, `Ctrl+Shift+R`, File-menu item, `App.reload_nodes_from_disk`,
-the `on_nodes_reloaded` callback) is DELETED — no more user bookkeeping. `make check` + `make smoke`
-green; new `tests/test_node_dir_sync.py` 6/6 (full-suite cross-`app`-fixture V3D/X flake is preexisting —
-per-file sweep green).
-**NEXT (maintainer's pick, no default):** run a `/shader-lab` session (mine reusable shader techniques),
-OR pick from `todo.md` (the copilot lazy tool-catalogue cost lever; etc.). **No open BLOCKERs.**
+<!-- As of 2026-06-16 (v0.19.0 TAGGED + built + pushed, but NOT yet uploaded to itch — see BLOCKER). -->
+**ACTIVE: v0.19.0 tagged & built but NOT yet live on itch — the upload is the only thing left.** The
+v0.19.0 release commit + tag are pushed; `dev` == `master` == `origin` at the release commit, tree
+clean, both dist zips built + verified. What FAILED is only the itch upload: itch.io's `/wharf` API
+was returning HTTP 500 (their backend outage) so `butler push` never created the build. **So the next
+ship is NOT a new version — it is finishing THIS one:** when itch recovers, run
+`./build.sh && yes | ./upload-itch.sh` against the EXISTING v0.19.0 (no new bump, no new tag), then
+`butler status where-is-your-keyboard/shaderbox` to confirm both channels show 0.19.0. See the BLOCKER
+in `todo.md` ("v0.19.0 upload pending itch recovery").
+v0.19.0's content: node-dir live auto-sync — the project's `nodes/` is reconciled to disk EVERY frame
+(`ProjectSession.sync_nodes_from_disk`, from `ui.py::update_and_draw`, gated off mid-copilot-turn) so a
+node dir ADDED/REMOVED or its `node.json` EDITED externally syncs automatically (disk authoritative —
+even the current node is force-reloaded); the manual "Reload nodes from disk" command + `Ctrl+Shift+R`
+deleted. Tests: `tests/test_node_dir_sync.py` 6/6.
+**NEXT (after the v0.19.0 upload lands):** run a `/shader-lab` session, OR pick from `todo.md` (the
+copilot lazy tool-catalogue cost lever; etc.).
 
-**Just shipped (context):** v0.18.0 — feature 050 copilot edit-engine correctness (comment-dup span fix, churn brake,
-probe clock t=0 + `probe_render` tool, honest forced-turn-end) + the reload-nodes-from-disk command + the shader-lab skill.
+**Last LIVE on itch (context):** v0.18.0 — feature 050 copilot edit-engine correctness (comment-dup span fix, churn brake,
+probe clock t=0 + `probe_render` tool, honest forced-turn-end) + the shader-lab skill. (v0.19.0 is tagged but its itch
+upload is still pending — see the Active banner + the `todo.md` BLOCKER.)
 
 **Just shipped (context):** v0.17.0 — hotkeys + script-play polish on v0.16.0's CPU-scripting subsystem (040-048 + 049).
 

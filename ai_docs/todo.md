@@ -31,6 +31,21 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
 
 ---
 
+## [BLOCKER] v0.19.0 is tagged + built but NOT yet uploaded to itch (upload pending itch recovery)
+- **Trigger:** fires NOW, and again the moment anyone reaches for `/ship` or thinks about the next
+  version — the v0.19.0 git tag + `release: v0.19.0` commit are pushed (`dev`==`master`==`origin` at
+  the release commit), both dist zips are built + verified clean, but the public itch build is STILL
+  on the PRIOR version. The itch upload failed on an itch.io `/wharf` API HTTP 500 (their backend
+  outage), so `butler push` never created the build.
+- **Resolve it (do this, NOT a new bump):** the version + tag already exist and are correct, so the
+  next ship is just the upload — when itch is back (`butler status where-is-your-keyboard/shaderbox`
+  returns without a 500), run `./build.sh && yes | ./upload-itch.sh` against the EXISTING v0.19.0
+  (no `make release`, no new tag), then `butler status` to confirm both channels show 0.19.0. Only
+  AFTER that is v0.19.0 actually shipped; delete this entry in the commit that confirms the upload.
+- **Do NOT** cut v0.20.0 / run `make release` again until this lands — that would orphan v0.19.0 as a
+  tag that never went public. This is the one legitimate "tag exists without a publish" mid-ship state
+  the ship flow anticipates (`/ship` skill ## The model), parked because of an external outage.
+
 ## [DEFERRAL] copilot turn-rollback: a NEW mutating tool must register with the checkpoint
 - **Trigger:** before plan-locking any feature that adds a new MUTATING copilot tool (one that
   writes a node / lib / uniform / creates / deletes) — it MUST capture into the active checkpoint
