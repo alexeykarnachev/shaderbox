@@ -349,6 +349,13 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   self-healing fact leaking into a headless probe context.** Revisit if a second script LANGUAGE lands
   (the dry-tick is language-agnostic via the `Behavior` protocol) or if the agent needs play/stop control
   (a `stop_uniform` pair, deferred). Spec: `ai_docs/features/043_copilot_scripting.md`.
+  **Corollary (feature 050): a copilot probe render's clock is a DEFINED, STABLE time, never live
+  `glfw.get_time()` wall-clock.** `_render_facts_for` defaults `t=0.0` (the export clock the user
+  renders), so an animated shader's facts don't drift with app uptime and correlate with what the user
+  sees; a caller wanting another moment passes `t` explicitly (the script probe's `t=mid[0]`, the
+  `probe_render` tool's chosen `t`). A wall-clock probe was the reference-trace bug (facts stamped
+  `t=951s` after 16 min open). Revisit if a probe ever legitimately needs the live preview clock
+  (unknowable headless — t=0 is the robust default).
 - **A copilot tool's interactive output is a STRUCTURED entity the engine renders, never a raw value in
   the model-facing message.** A tool returns `(ok, msg, payload)`: `msg` reaches the LLM, `payload` does
   NOT. A URL / file path / button / panel a tool surfaces goes in `payload` as a structured spec the UI

@@ -66,7 +66,8 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   tell if the deliverable is right (the `write_script` value-diff motion verdict proved insufficient
   because the clip's interesting window isn't at t=0). Then attach a first/last-frame `render_facts`
   pair to `render_video`'s result. The copilot `render_video` also inherits the t=0-only render
-  window (the sticker-render deferral below).
+  window (the sticker-render deferral below). The 050 `probe_render(node, t)` tool is now the
+  primitive to build the first/last-frame pair on (call it at t=0 and t=seconds).
 
 ## [DEFERRAL] script-engine cross-uniform shared state + compute-order guarantee (feature 042+)
 - **Trigger:** a real workflow needs TWO scripts to share mutable state (one writes, another reads —

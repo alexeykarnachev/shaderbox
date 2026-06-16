@@ -26,33 +26,32 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-06-15 (a copilot-quality investigation + the shader-lab skill; on top of SHIPPED v0.17.0). -->
-**ACTIVE: the `shader-lab` workflow + a copilot-quality investigation.** No release pending; this is dev work on `dev`.
-A bad copilot session (the `gpt-5.3-codex` "fire tutorial" — reference trace
-`~/.local/share/shaderbox/copilot_traces/copilot_dev_2026-06-15_21-26-29_*.transcript`, DO NOT DELETE) seeded
-**feature 050** (spec drafted, NOT plan-locked): the duplicate-comment edit-spiral (matcher + `comment_loss` guard), the
-too-weak `clean_streak_nudge`, and the probe-render clock being live wall-clock not t=0. Headline finding from hand-rebuilding
-the effect: the copilot is **render-blind**, so it can't tell a flame from a blob. That produced the **`/shader-lab` skill** —
-iterative step-by-step shader dev: an effect built as **versioned** steps the user watches live (or via MP4 offscreen), logging
-user verdicts + web findings (never the agent's own visual conclusions) in a per-project NOTES.md, to mine reusable techniques.
-Lab projects live gitignored in `projects/_lab/`. Also shipped: a **"Reload nodes from disk"** command (`Ctrl+Shift+R`), the
-stopgap for the app not seeing externally-added/edited node dirs (auto-sync deferred). **NEXT:** run a `/shader-lab` session
-(maintainer-driven), or plan-lock 050.
+<!-- As of 2026-06-16 (feature 050 landed + dogfood-confirmed + reviewed + committed on dev; on top of SHIPPED v0.17.0). -->
+**ACTIVE: feature 050 DONE on `dev` (committed `18b1e8f`), a SHIP candidate.** A copilot edit-engine
+correctness wave sourced from one bad real session (the `gpt-5.3-codex` "fire tutorial" — reference trace
+`~/.local/share/shaderbox/copilot_traces/copilot_dev_2026-06-15_21-26-29_*.transcript`, DO NOT DELETE). Four findings, all
+fixed + post-impl-reviewed + dogfood-confirmed live: **F1** the duplicate-comment spiral — ROOT was the comment-blind
+`token_match` excluding a leading comment from the splice span (NOT the matcher/guard theory the spec first chased; re-derived
+via a real-code repro + swarm) → fix grows the span over `old_str`'s edge comments; **F2** a per-FILE churn brake (soft
+escalating fact + hard force-end, two Settings-tunable thresholds); **F3** the probe-render clock pinned to t=0 (was live
+wall-clock) PLUS a new ungated `probe_render(node, t)` tool — this also DELIVERS the long-deferred "render at t=N" affordance
+the agent lacked; **F4** a cause-aware forced-turn-end nudge (kills the "you're right to pause now" misattribution). `make
+check` + `make smoke` green; suite passing. Spec: `ai_docs/features/050_*`; dogfood: `050_dogfood_report_stress.md`.
+**NEXT:** ship (maintainer call — promotes dev→master, public itch.io build), OR run a `/shader-lab` session. **No open BLOCKERs.**
 
 **Just shipped (context):** v0.17.0 — hotkeys + script-play polish on v0.16.0's CPU-scripting subsystem (040-048 + 049).
 
 **Just shipped (context):** v0.16.0. 043 COPILOT SCRIPTING — the copilot authors a node's Python script (`scripts/script.py`)
 EXACTLY like GLSL (the `read_script`/`write_script`/`edit_script` trio; `dry_run` synchronous feedback; motion verdict); a
-fresh self-playing-Tetris dogfood (2026-06-15) PASSED. One durable finding left UNFILED per maintainer: the agent has no
-"render at t=N" affordance, so it can't see its own animation past the export-pinned t=0 (a script/shader coordinate-seam
-bug was invisible to every check the agent has). `make check` 0 errors; suite green (GL subset on V3D). 049 maintainer-
+fresh self-playing-Tetris dogfood (2026-06-15) PASSED. The "render at t=N" affordance the agent then lacked is now DELIVERED
+by feature 050's `probe_render(node, t)` tool. `make check` 0 errors; suite green (GL subset on V3D). 049 maintainer-
 verified live. **No open BLOCKERs.**
 
 ## Features
 
 | # | Name | Status | Brief |
 |---|---|---|---|
-| 050 | copilot_edit_churn_and_probe_honesty | spec | Copilot-quality wave seeded by a real bad session (the `gpt-5.3-codex` "fire tutorial", reference trace preserved): the duplicate-comment edit-spiral (the token matcher is blind to comment trivia + the `comment_loss` guard refuses cleaning duplicates), the once-fired advisory `clean_streak_nudge` (the `todo.md` edit-churn-brake trigger has now fired), and the probe-render clock being live wall-clock not t=0 (so the render-blind agent's facts are uncorrelated with what the user sees). Spec drafted, NOT plan-locked. Spec: `ai_docs/features/050_copilot_edit_churn_and_probe_honesty.md`. |
+| 050 | copilot_edit_churn_and_probe_honesty | done | Copilot edit-engine correctness wave from one bad real session (the `gpt-5.3-codex` "fire tutorial", trace preserved): F1 the duplicate-comment spiral — ROOT was the comment-blind `token_match` excluding a leading comment from the splice span (re-derived via real-code repro + swarm after the matcher/guard theory was refuted), fixed by growing the span over `old_str`'s edge comments; F2 a per-FILE churn brake (soft escalating fact + hard force-end, two Settings-tunable thresholds, subsuming the `todo.md` edit-churn deferral); F3 the probe-render clock pinned to t=0 + a new ungated `probe_render(node, t)` tool (also delivers the deferred "render at t=N" affordance); F4 a cause-aware forced-turn-end nudge (kills the "you're right to pause now" misattribution). Post-impl-reviewed + dogfood-confirmed live. Spec: `ai_docs/features/050_copilot_edit_churn_and_probe_honesty.md`; dogfood: `ai_docs/features/050_dogfood_report_stress.md`. |
 | — | reload_nodes_from_disk | done | A "Reload nodes from disk" command (File menu + `Ctrl+Shift+R` + palette) — rescans `nodes/` so node dirs added/removed/edited OUTSIDE the app appear (the per-frame watcher only re-reads loaded nodes' shader text); the stopgap behind a deferred proper auto-sync. Spec: commit `7d934e7`. |
 | 049 | node_entry_points | done | Re-scoped from "reopen the closed shader tab" to the shared root: a node-panel **Entry points** zone (two compact rows — Shader / Script) where each entry-point's `open` ghost-button summons its tab into the editor (tab bar untouched — `open` is a summoner, not a duplicate), with an inset accent tick marking the editor's active tab. Solves all three symptoms at once: the closed-shader dead end (Shader `open` → `ensure_shader_tab`), the script/shader open-affordance asymmetry, and the orphaned node-level `stop` (the play/stop toggle moves onto the Script row — its true owner). The `</>` `script_glyph` folded into `ghost_button` (deleted); error-tint rides the Script `open` via a new `ghost_button(text_color=)`. The "brain" internal naming was later renamed to "script" in one sweep (`BrainStatus`→`ScriptStatus`, `_BRAIN_FILE`→`_SCRIPT_FILE`, `script_status`/`get_script_status`/`script_stub_for`/`_tick_script`/`_drop_script`, the `.behavior` attr, comments + docs). Spec: `ai_docs/features/049_reopen_shader_tab.md`. |
 | 043 | copilot_scripting | done | The copilot authors a node's Python script (`scripts/script.py`) EXACTLY like it authors GLSL — a separate `read_script`/`write_script`/`edit_script` trio mirroring the shader tools (NOT a `target:"script:"` overload — Python≠GLSL → `edit_script` matches plain text, indentation is semantic; the generic resilience ports — 0/1/N-match, `_splice`, shared write tail, 033 force-restore). Synchronous feedback is the make-or-break: a script's facts are tick-gated, so `ScriptEngine.dry_run` reads the live compile verdict then steps ONE fresh script instance continuously through the export clock (integrator-safe) into a `values_sink` leaving the live node byte-identical; the motion verdict is value-diff across t (GL-free, catches a pulse/color-cycle bbox misses) + ONE corroborating render (same clock) for visible/FLAT. Script lives in the working set; a write is checkpoint-captured (`_capture_script`, landed first as C1 — fixed a live data-loss bug where revert DELETED an edited script). Full brainstorm→review→pre/post-impl→post-post→convergence→2 driver dogfoods→ultracode-polish pipeline; the polish wave found the bug-density's shared root (headless probe vs self-healing live engine — a convention law) + cut the prompt ~140 tok/turn; fixed a copilot-hang + an mp4 bug along the way. Spec: `ai_docs/features/043_copilot_scripting.md`; dogfood: `ai_docs/features/043_dogfood_report_scripting.md`. |
