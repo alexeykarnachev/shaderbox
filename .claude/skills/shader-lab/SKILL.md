@@ -84,9 +84,9 @@ experience.
 2. User opens it in ShaderBox (loads the node into memory).
 3. You rewrite that node's shader each step → live recompile.
 
-A node you create on disk AFTER the user opened the project is invisible until they hit
-**File → "Reload nodes from disk"** (`Ctrl+Shift+R`) or reopen. So: set up the iteration node before
-they open. If you must add one mid-session, tell them to press reload.
+A node you create / edit / delete on disk AFTER the user opened the project now syncs into the app
+AUTOMATICALLY — ShaderBox reconciles `nodes/` to disk every frame (disk is the source of truth). So
+you can add an iteration node mid-session and it just appears; no reload step, no bookkeeping.
 
 **The user will NOT edit the shader during iterations** (they only watch / may view the code / may
 have the editor focused). So there is no edit-collision to fear — you own the file, they observe.
@@ -209,9 +209,5 @@ The experiment's *output* is knowledge, not just a pretty node. At the end:
   let the user pick visually ("take the tip from this one, the color from that one"), then aggregate
   the chosen parts into the main node and delete the intermediates. A richer compare/merge flow than
   the linear `versions/` log.
-- **Proper app-level bidirectional auto-sync.** The shipped "Reload nodes from disk" (`Ctrl+Shift+R`)
-  is the stopgap; the real fix is a live directory listener + `node.json` mtime watch that picks up
-  added/removed/edited nodes automatically (with care around the save-on-exit clobber race). Filed in
-  `ai_docs/todo.md`.
 - **Generalise the render helper into the app.** `render_node.py` is the lab's tool; a built-in
   "render this node to MP4 at size/duration" command in ShaderBox proper would remove the script.

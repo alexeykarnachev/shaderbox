@@ -507,14 +507,17 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   exporter context, OR when editing it feels unwieldy. Rated KEEP in feature 017 (button tiers + draw
   helpers + `preview_cell` + labeled fields all serve one role: the shared imgui+theme primitive set).
 
-## [DEFERRAL] a node whose shader file vanishes from disk freezes the frame loop (pre-existing)
+## [DEFERRAL] a node whose shader FILE (only) vanishes from disk freezes the frame loop (pre-existing)
 - **Trigger:** first user report of "app frozen / won't close" after deleting/moving a node's
-  `shader.frag.glsl` externally, OR next time the missing-file guard at the top of
-  `ui.py::update_and_draw` is edited.
+  `shader.frag.glsl` externally WHILE LEAVING its dir + `node.json` in place, OR next time the
+  missing-file guard at the top of `ui.py::update_and_draw` is edited.
 - The guard `return`s out of `update_and_draw` for every frame the file is missing, so
   `process_hotkeys` (which holds `glfw.poll_events()`) never runs — no repaint, no input, no OS
   close, until the file reappears. Ships in v0.12.1 too (not a regression). Fix needs design, not
-  just `continue`: downstream draw paths assume the source file exists.
+  just `continue`: downstream draw paths assume the source file exists. NARROWED by the node-dir
+  auto-sync (`ProjectSession.sync_nodes_from_disk`): deleting the WHOLE node dir is now handled
+  gracefully (the node is dropped, no freeze) — only the shader-file-only delete (dir + node.json
+  survive, so the mtime-keyed sync doesn't notice) still hits this guard.
 
 ## [DEFERRAL] corrupted/deleted seed manifest resurrects user-deleted shipped lib files
 - **Trigger:** next time `shader_lib/seed.py` is edited, OR a user report of deleted `SB_*` files
