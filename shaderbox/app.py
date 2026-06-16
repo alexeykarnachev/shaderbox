@@ -1345,7 +1345,7 @@ class App:
             pfd.select_folder("Open project", default_path=start_dir)
         )
         if project_dir:
-            self._init(project_dir)
+            self._init(Path(project_dir))
 
     def delete_current_node(self) -> None:
         self.delete_node(self.current_node_id)
