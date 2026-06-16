@@ -92,6 +92,13 @@ def update_and_draw(app: App) -> None:
         logger.exception(f"Error draining copilot bridge: {e}")
 
     # ----------------------------------------------------------------
+    # Reconcile ui_nodes to disk: pick up node dirs added/removed/edited externally. Skipped while a
+    # copilot turn is in flight — the worker is mutating nodes/node.json on its own thread, so a sync
+    # here would race its writes (it rebaselines via save_ui_node; the post-turn frame syncs the rest).
+    if not app.copilot.state.in_flight:
+        app.session.sync_nodes_from_disk()
+
+    # ----------------------------------------------------------------
     # Check for per-node shader file changes (root + every prepended lib file).
     for name in list(app.ui_nodes.keys()):
         ui_node = app.ui_nodes[name]
@@ -351,10 +358,6 @@ def _draw_menu_bar(app: App) -> None:
                     "Open project...", _hint(app, CommandId.OPEN_PROJECT), False
                 )[0]:
                     app.open_project()
-                if imgui.menu_item(
-                    "Reload nodes from disk", _hint(app, CommandId.RELOAD_NODES), False
-                )[0]:
-                    app.reload_nodes_from_disk()
                 imgui.separator()
                 if imgui.menu_item("Quit", _hint(app, CommandId.QUIT), False)[0]:
                     glfw.set_window_should_close(app.window, True)

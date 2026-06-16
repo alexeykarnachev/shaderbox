@@ -15,7 +15,6 @@ from imgui_bundle import imgui
 
 class CommandId(StrEnum):
     OPEN_PROJECT = auto()
-    RELOAD_NODES = auto()
     SAVE = auto()
     NEW_NODE = auto()
     DELETE_NODE = auto()
@@ -113,12 +112,6 @@ C = CommandCategory
 COMMAND_SPECS: list[CommandSpec] = [
     CommandSpec(
         CommandId.OPEN_PROJECT, "Open project", _chord(K.o, K.mod_ctrl), C.FILE
-    ),
-    CommandSpec(
-        CommandId.RELOAD_NODES,
-        "Reload nodes from disk",
-        _chord(K.r, K.mod_ctrl, K.mod_shift),
-        C.FILE,
     ),
     CommandSpec(CommandId.SAVE, "Save", _chord(K.s, K.mod_ctrl), C.FILE),
     CommandSpec(CommandId.QUIT, "Quit", _chord(K.q, K.mod_ctrl), C.FILE),

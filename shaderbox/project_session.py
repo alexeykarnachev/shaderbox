@@ -82,10 +82,6 @@ def _noop_node_deleted(node_id: str, source_path: Path) -> None:
     pass
 
 
-def _noop_nodes_reloaded() -> None:
-    pass
-
-
 class ProjectSession:
     def __init__(
         self,
@@ -103,7 +99,6 @@ class ProjectSession:
         ] = _noop_current_node_changed,
         on_node_source_synced: Callable[[str, str], None] = _noop_node_source_synced,
         on_node_deleted: Callable[[str, Path], None] = _noop_node_deleted,
-        on_nodes_reloaded: Callable[[], None] = _noop_nodes_reloaded,
     ) -> None:
         self._node_templates_dir = node_templates_dir
         self._starter_template_id = starter_template_id
@@ -117,13 +112,14 @@ class ProjectSession:
         self._on_current_node_changed = on_current_node_changed
         self._on_node_source_synced = on_node_source_synced
         self._on_node_deleted = on_node_deleted
-        self._on_nodes_reloaded = on_nodes_reloaded
 
         # ---- per-project state, (re)populated by _load ----
         self.paths: ProjectPaths
         self.project_dir: Path
         self.integrations_store = IntegrationsStore()
         self.ui_nodes: dict[str, UINode] = {}
+        # node.json mtime per loaded node — the diff baseline for sync_nodes_from_disk.
+        self._node_json_mtimes: dict[str, float] = {}
         self.ui_node_templates: dict[str, UINode] = {}
         self.app_state = UIAppState()
         # The active library index; rebuilt per project by rebuild_shader_lib_index.
@@ -219,6 +215,11 @@ class ProjectSession:
         # App.save_ui_node, the forwarder the UI paths call.
         root_dir = root_dir or self.paths.nodes_dir
         dir = ui_node.save(root_dir, dir_name)
+        # Our own write bumped node.json's mtime; rebaseline so sync_nodes_from_disk doesn't read it
+        # straight back as an external "change" and clobber the live node next frame.
+        if root_dir == self.paths.nodes_dir:
+            with contextlib.suppress(OSError):
+                self._node_json_mtimes[dir.name] = (dir / "node.json").lstat().st_mtime
         logger.info(f"Node '{ui_node.ui_state.ui_name}' saved: {dir}")
         return dir
 
@@ -243,6 +244,7 @@ class ProjectSession:
         # are path-keyed). The on_node_deleted handler drops the editor session + delete-arm.
         path = self.ui_nodes[node_id].node.source.path
         self.ui_nodes.pop(node_id).node.release()
+        self._node_json_mtimes.pop(node_id, None)
         self.script_engine.drop_node(
             node_id
         )  # free its behaviors + stale errors (feature 041)
@@ -309,6 +311,7 @@ class ProjectSession:
         self.rebuild_shader_lib_index()
 
         self.ui_nodes = load_nodes_from_dir(self.paths.nodes_dir)
+        self._seed_node_json_mtimes()
         self.ui_node_templates = self._order_templates(
             load_nodes_from_dir(self._node_templates_dir)
         )
@@ -334,23 +337,77 @@ class ProjectSession:
             )
             self._wire_node_hooks(node_id, ui_node.node)
 
-    def reload_nodes_from_disk(self) -> None:
-        # Re-scan nodes/ from disk: pick up node dirs ADDED or REMOVED externally and re-read every
-        # node's node.json + shader (the per-frame mtime watcher only updates the shader TEXT of
-        # nodes already loaded — it sees neither new dirs nor node.json edits). A blunt full reload,
-        # not a diff: release the live nodes' GL, rebuild ui_nodes, re-resolve scripts. The owner's
-        # on_nodes_reloaded handler resets the editor UI (its sessions/tabs point at released nodes).
-        # NOTE: this DISCARDS unsaved in-app edits to the current node — it's a load-from-disk, so a
-        # caller that wants to keep in-app work must save first.
-        for ui_node in self.ui_nodes.values():
-            ui_node.node.release()
-        self.ui_nodes = load_nodes_from_dir(self.paths.nodes_dir)
-        self._resolve_scripts()
-        # Keep the current node if it survived; else fall back to any node (or none).
+    def _seed_node_json_mtimes(self) -> None:
+        # Baseline the sync cache from the just-loaded nodes, so sync_nodes_from_disk's first frame
+        # sees no spurious "changed". A node whose dir/json vanished between load and seed is skipped.
+        self._node_json_mtimes = {}
+        for node_id in self.ui_nodes:
+            meta = self.paths.nodes_dir / node_id / "node.json"
+            try:
+                self._node_json_mtimes[node_id] = meta.lstat().st_mtime
+            except OSError:
+                continue
+
+    def sync_nodes_from_disk(self) -> None:
+        # Per-frame node-dir watcher: disk is the source of truth, so reconcile ui_nodes to it.
+        # Globs nodes/*/ + diffs each dir's node.json mtime against the cache, then ADDS new dirs,
+        # REMOVES vanished ones, and RE-READS a dir whose node.json changed (a new uniform value /
+        # ui_state / canvas size edited externally). Shader TEXT of a loaded node is NOT handled here
+        # — reload_node_if_changed (ui.py) already hot-reloads it by source mtime; script.py likewise
+        # rides reload_scripts. So this owns exactly the three things those miss: dir add/remove +
+        # node.json. Cheap when nothing changed: one glob + a stat per dir.
+        current: dict[str, float] = {}
+        for node_dir in self.paths.nodes_dir.iterdir():
+            meta = node_dir / "node.json"
+            if not node_dir.is_dir() or not meta.is_file():
+                continue
+            try:
+                current[node_dir.name] = meta.lstat().st_mtime
+            except OSError:
+                continue
+
+        removed = [nid for nid in self.ui_nodes if nid not in current]
+        added = [nid for nid in current if nid not in self.ui_nodes]
+        changed = [
+            nid
+            for nid, mtime in current.items()
+            if nid in self.ui_nodes and self._node_json_mtimes.get(nid) != mtime
+        ]
+        if not (removed or added or changed):
+            return
+
+        for node_id in removed:
+            path = self.ui_nodes[node_id].node.source.path
+            self.ui_nodes.pop(node_id).node.release()
+            self.script_engine.drop_node(node_id)
+            self._node_json_mtimes.pop(node_id, None)
+            self._on_node_deleted(node_id, path)
+
+        for node_id in added + changed:
+            self._load_one_node_from_disk(node_id)
+            self._node_json_mtimes[node_id] = current[node_id]
+
+        # A removed dir may have dropped the current node; reselect (mirrors _delete_node_unguarded).
         if self.current_node_id not in self.ui_nodes:
             self.set_current_node_id(next(iter(self.ui_nodes), ""))
-        self._on_nodes_reloaded()
-        logger.info(f"Reloaded {len(self.ui_nodes)} nodes from disk")
+
+        logger.debug(
+            f"Node sync: +{len(added)} -{len(removed)} ~{len(changed)} (now {len(self.ui_nodes)})"
+        )
+
+    def _load_one_node_from_disk(self, node_id: str) -> None:
+        # (Re)read one node dir from disk and install it: release a prior live copy, load fresh,
+        # re-resolve its scripts + wire hooks, then push the disk shader text into any open editor.
+        old = self.ui_nodes.get(node_id)
+        if old is not None:
+            old.node.release()
+        ui_node = load_node_from_dir(self.paths.nodes_dir / node_id)
+        self.ui_nodes[node_id] = ui_node
+        self.script_engine.reload(
+            node_id, self.paths.scripts_dir_for(node_id), ui_node.node
+        )
+        self._wire_node_hooks(node_id, ui_node.node)
+        self._on_node_source_synced(node_id, ui_node.node.source.text)
 
     def _wire_node_hooks(self, node_id: str, node: Node) -> None:
         # Inject the export-isolation factory (Node.render_media enters it around every export, so an
