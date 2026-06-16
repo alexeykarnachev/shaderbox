@@ -182,6 +182,15 @@ and probes the agent's self-review.
   `scripts/dogfood/harness.py` before the shaderbox imports, AND re-run whenever `scripts.dogfood` is
   imported. A caller-set `SHADERBOX_DATA_DIR` WINS (the `setdefault` no-ops) — so on resume you MUST pass it
   on the command line, never assign it in-script after import.
+- **🔴 `COPILOT_CONFIG` overrides must be set AFTER `DogfoodHarness.create()`, not before.**
+  `ProjectSession.__init__` calls `integrations_store.copilot.apply_limits()`, which pushes the
+  persisted integrations.json limits onto the shared `COPILOT_CONFIG` — clobbering any pre-create
+  override. To force a limit for a run (e.g. a low `clean_edit_hard_streak` to provoke the churn
+  hard-stop, or a low `max_iterations`): `h = DogfoodHarness.create()` THEN
+  `COPILOT_CONFIG.clean_edit_hard_streak = 3`. A pre-create assignment silently runs with defaults
+  (verified 2026-06-16 — cost a wasted turn). NOTE: a well-behaved cheap model self-limits on the soft
+  nudge and won't naturally spiral, so the hard-stop / max_iterations / forced-turn-end paths REQUIRE
+  such an override to exercise live.
 - **Resume = same project_dir + same SHADERBOX_DATA_DIR.** `create(project_dir=<existing>)` skips seeding,
   reloads the shaders, restores the conversation from `<project_dir>/copilot/conversation.json` (zero LLM
   calls). The data dir (lib + integrations) is separate and env-only — both must point at turn 1's dirs or

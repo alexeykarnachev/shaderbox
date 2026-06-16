@@ -58,6 +58,7 @@ class _FakeCaps:
     switch_node: Callable[[str], SwitchNodeResult]
     render_image: Callable[[str, int, int], RenderResult]
     render_video: Callable[[str, float, int, int, int], RenderResult]
+    probe_render: Callable[[str, float], str]
     publish_telegram: Callable[[str], PublishResult]
     publish_youtube: Callable[[str, str, bool], PublishResult]
     has_current_node: Callable[[], bool]
@@ -94,6 +95,7 @@ def minimal_caps(**overrides: Any) -> CopilotCapabilities:
         "switch_node": lambda _n: SwitchNodeResult(ok=True),
         "render_image": lambda _n, _w, _h: RenderResult(ok=True),
         "render_video": lambda _n, _s, _f, _w, _h: RenderResult(ok=True),
+        "probe_render": lambda _n, _t: "render@t=0.0s: ink 0% (probe)",
         "publish_telegram": lambda _e: PublishResult(ok=True),
         "publish_youtube": lambda _t, _d, _s: PublishResult(ok=True),
         "has_current_node": lambda: True,

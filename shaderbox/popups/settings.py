@@ -241,9 +241,17 @@ _COPILOT_LIMITS: list[tuple[str, str, str, int, int]] = [
     ),
     (
         "Clean-edit hint after",
-        "max_clean_edit_streak",
-        "Consecutive clean edits in one turn before a one-time 'stop and let the "
-        "user look' hint — brakes blind aesthetic tweak sprees. 0 = off.",
+        "clean_edit_soft_streak",
+        "Consecutive clean edits on one file in a turn before an escalating 'stop and "
+        "let the user look / finish in one write_shader' hint. 0 = off.",
+        0,
+        1,
+    ),
+    (
+        "Clean-edit hard stop after",
+        "clean_edit_hard_streak",
+        "Consecutive clean edits on one file in a turn before the turn is force-ended "
+        "(the agent returns to you). Should exceed the hint threshold. 0 = off.",
         0,
         1,
     ),

@@ -46,6 +46,7 @@ CANONICAL_TOOLS: frozenset[str] = frozenset(
         "switch_node",
         "grep",
         "read_lib",
+        "probe_render",
         "render_image",
         "render_video",
         "publish_telegram",
@@ -77,6 +78,7 @@ REACHABLE_TOOLS: tuple[str, ...] = (
     "switch_node",
     "grep",
     "read_lib",
+    "probe_render",
     "render_image",
     "render_video",
 )

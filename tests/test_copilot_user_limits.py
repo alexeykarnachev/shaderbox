@@ -19,7 +19,8 @@ _LIMIT_FIELDS = (
     "max_tokens_per_turn",
     "max_edit_retries",
     "max_compile_failures",
-    "max_clean_edit_streak",
+    "clean_edit_soft_streak",
+    "clean_edit_hard_streak",
     "auto_revert_after_failed_edits",
 )
 
@@ -50,7 +51,8 @@ def test_apply_limits_reaches_the_live_config_with_floors() -> None:
             max_tokens_per_turn=8_000,
             max_edit_retries=2,
             max_compile_failures=0,  # 0 = off, legal
-            max_clean_edit_streak=9,
+            clean_edit_soft_streak=9,
+            clean_edit_hard_streak=15,
             auto_revert_after_failed_edits=0,
         ).apply_limits()
         assert COPILOT_CONFIG.max_iterations == 1
@@ -58,16 +60,18 @@ def test_apply_limits_reaches_the_live_config_with_floors() -> None:
         assert COPILOT_CONFIG.max_tokens_per_turn == 8_000
         assert COPILOT_CONFIG.max_edit_retries == 2
         assert COPILOT_CONFIG.max_compile_failures == 0
-        assert COPILOT_CONFIG.max_clean_edit_streak == 9
+        assert COPILOT_CONFIG.clean_edit_soft_streak == 9
+        assert COPILOT_CONFIG.clean_edit_hard_streak == 15
         assert COPILOT_CONFIG.auto_revert_after_failed_edits == 0
     finally:
         _restore(snap)
 
 
 def test_round_trip_preserves_limit_fields() -> None:
-    cfg = CopilotIntegration(max_clean_edit_streak=11)
+    cfg = CopilotIntegration(clean_edit_soft_streak=11, clean_edit_hard_streak=20)
     again = CopilotIntegration.model_validate(cfg.model_dump())
-    assert again.max_clean_edit_streak == 11
+    assert again.clean_edit_soft_streak == 11
+    assert again.clean_edit_hard_streak == 20
 
 
 def test_zero_disables_clean_streak_nudge() -> None:
@@ -76,7 +80,7 @@ def test_zero_disables_clean_streak_nudge() -> None:
         "edit_shader",
         '{"old_str": "vec3 p = u_pos;", "new_str": "vec3 p = u_pos;"}',
     )
-    n_clean = COPILOT_CONFIG.max_clean_edit_streak + 4
+    n_clean = COPILOT_CONFIG.clean_edit_soft_streak + 4
     scripts: list[list[LLMStreamEvent]] = [edit] * n_clean + [
         [LLMTextDelta("done"), LLMDone("stop")]
     ]
@@ -91,7 +95,7 @@ def test_zero_disables_clean_streak_nudge() -> None:
         def event(self, kind: str, **fields: object) -> None:
             nudge_events.append(kind)
 
-    config = replace(COPILOT_CONFIG, max_clean_edit_streak=0)
+    config = replace(COPILOT_CONFIG, clean_edit_soft_streak=0, clean_edit_hard_streak=0)
     events = list(
         run_turn(
             _FakeClient(scripts),

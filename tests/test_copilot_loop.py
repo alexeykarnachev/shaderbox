@@ -8,6 +8,7 @@ feeds results back, and terminates on the clean compile with the final text.
 import json
 import threading
 from collections.abc import Iterator
+from dataclasses import replace
 from pathlib import Path
 
 from shaderbox.copilot.agent import (
@@ -931,16 +932,20 @@ class _CapturingClient(_FakeClient):
         return super().stream(messages, tools=tools, max_tokens=max_tokens)
 
 
-def test_clean_edit_streak_nudges_once() -> None:
-    # The render-blind spree brake (034): max_clean_edit_streak consecutive CLEAN edits in one
-    # turn splice a one-time "let the user look" nudge — never a giveup, latched per turn.
+def test_clean_edit_streak_fact_escalates_past_soft_threshold() -> None:
+    # The render-blind spree brake (feature 050): consecutive CLEAN edits on ONE file ride an
+    # ESCALATING per-file fact once past the SOFT threshold (replacing the blown-past one-shot
+    # nudge) - it fires on EVERY edit past the line, not once, while staying under the hard stop.
     edit = _tool_call(
         "cx",
         "edit_shader",
         '{"old_str": "vec3 p = u_pos;", "new_str": "vec3 p = u_pos;"}',
     )
-    cap = COPILOT_CONFIG.max_clean_edit_streak
-    n_clean = cap + 4
+    soft = COPILOT_CONFIG.clean_edit_soft_streak
+    n_clean = soft + 3  # past soft, under the hard stop
+    config = replace(
+        COPILOT_CONFIG, clean_edit_hard_streak=0
+    )  # hard stop off for this test
     scripts: list[list[LLMStreamEvent]] = [edit] * n_clean + [
         [LLMTextDelta("Tweaked it."), LLMDone("stop")]
     ]
@@ -960,7 +965,7 @@ def test_clean_edit_streak_nudges_once() -> None:
         run_turn(
             _FakeClient(scripts),
             registry,
-            COPILOT_CONFIG,
+            config,
             _fake_context(),
             history=[],
             user_text="make it prettier",
@@ -972,8 +977,90 @@ def test_clean_edit_streak_nudges_once() -> None:
 
     cards = [e for e in events if isinstance(e, AgentToolCard)]
     assert len(cards) == n_clean and all(c.ok for c in cards)
-    assert nudge_events.count("clean_streak_nudge") == 1
+    # The fact fires on every edit at/after the soft threshold (n_clean - soft + 1), not once.
+    assert nudge_events.count("clean_streak_nudge") == n_clean - soft + 1
     assert isinstance(events[-1], AgentTurnDone)
+
+
+def test_clean_edit_hard_stop_force_ends_turn() -> None:
+    # Past the HARD threshold the turn force-ends (the lone soft nudge was blown past in a 16-edit
+    # spiral) - a well-formed AgentError with an honest engine-cause note, not a user-pause framing.
+    edit = _tool_call(
+        "cx",
+        "edit_shader",
+        '{"old_str": "vec3 p = u_pos;", "new_str": "vec3 p = u_pos;"}',
+    )
+    hard = 5
+    config = replace(
+        COPILOT_CONFIG, clean_edit_soft_streak=2, clean_edit_hard_streak=hard
+    )
+    # The model WANTS to keep editing forever; the engine must cut it off at `hard`.
+    scripts: list[list[LLMStreamEvent]] = [edit] * 30
+    caps = _fake_caps(edit_errors=[[]] * 30)
+    registry = build_registry(caps)
+
+    events = list(
+        run_turn(
+            _FakeClient(scripts),
+            registry,
+            config,
+            _fake_context(),
+            history=[],
+            user_text="tweak forever",
+            gate=GateChannel(),
+            cancel=threading.Event(),
+            trace=TraceLog(Path()),
+        )
+    )
+
+    cards = [e for e in events if isinstance(e, AgentToolCard)]
+    assert len(cards) == hard  # force-ended exactly at the hard cap, not 30
+    last = events[-1]
+    assert isinstance(last, AgentError)
+    # Well-formed turn-end: summary carries the cutoff note + stats are present (not a bare turn).
+    assert last.summary.reply == last.message
+    assert last.stats is not None
+    assert "engine" in last.message.lower() and "not a pause" in last.message.lower()
+
+
+def test_write_shader_resets_clean_streak() -> None:
+    # write_shader (the sanctioned whole-file convergence) RESETS a file's clean-edit streak, so
+    # the corrective rewrite the soft fact STEERS toward never trips the hard stop (feature 050).
+    edit = _tool_call(
+        "cx",
+        "edit_shader",
+        '{"old_str": "vec3 p = u_pos;", "new_str": "vec3 p = u_pos;"}',
+    )
+    write = _tool_call("cw", "write_shader", '{"new_text": "vec3 p = u_pos;"}')
+    hard = 4
+    config = replace(
+        COPILOT_CONFIG, clean_edit_soft_streak=2, clean_edit_hard_streak=hard
+    )
+    # hard-1 edits, then a write (resets), then hard-1 more edits, then done: never hits `hard`.
+    pattern: list[list[LLMStreamEvent]] = (
+        [edit] * (hard - 1) + [write] + [edit] * (hard - 1)
+    )
+    scripts = [*pattern, [LLMTextDelta("done"), LLMDone("stop")]]
+    caps = _fake_caps(edit_errors=[[]] * len(pattern))
+    registry = build_registry(caps)
+
+    events = list(
+        run_turn(
+            _FakeClient(scripts),
+            registry,
+            config,
+            _fake_context(),
+            history=[],
+            user_text="converge",
+            gate=GateChannel(),
+            cancel=threading.Event(),
+            trace=TraceLog(Path()),
+        )
+    )
+    # No force-end: the write reset the streak, so 2*(hard-1) edits never reach `hard` in a row.
+    assert isinstance(events[-1], AgentTurnDone)
+    cards = [e for e in events if isinstance(e, AgentToolCard)]
+    assert len(cards) == len(pattern)
 
 
 class _CancellingClient:

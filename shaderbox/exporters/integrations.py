@@ -63,7 +63,8 @@ class CopilotIntegration(BaseModel):
     max_tokens_per_turn: int = CopilotConfig.max_tokens_per_turn
     max_edit_retries: int = CopilotConfig.max_edit_retries
     max_compile_failures: int = CopilotConfig.max_compile_failures
-    max_clean_edit_streak: int = CopilotConfig.max_clean_edit_streak
+    clean_edit_soft_streak: int = CopilotConfig.clean_edit_soft_streak
+    clean_edit_hard_streak: int = CopilotConfig.clean_edit_hard_streak
     auto_revert_after_failed_edits: int = CopilotConfig.auto_revert_after_failed_edits
 
     model_config = {"extra": "forbid"}
@@ -76,7 +77,8 @@ class CopilotIntegration(BaseModel):
             max_tokens_per_turn=self.max_tokens_per_turn,
             max_edit_retries=self.max_edit_retries,
             max_compile_failures=self.max_compile_failures,
-            max_clean_edit_streak=self.max_clean_edit_streak,
+            clean_edit_soft_streak=self.clean_edit_soft_streak,
+            clean_edit_hard_streak=self.clean_edit_hard_streak,
             auto_revert_after_failed_edits=self.auto_revert_after_failed_edits,
         )
 

@@ -86,9 +86,9 @@ FEEDBACK (what you can see)
   rgba(...)` = the whole frame is one color: a BLANK or a full-screen FILL — the reported color
   (alpha included) tells you which. USE the facts: bbox hugging an edge =
   off-center; x 0.00-1.00 = touching both edges (overflow?); unexpected FLAT black = the change
-  didn't take. t is the sample time — compare t across facts before crediting a delta to your
-  edit (an animated shader changes with phase on its own). They can't see orientation/mirroring
-  or judge beauty.
+  didn't take. An edit's auto-probe is at t=0 (the export clock); to look at another moment of an
+  ANIMATED shader, call `probe_render(node?, t)` — a FREE read-only look (NOT the gated render_image)
+  returning the same facts line at your chosen t. They can't see orientation/mirroring or judge beauty.
 - No real vision: you cannot judge beauty/readability — the user's eye is the final check; never
   claim how it LOOKS beyond what the facts show.
 - Uniform values: check the working-set `uniforms:` row before claiming a value changed. For a

@@ -259,19 +259,6 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   derives from `description`'s first sentence; if that proves too long, add `brief: str = ""` to
   `ToolDefinition` then (defaulted ⇒ pure addition; resolver `d.brief or first_sentence(d.description)`).
 
-## [DEFERRAL] copilot edit-churn brake (039 follow-up) — churn shown STOCHASTIC, do not build yet
-- **Trigger:** a third dogfood run showing a >10-iteration single-file clean-edit spree (the 039
-  gate run's turns 3/5/6/8 shape), OR a user report of the copilot "making many tiny edits".
-- Evidence (two runs, codex-mini, 2026-06-12): gate run drew micro-edit spirals (9-17 iterations per churn turn
-  per function rewrite, $0.04/turn — cost is iterations x context, NOT old_str re-quoting); the
-  same asks re-run cost $0.0025-$0.0065 with 2-4 iterations — cheaper than the line-tools
-  baseline on every shape. The existing `max_clean_edit_streak` nudge bounded the bad draw. If
-  the trigger fires, the levers (in order): a per-FILE clean-streak fact in the tool result
-  ("N edits in a row on this file — finish in ONE write_shader"), + a same-file batch steer in
-  `_EDIT_SHADER_DESC` (multiple edits per step — the engine already applies them in order).
-  Cache telemetry is in place (`LLMUsage.cached_tokens`, trace `cache=`, analyzer Cache line);
-  prefix cache already hits ~68% via the volatility-ordered prompt — little headroom there.
-
 ## [DEFERRAL] copilot agent-level error recovery — probes RUN (mega run, 2026-06-11); THRASH itself never reached
 - **Trigger:** the first trace/user report of the copilot looping on broken COMPILES (the one class the
   mega run could not provoke — codex-mini recovers every compile error in 1-2 steps, so the

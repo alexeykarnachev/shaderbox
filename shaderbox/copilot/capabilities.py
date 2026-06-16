@@ -331,6 +331,11 @@ class CopilotCapabilities(Protocol):
         self, node: str, seconds: float, fps: int, width: int, height: int, /
     ) -> RenderResult: ...
 
+    # The aimable read-side probe (feature 050): a one-line facts string off a tiny offscreen
+    # render at a chosen `t` (default 0.0). UN-gated + non-mutating, unlike render_image. Returns
+    # ready-to-read text (the facts line, or an honest error/empty note).
+    def probe_render(self, node: str, t: float, /) -> str: ...
+
     # Render with the exporter's own preset, then enqueue the upload + AWAIT its terminal
     # progress (the method does the bridge-marshalled poll).
     def publish_telegram(self, emoji: str, /) -> PublishResult: ...

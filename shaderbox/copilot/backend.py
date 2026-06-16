@@ -17,7 +17,6 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
-import glfw
 import moderngl
 from loguru import logger
 from OpenGL.GL import GL_SAMPLER_2D, GL_UNSIGNED_INT
@@ -1105,6 +1104,22 @@ class CopilotBackend:
             _on_main, timeout=COPILOT_CONFIG.render_op_timeout_s, defer=True
         )
 
+    def probe_render(self, node: str, t: float) -> str:
+        # The aimable read-side probe (feature 050): the same one-line facts string the edit path
+        # produces, at a chosen `t` (default 0.0 = the export clock). UN-gated + non-mutating - the
+        # render-blind agent glances here as often as it likes, vs render_image (gated, writes a
+        # deliverable file). Returns a ready-to-read facts line, or an honest "couldn't render" note.
+        def _on_main() -> str:
+            ui_node = self._copilot_render_target(node)
+            if ui_node is None:
+                return f"error: no such node '{node}'"
+            facts = self._render_facts_for(ui_node.node, t=t)
+            return facts or "probe rendered, but produced no readable facts (advisory)."
+
+        return self._bridge.run_on_main(
+            _on_main, timeout=COPILOT_CONFIG.render_op_timeout_s, defer=True
+        )
+
     def _copilot_render_target(self, node: str) -> UINode | None:
         node_id = (
             self._copilot_resolve_node_id(node) if node else self._get_current_node_id()
@@ -1504,12 +1519,14 @@ class CopilotBackend:
             render_facts=facts,
         )
 
-    def _render_facts_for(self, node: Node, t: float | None = None) -> str:
+    def _render_facts_for(self, node: Node, t: float = 0.0) -> str:
         # Best-effort probe render -> one facts line (feature 033). Runs on the main
         # thread (bridge-marshalled callers) with the GL context current. Never raises
-        # into the edit path — facts are advisory. `t` is the render clock (default
-        # glfw.get_time() — 0 headless): ONE source for both node.render(u_time=) AND the stamp,
-        # so a script-probe caller passing its sample time can't disagree with the rendered frame.
+        # into the edit path — facts are advisory. `t` is the render clock, DEFAULT 0.0 (the
+        # export clock the user renders, NOT wall-clock — feature 050: a wall-clock probe drifts
+        # with app uptime, so its facts can't be correlated with what the user sees). ONE source
+        # for both node.render(u_time=) AND the stamp, so a caller passing its sample time (a
+        # script probe, the probe_render tool) can't disagree with the rendered frame.
         if not COPILOT_CONFIG.render_facts_enabled:
             return ""
         try:
@@ -1522,7 +1539,7 @@ class CopilotBackend:
                 self._probe_canvas = Canvas(size=(size, h))
             else:
                 self._probe_canvas.set_size((size, h))
-            render_t = glfw.get_time() if t is None else t
+            render_t = t
             node.render(u_time=render_t, canvas=self._probe_canvas)
             raw = self._probe_canvas.texture.read()
             facts = render_facts(raw, size, h)

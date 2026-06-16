@@ -35,12 +35,20 @@ _MODEL_INCOMPATIBLE_MSG = (
     "Settings -> Integrations -> Copilot."
 )
 
-_FINAL_REPLY_NUDGE = (
-    "[engine] Tool budget exhausted for this turn. Reply to the USER now, plain text: "
-    "address their request directly — state the file's NET state vs the start of the turn "
-    "(the working set below is the live truth), what is still missing. Do not state "
-    "intentions as done and do not claim visual results. Short. No tool calls."
-)
+
+def _final_reply_nudge(cause: str) -> str:
+    # The closing no-tools nudge at a FORCED turn-end. `cause` names the ENGINE limit that ended
+    # the turn (NOT a user pause) so the reply owns the stop ("I hit my own limit and stopped")
+    # instead of crediting the user with a pause they didn't make (feature 050: the "you're right
+    # to pause now" misattribution). Stays plain ASCII - it is engine text injected as the user.
+    return (
+        f"[engine] {cause} (this is an engine limit, NOT a pause the user asked for). The turn "
+        "is ending now. Reply to the USER, plain text: tell them you hit your own limit and "
+        "stopped, state the file's NET state vs the start of the turn (the working set below is "
+        "the live truth) and what is still missing, and ask if they want you to continue. Do not "
+        "state intentions as done and do not claim visual results. Short. No tool calls."
+    )
+
 
 _COMPILE_THRASH_NUDGE = (
     "\n\n[hint] That's several edits in a row that applied but still left compile errors. "
@@ -49,11 +57,29 @@ _COMPILE_THRASH_NUDGE = (
     "a single block in a large file)."
 )
 
-_CLEAN_STREAK_NUDGE = (
-    "\n\n[hint] That's many clean edits in one turn that the user has not seen — and you "
-    "cannot see the visual result either. Unless something is still broken, STOP here: reply "
-    "with a short summary of what you changed and let the user look before iterating further."
-)
+
+def _clean_streak_fact(n: int) -> str:
+    # Escalating per-file nudge: rides EVERY clean edit_shader result past the soft threshold,
+    # getting more imperative — the one-shot version (a single soft nudge) was blown past in a
+    # 16-edit spiral. The model is render-blind, so nothing else brakes a clean micro-edit spree.
+    return (
+        f"\n\n[hint] {n} clean edits to this file in a row, none of which the user has seen "
+        "(and you can't see the visual result either). Unless something is still broken, STOP: "
+        "if more changes remain, make them in ONE write_shader, then reply with a short summary "
+        "and let the user look before iterating further."
+    )
+
+
+def _edit_target_key(name: str, args: dict[str, object]) -> str:
+    # The per-file key for the clean-edit streak: an edit's `target` (empty = the current node,
+    # keyed to a stable sentinel so consecutive no-target edits count as ONE file). Two edits to
+    # the same file share a streak; switching files starts a fresh one. The key is the RAW target
+    # string, not a resolved node id (run_turn has no resolver in scope), so editing one node both
+    # by-empty and by-its-id splits the streak across two keys and the brake counts slower for that
+    # file. Harmless: it only DELAYS the brake (never disables it), and a real spree uses one
+    # addressing style throughout. Resolve to a canonical id here if a trace ever shows the split.
+    target = str(args.get("target", "")).strip()
+    return target or "<current>"
 
 
 def _trunc(text: str, limit: int) -> str:
@@ -381,10 +407,9 @@ def run_turn(
     compile_nudge_sent = (
         False  # latched once the nudge fires; re-armed by a non-thrash step
     )
-    clean_edits_this_turn = (
-        0  # cumulative clean source edits (the render-blind spree brake)
-    )
-    clean_streak_nudge_sent = False  # once per turn
+    clean_edits_by_file: dict[
+        str, int
+    ] = {}  # per-file clean edit_shader streak (spree brake)
     first_input_tokens: int | None = None  # iter-0 context size for the usage bar
     logger.info(f"copilot turn start | user={_trunc(user_text, 80)!r}")
     logger.debug(
@@ -401,15 +426,16 @@ def run_turn(
 
     final_reply_text: list[str] = []
 
-    def stream_final_reply() -> "Iterator[AgentEvent]":
-        # One extra NO-TOOLS stream so a budget-exhausted turn still ends with the model
-        # addressing the USER (3/10 round-3 turns ended silent — feature 033). Appends
-        # nothing durable; usage folds into the turn total.
+    def stream_final_reply(cause: str) -> "Iterator[AgentEvent]":
+        # One extra NO-TOOLS stream so a forced turn-end still ends with the model addressing the
+        # USER (3/10 round-3 turns ended silent — feature 033). `cause` names the engine limit so
+        # the closing reply owns the stop, not the user (feature 050). Appends nothing durable;
+        # usage folds into the turn total.
         nonlocal usage
         request_messages = (
             messages
             + render_scratchpad()
-            + [LLMMessage(role="user", content=_FINAL_REPLY_NUDGE)]
+            + [LLMMessage(role="user", content=_final_reply_nudge(cause))]
         )
         tr.event(
             "llm_request",
@@ -613,7 +639,7 @@ def run_turn(
                         ),
                     )
                     return
-                yield from stream_final_reply()
+                yield from stream_final_reply("You reached the per-turn token budget")
                 reply = final_reply_text[-1] if final_reply_text else ""
                 if not reply:
                     reply = (
@@ -668,6 +694,9 @@ def run_turn(
         messages.append(_assistant_message(text_buf, calls))
         begin_batch()  # reset the per-batch rewrite guard
         giveup = False
+        clean_streak_giveup = (
+            False  # hard clean-edit cap: force-end the turn (vs the failed-edit giveup)
+        )
         for tc in calls:
             args = _parse_args(tc.arguments)
             if args is None:
@@ -809,44 +838,83 @@ def run_turn(
                 compile_nudge_sent = True
                 tr.event("compile_thrash_nudge", iteration=iteration)
 
-            # Render-blind spree brake: clean edits never trip either counter above, so a
-            # model iterating on AESTHETICS can stack them unbounded with the user seeing
-            # nothing. Cumulative per turn (a read/grep between edits is not user contact);
-            # one nudge per turn, while a broken compile is in flight the turn stays exempt
-            # (fixing comes first — those edits count toward the thrash nudge instead).
-            if registry.is_edit_tool(tc.name) and ok and not applied_with_errors:
-                clean_edits_this_turn += 1
-            if (
-                config.max_clean_edit_streak > 0
-                and clean_edits_this_turn >= config.max_clean_edit_streak
-                and not clean_streak_nudge_sent
-            ):
-                msg += _CLEAN_STREAK_NUDGE
-                clean_streak_nudge_sent = True
-                tr.event("clean_streak_nudge", iteration=iteration)
+            # Render-blind spree brake (per FILE): clean edit_shader edits never trip either
+            # counter above, so a model iterating on AESTHETICS can stack them unbounded with the
+            # user seeing nothing. A clean edit_shader on a file increments its streak; a CLEAN
+            # write_shader (the sanctioned whole-file convergence) RESETS it — finishing in one
+            # write must never be the straw that trips the hard stop. (A write that applies WITH
+            # errors isn't clean, so it neither counts nor resets — the turn is thrash-exempt while
+            # a compile is broken anyway.) While a broken compile is in flight the turn stays exempt
+            # (fixing comes first — those count toward the thrash nudge). At the soft threshold an
+            # escalating fact rides every result; at the hard threshold the turn force-ends (the lone
+            # soft nudge was blown past in a 16-edit spree).
+            clean_edit = (
+                registry.is_edit_tool(tc.name) and ok and not applied_with_errors
+            )
+            if clean_edit:
+                key = _edit_target_key(tc.name, args)
+                if tc.name == "write_shader":
+                    clean_edits_by_file[key] = 0
+                else:
+                    streak = clean_edits_by_file.get(key, 0) + 1
+                    clean_edits_by_file[key] = streak
+                    if (
+                        config.clean_edit_soft_streak > 0
+                        and streak >= config.clean_edit_soft_streak
+                    ):
+                        msg += _clean_streak_fact(streak)
+                        tr.event(
+                            "clean_streak_nudge", iteration=iteration, streak=streak
+                        )
+                    if (
+                        config.clean_edit_hard_streak > 0
+                        and streak >= config.clean_edit_hard_streak
+                    ):
+                        clean_streak_giveup = True
 
             messages.append(_tool_message(tc.id, msg))
 
             if consecutive_failed_edits >= config.max_edit_retries:
                 giveup = True
                 break
+            if clean_streak_giveup:
+                giveup = True
+                break
 
         if giveup:
-            logger.warning(
-                f"copilot edit giveup after {consecutive_failed_edits} failed "
-                f"edits | total_in={usage.input_tokens} "
-                f"cost=${usage.cost_usd:.6f}"
-            )
-            tr.event(
-                "edit_giveup",
-                consecutive_failed_edits=consecutive_failed_edits,
-                usage=usage,
-            )
-            note = (
-                f"I couldn't apply that edit after {consecutive_failed_edits} tries "
-                "— the edit kept not applying to the shader source. I've stopped to "
-                "avoid looping. Tell me to try again, or describe the change differently."
-            )
+            if clean_streak_giveup:
+                logger.warning(
+                    f"copilot clean-edit hard stop at {config.clean_edit_hard_streak} "
+                    f"edits on one file | total_in={usage.input_tokens} "
+                    f"cost=${usage.cost_usd:.6f}"
+                )
+                tr.event(
+                    "clean_streak_giveup",
+                    streak=config.clean_edit_hard_streak,
+                    usage=usage,
+                )
+                note = (
+                    f"[engine] I hit my own limit of {config.clean_edit_hard_streak} edits to "
+                    "one file in a turn (NOT a pause you asked for), so I stopped to keep from "
+                    "churning while you can't see the result. If more is needed, tell me to "
+                    "continue and I'll finish in one rewrite."
+                )
+            else:
+                logger.warning(
+                    f"copilot edit giveup after {consecutive_failed_edits} failed "
+                    f"edits | total_in={usage.input_tokens} "
+                    f"cost=${usage.cost_usd:.6f}"
+                )
+                tr.event(
+                    "edit_giveup",
+                    consecutive_failed_edits=consecutive_failed_edits,
+                    usage=usage,
+                )
+                note = (
+                    f"I couldn't apply that edit after {consecutive_failed_edits} tries "
+                    "- the edit kept not applying to the shader source. I've stopped to "
+                    "avoid looping. Tell me to try again, or describe the change differently."
+                )
             applied = ran.applied_mutations(registry)
             if applied:
                 note += "\nWhat DID apply this turn:\n" + "\n".join(
@@ -887,7 +955,9 @@ def run_turn(
             ),
         )
         return
-    yield from stream_final_reply()
+    yield from stream_final_reply(
+        f"You reached the per-turn limit of {config.max_iterations} tool-call steps"
+    )
     tr.event(
         "turn_done",
         cutoff="max_iterations",

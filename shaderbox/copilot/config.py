@@ -25,11 +25,17 @@ class CopilotConfig:
     # apply); an edit that applies returns ok=True, so it never trips that cap — this catches the
     # apply-but-broken thrash separately. Not a giveup: the model usually recovers.
     max_compile_failures: int = 5
-    # Consecutive CLEAN source edits in one turn (applied, zero compile errors) before a
-    # one-time "stop and let the user look" nudge (0 = off). The model is render-blind, so
-    # nothing else brakes an unbounded aesthetic-tweak spree of individually-clean edits.
-    # Not a giveup; per-turn cumulative, no reset.
-    max_clean_edit_streak: int = 6
+    # Consecutive CLEAN edit_shader edits on ONE file in a turn before an ESCALATING "stop and
+    # let the user look / finish in one write_shader" fact rides each subsequent edit's result
+    # (0 = off). The model is render-blind, so nothing else brakes an unbounded aesthetic-tweak
+    # spree of individually-clean edits. Per-file; a write_shader resets it (the convergence
+    # escape hatch). Soft = advisory text; the hard cap below force-ends the turn.
+    clean_edit_soft_streak: int = 6
+    # Consecutive CLEAN edit_shader edits on ONE file in a turn before the engine FORCE-ENDS the
+    # turn (0 = off) — the hard stop the lone soft nudge couldn't enforce (a 16-edit spiral).
+    # Per-file; a write_shader resets it. Must exceed clean_edit_soft_streak to leave room for the
+    # advisory to work first.
+    clean_edit_hard_streak: int = 12
     # Headroom the history trim withholds for the per-turn working-set scratchpad, which is
     # spliced AFTER the trim runs and is otherwise invisible to it (feature 020·29 D10).
     scratchpad_reserve_tokens: int = 50_000
@@ -78,7 +84,8 @@ def apply_user_limits(
     max_tokens_per_turn: int,
     max_edit_retries: int,
     max_compile_failures: int,
-    max_clean_edit_streak: int,
+    clean_edit_soft_streak: int,
+    clean_edit_hard_streak: int,
     auto_revert_after_failed_edits: int,
 ) -> None:
     # The Settings -> live-config seam. Values arrive pre-clamped by the Settings UI;
@@ -88,7 +95,8 @@ def apply_user_limits(
     COPILOT_CONFIG.max_tokens_per_turn = max(1_000, max_tokens_per_turn)
     COPILOT_CONFIG.max_edit_retries = max(1, max_edit_retries)
     COPILOT_CONFIG.max_compile_failures = max(0, max_compile_failures)  # 0 = off
-    COPILOT_CONFIG.max_clean_edit_streak = max(0, max_clean_edit_streak)  # 0 = off
+    COPILOT_CONFIG.clean_edit_soft_streak = max(0, clean_edit_soft_streak)  # 0 = off
+    COPILOT_CONFIG.clean_edit_hard_streak = max(0, clean_edit_hard_streak)  # 0 = off
     COPILOT_CONFIG.auto_revert_after_failed_edits = max(
         0, auto_revert_after_failed_edits
     )  # 0 = off

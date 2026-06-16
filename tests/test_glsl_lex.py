@@ -6,6 +6,7 @@ the load-bearing ones — they prove the matcher REJECTS what it must, not only 
 matches what it should.
 """
 
+from shaderbox.copilot.backend import _splice
 from shaderbox.copilot.glsl_lex import (
     TokenKind,
     comments_in,
@@ -220,3 +221,88 @@ def test_guard_no_comment_in_span_never_fires() -> None:
     old = "float r = length(p);"
     (s, e), *_ = token_match(src, old)
     assert span_drops_comment(src, s, e, old) is False
+
+
+# --- feature 050: leading-comment span-grow (the duplicate-comment spiral root) ---
+
+_DUP_SRC = (
+    "void main() {\n"
+    "    vec2 p = fire_space(vs_uv, u_aspect);\n\n"
+    "    // Step 2: animate\n"
+    "    float heat = fire_heat_distorted(p, u_time);\n}\n"
+)
+
+
+def test_leading_comment_not_duplicated_by_splice() -> None:
+    # An edit whose old_str LEADS with a comment above its code: the matched span must include the
+    # comment so _splice REPLACES it, instead of leaving the file's original beside new_str's copy
+    # (the 1->2 duplication that spiraled to 16). Verified end-to-end on the real splice.
+    old = "    // Step 2: animate\n    float heat = fire_heat_distorted(p, u_time);\n"
+    new = (
+        "    // Step 2: animate\n"
+        "    // Step 3: shape\n"
+        "    float heat = fire_heat_distorted(p, u_time);\n"
+    )
+    spans = token_match(_DUP_SRC, old)
+    assert len(spans) == 1
+    out = _splice(_DUP_SRC, spans, new)
+    assert out.count("// Step 2: animate") == 1  # NOT 2
+
+
+def test_cleanup_of_dupes_converges_not_grows() -> None:
+    # A cleanup edit on an already-2-copy file collapses to 1 (not 3) and a re-run does not climb -
+    # the monotonic-growth spiral is structurally dead.
+    src = "void main() {\n    // Step 2\n        // Step 2\n    float heat = h(p);\n}\n"
+    old = "    // Step 2\n        // Step 2\n    float heat = h(p);\n"
+    new = "    // Step 2\n    float heat = h(p);\n"
+    out = _splice(src, token_match(src, old), new)
+    assert out.count("// Step 2") == 1
+
+
+def test_leading_comment_rename_still_lands() -> None:
+    # The false-positive direction: a legitimate comment RENAME (old label -> new label) must
+    # replace the label exactly once - no stray old label left above the span, no duplicate.
+    src = "void f() {\n    // old label\n    int x = 1;\n}\n"
+    old = "    // old label\n    int x = 1;\n"
+    new = "    // new label\n    int x = 1;\n"
+    out = _splice(src, token_match(src, old), new)
+    assert "old label" not in out
+    assert out.count("// new label") == 1
+
+
+def test_guard_still_fires_when_grown_span_drops_a_unique_comment() -> None:
+    # The grow must not weaken the guard: when old_str OMITS an interior comment the matched span
+    # covers (a genuine silent-loss), span_drops_comment STILL fires on the (possibly grown) span.
+    src = (
+        "void f() {\n    // header\n    int a = 1;\n    // keep me\n    int b = 2;\n}\n"
+    )
+    # old_str leads with '// header' (grown) but OMITS the interior '// keep me' between the code.
+    old = "    // header\n    int a = 1;\n    int b = 2;\n"
+    (s, e), *_ = token_match(src, old)
+    assert (
+        span_drops_comment(src, s, e, old) is True
+    )  # '// keep me' would be silently lost
+
+
+def test_trailing_comment_grow_does_not_duplicate() -> None:
+    # Symmetric to the leading case: old_str ending with a comment BELOW its last code token grows
+    # the span END forward so the splice replaces it, not duplicates it.
+    src = "void f() {\n    int x = 1;\n    // trailing note\n}\n"
+    old = "    int x = 1;\n    // trailing note\n"
+    new = "    int x = 2;\n    // trailing note\n"
+    out = _splice(src, token_match(src, old), new)
+    assert out.count("// trailing note") == 1
+    assert "int x = 2;" in out
+
+
+def test_block_comment_not_grown_known_limit() -> None:
+    # KNOWN LIMIT: the grow walks LONE single-line comments only; a multi-line /* */ block leading
+    # old_str is NOT grown, so a block-comment-led edit can still duplicate. Agents emit // section
+    # comments (the spiral's shape), never /* */ blocks, so this is parked, not fixed. This test
+    # PINS the current behavior so a future block-comment grow is a deliberate change, not a surprise.
+    src = "void f() {\n    /* note line1\n       note line2 */\n    int x = 1;\n}\n"
+    old = "    /* note line1\n       note line2 */\n    int x = 1;\n"
+    new = "    /* note line1\n       note line2 */\n    int x = 2;\n"
+    out = _splice(src, token_match(src, old), new)
+    # Not grown -> the block survives above AND new_str re-inserts it -> duplicated (the known limit).
+    assert out.count("note line1") == 2

@@ -167,11 +167,83 @@ def span_drops_comment(src: str, start: int, end: int, old_str: str) -> bool:
     return bool(span)
 
 
+def _edge_comments(old_str: str, leading: bool) -> list[str]:
+    # The normalized comment lines old_str quotes BEFORE its first code token (leading=True) or
+    # AFTER its last code token (leading=False). token_match anchors on code tokens only, so these
+    # edge comments fall OUTSIDE the matched span — _grow_span_over_comments pulls the span over the
+    # matching source comments so a splice replaces them instead of duplicating new_str's copies.
+    toks = glsl_lex(old_str)
+    if not toks:
+        return []
+    cut = toks[0].start if leading else toks[-1].end
+    region = old_str[:cut] if leading else old_str[cut:]
+    return comments_in(region)
+
+
+def _lone_comment(line: str) -> str | None:
+    # The single normalized comment of a line that is ONLY whitespace + one comment, else None.
+    if not line.strip().startswith(("//", "/*")):
+        return None
+    cs = comments_in(line)
+    return cs[0] if len(cs) == 1 else None
+
+
+def _comment_line_above(src: str, start: int) -> tuple[int, str] | None:
+    # The lone comment line immediately above the span, as (line_start_offset, normalized_comment),
+    # or None. The span START is grown back to line_start so the splice replaces the whole line.
+    line_end = src.rfind("\n", 0, start)
+    if line_end == -1:
+        return None
+    line_start = src.rfind("\n", 0, line_end) + 1
+    c = _lone_comment(src[line_start:line_end])
+    return (line_start, c) if c is not None else None
+
+
+def _comment_line_below(src: str, end: int) -> tuple[int, str] | None:
+    # The lone comment line immediately below the span, as (line_end_offset, normalized_comment),
+    # or None. The span END is grown forward to line_end so the splice replaces the whole line.
+    nl = src.find("\n", end)
+    if nl == -1:
+        return None
+    line_start = nl + 1
+    line_end = src.find("\n", line_start)
+    if line_end == -1:
+        line_end = len(src)
+    c = _lone_comment(src[line_start:line_end])
+    return (line_end, c) if c is not None else None
+
+
+def _grow_span_over_comments(
+    src: str, start: int, end: int, old_str: str
+) -> tuple[int, int]:
+    # Extend [start, end) over the source comment lines old_str quotes at its leading/trailing edge,
+    # so _splice REPLACES them instead of leaving the file's originals beside new_str's copies (the
+    # comment-duplication bug). Grows ONLY over comments old_str actually reproduces, matched in
+    # order against the immediately-adjacent source lines — never swallows an unquoted comment.
+    # LONE single-line (// or one-line /* */) comments only: a MULTI-LINE /* */ block at the edge is
+    # not grown (so a block-comment-led edit can still duplicate). Agents emit // section comments,
+    # never multi-line blocks, so it's parked; extend _comment_line_above/below to walk a block if it
+    # ever fires.
+    for want in reversed(_edge_comments(old_str, leading=True)):
+        above = _comment_line_above(src, start)
+        if above is None or above[1] != want:
+            break
+        start = above[0]
+    for want in _edge_comments(old_str, leading=False):
+        below = _comment_line_below(src, end)
+        if below is None or below[1] != want:
+            break
+        end = below[0]
+    return start, end
+
+
 def token_match(src: str, old_str: str) -> list[tuple[int, int]]:
     # Every contiguous source-token run whose (kind, raw) sequence equals old_str's, as a
     # (byte_start, byte_end) span into src. Anchored full-length, non-overlapping
     # left-to-right (matches str.replace). ALL matches returned so an ambiguous old_str
-    # surfaces as ">1" rather than a silent wrong-region edit.
+    # surfaces as ">1" rather than a silent wrong-region edit. Each span is grown over the
+    # leading/trailing comment lines old_str quotes (comments lex as trivia, so they'd otherwise
+    # sit outside the span and get duplicated by the splice).
     needle: list[Token] = glsl_lex(old_str)
     if not needle:
         return []  # empty/whitespace-only/comment-only old_str — never a zero-length span
@@ -183,7 +255,9 @@ def token_match(src: str, old_str: str) -> list[tuple[int, int]]:
     i: int = 0
     while i + k <= len(hay):
         if hay_keys[i : i + k] == key:
-            spans.append((hay[i].start, hay[i + k - 1].end))
+            spans.append(
+                _grow_span_over_comments(src, hay[i].start, hay[i + k - 1].end, old_str)
+            )
             i += k  # non-overlapping: resume past the consumed run
         else:
             i += 1
