@@ -26,26 +26,20 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-06-17 (v0.19.0 ship DROPPED; a /shader-lab fire session + a knowledge-harvest wave; no release pending). -->
-**ACTIVE: dev work on `dev`, no release pending.** The earlier v0.19.0 ship was **dropped** at the
-maintainer's call (itch's `/wharf` API was 500ing for the upload; rather than wait, the v0.19.0 tag was
-deleted local+remote — `pyproject` stays at 0.19.0, just a skipped label; next ship auto-picks the next
-bump). This session ran a `/shader-lab` **fire** effect end-to-end (domain-warp + noise-gated silhouette +
-scene-glow + flicker + depth + a 17s timed-reveal showcase with SDF-text step captions, Shorts 9:16) — it
-lives in the gitignored `projects/_lab/fire/` (not shipped). The durable output is knowledge + two real
-fixes that landed: the half-written-node-dir crash guard in `sync_nodes_from_disk`
-(`tests/test_node_dir_sync.py` 7/7) and math-symbol glyphs added to the text lib (`gen_glyphs.py` →
-`glyphs.glsl`, `( ) + = * / < > %`). Lessons harvested into their homes: a node-authoring recipe in
-`dev_flow.md ## Recipes`, two engine footguns in `conventions.md ## Known quirks`, shader-craft + the
-confirm-the-FORM rule in the `/shader-lab` skill.
+<!-- As of 2026-06-17 (v0.20.0 SHIPPED live to itch; clean on dev, no release pending). -->
+**ACTIVE: dev work on `dev`, no release pending.** v0.20.0 just shipped live to itch (both channels,
+per `butler status`) — it carries the node-dir live auto-sync (the content of the dropped v0.19.0) +
+this session's math-symbol glyphs + fixes (Shorts longest-edge, half-written-node-dir crash guard,
+`open_project` Path). The skipped **v0.19.0** label is permanently burnt (`make release` can't make a
+no-op-version commit, so the bump jumped past it to 0.20.0). `dev` == `master` == origin, tree clean.
 **NEXT (maintainer's pick):** the blocker to crack before shipping examples is the **example/project
 shader-library coupling** (local-vs-global lib — `todo.md` BLOCKER); feature **051** (shipped examples
 project + an Examples-picker modal) is DRAFTED but parked behind it. Or another `/shader-lab` session, or a
 `todo.md` item.
 
-**Last LIVE on itch (context):** v0.18.0 — feature 050 copilot edit-engine correctness (comment-dup span fix, churn brake,
-probe clock t=0 + `probe_render` tool, honest forced-turn-end) + the shader-lab skill. v0.19.0 was tagged then
-dropped (never went public); its content (node-dir live auto-sync) sits on `dev`, unreleased.
+**Last LIVE on itch (context):** v0.20.0 — node-dir live auto-sync + math-symbol text glyphs + fixes.
+(v0.19.0 was tagged then dropped at upload time and never went public — a permanently skipped label;
+its node-dir-live-sync content rode into v0.20.0.)
 
 **Just shipped (context):** v0.17.0 — hotkeys + script-play polish on v0.16.0's CPU-scripting subsystem (040-048 + 049).
 
