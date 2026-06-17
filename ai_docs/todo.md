@@ -31,20 +31,22 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
 
 ---
 
-## [BLOCKER] v0.19.0 is tagged + built but NOT yet uploaded to itch (upload pending itch recovery)
-- **Trigger:** fires NOW, and again the moment anyone reaches for `/ship` or thinks about the next
-  version — the v0.19.0 git tag + `release: v0.19.0` commit are pushed (`dev`==`master`==`origin` at
-  the release commit), both dist zips are built + verified clean, but the public itch build is STILL
-  on the PRIOR version. The itch upload failed on an itch.io `/wharf` API HTTP 500 (their backend
-  outage), so `butler push` never created the build.
-- **Resolve it (do this, NOT a new bump):** the version + tag already exist and are correct, so the
-  next ship is just the upload — when itch is back (`butler status where-is-your-keyboard/shaderbox`
-  returns without a 500), run `./build.sh && yes | ./upload-itch.sh` against the EXISTING v0.19.0
-  (no `make release`, no new tag), then `butler status` to confirm both channels show 0.19.0. Only
-  AFTER that is v0.19.0 actually shipped; delete this entry in the commit that confirms the upload.
-- **Do NOT** cut v0.20.0 / run `make release` again until this lands — that would orphan v0.19.0 as a
-  tag that never went public. This is the one legitimate "tag exists without a publish" mid-ship state
-  the ship flow anticipates (`/ship` skill ## The model), parked because of an external outage.
+## [BLOCKER] example/project shader-library coupling (local vs global lib) — blocks feature 051
+- **Trigger:** before plan-locking feature 051 (shipped examples project), OR the first time a shipped
+  example / a saved user project fails to compile after a shader-library change removed or changed a
+  `SB_*` function it depended on (the "I improved the lib and an old project broke" report).
+- A project's shaders depend on `SB_*` lib functions resolved from the SINGLE evolving global lib
+  (`shader_lib_root()`). The lib is intentionally not frozen (this session added math glyphs to
+  `glyphs.glsl`). So any shipped example — or any user project — is silently pinned to whatever lib
+  shape existed when it was authored, and a later lib release can break it; hand-maintaining that
+  compatibility forever is untenable. Maintainer's leaning (NOT designed): a **per-project local
+  library** so a project carries the lib version it was authored against. Unsolved + must stay simple:
+  where the local lib lives, what copies from where to where (global→project on create? on example
+  seed?), how `ShaderLibIndex`/`resolve_usage` pick local-vs-global, and doing it **robustly +
+  ergonomically** (user never thinks about local vs global) **without further tangling the code**.
+  This is the real blocker under feature 051; the examples feature (incl. the new Examples-picker
+  modal scope) waits on it. Design: `ai_docs/features/051_shipped_examples_project.md` (## Unresolved
+  core problem). Revisit per the maintainer ("in a couple of days").
 
 ## [DEFERRAL] copilot turn-rollback: a NEW mutating tool must register with the checkpoint
 - **Trigger:** before plan-locking any feature that adds a new MUTATING copilot tool (one that

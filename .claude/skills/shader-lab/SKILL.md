@@ -20,11 +20,18 @@ This is a **living skill**: every run, fix the steps you tripped on and add to `
 
 ## The ONE rule that matters most
 
-**NEVER overwrite a version. NEVER write your own visual conclusions into the notes.**
+**Confirm the FORM before you build. NEVER overwrite a previous version. NEVER write your own visual
+conclusions into the notes.**
 
-Both are the costly mistakes from the first session:
-- Overwriting the shader in place destroyed earlier versions — we couldn't go back, compare, or
-  watch the evolution. **Every step is a new versioned file.** (Versioning section below.)
+The costly mistakes from past sessions:
+- **Restate the structure the user described, in your own words, BEFORE generating anything — a wrong
+  mental model multiplies into N wrong artifacts.** (Asked for "one shader where steps reveal over
+  time", an entire turn was burnt building NINE separate nodes — the decomposition was right, the FORM
+  was wrong.) When the user describes a shape ("a single X that does Y over time", "steps that stack"),
+  say it back and get a nod before writing files.
+- Overwriting a shader in place destroyed earlier versions — we couldn't go back, compare, or watch
+  the evolution. **Each step is a NEW node** (project-native: a new `nodes/<id>/` grid cell). You
+  author a fresh node per version and never touch an existing one. (Versioning section below.)
 - "Looks like a good flame" from *your own* read of an image is unreliable — your visual judgment is
   poor. The notes log records the USER's feedback, your WEB findings, and concrete formulas — **never
   your own "this looks good/bad" conclusions.** (Notes section below.)
@@ -75,47 +82,54 @@ lib automatically.
 
 ShaderBox's per-frame mtime watcher (`watch.py::reload_node_if_changed`, called for EVERY loaded node
 in `ui.py::update_and_draw`) **recompiles a node the instant its `shader.frag.glsl` mtime changes on
-disk**, and `reload_scripts()` does the same for `script.py`. So if you rewrite the live node's shader
-file, **the preview updates live with no action from the user** — exactly the "watch it unfold"
-experience.
+disk**, and `reload_scripts()` does the same for `script.py`. AND ShaderBox reconciles `nodes/` to
+disk every frame (disk is the source of truth), so a node dir you CREATE / DELETE on disk syncs into
+the grid AUTOMATICALLY — no reload, no bookkeeping. Together that means:
 
-**The one requirement:** the node must ALREADY be loaded when the user opened the project. So:
-1. Create the project + the iteration node FIRST.
-2. User opens it in ShaderBox (loads the node into memory).
-3. You rewrite that node's shader each step → live recompile.
+- **A new version = a new node dir** → it just appears in the grid as a fresh cell, live.
+- **Editing a node's shader** → that cell recompiles in place.
 
-A node you create / edit / delete on disk AFTER the user opened the project now syncs into the app
-AUTOMATICALLY — ShaderBox reconciles `nodes/` to disk every frame (disk is the source of truth). So
-you can add an iteration node mid-session and it just appears; no reload step, no bookkeeping.
+So the flow is: user opens the project once; thereafter you write a new `nodes/<id>/` per step and it
+shows up on its own. The only requirement is that the project was opened (so the app is watching that
+dir); everything after is automatic.
 
 **The user will NOT edit the shader during iterations** (they only watch / may view the code / may
-have the editor focused). So there is no edit-collision to fear — you own the file, they observe.
+have the editor focused). So there is no edit-collision to fear — you own the files, they observe.
 
 ---
 
-## Versioning — keep EVERY step, never overwrite
+## Versioning — one NODE per step, never overwrite
 
-The live node the app renders is "current". Version history lives in a **separate `versions/` dir the
-app never loads**, so it can never be clobbered by the app's save-on-exit.
+Use the project's NATIVE layout — no parallel snapshot dir, no scaffolding. **Each step is its own
+node** under `nodes/`; the grid IS the version history. To preserve a version you simply leave its
+node alone; to make a new one you author a fresh node dir. You never overwrite an existing node, so
+nothing is ever lost.
 
 ```
 projects/_lab/<slug>/
-  nodes/<live-id>/shader.frag.glsl     # the CURRENT version (what the app renders live)
-  nodes/<live-id>/scripts/script.py    # current script, if any
-  versions/v01_base_gradient.frag.glsl # immutable snapshot of each step
-  versions/v02_warped_field.frag.glsl
-  versions/v02_warped_field.script.py  # if that version had a script
-  versions/...
-  NOTES.md                             # the experiment log (see below)
+  nodes/<id-1>/shader.frag.glsl   # v01 — its own grid cell, named "<effect> v01 (<short-name>)"
+  nodes/<id-2>/shader.frag.glsl   # v02
+  nodes/<id-3>/shader.frag.glsl   # v03
+  nodes/<id-3>/scripts/script.py  # if that version had a script
+  ...
+  NOTES.md                        # the experiment log (see below)
 ```
 
-**Each step:** (1) write the new shader to `versions/vNN_<short-name>.frag.glsl` (snapshot, immutable);
-(2) copy it onto the live node's `shader.frag.glsl` so the preview updates; (3) append a NOTES.md
-entry. To let the user **compare** an earlier version, copy that `versions/vNN…` back onto the live
-node — it hot-reloads in place, so the single preview shows whichever version you point it at.
+**Each step:** (1) create a NEW `nodes/<uuid>/` (copy the node.json shape from an existing node;
+set `ui_state.ui_name` to `"<effect> vNN (<short-name>)"` so the grid reads as a progression);
+(2) write its `shader.frag.glsl` (+ `scripts/script.py` if any) — the new cell appears in the grid
+automatically (per-frame `nodes/` sync); (3) append a NOTES.md entry. To let the user **compare**,
+all versions are already side-by-side as their own grid cells — no swapping needed.
 
-This is what makes "I like v3's tip but v5's color, take both" possible — every version is still on
-disk to diff and cherry-pick from.
+This is what makes "I like v3's tip but v5's color, take both" possible — every version is still a
+live node to diff and cherry-pick from.
+
+**Caveat — the app can re-save a node's files on exit/edit.** A node that's currently selected/edited
+in the app may get its `node.json`/shader rewritten from the app's in-memory state on shutdown. You
+own the files between sessions, so just be aware: if you hand-edit a node dir while the app holds it,
+reconcile (the app's per-frame disk-sync usually wins for an unselected node, but don't fight a node
+the user has open). In practice: author NEW nodes for new steps (never contended) and don't hand-edit
+a node the user is actively viewing.
 
 ---
 
@@ -179,6 +193,38 @@ labs if present.)
 
 ---
 
+## Shader craft — making an effect READ right (general, not effect-specific)
+
+Hard-won levers that apply to fire, smoke, water, lightning, energy — anything organic. Generalized
+from real maintainer corrections; the parenthetical is the evidence, not a prescription to copy.
+
+- **Shape from a thresholded/eroded NOISE field, not an SDF-primitive mask.** A circle/ellipse mask
+  reads as a static blob; an organic silhouette should emerge from the noise itself — gate a soft
+  envelope by the field and erode the edge. (A circle-union flame looked like a balloon; the
+  noise-gated one read as flame.)
+- **Domain-warp the noise for organic motion:** `fbm(p + k·fbm(p + k·fbm(p)))` curls where plain
+  `fbm` only clouds — the single biggest "reads as alive" lever for fluid/fire/smoke.
+- **For interior detail, feed the RAW continuous field to the colour ramp — don't threshold-then-fill.**
+  A binary burn mask × a flat colour = a flat slab; mapping the raw field through the ramp keeps the
+  internal veins/structure. (A whole iteration came out flat-yellow because the field was thresholded
+  into a mask, then filled.)
+- **Animate the BOUNDARY, not just the interior.** If the envelope is a static function of position
+  and only the texture inside scrolls, it reads as "static shape with stuff moving inside" — displace
+  the silhouette's sample point by a flow field so the whole outline licks/sways.
+- **Light a scene by what it CASTS, not by recolouring the emitter.** A flame's flicker belongs on the
+  glow it throws into the scene (a wide, scene-covering, sharp-falloff radial bloom), not on the flame
+  body's colour. (Maintainer: "the light spreads, it doesn't work like this" — the flicker was wrongly
+  on the body.)
+- **Self-illuminate anything meant to read on BLACK.** Smoke/haze over black has nothing to occlude →
+  invisible unless it emits a little. (And if it still won't read after a fair attempt, cutting it is a
+  legitimate call — don't ship an invisible feature.)
+- **Expose tunables as uniforms EARLY and hand tuning to the user.** When the right value is aesthetic,
+  STOP guess-rendering — add inline-default uniforms (auto-generates ImGui controls; `uint`/`int` → an
+  integer slider, `float` → a drag), let the user dial them live, then bake their chosen values back as
+  the new defaults. (Several blind tune-render cycles evaporated the moment the knobs were exposed and
+  the maintainer dialed it in one pass.) For the engine mechanics of node files / headless render /
+  compile-check / aspect, see `dev_flow.md ## Recipes > Authoring / debugging nodes directly`.
+
 ## CPU scripting (optional)
 
 A node can carry `scripts/script.py` = `class Behavior(ScriptBehavior)` with `update(self, ctx) -> dict`
@@ -205,9 +251,9 @@ The experiment's *output* is knowledge, not just a pretty node. At the end:
 - **Text-on-steps → YouTube short.** Render each step for a few seconds, layer them, add a short
   explanatory text caption per step, stitch into a Shorts video. The original end-goal; deferred until
   the core iteration loop is solid.
-- **Variant nodes → visual pick → aggregate.** Generate several variants of an idea in separate nodes,
-  let the user pick visually ("take the tip from this one, the color from that one"), then aggregate
-  the chosen parts into the main node and delete the intermediates. A richer compare/merge flow than
-  the linear `versions/` log.
+- **Variant nodes → visual pick → aggregate.** At a fork, generate several variants of one idea as
+  parallel sibling nodes (not just a linear chain), let the user pick visually ("take the tip from
+  this one, the color from that one"), then aggregate the chosen parts into a new node and delete the
+  rejected variants. A branching compare/merge flow on top of the linear node progression.
 - **Generalise the render helper into the app.** `render_node.py` is the lab's tool; a built-in
   "render this node to MP4 at size/duration" command in ShaderBox proper would remove the script.

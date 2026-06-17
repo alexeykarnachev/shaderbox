@@ -362,6 +362,35 @@ hangs / pops a window (it did, repeatedly, across a session). `make smoke` alrea
 can't judge anyway — hand it to a `make run` pass. If a headless assertion is truly needed, drive a
 narrow object or a bare GL+imgui context, never a whole `App`.
 
+### Authoring / debugging nodes directly (from Claude Code, no app/copilot)
+A node is just files on disk — `<project>/nodes/<uuid>/{node.json, shader.frag.glsl, scripts/script.py}`
++ `<project>/app_state.json` (format under "Node-dir data format" above). So you can author/edit/debug
+a node directly for ad-hoc shader work, a repro, or a `/shader-lab` session — no `App`, no copilot. The
+mechanics that avoid the foot-guns hit in practice:
+
+- **Write a node dir ATOMICALLY: `shader.frag.glsl` BEFORE `node.json`** (or temp-dir + rename). A
+  running app reconciles `nodes/` every frame (`sync_nodes_from_disk`); a dir with `node.json` but no
+  shader is a half-written node the sync tries to load. The sync now skips an incomplete dir (both
+  files required), but writing shader-first closes the window regardless of the user's build.
+- **Never `git checkout -- <file>` to undo your OWN uncommitted edit** mid-task (e.g. a verify step:
+  revert-fix → confirm-the-test-goes-red → restore). Checkout restores the *committed* version and
+  silently eats your uncommitted fix; re-apply via Edit instead.
+- **Render a node headless to eyeball it** (the loop the copilot can't run — it's render-blind, you
+  aren't): construct a `Node`, `node.canvas.set_size((w,h))`, `node.render(u_time=t, canvas=...)`,
+  `texture_to_pil(node.canvas.texture).save(...)` on a standalone EGL context (`backend="egl"`, with
+  `MESA_GL_VERSION_OVERRIDE=4.6 MESA_GLSL_VERSION_OVERRIDE=460` set BEFORE context creation).
+  `set_active(ShaderLibIndex.build(shader_lib_root()))` first so `SB_*` resolves. (`/shader-lab` ships
+  a ready `render_node.py` for the PNG/MP4 case; note it forces a SQUARE canvas — for a non-square
+  aspect, set the real size yourself.)
+- **Check a shader actually compiled** via `node.program is not None` after a `render()` — do NOT grep
+  stderr for "error": the harmless `GLFWError` import-probe warning matches it and yields false fails.
+- **Grep the live lib before calling an `SB_*`**: `grep -rE "SB_<name>" ~/.local/share/shaderbox/shader_lib/`.
+  A plausible-sounding name may not exist; it only fails at compile.
+- **Portrait / any aspect is just `canvas_size` + render resolution** — `u_aspect = w/h` and
+  `SB_center_uv` scales x by it, so a vertical effect keeps its proportions with NO shader change.
+- **Tuned uniform values persist only on SAVE** (node-switch / app shutdown), into `node.json`'s
+  `uniforms`. To read a user's live-tuned values off disk, have them save (switch nodes / close) first.
+
 ### `make check`
 The single canonical lint/typecheck command — delegates to `uv run pre-commit run --all-files`:
 ruff fix, ruff format, then **pyright** (chosen over mypy on purpose — fewer false positives, less

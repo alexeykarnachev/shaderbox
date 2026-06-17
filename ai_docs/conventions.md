@@ -606,6 +606,14 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   strategies then), so a big branchy `switch`/`if`-ladder pays its whole codegen as a one-time
   first-draw stall (the pre-032 inlined glyph switch: ~20 s) — a flat data-table lookup doesn't. Prefer
   data TABLES over branchy GLSL on any V3D path.
+  - **Two consequences when AUTHORING a shader that adds uniform arrays (e.g. text captions):**
+    (1) the glyph tables already consume most of the driver's constant-register budget (~600 of
+    ~1024 slots), so adding several/large `uniform <T> arr[N]` on top can overflow with
+    `C6020: Constant register limit exceeded` — keep added uniform arrays small + few, pack N strings
+    into one array rather than N arrays. (2) `gen_glyphs.py` regen requires an app **RESTART** to take
+    effect: the engine binds the table VALUES from `shaderbox/glyph_tables.py` (a Python module loaded
+    at startup, NOT hot-reloaded like a shader), so a running app keeps the old tables and renders
+    new-glyph text blank/garbage until relaunched.
 - **A `MESA_*` / `SHADERBOX_DATA_DIR` env override must be a MODULE-TOP side-effect set BEFORE the first
   `shaderbox` import, and fail LOUD if it can't be.** `MESA_GL_VERSION_OVERRIDE` /
   `MESA_GLSL_VERSION_OVERRIDE` (lifting the reported GL version to 4.6/460 so `#version 460` compiles on
