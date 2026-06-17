@@ -39,6 +39,26 @@ def test_added_dir_appears(app: Any) -> None:
     assert app.ui_nodes[new_id].node.program is not None  # warm-compiled
 
 
+def test_half_written_dir_does_not_crash(app: Any) -> None:
+    # A dir with node.json but no shader yet (a node mid-creation on disk) must NOT crash the sync
+    # nor get added; it appears once the shader lands. Regression: an unguarded load FileNotFound'd
+    # and took down the frame loop.
+    nodes_dir = app.paths.nodes_dir
+    new_id = "half-written-node"
+    shutil.copytree(nodes_dir / STARTER_TEMPLATE_ID, nodes_dir / new_id)
+    (nodes_dir / new_id / "shader.frag.glsl").unlink()
+
+    app.session.sync_nodes_from_disk()  # must not raise
+    assert new_id not in app.ui_nodes
+
+    shutil.copy(
+        nodes_dir / STARTER_TEMPLATE_ID / "shader.frag.glsl",
+        nodes_dir / new_id / "shader.frag.glsl",
+    )
+    app.session.sync_nodes_from_disk()
+    assert new_id in app.ui_nodes
+
+
 def test_removed_dir_drops_node_and_editor(app: Any) -> None:
     # Open a tab for a non-current node, then delete its dir on disk: node + its editor tab go.
     victim = TEMPLATE_ORDER[1]

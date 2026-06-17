@@ -359,7 +359,10 @@ class ProjectSession:
         current: dict[str, float] = {}
         for node_dir in self.paths.nodes_dir.iterdir():
             meta = node_dir / "node.json"
-            if not node_dir.is_dir() or not meta.is_file():
+            shader = node_dir / "shader.frag.glsl"
+            # A dir is loadable only once BOTH files exist — skip a half-written node (e.g. a node.json
+            # already on disk while its shader is still being written); it syncs in once complete.
+            if not node_dir.is_dir() or not meta.is_file() or not shader.is_file():
                 continue
             try:
                 current[node_dir.name] = meta.lstat().st_mtime
