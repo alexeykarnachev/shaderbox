@@ -45,6 +45,15 @@ int sbt_glyph_id(uint cp) {
     if (cp == 58u) return 42;
     if (cp == 59u) return 43;
     if (cp == 63u) return 44;
+    if (cp == 43u) return 78; // +
+    if (cp == 61u) return 79; // =
+    if (cp == 47u) return 80; // /
+    if (cp == 42u) return 81; // *
+    if (cp == 40u) return 82; // (
+    if (cp == 41u) return 83; // )
+    if (cp == 60u) return 84; // <
+    if (cp == 62u) return 85; // >
+    if (cp == 37u) return 86; // %
     return -1;
 }
 
@@ -57,8 +66,8 @@ int sbt_glyph_id(uint cp) {
 // node-settable (ENGINE_DRIVEN_UNIFORMS). Span per glyph: x = stroke offset,
 // y = segment count, z = arc count, w = (tall_arc_count << 8) | dot_count.
 // Strokes are pre-sorted by kind.
-uniform ivec4 SBT_SPANS[78];
-uniform vec4 SBT_STROKES[520];
+uniform ivec4 SBT_SPANS[87];
+uniform vec4 SBT_STROKES[542];
 
 ivec4 sbt_glyph_span(int g) {
     return SBT_SPANS[g];
@@ -98,7 +107,8 @@ float sbt_char_skel(vec2 p, uint cp) {
 /// LOCAL units (0.1 regular .. 0.25 bold). To place a glyph of height ch at uv
 /// position c: SB_sd_char((uv - c) / (0.5*ch), cp, 0.1) * (0.5*ch) — the *0.5*ch
 /// converts the result back to uv units. Lowercase folds to uppercase; supports
-/// A-Z, Cyrillic А-Я/Ё, 0-9 and ! ? : ; , . - ' &. Unknown codepoints draw nothing.
+/// A-Z, Cyrillic А-Я/Ё, 0-9, punctuation ! ? : ; , . - ' & and math ( ) + = * / < > %.
+/// Unknown codepoints draw nothing.
 float SB_sd_char(vec2 p, uint codepoint, float weight) {
     return sbt_char_skel(p, codepoint) - weight;
 }

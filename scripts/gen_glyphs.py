@@ -151,6 +151,25 @@ GLYPHS: dict[str, list[Stroke]] = {
     "colon": dot((0.0, -0.88)) + dot((0.0, 0.0)),
     "semicolon": dot((0.0, 0.0)) + COMMA,
     "question": s(31, 32, 33, 14) + dot((0.0, -0.88)),
+    # Math symbols (appended to ORDER at ids 78+; codepoints mapped in sbt_glyph_id).
+    "plus": seg((-0.35, 0.0), (0.35, 0.0)) + seg((0.0, -0.35), (0.0, 0.35)),
+    "equals": seg((-0.35, 0.18), (0.35, 0.18)) + seg((-0.35, -0.18), (0.35, -0.18)),
+    "slash": seg((-0.4, -0.9), (0.4, 0.9)),
+    "asterisk": seg((-0.3, -0.3), (0.3, 0.3))
+    + seg((0.3, -0.3), (-0.3, 0.3))
+    + seg((0.0, -0.42), (0.0, 0.42))
+    + seg((-0.42, 0.0), (0.42, 0.0)),
+    "lparen": seg((0.2, 1.0), (-0.2, 0.5))
+    + seg((-0.2, 0.5), (-0.2, -0.5))
+    + seg((-0.2, -0.5), (0.2, -1.0)),
+    "rparen": seg((-0.2, 1.0), (0.2, 0.5))
+    + seg((0.2, 0.5), (0.2, -0.5))
+    + seg((0.2, -0.5), (-0.2, -1.0)),
+    "less": seg((0.35, 0.6), (-0.35, 0.0)) + seg((-0.35, 0.0), (0.35, -0.6)),
+    "greater": seg((-0.35, 0.6), (0.35, 0.0)) + seg((0.35, 0.0), (-0.35, -0.6)),
+    "percent": seg((0.4, 0.9), (-0.4, -0.9))
+    + dot((-0.28, 0.6), 0.13)
+    + dot((0.28, -0.6), 0.13),
     "cyr_BE": s(0, 1, 2, 3, 4, 5, 24, 28, 29, 11),
     "cyr_GHE": s(0, 1, 2, 3, 4, 5),
     "cyr_DE": EL
@@ -237,6 +256,19 @@ ORDER: list[str] = (
         "cyr_E",
         "cyr_YU",
         "cyr_YA",
+    ]
+    # Math symbols appended LAST (ids 78+) so the Cyrillic id arithmetic above is
+    # untouched; mapped by explicit codepoint in sbt_glyph_id.
+    + [
+        "plus",
+        "equals",
+        "slash",
+        "asterisk",
+        "lparen",
+        "rparen",
+        "less",
+        "greater",
+        "percent",
     ]
 )
 
@@ -336,6 +368,15 @@ int sbt_glyph_id(uint cp) {{
     if (cp == 58u) return 42;
     if (cp == 59u) return 43;
     if (cp == 63u) return 44;
+    if (cp == 43u) return 78; // +
+    if (cp == 61u) return 79; // =
+    if (cp == 47u) return 80; // /
+    if (cp == 42u) return 81; // *
+    if (cp == 40u) return 82; // (
+    if (cp == 41u) return 83; // )
+    if (cp == 60u) return 84; // <
+    if (cp == 62u) return 85; // >
+    if (cp == 37u) return 86; // %
     return -1;
 }}
 
@@ -389,7 +430,8 @@ float sbt_char_skel(vec2 p, uint cp) {{
 /// LOCAL units (0.1 regular .. 0.25 bold). To place a glyph of height ch at uv
 /// position c: SB_sd_char((uv - c) / (0.5*ch), cp, 0.1) * (0.5*ch) — the *0.5*ch
 /// converts the result back to uv units. Lowercase folds to uppercase; supports
-/// A-Z, Cyrillic А-Я/Ё, 0-9 and ! ? : ; , . - ' &. Unknown codepoints draw nothing.
+/// A-Z, Cyrillic А-Я/Ё, 0-9, punctuation ! ? : ; , . - ' & and math ( ) + = * / < > %.
+/// Unknown codepoints draw nothing.
 float SB_sd_char(vec2 p, uint codepoint, float weight) {{
     return sbt_char_skel(p, codepoint) - weight;
 }}
