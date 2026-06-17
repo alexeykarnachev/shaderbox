@@ -26,12 +26,15 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-06-17 (v0.20.0 SHIPPED live to itch; clean on dev, no release pending). -->
-**ACTIVE: dev work on `dev`, no release pending.** v0.20.0 just shipped live to itch (both channels,
-per `butler status`) — it carries the node-dir live auto-sync (the content of the dropped v0.19.0) +
-this session's math-symbol glyphs + fixes (Shorts longest-edge, half-written-node-dir crash guard,
-`open_project` Path). The skipped **v0.19.0** label is permanently burnt (`make release` can't make a
-no-op-version commit, so the bump jumped past it to 0.20.0). `dev` == `master` == origin, tree clean.
+<!-- As of 2026-06-17 (post night_city /shader-lab session + YouTube-Shorts-presets feature; clean on dev, unreleased). -->
+**ACTIVE: dev work on `dev`, unreleased (ahead of v0.20.0).** Since the v0.20.0 ship: a long
+`/shader-lab` **night_city** session (raymarched night cityscape → a single-node "how it's built"
+learning reel) committed as a referenceable past lab (`projects/_lab/night_city/`, force-added past
+the `_lab` gitignore); its generic raymarch/SDF + night-lighting + step-reveal-animation knowledge was
+harvested into the `/shader-lab` skill. Also shipped to the app proper: **YouTube Shorts resolution
+presets** (720/1080/1440, 9:16) in the Share tab. Two UX gaps filed in `todo.md` (Share-tab
+render-settings half-baked; copilot render tools take raw w/h not a preset enum). `dev` == origin,
+tree clean, `make check`+`smoke` green. These commits are unreleased (next ship bundles them).
 **NEXT (maintainer's pick):** the blocker to crack before shipping examples is the **example/project
 shader-library coupling** (local-vs-global lib — `todo.md` BLOCKER); feature **051** (shipped examples
 project + an Examples-picker modal) is DRAFTED but parked behind it. Or another `/shader-lab` session, or a
