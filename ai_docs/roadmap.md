@@ -26,26 +26,26 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-06-16 (v0.19.0 TAGGED + built + pushed, but NOT yet uploaded to itch — see BLOCKER). -->
-**ACTIVE: v0.19.0 tagged & built but NOT yet live on itch — the upload is the only thing left.** The
-v0.19.0 release commit + tag are pushed; `dev` == `master` == `origin` at the release commit, tree
-clean, both dist zips built + verified. What FAILED is only the itch upload: itch.io's `/wharf` API
-was returning HTTP 500 (their backend outage) so `butler push` never created the build. **So the next
-ship is NOT a new version — it is finishing THIS one:** when itch recovers, run
-`./build.sh && yes | ./upload-itch.sh` against the EXISTING v0.19.0 (no new bump, no new tag), then
-`butler status where-is-your-keyboard/shaderbox` to confirm both channels show 0.19.0. See the BLOCKER
-in `todo.md` ("v0.19.0 upload pending itch recovery").
-v0.19.0's content: node-dir live auto-sync — the project's `nodes/` is reconciled to disk EVERY frame
-(`ProjectSession.sync_nodes_from_disk`, from `ui.py::update_and_draw`, gated off mid-copilot-turn) so a
-node dir ADDED/REMOVED or its `node.json` EDITED externally syncs automatically (disk authoritative —
-even the current node is force-reloaded); the manual "Reload nodes from disk" command + `Ctrl+Shift+R`
-deleted. Tests: `tests/test_node_dir_sync.py` 6/6.
-**NEXT (after the v0.19.0 upload lands):** run a `/shader-lab` session, OR pick from `todo.md` (the
-copilot lazy tool-catalogue cost lever; etc.).
+<!-- As of 2026-06-17 (v0.19.0 ship DROPPED; a /shader-lab fire session + a knowledge-harvest wave; no release pending). -->
+**ACTIVE: dev work on `dev`, no release pending.** The earlier v0.19.0 ship was **dropped** at the
+maintainer's call (itch's `/wharf` API was 500ing for the upload; rather than wait, the v0.19.0 tag was
+deleted local+remote — `pyproject` stays at 0.19.0, just a skipped label; next ship auto-picks the next
+bump). This session ran a `/shader-lab` **fire** effect end-to-end (domain-warp + noise-gated silhouette +
+scene-glow + flicker + depth + a 17s timed-reveal showcase with SDF-text step captions, Shorts 9:16) — it
+lives in the gitignored `projects/_lab/fire/` (not shipped). The durable output is knowledge + two real
+fixes that landed: the half-written-node-dir crash guard in `sync_nodes_from_disk`
+(`tests/test_node_dir_sync.py` 7/7) and math-symbol glyphs added to the text lib (`gen_glyphs.py` →
+`glyphs.glsl`, `( ) + = * / < > %`). Lessons harvested into their homes: a node-authoring recipe in
+`dev_flow.md ## Recipes`, two engine footguns in `conventions.md ## Known quirks`, shader-craft + the
+confirm-the-FORM rule in the `/shader-lab` skill.
+**NEXT (maintainer's pick):** the blocker to crack before shipping examples is the **example/project
+shader-library coupling** (local-vs-global lib — `todo.md` BLOCKER); feature **051** (shipped examples
+project + an Examples-picker modal) is DRAFTED but parked behind it. Or another `/shader-lab` session, or a
+`todo.md` item.
 
 **Last LIVE on itch (context):** v0.18.0 — feature 050 copilot edit-engine correctness (comment-dup span fix, churn brake,
-probe clock t=0 + `probe_render` tool, honest forced-turn-end) + the shader-lab skill. (v0.19.0 is tagged but its itch
-upload is still pending — see the Active banner + the `todo.md` BLOCKER.)
+probe clock t=0 + `probe_render` tool, honest forced-turn-end) + the shader-lab skill. v0.19.0 was tagged then
+dropped (never went public); its content (node-dir live auto-sync) sits on `dev`, unreleased.
 
 **Just shipped (context):** v0.17.0 — hotkeys + script-play polish on v0.16.0's CPU-scripting subsystem (040-048 + 049).
 
