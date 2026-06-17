@@ -35,6 +35,13 @@ The costly mistakes from past sessions:
 - "Looks like a good flame" from *your own* read of an image is unreliable — your visual judgment is
   poor. The notes log records the USER's feedback, your WEB findings, and concrete formulas — **never
   your own "this looks good/bad" conclusions.** (Notes section below.)
+- **For a visual BUG, find the root cause — don't guess-and-patch, and don't override the user's
+  report with your own theory.** Reproduce/instrument before fixing: paint a debug field by a
+  variable's sign/value to SEE which screen region it covers; measure per-pixel frame deltas to locate
+  a one-frame pop; crop the suspect area and look. Twice this session a guess sent the fix the wrong
+  way (chasing brightness for a coordinate bug; concluding "occluded" when the user kept saying "I
+  clearly see it" — the user was right, my instrument reading was wrong). When the user repeats a
+  correction, your MODEL is broken — re-derive, don't defend.
 
 ---
 
@@ -172,6 +179,11 @@ uv run python .claude/skills/shader-lab/render_node.py video <node_dir> <out.mp4
 
 - Renders against the live `SB_*` lib; video goes through `Node.render_media` (so a `script.py` ticks
   a fresh per-export instance — export-isolation, same as a real export).
+- **`render_node.py` forces a SQUARE canvas** (`--size` → size×size). For a non-square aspect (e.g.
+  9:16 portrait) it distorts — write a small inline render with the real `canvas.set_size((w, h))`
+  instead (the snippet in `dev_flow.md ## Recipes > Authoring / debugging nodes directly`). Cropping a
+  region of the render (PIL `.crop`) to eyeball one area (a corner seam, a rooftop, a street) is the
+  fastest way to inspect a localized issue.
 - **Eyeball every step yourself** (the copilot's core handicap is render-blindness — you, here, are
   NOT blind, so use it). But per the ONE rule, your eyeball informs your NEXT iteration; it does NOT
   go into NOTES.md as a verdict.
@@ -184,12 +196,15 @@ uv run python .claude/skills/shader-lab/render_node.py video <node_dir> <out.mp4
 ## Researching techniques
 
 When an effect needs a technique you don't have cold (how real fire avoids a flat core, a teardrop
-silhouette, lightning branching, etc.), **WebSearch / WebFetch real sources** — Shadertoy breakdowns,
-iquilezles.org, Cyanilux, game-engine VFX writeups. Working example code is the canonical pattern;
-read it, find the divergence from your code. Put the technique + URL in NOTES.md. (Fire findings from
-the seed session: domain warping `fbm(p+4·fbm(p+4·fbm(p)))`, teardrop width profile, blackbody temp
-ramp, height-weighted edge perturbation — see `ai_docs/features/050_*` references and NOTES of past
-labs if present.)
+silhouette, lightning branching, how a night cityscape gets depth, etc.), **WebSearch / WebFetch real
+sources** — Shadertoy breakdowns, iquilezles.org, Cyanilux, game-engine VFX writeups, and for
+art-direction questions (value/contrast/colour) digital-painting + concept-art sources (Mitch Albala,
+ctrl+paint, Marco Bucci, art blogs). Working example code is the canonical pattern; read it, find the
+divergence from your code. Put the technique + URL in NOTES.md.
+
+**Check past labs before researching from scratch** — a prior session may already carry the
+technique, the maintainer's aesthetic verdicts, and the dead-ends. See `## Past labs` below; read the
+relevant `projects/_lab/<slug>/NOTES.md` first.
 
 ---
 
@@ -225,6 +240,108 @@ from real maintainer corrections; the parenthetical is the evidence, not a presc
   the maintainer dialed it in one pass.) For the engine mechanics of node files / headless render /
   compile-check / aspect, see `dev_flow.md ## Recipes > Authoring / debugging nodes directly`.
 
+## Raymarching / SDF craft (generic)
+
+Levers for any SDF-raymarched scene (cities, terrain, abstract solids — anything marched).
+
+- **Accumulate TRUE ray distance, not a per-step sum.** `dist = length(p - ro)` (recompute each step),
+  NOT `dist += length(p - ro)` — the `+=` re-adds the whole origin-distance every step, so it balloons
+  super-linearly. A wrong distance silently breaks every distance-driven effect (fog, LOD, glow). It
+  can look fine on a tiny/close scene and only blow up when the scene gets deep. (Cost a whole "why is
+  the fog saturating everything" debug.)
+- **Bounded domain repetition needs a NEIGHBOR-cell min, not a clamped round().** Tiling an SDF over a
+  finite footprint via `id = clamp(round(p/spacing), -R, R)` as a one-shot pick is NOT a valid SDF at
+  the boundary — near the edge the clamped cell can be the *wrong* (farther) one, the field
+  over-reports distance, the march OVERSHOOTS and grazes a primitive's infinite-plane extension →
+  phantom diagonal/triangular slivers in empty space. FIX (iq `opLimitedRepetition`): sample the
+  rounded cell AND its 3×3 (or 3×3×3) neighbours, each clamped, and take the min. https://iquilezles.org/articles/distfunctions/
+- **Detail by PAINTING the shaded surface beats adding geometry.** Recessed-window AO, sills, panel
+  lines, grime, pilasters — fake them in the surface-shading function (zero march cost) rather than in
+  the SDF. Reserve real geometry (extra `min()`-unioned primitives) for things that must change the
+  SILHOUETTE (rooftop antennae, balconies). Each SDF primitive multiplies the march cost (a 3×3 repeat
+  of one extra box = 9 more evals/step).
+- **Discrete lights/props as emissive screen-space/ground glows, not 3D objects.** Cars, streetlamps,
+  signs at a distance read perfectly as `attenuate(dist_to_point)` glows added to the ground/wall —
+  far cheaper than SDF geometry, and you control them by simple 2D math. Use `1/(1 + b·d + c·d²)`
+  falloff; for a *pair* of lights (headlights), draw two offset points and tighten each so they don't
+  merge into one blob at normal distance.
+- **A "cell-local" coordinate must round to the cell's CENTER, and the cell boundary must not land on a
+  feature you care about.** Computing `local = p - round(p/S)*S` puts the seam at the half-cell; if
+  your feature (a road centerline, a tile join) sits exactly on a `floor()`/`round()` boundary, half of
+  it falls into the neighbour cell with a garbage local coord and renders nothing. Round to the
+  feature's center explicitly (e.g. roads centered on half-integer cells → `round(p/S - 0.5) + 0.5`).
+  (This was the "left lane of every street is empty" bug — a cell-assignment error, NOT occlusion.)
+- **A sky feature (sun/moon/plane/cloud) lives in a fixed WORLD direction → whether it's on-screen is
+  camera-dependent and unforgiving.** Don't guess its placement. Project the desired direction through
+  the camera basis to screen NDC and SOLVE for the direction that lands it where you want:
+  `a = dir·fwd; b = dir·right; c = dir·up; ndc = (b/a/aspect, c/a) * screen_dist` (a one-off numpy
+  snippet; bake the resulting `vec3` as the default). Also: a feature drawn only where rays MISS
+  geometry is OCCLUDED by tall foreground — keep it above the skyline or in an open gap.
+
+## Lighting & art-direction (generic; the night-scene set is concrete)
+
+When a render reads FLAT, the cause is almost always a value/contrast problem, not a missing feature.
+General rule: **work the VALUE structure first** (large dark masses + a few bright accents + readable
+fore/mid/background value groups); colour and detail come after. Hue is the *weakest* depth cue —
+lean on value + saturation + contrast.
+
+**Night-scene rules (web-researched, broadly reusable; sources in `night_city/NOTES.md` v06):**
+- **At night the SKY is the brightest large value; solids read as dark silhouettes against it.** This
+  INVERTS daytime aerial perspective. Sky = vertical gradient: warm skyglow hugging the HORIZON
+  (`pow(1 - rd.y, ~2.5)`) fading to a cool dark ZENITH. Horizon ≈ 8–12× a near unlit surface.
+- **Even with no sun, light faces differently for FORM.** The sky-dome + moon act as a soft key: the
+  face toward the sky/moon catches more (cooler) light, the away face is darker/warmer. Keep it
+  SUBTLE (~1.3–1.6× value spread between faces) — night contrast is gentle. Apply to the SURFACE term
+  only; split out emissive (lit windows/lights) so the key doesn't dim them.
+- **Aerial perspective AT NIGHT fades distant solids TOWARD the horizon-glow colour** (not pale grey):
+  `mix(surface, horizonColor, f)` up to ~0.6–0.8 at max distance, drop saturation, collapse internal
+  contrast — so receding rows separate into fore/mid/background value groups.
+- **Reserve the only near-whites for the actual light sources** (windows, lamps). If walls, sky and
+  lights all sit mid-grey it reads flat — let shadow masses go near-black, keep the bright accents rare.
+
+## Step-reveal animation (the learning-deliverable pattern)
+
+The lab's headline deliverable is often a **single node** that animates the effect's construction with
+per-step caption text — a "how it's built" reel. This is a reusable PATTERN (seed: the fire & city
+labs). Build it as ONE shader, NOT N nodes:
+
+- A looping clock `reveal_time() = mod(u_time, PERIOD)`; per step a weight `w_i = smoothstep(start_i,
+  start_i + FADE, reveal_time())` that ramps 0→1 then HOLDS (steps STACK). Gate each feature by `w_i`.
+- A `u_step` uint uniform: 0 = autoplay, 1..N = freeze/inspect a step. **Tell the user 0 is autoplay**
+  — leaving it frozen (e.g. at N) renders the static final scene, a classic "why doesn't it start from
+  the beginning" surprise.
+- Captions: one `uint u_stepNtext[LEN]` codepoint array per step (engine encodes a typed string when
+  the uniform name ENDS in `text`), rendered via `SB_sd_char`, faded per a per-slot alpha. Glyph set is
+  UPPERCASE latin + digits + `()+=*/<>%&':;,.-!?` — transliterate formulas. Caption convention that
+  works: **line 1 = the IDEA, line 2 = the core MATH trick** (e.g. `GEOMETRY` / `ID = ROUND(P/S)`).
+- **Entrance ANIMATION, not just a fade**, sells it: scale a building's SDF height by the step weight
+  to GROW it from the ground; sweep a per-floor threshold to light windows bottom-up; lerp a rise
+  offset; stream props in. Geometry-affecting weights (a grow factor, a rooftop rise) must be set
+  BEFORE the march (as a global the SDF reads); shading weights branch in `main()`.
+- **Compute & set the total duration for the render.** Sum the step durations + hold = the loop period;
+  set the node's `render_media_details.duration` to exactly one period so the artifact loops seamlessly
+  (verify t=0 ≈ t=period). The final step can be longer than the rest — make step start/duration helper
+  functions rather than a single `STEP_DUR` if so.
+
+### The crossfade-switch trap (it WILL bite — read before animating a reveal)
+
+A step that "develops in" (texture, detail) is usually gated by a binary `USE_DETAIL` switch plus a
+0→1 crossfade weight. **Two hard rules or it pops in one frame:**
+1. **Flip the binary switch at the SLOT START, when the crossfade weight is still 0** — NOT at
+   `reveal ≥ 0.5`. If the switch turns on partway through the slot, the weight is already nonzero and
+   every detail term jumps to a partial value in a single frame. Gate the switch on `step(0.001,
+   weight)`.
+2. **EVERY branch inside that switch must scale by the crossfade weight** — including AO, sills,
+   curtains, a plinth/early-return, a cornice. An unscaled additive term, a hard bool passed into a
+   helper, or an early `return` that swaps the whole pixel will pop even if the main colour crossfades.
+   Convert bools to eased amounts (`has_curtains ? MIX : 0.0`); lerp early-return paths
+   (`mix(normal, special, MIX)`).
+
+**How to FIND a one-frame pop you can't see clearly:** render consecutive frames across the boundary
+and measure the **per-pixel max delta / count of changed pixels** frame-to-frame — a real pop shows a
+huge spike (thousands of pixels) at one timestamp vs the steady-state flicker baseline. A whole-frame
+MEAN hides a localized pop; use max/count.
+
 ## CPU scripting (optional)
 
 A node can carry `scripts/script.py` = `class Behavior(ScriptBehavior)` with `update(self, ctx) -> dict`
@@ -246,11 +363,24 @@ The experiment's *output* is knowledge, not just a pretty node. At the end:
 
 ---
 
+## Past labs (read the NOTES before re-deriving anything)
+
+Each lab leaves a `projects/_lab/<slug>/NOTES.md` — the full evolution, the maintainer's verdicts, the
+dead-ends, and the reusable techniques. When a new effect overlaps a past one, READ that NOTES first
+(it's the cheapest source — better than web). Gitignored labs are disposable; a promoted one keeps its
+NOTES. When the user references "the X project / lab", it's `projects/_lab/X/`.
+
+- **`fire`** — raymarched-free 2D flame: domain-warp turbulence `fbm(p + k·fbm(p + k·fbm(p)))`,
+  teardrop width profile, blackbody temp ramp, flicker-on-the-cast-glow, the **timed-reveal node**
+  pattern (seed). NOTES: `projects/_lab/fire/NOTES.md`.
+- **`night_city`** — SDF-raymarched night cityscape (committed): bounded domain-repetition w/
+  neighbor-min, ground-glow cars w/ right-hand lanes, painted facade detail, rooftop-clutter geometry,
+  the night-lighting art-rule set, per-step entrance animations, and the matured single-node learning
+  reel. Everything in the Raymarching/SDF, Lighting, and Step-reveal sections above was mined here.
+  NOTES: `projects/_lab/night_city/NOTES.md`.
+
 ## Follow-ups (NOT ready — don't build these mid-session; capture the idea)
 
-- **Text-on-steps → YouTube short.** Render each step for a few seconds, layer them, add a short
-  explanatory text caption per step, stitch into a Shorts video. The original end-goal; deferred until
-  the core iteration loop is solid.
 - **Variant nodes → visual pick → aggregate.** At a fork, generate several variants of one idea as
   parallel sibling nodes (not just a linear chain), let the user pick visually ("take the tip from
   this one, the color from that one"), then aggregate the chosen parts into a new node and delete the

@@ -1,0 +1,1167 @@
+{
+    "canvas_size": [
+        1080,
+        1920
+    ],
+    "uniforms": {
+        "u_cam_fov": 76.62000274658203,
+        "u_cam_look": [
+            -2.2200000286102295,
+            8.1899995803833,
+            0.0
+        ],
+        "u_cam_pos": [
+            6.0,
+            6.679999828338623,
+            40.0
+        ],
+        "u_cam_sway": 1.9199999570846558,
+        "u_car_falloff_lin": 10.0,
+        "u_car_falloff_quad": 100.0,
+        "u_car_head_boost": 6.380000114440918,
+        "u_car_head_color": [
+            1.0,
+            0.9700000286102295,
+            0.8999999761581421
+        ],
+        "u_car_intensity": 1.0,
+        "u_car_lane": 0.550000011920929,
+        "u_car_speed": 3.0,
+        "u_car_speed_var": 1.0,
+        "u_car_tail_boost": 4.0,
+        "u_car_tail_color": [
+            1.0,
+            0.1599999964237213,
+            0.10000000149011612
+        ],
+        "u_car_track": 0.1599999964237213,
+        "u_city_bldg_half": [
+            1.3799999952316284,
+            1.3600000143051147
+        ],
+        "u_city_floor_h": 0.7400000095367432,
+        "u_city_ground_y": -1.2999999523162842,
+        "u_city_height_base": 2.0999999046325684,
+        "u_city_height_var": 4.889999866485596,
+        "u_city_radius": 5.0,
+        "u_city_spacing": [
+            5.0,
+            6.0
+        ],
+        "u_fog_haze": 1.1100000143051147,
+        "u_fog_range": 50.0,
+        "u_fog_start": 8.0,
+        "u_light_ambient": 0.05999999865889549,
+        "u_light_cool_color": [
+            0.5488371849060059,
+            0.7167119383811951,
+            1.0
+        ],
+        "u_light_moon_key": 4.380000114440918,
+        "u_light_sky_key": 0.5,
+        "u_light_warm_color": [
+            1.0,
+            1.0,
+            1.0
+        ],
+        "u_plane_blink": 5.539999961853027,
+        "u_plane_color": [
+            1.0,
+            0.949999988079071,
+            0.8999999761581421
+        ],
+        "u_plane_period": 22.0,
+        "u_plane_size": 0.03500000014901161,
+        "u_plane_speed": 0.1599999964237213,
+        "u_roofbox_color": [
+            1.0,
+            0.8500000238418579,
+            0.20000000298023224
+        ],
+        "u_roofbox_gain": 6.0,
+        "u_sky_glow_pow": 11.399999618530273,
+        "u_sky_horizon_color": [
+            0.4372093081474304,
+            0.3437897861003876,
+            0.1952190399169922
+        ],
+        "u_sky_moon_dir": [
+            -0.6150000095367432,
+            0.800000011920929,
+            -0.8820000290870667
+        ],
+        "u_sky_moon_halo": 0.3499999940395355,
+        "u_sky_moon_size": 0.054999999701976776,
+        "u_sky_star_bright": 1.0399999618530273,
+        "u_sky_star_density": 0.9300000071525574,
+        "u_sky_zenith_color": [
+            0.06611140817403793,
+            0.06801020354032516,
+            0.07441860437393188
+        ],
+        "u_step": 0,
+        "u_step1text": [
+            71,
+            69,
+            79,
+            77,
+            69,
+            84,
+            82,
+            89,
+            10,
+            73,
+            68,
+            32,
+            61,
+            32,
+            82,
+            79,
+            85,
+            78,
+            68,
+            40,
+            80,
+            47,
+            83,
+            41,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+        ],
+        "u_step2text": [
+            87,
+            73,
+            78,
+            68,
+            79,
+            87,
+            83,
+            10,
+            85,
+            86,
+            32,
+            61,
+            32,
+            70,
+            82,
+            65,
+            67,
+            84,
+            40,
+            70,
+            65,
+            67,
+            69,
+            41,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+        ],
+        "u_step3text": [
+            68,
+            69,
+            84,
+            65,
+            73,
+            76,
+            10,
+            65,
+            79,
+            32,
+            61,
+            32,
+            83,
+            77,
+            79,
+            79,
+            84,
+            72,
+            83,
+            84,
+            69,
+            80,
+            40,
+            68,
+            41,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+        ],
+        "u_step4text": [
+            82,
+            79,
+            79,
+            70,
+            84,
+            79,
+            80,
+            83,
+            10,
+            77,
+            73,
+            78,
+            40,
+            66,
+            79,
+            68,
+            89,
+            44,
+            32,
+            84,
+            65,
+            78,
+            75,
+            44,
+            32,
+            77,
+            65,
+            83,
+            84,
+            41,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+        ],
+        "u_step5text": [
+            78,
+            73,
+            71,
+            72,
+            84,
+            32,
+            83,
+            75,
+            89,
+            10,
+            77,
+            73,
+            88,
+            40,
+            90,
+            69,
+            78,
+            44,
+            32,
+            72,
+            79,
+            82,
+            44,
+            32,
+            80,
+            79,
+            87,
+            40,
+            49,
+            45,
+            89,
+            41,
+            41,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+        ],
+        "u_step6text": [
+            84,
+            82,
+            65,
+            70,
+            70,
+            73,
+            67,
+            10,
+            73,
+            32,
+            61,
+            32,
+            49,
+            47,
+            40,
+            49,
+            32,
+            43,
+            32,
+            66,
+            42,
+            68,
+            32,
+            43,
+            32,
+            67,
+            42,
+            68,
+            42,
+            68,
+            41,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+        ],
+        "u_step7text": [
+            77,
+            79,
+            79,
+            78,
+            76,
+            73,
+            71,
+            72,
+            84,
+            10,
+            75,
+            69,
+            89,
+            32,
+            61,
+            32,
+            68,
+            79,
+            84,
+            40,
+            78,
+            44,
+            32,
+            76,
+            41,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+        ],
+        "u_step8text": [
+            68,
+            69,
+            80,
+            84,
+            72,
+            10,
+            77,
+            73,
+            88,
+            40,
+            67,
+            79,
+            76,
+            44,
+            32,
+            72,
+            65,
+            90,
+            69,
+            44,
+            32,
+            68,
+            73,
+            83,
+            84,
+            41,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+        ],
+        "u_text_color": [
+            1.0,
+            1.0,
+            1.0
+        ],
+        "u_text_fade_in": 0.4000000059604645,
+        "u_text_fade_out": 0.4000000059604645,
+        "u_text_line_gap": 0.10000000149011612,
+        "u_text_pos": [
+            0.0,
+            0.9200000166893005
+        ],
+        "u_text_sharp": 0.05999999865889549,
+        "u_text_size": 0.05999999865889549,
+        "u_text_spacing": 0.75,
+        "u_text_weight": 0.07999999821186066,
+        "u_wall_ao": 0.5,
+        "u_wall_band": 0.009999999776482582,
+        "u_wall_grain": 0.03999999910593033,
+        "u_wall_grey_hi": [
+            0.12558138370513916,
+            0.12289995700120926,
+            0.11331529170274734
+        ],
+        "u_wall_grey_lo": [
+            0.09302324056625366,
+            0.09302324056625366,
+            0.09302324056625366
+        ],
+        "u_wall_plinth": 0.550000011920929,
+        "u_win_brightness": 2.0,
+        "u_win_cool_color": [
+            0.6232558488845825,
+            0.4348296523094177,
+            0.0
+        ],
+        "u_win_curtain_frac": 0.5099999904632568,
+        "u_win_falloff_lin": 2.9700000286102295,
+        "u_win_falloff_quad": 20.0,
+        "u_win_size": [
+            0.6000000238418579,
+            0.49000000953674316
+        ],
+        "u_win_soft_color": [
+            0.5720930099487305,
+            0.4418490529060364,
+            0.15965387225151062
+        ],
+        "u_win_warm_color": [
+            0.7441860437393188,
+            0.5878294110298157,
+            0.29075175523757935
+        ]
+    },
+    "ui_state": {
+        "ui_name": "city (learning)",
+        "description": "SINGLE-node learning sequence (timed reveal, like fire timed-reveal): 8 build steps stack with per-step caption text. Steps: geometry, windows, facade detail, rooftops, sky, streets+cars, directional light, aerial+plane. u_debug_step freezes a step; u_stepNtext are the captions (typed in-app).",
+        "render_media_details": {
+            "is_video": true,
+            "file_details": {
+                "path": "",
+                "size": 0
+            },
+            "resolution_details": {
+                "width": 1080,
+                "height": 1920
+            },
+            "quality": 0,
+            "fps": 30,
+            "duration": 30.0
+        },
+        "ui_uniforms": {
+            "260085533400259490348506664942395818974": {
+                "name": "u_aspect",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "auto"
+            },
+            "37154164850612245702881750831795076973": {
+                "name": "u_time",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "auto"
+            },
+            "104717081228439853745846685210379645": {
+                "name": "u_cam_fov",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "59522689044772677027054269313982577573": {
+                "name": "u_cam_look",
+                "is_ubo": false,
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "65306524459533408279159412561230281913": {
+                "name": "u_cam_pos",
+                "is_ubo": false,
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "223809848260154245690628086168641599031": {
+                "name": "u_cam_sway",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "86477069641140933581962020253688214231": {
+                "name": "u_car_falloff_lin",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "81343227075673270706011545194830237155": {
+                "name": "u_car_falloff_quad",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "94259833247185706601469580312908091514": {
+                "name": "u_car_head_boost",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "121943706850113920772369375670913491159": {
+                "name": "u_car_head_color",
+                "is_ubo": false,
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "color"
+            },
+            "124518293787083434793867157766559472499": {
+                "name": "u_car_lane",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "102539188869940628624857981322751772132": {
+                "name": "u_car_speed",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "316718609235195588837882623340706629632": {
+                "name": "u_car_speed_var",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "153585972883361018817591882859452571320": {
+                "name": "u_car_tail_boost",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "41364591556545201349895114770808993138": {
+                "name": "u_car_tail_color",
+                "is_ubo": false,
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "color"
+            },
+            "7911194763130691641224901539213424234": {
+                "name": "u_car_track",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "258658911704769322382803738455383224229": {
+                "name": "u_city_bldg_half",
+                "is_ubo": false,
+                "gl_type": 35664,
+                "dimension": 2,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "199685930107425996600839743525096372340": {
+                "name": "u_city_floor_h",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "195293387477278585813024444811006870551": {
+                "name": "u_city_ground_y",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "312683298654015915598345985773537636254": {
+                "name": "u_city_height_base",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "122180749820385072404988601110312303077": {
+                "name": "u_city_height_var",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "282385199180141014505570726665812718051": {
+                "name": "u_city_radius",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "141308976459565336676369762619907589508": {
+                "name": "u_city_spacing",
+                "is_ubo": false,
+                "gl_type": 35664,
+                "dimension": 2,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "179460743686163863104902173045726710844": {
+                "name": "u_debug_step",
+                "is_ubo": false,
+                "gl_type": 5125,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "74723243297848368061365121627930166994": {
+                "name": "u_fog_haze",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "190134011973553841581182131546170099719": {
+                "name": "u_fog_range",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "98562367912241894743117960212534764539": {
+                "name": "u_fog_start",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "313230201156217545762636046464596596438": {
+                "name": "u_light_ambient",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "69213114406144269139596165524356615037": {
+                "name": "u_light_cool_color",
+                "is_ubo": false,
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "color"
+            },
+            "158369449691543563088735761619247242665": {
+                "name": "u_light_moon_key",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "239802468727184332469413848138478855762": {
+                "name": "u_light_sky_key",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "216417292275940972197300471045238801276": {
+                "name": "u_light_warm_color",
+                "is_ubo": false,
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "color"
+            },
+            "105152394684910454271375920862175700643": {
+                "name": "u_plane_blink",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "329570869516706941291638784521528761988": {
+                "name": "u_plane_color",
+                "is_ubo": false,
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "color"
+            },
+            "86557582463669270892088853869028276593": {
+                "name": "u_plane_period",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "25090487121931271549185422709441986420": {
+                "name": "u_plane_size",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "74111312241359710380026507745682768698": {
+                "name": "u_plane_speed",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "66488363321009066888236810842855607901": {
+                "name": "u_sky_glow_pow",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "184521432433695249135353633903608963148": {
+                "name": "u_sky_horizon_color",
+                "is_ubo": false,
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "color"
+            },
+            "20365557077877842776618045230012575917": {
+                "name": "u_sky_moon_dir",
+                "is_ubo": false,
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "257316772063644031752919806972107200464": {
+                "name": "u_sky_moon_halo",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "109944821991708779213761159118094853421": {
+                "name": "u_sky_moon_size",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "87043252128310311665639451008715537354": {
+                "name": "u_sky_star_bright",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "234334327884784312796382122995924555305": {
+                "name": "u_sky_star_density",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "134276630031988897647233160184375306211": {
+                "name": "u_sky_zenith_color",
+                "is_ubo": false,
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "color"
+            },
+            "210614263332231925495420810626243953588": {
+                "name": "u_step1text",
+                "is_ubo": false,
+                "gl_type": 5125,
+                "dimension": 1,
+                "array_length": 40,
+                "input_type": "text"
+            },
+            "106081832550466843844994123081223439863": {
+                "name": "u_step2text",
+                "is_ubo": false,
+                "gl_type": 5125,
+                "dimension": 1,
+                "array_length": 40,
+                "input_type": "text"
+            },
+            "197257203734888386880024474031622611853": {
+                "name": "u_step3text",
+                "is_ubo": false,
+                "gl_type": 5125,
+                "dimension": 1,
+                "array_length": 40,
+                "input_type": "text"
+            },
+            "137727011552561859495096833242174845962": {
+                "name": "u_step4text",
+                "is_ubo": false,
+                "gl_type": 5125,
+                "dimension": 1,
+                "array_length": 40,
+                "input_type": "text"
+            },
+            "186938203090081437401576762112978275772": {
+                "name": "u_step5text",
+                "is_ubo": false,
+                "gl_type": 5125,
+                "dimension": 1,
+                "array_length": 40,
+                "input_type": "text"
+            },
+            "303033828967890450049969996535623269674": {
+                "name": "u_step6text",
+                "is_ubo": false,
+                "gl_type": 5125,
+                "dimension": 1,
+                "array_length": 40,
+                "input_type": "text"
+            },
+            "7661886703451100362736864293129168646": {
+                "name": "u_step7text",
+                "is_ubo": false,
+                "gl_type": 5125,
+                "dimension": 1,
+                "array_length": 40,
+                "input_type": "text"
+            },
+            "224915568633159072546296262855004144906": {
+                "name": "u_step8text",
+                "is_ubo": false,
+                "gl_type": 5125,
+                "dimension": 1,
+                "array_length": 40,
+                "input_type": "text"
+            },
+            "183543307082416608884519225484308431530": {
+                "name": "u_text_color",
+                "is_ubo": false,
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "color"
+            },
+            "185171579233502407426567757262384949344": {
+                "name": "u_text_fade_in",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "58755939157579972087946461880916544367": {
+                "name": "u_text_fade_out",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "228516316697538822081054925546597288218": {
+                "name": "u_text_line_gap",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "35838703043500830021305130231798282123": {
+                "name": "u_text_pos",
+                "is_ubo": false,
+                "gl_type": 35664,
+                "dimension": 2,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "121003511659864047228588433867503108948": {
+                "name": "u_text_sharp",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "273011390658317441281303607155038016151": {
+                "name": "u_text_size",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "29893631648487623514519923409723500529": {
+                "name": "u_text_spacing",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "251766827701172079563226442757090139887": {
+                "name": "u_text_weight",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "334982875712017688232631721249208308230": {
+                "name": "u_wall_ao",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "299533354028693995788947640682474668957": {
+                "name": "u_wall_band",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "145634575090915805032140857662149592512": {
+                "name": "u_wall_grain",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "19043335480890024473664277210707171197": {
+                "name": "u_wall_grey_hi",
+                "is_ubo": false,
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "252542706484752286694305004114536222278": {
+                "name": "u_wall_grey_lo",
+                "is_ubo": false,
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "179230564339588071285027688241736507464": {
+                "name": "u_wall_plinth",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "242648840904611876057648061124116573811": {
+                "name": "u_win_brightness",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "311153685531913817973410488254841311146": {
+                "name": "u_win_cool_color",
+                "is_ubo": false,
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "color"
+            },
+            "6722701922468699970997620500027384720": {
+                "name": "u_win_curtain_frac",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "289115849807653395961134580190804204033": {
+                "name": "u_win_falloff_lin",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "292895706978305592159257651023538432388": {
+                "name": "u_win_falloff_quad",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "32067470447156734518675144498384371057": {
+                "name": "u_win_size",
+                "is_ubo": false,
+                "gl_type": 35664,
+                "dimension": 2,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "65144526604113065189364834721801296851": {
+                "name": "u_win_soft_color",
+                "is_ubo": false,
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "color"
+            },
+            "90177198846599751891728485152569928460": {
+                "name": "u_win_warm_color",
+                "is_ubo": false,
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "color"
+            },
+            "69322810241171497947106901521389652407": {
+                "name": "u_step",
+                "is_ubo": false,
+                "gl_type": 5125,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "105835221189958548721916571223203630495": {
+                "name": "u_roofbox_color",
+                "is_ubo": false,
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "color"
+            },
+            "249122973105035469885978728889846227208": {
+                "name": "u_roofbox_gain",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "167647240870737336480699371628351921920": {
+                "name": "u_roofbox_width",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "145943392632605031066179196124945144973": {
+                "name": "u_car_intensity",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            }
+        },
+        "uniform_sort_key": "name",
+        "uniform_sort_desc": false,
+        "video_to_video_smoothing_window": 5,
+        "video_to_video_smoothing_sigma": 1.0,
+        "stopped_uniforms": [],
+        "all_stopped": false
+    }
+}

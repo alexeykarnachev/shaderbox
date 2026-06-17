@@ -1,0 +1,632 @@
+{
+    "canvas_size": [
+        720,
+        1280
+    ],
+    "uniforms": {
+        "u_cam_fov": 76.62000274658203,
+        "u_cam_look": [
+            -2.2200000286102295,
+            8.1899995803833,
+            0.0
+        ],
+        "u_cam_pos": [
+            6.0,
+            6.679999828338623,
+            40.0
+        ],
+        "u_cam_sway": 1.9199999570846558,
+        "u_car_falloff_lin": 10.0,
+        "u_car_falloff_quad": 100.0,
+        "u_car_head_boost": 6.380000114440918,
+        "u_car_head_color": [
+            1.0,
+            0.9700000286102295,
+            0.8999999761581421
+        ],
+        "u_car_lane": 0.550000011920929,
+        "u_car_speed": 3.0,
+        "u_car_speed_var": 1.0,
+        "u_car_tail_boost": 4.0,
+        "u_car_tail_color": [
+            1.0,
+            0.1599999964237213,
+            0.10000000149011612
+        ],
+        "u_car_track": 0.1599999964237213,
+        "u_city_bldg_half": [
+            1.3799999952316284,
+            1.3600000143051147
+        ],
+        "u_city_floor_h": 0.7400000095367432,
+        "u_city_ground_y": -1.2999999523162842,
+        "u_city_height_base": 2.0999999046325684,
+        "u_city_height_var": 4.889999866485596,
+        "u_city_radius": 5.0,
+        "u_city_spacing": [
+            5.0,
+            6.0
+        ],
+        "u_fog_desat": 2.0399999618530273,
+        "u_fog_haze": 0.8899999856948853,
+        "u_fog_range": 70.0,
+        "u_fog_start": 20.0,
+        "u_light_ambient": 0.4000000059604645,
+        "u_light_cool_color": [
+            0.5488371849060059,
+            0.7167119383811951,
+            1.0
+        ],
+        "u_light_moon_key": 4.380000114440918,
+        "u_light_sky_key": 0.5,
+        "u_light_warm_color": [
+            1.0,
+            1.0,
+            1.0
+        ],
+        "u_plane_blink": 5.539999961853027,
+        "u_plane_color": [
+            1.0,
+            0.949999988079071,
+            0.8999999761581421
+        ],
+        "u_plane_period": 22.0,
+        "u_plane_size": 0.03500000014901161,
+        "u_plane_speed": 0.1599999964237213,
+        "u_sky_glow_pow": 11.670000076293945,
+        "u_sky_horizon_color": [
+            0.4372093081474304,
+            0.3437897861003876,
+            0.1952190399169922
+        ],
+        "u_sky_moon_dir": [
+            -0.45500001311302185,
+            0.5899999737739563,
+            -0.8820000290870667
+        ],
+        "u_sky_moon_halo": 0.3499999940395355,
+        "u_sky_moon_size": 0.054999999701976776,
+        "u_sky_star_bright": 1.0399999618530273,
+        "u_sky_star_density": 0.949999988079071,
+        "u_sky_zenith_color": [
+            0.07087073475122452,
+            0.07380792498588562,
+            0.08372092247009277
+        ],
+        "u_wall_ao": 0.5,
+        "u_wall_band": 0.009999999776482582,
+        "u_wall_grain": 0.03999999910593033,
+        "u_wall_grey_hi": [
+            0.12558138370513916,
+            0.12289995700120926,
+            0.11331529170274734
+        ],
+        "u_wall_grey_lo": [
+            0.09302324056625366,
+            0.09302324056625366,
+            0.09302324056625366
+        ],
+        "u_wall_plinth": 0.550000011920929,
+        "u_win_brightness": 2.0,
+        "u_win_cool_color": [
+            0.6232558488845825,
+            0.4348296523094177,
+            0.0
+        ],
+        "u_win_curtain_frac": 0.5099999904632568,
+        "u_win_falloff_lin": 2.9700000286102295,
+        "u_win_falloff_quad": 20.0,
+        "u_win_size": [
+            0.6000000238418579,
+            0.49000000953674316
+        ],
+        "u_win_soft_color": [
+            0.5720930099487305,
+            0.4418490529060364,
+            0.15965387225151062
+        ],
+        "u_win_warm_color": [
+            0.7441860437393188,
+            0.5878294110298157,
+            0.29075175523757935
+        ]
+    },
+    "ui_state": {
+        "ui_name": "city v06 (depth)",
+        "description": "Depth overhaul + cars(2 lights, both lanes) + single blink plane. ~57 uniforms exposed with inline defaults, grouped by prefix (u_cam_/u_city_/u_win_/u_wall_/u_light_/u_fog_/u_sky_/u_plane_/u_car_); color uniforms end in _color for the color picker. Name-sort groups them by subsystem.",
+        "render_media_details": {
+            "is_video": true,
+            "file_details": {
+                "path": "",
+                "size": 0
+            },
+            "resolution_details": {
+                "width": 720,
+                "height": 1280
+            },
+            "quality": 0,
+            "fps": 30,
+            "duration": 1.0
+        },
+        "ui_uniforms": {
+            "260085533400259490348506664942395818974": {
+                "name": "u_aspect",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "auto"
+            },
+            "37154164850612245702881750831795076973": {
+                "name": "u_time",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "auto"
+            },
+            "104717081228439853745846685210379645": {
+                "name": "u_cam_fov",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "59522689044772677027054269313982577573": {
+                "name": "u_cam_look",
+                "is_ubo": false,
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "65306524459533408279159412561230281913": {
+                "name": "u_cam_pos",
+                "is_ubo": false,
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "223809848260154245690628086168641599031": {
+                "name": "u_cam_sway",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "86477069641140933581962020253688214231": {
+                "name": "u_car_falloff_lin",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "81343227075673270706011545194830237155": {
+                "name": "u_car_falloff_quad",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "94259833247185706601469580312908091514": {
+                "name": "u_car_head_boost",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "121943706850113920772369375670913491159": {
+                "name": "u_car_head_color",
+                "is_ubo": false,
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "color"
+            },
+            "124518293787083434793867157766559472499": {
+                "name": "u_car_lane",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "102539188869940628624857981322751772132": {
+                "name": "u_car_speed",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "316718609235195588837882623340706629632": {
+                "name": "u_car_speed_var",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "153585972883361018817591882859452571320": {
+                "name": "u_car_tail_boost",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "41364591556545201349895114770808993138": {
+                "name": "u_car_tail_color",
+                "is_ubo": false,
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "color"
+            },
+            "7911194763130691641224901539213424234": {
+                "name": "u_car_track",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "258658911704769322382803738455383224229": {
+                "name": "u_city_bldg_half",
+                "is_ubo": false,
+                "gl_type": 35664,
+                "dimension": 2,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "199685930107425996600839743525096372340": {
+                "name": "u_city_floor_h",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "195293387477278585813024444811006870551": {
+                "name": "u_city_ground_y",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "312683298654015915598345985773537636254": {
+                "name": "u_city_height_base",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "122180749820385072404988601110312303077": {
+                "name": "u_city_height_var",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "282385199180141014505570726665812718051": {
+                "name": "u_city_radius",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "141308976459565336676369762619907589508": {
+                "name": "u_city_spacing",
+                "is_ubo": false,
+                "gl_type": 35664,
+                "dimension": 2,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "246462264483755088265186028058203222805": {
+                "name": "u_fog_desat",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "74723243297848368061365121627930166994": {
+                "name": "u_fog_haze",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "190134011973553841581182131546170099719": {
+                "name": "u_fog_range",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "98562367912241894743117960212534764539": {
+                "name": "u_fog_start",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "313230201156217545762636046464596596438": {
+                "name": "u_light_ambient",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "69213114406144269139596165524356615037": {
+                "name": "u_light_cool_color",
+                "is_ubo": false,
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "color"
+            },
+            "158369449691543563088735761619247242665": {
+                "name": "u_light_moon_key",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "239802468727184332469413848138478855762": {
+                "name": "u_light_sky_key",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "216417292275940972197300471045238801276": {
+                "name": "u_light_warm_color",
+                "is_ubo": false,
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "color"
+            },
+            "105152394684910454271375920862175700643": {
+                "name": "u_plane_blink",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "329570869516706941291638784521528761988": {
+                "name": "u_plane_color",
+                "is_ubo": false,
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "color"
+            },
+            "86557582463669270892088853869028276593": {
+                "name": "u_plane_period",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "25090487121931271549185422709441986420": {
+                "name": "u_plane_size",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "74111312241359710380026507745682768698": {
+                "name": "u_plane_speed",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "66488363321009066888236810842855607901": {
+                "name": "u_sky_glow_pow",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "184521432433695249135353633903608963148": {
+                "name": "u_sky_horizon_color",
+                "is_ubo": false,
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "color"
+            },
+            "20365557077877842776618045230012575917": {
+                "name": "u_sky_moon_dir",
+                "is_ubo": false,
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "257316772063644031752919806972107200464": {
+                "name": "u_sky_moon_halo",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "109944821991708779213761159118094853421": {
+                "name": "u_sky_moon_size",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "87043252128310311665639451008715537354": {
+                "name": "u_sky_star_bright",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "234334327884784312796382122995924555305": {
+                "name": "u_sky_star_density",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "134276630031988897647233160184375306211": {
+                "name": "u_sky_zenith_color",
+                "is_ubo": false,
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "color"
+            },
+            "334982875712017688232631721249208308230": {
+                "name": "u_wall_ao",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "299533354028693995788947640682474668957": {
+                "name": "u_wall_band",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "145634575090915805032140857662149592512": {
+                "name": "u_wall_grain",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "19043335480890024473664277210707171197": {
+                "name": "u_wall_grey_hi",
+                "is_ubo": false,
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "color"
+            },
+            "252542706484752286694305004114536222278": {
+                "name": "u_wall_grey_lo",
+                "is_ubo": false,
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "color"
+            },
+            "179230564339588071285027688241736507464": {
+                "name": "u_wall_plinth",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "242648840904611876057648061124116573811": {
+                "name": "u_win_brightness",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "311153685531913817973410488254841311146": {
+                "name": "u_win_cool_color",
+                "is_ubo": false,
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "color"
+            },
+            "6722701922468699970997620500027384720": {
+                "name": "u_win_curtain_frac",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "289115849807653395961134580190804204033": {
+                "name": "u_win_falloff_lin",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "292895706978305592159257651023538432388": {
+                "name": "u_win_falloff_quad",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "32067470447156734518675144498384371057": {
+                "name": "u_win_size",
+                "is_ubo": false,
+                "gl_type": 35664,
+                "dimension": 2,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "65144526604113065189364834721801296851": {
+                "name": "u_win_soft_color",
+                "is_ubo": false,
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "color"
+            },
+            "90177198846599751891728485152569928460": {
+                "name": "u_win_warm_color",
+                "is_ubo": false,
+                "gl_type": 35665,
+                "dimension": 3,
+                "array_length": 1,
+                "input_type": "color"
+            }
+        },
+        "uniform_sort_key": "name",
+        "uniform_sort_desc": false,
+        "video_to_video_smoothing_window": 5,
+        "video_to_video_smoothing_sigma": 1.0,
+        "stopped_uniforms": [],
+        "all_stopped": false
+    }
+}
