@@ -17,6 +17,15 @@ SHORT_LONGEST_EDGE = 1920
 DEFAULT_FPS = 30
 SHORTS_TAG = "#Shorts"
 
+# Selectable Shorts render resolutions (9:16; the value is the longest edge = height). 1080p is the
+# YouTube-recommended Shorts size; 1440p oversamples for crisper output, 720p is a fast preview.
+SHORT_RES_PRESETS: list[tuple[str, int]] = [
+    ("720p", 1280),
+    ("1080p", 1920),
+    ("1440p", 2560),
+]
+SHORT_RES_DEFAULT_IDX = 1  # 1080p
+
 # A small, stable subset of YouTube's videoCategories (id -> label). The full set
 # is region-dependent; these ids are valid everywhere and the user adjusts the rest
 # in Studio. Keep "22" first (the default).

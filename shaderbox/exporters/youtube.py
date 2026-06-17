@@ -33,8 +33,9 @@ from shaderbox.exporters.youtube_util import (
     DEFAULT_CATEGORY_ID,
     DEFAULT_FPS,
     SHORT_ASPECT,
-    SHORT_LONGEST_EDGE,
     SHORT_MAX_DURATION_SEC,
+    SHORT_RES_DEFAULT_IDX,
+    SHORT_RES_PRESETS,
     YOUTUBE_SCOPES,
     build_client_config,
     build_insert_body,
@@ -111,6 +112,7 @@ class _ConnectEvent:
 class _RenderState:
     media_dir: Path | None = None
     shape: Literal["long", "short"] = "long"
+    short_res_idx: int = SHORT_RES_DEFAULT_IDX
     title: str = ""
     description: str = ""
     tags_raw: str = ""
@@ -247,6 +249,9 @@ class YouTubeExporter(Exporter):
 
     def render_preset(self) -> RenderPreset:
         if self._render_state.shape == "short":
+            idx = max(
+                0, min(self._render_state.short_res_idx, len(SHORT_RES_PRESETS) - 1)
+            )
             return RenderPreset(
                 is_video=True,
                 container=".mp4",
@@ -254,7 +259,7 @@ class YouTubeExporter(Exporter):
                 duration_max=SHORT_MAX_DURATION_SEC,
                 resolution_policy=ResolutionPolicy.FIXED_ASPECT,
                 aspect=SHORT_ASPECT,
-                longest_edge=SHORT_LONGEST_EDGE,
+                longest_edge=SHORT_RES_PRESETS[idx][1],
                 fit=FitPolicy.RENDER_AT_TARGET,
             )
         return RenderPreset(
@@ -454,6 +459,14 @@ class YouTubeExporter(Exporter):
         imgui.same_line()
         if chip_button("Short", active=rs.shape == "short"):
             rs.shape = "short"
+
+        # Shorts resolution presets (9:16; longest edge). Only relevant for the short shape.
+        if rs.shape == "short":
+            for i, (label, _edge) in enumerate(SHORT_RES_PRESETS):
+                if i > 0:
+                    imgui.same_line()
+                if chip_button(label, active=rs.short_res_idx == i):
+                    rs.short_res_idx = i
 
         # Metadata fields (inline, no accordion).
         rs.title = labeled_text_input("Title", rs.title, field_w)
