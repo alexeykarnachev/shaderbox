@@ -347,8 +347,82 @@ MEAN hides a localized pop; use max/count.
 A node can carry `scripts/script.py` = `class Behavior(ScriptBehavior)` with `update(self, ctx) -> dict`
 returning `{uniform_name: value}` to drive uniforms from Python state each frame (the engine hot-reloads
 it live, same as the shader). Good for time-varying SCALAR/VECTOR uniforms with persistent state
-(flicker amplitude random-walk, a pulsing intensity) — NOT for per-pixel work (that stays in GLSL).
-Reach for it only when an effect genuinely wants stateful CPU-driven parameters; many effects don't.
+(flicker amplitude random-walk, a pulsing intensity), AND for a whole per-instance SIMULATION pushed to
+the shader as an array uniform (`Array([flat floats])` → `uniform vecN arr[M]`) — e.g. N agents whose
+positions a Python sim integrates each frame. NOT for per-pixel work (that stays in GLSL). Reach for it
+only when an effect genuinely wants stateful CPU-driven parameters; many effects don't.
+
+- **The `render_node.py` still path and video path BOTH must coerce + tick like the live engine.** A
+  script that returns `Array`/`Vec3`/`Text` (not a bare scalar) only works in the headless helper if
+  the still path runs `normalize_output` + `coerce_uniform_value` against the live `moderngl.Uniform`,
+  and the VIDEO path wires `node.on_pre_render` to tick a fresh `Behavior` per frame (a bare Node has
+  no `ProjectSession` to wire it, so without this the sim is frozen at `__init__` state). Both were
+  fixed in the boids lab — if a future lab's first array/sim script renders blank or static, check
+  these two in `render_node.py` first.
+- **A CONSTANT-REGISTER budget caps array uniforms.** The glyph tables already eat ~600/1024 slots, so
+  a large `uniform vecN arr[M]` can overflow with `C6020`. Keep M modest (boids ran fine at N=40);
+  if you need text captions AND a big array in the same shader, that's the collision to watch.
+
+## Specific-algorithm sims — research the real thing, don't hand-tune from intuition
+
+When the CPU sim implements a NAMED algorithm (flocking/boids, a physics integrator, a cellular
+automaton, an L-system, SPH, …), your invented parameters will be wrong and you'll burn rounds chasing
+them. (The boids lab: many rounds of guessed weights gave a frozen ball, then a comet line, before a
+deep-research pass on Reynolds/Shiffman/the starling papers gave the canonical structure that fixed it
+in one shot.) The protocol:
+
+- **Get the canonical STRUCTURE + parameter REGIME from real sources** (the algorithm's primary paper,
+  a reference implementation, a respected tutorial), not from memory. Transfer the RATIOS and the
+  structure, not raw numbers tuned for someone else's world scale.
+- **If the maintainer has their OWN implementation (a repo, a past project), port THAT** — it's already
+  debugged to their taste. (The boids lab ported the maintainer's `boids_demo` C/raylib repo; its
+  alignment-as-capped-rotation + damping-drag + min-speed-floor was the robust recipe intuition missed.)
+- **A CPU mirror of a shader function MUST be verified numerically EQUAL to the GLSL, including on
+  negatives/edges — never assumed.** A "looks equivalent" builtin can silently diverge: `np.modf(x)[0]`
+  keeps the sign while GLSL `fract` doesn't, so on negative inputs the Python city heights diverged
+  from the drawn ones by ~38 units and the agents navigated a phantom world ("flying through
+  buildings"). Cross-check by sampling BOTH implementations over the real input domain and asserting
+  max-diff ≈ 0. A self-consistency check against your own mirror proves nothing — the oracle must be
+  the OTHER implementation (the shader).
+- **Per-agent obstacle avoidance is anti-cohesive for a group that must read as ONE cluster** — each
+  agent dodges its own way and the group shatters/stretches. Either avoid as a GROUP (centroid-based)
+  or route the group where avoidance rarely fires (the boids ended up cruising ABOVE the rooftops).
+
+## Selective-variant tuning — when the agent CAN'T judge the look, let the maintainer pick
+
+The agent's read of a rendered image (and especially of MOTION) is unreliable, and numeric proxies
+(elongation, alignment, spread) only weakly predict "looks good". When a parameter is AESTHETIC and you
+catch yourself guessing-and-re-rendering, STOP and run a **side-by-side selection loop** instead — this
+was the one part of the boids lab that worked cleanly:
+
+1. Render **2×2 (or N) variants in ONE frame/clip**, each a different parameter set, labelled. (Cheap
+   way for a sim: a small pure-Python/numpy splat renderer drawing all N grids into one MP4 — you don't
+   even need the shader for a motion-shape comparison.)
+2. The maintainer picks the best **by eye** (and says which to drop).
+3. **Mutate the winner** into a new N variants (vary one or two axes each; keep one near-copy as a
+   control), render the grid again, repeat. A few rounds converge fast.
+4. Crossbreed survivors when several are "good" (average / mix their genes), and only THEN graduate the
+   chosen params into the full scene.
+
+This beats both blind agent tuning and a single-number objective for anything where the target is "looks
+alive / looks right". Treat it as the default move for aesthetic-parameter search.
+
+## Verify the premise before patching (and verify WHICH part is broken)
+
+A recurring time-sink this lab: a symptom gets attributed to the wrong cause and you optimize/patch the
+wrong thing. Discipline:
+
+- **A "still broken / it's worse" report is a signal your MODEL is wrong — re-derive from real data, do
+  not defend or re-guess.** When the maintainer names a likely cause ("maybe it's the heights?"), test
+  THAT first — they were right and it was a numeric mirror bug.
+- **Confirm WHICH function/stage is the problem before fixing it.** A "20 update() calls didn't finish
+  in 90s" was read as "update() is slow" and the wrong code was optimized for a long time — the process
+  was actually hung in `__init__` (an infinite rejection-sampling loop). The cheap decisive measurement
+  (time `__init__` in isolation) would have localized it in seconds.
+- **One constant doing two unrelated jobs is a trap.** A clearance value reused as both an in-flight
+  margin (wants to be large) and a spawn-acceptance gate (must be small/satisfiable) hung the
+  constructor forever when widened. Give each job its own named constant; bound any rejection-sampling
+  loop + assert its post-condition (never a bare `while` on a possibly-unsatisfiable predicate).
 
 ---
 
@@ -377,13 +451,24 @@ NOTES. When the user references "the X project / lab", it's `projects/_lab/X/`.
   neighbor-min, ground-glow cars w/ right-hand lanes, painted facade detail, rooftop-clutter geometry,
   the night-lighting art-rule set, per-step entrance animations, and the matured single-node learning
   reel. Everything in the Raymarching/SDF, Lighting, and Step-reveal sections above was mined here.
-  NOTES: `projects/_lab/night_city/NOTES.md`.
+  **Its directional night-key + facade unwrap is the canonical "night city look" — PORT THE SHADER,
+  not the NOTES summary** (a summary-based reimpl dropped the directional key and read flat). NOTES:
+  `projects/_lab/night_city/NOTES.md`; shader: `nodes/v06-depth/shader.frag.glsl`.
+- **`boids`** — 3D flocking (CPU-scripted sim) over the night city (gitignored, NOT promoted — the
+  maintainer judged the motion unsatisfying). Mined process lessons, not a kept effect: the
+  selective-variant tuning loop, "research/port the real algorithm", the CPU↔GPU numeric-mirror bug
+  (`fract` vs `np.modf`), per-agent avoidance is anti-cohesive, verify-the-premise discipline, and the
+  array-uniform / `render_node.py` ticking gotchas — all folded into the generic sections above.
+  NOTES: `projects/_lab/boids/NOTES.md`.
 
 ## Follow-ups (NOT ready — don't build these mid-session; capture the idea)
 
-- **Variant nodes → visual pick → aggregate.** At a fork, generate several variants of one idea as
-  parallel sibling nodes (not just a linear chain), let the user pick visually ("take the tip from
-  this one, the color from that one"), then aggregate the chosen parts into a new node and delete the
-  rejected variants. A branching compare/merge flow on top of the linear node progression.
 - **Generalise the render helper into the app.** `render_node.py` is the lab's tool; a built-in
   "render this node to MP4 at size/duration" command in ShaderBox proper would remove the script.
+- **A built-in N-up variant grid render.** The selective-variant loop above was hand-rolled as a
+  throwaway numpy splat script each round. A reusable "render these K param-sets into one labelled grid
+  MP4" helper would make the selection loop a first-class lab tool. (Promoted from a prior follow-up
+  after the boids lab proved the loop's value.)
+- **Group-coherent obstacle avoidance.** Per-agent SDF avoidance shatters a flock; a centroid-based or
+  shared-steering avoidance that keeps the group cohesive while dodging is unsolved — deferred (the
+  boids lab sidestepped it by flying above the obstacles).
