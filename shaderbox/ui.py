@@ -300,9 +300,9 @@ def update_and_draw(app: App) -> None:
         glfw.set_cursor(app.window, app.want_cursor)
         app.cur_cursor = app.want_cursor
     app.want_cursor = None
-    # The "Rendering..." cue. The Render-tab encode runs AFTER this frame's swap (below)
-    # so its cue is provably on the glass before the encode freezes the loop; the copilot
-    # bridge handles its own deferral.
+    # The "Rendering..." cue. Every render encode — Render tab, Share-tab outlet, copilot — runs
+    # AFTER this frame's swap + gl.finish (below), the one point the cue is provably on the glass
+    # before the encode freezes the loop.
     run_render_now = app.render_defer.ready_to_fire()
     if app.copilot.bridge.render_pending() or app.render_defer.has_request():
         rendering_overlay("Rendering... the app pauses while it encodes.")
@@ -323,11 +323,15 @@ def update_and_draw(app: App) -> None:
 
     glfw.swap_buffers(app.window)
 
-    # Run the Render-tab encode HERE, after the swap, so the cue frame is presented before
-    # the encode blocks. glFinish forces the GPU to display it (a queued buffer can't
-    # composite while the main thread blocks for seconds inside the encode).
-    if run_render_now:
+    # Run every deferred render encode HERE, after the swap, so the cue frame is presented before
+    # the encode blocks. glFinish forces the GPU to display it (a queued buffer can't composite
+    # while the main thread blocks for seconds inside the encode). Both producers share this one
+    # firing point: RenderDefer (Render/Share tabs, a two-frame latch) and the copilot bridge's
+    # parked render op (parked this frame in drain_bridge, fired now).
+    bridge_render_pending: bool = app.copilot.bridge.render_pending()
+    if run_render_now or bridge_render_pending:
         gl.finish()
+    if run_render_now:
         request = app.render_defer.fire_and_clear()
         if request is not None:
             request()
@@ -336,6 +340,8 @@ def update_and_draw(app: App) -> None:
         app.render_defer.mark_shown()
     else:
         app.render_defer.shown = False
+    if bridge_render_pending:
+        app.copilot.bridge.run_deferred_render()
 
     app.frame_idx += 1
 

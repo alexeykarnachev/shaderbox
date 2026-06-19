@@ -8,12 +8,18 @@ from shaderbox.copilot.capabilities import (
     RenderResult,
 )
 from shaderbox.copilot.tools.base import GatePolicy, ToolArgs, ToolDefinition
+from shaderbox.render_shape import RenderShape
 
 # Render tools marshal GL via the bridge; all are GatePolicy.ALWAYS (render freezes the UI,
 # publish is external + irreversible). Publish tools precheck (handoff) before the gate.
 
-# Dimensions snap to the codec alignment, so the result reports the ACTUAL rendered size.
-_DIM_DESC = "pixels; omit (0) to use the node's current canvas size. Snaps up to the codec alignment."
+# The output size is a named RenderShape tier — the SAME vocabulary the Share tab exposes, so a
+# render matches what publish would emit. The agent picks a member (NATIVE = the node's authored
+# canvas size, any aspect; short_* = 9:16; wide_* = 16:9), never raw pixels (no off-aspect Short).
+_SHAPE_DESC = (
+    "output size: native (the node's canvas size, any aspect), short_720/short_1080/short_1440 "
+    "(9:16 vertical), or wide_720/wide_1080/wide_1440 (16:9). Dims snap to the codec alignment."
+)
 
 
 class _RenderImageArgs(ToolArgs):
@@ -21,8 +27,7 @@ class _RenderImageArgs(ToolArgs):
         default="",
         description="node id (from the project map); empty = the shader you're working on",
     )
-    width: int = Field(default=0, ge=0, le=4096, description=_DIM_DESC)
-    height: int = Field(default=0, ge=0, le=4096, description=_DIM_DESC)
+    shape: RenderShape = Field(default=RenderShape.NATIVE, description=_SHAPE_DESC)
 
 
 class _RenderVideoArgs(ToolArgs):
@@ -36,8 +41,7 @@ class _RenderVideoArgs(ToolArgs):
         description="how many seconds of the animation to render, from t=0 (required)",
     )
     fps: int = Field(default=30, ge=1, le=120, description="frames per second")
-    width: int = Field(default=0, ge=0, le=4096, description=_DIM_DESC)
-    height: int = Field(default=0, ge=0, le=4096, description=_DIM_DESC)
+    shape: RenderShape = Field(default=RenderShape.NATIVE, description=_SHAPE_DESC)
 
 
 class _PublishTelegramArgs(ToolArgs):
@@ -50,9 +54,12 @@ class _PublishTelegramArgs(ToolArgs):
 class _PublishYoutubeArgs(ToolArgs):
     title: str = Field(description="the video title")
     description: str = Field(default="", description="the video description")
-    is_short: bool = Field(
-        default=False,
-        description="True = a YouTube Short (9:16, <=60s); False = a normal video",
+    shape: RenderShape = Field(
+        default=RenderShape.NATIVE,
+        description=(
+            "the output shape: a short_* (9:16, <=60s, a YouTube Short) or a wide_*/native "
+            "(16:9 or canvas, a normal video). " + _SHAPE_DESC
+        ),
     )
 
 
@@ -120,13 +127,11 @@ def _publish_result(r: PublishResult, target: str) -> tuple[bool, str, dict | No
 
 def publish_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
     def render_image(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
-        r = caps.render_image(args["node"], args["width"], args["height"])
+        r = caps.render_image(args["node"], args["shape"])
         return _render_result(r, "image")
 
     def render_video(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
-        r = caps.render_video(
-            args["node"], args["seconds"], args["fps"], args["width"], args["height"]
-        )
+        r = caps.render_video(args["node"], args["seconds"], args["fps"], args["shape"])
         return _render_result(r, "video")
 
     def publish_telegram(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
@@ -134,7 +139,7 @@ def publish_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
         return _publish_result(r, "Telegram")
 
     def publish_youtube(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
-        r = caps.publish_youtube(args["title"], args["description"], args["is_short"])
+        r = caps.publish_youtube(args["title"], args["description"], args["shape"])
         return _publish_result(r, "YouTube")
 
     def telegram_precheck(args: dict[str, Any]) -> str | None:

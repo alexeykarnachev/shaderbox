@@ -233,7 +233,7 @@ class SIZE:
     # Shared share-panel preview box — every exporter's preview is this exact size.
     # Height is generous so it always exceeds any outlet's control column.
     SHARE_PREVIEW_W: int = 200
-    SHARE_PREVIEW_H: int = 310
+    SHARE_PREVIEW_H: int = 335
 
     FPS_PANEL_W: int = 160
     SETTINGS_W: int = 780

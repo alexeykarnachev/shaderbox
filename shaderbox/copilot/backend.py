@@ -69,7 +69,8 @@ from shaderbox.exporters.telegram import NEEDS_START_ERROR, TelegramExporter
 from shaderbox.exporters.youtube import YouTubeExporter
 from shaderbox.glyph_tables import TABLE_UNIFORMS
 from shaderbox.paths import shader_lib_root
-from shaderbox.render_preset import FitPolicy, RenderPreset, ResolutionPolicy
+from shaderbox.render_preset import RenderPreset
+from shaderbox.render_shape import RenderShape, shape_to_preset
 from shaderbox.scripting import (
     ScriptError,
     ScriptProbe,
@@ -1053,14 +1054,15 @@ class CopilotBackend:
                 return candidate
             n += 1
 
-    def render_image(self, node: str, width: int, height: int) -> RenderResult:
+    def render_image(self, node: str, shape: RenderShape) -> RenderResult:
         # Render the current frame to a PNG (GL; marshalled with the longer render_op_timeout_s).
         def _on_main() -> RenderResult:
             ui_node = self._copilot_render_target(node)
             if ui_node is None:
                 return RenderResult(ok=False, error=f"no such node '{node}'")
-            w, h = self._copilot_render_dims(ui_node, width, height)
-            preset = self._copilot_render_preset(False, None, w, h)
+            preset = shape_to_preset(
+                shape, is_video=False, fps=None, container=None, duration_max=None
+            )
             out = self._copilot_render_path(ui_node, "png")
             art = share_state.render_to(ui_node.node, preset, 0.0, out)
             if art is None:
@@ -1078,15 +1080,16 @@ class CopilotBackend:
         )
 
     def render_video(
-        self, node: str, seconds: float, fps: int, width: int, height: int
+        self, node: str, seconds: float, fps: int, shape: RenderShape
     ) -> RenderResult:
         # Render `seconds` of animation (from t=0) to a WebM.
         def _on_main() -> RenderResult:
             ui_node = self._copilot_render_target(node)
             if ui_node is None:
                 return RenderResult(ok=False, error=f"no such node '{node}'")
-            w, h = self._copilot_render_dims(ui_node, width, height)
-            preset = self._copilot_render_preset(True, fps, w, h)
+            preset = shape_to_preset(
+                shape, is_video=True, fps=fps, container=".webm", duration_max=None
+            )
             out = self._copilot_render_path(ui_node, "webm")
             art = share_state.render_to(ui_node.node, preset, seconds, out)
             if art is None:
@@ -1127,27 +1130,6 @@ class CopilotBackend:
         if node_id is None or node_id not in self._get_ui_nodes():
             return None
         return self._get_ui_nodes()[node_id]
-
-    def _copilot_render_dims(
-        self, node: UINode, width: int, height: int
-    ) -> tuple[int, int]:
-        # 0 => the node's current canvas size (GL read, main thread).
-        cw, ch = node.node.canvas.texture.size
-        return (width or cw, height or ch)
-
-    def _copilot_render_preset(
-        self, is_video: bool, fps: int | None, w: int, h: int
-    ) -> RenderPreset:
-        # FIXED_DIMS + RENDER_AT_TARGET so (w, h) drives the output (the default ignores them).
-        return RenderPreset(
-            is_video=is_video,
-            fps=fps,
-            target_w=w,
-            target_h=h,
-            container=".webm" if is_video else None,
-            resolution_policy=ResolutionPolicy.FIXED_DIMS,
-            fit=FitPolicy.RENDER_AT_TARGET,
-        )
 
     def _copilot_publish(
         self,
@@ -1224,7 +1206,7 @@ class CopilotBackend:
         return self._copilot_publish(exporter, "telegram", preset, settings)
 
     def publish_youtube(
-        self, title: str, description: str, is_short: bool
+        self, title: str, description: str, shape: RenderShape
     ) -> PublishResult:
         exporter = self._get_exporter_registry().get("youtube")
         if not isinstance(exporter, YouTubeExporter):
@@ -1232,27 +1214,28 @@ class CopilotBackend:
                 ok=False, error="YouTube exporter unavailable", kind="youtube"
             )
 
-        # Drive the shape from the arg so preset + is_short agree; restore the user's Share-tab
-        # shape after. set_shape writes _render_state.shape, which the main-thread Share tab reads —
+        # Drive the shape from the arg so the render preset + the #Shorts upload flag agree; restore
+        # the user's Share-tab shape after (a FULL RenderShape, so a WIDE_1440 choice round-trips
+        # losslessly). set_shape writes _render_state.shape, which the main-thread Share tab reads —
         # so the shape mutations marshal to main (the publish itself does its own bridge ops).
-        def _set_shape_read_preset(shape: bool) -> tuple[bool, RenderPreset]:
-            prior = exporter.current_is_short()
+        def _set_shape_read_preset() -> tuple[RenderShape, RenderPreset, bool]:
+            prior = exporter.current_shape()
             exporter.set_shape(shape)
-            return prior, exporter.render_preset()
+            return prior, exporter.render_preset(), exporter.current_is_short()
 
-        prior_short, preset = self._bridge.run_on_main(
-            lambda: _set_shape_read_preset(is_short)
+        prior_shape, preset, is_short_now = self._bridge.run_on_main(
+            _set_shape_read_preset
         )
         try:
             settings: dict[str, Any] = {
                 "title": title,
                 "description": description,
-                "is_short": is_short,
+                "is_short": is_short_now,
                 "seconds": preset.duration_max or 6.0,
             }
             return self._copilot_publish(exporter, "youtube", preset, settings)
         finally:
-            self._bridge.run_on_main(lambda: exporter.set_shape(prior_short))
+            self._bridge.run_on_main(lambda: exporter.set_shape(prior_shape))
 
     def has_current_node(self) -> bool:
         return self._get_current_node_id() in self._get_ui_nodes()

@@ -1,6 +1,8 @@
 from dataclasses import dataclass, field
 from typing import Protocol
 
+from shaderbox.render_shape import RenderShape
+
 # The only app surface the copilot package imports: a Protocol the backend
 # (copilot/backend.py::CopilotBackend) satisfies structurally — the production session
 # passes the backend itself. The package imports ONLY this leaf — never App, imgui, or
@@ -325,10 +327,10 @@ class CopilotCapabilities(Protocol):
     # ---- render / publish (all gated) ----
     # Render a node's current frame to a PNG / `seconds` of animation to a WebM under the
     # project renders dir. GL => the method marshals via the bridge with the longer
-    # render_op_timeout_s. A 0 width/height means "use the node's canvas size".
-    def render_image(self, node: str, width: int, height: int, /) -> RenderResult: ...
+    # render_op_timeout_s. `shape` is a named RenderShape tier (NATIVE = the node's canvas size).
+    def render_image(self, node: str, shape: RenderShape, /) -> RenderResult: ...
     def render_video(
-        self, node: str, seconds: float, fps: int, width: int, height: int, /
+        self, node: str, seconds: float, fps: int, shape: RenderShape, /
     ) -> RenderResult: ...
 
     # The aimable read-side probe (feature 050): a one-line facts string off a tiny offscreen
@@ -340,7 +342,7 @@ class CopilotCapabilities(Protocol):
     # progress (the method does the bridge-marshalled poll).
     def publish_telegram(self, emoji: str, /) -> PublishResult: ...
     def publish_youtube(
-        self, title: str, description: str, is_short: bool, /
+        self, title: str, description: str, shape: RenderShape, /
     ) -> PublishResult: ...
 
     # GL-free precheck reads backing the pre-gate guided handoff: is there a current node, is

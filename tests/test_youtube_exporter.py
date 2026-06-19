@@ -18,6 +18,7 @@ from shaderbox.exporters.base import (
 )
 from shaderbox.exporters.integrations import IntegrationsStore
 from shaderbox.exporters.youtube import YouTubeExporter, _AuthEvent, _ConnectEvent, _Job
+from shaderbox.render_shape import RenderShape
 
 
 def _video(tmp_path: Path, size: tuple[int, int] = (608, 1088)) -> RenderedArtifact:
@@ -212,20 +213,20 @@ def test_size_gate_rejects_mismatched_artifact() -> None:
 
     ui_node: Any = _UINode()
 
-    exp._render_state.shape = "short"
+    exp._render_state.shape = RenderShape.SHORT_1080
     short_expected = resolve_dims(exp.render_preset(), node_canvas)
-    exp._render_state.shape = "long"
+    exp._render_state.shape = RenderShape.NATIVE
     long_expected = resolve_dims(exp.render_preset(), node_canvas)
     assert short_expected != long_expected  # the two shapes resolve differently
 
-    # Landscape artifact (matches long) while toggle is "short" -> gate fails.
+    # Landscape artifact (matches long) while toggle is a Short -> gate fails.
     landscape = RenderedArtifact(
         path=Path("x.mp4"), is_video=True, duration=4.0, size=long_expected
     )
-    exp._render_state.shape = "short"
+    exp._render_state.shape = RenderShape.SHORT_1080
     assert not exp._artifact_matches_shape(landscape, ui_node)
-    # Same artifact while toggle is "long" -> gate passes.
-    exp._render_state.shape = "long"
+    # Same artifact while toggle is long-form -> gate passes.
+    exp._render_state.shape = RenderShape.NATIVE
     assert exp._artifact_matches_shape(landscape, ui_node)
     # None artifact never passes.
     assert not exp._artifact_matches_shape(None, ui_node)
@@ -347,11 +348,11 @@ def test_current_settings_empty() -> None:
 def test_rebind_clears_render_state() -> None:
     exp = YouTubeExporter()
     exp._render_state.title = "old project title"
-    exp._render_state.shape = "short"
+    exp._render_state.shape = RenderShape.SHORT_1080
     exp._render_state.last_studio_url = "url"
     exp.rebind({})
     assert exp._render_state.title == ""
-    assert exp._render_state.shape == "long"
+    assert exp._render_state.shape == RenderShape.NATIVE
     assert exp._render_state.last_studio_url == ""
 
 

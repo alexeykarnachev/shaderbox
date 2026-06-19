@@ -168,6 +168,8 @@ class Video(MediaWithTexture):
 
         self._texture: moderngl.Texture | None = None
 
+        self._fps: int = fps
+        self._n_frames: int = int(self._cap.get(cv2.CAP_PROP_FRAME_COUNT))
         self._frame_period = 1.0 / fps
         self._last_frame_idx: int = -1
 
@@ -179,28 +181,32 @@ class Video(MediaWithTexture):
     def details(self) -> MediaDetails:
         return self._details
 
+    def _upload_frame(self, frame: "cv2.typing.MatLike") -> None:
+        # cv2 reads BGR uint8; convert to RGBA, flip for OpenGL, upload as f1 (uint8 normalized —
+        # what imgui samples, same as Image). No float32/255 pass: it quadrupled the upload bytes
+        # and cost a CPU convert every previewed frame (the post-render fps drop).
+        rgba = np.flipud(cv2.cvtColor(frame, cv2.COLOR_BGR2RGBA))
+        data = np.ascontiguousarray(rgba)
+        if self._texture is None:
+            self._texture = moderngl.get_context().texture(
+                size=(data.shape[1], data.shape[0]),
+                components=4,
+                data=data,
+                dtype="f1",
+            )
+        else:
+            self._texture.write(data)
+
     @property
     def texture(self) -> moderngl.Texture:
         if self._texture is None:
             self._cap.grab()
-            frame = self._cap.retrieve()[1]
-            frame = np.flipud(frame)
-            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGBA)
-            frame = frame.astype(np.float32) / 255.0
-            self._texture = moderngl.get_context().texture(
-                size=(frame.shape[1], frame.shape[0]),
-                components=4,
-                data=frame,
-                dtype="f4",
-            )
-
+            self._upload_frame(self._cap.retrieve()[1])
+        assert self._texture is not None  # _upload_frame creates it on first frame
         return self._texture
 
     def update(self, t: float) -> None:
-        fps = self._cap.get(cv2.CAP_PROP_FPS)
-        n_frames = int(self._cap.get(cv2.CAP_PROP_FRAME_COUNT))
-
-        target_frame_idx = int(t * fps) % n_frames
+        target_frame_idx = int(t * self._fps) % self._n_frames
 
         # We already have this frame in the texture, skip
         if self._last_frame_idx == target_frame_idx:
@@ -212,18 +218,7 @@ class Video(MediaWithTexture):
 
         is_frame, frame = self._cap.read()
         if is_frame:
-            frame = np.flipud(frame)
-            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGBA)
-            frame = frame.astype(np.float32) / 255.0
-            if self._texture is None:
-                self._texture = moderngl.get_context().texture(
-                    size=(frame.shape[1], frame.shape[0]),
-                    components=4,
-                    data=frame,
-                    dtype="f4",
-                )
-            else:
-                self._texture.write(frame)
+            self._upload_frame(frame)
             self._last_frame_idx = target_frame_idx
 
     def save(self, dir: Path, file_name_wo_ext: str) -> Path:

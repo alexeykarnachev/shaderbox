@@ -120,7 +120,9 @@ def _draw_outlet(
         size = preview.texture.size
 
     def _do_render() -> None:
-        _render(outlet, preset, current_node, state)
+        # Defer the encode one frame so the "Rendering..." cue (and any modal) paints before the
+        # synchronous encode freezes the loop — same path as the Render tab (tabs/render.py).
+        app.render_defer.submit(lambda: _render(outlet, preset, current_node, state))
 
     def _set_duration(value: float) -> None:
         outlet.duration = value

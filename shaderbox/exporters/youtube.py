@@ -3,7 +3,7 @@ import queue
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 import google.auth.transport.requests
 import google.oauth2.credentials
@@ -32,10 +32,7 @@ from shaderbox.exporters.youtube_util import (
     CATEGORY_CHOICES,
     DEFAULT_CATEGORY_ID,
     DEFAULT_FPS,
-    SHORT_ASPECT,
     SHORT_MAX_DURATION_SEC,
-    SHORT_RES_DEFAULT_IDX,
-    SHORT_RES_PRESETS,
     YOUTUBE_SCOPES,
     build_client_config,
     build_insert_body,
@@ -43,18 +40,19 @@ from shaderbox.exporters.youtube_util import (
     parse_tags,
     studio_edit_url,
 )
-from shaderbox.render_preset import (
-    FitPolicy,
-    RenderPreset,
-    ResolutionPolicy,
-    resolve_dims,
+from shaderbox.render_preset import RenderPreset, resolve_dims
+from shaderbox.render_shape import (
+    MENU_SHAPES,
+    SHAPE_TABLE,
+    RenderShape,
+    is_short,
+    shape_to_preset,
 )
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_models import UINode
 from shaderbox.ui_primitives import (
     button,
     caption_text,
-    chip_button,
     connection_status,
     danger_button,
     draw_link,
@@ -111,8 +109,7 @@ class _ConnectEvent:
 @dataclass
 class _RenderState:
     media_dir: Path | None = None
-    shape: Literal["long", "short"] = "long"
-    short_res_idx: int = SHORT_RES_DEFAULT_IDX
+    shape: RenderShape = RenderShape.NATIVE
     title: str = ""
     description: str = ""
     tags_raw: str = ""
@@ -191,7 +188,7 @@ class YouTubeExporter(Exporter):
             AuthState.AUTHED if self._has_identity() else AuthState.UNCONFIGURED
         )
         self._render_state.auth_message = ""
-        self._render_state.shape = "long"
+        self._render_state.shape = RenderShape.NATIVE
         self._render_state.title = ""
         self._render_state.description = ""
         self._render_state.tags_raw = ""
@@ -241,33 +238,24 @@ class YouTubeExporter(Exporter):
         )
 
     def current_is_short(self) -> bool:
-        return self._render_state.shape == "short"
+        return is_short(self._render_state.shape)
 
-    def set_shape(self, is_short: bool) -> None:
-        # Lets the publish path set the shape so render_preset() and the upload flag agree.
-        self._render_state.shape = "short" if is_short else "long"
+    def current_shape(self) -> RenderShape:
+        return self._render_state.shape
+
+    def set_shape(self, shape: RenderShape) -> None:
+        # Lets the copilot publish path drive the shape so preset + upload flag agree, then restore.
+        self._render_state.shape = shape
 
     def render_preset(self) -> RenderPreset:
-        if self._render_state.shape == "short":
-            idx = max(
-                0, min(self._render_state.short_res_idx, len(SHORT_RES_PRESETS) - 1)
-            )
-            return RenderPreset(
-                is_video=True,
-                container=".mp4",
-                fps=DEFAULT_FPS,
-                duration_max=SHORT_MAX_DURATION_SEC,
-                resolution_policy=ResolutionPolicy.FIXED_ASPECT,
-                aspect=SHORT_ASPECT,
-                longest_edge=SHORT_RES_PRESETS[idx][1],
-                fit=FitPolicy.RENDER_AT_TARGET,
-            )
-        return RenderPreset(
+        return shape_to_preset(
+            self._render_state.shape,
             is_video=True,
-            container=".mp4",
             fps=DEFAULT_FPS,
-            resolution_policy=ResolutionPolicy.FREE,
-            fit=FitPolicy.RENDER_AT_TARGET,
+            container=".mp4",
+            duration_max=SHORT_MAX_DURATION_SEC
+            if is_short(self._render_state.shape)
+            else None,
         )
 
     def build_render_extras(self, deps: OutletUiDeps) -> dict[str, Any]:
@@ -453,20 +441,15 @@ class YouTubeExporter(Exporter):
         rs = self._render_state
         field_w: float = float(SIZE.NAME_INPUT_W)
 
-        # Shape toggle.
-        if chip_button("Long-form", active=rs.shape == "long"):
-            rs.shape = "long"
-        imgui.same_line()
-        if chip_button("Short", active=rs.shape == "short"):
-            rs.shape = "short"
-
-        # Shorts resolution presets (9:16; longest edge). Only relevant for the short shape.
-        if rs.shape == "short":
-            for i, (label, _edge) in enumerate(SHORT_RES_PRESETS):
-                if i > 0:
-                    imgui.same_line()
-                if chip_button(label, active=rs.short_res_idx == i):
-                    rs.short_res_idx = i
+        # Resolution: one combo over all shapes (native / short 9:16 / wide 16:9). The chosen shape
+        # carries its group, so the duration cap + the Short upload flag below derive from it.
+        short_now: bool = is_short(rs.shape)
+        res_labels: list[str] = [SHAPE_TABLE[s].menu_label for s in MENU_SHAPES]
+        cur_res: int = MENU_SHAPES.index(rs.shape)
+        res_changed, new_res = labeled_combo("Resolution", cur_res, res_labels, field_w)
+        if res_changed and 0 <= new_res < len(MENU_SHAPES):
+            rs.shape = MENU_SHAPES[new_res]
+            short_now = is_short(rs.shape)
 
         # Metadata fields (inline, no accordion).
         rs.title = labeled_text_input("Title", rs.title, field_w)
@@ -483,9 +466,7 @@ class YouTubeExporter(Exporter):
         if changed and 0 <= new_idx < len(CATEGORY_CHOICES):
             rs.category_id = CATEGORY_CHOICES[new_idx][0]
 
-        v_max: float = (
-            SHORT_MAX_DURATION_SEC if rs.shape == "short" else _LONG_MAX_DURATION_SEC
-        )
+        v_max: float = SHORT_MAX_DURATION_SEC if short_now else _LONG_MAX_DURATION_SEC
         new_dur: float = labeled_drag_float(
             "Duration", rc.duration, 0.5, v_max, field_w
         )
@@ -522,7 +503,7 @@ class YouTubeExporter(Exporter):
                     description=rs.description,
                     tags=parse_tags(rs.tags_raw),
                     category_id=rs.category_id,
-                    is_short=rs.shape == "short",
+                    is_short=short_now,
                 )
             )
         if not upload_enabled:
@@ -549,7 +530,7 @@ class YouTubeExporter(Exporter):
                 # Short label, not the raw URL (too long for the slot); click opens + copies.
                 draw_link("Open in YouTube Studio", url=rs.last_studio_url)
             elif mismatch:
-                want: str = "Short" if rs.shape == "short" else "Long-form"
+                want: str = "Short" if short_now else "Long-form"
                 imgui.text_colored(COLOR.STATE_INFO, f"Re-render for {want}.")
             else:
                 caption_text("Uploads land privately on your channel.")
