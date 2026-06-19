@@ -5,12 +5,15 @@ no thread is spawned; asserts the cross-thread events + store persistence.
 """
 
 import json
+import types
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from shaderbox.copilot.backend import CopilotBackend
+from shaderbox.copilot.capabilities import PublishResult
 from shaderbox.exporters.base import (
     AuthState,
     ExporterValueError,
@@ -375,3 +378,40 @@ def test_integrations_store_youtube_round_trip() -> None:
     assert reloaded.youtube.channel_id == "UC1"
     # Telegram block still defaults cleanly alongside.
     assert reloaded.telegram.bot_token == ""
+
+
+# ------------------------------------------------- copilot publish round-trip
+def test_publish_youtube_restores_prior_shape_and_derives_is_short() -> None:
+    # The copilot publish drives the exporter's shape from its arg, then MUST restore the user's
+    # Share-tab shape (a FULL RenderShape, lossless) — and the #Shorts upload flag derives from the
+    # PUBLISHED shape, not the prior one.
+    exp = YouTubeExporter()
+    exp.set_shape(RenderShape.WIDE_1440)  # the user's standing Share-tab choice
+
+    captured: dict[str, Any] = {}
+
+    def fake_publish(
+        _exporter: Any, kind: str, _preset: Any, settings: dict[str, Any]
+    ) -> PublishResult:
+        captured["settings"] = settings
+        # the shape must be the PUBLISHED one while the publish runs
+        captured["is_short_during"] = exp.current_is_short()
+        return PublishResult(ok=True, kind=kind)
+
+    stub = types.SimpleNamespace(
+        _get_exporter_registry=lambda: {"youtube": exp},
+        _bridge=types.SimpleNamespace(run_on_main=lambda fn: fn()),
+        _copilot_publish=fake_publish,
+    )
+    publish = CopilotBackend.publish_youtube.__get__(stub)
+
+    result = publish("t", "d", RenderShape.SHORT_1080)
+
+    assert result.ok
+    assert (
+        captured["settings"]["is_short"] is True
+    )  # derived from the published SHORT_1080
+    assert captured["is_short_during"] is True
+    assert (
+        exp.current_shape() is RenderShape.WIDE_1440
+    )  # restored losslessly, not clobbered

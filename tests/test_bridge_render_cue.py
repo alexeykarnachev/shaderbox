@@ -4,7 +4,12 @@ firing point so the cue covers the frozen frame, then cleared. This is the same 
 Render/Share tabs' RenderDefer uses — one place all render encodes freeze the loop, after the cue is
 provably on the glass. Pure: drain() / run_deferred_render() are driven by hand, no GL / no worker."""
 
+import threading
+
+import pytest
+
 from shaderbox.copilot.bridge import CopilotBridge, MainThreadOp
+from shaderbox.copilot.errors import CopilotCancelled
 
 
 def test_deferred_op_is_parked_then_runs_at_the_post_swap_point() -> None:
@@ -55,3 +60,45 @@ def test_cancel_all_releases_a_parked_render_op() -> None:
     )
     assert op.error is not None, "cancelled parked op must carry the cancel error"
     assert bridge.render_pending() is False, "cancel must clear the parked render"
+
+
+def test_run_on_main_defer_parks_and_unblocks_a_real_worker() -> None:
+    # End-to-end through the PRODUCTION entry point (run_on_main with defer=True), on a real worker
+    # thread — the unit tests above bypass it via _ops.put, so the defer plumbing itself is unasserted.
+    bridge = CopilotBridge()
+    ran: list[str] = []
+    result: list[object] = []
+
+    def worker() -> None:
+        result.append(
+            bridge.run_on_main(lambda: (ran.append("encode"), "ok")[1], defer=True)
+        )
+
+    t = threading.Thread(target=worker)
+    t.start()
+
+    # The op must be in the queue before drain; the worker blocks on done, so spin briefly.
+    for _ in range(1000):
+        if not bridge._ops.empty():  # type: ignore[attr-defined]
+            break
+
+    bridge.drain()  # parks; does NOT run
+    assert ran == [], "defer=True op ran in drain instead of being parked"
+    assert bridge.render_pending() is True
+    assert not t.is_alive() or result == [], (
+        "worker unblocked before run_deferred_render"
+    )
+
+    bridge.run_deferred_render()  # the post-swap fire
+    t.join(timeout=2.0)
+    assert not t.is_alive(), "worker never unblocked after run_deferred_render"
+    assert ran == ["encode"]
+    assert result == ["ok"], "the op's return value did not reach the blocked worker"
+
+
+def test_run_on_main_rejects_when_shut_down() -> None:
+    # A worker that calls run_on_main after a non-reusable cancel_all must be refused, not hang.
+    bridge = CopilotBridge()
+    bridge.cancel_all()  # latches _shutdown
+    with pytest.raises(CopilotCancelled):
+        bridge.run_on_main(lambda: None, defer=True)

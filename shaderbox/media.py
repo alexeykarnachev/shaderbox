@@ -156,6 +156,9 @@ class Video(MediaWithTexture):
         fps = int(self._cap.get(cv2.CAP_PROP_FPS))
         if fps <= 0:
             raise ValueError(f"Video reports no frame rate (corrupt?): {file_path}")
+        n_frames = int(self._cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        if n_frames <= 0:
+            raise ValueError(f"Video reports no frames (corrupt?): {file_path}")
         file_size = Path(file_path).stat().st_size
 
         self._details = MediaDetails(
@@ -163,13 +166,13 @@ class Video(MediaWithTexture):
             file_details=FileDetails(path=str(file_path), size=file_size),
             resolution_details=ResolutionDetails(width=width, height=height),
             fps=fps,
-            duration=self._cap.get(cv2.CAP_PROP_FRAME_COUNT) / fps,
+            duration=n_frames / fps,
         )
 
         self._texture: moderngl.Texture | None = None
 
         self._fps: int = fps
-        self._n_frames: int = int(self._cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        self._n_frames: int = n_frames
         self._frame_period = 1.0 / fps
         self._last_frame_idx: int = -1
 
@@ -182,9 +185,8 @@ class Video(MediaWithTexture):
         return self._details
 
     def _upload_frame(self, frame: "cv2.typing.MatLike") -> None:
-        # cv2 reads BGR uint8; convert to RGBA, flip for OpenGL, upload as f1 (uint8 normalized —
-        # what imgui samples, same as Image). No float32/255 pass: it quadrupled the upload bytes
-        # and cost a CPU convert every previewed frame (the post-render fps drop).
+        # cv2 reads BGR uint8; convert to RGBA, flip for OpenGL, upload as f1 (uint8 normalized,
+        # what imgui samples — same as Image).
         rgba = np.flipud(cv2.cvtColor(frame, cv2.COLOR_BGR2RGBA))
         data = np.ascontiguousarray(rgba)
         if self._texture is None:
@@ -236,6 +238,7 @@ class Video(MediaWithTexture):
 
         if self._texture is not None:
             self._texture.release()
+            self._texture = None
 
     def apply_temporal_smoothing(
         self,

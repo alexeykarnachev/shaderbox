@@ -103,6 +103,10 @@ def update_and_draw(app: App) -> None:
     for name in list(app.ui_nodes.keys()):
         ui_node = app.ui_nodes[name]
         if not ui_node.node.source.path.exists():
+            # Degenerate frame (a node's shader file vanished): nothing draws/swaps, so the cue
+            # can't paint — but a parked copilot render must still fire to unblock its waiting
+            # worker, or the turn stalls until the op times out.
+            app.copilot.bridge.run_deferred_render()
             return
         reload_node_if_changed(app, name, ui_node)
 

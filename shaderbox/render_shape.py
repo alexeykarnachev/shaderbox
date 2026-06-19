@@ -64,7 +64,6 @@ def shape_to_preset(
     fps: int | None,
     container: str | None,
     duration_max: float | None,
-    max_bytes: int | None = None,
 ) -> RenderPreset:
     # Lower a named shape to a transient RenderPreset. The shape owns ONLY size + aspect; fps /
     # container / duration_max are per-outlet facts the caller supplies.
@@ -75,7 +74,6 @@ def shape_to_preset(
             fps=fps,
             container=container,
             duration_max=duration_max,
-            max_bytes=max_bytes,
             resolution_policy=ResolutionPolicy.FREE,
             fit=FitPolicy.RENDER_AT_TARGET,
         )
@@ -84,7 +82,6 @@ def shape_to_preset(
         fps=fps,
         container=container,
         duration_max=duration_max,
-        max_bytes=max_bytes,
         resolution_policy=ResolutionPolicy.FIXED_ASPECT,
         aspect=spec.aspect,
         longest_edge=spec.longest_edge,
