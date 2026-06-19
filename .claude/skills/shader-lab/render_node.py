@@ -27,7 +27,9 @@ import moderngl
 from shaderbox.core import Node
 from shaderbox.media import FileDetails, MediaDetails, ResolutionDetails, texture_to_pil
 from shaderbox.paths import shader_lib_root
+from shaderbox.scripting.outputs import normalize_output
 from shaderbox.shader_lib import ShaderLibIndex, set_active
+from shaderbox.uniform_coerce import coerce_uniform_value
 
 
 @dataclass
@@ -44,26 +46,46 @@ def _load(node_dir: str) -> Node:
     return node
 
 
-def _apply_script_at(node: Node, node_dir: str, t: float) -> None:
-    # For a STILL frame: step a fresh Behavior 0 -> t so its state (random walks etc.)
-    # matches what the live engine would have at t, then feed the driven uniforms in.
-    # (The video path doesn't need this — render_media's export-isolation ticks the
-    # script per frame itself.)
+def _load_behavior(node_dir: str) -> object | None:
     script_path = Path(node_dir) / "scripts" / "script.py"
     if not script_path.exists():
-        return
+        return None
     spec = importlib.util.spec_from_file_location("_node_script", str(script_path))
     if spec is None or spec.loader is None:
-        return
+        return None
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    beh = mod.Behavior()
+    return mod.Behavior()
+
+
+def _apply_driven(node: Node, driven: dict[str, object]) -> None:
+    # Coerce each script output into the program-ready shape exactly as the live engine does
+    # (normalize the typed output, then chunk a vecN[M]/array per the live Uniform) — core.render
+    # writes uniform_values straight to the program without coercing, so this must mirror it.
+    if not node.program:
+        node.compile()
+    uniforms = {u.name: u for u in node.get_active_uniforms()}
+    for name, val in driven.items():
+        normalized = normalize_output(val)
+        uniform = uniforms.get(name)
+        if uniform is None:
+            node.uniform_values[name] = normalized
+            continue
+        coerced = coerce_uniform_value(normalized, uniform)
+        node.uniform_values[name] = normalized if coerced is None else coerced
+
+
+def _apply_script_at(node: Node, node_dir: str, t: float) -> None:
+    # For a STILL frame: step a fresh Behavior 0 -> t so its state (random walks etc.) matches
+    # what the live engine would have at t, then feed the driven uniforms in.
+    beh = _load_behavior(node_dir)
+    if beh is None:
+        return
     dt = 1.0 / 60.0
     driven: dict[str, object] = {}
     for i in range(max(1, int(t / dt))):
         driven = beh.update(_Ctx(t=i * dt, dt=dt, frame=i))
-    for name, val in driven.items():
-        node.uniform_values[name] = val
+    _apply_driven(node, driven)
 
 
 def render_image(node_dir: str, out_path: str, t: float, size: int) -> None:
@@ -82,6 +104,19 @@ def render_video(
         raise SystemExit("offscreen deliverable must be .mp4 (WebM won't play on iPad)")
     node = _load(node_dir)
     node.canvas.set_size((size, size))
+
+    # A bare Node has no ProjectSession, so nothing wires on_pre_render — without it render_media's
+    # per-frame loop never ticks the script and the sim stays frozen at its __init__ state. Wire a
+    # minimal hook: one fresh Behavior ticked per export frame (mirrors export-isolation: a clean
+    # instance per render, ticked 0 -> duration).
+    beh = _load_behavior(node_dir)
+    if beh is not None:
+
+        def _pre_render(t: float, dt: float, frame: int) -> None:
+            _apply_driven(node, beh.update(_Ctx(t=t, dt=dt, frame=frame)))
+
+        node.on_pre_render = _pre_render
+
     Path(out_path).parent.mkdir(parents=True, exist_ok=True)
     details = MediaDetails(
         is_video=True,
