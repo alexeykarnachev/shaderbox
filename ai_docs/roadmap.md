@@ -26,18 +26,20 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-06-17 (post night_city /shader-lab session + YouTube-Shorts-presets feature; clean on dev, unreleased). -->
-**ACTIVE: dev work on `dev`, unreleased (ahead of v0.20.0).** Since the v0.20.0 ship: a long
-`/shader-lab` **night_city** session (raymarched night cityscape → a single-node "how it's built"
-learning reel) committed as a referenceable past lab (`projects/_lab/night_city/`, force-added past
-the `_lab` gitignore); its generic raymarch/SDF + night-lighting + step-reveal-animation knowledge was
-harvested into the `/shader-lab` skill. Also shipped to the app proper: **YouTube Shorts resolution
-presets** (720/1080/1440, 9:16) in the Share tab. Two UX gaps filed in `todo.md` (Share-tab
-render-settings half-baked; copilot render tools take raw w/h not a preset enum). `dev` == origin,
-tree clean, `make check`+`smoke` green. These commits are unreleased (next ship bundles them).
-**NEXT (maintainer's pick):** the blocker to crack before shipping examples is the **example/project
+<!-- As of 2026-06-19 (render-divergence fix wave: cue + RenderShape + video-preview perf; clean on dev, unreleased). -->
+**ACTIVE: dev work on `dev`, unreleased (ahead of v0.20.0).** Latest wave — a render-path
+**divergence cleanup** (3 commits, reviewed by a verified multi-agent swarm to convergence): (1) the
+"Rendering…" cue/modal-invisible bug — every render encode (Render tab, Share outlets, copilot) now
+fires at ONE post-swap+`gl.finish` point (`ui.py`); the copilot bridge parks its render op instead of
+running it top-of-frame. (2) **`RenderShape`** (`render_shape.py`) — one named-size vocabulary (NATIVE
++ short_*/wide_*) the Share UI, copilot render tools, and copilot publish all speak; closed the two
+preset `todo.md` deferrals (Share render-settings UX + copilot raw-w/h foot-gun); the Share resolution
+control is now a single combo (not accent chips). (3) video-preview fps drop fixed (`media.py`: f1
+upload + cached fps/n_frames). Earlier this cycle: night_city `/shader-lab` lab + harvest. `dev` ==
+origin, tree clean, `make check`+`smoke` green. Unreleased (next ship bundles all of it).
+**NEXT (maintainer's pick):** the blocker before shipping examples is the **example/project
 shader-library coupling** (local-vs-global lib — `todo.md` BLOCKER); feature **051** (shipped examples
-project + an Examples-picker modal) is DRAFTED but parked behind it. Or another `/shader-lab` session, or a
+project + Examples-picker modal) is DRAFTED but parked behind it. Or a `/shader-lab` session, or a
 `todo.md` item.
 
 **Last LIVE on itch (context):** v0.20.0 — node-dir live auto-sync + math-symbol text glyphs + fixes.
@@ -56,6 +58,7 @@ verified live. **No open BLOCKERs.**
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| — | render_path_divergence_cleanup | done | Three render-path divergence fixes (reviewed to convergence by a verified multi-agent swarm): (1) the "Rendering…" cue/modal-invisible bug — every render encode (Render tab, Share outlets, copilot) now fires at ONE post-swap+`gl.finish` point (`ui.py`); the copilot bridge PARKS its deferred render op (`run_deferred_render`) instead of running it top-of-frame, keeping it the sole worker→main seam. (2) `RenderShape` (`render_shape.py`) — one named-size vocabulary (NATIVE + short_*/wide_*, aspect baked in) the Share UI / copilot render tools / copilot publish all resolve through, closing the two preset `todo.md` deferrals (off-aspect-Short foot-gun gone via a closed enum; long-form gets a resolution picker; the Share control is one combo, not accent chips). (3) video-preview fps drop — `media.py::Video` uploads `f1` not float32/`f4` + caches fps/n_frames. Spec: commits `1ccd416` + `4f05e8a` + `f517eec`. |
 | 050 | copilot_edit_churn_and_probe_honesty | done | Copilot edit-engine correctness wave from one bad real session (the `gpt-5.3-codex` "fire tutorial", trace preserved): F1 the duplicate-comment spiral — ROOT was the comment-blind `token_match` excluding a leading comment from the splice span (re-derived via real-code repro + swarm after the matcher/guard theory was refuted), fixed by growing the span over `old_str`'s edge comments; F2 a per-FILE churn brake (soft escalating fact + hard force-end, two Settings-tunable thresholds, subsuming the `todo.md` edit-churn deferral); F3 the probe-render clock pinned to t=0 + a new ungated `probe_render(node, t)` tool (also delivers the deferred "render at t=N" affordance); F4 a cause-aware forced-turn-end nudge (kills the "you're right to pause now" misattribution). Post-impl-reviewed + dogfood-confirmed live. Spec: `ai_docs/features/050_copilot_edit_churn_and_probe_honesty.md`; dogfood: `ai_docs/features/050_dogfood_report_stress.md`. |
 | — | node_dir_live_sync | done | Per-frame node-dir auto-sync: `ProjectSession.sync_nodes_from_disk` reconciles `ui_nodes` to `nodes/` every frame (called from `ui.py::update_and_draw`, gated off mid-copilot-turn) — a dir ADDED/REMOVED or `node.json` EDITED externally syncs with no user action (disk is authoritative; even the current node is force-reloaded). Glob-diff on `node.json` mtime, mirroring `maybe_rebuild_lib_index`; shader text + `script.py` keep their existing watchers. SUPERSEDED the manual "Reload nodes from disk" command (deleted: command/`Ctrl+Shift+R`/menu/`App.reload_nodes_from_disk`/`on_nodes_reloaded`). Tests: `tests/test_node_dir_sync.py`. Spec: commit (this wave). |
 | — | reload_nodes_from_disk | superseded | A "Reload nodes from disk" command (File menu + `Ctrl+Shift+R` + palette) rescanning `nodes/` for externally added/removed/edited dirs; shipped in v0.18.0 as the stopgap, fully replaced by the per-frame `node_dir_live_sync` (the command + all its wiring deleted). Spec: commit `7d934e7`. |

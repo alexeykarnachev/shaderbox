@@ -35,8 +35,8 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
 - **Trigger:** the maintainer reports the app fps still drops while a rendered video preview / the
   Telegram video-sticker carousel is on screen (the cheap-wins pass below didn't recover enough), OR
   next time you touch `media.py::Video.update` / `_upload_frame`.
-- After a video render the Share-tab outlet preview (`tabs/share.py:118`) and the Telegram carousel
-  thumbnails (`exporters/telegram.py:702`) call `Video.update(imgui.get_time())` every frame, which
+- After a video render the Share-tab outlet preview (`tabs/share.py::_draw_outlet`) and the Telegram
+  carousel thumbnails (`telegram.py` `_draw_sticker_section`) call `Video.update(imgui.get_time())` every frame, which
   decodes a WebM frame (`cv2` read + BGR→RGBA + GPU upload) ON THE RENDER THREAD whenever the frame
   index advances — at real-time playback that's most frames, and the carousel multiplies it per
   thumbnail. DONE (cheap wins): cached fps/n_frames (no per-frame `cv2.get`), dropped the
