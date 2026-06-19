@@ -31,6 +31,28 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
 
 ---
 
+## [DEFERRAL] shader-lib edits on the desktop never flow back into the repo seed (one-way sync)
+- **Trigger:** the maintainer notices an `SB_*` helper that existed on the desktop is gone on a fresh
+  env / after a pull (e.g. `SB_fbm`, `SB_tri_wave` — used by a stale "codex fire" A/B node that now
+  fails include resolution), OR next time `shader_lib/seed.py` / `sync_shipped_lib` is edited, OR when
+  deciding whether a lab-discovered helper should become a real `SB_*`.
+- Root cause (verified 2026-06-15): `sync_shipped_lib` is STRICTLY one-way `resources/shader_lib/`
+  (repo seed) -> `shader_lib_root()` (`app_data_dir()/shader_lib`, user-writable). There is NO reverse
+  path: a helper authored/edited in the live root on the desktop is "user-owned" and never promoted
+  back into `resources/`, so it's never committed and vanishes on any other env. Confirmed the two
+  dirs are byte-identical here and NEITHER contains `SB_fbm`/`SB_tri_wave` — so those functions live
+  ONLY in the maintainer's desktop live root, uncommitted. (Also: this box has no `.seed_manifest.json`
+  in the live root — sync runs in `App._init`, which headless sessions never invoke, so the active
+  root is whatever was last copied there, not a guaranteed mirror of `resources/`.)
+- Honest fix when triggered: decide the promotion path — either (a) a maintainer-run "promote live lib
+  -> resources/ seed" step (the missing reverse of seed-sync, gated on the manifest's user-owned set),
+  or (b) treat `resources/shader_lib/` as the ONLY place to author helpers and re-seed the desktop from
+  it. Until then, recover the lost desktop helpers by hand from the desktop's live root and commit them
+  into `resources/`. Source: shader-lab session 2026-06-15 (the `SB_fbm` "it was there" report).
+- **NOT the same as the `051 lib coupling` BLOCKER below** — that's about per-project lib *pinning*
+  (a project breaking when the global lib evolves); this is the missing reverse *seed-sync* (desktop
+  edits never reaching the repo). Different problem, different fix.
+
 ## [DEFERRAL] share-panel video preview decodes on the render thread (post-render fps drop)
 - **Trigger:** the maintainer reports the app fps still drops while a rendered video preview / the
   Telegram video-sticker carousel is on screen (the cheap-wins pass below didn't recover enough), OR

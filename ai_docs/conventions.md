@@ -125,6 +125,14 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   `shaderbox/resources/shader_lib/`. Revisit if a needed helper genuinely can't be expressed as
   source/op/renderer (the first candidate defines layer 4, not an exception). Spec:
   `ai_docs/features/032_sdf_shader_library.md`.
+  - **To know what `SB_*` actually exist, grep the ACTIVE lib root, not `resources/`.** The compiler
+    resolves includes from `paths.shader_lib_root()` = `app_data_dir()/shader_lib` (the user-side seed),
+    NOT from the in-repo `resources/shader_lib/`; the active root is authoritative — `grep -rn SB_
+    "$(uv run python -c 'from shaderbox.paths import shader_lib_root as r; print(r())')"`.
+    (`shaderbox/shader_lib/` is the Python index/parser/resolver package, NOT GLSL — don't grep there
+    for helpers.) NOTE: the active root can DIVERGE from `resources/` — helpers the maintainer authored
+    only on the desktop live root (`SB_fbm`, `SB_tri_wave`) aren't resolvable on a fresh env; tracked in
+    `todo.md [DEFERRAL] shader-lib edits on the desktop never flow back into the repo seed (one-way sync)`.
 
 - **Three-layer UI architecture.** `app.py` = UI/glfw/imgui owner + lifecycle wrapper (windowing, GL
   context, editor sessions, popups, nav, the exporter panels) — no imgui drawing in the orchestrator
