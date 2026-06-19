@@ -31,35 +31,20 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
 
 ---
 
-## [DEFERRAL] Share/YouTube render-settings UX is half-baked
-- **Trigger:** next time you touch `exporters/youtube.py::_draw_controls` / the Share-tab render
-  panel, OR a user complaint about the YouTube render layout / missing long-form resolution control.
-- Two gaps in the YouTube outlet's render panel (`_draw_controls`): (1) the resolution presets exist
-  ONLY for Shorts (`SHORT_RES_PRESETS` chip row); long-form video has NO resolution picker — it falls
-  through to `ResolutionPolicy.FREE` (renders at the node's canvas size), so there's no way to choose
-  a regular-video output size. (2) The Shorts chip row is conditionally drawn (`if rs.shape ==
-  "short"`), so toggling Short ADDS a line and reflows the whole panel — the maintainer's tuned
-  layout floats/jumps. Fix when triggered: a unified resolution-preset control present for BOTH shapes
-  (long-form gets its own 720/1080/1440/native set), drawn in a FIXED layout slot that doesn't reflow
-  on shape toggle (reserve the row / use a combo instead of an appearing chip row). The 3-preset
-  Shorts picker shipped as the minimum needed to render YouTube now; this is the proper UX pass.
-  All UI work flows through `ui_primitives.py` + `/imgui-ui` (no hand-rolled styling).
-
-## [DEFERRAL] copilot render tools take raw w/h, not a resolution-PRESET enum
-- **Trigger:** a trace/user report where the copilot renders or publishes a Short at the wrong size
-  (guesses dims instead of the canonical 9:16 presets), OR next time you touch
-  `copilot/backend.py::render_video` / `render_image` / `_copilot_render_preset`, OR the
-  `SHORT_RES_PRESETS` list changes.
-- `render_video`/`render_image` take raw `width`/`height` and build a `FIXED_DIMS` preset via
-  `_copilot_render_preset`, so the agent picks arbitrary dimensions and never goes through
-  `YouTubeExporter.render_preset()` (which now honours the Share-tab `SHORT_RES_PRESETS` chip — 720p/
-  1080p/1440p, 9:16). `publish_youtube(is_short)` DOES ride the exporter preset (inherits the user's
-  chip choice; the agent only passes the `is_short` bool). The gap: the agent should operate on a
-  resolution-PRESET ENUM (e.g. `short_720|short_1080|short_1440`, and a "native"/long form), NOT raw
-  pixel dims — so a copilot render matches the same presets the UI uses and the agent can't fat-finger
-  an off-aspect size. Fix when triggered: replace the `width`/`height` params with a `preset:` enum on
-  the render tools, resolve it through the same `SHORT_RES_PRESETS` table. Design lives in the
-  `copilot-llm-agent-design` skill / `conventions.md`; this is the trigger index.
+## [DEFERRAL] share-panel video preview decodes on the render thread (post-render fps drop)
+- **Trigger:** the maintainer reports the app fps still drops while a rendered video preview / the
+  Telegram video-sticker carousel is on screen (the cheap-wins pass below didn't recover enough), OR
+  next time you touch `media.py::Video.update` / `_upload_frame`.
+- After a video render the Share-tab outlet preview (`tabs/share.py:118`) and the Telegram carousel
+  thumbnails (`exporters/telegram.py:702`) call `Video.update(imgui.get_time())` every frame, which
+  decodes a WebM frame (`cv2` read + BGR→RGBA + GPU upload) ON THE RENDER THREAD whenever the frame
+  index advances — at real-time playback that's most frames, and the carousel multiplies it per
+  thumbnail. DONE (cheap wins): cached fps/n_frames (no per-frame `cv2.get`), dropped the
+  `float32/255 -> f4` pass for an `f1` uint8 upload (¼ the bytes, matches `Image`), kept the
+  already-present "skip if frame unchanged" guard. If still slow, escalate: throttle preview playback
+  to ~15fps and/or only when the Share/Telegram tab is the active tab; last resort a background
+  decoder thread (overkill for a thumbnail). The decode itself staying on the main thread is the
+  residual cost the cheap wins don't remove.
 
 ## [BLOCKER] example/project shader-library coupling (local vs global lib) — blocks feature 051
 - **Trigger:** before plan-locking feature 051 (shipped examples project), OR the first time a shipped
@@ -158,19 +143,6 @@ is authoritative — no "Resolved YYYY-MM-DD" headers).
   functions, entry) atop the read_shader result, so the agent sees what a shader already declares. Fully
   specced: `ai_docs/features/020_copilot_agent/27_structural_shader_view.md` (pre-impl reviewed, not yet
   implemented).
-
-## [DEFERRAL] copilot render/publish cue likely invisible (no gl.finish before the freeze)
-- **Trigger:** a maintainer reports the "Rendering…" cue is missing when the COPILOT renders/publishes
-  (render_image / render_video / publish_telegram / publish_youtube), the same symptom the Render-tab
-  button had — OR next time you touch `bridge.drain` / `drain_bridge` / the copilot render defer.
-- The Render-tab fix (`ui.py`) presents the cue with `gl.finish()` AFTER the swap and BEFORE the encode
-  (see `conventions.md ## Known quirks` — a queued buffer never composites while the main thread blocks).
-  The copilot path runs its encode inside `drain_bridge()` at the TOP of the frame (in `update_and_draw`,
-  before the cue is drawn and the buffer swapped) — so the cue frame it scheduled has the same "queued,
-  never presented" problem and is probably invisible too. The `_render_pending` FLAG timing is correct;
-  the present-before-freeze requirement is what's still unaddressed in the copilot path. Honest fix: route the copilot deferred render so its encode
-  also runs after a swap + `gl.finish()` (or have the bridge's held-op run at the same post-swap point as
-  `render_request`). Deferred — needs a live copilot render to confirm it's actually invisible first.
 
 ## [DEFERRAL] TraceLog._ensure_open can't distinguish "closed" from "never opened" (structural)
 - **Trigger:** a NON-MODAL project switch lands (a "recent projects" menu / hotkey that doesn't go

@@ -437,6 +437,22 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   type). Each exporter owns its own panel UI. A disabled/stub exporter overrides `is_available ->
   False` + `unavailable_reason` (registry won't auto-activate it; UI gates on it). Revisit when a
   third *concrete* exporter lands.
+- **Render output size is ONE named vocabulary (`RenderShape`), not raw dims per caller.**
+  `render_shape.py` owns the single home: a `RenderShape` StrEnum (`NATIVE` + `SHORT_720/1080/1440`
+  9:16 + `WIDE_720/1080/1440` 16:9) with the aspect BAKED into each tier, a `SHAPE_TABLE` mapping each
+  to its spec, and one `shape_to_preset(shape, *, is_video, fps, container, duration_max)` resolver
+  that lowers a tier into a transient `RenderPreset`. The Share UI (`_RenderState.shape`), the copilot
+  render tools (`render_image`/`render_video` take `shape: RenderShape`), and copilot publish
+  (`publish_youtube(shape)`) all speak it — so a render matches what publish emits BY CONSTRUCTION
+  (the old raw-w/h render vs exporter-preset publish disagreement is gone), and the closed Pydantic
+  enum makes an off-aspect Short structurally unrepresentable (the structural-impossibility law, not a
+  guard). The shape owns ONLY size+aspect; fps/container/duration_max stay per-OUTLET caller args (a
+  Short is 60s .mp4, a sticker 3s .webm — not a shape fact). DELIBERATELY out of the vocabulary: the
+  Render-tab `ResolutionDetails` (a free-form WxH artist control that is ALSO the actual-rendered-dims
+  record, persisted in node.json — a 7-value enum can't carry concrete dims, and it's a different
+  concept with its own home) and Telegram's hard 512px cap (a platform limit, not a user choice).
+  Revisit if a third exporter needs a size tier the table lacks, or a real need for free copilot dims
+  surfaces (then a `CUSTOM` member, NOT a return to raw w/h — that re-admits the foot-gun).
 - **The generic exporter seam carries NO exporter-domain vocabulary.** `RenderControl` is pure render
   plumbing; `exporters/base.py`, `registry.py`, `tabs/share.py`, `popups/emoji_picker.py` name no
   Telegram/sticker/pack/emoji concept. A per-exporter UI need (e.g. Telegram's emoji affordances)
@@ -654,10 +670,16 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   immediately blocks for seconds (a synchronous render/encode that freezes the frame loop), the queued
   "Rendering…" cue frame may NEVER composite — the user sees the pre-render frame the whole time. The fix:
   draw the cue, `swap_buffers`, then `gl.finish()` (blocks until the GPU has executed the present) BEFORE
-  the blocking encode (`ui.py::update_and_draw`, the Render-tab `render_request` path). Verified live on the
-  maintainer's X11 box: the cue was correctly scheduled three times and stayed invisible until the swap was
-  followed by `gl.finish()` before the encode. The copilot bridge render path runs its encode at the TOP of
-  the frame (`drain_bridge`, before the swap) and so has the SAME latent invisibility — tracked in `todo.md`.
+  the blocking encode. Verified live on the maintainer's X11 box: the cue was correctly scheduled three
+  times and stayed invisible until the swap was followed by `gl.finish()` before the encode. **EVERY render
+  encode shares ONE post-swap firing point** (`ui.py::update_and_draw`, after `swap_buffers`): the Render
+  tab + the Share-tab outlets feed it through `RenderDefer`; the copilot feeds it through the bridge's
+  parked render op (`bridge.drain` parks a `defer=True` op, `run_deferred_render` fires it post-swap). The
+  divergence that recreated this bug was a SECOND firing point — the Render tab fired post-swap with
+  `gl.finish` while the copilot ran its encode at the TOP of the frame (and the Share tab ran it inline mid-
+  draw): a sibling encode silently missed the guarantee. The lesson is the funnel rule applied to a timing
+  guarantee — a "present before you freeze" invariant belongs at the single post-swap funnel, not re-derived
+  per render entry point. A NEW render entry point MUST route its encode here, never call it inline.
 - **imgui / imgui-bundle quirks live in the `/imgui-ui` skill §8.** That includes: TextEditor
   palette read-only, monochrome emoji, dynamic glyph loading, `push_font` rasterized-size,
   `image()` lost `tint_col`, glfw cursor sync gap, pfd non-blocking handles, TextEditor
