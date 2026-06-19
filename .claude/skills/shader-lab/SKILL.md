@@ -204,7 +204,19 @@ divergence from your code. Put the technique + URL in NOTES.md.
 
 **Check past labs before researching from scratch** — a prior session may already carry the
 technique, the maintainer's aesthetic verdicts, and the dead-ends. See `## Past labs` below; read the
-relevant `projects/_lab/<slug>/NOTES.md` first.
+relevant `projects/_lab/<slug>/NOTES.md` FIRST.
+
+- **Read the lab's OWN NOTES (and its shader), not the digest in THIS skill.** The `## Lighting`,
+  `## Raymarching/SDF` etc. sections here are a one-line-per-idea INDEX — by construction they drop the
+  formulas and the why. (The boids lab reimplemented "night look" from this skill's bullet summary and
+  it read FLAT — it had silently dropped the directional sky/moon key, which the night_city v06 NOTES
+  states in full as `key = 0.55 + 0.45*skyAmt + 0.40*moonAmt`, surface-keyed with emissive split. The
+  NOTES were complete; the skill digest was not, and I lazily read the digest.) The skill points you AT
+  the source; the NOTES entry + shader ARE the source. Open them.
+- **So the duty cuts both ways: NOTES must be COMPLETE (record the mechanic — formula, split, the
+  numbers — not just the maintainer's verdict), and they must LINK their shader** (`nodes/<v>/shader.frag.glsl`)
+  for the exact code. A reusable lesson that only lives as a verdict ("added a night key") forces a
+  re-derivation next time.
 
 ---
 
@@ -451,9 +463,9 @@ NOTES. When the user references "the X project / lab", it's `projects/_lab/X/`.
   neighbor-min, ground-glow cars w/ right-hand lanes, painted facade detail, rooftop-clutter geometry,
   the night-lighting art-rule set, per-step entrance animations, and the matured single-node learning
   reel. Everything in the Raymarching/SDF, Lighting, and Step-reveal sections above was mined here.
-  **Its directional night-key + facade unwrap is the canonical "night city look" — PORT THE SHADER,
-  not the NOTES summary** (a summary-based reimpl dropped the directional key and read flat). NOTES:
-  `projects/_lab/night_city/NOTES.md`; shader: `nodes/v06-depth/shader.frag.glsl`.
+  **Its directional night-key + facade unwrap is the canonical "night city look".** NOTES:
+  `projects/_lab/night_city/NOTES.md` (the v06 entry has the FULL recipe — key formula, surface/emissive
+  split, aerial-fog); shader: `nodes/v06-depth/shader.frag.glsl`.
 - **`boids`** — 3D flocking (CPU-scripted sim) over the night city (gitignored, NOT promoted — the
   maintainer judged the motion unsatisfying). Mined process lessons, not a kept effect: the
   selective-variant tuning loop, "research/port the real algorithm", the CPU↔GPU numeric-mirror bug
