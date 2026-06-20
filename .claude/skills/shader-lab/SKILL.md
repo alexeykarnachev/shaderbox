@@ -227,6 +227,11 @@ relevant `projects/_lab/<slug>/NOTES.md` FIRST.
 Hard-won levers that apply to fire, smoke, water, lightning, energy — anything organic. Generalized
 from real maintainer corrections; the parenthetical is the evidence, not a prescription to copy.
 
+> **These sections name the LEVER, not the code.** The working implementation lives in a committed
+> lab — that's WHY labs are kept. When you need a technique, REFERENCE the lab that has it (read its
+> NOTES + open the cited shader) instead of re-deriving or copy-pasting a snippet here. The lab is the
+> source of truth; this skill is the index. (Lab → technique map is in `## Past labs`.)
+
 - **Shape from a thresholded/eroded NOISE field, not an SDF-primitive mask.** A circle/ellipse mask
   reads as a static blob; an organic silhouette should emerge from the noise itself — gate a soft
   envelope by the field and erode the edge. (A circle-union flame looked like a balloon; the
@@ -457,29 +462,34 @@ The experiment's *output* is knowledge, not just a pretty node. At the end:
 
 ---
 
-## Past labs (read the NOTES before re-deriving anything)
+## Past labs — the technique REFERENCE MAP (the code lives here, not in this skill)
 
-Each lab leaves a `projects/_lab/<slug>/NOTES.md` — the full evolution, the maintainer's verdicts, the
-dead-ends, and the reusable techniques. When a new effect overlaps a past one, READ that NOTES first
-(it's the cheapest source — better than web). Gitignored labs are disposable; a promoted one keeps its
-NOTES. When the user references "the X project / lab", it's `projects/_lab/X/`.
+A lab is a kept, working REFERENCE: when you need a technique, open the lab that already solved it —
+read its `NOTES.md` for the evolution + verdicts, then open the cited `nodes/<id>/shader.frag.glsl`
+for the real code. This is WHY labs are saved; do not re-derive or paste snippets when a reference
+exists. When the user references "the X lab", it's `projects/_lab/X/`. (COMMITTED labs travel via git
+and are reliable references on any machine; LOCAL-ONLY labs exist only where they were made.)
 
-- **`fire`** — raymarched-free 2D flame: domain-warp turbulence `fbm(p + k·fbm(p + k·fbm(p)))`,
-  teardrop width profile, blackbody temp ramp, flicker-on-the-cast-glow, the **timed-reveal node**
-  pattern (seed). NOTES: `projects/_lab/fire/NOTES.md`.
-- **`night_city`** — SDF-raymarched night cityscape (committed): bounded domain-repetition w/
-  neighbor-min, ground-glow cars w/ right-hand lanes, painted facade detail, rooftop-clutter geometry,
-  the night-lighting art-rule set, per-step entrance animations, and the matured single-node learning
-  reel. Everything in the Raymarching/SDF, Lighting, and Step-reveal sections above was mined here.
-  **Its directional night-key + facade unwrap is the canonical "night city look".** NOTES:
-  `projects/_lab/night_city/NOTES.md` (the v06 entry has the FULL recipe — key formula, surface/emissive
-  split, aerial-fog); shader: `nodes/v06-depth/shader.frag.glsl`.
-- **`boids`** — 3D flocking (CPU-scripted sim) over the night city (gitignored, NOT promoted — the
-  maintainer judged the motion unsatisfying). Mined process lessons, not a kept effect: the
-  selective-variant tuning loop, "research/port the real algorithm", the CPU↔GPU numeric-mirror bug
-  (`fract` vs `np.modf`), per-agent avoidance is anti-cohesive, verify-the-premise discipline, and the
-  array-uniform / `render_node.py` ticking gotchas — all folded into the generic sections above.
-  NOTES: `projects/_lab/boids/NOTES.md`.
+**Need it? → go here:**
+- **Turbulent flame / fire / organic rising heat / smoke** → **`fire`** (committed). Domain-warp
+  turbulence, fuel-envelope + eroded silhouette, blackbody/temperature colour ramp, flicker-on-the-
+  cast-glow (not on the body), volumetric-ish smoke, and the **timed-reveal node** pattern (its seed).
+  NOTES: `projects/_lab/fire/NOTES.md`. Matured flame: `nodes/<fire v09…>/shader.frag.glsl`; domain-warp
+  + CPU-script wind: `nodes/<fire v03…>/`; reveal reel: `nodes/<fire timed reveal>/` (NOTES lists ids).
+- **SDF box city / bounded tower repetition / painted facade detail / NIGHT CITY LIGHTING** →
+  **`night_city`** (committed). Bounded domain-repetition w/ neighbor-min, the directional night-key
+  (sky-dome+moon, surface keyed, emissive split — the FORM-giver), facade unwrap (floors×bays, AO,
+  sills, pilasters, plinth, cornice), night aerial fog, ground-glow cars, the learning reel. NOTES:
+  `projects/_lab/night_city/NOTES.md` (v06 entry = the full lighting recipe); canonical shader:
+  `nodes/v06-depth/shader.frag.glsl`.
+- **3D agent sim / flocking / CPU-driven particle positions** → **`boids`** (LOCAL-ONLY, NOT promoted —
+  the maintainer rejected the motion). Use it for the PROCESS lessons (now in the generic sections
+  above): selective-variant tuning, research/port a named algorithm, the CPU↔GPU numeric-mirror check,
+  per-agent avoidance is anti-cohesive, the array-uniform / `render_node.py` ticking gotchas. NOTES:
+  `projects/_lab/boids/NOTES.md`.
+- **2D lightning / electric bolts / branching energy** → **`lightning`** (LOCAL-ONLY). `1/dist`
+  ridge-glow, HDR-core+posterize for an electric read, segment-polyline + branch geometry, the strobe-
+  cadence-vs-fps lesson. NOTES: `projects/_lab/lightning/NOTES.md`.
 
 ## Follow-ups (NOT ready — don't build these mid-session; capture the idea)
 
