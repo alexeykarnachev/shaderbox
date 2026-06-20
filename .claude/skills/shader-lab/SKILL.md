@@ -51,14 +51,15 @@ The costly mistakes from past sessions:
    progression you intend (e.g. fire: base gradient → warped-noise field → flame shape → color ramp
    → glow → embers → smoke).
 
-2. **Environment — desktop vs offscreen. Infer from context, then CONFIRM.**
-   - **Desktop** (the user is at the machine running ShaderBox): they open the project and watch the
-     preview update live as you rewrite the shader. You do NOT render anything to show them — the app
-     does it. (You still render stills for YOUR OWN eyeballing.)
-   - **Offscreen / headless** (the user is on an iPad / a phone / a Pi over SSH — no app, no display;
-     they said so, or the session is clearly remote): you render a **~10s MP4** (NOT WebM — iPad won't
-     play it) of each result you want to show and send it to the chat. Same iteration loop, no live app.
-   - When unsure which, ASK: "are you watching live in ShaderBox, or should I render MP4s to chat?"
+2. **Environment — live vs offscreen. Infer from context, then CONFIRM.**
+   - **Live** (the user has ShaderBox open and is watching the preview): they open the project and
+     watch the preview update live as you rewrite the shader. You do NOT render anything to show them —
+     the app does it. (You still render stills for YOUR OWN eyeballing.)
+   - **Offscreen** (no live app/display — the user is away from the app, on another device, or the
+     session is headless): you render a **~10s MP4** of each result you want to show and deliver it on
+     whatever channel you're talking to the user through. Same iteration loop, no live app. Prefer
+     **.mp4** (H.264) — it's the most universally-playable format across devices; avoid WebM.
+   - When unsure which, ASK: "are you watching live in ShaderBox, or should I render MP4s to show you?"
 
 3. **Stop cadence.** Ask up front: "how often should I stop for your review?" — options: after every
    step / once at the very end / at my discretion (stop only at a real fork or when I need a verdict).
@@ -85,7 +86,7 @@ lib automatically.
 
 ---
 
-## The live-preview contract (desktop) — why it Just Works, and the one requirement
+## The live-preview contract (live mode) — why it Just Works, and the one requirement
 
 ShaderBox's per-frame mtime watcher (`watch.py::reload_node_if_changed`, called for EVERY loaded node
 in `ui.py::update_and_draw`) **recompiles a node the instant its `shader.frag.glsl` mtime changes on
@@ -161,7 +162,7 @@ Entry shape:
 - User verdict: <what the user said, or "pending review">
 ```
 
-Start NOTES.md with a header: effect name, date, environment (desktop/offscreen), stop cadence.
+Start NOTES.md with a header: effect name, date, environment (live/offscreen), stop cadence.
 
 ---
 
@@ -173,7 +174,7 @@ Start NOTES.md with a header: effect name, date, environment (desktop/offscreen)
 # still PNG at time t — for YOU to eyeball a result before/while iterating:
 uv run python .claude/skills/shader-lab/render_node.py image <node_dir> <out.png> --t 0.5 --size 512
 
-# MP4 clip — the OFFSCREEN deliverable (mandatory .mp4; WebM won't play on iPad):
+# MP4 clip — the OFFSCREEN deliverable (use .mp4/H.264 — most universally playable; avoid WebM):
 uv run python .claude/skills/shader-lab/render_node.py video <node_dir> <out.mp4> --seconds 10 --fps 30 --size 512
 ```
 
@@ -184,12 +185,13 @@ uv run python .claude/skills/shader-lab/render_node.py video <node_dir> <out.mp4
   instead (the snippet in `dev_flow.md ## Recipes > Authoring / debugging nodes directly`). Cropping a
   region of the render (PIL `.crop`) to eyeball one area (a corner seam, a rooftop, a street) is the
   fastest way to inspect a localized issue.
-- **Eyeball every step yourself** (the copilot's core handicap is render-blindness — you, here, are
-  NOT blind, so use it). But per the ONE rule, your eyeball informs your NEXT iteration; it does NOT
-  go into NOTES.md as a verdict.
-- **Offscreen mode:** render the MP4 and send it to the user's chat (use the `mytools-tg` skill to
-  send, or hand them the path if that's the channel). Intermediate clips at review stops, a final clip
-  at the end.
+- **Eyeball every step yourself IF you can read a render** — render a still and look at it to inform
+  your NEXT iteration. But per the ONE rule, your own read informs the next move only; it does NOT go
+  into NOTES.md as a verdict (the user's verdict does). If you CAN'T reliably read a render, don't
+  invent a visual read — get the artifact in front of the user and act on their verdict.
+- **Offscreen mode:** render the MP4 and deliver it however you're communicating with the user (attach
+  it / surface the file on your channel; if you have no way to send files, give them the output path).
+  Intermediate clips at review stops, a final clip at the end.
 
 ---
 
@@ -444,6 +446,12 @@ The experiment's *output* is knowledge, not just a pretty node. At the end:
 - Make sure NOTES.md is complete (every version, every user verdict, every source).
 - Propose what to PROMOTE: a reusable technique → an `SB_*` lib helper; a recurring need → a ShaderBox
   feature or a copilot instruction; a finding → `ai_docs/conventions.md` or a feature spec.
+  - **When promoting into the copilot, strip everything specific to a lab session.** The copilot runs
+    INSIDE the ShaderBox app on the user's own machine: the rendered preview is always on the user's
+    screen, so the user does the visual judging through the app — there is no "render a file and send
+    it" / "compare clips" step, no external delivery channel. Promote only the GRAPHICS CRAFT
+    (shader/SDF/lighting/colour/motion levers) and generic engineering discipline; drop the lab's
+    orchestration (offscreen rendering, file delivery, session-versioning, NOTES bookkeeping).
 - Ask the user whether to **preserve** the lab project (promote a node dir out of `projects/_lab/`
   into a real project + `git add`) or let it stay gitignored/disposable.
 
