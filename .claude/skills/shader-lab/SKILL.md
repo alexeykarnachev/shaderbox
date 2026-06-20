@@ -16,6 +16,15 @@ library / ShaderBox itself.
 
 This is a **living skill**: every run, fix the steps you tripped on and add to `## Follow-ups`.
 
+**How it's organized (so it stays easy to extend ADDITIVELY — don't re-cut the structure to add a
+lesson):** the file is in stable blocks — PROCESS (Setup → live-preview → Versioning → NOTES →
+Rendering → Researching), GRAPHICS CRAFT (Shader craft / Raymarching-SDF / Lighting / Step-reveal /
+Colour / Motion — the levers; the code lives in the reference labs), CPU-SIM (only if the effect runs
+a Python sim), and END (extract value, Past-labs reference map, Follow-ups). To add a lesson: drop a
+bullet into the matching section, or append a whole new `##` section at the end of its block — never
+reorganize. A new technique → a bullet + a pointer to the lab that implements it. A new lab → a
+`## Past labs` bullet. A not-yet-ready idea → `## Follow-ups`.
+
 ---
 
 ## The ONE rule that matters most
@@ -123,21 +132,17 @@ projects/_lab/<slug>/
   NOTES.md                        # the experiment log (see below)
 ```
 
-**Each step:** (1) create a NEW `nodes/<uuid>/` (copy the node.json shape from an existing node;
-set `ui_state.ui_name` to `"<effect> vNN (<short-name>)"` so the grid reads as a progression);
-(2) write its `shader.frag.glsl` (+ `scripts/script.py` if any) — the new cell appears in the grid
-automatically (per-frame `nodes/` sync); (3) append a NOTES.md entry. To let the user **compare**,
-all versions are already side-by-side as their own grid cells — no swapping needed.
+**Each step:** (1) create a NEW `nodes/<id>/` (the dir name is the node id — any readable string like
+`v03-warp`, not a uuid; the grid sorts by creation time, not name; copy the node.json shape from an
+existing node and set `ui_state.ui_name` to `"<effect> vNN (<short-name>)"` so the grid reads as a
+progression); (2) write its `shader.frag.glsl` (+ `scripts/script.py` if any) — it appears in the grid
+on its own (the per-frame disk-sync from `## The live-preview contract`); (3) append a NOTES.md entry.
+All versions sit side-by-side as their own grid cells, so "I like v3's tip but v5's color, take both"
+is just opening both — every version stays a live node to diff and cherry-pick from.
 
-This is what makes "I like v3's tip but v5's color, take both" possible — every version is still a
-live node to diff and cherry-pick from.
-
-**Caveat — the app can re-save a node's files on exit/edit.** A node that's currently selected/edited
-in the app may get its `node.json`/shader rewritten from the app's in-memory state on shutdown. You
-own the files between sessions, so just be aware: if you hand-edit a node dir while the app holds it,
-reconcile (the app's per-frame disk-sync usually wins for an unselected node, but don't fight a node
-the user has open). In practice: author NEW nodes for new steps (never contended) and don't hand-edit
-a node the user is actively viewing.
+**Caveat:** don't hand-edit a node the user has OPEN in the app — on exit/save it rewrites that node's
+files from its in-memory state. Author NEW nodes for new steps (never contended); leave the user's
+open node alone.
 
 ---
 
@@ -146,20 +151,21 @@ a node the user is actively viewing.
 A per-project log so we can see *exactly what changed and why* across the evolution. One entry per
 version. **Record only verifiable inputs, NEVER your own visual judgments:**
 
-- ✅ **The user's verdict** (verbatim or close: "still looks like a triangle", "wind is cringe, drop it").
-- ✅ **Web findings / techniques / formulas** you researched, WITH the source URL (domain warping, the
-  teardrop width profile, the temperature ramp, etc.).
-- ✅ **What changed** mechanically in this version (the diff in plain words).
-- ❌ **NOT** "this looks like a great flame now" / "the interior is nicely structured" — your read of a
-  rendered image is unreliable; leave the aesthetic verdict to the user.
+- ✅ **The user's verdict** (verbatim or close: "still looks like a triangle", "drop the wind").
+- ✅ **Web findings / techniques / formulas** you researched, WITH the source URL.
+- ✅ **What changed** mechanically in this version (the diff in plain words) — the MECHANIC, not just
+  the verdict: the term/function/formula that changed, so the entry is a real reference later.
+- ❌ **NOT** "this looks great now" / "the interior is nicely structured" — your read of a rendered
+  image is unreliable; leave the aesthetic verdict to the user.
 
-Entry shape:
+Entry shape (effect-agnostic skeleton; `vNN` so a draft doesn't pollute the outline):
 
 ```markdown
-## v03 — teardrop body
-- Change: replaced the width-narrows cone with a curved teardrop profile (sin-belly + convex taper).
-- Source: Cyanilux fire breakdown (Y-remap teardrop) https://www.cyanilux.com/tutorials/fire-shader-breakdown/
-- User verdict: <what the user said, or "pending review">
+## vNN — <short name> (node <id or ui_name>)
+- Change: <the mechanical diff in plain words — the term/function/formula that changed>.
+- Source: <technique name> <URL>        # only when researched
+- Shader: nodes/<id>/shader.frag.glsl   # link the code so the entry IS a reference
+- User verdict: <verbatim, or "pending review">
 ```
 
 Start NOTES.md with a header: effect name, date, environment (live/offscreen), stop cadence.
@@ -296,6 +302,13 @@ Levers for any SDF-raymarched scene (cities, terrain, abstract solids — anythi
   `a = dir·fwd; b = dir·right; c = dir·up; ndc = (b/a/aspect, c/a) * screen_dist` (a one-off numpy
   snippet; bake the resulting `vec3` as the default). Also: a feature drawn only where rays MISS
   geometry is OCCLUDED by tall foreground — keep it above the skyline or in an open gap.
+- **Mind the render cost — it can be slow, and the deepest/most-nested lines dominate.** Bound the
+  march step count and cap max distance (fogging out the far field is cheaper than marching it). Each
+  added SDF primitive multiplies per-step cost; each fbm octave and each nested domain-warp level
+  multiplies it again (so `fbm(p + k·fbm(p + k·fbm(p)))` is the single most expensive line in a noise
+  effect — reach for it deliberately). A per-pixel `for` needs a compile-time-constant bound. Iterate
+  at a small `--size` and short clips; render full-res / long only for the final deliverable. If a
+  render is slow or times out, cut `--size` or the step count first.
 
 ## Lighting & art-direction (generic; the night-scene set is concrete)
 
@@ -329,16 +342,19 @@ labs). Build it as ONE shader, NOT N nodes:
 - A `u_step` uint uniform: 0 = autoplay, 1..N = freeze/inspect a step. **Tell the user 0 is autoplay**
   — leaving it frozen (e.g. at N) renders the static final scene, a classic "why doesn't it start from
   the beginning" surprise.
-- Captions: one `uint u_stepNtext[LEN]` codepoint array per step (engine encodes a typed string when
-  the uniform name ENDS in `text`), rendered via `SB_sd_char`, faded per a per-slot alpha. Glyph set is
-  UPPERCASE latin + digits + `()+=*/<>%&':;,.-!?` — transliterate formulas. Caption convention that
-  works: **line 1 = the IDEA, line 2 = the core MATH trick** (e.g. `GEOMETRY` / `ID = ROUND(P/S)`).
+- Captions: one codepoint array per step. **ANY `uniform uint name[N]` (N>1, scalar) is auto-encoded
+  from a string** — the engine fills it from the string's codepoints (`uniform_coerce.is_text_array`
+  keys off the GL SHAPE `uint[N]`, NOT the name; the `…text` suffix is only our naming convention).
+  Render via `SB_sd_char`, fade per a per-slot alpha. Glyph set is UPPERCASE latin + digits +
+  `()+=*/<>%&':;,.-!?` — transliterate formulas. Caption convention that works: **line 1 = the IDEA,
+  line 2 = the core MATH trick** (e.g. `GEOMETRY` / `ID = ROUND(P/S)`). Reference implementation:
+  `night_city` learning-reel node (`projects/_lab/night_city/nodes/city-learning/shader.frag.glsl`).
 - **Entrance ANIMATION, not just a fade**, sells it: scale a building's SDF height by the step weight
   to GROW it from the ground; sweep a per-floor threshold to light windows bottom-up; lerp a rise
   offset; stream props in. Geometry-affecting weights (a grow factor, a rooftop rise) must be set
   BEFORE the march (as a global the SDF reads); shading weights branch in `main()`.
 - **Compute & set the total duration for the render.** Sum the step durations + hold = the loop period;
-  set the node's `render_media_details.duration` to exactly one period so the artifact loops seamlessly
+  set the node's `ui_state.render_media_details.duration` (in node.json) to exactly one period so the artifact loops seamlessly
   (verify t=0 ≈ t=period). The final step can be longer than the rest — make step start/duration helper
   functions rather than a single `STEP_DUR` if so.
 
@@ -459,6 +475,10 @@ The experiment's *output* is knowledge, not just a pretty node. At the end:
     orchestration (offscreen rendering, file delivery, session-versioning, NOTES bookkeeping).
 - Ask the user whether to **preserve** the lab project (promote a node dir out of `projects/_lab/`
   into a real project + `git add`) or let it stay gitignored/disposable.
+- **Add/update this lab's bullet in `## Past labs`** so the next run can find it (the reference map
+  must stay current — a missing or stale entry is why a technique gets re-derived). A worthwhile lab
+  becomes a real reference only if it's COMMITTED (`git add -f projects/_lab/<slug>` — the dir is
+  gitignored; mirror what `night_city`/`fire` did) so it travels to every machine.
 
 ---
 
