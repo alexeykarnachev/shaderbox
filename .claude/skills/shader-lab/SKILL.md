@@ -16,14 +16,22 @@ library / ShaderBox itself.
 
 This is a **living skill**: every run, fix the steps you tripped on and add to `## Follow-ups`.
 
-**How it's organized (so it stays easy to extend ADDITIVELY — don't re-cut the structure to add a
-lesson):** the file is in stable blocks — PROCESS (Setup → live-preview → Versioning → NOTES →
-Rendering → Researching), GRAPHICS CRAFT (Shader craft / Raymarching-SDF / Lighting / Step-reveal /
-Colour / Motion — the levers; the code lives in the reference labs), CPU-SIM (only if the effect runs
-a Python sim), and END (extract value, Past-labs reference map, Follow-ups). To add a lesson: drop a
-bullet into the matching section, or append a whole new `##` section at the end of its block — never
-reorganize. A new technique → a bullet + a pointer to the lab that implements it. A new lab → a
-`## Past labs` bullet. A not-yet-ready idea → `## Follow-ups`.
+**How to read this** — four stable blocks:
+
+- **READ NOW, every session (PROCESS):** The ONE rule · Setup · project location · live-preview
+  contract · Versioning · NOTES.md · Rendering · Researching/Past-labs. These run the loop; read top
+  to bottom at session start.
+- **CONSULT WHEN RELEVANT (GRAPHICS CRAFT):** Shader craft · Raymarching/SDF *(marched scene)* ·
+  Lighting *(a render reads flat)* · Colour & tone · Motion & timing · Step-reveal+crossfade *(a reveal
+  node)*. These name LEVERS; the working code lives in the reference labs (`## Past labs`).
+- **ONLY IF the effect runs a Python sim (CPU-SIM):** CPU scripting · Specific-algorithm sims ·
+  Selective-variant tuning · Verify the premise. Pure-GLSL effects skip this whole block.
+- **END:** extract value · Past-labs reference map · Follow-ups.
+
+**Extend it ADDITIVELY — never re-cut the structure to add a lesson:** drop a bullet into the matching
+section, or append a whole new `##` section at the END of its block. A new technique → a bullet + a
+pointer to the lab that implements it. A new lab → a `## Past labs` bullet. A not-ready idea →
+`## Follow-ups`.
 
 ---
 
@@ -88,10 +96,26 @@ The costly mistakes from past sessions:
 
 ### Project / node layout to write
 
-A minimal node dir (copy the shape from any `projects/dev/nodes/<id>/node.json` — `ui_state.ui_name`
-is the grid label, `canvas_size` the preview size). A node needs `node.json` + `shader.frag.glsl`;
-`scripts/script.py` is optional (CPU-driven uniforms). `SB_*` helpers resolve from the live shader
-lib automatically.
+A node dir is `node.json` + `shader.frag.glsl` (+ optional `scripts/script.py` for CPU-driven
+uniforms). `SB_*` helpers resolve from the live shader lib automatically. The smallest valid
+`node.json`:
+
+```json
+{ "canvas_size": [720, 1280],
+  "uniforms": {},
+  "ui_state": { "ui_name": "<effect> v01 (port)",
+                "render_media_details": { "duration": 1.0 } } }
+```
+
+- `uniforms` is **REQUIRED** — leave it `{}` for a fresh node (it holds SAVED tuned values; the engine
+  subscripts it, so a node missing the key is skipped). Defaults come from the shader's inline-default
+  uniforms, not here.
+- **Do NOT copy `uniforms` / `ui_uniforms` from an unrelated node** — you'll drag its saved state in.
+  Leave `ui_uniforms` out entirely; introspection rebuilds it on load (you never hand-author the keys).
+- `ui_name` = grid label; `canvas_size` = preview size + aspect; `ui_state.render_media_details.duration`
+  = render loop length. (JSON has no comments — keep the legend in your head, not in the file.)
+- For a fuller real example to mirror, open any committed node, e.g.
+  `projects/_lab/night_city/nodes/v06-depth/node.json`.
 
 ---
 
@@ -258,12 +282,21 @@ from real maintainer corrections; the parenthetical is the evidence, not a presc
 - **Self-illuminate anything meant to read on BLACK.** Smoke/haze over black has nothing to occlude →
   invisible unless it emits a little. (And if it still won't read after a fair attempt, cutting it is a
   legitimate call — don't ship an invisible feature.)
+- **Anti-alias every hard threshold by ~1px in screen space**, not a hand-picked constant: soften with
+  `smoothstep(-w, w, field)` where `w = fwidth(field)` (or `length(vec2(dFdx(field), dFdy(field)))`).
+  Renders are small (512²) — the size where aliasing/crawl is worst and most visibly degrades the clip.
+  Thin features (bolt cores, road lines, distant windows) need a min screen-width of ~1px or they
+  sparkle and drop out under motion. Where `fwidth` is unreliable (raymarched SDF surfaces) render at
+  2× and downsample, or jitter 2–4 samples.
 - **Expose tunables as uniforms EARLY and hand tuning to the user.** When the right value is aesthetic,
-  STOP guess-rendering — add inline-default uniforms (auto-generates ImGui controls; `uint`/`int` → an
-  integer slider, `float` → a drag), let the user dial them live, then bake their chosen values back as
-  the new defaults. (Several blind tune-render cycles evaporated the moment the knobs were exposed and
-  the maintainer dialed it in one pass.) For the engine mechanics of node files / headless render /
-  compile-check / aspect, see `dev_flow.md ## Recipes > Authoring / debugging nodes directly`.
+  STOP guess-rendering — declare it as an **inline-default uniform** and let the user dial it live. The
+  `= default` both seeds the value AND tells the engine the control type:
+  `uniform float u_glow = 1.2;` (a drag), `uniform vec3 u_tint = vec3(1.0,0.4,0.1);`,
+  `uniform uint u_octaves = 4u;` (an integer slider). After the user dials a value live and SAVES, read
+  it back off the node's `uniforms{}` in node.json and bake it as the new inline default. (Several
+  blind tune-render cycles evaporated the moment the knobs were exposed and the user dialed it in one
+  pass.) For the engine mechanics of node files / headless render / compile-check / aspect, see
+  `dev_flow.md ## Recipes > Authoring / debugging nodes directly`.
 
 ## Raymarching / SDF craft (generic)
 
@@ -331,7 +364,39 @@ lean on value + saturation + contrast.
 - **Reserve the only near-whites for the actual light sources** (windows, lamps). If walls, sky and
   lights all sit mid-grey it reads flat — let shadow masses go near-black, keep the bright accents rare.
 
-## Step-reveal animation (the learning-deliverable pattern)
+## Colour & tone (generic)
+
+Levers for how light VALUES read, independent of the effect. (Reference: `lightning` lab for the
+HDR-core + posterize electric look; `night_city` for the value-structure + emissive-split discipline.)
+
+- **Work in HDR — let emitters exceed 1.0; don't pre-clamp the core.** A bright core pushed above 1.0
+  is what a bloom/threshold pass has to bloom; clamping flat-white first kills the glow. (lightning:
+  HDR core + posterize = the sharp electric read.)
+- **Tonemap before output so highlights ROLL OFF instead of clipping** (`x/(1+x)` Reinhard, or ACES) —
+  clipped highlights read as dead flat white. Check first whether the engine already sRGB-encodes the
+  framebuffer before adding a final gamma, or you double-correct.
+- **Bloom = bright-pass threshold → blur → add.** Flicker/flutter rides the bloom, not the body (echoes
+  the "light by what it CASTS" lever in Shader craft).
+- **Posterize a continuous field into a few bands** to read as sharp/graphic (forks, cel edges) rather
+  than a soft gradient.
+- **Kill 8-bit banding on smooth dark gradients** (a `pow(1-rd.y, k)` sky bands on a 512 render): add a
+  tiny ordered/hash dither `+ (hash(uv) - 0.5)/255.0` just before output.
+- **Saturation is a depth/heat cue** — distant/cooler things desaturate; the hottest/nearest stay
+  saturated. Hue is the WEAKEST cue; lean on value + saturation + contrast.
+
+## Motion & timing (generic)
+
+What makes motion read ALIVE vs mechanical. (Reference: `lightning` for noise-domain scrolling +
+strobe-vs-fps; `fire` for domain-warp turbulence; `boids` for the easing/maneuver lessons.)
+
+- **Shape motion with easing and INCOMMENSURATE rates** (sum sines/noise at non-integer-ratio speeds)
+  → organic; linear or single-period motion → mechanical/clockwork.
+- **Temporal coherence: animate by scrolling the noise DOMAIN over time** (`noise_uv.y -= t*speed`), NOT
+  by toggling alpha/visibility frame to frame — scrolling the field keeps it coherent; toggling pops.
+  (Spatial counterpart: "animate the BOUNDARY" in Shader craft.)
+- **Frame-rate budget — an event shorter than ~2 frames at render fps is INVISIBLE.** When strobing /
+  flashing, check the lit-frame cadence against the render fps (a sub-frame strobe never shows). The
+  durable lightning lesson.
 
 The lab's headline deliverable is often a **single node** that animates the effect's construction with
 per-step caption text — a "how it's built" reel. This is a reusable PATTERN (seed: the fire & city
@@ -376,6 +441,11 @@ A step that "develops in" (texture, detail) is usually gated by a binary `USE_DE
 and measure the **per-pixel max delta / count of changed pixels** frame-to-frame — a real pop shows a
 huge spike (thousands of pixels) at one timestamp vs the steady-state flicker baseline. A whole-frame
 MEAN hides a localized pop; use max/count.
+
+# ─── CPU-SIM block — skip unless the effect drives uniforms from a Python sim ───
+*Most effects (fire / smoke / lightning / abstract) are pure GLSL and never touch the next four
+sections. (Exception: `## Selective-variant tuning` is general aesthetic-parameter search — useful for
+ANY effect where the agent can't judge the look by eye, not just sims.)*
 
 ## CPU scripting (optional)
 
