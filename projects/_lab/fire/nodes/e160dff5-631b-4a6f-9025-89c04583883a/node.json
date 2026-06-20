@@ -1,0 +1,95 @@
+{
+    "canvas_size": [
+        1280,
+        960
+    ],
+    "uniforms": {
+        "u_depth": 4.489999771118164,
+        "u_flicker_amp": 0.3199999928474426,
+        "u_flicker_speed": 1.1699999570846558,
+        "u_glow_radius": 1.7300000190734863,
+        "u_glow_strength": 0.7900000214576721
+    },
+    "ui_state": {
+        "ui_name": "fire v11 (v09 minus smoke, + depth)",
+        "description": "v09 with EXACTLY two changes: smoke removed entirely, and a subtle parallax depth layer behind the flame (offset/dimmer/slower) for dimensionality. Glow + flicker unchanged from v09.",
+        "render_media_details": {
+            "is_video": true,
+            "file_details": {
+                "path": "",
+                "size": 0
+            },
+            "resolution_details": {
+                "width": 1280,
+                "height": 960
+            },
+            "quality": 0,
+            "fps": 30,
+            "duration": 1.0
+        },
+        "ui_uniforms": {
+            "260085533400259490348506664942395818974": {
+                "name": "u_aspect",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "auto"
+            },
+            "37154164850612245702881750831795076973": {
+                "name": "u_time",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "auto"
+            },
+            "160478429207965359617119139785315038288": {
+                "name": "u_depth",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "107936581088479736253838442199286995489": {
+                "name": "u_flicker_amp",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "214837999281837599086018106272342444716": {
+                "name": "u_flicker_speed",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "122859712922629732311043720836593932046": {
+                "name": "u_glow_radius",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "316412596093658278310975111097753393459": {
+                "name": "u_glow_strength",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            }
+        },
+        "uniform_sort_key": "code",
+        "uniform_sort_desc": false,
+        "video_to_video_smoothing_window": 5,
+        "video_to_video_smoothing_sigma": 1.0,
+        "stopped_uniforms": [],
+        "all_stopped": false
+    }
+}

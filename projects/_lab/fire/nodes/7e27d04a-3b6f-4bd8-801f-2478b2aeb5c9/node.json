@@ -1,0 +1,104 @@
+{
+    "canvas_size": [
+        1280,
+        960
+    ],
+    "uniforms": {
+        "u_flicker_amp": 0.6499999761581421,
+        "u_flicker_speed": 0.8799999952316284,
+        "u_glow_radius": 0.4399999976158142,
+        "u_glow_strength": 0.6800000071525574,
+        "u_smoke_strength": 0.0,
+        "u_smoke_top": 7.389999866485596
+    },
+    "ui_state": {
+        "ui_name": "fire v08 (volumetric smoke + flicker)",
+        "description": "v07 + volumetric smoke (short per-pixel raymarch through a scrolling 3D fbm density, Beer-Lambert absorption + a self-shadow light-march for depth, warm-at-base cooling-up) and stronger multi-frequency light flicker on the flame heat.",
+        "render_media_details": {
+            "is_video": true,
+            "file_details": {
+                "path": "",
+                "size": 0
+            },
+            "resolution_details": {
+                "width": 1280,
+                "height": 960
+            },
+            "quality": 0,
+            "fps": 30,
+            "duration": 1.0
+        },
+        "ui_uniforms": {
+            "260085533400259490348506664942395818974": {
+                "name": "u_aspect",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "auto"
+            },
+            "37154164850612245702881750831795076973": {
+                "name": "u_time",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "auto"
+            },
+            "107936581088479736253838442199286995489": {
+                "name": "u_flicker_amp",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "214837999281837599086018106272342444716": {
+                "name": "u_flicker_speed",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "90712233995786848673160925221636538586": {
+                "name": "u_smoke_top",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "259842542641997930066328714685744137348": {
+                "name": "u_smoke_strength",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "122859712922629732311043720836593932046": {
+                "name": "u_glow_radius",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "316412596093658278310975111097753393459": {
+                "name": "u_glow_strength",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            }
+        },
+        "uniform_sort_key": "code",
+        "uniform_sort_desc": false,
+        "video_to_video_smoothing_window": 5,
+        "video_to_video_smoothing_sigma": 1.0,
+        "stopped_uniforms": [],
+        "all_stopped": false
+    }
+}
