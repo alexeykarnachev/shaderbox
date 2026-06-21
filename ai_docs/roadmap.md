@@ -26,26 +26,23 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-06-21 (todo.md purged to bugs/debt then CLEARED — all 7 fixed this wave; render-divergence still latest feature code). -->
-**ACTIVE: dev work on `dev`, unreleased (ahead of v0.20.0).** Two-part `todo.md` wave (maintainer
-call): (1) **purged** the file to ONLY bugs + obligatory tech debt — every feature-wish, optimization,
-refactor-want, documented trade-off, and future-feature infrastructure DELETED (knowledge stays in git
-history / feature specs / `conventions.md`); the header now bans filing features here. (2) **fixed all
-7** remaining `[BUG]`/`[DEBT]` entries in one wave, so `todo.md` is now EMPTY: `UINodeState`
-value-fallback validator (no more silent node-drop on a bad Literal), missing-shader-file freeze
-(degenerate frame now pumps `glfw.poll_events`), corrupt-seed-manifest resurrection guard
-(`seed.py::_manifest_corrupt`), lib-picker Esc edges (inline-input cancel + tag-input one-press close),
-mid-turn `CopilotConfigError` ledger preservation (contained-not-reraised once tools ran), edit-giveup
-counter (a read no longer resets the streak), `TraceLog` permanent-closed latch. `make check`+`smoke`
-green; per-module tests pass (the combined-run `FFF` is the known V3D cross-test GL flake, not a
-regression). Latest *feature* code remains the render-path **divergence cleanup**. `dev` == origin.
-**NEXT (maintainer's pick):** a `/shader-lab` session, or ship the accumulated `dev` to itch, or new
-feature work. (Feature **051** — shipped examples project — stays a parked draft in `features/`; its
-lib-coupling design is revisited when 051 itself is picked up.)
+<!-- As of 2026-06-21 (SHIPPED v0.21.0 to itch; dev == master == origin, tree clean). -->
+**ACTIVE: just SHIPPED v0.21.0** (minor bump — backward-compatible features since v0.20.0). `dev` ==
+`master` == origin, tree clean, both itch channels (linux + windows) live at 0.21.0. The release
+bundles: feature **050** (`probe_render` copilot tool + edit-churn correctness), the render-path
+**divergence cleanup** (`RenderShape` named-size vocabulary, the one-point render-cue fix, video-preview
+fps), YouTube Shorts resolution presets, the night_city `/shader-lab` harvest, and a `todo.md`
+discipline wave — purged to bugs/debt-only (features/wishes/trade-offs/future-infra deleted; the header
+now bans filing features there) then **all 7** remaining `[BUG]`/`[DEBT]` fixed (`UINodeState`
+value-fallback, missing-shader-file freeze, corrupt-seed-manifest guard, lib-picker Esc edges,
+`CopilotConfigError` ledger preservation, edit-giveup counter, `TraceLog` permanent-closed latch).
+`todo.md` is now EMPTY. **NEXT (maintainer's pick):** a `/shader-lab` session, or new feature work
+(feature **051** — shipped examples project — stays a parked draft in `features/`; its lib-coupling
+design is revisited when 051 itself is picked up).
 
-**Last LIVE on itch (context):** v0.20.0 — node-dir live auto-sync + math-symbol text glyphs + fixes.
-(v0.19.0 was tagged then dropped at upload time and never went public — a permanently skipped label;
-its node-dir-live-sync content rode into v0.20.0.)
+**Last LIVE on itch (context):** v0.21.0 — feature 050 + render-divergence cleanup + YT Shorts presets
++ the bugs/debt fix wave. (Previously v0.20.0 — node-dir live auto-sync + math-symbol text glyphs.
+v0.19.0 was tagged then dropped at upload and never went public — a permanently skipped label.)
 
 **Just shipped (context):** v0.17.0 — hotkeys + script-play polish on v0.16.0's CPU-scripting subsystem (040-048 + 049).
 
