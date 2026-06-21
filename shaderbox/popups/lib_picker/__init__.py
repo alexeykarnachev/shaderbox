@@ -148,13 +148,11 @@ def _draw_body(app: App) -> bool:
     if ghost_button("Close"):
         keep_open = False
 
-    # Esc closes the picker — except when an inline input owns it (rename /
-    # new-file / new-dir / add-tag).
-    if (
-        not input_owns_keys
-        and not tag_input_was_focused
-        and imgui.is_key_pressed(imgui.Key.escape, repeat=False)
-    ):
+    # Esc closes the picker — except when a rename/new-file/new-dir inline input owns it (those
+    # cancel themselves). The tag input does NOT suppress Esc (unlike Enter, which commits a tag):
+    # Esc on a focused tag input means "close the picker" — there's nothing to commit — so gating it
+    # on tag_input_was_focused only forced a useless first Esc (defocus) before the close.
+    if not input_owns_keys and imgui.is_key_pressed(imgui.Key.escape, repeat=False):
         keep_open = False
 
     return keep_open

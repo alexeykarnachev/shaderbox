@@ -85,9 +85,16 @@ class TraceLog:
         self._path = path
         self._lock = threading.Lock()  # worker thread writes; serialize appends
         self._fh: TextIOWrapper | None = None
+        # Permanent-closed latch: `_fh is None` alone can't tell "never opened" from "closed", so a
+        # stray event after close() would silently re-open the just-closed file (append) and bleed a
+        # later turn's lines into it. A reopen is a NEW TraceLog object (session._new_trace), never a
+        # revived closed one — so this latch only ever needs to STAY closed, no re-arm.
+        self._closed = False
 
     def _ensure_open(self) -> TextIOWrapper | None:
-        # Caller holds the lock. Open (append) on first use / after close().
+        # Caller holds the lock. Open (append) on first use; never re-open after close().
+        if self._closed:
+            return None
         if self._fh is not None:
             return self._fh
         try:
@@ -120,6 +127,7 @@ class TraceLog:
 
     def close(self) -> None:
         with self._lock:
+            self._closed = True
             if self._fh is not None:
                 self._fh.close()
                 self._fh = None

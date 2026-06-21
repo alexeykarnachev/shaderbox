@@ -107,6 +107,9 @@ def update_and_draw(app: App) -> None:
             # can't paint — but a parked copilot render must still fire to unblock its waiting
             # worker, or the turn stalls until the op times out.
             app.copilot.bridge.run_deferred_render()
+            # Pump the OS event queue so the window stays responsive (close button, resize) while
+            # the file is missing — process_hotkeys (the normal poll_events site) is past the return.
+            glfw.poll_events()
             return
         reload_node_if_changed(app, name, ui_node)
 

@@ -385,11 +385,12 @@ class CopilotSession:
                     break  # the generator yields nothing after a terminal event
                 self._events.put(ev)
         except CopilotConfigError as e:
+            # Only a PRE-WORK reject reaches here (no key/model before any tool ran) — empty ledger is
+            # correct. A config error AFTER tools ran is contained inside run_turn as an AgentError
+            # carrying its summary+stats (caught above at the AgentError branch), so it never gets here.
             logger.warning(f"Copilot turn aborted: {e}")
             error_text = str(e)
-            terminal = AgentError(
-                str(e)
-            )  # no run_turn messages -> empty tail (default)
+            terminal = AgentError(str(e))
         except Exception:
             logger.exception("Copilot turn failed")
             error_text = "copilot turn failed (see logs)"

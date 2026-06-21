@@ -220,12 +220,15 @@ def _draw_inline_new_input(
         state.buf,
         flags=imgui.InputTextFlags_.enter_returns_true,
     )
-    input_focused = imgui.is_item_focused()
     if changed:
         created = commit()
         if created is not None and on_create is not None:
             on_create(created)
-    if input_focused and imgui.is_key_pressed(imgui.Key.escape, repeat=False):
+    # Esc cancels whenever the input is OPEN, not only while focused: a user who clicked away (input
+    # open but unfocused) would otherwise find Esc dead — inline_input_owns_esc routes Esc here, but
+    # the global handler leaves the picker open. Only one inline input is ever open at a time
+    # (mutually-exclusive targets), so this can't double-consume.
+    if imgui.is_key_pressed(imgui.Key.escape, repeat=False):
         cancel()
     imgui.same_line()
     if ghost_button(f"x##cancel_{id_prefix}_{dir_rel}"):
@@ -291,8 +294,8 @@ def _draw_file_rename_input(app: App, path: Path) -> None:
         app.shader_lib_files.file_rename.buf,
         flags=imgui.InputTextFlags_.enter_returns_true,
     )
-    input_focused = imgui.is_item_focused()
-    if input_focused and imgui.is_key_pressed(imgui.Key.escape, repeat=False):
+    # Esc cancels whenever the rename input is OPEN, not only while focused (see the new-input note).
+    if imgui.is_key_pressed(imgui.Key.escape, repeat=False):
         app.shader_lib_files.cancel_file_rename()
     if changed:
         app.shader_lib_files.rename_file(path, app.shader_lib_files.file_rename.buf)

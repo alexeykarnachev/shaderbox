@@ -2,7 +2,7 @@ import base64
 import json
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, Literal, Self
+from typing import Any, Literal, Self, get_args
 from uuid import uuid4
 
 import moderngl
@@ -143,6 +143,25 @@ class UINodeState(BaseModel):
     # Node-level stop: freezes EVERY driven uniform's write at once (the script keeps ticking, so a
     # later node-play resumes from advanced state, not stale state). Born False.
     all_stopped: bool = False
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reset_out_of_range_values(cls, data: Any) -> Any:
+        # A known key with an out-of-Literal VALUE (a stale uniform_sort_key, a bad input_type from a
+        # narrowed Literal) would raise ValidationError, which load_nodes_from_dir swallows by dropping
+        # the WHOLE node. Reset such values to defaults so the node survives the upgrade instead.
+        if not isinstance(data, dict):
+            return data
+        if data.get("uniform_sort_key") not in get_args(UniformSortKey):
+            data.pop("uniform_sort_key", None)
+        uniforms = data.get("ui_uniforms")
+        if isinstance(uniforms, dict):
+            for u in uniforms.values():
+                if isinstance(u, dict) and u.get("input_type") not in get_args(
+                    UIUniformInputType
+                ):
+                    u.pop("input_type", None)
+        return data
 
 
 class EditorSettings(BaseModel):

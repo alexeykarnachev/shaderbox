@@ -34,6 +34,20 @@ def _load_manifest(root: Path) -> dict[str, str]:
     return {str(k): str(v) for k, v in raw.items()}
 
 
+def _manifest_corrupt(root: Path) -> bool:
+    # The manifest file is present on disk but unreadable/non-dict, so _load_manifest fail-softs to
+    # {}. That empty dict is INDISTINGUISHABLE from a fresh install — and treating it as fresh would
+    # re-seed every shipped file the user DELETED (their manifest entries are gone with the corruption).
+    path = root / _MANIFEST_NAME
+    if not path.exists():
+        return False
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return True
+    return not isinstance(raw, dict)
+
+
 def _save_manifest(root: Path, manifest: dict[str, str]) -> None:
     (root / _MANIFEST_NAME).write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
@@ -85,6 +99,14 @@ def sync_shipped_lib(seed_dir: Path, root: Path) -> int:
 def _sync_shipped_lib(seed_dir: Path, root: Path) -> int:
     seed = _seed_files(seed_dir)
     if not seed:
+        return 0
+    if _manifest_corrupt(root):
+        # Skip the incremental sync entirely: with no trustworthy manifest we can't tell a
+        # user-deleted shipped file from a never-seeded one, so seeding would resurrect deletions.
+        # The user keeps whatever is on disk; a deliberate "Reset library to shipped" still works.
+        logger.warning(
+            "shader-lib seed: manifest corrupt — skipping sync (no files resurrected)"
+        )
         return 0
     manifest = _load_manifest(root)
     written = 0

@@ -211,6 +211,10 @@ class _RunLog:
     ) -> None:
         self._entries.append(_RunEntry(name, ok, msg, args, payload))
 
+    def __bool__(self) -> bool:
+        # True once any tool has run this turn — the "did work worth preserving on an error" signal.
+        return bool(self._entries)
+
     def referenced_nodes(self) -> list[str]:
         # Every node name/handle the turn touched or referenced: args of every call, deduped,
         # order-preserved. A later turn's "do the same to C" needs the prior referent named.
@@ -533,7 +537,27 @@ def run_turn(
                             first_input_tokens = ev.usage.input_tokens
                         done = ev
         except CopilotConfigError:
-            raise
+            # A pre-work config reject (key/model wiped before any tool ran) still propagates — the
+            # session surfaces its message verbatim with an empty ledger (correct: nothing happened).
+            # But once tools HAVE run (credentials cleared in Settings mid-turn), the same containment
+            # as the stream-error path below applies: terminate carrying the accumulated summary +
+            # stats, or the turn's ledger + spend are silently dropped.
+            if not ran:
+                raise
+            note = (
+                "The turn was aborted (copilot credentials cleared mid-turn). "
+                "Any actions shown above did complete - ask me to continue or recap."
+            )
+            yield AgentError(
+                note,
+                summary=_build_turn_summary(note, ran, registry),
+                stats=TurnStats(
+                    context_tokens=first_input_tokens or 0,
+                    reply_tokens=usage.output_tokens,
+                    cost_usd=usage.cost_usd,
+                ),
+            )
+            return
         except Exception as exc:
             logger.warning(f"copilot stream failed mid-turn: {exc}")
             tr.event("stream_error", iteration=iteration, error=str(exc))
@@ -805,11 +829,13 @@ def run_turn(
             # Self-correction cap: a model stuck on an edit (an old_str that keeps not matching, a
             # line range that keeps not resolving) would otherwise retry to the max_iterations
             # ceiling. Count CONSECUTIVE failed shader-EDIT tools (not all mutating tools — a failed
-            # render/publish is non-convergence, not a stuck edit); any success or non-edit tool
-            # resets it.
+            # render/publish is non-convergence, not a stuck edit). A non-mutating tool (a read)
+            # carries no new edit information, so it does NOT reset the streak — else a read between
+            # two failed edits would let a 3-strikes loop stretch indefinitely. Only a success or a
+            # genuine state change (any mutating tool) resets it.
             if registry.is_edit_tool(tc.name) and not ok:
                 consecutive_failed_edits += 1
-            else:
+            elif registry.is_edit_tool(tc.name) or registry.is_mutating(tc.name):
                 consecutive_failed_edits = 0
 
             # Applies-but-broken thrash: an edit that APPLIES (ok=True) but leaves compile errors
