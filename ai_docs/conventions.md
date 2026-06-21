@@ -131,16 +131,19 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
     "$(uv run python -c 'from shaderbox.paths import shader_lib_root as r; print(r())')"`.
     (`shaderbox/shader_lib/` is the Python index/parser/resolver package, NOT GLSL — don't grep there
     for helpers.) NOTE: the active root can DIVERGE from `resources/` — helpers the maintainer authored
-    only on the desktop live root (`SB_fbm`, `SB_tri_wave`) aren't resolvable on a fresh env; tracked in
-    `todo.md [DEFERRAL] shader-lib edits on the desktop never flow back into the repo seed (one-way sync)`.
+    only on the desktop live root (`SB_fbm`, `SB_tri_wave`) aren't resolvable on a fresh env, because
+    `sync_shipped_lib` is strictly one-way (`resources/` → live root, never back). To recover a lost
+    helper, copy it by hand from the desktop live root into `resources/shader_lib/` and commit.
 
 - **Three-layer UI architecture.** `app.py` = UI/glfw/imgui owner + lifecycle wrapper (windowing, GL
   context, editor sessions, popups, nav, the exporter panels) — no imgui drawing in the orchestrator
   sense, but it owns all imgui-bound state. `ui.py` = thin orchestrator owning the frame loop (`run` +
   `update_and_draw`). `widgets`/`popups`/`tabs` = pure draw functions taking `app: App`. (The split is
   forced by the no-`TYPE_CHECKING` rule: a draw fn annotating `app: App` while `App` imports it would
-  cycle — so `App` lives in its own module.) Revisit if a 4th UI sub-package is needed. Tracked:
-  `todo.md [DEFERRAL] split ui.py / app.py further`.
+  cycle — so `App` lives in its own module.) Prior extractions already lifted the copilot backend
+  (`copilot/backend.py`) and the headless project core (`project_session.py`) out of `App`; what
+  remains in `App` is genuinely UI/glfw/imgui-bound. Don't split further without a fresh pain signal
+  (lost search-and-replace, unclear blast radius) — the remaining candidates are net-negative today.
 - **`ProjectSession` is the headless project + copilot core; `App` owns one and forwards to it.** The
   project lifecycle (paths, nodes, app_state, lib index + cross-project stores, integrations) and the
   whole copilot cluster (`CopilotSession`/`CopilotBackend`/`RevertExecutor` + the capability wiring)
@@ -206,7 +209,8 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   ticks once** (`session.tick` in `ui.py`). A future C backend implements the same `Behavior.run` protocol
   over a `.so` with no engine-loop change. Spec: `ai_docs/features/048_single_script_play_stop.md` (041 the
   origin, 044/047's per-uniform half superseded). Revisit `ctx` when a script needs cross-NODE state (the
-  mini-game milestone — `todo.md`).
+  mini-game milestone — a deliberate shared channel with an explicit read/write phase order, NOT a dict
+  smuggled back into `ctx`).
 - **`tabs/*.py`: free `draw(app: App)` + optional `update(app: App)`.** `draw()` does imgui calls
   only; `update()` runs *before* imgui draws, for GL/canvas/mtime work outside the frame body. Tab
   state goes on `App` directly; a state-only sibling module (e.g. `tabs/share_state.py`) may hold
@@ -405,8 +409,7 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   a new prompt tier is a named block at its volatility rank, not a string-concat. Prompt composition lives
   ONLY in `build_prompt`; the summary is produced in `agent.py` and rendered to a message in `session.py`
   (clean producer/render/compose split — `prompt.py` imports no agent/registry). The within-turn read
-  de-dup + line-drift follow-up was CLOSED by 020·29 (the PER_TURN working-set block); reasoning-notes
-  scratchpad + cross-shader derived-edit memory remain deferred in `todo.md`.
+  de-dup + line-drift follow-up was CLOSED by 020·29 (the PER_TURN working-set block).
 - **A new addressable copilot SOURCE kind gets a `<kind>:` prefix + rides the EXISTING read/grep, never
   a parallel tool.** Nodes are bare ids, library files are `lib:<path>`, templates are `template:<id>`
   (feature 020·22). A new readable source (a future preset, an example, etc.) mirrors this: a
@@ -486,7 +489,10 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   exporter whose creds are global returns `current_settings() -> {}` so the per-project
   `exporter_settings` stays non-authoritative. The per-project pointer that remains (e.g.
   `telegram_default_pack`) lives on `UIAppState`. Revisit if an integration brings genuinely
-  per-project credentials.
+  per-project credentials. **All secrets are stored CLEARTEXT** (Telegram `bot_token`, the YouTube
+  `client_secret` + long-lived `token_json`, the Copilot `openrouter_key`) — an accepted posture for a
+  single-user desktop tool (feature-001 decision). The single `IntegrationsStore` is the migration
+  seam if a keyring/OS-secret-store is ever warranted (shared machine / synced data dir).
 - **All on-disk state roots at `paths.py::app_data_dir()`** — projects, the active-project pointer,
   logs, `integrations.json`. Never call `platformdirs.user_data_dir(...)` directly (that path
   silently ignores the override); go through `app_data_dir()`, which honors `SHADERBOX_DATA_DIR`
