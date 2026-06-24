@@ -46,7 +46,7 @@ DEFAULT_DURATION = 1.0
 
 # File extensions
 IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".bmp", ".webp"]
-VIDEO_EXTENSIONS = [".mp4", ".webm"]
+VIDEO_EXTENSIONS = [".mp4", ".webm", ".mov"]
 MEDIA_EXTENSIONS = IMAGE_EXTENSIONS + VIDEO_EXTENSIONS
 
 # Directory names for node loading

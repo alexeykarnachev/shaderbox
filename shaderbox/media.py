@@ -284,6 +284,7 @@ class Video(MediaWithTexture):
 
 
 def media_class_for(suffix: str) -> type[Image] | type[Video]:
+    suffix = suffix.lower()
     if suffix in IMAGE_EXTENSIONS:
         return Image
     if suffix in VIDEO_EXTENSIONS:

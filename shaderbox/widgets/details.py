@@ -31,7 +31,7 @@ def draw_file_details(
     if button("Choose file..."):
         file_path = pfd_block(pfd.save_file("File path", default_path="."))
         if file_path:
-            extension = Path(file_path).suffix
+            extension = Path(file_path).suffix.lower()
             if extensions and extension not in extensions:
                 details.path = ""
                 err = f"Can't select {extension} file, available extensions are: {extensions}"

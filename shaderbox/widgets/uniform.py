@@ -241,7 +241,8 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
         )
 
         if button("Load" + hidden):
-            patterns = " ".join("*" + ext for ext in MEDIA_EXTENSIONS)
+            # Both cases: Linux glob filters are case-sensitive, phone cameras emit .MOV/.JPG.
+            patterns = " ".join(f"*{ext} *{ext.upper()}" for ext in MEDIA_EXTENSIONS)
             results = pfd_block(
                 pfd.open_file(
                     "Select image or video",
@@ -251,7 +252,7 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
             )
             file_path = Path(results[0]) if results else Path()
 
-            if file_path.suffix in MEDIA_EXTENSIONS:
+            if file_path.suffix.lower() in MEDIA_EXTENSIONS:
                 new_value = media_class_for(file_path.suffix)(file_path)
 
         imgui.same_line()

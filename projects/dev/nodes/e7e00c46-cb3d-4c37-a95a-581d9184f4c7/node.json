@@ -3,14 +3,10 @@
         1280,
         960
     ],
-    "uniforms": {
-        "u_flicker": 0.9127305566790304,
-        "u_intensity": 0.9778129964031751,
-        "u_wind": 0.9414593441187571
-    },
+    "uniforms": {},
     "ui_state": {
-        "ui_name": "Fire (hand v2)",
-        "description": "Hand attempt v2 post-research: domain-warp field, fuel-envelope shape (triangle-ish), glow, embers, flat smoke, CPU-script wind/flicker. Kept for comparison.",
+        "ui_name": "UV Mango",
+        "description": "The default blank-canvas starter: a minimal shader that colours the screen by UV coordinate + time. Start here for a shader from scratch.",
         "render_media_details": {
             "is_video": true,
             "file_details": {
@@ -18,8 +14,8 @@
                 "size": 0
             },
             "resolution_details": {
-                "width": 1280,
-                "height": 960
+                "width": 0,
+                "height": 0
             },
             "quality": 0,
             "fps": 30,
@@ -34,16 +30,8 @@
                 "array_length": 1,
                 "input_type": "auto"
             },
-            "240226327198999399124916269763010832654": {
-                "name": "u_flicker",
-                "is_ubo": false,
-                "gl_type": 5126,
-                "dimension": 1,
-                "array_length": 1,
-                "input_type": "drag"
-            },
-            "6023357845837506267001420149283385170": {
-                "name": "u_intensity",
+            "28817900879564012086563967923611592100": {
+                "name": "u_zoomout",
                 "is_ubo": false,
                 "gl_type": 5126,
                 "dimension": 1,
@@ -57,14 +45,6 @@
                 "dimension": 1,
                 "array_length": 1,
                 "input_type": "auto"
-            },
-            "272463616134755952231930176098151553630": {
-                "name": "u_wind",
-                "is_ubo": false,
-                "gl_type": 5126,
-                "dimension": 1,
-                "array_length": 1,
-                "input_type": "drag"
             }
         },
         "uniform_sort_key": "code",

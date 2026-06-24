@@ -26,19 +26,16 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-06-21 (SHIPPED v0.21.0 to itch; dev == master == origin, tree clean). -->
-**ACTIVE: just SHIPPED v0.21.0** (minor bump — backward-compatible features since v0.20.0). `dev` ==
-`master` == origin, tree clean, both itch channels (linux + windows) live at 0.21.0. The release
-bundles: feature **050** (`probe_render` copilot tool + edit-churn correctness), the render-path
-**divergence cleanup** (`RenderShape` named-size vocabulary, the one-point render-cue fix, video-preview
-fps), YouTube Shorts resolution presets, the night_city `/shader-lab` harvest, and a `todo.md`
-discipline wave — purged to bugs/debt-only (features/wishes/trade-offs/future-infra deleted; the header
-now bans filing features there) then **all 7** remaining `[BUG]`/`[DEBT]` fixed (`UINodeState`
-value-fallback, missing-shader-file freeze, corrupt-seed-manifest guard, lib-picker Esc edges,
-`CopilotConfigError` ledger preservation, edit-giveup counter, `TraceLog` permanent-closed latch).
-`todo.md` is now EMPTY. **NEXT (maintainer's pick):** a `/shader-lab` session, or new feature work
+<!-- As of 2026-06-24 (v0.21.0 still LIVE on itch; dev ahead of master by one bugfix, tree clean after commit). -->
+**ACTIVE: shipped v0.21.0 is live; `dev` carries one un-shipped bugfix.** Both itch channels (linux +
+windows) are at 0.21.0. Since then, one fix landed on `dev` (not yet promoted to master/shipped): the
+**media-uniform load now accepts `.mov` and is case-insensitive** — `IMG_*.MOV` (iOS uppercase) used to
+silently no-op at the Load button because the extension gate was case-sensitive and `.mov` wasn't in
+`VIDEO_EXTENSIONS`; the suffix is now lowercased at the canonical `media.py::media_class_for` resolver +
+both call-site gates, `.mov` is supported, and the picker filter emits both-case globs. `todo.md` is
+EMPTY (no open bugs/debt). **NEXT (maintainer's pick):** a `/shader-lab` session, or new feature work
 (feature **051** — shipped examples project — stays a parked draft in `features/`; its lib-coupling
-design is revisited when 051 itself is picked up).
+design is revisited when 051 itself is picked up). The `.mov` fix ships on the next release.
 
 **Last LIVE on itch (context):** v0.21.0 — feature 050 + render-divergence cleanup + YT Shorts presets
 + the bugs/debt fix wave. (Previously v0.20.0 — node-dir live auto-sync + math-symbol text glyphs.
