@@ -17,6 +17,14 @@ per-feature branches); `master` is the line actually released to itch and only a
 So `dev` can sit many commits ahead with no version bump — the bump happens once, when `dev` is
 ship-ready (`## Build / ship to itch.io`).
 
+**Lab worktree / `lab` branch.** Shader-lab experiments run in a separate git *worktree*
+(`~/src/shaderbox2`) checked out on the `lab` branch, sharing one `.git` with the main tree
+(`~/src/shaderbox`, on `dev`). The experiments themselves stay gitignored drafts under
+`projects/_lab/`; when a run yields something worth keeping — a promoted node dir (`git add -f`) or
+harvest into the skill / lib / a feature — commit it on `lab` and **push to `origin/lab`**. The
+maintainer then merges `lab` into the main line from the main tree. Keep lab work on `lab`; don't
+switch the lab worktree's branch.
+
 ---
 
 ## Three kinds of work — pick the shape
