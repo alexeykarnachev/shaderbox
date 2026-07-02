@@ -89,6 +89,8 @@ if not _INTEGRATIONS.exists():
 
 import glfw  # noqa: E402
 import moderngl  # noqa: E402
+import numpy as np  # noqa: E402
+from PIL import Image as PILImage  # noqa: E402
 
 # core.py's render path reads glfw.get_time() for the default u_time; glfw is never init()'d
 # here (we use EGL, not a glfw window), so it warns "not initialized" and returns 0.0 — which
@@ -101,6 +103,7 @@ from shaderbox.constants import (  # noqa: E402
     TEMPLATE_ORDER,
 )
 from shaderbox.copilot.capabilities import RenderResult  # noqa: E402
+from shaderbox.copilot.gate import GateResponse  # noqa: E402
 from shaderbox.copilot.persistence import ConversationStore  # noqa: E402
 from shaderbox.copilot.session import CopilotSession  # noqa: E402
 from shaderbox.copilot.state import Message  # noqa: E402
@@ -229,6 +232,7 @@ class DogfoodHarness:
         while True:
             cop.drain_bridge()
             cop.pump_events()
+            self._pump_file_gate()
             self._print_new_messages()
             gate = self._open_gate()
             if gate is not None:
@@ -252,6 +256,55 @@ class DogfoodHarness:
     def decline(self) -> None:
         self._copilot.answer_gate(False)
         print("    [declined]")
+
+    # ---- FILE gate (feature 052): auto-answer a bind_media/import_node pick ----
+
+    def _pump_file_gate(self) -> None:
+        """Auto-answer a mid-turn FILE gate (bind_media / import_node) with a CANNED asset — the
+        headless harness has no UI file picker, so this simulates the user's pick (the real app's
+        `ui.py::_pump_file_gate` does this with a native dialog). Runs on the context-owning thread
+        (the load+bind / read+create are GL/FS on main), same as the app's frame-loop poll.
+        """
+        gate = self._copilot.gate
+        req = gate.take_file_pending()
+        if req is None:
+            return
+        backend = self.session.copilot_backend
+        if req.file_action == "import_node":
+            result = backend.import_picked_node(self._canned_glsl(), req.switch_to)
+            gate.answer_file(GateResponse(import_result=result))
+            print(
+                f"    [file-gate: import_node <- canned.glsl -> "
+                f"{result.node_id or result.error}]"
+            )
+        else:
+            result = backend.bind_picked_media(
+                req.node_id, req.uniform, self._canned_image()
+            )
+            gate.answer_file(GateResponse(media_result=result))
+            tag = f"{result.width}x{result.height}" if result.ok else result.error
+            print(f"    [file-gate: bind {req.uniform} <- canned.png ({tag})]")
+
+    def _canned_image(self) -> Path:
+        # A small gradient PNG in the project dir (generated once) that bind_media binds to a sampler.
+        p = self.project_dir / "dogfood_canned.png"
+        if not p.exists():
+            n = 128
+            yy, xx = np.mgrid[0:n, 0:n].astype("float32") / n
+            arr = (np.dstack([xx, yy, 1.0 - xx]) * 255).astype("uint8")
+            PILImage.fromarray(arr, "RGB").save(p)
+        return p
+
+    def _canned_glsl(self) -> Path:
+        # A trivially-valid fragment shader on disk (generated once) that import_node creates a node from.
+        p = self.project_dir / "dogfood_canned.frag.glsl"
+        if not p.exists():
+            p.write_text(
+                "#version 460 core\nin vec2 vs_uv;\nout vec4 fs_color;\n"
+                "void main() { fs_color = vec4(vs_uv, 0.5, 1.0); }\n",
+                encoding="utf-8",
+            )
+        return p
 
     # ---- rendering ----
 
