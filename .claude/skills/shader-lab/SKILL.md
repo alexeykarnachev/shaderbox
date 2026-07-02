@@ -64,11 +64,31 @@ The costly mistakes from past sessions:
 
 ## Setup — at the START of a session, settle these with the user
 
-1. **Effect + concept.** What are we building (fire / lightning / smoke / …)? Restate the teachable
-   progression you intend (e.g. fire: base gradient → warped-noise field → flame shape → color ramp
-   → glow → embers → smoke).
+**Precondition — start from a CLEAN working tree.** A lab session assumes `git status` is clean at
+start; if it isn't, ASK the user before proceeding — trivial ambient churn (a scratch file, an
+unrelated formatting nit) is ignorable, but flag anything substantive (an uncommitted source / skill /
+doc change) and let them decide. Don't silently build on another session's in-flight work.
 
-2. **Environment — live vs offscreen. Infer from context, then CONFIRM.**
+1. **Effect + concept.** What are we building (fire / lightning / smoke / …)? Restate it back in your
+   own words (the ONE rule) before writing files.
+
+2. **Iteration model — WHICH kind of versioning? ASK up front; do NOT presume.** The two modes produce
+   completely different node sequences, and picking the wrong one multiplies into N wrong artifacts (I
+   have repeatedly defaulted to the wrong one — so ASK, never assume):
+   - **Whole-image iteration (default when the goal is realism / a hero shot):** each version is a
+     COMPLETE, best-effort render of the ENTIRE effect — the max you can do that round. Between versions
+     the user critiques and you improve the whole thing (swap a fake for the real model, better light,
+     better material). The vNN are complete standalone pictures to compare side by side — NOT partial
+     build stages. This is the mode the realism meta-lever assumes; the `us_flag` arc (v01→v18, each a
+     full flag) is its shape.
+   - **Component progression (a "how it's built" teaching decomposition):** each version ADDS one
+     mechanic on top of the previous (e.g. fire: base gradient → warped-noise → flame shape → colour
+     ramp → glow → embers → smoke); early versions are intentionally incomplete. Good when the
+     deliverable is a learning reel (see the reveal-reel pattern near the end).
+   - Ask verbatim: "Each version a COMPLETE standalone attempt we critique & improve, or INCREMENTAL
+     build-steps that each add one mechanic?" Honour the answer for the whole session.
+
+3. **Environment — live vs offscreen. Infer from context, then CONFIRM.**
    - **Live** (the user has ShaderBox open and is watching the preview): they open the project and
      watch the preview update live as you rewrite the shader. You do NOT render anything to show them —
      the app does it. (You still render stills for YOUR OWN eyeballing.)
@@ -78,7 +98,7 @@ The costly mistakes from past sessions:
      **.mp4** (H.264) — it's the most universally-playable format across devices; avoid WebM.
    - When unsure which, ASK: "are you watching live in ShaderBox, or should I render MP4s to show you?"
 
-3. **Stop cadence.** Ask up front: "how often should I stop for your review?" — options: after every
+4. **Stop cadence.** Ask up front: "how often should I stop for your review?" — options: after every
    step / once at the very end / at my discretion (stop only at a real fork or when I need a verdict).
    Honour it for the whole session unless the user changes it.
 
@@ -104,6 +124,17 @@ The costly mistakes from past sessions:
 A node dir is `node.json` + `shader.frag.glsl` (+ optional `scripts/script.py` for CPU-driven
 uniforms). `SB_*` helpers resolve from the live shader lib automatically. The smallest valid
 `node.json`:
+
+> **VERIFY the `SB_*` inventory before using a helper — the shipped set is SMALLER than old labs
+> assume.** The canonical library ships in `shaderbox/resources/shader_lib/`; the current set is only:
+> `SB_value_noise`, `SB_hash21`, `SB_sd_box/circle/segment`, `SB_op_*` (union/subtract/intersect/
+> smooth_union/round/onion), `SB_fill`, `SB_fill_aa`, `SB_glow`, `SB_center_uv`, `SB_rotate`,
+> `SB_sd_char/text` + `SB_text_*`. **`SB_fbm` was REMOVED** — the `fire`/`us_flag` labs reference it and
+> WON'T compile as-is; write a local fbm from `SB_value_noise` (`fbm(p)=Σ aᵢ·SB_value_noise(2ⁱp)`), and
+> a local star SDF (iq `sdStar5`) — neither ships. Confirm with
+> `grep -rhoE '\bSB_[a-z0-9_]+\s*\(' shaderbox/resources/shader_lib/ | sort -u`. If a `SB_*` won't
+> resolve at all (empty live lib), seed it once:
+> `python -c "from pathlib import Path; import shaderbox; from shaderbox.shader_lib.seed import sync_shipped_lib; from shaderbox.paths import shader_lib_root; sync_shipped_lib(Path(shaderbox.__file__).parent/'resources'/'shader_lib', shader_lib_root())"`.
 
 ```json
 { "canvas_size": [720, 1280],
