@@ -172,6 +172,12 @@ def render_facts(rgba: bytes, width: int, height: int) -> str:
     min_x, min_y, max_x, max_y = width, height, -1, -1
     luma_sum = [0.0] * 9
     luma_cnt = [0] * 9
+    ink_rgb = [
+        0.0,
+        0.0,
+        0.0,
+    ]  # alpha-weighted mean colour of the DRAWN region (chroma is
+    ink_w = 0.0  # otherwise blind — "make it warmer/bluer" has no signal without it)
     for y in range(height):
         row = y * width
         cell_row = (y * 3 // height) * 3
@@ -187,6 +193,11 @@ def render_facts(rgba: bytes, width: int, height: int) -> str:
                 max_x = max(max_x, x)
                 min_y = min(min_y, y)
                 max_y = max(max_y, y)
+                w = a / 255.0
+                ink_rgb[0] += r * w
+                ink_rgb[1] += g * w
+                ink_rgb[2] += b * w
+                ink_w += w
 
     if ink == 0:
         # Self-describing flat-frame verdict: a blank AND a full-screen fill both
@@ -214,8 +225,11 @@ def render_facts(rgba: bytes, width: int, height: int) -> str:
     rows = [grid[6:9], grid[3:6], grid[0:3]]
     grid_str = " / ".join(" ".join(str(v) for v in row) for row in rows)
     pct = round(ink / n * 100)
+    mr, mg, mb = (round(c / ink_w) for c in ink_rgb) if ink_w > 0 else (0, 0, 0)
+    tone = "warm" if mr > mb + 25 else "cool" if mb > mr + 25 else "neutral"
     return (
         f"render: ink {pct}% | bbox x {min_x / width:.2f}-{(max_x + 1) / width:.2f}, "
         f"y {min_y / height:.2f}-{(max_y + 1) / height:.2f} (y=0 bottom) | "
+        f"ink mean rgb({mr},{mg},{mb}) {tone} | "
         f"luma 0-9 top/mid/bottom rows: {grid_str}"
     )

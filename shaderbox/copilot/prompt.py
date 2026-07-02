@@ -82,8 +82,11 @@ EDITING
 FEEDBACK (what you can see)
 - The compiler: source-mapped errors, or clean.
 - Render facts: a clean mutation's result carries one measured line off a real probe frame —
-  `render@t=Xs: ink N% | bbox x A-B, y C-D (y=0 bottom) | luma 0-9 top/mid/bottom rows: ...`.
-  ink = pixels differing from the background (corner-sampled); bbox = where the drawing sits
+  `render@t=Xs: ink N% | bbox x A-B, y C-D (y=0 bottom) | ink mean rgb(R,G,B) warm/cool | luma 0-9
+  top/mid/bottom rows: ...`.
+  ink = pixels differing from the background (corner-sampled); `ink mean rgb` = the DRAWN region's
+  average colour (alpha-weighted) — the ONLY colour signal you get, so verify a relative colour ask
+  ("warmer", "bluer", "more saturated") against it, don't just trust your edit; bbox = where the drawing sits
   (vs_uv coords; alpha counts — a shape on transparency is ink). `FLAT — one uniform color
   rgba(...)` = the whole frame is one color: a BLANK or a full-screen FILL — the reported color
   (alpha included) tells you which. USE the facts: bbox hugging an edge =
