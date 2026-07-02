@@ -34,6 +34,7 @@ from pathlib import Path
 
 CANONICAL_TOOLS: frozenset[str] = frozenset(
     {
+        "load_tools",
         "read_shader",
         "edit_shader",
         "write_shader",

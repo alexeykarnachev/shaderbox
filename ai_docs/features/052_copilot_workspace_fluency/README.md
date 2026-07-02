@@ -61,7 +61,17 @@ per-turn token tax"). Contained capability slices deliver value at lower risk.
   `_create_node_on_main` (extracted from `create_node`), answers a path-free `NodeImportResult`. A
   broken import still creates the node + returns compile errors. Verified in-env (creates a compiling
   node, sentinel-dir absent from result + msg). `make check` clean.
-- [ ] **Slice 0 — lazy tool catalogue** (`load_tools` + demote the new + 7 integration tools) — LAST.
+- [x] **Slice 0 — lazy tool catalogue** — `load_tools(names)` meta-tool (eager) intercepted in
+  `run_turn` before execute: extends a turn-scoped `loaded` set + rebuilds `tools=` via
+  `registry.assemble_specs` (eager + loaded, SORTED → byte-stable/cacheable). The 7 new + 7 integration
+  tools demoted to `eager=False` with `catalog_summary`; the catalogue rides the `load_tools`
+  description. Verified: demoted tools absent from the eager core but reachable; order-independent
+  sorted specs; end-to-end injection (`bind_media` in `tools=` only after `load_tools`). 93 passed.
+
+**Feature 052 is CODE-COMPLETE (all 6 slices landed).** Remaining before "done": a complete-feature
+review pass + manual app verification (the FILE-gate picker + working-set awareness need a real
+`make run` — not headless-exercisable); + the slice-0 warm-turn token-probe measurement (follow-up).
+Then flip the roadmap row `in progress → done`.
 
 ## Slicing guidance (for turning this into tasks)
 

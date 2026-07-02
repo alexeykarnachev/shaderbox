@@ -332,3 +332,54 @@ def test_unknown_edit_target_rejects_as_unresolved(app: Any) -> None:
     # The resolver keeps its unresolved-target reject after the freshness guard retired (GL-free).
     res = app.copilot_backend.apply_full_rewrite("x", "no-such-node-zzz")
     assert res.unresolved and "no node" in res.unresolved_reason
+
+
+# ---- lazy load_tools injection (feature 052 slice 0) ----
+
+
+class _ToolsRecordingClient:
+    # Records the tools= names it was streamed each call, so a test can assert the lazy injection.
+    def __init__(self, scripts: list[list[LLMStreamEvent]]) -> None:
+        self._scripts = scripts
+        self._i = 0
+        self.tools_seen: list[list[str]] = []
+
+    def stream(
+        self,
+        messages: list[LLMMessage],
+        *,
+        tools: list[LLMToolSpec] | None = None,
+        max_tokens: int,
+    ) -> Iterator[LLMStreamEvent]:
+        _ = (messages, max_tokens)
+        self.tools_seen.append([t.name for t in (tools or [])])
+        script = self._scripts[self._i]
+        self._i += 1
+        return iter(script)
+
+
+def test_load_tools_injects_lazy_tool_into_next_stream() -> None:
+    # iteration 0 carries the eager core (no bind_media); the model calls load_tools(["bind_media"]);
+    # iteration 1's tools= now includes bind_media (§0 turn-scoped injection).
+    client = _ToolsRecordingClient(
+        [
+            _tool_call("c1", "load_tools", '{"names": ["bind_media"]}'),
+            [LLMTextDelta("done"), LLMDone("stop")],
+        ]
+    )
+    list(
+        run_turn(
+            client,
+            build_registry(minimal_caps()),
+            COPILOT_CONFIG,
+            _fake_context(),
+            history=[],
+            user_text="bind a texture",
+            gate=GateChannel(),
+            cancel=threading.Event(),
+        )
+    )
+    assert len(client.tools_seen) == 2
+    assert "load_tools" in client.tools_seen[0]
+    assert "bind_media" not in client.tools_seen[0]  # lazy, not yet loaded
+    assert "bind_media" in client.tools_seen[1]  # loaded for the rest of the turn

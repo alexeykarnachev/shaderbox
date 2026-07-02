@@ -601,7 +601,8 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             args_model=_DeleteLibFileArgs,
             handler=delete_lib_file,
             mutating=True,
-            eager=True,
+            eager=False,
+            catalog_summary="delete a shader-library file (a lib: address) to the trash",
             gate_policy=GatePolicy.ALWAYS,
             gate_prompt=lambda a: (
                 f"Delete library file `{a.get('path', '')}`? It moves to the shader-lib "

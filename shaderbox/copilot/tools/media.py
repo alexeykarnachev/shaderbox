@@ -51,7 +51,8 @@ def media_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             args_model=_BindMediaArgs,
             handler=bind_media,
             mutating=True,
-            eager=True,
+            eager=False,
+            catalog_summary="bind an image/video to a sampler2D uniform (opens the user's file picker)",
             gate_policy=GatePolicy.NONE,
         ),
         ToolDefinition(
@@ -65,7 +66,8 @@ def media_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             args_model=_BindMediaArgs,
             handler=unbind_media,
             mutating=True,
-            eager=True,
+            eager=False,
+            catalog_summary="reset a sampler2D uniform to no bound media",
             gate_policy=GatePolicy.NONE,
         ),
     ]

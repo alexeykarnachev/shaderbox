@@ -51,7 +51,8 @@ def youtube_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             args_model=EmptyArgs,
             handler=set_youtube_credentials,
             mutating=True,
-            eager=True,
+            eager=False,
+            catalog_summary="set up YouTube credentials to enable publishing",
             gate_policy=GatePolicy.ALWAYS,
             gate_prompt=lambda a: (
                 "Set up YouTube below: paste your client_secret JSON, then press "

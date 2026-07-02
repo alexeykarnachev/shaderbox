@@ -28,9 +28,7 @@ class _DuplicateNodeArgs(ToolArgs):
     new_name: str = Field(
         default="", description="name for the copy; empty = '<original> copy'"
     )
-    switch_to: bool = Field(
-        default=False, description="make the copy the current node"
-    )
+    switch_to: bool = Field(default=False, description="make the copy the current node")
 
 
 class _ImportNodeArgs(ToolArgs):
@@ -65,7 +63,11 @@ def node_ops_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
     def import_node(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
         res = caps.import_node(args["switch_to"])
         if res.cancelled:
-            return True, "the user dismissed the file picker — nothing was imported.", None
+            return (
+                True,
+                "the user dismissed the file picker — nothing was imported.",
+                None,
+            )
         if not res.ok:
             return False, f"error: {res.error}", None
         head = f"imported {res.basename} -> node {res.node_id}"
@@ -83,7 +85,8 @@ def node_ops_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             args_model=_RenameNodeArgs,
             handler=rename_node,
             mutating=True,
-            eager=True,
+            eager=False,
+            catalog_summary="rename a node's display name",
             gate_policy=GatePolicy.NONE,
         ),
         ToolDefinition(
@@ -98,7 +101,8 @@ def node_ops_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             args_model=_SetCanvasSizeArgs,
             handler=set_canvas_size,
             mutating=True,
-            eager=True,
+            eager=False,
+            catalog_summary="set a node's render resolution (canvas WxH)",
             gate_policy=GatePolicy.NONE,
         ),
         ToolDefinition(
@@ -112,7 +116,8 @@ def node_ops_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             args_model=_DuplicateNodeArgs,
             handler=duplicate_node,
             mutating=True,
-            eager=True,
+            eager=False,
+            catalog_summary="fork a node into a variant (copies shader/script/media)",
             gate_policy=GatePolicy.NONE,
         ),
         ToolDefinition(
@@ -127,7 +132,8 @@ def node_ops_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             args_model=_ImportNodeArgs,
             handler=import_node,
             mutating=True,
-            eager=True,
+            eager=False,
+            catalog_summary="import a .glsl shader file from the user's disk as a new node",
             gate_policy=GatePolicy.NONE,
         ),
     ]

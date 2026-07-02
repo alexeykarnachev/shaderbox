@@ -1,7 +1,7 @@
 from typing import Any, cast
 
 from loguru import logger
-from pydantic import ValidationError
+from pydantic import Field, ValidationError
 
 from shaderbox.copilot.capabilities import CopilotCapabilities
 from shaderbox.copilot.config import CopilotConfig
@@ -11,6 +11,7 @@ from shaderbox.copilot.llm.api import LLMToolSpec
 from shaderbox.copilot.tools.base import (
     CredentialToolHandler,
     GatePolicy,
+    ToolArgs,
     ToolDefinition,
     ToolHandler,
 )
@@ -22,6 +23,22 @@ from shaderbox.copilot.tools.script import script_tools
 from shaderbox.copilot.tools.shader import shader_tools
 from shaderbox.copilot.tools.telegram import telegram_tools
 from shaderbox.copilot.tools.youtube import youtube_tools
+
+LOAD_TOOLS_NAME = "load_tools"
+
+
+class _LoadToolsArgs(ToolArgs):
+    names: list[str] = Field(
+        description="the lazy tool names to load for the rest of this turn (from the catalogue "
+        "in this tool's description)"
+    )
+
+
+_LOAD_TOOLS_DESC = (
+    "Load extra tools you need for THIS turn by name. To keep the toolset lean, the tools below are "
+    "NOT loaded by default — call load_tools with their names to make them available for the rest of "
+    "the turn. Load a tool BEFORE you need to call it. Available:\n"
+)
 
 
 def _validation_message(exc: ValidationError) -> str:
@@ -39,6 +56,17 @@ class ToolRegistry:
 
     def specs_for(self, names: list[str]) -> list[LLMToolSpec]:
         return [self._by_name[n].spec() for n in names if n in self._by_name]
+
+    def assemble_specs(self, loaded: set[str]) -> list[LLMToolSpec]:
+        # The `tools=` for a turn iteration: the eager core + any lazily-loaded tools, SORTED by name
+        # so the block is byte-stable (prefix-cacheable) regardless of load order (feature 052 §3).
+        chosen = [d for d in self._by_name.values() if d.eager or d.name in loaded]
+        return [d.spec() for d in sorted(chosen, key=lambda d: d.name)]
+
+    def is_lazy(self, name: str) -> bool:
+        # A real, lazily-loadable tool (not eager, not the load_tools meta-tool itself).
+        tool = self._by_name.get(name)
+        return tool is not None and not tool.eager and name != LOAD_TOOLS_NAME
 
     def is_mutating(self, name: str) -> bool:
         tool = self._by_name.get(name)
@@ -133,4 +161,25 @@ def build_registry(caps: CopilotCapabilities) -> ToolRegistry:
         *telegram_tools(caps),
         *youtube_tools(caps),
     ]
-    return ToolRegistry(definitions)
+
+    def load_tools_handler(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
+        # Never actually invoked: run_turn intercepts load_tools before execute (it mutates the
+        # turn's tools= set, engine state the handler can't reach). Present for schema + a benign
+        # fallback if ever called directly.
+        _ = args
+        return True, "tools loaded", None
+
+    lazy = sorted((d for d in definitions if not d.eager), key=lambda d: d.name)
+    catalog = "\n".join(f"- {d.name}: {d.catalog_summary}" for d in lazy)
+    load_tools_def = ToolDefinition(
+        name=LOAD_TOOLS_NAME,
+        label_live="Loading tools",
+        label_done="Loaded tools",
+        description=_LOAD_TOOLS_DESC + catalog,
+        args_model=_LoadToolsArgs,
+        handler=load_tools_handler,
+        mutating=False,
+        eager=True,
+        gate_policy=GatePolicy.NONE,
+    )
+    return ToolRegistry([*definitions, load_tools_def])

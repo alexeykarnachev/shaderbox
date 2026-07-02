@@ -21,7 +21,7 @@ from shaderbox.copilot.llm.api import (
 from shaderbox.copilot.prompt import build_messages
 from shaderbox.copilot.prompt_context import CopilotContext
 from shaderbox.copilot.state import RESULT_WIDGET_KINDS, ResultWidget, TurnStats
-from shaderbox.copilot.tools.registry import ToolRegistry
+from shaderbox.copilot.tools.registry import LOAD_TOOLS_NAME, ToolRegistry
 from shaderbox.copilot.trace import NULL_TRACE, TraceLog
 
 # The agent loop: own a growing conversation, stream one assistant turn, execute any tool
@@ -402,7 +402,10 @@ def run_turn(
     # runs (the provider 400s on an orphaned tool_call_id). Never persisted — at commit the turn
     # collapses to one engine-derived NL TurnSummary, so history stays natural-language only.
     messages = build_messages(context, history, user_text)
-    specs = registry.eager_specs()
+    loaded_tools: set[str] = set()  # lazily-loaded tools, turn-scoped (feature 052 §0)
+    specs = registry.assemble_specs(
+        loaded_tools
+    )  # eager core (sorted); grows on load_tools
     usage = LLMUsage()  # running per-turn total (LLMUsage.__add__)
     ran = _RunLog()
     total_tool_calls = 0
@@ -741,6 +744,40 @@ def run_turn(
                     if consecutive_failed_edits >= config.max_edit_retries:
                         giveup = True
                         break
+                continue
+            if tc.name == LOAD_TOOLS_NAME:
+                # Meta-tool (feature 052 §0): intercept BEFORE execute — it mutates the turn's tools=
+                # set (engine state), not project state. Add the valid lazy names to the loaded set +
+                # rebuild specs so the NEXT iteration's stream carries them.
+                raw = args.get("names", [])
+                requested = raw if isinstance(raw, list) else []
+                newly = [
+                    n
+                    for n in requested
+                    if registry.is_lazy(n) and n not in loaded_tools
+                ]
+                loaded_tools.update(newly)
+                specs = registry.assemble_specs(loaded_tools)
+                load_msg = (
+                    f"loaded {', '.join(newly)} — callable for the rest of this turn."
+                    if newly
+                    else "no new tools loaded (already loaded, or not a lazy tool name)."
+                )
+                total_tool_calls += 1
+                tr.event(
+                    "tool_call",
+                    n=total_tool_calls,
+                    name=tc.name,
+                    args=args,
+                    ok=True,
+                    result=load_msg,
+                    payload=None,
+                )
+                ran.record(tc.name, True, load_msg, args, None)
+                yield AgentToolCard(
+                    tc.name, True, None, result=load_msg, widget=None, display=""
+                )
+                messages.append(_tool_message(tc.id, load_msg))
                 continue
             yield AgentStatus(registry.status_for(tc.name, args))
             if cancel.is_set():

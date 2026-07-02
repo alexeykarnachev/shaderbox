@@ -52,7 +52,10 @@ def test_duplicate_node_forks_independently(app: Any) -> None:
     # Editing the fork does not touch the original.
     original_src = app.ui_nodes[app.current_node_id].node.source.text
     app.copilot_backend.apply_shader_edit(
-        "void main", "void main /*fork*/", False, app.copilot_backend._copilot_short_ids()[fork_id]
+        "void main",
+        "void main /*fork*/",
+        False,
+        app.copilot_backend._copilot_short_ids()[fork_id],
     )
     assert app.ui_nodes[app.current_node_id].node.source.text == original_src
 
@@ -104,7 +107,9 @@ def _stub_with_starter(project: Path) -> tuple[types.SimpleNamespace, str]:
     return stub, node.id
 
 
-def test_backend_rename_and_canvas_run(gl_ctx: moderngl.Context, tmp_path: Path) -> None:
+def test_backend_rename_and_canvas_run(
+    gl_ctx: moderngl.Context, tmp_path: Path
+) -> None:
     stub, node_id = _stub_with_starter(tmp_path / "p")
     ren = CopilotBackend.rename_node.__get__(stub)("", "Aurora")
     assert ren.ok and stub._get_ui_nodes()[node_id].ui_state.ui_name == "Aurora"
@@ -131,9 +136,14 @@ def test_backend_delete_lib_file(tmp_path: Path) -> None:
     f = root / "noise.glsl"
     f.write_text("float SB_noise(){ return 0.0; }")
     deleted: list[Path] = []
+
+    def _fake_delete(p: Path) -> None:
+        deleted.append(p)
+        p.unlink()
+
     fake_files = types.SimpleNamespace(
         resolve_copilot_path=lambda rel: root / rel,
-        delete_file=lambda p: (deleted.append(p), p.unlink()) and None,
+        delete_file=_fake_delete,
     )
     stub = types.SimpleNamespace(
         _bridge=types.SimpleNamespace(
@@ -144,7 +154,9 @@ def test_backend_delete_lib_file(tmp_path: Path) -> None:
         _working_set_reader=lambda: [],
         _get_ui_nodes=lambda: {},
     )
-    stub.invalidate_lib_consumers = CopilotBackend.invalidate_lib_consumers.__get__(stub)
+    stub.invalidate_lib_consumers = CopilotBackend.invalidate_lib_consumers.__get__(
+        stub
+    )
     res = CopilotBackend.delete_lib_file.__get__(stub)("lib:noise.glsl")
     assert res.ok and not f.exists() and deleted == [f]
     miss = CopilotBackend.delete_lib_file.__get__(stub)("lib:nope.glsl")

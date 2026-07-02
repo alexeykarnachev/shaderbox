@@ -143,3 +143,33 @@ def test_delete_precheck_fails_fast_on_empty_or_unknown_target() -> None:
     assert unknown is not None and "zzzz" in unknown
     # A resolvable target passes the precheck (None) so the gate proceeds.
     assert registry.precheck("delete_node", {"node": "a1b2"}) is None
+
+
+# ---- lazy tool catalogue (feature 052 slice 0) ----
+
+
+def test_lazy_tools_demoted_but_reachable() -> None:
+    reg = build_registry(minimal_caps())
+    eager = {s.name for s in reg.eager_specs()}
+    assert "load_tools" in eager  # the meta-tool is always present
+    for lazy in ("bind_media", "rename_node", "delete_lib_file", "set_telegram_token"):
+        assert lazy not in eager  # demoted off the eager core
+        assert reg.is_lazy(lazy)
+    assert not reg.is_lazy("edit_shader")  # an eager tool is not lazy
+    assert not reg.is_lazy("load_tools")  # the meta-tool isn't self-loadable
+    assert "bind_media" in {s.name for s in reg.assemble_specs({"bind_media"})}
+
+
+def test_assemble_specs_is_sorted_and_load_order_independent() -> None:
+    reg = build_registry(minimal_caps())
+    a = [s.name for s in reg.assemble_specs({"bind_media", "rename_node"})]
+    b = [s.name for s in reg.assemble_specs({"rename_node", "bind_media"})]
+    assert a == b == sorted(a)  # byte-stable tools= regardless of load order
+
+
+def test_load_tools_catalog_lists_lazy_only() -> None:
+    reg = build_registry(minimal_caps())
+    d = reg.definition_for("load_tools")
+    assert d is not None
+    assert "bind_media:" in d.description and "rename_node:" in d.description
+    assert "read_shader:" not in d.description  # eager tools are not in the catalogue

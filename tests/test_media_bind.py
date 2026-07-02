@@ -114,7 +114,9 @@ def gl_ctx() -> Iterator[moderngl.Context]:
     ctx.release()
 
 
-def _sampler_stub(gl: moderngl.Context, project: Path) -> tuple[types.SimpleNamespace, str]:
+def _sampler_stub(
+    gl: moderngl.Context, project: Path
+) -> tuple[types.SimpleNamespace, str]:
     node = Node(gl=gl)
     node.release_program(_SAMPLER_SRC)
     node.compile()
@@ -144,11 +146,15 @@ def test_bind_picked_media_binds_and_is_path_free(
     img_path = secret / "fire.png"
     PILImage.new("RGB", (8, 8), (255, 0, 0)).save(img_path)
 
-    outcome = CopilotBackend.bind_picked_media.__get__(stub)(node_id, "u_image", img_path)
+    outcome = CopilotBackend.bind_picked_media.__get__(stub)(
+        node_id, "u_image", img_path
+    )
     assert outcome.ok and outcome.basename == "fire.png"
     assert (outcome.width, outcome.height) == (8, 8)
     # The bind took: the sampler no longer holds the default.
-    assert not is_default_image(stub._get_ui_nodes()[node_id].node.uniform_values["u_image"])
+    assert not is_default_image(
+        stub._get_ui_nodes()[node_id].node.uniform_values["u_image"]
+    )
     # Corollary-1: the absolute path / sentinel dir is nowhere in the result.
     assert "SENTINEL_SECRET_DIR" not in str(outcome)
     assert str(img_path) not in str(outcome)

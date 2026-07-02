@@ -142,7 +142,8 @@ def telegram_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             args_model=EmptyArgs,
             handler=set_telegram_token,
             mutating=True,
-            eager=True,
+            eager=False,
+            catalog_summary="set the Telegram bot token to connect Telegram",
             gate_policy=GatePolicy.ALWAYS,
             gate_prompt=lambda a: (
                 "Paste your Telegram bot token below (from @BotFather). "
@@ -159,7 +160,8 @@ def telegram_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             args_model=EmptyArgs,
             handler=telegram_connect,
             mutating=True,
-            eager=True,
+            eager=False,
+            catalog_summary="re-run the Telegram link after the user starts the bot",
             gate_policy=GatePolicy.NONE,
         ),
         ToolDefinition(
@@ -170,7 +172,8 @@ def telegram_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             args_model=EmptyArgs,
             handler=list_telegram_packs,
             mutating=False,
-            eager=True,
+            eager=False,
+            catalog_summary="list the user's saved Telegram sticker packs",
             gate_policy=GatePolicy.NONE,
             precheck=connected_precheck,
         ),
@@ -182,7 +185,8 @@ def telegram_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             args_model=_SetNameArgs,
             handler=select_telegram_pack,
             mutating=True,
-            eager=True,
+            eager=False,
+            catalog_summary="switch the active Telegram sticker pack",
             gate_policy=GatePolicy.ALWAYS,
             gate_prompt=lambda a: (
                 f"Switch your active Telegram pack to '{a.get('set_name', '')}'?"
@@ -197,7 +201,8 @@ def telegram_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             args_model=_CreatePackArgs,
             handler=create_telegram_pack,
             mutating=True,
-            eager=True,
+            eager=False,
+            catalog_summary="create + activate a new Telegram sticker pack",
             gate_policy=GatePolicy.ALWAYS,
             gate_prompt=lambda a: (
                 f"Create a new Telegram sticker pack '{a.get('title', '')}'?"
@@ -212,7 +217,8 @@ def telegram_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             args_model=_SetNameArgs,
             handler=delete_telegram_pack,
             mutating=True,
-            eager=True,
+            eager=False,
+            catalog_summary="delete a Telegram sticker pack (external + irreversible)",
             gate_policy=GatePolicy.ALWAYS,
             gate_prompt=lambda a: (
                 f"Delete the Telegram sticker pack '{a.get('set_name', '')}'? "
