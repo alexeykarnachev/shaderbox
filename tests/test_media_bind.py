@@ -220,7 +220,7 @@ def test_import_picked_node_creates_and_is_path_free(
         _set_current_node_id=lambda nid: current.__setitem__("id", nid),
         _working_set_add=lambda nid: None,
         _copilot_short_ids=lambda: {i: i for i in nodes},
-        _render_facts_for=lambda _node: "facts",
+        _render_facts_for=lambda _node, motion=False: "facts",
         _last_clean={},
     )
     stub._create_node_on_main = CopilotBackend._create_node_on_main.__get__(stub)

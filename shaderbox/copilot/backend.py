@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 import moderngl
+import numpy as np
 from loguru import logger
 from OpenGL.GL import GL_SAMPLER_2D, GL_UNSIGNED_INT
 
@@ -101,6 +102,16 @@ from shaderbox.uniform_coerce import (
 from shaderbox.util import try_to_release
 
 # Node-id prefix shown to the agent; _copilot_short_ids grows it past the floor only on collision.
+# Mean abs per-channel pixel delta (0-255) between two probe frames above which a shader counts as
+# ANIMATING — small enough to catch any real u_time motion, large enough to ignore FP noise.
+_MOTION_EPS = 1.5
+
+
+def _stamp_facts(facts: str, t: float) -> str:
+    # Stamp the probe's sample time onto the facts line ("render:" -> "render@t=Xs:").
+    return facts.replace("render:", f"render@t={t:.1f}s:", 1) if facts else ""
+
+
 _COPILOT_SHORT_ID_LEN = 4
 _COPILOT_FULL_ID_LEN = 36
 # Canvas-size clamp for set_canvas_size (feature 052): a sane render-resolution range.
@@ -963,7 +974,9 @@ class CopilotBackend:
             try_to_release(target.uniform_values.get(name))
             target.uniform_values[name] = coerced
             return SetUniformResult(
-                ok=True, type_label=label, render_facts=self._render_facts_for(target)
+                ok=True,
+                type_label=label,
+                render_facts=self._render_facts_for(target, motion=True),
             )
 
         return self._bridge.run_on_main(_on_main)
@@ -1021,7 +1034,7 @@ class CopilotBackend:
                 compile_hints(new_node.node.source.text, [e.message for e in errors])
             )
         else:
-            extra = self._render_facts_for(new_node.node)
+            extra = self._render_facts_for(new_node.node, motion=True)
             self._last_clean[new_node.id] = new_node.node.source.text
         # Short id, computed after insert so it's in the current id set.
         return self._copilot_short_ids()[new_node.id], errors, extra
@@ -1156,7 +1169,7 @@ class CopilotBackend:
                     )
                 )
             else:
-                extra = self._render_facts_for(new_node.node)
+                extra = self._render_facts_for(new_node.node, motion=True)
                 self._last_clean[new_node.id] = new_node.node.source.text
             return self._copilot_short_ids()[new_node.id], errors, extra
 
@@ -1779,7 +1792,7 @@ class CopilotBackend:
                 "file was restored to an earlier state, which itself no longer "
                 f"compiles (likely a library change):\n{err_lines}"
             )
-        facts = self._render_facts_for(node) if not restore_errors else ""
+        facts = self._render_facts_for(node, motion=True) if not restore_errors else ""
         return EditResult(
             matches=matches,
             errors=restore_errors,
@@ -1787,7 +1800,9 @@ class CopilotBackend:
             render_facts=facts,
         )
 
-    def _render_facts_for(self, node: Node, t: float = 0.0) -> str:
+    def _render_facts_for(
+        self, node: Node, t: float = 0.0, motion: bool = False
+    ) -> str:
         # Best-effort probe render -> one facts line (feature 033). Runs on the main
         # thread (bridge-marshalled callers) with the GL context current. Never raises
         # into the edit path — facts are advisory. `t` is the render clock, DEFAULT 0.0 (the
@@ -1795,6 +1810,9 @@ class CopilotBackend:
         # with app uptime, so its facts can't be correlated with what the user sees). ONE source
         # for both node.render(u_time=) AND the stamp, so a caller passing its sample time (a
         # script probe, the probe_render tool) can't disagree with the rendered frame.
+        # `motion=True` (mutation auto-probes): also render a SECOND frame at render_facts_motion_t
+        # and append a STATIC/ANIMATES verdict — t=0 alone is blank for a ramping effect and reads
+        # as a failed edit; the verdict + the later frame's facts say it develops over time.
         if not COPILOT_CONFIG.render_facts_enabled:
             return ""
         try:
@@ -1807,17 +1825,22 @@ class CopilotBackend:
                 self._probe_canvas = Canvas(size=(size, h))
             else:
                 self._probe_canvas.set_size((size, h))
-            render_t = t
-            node.render(u_time=render_t, canvas=self._probe_canvas)
-            raw = self._probe_canvas.texture.read()
-            facts = render_facts(raw, size, h)
+            node.render(u_time=t, canvas=self._probe_canvas)
+            raw0 = self._probe_canvas.texture.read()
             # Stamp the sample time: an animated shader's facts change with phase,
             # which otherwise reads as an edit effect.
-            return (
-                facts.replace("render:", f"render@t={render_t:.1f}s:", 1)
-                if facts
-                else ""
-            )
+            line0 = _stamp_facts(render_facts(raw0, size, h), t)
+            if not motion or not line0:
+                return line0
+            t2 = COPILOT_CONFIG.render_facts_motion_t
+            node.render(u_time=t2, canvas=self._probe_canvas)
+            raw1 = self._probe_canvas.texture.read()
+            a0 = np.frombuffer(raw0, dtype=np.uint8).astype(np.int16)
+            a1 = np.frombuffer(raw1, dtype=np.uint8).astype(np.int16)
+            if float(np.mean(np.abs(a0 - a1))) < _MOTION_EPS:
+                return f"{line0}\nmotion: STATIC (unchanged from t=0 to t={t2:.1f}s)"
+            line1 = _stamp_facts(render_facts(raw1, size, h), t2)
+            return f"{line0}\n{line1}\nmotion: ANIMATES (the frame changes over time)"
         except Exception as exc:  # — advisory channel, never break an edit
             logger.debug(f"copilot render facts skipped: {exc}")
             return ""
@@ -2137,7 +2160,7 @@ class CopilotBackend:
                 )
             self._broken_streak[tgt.node_id] = 0
             self._last_clean[tgt.node_id] = new_text
-            facts = self._render_facts_for(tgt.node)
+            facts = self._render_facts_for(tgt.node, motion=True)
             loop_note = self._oscillation_note(tgt.node_id, tgt.source, new_text)
             if loop_note:
                 facts = f"{facts}\n{loop_note}" if facts else loop_note

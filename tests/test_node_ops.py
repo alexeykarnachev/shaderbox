@@ -101,7 +101,7 @@ def _stub_with_starter(project: Path) -> tuple[types.SimpleNamespace, str]:
         _get_active_checkpoint=lambda: None,
         _set_current_node_id=lambda nid: current.__setitem__("id", nid),
         _working_set_add=lambda nid: None,
-        _render_facts_for=lambda node: "facts",
+        _render_facts_for=lambda node, motion=False: "facts",
         _last_clean={},
     )
     return stub, node.id

@@ -43,6 +43,10 @@ class CopilotConfig:
     # (ink/bbox/luma off a tiny offscreen render). Size is the square probe edge.
     render_facts_enabled: bool = True
     render_facts_size: int = 64
+    # A mutation's auto-probe renders a SECOND frame at this later time (seconds) to derive a
+    # STATIC/ANIMATES verdict — t=0 alone is the worst instant for a ramping effect (blank/cold),
+    # which reads as a failed edit; the verdict + the later frame's facts tell the model it develops.
+    render_facts_motion_t: float = 1.5
     # Feature 043 script-write motion probe: the sample times (seconds) the dry-run captures
     # driven values at (the value-diff motion verdict), the fps the dry-tick steps at (pinned to
     # the export clock so an integrator accumulates the same way render_video will), and the
