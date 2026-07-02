@@ -252,6 +252,56 @@ relevant `projects/_lab/<slug>/NOTES.md` FIRST.
 
 ---
 
+## The realism meta-lever: REAL models beat hand-tuned fakes
+
+The single biggest lesson, above any specific technique. When something must READ AS REAL, implement the
+actual physical/mathematical model from a PRIMARY source — not a plausible-looking hand-tuned
+approximation. **A fake plateaus and reads cheap; polishing it burns more iterations than building the
+real thing would.** The examples below are just instances — the rule is effect-agnostic.
+
+- **Real model > "looks about right" fake.** Every hand-rolled approximation hit a ceiling and got
+  rejected as "cheap/fake"; the real model read right immediately. (Instances from one lab: a sine-wave
+  displacement "cloth" → real Verlet mass-spring sim; a hand-picked colour-stop sunset → analytic
+  Rayleigh/Mie single-scatter; an ad-hoc `pow(1-NdotV)` rim → the Charlie/Ashikhmin cloth sheen BRDF; a
+  diffuse yellow disc → a metal sphere shaded by environment reflection.)
+- **Organic motion EMERGES from feedback; it is not imposed.** An applied oscillating field (a travelling
+  sine) is periodic by construction → mechanical. Real motion emerges from a system with the right
+  coupling — e.g. flag/membrane flutter is an aeroelastic instability where the force depends on the
+  RELATIVE velocity between medium and surface, so the object extracts energy from the flow and
+  self-oscillates into a NON-periodic limit cycle. "Looks looped/fake" → you're imposing motion instead
+  of letting it emerge; add the feedback term (relative velocity, added mass) and seed the instability.
+  Verify non-periodicity numerically (autocorrelation with no repeated peaks).
+- **Ground each "make it real" model in a PRIMARY source, not memory.** "Make it realistic" → WebSearch/
+  read the actual paper / reference implementation / domain writeup and lift the exact formula + parameter
+  regime. Training-data recall gives a plausible-but-wrong approximation that wastes the iteration. Record
+  the source URL in NOTES.
+- **A metal / glass / polished surface is shaded by its REFLECTION, not by diffuse.** It is a mirror of
+  the environment + a sharp light hotspot + Fresnel; a diffuse+spec Lambert reads as plastic. Reflect the
+  ACTUAL scene so the object integrates into it.
+- **Depth-cue hierarchy: cast SHADOWS > occlusion/AO > normal shading.** A surface lit only by its normals
+  reads FLAT however good the normals. Real self-shadowing (parts occluding the light from each other) is
+  what gives volume — compute it (ray vs the geometry) where you have the geometry, and light GRAZING (low
+  angle to the surface); a frontal light casts almost no shadow.
+- **Decouple constraints that fight.** When one stiffness/parameter secretly controls two things you need
+  independently (inextensibility vs freedom-to-fold; coverage vs contrast), give each its own knob.
+  Cranking the shared one to fix a symptom kills the other.
+- **Backdrop detail comes from a PERSPECTIVE projection, not more noise.** A flat noise field reads blurry;
+  projecting it onto a receding plane (detail compresses toward the horizon/vanishing point) gives depth +
+  crisp structure. (Cloudscape, terrain haze, any far backdrop.)
+- **Drama = value contrast + saturation, NOT more detail; structured texture reads as material, random
+  colour-mottle reads as cheap.** "Looks garish/cheap" is usually washed mid-tones + random colour noise;
+  deepen the base colours, raise contrast, and replace mottle with a STRUCTURED texture (a real weave/
+  grain). A soft occluder over a blown highlight (a cloud across the sun) beats just dimming it.
+- **Process discipline this lab paid for:** verify the premise in ISOLATION before rendering (a sim's
+  stability/ranges/amplitude/autocorrelation in numpy catches a blow-up the render only shows as a black
+  frame); tune the expensive part on the cheapest proxy (sky on a `t≈0` still — GL-dominated, no sim
+  stepping; the sim numerically before any render); a REPEATED complaint ("still fake") means the MODEL is
+  wrong — replace it, don't re-tune the fake; cull expensive per-pixel work (SDF raymarch) to the screen
+  region where it can matter; keep ONE source of truth for a shared quantity (a light dir driving both the
+  CPU shadow rays and the shader lighting; a camera basis driving both the mesh projection and a raymarch).
+
+---
+
 ## Shader craft — making an effect READ right (general, not effect-specific)
 
 Hard-won levers that apply to fire, smoke, water, lightning, energy — anything organic. Generalized
@@ -297,6 +347,21 @@ from real maintainer corrections; the parenthetical is the evidence, not a presc
   blind tune-render cycles evaporated the moment the knobs were exposed and the user dialed it in one
   pass.) For the engine mechanics of node files / headless render / compile-check / aspect, see
   `dev_flow.md ## Recipes > Authoring / debugging nodes directly`.
+- **Cheap cloth fake (ONE height field, used twice) — a QUICK-AND-DIRTY with a ceiling; know when it's
+  not enough.** For a throwaway/background cloth: one scalar field `H(x,y,t)` bends the texture
+  (`f.y -= H`) AND gives the shading normal (`n = normalize(vec3(-dH/dx, -dH/dy, k))`), pinned by ramping
+  amplitude to 0 at an edge. BUT this session proved the fake reads "cheap/cartoonish" for a hero shot and
+  no amount of polish fixes it — a real mass-spring Verlet sim (script-driven, pushed to the shader as a
+  mesh) was what read as fabric. Reach for the fake only when the cloth is incidental; for anything that
+  must read real, do the real sim (see the meta-lever above + the `us_flag` lab). Reference:
+  `us_flag/nodes/v05-scene/shader.frag.glsl` (fake) vs the `v13`/`v14` scripts (real Verlet aeroelastic).
+- **Placing a fixed-RATIO rect on a non-square canvas: correct for `u_aspect`, or it stretches.** Equal
+  `vs_uv.x` and `vs_uv.y` spans are UNEQUAL pixels when the canvas isn't square, so a shape sized in raw
+  uv comes out the wrong ratio. For a rect that must read as physical ratio `R:1` in PIXELS:
+  `h_uv = w_uv * u_aspect / R` (NOT `w_uv / R`). Cost a whole "why is my 1.9:1 flag drawing 3.6:1" fix.
+  Same trap hits any aspect-round primitive — multiply the x-delta by `u_aspect` before `length()`
+  (finial sphere, sun glow). Fake a lit sphere cheaply from a circle: `nz = sqrt(1 - (r/R)²)`,
+  `n = vec3(p/R, nz)`, lambert + `pow(spec,32)`.
 
 ## Raymarching / SDF craft (generic)
 
@@ -580,6 +645,29 @@ and are reliable references on any machine; LOCAL-ONLY labs exist only where the
 - **2D lightning / electric bolts / branching energy** → **`lightning`** (LOCAL-ONLY). `1/dist`
   ridge-glow, HDR-core+posterize for an electric read, segment-polyline + branch geometry, the strobe-
   cadence-vs-fps lesson. NOTES: `projects/_lab/lightning/NOTES.md`.
+- **Real cloth sim + PBR sunset scene (the "realism meta-lever" case study)** → **`us_flag`**
+  (LOCAL-ONLY unless committed). The arc IS the lesson: v01–v05 hand-rolled fakes (sine cloth, ad-hoc
+  sheen, gradient sky, plastic finial) each rejected as cheap; v06–v18 replaced each with the real model.
+  What it demonstrates, by node:
+  - **Script-driven Verlet mass-spring cloth** pushed to the shader as a mesh (per-vertex screen pos +
+    normal as `vec3[NV]` array uniforms; shader rasterizes the mesh per-pixel via barycentric + z-test →
+    real self-occlusion). Valence-normalized Jacobi constraint solve; SOFT bend / stiff structural to keep
+    folds without rubber-stretch. `v14` script.
+  - **AEROELASTIC wind**: `F = K_AERO*(n·vrel)*n + K_DRAG*vrel`, `vrel = wind - cloth_velocity` → emergent
+    non-periodic flutter (the imposed-sine versions v04/v10 read fake). Gaussian gusts. `v14` script.
+  - **CPU self-shadow**: ray from each vertex to the sun vs the mesh triangles (Möller-Trumbore, jittered
+    for penumbra) → `u_shadow[NV]`; grazing light. The depth cue that killed the flat look.
+  - **Cloth BRDF**: Charlie sheen (Sony Imageworks) + Ashikhmin visibility + subsurface wrap diffuse;
+    deep saturated albedo + structured plain-weave (not colour mottle). `v13`.
+  - **Analytic scattering sky**: Rayleigh+Mie+ozone single-scatter + transmittance → the sunset gradient
+    emerges from physics; PERSPECTIVE-projected multi-octave lit cloudscape; sun occluded by cloud cover.
+    `v11`/`v16`/`v18`.
+  - **Raymarched 3D SDF pole** (capsule+sphere+collar) in the SAME camera as the mesh, metal shaded by
+    ENV REFLECTION, SDF soft shadow, depth-composited with the flag; screen-cull the march to the pole
+    strip. `v17`.
+  - Generic fixes also here: non-square proportion (`h_uv = w_uv*aspect/R`), ACES tonemap, hash dither,
+    lens flare, aerial perspective. NOTES: `projects/_lab/us_flag/NOTES.md` (full v01→v18 evolution +
+    every source URL); canonical shader/script: `nodes/v18-suncloud/` + `nodes/v14-shadow/scripts/`.
 
 ## Follow-ups (NOT ready — don't build these mid-session; capture the idea)
 
