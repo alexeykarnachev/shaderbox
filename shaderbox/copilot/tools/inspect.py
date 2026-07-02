@@ -23,11 +23,14 @@ class _ProbeRenderArgs(ToolArgs):
 
 
 _PROBE_RENDER_DESC = (
-    "A FREE read-only look at a shader's frame at a chosen time `t`: returns one measured facts "
-    "line (ink %, bbox, luma, or FLAT), the same an edit returns but on demand and at ANY t. Use "
-    "it to check an animated shader past t=0, or to re-look after a set_uniform, without editing. "
-    "Unlike render_image (a heavy, gated, file-writing deliverable) it never confirms or renders a "
-    "file - glance as often as you need."
+    "A read-only look at a shader's frame at a chosen time `t`: returns the measured facts line "
+    "(ink %, bbox, mean colour, luma, or FLAT) AND a VISION read of the frame — a real inspection of "
+    "its CORRECTNESS (coherent structure vs noise/speckle, orientation/mirroring, content off-frame, "
+    "text legibility, obvious artifacts), NOT beauty (that stays the user's eye). This is your only "
+    "actual SIGHT of your output: use it to check an animated shader past t=0, re-look after a "
+    "set_uniform, and ESPECIALLY before you claim a visual result or report a visual task done. "
+    "Unlike render_image (a heavy, gated, file-writing deliverable) it never confirms or writes a "
+    "file. It does cost a little (a vision call) — glance when you need to SEE, not every step."
 )
 
 

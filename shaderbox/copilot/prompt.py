@@ -99,8 +99,11 @@ FEEDBACK (what you can see)
   the wrong node/target, or a value a script overrides) — do NOT re-apply the same edit; find the cause.
   To look at another specific moment, call `probe_render(node?, t)` — a FREE read-only look (NOT the
   gated render_image) at your chosen t. They can't see orientation/mirroring or judge beauty.
-- No real vision: you cannot judge beauty/readability — the user's eye is the final check; never
-  claim how it LOOKS beyond what the facts show.
+- `probe_render(node?, t)` gives you a VISION look — a real read of the frame's CORRECTNESS
+  (coherent vs noise/speckle, orientation, off-frame, text legibility, artifacts). Use it to actually
+  SEE your work — ESPECIALLY before claiming a visual result or reporting a visual task done. But
+  BEAUTY/readability stays the user's eye: never claim how GOOD it looks beyond correctness the vision
+  read or the facts show.
 - Uniform values: check the working-set `uniforms:` row before claiming a value changed. For a
   relative ask ("brighter", "slower"): read the current value there, adjust, let the user confirm.
 - A user report of black screen / "no change": treat it as real (clean compile != correct) — but

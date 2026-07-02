@@ -1,3 +1,4 @@
+import base64
 from collections.abc import Callable, Iterator
 from typing import Any
 
@@ -21,6 +22,16 @@ from shaderbox.copilot.llm.api import (
 )
 
 _OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+
+_VISION_SYSTEM = (
+    "You inspect a shader render for a coding agent that is BLIND to its own output. Report "
+    "OBSERVATIONS only — terse, factual, NO aesthetic or beauty judgment (that is the user's job). "
+    "Cover, each in a few words: coherent subject/structure vs random noise/speckle/garbage; "
+    "orientation (upside-down / mirrored / sideways); content off-frame or cut off at an edge; any "
+    "text present + whether it is legible and right-way-up; obvious artifacts (banding, tiling "
+    "seams, a single flat color, aliasing). If something looks broken, say so plainly; if it looks "
+    "structurally fine, say that. Do not invent detail you cannot see."
+)
 
 
 def _to_wire_message(m: LLMMessage) -> dict[str, Any]:
@@ -103,6 +114,37 @@ class OpenRouterLLMClient(LLMClient):
             timeout=timeout,
             max_retries=0,
         )
+
+    def describe_image(self, png_bytes: bytes, hint: str = "") -> str:
+        # Advisory vision look for probe_render (feature 053): a cheap multimodal model describes the
+        # frame's CORRECTNESS (coherence/orientation/off-frame/legibility/artifacts, never beauty).
+        # NEVER raises — it is an enrichment, not a load-bearing result; returns "" on any failure so
+        # a vision-model outage / a non-vision key never breaks a probe.
+        if not COPILOT_CONFIG.copilot_vision_enabled or not self._get_api_key():
+            return ""
+        try:
+            b64 = base64.b64encode(png_bytes).decode()
+            resp = self._client().chat.completions.create(
+                model=COPILOT_CONFIG.copilot_vision_model,
+                max_tokens=COPILOT_CONFIG.copilot_vision_max_tokens,
+                messages=[
+                    {"role": "system", "content": _VISION_SYSTEM},
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": hint or "Inspect this render."},
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": f"data:image/png;base64,{b64}"},
+                            },
+                        ],
+                    },
+                ],
+            )
+            return (resp.choices[0].message.content or "").strip()
+        except Exception as exc:
+            logger.debug(f"copilot vision look skipped: {exc}")
+            return ""
 
     def stream(
         self,

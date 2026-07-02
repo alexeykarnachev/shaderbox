@@ -162,6 +162,9 @@ class ProjectSession:
         self.copilot_backend = CopilotBackend(
             get_bridge=lambda: self.copilot.bridge,
             get_gate=lambda: self.copilot.gate,
+            describe_image=lambda png, hint: self.copilot.client.describe_image(
+                png, hint
+            ),
             node_templates_dir=self.node_templates_dir,
             starter_template_id=self._starter_template_id,
             get_renders_dir=lambda: self.paths.renders_dir,

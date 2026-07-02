@@ -47,6 +47,14 @@ class CopilotConfig:
     # STATIC/ANIMATES verdict — t=0 alone is the worst instant for a ramping effect (blank/cold),
     # which reads as a failed edit; the verdict + the later frame's facts tell the model it develops.
     render_facts_motion_t: float = 1.5
+    # Vision look on probe_render (the agent's only REAL sight of its render): a cheap multimodal
+    # describes the frame's CORRECTNESS — coherent structure vs noise/speckle, orientation, off-frame,
+    # text legibility, obvious artifacts — NOT beauty (that stays the user's eye). On-demand
+    # (probe_render only, NOT the per-edit auto-probe) to bound cost (~$0.001-0.004/look).
+    copilot_vision_enabled: bool = True
+    copilot_vision_model: str = "openai/gpt-4o-mini"
+    copilot_vision_probe_size: int = 320
+    copilot_vision_max_tokens: int = 220
     # Feature 043 script-write motion probe: the sample times (seconds) the dry-run captures
     # driven values at (the value-diff motion verdict), the fps the dry-tick steps at (pinned to
     # the export clock so an integrator accumulates the same way render_video will), and the

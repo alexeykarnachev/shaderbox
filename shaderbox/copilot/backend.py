@@ -10,6 +10,7 @@ batch-mutated state stays on `App` and is reached through accessor callbacks. Ev
 GL-affine verb marshals to the main thread through `self._bridge.run_on_main`.
 """
 
+import io
 import re
 import time
 from collections.abc import Callable
@@ -80,6 +81,7 @@ from shaderbox.media import (
     MediaWithTexture,
     is_default_image,
     media_class_for,
+    texture_to_pil,
 )
 from shaderbox.paths import shader_lib_root
 from shaderbox.render_preset import RenderPreset
@@ -493,6 +495,7 @@ class CopilotBackend:
         *,
         get_bridge: Callable[[], CopilotBridge],
         get_gate: Callable[[], GateChannel],
+        describe_image: Callable[[bytes, str], str],
         node_templates_dir: Path,
         starter_template_id: str,
         get_renders_dir: Callable[[], Path],
@@ -519,7 +522,11 @@ class CopilotBackend:
     ) -> None:
         self._get_bridge = get_bridge
         self._get_gate = get_gate
+        self._describe_image = describe_image
         self._probe_canvas: Canvas | None = None  # lazy 033 render-facts target
+        self._vision_canvas: Canvas | None = (
+            None  # lazy 053 vision-probe target (larger)
+        )
         # Per-node last probe frames (raw0, raw1) — a mutation whose frames match the previous
         # ones changed NOTHING on screen (dead code / wrong target / script-overridden value).
         self._last_probe: dict[str, tuple[bytes, bytes]] = {}
@@ -1411,20 +1418,57 @@ class CopilotBackend:
         )
 
     def probe_render(self, node: str, t: float) -> str:
-        # The aimable read-side probe (feature 050): the same one-line facts string the edit path
+        # The aimable read-side probe (feature 050): the one-line facts string the edit path
         # produces, at a chosen `t` (default 0.0 = the export clock). UN-gated + non-mutating - the
         # render-blind agent glances here as often as it likes, vs render_image (gated, writes a
-        # deliverable file). Returns a ready-to-read facts line, or an honest "couldn't render" note.
-        def _on_main() -> str:
+        # deliverable file). Feature 053: also does a VISION look — a cheap multimodal describes the
+        # frame's CORRECTNESS (coherence/orientation/off-frame/legibility/artifacts, NOT beauty). The
+        # GL render + PNG happen on main (bridge); the vision NETWORK call runs on THIS worker thread
+        # AFTER the bridge returns (never blocks the GL/main thread).
+        def _on_main() -> tuple[str, bytes]:
             ui_node = self._copilot_render_target(node)
             if ui_node is None:
-                return f"error: no such node '{node}'"
+                return f"error: no such node '{node}'", b""
             facts = self._render_facts_for(ui_node.node, t=t)
-            return facts or "probe rendered, but produced no readable facts (advisory)."
+            facts = (
+                facts or "probe rendered, but produced no readable facts (advisory)."
+            )
+            png = (
+                self._probe_png(ui_node.node, t)
+                if COPILOT_CONFIG.copilot_vision_enabled
+                else b""
+            )
+            return facts, png
 
-        return self._bridge.run_on_main(
+        facts, png = self._bridge.run_on_main(
             _on_main, timeout=COPILOT_CONFIG.render_op_timeout_s, defer=True
         )
+        if png:
+            obs = self._describe_image(
+                png, "Inspect this shader render for correctness."
+            )
+            if obs:
+                facts = f"{facts}\nvisual (correctness only, NOT beauty): {obs}"
+        return facts
+
+    def _probe_png(self, node: Node, t: float) -> bytes:
+        # Render the node at `t` to a vision-readable PNG (larger than the 64px facts probe) for the
+        # probe_render vision look. Main thread (GL). Advisory — b"" on any failure.
+        try:
+            size = COPILOT_CONFIG.copilot_vision_probe_size
+            cw, ch = node.canvas.texture.size
+            h = min(4 * size, max(8, round(size * ch / cw))) if cw else size
+            if self._vision_canvas is None:
+                self._vision_canvas = Canvas(size=(size, h))
+            else:
+                self._vision_canvas.set_size((size, h))
+            node.render(u_time=t, canvas=self._vision_canvas)
+            buf = io.BytesIO()
+            texture_to_pil(self._vision_canvas.texture).convert("RGB").save(buf, "PNG")
+            return buf.getvalue()
+        except Exception as exc:  # advisory — never break a probe
+            logger.debug(f"copilot vision probe png skipped: {exc}")
+            return b""
 
     def _copilot_render_target(self, node: str) -> UINode | None:
         node_id = (
