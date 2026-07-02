@@ -28,6 +28,7 @@ from shaderbox.constants import (
     TEMPLATE_ORDER,
 )
 from shaderbox.copilot.backend import CopilotBackend
+from shaderbox.copilot.gate import GateRequest
 from shaderbox.copilot.persistence import ConversationStore
 from shaderbox.copilot.revert import RevertExecutor
 from shaderbox.copilot.session import CopilotSession
@@ -249,6 +250,10 @@ class App:
         # reconciled to session.state.in_flight each frame in ui.py.
         self.copilot_turn_active: bool = False
         self.copilot_input: str = ""
+        # FILE-gate poll state (feature 052): the open native picker + its request, carried across
+        # frames while the copilot worker blocks on the pick (ui.py::_pump_file_gate).
+        self.file_pick_dialog: pfd.open_file | None = None
+        self.file_pick_request: GateRequest | None = None
         # The editor child's screen rect (x, y, w, h), captured inside the child so the
         # floating chat anchors to the coding area, not the whole glfw window.
         self.editor_rect: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)

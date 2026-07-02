@@ -15,6 +15,8 @@ from shaderbox.copilot.tools.base import (
     ToolHandler,
 )
 from shaderbox.copilot.tools.inspect import inspect_tools
+from shaderbox.copilot.tools.media import media_tools
+from shaderbox.copilot.tools.node_ops import node_ops_tools
 from shaderbox.copilot.tools.publish import publish_tools
 from shaderbox.copilot.tools.script import script_tools
 from shaderbox.copilot.tools.shader import shader_tools
@@ -125,6 +127,8 @@ def build_registry(caps: CopilotCapabilities) -> ToolRegistry:
         *shader_tools(caps),
         *script_tools(caps),
         *inspect_tools(caps),
+        *node_ops_tools(caps),
+        *media_tools(caps),
         *publish_tools(caps),
         *telegram_tools(caps),
         *youtube_tools(caps),

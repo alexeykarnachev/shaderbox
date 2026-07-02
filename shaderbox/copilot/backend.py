@@ -21,6 +21,7 @@ import moderngl
 from loguru import logger
 from OpenGL.GL import GL_SAMPLER_2D, GL_UNSIGNED_INT
 
+from shaderbox.constants import DEFAULT_IMAGE_FILE_PATH
 from shaderbox.copilot.address import (
     is_lib_address,
     is_template_address,
@@ -36,7 +37,11 @@ from shaderbox.copilot.capabilities import (
     EditResult,
     GrepHit,
     LibCatalogEntry,
+    LibFileResult,
     LibFunctionBody,
+    MediaBindResult,
+    NodeImportResult,
+    NodeOpResult,
     NodeTreeEntry,
     PublishResult,
     RenderResult,
@@ -55,6 +60,7 @@ from shaderbox.copilot.checkpoint import TurnCheckpoint
 from shaderbox.copilot.config import COPILOT_CONFIG
 from shaderbox.copilot.edit_hints import compile_hints, render_facts
 from shaderbox.copilot.errors import CopilotToolError
+from shaderbox.copilot.gate import GateChannel, GateKind, GateRequest
 from shaderbox.copilot.glsl_lex import glsl_lex, span_drops_comment, token_match
 from shaderbox.copilot.sanitize import sanitize_display
 from shaderbox.core import ENGINE_DRIVEN_UNIFORMS, Canvas, Node
@@ -68,6 +74,12 @@ from shaderbox.exporters.registry import ExporterRegistry
 from shaderbox.exporters.telegram import NEEDS_START_ERROR, TelegramExporter
 from shaderbox.exporters.youtube import YouTubeExporter
 from shaderbox.glyph_tables import TABLE_UNIFORMS
+from shaderbox.media import (
+    Image,
+    MediaWithTexture,
+    is_default_image,
+    media_class_for,
+)
 from shaderbox.paths import shader_lib_root
 from shaderbox.render_preset import RenderPreset
 from shaderbox.render_shape import RenderShape, shape_to_preset
@@ -91,6 +103,9 @@ from shaderbox.util import try_to_release
 # Node-id prefix shown to the agent; _copilot_short_ids grows it past the floor only on collision.
 _COPILOT_SHORT_ID_LEN = 4
 _COPILOT_FULL_ID_LEN = 36
+# Canvas-size clamp for set_canvas_size (feature 052): a sane render-resolution range.
+_MIN_CANVAS_PX = 16
+_MAX_CANVAS_PX = 4096
 
 
 def _to_error_infos(errors: list[ShaderError]) -> list[CompileErrorInfo]:
@@ -386,10 +401,25 @@ def _format_uniforms(node: Node, driven: set[str]) -> list[str]:
             rows.append(f"{u.name} {label}")
         elif u.name in driven:
             rows.append(f"{u.name} {label} = <driven by script.py>")
+        elif label == "sampler2D":
+            rows.append(f"{u.name} {label} <- {_sampler_binding(node, u.name)}")
         else:
             value = node.uniform_values.get(u.name, u.value)
             rows.append(f"{u.name} {label} = {value}")
     return rows
+
+
+def _sampler_binding(node: Node, name: str) -> str:
+    # What a sampler is bound to, for the working-set row. NEVER the source path (corollary-1: the abs
+    # path is a model-visible leak); only "(no media bound)" for the default, else dims + kind.
+    value = node.uniform_values.get(name)
+    if value is None or is_default_image(value):
+        return "(no media bound)"
+    if isinstance(value, MediaWithTexture):
+        res = value.details.resolution_details
+        kind = "video" if value.details.is_video else "image"
+        return f"({res.width}x{res.height}, {kind})"
+    return "(texture)"
 
 
 def _values_differ(a: object, b: object, eps: float) -> bool:
@@ -451,6 +481,7 @@ class CopilotBackend:
         self,
         *,
         get_bridge: Callable[[], CopilotBridge],
+        get_gate: Callable[[], GateChannel],
         node_templates_dir: Path,
         starter_template_id: str,
         get_renders_dir: Callable[[], Path],
@@ -476,6 +507,7 @@ class CopilotBackend:
         get_active_checkpoint: Callable[[], TurnCheckpoint | None],
     ) -> None:
         self._get_bridge = get_bridge
+        self._get_gate = get_gate
         self._probe_canvas: Canvas | None = None  # lazy 033 render-facts target
         # 033 force-restore bookkeeping: per-node consecutive broken-compile edits +
         # the last source text that compiled clean (the restore target).
@@ -782,6 +814,7 @@ class CopilotBackend:
             errors=_to_error_infos(node.compile_unit.errors),
             script_listing=_number_lines(script_text) if script_text else "",
             script_errors=script_errors,
+            canvas=f"{node.canvas.texture.size[0]}x{node.canvas.texture.size[1]}",
         )
 
     def _copilot_lib_working_view(self, address: str) -> WorkingSetView | None:
@@ -935,67 +968,70 @@ class CopilotBackend:
 
         return self._bridge.run_on_main(_on_main)
 
+    def _create_node_on_main(
+        self, name: str, source: str, template: str, switch_to: bool
+    ) -> tuple[str, list[CompileErrorInfo], str]:
+        # MAIN THREAD. Create a node from `template` (empty = the default starter); `source` overrides
+        # the body. Order: save -> insert -> set-current. Adds to the working set; compiles + returns
+        # errors. Called marshalled by create_node, and directly by import_picked_node (already on main).
+        template_id = (
+            self._copilot_resolve_template_id(template)
+            if template.strip()
+            else self._starter_template_id
+        )
+        if template_id is None:
+            raise RuntimeError(f"no template matching '{template}'")
+        template_dir = self._node_templates_dir / template_id
+        if not template_dir.is_dir():
+            # Missing only on a broken install; the registry turns the raise into a tool error.
+            raise RuntimeError("starter template is missing")
+        new_node = load_node_from_dir(template_dir)
+        new_node.reset_id()
+        if name.strip():
+            new_node.ui_state.ui_name = name.strip()
+        if source.strip():
+            # release_program sets source.text; save_ui_node writes + rebinds source.path. Do NOT
+            # write through source.path here — it still points at the shared starter template.
+            new_node.node.release_program(
+                source.replace("\r\n", "\n").replace("\r", "\n")
+            )
+        # Compile (GL, main-thread) BEFORE save so the persisted program matches the reported errors.
+        new_node.node.compile()
+        # source.path still points at the template dir here; save rebinds it.
+        pre_save_path = str(new_node.node.source.path)
+        self._save_ui_node(new_node)
+        self._get_ui_nodes()[new_node.id] = new_node
+        cp = self._get_active_checkpoint()
+        if cp is not None:
+            cp.mark_created(new_node.id)  # reverse = delete-to-trash, no snapshot
+        if switch_to:
+            self._set_current_node_id(new_node.id)
+        self._working_set_add(new_node.id)
+        persisted_path = str(new_node.node.source.path)
+        errors = [
+            replace(e, path=persisted_path) if e.path == pre_save_path else e
+            for e in _to_error_infos(new_node.node.compile_unit.errors)
+        ]
+        logger.info(
+            f"copilot created node {new_node.id} (switch_to={switch_to}, "
+            f"errors={len(errors)})"
+        )
+        if errors:
+            extra = "\n".join(
+                compile_hints(new_node.node.source.text, [e.message for e in errors])
+            )
+        else:
+            extra = self._render_facts_for(new_node.node)
+            self._last_clean[new_node.id] = new_node.node.source.text
+        # Short id, computed after insert so it's in the current id set.
+        return self._copilot_short_ids()[new_node.id], errors, extra
+
     def create_node(
         self, name: str, source: str, template: str, switch_to: bool
     ) -> tuple[str, list[CompileErrorInfo], str]:
-        # Create a node from `template` (empty = the default starter); `source` overrides the body.
-        # Order: save -> insert -> set-current. Adds to the working set; compiles + returns errors.
-        def _on_main() -> tuple[str, list[CompileErrorInfo], str]:
-            template_id = (
-                self._copilot_resolve_template_id(template)
-                if template.strip()
-                else self._starter_template_id
-            )
-            if template_id is None:
-                raise RuntimeError(f"no template matching '{template}'")
-            template_dir = self._node_templates_dir / template_id
-            if not template_dir.is_dir():
-                # Missing only on a broken install; the registry turns the raise into a tool error.
-                raise RuntimeError("starter template is missing")
-            new_node = load_node_from_dir(template_dir)
-            new_node.reset_id()
-            if name.strip():
-                new_node.ui_state.ui_name = name.strip()
-            if source.strip():
-                # release_program sets source.text; save_ui_node writes + rebinds source.path. Do NOT
-                # write through source.path here — it still points at the shared starter template.
-                new_node.node.release_program(
-                    source.replace("\r\n", "\n").replace("\r", "\n")
-                )
-            # Compile (GL, main-thread) BEFORE save so the persisted program matches the reported errors.
-            new_node.node.compile()
-            # source.path still points at the template dir here; save rebinds it.
-            pre_save_path = str(new_node.node.source.path)
-            self._save_ui_node(new_node)
-            self._get_ui_nodes()[new_node.id] = new_node
-            cp = self._get_active_checkpoint()
-            if cp is not None:
-                cp.mark_created(new_node.id)  # reverse = delete-to-trash, no snapshot
-            if switch_to:
-                self._set_current_node_id(new_node.id)
-            self._working_set_add(new_node.id)
-            persisted_path = str(new_node.node.source.path)
-            errors = [
-                replace(e, path=persisted_path) if e.path == pre_save_path else e
-                for e in _to_error_infos(new_node.node.compile_unit.errors)
-            ]
-            logger.info(
-                f"copilot created node {new_node.id} (switch_to={switch_to}, "
-                f"errors={len(errors)})"
-            )
-            if errors:
-                extra = "\n".join(
-                    compile_hints(
-                        new_node.node.source.text, [e.message for e in errors]
-                    )
-                )
-            else:
-                extra = self._render_facts_for(new_node.node)
-                self._last_clean[new_node.id] = new_node.node.source.text
-            # Short id, computed after insert so it's in the current id set.
-            return self._copilot_short_ids()[new_node.id], errors, extra
-
-        return self._bridge.run_on_main(_on_main)
+        return self._bridge.run_on_main(
+            lambda: self._create_node_on_main(name, source, template, switch_to)
+        )
 
     def delete_node(self, node: str) -> DeleteNodeResult:
         # Delete a node (already user-confirmed). Marshals the GL teardown to main; returns node_id +
@@ -1039,6 +1075,255 @@ class CopilotBackend:
             return SwitchNodeResult(ok=True, name=ui_node.ui_state.ui_name)
 
         return self._bridge.run_on_main(_on_main)
+
+    def rename_node(self, node: str, new_name: str) -> NodeOpResult:
+        def _on_main() -> NodeOpResult:
+            node_id = self._copilot_resolve_node_id(node)
+            if node_id is None or node_id not in self._get_ui_nodes():
+                return NodeOpResult(
+                    ok=False,
+                    error=f"no such node '{node}' — check the project map for ids",
+                )
+            name = new_name.strip()
+            if not name:
+                return NodeOpResult(ok=False, error="new_name is empty")
+            ui_node = self._get_ui_nodes()[node_id]
+            self._capture_node(node_id)  # pre-change rollback snapshot (best-effort)
+            ui_node.ui_state.ui_name = name
+            self._save_ui_node(ui_node)
+            logger.info(f"copilot renamed node {node_id} -> {name!r}")
+            return NodeOpResult(ok=True, name=name)
+
+        return self._bridge.run_on_main(_on_main)
+
+    def set_canvas_size(self, node: str, width: int, height: int) -> NodeOpResult:
+        def _on_main() -> NodeOpResult:
+            node_id = self._copilot_resolve_node_id(node)
+            if node_id is None or node_id not in self._get_ui_nodes():
+                return NodeOpResult(
+                    ok=False,
+                    error=f"no such node '{node}' — check the project map for ids",
+                )
+            w = max(_MIN_CANVAS_PX, min(_MAX_CANVAS_PX, width))
+            h = max(_MIN_CANVAS_PX, min(_MAX_CANVAS_PX, height))
+            ui_node = self._get_ui_nodes()[node_id]
+            self._capture_node(node_id)  # pre-change rollback snapshot (best-effort)
+            ui_node.node.canvas.set_size((w, h))
+            self._save_ui_node(ui_node)
+            logger.info(f"copilot set canvas of {node_id} -> {w}x{h}")
+            return NodeOpResult(ok=True, width=w, height=h)
+
+        return self._bridge.run_on_main(_on_main)
+
+    def duplicate_node(
+        self, node: str, new_name: str, switch_to: bool
+    ) -> tuple[str, list[CompileErrorInfo], str]:
+        # Fork a node: persist the live source, load its dir as an independent node (deep copy incl.
+        # media/ + script), give it a fresh id, compile, save + insert. Mirrors create_node's tail.
+        def _on_main() -> tuple[str, list[CompileErrorInfo], str]:
+            node_id = self._copilot_resolve_node_id(node)
+            if node_id is None or node_id not in self._get_ui_nodes():
+                raise RuntimeError(f"no such node '{node}'")
+            source_node = self._get_ui_nodes()[node_id]
+            self._save_ui_node(
+                source_node
+            )  # persist live state so the load is a full copy
+            src_dir = source_node.node.source.path.parent
+            new_node = load_node_from_dir(src_dir)
+            new_node.reset_id()
+            name = new_name.strip() or f"{source_node.ui_state.ui_name} copy"
+            new_node.ui_state.ui_name = name
+            new_node.node.compile()
+            pre_save_path = str(new_node.node.source.path)
+            self._save_ui_node(new_node)
+            self._get_ui_nodes()[new_node.id] = new_node
+            cp = self._get_active_checkpoint()
+            if cp is not None:
+                cp.mark_created(new_node.id)  # reverse = delete-to-trash
+            if switch_to:
+                self._set_current_node_id(new_node.id)
+            self._working_set_add(new_node.id)
+            persisted_path = str(new_node.node.source.path)
+            errors = [
+                replace(e, path=persisted_path) if e.path == pre_save_path else e
+                for e in _to_error_infos(new_node.node.compile_unit.errors)
+            ]
+            logger.info(f"copilot duplicated {node_id} -> {new_node.id} ({name!r})")
+            if errors:
+                extra = "\n".join(
+                    compile_hints(
+                        new_node.node.source.text, [e.message for e in errors]
+                    )
+                )
+            else:
+                extra = self._render_facts_for(new_node.node)
+                self._last_clean[new_node.id] = new_node.node.source.text
+            return self._copilot_short_ids()[new_node.id], errors, extra
+
+        return self._bridge.run_on_main(_on_main)
+
+    def delete_lib_file(self, path: str) -> LibFileResult:
+        # Trash a lib file (already user-confirmed via the ALWAYS gate). Capture pre-delete bytes for
+        # revert, invalidate consumers WHILE the path still resolves, then move to .trash.
+        def _on_main() -> LibFileResult:
+            files = self._get_shader_lib_files()
+            resolved = files.resolve_copilot_path(strip_lib_prefix(path))
+            if resolved is None or not resolved.exists():
+                return LibFileResult(
+                    ok=False,
+                    error=f"no library file at '{path}' — copy a lib: address from the "
+                    "catalogue or grep",
+                )
+            self._capture_lib(
+                path, resolved.read_text(encoding="utf-8"), lib_create=False
+            )
+            self.invalidate_lib_consumers(resolved)
+            files.delete_file(resolved)
+            logger.info(f"copilot deleted lib file {path}")
+            return LibFileResult(ok=True)
+
+        return self._bridge.run_on_main(_on_main)
+
+    def bind_media(self, node: str, uniform: str) -> MediaBindResult:
+        # Validate the sampler on main FIRST (so a bad target rejects BEFORE a picker opens), then
+        # block on the FILE gate. The UI poll opens the OS picker, does the load+bind on main
+        # (bind_picked_media), and answers with a path-free result — the abs path never reaches here.
+        def _validate() -> tuple[str, str]:
+            node_id = self._copilot_resolve_node_id(node)
+            if node_id is None or node_id not in self._get_ui_nodes():
+                return "", f"no such node '{node}' — check the project map for ids"
+            n = self._get_ui_nodes()[node_id].node
+            if n.program is None:
+                n.compile()
+            samplers = [
+                u.name
+                for u in n.get_active_uniforms()
+                if _uniform_type_label(u) == "sampler2D"
+            ]
+            if uniform not in samplers:
+                listed = ", ".join(samplers) or "(none)"
+                return "", (
+                    f"'{uniform}' is not a sampler2D on this node; its samplers: {listed}. "
+                    "Declare `uniform sampler2D <name>;` in the source first if you need one."
+                )
+            return node_id, ""
+
+        node_id, err = self._bridge.run_on_main(_validate)
+        if err:
+            return MediaBindResult(ok=False, error=err)
+        resp = self._get_gate().ask_file(
+            GateRequest(
+                kind=GateKind.FILE,
+                prompt=f"Choose an image or video for {uniform}",
+                node_id=node_id,
+                uniform=uniform,
+                file_kinds=("image", "video"),
+            )
+        )
+        if resp.media_result is None:
+            return MediaBindResult(cancelled=True)
+        return resp.media_result
+
+    def bind_picked_media(
+        self, node_id: str, uniform: str, path: Path
+    ) -> MediaBindResult:
+        # MAIN THREAD (called by the UI FILE-gate poll, already on the GL thread — NOT bridged). Loads
+        # the user-picked file + binds it to the sampler. The path lives ONLY here + the poll; the
+        # returned result is path-free.
+        ui_node = self._get_ui_nodes().get(node_id)
+        if ui_node is None:
+            return MediaBindResult(ok=False, error="the node is gone")
+        self._capture_node(node_id)  # pre-change rollback snapshot (best-effort)
+        try:
+            media = media_class_for(path.suffix)(path)
+        except Exception as exc:
+            logger.warning(f"copilot bind_media load failed for {path.name}: {exc}")
+            return MediaBindResult(
+                ok=False, error=f"could not load '{path.name}' ({type(exc).__name__})"
+            )
+        try_to_release(ui_node.node.uniform_values.get(uniform))
+        ui_node.node.uniform_values[uniform] = media
+        self._save_ui_node(ui_node)
+        d = media.details
+        logger.info(f"copilot bound media -> {node_id}.{uniform} ({path.name})")
+        return MediaBindResult(
+            ok=True,
+            basename=path.name,
+            width=d.resolution_details.width,
+            height=d.resolution_details.height,
+            is_video=d.is_video,
+        )
+
+    def unbind_media(self, node: str, uniform: str) -> MediaBindResult:
+        # Reset a sampler to the default image (no picker). save() then skips the default, so it
+        # round-trips to "(no media bound)".
+        def _on_main() -> MediaBindResult:
+            node_id = self._copilot_resolve_node_id(node)
+            if node_id is None or node_id not in self._get_ui_nodes():
+                return MediaBindResult(
+                    ok=False,
+                    error=f"no such node '{node}' — check the project map for ids",
+                )
+            ui_node = self._get_ui_nodes()[node_id]
+            n = ui_node.node
+            if n.program is None:
+                n.compile()
+            is_sampler = any(
+                u.name == uniform and _uniform_type_label(u) == "sampler2D"
+                for u in n.get_active_uniforms()
+            )
+            if not is_sampler:
+                return MediaBindResult(
+                    ok=False, error=f"'{uniform}' is not a sampler2D on this node"
+                )
+            self._capture_node(node_id)
+            try_to_release(n.uniform_values.get(uniform))
+            n.uniform_values[uniform] = Image(DEFAULT_IMAGE_FILE_PATH)
+            self._save_ui_node(ui_node)
+            logger.info(f"copilot unbound media on {node_id}.{uniform}")
+            return MediaBindResult(ok=True)
+
+        return self._bridge.run_on_main(_on_main)
+
+    def import_node(self, switch_to: bool) -> NodeImportResult:
+        # Worker: block on a FILE gate for a .glsl; the UI poll reads it on main (import_picked_node)
+        # and answers with a path-free result.
+        resp = self._get_gate().ask_file(
+            GateRequest(
+                kind=GateKind.FILE,
+                prompt="Choose a .glsl shader to import",
+                file_kinds=("glsl",),
+                file_action="import_node",
+                switch_to=switch_to,
+            )
+        )
+        if resp.import_result is None:
+            return NodeImportResult(cancelled=True)
+        return resp.import_result
+
+    def import_picked_node(self, path: Path, switch_to: bool) -> NodeImportResult:
+        # MAIN THREAD (called by the UI FILE-gate poll). Read the picked file + create a node from it.
+        # The path lives only here; the result is path-free (basename only).
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            logger.warning(f"copilot import_node read failed for {path.name}: {exc}")
+            return NodeImportResult(
+                ok=False, error=f"could not read '{path.name}' ({type(exc).__name__})"
+            )
+        try:
+            node_id, errors, _extra = self._create_node_on_main(
+                path.stem, text, "", switch_to
+            )
+        except Exception as exc:
+            logger.warning(f"copilot import_node create failed: {exc}")
+            return NodeImportResult(
+                ok=False, error=f"import failed ({type(exc).__name__})"
+            )
+        logger.info(f"copilot imported node {node_id} from {path.name}")
+        return NodeImportResult(
+            ok=True, node_id=node_id, errors=errors, basename=path.name
+        )
 
     def _copilot_render_path(self, node: UINode, ext: str) -> Path:
         # Non-colliding filename <name>_<short-id>_<n>.<ext>, n = next free index in renders_dir.

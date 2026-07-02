@@ -1,15 +1,20 @@
 import time
 from collections.abc import Callable
+from pathlib import Path
 
 import glfw
 import moderngl
 import numpy as np
 from imgui_bundle import imgui, imgui_ctx
 from imgui_bundle import imgui_command_palette as imcmd
+from imgui_bundle import portable_file_dialogs as pfd
 from loguru import logger
 
 from shaderbox.app import App, PopupState
 from shaderbox.commands import ActiveRegion, CommandId, NodeTab, chord_to_str
+from shaderbox.constants import GLSL_EXTENSIONS, MEDIA_EXTENSIONS
+from shaderbox.copilot.capabilities import MediaBindResult, NodeImportResult
+from shaderbox.copilot.gate import GateResponse
 from shaderbox.hotkeys import dispatch_commands, process_hotkeys
 from shaderbox.logging_setup import configure_logging
 from shaderbox.paths import log_dir
@@ -55,6 +60,55 @@ _MAIN_WINDOW_FLAGS = (
     # the chat must stay visible while open. It's submitted after this window to stay on top.
     | imgui.WindowFlags_.no_bring_to_front_on_focus
 )
+
+
+def _file_pick_patterns(file_kinds: tuple[str, ...]) -> list[str]:
+    # pfd filter pair [label, "*.png *.jpg ..."] for the requested kinds (feature 052).
+    exts: list[str] = []
+    if "image" in file_kinds or "video" in file_kinds:
+        exts += MEDIA_EXTENSIONS
+    if "glsl" in file_kinds:
+        exts += GLSL_EXTENSIONS
+    label = "Shader" if "glsl" in file_kinds else ("Media" if exts else "All files")
+    return [label, " ".join(f"*{e}" for e in exts) or "*"]
+
+
+def _pump_file_gate(app: App) -> None:
+    # MAIN-THREAD per-frame poll (feature 052). While the copilot worker blocks on a bind_media file
+    # pick, open the native picker and poll it across LIVE frames (the app never freezes), then do the
+    # bind on main and answer the gate with a path-free result. A pick landing after Stop is dropped
+    # by gate.answer_file's _file_current guard.
+    gate = app.copilot.gate
+    if app.file_pick_request is None:
+        req = gate.take_file_pending()
+        if req is None:
+            return
+        app.file_pick_request = req
+        app.file_pick_dialog = pfd.open_file(
+            req.prompt, "", _file_pick_patterns(req.file_kinds)
+        )
+    dialog = app.file_pick_dialog
+    req = app.file_pick_request
+    if dialog is None or req is None or not dialog.ready():
+        return
+    picked = dialog.result()
+    app.file_pick_dialog = None
+    app.file_pick_request = None
+    picked_path = Path(picked[0]) if picked else None
+    if req.file_action == "import_node":
+        result = (
+            app.copilot_backend.import_picked_node(picked_path, req.switch_to)
+            if picked_path is not None
+            else NodeImportResult(cancelled=True)
+        )
+        gate.answer_file(GateResponse(import_result=result))
+    else:
+        outcome = (
+            app.copilot_backend.bind_picked_media(req.node_id, req.uniform, picked_path)
+            if picked_path is not None
+            else MediaBindResult(cancelled=True)
+        )
+        gate.answer_file(GateResponse(media_result=outcome))
 
 
 def run(app: App) -> None:
@@ -152,6 +206,7 @@ def update_and_draw(app: App) -> None:
     # ----------------------------------------------------------------
     # Drain copilot worker events into the chat render-state (no GL; single-writer).
     app.copilot.pump_events()
+    _pump_file_gate(app)  # feature 052: serve a mid-turn bind_media file pick
     # A True->False transition means a turn just completed — persist it (a completed turn
     # is the durable unit, so a later crash never loses it) + re-focus the input, which was
     # disabled (unfocusable) for the whole turn so the on-send focus latch was lost.

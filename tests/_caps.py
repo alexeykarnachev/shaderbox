@@ -18,7 +18,11 @@ from shaderbox.copilot.capabilities import (
     EditResult,
     GrepHit,
     LibCatalogEntry,
+    LibFileResult,
     LibFunctionBody,
+    MediaBindResult,
+    NodeImportResult,
+    NodeOpResult,
     NodeTreeEntry,
     PublishResult,
     RenderResult,
@@ -57,6 +61,13 @@ class _FakeCaps:
     ]
     delete_node: Callable[[str], DeleteNodeResult]
     switch_node: Callable[[str], SwitchNodeResult]
+    rename_node: Callable[[str, str], NodeOpResult]
+    set_canvas_size: Callable[[str, int, int], NodeOpResult]
+    duplicate_node: Callable[[str, str, bool], tuple[str, list[CompileErrorInfo], str]]
+    delete_lib_file: Callable[[str], LibFileResult]
+    bind_media: Callable[[str, str], MediaBindResult]
+    unbind_media: Callable[[str, str], MediaBindResult]
+    import_node: Callable[[bool], NodeImportResult]
     render_image: Callable[[str, RenderShape], RenderResult]
     render_video: Callable[[str, float, int, RenderShape], RenderResult]
     probe_render: Callable[[str, float], str]
@@ -94,6 +105,19 @@ def minimal_caps(**overrides: Any) -> CopilotCapabilities:
         "create_node": lambda _n, _s, _t, _sw: ("node-new", [], ""),
         "delete_node": lambda _n: DeleteNodeResult(ok=True),
         "switch_node": lambda _n: SwitchNodeResult(ok=True),
+        "rename_node": lambda _n, _name: NodeOpResult(ok=True, name="renamed"),
+        "set_canvas_size": lambda _n, _w, _h: NodeOpResult(
+            ok=True, width=256, height=256
+        ),
+        "duplicate_node": lambda _n, _name, _sw: ("node-copy", [], ""),
+        "delete_lib_file": lambda _p: LibFileResult(ok=True),
+        "bind_media": lambda _n, _u: MediaBindResult(
+            ok=True, basename="x.png", width=8, height=8
+        ),
+        "unbind_media": lambda _n, _u: MediaBindResult(ok=True),
+        "import_node": lambda _sw: NodeImportResult(
+            ok=True, node_id="node-imp", basename="x.glsl"
+        ),
         "render_image": lambda _n, _shape: RenderResult(ok=True),
         "render_video": lambda _n, _s, _f, _shape: RenderResult(ok=True),
         "probe_render": lambda _n, _t: "render@t=0.0s: ink 0% (probe)",

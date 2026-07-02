@@ -48,6 +48,7 @@ DEFAULT_DURATION = 1.0
 IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".bmp", ".webp"]
 VIDEO_EXTENSIONS = [".mp4", ".webm", ".mov"]
 MEDIA_EXTENSIONS = IMAGE_EXTENSIONS + VIDEO_EXTENSIONS
+GLSL_EXTENSIONS = [".glsl", ".frag"]
 
 # Directory names for node loading
 MEDIA_DIR_NAME = "media"

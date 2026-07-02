@@ -16,6 +16,7 @@ from pydantic import BaseModel
 
 from shaderbox.constants import (
     DEFAULT_FPS,
+    DEFAULT_IMAGE_FILE_PATH,
     IMAGE_EXTENSIONS,
     MP4_CRF_VALUES,
     MP4_PRESETS,
@@ -140,6 +141,16 @@ class Image(MediaWithTexture):
         if self._texture is not None:
             self._texture.release()
             self._texture = None
+
+
+def is_default_image(value: object) -> bool:
+    # A sampler still holding the shipped default image = "unbound". Node.seed_uniform_values fills an
+    # unbound sampler with Image(DEFAULT_IMAGE_FILE_PATH); its source path is the sole marker. Callers
+    # rely on this holding at SAVE time (in-memory the path is the resource path) so save can skip
+    # persisting a default sampler, letting seed re-establish it on load.
+    return isinstance(value, Image) and value.details.file_details.path == str(
+        DEFAULT_IMAGE_FILE_PATH
+    )
 
 
 class Video(MediaWithTexture):

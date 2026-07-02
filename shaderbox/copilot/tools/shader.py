@@ -115,6 +115,13 @@ class _SwitchNodeArgs(ToolArgs):
     )
 
 
+class _DeleteLibFileArgs(ToolArgs):
+    path: str = Field(
+        description="the 'lib:<path>' address of the library FILE to delete (from the catalogue "
+        "or grep) — REQUIRED. Destructive; the file moves to the shader-lib trash (recoverable)."
+    )
+
+
 _READ_SHADER_DESC = (
     "Bring shader nodes into your WORKING SET — their full live source (line-numbered), uniforms, "
     "and compile errors then appear in the working-set block at the bottom of the conversation, "
@@ -455,6 +462,18 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             },
         )
 
+    def delete_lib_file(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
+        # The ALWAYS gate has already cleared a user Yes by the time this runs.
+        result = caps.delete_lib_file(args["path"])
+        if not result.ok:
+            return False, f"error: {result.error}", None
+        return (
+            True,
+            f"deleted library file '{args['path']}' — moved to the shader-lib trash "
+            "(recoverable). Nodes calling its functions will show a compile error next step.",
+            None,
+        )
+
     def switch_node(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
         result = caps.switch_node(args["node"])
         if not result.ok:
@@ -569,5 +588,24 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             mutating=False,
             eager=True,
             gate_policy=GatePolicy.NONE,
+        ),
+        ToolDefinition(
+            name="delete_lib_file",
+            label_live="Deleting library file",
+            label_done="Deleted library file",
+            description=(
+                "Delete a shader-LIBRARY FILE (a 'lib:<path>' address) to the shader-lib trash "
+                "(recoverable). Destructive + always confirmed. Nodes calling its SB_* functions "
+                "recompile with a missing-function error afterwards."
+            ),
+            args_model=_DeleteLibFileArgs,
+            handler=delete_lib_file,
+            mutating=True,
+            eager=True,
+            gate_policy=GatePolicy.ALWAYS,
+            gate_prompt=lambda a: (
+                f"Delete library file `{a.get('path', '')}`? It moves to the shader-lib "
+                "trash (recoverable)."
+            ),
         ),
     ]

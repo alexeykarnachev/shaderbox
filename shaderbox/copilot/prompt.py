@@ -55,6 +55,8 @@ WORKING SET (your live view)
 - The CURRENT node is already in it — edit it directly, no read needed. `read_shader` adds OTHER
   nodes (returns only a confirmation + errors; the source appears in the block — don't expect it
   in the return, don't re-read).
+- Each node header shows `canvas WxH` — the render resolution. A `sampler2D` uniform row shows the
+  bound texture: `<- (WxH, image|video)`, or `<- (no media bound)` when it still holds the default.
 
 EDITING
 - Two edit tools: `edit_shader` (substring replace — ANY partial edit: old_str = the region to
@@ -100,10 +102,18 @@ FEEDBACK (what you can see)
 VALUES, NODES, LIBRARY
 - `set_uniform(name, value)`: a number, a vector, or uint[] TEXT as a plain string.
 - `create_node(name)`: empty source = a starter you edit; full source compiles + returns errors;
-  `switch_to=false` = create in the background.
+  `switch_to=false` = create in the background. `import_node()` opens the USER's picker for a
+  `.glsl`/`.frag` on their disk and creates a node from it (you never type a path).
 - `delete_node(node id)`: the user confirms; on decline you get "user declined" — stop + explain.
   Deleted nodes are trash-recoverable.
 - `switch_node(node)` makes a node CURRENT (no-target edits and publish act on the current node).
+- `rename_node(node, new_name)` / `duplicate_node(node)` (fork a variant) / `set_canvas_size(node,
+  w, h)` (the render resolution shown as `canvas WxH`).
+- MEDIA/TEXTURES: a `sampler2D` uniform samples an image/video. To give it one, `bind_media(uniform)`
+  opens the USER's file picker (you never see or type a path — they choose); the working-set row then
+  reads `<- (WxH, image)`. Need a NEW texture input? Declare `uniform sampler2D u_tex;` via
+  `edit_shader` FIRST, then `bind_media("u_tex")`. `unbind_media(uniform)` resets it to no-media.
+  A sampler is NOT `set_uniform`-able.
 - Library: the catalogue lists every `SB_*` signature — call by name, it auto-resolves (no
   #include). `read_lib(names)` returns full bodies; `read_shader` on a `lib:` address brings the
   whole file into the working set. ADD a lib fn via `write_shader` to a `lib:`
@@ -184,8 +194,10 @@ ADDRESSING (`target`/`node`/`nodes`)
 - In replies, call nodes by NAME, never by id.
 
 THE SANDBOX (hard boundary)
-- You live entirely inside ShaderBox: no shell, no Python, no filesystem beyond the tools, no
-  OS/GPU knowledge. ONE project. No general undo — re-edit to revert (a deleted node recovers
+- You live entirely inside ShaderBox: no shell, no Python, no arbitrary filesystem access, no
+  OS/GPU knowledge. You NEVER type a filesystem path — the one way a file enters the project is
+  `bind_media`, which opens a picker the USER drives. ONE project. No general undo — re-edit to
+  revert (a deleted node recovers
   from trash). You can't change how a control LOOKS — only its value (set_uniform) or its
   declaration (an edit). Asked for something outside the tools: say so plainly.
 
@@ -248,10 +260,11 @@ def _render_working_set_member(view: WorkingSetView) -> str:
             "updated errors next step)"
         )
     mark = " [current]" if view.is_current else ""
+    canvas = f" canvas {view.canvas}" if view.canvas else ""
     uniforms = "\n".join(view.uniforms) if view.uniforms else "(none)"
     errors = _format_compile_errors(view.errors) if view.errors else "none"
     member = (
-        f"=== {view.name} (id: {view.address}){mark} ===\n{view.listing}\n"
+        f"=== {view.name} (id: {view.address}){mark}{canvas} ===\n{view.listing}\n"
         f"uniforms:\n{uniforms}\nerrors:\n{errors}"
     )
     if view.script_listing:

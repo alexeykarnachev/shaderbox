@@ -96,6 +96,52 @@ class SwitchNodeResult:
 
 
 @dataclass(frozen=True)
+class NodeOpResult:
+    # Shared result for the small node-file ops (feature 052): rename (name set) and set_canvas_size
+    # (width/height = the APPLIED, clamped size). ok=False carries `error` (no such node / bad size).
+    ok: bool
+    error: str = ""
+    name: str = ""
+    width: int = 0
+    height: int = 0
+
+
+@dataclass(frozen=True)
+class MediaBindResult:
+    # The result of a bind_media / unbind_media op (feature 052), carried back to the worker through
+    # the FILE gate. NO absolute path: the picked path is consumed on the main thread inside the bind
+    # and never reaches this object (corollary-1 by construction). `basename` is the source filename
+    # (no directory) — safe to echo. `cancelled` = the user dismissed the picker.
+    ok: bool = False
+    error: str = ""
+    cancelled: bool = False
+    basename: str = ""
+    width: int = 0
+    height: int = 0
+    is_video: bool = False
+
+
+@dataclass(frozen=True)
+class NodeImportResult:
+    # import_node outcome (feature 052 slice 4), carried back through the FILE gate. NO source path:
+    # the picked file is read on the main thread inside import_picked_node. `basename` = the source
+    # filename (no directory). `node_id` = the new node's short id; `errors` = its post-compile errors.
+    ok: bool = False
+    cancelled: bool = False
+    error: str = ""
+    node_id: str = ""
+    errors: list[CompileErrorInfo] = field(default_factory=list)
+    basename: str = ""
+
+
+@dataclass(frozen=True)
+class LibFileResult:
+    # delete_lib_file outcome (feature 052). ok=False carries `error` (no such lib file).
+    ok: bool
+    error: str = ""
+
+
+@dataclass(frozen=True)
 class GrepHit:
     # One grep match. `origin` is an addressable handle for a read/edit tool: a node id
     # or a "lib:<path>" address.
@@ -133,6 +179,9 @@ class WorkingSetView:
     # at default. Rendered as a "=== <node> SCRIPT ===" sub-section only when script_listing is set.
     script_listing: str = ""
     script_errors: list[CompileErrorInfo] = field(default_factory=list)
+    # The node's canvas resolution ("WxH"; "" for a lib view) — the render size the user gets
+    # (feature 052). Rendered in the working-set node header so the model can see it.
+    canvas: str = ""
 
 
 @dataclass(frozen=True)
@@ -323,6 +372,36 @@ class CopilotCapabilities(Protocol):
     # Make a node CURRENT so the per-current tools (publish/render/edit-without-target) act
     # on it. Stamps freshness so a follow-up edit lands.
     def switch_node(self, node: str, /) -> SwitchNodeResult: ...
+
+    # ---- node file ops (feature 052 slice 3) — checkpoint-revertable node.json mutations ----
+    # rename_node sets the display name; set_canvas_size sets the node's render resolution (clamped,
+    # returns the applied size). node "" = current. duplicate_node forks a node (dir copy incl.
+    # media/script) into a fresh id, returning the create_node shape (short id, post-compile errors,
+    # facts).
+    def rename_node(self, node: str, new_name: str, /) -> NodeOpResult: ...
+    def set_canvas_size(
+        self, node: str, width: int, height: int, /
+    ) -> NodeOpResult: ...
+    def duplicate_node(
+        self, node: str, new_name: str, switch_to: bool, /
+    ) -> tuple[str, list[CompileErrorInfo], str]: ...
+
+    # Delete a shader-library file (a "lib:<path>" address) to the shader-lib trash (recoverable);
+    # consumers recompile with a missing-SB_* error next step. Destructive => always gated.
+    def delete_lib_file(self, path: str, /) -> LibFileResult: ...
+
+    # ---- media / textures (feature 052 slice 2) ----
+    # bind_media validates the sampler, then BLOCKS on a FILE gate while the UI opens the OS file
+    # picker; the main thread does the load+bind and answers with a path-free MediaBindResult (the
+    # abs path never crosses back to the worker). unbind_media resets a sampler to the default image
+    # (a normal main-thread op, no picker). node "" = current.
+    def bind_media(self, node: str, uniform: str, /) -> MediaBindResult: ...
+    def unbind_media(self, node: str, uniform: str, /) -> MediaBindResult: ...
+
+    # Import a .glsl off the user's disk (feature 052 slice 4): opens the file picker, reads the file
+    # on the main thread, and creates a node from it. Reuses the FILE gate; the source path never
+    # reaches the worker.
+    def import_node(self, switch_to: bool, /) -> NodeImportResult: ...
 
     # ---- render / publish (all gated) ----
     # Render a node's current frame to a PNG / `seconds` of animation to a WebM under the

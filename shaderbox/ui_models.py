@@ -13,7 +13,7 @@ from pydantic import BaseModel, ValidationError, model_validator
 from shaderbox.commands import NodeTab
 from shaderbox.copilot.state import CopilotLayout
 from shaderbox.core import _NODE_SHADER_BASENAME, ENGINE_DRIVEN_UNIFORMS, Node
-from shaderbox.media import MediaDetails, MediaWithTexture
+from shaderbox.media import MediaDetails, MediaWithTexture, is_default_image
 
 UIUniformInputType = Literal[
     "texture", "buffer", "array", "color", "text", "drag", "auto"
@@ -287,6 +287,12 @@ class UINode(BaseModel):
             value = self.node.uniform_values[uniform.name]
 
             if getattr(uniform, "gl_type", None) == GL_SAMPLER_2D:
+                # An unbound sampler holds the shipped default; persisting a per-node copy is pointless
+                # and would make it read back as "bound" on reload. Skip it — load's seed_uniform_values
+                # re-establishes the default.
+                if is_default_image(value):
+                    continue
+
                 file_name_wo_ext = uniform.name
 
                 if isinstance(value, MediaWithTexture):

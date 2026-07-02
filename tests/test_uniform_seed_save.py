@@ -9,9 +9,12 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import moderngl
+import numpy as np
 import pytest
 
+from shaderbox.copilot.backend import _format_uniforms
 from shaderbox.core import Node
+from shaderbox.media import Image, is_default_image
 from shaderbox.ui_models import UINode
 
 _SCALAR_SRC = """#version 460 core
@@ -73,18 +76,57 @@ def test_save_seeds_scalar_uniforms_without_render(
     _teardown(reloaded)
 
 
-def test_save_seeds_sampler_uniform_without_render(
+def test_save_skips_default_sampler_and_reload_reseeds(
     gl_ctx: moderngl.Context, tmp_path: Path
 ) -> None:
+    # Feature 052: an UNBOUND sampler (still the shipped default) is NOT persisted — save skips it so
+    # it never reads back as "bound" on reload (the round-2 round-trip fix). Load's seed re-establishes
+    # the default. Falsifier: without the skip, `u_image` is in meta and reloads from media/ (path !=
+    # default) -> would read as bound.
     node = _node_from_source(gl_ctx, _SAMPLER_SRC)
     ui_node = UINode(node=node, id="sampler")
-    ui_node.save(
-        tmp_path
-    )  # pre-fix: ValueError (sampler default was an int, not a texture)
+    ui_node.save(tmp_path)  # must not raise
+    assert not (tmp_path / "sampler" / "media" / "u_image.png").exists()
     reloaded, meta = Node.load_from_dir(tmp_path / "sampler", gl=gl_ctx)
-    assert "u_image" in meta["uniforms"]  # serialized via the default Image
+    assert "u_image" not in meta["uniforms"]  # default sampler skipped
+    assert is_default_image(
+        reloaded.uniform_values["u_image"]
+    )  # re-seeded to default on load
     _teardown(node)
     _teardown(reloaded)
+
+
+def test_save_persists_user_bound_sampler(
+    gl_ctx: moderngl.Context, tmp_path: Path
+) -> None:
+    # A user-BOUND sampler (non-default) IS persisted and round-trips as bound.
+    node = _node_from_source(gl_ctx, _SAMPLER_SRC)
+    node.seed_uniform_values()
+    node.uniform_values["u_image"] = Image(
+        np.zeros((8, 8, 3), dtype=np.uint8)
+    )  # non-default
+    ui_node = UINode(node=node, id="bound")
+    ui_node.save(tmp_path)
+    assert (tmp_path / "bound" / "media" / "u_image.png").exists()
+    reloaded, meta = Node.load_from_dir(tmp_path / "bound", gl=gl_ctx)
+    assert "u_image" in meta["uniforms"]
+    assert not is_default_image(reloaded.uniform_values["u_image"])
+    _teardown(node)
+    _teardown(reloaded)
+
+
+def test_sampler_awareness_row_default_vs_bound(gl_ctx: moderngl.Context) -> None:
+    # Feature 052 slice 1: the working-set uniform row shows a sampler's binding, NOT a source path.
+    node = _node_from_source(gl_ctx, _SAMPLER_SRC)
+    node.seed_uniform_values()
+    default_rows = _format_uniforms(node, set())
+    assert any("u_image sampler2D <- (no media bound)" in r for r in default_rows)
+    node.uniform_values["u_image"] = Image(np.zeros((8, 8, 3), dtype=np.uint8))
+    bound_rows = _format_uniforms(node, set())
+    assert any("u_image sampler2D <- (8x8, image)" in r for r in bound_rows)
+    # Corollary-1: no absolute path leaks into the row.
+    assert all("/" not in r.split("<-")[1] for r in bound_rows if "u_image" in r)
+    _teardown(node)
 
 
 def test_seed_skips_engine_uniforms(gl_ctx: moderngl.Context) -> None:
