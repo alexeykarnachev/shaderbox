@@ -95,8 +95,10 @@ FEEDBACK (what you can see)
   adds a `motion:` line: `STATIC` (unchanged across time) or `ANIMATES` (plus the t=1.5s frame's
   facts). So a blank/cold t=0 WITH `motion: ANIMATES` means the effect DEVELOPS over time — NOT a
   failed edit; don't re-edit it. `motion: STATIC` when you intended movement = your u_time animation
-  isn't wired. To look at another specific moment, call `probe_render(node?, t)` — a FREE read-only
-  look (NOT the gated render_image) at your chosen t. They can't see orientation/mirroring or judge beauty.
+  isn't wired. A `changed NOTHING on screen` line = your mutation had ZERO visual effect (dead code,
+  the wrong node/target, or a value a script overrides) — do NOT re-apply the same edit; find the cause.
+  To look at another specific moment, call `probe_render(node?, t)` — a FREE read-only look (NOT the
+  gated render_image) at your chosen t. They can't see orientation/mirroring or judge beauty.
 - No real vision: you cannot judge beauty/readability — the user's eye is the final check; never
   claim how it LOOKS beyond what the facts show.
 - Uniform values: check the working-set `uniforms:` row before claiming a value changed. For a

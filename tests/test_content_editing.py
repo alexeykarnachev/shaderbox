@@ -253,7 +253,7 @@ def test_persist_normalizes_crlf() -> None:
         _batch_mutated=set(),
         _broken_streak={},
         _last_clean={},
-        _render_facts_for=lambda _n, motion=False: "",
+        _render_facts_for=lambda _n, motion=False, cache_key="": "",
         _oscillation_note=lambda _k, _p, _n: "",
     )
     persist = CopilotBackend._copilot_persist_target.__get__(stub)
@@ -297,7 +297,7 @@ def test_persist_force_restores_after_streak_on_real_path() -> None:
         _batch_mutated=set(),
         _broken_streak={},
         _last_clean={},
-        _render_facts_for=lambda _n, motion=False: "",
+        _render_facts_for=lambda _n, motion=False, cache_key="": "",
         _oscillation_note=lambda _k, _p, _n: "",
     )
     stub._force_restore = CopilotBackend._force_restore.__get__(stub)
@@ -527,7 +527,7 @@ def test_persist_normalizes_lone_cr() -> None:
         _batch_mutated=set(),
         _broken_streak={},
         _last_clean={},
-        _render_facts_for=lambda _n, motion=False: "",
+        _render_facts_for=lambda _n, motion=False, cache_key="": "",
         _oscillation_note=lambda _k, _p, _n: "",
     )
     persist = CopilotBackend._copilot_persist_target.__get__(stub)

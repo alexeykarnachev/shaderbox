@@ -520,6 +520,9 @@ class CopilotBackend:
         self._get_bridge = get_bridge
         self._get_gate = get_gate
         self._probe_canvas: Canvas | None = None  # lazy 033 render-facts target
+        # Per-node last probe frames (raw0, raw1) — a mutation whose frames match the previous
+        # ones changed NOTHING on screen (dead code / wrong target / script-overridden value).
+        self._last_probe: dict[str, tuple[bytes, bytes]] = {}
         # 033 force-restore bookkeeping: per-node consecutive broken-compile edits +
         # the last source text that compiled clean (the restore target).
         self._broken_streak: dict[str, int] = {}
@@ -976,7 +979,9 @@ class CopilotBackend:
             return SetUniformResult(
                 ok=True,
                 type_label=label,
-                render_facts=self._render_facts_for(target, motion=True),
+                render_facts=self._render_facts_for(
+                    target, motion=True, cache_key=node_id
+                ),
             )
 
         return self._bridge.run_on_main(_on_main)
@@ -1792,7 +1797,11 @@ class CopilotBackend:
                 "file was restored to an earlier state, which itself no longer "
                 f"compiles (likely a library change):\n{err_lines}"
             )
-        facts = self._render_facts_for(node, motion=True) if not restore_errors else ""
+        facts = (
+            self._render_facts_for(node, motion=True, cache_key=node_id)
+            if not restore_errors
+            else ""
+        )
         return EditResult(
             matches=matches,
             errors=restore_errors,
@@ -1801,7 +1810,7 @@ class CopilotBackend:
         )
 
     def _render_facts_for(
-        self, node: Node, t: float = 0.0, motion: bool = False
+        self, node: Node, t: float = 0.0, motion: bool = False, cache_key: str = ""
     ) -> str:
         # Best-effort probe render -> one facts line (feature 033). Runs on the main
         # thread (bridge-marshalled callers) with the GL context current. Never raises
@@ -1838,9 +1847,23 @@ class CopilotBackend:
             a0 = np.frombuffer(raw0, dtype=np.uint8).astype(np.int16)
             a1 = np.frombuffer(raw1, dtype=np.uint8).astype(np.int16)
             if float(np.mean(np.abs(a0 - a1))) < _MOTION_EPS:
-                return f"{line0}\nmotion: STATIC (unchanged from t=0 to t={t2:.1f}s)"
-            line1 = _stamp_facts(render_facts(raw1, size, h), t2)
-            return f"{line0}\n{line1}\nmotion: ANIMATES (the frame changes over time)"
+                result = f"{line0}\nmotion: STATIC (unchanged from t=0 to t={t2:.1f}s)"
+            else:
+                line1 = _stamp_facts(render_facts(raw1, size, h), t2)
+                result = (
+                    f"{line0}\n{line1}\nmotion: ANIMATES (the frame changes over time)"
+                )
+            # No-op detection: identical to the frames before this mutation = it changed nothing.
+            if cache_key:
+                prev = self._last_probe.get(cache_key)
+                self._last_probe[cache_key] = (raw0, raw1)
+                if prev is not None and prev[0] == raw0 and prev[1] == raw1:
+                    result = (
+                        "this mutation changed NOTHING on screen vs the frame before it — "
+                        "dead code, the wrong node/target, a value a script overrides, or a "
+                        "change only visible between t=0 and t=1.5s\n" + result
+                    )
+            return result
         except Exception as exc:  # — advisory channel, never break an edit
             logger.debug(f"copilot render facts skipped: {exc}")
             return ""
@@ -2160,7 +2183,7 @@ class CopilotBackend:
                 )
             self._broken_streak[tgt.node_id] = 0
             self._last_clean[tgt.node_id] = new_text
-            facts = self._render_facts_for(tgt.node, motion=True)
+            facts = self._render_facts_for(tgt.node, motion=True, cache_key=tgt.node_id)
             loop_note = self._oscillation_note(tgt.node_id, tgt.source, new_text)
             if loop_note:
                 facts = f"{facts}\n{loop_note}" if facts else loop_note
