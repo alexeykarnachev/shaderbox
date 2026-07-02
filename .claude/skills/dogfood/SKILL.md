@@ -6,8 +6,9 @@ user_invocable: true
 
 <command-name>dogfood</command-name>
 
-Drive the REAL copilot ENGINE end-to-end, headless on the Pi (no App, no glfw window), against a real
-LLM. Create a `ProjectSession` on a standalone EGL context, send turns, watch the tool calls + compile
+Drive the REAL copilot ENGINE end-to-end, headless on ANY display-less box (Pi V3D / WSL Mesa / CI —
+NOT Pi-specific; all it needs is a standalone EGL context + `OPENROUTER_API_KEY` + network), against a
+real LLM. Create a `ProjectSession` on a standalone EGL context, send turns, watch the tool calls + compile
 feedback, render images, OPEN them and judge by eye. The judge is YOU (reading the trace + the PNGs) —
 there are NO code assertions. The point is to test the whole PIPELINE and find where the copilot is weak,
 where context wastes tokens, and what's broken — not to make the copilot write good shaders (use a CHEAP
@@ -22,13 +23,13 @@ gotcha already hit, so you don't re-discover them.
 
 ## 0. Prerequisites (the run fails without these)
 
-- **`OPENROUTER_API_KEY`** — required, billed. **Already `export`ed in `~/.bashrc`** (don't ask the
-  maintainer for it). FOOTGUN: `~/.bashrc` has the standard "if not running interactively, return" guard
-  at the top, and the export sits BELOW it — so a NON-interactive shell (the default for tool Bash calls)
-  does NOT pick the key up (`echo $OPENROUTER_API_KEY` comes back empty). Run dogfood commands through an
-  INTERACTIVE shell so the export fires: `bash -ic '<the uv run … one-liner>'`. (Verified 2026-06-09: the
-  key surfaces under `bash -ic`, len 73, `sk-or-…`.) The harness reads the key at import, so it must be in
-  the process env before `uv run` — which `bash -ic` guarantees.
+- **`OPENROUTER_API_KEY`** — required, billed. Must be in the process env before `uv run` (the harness
+  reads it at import). **On the Pi** it's `export`ed in `~/.bashrc` — but below the standard "if not
+  interactive, return" guard, so a NON-interactive shell (the default for tool Bash calls) comes back
+  empty; run through an INTERACTIVE shell so the export fires: `bash -ic '<the uv run … one-liner>'`.
+  **On another box (WSL / a fresh clone) the key may NOT be preset** — check `bash -ic 'echo
+  ${OPENROUTER_API_KEY:+SET}'`; if empty, the maintainer must export it (or add it to that box's
+  `~/.bashrc`). Don't assume the Pi's setup exists elsewhere.
 - **Model:** the in-tree default (`CopilotIntegration.model`) is `openai/gpt-5.1-codex-mini` (cheap:
   ~USD 0.25 in / 2.00 out per Mtok, tool-call compatible, 400k ctx — no `$N` literals in this file:
   the skill runner substitutes `$0`/`$1`/… with invocation args), used automatically — no `OPENROUTER_MODEL`
@@ -38,8 +39,12 @@ gotcha already hit, so you don't re-discover them.
   if a run 404s, `curl -s https://openrouter.ai/api/v1/models` and filter for the current cheap codex,
   confirm `tools` is in its `supported_parameters` (the agent rejects tool-incompatible models), bump the
   in-tree default.
-- **This is a display-less Pi.** `glfw.init()` FAILS here; `import glfw`/`import imgui` SUCCEED. The whole
-  point of the headless harness is to bypass glfw via a standalone EGL context.
+- **Display-less box.** `glfw.init()` FAILS (no window); `import glfw`/`import imgui` SUCCEED. The whole
+  point of the headless harness is to bypass glfw via a standalone EGL context — works on Pi V3D, WSL
+  Mesa (software GL), a CI runner, anything with EGL. `h.render()` uses the DIRECT context-thread render
+  (robust everywhere); the bridge-marshalled `render_image` can be slow-first-draw under software GL (WSL)
+  and hit the op timeout — that's a per-box quirk, not a harness fault (the agent's own render_image calls
+  still exercise that path).
 
 ## 1. Drive a scenario — ONE blocking `uv run` per turn (resume/dump)
 

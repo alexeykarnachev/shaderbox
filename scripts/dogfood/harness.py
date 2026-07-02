@@ -7,9 +7,10 @@ human reading the printed events / the trace transcript + looking at the rendere
 there are NO code assertions and no pass/fail. The point is dogfooding: surface where the
 copilot is weak, where context wastes tokens, what's missing from context.
 
-Built on feature 025's `ProjectSession` (the headless project + copilot core). This box is
-a display-less Raspberry Pi where glfw can't open a window but a standalone EGL context
-reaches the real V3D GPU.
+Built on feature 025's `ProjectSession` (the headless project + copilot core). Runs on ANY
+display-less box where glfw can't open a window but a standalone EGL context reaches a GPU or
+software GL — a Pi (V3D), a WSL/Linux box (Mesa), a CI runner. Not Pi-specific: all it needs is
+EGL + the MESA `#version 460` overrides + `OPENROUTER_API_KEY` + network to OpenRouter.
 
 ENV (load-bearing, set at module top BEFORE the shaderbox imports below): `SHADERBOX_DATA_DIR`
 redirects the data dir to an isolated run dir (so lib edits + the written `integrations.json`
@@ -255,37 +256,16 @@ class DogfoodHarness:
     # ---- rendering ----
 
     def render(self, node_id: str = "", *, size: int = 400) -> str:
-        """Render a node to a `size`x`size` PNG; return + print the exact path.
+        """Render a node's static (t=0) frame to a `size`x`size` PNG (the driver's eyeball helper);
+        return + print the exact path. `node_id` empty = the current node.
 
-        Forces the size (the node's default canvas is small — too small to eyeball a shape).
-        `node_id` empty = the current node. Uses the REAL `render_image` capability — but that
-        marshals the GL work through the bridge and BLOCKS on it, so it must run off the
-        context-owning thread while THIS thread drains the bridge (the same shape as a copilot
-        turn). We run it on a throwaway thread and pump until it returns.
+        Uses the DIRECT context-thread render (`render_at` at t=0) — GL on the owning thread, no
+        bridge — so it is robust on any GL backend (the bridge-marshalled `render_image` path is
+        flaky under WSL software-GL: slow first-draw vs the op timeout). The COPILOT's own gated
+        `render_image` tool is exercised separately when the AGENT calls it (see /dogfood §1a) — this
+        helper does not need to route through it just to give the driver a PNG to look at.
         """
-        target = node_id or self.session.current_node_id
-        out: dict[str, RenderResult] = {}
-
-        def _do() -> None:
-            out["result"] = self.session.copilot_backend.render_image(
-                target, size, size
-            )
-
-        worker = threading.Thread(target=_do, name="dogfood-render", daemon=True)
-        worker.start()
-        while worker.is_alive():
-            self.session.copilot.drain_bridge()
-            time.sleep(0.01)
-        worker.join()
-
-        result = out.get("result")
-        if result is None or not result.ok:
-            err = result.error if result is not None else "no result"
-            print(f"    [render FAILED: {err}]")
-            return ""
-        print(f"    [rendered {result.width}x{result.height} -> {result.path}]")
-        self._last_render_path = result.path
-        return result.path
+        return self.render_at(0.0, node_id, size=size)
 
     def render_video(
         self,
