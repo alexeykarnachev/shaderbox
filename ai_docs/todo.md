@@ -32,5 +32,13 @@ no "Resolved YYYY-MM-DD" headers).
 
 ---
 
+## [DEBT] Unbind/rebind leaves an orphaned `media/<uniform>.*` file on disk
 
-_No open bugs or must-fix debt. (Resolved entries are deleted in their fixing commit — git log is the history.)_
+- **Trigger:** next time you touch the `GL_SAMPLER_2D` branch of `ui_models.py::UINode.save`, or a
+  feature reads a node's `media/` dir contents (not just `node.json`).
+- Feature 052's `unbind_media` resets a sampler to the default; `save` then SKIPS it
+  (`is_default_image`), so `node.json` no longer references the old `media/<uniform>.<ext>` — but the
+  file itself is never deleted. Load is driven purely by `node.json` (`core.py`), so the stale file is
+  correctly IGNORED (no wrong re-bind) — this is a disk-cleanliness leak, not a correctness bug. Note:
+  `duplicate_node` copytrees the node dir, so it carries the orphan into the fork. Fix sketch: when
+  `save` skips a default sampler, unlink a pre-existing `media/<uniform>.*` for that uniform.

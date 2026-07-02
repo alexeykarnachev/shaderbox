@@ -116,6 +116,13 @@ class GateChannel:
         except queue.Empty:
             return None
 
+    def file_gate_active(self) -> bool:
+        # MAIN THREAD (feature 052). True while a worker is blocked on a FILE pick. Goes False the
+        # instant cancel_all fires (Stop/reset) — the UI poll checks this so a dialog still open when
+        # the turn was cancelled is ABANDONED (its late pick never mutates a node, never mis-wires the
+        # next turn's gate).
+        return self._file_current is not None
+
     def answer_file(self, response: GateResponse) -> None:
         # MAIN THREAD (feature 052). Fill the current FILE pending + unblock the worker. A late answer
         # after cancel_all is a no-op (the guard below), so a pick that lands after Stop is dropped.

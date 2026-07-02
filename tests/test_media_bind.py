@@ -83,6 +83,21 @@ def test_file_gate_cancel_wakes_worker() -> None:
     assert out["r"].cancelled and out["r"].media_result is None
 
 
+def test_file_gate_active_flips_on_cancel() -> None:
+    # The UI poll gates the bind on file_gate_active(): while a worker is blocked it's True; a turn
+    # Stop (cancel_all) flips it False so a dialog still open is abandoned (no post-cancel phantom bind).
+    gate = GateChannel()
+    assert not gate.file_gate_active()  # idle
+    threading.Thread(
+        target=lambda: gate.ask_file(GateRequest(kind=GateKind.FILE, prompt="f")),
+        daemon=True,
+    ).start()
+    assert _wait_for_file_pending(gate) is not None
+    assert gate.file_gate_active()  # worker parked, dialog would be live
+    gate.cancel_all(reusable=True)
+    assert not gate.file_gate_active()  # cancelled -> poll abandons the pick, no bind
+
+
 def test_file_and_confirm_slots_are_independent() -> None:
     # A CONFIRM ask enqueues on _pending, a FILE ask on _file_pending — take_pending / take_file_pending
     # never steal from each other (so the App poll can't consume a CONFIRM gate).

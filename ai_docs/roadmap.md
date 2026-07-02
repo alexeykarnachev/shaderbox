@@ -26,18 +26,20 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-07-02 (v0.21.0 live on itch; dev ahead of master; feature 052 slices 1-4 landed on dev, slice 0 pending). -->
-**ACTIVE: feature 052 — copilot workspace fluency (slices 1-4 landed, slice 0 remaining).** On `dev`,
-un-shipped: the earlier **`.mov` + case-insensitive media** bugfix (suffix lowercased at
-`media.py::media_class_for` + call-site gates; iOS `IMG_*.MOV` used to no-op), and now feature **052** —
-making the copilot literate in the ShaderBox *workspace*. Spec CONVERGED (3 code-anchored review rounds).
-LANDED: slice 1 awareness (samplers + canvas in the working set; save-skips-default sampler), slice 3
-node/file ops (`rename_node`/`set_canvas_size`/`duplicate_node`/`delete_lib_file`), slice 2 media
+<!-- As of 2026-07-02 (v0.21.0 live on itch; dev ahead of master + pushed; feature 052 CODE-COMPLETE on dev, awaiting manual app-verify). -->
+**ACTIVE: feature 052 — copilot workspace fluency (CODE-COMPLETE, all 6 slices; committed + pushed to
+`origin/dev`).** On `dev`, un-shipped: the earlier **`.mov` + case-insensitive media** bugfix, and now
+feature **052** — making the copilot literate in the ShaderBox *workspace*. Spec CONVERGED (3 review
+rounds); complete-feature review done (1 HIGH FILE-gate cancel-path bug found + FIXED, rest PASS —
+corollary-1 confirmed path-free on every vector). LANDED: slice 1 awareness (samplers + canvas in the
+working set; save-skips-default sampler), slice 3 node/file ops
+(`rename_node`/`set_canvas_size`/`duplicate_node`/`delete_lib_file`), slice 2 media
 (`bind_media`/`unbind_media` via a `GateKind.FILE` slot — worker blocks, `ui.py::_pump_file_gate` polls
-`pfd` across live frames, binds on main, path never crosses to the worker: corollary-1), slice 4
-`import_node`. All `make check`-clean, tests green in-env. REMAINING: slice 0 (lazy `load_tools`
-catalogue + demote the 7 new + 7 integration tools). Spec: `features/052_copilot_workspace_fluency/`
-(see `README.md ## Build progress`). **NEXT:** slice 0, then complete-feature review + ship.
+`pfd` across live frames, binds on main, path never crosses to the worker), slice 4 `import_node`,
+slice 0 lazy `load_tools` catalogue (7 new + 7 integration tools demoted). `make check` clean, tests
+green in-env. Spec: `features/052_copilot_workspace_fluency/`. **NEXT:** manual app-verify (the FILE-gate
+picker + working-set awareness need a real `make run` — not headless-exercisable), then flip the row to
+`done` + ship on the next release.
 
 **Last LIVE on itch (context):** v0.21.0 — feature 050 + render-divergence cleanup + YT Shorts presets
 + the bugs/debt fix wave. (Previously v0.20.0 — node-dir live auto-sync + math-symbol text glyphs.

@@ -79,6 +79,13 @@ def _pump_file_gate(app: App) -> None:
     # bind on main and answer the gate with a path-free result. A pick landing after Stop is dropped
     # by gate.answer_file's _file_current guard.
     gate = app.copilot.gate
+    # A dialog we're holding whose gate was cancelled underneath us (turn Stop / reset): ABANDON it —
+    # drop the App-side state so a late pick can't bind after cancel, and a NEW turn's file gate is
+    # served instead of waiting behind the stale dialog (the native dialog can't be closed
+    # programmatically; its late result is simply ignored).
+    if app.file_pick_request is not None and not gate.file_gate_active():
+        app.file_pick_dialog = None
+        app.file_pick_request = None
     if app.file_pick_request is None:
         req = gate.take_file_pending()
         if req is None:
@@ -94,6 +101,8 @@ def _pump_file_gate(app: App) -> None:
     picked = dialog.result()
     app.file_pick_dialog = None
     app.file_pick_request = None
+    if not gate.file_gate_active():
+        return  # cancelled between .ready() and here — drop the pick, no bind
     picked_path = Path(picked[0]) if picked else None
     if req.file_action == "import_node":
         result = (
