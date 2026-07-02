@@ -26,20 +26,20 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-07-02 (v0.21.0 live on itch; dev ahead of master + pushed; feature 052 CODE-COMPLETE on dev, awaiting manual app-verify). -->
-**ACTIVE: feature 052 — copilot workspace fluency (CODE-COMPLETE, all 6 slices; committed + pushed to
-`origin/dev`).** On `dev`, un-shipped: the earlier **`.mov` + case-insensitive media** bugfix, and now
-feature **052** — making the copilot literate in the ShaderBox *workspace*. Spec CONVERGED (3 review
-rounds); complete-feature review done (1 HIGH FILE-gate cancel-path bug found + FIXED, rest PASS —
-corollary-1 confirmed path-free on every vector). LANDED: slice 1 awareness (samplers + canvas in the
-working set; save-skips-default sampler), slice 3 node/file ops
-(`rename_node`/`set_canvas_size`/`duplicate_node`/`delete_lib_file`), slice 2 media
-(`bind_media`/`unbind_media` via a `GateKind.FILE` slot — worker blocks, `ui.py::_pump_file_gate` polls
-`pfd` across live frames, binds on main, path never crosses to the worker), slice 4 `import_node`,
-slice 0 lazy `load_tools` catalogue (7 new + 7 integration tools demoted). `make check` clean, tests
-green in-env. Spec: `features/052_copilot_workspace_fluency/`. **NEXT:** manual app-verify (the FILE-gate
-picker + working-set awareness need a real `make run` — not headless-exercisable), then flip the row to
-`done` + ship on the next release.
+<!-- As of 2026-07-02 (v0.22.0 tag on GitHub master; itch STILL v0.21.0 — upload deferred; feature 052 done in-code, UI-verify pending). -->
+**ACTIVE: v0.22.0 CUT + pushed to GitHub (dev == master == tag `v0.22.0`) — NOT yet uploaded to itch
+(public build is STILL v0.21.0).** The release bundles the **`.mov` + case-insensitive media** bugfix
+and feature **052 — copilot workspace fluency** (all 6 slices). The itch upload is DEFERRED on purpose:
+it needs a machine with `butler` + a display (this WSL box has neither), where the release-gate manual
+`make run` UI-verify + `make smoke` also run. So GitHub master/tag = 0.22.0 while itch = 0.21.0 until
+that upload. Feature 052 is code-complete + reviewed (complete-feature review: 1 HIGH FILE-gate
+cancel-path bug found + FIXED, rest PASS — corollary-1 confirmed path-free on every vector); slices:
+awareness (samplers + canvas in the working set; save-skips-default) · media `bind_media`/`unbind_media`
+via a `GateKind.FILE` slot (worker blocks, `ui.py::_pump_file_gate` polls `pfd` across live frames,
+path never crosses to the worker) · `rename`/`set_canvas_size`/`duplicate`/`delete_lib_file` ·
+`import_node` · lazy `load_tools` catalogue. **NEXT:** from a display+butler machine — `make run` UI
+verify (the FILE-gate picker + awareness are NOT headless-exercisable) + `make smoke`, then
+`upload-itch.sh` to publish v0.22.0.
 
 **Last LIVE on itch (context):** v0.21.0 — feature 050 + render-divergence cleanup + YT Shorts presets
 + the bugs/debt fix wave. (Previously v0.20.0 — node-dir live auto-sync + math-symbol text glyphs.
@@ -57,7 +57,7 @@ verified live. **No open BLOCKERs.**
 
 | # | Name | Status | Brief |
 |---|---|---|---|
-| 052 | copilot_workspace_fluency | in progress | Umbrella making the copilot literate in the ShaderBox workspace: (slice 1) samplers + their media bindings + canvas size surface in the working set (read-only awareness); (slice 2) `bind_media`/`unbind_media` bind a texture to a `sampler2D` via a GATE-family user-file-pick primitive (worker blocks on a file gate, UI polls `pfd` across live frames) the model triggers but never types a path into — abs path consumed engine-side (structural corollary-1); (slice 3) `rename_node`/`duplicate_node`/`set_canvas_size` + `delete_lib_file`; (slice 4) `import_node` pulls a `.glsl` off disk via the same picker; (slice 0) revives the parked D5 lazy-tool catalogue (`load_tools` + catalogue block, sorted serialization) to pay for the 7 new tools (all lazy — ~24 eager tools today, >16 trigger already blown). Plan-locked + round-1 pre-impl review applied (3 code-anchored reviewers, all PARTIAL): two built-on premises refuted (no empty-sampler state; checkpoint ALREADY captures/restores media so revert is free, no new code) + `rename_lib_file` cut (derivable + revert-less). Spec: `ai_docs/features/052_copilot_workspace_fluency/`. |
+| 052 | copilot_workspace_fluency | done | Umbrella making the copilot literate in the ShaderBox workspace: (slice 1) samplers + their media bindings + canvas size surface in the working set (read-only awareness); (slice 2) `bind_media`/`unbind_media` bind a texture to a `sampler2D` via a GATE-family user-file-pick primitive (worker blocks on a file gate, UI polls `pfd` across live frames) the model triggers but never types a path into — abs path consumed engine-side (structural corollary-1); (slice 3) `rename_node`/`duplicate_node`/`set_canvas_size` + `delete_lib_file`; (slice 4) `import_node` pulls a `.glsl` off disk via the same picker; (slice 0) revives the parked D5 lazy-tool catalogue (`load_tools` + catalogue block, sorted serialization) to pay for the 7 new tools (all lazy — ~24 eager tools today, >16 trigger already blown). Plan-locked + round-1 pre-impl review applied (3 code-anchored reviewers, all PARTIAL): two built-on premises refuted (no empty-sampler state; checkpoint ALREADY captures/restores media so revert is free, no new code) + `rename_lib_file` cut (derivable + revert-less). Spec: `ai_docs/features/052_copilot_workspace_fluency/`. |
 | — | render_path_divergence_cleanup | done | Three render-path divergence fixes (reviewed to convergence by a verified multi-agent swarm): (1) the "Rendering…" cue/modal-invisible bug — every render encode (Render tab, Share outlets, copilot) now fires at ONE post-swap+`gl.finish` point (`ui.py`); the copilot bridge PARKS its deferred render op (`run_deferred_render`) instead of running it top-of-frame, keeping it the sole worker→main seam. (2) `RenderShape` (`render_shape.py`) — one named-size vocabulary (NATIVE + short_*/wide_*, aspect baked in) the Share UI / copilot render tools / copilot publish all resolve through, closing the two preset `todo.md` deferrals (off-aspect-Short foot-gun gone via a closed enum; long-form gets a resolution picker; the Share control is one combo, not accent chips). (3) video-preview fps drop — `media.py::Video` uploads `f1` not float32/`f4` + caches fps/n_frames. Spec: commits `1ccd416` + `4f05e8a` + `f517eec`. |
 | 050 | copilot_edit_churn_and_probe_honesty | done | Copilot edit-engine correctness wave from one bad real session (the `gpt-5.3-codex` "fire tutorial", trace preserved): F1 the duplicate-comment spiral — ROOT was the comment-blind `token_match` excluding a leading comment from the splice span (re-derived via real-code repro + swarm after the matcher/guard theory was refuted), fixed by growing the span over `old_str`'s edge comments; F2 a per-FILE churn brake (soft escalating fact + hard force-end, two Settings-tunable thresholds, subsuming the `todo.md` edit-churn deferral); F3 the probe-render clock pinned to t=0 + a new ungated `probe_render(node, t)` tool (also delivers the deferred "render at t=N" affordance); F4 a cause-aware forced-turn-end nudge (kills the "you're right to pause now" misattribution). Post-impl-reviewed + dogfood-confirmed live. Spec: `ai_docs/features/050_copilot_edit_churn_and_probe_honesty.md`; dogfood: `ai_docs/features/050_dogfood_report_stress.md`. |
 | — | node_dir_live_sync | done | Per-frame node-dir auto-sync: `ProjectSession.sync_nodes_from_disk` reconciles `ui_nodes` to `nodes/` every frame (called from `ui.py::update_and_draw`, gated off mid-copilot-turn) — a dir ADDED/REMOVED or `node.json` EDITED externally syncs with no user action (disk is authoritative; even the current node is force-reloaded). Glob-diff on `node.json` mtime, mirroring `maybe_rebuild_lib_index`; shader text + `script.py` keep their existing watchers. SUPERSEDED the manual "Reload nodes from disk" command (deleted: command/`Ctrl+Shift+R`/menu/`App.reload_nodes_from_disk`/`on_nodes_reloaded`). Tests: `tests/test_node_dir_sync.py`. Spec: commit (this wave). |
