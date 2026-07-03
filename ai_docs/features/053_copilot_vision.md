@@ -195,6 +195,38 @@ rendering is display-only and CANNOT be verified headless). Each check fails for
 None outstanding — 1A/2A/3A confirmed; vision-model configurability + live validation added and refined
 through pre-review (D7 live-getter seam, D9 re-kick guard, D8 three-state classifier verified first-hand).
 
+## Slice B (follow-up): turn-end auto vision look
+
+The on-demand tool left a gap the maintainer flagged: a lazy/cheap model can declare a VISUAL result done
+having never looked (dogfood turn 1 — it wrote a circle and reported done from the auto-probe facts + its
+own code reasoning, no `probe_render`). Not a lie (it grounded in real facts, didn't fake a look) and not
+wrong for a trivial circle — but the risk scales with complexity (fire/text/complex effects the code can't
+predict). Per the doctrine (§4 facts-as-DATA > an opt-in tool the model won't call), the fix is to put the
+vision read on the always-on channel at the decisive moment, NOT a prompt nag (which fails the better-model
+test).
+
+**D11 — turn-end auto-look, injected as data with explicit provenance.** When a turn CHANGED the render
+(an ok `edit_shader`/`write_shader`/`set_uniform`/`edit_script`/`write_script`) but the model never looked
+(no `probe_render`) and is about to end on a clean `stop` with a reply, the engine executes ONE
+`probe_render` on the current frame and, if the result carries a `visual (` line, appends the model's
+closing text + a USER-role fact and re-opens the turn for ONE reaction iteration. Gated: once per turn
+(`auto_looked`), only if a next iteration exists (`iteration+1 < max_iterations`), not cancelled, and
+config flag `copilot_vision_auto_look_on_turn_end` (default on). The `visual (`-presence gate means
+vision-off / an outage / a non-vision model just skip the injection (a wasted tiny render at worst) — no
+new vision-enabled plumbing into `run_turn`. The injected text (`agent.py::_auto_look_fact`) states the
+provenance THREE ways ("you did NOT call this" / "the engine took one look FOR you" / "not a look you
+performed") so the model is never confused about who looked — corollary-2 (it must see what actually
+happened). `probe_render` stays optional (it's an aimed `t`+`look_for` query); only the automatic
+decisive-moment look is forced.
+
+*Files:* `config.py` (the flag); `agent.py` (`_RENDER_AUTHORING_TOOLS`, `_RunLog.changed_render()` /
+`.looked()`, `_auto_look_fact`, the turn-end hook + `auto_looked` flag). *Tests:*
+`tests/test_vision_auto_look.py` — fires on changed+not-looked, skips when already looked / no visual
+mutation / no `visual (` line, and the wording asserts the three provenance statements. *Dogfood-verified*
+(2026-07-03): the cheap model made a circle without looking → auto-look fired → turn ran 3 iterations → the
+model reacted correctly, attributing the read to "The engine's visual read" (not confused, not claimed as
+its own).
+
 ## Review history
 
 **Pre-implementation review (2 adversarial agents, both PARTIAL → resolved):**

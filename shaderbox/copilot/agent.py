@@ -57,6 +57,29 @@ _COMPILE_THRASH_NUDGE = (
     "a single block in a large file)."
 )
 
+# Tools that change what the CURRENT node renders — a turn that ran one of these ok produced a
+# visual result (053 slice B). Structural ops (rename/delete/switch/canvas-size) are excluded.
+_RENDER_AUTHORING_TOOLS = frozenset(
+    {"edit_shader", "write_shader", "set_uniform", "edit_script", "write_script"}
+)
+
+
+def _auto_look_fact(look_line: str) -> str:
+    # Injected as the USER role at turn-end when the model changed the render but never looked. The
+    # provenance is stated THREE ways ("you did NOT call this" / "the engine took one look FOR you" /
+    # "engine-injected data, not something you did") so the model is never confused about who looked -
+    # it must understand this is the engine handing it an observation, not a look it performed. Plain
+    # ASCII (engine text on the user channel).
+    return (
+        "[automatic visual check -- you did NOT call this] You are ending the turn having CHANGED the "
+        "render but WITHOUT looking at the result this turn. So the engine took ONE vision look FOR you "
+        "on the current frame (this is engine-injected data, not a look you performed):\n\n"
+        f"{look_line}\n\n"
+        "Treat it as the eye's OBSERVATION, not a verdict and not a beauty judgment. If it contradicts "
+        "what you intended, fix it now before the user sees it; if it matches, briefly tell the user "
+        "what the render shows. Do NOT call probe_render again just to repeat this same look."
+    )
+
 
 def _clean_streak_fact(n: int) -> str:
     # Escalating per-file nudge: rides EVERY clean edit_shader result past the soft threshold,
@@ -214,6 +237,14 @@ class _RunLog:
     def __bool__(self) -> bool:
         # True once any tool has run this turn — the "did work worth preserving on an error" signal.
         return bool(self._entries)
+
+    def changed_render(self) -> bool:
+        # A render-authoring tool ran ok this turn (053 slice B: the turn produced a visual result).
+        return any(e.ok and e.name in _RENDER_AUTHORING_TOOLS for e in self._entries)
+
+    def looked(self) -> bool:
+        # The model looked at the render this turn (called probe_render — the vision look path).
+        return any(e.name == "probe_render" for e in self._entries)
 
     def referenced_nodes(self) -> list[str]:
         # Every node name/handle the turn touched or referenced: args of every call, deduped,
@@ -410,6 +441,9 @@ def run_turn(
     ran = _RunLog()
     total_tool_calls = 0
     consecutive_failed_edits = 0  # self-correction cap (reset on any other outcome)
+    auto_looked = (
+        False  # 053 slice B: the turn-end auto vision look fires at most once per turn
+    )
     consecutive_compile_failures = 0  # applies-but-broken thrash counter
     compile_nudge_sent = (
         False  # latched once the nudge fires; re-armed by a non-thrash step
@@ -692,6 +726,32 @@ def run_turn(
                     summary=_build_turn_summary(reply, ran, registry), stats=stats
                 )
                 return
+            # 053 slice B: the turn changed the render but the model never looked -> the engine takes
+            # ONE vision look FOR it and injects the observation (as data, with explicit provenance),
+            # giving the model one iteration to react before it declares a visual result blind. Gated on
+            # a present "visual (" line so vision-off / a vision outage / a non-vision model just skip it.
+            if (
+                config.copilot_vision_auto_look_on_turn_end
+                and not auto_looked
+                and fr == "stop"
+                and text_buf.strip()
+                and iteration + 1 < config.max_iterations
+                and not cancel.is_set()
+                and ran.changed_render()
+                and not ran.looked()
+            ):
+                auto_looked = True
+                look_args: dict[str, object] = {"node": "", "t": 0.0, "look_for": ""}
+                ok_l, look_msg, _ = registry.execute("probe_render", look_args, "")
+                if ok_l and "visual (" in look_msg:
+                    logger.info("copilot turn-end auto vision look injected")
+                    tr.event("auto_vision_look", iteration=iteration, result=look_msg)
+                    ran.record("probe_render", ok_l, look_msg, look_args, None)
+                    messages.append(_assistant_message(text_buf, []))
+                    messages.append(
+                        LLMMessage(role="user", content=_auto_look_fact(look_msg))
+                    )
+                    continue
             logger.info(
                 f"copilot turn done | iterations={iteration + 1} "
                 f"tool_calls={total_tool_calls} reply={len(text_buf)}ch "

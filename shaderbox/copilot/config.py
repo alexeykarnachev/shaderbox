@@ -55,6 +55,11 @@ class CopilotConfig:
     copilot_vision_model: str = "openai/gpt-4o-mini"
     copilot_vision_probe_size: int = 320
     copilot_vision_max_tokens: int = 220
+    # Turn-end auto-look (053 slice B): if a turn CHANGED the render but the model never looked at the
+    # result (no probe_render), the engine takes ONE vision look FOR it at turn-end and injects the
+    # observation as data — so a visual result is never declared blind. Facts-as-data, not a nag; the
+    # injected text is explicit that the ENGINE looked (not the model), so the model isn't confused.
+    copilot_vision_auto_look_on_turn_end: bool = True
     # Settings capability check: bound the GET /models fetch that classifies whether the chosen vision
     # model accepts image input (free metadata, not a billed probe). A transient miss -> "couldn't verify".
     vision_models_fetch_timeout_s: float = 15.0
