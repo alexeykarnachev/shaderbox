@@ -15,8 +15,9 @@ def test_system_prompt_carries_the_visual_craft_block() -> None:
         "tonemap",  # never ship a dark muddy frame
         "SHADOWS > AO > normals",  # depth hierarchy
         "EMERGE from feedback",  # motion, not an imposed sine
+        "PLAN COMPLEX WORK FIRST",  # decompose before diving into edits
         "BUILD IN STAGES",  # robustness vs the token budget
-        "iterate until the render MATCHES the ask",  # convergence discipline
+        "iterate until the render MATCHES",  # convergence discipline
         "aces(",  # an embedded formula the weak model shouldn't recall from memory
     ):
         assert marker in p, marker

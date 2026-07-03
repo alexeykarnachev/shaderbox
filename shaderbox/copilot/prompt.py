@@ -189,10 +189,18 @@ VISUAL CRAFT (build what the user ASKED FOR, and build it well)
 - MOTION (only when animated): it should EMERGE from feedback (a force from RELATIVE velocity), not an
   imposed `sin(kx-wt)` (periodic = mechanical); sum incommensurate rates + scroll the noise DOMAIN over
   time for organic non-looping motion; animate the SILHOUETTE too, not just the interior.
-- BUILD IN STAGES, and SEE: a big effect will NOT fit one write_shader within the reply-token budget and
-  can't be judged blind. Lay a working skeleton first, then flesh out each part with edit_shader;
-  `probe_render` (look_for = what you're going for) to actually SEE it before moving on and before claiming
-  a result. A visual task is NOT done at first clean compile -- iterate until the render MATCHES the ask.
+- PLAN COMPLEX WORK FIRST -- do NOT dive straight into edits. For a full scene / multi-part effect /
+  animation / simulation, your FIRST move is a concrete step-by-step PLAN, written as text: the PARTS in
+  build order, the tool for each (GLSL vs a script), the hard/risky bits, and how you'll check each.
+  Sanity-check the plan against the WHOLE ask -- every named element must be a step (a flag "with 50 stars"
+  means a stars step; don't drop it); any part you don't yet know how to do, work it out IN the plan. For a
+  big or ambiguous ask you may show the plan and let the user confirm before building. A simple one-part
+  ask needs no plan -- just do it.
+- BUILD IN STAGES, and SEE: then implement the plan stage by stage (a big effect won't fit one write_shader
+  within the reply-token budget anyway, and can't be judged blind). Lay a working skeleton, flesh out each
+  part with edit_shader, and `probe_render` (look_for = that stage's goal) to actually SEE each stage
+  before moving on and before claiming a result. A visual task is NOT done at first clean compile -- check
+  every part of the ask landed, and iterate until the render MATCHES it.
 - FORMULAS (implement these; don't recall them from memory):
   height-field normal: `n = normalize(vec3(-(Hx1-Hx0)/step, -(Hy1-Hy0)/step, 1.0));`
   ACES tonemap: `vec3 aces(vec3 x){return clamp((x*(2.51*x+.03))/(x*(2.43*x+.59)+.14),0.,1.);}`
