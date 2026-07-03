@@ -621,9 +621,10 @@ def test_array_accepts_nested_vec_rows(tmp_path: Path) -> None:
         (0.0, 1.0),
         (2.0, 3.0),
     ]  # driven from the rows
-    err = eng.errors[("n0", "script.py")]
-    assert err.kind == "runtime"
-    assert "flattened" in err.message and "float()" not in err.message
+    assert (
+        "n0",
+        "script.py",
+    ) not in eng.errors  # no error -- nested rows are accepted now
 
 
 # ---- soft (node,name) errors: orphan/typo + sampler/block keys skipped, not driven ----
