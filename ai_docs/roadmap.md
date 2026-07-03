@@ -26,23 +26,22 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-07-03 (053 copilot vision done on dev, post-v0.22.0; itch STILL v0.21.0; UI-verify + upload pending). -->
-**ACTIVE: feature 053 — copilot vision — DONE on `dev` (post-v0.22.0, unreleased).** The render-blind
-copilot now has a real EYE: `probe_render` returns the facts line AND a vision read of the frame's
-CORRECTNESS (coherence/orientation/off-frame/text-legibility/artifacts, NOT beauty), grounded in a
-`look_for` intent arg, two-tact anti-sycophantic, animated nodes as a forward-time 3-frame strip, cached
-per (frame, intent), on-demand only. The vision model is configurable in Settings with a live capability
-badge (free `GET /models` `input_modalities` check, three states, async daemon + re-kick guard, live
-getters — no `apply_limits` push). Reviewed pre + post (5 adversarial agents): every blocker found +
-fixed (cache-key/Protocol/blast-radius/live-apply/backward-time-strip); `make check` clean; the classifier
-+ wire + cache + a real-GL forward-time regression are headless-gated. **UI-verify PENDING** (LIVE, a
-display box): the Settings vision badge visual + no-jitter/no-storm, per imgui-ui §0. Builds on first cut
-`6151ca4`.
+<!-- As of 2026-07-03 (v0.23.0 CUT to GitHub master; itch STILL v0.21.0 — upload deferred). -->
+**ACTIVE: v0.23.0 CUT to GitHub master (git release; NOT shipped to itch).** Bundles feature **053 —
+copilot vision** (the render-blind agent's real EYE: `probe_render` returns facts + a vision read of the
+frame's CORRECTNESS, `look_for`-grounded, two-tact anti-sycophantic, animated → 3-frame strip, cached,
+configurable model with a live Settings capability badge) and feature **054 — copilot visual craft &
+robustness** (a VISUAL CRAFT prompt block distilled from the labs; PLAN-first for complex work; the
+turn-end auto-look now AIMED at the ask + forbidden from over-claiming; surgical / large-file edit
+discipline) plus **engine fixes that unblocked physics scripting** — `Vec2/3/4` are real vectors
+(`.x/.y/.z` + component math), `Array` auto-flattens Vec rows. Validated by a long US-flag dogfood: the
+copilot went from dark fbm-mush to a real **Verlet cloth-sim** flag (a strong model went straight for the
+real sim; the Vec/Array fixes then let the CHEAP model build it step-by-step). **UI-verify PENDING** (LIVE,
+a display box): the Settings vision badge, per `todo.md`.
 
-**Also pending — v0.22.0 → itch (context):** GitHub master/tag = 0.22.0 (052 workspace fluency +
-`.mov`/case-insensitive media fix) while itch is STILL v0.21.0. The upload is DEFERRED — it needs a
-`butler`+display machine (this WSL box has neither) for `make run` UI-verify + `make smoke` + `upload-itch.sh`.
-053 rides the same next release once cut.
+**Also pending — itch upload (context):** GitHub master/tag = 0.23.0 while itch is STILL v0.21.0. Deferred
+— needs a `butler`+display machine (this WSL box has neither) for `make run` UI-verify + `make smoke` +
+`upload-itch.sh`. v0.22.x (052 workspace fluency + `.mov`/media fix) + 053 + 054 all ride that next upload.
 
 **Last LIVE on itch (context):** v0.21.0 — feature 050 + render-divergence cleanup + YT Shorts presets
 + the bugs/debt fix wave. (Previously v0.20.0 — node-dir live auto-sync + math-symbol text glyphs.
@@ -60,6 +59,7 @@ verified live. **No open BLOCKERs.**
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 054 | copilot_visual_craft | done | Make the copilot faithfully + competently execute a visual instruction (metric = instruction-fidelity, NOT realism). A `VISUAL CRAFT` prompt block distilled from the shader labs (match-the-asked-look; pick tool by effect — per-pixel→GLSL, physics-sim→script; tonemap/AA/dither/structured-texture baseline; shadows>AO>normals + grazing light; motion emerges from feedback; PLAN complex work first then BUILD IN STAGES; iterate until it MATCHES). Turn-end auto-look now AIMED at the ask (not empty look_for) + a legibility dimension + forbidden from claiming what the eye doesn't show; surgical / large-file edit discipline. Engine fixes that unblocked physics scripting: `Vec2/3/4` are real vectors (`.x/.y/.z`, component + scalar math, `.dot/.length/.normalized/.cross`); `Array` auto-flattens Vec/tuple rows. Loop-mined + dogfood-validated (US flag: dark fbm-mush → real Verlet cloth-sim, incl. the CHEAP model building the sim step-by-step once Vec/Array were fixed). Spec: `ai_docs/features/054_copilot_visual_craft.md`. |
 | 053 | copilot_vision | done | The render-blind copilot's REAL eye — `probe_render` now returns the facts line AND a vision read of the frame's CORRECTNESS (coherence vs noise, orientation/mirroring, off-frame, text legibility, artifacts; NOT beauty). Actor-model split: `look_for` carries the copilot's intent as DATA into a cheap multimodal (`describe_image`, default `gpt-4o-mini`); a two-tact anti-sycophantic prompt (baseline read + skeptical evidence-gated answer, "point to the pixels or say NO"); the eye is a WITNESS, the copilot the JUDGE, beauty stays the user's. ANIMATES nodes go as a forward-time 3-frame contact strip (reuses the motion verdict); on-demand only; cached per (frame-hash, look_for, is_strip). Vision model configurable in Settings with a LIVE capability badge — a free `GET /models` `input_modalities` check (three states: supports/no-image/couldn't-verify), read via live getters (no `apply_limits` push), async on a daemon thread with a re-kick guard. Pre + post review (5 adversarial agents): cache-key-omits-look_for, Protocol/test blast-radius, live-apply asymmetry, backward-time contact-sheet — all found + fixed. **Slice B (follow-up):** a turn that CHANGED the render but never looked → the engine takes ONE auto-look at turn-end and injects the observation as data with explicit provenance ("the engine looked FOR you, not you") so a visual result is never declared blind, and the model isn't confused about who looked (dogfood-verified: it reacts, attributing "the engine's visual read"). Spec: `ai_docs/features/053_copilot_vision.md` (builds on first cut `6151ca4`). |
 | 052 | copilot_workspace_fluency | done | Umbrella making the copilot literate in the ShaderBox workspace: (slice 1) samplers + their media bindings + canvas size surface in the working set (read-only awareness); (slice 2) `bind_media`/`unbind_media` bind a texture to a `sampler2D` via a GATE-family user-file-pick primitive (worker blocks on a file gate, UI polls `pfd` across live frames) the model triggers but never types a path into — abs path consumed engine-side (structural corollary-1); (slice 3) `rename_node`/`duplicate_node`/`set_canvas_size` + `delete_lib_file`; (slice 4) `import_node` pulls a `.glsl` off disk via the same picker; (slice 0) revives the parked D5 lazy-tool catalogue (`load_tools` + catalogue block, sorted serialization) to pay for the 7 new tools (all lazy — ~24 eager tools today, >16 trigger already blown). Plan-locked + round-1 pre-impl review applied (3 code-anchored reviewers, all PARTIAL): two built-on premises refuted (no empty-sampler state; checkpoint ALREADY captures/restores media so revert is free, no new code) + `rename_lib_file` cut (derivable + revert-less). Spec: `ai_docs/features/052_copilot_workspace_fluency/`. |
 | — | render_path_divergence_cleanup | done | Three render-path divergence fixes (reviewed to convergence by a verified multi-agent swarm): (1) the "Rendering…" cue/modal-invisible bug — every render encode (Render tab, Share outlets, copilot) now fires at ONE post-swap+`gl.finish` point (`ui.py`); the copilot bridge PARKS its deferred render op (`run_deferred_render`) instead of running it top-of-frame, keeping it the sole worker→main seam. (2) `RenderShape` (`render_shape.py`) — one named-size vocabulary (NATIVE + short_*/wide_*, aspect baked in) the Share UI / copilot render tools / copilot publish all resolve through, closing the two preset `todo.md` deferrals (off-aspect-Short foot-gun gone via a closed enum; long-form gets a resolution picker; the Share control is one combo, not accent chips). (3) video-preview fps drop — `media.py::Video` uploads `f1` not float32/`f4` + caches fps/n_frames. Spec: commits `1ccd416` + `4f05e8a` + `f517eec`. |
