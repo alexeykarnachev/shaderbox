@@ -132,18 +132,30 @@ class Vec4(_Vec):
 
 
 class Array:
-    """A whole numeric uniform array (`float[N]` or `vecN[M]`) — a FLAT sequence of numbers.
-    For `vecN[M]` pass the components flattened row by row; coercion chunks them by `dim`."""
+    """A whole numeric uniform array (`float[N]` or `vecN[M]`). Accepts EITHER a flat sequence of
+    numbers OR a sequence of Vec/tuple/list rows (a `vecN[M]` as `[Vec3(...), Vec3(...), ...]`) —
+    rows are auto-flattened row by row (feature 054: a physics sim naturally builds a list of Vecs,
+    and hand-flattening was a footgun). Coercion chunks the flat result by the uniform's `dim`."""
 
-    def __init__(self, values: Sequence[float]) -> None:
+    def __init__(self, values: Sequence[object]) -> None:
+        def _num(x: object) -> float:
+            if isinstance(x, bool) or not isinstance(x, int | float | str):
+                raise TypeError(f"not a number: {x!r}")
+            return float(x)
+
+        flat: list[float] = []
         try:
-            self.values: list[float] = [float(v) for v in values]
+            for v in values:
+                if isinstance(v, tuple | list):  # a Vec/tuple/list row -> flatten it
+                    flat.extend(_num(c) for c in v)
+                else:
+                    flat.append(_num(v))  # a bare number
         except (TypeError, ValueError) as e:
-            # The common vecN[M] mistake is a list of tuples/lists; the float() error is cryptic.
             raise TypeError(
-                "Array takes a FLAT sequence of numbers — for a vecN[M] uniform pass the "
-                "components flattened row by row (e.g. [x0,y0, x1,y1, ...]), not a list of tuples"
+                "Array takes numbers or Vec/tuple rows — each element must be a number or a "
+                "sequence of numbers (e.g. [Vec3(...), ...] or a flat [x0,y0,z0, x1,...])"
             ) from e
+        self.values: list[float] = flat
 
 
 class Text:

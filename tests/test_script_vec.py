@@ -38,3 +38,15 @@ def test_still_a_coercible_tuple() -> None:
     v = Vec3(1, 2, 3)
     assert isinstance(v, tuple) and tuple(v) == (1.0, 2.0, 3.0)
     assert normalize_output(v) is v  # passes through unchanged for coercion
+
+
+def test_array_auto_flattens_vec_rows() -> None:
+    from shaderbox.scripting.outputs import Array
+
+    # a vecN[M] built as a list of Vecs -> flattened row by row (the natural sim form)
+    a = Array([Vec3(1, 2, 3), Vec3(4, 5, 6)])
+    assert a.values == [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+    # a plain flat list still works
+    assert Array([1, 2, 3, 4]).values == [1.0, 2.0, 3.0, 4.0]
+    # tuples/lists as rows also flatten
+    assert Array([(1, 2), [3, 4]]).values == [1.0, 2.0, 3.0, 4.0]

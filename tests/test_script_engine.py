@@ -603,23 +603,24 @@ def test_nan_inf_freezes_and_records(tmp_path: Path) -> None:
     assert err.kind == "runtime" and "finite" in err.message
 
 
-def test_array_nested_tuples_gives_flatten_hint(tmp_path: Path) -> None:
-    # The vecN[M] footgun (a list of tuples) surfaces a clear flatten hint, not the cryptic
-    # "float() argument must be ... not 'tuple'". NOTE (script change vs the 044 per-uniform world):
-    # `Array(...)` raises its TypeError inside `update()` BEFORE the dict returns, so the whole script
-    # freezes at the SENTINEL key — not a per-key (node, u_pts) error. The hint is still surfaced.
-    # Falsifier: no flatten hint, or the cryptic float() message leaks.
+def test_array_accepts_nested_vec_rows(tmp_path: Path) -> None:
+    # Feature 054: `Array` now AUTO-FLATTENS a list of Vec/tuple rows (the natural sim form) instead
+    # of raising the old flatten-hint TypeError -- a `vec2[2]` built as `[(x0,y0),(x1,y1)]` drives
+    # the uniform correctly. Falsifier: the uniform freezes / the value isn't the flattened rows.
     _write_script(
         tmp_path,
         _script(
             update_body="        return {'u_pts': Array([(0.0, 1.0), (2.0, 3.0)])}\n"
-        ),  # nested, wrong
+        ),  # nested rows -> auto-flattened
     )
     node = _FakeNode([_u("u_pts", dim=2, n=2)])
     node.uniform_values["u_pts"] = [(0.0, 0.0), (0.0, 0.0)]
     eng = _engine(tmp_path, node)
     eng.tick("n0", node, _ctx(0.0))
-    assert node.uniform_values["u_pts"] == [(0.0, 0.0), (0.0, 0.0)]  # frozen
+    assert node.uniform_values["u_pts"] == [
+        (0.0, 1.0),
+        (2.0, 3.0),
+    ]  # driven from the rows
     err = eng.errors[("n0", "script.py")]
     assert err.kind == "runtime"
     assert "flattened" in err.message and "float()" not in err.message
