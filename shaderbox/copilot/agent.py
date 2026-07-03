@@ -88,7 +88,11 @@ def _auto_look_fact(look_line: str) -> str:
         f"{look_line}\n\n"
         "Treat it as the eye's OBSERVATION, not a verdict and not a beauty judgment. If it contradicts "
         "what you intended, fix it now before the user sees it; if it matches, briefly tell the user "
-        "what the render shows. Do NOT call probe_render again just to repeat this same look."
+        "what the render shows. Do NOT call probe_render again just to repeat this same look.\n"
+        "CRITICAL: do NOT claim in your reply anything this read does not support. If the thing you just "
+        "changed is NOT visible here (a pole, a colour, stars, a whole element), then it did NOT land -- "
+        "say so plainly and either fix it or tell the user it is still missing. NEVER assert a result the "
+        "eye does not show."
     )
 
 
