@@ -161,9 +161,11 @@ SCRIPTING (node scripts -- driving uniforms over time)
   write_script(node?, new_text) create-or-overwrites the whole script, edit_script (old_str/new_str)
   tweaks a region. Use edit_script for a localized change, write_script for a fresh script or rewrite.
 - A returned VALUE is shaped to the uniform: a float = a bare number; a vec = `Vec2(x,y)` /
-  `Vec3(...)` / `Vec4(...)` (do math on plain floats, wrap ONLY in the return -- Vec2 has no .x/.y and
-  `*n` repeats it, it does NOT scale; a bare `[x,y]` also coerces for a vec, NOT for an array); array
-  = `Array([..flat..])`; text = a plain string. The stub seeds the import -- you never type it.
+  `Vec3(...)` / `Vec4(...)`; array = `Array([..flat..])`; text = a plain string. `Vec2/3/4` ARE real
+  vectors -- `.x/.y/.z/.w`, component-wise `+ - *`, scalar `* /`, `.dot()`, `.length()`,
+  `.normalized()`, `Vec3.cross()` -- so a physics/geometry sim reads naturally (build a cloth/particle
+  state out of them). A bare `[x,y]` also coerces for a vec, NOT for an array. The stub seeds the import
+  -- you never type it.
 - A script-DRIVEN uniform is NOT set_uniform-able (a set is overwritten next tick and rejected). To
   change a driven value, edit update -- not the shader default (once driven, the default only seeds the
   initial value). The script writes VALUES only: it cannot add a uniform or change a control's look.

@@ -5,26 +5,130 @@ type. Each normalizes to exactly what `uniform_coerce.coerce_uniform_value` acce
 (`list | tuple | str | number`) so the engine validates the result against the live
 `moderngl.Uniform` with no special-casing.
 
-`Vec2/3/4` subclass `tuple` so coercion's `isinstance(value, list | tuple)` check passes on
-the value as-is. `Array` holds a FLAT numeric sequence (`vec2[3]` is `[x0,y0,x1,y1,x2,y2]`,
-not nested). `Text` carries the raw string (coercion's `str_to_unicode` branch)."""
+`Vec2/3/4` subclass `tuple` (so coercion's `isinstance(value, list | tuple)` check passes on
+the value as-is) AND carry component-wise vector math (`.x/.y/.z/.w`, `+ - *` and scalar `* /`,
+`.dot/.length/.normalized`, `Vec3.cross`) so a physics/geometry script reads naturally — feature
+054 found the bare-tuple form (no `.x`, `*n` repeats) made even a strong model abandon a real sim.
+`Array` holds a FLAT numeric sequence (`vec2[3]` is `[x0,y0,x1,y1,x2,y2]`, not nested). `Text`
+carries the raw string (coercion's `str_to_unicode` branch)."""
 
+import math
 from collections.abc import Sequence
 
 
-class Vec2(tuple[float, float]):
+class _Vec(tuple[float, ...]):
+    # Component-wise vector math shared by Vec2/3/4. Subclasses fix the arity + named components in
+    # __new__/properties; every op rebuilds the SAME concrete type via `type(self)(*components)`, so
+    # the result stays a coercible tuple of the right length.
+    __slots__ = ()
+
+    def __new__(cls, *components: float) -> "_Vec":
+        return tuple.__new__(cls, tuple(float(c) for c in components))
+
+    def _same_len(self, other: object) -> bool:
+        return isinstance(other, tuple) and len(other) == len(self)
+
+    def __add__(self, other: object) -> "_Vec":
+        if not self._same_len(other):
+            return NotImplemented
+        assert isinstance(other, tuple)
+        return type(self)(*(a + b for a, b in zip(self, other, strict=True)))
+
+    def __sub__(self, other: object) -> "_Vec":
+        if not self._same_len(other):
+            return NotImplemented
+        assert isinstance(other, tuple)
+        return type(self)(*(a - b for a, b in zip(self, other, strict=True)))
+
+    def __mul__(self, other: object) -> "_Vec":
+        if isinstance(other, int | float):
+            return type(self)(*(a * other for a in self))
+        if self._same_len(other):
+            assert isinstance(other, tuple)
+            return type(self)(*(a * b for a, b in zip(self, other, strict=True)))
+        return NotImplemented
+
+    def __rmul__(self, other: object) -> "_Vec":
+        return self.__mul__(other)
+
+    def __truediv__(self, other: object) -> "_Vec":
+        if isinstance(other, int | float):
+            return type(self)(*(a / other for a in self))
+        if self._same_len(other):
+            assert isinstance(other, tuple)
+            return type(self)(*(a / b for a, b in zip(self, other, strict=True)))
+        return NotImplemented
+
+    def __neg__(self) -> "_Vec":
+        return type(self)(*(-a for a in self))
+
+    def dot(self, other: Sequence[float]) -> float:
+        return float(sum(a * b for a, b in zip(self, other, strict=True)))
+
+    def length(self) -> float:
+        return math.sqrt(self.dot(self))
+
+    def normalized(self) -> "_Vec":
+        n = self.length()
+        return self if n == 0.0 else self / n
+
+
+class Vec2(_Vec):
     def __new__(cls, x: float, y: float) -> "Vec2":
-        return super().__new__(cls, (float(x), float(y)))
+        return tuple.__new__(cls, (float(x), float(y)))
+
+    @property
+    def x(self) -> float:
+        return self[0]
+
+    @property
+    def y(self) -> float:
+        return self[1]
 
 
-class Vec3(tuple[float, float, float]):
+class Vec3(_Vec):
     def __new__(cls, x: float, y: float, z: float) -> "Vec3":
-        return super().__new__(cls, (float(x), float(y), float(z)))
+        return tuple.__new__(cls, (float(x), float(y), float(z)))
+
+    @property
+    def x(self) -> float:
+        return self[0]
+
+    @property
+    def y(self) -> float:
+        return self[1]
+
+    @property
+    def z(self) -> float:
+        return self[2]
+
+    def cross(self, o: Sequence[float]) -> "Vec3":
+        return Vec3(
+            self[1] * o[2] - self[2] * o[1],
+            self[2] * o[0] - self[0] * o[2],
+            self[0] * o[1] - self[1] * o[0],
+        )
 
 
-class Vec4(tuple[float, float, float, float]):
+class Vec4(_Vec):
     def __new__(cls, x: float, y: float, z: float, w: float) -> "Vec4":
-        return super().__new__(cls, (float(x), float(y), float(z), float(w)))
+        return tuple.__new__(cls, (float(x), float(y), float(z), float(w)))
+
+    @property
+    def x(self) -> float:
+        return self[0]
+
+    @property
+    def y(self) -> float:
+        return self[1]
+
+    @property
+    def z(self) -> float:
+        return self[2]
+
+    @property
+    def w(self) -> float:
+        return self[3]
 
 
 class Array:
