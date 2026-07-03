@@ -56,6 +56,10 @@ class YouTubeIntegration(BaseModel):
 class CopilotIntegration(BaseModel):
     openrouter_key: str = ""
     model: str = "openai/gpt-5.1-codex-mini"  # OpenRouter "provider/model-id"
+    # Vision look (feature 053) — the agent's real eye on its render. Read LIVE via getters (like
+    # `model`), NOT pushed to COPILOT_CONFIG; defaults mirror CopilotConfig (the source of truth).
+    vision_enabled: bool = CopilotConfig.copilot_vision_enabled
+    vision_model: str = CopilotConfig.copilot_vision_model
     # User-tunable agent limits (034 F12) — defaults sourced from CopilotConfig (the
     # single source of truth); applied onto the live config via apply_user_limits.
     max_iterations: int = CopilotConfig.max_iterations

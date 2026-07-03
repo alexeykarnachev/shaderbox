@@ -72,14 +72,20 @@ def test_probe_render_tool_is_ungated_and_non_mutating() -> None:
 
 
 def test_probe_render_in_registry_and_reaches_capability() -> None:
-    calls: list[tuple[str, float]] = []
+    # Also the look_for WIRE (feature 053): the tool's look_for arg must reach the capability verbatim,
+    # else the vision look is grounded in an empty hint. Falsifier: a dropped/renamed arg.
+    calls: list[tuple[str, float, str]] = []
     caps = minimal_caps(
-        probe_render=lambda n, t: calls.append((n, t)) or "render@t=2.5s: ink 5%"
+        probe_render=lambda n, t, lf: (
+            calls.append((n, t, lf)) or "render@t=2.5s: ink 5%"
+        )
     )
     reg = build_registry(caps)
-    ok, msg, _ = reg.execute("probe_render", {"node": "n1", "t": 2.5}, "")
+    ok, msg, _ = reg.execute(
+        "probe_render", {"node": "n1", "t": 2.5, "look_for": "reads HELLO"}, ""
+    )
     assert ok and "render@t=2.5s" in msg
-    assert calls == [("n1", 2.5)]
+    assert calls == [("n1", 2.5, "reads HELLO")]
 
 
 def test_forced_turn_end_nudge_names_engine_cause_and_denies_user_pause() -> None:

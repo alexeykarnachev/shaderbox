@@ -22,6 +22,7 @@ import moderngl
 import numpy as np
 from loguru import logger
 from OpenGL.GL import GL_SAMPLER_2D, GL_UNSIGNED_INT
+from PIL import Image as PILImage
 
 from shaderbox.constants import DEFAULT_IMAGE_FILE_PATH
 from shaderbox.copilot.address import (
@@ -495,7 +496,8 @@ class CopilotBackend:
         *,
         get_bridge: Callable[[], CopilotBridge],
         get_gate: Callable[[], GateChannel],
-        describe_image: Callable[[bytes, str], str],
+        describe_image: Callable[[bytes, str, bool], str],
+        vision_enabled: Callable[[], bool],
         node_templates_dir: Path,
         starter_template_id: str,
         get_renders_dir: Callable[[], Path],
@@ -523,10 +525,15 @@ class CopilotBackend:
         self._get_bridge = get_bridge
         self._get_gate = get_gate
         self._describe_image = describe_image
+        self._vision_enabled = vision_enabled
         self._probe_canvas: Canvas | None = None  # lazy 033 render-facts target
         self._vision_canvas: Canvas | None = (
             None  # lazy 053 vision-probe target (larger)
         )
+        # Per-node last vision look, keyed on (frame-hash, look_for, is_strip): an identical frame +
+        # same intent returns the cached read for free (a different look_for MUST miss - the read
+        # depends on the intent). Bounded to the latest look per node.
+        self._vision_cache: dict[str, tuple[tuple[int, str, bool], str]] = {}
         # Per-node last probe frames (raw0, raw1) — a mutation whose frames match the previous
         # ones changed NOTHING on screen (dead code / wrong target / script-overridden value).
         self._last_probe: dict[str, tuple[bytes, bytes]] = {}
@@ -1417,43 +1424,51 @@ class CopilotBackend:
             _on_main, timeout=COPILOT_CONFIG.render_op_timeout_s, defer=True
         )
 
-    def probe_render(self, node: str, t: float) -> str:
+    def probe_render(self, node: str, t: float, look_for: str = "") -> str:
         # The aimable read-side probe (feature 050): the one-line facts string the edit path
         # produces, at a chosen `t` (default 0.0 = the export clock). UN-gated + non-mutating - the
         # render-blind agent glances here as often as it likes, vs render_image (gated, writes a
-        # deliverable file). Feature 053: also does a VISION look — a cheap multimodal describes the
-        # frame's CORRECTNESS (coherence/orientation/off-frame/legibility/artifacts, NOT beauty). The
-        # GL render + PNG happen on main (bridge); the vision NETWORK call runs on THIS worker thread
-        # AFTER the bridge returns (never blocks the GL/main thread).
-        def _on_main() -> tuple[str, bytes]:
+        # deliverable file). Feature 053: also a VISION look — a cheap multimodal reports the frame's
+        # CORRECTNESS (coherence/orientation/off-frame/legibility/artifacts, NOT beauty), grounded in
+        # `look_for` (what the agent is checking). An ANIMATES node is sent as a time strip. The GL
+        # render + PNG happen on main (bridge); the vision NETWORK call runs on THIS worker thread AFTER
+        # the bridge returns (never blocks GL/main). Cached per (frame, look_for, strip) so a re-look at
+        # an unchanged frame with the same intent is free.
+        def _on_main() -> tuple[str, bytes, bool, int, str]:
             ui_node = self._copilot_render_target(node)
             if ui_node is None:
-                return f"error: no such node '{node}'", b""
+                return f"error: no such node '{node}'", b"", False, 0, ""
             facts = self._render_facts_for(ui_node.node, t=t)
             facts = (
                 facts or "probe rendered, but produced no readable facts (advisory)."
             )
-            png = (
-                self._probe_png(ui_node.node, t)
-                if COPILOT_CONFIG.copilot_vision_enabled
-                else b""
-            )
-            return facts, png
+            if not self._vision_enabled():
+                return facts, b"", False, 0, ui_node.id
+            png, is_strip, frame_hash = self._probe_png(ui_node.node, t)
+            return facts, png, is_strip, frame_hash, ui_node.id
 
-        facts, png = self._bridge.run_on_main(
+        facts, png, is_strip, frame_hash, node_id = self._bridge.run_on_main(
             _on_main, timeout=COPILOT_CONFIG.render_op_timeout_s, defer=True
         )
         if png:
-            obs = self._describe_image(
-                png, "Inspect this shader render for correctness."
-            )
+            key = (frame_hash, look_for, is_strip)
+            cached = self._vision_cache.get(node_id)
+            if cached is not None and cached[0] == key:
+                obs = cached[1]
+            else:
+                obs = self._describe_image(png, look_for, is_strip)
+                if obs:
+                    self._vision_cache[node_id] = (key, obs)
             if obs:
                 facts = f"{facts}\nvisual (correctness only, NOT beauty): {obs}"
         return facts
 
-    def _probe_png(self, node: Node, t: float) -> bytes:
-        # Render the node at `t` to a vision-readable PNG (larger than the 64px facts probe) for the
-        # probe_render vision look. Main thread (GL). Advisory — b"" on any failure.
+    def _probe_png(self, node: Node, t: float) -> tuple[bytes, bool, int]:
+        # Render the node to a vision-readable PNG (larger than the 64px facts probe) for probe_render.
+        # An ANIMATES node (frame0 vs frame1 differ beyond _MOTION_EPS, the same test _render_facts_for
+        # uses) becomes a 3-frame LEFT->RIGHT time strip so the eye reads motion; a STATIC node is one
+        # frame. Returns (png, is_strip, frame_hash) — the hash keys the vision cache. Main thread (GL).
+        # Advisory — (b"", False, 0) on any failure.
         try:
             size = COPILOT_CONFIG.copilot_vision_probe_size
             cw, ch = node.canvas.texture.size
@@ -1462,13 +1477,33 @@ class CopilotBackend:
                 self._vision_canvas = Canvas(size=(size, h))
             else:
                 self._vision_canvas.set_size((size, h))
+            dt = COPILOT_CONFIG.render_facts_motion_t
             node.render(u_time=t, canvas=self._vision_canvas)
+            frame0 = texture_to_pil(self._vision_canvas.texture).convert("RGB")
+            raw0 = self._vision_canvas.texture.read()
+            node.render(u_time=t + dt, canvas=self._vision_canvas)
+            frame1 = texture_to_pil(self._vision_canvas.texture).convert("RGB")
+            raw1 = self._vision_canvas.texture.read()
+            a0 = np.frombuffer(raw0, dtype=np.uint8).astype(np.int16)
+            a1 = np.frombuffer(raw1, dtype=np.uint8).astype(np.int16)
+            is_strip = float(np.mean(np.abs(a0 - a1))) >= _MOTION_EPS
+            frame_hash = hash(raw0)
+            if not is_strip:
+                buf = io.BytesIO()
+                frame0.save(buf, "PNG")
+                return buf.getvalue(), False, frame_hash
+            node.render(u_time=t + dt * 2.0, canvas=self._vision_canvas)
+            frame2 = texture_to_pil(self._vision_canvas.texture).convert("RGB")
+            gutter = 4
+            strip = PILImage.new("RGB", (size * 3 + gutter * 2, h), (40, 40, 40))
+            for i, frame in enumerate((frame0, frame1, frame2)):
+                strip.paste(frame, (i * (size + gutter), 0))
             buf = io.BytesIO()
-            texture_to_pil(self._vision_canvas.texture).convert("RGB").save(buf, "PNG")
-            return buf.getvalue()
+            strip.save(buf, "PNG")
+            return buf.getvalue(), True, frame_hash
         except Exception as exc:  # advisory — never break a probe
             logger.debug(f"copilot vision probe png skipped: {exc}")
-            return b""
+            return b"", False, 0
 
     def _copilot_render_target(self, node: str) -> UINode | None:
         node_id = (

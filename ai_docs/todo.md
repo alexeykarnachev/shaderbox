@@ -32,6 +32,18 @@ no "Resolved YYYY-MM-DD" headers).
 
 ---
 
+## [VERIFY] Feature 053 vision — Settings badge is LIVE-only, unverified on this box
+
+- **Trigger:** next `make run` on a machine with a display (the same session that finally UI-verifies
+  052 + uploads v0.22.0). Do it before the next itch cut.
+- The classifier, the look_for wire, the vision cache, and the forward-time contact sheet are all
+  headless-gated in `tests/test_vision_probe.py`. NOT verifiable headless (imgui-ui §0): the Settings →
+  Copilot → Vision badge RENDERING — set a known vision model → `supports vision`; a text-only id → `no
+  image input`; a typo → `model not recognized`; pull the network → `couldn't verify`. Confirm the
+  `status_slot` height never jitters as status changes and rapid model-field edits cause no daemon-thread
+  re-kick storm. Also eyeball one real `probe_render(look_for=...)` on an animated node (the 3-frame strip
+  read) against a live OpenRouter key.
+
 ## [DEBT] Unbind/rebind leaves an orphaned `media/<uniform>.*` file on disk
 
 - **Trigger:** next time you touch the `GL_SAMPLER_2D` branch of `ui_models.py::UINode.save`, or a

@@ -33,6 +33,7 @@ from shaderbox.copilot.persistence import ConversationStore
 from shaderbox.copilot.revert import RevertExecutor
 from shaderbox.copilot.session import CopilotSession
 from shaderbox.copilot.state import CopilotLayout, Message
+from shaderbox.copilot.vision_probe import VisionModelProbe
 from shaderbox.core import Canvas
 from shaderbox.editor_types import (
     EditorSession,
@@ -288,6 +289,9 @@ class App:
         self.rebinding_command: CommandId | None = None
         # Settings: the library factory-reset confirm is armed (reset on open).
         self.lib_reset_armed: bool = False
+        # Settings: async capability check for the vision model (feature 053) — a live badge polled
+        # by the Copilot settings draw. State only; the fetch runs on a daemon thread it kicks.
+        self.vision_probe: VisionModelProbe = VisionModelProbe()
         # A settings-field key (see popups.settings.SettingsField) to expand + focus when the
         # Settings modal next opens; "" = none. Consumed one-shot by the field's focus_field call.
         self.settings_focus: str = ""

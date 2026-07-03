@@ -55,6 +55,9 @@ class CopilotConfig:
     copilot_vision_model: str = "openai/gpt-4o-mini"
     copilot_vision_probe_size: int = 320
     copilot_vision_max_tokens: int = 220
+    # Settings capability check: bound the GET /models fetch that classifies whether the chosen vision
+    # model accepts image input (free metadata, not a billed probe). A transient miss -> "couldn't verify".
+    vision_models_fetch_timeout_s: float = 15.0
     # Feature 043 script-write motion probe: the sample times (seconds) the dry-run captures
     # driven values at (the value-diff motion verdict), the fps the dry-tick steps at (pinned to
     # the export clock so an integrator accumulates the same way render_video will), and the

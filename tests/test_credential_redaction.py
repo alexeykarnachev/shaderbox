@@ -35,7 +35,12 @@ def test_handler_msg_and_payload_are_redacted() -> None:
 def test_resolved_card_and_persistence_are_redacted(tmp_path: Path) -> None:
     # The resolved-card echo (answer_gate_credential) + a persistence round-trip carry only
     # the mask; gate_kind survives the round-trip (a credential card stays one).
-    client = OpenRouterLLMClient(get_api_key=lambda: "", get_model=lambda: "stub")
+    client = OpenRouterLLMClient(
+        get_api_key=lambda: "",
+        get_model=lambda: "stub",
+        get_vision_enabled=lambda: False,
+        get_vision_model=lambda: "stub-vision",
+    )
     session = CopilotSession(
         caps=minimal_caps(),
         client=client,

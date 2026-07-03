@@ -40,6 +40,9 @@ def test_integration_defaults_mirror_config_defaults() -> None:
     defaults = CopilotConfig()
     for f in _LIMIT_FIELDS:
         assert getattr(cfg, f) == getattr(defaults, f), f
+    # Feature 053: vision fields also mirror config (read via live getters, so no apply_limits push).
+    assert cfg.vision_enabled == defaults.copilot_vision_enabled
+    assert cfg.vision_model == defaults.copilot_vision_model
 
 
 def test_apply_limits_reaches_the_live_config_with_floors() -> None:

@@ -20,6 +20,14 @@ class _ProbeRenderArgs(ToolArgs):
         "user renders to a file. Aim it at a specific moment to inspect an animated shader "
         "past t=0 (e.g. t=2.5 to see the flame mid-rise).",
     )
+    look_for: str = Field(
+        default="",
+        description="OPTIONAL - what you are trying to achieve or check, in your own words "
+        "(e.g. 'the text should read HELLO and be upright', 'a teardrop-shaped flame tip', "
+        "'the glow should pulse'). The eye answers it as a skeptical observation (says NO if it "
+        "can't clearly see it). Leave empty for just the baseline read. YOU judge whether your "
+        "intent was met - the eye only reports what's on the pixels.",
+    )
 
 
 _PROBE_RENDER_DESC = (
@@ -36,7 +44,7 @@ _PROBE_RENDER_DESC = (
 
 def inspect_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
     def probe_render(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
-        facts = caps.probe_render(args["node"], args["t"])
+        facts = caps.probe_render(args["node"], args["t"], args["look_for"])
         ok = not facts.startswith("error:")
         return ok, facts, None
 

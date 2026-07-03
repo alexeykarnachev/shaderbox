@@ -14,6 +14,7 @@ from shaderbox.commands import (
     chord_to_str,
 )
 from shaderbox.constants import SHADER_LIB_SEED_DIR
+from shaderbox.copilot.vision_probe import VisionVerdict
 from shaderbox.paths import shader_lib_root
 from shaderbox.shader_lib.seed import reset_to_shipped
 from shaderbox.theme import COLOR, SIZE, SPACE
@@ -27,6 +28,7 @@ from shaderbox.ui_primitives import (
     label_row,
     labeled_text_input,
     modal_window,
+    status_slot,
 )
 
 
@@ -266,6 +268,18 @@ _COPILOT_LIMITS: list[tuple[str, str, str, int, int]] = [
 ]
 
 
+_VISION_BADGE: dict[VisionVerdict, tuple[tuple[float, float, float, float], str]] = {
+    VisionVerdict.CHECKING: (COLOR.FG_DIM, "checking model capability..."),
+    VisionVerdict.SUPPORTED: (COLOR.STATE_OK, "supports vision"),
+    VisionVerdict.UNSUPPORTED: (
+        COLOR.STATE_ERROR,
+        "no image input - vision will be skipped",
+    ),
+    VisionVerdict.UNKNOWN: (COLOR.STATE_WARN, "model not recognized - check the id"),
+    VisionVerdict.UNVERIFIED: (COLOR.STATE_WARN, "couldn't verify (offline?)"),
+}
+
+
 def _draw_copilot_config(app: App, focus: bool = False) -> None:
     field_w = float(SIZE.SETTINGS_CTRL_W) * 2.0
     cfg = app.integrations_store.copilot
@@ -277,6 +291,24 @@ def _draw_copilot_config(app: App, focus: bool = False) -> None:
         cfg.openrouter_key = new_key
         cfg.model = new_model
         app.integrations_store.save()
+
+    imgui.dummy((0.0, SPACE.SM))
+    caption_text("Vision (the agent sees its renders)")
+    enabled_changed, new_vision = imgui.checkbox("Enabled##vision", cfg.vision_enabled)
+    if enabled_changed:
+        cfg.vision_enabled = new_vision
+        app.integrations_store.save()
+    new_vmodel = labeled_text_input("Vision model", cfg.vision_model, field_w)
+    if new_vmodel != cfg.vision_model:
+        cfg.vision_model = new_vmodel
+        app.integrations_store.save()
+    # Live capability badge: a background GET /models classifies whether this model accepts image
+    # input, so a text-only / mistyped model is caught here instead of failing silently on first probe.
+    if cfg.openrouter_key:
+        app.vision_probe.ensure_checked(cfg.openrouter_key)
+        color, text = _VISION_BADGE[app.vision_probe.verdict(cfg.vision_model)]
+        with status_slot("vision_badge", field_w):
+            imgui.text_colored(color, text)
 
     imgui.dummy((0.0, SPACE.SM))
     caption_text("Agent limits")
