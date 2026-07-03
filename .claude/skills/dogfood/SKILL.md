@@ -181,6 +181,14 @@ and probes the agent's self-review.
 - **`render()` runs on a throwaway thread + pumps the bridge.** A DIRECT `render_image` call from the main
   thread DEADLOCKS (it enqueues a bridge op and blocks on a drain that never comes). The harness runs it on
   a helper thread and drains from the owner thread. Already handled — don't call `render_image` directly.
+- **`drive_until_idle` MUST fire `bridge.run_deferred_render()` each loop (fixed 2026-07-03).** The
+  copilot's render tools — `probe_render` (053 vision), `render_image`, `render_video` — call
+  `run_on_main(..., defer=True)`, which PARKS the op for a post-swap firing point. The real App fires it in
+  `ui.py` (`run_deferred_render()` after `drain_bridge`); the harness loop omitted it, so any of those tools
+  BLOCKED until the worker's 60s `render_op_timeout_s` and returned `error: main-thread op timed out`. Symptom
+  in a trace: a tool the model legitimately called (e.g. `probe_render`) failing 3× at exactly 60s apart.
+  The pump now mirrors `ui.py`: `drain_bridge()` → `run_deferred_render()` → `pump_events()`. If you ever see
+  a deferred render time out, this is the line.
 - **Env order: set BEFORE importing shaderbox.** `SHADERBOX_DATA_DIR` (isolation — never pollute the real
   library/creds; also the RESUME seam) + the two MESA overrides (`MESA_GL_VERSION_OVERRIDE=4.6` /
   `MESA_GLSL_VERSION_OVERRIDE=460`, for `#version 460` on V3D) are set at the TOP of

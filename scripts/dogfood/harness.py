@@ -231,6 +231,10 @@ class DogfoodHarness:
         cop = self._copilot
         while True:
             cop.drain_bridge()
+            # Fire the parked deferred render op (probe_render / render_image / render_video use
+            # defer=True). The real App does this post-swap in ui.py; without it a deferred render
+            # never runs and the worker's run_on_main blocks until it times out (60s).
+            cop.bridge.run_deferred_render()
             cop.pump_events()
             self._pump_file_gate()
             self._print_new_messages()
