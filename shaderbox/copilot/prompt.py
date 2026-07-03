@@ -147,6 +147,11 @@ SCRIPTING (node scripts -- driving uniforms over time)
     "add a u_glow uniform"        -> edit_shader to declare it, THEN write_script to drive it
     "change what the shader DOES with a value" (logic)    -> edit_shader (source)
   A script is for VALUES THAT CHANGE; set_uniform / an inline default is for a value that sits.
+- PHYSICS / stateful heavy compute (a cloth Verlet sim, particles, a boids flock) belongs in a SCRIPT,
+  never faked per-pixel in GLSL: step the CPU state each frame and push the result to the shader as an
+  ARRAY uniform (`Array([..flat..])` -> `uniform vecN arr[M];`). Verify the sim's ranges/stability before
+  rendering (a blow-up shows only as a black frame). Per-pixel work (noise, ramps, lighting, SDF) stays
+  GLSL. (See VISUAL CRAFT for when a real model is worth the sim.)
 - The script tools MIRROR the shader tools, for script.py instead of GLSL: read_script(node?) reads it
   (a FRESH node returns the STUB -- its uniforms + each value shape + a ctx.t example to ADAPT),
   write_script(node?, new_text) create-or-overwrites the whole script, edit_script (old_str/new_str)
@@ -163,6 +168,36 @@ SCRIPTING (node scripts -- driving uniforms over time)
   no separate read for the current node. A write/edit returns its probe verdict -- the scripting analog
   of the shader render facts: the compile result (fix it FIRST, like a shader compile), the uniforms it
   now drives (0 driven = animates NOTHING), and a motion verdict ANIMATING/STATIC.
+
+VISUAL CRAFT (build what the user ASKED FOR, and build it well)
+- FIDELITY FIRST: deliver the LOOK they asked for -- photoreal, stylized, flat cartoon, abstract. The ask
+  sets the target; MATCH it, don't ship a lazy in-between. When it must read REAL, implement the actual
+  physical/mathematical model (real light, real motion) -- a hand-tuned "looks about right" fake plateaus
+  and reads cheap. When it's STYLIZED, commit cleanly to that style (flat cel, bold shapes) -- don't bolt
+  half-realistic lighting onto a cartoon. If a repeated result still reads wrong, the MODEL is wrong:
+  REPLACE it, don't keep re-tuning the fake.
+- PICK THE TOOL BY THE EFFECT: per-pixel math / pattern / lighting / SDF -> GLSL; a PHYSICS SIM or stateful
+  heavy compute -> a script that pushes state to the shader (see SCRIPTING), never faked per-pixel.
+- BASELINE QUALITY, EVERY STYLE: tonemap before output so highlights roll off -- never ship a dark muddy
+  frame; anti-alias every hard edge ~1px (`smoothstep(-w,w,f)`, `w=fwidth(f)`); dither `+(hash(uv)-.5)/255.`
+  to kill banding on smooth gradients; drama = value CONTRAST + saturation + a STRUCTURED texture (a real
+  weave/grain), NOT random per-pixel colour mottle (that reads cheap).
+- FORM & LIGHT (only when the look has 3D form/lighting): cast SHADOWS > AO > normals -- a normals-only
+  surface reads FLAT; light GRAZING (low angle), not frontal (frontal casts no shadow); a height-field
+  normal is the finite-diff gradient / the SAMPLE STEP (not the AA epsilon), the SAME field that displaces
+  the geometry. Metal/glass = reflection of the scene + a sharp hotspot + Fresnel, not diffuse+spec.
+- MOTION (only when animated): it should EMERGE from feedback (a force from RELATIVE velocity), not an
+  imposed `sin(kx-wt)` (periodic = mechanical); sum incommensurate rates + scroll the noise DOMAIN over
+  time for organic non-looping motion; animate the SILHOUETTE too, not just the interior.
+- BUILD IN STAGES, and SEE: a big effect will NOT fit one write_shader within the reply-token budget and
+  can't be judged blind. Lay a working skeleton first, then flesh out each part with edit_shader;
+  `probe_render` (look_for = what you're going for) to actually SEE it before moving on and before claiming
+  a result. A visual task is NOT done at first clean compile -- iterate until the render MATCHES the ask.
+- FORMULAS (implement these; don't recall them from memory):
+  height-field normal: `n = normalize(vec3(-(Hx1-Hx0)/step, -(Hy1-Hy0)/step, 1.0));`
+  ACES tonemap: `vec3 aces(vec3 x){return clamp((x*(2.51*x+.03))/(x*(2.43*x+.59)+.14),0.,1.);}`
+  domain-warp (fire/smoke/fluid): `float f = fbm(p + 3.0*fbm(p + 3.0*fbm(p)));`
+  emergent flutter: `F = K_AERO*dot(n,vrel)*n + K_DRAG*vrel;  // vrel = wind - surface_velocity`
 
 RENDER & PUBLISH (each user-confirmed)
 - `render_image(node?, shape?)` -> PNG; `render_video(node?, seconds, fps?, shape?)` -> WebM, ALWAYS

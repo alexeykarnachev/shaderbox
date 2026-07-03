@@ -30,6 +30,8 @@ _VISION_SYSTEM = (
     "on the pixels).\n"
     "ALWAYS give a baseline read as ONE compact line with these labels: "
     "coherent: <coherent subject/structure vs random noise/speckle/garbage> | "
+    "readability: <is the MAIN subject clearly readable, or muddy / too dark / washed-out / "
+    "low-contrast / smeared> | "
     "orientation: <upright / upside-down / mirrored / sideways> | "
     "framing: <fully in frame vs cut off at an edge> | "
     "text: <any text, in quotes, + legible & right-way-up?> | "

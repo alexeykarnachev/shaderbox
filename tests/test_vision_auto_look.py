@@ -4,7 +4,12 @@ provenance) so a visual result is never declared blind. Deterministic (scripted 
 
 import threading
 
-from shaderbox.copilot.agent import AgentTextDelta, _auto_look_fact, run_turn
+from shaderbox.copilot.agent import (
+    AgentTextDelta,
+    _auto_look_fact,
+    _turn_intent_look_for,
+    run_turn,
+)
 from shaderbox.copilot.capabilities import EditResult
 from shaderbox.copilot.config import COPILOT_CONFIG
 from shaderbox.copilot.gate import GateChannel
@@ -72,9 +77,22 @@ def test_auto_look_fires_when_render_changed_and_model_never_looked() -> None:
         len(calls) == 1
     )  # the ENGINE's single auto-look (the model itself never called probe)
     assert calls[0]["node"] == ""  # the current frame
+    # 054: the auto-look is AIMED at the ask (user_text), not an empty look_for.
+    assert "make a red circle" in calls[0]["look_for"]
     assert (
         "Confirmed: centered and round." in replies
     )  # the model got the extra reaction iteration
+
+
+def test_turn_intent_look_for_carries_ask_and_handles_empty() -> None:
+    lf = _turn_intent_look_for("Make a waving US flag with 50 stars")
+    assert "waving US flag with 50 stars" in lf and lf.lower().startswith("does")
+    assert (
+        _turn_intent_look_for("   ") == ""
+    )  # empty ask -> baseline, no fabricated intent
+    assert (
+        len(_turn_intent_look_for("x" * 500)) < 320
+    )  # bounded (ask capped at 240 + prefix)
 
 
 def test_no_auto_look_when_model_already_looked() -> None:

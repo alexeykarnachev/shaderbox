@@ -64,6 +64,17 @@ _RENDER_AUTHORING_TOOLS = frozenset(
 )
 
 
+def _turn_intent_look_for(user_text: str) -> str:
+    # Aim the turn-end auto-look at the ACTUAL ask (054): an empty look_for gave the eye only a bland
+    # baseline read that couldn't tell whether the result matches what was requested. Carrying the ask
+    # makes the eye critique against the goal ("stripes muddy, no stars visible"). Empty/whitespace ask
+    # -> "" (fall back to the baseline; don't fabricate an intent). Bounded so a long ask can't bloat.
+    ask = " ".join(user_text.split())[:240]
+    if not ask:
+        return ""
+    return f'does the current frame actually achieve what the user asked: "{ask}"'
+
+
 def _auto_look_fact(look_line: str) -> str:
     # Injected as the USER role at turn-end when the model changed the render but never looked. The
     # provenance is stated THREE ways ("you did NOT call this" / "the engine took one look FOR you" /
@@ -741,7 +752,11 @@ def run_turn(
                 and not ran.looked()
             ):
                 auto_looked = True
-                look_args: dict[str, object] = {"node": "", "t": 0.0, "look_for": ""}
+                look_args: dict[str, object] = {
+                    "node": "",
+                    "t": 0.0,
+                    "look_for": _turn_intent_look_for(user_text),
+                }
                 ok_l, look_msg, _ = registry.execute("probe_render", look_args, "")
                 if ok_l and "visual (" in look_msg:
                     logger.info("copilot turn-end auto vision look injected")
