@@ -62,7 +62,8 @@ ShaderBox opens on a starter shader ("UV Mango") rendering live.
 2. Press **Ctrl+S**. The render updates instantly — that's the hot-reload.
 3. The controls on the right are generated automatically from your shader's `uniform`
    declarations. Drag a slider and watch the image respond.
-4. Press **Ctrl+N** to start a new shader from a template.
+4. Press **Ctrl+N** to start a new shader (an instant copy of the basic starter).
+   Press **Alt+E** to browse the built-in examples and open an editable copy of one.
 5. Click **Open dir** to open the shader's folder in your file manager — edit the
    `.frag.glsl` in your own editor if you prefer; it hot-reloads on save.
 
@@ -85,7 +86,8 @@ cheatsheet.
 | Key | Action |
 |-----|--------|
 | Ctrl+S | Save + hot-reload the current shader |
-| Ctrl+N | New shader (pick a template) |
+| Ctrl+N | New shader (copy of the starter) |
+| Alt+E | Examples browser |
 | Ctrl+O | Open a project |
 | Ctrl+D | Delete the current shader |
 | Ctrl+P | Shader library picker |

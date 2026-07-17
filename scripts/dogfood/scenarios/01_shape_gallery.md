@@ -35,7 +35,7 @@ pick the phrasing live from what the agent just did, but make sure each cold too
 fire before the run ends:
 
 1. **Build the primitives as separate nodes**, one request at a time — a circle node, a square node, a
-   triangle node, a ring node. Empty project (`create(seed_templates=False)`) so you control the set.
+   triangle node, a ring node. Empty project (`create(seed_examples=False)`) so you control the set.
    Render + EYEBALL each as it lands: round circle (aspect!), four-cornered square, three-cornered
    triangle, a ring with a visible hole. Let the agent fix its own compile errors — watch the recovery.
    Pin a SPECIFIC non-obvious constant per shape (radius 0.4 circle, half-side 0.35 square, etc.) — those

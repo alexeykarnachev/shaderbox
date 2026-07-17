@@ -91,7 +91,7 @@ class CommandSpec:
     category: CommandCategory
     scope: CommandScope = CommandScope.GLOBAL
     repeat: bool = False
-    # Excluded from the palette (e.g. node-creator-internal nav).
+    # Excluded from the palette.
     in_palette: bool = True
     # Excluded from the rebinder UI (e.g. arrow nav with a fixed key).
     rebindable: bool = True
