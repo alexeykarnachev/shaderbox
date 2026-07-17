@@ -12,37 +12,39 @@ from typing import Any
 import moderngl
 import pytest
 
-from shaderbox.constants import NODE_TEMPLATES_DIR, STARTER_TEMPLATE_ID
+from shaderbox.constants import NODE_EXAMPLES_DIR, STARTER_EXAMPLE_ID
 from shaderbox.copilot.backend import CopilotBackend
 from shaderbox.ui_models import UINode, load_node_from_dir
 
 
 def test_rename_node_sets_name_and_keeps_id(app: Any) -> None:
     node_id = app.current_node_id
-    res = app.copilot_backend.rename_node("", "Renamed Node")
+    res = app.copilot_backend.rename_node(node_id, "Renamed Node")
     assert res.ok and res.name == "Renamed Node"
     assert app.ui_nodes[node_id].ui_state.ui_name == "Renamed Node"
     assert app.current_node_id == node_id  # id unchanged
 
 
 def test_rename_empty_name_rejects(app: Any) -> None:
-    res = app.copilot_backend.rename_node("", "   ")
+    res = app.copilot_backend.rename_node(app.current_node_id, "   ")
     assert not res.ok and "empty" in res.error
 
 
 def test_set_canvas_size_applies_and_clamps(app: Any) -> None:
     node_id = app.current_node_id
-    res = app.copilot_backend.set_canvas_size("", 128, 200)
+    res = app.copilot_backend.set_canvas_size(node_id, 128, 200)
     assert res.ok and (res.width, res.height) == (128, 200)
     assert app.ui_nodes[node_id].node.canvas.texture.size == (128, 200)
     # Clamp both ends.
-    clamped = app.copilot_backend.set_canvas_size("", 99999, 4)
+    clamped = app.copilot_backend.set_canvas_size(node_id, 99999, 4)
     assert (clamped.width, clamped.height) == (4096, 16)
 
 
 def test_duplicate_node_forks_independently(app: Any) -> None:
     n_before = len(app.ui_nodes)
-    new_short, errors, _extra = app.copilot_backend.duplicate_node("", "Fork", False)
+    new_short, errors, _extra = app.copilot_backend.duplicate_node(
+        app.current_node_id, "Fork", False
+    )
     assert new_short and not errors
     assert len(app.ui_nodes) == n_before + 1
     forks = [n for n in app.ui_nodes.values() if n.ui_state.ui_name == "Fork"]
@@ -81,7 +83,7 @@ def gl_ctx() -> Iterator[moderngl.Context]:
 def _stub_with_starter(project: Path) -> tuple[types.SimpleNamespace, str]:
     # One real starter node saved into `project`, wired into a stub carrying only the members the
     # node-op methods touch (bridge inlined, checkpoint None).
-    node = load_node_from_dir(NODE_TEMPLATES_DIR / STARTER_TEMPLATE_ID)
+    node = load_node_from_dir(NODE_EXAMPLES_DIR / STARTER_EXAMPLE_ID)
     node.reset_id()
     node.node.compile()
     node.save(project)  # rebinds source.path into project/nodes/<id>/
