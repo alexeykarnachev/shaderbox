@@ -32,6 +32,20 @@ no "Resolved YYYY-MM-DD" headers).
 
 ---
 
+## [BUG] "Reset library to shipped" never removes a live-root file that left the shipped set
+
+- **Trigger:** next time you touch `shader_lib/seed.py::reset_to_shipped`, or a user reports "reset
+  did nothing / stale lib helpers persist after a factory reset".
+- `reset_to_shipped` restores/overwrites every SHIPPED file but has no removal pass for a live-root
+  `.glsl` that is NOT in the current shipped set — so a helper that moved (e.g. flat `noise.glsl` →
+  `noise/fbm.glsl` when the toolbox shipped) leaves the OLD file lingering, giving DUPLICATE `SB_*`
+  definitions and a reset that reports "0 restored" while the user still sees the stale lib.
+  `sync_shipped_lib` already does manifest-guarded stale-removal (pristine-only); `reset_to_shipped`
+  should mirror it. Only bit the maintainer's dev live-root (hand-authored pre-subdir flat files —
+  cleaned by hand 2026-07-17); a fresh user install seeds only subdirs so it can't hit this yet, but
+  any future shipped rename re-arms it. Fix sketch: after the restore loop, delete a live-root file
+  absent from `seed` whose hash matches its manifest entry (never an edited/user-authored one).
+
 ## [VERIFY] Feature 053 vision — Settings badge is LIVE-only, unverified on this box
 
 - **Trigger:** next `make run` on a machine with a display (the same session that finally UI-verifies
