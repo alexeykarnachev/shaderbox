@@ -9,7 +9,7 @@ from shaderbox.copilot.tools.base import GatePolicy, ToolArgs, ToolDefinition
 # node.json (checkpoint-revertable via the backend's _capture_node / mark_created), handle-addressed
 # by node id, no gate.
 
-_NODE_DESC = "node id (from the project map); empty = the node you're working on"
+_NODE_DESC = "node id (from the project map)"
 
 
 class _RenameNodeArgs(ToolArgs):
