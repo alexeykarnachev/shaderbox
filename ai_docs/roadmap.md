@@ -26,18 +26,17 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-07-17 (051 rebased onto the v0.23.0 line; itch STILL v0.21.0 - the deferred upload is being executed NOW as v0.24.0). -->
-**ACTIVE: shipping v0.24.0 to itch (in progress).** The upload carries everything since v0.21.0:
-**052** workspace fluency + the `.mov`/media fix (v0.22.x), **053** copilot vision, **054** visual
-craft + Vec/Array physics fixes (v0.23.0, cut on the WSL box with the itch upload deferred - no
-butler/display there), and today's **051 - node examples**: templates are now read-only examples,
-Ctrl+N instant-clones the UV-Mango starter (picker gone), the old New-Node popup is the Examples
-browser (`Alt+E`/menu-bar/palette/first-launch auto-open), the Fire showcase ships as the 4th
-example, example<->lib drift pinned by `tests/test_examples_resolve.py` + the `SB_*` api-lock
-snapshot. **Maintainer verify BEFORE upload:** 051's manual steps (spec `## Manual verification`) +
-the 053 Settings vision badge (`todo.md [VERIFY]`). After ship: 2-4 more showcase examples via
-`/shader-lab`, then the demo video + Show HN (051 is HN-post prep). `todo.md` also carries the
-pre-existing full-pytest X-crash [BUG] (dev box only; modules pass alone).
+<!-- As of 2026-07-17 (v0.24.0 LIVE on itch, both channels; dev == master == origin, tree clean). -->
+**ACTIVE: v0.24.0 is LIVE on itch (both channels), catching itch up from v0.21.0.** The upload
+bundled **052** workspace fluency + `.mov`/media fix, **053** copilot vision, **054** visual craft +
+Vec/Array physics fixes (all cut to git earlier as v0.22.x/v0.23.0 but never uploaded), and **051 -
+node examples** (templates → read-only examples; Ctrl+N instant-clones the UV-Mango starter; the
+Examples browser on `Alt+E`; the Fire showcase; example↔lib drift pinned by
+`tests/test_examples_resolve.py` + the `SB_*` api-lock). **NEXT — the HN-post push (051 was prep for
+it):** author 2-4 more showcase examples via `/shader-lab`, then a demo video, then Show HN + a
+r/creativecoding post. `todo.md` open items: 053 Settings vision badge [VERIFY] (LIVE-only, still
+un-eyeballed), the `reset_to_shipped` stale-file-removal [BUG] (dev-machine-only, hand-cleaned), the
+052 orphaned-media [DEBT], and the full-pytest X-crash [BUG] (dev box only; modules pass alone).
 
 **Last LIVE on itch (context):** v0.21.0 — feature 050 + render-divergence cleanup + YT Shorts presets
 + the bugs/debt fix wave. (Previously v0.20.0 — node-dir live auto-sync + math-symbol text glyphs.
