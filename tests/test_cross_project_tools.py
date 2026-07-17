@@ -13,7 +13,7 @@ from pathlib import Path
 import moderngl
 import pytest
 
-from shaderbox.constants import NODE_TEMPLATES_DIR, STARTER_TEMPLATE_ID
+from shaderbox.constants import NODE_EXAMPLES_DIR, STARTER_EXAMPLE_ID
 from shaderbox.core import ENGINE_DRIVEN_UNIFORMS
 from shaderbox.shader_lib.file_ops import ShaderLibFileManager
 from shaderbox.shader_lib.index import ShaderLibIndex
@@ -23,7 +23,7 @@ from shaderbox.uniform_coerce import coerce_uniform_value
 
 def _uniform(dimension: int) -> types.SimpleNamespace:
     # array_length=1 (a scalar/vec, not an array); gl_type GL_FLOAT — the array branch is exercised
-    # by the dedicated coercion tests in test_template_library / test_uniform_arrays.
+    # by the dedicated coercion tests in test_example_library / test_uniform_arrays.
     return types.SimpleNamespace(dimension=dimension, array_length=1, gl_type=0x1406)
 
 
@@ -131,15 +131,15 @@ def gl_ctx() -> Iterator[moderngl.Context]:
     ctx.release()
 
 
-def test_create_node_from_source_does_not_touch_starter_template(
+def test_create_node_from_source_does_not_touch_starter_example(
     gl_ctx: moderngl.Context, tmp_path: Path
 ) -> None:
     # Regression (review CRITICAL): _copilot_create_node must NOT write the agent's source
     # through new_node.node.source.path — after load_node_from_dir that path still points at
-    # the SHARED starter template. The fix relies on UINode.save rebinding the path + writing
+    # the SHARED starter example. The fix relies on UINode.save rebinding the path + writing
     # the source to the new node's own dir. This pins the contract: the starter file is
     # byte-unchanged, and the new dir holds the agent's source.
-    starter = NODE_TEMPLATES_DIR / STARTER_TEMPLATE_ID
+    starter = NODE_EXAMPLES_DIR / STARTER_EXAMPLE_ID
     starter_shader = starter / "shader.frag.glsl"
     before = starter_shader.read_bytes()
 
@@ -149,7 +149,7 @@ def test_create_node_from_source_does_not_touch_starter_template(
     new_node.node.release_program(agent_source)  # sets source.text, NOT a disk write
     saved_dir = new_node.save(tmp_path)
 
-    assert starter_shader.read_bytes() == before, "starter template was clobbered"
+    assert starter_shader.read_bytes() == before, "starter example was clobbered"
     assert (saved_dir / "shader.frag.glsl").read_text() == agent_source
     assert new_node.node.source.path == saved_dir / "shader.frag.glsl"
 
@@ -158,7 +158,7 @@ def test_create_node_compiles_and_surfaces_errors(gl_ctx: moderngl.Context) -> N
     # The compile-feedback contract (the test-exposed gap): create_node compiles the new node
     # and returns its errors, so a create-from-broken-source can't report success. Mirrors what
     # _copilot_create_node does (release_program -> compile -> read compile_unit.errors).
-    starter = NODE_TEMPLATES_DIR / STARTER_TEMPLATE_ID
+    starter = NODE_EXAMPLES_DIR / STARTER_EXAMPLE_ID
 
     # Full broken source -> compile surfaces errors.
     broken = load_node_from_dir(starter)

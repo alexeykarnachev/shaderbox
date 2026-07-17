@@ -12,15 +12,19 @@ from loguru import logger
 
 from shaderbox.app import App, PopupState
 from shaderbox.commands import ActiveRegion, CommandId, NodeTab, chord_to_str
-from shaderbox.constants import GLSL_EXTENSIONS, MEDIA_EXTENSIONS
+from shaderbox.constants import (
+    GLSL_EXTENSIONS,
+    MEDIA_EXTENSIONS,
+    STARTER_EXAMPLE_ID,
+)
 from shaderbox.copilot.capabilities import MediaBindResult, NodeImportResult
 from shaderbox.copilot.gate import GateResponse
 from shaderbox.hotkeys import dispatch_commands, process_hotkeys
 from shaderbox.logging_setup import configure_logging
 from shaderbox.paths import log_dir
 from shaderbox.popups.emoji_picker import draw_emoji_picker
+from shaderbox.popups.examples import draw_examples
 from shaderbox.popups.lib_picker import draw_lib_picker
-from shaderbox.popups.node_creator import draw_node_creator
 from shaderbox.popups.settings import draw_settings
 from shaderbox.scripting import MouseState
 from shaderbox.tabs import code as code_tab
@@ -239,8 +243,8 @@ def update_and_draw(app: App) -> None:
                 or app.frame_idx == 0
             ):
                 ui_node.node.render()
-    elif app.popup_state == PopupState.NODE_CREATOR:
-        for ui_node in app.ui_node_templates.values():
+    elif app.popup_state == PopupState.EXAMPLES:
+        for ui_node in app.ui_node_examples.values():
             ui_node.node.render()
 
     # ----------------------------------------------------------------
@@ -343,7 +347,7 @@ def update_and_draw(app: App) -> None:
 
         # ------------------------------------------------------------
         # Popups and notifications
-        draw_node_creator(app)
+        draw_examples(app)
         draw_settings(app)
         draw_emoji_picker(app)
         draw_lib_picker(app)
@@ -430,7 +434,7 @@ def _draw_menu_bar(app: App) -> None:
                 if imgui.menu_item("New node", _hint(app, CommandId.NEW_NODE), False)[
                     0
                 ]:
-                    app.open_node_creator()
+                    app.create_node_from_example(STARTER_EXAMPLE_ID)
                 if imgui.menu_item(
                     "Open project...", _hint(app, CommandId.OPEN_PROJECT), False
                 )[0]:
@@ -454,6 +458,9 @@ def _draw_menu_bar(app: App) -> None:
                 )[0]
             ):
                 app.open_shader_lib_picker()
+        # A direct-click bar item, not a dropdown — opening the browser IS the action.
+        if imgui.menu_item("Examples", _hint(app, CommandId.EXAMPLES), False)[0]:
+            app.open_examples()
 
 
 def _draw_copilot_bar(app: App, width: float) -> None:

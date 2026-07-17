@@ -49,7 +49,6 @@ from shaderbox.shader_lib import set_active as set_active_lib_index
 from shaderbox.shader_lib.favorites import ShaderLibFavoritesStore
 from shaderbox.shader_lib.file_ops import ShaderLibFileManager
 from shaderbox.shader_lib.tags import ShaderLibTagsStore
-from shaderbox.templates_descriptions import TemplateDescriptionsStore
 from shaderbox.ui_models import (
     UIAppState,
     UINode,
@@ -86,9 +85,9 @@ class ProjectSession:
     def __init__(
         self,
         *,
-        node_templates_dir: Path,
-        starter_template_id: str,
-        template_order: list[str],
+        node_examples_dir: Path,
+        starter_example_id: str,
+        example_order: list[str],
         get_exporter_registry: Callable[[], ExporterRegistry],
         get_shader_lib_files: Callable[[], ShaderLibFileManager],
         # UI reactions to project mutations ride these callbacks (the core never touches imgui
@@ -100,11 +99,11 @@ class ProjectSession:
         on_node_source_synced: Callable[[str, str], None] = _noop_node_source_synced,
         on_node_deleted: Callable[[str, Path], None] = _noop_node_deleted,
     ) -> None:
-        self._node_templates_dir = node_templates_dir
-        self._starter_template_id = starter_template_id
-        # Authored template display order (filesystem ctime isn't preserved through git/zip);
-        # templates not listed sort last.
-        self._template_order = template_order
+        self._node_examples_dir = node_examples_dir
+        self._starter_example_id = starter_example_id
+        # Authored example display order (filesystem ctime isn't preserved through git/zip);
+        # examples not listed sort last.
+        self._example_order = example_order
         # Injected refs: exporter_registry + shader_lib_files stay App-side (imgui-coupled).
         self._get_exporter_registry = get_exporter_registry
         self._get_shader_lib_files = get_shader_lib_files
@@ -120,7 +119,7 @@ class ProjectSession:
         self.ui_nodes: dict[str, UINode] = {}
         # node.json mtime per loaded node — the diff baseline for sync_nodes_from_disk.
         self._node_json_mtimes: dict[str, float] = {}
-        self.ui_node_templates: dict[str, UINode] = {}
+        self.ui_node_examples: dict[str, UINode] = {}
         self.app_state = UIAppState()
         # The active library index; rebuilt per project by rebuild_shader_lib_index.
         self.shader_lib_index: ShaderLibIndex = ShaderLibIndex.empty()
@@ -129,9 +128,6 @@ class ProjectSession:
             ShaderLibFavoritesStore.load()
         )
         self.shader_lib_tags: ShaderLibTagsStore = ShaderLibTagsStore.load()
-        self.template_descriptions: TemplateDescriptionsStore = (
-            TemplateDescriptionsStore.load()
-        )
         # Working set: every node/lib address the agent touched this turn, reset per turn.
         self._copilot_working_set: list[str] = []
 
@@ -170,11 +166,11 @@ class ProjectSession:
                 self.copilot.client.describe_image(png, hint, is_strip)
             ),
             vision_enabled=lambda: self.integrations_store.copilot.vision_enabled,
-            node_templates_dir=self.node_templates_dir,
-            starter_template_id=self._starter_template_id,
+            node_examples_dir=self.node_examples_dir,
+            starter_example_id=self._starter_example_id,
             get_renders_dir=lambda: self.paths.renders_dir,
             get_ui_nodes=lambda: self.ui_nodes,
-            get_ui_node_templates=lambda: self.ui_node_templates,
+            get_ui_node_examples=lambda: self.ui_node_examples,
             get_exporter_registry=self._get_exporter_registry,
             get_shader_lib_index=lambda: self.shader_lib_index,
             get_shader_lib_files=self._get_shader_lib_files,
@@ -189,7 +185,7 @@ class ProjectSession:
             save_ui_node=self.save_ui_node,
             sync_editor_from_disk=self.sync_editor_from_disk,
             delete_node_unguarded=self._delete_node_unguarded,
-            template_description=self.template_description,
+            example_description=self.example_description,
             working_set_reader=lambda: self._copilot_working_set,
             working_set_add=self._copilot_ws_add,
             get_active_checkpoint=lambda: self.copilot.checkpoints.active,
@@ -273,20 +269,15 @@ class ProjectSession:
         return trash_name
 
     @property
-    def node_templates_dir(self) -> Path:
-        return self._node_templates_dir
+    def node_examples_dir(self) -> Path:
+        return self._node_examples_dir
 
     @property
     def current_node_id(self) -> str:
         return self.app_state.current_node_id
 
-    def template_description(self, template_uuid: str) -> str:
-        # Effective description: the user override if present, else the shipped node.json
-        # default. ui_state is NOT mutated, so a 'reset' = delete the sidecar key.
-        override = self.template_descriptions.get(template_uuid)
-        if override is not None:
-            return override
-        ui_node = self.ui_node_templates.get(template_uuid)
+    def example_description(self, example_uuid: str) -> str:
+        ui_node = self.ui_node_examples.get(example_uuid)
         return ui_node.ui_state.description if ui_node is not None else ""
 
     def _copilot_ws_add(self, address: str) -> None:
@@ -301,13 +292,13 @@ class ProjectSession:
         set_active_lib_index(self.shader_lib_index)
         logger.debug(f"Lib index: {len(self.shader_lib_index.functions)} functions")
 
-    def _order_templates(self, templates: dict[str, UINode]) -> dict[str, UINode]:
-        rank = {tid: i for i, tid in enumerate(self._template_order)}
-        ordered_ids = sorted(templates, key=lambda tid: rank.get(tid, len(rank)))
-        return {tid: templates[tid] for tid in ordered_ids}
+    def _order_examples(self, examples: dict[str, UINode]) -> dict[str, UINode]:
+        rank = {eid: i for i, eid in enumerate(self._example_order)}
+        ordered_ids = sorted(examples, key=lambda eid: rank.get(eid, len(rank)))
+        return {eid: examples[eid] for eid in ordered_ids}
 
     def load(self, project_dir: Path) -> None:
-        # Load the project's GL-free state: paths, lib index, nodes + templates, app_state,
+        # Load the project's GL-free state: paths, lib index, nodes + examples, app_state,
         # integrations. A moderngl context must already be current (node warm-up compiles).
         self.ui_nodes.clear()
 
@@ -321,8 +312,8 @@ class ProjectSession:
 
         self.ui_nodes = load_nodes_from_dir(self.paths.nodes_dir)
         self._seed_node_json_mtimes()
-        self.ui_node_templates = self._order_templates(
-            load_nodes_from_dir(self._node_templates_dir)
+        self.ui_node_examples = self._order_examples(
+            load_nodes_from_dir(self._node_examples_dir)
         )
 
         if self.paths.app_state_file.exists():
@@ -425,7 +416,7 @@ class ProjectSession:
         # Inject the export-isolation factory (Node.render_media enters it around every export, so an
         # exported integrator starts from a clean per-export instance). Wired ONCE on first sight —
         # called from reload_scripts each frame, so a node inserted AFTER load (copilot create /
-        # template / revert-replace) gets it too. The live preview path does NOT ride on_pre_render
+        # example / revert-replace) gets it too. The live preview path does NOT ride on_pre_render
         # (ui.py ticks via session.tick); on_pre_render is the swap target the isolation factory uses.
         if node.export_isolation is not contextlib.nullcontext:
             return  # already wired (the factory never resets it, so this sentinel is unambiguous)
@@ -470,7 +461,7 @@ class ProjectSession:
     def reload_scripts(self) -> None:
         # The live hot-reload poll: re-stat each node's scripts dir, recompiling only changed files
         # (a recompile makes a fresh instance — state resets on edit), and re-wire hooks so a node
-        # inserted after load (copilot create / template / revert) is covered. Invoked from
+        # inserted after load (copilot create / example / revert) is covered. Invoked from
         # ui.py::update_and_draw before the live tick.
         for node_id, ui_node in self.ui_nodes.items():
             self.script_engine.reload(
@@ -655,12 +646,12 @@ class ProjectSession:
     def seed_starter_node(self, seed_current: Callable[[str], None]) -> None:
         # First-run only: seed a starter into an empty project. A node load + save + select;
         # `seed_current` is the owner's set-current hook (the setter lives in App until C3).
-        template_dir = self._node_templates_dir / self._starter_template_id
-        if not template_dir.is_dir():
-            logger.warning(f"Starter template missing ({template_dir}); skipping seed")
+        starter_dir = self._node_examples_dir / self._starter_example_id
+        if not starter_dir.is_dir():
+            logger.warning(f"Starter example missing ({starter_dir}); skipping seed")
             return
         try:
-            new_node = load_node_from_dir(template_dir)
+            new_node = load_node_from_dir(starter_dir)
             new_node.reset_id()
             new_node.save(self.paths.nodes_dir, new_node.id)
             self.ui_nodes[new_node.id] = new_node

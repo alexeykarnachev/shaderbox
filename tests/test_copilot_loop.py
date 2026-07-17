@@ -79,7 +79,7 @@ def _fake_context() -> CopilotContext:
     return CopilotContext(
         node_tree="- shader (id: node-1)  [current]",
         lib_catalog="(library is empty)",
-        template_catalog="(no templates)",
+        example_catalog="(no examples)",
         conventions="",
     )
 

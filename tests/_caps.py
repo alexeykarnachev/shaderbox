@@ -16,6 +16,7 @@ from shaderbox.copilot.capabilities import (
     CopilotCapabilities,
     DeleteNodeResult,
     EditResult,
+    ExampleEntry,
     GrepHit,
     LibCatalogEntry,
     LibFileResult,
@@ -34,7 +35,6 @@ from shaderbox.copilot.capabilities import (
     TelegramConnectResult,
     TelegramOpResult,
     TelegramPackInfo,
-    TemplateEntry,
     WorkingSetView,
 )
 from shaderbox.render_shape import RenderShape
@@ -44,7 +44,7 @@ from shaderbox.render_shape import RenderShape
 class _FakeCaps:
     node_tree: Callable[[], list[NodeTreeEntry]]
     lib_catalog: Callable[[], list[LibCatalogEntry]]
-    template_catalog: Callable[[], list[TemplateEntry]]
+    example_catalog: Callable[[], list[ExampleEntry]]
     read_shaders: Callable[[list[str]], list[ShaderView]]
     grep: Callable[[str], list[GrepHit]]
     read_lib: Callable[[list[str]], list[LibFunctionBody]]
@@ -90,7 +90,7 @@ def minimal_caps(**overrides: Any) -> CopilotCapabilities:
     defaults: dict[str, Any] = {
         "node_tree": lambda: [],
         "lib_catalog": lambda: [],
-        "template_catalog": lambda: [],
+        "example_catalog": lambda: [],
         "read_shaders": lambda _ids: [],
         "grep": lambda _q: [],
         "read_lib": lambda _names: [],

@@ -1,5 +1,5 @@
 """Headless smoke test — runs ~200 frames of update_and_draw against a THROWAWAY tmp project
-(seeded with the shipped template nodes; never the tracked projects/dev sandbox) in an invisible
+(seeded with the shipped example nodes; never the tracked projects/dev sandbox) in an invisible
 glfw window and asserts no exception + a few invariants.
 
 Catches import errors, callback dispatch failures, popup state-machine crashes,
@@ -20,7 +20,7 @@ from loguru import logger
 
 from shaderbox.app import App, PopupState
 from shaderbox.commands import ActiveRegion, NodeTab
-from shaderbox.constants import NODE_TEMPLATES_DIR, TEMPLATE_ORDER
+from shaderbox.constants import EXAMPLE_ORDER, NODE_EXAMPLES_DIR
 from shaderbox.logging_setup import configure_logging
 from shaderbox.ui import update_and_draw
 
@@ -77,13 +77,13 @@ _SCRIPT_SOURCE = (
 
 
 def _seed_tmp_project(root: Path) -> Path:
-    # A throwaway project seeded with the shipped template nodes — smoke must never read or
+    # A throwaway project seeded with the shipped example nodes — smoke must never read or
     # mutate the tracked projects/dev sandbox.
     project = root / "project"
     nodes = project / "nodes"
     nodes.mkdir(parents=True)
-    for tid in TEMPLATE_ORDER:
-        shutil.copytree(NODE_TEMPLATES_DIR / tid, nodes / tid)
+    for tid in EXAMPLE_ORDER:
+        shutil.copytree(NODE_EXAMPLES_DIR / tid, nodes / tid)
 
     # A node script node (048 — one script per node): the engine ticks it every frame, so 200 clean
     # frames prove the App-with-a-scripted-node loop doesn't crash. (Engine-correctness — values/
@@ -137,6 +137,11 @@ def main() -> int:
         project = _seed_tmp_project(Path(tmp))
         try:
             app = App(project_dir=project, headless=True)
+            # An explicit-dir App is never a first run: the examples browser must NOT
+            # auto-open (feature 051 — the auto-open is gated on project_dir=None).
+            assert app.popup_state == PopupState.CLOSED, (
+                f"popup auto-opened for an explicit-dir App ({app.popup_state!r})"
+            )
             # Decision-15 regression canary (048): _init opens the restored current node's shader tab
             # (it used to stay blank until a node switch). A non-empty project must have a tab now.
             assert app.editor_tabs, (
@@ -159,10 +164,10 @@ def main() -> int:
                     app.cycle_region()
                 if frame_idx == 60:
                     app.focus_node_tab(NodeTab.RENDER)
-                # Open the New Node modal for a stretch so its draw path (grid + desc slot +
+                # Open the Examples browser for a stretch so its draw path (grid + desc slot +
                 # action row sizing) is exercised — it never opens on its own in the loop.
                 if frame_idx == 70:
-                    app.popup_state = PopupState.NODE_CREATOR
+                    app.popup_state = PopupState.EXAMPLES
                 if frame_idx == 90:
                     app.popup_state = PopupState.CLOSED
                 # Cold-start copilot gate over an open Settings modal: the chat is open with no key

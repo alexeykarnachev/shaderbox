@@ -2,9 +2,9 @@ from dataclasses import dataclass
 
 from shaderbox.copilot.capabilities import (
     CopilotCapabilities,
+    ExampleEntry,
     LibCatalogEntry,
     NodeTreeEntry,
-    TemplateEntry,
 )
 
 # Per-turn app-state snapshot, GL-FREE so it builds off-main. Rendered to text here so
@@ -27,8 +27,8 @@ _CONVENTIONS = """\
 class CopilotContext:
     node_tree: str  # rendered project-map block (name/id/has_errors/is_current)
     lib_catalog: str  # rendered lib-catalogue block (name/signature/doc)
-    template_catalog: (
-        str  # rendered template-library block (name/template: handle/description)
+    example_catalog: (
+        str  # rendered example-library block (name/example: handle/description)
     )
     conventions: str
 
@@ -58,14 +58,14 @@ def _render_lib_catalog(entries: list[LibCatalogEntry]) -> str:
     return "\n".join(rows)
 
 
-def _render_template_catalog(entries: list[TemplateEntry]) -> str:
-    # name + the `template:` handle + one-line description.
+def _render_example_catalog(entries: list[ExampleEntry]) -> str:
+    # name + the `example:` handle + one-line description.
     if not entries:
-        return "(no templates)"
+        return "(no examples)"
     rows: list[str] = []
     for e in entries:
         desc = f" — {e.description.strip()}" if e.description.strip() else ""
-        rows.append(f"- {e.name} ({e.template_id}){desc}")
+        rows.append(f"- {e.name} ({e.example_id}){desc}")
     return "\n".join(rows)
 
 
@@ -73,6 +73,6 @@ def build_context(caps: CopilotCapabilities) -> CopilotContext:
     return CopilotContext(
         node_tree=_render_node_tree(caps.node_tree()),
         lib_catalog=_render_lib_catalog(caps.lib_catalog()),
-        template_catalog=_render_template_catalog(caps.template_catalog()),
+        example_catalog=_render_example_catalog(caps.example_catalog()),
         conventions=_CONVENTIONS,
     )

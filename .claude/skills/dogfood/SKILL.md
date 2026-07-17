@@ -81,7 +81,7 @@ env OPENROUTER_API_KEY=… uv run python -c '
 from pathlib import Path
 from scripts.dogfood import DogfoodHarness
 h = DogfoodHarness.create()                          # seeded project (UV Mango / Media / Text)
-# h = DogfoodHarness.create(seed_templates=False)    # empty -> create_node from scratch
+# h = DogfoodHarness.create(seed_examples=False)     # empty -> create_node from scratch
 h.send("Make the current shader output solid red. Keep it simple.")
 h.drive_until_idle()                                 # pump worker+bridge; STOPS on a gate
 h.render(size=400)                                   # 400x400 PNG (path echoed in the dump)

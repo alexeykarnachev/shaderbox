@@ -35,10 +35,10 @@ class LibCatalogEntry:
 
 
 @dataclass(frozen=True)
-class TemplateEntry:
-    # One shipped node template in the prompt catalogue: name + description + a
-    # `template:<short>` handle passed to create_node / read_shader / grep. GL-free.
-    template_id: str  # the `template:<4-char>` handle (NOT the 36-char dir uuid)
+class ExampleEntry:
+    # One shipped node example in the prompt catalogue: name + description + a
+    # `example:<short>` handle passed to create_node / read_shader / grep. GL-free.
+    example_id: str  # the `example:<4-char>` handle (NOT the 36-char dir uuid)
     name: str
     description: str
 
@@ -195,7 +195,7 @@ class EditResult:
     # is no unique whitespace-only near-match.
     hint: str = ""
     # Unresolvable-target reject: bad target (unknown node id / invalid lib path), a read-only
-    # template, the intra-batch rewrite guard, or a failed lib write. An argument/operation
+    # example, the intra-batch rewrite guard, or a failed lib write. An argument/operation
     # error that DOES count toward the edit-retry cap. unresolved_reason is the message. matches==0.
     unresolved: bool = False
     unresolved_reason: str = ""
@@ -307,8 +307,8 @@ class CopilotCapabilities(Protocol):
     # uniforms ON PURPOSE (uniform names need a GL read; see NodeTreeEntry).
     def node_tree(self) -> list[NodeTreeEntry]: ...
     def lib_catalog(self) -> list[LibCatalogEntry]: ...
-    # Shipped node templates for create_node(template=...). GL-free.
-    def template_catalog(self) -> list[TemplateEntry]: ...
+    # Shipped node examples for create_node(example=...). GL-free.
+    def example_catalog(self) -> list[ExampleEntry]: ...
 
     # ---- cross-project reads ----
     # read_shaders marshals (force-compile + uniform read are GL) and STAMPS freshness per
@@ -358,11 +358,11 @@ class CopilotCapabilities(Protocol):
         self, old_str: str, new_str: str, replace_all: bool, node: str, /
     ) -> ScriptWriteResult: ...
 
-    # Create a node, then COMPILE it and return its errors. `template` = a template id from
-    # template_catalog ("" = the default starter); `source` overrides the template body when
+    # Create a node, then COMPILE it and return its errors. `example` = an example id from
+    # example_catalog ("" = the default starter); `source` overrides the example body when
     # non-empty. Returns (new node-id, post-compile errors).
     def create_node(
-        self, name: str, source: str, template: str, switch_to: bool, /
+        self, name: str, source: str, example: str, switch_to: bool, /
     ) -> tuple[str, list[CompileErrorInfo], str]: ...
 
     # Delete a node (move its dir to the project trash, recoverable). Destructive => always

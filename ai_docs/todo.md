@@ -54,3 +54,13 @@ no "Resolved YYYY-MM-DD" headers).
   correctly IGNORED (no wrong re-bind) — this is a disk-cleanliness leak, not a correctness bug. Note:
   `duplicate_node` copytrees the node dir, so it carries the orphan into the fork. Fix sketch: when
   `save` skips a default sampler, unlink a pre-existing `media/<uniform>.*` for that uniform.
+
+## [BUG] full pytest suite corrupts the X connection mid-run (pre-existing, not 051)
+
+- **Trigger:** any full `uv run pytest` on the dev box — reproduces today, every run.
+- The app-fixture window churn plus the `pytest.mark.forked` GL module (`test_revert_executor`)
+  corrupt the shared X connection on the WM-less `:1` display: the forked tests error
+  ("Cannot detect window with OpenGL support"), and later the process dies with
+  `XIO: fatal IO error` before printing a summary. Verified independent of feature 051 — the
+  pre-051 tree crashes identically; every module passes when run alone. Fix sketch: process-isolate
+  ALL app-fixture modules (forked/xdist) or run the suite under a dedicated Xvfb.

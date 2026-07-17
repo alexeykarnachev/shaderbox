@@ -21,11 +21,11 @@ from shaderbox.commands import (
     chord_to_str,
 )
 from shaderbox.constants import (
-    NODE_TEMPLATES_DIR,
+    EXAMPLE_ORDER,
+    NODE_EXAMPLES_DIR,
     RESOURCES_DIR,
     SHADER_LIB_SEED_DIR,
-    STARTER_TEMPLATE_ID,
-    TEMPLATE_ORDER,
+    STARTER_EXAMPLE_ID,
 )
 from shaderbox.copilot.backend import CopilotBackend
 from shaderbox.copilot.gate import GateRequest
@@ -39,7 +39,6 @@ from shaderbox.editor_types import (
     EditorSession,
     EditorTab,
     HoverMark,
-    InlineInput,
     JumpRequest,
 )
 from shaderbox.exporters.integrations import IntegrationsStore
@@ -59,7 +58,6 @@ from shaderbox.shader_lib.seed import sync_shipped_lib
 from shaderbox.shader_lib.tags import ShaderLibTagsStore
 from shaderbox.shader_source import ShaderSource
 from shaderbox.tabs import share_state
-from shaderbox.templates_descriptions import TemplateDescriptionsStore
 from shaderbox.theme import COLOR, apply_theme
 from shaderbox.ui_models import (
     EditorSettings,
@@ -85,7 +83,7 @@ class PopupState(Enum):
     # The one open modal popup, or CLOSED — a single field makes the "at most one open"
     # mutex structural. The command palette is non-modal (App.is_palette_open), not here.
     CLOSED = "closed"
-    NODE_CREATOR = "node_creator"
+    EXAMPLES = "examples"
     SETTINGS = "settings"
     EMOJI_PICKER = "emoji_picker"
     SHADER_LIB_PICKER = "shader_lib_picker"
@@ -223,9 +221,9 @@ class App:
         # editor_sessions are injected (the core stays imgui-import-free); the two callbacks route
         # the UI-tail side effects the core can't own (sticky-focus reset, delete-arm clear).
         self.session = ProjectSession(
-            node_templates_dir=NODE_TEMPLATES_DIR,
-            starter_template_id=STARTER_TEMPLATE_ID,
-            template_order=TEMPLATE_ORDER,
+            node_examples_dir=NODE_EXAMPLES_DIR,
+            starter_example_id=STARTER_EXAMPLE_ID,
+            example_order=EXAMPLE_ORDER,
             get_exporter_registry=lambda: self.exporter_registry,
             get_shader_lib_files=lambda: self.shader_lib_files,
             on_current_node_changed=self._on_current_node_changed,
@@ -268,9 +266,6 @@ class App:
         # openers (before the popup draws), consumed on the close edge by reconcile_popup_focus.
         self._popup_was_open: bool = False
         self._chat_focused_before_popup: bool = False
-        # The node-creator popup's inline template-description editor. Bound to the selected
-        # template's DIR path; closed when the popup opens or the selection changes.
-        self.template_desc_input: InlineInput = InlineInput()
         # Command palette: a transient floating search box, NOT one of the modal popups
         # above — excluded from the popup mutex on purpose.
         self.is_palette_open: bool = False
@@ -279,9 +274,6 @@ class App:
         # with the project's rebindings merged over them.
         self.command_callbacks: dict[CommandId, Callable[[], None]] = {}
         self.effective_bindings: dict[CommandId, int] = {}
-        # Snapshot of template ids for the palette's two-step "New node" prompt
-        # (initial_callback fills it; subsequent_callback indexes it).
-        self._palette_template_ids: list[str] = []
         # Palette command names currently registered (so a rebind can remove +
         # re-add them with refreshed chord labels).
         self._palette_command_names: list[str] = []
@@ -355,7 +347,7 @@ class App:
         # (an expanded strip on one script shouldn't carry to the next).
         self.errors_expanded: bool = False
 
-        # shader_lib_index + the cross-project stores (favorites/tags/template-descriptions)
+        # shader_lib_index + the cross-project stores (favorites/tags)
         # live on self.session (feature 025); App reaches them via the @property forwarders.
 
         # Shader-library file CRUD + picker inline-input/filter state. Owns the file
@@ -369,7 +361,7 @@ class App:
         )
 
         self._init(
-            project_dir, seed_starter=is_first_launch, persist_pointer=persist_pointer
+            project_dir, first_run=is_first_launch, persist_pointer=persist_pointer
         )
 
         self._build_command_callbacks()
@@ -409,7 +401,10 @@ class App:
         self.command_callbacks = {
             CommandId.OPEN_PROJECT: self.open_project,
             CommandId.SAVE: self.save,
-            CommandId.NEW_NODE: self.open_node_creator,
+            CommandId.NEW_NODE: lambda: self.create_node_from_example(
+                STARTER_EXAMPLE_ID
+            ),
+            CommandId.EXAMPLES: self.open_examples,
             CommandId.DELETE_NODE: self.delete_current_node,
             CommandId.TOGGLE_NODE_PLAY: self.toggle_current_node_play,
             CommandId.OPEN_SETTINGS: self.open_settings,
@@ -512,8 +507,7 @@ class App:
 
     def _register_palette_commands(self) -> None:
         # One entry per palette-eligible command; the name carries the chord so the palette
-        # reads as the same list as the cheatsheet. "New node" is two-step: initial prompts
-        # for a template, subsequent creates the picked one. Re-run on a rebind so the shown
+        # reads as the same list as the cheatsheet. Re-run on a rebind so the shown
         # chords stay live.
         for name in self._palette_command_names:
             imcmd.remove_command(name)
@@ -530,28 +524,9 @@ class App:
             )
             cmd = imcmd.Command()
             cmd.name = name
-            if spec.id == CommandId.NEW_NODE:
-                cmd.initial_callback = self._palette_new_node_initial
-                cmd.subsequent_callback = self._palette_new_node_subsequent
-            else:
-                cmd.initial_callback = self.command_callbacks[spec.id]
+            cmd.initial_callback = self.command_callbacks[spec.id]
             imcmd.add_command(cmd)
             self._palette_command_names.append(name)
-
-    def _palette_new_node_initial(self) -> None:
-        self._palette_template_ids = list(self.ui_node_templates.keys())
-        labels = [
-            self.ui_node_templates[tid].ui_state.ui_name
-            for tid in self._palette_template_ids
-        ]
-        imcmd.prompt(labels)
-
-    def _palette_new_node_subsequent(self, selected: int) -> None:
-        if 0 <= selected < len(self._palette_template_ids):
-            self.app_state.selected_node_template_id = self._palette_template_ids[
-                selected
-            ]
-            self.create_node_from_selected_template()
 
     def open_palette(self) -> None:
         self.is_palette_open = True
@@ -772,13 +747,8 @@ class App:
         self._chat_focused_before_popup = self.copilot_focused
         self.copilot_revert_target = msg
 
-    def open_node_creator(self) -> None:
-        self._open_popup(PopupState.NODE_CREATOR)
-        self.template_desc_input.close()  # no stale description editor on reopen
-
-    def set_template_description(self, template_uuid: str, description: str) -> None:
-        # On-change persist of a user-edited template description to the sidecar.
-        self.template_descriptions.set(template_uuid, description)
+    def open_examples(self) -> None:
+        self._open_popup(PopupState.EXAMPLES)
 
     def open_settings(self, focus: str = "") -> None:
         # focus: a SettingsField key to expand-section + keyboard-focus on open (e.g. from an
@@ -838,8 +808,8 @@ class App:
         return self.session.ui_nodes
 
     @property
-    def ui_node_templates(self) -> dict[str, UINode]:
-        return self.session.ui_node_templates
+    def ui_node_examples(self) -> dict[str, UINode]:
+        return self.session.ui_node_examples
 
     @property
     def app_state(self) -> UIAppState:
@@ -858,12 +828,8 @@ class App:
         return self.session.shader_lib_tags
 
     @property
-    def template_descriptions(self) -> TemplateDescriptionsStore:
-        return self.session.template_descriptions
-
-    @property
-    def node_templates_dir(self) -> Path:
-        return self.session.node_templates_dir
+    def node_examples_dir(self) -> Path:
+        return self.session.node_examples_dir
 
     @property
     def current_node_id(self) -> str:
@@ -872,8 +838,8 @@ class App:
     def rebuild_shader_lib_index(self) -> None:
         self.session.rebuild_shader_lib_index()
 
-    def template_description(self, template_uuid: str) -> str:
-        return self.session.template_description(template_uuid)
+    def example_description(self, example_uuid: str) -> str:
+        return self.session.example_description(example_uuid)
 
     def _copilot_ws_add(self, address: str) -> None:
         self.session._copilot_ws_add(address)
@@ -896,7 +862,7 @@ class App:
     def _init(
         self,
         project_dir: Path,
-        seed_starter: bool = False,
+        first_run: bool = False,
         persist_pointer: bool = True,
     ) -> None:
         self.release()
@@ -912,7 +878,7 @@ class App:
         # before the preview draws) — harmless, like dt.
         self.script_mouse: MouseState = EXPORT_MOUSE
 
-        # Project load (GL-free): paths, lib index, nodes + templates, app_state, integrations.
+        # Project load (GL-free): paths, lib index, nodes + examples, app_state, integrations.
         self.session.load(project_dir)
         # Persist the active-project pointer for the next launch — EXCEPT for an explicit-dir
         # test/smoke process (persist_pointer=False), which must not overwrite the user's pointer.
@@ -921,7 +887,7 @@ class App:
 
         # First launch only: seed a starter into the empty default project. NOT on
         # open_project (which would pollute a folder the user picked expecting it empty).
-        if seed_starter and not self.ui_nodes:
+        if first_run and not self.ui_nodes:
             self.session.seed_starter_node(self.set_current_node_id)
 
         # load() restores current_node_id by direct field assignment (not set_current_node_id), so
@@ -937,6 +903,11 @@ class App:
 
         # app_state was just replaced, so the effective binding map is recomputed per project.
         self._merge_effective_bindings()
+
+        # First launch lands on the examples gallery (onboarding); never for an
+        # explicit-dir harness (first_run requires project_dir=None) or a project switch.
+        if first_run:
+            self.open_examples()
         # Restore persisted layout prefs into the live attrs (save() mirrors them back).
         # active_region stays transient.
         self.active_node_tab = self.app_state.active_node_tab
@@ -1336,7 +1307,7 @@ class App:
         for node in self.ui_nodes.values():
             node.node.release()
 
-        for node in self.ui_node_templates.values():
+        for node in self.ui_node_examples.values():
             node.node.release()
 
         if hasattr(self, "preview_canvas"):
@@ -1371,19 +1342,18 @@ class App:
     def _delete_node_unguarded(self, node_id: str) -> str:
         return self.session._delete_node_unguarded(node_id)
 
-    def create_node_from_selected_template(self) -> None:
+    def create_node_from_example(self, example_id: str) -> None:
         if self._copilot_busy_blocked("Creating a node"):
             return
-        selected_template = self.ui_node_templates[
-            self.app_state.selected_node_template_id
-        ]
+        if example_id not in self.ui_node_examples:
+            logger.warning(f"Example missing ({example_id}); nothing created")
+            self.notifications.push("Example missing — node not created")
+            return
 
-        new_node = load_node_from_dir(self.node_templates_dir / selected_template.id)
+        new_node = load_node_from_dir(self.node_examples_dir / example_id)
         new_node.reset_id()
 
         self.ui_nodes[new_node.id] = new_node
         self.set_current_node_id(new_node.id)
         self.save_ui_node(new_node)
-        logger.info(
-            f"New node {new_node.id} created from template {self.app_state.selected_node_template_id}"
-        )
+        logger.info(f"New node {new_node.id} created from example {example_id}")

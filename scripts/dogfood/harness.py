@@ -98,9 +98,9 @@ from PIL import Image as PILImage  # noqa: E402
 glfw.set_error_callback(lambda code, desc: None)
 
 from shaderbox.constants import (  # noqa: E402
-    NODE_TEMPLATES_DIR,
-    STARTER_TEMPLATE_ID,
-    TEMPLATE_ORDER,
+    EXAMPLE_ORDER,
+    NODE_EXAMPLES_DIR,
+    STARTER_EXAMPLE_ID,
 )
 from shaderbox.copilot.capabilities import RenderResult  # noqa: E402
 from shaderbox.copilot.gate import GateResponse  # noqa: E402
@@ -142,11 +142,11 @@ class DogfoodHarness:
 
     @classmethod
     def create(
-        cls, project_dir: Path | None = None, *, seed_templates: bool = True
+        cls, project_dir: Path | None = None, *, seed_examples: bool = True
     ) -> "DogfoodHarness":
         """Build the EGL context + a real `ProjectSession` + restore the conversation if resuming.
 
-        `project_dir=None` -> a fresh mkdtemp'd project (seeded unless `seed_templates=False`).
+        `project_dir=None` -> a fresh mkdtemp'd project (seeded unless `seed_examples=False`).
         `project_dir=<existing run dir>` -> RESUME: skip seeding (the nodes persist from prior
         turns), reload the shaders, and restore the conversation from disk (zero LLM calls) so a
         per-turn process keeps full state. The caller must also point `SHADERBOX_DATA_DIR` at the
@@ -164,9 +164,9 @@ class DogfoodHarness:
         nodes_dir = project_dir / "nodes"
         nodes_dir.mkdir(parents=True, exist_ok=True)
         # On resume the nodes already exist on disk; seeding only applies to a fresh project.
-        if seed_templates and not resuming:
-            for tid in TEMPLATE_ORDER:
-                src = NODE_TEMPLATES_DIR / tid
+        if seed_examples and not resuming:
+            for tid in EXAMPLE_ORDER:
+                src = NODE_EXAMPLES_DIR / tid
                 if src.is_dir():
                     shutil.copytree(src, nodes_dir / tid)
 
@@ -182,9 +182,9 @@ class DogfoodHarness:
         # then the manager (closing over the session), exposed through a mutable slot.
         slot: dict[str, ShaderLibFileManager] = {}
         session = ProjectSession(
-            node_templates_dir=NODE_TEMPLATES_DIR,
-            starter_template_id=STARTER_TEMPLATE_ID,
-            template_order=TEMPLATE_ORDER,
+            node_examples_dir=NODE_EXAMPLES_DIR,
+            starter_example_id=STARTER_EXAMPLE_ID,
+            example_order=EXAMPLE_ORDER,
             get_exporter_registry=lambda: exporters,
             get_shader_lib_files=lambda: slot["mgr"],
             # on_* UI-reaction callbacks default to no-ops — the harness has no editor/UI.

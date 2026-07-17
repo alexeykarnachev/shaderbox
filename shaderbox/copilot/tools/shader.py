@@ -72,16 +72,16 @@ class _SetUniformArgs(ToolArgs):
 
 class _CreateNodeArgs(ToolArgs):
     name: str = Field(description="a display name for the new node")
-    template: str = Field(
+    example: str = Field(
         default="",
-        description="a template: handle from the TEMPLATE LIBRARY to start from (e.g. for a "
-        "text-rendering shader, pick the text template) — prefer this over writing source blind; "
+        description="an example: handle from the EXAMPLE LIBRARY to start from (e.g. for a "
+        "text-rendering shader, pick the text example) — prefer this over writing source blind; "
         "empty = the default blank-canvas starter",
     )
     source: str = Field(
         default="",
-        description="initial GLSL source; empty = the chosen template (or the starter), or full "
-        "GLSL following the project conventions (overrides the template body)",
+        description="initial GLSL source; empty = the chosen example (or the starter), or full "
+        "GLSL following the project conventions (overrides the example body)",
     )
     switch_to: bool = Field(
         default=True,
@@ -228,7 +228,7 @@ def _format_hits(hits: list[GrepHit]) -> str:
 
 
 def _unresolved_result(result: EditResult) -> tuple[bool, str, None] | None:
-    # An unresolvable reject (bad node id / lib path, read-only template, failed lib write,
+    # An unresolvable reject (bad node id / lib path, read-only example, failed lib write,
     # intra-batch rewrite guard). Counts toward the edit-retry cap.
     if result.unresolved:
         msg = f"error: {result.unresolved_reason}"
@@ -373,7 +373,7 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
 
     def create_node(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
         node_id, errors, extra = caps.create_node(
-            args["name"], args["source"], args["template"], args["switch_to"]
+            args["name"], args["source"], args["example"], args["switch_to"]
         )
         where = "now active" if args["switch_to"] else "in the background"
         # success stays True even with compile errors — the node IS created; the agent reads

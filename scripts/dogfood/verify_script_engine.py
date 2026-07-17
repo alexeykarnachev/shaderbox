@@ -83,7 +83,7 @@ _BROKEN = (
 
 
 def main() -> int:
-    h = DogfoodHarness.create(seed_templates=False)
+    h = DogfoodHarness.create(seed_examples=False)
     _seed_scripted_node(h.project_dir, _PURE)
     h.session.load(h.project_dir)
     h.session.set_current_node_id("scripted")

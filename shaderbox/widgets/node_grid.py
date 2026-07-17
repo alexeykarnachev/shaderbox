@@ -2,6 +2,7 @@ from imgui_bundle import imgui, imgui_ctx
 
 from shaderbox.app import App
 from shaderbox.commands import ActiveRegion
+from shaderbox.constants import STARTER_EXAMPLE_ID
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_models import UINode
 from shaderbox.ui_primitives import (
@@ -59,7 +60,7 @@ def draw_node_preview_grid(app: App, width: float, height: float) -> None:
         # affordances so the freeze is visible (the verbs also hard-refuse, for non-grid paths).
         imgui.begin_disabled(app.copilot_turn_active)
         if imgui.button("New node"):
-            app.open_node_creator()
+            app.create_node_from_example(STARTER_EXAMPLE_ID)
         imgui.end_disabled()
 
         imgui.same_line()

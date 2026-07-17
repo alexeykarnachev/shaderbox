@@ -1,6 +1,6 @@
 """Shared test fixtures. The `app` fixture builds a real headless App against a THROWAWAY tmp
 project (never the tracked projects/dev sandbox — tests must not read or mutate it), seeded with
-the three shipped template nodes so there is always a loadable current node."""
+the three shipped example nodes so there is always a loadable current node."""
 
 import contextlib
 import shutil
@@ -10,16 +10,16 @@ from typing import Any
 
 import pytest
 
-from shaderbox.constants import NODE_TEMPLATES_DIR, STARTER_TEMPLATE_ID, TEMPLATE_ORDER
+from shaderbox.constants import EXAMPLE_ORDER, NODE_EXAMPLES_DIR, STARTER_EXAMPLE_ID
 
 
 def seed_tmp_project(tmp_path: Path) -> Path:
-    # A throwaway project dir seeded with the shipped template nodes copied out of resources.
+    # A throwaway project dir seeded with the shipped example nodes copied out of resources.
     project = tmp_path / "project"
     nodes = project / "nodes"
     nodes.mkdir(parents=True)
-    for tid in TEMPLATE_ORDER:
-        shutil.copytree(NODE_TEMPLATES_DIR / tid, nodes / tid)
+    for tid in EXAMPLE_ORDER:
+        shutil.copytree(NODE_EXAMPLES_DIR / tid, nodes / tid)
     return project
 
 
@@ -35,9 +35,9 @@ def app(tmp_path: Path) -> Iterator[Any]:
     a = App(project_dir=project)
     # No main loop in a test: run every marshalled bridge op INLINE (already on the GL thread).
     a.copilot.bridge.run_on_main = lambda fn, timeout=None, defer=False: fn()  # type: ignore[method-assign]
-    a.set_current_node_id(STARTER_TEMPLATE_ID)
+    a.set_current_node_id(STARTER_EXAMPLE_ID)
     a.ui_nodes[
-        STARTER_TEMPLATE_ID
+        STARTER_EXAMPLE_ID
     ].node.render()  # warm the GL program (matches the live loop)
     yield a
     with contextlib.suppress(Exception):

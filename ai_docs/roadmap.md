@@ -26,22 +26,18 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-07-03 (v0.23.0 CUT to GitHub master; itch STILL v0.21.0 — upload deferred). -->
-**ACTIVE: v0.23.0 CUT to GitHub master (git release; NOT shipped to itch).** Bundles feature **053 —
-copilot vision** (the render-blind agent's real EYE: `probe_render` returns facts + a vision read of the
-frame's CORRECTNESS, `look_for`-grounded, two-tact anti-sycophantic, animated → 3-frame strip, cached,
-configurable model with a live Settings capability badge) and feature **054 — copilot visual craft &
-robustness** (a VISUAL CRAFT prompt block distilled from the labs; PLAN-first for complex work; the
-turn-end auto-look now AIMED at the ask + forbidden from over-claiming; surgical / large-file edit
-discipline) plus **engine fixes that unblocked physics scripting** — `Vec2/3/4` are real vectors
-(`.x/.y/.z` + component math), `Array` auto-flattens Vec rows. Validated by a long US-flag dogfood: the
-copilot went from dark fbm-mush to a real **Verlet cloth-sim** flag (a strong model went straight for the
-real sim; the Vec/Array fixes then let the CHEAP model build it step-by-step). **UI-verify PENDING** (LIVE,
-a display box): the Settings vision badge, per `todo.md`.
-
-**Also pending — itch upload (context):** GitHub master/tag = 0.23.0 while itch is STILL v0.21.0. Deferred
-— needs a `butler`+display machine (this WSL box has neither) for `make run` UI-verify + `make smoke` +
-`upload-itch.sh`. v0.22.x (052 workspace fluency + `.mov`/media fix) + 053 + 054 all ride that next upload.
+<!-- As of 2026-07-17 (051 rebased onto the v0.23.0 line; itch STILL v0.21.0 - the deferred upload is being executed NOW as v0.24.0). -->
+**ACTIVE: shipping v0.24.0 to itch (in progress).** The upload carries everything since v0.21.0:
+**052** workspace fluency + the `.mov`/media fix (v0.22.x), **053** copilot vision, **054** visual
+craft + Vec/Array physics fixes (v0.23.0, cut on the WSL box with the itch upload deferred - no
+butler/display there), and today's **051 - node examples**: templates are now read-only examples,
+Ctrl+N instant-clones the UV-Mango starter (picker gone), the old New-Node popup is the Examples
+browser (`Alt+E`/menu-bar/palette/first-launch auto-open), the Fire showcase ships as the 4th
+example, example<->lib drift pinned by `tests/test_examples_resolve.py` + the `SB_*` api-lock
+snapshot. **Maintainer verify BEFORE upload:** 051's manual steps (spec `## Manual verification`) +
+the 053 Settings vision badge (`todo.md [VERIFY]`). After ship: 2-4 more showcase examples via
+`/shader-lab`, then the demo video + Show HN (051 is HN-post prep). `todo.md` also carries the
+pre-existing full-pytest X-crash [BUG] (dev box only; modules pass alone).
 
 **Last LIVE on itch (context):** v0.21.0 — feature 050 + render-divergence cleanup + YT Shorts presets
 + the bugs/debt fix wave. (Previously v0.20.0 — node-dir live auto-sync + math-symbol text glyphs.
@@ -59,6 +55,7 @@ verified live. **No open BLOCKERs.**
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 051 | node_examples | done | Templates → read-only **examples**: Ctrl+N instant-clones the starter (picker deleted), the node-creator popup re-purposed as the Examples browser (`Alt+E`/menu-bar/palette/first-launch auto-open, "Open a copy"), the Fire showcase promoted from `_lab` with `SB_fbm` into the seed lib, description-sidecar + "Save as template" subsystems deleted, example↔lib coherence pinned by resolve-clean + `SB_*` api-lock tests. Spec: `ai_docs/features/051_node_examples.md`. |
 | 054 | copilot_visual_craft | done | Make the copilot faithfully + competently execute a visual instruction (metric = instruction-fidelity, NOT realism). A `VISUAL CRAFT` prompt block distilled from the shader labs (match-the-asked-look; pick tool by effect — per-pixel→GLSL, physics-sim→script; tonemap/AA/dither/structured-texture baseline; shadows>AO>normals + grazing light; motion emerges from feedback; PLAN complex work first then BUILD IN STAGES; iterate until it MATCHES). Turn-end auto-look now AIMED at the ask (not empty look_for) + a legibility dimension + forbidden from claiming what the eye doesn't show; surgical / large-file edit discipline. Engine fixes that unblocked physics scripting: `Vec2/3/4` are real vectors (`.x/.y/.z`, component + scalar math, `.dot/.length/.normalized/.cross`); `Array` auto-flattens Vec/tuple rows. Loop-mined + dogfood-validated (US flag: dark fbm-mush → real Verlet cloth-sim, incl. the CHEAP model building the sim step-by-step once Vec/Array were fixed). Spec: `ai_docs/features/054_copilot_visual_craft.md`. |
 | 053 | copilot_vision | done | The render-blind copilot's REAL eye — `probe_render` now returns the facts line AND a vision read of the frame's CORRECTNESS (coherence vs noise, orientation/mirroring, off-frame, text legibility, artifacts; NOT beauty). Actor-model split: `look_for` carries the copilot's intent as DATA into a cheap multimodal (`describe_image`, default `gpt-4o-mini`); a two-tact anti-sycophantic prompt (baseline read + skeptical evidence-gated answer, "point to the pixels or say NO"); the eye is a WITNESS, the copilot the JUDGE, beauty stays the user's. ANIMATES nodes go as a forward-time 3-frame contact strip (reuses the motion verdict); on-demand only; cached per (frame-hash, look_for, is_strip). Vision model configurable in Settings with a LIVE capability badge — a free `GET /models` `input_modalities` check (three states: supports/no-image/couldn't-verify), read via live getters (no `apply_limits` push), async on a daemon thread with a re-kick guard. Pre + post review (5 adversarial agents): cache-key-omits-look_for, Protocol/test blast-radius, live-apply asymmetry, backward-time contact-sheet — all found + fixed. **Slice B (follow-up):** a turn that CHANGED the render but never looked → the engine takes ONE auto-look at turn-end and injects the observation as data with explicit provenance ("the engine looked FOR you, not you") so a visual result is never declared blind, and the model isn't confused about who looked (dogfood-verified: it reacts, attributing "the engine's visual read"). Spec: `ai_docs/features/053_copilot_vision.md` (builds on first cut `6151ca4`). |
 | 052 | copilot_workspace_fluency | done | Umbrella making the copilot literate in the ShaderBox workspace: (slice 1) samplers + their media bindings + canvas size surface in the working set (read-only awareness); (slice 2) `bind_media`/`unbind_media` bind a texture to a `sampler2D` via a GATE-family user-file-pick primitive (worker blocks on a file gate, UI polls `pfd` across live frames) the model triggers but never types a path into — abs path consumed engine-side (structural corollary-1); (slice 3) `rename_node`/`duplicate_node`/`set_canvas_size` + `delete_lib_file`; (slice 4) `import_node` pulls a `.glsl` off disk via the same picker; (slice 0) revives the parked D5 lazy-tool catalogue (`load_tools` + catalogue block, sorted serialization) to pay for the 7 new tools (all lazy — ~24 eager tools today, >16 trigger already blown). Plan-locked + round-1 pre-impl review applied (3 code-anchored reviewers, all PARTIAL): two built-on premises refuted (no empty-sampler state; checkpoint ALREADY captures/restores media so revert is free, no new code) + `rename_lib_file` cut (derivable + revert-less). Spec: `ai_docs/features/052_copilot_workspace_fluency/`. |

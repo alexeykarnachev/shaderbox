@@ -122,18 +122,23 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   helper must name its layer by prefix and take/return SDFs at the layer boundary — never a
   one-off mask utility (that's how a library rots into an effects zoo). Non-`SB_` names are
   library-private: catalogued nowhere, reachable transitively. Canonical seed lives in-repo at
-  `shaderbox/resources/shader_lib/`. Revisit if a needed helper genuinely can't be expressed as
-  source/op/renderer (the first candidate defines layer 4, not an exception). Spec:
+  `shaderbox/resources/shader_lib/`. **Shipped `SB_*` is supersede-don't-mutate** (feature 051):
+  never change an existing shipped helper's signature or semantics — add a new name instead. The
+  shipped examples compile against whatever lib ships with them, and `tests/test_examples_resolve.py`
+  (examples-resolve-clean + the `shader_lib_api_lock.json` signature snapshot) turns any drift into a
+  red test until the snapshot is deliberately regenerated. Revisit if a needed helper genuinely can't
+  be expressed as source/op/renderer (the first candidate defines layer 4, not an exception). Spec:
   `ai_docs/features/032_sdf_shader_library.md`.
   - **To know what `SB_*` actually exist, grep the ACTIVE lib root, not `resources/`.** The compiler
     resolves includes from `paths.shader_lib_root()` = `app_data_dir()/shader_lib` (the user-side seed),
     NOT from the in-repo `resources/shader_lib/`; the active root is authoritative — `grep -rn SB_
     "$(uv run python -c 'from shaderbox.paths import shader_lib_root as r; print(r())')"`.
     (`shaderbox/shader_lib/` is the Python index/parser/resolver package, NOT GLSL — don't grep there
-    for helpers.) NOTE: the active root can DIVERGE from `resources/` — helpers the maintainer authored
-    only on the desktop live root (`SB_fbm`, `SB_tri_wave`) aren't resolvable on a fresh env, because
-    `sync_shipped_lib` is strictly one-way (`resources/` → live root, never back). To recover a lost
-    helper, copy it by hand from the desktop live root into `resources/shader_lib/` and commit.
+    for helpers.) NOTE: the active root can DIVERGE from `resources/` — a helper authored only on the
+    desktop live root (e.g. `SB_tri_wave` today; `SB_fbm` until feature 051 promoted it) isn't
+    resolvable on a fresh env, because `sync_shipped_lib` is strictly one-way (`resources/` → live
+    root, never back). To recover a lost helper, copy it by hand from the desktop live root into
+    `resources/shader_lib/` and commit (+ regenerate the api-lock snapshot).
 
 - **Three-layer UI architecture.** `app.py` = UI/glfw/imgui owner + lifecycle wrapper (windowing, GL
   context, editor sessions, popups, nav, the exporter panels) — no imgui drawing in the orchestrator
@@ -238,8 +243,8 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   organizational convention, not a polymorphic contract — no `Widget` ABC, no shared return shape;
   each gets the shape that fits its job. Revisit if a polymorphic `list[Widget]` dispatcher materializes.
 - **`popups/*.py`: free `draw(app: App)` functions; open/closed state lives on `App` as a single
-  `PopupState` enum field.** The four modal popups (node creator, settings, emoji picker, shader-lib
-  picker) share one `app.popup_state` field — `CLOSED` / `NODE_CREATOR` / `SETTINGS` / `EMOJI_PICKER`
+  `PopupState` enum field.** The four modal popups (examples browser, settings, emoji picker,
+  shader-lib picker) share one `app.popup_state` field — `CLOSED` / `EXAMPLES` / `SETTINGS` / `EMOJI_PICKER`
   / `SHADER_LIB_PICKER`. Each `app.open_*()` helper sets `popup_state`; the single field IS the mutex
   ("at most one modal open" holds by construction — one field can't be two states). A new modal popup
   adds an enum member + its `open_*()` + a self-close to `CLOSED`. `app.any_popup_open()`
@@ -411,8 +416,9 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   (clean producer/render/compose split — `prompt.py` imports no agent/registry). The within-turn read
   de-dup + line-drift follow-up was CLOSED by 020·29 (the PER_TURN working-set block).
 - **A new addressable copilot SOURCE kind gets a `<kind>:` prefix + rides the EXISTING read/grep, never
-  a parallel tool.** Nodes are bare ids, library files are `lib:<path>`, templates are `template:<id>`
-  (feature 020·22). A new readable source (a future preset, an example, etc.) mirrors this: a
+  a parallel tool.** Nodes are bare ids, library files are `lib:<path>`, shipped examples are
+  `example:<id>` (feature 020·22; renamed from `template:` by 051). A new readable source (a future
+  preset, etc.) mirrors this: a
   self-describing prefix the catalogue emits, a branch in `_copilot_resolve_source` + the read/grep
   builders (the SAME `ShaderView`/`GrepHit`, one implementation), and — if it's read-only — an EXPLICIT
   reject in the edit-target resolver (a `<kind>:` target returns an unresolved EditResult with an
@@ -434,14 +440,6 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   rounds: stop once a fresh session has no terminal failure, no NEW failure class, and a residual that fails the
   "better model" test — a new INSTANCE of a known class is NOT a trigger for another round; a new CLASS in a
   different session is. (Established by the 020·29 overfit audit, which cut 3.5 of 6 proposed guards.)
-- **Editable metadata on a SHIPPED (read-only-in-bundle) resource is two-tier: a shipped default + a
-  user sidecar at `app_data_dir()`.** A template description (feature 020·22) lives in the shipped
-  `node.json` (the dev default, ships immutable) AND in a `TemplateDescriptionsStore` sidecar keyed by
-  the stable full id; lookup is override-else-shipped AT THE CONSUMPTION SITE (never mutate the
-  in-memory shipped object — that keeps "reset" = delete the sidecar key). The sidecar mirrors the
-  shader-lib favorites/tags store posture (cross-project, fail-soft load/save, loaded in `__init__`).
-  User-edit-wins-forever (a later shipped-default change is shadowed) — accepted, matches favorites.
-  Revisit if a shipped-default update must win until the user touches it (needs a version/hash stamp).
 - **Exporters: own thread, own panel, GL-free artifacts.** The `Exporter` ABC enforces thread
   affinity — render-thread methods may touch moderngl; worker-thread methods (`prepare`, `export`,
   the `_do_*`/`_handle_*` job handlers) MUST NOT, they see only `RenderedArtifact` (a pure value

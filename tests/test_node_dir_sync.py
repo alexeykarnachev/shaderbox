@@ -13,7 +13,7 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from shaderbox.constants import STARTER_TEMPLATE_ID, TEMPLATE_ORDER
+from shaderbox.constants import EXAMPLE_ORDER, STARTER_EXAMPLE_ID
 
 
 def _bump_node_json(node_dir: Path) -> None:
@@ -30,7 +30,7 @@ def _bump_node_json(node_dir: Path) -> None:
 def test_added_dir_appears(app: Any) -> None:
     nodes_dir = app.paths.nodes_dir
     new_id = "externally-added-node"
-    shutil.copytree(nodes_dir / STARTER_TEMPLATE_ID, nodes_dir / new_id)
+    shutil.copytree(nodes_dir / STARTER_EXAMPLE_ID, nodes_dir / new_id)
     assert new_id not in app.ui_nodes
 
     app.session.sync_nodes_from_disk()
@@ -45,14 +45,14 @@ def test_half_written_dir_does_not_crash(app: Any) -> None:
     # and took down the frame loop.
     nodes_dir = app.paths.nodes_dir
     new_id = "half-written-node"
-    shutil.copytree(nodes_dir / STARTER_TEMPLATE_ID, nodes_dir / new_id)
+    shutil.copytree(nodes_dir / STARTER_EXAMPLE_ID, nodes_dir / new_id)
     (nodes_dir / new_id / "shader.frag.glsl").unlink()
 
     app.session.sync_nodes_from_disk()  # must not raise
     assert new_id not in app.ui_nodes
 
     shutil.copy(
-        nodes_dir / STARTER_TEMPLATE_ID / "shader.frag.glsl",
+        nodes_dir / STARTER_EXAMPLE_ID / "shader.frag.glsl",
         nodes_dir / new_id / "shader.frag.glsl",
     )
     app.session.sync_nodes_from_disk()
@@ -61,7 +61,7 @@ def test_half_written_dir_does_not_crash(app: Any) -> None:
 
 def test_removed_dir_drops_node_and_editor(app: Any) -> None:
     # Open a tab for a non-current node, then delete its dir on disk: node + its editor tab go.
-    victim = TEMPLATE_ORDER[1]
+    victim = EXAMPLE_ORDER[1]
     app.ensure_shader_tab(victim)
     assert any(t.node_id == victim for t in app.editor_tabs)
 
@@ -73,17 +73,17 @@ def test_removed_dir_drops_node_and_editor(app: Any) -> None:
 
 
 def test_removed_current_dir_reselects(app: Any) -> None:
-    assert app.current_node_id == STARTER_TEMPLATE_ID
-    shutil.rmtree(app.paths.nodes_dir / STARTER_TEMPLATE_ID)
+    assert app.current_node_id == STARTER_EXAMPLE_ID
+    shutil.rmtree(app.paths.nodes_dir / STARTER_EXAMPLE_ID)
 
     app.session.sync_nodes_from_disk()
 
-    assert STARTER_TEMPLATE_ID not in app.ui_nodes
+    assert STARTER_EXAMPLE_ID not in app.ui_nodes
     assert app.current_node_id in app.ui_nodes  # fell back to a surviving node
 
 
 def test_changed_node_json_reloads(app: Any) -> None:
-    target = TEMPLATE_ORDER[1]
+    target = EXAMPLE_ORDER[1]
     assert tuple(app.ui_nodes[target].node.canvas.texture.size) != (123, 123)
     _bump_node_json(app.paths.nodes_dir / target)
 
@@ -103,9 +103,9 @@ def test_quiet_frame_is_a_noop(app: Any) -> None:
 def test_own_save_does_not_self_trigger(app: Any) -> None:
     # save_ui_node rebaselines the mtime cache, so the next sync must NOT read our own write back
     # as an external change and reload (which would churn the live node object).
-    app.save_ui_node(app.ui_nodes[STARTER_TEMPLATE_ID])
-    node_obj_id = id(app.ui_nodes[STARTER_TEMPLATE_ID].node)
+    app.save_ui_node(app.ui_nodes[STARTER_EXAMPLE_ID])
+    node_obj_id = id(app.ui_nodes[STARTER_EXAMPLE_ID].node)
 
     app.session.sync_nodes_from_disk()
 
-    assert id(app.ui_nodes[STARTER_TEMPLATE_ID].node) == node_obj_id
+    assert id(app.ui_nodes[STARTER_EXAMPLE_ID].node) == node_obj_id

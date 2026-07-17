@@ -1,5 +1,3 @@
-from uuid import uuid4
-
 from imgui_bundle import imgui, imgui_ctx
 from OpenGL.GL import GL_SAMPLER_2D
 
@@ -9,7 +7,6 @@ from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_models import (
     UIUniform,
     UniformSortKey,
-    load_node_from_dir,
     sort_uniform_hashes,
 )
 from shaderbox.ui_primitives import (
@@ -114,19 +111,6 @@ def draw(app: App) -> None:
         app.notifications.push(
             f"Canvas resolution changed: {resolution_items[new_res_idx]}"
         )
-
-    imgui.same_line()
-    if ghost_button("...##node_actions"):
-        imgui.open_popup("node_actions_popup")
-    with imgui_ctx.begin_popup("node_actions_popup") as popup:
-        if popup and imgui.selectable("Save as template", False)[0]:
-            dir = app.save_ui_node(
-                ui_node,
-                root_dir=app.node_templates_dir,
-                dir_name=str(uuid4()),
-            )
-            app.ui_node_templates[dir.name] = load_node_from_dir(dir)
-            app.notifications.push("New template created")
 
     imgui.dummy((0, SPACE.MD))
     _draw_entry_points(app)

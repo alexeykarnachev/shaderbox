@@ -26,18 +26,19 @@ from PIL import Image as PILImage
 
 from shaderbox.constants import DEFAULT_IMAGE_FILE_PATH
 from shaderbox.copilot.address import (
+    example_address,
+    is_example_address,
     is_lib_address,
-    is_template_address,
     lib_address,
+    strip_example_prefix,
     strip_lib_prefix,
-    strip_template_prefix,
-    template_address,
 )
 from shaderbox.copilot.bridge import CopilotBridge
 from shaderbox.copilot.capabilities import (
     CompileErrorInfo,
     DeleteNodeResult,
     EditResult,
+    ExampleEntry,
     GrepHit,
     LibCatalogEntry,
     LibFileResult,
@@ -56,7 +57,6 @@ from shaderbox.copilot.capabilities import (
     TelegramConnectResult,
     TelegramOpResult,
     TelegramPackInfo,
-    TemplateEntry,
     WorkingSetView,
 )
 from shaderbox.copilot.checkpoint import TurnCheckpoint
@@ -498,11 +498,11 @@ class CopilotBackend:
         get_gate: Callable[[], GateChannel],
         describe_image: Callable[[bytes, str, bool], str],
         vision_enabled: Callable[[], bool],
-        node_templates_dir: Path,
-        starter_template_id: str,
+        node_examples_dir: Path,
+        starter_example_id: str,
         get_renders_dir: Callable[[], Path],
         get_ui_nodes: Callable[[], dict[str, UINode]],
-        get_ui_node_templates: Callable[[], dict[str, UINode]],
+        get_ui_node_examples: Callable[[], dict[str, UINode]],
         get_exporter_registry: Callable[[], ExporterRegistry],
         get_shader_lib_index: Callable[[], ShaderLibIndex],
         get_shader_lib_files: Callable[[], ShaderLibFileManager],
@@ -517,7 +517,7 @@ class CopilotBackend:
         save_ui_node: Callable[[UINode], object],
         sync_editor_from_disk: Callable[[str, str], None],
         delete_node_unguarded: Callable[[str], str],
-        template_description: Callable[[str], str],
+        example_description: Callable[[str], str],
         working_set_reader: Callable[[], list[str]],
         working_set_add: Callable[[str], None],
         get_active_checkpoint: Callable[[], TurnCheckpoint | None],
@@ -549,11 +549,11 @@ class CopilotBackend:
         # Oscillation brake (review cycle 2): recent source-state hashes per node —
         # an edit that returns the file to an earlier state is flagged as a fact.
         self._state_history: dict[str, list[int]] = {}
-        self._node_templates_dir = node_templates_dir
-        self._starter_template_id = starter_template_id
+        self._node_examples_dir = node_examples_dir
+        self._starter_example_id = starter_example_id
         self._get_renders_dir = get_renders_dir
         self._get_ui_nodes = get_ui_nodes
-        self._get_ui_node_templates = get_ui_node_templates
+        self._get_ui_node_examples = get_ui_node_examples
         self._get_exporter_registry = get_exporter_registry
         self._get_shader_lib_index = get_shader_lib_index
         self._get_shader_lib_files = get_shader_lib_files
@@ -568,7 +568,7 @@ class CopilotBackend:
         self._save_ui_node = save_ui_node
         self._sync_editor_from_disk = sync_editor_from_disk
         self._delete_node_unguarded_cb = delete_node_unguarded
-        self._template_description = template_description
+        self._example_description = example_description
         self._working_set_reader = working_set_reader
         self._working_set_add = working_set_add
         # Per-batch mutated-target guard: a whole-file rewrite of an address already here is rejected
@@ -664,44 +664,44 @@ class CopilotBackend:
             for nid, ui_node in self._get_ui_nodes().items()
         ]
 
-    def template_catalog(self) -> list[TemplateEntry]:
-        # GL-FREE: the shipped templates, addressed by a `template:<4-char>` handle (never the uuid).
+    def example_catalog(self) -> list[ExampleEntry]:
+        # GL-FREE: the shipped examples, addressed by a `example:<4-char>` handle (never the uuid).
         # Description is the merged override-or-shipped value, sanitized.
         return [
-            TemplateEntry(
-                template_id=template_address(tid),
+            ExampleEntry(
+                example_id=example_address(tid),
                 name=ui_node.ui_state.ui_name,
-                description=sanitize_display(self._template_description(tid)),
+                description=sanitize_display(self._example_description(tid)),
             )
-            for tid, ui_node in self._get_ui_node_templates().items()
+            for tid, ui_node in self._get_ui_node_examples().items()
         ]
 
-    def _copilot_resolve_template_id(self, handle: str) -> str | None:
-        # Template handle (`template:`-prefixed, short, or full uuid) -> full uuid, or None if no/ambiguous.
-        # Forgiving: also matches a template by its DISPLAY NAME (case-insensitive) — the model copies the
-        # human half of the `template:<id> | <name>` catalogue, so a bare name must resolve, not hard-fail.
-        templates = self._get_ui_node_templates()
-        h = strip_template_prefix(handle).strip()
+    def _copilot_resolve_example_id(self, handle: str) -> str | None:
+        # Example handle (`example:`-prefixed, short, or full uuid) -> full uuid, or None if no/ambiguous.
+        # Forgiving: also matches an example by its DISPLAY NAME (case-insensitive) — the model copies the
+        # human half of the `example:<id> | <name>` catalogue, so a bare name must resolve, not hard-fail.
+        examples = self._get_ui_node_examples()
+        h = strip_example_prefix(handle).strip()
         if not h:
             return None
-        if h in templates:
+        if h in examples:
             return h
-        prefix = [tid for tid in templates if tid.startswith(h)]
+        prefix = [tid for tid in examples if tid.startswith(h)]
         if len(prefix) == 1:
             return prefix[0]
         named = [
             tid
-            for tid, n in templates.items()
+            for tid, n in examples.items()
             if n.ui_state.ui_name.casefold() == h.casefold()
         ]
         return named[0] if len(named) == 1 else None
 
     def _copilot_resolve_source(self, handle: str) -> tuple[str, str | None]:
-        # read/grep addressing: `template:` -> TEMPLATE, else NODE. Returns (kind, full_id|None).
+        # read/grep addressing: `example:` -> EXAMPLE, else NODE. Returns (kind, full_id|None).
         # lib: falls through to the node resolver and returns None (read_shaders short-circuits
         # lib addresses before calling this).
-        if is_template_address(handle):
-            return "template", self._copilot_resolve_template_id(handle)
+        if is_example_address(handle):
+            return "example", self._copilot_resolve_example_id(handle)
         return "node", self._copilot_resolve_node_id(handle)
 
     def lib_catalog(self) -> list[LibCatalogEntry]:
@@ -763,10 +763,10 @@ class CopilotBackend:
                 if full_id is None or full_id in seen:
                     continue
                 seen.add(full_id)
-                if kind == "template":
-                    # Read-only: same view, not added to the working set, addressed by `template:` handle.
-                    ui_node = self._get_ui_node_templates()[full_id]
-                    view_id = template_address(full_id)
+                if kind == "example":
+                    # Read-only: same view, not added to the working set, addressed by `example:` handle.
+                    ui_node = self._get_ui_node_examples()[full_id]
+                    view_id = example_address(full_id)
                 else:
                     ui_node = self._get_ui_nodes()[full_id]
                     view_id = short[full_id]
@@ -867,8 +867,8 @@ class CopilotBackend:
         )
 
     def grep(self, query: str) -> list[GrepHit]:
-        # GL-FREE case-sensitive substring search across node / template / lib sources. Each hit is
-        # origin-labelled (node id, `template:` handle, or lib: address) for a follow-up read.
+        # GL-FREE case-sensitive substring search across node / example / lib sources. Each hit is
+        # origin-labelled (node id, `example:` handle, or lib: address) for a follow-up read.
         if not query:
             return []
         short = self._copilot_short_ids()
@@ -885,9 +885,9 @@ class CopilotBackend:
                             text=line.strip(),
                         )
                     )
-        for tid, ui_node in self._get_ui_node_templates().items():
-            origin = template_address(tid)
-            label = f"template '{ui_node.ui_state.ui_name}'"
+        for tid, ui_node in self._get_ui_node_examples().items():
+            origin = example_address(tid)
+            label = f"example '{ui_node.ui_state.ui_name}'"
             for i, line in enumerate(ui_node.node.source.text.split("\n"), start=1):
                 if query in line:
                     hits.append(
@@ -1001,35 +1001,35 @@ class CopilotBackend:
         return self._bridge.run_on_main(_on_main)
 
     def _create_node_on_main(
-        self, name: str, source: str, template: str, switch_to: bool
+        self, name: str, source: str, example: str, switch_to: bool
     ) -> tuple[str, list[CompileErrorInfo], str]:
-        # MAIN THREAD. Create a node from `template` (empty = the default starter); `source` overrides
+        # MAIN THREAD. Create a node from `example` (empty = the default starter); `source` overrides
         # the body. Order: save -> insert -> set-current. Adds to the working set; compiles + returns
         # errors. Called marshalled by create_node, and directly by import_picked_node (already on main).
-        template_id = (
-            self._copilot_resolve_template_id(template)
-            if template.strip()
-            else self._starter_template_id
+        example_id = (
+            self._copilot_resolve_example_id(example)
+            if example.strip()
+            else self._starter_example_id
         )
-        if template_id is None:
-            raise RuntimeError(f"no template matching '{template}'")
-        template_dir = self._node_templates_dir / template_id
-        if not template_dir.is_dir():
+        if example_id is None:
+            raise RuntimeError(f"no example matching '{example}'")
+        example_dir = self._node_examples_dir / example_id
+        if not example_dir.is_dir():
             # Missing only on a broken install; the registry turns the raise into a tool error.
-            raise RuntimeError("starter template is missing")
-        new_node = load_node_from_dir(template_dir)
+            raise RuntimeError("starter example is missing")
+        new_node = load_node_from_dir(example_dir)
         new_node.reset_id()
         if name.strip():
             new_node.ui_state.ui_name = name.strip()
         if source.strip():
             # release_program sets source.text; save_ui_node writes + rebinds source.path. Do NOT
-            # write through source.path here — it still points at the shared starter template.
+            # write through source.path here — it still points at the shared starter example.
             new_node.node.release_program(
                 source.replace("\r\n", "\n").replace("\r", "\n")
             )
         # Compile (GL, main-thread) BEFORE save so the persisted program matches the reported errors.
         new_node.node.compile()
-        # source.path still points at the template dir here; save rebinds it.
+        # source.path still points at the example dir here; save rebinds it.
         pre_save_path = str(new_node.node.source.path)
         self._save_ui_node(new_node)
         self._get_ui_nodes()[new_node.id] = new_node
@@ -1059,10 +1059,10 @@ class CopilotBackend:
         return self._copilot_short_ids()[new_node.id], errors, extra
 
     def create_node(
-        self, name: str, source: str, template: str, switch_to: bool
+        self, name: str, source: str, example: str, switch_to: bool
     ) -> tuple[str, list[CompileErrorInfo], str]:
         return self._bridge.run_on_main(
-            lambda: self._create_node_on_main(name, source, template, switch_to)
+            lambda: self._create_node_on_main(name, source, example, switch_to)
         )
 
     def delete_node(self, node: str) -> DeleteNodeResult:
@@ -2104,7 +2104,7 @@ class CopilotBackend:
 
     def _resolve_node_or_current(self, node: str) -> str | None:
         # A node-id handle (or "" = current) -> full id, or None when it resolves to no live node.
-        # Scripts address only nodes (one script per node), never lib/template handles.
+        # Scripts address only nodes (one script per node), never lib/example handles.
         if not node:
             cur = self._get_current_node_id()
             return cur if cur and cur in self._get_ui_nodes() else None
@@ -2130,13 +2130,13 @@ class CopilotBackend:
         # file; empty -> current node; else a node-id (unknown is a hard error, never a lib fallback).
         if is_lib_address(target):
             return self._copilot_resolve_lib_target(target, allow_create=allow_create)
-        if is_template_address(target):
-            # Templates are read-only; an explicit guard with an actionable message (not silent non-resolution).
+        if is_example_address(target):
+            # Examples are read-only; an explicit guard with an actionable message (not silent non-resolution).
             return EditResult(
                 matches=0,
                 errors=[],
                 unresolved=True,
-                unresolved_reason="templates are read-only — create_node(template=...) from it "
+                unresolved_reason="examples are read-only — create_node(example=...) from it "
                 "first, then edit the resulting node",
             )
         if not target:

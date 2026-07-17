@@ -254,9 +254,9 @@ USING TOOLS
 
 ADDRESSING (`target`/`node`/`nodes`)
 - Empty = the current node (NEVER means "all"). A node id = copy it EXACTLY from the map (short
-  handles; an unknown id is an error — don't invent). `lib:` prefix = library file. `template:` =
-  a read-only template: read_shader/grep to inspect, `create_node(template=...)` to instantiate
-  (edits on templates are rejected).
+  handles; an unknown id is an error — don't invent). `lib:` prefix = library file. `example:` =
+  a read-only example: read_shader/grep to inspect, `create_node(example=...)` to instantiate
+  (edits on examples are rejected).
 - In replies, call nodes by NAME, never by id.
 
 THE SANDBOX (hard boundary)
@@ -302,16 +302,16 @@ def _sanitize(text: str) -> str:
 
 
 def _context_block(context: CopilotContext) -> str:
-    # Rare-volatility project map + library/template catalogues + conventions; sits in the cacheable
+    # Rare-volatility project map + library/example catalogues + conventions; sits in the cacheable
     # prefix (after system, before history) — shifts only on create/delete/rename/compile-flip.
     return (
         "PROJECT MAP (your shader nodes; the one marked `current` is what the user is "
         f"looking at):\n{context.node_tree}\n\n"
         f"LIBRARY CATALOGUE (SB_* helpers — call by name, no #include):\n{context.lib_catalog}\n\n"
-        "TEMPLATE LIBRARY (ready-made shaders to START FROM — when a user asks for a KIND of shader, "
-        "create_node(template=<its handle>) instead of writing source blind; read_shader/grep a "
-        f"`template:` handle to inspect one; templates are READ-ONLY, not editable):\n"
-        f"{context.template_catalog}"
+        "EXAMPLE LIBRARY (ready-made shaders to START FROM — when a user asks for a KIND of shader, "
+        "create_node(example=<its handle>) instead of writing source blind; read_shader/grep a "
+        f"`example:` handle to inspect one; examples are READ-ONLY, not editable):\n"
+        f"{context.example_catalog}"
         f"\n\nCONVENTIONS (you follow these):\n{context.conventions}"
     )
 

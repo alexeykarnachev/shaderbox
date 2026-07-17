@@ -17,6 +17,7 @@ class CommandId(StrEnum):
     OPEN_PROJECT = auto()
     SAVE = auto()
     NEW_NODE = auto()
+    EXAMPLES = auto()
     DELETE_NODE = auto()
     TOGGLE_NODE_PLAY = auto()
     OPEN_SETTINGS = auto()
@@ -177,6 +178,7 @@ COMMAND_SPECS: list[CommandSpec] = [
         C.TOOLS,
     ),
     CommandSpec(CommandId.OPEN_SETTINGS, "Settings", _chord(K.s, K.mod_alt), C.TOOLS),
+    CommandSpec(CommandId.EXAMPLES, "Examples", _chord(K.e, K.mod_alt), C.TOOLS),
     CommandSpec(
         CommandId.TOGGLE_CHEATSHEET,
         "Toggle keyboard cheatsheet",

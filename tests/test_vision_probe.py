@@ -9,7 +9,7 @@ from typing import Any
 import moderngl
 import pytest
 
-from shaderbox.constants import NODE_TEMPLATES_DIR, STARTER_TEMPLATE_ID
+from shaderbox.constants import NODE_EXAMPLES_DIR, STARTER_EXAMPLE_ID
 from shaderbox.copilot import backend as backend_mod
 from shaderbox.copilot.backend import CopilotBackend
 from shaderbox.copilot.config import COPILOT_CONFIG, CopilotConfig
@@ -189,7 +189,7 @@ def test_probe_png_renders_forward_in_time(
     # (t, t+dt, t+2dt), never from an absolute constant. A probe aimed at t=2.5 once produced a
     # reversed 2.5, 1.5, 0.5 strip that describe_image labelled "early -> late". Real GL: capture the
     # u_time of every render and assert it strides forward from t. The stub tests can't see this.
-    node = load_node_from_dir(NODE_TEMPLATES_DIR / STARTER_TEMPLATE_ID)
+    node = load_node_from_dir(NODE_EXAMPLES_DIR / STARTER_EXAMPLE_ID)
     node.node.compile()
     times: list[float] = []
     orig = node.node.render

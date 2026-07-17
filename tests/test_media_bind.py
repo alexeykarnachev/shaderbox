@@ -12,7 +12,7 @@ import moderngl
 import pytest
 from PIL import Image as PILImage
 
-from shaderbox.constants import NODE_TEMPLATES_DIR, STARTER_TEMPLATE_ID
+from shaderbox.constants import NODE_EXAMPLES_DIR, STARTER_EXAMPLE_ID
 from shaderbox.copilot.backend import CopilotBackend
 from shaderbox.copilot.capabilities import MediaBindResult
 from shaderbox.copilot.gate import (
@@ -211,9 +211,9 @@ def test_import_picked_node_creates_and_is_path_free(
     nodes: dict[str, object] = {}
     current = {"id": ""}
     stub = types.SimpleNamespace(
-        _starter_template_id=STARTER_TEMPLATE_ID,
-        _node_templates_dir=NODE_TEMPLATES_DIR,
-        _copilot_resolve_template_id=lambda _t: STARTER_TEMPLATE_ID,
+        _starter_example_id=STARTER_EXAMPLE_ID,
+        _node_examples_dir=NODE_EXAMPLES_DIR,
+        _copilot_resolve_example_id=lambda _t: STARTER_EXAMPLE_ID,
         _get_ui_nodes=lambda: nodes,
         _save_ui_node=lambda un: un.save(tmp_path / "proj"),
         _get_active_checkpoint=lambda: None,

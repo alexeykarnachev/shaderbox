@@ -89,8 +89,13 @@ The costly mistakes from past sessions:
 - Create one fresh ShaderBox project **per experiment** under `projects/_lab/<slug>/` — it's a
   collection of nodes (each node = a `node.json` + `shader.frag.glsl` + optional `scripts/script.py`).
 - `projects/_lab/` is **gitignored** (`.gitignore`), so nothing here pollutes the repo. A worthwhile
-  result is promoted **by hand at the very end** (move the node dir out of `_lab/` into a real project
-  + `git add`) — only if the user decides to keep it.
+  result is promoted **by hand at the very end** — only if the user decides to keep it. Two targets:
+  a real project (move the node dir + `git add`), or — for a polished showcase — a **shipped
+  example**: copy the node dir into `shaderbox/resources/node_examples/<uuid>/`, append the uuid to
+  `constants.py::EXAMPLE_ORDER`, give it a stranger-facing `ui_name`/`description` in `node.json`,
+  promote any live-root-only `SB_*` helpers it uses into `resources/shader_lib/` (the fresh-env
+  resolve is pinned by `tests/test_examples_resolve.py` — regenerate its api-lock snapshot). The
+  canonical reference: the fire showcase (feature 051).
 - Tell the user the path and to **open that project in ShaderBox** (File → Open project → the
   `projects/_lab/<slug>/` folder), THEN you begin iterating, so the app has the node loaded.
 

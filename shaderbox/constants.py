@@ -5,18 +5,19 @@ from pathlib import Path
 
 # Resource directories
 RESOURCES_DIR = Path(str(files("shaderbox.resources")))
-NODE_TEMPLATES_DIR = RESOURCES_DIR / "node_templates"
+NODE_EXAMPLES_DIR = RESOURCES_DIR / "node_examples"
 SHADER_LIB_SEED_DIR = RESOURCES_DIR / "shader_lib"
 
-# Authored display order for the template grid — filesystem ctime isn't preserved
-# through git/zip/bundle. Templates not listed sort last. The first is the procedural
-# starter seeded into an empty project on first run (no external media).
-TEMPLATE_ORDER = [
+# Authored display order for the examples browser — filesystem ctime isn't preserved
+# through git/zip/bundle. Examples not listed sort last. The first is the procedural
+# starter cloned by "New node" and seeded into an empty project on first run.
+EXAMPLE_ORDER = [
     "53724dbd-8efb-4c09-8c7d-28d626a066e7",  # UV Mango
     "73ea2431-13f6-41e4-b923-04d846b678b0",  # Media Input
     "f90f5ff9-29c6-4bcf-aee7-090f20542353",  # Text Rendering
+    "0b0d16bb-f014-4a85-b155-6be74c33eded",  # Fire
 ]
-STARTER_TEMPLATE_ID = TEMPLATE_ORDER[0]
+STARTER_EXAMPLE_ID = EXAMPLE_ORDER[0]
 
 # Default file paths
 DEFAULT_VS_FILE_PATH = RESOURCES_DIR / "shaders" / "default.vert.glsl"

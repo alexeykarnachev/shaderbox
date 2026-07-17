@@ -265,14 +265,14 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   cycle-free (app.py imports `share_state`, NOT `share`).
 - **`widgets/`** — stateless imgui-drawing functions taking `app: App`. No shared contract.
   `details.py`, `media_ops.py`, `node_grid.py` (incl. `draw_node_preview_button`, the free preview
-  helper both the node grid and the node-creator template grid call), `uniform.py`,
+  helper both the node grid and the examples-browser grid call), `uniform.py`,
   `cheatsheet.py` (the floating bottom-right keyboard-cheatsheet overlay — own top-level window,
   scope-filtered rows, opt-out via `UIAppState.show_cheatsheet`).
 - **`popups/`** — popup `draw(app: App)` free functions. Open/closed state on `App` as a single
   `PopupState` enum field (`app.popup_state`); the `app.open_*()` helpers set it, `any_popup_open()`
   gates rendering, and `scripts/smoke.py` asserts it's a `PopupState`. Model owned by
   `conventions.md ## Design decisions` (the `popups/*.py` bullet).
-  `node_creator.py`, `settings.py` (global target FPS + inline-editor visual options + the
+  `examples.py` (the Examples browser — grid + description + "Open a copy"), `settings.py` (global target FPS + inline-editor visual options + the
   **Integrations** credential blocks), `emoji_data.py` + `emoji_picker.py` (monochrome glyph grid),
   `lib_picker/` (package: `__init__` entry+orchestrator, `tree`, `preview`, `search`, `filtering` —
   the tree+preview shader-library browser with right-click file/dir/function context menus).
@@ -282,10 +282,6 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   `open_in_file_manager`, `format_auto_value`, …) / **`constants.py`** / **`notifications.py`** /
   **`watch.py`** (the per-frame mtime watcher: `reload_node_if_changed` / `maybe_rebuild_lib_index`,
   called from `ui.py::update_and_draw`).
-- **`templates_descriptions.py`** — `TemplateDescriptionsStore`: a user-edit sidecar
-  (`template_descriptions.json` at `app_data_dir()`) overriding a shipped template's description;
-  lookup is override-else-shipped, so "reset" = delete the key. Same posture as the shader-lib
-  favorites/tags stores. The two-tier pattern lives in `conventions.md ## Design decisions`.
 - **`copilot/`** — the in-app coding-copilot agent (feature 020, cross-project + gate-UI + render/publish +
   Telegram-connect/pack + UI/UX-polish + turn-rollback waves DONE). Mirrors `exporters/`: its own
   package + worker thread + queues + a worker→main GL `bridge`. `App` owns a `CopilotSession` handle + drains
@@ -317,7 +313,7 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   display). Any offscreen driver should use `App(headless=True)`, not a hand-rolled hidden window.
 - **Node-dir data format:** a project lives in `<project>/nodes/<uuid>/{node.json, shader.frag.glsl,
   media/, textures/}` + `<project>/app_state.json`. The active-project pointer is
-  `~/.local/share/shaderbox/project_dir`; templates ship under `shaderbox/resources/node_templates/`.
+  `~/.local/share/shaderbox/project_dir`; shipped examples live under `shaderbox/resources/node_examples/`.
   Exporter render-output scratch files live in `<project>/exporter_scratch/` (cleaned per export).
 
 ### Run the app
@@ -400,7 +396,7 @@ failure** — the repo is currently at 0 pyright errors; keep it that way.
 
 ### `make smoke`
 Headless smoke test (`scripts/smoke.py`) — runs ~200 frames of `update_and_draw` against a THROWAWAY
-tmp project (seeded with the shipped template nodes + one script-driven-uniform node so the feature-040
+tmp project (seeded with the shipped example nodes + one script-driven-uniform node so the feature-040
 engine ticks in the loop; never `projects/dev/`) in an invisible glfw window, asserts popup-mutex +
 `current_node_id` invariants. ~1.5s; catches import errors, callback dispatch
 failures, popup state-machine crashes, released-texture binding errors. Doesn't catch visual bugs. Run
