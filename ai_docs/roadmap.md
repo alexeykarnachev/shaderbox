@@ -26,20 +26,24 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-07-17 (v0.24.0 LIVE on itch, both channels; dev == master == origin, tree clean). -->
-**ACTIVE: v0.24.0 is LIVE on itch (both channels), catching itch up from v0.21.0.** The upload
-bundled **052** workspace fluency + `.mov`/media fix, **053** copilot vision, **054** visual craft +
-Vec/Array physics fixes (all cut to git earlier as v0.22.x/v0.23.0 but never uploaded), and **051 -
-node examples** (templates → read-only examples; Ctrl+N instant-clones the UV-Mango starter; the
-Examples browser on `Alt+E`; the Fire showcase; example↔lib drift pinned by
-`tests/test_examples_resolve.py` + the `SB_*` api-lock). **Since the ship, on `dev` (un-shipped):** feature **055 — the in-app Help panel** (`F1`: the GLSL
-contract, engine uniforms, the `SB_` library, shortcuts — generated from the code so it can't drift;
-snippets insert at the caret). Awaiting the maintainer's manual check (spec `## Manual verification`).
-**NEXT — the HN-post push (051 was prep for
-it):** author 2-4 more showcase examples via `/shader-lab`, then a demo video, then Show HN + a
-r/creativecoding post. `todo.md` open items: 053 Settings vision badge [VERIFY] (LIVE-only, still
-un-eyeballed), the `reset_to_shipped` stale-file-removal [BUG] (dev-machine-only, hand-cleaned), the
-052 orphaned-media [DEBT], and the full-pytest X-crash [BUG] (dev box only; modules pass alone).
+<!-- As of 2026-07-17 (v0.25.0 LIVE on itch, both channels; dev == master == origin, tree clean). -->
+**ACTIVE: v0.25.0 is LIVE on itch (both channels) — the app side of the HN push is DONE.** This
+upload adds feature **055 — the in-app Help panel** (`F1`: the shader contract, engine uniforms, the
+`SB_` library, shortcuts — generated from the code so it can't drift; snippets insert at the caret;
+the cheatsheet moved to `Alt+/`, freeing `Ctrl+/` for the editor's comment toggle) and the **Night
+City** example (the raymarched hero scene promoted out of `_lab`, ~60 sliders, a true 62.83s loop —
+the lab notes' "30s seamless" was measured FALSE and corrected). v0.24.0 before it carried 051-054.
+Maintainer-verified live.
+
+**NEXT — the HN post itself.** Everything code-side is shipped; what remains is content + copy:
+(1) hero assets — a Night City still + a 45-60s demo video exported from ShaderBox itself + 2-3 GIFs;
+(2) a README rewrite (hero above the fold, one-line install, the hook in sentence one); (3) the itch
+page synced from `page.yaml`; (4) "Show HN: ShaderBox - a desktop GLSL playground", weekday ~9am ET,
+then r/creativecoding + r/proceduralgeneration. **Framing is a maintainer decision: lead with the
+PICTURE, not the machinery** — no library/introspection/copilot feature-listing up front. The other
+`_lab` projects (boids2d, lightning, night_horror, boids) stay unshipped scratch, all "pending
+review". `todo.md`: 053 vision badge [VERIFY], `reset_to_shipped` stale-file [BUG] (dev-box only,
+hand-cleaned), 052 orphaned-media [DEBT], full-pytest X-crash [BUG] (dev box only).
 
 **Last LIVE on itch (context):** v0.21.0 — feature 050 + render-divergence cleanup + YT Shorts presets
 + the bugs/debt fix wave. (Previously v0.20.0 — node-dir live auto-sync + math-symbol text glyphs.
