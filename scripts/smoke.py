@@ -21,6 +21,7 @@ from loguru import logger
 from shaderbox.app import App, PopupState
 from shaderbox.commands import ActiveRegion, NodeTab
 from shaderbox.constants import EXAMPLE_ORDER, NODE_EXAMPLES_DIR
+from shaderbox.help_content import help_sections
 from shaderbox.logging_setup import configure_logging
 from shaderbox.ui import update_and_draw
 
@@ -169,6 +170,15 @@ def main() -> int:
                 if frame_idx == 70:
                     app.popup_state = PopupState.EXAMPLES
                 if frame_idx == 90:
+                    app.popup_state = PopupState.CLOSED
+                # Help goes through the REAL opener (not a popup_state poke) so the
+                # section reset is exercised, not just the draw path.
+                if frame_idx == 120:
+                    app.open_help()
+                    assert app.help_section == help_sections()[0].key, (
+                        f"open_help did not reset the section ({app.help_section!r})"
+                    )
+                if frame_idx == 135:
                     app.popup_state = PopupState.CLOSED
                 # Cold-start copilot gate over an open Settings modal: the chat is open with no key
                 # (gate path) and the focus-pending latch is set, the exact state that re-grabbed

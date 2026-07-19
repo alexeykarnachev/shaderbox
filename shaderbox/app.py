@@ -45,6 +45,7 @@ from shaderbox.exporters.integrations import IntegrationsStore
 from shaderbox.exporters.registry import ExporterRegistry
 from shaderbox.exporters.telegram import TelegramExporter
 from shaderbox.exporters.youtube import YouTubeExporter
+from shaderbox.help_content import help_sections
 from shaderbox.notifications import Notifications
 from shaderbox.paths import ProjectPaths, app_data_dir, shader_lib_root
 from shaderbox.project_session import ProjectSession
@@ -84,6 +85,7 @@ class PopupState(Enum):
     # mutex structural. The command palette is non-modal (App.is_palette_open), not here.
     CLOSED = "closed"
     EXAMPLES = "examples"
+    HELP = "help"
     SETTINGS = "settings"
     EMOJI_PICKER = "emoji_picker"
     SHADER_LIB_PICKER = "shader_lib_picker"
@@ -315,6 +317,10 @@ class App:
         # closes and the editor must re-grab focus, caret where the insert ended. tabs/code.py
         # honors + clears it on the next render.
         self.editor_focus_requested: bool = False
+        # Selected Help section key. Initialized here as well as in open_help(): a harness that
+        # sets popup_state directly never runs the opener, and the content pane must not index
+        # into an unknown key.
+        self.help_section: str = help_sections()[0].key
         # Path-tagged jump request for tabs/code.py to honor next render — the consumer gates
         # on `path == current_editor_path` so an error in a non-active file doesn't move the
         # active editor's caret. Cleared on consume.
@@ -405,6 +411,7 @@ class App:
                 STARTER_EXAMPLE_ID
             ),
             CommandId.EXAMPLES: self.open_examples,
+            CommandId.HELP: self.open_help,
             CommandId.DELETE_NODE: self.delete_current_node,
             CommandId.TOGGLE_NODE_PLAY: self.toggle_current_node_play,
             CommandId.OPEN_SETTINGS: self.open_settings,
@@ -769,6 +776,23 @@ class App:
         self._open_popup(PopupState.SHADER_LIB_PICKER)
         self.shader_lib_files.picker_query = ""
         self.shader_lib_files.picker_tag_input_focused = False
+
+    def open_help(self) -> None:
+        self._open_popup(PopupState.HELP)
+        self.help_section = help_sections()[0].key
+
+    def insert_text_at_caret(self, text: str) -> bool:
+        # The one insert seam (lib picker + help panel). Returns whether the text landed, so a
+        # caller closes its modal only on a real insert.
+        session = self.get_current_session_if_exists()
+        if session is None:
+            logger.warning("No editor session active; can't insert text")
+            return False
+        session.editor.replace_text_in_current_cursor(text)
+        # The caller's modal closes this frame (the editor isn't drawn behind it), so ask the
+        # editor to re-grab focus next render — the caret stays where the insert ended.
+        self.editor_focus_requested = True
+        return True
 
     @property
     def app_dir(self) -> Path:

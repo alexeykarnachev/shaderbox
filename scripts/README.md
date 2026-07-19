@@ -80,7 +80,7 @@ directly for what you use; without a key the rest of ShaderBox works as usual.
 
 ## Keyboard shortcuts
 
-All of these are rebindable in Settings; press **Ctrl+/** in the app for the full live
+All of these are rebindable in Settings; press **F1** for the in-app help, or **Alt+/** for the live
 cheatsheet.
 
 | Key | Action |
@@ -93,7 +93,8 @@ cheatsheet.
 | Ctrl+P | Shader library picker |
 | Ctrl+Shift+P | Command palette |
 | Ctrl+J | Toggle the AI copilot chat |
-| Ctrl+/ | Keyboard cheatsheet |
+| F1 | Help |
+| Alt+/ | Keyboard cheatsheet |
 | Ctrl+Tab | Cycle focus region (editor / grid / panel) |
 | Ctrl+1 / 2 / 3 | Node / Render / Share tab |
 | F8 | Jump to next compile error |

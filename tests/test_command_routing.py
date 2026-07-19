@@ -2,7 +2,13 @@
 
 from imgui_bundle import imgui
 
-from shaderbox.commands import CommandScope, route_flag
+from shaderbox.commands import (
+    COMMAND_SPECS,
+    CommandScope,
+    chord_to_str,
+    route_flag,
+    scopes_overlap,
+)
 
 K = imgui.Key
 
@@ -29,3 +35,16 @@ def test_scoped_ctrl_chord_routes_global() -> None:
 def test_scoped_alt_chord_routes_always() -> None:
     chord = int(K.f8) | int(K.mod_alt)
     assert route_flag(CommandScope.EDITOR, chord) == imgui.InputFlags_.route_always
+
+
+def test_no_two_specs_share_a_chord_in_overlapping_scopes() -> None:
+    # The static table has no uniqueness guard of its own (the interactive rebinder checks only
+    # live rebinds), so a half-finished chord move ships two commands firing on one press —
+    # _dispatch_registry loops every spec with no first-wins break.
+    for i, a in enumerate(COMMAND_SPECS):
+        for b in COMMAND_SPECS[i + 1 :]:
+            if a.default_chord and a.default_chord == b.default_chord:
+                assert not scopes_overlap(a.scope, b.scope), (
+                    f"{a.id} and {b.id} share {chord_to_str(a.default_chord)} "
+                    f"in overlapping scopes ({a.scope} / {b.scope})"
+                )

@@ -12,6 +12,7 @@ from shaderbox.commands import (
     capture_chord,
     chord_needs_modifier,
     chord_to_str,
+    scopes_overlap,
 )
 from shaderbox.constants import SHADER_LIB_SEED_DIR
 from shaderbox.copilot.vision_probe import VisionVerdict
@@ -332,19 +333,12 @@ def _draw_copilot_config(app: App, focus: bool = False) -> None:
         cfg.apply_limits()
 
 
-def _scopes_overlap(a: CommandScope, b: CommandScope) -> bool:
-    # Two commands can fire on the same press iff their eligibility windows overlap: GLOBAL is
-    # always eligible (so it clashes with any scope); two focus-scoped commands clash only when
-    # they share the scope (only one focus flag is true at a time).
-    return a == CommandScope.GLOBAL or b == CommandScope.GLOBAL or a == b
-
-
 def _chord_in_use(
     app: App, chord: int, scope: CommandScope, exclude: CommandId
 ) -> bool:
     return any(
         spec.id != exclude
-        and _scopes_overlap(spec.scope, scope)
+        and scopes_overlap(spec.scope, scope)
         and app.effective_bindings.get(spec.id, 0) == chord
         for spec in COMMAND_SPECS
     )

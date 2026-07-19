@@ -142,8 +142,8 @@ def _draw_body(app: App) -> bool:
         )
     if (btn_clicked or pressed_enter) and can_insert:
         assert selected is not None
-        filtering.insert_name(app, selected)
-        keep_open = False
+        if filtering.insert_name(app, selected):
+            keep_open = False
     imgui.same_line()
     if ghost_button("Close"):
         keep_open = False

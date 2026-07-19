@@ -24,6 +24,7 @@ from shaderbox.logging_setup import configure_logging
 from shaderbox.paths import log_dir
 from shaderbox.popups.emoji_picker import draw_emoji_picker
 from shaderbox.popups.examples import draw_examples
+from shaderbox.popups.help import draw_help
 from shaderbox.popups.lib_picker import draw_lib_picker
 from shaderbox.popups.settings import draw_settings
 from shaderbox.scripting import MouseState
@@ -348,6 +349,7 @@ def update_and_draw(app: App) -> None:
         # ------------------------------------------------------------
         # Popups and notifications
         draw_examples(app)
+        draw_help(app)
         draw_settings(app)
         draw_emoji_picker(app)
         draw_lib_picker(app)
@@ -461,6 +463,8 @@ def _draw_menu_bar(app: App) -> None:
         # A direct-click bar item, not a dropdown — opening the browser IS the action.
         if imgui.menu_item("Examples", _hint(app, CommandId.EXAMPLES), False)[0]:
             app.open_examples()
+        if imgui.menu_item("Help", _hint(app, CommandId.HELP), False)[0]:
+            app.open_help()
 
 
 def _draw_copilot_bar(app: App, width: float) -> None:

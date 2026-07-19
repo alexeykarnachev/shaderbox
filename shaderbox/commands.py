@@ -18,6 +18,7 @@ class CommandId(StrEnum):
     SAVE = auto()
     NEW_NODE = auto()
     EXAMPLES = auto()
+    HELP = auto()
     DELETE_NODE = auto()
     TOGGLE_NODE_PLAY = auto()
     OPEN_SETTINGS = auto()
@@ -179,10 +180,12 @@ COMMAND_SPECS: list[CommandSpec] = [
     ),
     CommandSpec(CommandId.OPEN_SETTINGS, "Settings", _chord(K.s, K.mod_alt), C.TOOLS),
     CommandSpec(CommandId.EXAMPLES, "Examples", _chord(K.e, K.mod_alt), C.TOOLS),
+    CommandSpec(CommandId.HELP, "Help", _chord(K.f1), C.TOOLS),
     CommandSpec(
         CommandId.TOGGLE_CHEATSHEET,
         "Toggle keyboard cheatsheet",
-        _chord(K.slash, K.mod_ctrl),
+        # Alt+/, not Ctrl+/: the TextEditor hardwires Ctrl+/ to toggle_comments with no remap API.
+        _chord(K.slash, K.mod_alt),
         C.TOOLS,
     ),
 ]
@@ -238,6 +241,13 @@ def route_flag(scope: CommandScope, chord: int) -> imgui.InputFlags_:
     return imgui.InputFlags_.route_global
 
 
+def scopes_overlap(a: CommandScope, b: CommandScope) -> bool:
+    # Two commands can fire on the same press iff their eligibility windows overlap: GLOBAL is
+    # always eligible (so it clashes with any scope); two focus-scoped commands clash only when
+    # they share the scope (only one focus flag is true at a time).
+    return a == CommandScope.GLOBAL or b == CommandScope.GLOBAL or a == b
+
+
 def popup_suppresses(scope: CommandScope) -> bool:
     """Whether an open modal popup suppresses commands of this scope. All scopes: a modal owns
     the frame (the EDITOR/COPILOT focus flags also read False behind one, so this is belt-and-
@@ -254,6 +264,7 @@ _BINDABLE_KEYS: list[imgui.Key] = [
     K.enter,
     K.tab,
     K.grave_accent,
+    K.slash,
     K.backspace,
     K.delete,
     K.home,
