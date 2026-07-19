@@ -35,12 +35,12 @@ City** example (the raymarched hero scene promoted out of `_lab`, ~60 sliders, a
 the lab notes' "30s seamless" was measured FALSE and corrected). v0.24.0 before it carried 051-054.
 Maintainer-verified live.
 
-**NEXT — the HN post itself.** Everything code-side is shipped; what remains is content + copy:
-(1) hero assets — a Night City still + a 45-60s demo video exported from ShaderBox itself + 2-3 GIFs;
-(2) a README rewrite (hero above the fold, one-line install, the hook in sentence one); (3) the itch
-page synced from `page.yaml`; (4) "Show HN: ShaderBox - a desktop GLSL playground", weekday ~9am ET,
-then r/creativecoding + r/proceduralgeneration. **Framing is a maintainer decision: lead with the
-PICTURE, not the machinery** — no library/introspection/copilot feature-listing up front. The other
+**NEXT — the HN post (maintainer-paced).** Code side is DONE and live; the README now leads with a
+rendered Night City hero (`docs/screenshots/hero_night_city.png`) + the idea in three lines, with the
+copilot/library demoted to a bullet list. Remaining is optional polish the maintainer will pick up
+when he wants it: one GIF of "declare a uniform -> the slider appears" (the whole pitch in 4s), the
+itch cover swapped to the hero, then a Show HN link post. **Deliberate calls: lead with the PICTURE,
+not the machinery; no produced video and no voiceover; launch copy is NOT kept in-repo.** The other
 `_lab` projects (boids2d, lightning, night_horror, boids) stay unshipped scratch, all "pending
 review". `todo.md`: 053 vision badge [VERIFY], `reset_to_shipped` stale-file [BUG] (dev-box only,
 hand-cleaned), 052 orphaned-media [DEBT], full-pytest X-crash [BUG] (dev box only).
