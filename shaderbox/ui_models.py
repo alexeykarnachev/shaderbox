@@ -288,8 +288,12 @@ class UINode(BaseModel):
             if getattr(uniform, "gl_type", None) == GL_SAMPLER_2D:
                 # An unbound sampler holds the shipped default; persisting a per-node copy is pointless
                 # and would make it read back as "bound" on reload. Skip it — load's seed_uniform_values
-                # re-establishes the default.
+                # re-establishes the default. A file left by a PREVIOUS bind is deleted with the
+                # skip (load ignores it, but it would linger on disk and ride along duplicate_node).
                 if is_default_image(value):
+                    for stale_dir in (dir / "media", dir / "textures"):
+                        for stale in stale_dir.glob(f"{uniform.name}.*"):
+                            stale.unlink()
                     continue
 
                 file_name_wo_ext = uniform.name

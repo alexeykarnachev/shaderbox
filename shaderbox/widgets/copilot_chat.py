@@ -1,4 +1,5 @@
 import contextlib
+import time
 from pathlib import Path
 
 import pyperclip
@@ -472,9 +473,13 @@ def _draw_turn_snippet(app: App, msg: Message, idx: int, is_last_snippet: bool) 
         st = msg.snippet_stats
         if live:
             status = app.copilot.state.status
-            wrapped_caption(
-                sanitize_display(status) if status else "thinking...", COLOR.FG_DIM
-            )
+            line = sanitize_display(status) if status else "thinking..."
+            # A silent stream (hidden reasoning burst) shows a ticking wait counter, so a
+            # quiet minute is visibly alive, not indistinguishable from a hang.
+            quiet = time.monotonic() - app.copilot.state.last_activity_at
+            if quiet > 3.0:
+                line = f"{line}  -  waiting {int(quiet)}s"
+            wrapped_caption(line, COLOR.FG_DIM)
         elif st is not None:
             n = len(msg.steps)
             wrapped_caption(

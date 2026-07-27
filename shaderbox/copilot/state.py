@@ -130,6 +130,10 @@ class ChatState:
     # Transient in-flight status phrase from AgentStatus; shown in place of "thinking", cleared on
     # turn end. Not persisted and not a durable Message.
     status: str = ""
+    # time.monotonic() of the last applied agent event (any kind). While in_flight, a growing gap
+    # here is a hidden-reasoning burst — the chat shows a ticking "waiting Ns" so a silent stream
+    # is distinguishable from a hang. Not persisted.
+    last_activity_at: float = 0.0
     # Running cost across the whole conversation (persisted; shown in the gauge tooltip).
     session_cost_usd: float = 0.0
     # Last completed turn's stats; drives the header context gauge. Persisted (ConversationStore v7),

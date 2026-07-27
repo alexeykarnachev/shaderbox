@@ -1,5 +1,9 @@
 # TODO — bugs & must-fix tech debt
 
+**FROZEN (maintainer call, 2026-07-27): DRAIN-ONLY.** No new entries, ever — a new defect gets
+FIXED in the wave that finds it, or its knowledge goes to the feature spec / `conventions.md`.
+This file only shrinks; the goal is zero entries.
+
 ONLY bugs and obligatory technical debt — defects we are committed to fixing. **Not a feature
 backlog, not a wishlist, not a quirks log.** A "nice to have", an optimization that isn't fixing a
 defect, a future-feature's infrastructure, or a documented trade-off does NOT belong here — when we
@@ -32,20 +36,6 @@ no "Resolved YYYY-MM-DD" headers).
 
 ---
 
-## [BUG] "Reset library to shipped" never removes a live-root file that left the shipped set
-
-- **Trigger:** next time you touch `shader_lib/seed.py::reset_to_shipped`, or a user reports "reset
-  did nothing / stale lib helpers persist after a factory reset".
-- `reset_to_shipped` restores/overwrites every SHIPPED file but has no removal pass for a live-root
-  `.glsl` that is NOT in the current shipped set — so a helper that moved (e.g. flat `noise.glsl` →
-  `noise/fbm.glsl` when the toolbox shipped) leaves the OLD file lingering, giving DUPLICATE `SB_*`
-  definitions and a reset that reports "0 restored" while the user still sees the stale lib.
-  `sync_shipped_lib` already does manifest-guarded stale-removal (pristine-only); `reset_to_shipped`
-  should mirror it. Only bit the maintainer's dev live-root (hand-authored pre-subdir flat files —
-  cleaned by hand 2026-07-17); a fresh user install seeds only subdirs so it can't hit this yet, but
-  any future shipped rename re-arms it. Fix sketch: after the restore loop, delete a live-root file
-  absent from `seed` whose hash matches its manifest entry (never an edited/user-authored one).
-
 ## [VERIFY] Features 053+056 vision/copilot — LIVE-only UI checks, unverified on this box
 
 - **Trigger:** next `make run` on a machine with a display. Do it before the next itch cut.
@@ -60,44 +50,10 @@ no "Resolved YYYY-MM-DD" headers).
   checked the render against your ask") only on turns where a vision read happened; a deflected
   publish (no credentials) renders a neutral "handed off" line, not a red failure; the Settings →
   Copilot row for `copilot_convergence_max_looks` renders and persists.
-
-## [DEBT] Unbind/rebind leaves an orphaned `media/<uniform>.*` file on disk
-
-- **Trigger:** next time you touch the `GL_SAMPLER_2D` branch of `ui_models.py::UINode.save`, or a
-  feature reads a node's `media/` dir contents (not just `node.json`).
-- Feature 052's `unbind_media` resets a sampler to the default; `save` then SKIPS it
-  (`is_default_image`), so `node.json` no longer references the old `media/<uniform>.<ext>` — but the
-  file itself is never deleted. Load is driven purely by `node.json` (`core.py`), so the stale file is
-  correctly IGNORED (no wrong re-bind) — this is a disk-cleanliness leak, not a correctness bug. Note:
-  `duplicate_node` copytrees the node dir, so it carries the orphan into the fork. Fix sketch: when
-  `save` skips a default sampler, unlink a pre-existing `media/<uniform>.*` for that uniform.
-
-## [DEBT] A killed harness turn loses the conversation while its disk edits persist
-
-- **Trigger:** next time you touch `scripts/dogfood/harness.py`'s turn lifecycle, or a dogfood run
-  resumes into a "the model doesn't remember its own visible edits" state.
-- The one-process-per-turn harness `dump()`s (and persists the conversation) only AFTER
-  `drive_until_idle` returns; an external kill (timeout, Ctrl-C) loses the in-flight turn's
-  conversation while every tool edit already landed on disk — the next resume is half-restored
-  (nodes changed, history unaware). The engine-side `turn_time_budget_s` (180s) makes external
-  kills rare, but the window remains. Fix sketch: a SIGTERM handler (or incremental persist at
-  each bridge drain) that saves the conversation before exit.
-
-## [DEBT] No liveness indicator during hidden-reasoning bursts in the chat
-
-- **Trigger:** first user complaint shaped "the copilot froze" during a turn that was actually a
-  long reasoning burst; or the next feature touching `widgets/copilot_chat.py`'s streaming state.
-- A reasoning-heavy iteration streams no visible deltas for up to ~a minute; the chat shows
-  nothing alive, indistinguishable from a hang. The engine now bounds the turn
-  (`turn_time_budget_s`), but the UI should still show "thinking… Ns" (the worker knows a stream
-  is open with zero visible deltas). UI-only; no engine change.
-
-## [BUG] full pytest suite corrupts the X connection mid-run (pre-existing, not 051)
-
-- **Trigger:** any full `uv run pytest` on the dev box — reproduces today, every run.
-- The app-fixture window churn plus the `pytest.mark.forked` GL module (`test_revert_executor`)
-  corrupt the shared X connection on the WM-less `:1` display: the forked tests error
-  ("Cannot detect window with OpenGL support"), and later the process dies with
-  `XIO: fatal IO error` before printing a summary. Verified independent of feature 051 — the
-  pre-051 tree crashes identically; every module passes when run alone. Fix sketch: process-isolate
-  ALL app-fixture modules (forked/xdist) or run the suite under a dedicated Xvfb.
+- Liveness counter (todo-drain 2026-07-27): during a quiet stream stretch the live status line
+  grows a ticking "waiting Ns" suffix after ~3s of silence, and it disappears when deltas resume.
+- Dev-box only, same session: run `make test` (now MESA-override + one-context-recipe; the
+  WSL-verified fix for the "GL modules segfault / every module passes alone" class — the explicit-
+  EGL release in `test_script_engine_gl` poisoned the process's EGL display, fixed 2026-07-27,
+  622/622 headless). If the dev box's full run STILL dies with `XIO: fatal IO error` on `:1`, the
+  shared-X window-churn half is real there — then per-run `xvfb-run` on that box is the next move.

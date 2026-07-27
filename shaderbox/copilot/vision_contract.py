@@ -35,10 +35,10 @@ _BLANK_RUN = re.compile(r"\n[ \t\r]*\n([ \t\r]*\n)+")
 
 def _last(pattern: re.Pattern[str], text: str) -> re.Match[str] | None:
     # The contract puts the line LAST, so a stray earlier mention must never outvote it.
-    match: re.Match[str] | None = None
-    for match in pattern.finditer(text):
-        pass
-    return match
+    last: re.Match[str] | None = None
+    for m in pattern.finditer(text):
+        last = m
+    return last
 
 
 @dataclass(frozen=True)

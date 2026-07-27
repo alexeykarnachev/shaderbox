@@ -52,6 +52,7 @@ JSON turn-result, so a fresh process per turn keeps full state via disk:
 import json
 import os
 import shutil
+import signal
 import tempfile
 import threading
 import time
@@ -208,7 +209,27 @@ class DogfoodHarness:
         harness = cls(ctx, session, project_dir)
         if resuming:
             harness._restore_conversation()
+        harness._install_kill_persist()
         return harness
+
+    def _install_kill_persist(self) -> None:
+        # An external kill (the command-line `timeout`, Ctrl-C) must not lose the in-flight
+        # turn's conversation while its tool edits already landed on disk — that leaves the next
+        # resume half-restored (nodes changed, history unaware). Persist the conversation before
+        # dying; node/app_state saves are skipped (GL state is not signal-safe; edits are already
+        # on disk).
+        def _persist_and_die(signum: int, frame: object) -> None:
+            try:
+                self._copilot.save_conversation(
+                    self.session.paths.copilot_conversation_path
+                )
+                print(f"    [kill-persist: conversation saved on signal {signum}]")
+            finally:
+                signal.signal(signum, signal.SIG_DFL)
+                signal.raise_signal(signum)
+
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            signal.signal(sig, _persist_and_die)
 
     @property
     def _copilot(self) -> CopilotSession:

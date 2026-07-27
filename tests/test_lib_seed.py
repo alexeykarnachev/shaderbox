@@ -171,3 +171,28 @@ def test_corrupt_manifest_key_cannot_delete_outside_root(tmp_path: Path) -> None
     saved = json.loads((root / ".seed_manifest.json").read_text(encoding="utf-8"))
     assert str(outside) not in saved
     assert "../outside.glsl" not in saved
+
+
+def test_reset_removes_a_pristine_file_that_left_the_shipped_set(
+    tmp_path: Path,
+) -> None:
+    # A shipped rename (flat noise.glsl -> noise/fbm.glsl) must not leave the old
+    # pristine copy lingering as a duplicate SB_* definition after a factory reset.
+    seed, root = _roots(tmp_path, {"noise.glsl": "n1\n"})
+    sync_shipped_lib(seed, root)
+    (seed / "noise.glsl").unlink()
+    _mk(seed, {"noise_new.glsl": "n1\n"})
+    written, trashed = reset_to_shipped(seed, root)
+    assert not (root / "noise.glsl").exists()
+    assert (root / "noise_new.glsl").read_text() == "n1\n"
+    assert (written, trashed) == (1, 0)
+
+
+def test_reset_keeps_an_edited_file_that_left_the_shipped_set(tmp_path: Path) -> None:
+    # An EDITED ex-shipped copy is user-owned (same rule as the startup sync).
+    seed, root = _roots(tmp_path, {"noise.glsl": "n1\n"})
+    sync_shipped_lib(seed, root)
+    (seed / "noise.glsl").unlink()
+    (root / "noise.glsl").write_text("my edits\n", encoding="utf-8")
+    reset_to_shipped(seed, root)
+    assert (root / "noise.glsl").read_text() == "my edits\n"

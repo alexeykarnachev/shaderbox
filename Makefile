@@ -25,10 +25,15 @@ check:
 	uv run pre-commit run --all-files
 
 # Unit tests. Pure logic (resolve_dims) + GL-backed render glue (render_for,
-# render_media) against a headless standalone moderngl context; the GL module
-# skips if no GL driver is available rather than failing.
+# render_media) against a headless standalone moderngl context; app-fixture
+# modules skip without a display. The MESA overrides are LOAD-BEARING: the
+# shaders are #version 460 and compiling 460 on a bare llvmpipe 4.5 context
+# SEGFAULTS Mesa (the "GL segfault modules" class; same overrides the dogfood
+# harness sets). GLCONTEXT_LINUX_LIBGL avoids the libGL.so dev-symlink dlopen
+# failure on boxes without libgl-dev.
 test:
-	uv run pytest tests/ -q
+	env MESA_GL_VERSION_OVERRIDE=4.6 MESA_GLSL_VERSION_OVERRIDE=460 \
+		GLCONTEXT_LINUX_LIBGL=libGL.so.1 uv run pytest tests/ -q
 
 # Headless smoke test — runs ~200 frames of update_and_draw against projects/dev/
 # in an invisible glfw window. Catches import errors, callback dispatch failures,

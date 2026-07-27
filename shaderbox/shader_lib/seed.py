@@ -154,11 +154,16 @@ def reset_to_shipped(seed_dir: Path, root: Path) -> tuple[int, int]:
     """Factory reset: every shipped file back to its shipped content.
 
     Edited copies are moved to `.trash/` before being overwritten; deleted shipped
-    files are restored; user-authored files are untouched. Returns
-    (files written, edited copies trashed). The caller does NOT need to rebuild
-    the lib index — the mtime watcher picks the writes up next frame.
+    files are restored; user-authored files are untouched. A live file whose
+    rel-path LEFT the shipped set (a shipped rename/removal) is deleted when still
+    pristine per the old manifest — same rule as the startup sync — so a reset
+    can't leave a stale duplicate `SB_*` definition behind; an edited ex-shipped
+    copy is user-owned and stays. Returns (files written, edited copies trashed).
+    The caller does NOT need to rebuild the lib index — the mtime watcher picks
+    the writes up next frame.
     """
     seed = _seed_files(seed_dir)
+    old_manifest = _load_manifest(root)
     manifest: dict[str, str] = {}
     written = 0
     trashed = 0
@@ -176,6 +181,18 @@ def reset_to_shipped(seed_dir: Path, root: Path) -> tuple[int, int]:
         target.write_bytes(seed_bytes)
         manifest[rel] = seed_hash
         written += 1
+    removed = 0
+    for rel in [r for r in old_manifest if r not in seed]:
+        rel_path = Path(rel)
+        # `root / rel` ESCAPES the root for an absolute or `..` key (pathlib
+        # semantics) — a corrupt manifest must never unlink outside the root.
+        if not rel_path.is_absolute() and ".." not in rel_path.parts:
+            stale = root / rel_path
+            if stale.exists() and _sha1(stale.read_bytes()) == old_manifest[rel]:
+                stale.unlink()
+                removed += 1
     _save_manifest(root, manifest)
-    logger.info(f"shader-lib reset: {written} restored, {trashed} trashed")
+    logger.info(
+        f"shader-lib reset: {written} restored, {trashed} trashed, {removed} stale removed"
+    )
     return written, trashed

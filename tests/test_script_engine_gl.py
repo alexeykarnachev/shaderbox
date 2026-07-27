@@ -38,15 +38,13 @@ def gl_ctx() -> Iterator[moderngl.Context]:
     # creation, so set them here before create_standalone_context (no effect on a desktop driver).
     os.environ.setdefault("MESA_GL_VERSION_OVERRIDE", "4.6")
     os.environ.setdefault("MESA_GLSL_VERSION_OVERRIDE", "460")
-    ctx = None
-    for kwargs in ({"backend": "egl"}, {}):
-        try:
-            ctx = moderngl.create_standalone_context(**kwargs)  # type: ignore[arg-type]
-            break
-        except Exception:
-            continue
-    if ctx is None:
-        pytest.skip("no standalone GL context available")
+    # Default-backend like every other GL module's fixture — an EXPLICIT backend="egl" context
+    # released here poisons the process's EGL display and the NEXT module's first program
+    # compile segfaults (module-order-only; one context recipe per process is the rule).
+    try:
+        ctx = moderngl.create_standalone_context()
+    except Exception as e:
+        pytest.skip(f"no standalone GL context available: {e}")
     yield ctx
     ctx.release()
 

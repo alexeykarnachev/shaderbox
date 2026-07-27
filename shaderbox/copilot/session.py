@@ -1,5 +1,6 @@
 import queue
 import threading
+import time
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
@@ -169,6 +170,7 @@ class CopilotSession:
         self.state.messages.append(Message(role="turn_snippet"))
         self.state.streaming_text = ""
         self.state.in_flight = True
+        self.state.last_activity_at = time.monotonic()
         # Clear a `_shutdown` the bridge + gate may have latched from a prior release() on this
         # reused session — else every GL tool raises "copilot shutting down" and gate.ask()
         # returns cancelled immediately.
@@ -200,6 +202,7 @@ class CopilotSession:
             self._apply_event(ev)
 
     def _apply_event(self, ev: AgentEvent) -> None:
+        self.state.last_activity_at = time.monotonic()
         match ev:
             case AgentTextDelta():
                 self.state.streaming_text += ev.text

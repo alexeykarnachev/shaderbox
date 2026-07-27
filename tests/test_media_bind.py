@@ -239,3 +239,22 @@ def test_import_picked_node_creates_and_is_path_free(
         minimal_caps(import_node=lambda _sw: result)
     ).execute("import_node", {"switch_to": False})
     assert ok and "SENTINEL_SECRET_DIR" not in msg and "cool.glsl" in msg
+
+
+def test_unbind_then_save_removes_the_orphan_media_file(
+    gl_ctx: moderngl.Context, tmp_path: Path
+) -> None:
+    # save() skips a default sampler; the file a PREVIOUS bind wrote must not linger
+    # (disk-cleanliness leak that also rode along duplicate_node's copytree).
+    stub, node_id = _sampler_stub(gl_ctx, tmp_path / "proj")
+    img_path = tmp_path / "x.png"
+    PILImage.new("RGB", (8, 8), (0, 255, 0)).save(img_path)
+    CopilotBackend.bind_picked_media.__get__(stub)(node_id, "u_image", img_path)
+    ui = stub._get_ui_nodes()[node_id]
+    ui.save(tmp_path / "proj")
+    media_dir = tmp_path / "proj" / node_id / "media"
+    assert list(media_dir.glob("u_image.*"))
+
+    CopilotBackend.unbind_media.__get__(stub)("", "u_image")
+    ui.save(tmp_path / "proj")
+    assert not list(media_dir.glob("u_image.*"))
