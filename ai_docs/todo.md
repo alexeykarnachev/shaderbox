@@ -72,6 +72,26 @@ no "Resolved YYYY-MM-DD" headers).
   `duplicate_node` copytrees the node dir, so it carries the orphan into the fork. Fix sketch: when
   `save` skips a default sampler, unlink a pre-existing `media/<uniform>.*` for that uniform.
 
+## [DEBT] A killed harness turn loses the conversation while its disk edits persist
+
+- **Trigger:** next time you touch `scripts/dogfood/harness.py`'s turn lifecycle, or a dogfood run
+  resumes into a "the model doesn't remember its own visible edits" state.
+- The one-process-per-turn harness `dump()`s (and persists the conversation) only AFTER
+  `drive_until_idle` returns; an external kill (timeout, Ctrl-C) loses the in-flight turn's
+  conversation while every tool edit already landed on disk — the next resume is half-restored
+  (nodes changed, history unaware). The engine-side `turn_time_budget_s` (180s) makes external
+  kills rare, but the window remains. Fix sketch: a SIGTERM handler (or incremental persist at
+  each bridge drain) that saves the conversation before exit.
+
+## [DEBT] No liveness indicator during hidden-reasoning bursts in the chat
+
+- **Trigger:** first user complaint shaped "the copilot froze" during a turn that was actually a
+  long reasoning burst; or the next feature touching `widgets/copilot_chat.py`'s streaming state.
+- A reasoning-heavy iteration streams no visible deltas for up to ~a minute; the chat shows
+  nothing alive, indistinguishable from a hang. The engine now bounds the turn
+  (`turn_time_budget_s`), but the UI should still show "thinking… Ns" (the worker knows a stream
+  is open with zero visible deltas). UI-only; no engine change.
+
 ## [BUG] full pytest suite corrupts the X connection mid-run (pre-existing, not 051)
 
 - **Trigger:** any full `uv run pytest` on the dev box — reproduces today, every run.

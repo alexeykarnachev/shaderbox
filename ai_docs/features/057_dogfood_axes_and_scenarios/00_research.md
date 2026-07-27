@@ -102,6 +102,39 @@ dimension; the craft-block "one deformation field" lesson; any copilot prompt/en
 die? (3) quality axes D4/D5 (over-reach, palette drift) — keep as prose in 02 or invent a counted
 signal? (maintainer leaned unanswered; agent's default: prose for now).
 
+## Cornerstone pilot results (2026-07-27, run live in-session; dialogues + videos in chat)
+
+Four cornerstone scenarios written (`scenarios/03/04/05/08` + a "cornerstone" contract section in
+the scenarios README; trivial singles 06/07 written then DELETED — maintainer call: single trivial
+asks prove nothing, complexity must come from the VOLUME of merged simple constraints).
+
+| Scenario | Verdict | User msgs (budget 3) | Notes |
+|---|---|---|---|
+| 03 static_comp | PASS (measured: y=199.5/200, step 75px, equal Ø46px) | 3 | needed 2 layout corrections |
+| 04 glsl_anim | PASS one-shot (period 2.000s, circle exact) | 1 | trivially easy — motivated the compound redesign |
+| 05 bounce2d | PASS at budget (parabola, damped peaks 17→184→240px, rest) | 3 | 2 turns of failed debugging first |
+| 08 mixed_grid | PASS 11/11 at budget | 3 | y-flip + dead pulse + wrong blink → fixed |
+
+**Copilot findings (next-slice candidates):**
+1. **uv-y row-order flip** (08): "top row" placed at uv-y bottom — the y=0-bottom semantics is a
+   recurring craft/prompt gap (the facts line already documents y=0 bottom; the BUILD side lacks it).
+2. **Script→shader first-render wiring blindspot** (05): 3 turns to make a script-driven ball
+   visible at all; the model grinds edits instead of bisecting (shader-only? uniform driven? value
+   sane?) — a debugging-procedure craft gap.
+3. **Limit-cutoff UNDER-claims, twice** (05 ball, 08 blink): the model FIXED the thing, then the
+   token/time-limit forced reply claimed it still broken — the forced-reply path skips the eye
+   (056's accepted residual; its revisit trigger has now FIRED in the under-claim direction).
+4. Honesty held everywhere else: no over-claims in any run.
+
+**Infra landed this session:** `turn_time_budget_s=180` engine wall-clock bound (root cause of the
+"grind" timeouts: count-bounded but not time-bounded loop + slow reasoning streams; commit
+`4c5bc38`). Filed in todo: harness kill-safety (killed turn loses conversation, keeps disk edits);
+chat liveness indicator for hidden-reasoning bursts.
+
+**Judge-tooling confirmations for the 057 spec:** pixel measurement beat the human eye twice (a
+"bunched" false call; a "still broken" model claim disproved) — per-cell/region numeric asserts,
+`render_strip`, and a dialogue extractor from per-turn dumps are the right slice-3 items.
+
 ## Cold-start checklist for the next session
 
 1. `CLAUDE.md` chain (roadmap banner points here) → this file → `/dogfood` skill →

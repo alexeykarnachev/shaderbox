@@ -250,6 +250,11 @@ and probes the agent's self-review.
   GL-free, no `send`). The render path attr is `h._last_render_path` (underscore). NOTE: a uniform value
   set via `set_uniform` is in-memory-only until a project save, so a between-process render shows the
   file's inline default, not the tuned value.
+- **Turns are engine-bounded since `turn_time_budget_s` (default 180s, `copilot/config.py`):** a
+  slow reasoning grind force-ends with an honest final reply at the budget, so `timeout 300` on the
+  command is enough again — if a turn still exceeds it, that's a REAL finding (a hung stream, not a
+  long grind). Pre-budget history: debug-shaped correction turns legally ground past 10 minutes
+  (14+ iterations x 30-70s reasoning streams; observed 2026-07-27).
 - **🔴 ALWAYS wrap a turn process in `timeout` (`... timeout 300 uv run python -c …`).** A stalled LLM
   stream could leave the non-daemon copilot worker blocked, and interpreter `_shutdown` then hangs
   joining it — a process that never exits, never dumps. The per-delta stream cancel + the 120s client
