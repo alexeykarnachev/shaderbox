@@ -128,8 +128,11 @@ class ProjectSession:
             ShaderLibFavoritesStore.load()
         )
         self.shader_lib_tags: ShaderLibTagsStore = ShaderLibTagsStore.load()
-        # Working set: every node/lib address the agent touched this turn, reset per turn.
+        # Working set: every node/lib address the agent touched this turn, reset per turn (by the
+        # copilot session at enqueue). LRU-ordered — oldest first, so the size cap evicts the
+        # least-recently-touched member into `_copilot_working_set_evicted` (reported to the agent).
         self._copilot_working_set: list[str] = []
+        self._copilot_working_set_evicted: list[str] = []
 
         # The CPU-script engine (feature 041): per-node uniform-compute behaviors, ticked once
         # per frame before render. Populated per project by _resolve_scripts in load().
@@ -188,6 +191,8 @@ class ProjectSession:
             example_description=self.example_description,
             working_set_reader=lambda: self._copilot_working_set,
             working_set_add=self._copilot_ws_add,
+            working_set_evicted=lambda: self._copilot_working_set_evicted,
+            working_set_reset=self._copilot_ws_reset,
             get_active_checkpoint=lambda: self.copilot.checkpoints.active,
         )
         self.revert_executor = RevertExecutor(
@@ -281,9 +286,24 @@ class ProjectSession:
         return ui_node.ui_state.description if ui_node is not None else ""
 
     def _copilot_ws_add(self, address: str) -> None:
-        # Add a node full-id or "lib:" address to the working set, order-preserved, no dupes.
-        if address not in self._copilot_working_set:
-            self._copilot_working_set.append(address)
+        # Add a node full-id or "lib:" address to the working set, no dupes, MOVE-TO-END on a
+        # re-touch (so the node being hammered is never the one the cap evicts). Past the cap the
+        # oldest member is dropped and recorded; a re-added address leaves the record, or the
+        # rendered "dropped" line would claim something the block still shows.
+        if address in self._copilot_working_set:
+            self._copilot_working_set.remove(address)
+        self._copilot_working_set.append(address)
+        if address in self._copilot_working_set_evicted:
+            self._copilot_working_set_evicted.remove(address)
+        cap = COPILOT_CONFIG.copilot_working_set_max_nodes
+        while cap > 0 and len(self._copilot_working_set) > cap:  # 0 = uncapped
+            dropped = self._copilot_working_set.pop(0)
+            if dropped not in self._copilot_working_set_evicted:
+                self._copilot_working_set_evicted.append(dropped)
+
+    def _copilot_ws_reset(self) -> None:
+        self._copilot_working_set = []
+        self._copilot_working_set_evicted = []
 
     def rebuild_shader_lib_index(self) -> None:
         # Walk shader_lib_root, extract every top-level function, publish via the module-level

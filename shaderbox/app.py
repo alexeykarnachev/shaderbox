@@ -609,8 +609,6 @@ class App:
         logger.debug(f"copilot_send: enqueuing {preview!r}")
         self.flush_current_editor()
         self.copilot_turn_active = True
-        # A fresh working set per turn — starts empty, accretes the nodes/libs this turn touches.
-        self.session._copilot_working_set = []
         self.copilot.enqueue_turn(text)
 
     def copilot_clear_chat(self) -> None:

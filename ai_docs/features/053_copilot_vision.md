@@ -1,5 +1,12 @@
 # 053 — Copilot vision (the agent's real eye)
 
+> **SUPERSEDED IN PART by 056** (`056_copilot_convergence_and_robustness.md`): slice B's single
+> turn-end auto-look became a bounded multi-look convergence loop — the
+> `copilot_vision_auto_look_on_turn_end` bool is GONE (replaced by `copilot_convergence_max_looks`,
+> 0=off / 1=single look), `_RunLog.changed_render()`/`.looked()` were replaced by a since-index
+> mutation gate, and the eye now emits an engine-parsed (and stripped) `ASK:` verdict line. This
+> spec stays authoritative for the probe/facts/cache/Settings-badge design.
+
 Give the render-blind copilot a *good* look at its own output — the primary channel through which the
 render's content enters the agent's token stream. A first cut already shipped (`probe_render` appends a
 one-shot `describe_image` read, commit `6151ca4`); this feature makes that channel actually good:

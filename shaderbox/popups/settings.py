@@ -266,6 +266,15 @@ _COPILOT_LIMITS: list[tuple[str, str, str, int, int]] = [
         0,
         1,
     ),
+    (
+        "Engine looks per turn",
+        "copilot_convergence_max_looks",
+        "Vision looks the engine takes on its own at the end of a turn that changed the "
+        "render: it checks the frame against your ask and gives the agent another round "
+        "when the ask is not met. Each look costs a small vision call. 0 = off.",
+        0,
+        1,
+    ),
 ]
 
 

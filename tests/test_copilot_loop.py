@@ -75,6 +75,16 @@ class _FakeClient:
         return iter(script)
 
 
+def _model_cards(events: list[AgentEvent]) -> list[AgentToolCard]:
+    # The cards for tools the MODEL called — the engine's own turn-end look (056) also yields a
+    # card (it is a billed step the user must see), which is pinned in test_vision_auto_look.
+    return [
+        e
+        for e in events
+        if isinstance(e, AgentToolCard) and not (e.payload or {}).get("engine_look")
+    ]
+
+
 def _fake_context() -> CopilotContext:
     return CopilotContext(
         node_tree="- shader (id: node-1)  [current]",
@@ -180,7 +190,7 @@ def test_edit_compile_feedback_self_correction() -> None:
         )
     )
 
-    cards = [e for e in events if isinstance(e, AgentToolCard)]
+    cards = _model_cards(events)
     assert [c.name for c in cards] == [
         "read_shader",
         "edit_shader",
@@ -228,7 +238,7 @@ def test_edit_applies_despite_whitespace_divergence() -> None:
             cancel=threading.Event(),
         )
     )
-    cards = [e for e in events if isinstance(e, AgentToolCard)]
+    cards = _model_cards(events)
     assert len(cards) == 1
     assert cards[0].name == "edit_shader"
     assert cards[0].ok  # applied + compiled clean, NOT a 0-match
@@ -255,7 +265,7 @@ def test_edit_not_found_is_a_tool_error() -> None:
             cancel=threading.Event(),
         )
     )
-    cards = [e for e in events if isinstance(e, AgentToolCard)]
+    cards = _model_cards(events)
     assert len(cards) == 1
     assert cards[0].name == "edit_shader"
     assert cards[0].ok is False
@@ -417,7 +427,7 @@ def test_applies_but_broken_thrash_nudges_not_giveup() -> None:
         )
     )
 
-    cards = [e for e in events if isinstance(e, AgentToolCard)]
+    cards = _model_cards(events)
     # All edits applied (ok=True) — none counted as a failed edit, so no giveup.
     assert len(cards) == n_broken
     assert all(c.ok for c in cards)
@@ -975,7 +985,7 @@ def test_clean_edit_streak_fact_escalates_past_soft_threshold() -> None:
         )
     )
 
-    cards = [e for e in events if isinstance(e, AgentToolCard)]
+    cards = _model_cards(events)
     assert len(cards) == n_clean and all(c.ok for c in cards)
     # The fact fires on every edit at/after the soft threshold (n_clean - soft + 1), not once.
     assert nudge_events.count("clean_streak_nudge") == n_clean - soft + 1
@@ -1013,7 +1023,7 @@ def test_clean_edit_hard_stop_force_ends_turn() -> None:
         )
     )
 
-    cards = [e for e in events if isinstance(e, AgentToolCard)]
+    cards = _model_cards(events)
     assert len(cards) == hard  # force-ended exactly at the hard cap, not 30
     last = events[-1]
     assert isinstance(last, AgentError)
@@ -1059,7 +1069,7 @@ def test_write_shader_resets_clean_streak() -> None:
     )
     # No force-end: the write reset the streak, so 2*(hard-1) edits never reach `hard` in a row.
     assert isinstance(events[-1], AgentTurnDone)
-    cards = [e for e in events if isinstance(e, AgentToolCard)]
+    cards = _model_cards(events)
     assert len(cards) == len(pattern)
 
 

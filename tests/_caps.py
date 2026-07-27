@@ -25,6 +25,7 @@ from shaderbox.copilot.capabilities import (
     NodeImportResult,
     NodeOpResult,
     NodeTreeEntry,
+    ProbeResult,
     PublishResult,
     RenderResult,
     ScriptView,
@@ -48,7 +49,8 @@ class _FakeCaps:
     read_shaders: Callable[[list[str]], list[ShaderView]]
     grep: Callable[[str], list[GrepHit]]
     read_lib: Callable[[list[str]], list[LibFunctionBody]]
-    read_working_set: Callable[[], list[WorkingSetView]]
+    read_working_set: Callable[[], tuple[list[WorkingSetView], list[str]]]
+    reset_working_set: Callable[[], None]
     batch_begin: Callable[[], None]
     apply_shader_edit: Callable[[str, str, bool, str], EditResult]
     apply_full_rewrite: Callable[[str, str], EditResult]
@@ -70,7 +72,7 @@ class _FakeCaps:
     import_node: Callable[[bool], NodeImportResult]
     render_image: Callable[[str, RenderShape], RenderResult]
     render_video: Callable[[str, float, int, RenderShape], RenderResult]
-    probe_render: Callable[[str, float, str], str]
+    probe_render: Callable[[str, float, str], ProbeResult]
     publish_telegram: Callable[[str], PublishResult]
     publish_youtube: Callable[[str, str, RenderShape], PublishResult]
     has_current_node: Callable[[], bool]
@@ -94,7 +96,8 @@ def minimal_caps(**overrides: Any) -> CopilotCapabilities:
         "read_shaders": lambda _ids: [],
         "grep": lambda _q: [],
         "read_lib": lambda _names: [],
-        "read_working_set": lambda: [],
+        "read_working_set": lambda: ([], []),
+        "reset_working_set": lambda: None,
         "batch_begin": lambda: None,
         "apply_shader_edit": lambda _o, _n, _r, _t: EditResult(matches=0, errors=[]),
         "apply_full_rewrite": lambda _t, _tg: EditResult(matches=1, errors=[]),
@@ -120,7 +123,9 @@ def minimal_caps(**overrides: Any) -> CopilotCapabilities:
         ),
         "render_image": lambda _n, _shape: RenderResult(ok=True),
         "render_video": lambda _n, _s, _f, _shape: RenderResult(ok=True),
-        "probe_render": lambda _n, _t, _lf="": "render@t=0.0s: ink 0% (probe)",
+        "probe_render": lambda _n, _t, _lf="": ProbeResult(
+            msg="render@t=0.0s: ink 0% (probe)"
+        ),
         "publish_telegram": lambda _e: PublishResult(ok=True),
         "publish_youtube": lambda _t, _d, _shape: PublishResult(ok=True),
         "has_current_node": lambda: True,

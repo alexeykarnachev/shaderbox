@@ -26,24 +26,27 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-07-17 (v0.25.0 LIVE on itch, both channels; dev == master == origin, tree clean). -->
-**ACTIVE: v0.25.0 is LIVE on itch (both channels) — the app side of the HN push is DONE.** This
-upload adds feature **055 — the in-app Help panel** (`F1`: the shader contract, engine uniforms, the
-`SB_` library, shortcuts — generated from the code so it can't drift; snippets insert at the caret;
-the cheatsheet moved to `Alt+/`, freeing `Ctrl+/` for the editor's comment toggle) and the **Night
-City** example (the raymarched hero scene promoted out of `_lab`, ~60 sliders, a true 62.83s loop —
-the lab notes' "30s seamless" was measured FALSE and corrected). v0.24.0 before it carried 051-054.
-Maintainer-verified live.
+<!-- As of 2026-07-27 (056 landed on dev; itch still v0.25.0; HN post still maintainer-paced). -->
+**ACTIVE: feature 056 — copilot convergence & robustness — LANDED on dev (not shipped).** The
+copilot's turn-end eye is now a bounded CONVERGENCE loop: the eye emits an engine-parsed-and-
+stripped `ASK: met|not-met|unclear` verdict, the aimed look is unconditional (the model can't opt
+out by probing itself), re-looks are mutation-gated up to `copilot_convergence_max_looks` (default
+3), and a final `not-met` survives into the turn record. Plus the robustness wave: auto-look
+targets the node actually changed; script-edit brakes actually work (4 inverted signals fixed);
+vision spend is billed + visible; working-set reset at one choke point + LRU cap with loud
+eviction; truthful torn-stream/cancel/handoff errors. 3-round spec review + 3+1-round impl review
+(Opus swarm), micro-dogfood on this box's GPU (`GALLIUM_DRIVER=d3d12` — WSL renders on the RTX
+3090 now): ASK parse 9/9, the 054 flag over-claim is DEAD (model honestly reports gaps), one full
+not-met→fix→met arc observed.
 
-**NEXT — the HN post (maintainer-paced).** Code side is DONE and live; the README now leads with a
-rendered Night City hero (`docs/screenshots/hero_night_city.png`) + the idea in three lines, with the
-copilot/library demoted to a bullet list. Remaining is optional polish the maintainer will pick up
-when he wants it: one GIF of "declare a uniform -> the slider appears" (the whole pitch in 4s), the
-itch cover swapped to the hero, then a Show HN link post. **Deliberate calls: lead with the PICTURE,
-not the machinery; no produced video and no voiceover; launch copy is NOT kept in-repo.** The other
-`_lab` projects (boids2d, lightning, night_horror, boids) stay unshipped scratch, all "pending
-review". `todo.md`: 053 vision badge [VERIFY], `reset_to_shipped` stale-file [BUG] (dev-box only,
-hand-cleaned), 052 orphaned-media [DEBT], full-pytest X-crash [BUG] (dev box only).
+**NEXT — next copilot slice (maintainer + agent, in progress):** the flag dogfood exposed the two
+follow-up classes (056 spec Review history): the eye is blind to MOTION COHERENCE (canton waved
+independently of the stripes and two not-met verdicts missed it), and the craft block lacks "one
+object = ONE deformation field". Plan: ground-truth-checkable dogfood fixtures (physics/logic/3D
+base cases — bounce2d/pong/spin3d sketches in chat 2026-07-27) → then the eye/craft fixes. The HN
+post remains maintainer-paced (unchanged from v0.25.0: GIF, itch cover, Show HN). `todo.md`:
+053+056 live-UI [VERIFY], `reset_to_shipped` stale-file [BUG], 052 orphaned-media [DEBT],
+full-pytest X-crash [BUG].
 
 **Last LIVE on itch (context):** v0.21.0 — feature 050 + render-divergence cleanup + YT Shorts presets
 + the bugs/debt fix wave. (Previously v0.20.0 — node-dir live auto-sync + math-symbol text glyphs.
@@ -61,6 +64,7 @@ verified live. **No open BLOCKERs.**
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 056 | copilot_convergence_and_robustness | done | The turn-end eye becomes a bounded convergence loop (engine-parsed+stripped `ASK: met\|not-met\|unclear` verdict via `vision_contract.py`, unconditional aimed look, mutation-gated re-looks under `copilot_convergence_max_looks`, final not-met lands in the turn record) + a robustness wave: auto-look targets the mutated node, script-edit brake parity (tuple keys, write_script resets, broken-edit signals un-inverted, batch guard), structured `ProbeResult` plumbing (vision cost billed + truthful failure suffix + user-visible engine look), working-set reset at `enqueue_turn` + LRU cap with loud eviction, truthful torn-stream/cancel/`content=null`/handoff paths. 3-round spec review + 3+1-round post-impl review (Opus), GPU micro-dogfood: ASK parse 9/9, 054's over-claim dead, one not-met→fix→met arc. Spec: `ai_docs/features/056_copilot_convergence_and_robustness.md`. |
 | 055 | help_panel | done | In-app Help modal (`F1` + a Help menu-bar item) teaching ShaderBox's GLSL contract natively — never an "open a file" hand-off: section list left, prose + an insertable GLSL snippet right, mirroring the lib picker. Content is DATA (`help_content.py::HelpSection`); the engine-uniform and shortcuts sections are GENERATED from `ENGINE_DRIVEN_UNIFORMS` / `COMMAND_SPECS`, so a new builtin without a doc entry fails a test instead of shipping stale help. Snippets carry "Insert at caret" through one shared funnel (`App.insert_text_at_caret`, which the lib picker now delegates to), gated to a node shader tab; a display-only snippet (the shortcuts table) gets no button. `TOGGLE_CHEATSHEET` moved `Ctrl+/`→`Alt+/` (the TextEditor hardwires Ctrl+/ to toggle_comments, so both fired on one press) freeing F1, with `K.slash` added to `_BINDABLE_KEYS` so the new chord stays rebindable; a registry-wide chord-uniqueness invariant now guards every future chord edit. Post-impl review compiled both shipped snippets headlessly on a real EGL context. Spec: `ai_docs/features/055_help_panel.md`. |
 | 051 | node_examples | done | Templates → read-only **examples**: Ctrl+N instant-clones the starter (picker deleted), the node-creator popup re-purposed as the Examples browser (`Alt+E`/menu-bar/palette/first-launch auto-open, "Open a copy"), the Fire showcase promoted from `_lab` with `SB_fbm` into the seed lib, description-sidecar + "Save as template" subsystems deleted, example↔lib coherence pinned by resolve-clean + `SB_*` api-lock tests. Spec: `ai_docs/features/051_node_examples.md`. |
 | 054 | copilot_visual_craft | done | Make the copilot faithfully + competently execute a visual instruction (metric = instruction-fidelity, NOT realism). A `VISUAL CRAFT` prompt block distilled from the shader labs (match-the-asked-look; pick tool by effect — per-pixel→GLSL, physics-sim→script; tonemap/AA/dither/structured-texture baseline; shadows>AO>normals + grazing light; motion emerges from feedback; PLAN complex work first then BUILD IN STAGES; iterate until it MATCHES). Turn-end auto-look now AIMED at the ask (not empty look_for) + a legibility dimension + forbidden from claiming what the eye doesn't show; surgical / large-file edit discipline. Engine fixes that unblocked physics scripting: `Vec2/3/4` are real vectors (`.x/.y/.z`, component + scalar math, `.dot/.length/.normalized/.cross`); `Array` auto-flattens Vec/tuple rows. Loop-mined + dogfood-validated (US flag: dark fbm-mush → real Verlet cloth-sim, incl. the CHEAP model building the sim step-by-step once Vec/Array were fixed). Spec: `ai_docs/features/054_copilot_visual_craft.md`. |

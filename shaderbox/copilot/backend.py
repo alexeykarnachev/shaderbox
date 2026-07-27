@@ -47,6 +47,7 @@ from shaderbox.copilot.capabilities import (
     NodeImportResult,
     NodeOpResult,
     NodeTreeEntry,
+    ProbeResult,
     PublishResult,
     RenderResult,
     ScriptView,
@@ -66,6 +67,12 @@ from shaderbox.copilot.errors import CopilotToolError
 from shaderbox.copilot.gate import GateChannel, GateKind, GateRequest
 from shaderbox.copilot.glsl_lex import glsl_lex, span_drops_comment, token_match
 from shaderbox.copilot.sanitize import sanitize_display
+from shaderbox.copilot.vision_contract import (
+    VisionUsage,
+    find_ask_line,
+    parse_ask_verdict,
+    strip_ask_line,
+)
 from shaderbox.core import ENGINE_DRIVEN_UNIFORMS, Canvas, Node
 from shaderbox.exporters.base import (
     AuthState,
@@ -114,6 +121,8 @@ def _stamp_facts(facts: str, t: float) -> str:
     # Stamp the probe's sample time onto the facts line ("render:" -> "render@t=Xs:").
     return facts.replace("render:", f"render@t={t:.1f}s:", 1) if facts else ""
 
+
+_VISION_UNAVAILABLE_SUFFIX = "(vision look unavailable this step)"
 
 _COPILOT_SHORT_ID_LEN = 4
 _COPILOT_FULL_ID_LEN = 36
@@ -194,12 +203,14 @@ def _edit_error_hints(
 
 
 # D9: one whole-file rewrite per file per step — an earlier edit this batch changed the
-# content the rewrite was composed from.
-_BATCH_GUARD_REASON = (
-    "this file was already edited earlier in this same step, so what you copied from "
-    "the working set is stale — the working set refreshes next step; re-issue then "
-    "(or use edit_shader, which re-matches the current text)"
-)
+# content the rewrite was composed from. `edit_tool` names the substring editor for the
+# artifact kind (a script write must not steer at edit_shader).
+def _batch_guard_reason(edit_tool: str) -> str:
+    return (
+        "this file was already edited earlier in this same step, so what you copied from "
+        "the working set is stale — the working set refreshes next step; re-issue then "
+        f"(or use {edit_tool}, which re-matches the current text)"
+    )
 
 
 def _number_lines(text: str) -> str:
@@ -496,7 +507,7 @@ class CopilotBackend:
         *,
         get_bridge: Callable[[], CopilotBridge],
         get_gate: Callable[[], GateChannel],
-        describe_image: Callable[[bytes, str, bool], str],
+        describe_image: Callable[[bytes, str, bool], tuple[str, VisionUsage]],
         vision_enabled: Callable[[], bool],
         node_examples_dir: Path,
         starter_example_id: str,
@@ -520,6 +531,8 @@ class CopilotBackend:
         example_description: Callable[[str], str],
         working_set_reader: Callable[[], list[str]],
         working_set_add: Callable[[str], None],
+        working_set_evicted: Callable[[], list[str]],
+        working_set_reset: Callable[[], None],
         get_active_checkpoint: Callable[[], TurnCheckpoint | None],
     ) -> None:
         self._get_bridge = get_bridge
@@ -571,13 +584,19 @@ class CopilotBackend:
         self._example_description = example_description
         self._working_set_reader = working_set_reader
         self._working_set_add = working_set_add
+        self._working_set_evicted = working_set_evicted
+        self._working_set_reset = working_set_reset
         # Per-batch mutated-target guard: a whole-file rewrite of an address already here is rejected
-        # (its lines shifted from an earlier same-batch edit). Cleared per batch via batch_begin.
-        self._batch_mutated: set[str] = set()
+        # (its lines shifted from an earlier same-batch edit). Cleared per batch via batch_begin. A
+        # node's script keys as ("script", node_id) so it can't collide with a node address.
+        self._batch_mutated: set[str | tuple[str, str]] = set()
         self._get_active_checkpoint = get_active_checkpoint
 
     def batch_begin(self) -> None:
         self._batch_mutated.clear()
+
+    def reset_working_set(self) -> None:
+        self._working_set_reset()
 
     @property
     def _bridge(self) -> CopilotBridge:
@@ -794,11 +813,15 @@ class CopilotBackend:
 
         return self._bridge.run_on_main(_on_main)
 
-    def read_working_set(self) -> list[WorkingSetView]:
+    def read_working_set(self) -> tuple[list[WorkingSetView], list[str]]:
         # Rebuild the working set into live views (marshalled: uniform read + recompile are GL).
-        # Current node unioned in first, then touched addresses in add-order; gone nodes skipped.
-        # A program-less node is recompiled here so its source and errors are coherent.
-        def _on_main() -> list[WorkingSetView]:
+        # Current node unioned in first (so the rendered set is the size cap + 1 at most), then
+        # touched addresses in add-order; gone nodes skipped. A program-less node is recompiled here
+        # so its source and errors are coherent. The second element is this turn's evictions, as
+        # AGENT-FACING handles and minus anything the block still renders (an evicted node that the
+        # current-node union brought back shows its full source — calling it dropped would be a
+        # falsehood on the model channel).
+        def _on_main() -> tuple[list[WorkingSetView], list[str]]:
             short = self._copilot_short_ids()
             current = self._get_current_node_id()
             ordered: list[str] = []
@@ -815,7 +838,18 @@ class CopilotBackend:
                     view = self._copilot_node_working_view(address, short, current)
                 if view is not None:
                     views.append(view)
-            return views
+            rendered = {v.address for v in views}
+            evicted = [
+                handle
+                for handle in (
+                    address
+                    if is_lib_address(address)
+                    else short.get(address, address[:_COPILOT_SHORT_ID_LEN])
+                    for address in self._working_set_evicted()
+                )
+                if handle not in rendered
+            ]
+            return views, evicted
 
         return self._bridge.run_on_main(_on_main)
 
@@ -1424,7 +1458,7 @@ class CopilotBackend:
             _on_main, timeout=COPILOT_CONFIG.render_op_timeout_s, defer=True
         )
 
-    def probe_render(self, node: str, t: float, look_for: str = "") -> str:
+    def probe_render(self, node: str, t: float, look_for: str = "") -> ProbeResult:
         # The aimable read-side probe (feature 050): the one-line facts string the edit path
         # produces, at a chosen `t` (default 0.0 = the export clock). UN-gated + non-mutating - the
         # render-blind agent glances here as often as it likes, vs render_image (gated, writes a
@@ -1450,18 +1484,38 @@ class CopilotBackend:
         facts, png, is_strip, frame_hash, node_id = self._bridge.run_on_main(
             _on_main, timeout=COPILOT_CONFIG.render_op_timeout_s, defer=True
         )
+        obs = ""
+        usage: VisionUsage | None = None
         if png:
             key = (frame_hash, look_for, is_strip)
             cached = self._vision_cache.get(node_id)
             if cached is not None and cached[0] == key:
                 obs = cached[1]
             else:
-                obs = self._describe_image(png, look_for, is_strip)
+                obs, usage = self._describe_image(png, look_for, is_strip)
                 if obs:
                     self._vision_cache[node_id] = (key, obs)
-            if obs:
-                facts = f"{facts}\nvisual (correctness only, NOT beauty): {obs}"
-        return facts
+        if not obs:
+            if self._vision_enabled() and not facts.startswith("error:"):
+                # Vision is ON but this look produced nothing — say so, or a failed eye is
+                # indistinguishable from vision-off while the prompt promises sight. Class only:
+                # no exception text reaches the model.
+                facts = f"{facts}\n{_VISION_UNAVAILABLE_SUFFIX}"
+            return ProbeResult(msg=facts, usage=usage)
+        # The ASK line is engine-only: parsed here, and REMOVED from every model-facing string
+        # (the model's own probes carry a look_for too, and a raw done-ness label on that surface
+        # would make the eye a judge).
+        verdict = parse_ask_verdict(obs)
+        ask_line = find_ask_line(obs)
+        read = strip_ask_line(obs)
+        return ProbeResult(
+            msg=f"{facts}\nvisual (correctness only, NOT beauty): {read}",
+            vision_ok=True,
+            verdict=verdict,
+            ask_line=ask_line,
+            read=read,
+            usage=usage,
+        )
 
     def _probe_png(self, node: Node, t: float) -> tuple[bytes, bool, int]:
         # Render the node to a vision-readable PNG (larger than the 64px facts probe) for probe_render.
@@ -2000,6 +2054,7 @@ class CopilotBackend:
         # ScriptWriteResult. write_script (whole file) and edit_script (after a splice) both end here, so
         # an edit and a write give IDENTICAL feedback. Runs on the main thread (the caller marshals).
         self._working_set_add(node_id)  # so the script rides the working set next step
+        self._batch_mutated.add(("script", node_id))
         self._capture_script(node_id)
         probe = self._write_script_source(node_id, new_text)
         broken = (
@@ -2052,7 +2107,7 @@ class CopilotBackend:
                     f"{streak} broken edits in a row; the restore target also no longer runs "
                     "(likely a shader/uniform change) -- re-read and rewrite the whole script."
                 )
-            return ScriptWriteResult(ok=True, compile_error=note)
+            return ScriptWriteResult(ok=True, restored_note=note)
         return ScriptWriteResult(ok=True, compile_error=error)
 
     def write_script(self, new_text: str, node: str, /) -> ScriptWriteResult:
@@ -2060,6 +2115,10 @@ class CopilotBackend:
             node_id = self._resolve_node_or_current(node)
             if node_id is None:
                 return ScriptWriteResult(ok=False, error=_no_node_error(node).message)
+            if ("script", node_id) in self._batch_mutated:
+                return ScriptWriteResult(
+                    ok=False, error=_batch_guard_reason("edit_script")
+                )
             return self._apply_script_text(node_id, new_text)
 
         return self._bridge.run_on_main(
@@ -2329,7 +2388,7 @@ class CopilotBackend:
                     matches=0,
                     errors=[],
                     unresolved=True,
-                    unresolved_reason=_BATCH_GUARD_REASON,
+                    unresolved_reason=_batch_guard_reason("edit_shader"),
                     target_label=tgt.label,
                 )
             result = self._copilot_persist_target(tgt, new_text, 1)

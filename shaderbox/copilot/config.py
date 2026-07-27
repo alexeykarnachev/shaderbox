@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 @dataclass
 class CopilotConfig:
-    # Agent-loop limits. The seven user-facing ones (caps, retry budgets, nudge
+    # Agent-loop limits. The nine user-facing ones (caps, retry budgets, nudge
     # thresholds) are Settings-tunable: persisted on `CopilotIntegration`
     # (integrations.json) and applied onto the shared COPILOT_CONFIG instance via
     # `apply_user_limits` (startup + Settings edit) — every consumer holds this
@@ -39,6 +39,11 @@ class CopilotConfig:
     # Headroom the history trim withholds for the per-turn working-set scratchpad, which is
     # spliced AFTER the trim runs and is otherwise invisible to it (feature 020·29 D10).
     scratchpad_reserve_tokens: int = 50_000
+    # Working-set MEMBER cap (feature 056 D3): the add seam evicts the least-recently-touched
+    # address past this, so an accreting turn can't render an unbounded scratchpad. The current
+    # node is unioned in regardless, so the rendered set is this + 1 at most. 0 = uncapped.
+    # Internals knob, not Settings-tunable.
+    copilot_working_set_max_nodes: int = 6
     # Feature 033 enriched results: probe-render facts after clean mutations
     # (ink/bbox/luma off a tiny offscreen render). Size is the square probe edge.
     render_facts_enabled: bool = True
@@ -55,11 +60,13 @@ class CopilotConfig:
     copilot_vision_model: str = "openai/gpt-4o-mini"
     copilot_vision_probe_size: int = 320
     copilot_vision_max_tokens: int = 220
-    # Turn-end auto-look (053 slice B): if a turn CHANGED the render but the model never looked at the
-    # result (no probe_render), the engine takes ONE vision look FOR it at turn-end and injects the
-    # observation as data — so a visual result is never declared blind. Facts-as-data, not a nag; the
-    # injected text is explicit that the ENGINE looked (not the model), so the model isn't confused.
-    copilot_vision_auto_look_on_turn_end: bool = True
+    # Convergence enforcement (feature 056): TOTAL engine vision looks per turn. At turn-end, if a
+    # render-authoring tool succeeded since the last engine look, the engine takes an aimed look FOR
+    # the model and injects the observation as data — so a visual result is never declared blind and
+    # a `not-met` read re-opens the turn for a bounded number of rounds. 0 = off (the master switch);
+    # 1 = a single aimed look. Unconditional on the model's OWN probes (its look answers its own
+    # question, not the user's ask).
+    copilot_convergence_max_looks: int = 3
     # Settings capability check: bound the GET /models fetch that classifies whether the chosen vision
     # model accepts image input (free metadata, not a billed probe). A transient miss -> "couldn't verify".
     vision_models_fetch_timeout_s: float = 15.0
@@ -107,6 +114,7 @@ def apply_user_limits(
     clean_edit_soft_streak: int,
     clean_edit_hard_streak: int,
     auto_revert_after_failed_edits: int,
+    copilot_convergence_max_looks: int,
 ) -> None:
     # The Settings -> live-config seam. Values arrive pre-clamped by the Settings UI;
     # a hand-edited integrations.json gets a floor here so a 0 cap can't wedge the loop.
@@ -119,4 +127,7 @@ def apply_user_limits(
     COPILOT_CONFIG.clean_edit_hard_streak = max(0, clean_edit_hard_streak)  # 0 = off
     COPILOT_CONFIG.auto_revert_after_failed_edits = max(
         0, auto_revert_after_failed_edits
+    )  # 0 = off
+    COPILOT_CONFIG.copilot_convergence_max_looks = max(
+        0, copilot_convergence_max_looks
     )  # 0 = off

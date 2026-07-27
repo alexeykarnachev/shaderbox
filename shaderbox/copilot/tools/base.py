@@ -69,7 +69,7 @@ class ToolDefinition:
     # One-line summary for the lazy-tool catalogue the model reads to decide what to `load_tools`
     # (feature 052 slice 0). Only meaningful on a lazy (eager=False) tool; ignored for eager tools.
     catalog_summary: str = ""
-    # Shader-SOURCE edit tools only (edit_shader / write_shader) — drives the
+    # SOURCE edit tools only (the shader and script edit/write pairs) — drives the
     # consecutive-failed-edits giveup cap. Deliberately NARROWER than `mutating`: a failed
     # render/publish must not trip the edit-retry cap.
     is_edit: bool = False

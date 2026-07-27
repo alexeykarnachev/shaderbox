@@ -41,10 +41,17 @@ gotcha already hit, so you don't re-discover them.
   in-tree default.
 - **Display-less box.** `glfw.init()` FAILS (no window); `import glfw`/`import imgui` SUCCEED. The whole
   point of the headless harness is to bypass glfw via a standalone EGL context — works on Pi V3D, WSL
-  Mesa (software GL), a CI runner, anything with EGL. `h.render()` uses the DIRECT context-thread render
-  (robust everywhere); the bridge-marshalled `render_image` can be slow-first-draw under software GL (WSL)
+  Mesa, a CI runner, anything with EGL. `h.render()` uses the DIRECT context-thread render
+  (robust everywhere); the bridge-marshalled `render_image` can be slow-first-draw under software GL
   and hit the op timeout — that's a per-box quirk, not a harness fault (the agent's own render_image calls
   still exercise that path).
+- **🔴 On WSL, set `GALLIUM_DRIVER=d3d12` — the real GPU, not llvmpipe (verified 2026-07-27).** Bare
+  surfaceless EGL on WSL2 silently picks llvmpipe (software, minutes-long heavy-shader renders; a 560s
+  flag turn barely fit); with `GALLIUM_DRIVER=d3d12` the SAME EGL path lands on the host GPU via WSLg's
+  d3d12 gallium driver (`D3D12 (NVIDIA GeForce RTX 3090)`, native GL 4.6 — the MESA_*_OVERRIDE vars
+  become unnecessary but are harmless). Prepend it to every harness command on a WSL box:
+  `env GALLIUM_DRIVER=d3d12 SHADERBOX_DATA_DIR=... uv run ...`. Don't bake it into `harness.py` — it
+  would misfire on non-WSL boxes; it's a per-box env, like the key.
 
 ## 1. Drive a scenario — ONE blocking `uv run` per turn (resume/dump)
 

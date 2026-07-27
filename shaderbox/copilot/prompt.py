@@ -108,8 +108,10 @@ FEEDBACK (what you can see)
   shader is sent as a time strip so motion is read too). Pass `look_for` = what you're trying to achieve
   or check, in your own words — the eye answers it skeptically (says NO if it can't clearly see it). Use
   it to actually SEE your work, ESPECIALLY before claiming a visual result or reporting a visual task
-  done. The eye is a WITNESS, not a judge: it can be wrong on fine detail; YOU decide whether your intent
-  was met. BEAUTY/readability stays the user's eye — never claim how GOOD it looks beyond the correctness
+  done. The eye is a WITNESS, not a judge: it never rules on quality or doneness and it can be wrong on
+  fine detail; YOU decide whether your intent was met. But when it reports the asked-for content is NOT
+  on the pixels, that is a factual presence report — do not overrule it with a claim that it is done.
+  BEAUTY/readability stays the user's eye — never claim how GOOD it looks beyond the correctness
   the vision read or the facts show.
 - Uniform values: check the working-set `uniforms:` row before claiming a value changed. For a
   relative ask ("brighter", "slower"): read the current value there, adjust, let the user confirm.
@@ -354,16 +356,25 @@ def _format_compile_errors(errors: list[CompileErrorInfo]) -> str:
     return "\n".join(f"{e.path}:{e.line}: {e.message}" for e in errors)
 
 
-def render_working_set(views: list[WorkingSetView]) -> list[LLMMessage]:
+def render_working_set(
+    views: list[WorkingSetView], evicted: list[str]
+) -> list[LLMMessage]:
     # One inert user message (no tool_call_id/tool_calls, so it can't orphan a tool pair); [] when
     # empty. Listings are already sanitized at the source-read boundary — do NOT re-sanitize here.
-    if not views:
+    # `evicted` = the addresses the size cap dropped this turn: named LOUDLY, because a source that
+    # silently vanishes from the block leaves the agent editing from a remembered copy.
+    if not views and not evicted:
         return []
     body = (
         _WORKING_SET_HEADER
         + "\n\n"
         + "\n\n".join(_render_working_set_member(v) for v in views)
     )
+    if evicted:
+        body += (
+            f"\n\ndropped from the working set (size cap): {', '.join(evicted)} "
+            "-- re-read to view"
+        )
     return [LLMMessage(role="user", content=body)]
 
 

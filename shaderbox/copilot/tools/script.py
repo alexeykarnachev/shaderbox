@@ -77,12 +77,16 @@ def _format_write_result(result: ScriptWriteResult) -> tuple[bool, str, dict | N
     # The shared agent-facing message for a write_script OR edit_script result (identical feedback).
     if not result.ok:
         return False, f"error: {result.error}", None
+    if result.restored_note:
+        # A force-restore is a SUCCESSFUL write of the last clean source — no errors payload,
+        # so it never counts as applied-with-errors.
+        return True, result.restored_note, None
     if result.compile_error:
         return (
             True,
             f"compiled with errors:\n{result.compile_error}\n-> fix the compile "
             "first (no uniforms driven, no motion probe). Same as a shader compile.",
-            None,
+            {"errors": [result.compile_error]},
         )
     if not result.driven:
         return True, f"ok -- {result.motion_facts}", None
@@ -110,6 +114,8 @@ def script_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             return False, f"error: {_fmt_errors(view.errors)}", None
         lines = view.listing.count("\n") + 1 if view.listing else 0
         if view.is_stub:
+            # The stub is NOT persisted, so the working set can't render it — inline is its
+            # only channel (a node WITH a script rides the working set, mirroring read_shader).
             body = (
                 f"{view.name} has no script yet — here is the STUB to adapt + write_script "
                 f"(its drivable uniforms + one ctx.t example):\n{view.listing}"
@@ -121,7 +127,8 @@ def script_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
                 else "compiles clean"
             )
             body = (
-                f"read {view.name}'s script.py — {lines} lines, {state}\n{view.listing}"
+                f"added {view.name}'s script.py to your working set — {lines} lines, {state} "
+                "(its live source is shown below; don't expect it in this return)"
             )
         return True, body, {"node": view.node_id, "is_stub": view.is_stub}
 

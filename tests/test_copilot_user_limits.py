@@ -4,14 +4,20 @@ import threading
 from dataclasses import replace
 from pathlib import Path
 
-from shaderbox.copilot.agent import AgentToolCard, AgentTurnDone, run_turn
+from shaderbox.copilot.agent import AgentTurnDone, run_turn
 from shaderbox.copilot.config import COPILOT_CONFIG, CopilotConfig
 from shaderbox.copilot.gate import GateChannel
 from shaderbox.copilot.llm.api import LLMDone, LLMStreamEvent, LLMTextDelta
 from shaderbox.copilot.tools.registry import build_registry
 from shaderbox.copilot.trace import TraceLog
 from shaderbox.exporters.integrations import CopilotIntegration
-from tests.test_copilot_loop import _fake_caps, _fake_context, _FakeClient, _tool_call
+from tests.test_copilot_loop import (
+    _fake_caps,
+    _fake_context,
+    _FakeClient,
+    _model_cards,
+    _tool_call,
+)
 
 _LIMIT_FIELDS = (
     "max_iterations",
@@ -22,6 +28,7 @@ _LIMIT_FIELDS = (
     "clean_edit_soft_streak",
     "clean_edit_hard_streak",
     "auto_revert_after_failed_edits",
+    "copilot_convergence_max_looks",
 )
 
 
@@ -57,6 +64,7 @@ def test_apply_limits_reaches_the_live_config_with_floors() -> None:
             clean_edit_soft_streak=9,
             clean_edit_hard_streak=15,
             auto_revert_after_failed_edits=0,
+            copilot_convergence_max_looks=0,  # 0 = off, legal
         ).apply_limits()
         assert COPILOT_CONFIG.max_iterations == 1
         assert COPILOT_CONFIG.max_input_tokens == 50_000
@@ -66,6 +74,7 @@ def test_apply_limits_reaches_the_live_config_with_floors() -> None:
         assert COPILOT_CONFIG.clean_edit_soft_streak == 9
         assert COPILOT_CONFIG.clean_edit_hard_streak == 15
         assert COPILOT_CONFIG.auto_revert_after_failed_edits == 0
+        assert COPILOT_CONFIG.copilot_convergence_max_looks == 0
     finally:
         _restore(snap)
 
@@ -113,6 +122,5 @@ def test_zero_disables_clean_streak_nudge() -> None:
         )
     )
     assert nudge_events.count("clean_streak_nudge") == 0
-    cards = [e for e in events if isinstance(e, AgentToolCard)]
-    assert len(cards) == n_clean
+    assert len(_model_cards(events)) == n_clean
     assert isinstance(events[-1], AgentTurnDone)

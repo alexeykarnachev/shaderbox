@@ -335,6 +335,7 @@ def test_script_force_restores_after_streak() -> None:
 
     stub = types.SimpleNamespace(
         _working_set_add=lambda _a: None,
+        _batch_mutated=set(),
         _capture_script=lambda _id: None,
         _write_script_source=write_script_source,
         _script_render_line=lambda _n, _s: "",
@@ -348,9 +349,12 @@ def test_script_force_restores_after_streak() -> None:
 
     for _ in range(limit - 1):
         res = apply("n1", "broken(")
-        assert "RESTORED" not in (res.compile_error or "")
+        assert not res.restored_note
     res = apply("n1", "broken(")  # the limit-th broken edit
-    assert "SCRIPT RESTORED" in (res.compile_error or "")
+    # The restore rides its OWN field: it is a successful write of the last clean source, so it
+    # must never surface as a compile error (which would count the recovery itself as thrash).
+    assert "SCRIPT RESTORED" in res.restored_note
+    assert not res.compile_error
     assert writes[-1] == clean  # the restore re-wrote the last clean state
     assert stub._script_broken_streak["n1"] == 0  # fresh budget after the restore
 

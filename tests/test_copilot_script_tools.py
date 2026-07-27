@@ -26,6 +26,20 @@ def test_read_script_stub_is_flagged() -> None:
     assert payload == {"node": "f90f", "is_stub": True}
 
 
+def test_read_script_of_a_scripted_node_does_not_repeat_the_listing() -> None:
+    # The source rides the working set (mirroring read_shader) — returning it here too billed the
+    # same bytes twice on every script read.
+    reg = _registry(
+        read_script=lambda _node: ScriptView(
+            "f90f", "Wave", "1  class Behavior(ScriptBehavior):", [], is_stub=False
+        )
+    )
+    ok, msg, _payload = reg.execute("read_script", {"node": ""})
+    assert ok is True
+    assert "class Behavior" not in msg  # the listing stays in the working set
+    assert "working set" in msg and "compiles clean" in msg
+
+
 def test_read_script_no_node_is_error() -> None:
     reg = _registry(
         read_script=lambda _node: ScriptView(
@@ -47,10 +61,29 @@ def test_write_script_compile_error() -> None:
             ok=True, compile_error="script.py:3: SyntaxError: invalid syntax"
         )
     )
-    ok, msg, _ = reg.execute("write_script", {"new_text": "broken"})
+    ok, msg, payload = reg.execute("write_script", {"new_text": "broken"})
     assert ok is True  # the tool ran; the script just doesn't compile
     assert "compiled with errors" in msg
     assert "script.py:3: SyntaxError" in msg
+    # A broken edit is NOT clean: the errors payload is what the engine's applies-but-broken
+    # counter reads, and its LIST shape is what the card renders as "1 compile error".
+    assert payload == {"errors": ["script.py:3: SyntaxError: invalid syntax"]}
+
+
+def test_force_restore_is_not_an_applied_with_errors_result() -> None:
+    # The restore is a SUCCESSFUL write of the last clean source — an errors payload here would
+    # count the recovery itself as thrash and re-arm the very loop it just broke.
+    reg = _registry(
+        write_script=lambda _t, _node: ScriptWriteResult(
+            ok=True,
+            restored_note="SCRIPT RESTORED -- 6 broken script edits in a row, so the script "
+            "was reverted to its last clean-running state.",
+        )
+    )
+    ok, msg, payload = reg.execute("write_script", {"new_text": "broken again"})
+    assert ok is True
+    assert "SCRIPT RESTORED" in msg and "compiled with errors" not in msg
+    assert payload is None
 
 
 def test_write_script_drives_nothing_is_loud() -> None:

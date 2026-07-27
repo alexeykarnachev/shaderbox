@@ -44,9 +44,19 @@ _PROBE_RENDER_DESC = (
 
 def inspect_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
     def probe_render(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
-        facts = caps.probe_render(args["node"], args["t"], args["look_for"])
-        ok = not facts.startswith("error:")
-        return ok, facts, None
+        # `msg` is the whole model-facing result (the eye's ASK line is stripped backend-side);
+        # the verdict / vision availability / billed usage ride the payload, which the engine
+        # reads and the model never sees.
+        result = caps.probe_render(args["node"], args["t"], args["look_for"])
+        ok = not result.msg.startswith("error:")
+        payload = {
+            "vision_ok": result.vision_ok,
+            "verdict": result.verdict,
+            "ask_line": result.ask_line,
+            "read": result.read,
+            "usage": result.usage,
+        }
+        return ok, result.msg, payload
 
     return [
         ToolDefinition(

@@ -70,6 +70,7 @@ class CopilotIntegration(BaseModel):
     clean_edit_soft_streak: int = CopilotConfig.clean_edit_soft_streak
     clean_edit_hard_streak: int = CopilotConfig.clean_edit_hard_streak
     auto_revert_after_failed_edits: int = CopilotConfig.auto_revert_after_failed_edits
+    copilot_convergence_max_looks: int = CopilotConfig.copilot_convergence_max_looks
 
     model_config = {"extra": "forbid"}
 
@@ -84,6 +85,7 @@ class CopilotIntegration(BaseModel):
             clean_edit_soft_streak=self.clean_edit_soft_streak,
             clean_edit_hard_streak=self.clean_edit_hard_streak,
             auto_revert_after_failed_edits=self.auto_revert_after_failed_edits,
+            copilot_convergence_max_looks=self.copilot_convergence_max_looks,
         )
 
 

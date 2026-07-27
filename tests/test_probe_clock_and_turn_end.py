@@ -8,6 +8,7 @@ import types
 from shaderbox.copilot import backend as backend_mod
 from shaderbox.copilot.agent import _final_reply_nudge
 from shaderbox.copilot.backend import CopilotBackend
+from shaderbox.copilot.capabilities import ProbeResult
 from shaderbox.copilot.config import COPILOT_CONFIG
 from shaderbox.copilot.tools.inspect import inspect_tools
 from shaderbox.copilot.tools.registry import build_registry
@@ -77,15 +78,17 @@ def test_probe_render_in_registry_and_reaches_capability() -> None:
     calls: list[tuple[str, float, str]] = []
     caps = minimal_caps(
         probe_render=lambda n, t, lf: (
-            calls.append((n, t, lf)) or "render@t=2.5s: ink 5%"
+            calls.append((n, t, lf)) or ProbeResult(msg="render@t=2.5s: ink 5%")
         )
     )
     reg = build_registry(caps)
-    ok, msg, _ = reg.execute(
+    ok, msg, payload = reg.execute(
         "probe_render", {"node": "n1", "t": 2.5, "look_for": "reads HELLO"}, ""
     )
     assert ok and "render@t=2.5s" in msg
     assert calls == [("n1", 2.5, "reads HELLO")]
+    # The structured half rides the payload, which never reaches the model.
+    assert payload is not None and payload["vision_ok"] is False
 
 
 def test_forced_turn_end_nudge_names_engine_cause_and_denies_user_pause() -> None:

@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Protocol
 
+from shaderbox.copilot.vision_contract import VisionUsage
 from shaderbox.render_shape import RenderShape
 
 # The only app surface the copilot package imports: a Protocol the backend
@@ -249,6 +250,25 @@ class ScriptWriteResult:
     per_key_errors: list[str] = field(default_factory=list)
     orphan_keys: list[str] = field(default_factory=list)
     motion_facts: str = ""
+    # Set when the engine force-restored the script to its last clean-running state (mirrors
+    # EditResult.restored_note). Its own field so a successful restore never reads as
+    # applied-with-errors.
+    restored_note: str = ""
+
+
+@dataclass(frozen=True)
+class ProbeResult:
+    # probe_render's structured result. `msg` is the ONLY model-facing part (the eye's ASK line is
+    # already stripped out of it); vision_ok tells a real vision read apart from facts-only,
+    # `verdict` is the parsed ASK verdict (None = no vision read to parse), `ask_line` its raw text
+    # for the trace, `read` the eye's observation alone (no facts line, no header — what the turn
+    # record quotes), `usage` the billed vision spend (None on a cache hit / no call).
+    msg: str
+    vision_ok: bool = False
+    verdict: str | None = None
+    ask_line: str = ""
+    read: str = ""
+    usage: VisionUsage | None = None
 
 
 @dataclass(frozen=True)
@@ -318,9 +338,12 @@ class CopilotCapabilities(Protocol):
     def read_lib(self, names: list[str], /) -> list[LibFunctionBody]: ...
     # The per-turn working set: every shader/lib touched this turn, rebuilt from live source
     # each iteration. read_working_set returns a compile-coherent view (bridge-marshalled —
-    # uniform read + the program-is-None recompile are GL). batch_begin clears the per-batch
-    # rewrite guard's mutated-target set; run_turn calls it ONCE before each tool-call batch.
-    def read_working_set(self) -> list[WorkingSetView]: ...
+    # uniform read + the program-is-None recompile are GL) PLUS the addresses the size cap
+    # evicted this turn (rendered as a loud line — a silently vanished source is worse than
+    # none). reset_working_set clears both, once per turn at enqueue. batch_begin clears the
+    # per-batch rewrite guard's mutated-target set; run_turn calls it ONCE before each batch.
+    def read_working_set(self) -> tuple[list[WorkingSetView], list[str]]: ...
+    def reset_working_set(self) -> None: ...
     def batch_begin(self) -> None: ...
 
     # ---- mutations the worker REQUESTS but the main thread APPLIES ----
@@ -413,9 +436,12 @@ class CopilotCapabilities(Protocol):
     ) -> RenderResult: ...
 
     # The aimable read-side probe (feature 050): a one-line facts string off a tiny offscreen
-    # render at a chosen `t` (default 0.0). UN-gated + non-mutating, unlike render_image. Returns
-    # ready-to-read text (the facts line, or an honest error/empty note).
-    def probe_render(self, node: str, t: float, look_for: str = "", /) -> str: ...
+    # render at a chosen `t` (default 0.0). UN-gated + non-mutating, unlike render_image. `msg` is
+    # ready-to-read text (the facts line, or an honest error/empty note); the rest of ProbeResult
+    # is engine-only.
+    def probe_render(
+        self, node: str, t: float, look_for: str = "", /
+    ) -> ProbeResult: ...
 
     # Render with the exporter's own preset, then enqueue the upload + AWAIT its terminal
     # progress (the method does the bridge-marshalled poll).

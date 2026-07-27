@@ -66,7 +66,8 @@ def test_trim_reserves_scratchpad_headroom() -> None:
                 uniforms=[],
                 errors=[],
             )
-        ]
+        ],
+        [],
     )
     total_chars = sum(len(m.content or "") for m in built + scratchpad)
     # The reserve is 50k tok ~= 200k chars of headroom; the request must fit the budget.
@@ -78,7 +79,7 @@ def test_trim_reserves_scratchpad_headroom() -> None:
 
 
 def test_render_working_set_empty_drops_block() -> None:
-    assert render_working_set([]) == []
+    assert render_working_set([], []) == []
 
 
 def test_render_working_set_node_and_lib() -> None:
@@ -102,7 +103,7 @@ def test_render_working_set_node_and_lib() -> None:
             errors=[],
         ),
     ]
-    msgs = render_working_set(views)
+    msgs = render_working_set(views, [])
     assert len(msgs) == 1 and msgs[0].role == "user"
     body = msgs[0].content or ""
     assert body.startswith(_WORKING_SET_HEADER)
@@ -128,11 +129,28 @@ def test_render_working_set_carries_script_section() -> None:
         script_listing="1  class Behavior(ScriptBehavior):\n2    def update(self, ctx):",
         script_errors=[CompileErrorInfo(path="script.py", line=2, message="bad")],
     )
-    body = (render_working_set([scripted])[0].content) or ""
+    body = (render_working_set([scripted], [])[0].content) or ""
     assert "Drift SCRIPT (scripts/script.py)" in body
     assert "class Behavior(ScriptBehavior)" in body
     assert "script.py:2: bad" in body
     assert "u_center vec2 = <driven by script.py>" in body
+
+
+def test_render_working_set_names_evicted_members() -> None:
+    # D3: a member the size cap dropped is named LOUDLY — a source that silently vanishes from the
+    # block leaves the agent editing from a remembered copy (the stale-copy class).
+    plain = WorkingSetView(
+        address="7f3a",
+        name="Plain",
+        listing="1  void main(){}",
+        is_current=True,
+        is_lib=False,
+        uniforms=[],
+        errors=[],
+    )
+    body = (render_working_set([plain], ["9c1d", "lib:glow.glsl"])[0].content) or ""
+    assert "dropped from the working set (size cap): 9c1d, lib:glow.glsl" in body
+    assert "re-read to view" in body
 
 
 def test_render_working_set_no_script_adds_zero_bytes() -> None:
@@ -147,7 +165,7 @@ def test_render_working_set_no_script_adds_zero_bytes() -> None:
         uniforms=["u_speed float = 1.5"],
         errors=[],
     )
-    body = (render_working_set([plain])[0].content) or ""
+    body = (render_working_set([plain], [])[0].content) or ""
     assert "SCRIPT" not in body  # zero script bytes for an unscripted node
 
 
@@ -284,7 +302,7 @@ def test_read_adds_to_working_set_and_rebuild_shows_live_source(app: Any) -> Non
     app.session._copilot_working_set = []
     app.copilot_backend.read_shaders([])  # current node
     assert app.session._copilot_working_set  # the current node joined
-    views = app.copilot_backend.read_working_set()
+    views, _evicted = app.copilot_backend.read_working_set()
     assert views and views[0].is_current
     assert views[0].listing.strip().startswith("1  ")
 
@@ -292,7 +310,7 @@ def test_read_adds_to_working_set_and_rebuild_shows_live_source(app: Any) -> Non
 def test_current_node_unioned_into_rebuild(app: Any) -> None:
     # The current node is an implicit working-set member even if no read/edit added it (D1).
     app.session._copilot_working_set = []
-    views = app.copilot_backend.read_working_set()
+    views, _evicted = app.copilot_backend.read_working_set()
     assert any(v.is_current for v in views)
 
 
@@ -324,7 +342,7 @@ def test_substring_edit_never_d9_rejected(app: Any) -> None:
 def test_gone_node_skipped_in_rebuild(app: Any) -> None:
     # A working-set address that is no longer a node never KeyErrors the rebuild.
     app.session._copilot_working_set = ["does-not-exist-id"]
-    views = app.copilot_backend.read_working_set()  # must not raise
+    views, _evicted = app.copilot_backend.read_working_set()  # must not raise
     assert all(v.address != "does-not-exist-id" for v in views)
 
 

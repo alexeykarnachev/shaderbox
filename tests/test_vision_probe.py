@@ -15,6 +15,7 @@ from shaderbox.copilot.backend import CopilotBackend
 from shaderbox.copilot.config import COPILOT_CONFIG, CopilotConfig
 from shaderbox.copilot.llm import openrouter as openrouter_mod
 from shaderbox.copilot.llm.openrouter import fetch_model_image_support
+from shaderbox.copilot.vision_contract import ASK_NOT_MET, VisionUsage
 from shaderbox.copilot.vision_probe import (
     VisionModelProbe,
     VisionProbeStatus,
@@ -92,9 +93,12 @@ def _probe_stub() -> tuple[types.SimpleNamespace, dict[str, int]]:
     ui_node = types.SimpleNamespace(node=object(), id="n1")
     frame = {"hash": 111, "strip": False}
 
-    def _describe(png: bytes, hint: str, is_strip: bool) -> str:
+    def _describe(png: bytes, hint: str, is_strip: bool) -> tuple[str, VisionUsage]:
         counters["describe"] += 1
-        return f"obs#{counters['describe']} hint={hint!r} strip={is_strip}"
+        return (
+            f"obs#{counters['describe']} hint={hint!r} strip={is_strip}",
+            VisionUsage(input_tokens=900, output_tokens=40, cost_usd=0.002),
+        )
 
     def _probe_png(node: object, t: float) -> tuple[bytes, bool, int]:
         counters["png"] += 1
@@ -119,12 +123,12 @@ def test_vision_cache_hits_identical_and_misses_new_intent() -> None:
     stub, counters = _probe_stub()
     run = CopilotBackend.probe_render.__get__(stub)
 
-    out1 = run("n1", 0.0, "reads HELLO")
+    out1 = run("n1", 0.0, "reads HELLO").msg
     assert (
         "obs#1" in out1 and "hint='reads HELLO'" in out1 and counters["describe"] == 1
     )
     # Identical frame + same intent -> cache hit, no second vision call.
-    out2 = run("n1", 0.0, "reads HELLO")
+    out2 = run("n1", 0.0, "reads HELLO").msg
     assert out2 == out1 and counters["describe"] == 1
     # SAME frame, DIFFERENT look_for -> MUST miss (the read depends on intent).
     run("n1", 0.0, "is it upside down?")
@@ -138,17 +142,54 @@ def test_vision_cache_hits_identical_and_misses_new_intent() -> None:
 def test_probe_render_skips_vision_when_disabled() -> None:
     stub, counters = _probe_stub()
     stub._vision_enabled = lambda: False
-    out = CopilotBackend.probe_render.__get__(stub)("n1", 0.0, "reads HELLO")
-    assert "facts@t" in out and "visual" not in out
+    result = CopilotBackend.probe_render.__get__(stub)("n1", 0.0, "reads HELLO")
+    assert "facts@t" in result.msg and "visual" not in result.msg
+    assert result.vision_ok is False and result.verdict is None
+    # Vision OFF is not an outage — the unavailable suffix on this branch would be the bug.
+    assert "unavailable" not in result.msg
     assert counters["png"] == 0 and counters["describe"] == 0
+
+
+def test_failed_look_with_vision_on_is_truthful() -> None:
+    # Vision enabled but the look produced nothing: say so, or a broken eye is indistinguishable
+    # from vision-off while the system prompt promises sight.
+    stub, _ = _probe_stub()
+    stub._describe_image = lambda png, hint, is_strip: ("", VisionUsage())
+    result = CopilotBackend.probe_render.__get__(stub)("n1", 0.0, "reads HELLO")
+    assert "(vision look unavailable this step)" in result.msg
+    assert result.vision_ok is False
+
+
+def test_ask_line_is_parsed_and_stripped_from_the_model_facing_msg() -> None:
+    # The verdict travels ONLY in the structured result; a raw done-ness label on the model's own
+    # probe result would make the eye a judge.
+    stub, _ = _probe_stub()
+    stub._describe_image = lambda png, hint, is_strip: (
+        "look_for: no stars visible\nASK: not-met",
+        VisionUsage(cost_usd=0.002),
+    )
+    result = CopilotBackend.probe_render.__get__(stub)("n1", 0.0, "50 stars")
+    assert result.verdict == ASK_NOT_MET
+    assert result.ask_line == "ASK: not-met"
+    assert "ASK" not in result.msg and "no stars visible" in result.msg
+    assert result.vision_ok is True
+    assert result.usage is not None and result.usage.cost_usd == 0.002
+
+
+def test_cache_hit_carries_no_usage() -> None:
+    # A cached read was never billed — folding its cost again would double-count the look.
+    stub, _ = _probe_stub()
+    run = CopilotBackend.probe_render.__get__(stub)
+    assert run("n1", 0.0, "reads HELLO").usage is not None
+    assert run("n1", 0.0, "reads HELLO").usage is None
 
 
 def test_probe_png_returns_strip_flag_to_the_eye() -> None:
     # is_strip flows from _probe_png through to describe_image (the time-strip note).
     stub, _ = _probe_stub()
     stub._frame["strip"] = True
-    out = CopilotBackend.probe_render.__get__(stub)("n1", 0.0, "does it pulse?")
-    assert "strip=True" in out
+    result = CopilotBackend.probe_render.__get__(stub)("n1", 0.0, "does it pulse?")
+    assert "strip=True" in result.msg
 
 
 def test_integrations_roundtrip_and_old_config_defaults() -> None:

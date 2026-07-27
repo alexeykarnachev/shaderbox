@@ -64,6 +64,8 @@ def _tool_card_outcome(ev: AgentToolCard) -> str:
     if not ev.ok:
         return "failed"
     payload = ev.payload or {}
+    if payload.get("handoff"):
+        return "handed off"
     if "errors" in payload:
         n = len(payload.get("errors", []))
         return f"{n} compile error{'s' if n != 1 else ''}" if n else "compiled clean"
@@ -71,6 +73,16 @@ def _tool_card_outcome(ev: AgentToolCard) -> str:
         n = int(payload.get("hits", 0))
         return f"{n} match{'es' if n != 1 else ''}"
     return ""
+
+
+def _engine_look_line(ev: AgentToolCard) -> str:
+    # The attributed line for an engine-initiated look — only when the eye actually SAW something;
+    # a blind or failed look must not claim a check happened. "" = not an engine look (or a blind
+    # one), so the caller falls through.
+    payload = ev.payload or {}
+    if not (payload.get("engine_look") and payload.get("vision_ok")):
+        return ""
+    return "the engine checked the render against your ask"
 
 
 def _tool_card_line(ev: AgentToolCard, verb: str) -> str:
@@ -139,6 +151,13 @@ class CopilotSession:
     def enqueue_turn(self, user_text: str) -> None:
         # MAIN THREAD (on Send). The editor flush + lock happens App-side BEFORE this call so
         # the worker's first read sees consistent state.
+        # A fresh working set per turn, at the ONE choke point every driver goes through (a
+        # session driven directly by a harness would otherwise accrete it across turns).
+        if self.state.in_flight:
+            logger.warning(
+                "enqueue_turn called mid-turn — the working-set reset lands on a live turn"
+            )
+        self.caps.reset_working_set()
         self._turn_seq += 1
         turn_id = f"turn_{self._turn_seq:04d}_{_trace_stamp()}"
         self.checkpoints.open(turn_id, _first_line(user_text))
@@ -217,6 +236,17 @@ class CopilotSession:
                             result_widget=ev.widget,
                         )
                     )
+                elif _engine_look_line(ev) or (ev.payload or {}).get("handoff"):
+                    # Two payload-shape lines with no widget: the engine's own look (a billed step
+                    # the user never asked for) and a precheck handoff (otherwise an unexplained
+                    # empty step). A blind engine look claims no check happened.
+                    self.state.messages.append(
+                        Message(
+                            role="tool_status",
+                            text=_engine_look_line(ev)
+                            or _tool_card_line(ev, self.registry.label_for(ev.name)),
+                        )
+                    )
                 # A successful delete attaches the Recover affordance to its (resolved-Yes)
                 # confirm card — the gated tool's card always trails the open pending_action.
                 if ev.name == "delete_node" and ev.ok and ev.payload is not None:
@@ -249,6 +279,14 @@ class CopilotSession:
                         snippet.snippet_stats = ev.stats
                 self._finish_turn()
             case AgentCancelled():
+                # The cancel terminals carry the partial text into the committed summary, so the
+                # screen must keep what history keeps.
+                if ev.summary.reply:
+                    self.state.messages.append(
+                        Message(
+                            role="assistant", text=sanitize_display(ev.summary.reply)
+                        )
+                    )
                 self.state.streaming_text = ""
                 self._resolve_open_gate_card("cancelled")
                 if ev.stats is not None:
@@ -373,7 +411,7 @@ class CopilotSession:
                 self._cancel,
                 self.trace,
                 scratchpad_render=lambda: render_working_set(
-                    self.caps.read_working_set()
+                    *self.caps.read_working_set()
                 ),
                 batch_begin=self.caps.batch_begin,
                 model=self.client.model,
@@ -422,19 +460,23 @@ class CopilotSession:
             )
         )
 
-    def _render_summary(self, summary: TurnSummary, error_text: str) -> str | None:
-        # The NL assistant message persisted for a turn: reply prose (sanitized ASCII) + a terse
-        # action ledger + the nodes touched, so the next turn can resolve "it" / not re-publish.
-        # None only when a turn produced nothing — keeps the user/assistant pairing.
+    def _render_summary(self, summary: TurnSummary, error_text: str) -> str:
+        # The NL assistant message persisted for a turn: reply prose (sanitized ASCII) + the eye's
+        # closing verdict + a terse action ledger + the nodes touched, so the next turn can resolve
+        # "it" / not re-publish / inherit an honest visual state. A turn that produced nothing still
+        # gets a placeholder — a null assistant content 400s on some providers, and dropping the
+        # message alone would break the user/assistant pairing.
         parts: list[str] = []
         reply = summary.reply or error_text
         if reply:
             parts.append(sanitize_display(reply))
+        if summary.eye:
+            parts.append(summary.eye)
         if summary.ledger:
             parts.append("(this turn: " + "; ".join(summary.ledger) + ")")
         if summary.nodes:
             parts.append("(nodes: " + ", ".join(summary.nodes) + ")")
-        return "\n".join(parts) if parts else None
+        return "\n".join(parts) if parts else "(turn ended with no reply)"
 
     # ---- lifecycle ----
 

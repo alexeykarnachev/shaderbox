@@ -385,7 +385,7 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
         )
         body = (
             f"created node '{args['name']}' (id: {node_id}), {where} — {status}. "
-            "Read it before editing."
+            "Its source is already in your working set below — edit it directly."
         )
         if extra:
             body += "\n" + extra

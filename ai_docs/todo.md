@@ -46,10 +46,9 @@ no "Resolved YYYY-MM-DD" headers).
   any future shipped rename re-arms it. Fix sketch: after the restore loop, delete a live-root file
   absent from `seed` whose hash matches its manifest entry (never an edited/user-authored one).
 
-## [VERIFY] Feature 053 vision — Settings badge is LIVE-only, unverified on this box
+## [VERIFY] Features 053+056 vision/copilot — LIVE-only UI checks, unverified on this box
 
-- **Trigger:** next `make run` on a machine with a display (the same session that finally UI-verifies
-  052 + uploads v0.22.0). Do it before the next itch cut.
+- **Trigger:** next `make run` on a machine with a display. Do it before the next itch cut.
 - The classifier, the look_for wire, the vision cache, and the forward-time contact sheet are all
   headless-gated in `tests/test_vision_probe.py`. NOT verifiable headless (imgui-ui §0): the Settings →
   Copilot → Vision badge RENDERING — set a known vision model → `supports vision`; a text-only id → `no
@@ -57,6 +56,10 @@ no "Resolved YYYY-MM-DD" headers).
   `status_slot` height never jitters as status changes and rapid model-field edits cause no daemon-thread
   re-kick storm. Also eyeball one real `probe_render(look_for=...)` on an animated node (the 3-frame strip
   read) against a live OpenRouter key.
+- Feature 056 additions in the same run: the chat shows the attributed engine-look line ("the engine
+  checked the render against your ask") only on turns where a vision read happened; a deflected
+  publish (no credentials) renders a neutral "handed off" line, not a red failure; the Settings →
+  Copilot row for `copilot_convergence_max_looks` renders and persists.
 
 ## [DEBT] Unbind/rebind leaves an orphaned `media/<uniform>.*` file on disk
 
