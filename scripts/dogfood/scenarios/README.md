@@ -18,9 +18,16 @@ agent's memory for the cold-start half. The exact commands + the model + the `~/
 single-process gate rule are all in the **`/dogfood` skill** (the operating manual) — don't re-derive them
 here. All run artifacts live under `scripts/dogfood/runs/` (gitignored).
 
-After a run, produce a FINAL REPORT (`ai_docs/features/026_dogfood_report_<run>.md`) with follow-up TODOs:
-what's next + ideas to improve (a) the copilot AGENT, (b) the dogfooding FRAMEWORK, (c) the library. Send
-it to the maintainer.
+After a run, produce a FINAL REPORT (`ai_docs/features/NNN_dogfood_report_<run>.md`, ONE per scenario)
+from `scripts/dogfood/REPORT_TEMPLATE.md` — five axes (fidelity · motion · logic · honesty · process) +
+the dialogue — with follow-up TODOs: what's next + ideas to improve (a) the copilot AGENT, (b) the
+dogfooding FRAMEWORK, (c) the library. Send it to the maintainer.
+
+**Judge tooling** (don't hand-roll it — that's what the 043 run did three times):
+`analyze.py <data_dir> --scenario <name>` fills the AUTO slots incl. the honesty axis;
+`analyze.py <data_dir> --dialogue` prints the dialogue; `h.render_strip(times, node_id)` is the motion
+contact sheet; `h.script_values(times, node_id)` the logic probe; `scripts/dogfood/judge.py` the pixel
+primitives (centroids, column runs, region diffs, rotation angle).
 
 ## Scenarios
 
@@ -42,8 +49,12 @@ failure). The contract:
 - **Metric = user-message count** (1 = perfect, 2-3 = corrected, fail = still wrong after the
   budget), plus the usual cost/iteration numbers.
 - **Report = the dialogue + the final render** (a 5-10s `h.render_video_mp4` for anything animated,
-  a PNG for statics), sent to the maintainer; the dialogue is assembled from the per-turn `dump()`
-  `new_messages` — never retyped from memory.
+  a PNG for statics), sent to the maintainer; the dialogue is PRINTED by
+  `analyze.py <data_dir> --dialogue` — never retyped from memory. Its source is the UI chat store
+  (`<project>/copilot/conversation.json` `messages`), i.e. exactly what the user SAW; on a
+  context-wipe run that store is re-saved EMPTY, so the printer falls back to the per-turn `dump()`
+  `new_messages`; the pre-wipe text also survives as
+  `<project>/copilot/archive/conversation_<stamp>.json`.
 - Every checklist item is BINARY and checkable from the artifact (count it, time it, point at it);
   the ground truth (period, phase timings, trajectory) is stated in the file.
 
@@ -52,8 +63,7 @@ failure). The contract:
 | `03_static_comp.md` | pure-GLSL static composition | 5 equal circles, even row |
 | `04_glsl_anim.md` | u_time animation (no script) | 2s orbit period, circular path |
 | `05_bounce2d.md` | physics in `script.py` | gravity parabola + damped rest |
-| `06_traffic_light.md` | discrete state logic in `script.py` | red 2s / green 2s / yellow 1s |
-| `07_spin3d.md` | raymarched 3D + light | rotating die, countable pips, shadow |
+| `08_mixed_grid.md` | many simple constraints merged in one scene | 3x3 grid, 9 stated per-cell motions |
 
 **Next (harder, later):** a composite that grades CODE QUALITY + a real token-overflow provocation +
 trickier scenes — once the mechanism is obkatan on 01. Keep 01 simple ON PURPOSE: you must be able to judge

@@ -56,7 +56,9 @@ import signal
 import tempfile
 import threading
 import time
+from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 # All dogfood run artifacts (data dir, per-run project dirs, JSON dumps, traces, PNGs) live
 # under scripts/dogfood/runs/ — one consolidated, gitignored home (feature 027).
@@ -65,13 +67,12 @@ _RUNS_DIR.mkdir(parents=True, exist_ok=True)
 
 # --- env MUST be set before the shaderbox imports below (paths.app_data_dir reads it at
 # --- import time; the MESA overrides are read at EGL context creation). A caller-set
-# --- SHADERBOX_DATA_DIR wins (setdefault no-ops) — the resume seam (feature 027). -------
-_DATA_DIR = Path(
-    os.environ.setdefault(
-        "SHADERBOX_DATA_DIR",
-        tempfile.mkdtemp(prefix="data-", dir=_RUNS_DIR),
-    )
-)
+# --- SHADERBOX_DATA_DIR wins — the resume seam (feature 027). The mkdtemp is guarded, not a
+# --- setdefault default: a default argument is evaluated EAGERLY, so a resume would still cut
+# --- a stray empty runs/data-* dir it never uses. -----------------------------------------
+if not os.environ.get("SHADERBOX_DATA_DIR"):
+    os.environ["SHADERBOX_DATA_DIR"] = tempfile.mkdtemp(prefix="data-", dir=_RUNS_DIR)
+_DATA_DIR = Path(os.environ["SHADERBOX_DATA_DIR"])
 os.environ.setdefault("MESA_GL_VERSION_OVERRIDE", "4.6")
 os.environ.setdefault("MESA_GLSL_VERSION_OVERRIDE", "460")
 
@@ -92,6 +93,7 @@ import glfw  # noqa: E402
 import moderngl  # noqa: E402
 import numpy as np  # noqa: E402
 from PIL import Image as PILImage  # noqa: E402
+from PIL import ImageDraw  # noqa: E402
 
 # core.py's render path reads glfw.get_time() for the default u_time; glfw is never init()'d
 # here (we use EGL, not a glfw window), so it warns "not initialized" and returns 0.0 — which
@@ -117,8 +119,16 @@ from shaderbox.render_preset import (  # noqa: E402
     RenderPreset,
     ResolutionPolicy,
 )
+from shaderbox.scripting import EngineContext  # noqa: E402
 from shaderbox.shader_lib.file_ops import ShaderLibFileManager  # noqa: E402
 from shaderbox.tabs.share_state import render_to  # noqa: E402
+
+
+def _strip_cell(texture: moderngl.Texture, t: float, size: int) -> PILImage.Image:
+    backdrop = PILImage.new("RGBA", (size, size), (25, 25, 40, 255))
+    cell = PILImage.alpha_composite(backdrop, texture_to_pil(texture)).convert("RGB")
+    ImageDraw.Draw(cell).text((5, 4), f"t={t:g}s", fill=(255, 255, 255))
+    return cell
 
 
 class DogfoodHarness:
@@ -474,6 +484,113 @@ class DogfoodHarness:
         print(f"    [exported {target} @t={t:.3f} -> {out_path}]")
         self._last_render_path = str(out_path)
         return str(out_path)
+
+    def render_strip(
+        self,
+        times: Sequence[float],
+        node_id: str = "",
+        *,
+        size: int = 300,
+        fps: int = 30,
+    ) -> str:
+        """One horizontal contact sheet of the node at each `t` — the motion-axis measurement.
+
+        Each sample is a REPLAY, never a live tick: a scripted node gets a FRESH behavior per
+        sample, stepped through frames `0..round(t*fps)` on the export-isolation seam, so a
+        stateful integrator (one that reads `ctx.dt`) samples its real trajectory and two calls
+        with the same times give the same sheet. A script-less node renders directly at each `t`.
+
+        Frames alpha-composite onto (25,25,40) — deliberately NOT the eye's (40,40,40), so a
+        strip is never mistaken for what the copilot saw — with a 4px gutter and a `t=` label per
+        cell. The sheet lands in the project's renders dir so `dump()`'s `last_render_path` finds
+        it. Both pieces of state the sampling touches are saved and restored: the canvas size and
+        `node.uniform_values` (`tick_export` writes the driven uniforms into the LIVE node) — a
+        later `dump()` would otherwise persist the last sample's frame into node.json.
+        """
+        target = node_id or self.session.current_node_id
+        ui_node = self.session.ui_nodes.get(target)
+        if ui_node is None:
+            print(f"    [render_strip FAILED: no node '{target}']")
+            return ""
+        if not times:
+            print("    [render_strip FAILED: no sample times]")
+            return ""
+        node = ui_node.node
+        engine = self.session.script_engine
+        saved_size = node.canvas.texture.size
+        saved_values = dict(node.uniform_values)
+        dt = 1.0 / fps
+        cells: list[PILImage.Image] = []
+        node.canvas.set_size((size, size))
+        try:
+            for t in times:
+                behavior = engine.fresh_behavior_for(target)
+                if behavior is not None:
+                    for frame in range(round(t * fps) + 1):
+                        engine.tick_export(
+                            target,
+                            node,
+                            EngineContext(t=frame * dt, dt=dt, frame=frame),
+                            behavior,
+                        )
+                node.render(u_time=t)
+                cells.append(_strip_cell(node.canvas.texture, t, size))
+        finally:
+            node.canvas.set_size(saved_size)
+            node.uniform_values.clear()
+            node.uniform_values.update(saved_values)
+
+        gutter = 4
+        sheet = PILImage.new(
+            "RGB",
+            (len(cells) * size + (len(cells) - 1) * gutter, size),
+            (0, 0, 0),
+        )
+        for i, cell in enumerate(cells):
+            sheet.paste(cell, (i * (size + gutter), 0))
+        span = f"{times[0]:g}-{times[-1]:g}" if len(times) > 1 else f"{times[0]:g}"
+        out_path = self.session.paths.renders_dir / f"{target}_strip_t{span}.png"
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        sheet.save(out_path)
+        stamps = ", ".join(f"{t:g}" for t in times)
+        print(f"    [strip {target} @t=({stamps}) -> {out_path}]")
+        self._last_render_path = str(out_path)
+        return str(out_path)
+
+    def script_values(
+        self, times: Sequence[float], node_id: str = "", *, fps: int = 30
+    ) -> list[tuple[float, dict[str, Any]]]:
+        """The logic-axis numeric probe: the script-driven uniform VALUES at each `t`.
+
+        A passthrough to `ScriptEngine.dry_run` — one fresh script stepped continuously through
+        the export clock, every write into a throwaway sink, so the live node and engine are
+        byte-identical afterwards. Returns `(t, {uniform: value})` per sample.
+
+        Every probe failure is PRINTED (compile, runtime, per-key shape, orphan key): a broken
+        probe yields empty sample dicts, which read as "the script drove nothing" — the logic axis
+        must never mistake that for a measurement.
+        """
+        target = node_id or self.session.current_node_id
+        ui_node = self.session.ui_nodes.get(target)
+        if ui_node is None:
+            print(f"    [script_values FAILED: no node '{target}']")
+            return []
+        probe = self.session.script_engine.dry_run(
+            target, ui_node.node, tuple(times), fps
+        )
+        if probe.compile_error is not None:
+            print(f"    [script_values: compile error {probe.compile_error.message}]")
+        if probe.runtime_error is not None:
+            print(f"    [script_values: runtime error {probe.runtime_error.message}]")
+        for name, err in probe.per_key_errors:
+            print(f"    [script_values: '{name}' shape error {err.message}]")
+        for name, err in probe.orphan_keys:
+            print(f"    [script_values: orphan key '{name}' {err.message}]")
+        if not probe.driven:
+            print("    [script_values: the script drove NO uniform]")
+        for t, values in probe.samples:
+            print(f"    [t={t:g}s {values}]")
+        return probe.samples
 
     def _latest_render_on_disk(self) -> str:
         # The truthful render pointer: harness renders set _last_render_path, but

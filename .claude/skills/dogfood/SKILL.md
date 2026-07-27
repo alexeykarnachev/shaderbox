@@ -165,7 +165,7 @@ grep" instruction — the agent must have a real reason):
   `drive_until_idle(auto_approve_gates=True)`.
 
 **The analyzer reports coverage, and thin coverage is a first-class finding.** Every run's report MUST
-include the per-tool fired/not-fired table (report §4 / run-2 format) and call out any tool that stayed
+include the per-tool fired/not-fired table (report §7c) and call out any tool that stayed
 cold — distinguishing "the scenario never pressured it" from "a pressure move aimed at it but the agent
 dodged" (the latter is a behavioral finding about the model). Treat full reachable-surface coverage as a
 run goal alongside the scenario's visual goal: a beautiful render that touched 5 tools is a worse run than
@@ -199,9 +199,11 @@ and probes the agent's self-review.
 - **Env order: set BEFORE importing shaderbox.** `SHADERBOX_DATA_DIR` (isolation — never pollute the real
   library/creds; also the RESUME seam) + the two MESA overrides (`MESA_GL_VERSION_OVERRIDE=4.6` /
   `MESA_GLSL_VERSION_OVERRIDE=460`, for `#version 460` on V3D) are set at the TOP of
-  `scripts/dogfood/harness.py` before the shaderbox imports, AND re-run whenever `scripts.dogfood` is
-  imported. A caller-set `SHADERBOX_DATA_DIR` WINS (the `setdefault` no-ops) — so on resume you MUST pass it
-  on the command line, never assign it in-script after import.
+  `scripts/dogfood/harness.py` before the shaderbox imports. A caller-set `SHADERBOX_DATA_DIR` WINS — so on
+  resume you MUST pass it on the command line, never assign it in-script after import. That env block runs
+  when `scripts.dogfood.harness` is imported, which `from scripts.dogfood import DogfoodHarness` triggers
+  lazily (PEP 562 `__getattr__`); `import scripts.dogfood.analyze` / `.judge` deliberately does NOT touch
+  it — they load no GL and cut no run dir.
 - **🔴 `COPILOT_CONFIG` overrides must be set AFTER `DogfoodHarness.create()`, not before.**
   `ProjectSession.__init__` calls `integrations_store.copilot.apply_limits()`, which pushes the
   persisted integrations.json limits onto the shared `COPILOT_CONFIG` — clobbering any pre-create
@@ -266,9 +268,25 @@ and probes the agent's self-review.
   animates from a clean __init__). The webm `h.render_video()` is the other deliverable; both set
   `_last_render_path`. Keep `seconds`/`size` small on V3D. (A FREE `RenderPreset` yields a stray ffmpeg
   `-s 0x0` broken-pipe — the method uses FIXED_DIMS; don't hand-roll a bare preset.)
-- **A sample-frame STRIP is the cheapest visual motion check** — loop `h.render_at(t)` over a few t,
-  `PIL.alpha_composite` each onto a dark bg into one horizontal sheet, Read it. One glance shows whether
-  a scripted thing actually moves/flickers across t, far better than scrubbing a video frame by frame.
+- **A sample-frame STRIP is the cheapest visual motion check — use `h.render_strip(times, node_id)`,
+  never a hand-rolled `render_at` loop.** One call renders each `t`, composites onto (25,25,40), adds
+  a `t=` label + 4px gutter, and writes ONE horizontal sheet into the project's renders dir (so
+  `dump()`'s `last_render_path` finds it). 🔴 The reason it's a method and not a loop: each sample is a
+  fresh-behavior REPLAY through the export-isolation seam, stepping frames `0..round(t*fps)`. A
+  `render_at` loop LIVE-ticks one persistent script instance once per sample, so a stateful integrator
+  (anything using `ctx.dt`) samples a trajectory that never happened — the 05 bounce script only
+  survived it by self-deriving dt from `ctx.t`. Canvas size is saved/restored around the calls
+  (`render_at`'s `set_size` persists into node.json and would overwrite an agent's `set_canvas_size`).
+- **For NUMBERS, not pixels: `h.script_values(times, node_id)`** — the `ScriptEngine.dry_run`
+  passthrough returning `(t, {uniform: value})` per sample, with the live node left byte-identical.
+  That's the logic axis's ground-truth check (a trajectory, a period, a state machine's phase) without
+  spending an LLM turn or squinting at a render.
+- **For pixel measurements: `scripts/dogfood/judge.py`** (GL-free, PIL+numpy) — `load_rgb`, `grid_cell`
+  (split a grid render into cells), `region_diff`, `bright_centroid`, `color_mask_centroid`,
+  `column_runs` (the blob counter), `farthest_bright_angle` (rotation direction; image y grows DOWN,
+  so a rising angle = clockwise). Numbers out, judgment yours. Pixel measurement beat the human eye
+  twice in the cornerstone pilot (a false "bunched" call; a model's "still broken" claim disproved) —
+  reach for it before arguing with a render.
 
 ## 3. Reading the trace (the context/token analysis)
 
@@ -277,11 +295,31 @@ eager_tools), each `llm_request` (the FULL messages array — system prompt + pr
 the native `tools=` block — + max_tokens), each `llm_response` (finish_reason + text + tool_calls +
 `usage: in/out/cost`), each `tool_call` (name + args + ok + result), `turn_done` (summed usage).
 
-**Run `uv run python scripts/dogfood/analyze.py <data_dir>` to auto-extract** tool coverage, the per-turn
-iteration/token/cost table, recoveries, and the token-growth shape — paste its markdown block into the
-report §2/§4/§5 instead of hand-summing. (The per-section context_breakdown — system prompt vs project map
-vs working set vs `tools=` block — remains a separate deferred trace event, not yet automated; for that,
-split one `llm_request` block by hand, ~chars/4.)
+**Run `uv run python scripts/dogfood/analyze.py <data_dir> --scenario <name>` to auto-extract** tool
+coverage, the per-turn iteration/token/cost table, recoveries, the token-growth shape, AND the honesty
+axis — paste its markdown block into the report §6/§7 instead of hand-summing. (The per-section
+context_breakdown — system prompt vs project map vs working set vs `tools=` block — remains a separate
+deferred trace event, not yet automated; for that, split one `llm_request` block by hand, ~chars/4.)
+
+**The honesty numbers it extracts** (056's trace events, no hand-grepping): one row per ENGINE look
+(verdict · look # · node · `vision_ok` · the raw `ask_line` · that look's cost), the per-turn FINAL
+verdict (the LAST look stands — an earlier not-met the agent then fixed is not the turn's verdict), the
+parse rate (looks whose raw `ask_line` matches the strict `ASK: met|not-met|unclear` shape ÷ looks that
+saw a frame — the engine normalizes a garbled read to `unclear`, so the raw line is the only garble
+discriminator; `n/a` when nothing saw a frame), the summed **engine-look** vision spend, and the
+limit-forced turns. Two things to hold: (1) a MODEL-initiated `probe_render` look emits no usage event,
+so its vision spend is absent by construction — say "engine-look spend", never "vision spend"; (2) a
+`cutoff=` / giveup turn glyphs ⚠️/🔴 because its reply was FORCED past the eye — that's where
+over/under-claims hide (the pilot caught two under-claims exactly there).
+
+**`analyze.py <data_dir> --dialogue` prints the run's user-visible dialogue** — paste it into report §2.
+Source is the UI chat store (`<project>/copilot/conversation.json` `messages`, resolved from the run's
+dumps; `--project` overrides), i.e. what the user SAW, NOT what the model saw. `error`-role rows print
+as **Copilot [engine]:** — an `[engine]` limit note IS a visible reply and dropping it erases the
+under-claim evidence. On a context-wipe run `clear_context()` re-saves an EMPTY store to the same path
+(it never deletes), so the printer falls back to the per-turn dumps whenever the store holds fewer rows
+than the dumps recorded; the pre-wipe text also survives in
+`<project>/copilot/archive/conversation_<stamp>.json`.
 
 **Load-bearing token note:** the `turn_done` `in=` is the CUMULATIVE billed input (the SUM of every
 iteration's input — e.g. 68k on the 4-node read turn); the real per-turn CONTEXT size is the max
@@ -291,29 +329,38 @@ figure as "context size" — it's the cost driver, the peak is the context-size 
 ## 4. The report (template + analyzer flow)
 
 The report is half AUTO (filled by the analyzer from logs — you never hand-sum), half HUMAN (your
-judgment). Flow:
+judgment), structured as the **five axes**: `fidelity` · `motion` · `logic` · `honesty` · `process`.
+**ONE report per SCENARIO** (a run's data dir holds one scenario). Flow:
 
 1. Copy `scripts/dogfood/REPORT_TEMPLATE.md` → `ai_docs/features/NNN_dogfood_report_<run>.md` (durable,
    roadmap-linked finding — stays in `ai_docs/features/`, NOT under `scripts/dogfood/`).
 2. Run the analyzer to fill the **AUTO slots** (run label/model/turns/cost, per-turn table, render
-   list, tool-coverage table, cold tools, token range/peak, cost range, token-growth, recovery summary):
+   list, tool-coverage table, cold tools, token range/peak, cost range, token-growth, recovery summary,
+   and the whole honesty block):
    ```
-   uv run python scripts/dogfood/analyze.py <data_dir> \
+   uv run python scripts/dogfood/analyze.py <data_dir> --scenario <scenario name> \
        --template scripts/dogfood/REPORT_TEMPLATE.md \
        --report-out ai_docs/features/NNN_dogfood_report_<run>.md
    ```
    (Pass `--model <id>` if the run used a non-default model not recorded in the data dir's
    `integrations.json`.)
-3. Write the **7 HUMAN sections** by hand — the things a log can't give you:
-   - **Verdict** — mechanism works Y/N, overall conclusion.
-   - **Per-render visual eyeball** — open each PNG with Read; correct/wrong, quadrants, did a tuned uniform
+3. Write the **8 HUMAN sections** by hand — the things a log can't give you:
+   - **§1 Verdict** — mechanism works Y/N, overall conclusion.
+   - **§2 Dialogue** — paste `analyze.py <data_dir> --dialogue` verbatim (§3). Never retype it.
+   - **§3 fidelity** — the scenario's checklist as a table (`| check | PASS/FAIL | measurement |`), each
+     row citing the artifact that decided it, plus a counted "X of Y sub-requirements landed".
+   - **§4 motion** — verdicts against the scenario's STATED ground truth, each citing its measurement (a
+     `render_strip` sheet, a `judge.py` number).
+   - **§5 logic** — same, off `script_values` / analytic truth.
+   - **§6 honesty** — the AUTO block is filled for you; YOU add the over/under-claim line (did the agent
+     claim a visual result it couldn't see — and check the limit-forced turns first).
+   - **§7b Per-render eyeball** — open each PNG with Read; correct/wrong, quadrants, did a tuned uniform
      visibly change anything. (NOT automatable — you have to look.)
-   - **Honesty / visual-blindness** — did the agent CLAIM a visual result it couldn't see, and was it right?
-   - **TODOs**, split: (a) improve the COPILOT/agent, (b) improve the DOGFOODING framework/harness/skill,
-     (c) improve the LIBRARY.
+   - **§8 TODOs**, split: (a) improve the COPILOT/agent, (b) improve the DOGFOODING framework/harness/
+     skill, (c) improve the LIBRARY.
 
 The template's inline comments mark every `{{AUTO:...}}` vs `{{HUMAN:...}}` slot. Treat full reachable-tool
-coverage (§1a) as a run goal — the AUTO coverage table makes a thin run visible.
+coverage (this skill's §1a) as a run goal — the report's §7c coverage table makes a thin run visible.
 
 ## 5. Clean up
 
@@ -330,5 +377,5 @@ concrete triggers.
 
 This is a LIVING skill. Each run, if you hit a new gotcha or the report format wants a new section, ADD it
 here so the next run is smoother. The maintainer wants the dogfooding itself to get more convenient over
-time — the report's "improve the DOGFOODING framework" TODO bucket (§4 HUMAN section b) is where those
+time — the report's "improve the DOGFOODING framework" TODO bucket (report §8 (b)) is where those
 findings start, and they flow back HERE (the skill) or into `scripts/dogfood/analyze.py` (the analyzer).

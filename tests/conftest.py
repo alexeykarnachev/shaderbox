@@ -3,6 +3,7 @@ project (never the tracked projects/dev sandbox — tests must not read or mutat
 the three shipped example nodes so there is always a loadable current node."""
 
 import contextlib
+import os
 import shutil
 from collections.abc import Iterator
 from pathlib import Path
@@ -11,6 +12,12 @@ from typing import Any
 import pytest
 
 from shaderbox.constants import EXAMPLE_ORDER, NODE_EXAMPLES_DIR, STARTER_EXAMPLE_ID
+
+# LOAD-BEARING, read at GL-context creation (not at import): compiling this repo's #version 460
+# shaders on a bare llvmpipe 4.5 context SEGFAULTS Mesa — see the Makefile's `test` note. `make
+# test` exports them; these setdefaults make a bare `uv run pytest tests/` safe too.
+os.environ.setdefault("MESA_GL_VERSION_OVERRIDE", "4.6")
+os.environ.setdefault("MESA_GLSL_VERSION_OVERRIDE", "460")
 
 
 def seed_tmp_project(tmp_path: Path) -> Path:

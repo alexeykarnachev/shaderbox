@@ -26,29 +26,25 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-07-27 (056 landed on dev; itch still v0.25.0; HN post still maintainer-paced). -->
-**ACTIVE: feature 056 — copilot convergence & robustness — LANDED on dev (not shipped).** The
-copilot's turn-end eye is now a bounded CONVERGENCE loop: the eye emits an engine-parsed-and-
-stripped `ASK: met|not-met|unclear` verdict, the aimed look is unconditional (the model can't opt
-out by probing itself), re-looks are mutation-gated up to `copilot_convergence_max_looks` (default
-3), and a final `not-met` survives into the turn record. Plus the robustness wave: auto-look
-targets the node actually changed; script-edit brakes actually work (4 inverted signals fixed);
-vision spend is billed + visible; working-set reset at one choke point + LRU cap with loud
-eviction; truthful torn-stream/cancel/handoff errors. 3-round spec review + 3+1-round impl review
-(Opus swarm), micro-dogfood on this box's GPU (`GALLIUM_DRIVER=d3d12` — WSL renders on the RTX
-3090 now): ASK parse 9/9, the 054 flag over-claim is DEAD (model honestly reports gaps), one full
-not-met→fix→met arc observed.
+<!-- As of 2026-07-27 (056+057 landed on dev; todo FROZEN drain-only; itch still v0.25.0). -->
+**ACTIVE: features 056 (copilot convergence & robustness) + 057 (dogfood axes & judge tooling) —
+LANDED on dev (not shipped).** 056: the eye's `ASK` verdict + the bounded convergence loop killed
+the 054 over-claim (verified live); the robustness wave fixed the script brakes, vision billing,
+working-set hygiene, and the misleading error paths. 057: the measuring stick — five-axis reports
+(honesty AUTO-filled from the trace), the cornerstone scenario type (03/04/05/08, pilot 4/4 PASS
+with dialogues+videos delivered), `render_strip`/`script_values`/`judge.py`, `--dialogue`. En
+route: `turn_time_budget_s` (no more 10-minute grinds), WSL renders on the RTX 3090
+(`GALLIUM_DRIVER=d3d12`), the full pytest suite is green headless for the FIRST time (the
+GL-segfault class was llvmpipe-4.5-vs-#version-460 + an explicit-EGL release poisoning the
+process), and `todo.md` is FROZEN drain-only — one live-UI [VERIFY] entry remains.
 
-**NEXT — feature 057, dogfood axes & ground-truth scenarios (research done, spec pending):** the
-flag dogfood exposed two copilot follow-up classes (056 Review history: motion-coherence-blind eye;
-no "one object = ONE deformation field" craft lesson), and the agreed order is measuring stick
-FIRST — a 5-axis run report (fidelity/motion/logic/honesty/process) + a ground-truth scenario
-ladder (bounce2d/pong/spin3d) + 3 infra gaps (render_strip, analyze.py verdict extraction, numeric
-script probe). **Cold-start brief: `ai_docs/features/057_dogfood_axes_and_scenarios/00_research.md`**
-— read it, draft the spec, plan-lock. The eye/craft fixes are the feature AFTER, validated against
-057's fixtures. The HN post remains maintainer-paced (unchanged from v0.25.0). `todo.md`: 053+056
-live-UI [VERIFY], `reset_to_shipped` stale-file [BUG], 052 orphaned-media [DEBT], full-pytest
-X-crash [BUG].
+**NEXT — the copilot fix wave the pilot earned, measured by 057's stick:** (1) the eye is blind to
+MOTION COHERENCE (the flag's canton waved independently past two not-met verdicts); (2) the craft
+block lacks "one object = ONE deformation field"; (3) the forced-reply path skips the eye — its
+056 trigger FIRED twice as UNDER-claims (05 ball, 08 blink: the model fixed the thing then claimed
+it broken); (4) the uv-y "top row" flip (08). Each fix gets validated by re-running the cornerstone
+set. Then the next scenario echelon (pong / 3D compound / the all-axes final). The HN post remains
+maintainer-paced (unchanged from v0.25.0).
 
 **Last LIVE on itch (context):** v0.21.0 — feature 050 + render-divergence cleanup + YT Shorts presets
 + the bugs/debt fix wave. (Previously v0.20.0 — node-dir live auto-sync + math-symbol text glyphs.
@@ -66,6 +62,7 @@ verified live. **No open BLOCKERs.**
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 057 | dogfood_axes_and_scenarios | done | The dogfood measuring stick: a five-axis report (fidelity/motion/logic/honesty/process + a dialogue section) with the honesty axis AUTO-filled from the 056 trace (`ask_verdict`/`engine_look_usage` extraction, parse rate, limit-forced turns), `analyze.py --dialogue` (UI-store source, dumps fallback for wipe runs), the cornerstone scenario type (03/04/05/08 — opening message verbatim, ≤2 corrections, ground truth per checklist; pilot: 4/4 PASS, over-claim dead, 2 under-claims caught) + judge tooling: `render_strip` (per-sample REPLAY through export-isolation — a live-tick strip lies for stateful scripts), `script_values` (dry_run passthrough), `judge.py` pixel primitives, lazy package init (no more key-bearing `data-*` litter on import). Fixed en route: `turn_time_budget_s` engine wall-clock bound; the GL-segfault class (llvmpipe-4.5 vs `#version 460` + the explicit-EGL release poison) — full suite green headless for the first time. Spec: `ai_docs/features/057_dogfood_axes_and_scenarios/`. |
 | 056 | copilot_convergence_and_robustness | done | The turn-end eye becomes a bounded convergence loop (engine-parsed+stripped `ASK: met\|not-met\|unclear` verdict via `vision_contract.py`, unconditional aimed look, mutation-gated re-looks under `copilot_convergence_max_looks`, final not-met lands in the turn record) + a robustness wave: auto-look targets the mutated node, script-edit brake parity (tuple keys, write_script resets, broken-edit signals un-inverted, batch guard), structured `ProbeResult` plumbing (vision cost billed + truthful failure suffix + user-visible engine look), working-set reset at `enqueue_turn` + LRU cap with loud eviction, truthful torn-stream/cancel/`content=null`/handoff paths. 3-round spec review + 3+1-round post-impl review (Opus), GPU micro-dogfood: ASK parse 9/9, 054's over-claim dead, one not-met→fix→met arc. Spec: `ai_docs/features/056_copilot_convergence_and_robustness.md`. |
 | 055 | help_panel | done | In-app Help modal (`F1` + a Help menu-bar item) teaching ShaderBox's GLSL contract natively — never an "open a file" hand-off: section list left, prose + an insertable GLSL snippet right, mirroring the lib picker. Content is DATA (`help_content.py::HelpSection`); the engine-uniform and shortcuts sections are GENERATED from `ENGINE_DRIVEN_UNIFORMS` / `COMMAND_SPECS`, so a new builtin without a doc entry fails a test instead of shipping stale help. Snippets carry "Insert at caret" through one shared funnel (`App.insert_text_at_caret`, which the lib picker now delegates to), gated to a node shader tab; a display-only snippet (the shortcuts table) gets no button. `TOGGLE_CHEATSHEET` moved `Ctrl+/`→`Alt+/` (the TextEditor hardwires Ctrl+/ to toggle_comments, so both fired on one press) freeing F1, with `K.slash` added to `_BINDABLE_KEYS` so the new chord stays rebindable; a registry-wide chord-uniqueness invariant now guards every future chord edit. Post-impl review compiled both shipped snippets headlessly on a real EGL context. Spec: `ai_docs/features/055_help_panel.md`. |
 | 051 | node_examples | done | Templates → read-only **examples**: Ctrl+N instant-clones the starter (picker deleted), the node-creator popup re-purposed as the Examples browser (`Alt+E`/menu-bar/palette/first-launch auto-open, "Open a copy"), the Fire showcase promoted from `_lab` with `SB_fbm` into the seed lib, description-sidecar + "Save as template" subsystems deleted, example↔lib coherence pinned by resolve-clean + `SB_*` api-lock tests. Spec: `ai_docs/features/051_node_examples.md`. |

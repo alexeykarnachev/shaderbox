@@ -104,6 +104,7 @@ _TERMINAL_KINDS: frozenset[str] = frozenset(
     {
         "turn_done",
         "edit_giveup",
+        "clean_streak_giveup",
         "stream_error",
         "turn_truncated",
         "model_incompatible",
@@ -112,6 +113,35 @@ _TERMINAL_KINDS: frozenset[str] = frozenset(
 _HARD_FAIL_TERMINALS: frozenset[str] = frozenset(
     {"edit_giveup", "stream_error", "model_incompatible"}
 )
+# Terminals where the engine STOPPED the agent at a limit but still delivered a visible reply —
+# degraded, not failed. They share the ⚠️ glyph with a `cutoff=` turn_done and are the honesty
+# axis's own turn class (the reply was forced past the eye).
+_LIMIT_TERMINALS: frozenset[str] = frozenset({"clean_streak_giveup"})
+# The `key: value` field lines the section parser keeps. Anything absent here is dropped, so a new
+# trace field must be added BOTH to the emitter and to this set.
+_FIELD_KEYS: frozenset[str] = frozenset(
+    {
+        "user_text",
+        "model",
+        "iteration",
+        "finish_reason",
+        "n",
+        "name",
+        "ok",
+        "iterations",
+        "tool_calls",
+        "reply",
+        "cutoff",
+        "verdict",
+        "ask_line",
+        "node",
+        "look",
+        "vision_ok",
+        "input_tokens",
+        "output_tokens",
+        "cost_usd",
+    }
+)
 
 _TS_RE = re.compile(r"copilot_.*_(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}_\d+)\.transcript")
 _SECTION_RE = re.compile(r"^### (?P<kind>\w+)\s")
@@ -119,6 +149,19 @@ _USAGE_RE = re.compile(
     r"^usage: in=(\d+) out=(\d+)(?: rsn=(\d+))?(?: cache=(\d+))? cost=\$([\d.]+)"
 )
 _INVOKE_RE = re.compile(r"^\s*-> tool_call (?P<name>\w+)\(id=(?P<id>call_\w+)\)")
+# The eye's demanded final line, verbatim (shaderbox/copilot/vision_contract.py). A look whose
+# ask_line misses this shape is a GARBLED read — the engine normalizes the verdict to `unclear`,
+# so the raw line is the only discriminator left.
+_ASK_STRICT_RE = re.compile(r"^ASK\s*:\s*(met|not-met|unclear)\.?$", re.IGNORECASE)
+# The UI chat roles the dialogue prints, and the label each gets. `error` is a VISIBLE copilot
+# reply (a limit-cutoff note), not a dropped row.
+_DIALOGUE_LABELS: dict[str, str] = {
+    "user": "**User:**",
+    "assistant": "**Copilot:**",
+    "error": "**Copilot [engine]:**",
+}
+# Roles the user never read as dialogue: a per-turn tool digest and an unanswered gate prompt.
+_DIALOGUE_SKIP: frozenset[str] = frozenset({"turn_snippet", "pending_action"})
 
 
 @dataclass
@@ -144,6 +187,24 @@ class Iteration:
 
 
 @dataclass
+class LookVerdict:
+    # One ENGINE look (feature 056's ask_verdict event) + the vision usage of the same iteration.
+    # `verdict` is already normalized by the engine (garbled -> unclear, blind -> none), so
+    # `ask_line` is what tells a garbled read from a clean one.
+    segment: str
+    turn_index: int
+    iteration: int
+    verdict: str
+    ask_line: str
+    node: str
+    look: int
+    vision_ok: bool
+    input_tokens: int
+    output_tokens: int
+    cost_usd: float
+
+
+@dataclass
 class Turn:
     user_text: str
     model: str
@@ -163,10 +224,14 @@ class Turn:
     # THIS, not on whether some attempt errored — an attempt the agent handled is not a
     # failed turn.
     terminal_kind: str
+    # turn_done's `cutoff=` ("" on a clean finish): max_iterations / time_budget. A cutoff turn
+    # REPLIED, but the reply was forced by a limit — the class the honesty axis investigates.
+    cutoff: str
     gate_approvals: int
     gate_declines: int
     errored: bool
     recovered: bool
+    looks: list[LookVerdict] = field(default_factory=list)
 
 
 @dataclass
@@ -193,6 +258,9 @@ class RunAnalysis:
     recoveries: list[Recovery]
     errored_attempts: list[ToolAttempt]
     recovery_summary: str
+    looks: list[LookVerdict]
+    engine_look_cost_usd: float
+    parse_rate: str
     total_cost_usd: float
     total_billed_in_tokens: int
     total_out_tokens: int
@@ -227,6 +295,11 @@ def _as_str(value: object) -> str:
     return str(value) if value is not None else ""
 
 
+def _as_bool(value: object) -> bool:
+    # The trace renders python bools with str(), so the field arrives as the text "True"/"False".
+    return _as_str(value).strip().lower() == "true"
+
+
 def _collect_transcripts(target: Path) -> list[Path]:
     if target.is_dir():
         files = list((target / "copilot_traces").glob("*.transcript"))
@@ -248,6 +321,9 @@ def _parse_transcript(path: Path, turns: list[Turn], warnings: list[str]) -> Non
     kind = ""
     cur: dict[str, object] = {}
     cur_turn: Turn | None = None
+    # engine_look_usage is emitted immediately BEFORE the ask_verdict of the same iteration (the
+    # vision call's own billing); hold it until that verdict closes so one look = one row.
+    pending_look: dict[str, object] = {}
 
     def _finalize_turn(t: Turn | None) -> None:
         # An error terminal (giveup / stream_error / truncated / model_incompatible) never emits a
@@ -261,9 +337,10 @@ def _parse_transcript(path: Path, turns: list[Turn], warnings: list[str]) -> Non
         t.peak_iter_in_tokens = max(it.in_tokens for it in t.iterations)
 
     def _close_section() -> None:
-        nonlocal cur_turn
+        nonlocal cur_turn, pending_look
         if kind == "turn_start":
             _finalize_turn(cur_turn)
+            pending_look = {}  # iteration numbers restart per turn
             cur_turn = Turn(
                 user_text=_as_str(cur.get("user_text", "")),
                 model=_as_str(cur.get("model", "")),
@@ -279,6 +356,7 @@ def _parse_transcript(path: Path, turns: list[Turn], warnings: list[str]) -> Non
                 cost_usd=0.0,
                 segment=path.name,
                 terminal_kind="",
+                cutoff="",
                 gate_approvals=0,
                 gate_declines=0,
                 errored=False,
@@ -312,9 +390,35 @@ def _parse_transcript(path: Path, turns: list[Turn], warnings: list[str]) -> Non
             cur_turn.gate_approvals += 1
         elif kind == "gate_declined" and cur_turn is not None:
             cur_turn.gate_declines += 1
-        elif kind in _TERMINAL_KINDS and cur_turn is not None:
+        elif kind == "engine_look_usage":
+            pending_look = dict(cur)
+        elif kind == "ask_verdict" and cur_turn is not None:
+            paired = (
+                pending_look
+                if _as_int(pending_look.get("iteration"))
+                == _as_int(cur.get("iteration"))
+                else {}
+            )
+            pending_look = {}
+            cur_turn.looks.append(
+                LookVerdict(
+                    segment=path.name,
+                    turn_index=len(turns),
+                    iteration=_as_int(cur.get("iteration")),
+                    verdict=_as_str(cur.get("verdict", "")),
+                    ask_line=_as_str(cur.get("ask_line", "")),
+                    node=_as_str(cur.get("node", "")),
+                    look=_as_int(cur.get("look")),
+                    vision_ok=_as_bool(cur.get("vision_ok")),
+                    input_tokens=_as_int(paired.get("input_tokens")),
+                    output_tokens=_as_int(paired.get("output_tokens")),
+                    cost_usd=_as_float(paired.get("cost_usd")),
+                )
+            )
+        if kind in _TERMINAL_KINDS and cur_turn is not None:
             cur_turn.terminal_kind = kind
         if kind == "turn_done" and cur_turn is not None:
+            cur_turn.cutoff = _as_str(cur.get("cutoff", ""))
             cur_turn.iterations_count = _as_int(cur.get("iterations"))
             cur_turn.tool_calls_count = _as_int(cur.get("tool_calls"))
             cur_turn.reply = _as_str(cur.get("reply", ""))
@@ -355,23 +459,12 @@ def _parse_transcript(path: Path, turns: list[Turn], warnings: list[str]) -> Non
         ):
             cur["result_head"] = line.strip()
             continue
-        # simple `key: value` field lines (user_text / iteration / finish_reason / n / name / ok /
-        # iterations / tool_calls / reply)
+        # simple `key: value` field lines. engine_look_usage's `cost_usd:` rides this path — it is
+        # NOT a `usage: in=… cost=$…` line, so _USAGE_RE never sees it.
         if ":" in line and not line.startswith(" "):
             key, _, val = line.partition(":")
             key = key.strip()
-            if key in {
-                "user_text",
-                "model",
-                "iteration",
-                "finish_reason",
-                "n",
-                "name",
-                "ok",
-                "iterations",
-                "tool_calls",
-                "reply",
-            }:
+            if key in _FIELD_KEYS:
                 cur[key] = val.strip()
                 pending_key = ""
     _close_section()
@@ -477,7 +570,10 @@ def _load_dumps(runs_dir: Path, data_dir: Path) -> list[dict[str, object]]:
     # own `data_dir` field), or analyzing run A reports run B's render/cost (they cross-contaminate).
     want = data_dir.resolve()
     dumps: list[dict[str, object]] = []
-    for p in sorted(runs_dir.glob("*.json")):
+    # CHRONOLOGICAL, not lexicographic: a run's dumps are named per turn (`s01_t2`, `s01_t10`), and
+    # a name sort puts t10 before t2 — which would scramble the dialogue fallback and the cost
+    # series on exactly the long runs that need them. Name breaks an mtime tie deterministically.
+    for p in sorted(runs_dir.glob("*.json"), key=lambda q: (q.stat().st_mtime, q.name)):
         try:
             data = json.loads(p.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
@@ -493,6 +589,17 @@ def _load_dumps(runs_dir: Path, data_dir: Path) -> list[dict[str, object]]:
             continue
         dumps.append(data)
     return dumps
+
+
+def _parse_rate(looks: list[LookVerdict]) -> str:
+    # The engine already normalizes a garbled read to `unclear` and a blind one to `none`, so the
+    # RAW ask_line is the only garble discriminator. Denominator = the looks that actually saw a
+    # frame; a run with none prints n/a rather than dividing by zero.
+    seen = [lk for lk in looks if lk.vision_ok]
+    if not seen:
+        return "n/a (no look returned a frame)"
+    ok = sum(1 for lk in seen if _ASK_STRICT_RE.match(lk.ask_line.strip()) is not None)
+    return f"{ok}/{len(seen)} ({ok / len(seen):.0%})"
 
 
 def _growth_shape(turns: list[Turn]) -> str:
@@ -548,6 +655,7 @@ def analyze(target: Path, cli_model: str) -> RunAnalysis:
     reachable_used = [t for t in REACHABLE_TOOLS if t in tool_counts]
     reachable_gap = [t for t in REACHABLE_TOOLS if t not in tool_counts]
     recoveries, errored = _find_recoveries(turns)
+    looks = [lk for t in turns for lk in t.looks]
 
     runs_dir = target.parent
     dumps = _load_dumps(runs_dir, target) if runs_dir.is_dir() else []
@@ -609,6 +717,9 @@ def analyze(target: Path, cli_model: str) -> RunAnalysis:
         recoveries=recoveries,
         errored_attempts=errored,
         recovery_summary=recovery_summary,
+        looks=looks,
+        engine_look_cost_usd=round(sum(lk.cost_usd for lk in looks), 6),
+        parse_rate=_parse_rate(looks),
         total_cost_usd=round(total_cost, 6),
         total_billed_in_tokens=sum(t.billed_in_tokens for t in turns),
         total_out_tokens=sum(t.reply_tokens for t in turns),
@@ -628,7 +739,12 @@ def _result_glyph(turn: Turn) -> str:
     # (recovered-from-error, or truncated-but-replied).
     if turn.terminal_kind in _HARD_FAIL_TERMINALS:
         return "🔴"
-    if turn.recovered or turn.terminal_kind == "turn_truncated":
+    if (
+        turn.recovered
+        or turn.terminal_kind == "turn_truncated"
+        or turn.terminal_kind in _LIMIT_TERMINALS
+        or turn.cutoff
+    ):
         return "⚠️"
     return "✅"
 
@@ -657,6 +773,42 @@ def _coverage_table(an: RunAnalysis) -> str:
         )
     rows.append(f"\n**Coverage: {an.coverage}**")
     return "\n".join(rows)
+
+
+def _look_table(an: RunAnalysis) -> str:
+    if not an.looks:
+        return "(no engine look fired this run)"
+    rows = [
+        "| turn | look # | node | verdict | vision_ok | ask_line | look cost |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    for lk in an.looks:
+        rows.append(
+            f"| {lk.turn_index} | {lk.look} | {lk.node} | {lk.verdict} | "
+            f"{'✅' if lk.vision_ok else '❌'} | `{lk.ask_line}` | ${lk.cost_usd:.5f} |"
+        )
+    return "\n".join(rows)
+
+
+def _final_verdicts(an: RunAnalysis) -> str:
+    # The turn's LAST look is the one that stands: an earlier not-met the agent then fixed must not
+    # read as the turn's verdict.
+    finals = [
+        f"turn {i}: {t.looks[-1].verdict}" for i, t in enumerate(an.turns, 1) if t.looks
+    ]
+    return " · ".join(finals) or "(no engine look fired this run)"
+
+
+def _cutoff_turns(an: RunAnalysis) -> str:
+    # LIMITS only (iteration/time cutoff, churn hard-stop) — a limit-forced reply skips the eye, so
+    # these turns are where over/under-claims hide. A crash terminal is a different failure and
+    # belongs to the recovery summary, not here.
+    hits = [
+        f"turn {i} ({t.cutoff or t.terminal_kind})"
+        for i, t in enumerate(an.turns, 1)
+        if t.cutoff or t.terminal_kind in _LIMIT_TERMINALS
+    ]
+    return ", ".join(hits) or "none (every turn finished on its own)"
 
 
 def _render_list(dumps_render: str | None) -> str:
@@ -712,6 +864,15 @@ def _markdown_block(an: RunAnalysis) -> str:
 **Recoveries:**
 {rec_lines or "(none)"}
 
+### Engine-look verdicts
+{_look_table(an)}
+
+Per-turn FINAL verdict: {_final_verdicts(an)}.
+Parse rate (strict `ASK:` line / looks that saw a frame): {an.parse_rate}.
+Engine-look vision spend: **${an.engine_look_cost_usd:.5f}** (engine looks ONLY — a
+MODEL-initiated probe_render look leaves no usage event, so its vision spend is not in this figure).
+Limit-forced turns: {_cutoff_turns(an)}.
+
 ### Token growth
 Per-turn peak context: {pmin}-{pmax}. {an.growth_shape}.
 (Per-turn billed input is the CUMULATIVE sum of iterations; total billed in = {an.total_billed_in_tokens} tok.)
@@ -724,7 +885,7 @@ Dump session_cost cross-check: {f"${an.dump_session_cost_usd:.4f}" if an.dump_se
 Recovery summary: {an.recovery_summary}.{warn}"""
 
 
-def _auto_fields(an: RunAnalysis) -> dict[str, str]:
+def _auto_fields(an: RunAnalysis, scenario: str = "") -> dict[str, str]:
     cost_vals = [t.cost_usd for t in an.turns]
     cmin, cmax = (min(cost_vals), max(cost_vals)) if cost_vals else (0.0, 0.0)
     dearest = (cost_vals.index(cmax) + 1) if cost_vals else 0
@@ -740,7 +901,7 @@ def _auto_fields(an: RunAnalysis) -> dict[str, str]:
         "run_label": f"{run_id} — {model_short}",
         "run_id": run_id,
         "date": date,
-        "scenario_list": "(unspecified)",
+        "scenario_list": scenario or "(unspecified)",
         "model": an.model,
         "turn_count": str(len(an.turns)),
         "total_cost_usd": f"${an.total_cost_usd:.4f}",
@@ -754,6 +915,11 @@ def _auto_fields(an: RunAnalysis) -> dict[str, str]:
         "dearest_turn": str(dearest),
         "token_growth_note": an.growth_shape,
         "recovery_summary": an.recovery_summary,
+        "look_table": _look_table(an),
+        "final_verdicts": _final_verdicts(an),
+        "parse_rate": an.parse_rate,
+        "engine_look_spend": f"${an.engine_look_cost_usd:.5f}",
+        "cutoff_turns": _cutoff_turns(an),
     }
 
 
@@ -764,6 +930,98 @@ def _fill_template(template: str, auto: dict[str, str]) -> str:
     return out
 
 
+def _resolve_project_dir(target: Path, cli_project: str) -> Path | None:
+    # The positional target is the DATA dir; the dialogue lives in the PROJECT dir. Every dump the
+    # run wrote echoes both, so resolve one from the other (a dump may hold a repo-relative
+    # project_dir — try the newest that actually exists on disk).
+    if cli_project:
+        return Path(cli_project)
+    runs_dir = target.parent
+    dumps = _load_dumps(runs_dir, target) if runs_dir.is_dir() else []
+    for data in reversed(dumps):
+        # Guard the RAW string: Path("") is PosixPath('.'), which `is_dir()`s true and would
+        # short-circuit an older dump that holds the real path.
+        raw = str(data.get("project_dir", "")).strip()
+        if raw and Path(raw).is_dir():
+            return Path(raw)
+    return None
+
+
+def _dialogue_rows(messages: list[dict[str, str]]) -> list[str]:
+    rows: list[str] = []
+    for msg in messages:
+        role = msg.get("role", "")
+        text = (msg.get("text") or "").strip()
+        if not text or role in _DIALOGUE_SKIP:
+            continue
+        if role in _DIALOGUE_LABELS:
+            rows.append(f"{_DIALOGUE_LABELS[role]} {text}")
+        elif role == "tool_status":
+            rows.append(f"_[engine] {text}_")
+        else:
+            # The store's role is a free string off disk. An unmapped one is FLAGGED, never quietly
+            # dressed as an engine line — a new role must be visible, not misattributed.
+            rows.append(f"**[role?{role}]** {text}")
+    return rows
+
+
+def _dumps_dialogue(target: Path) -> list[dict[str, str]]:
+    runs_dir = target.parent
+    dumps = _load_dumps(runs_dir, target) if runs_dir.is_dir() else []
+    out: list[dict[str, str]] = []
+    for data in dumps:
+        new = data.get("new_messages", [])
+        if isinstance(new, list):
+            for msg in new:
+                if isinstance(msg, dict):
+                    out.append(
+                        {
+                            "role": _as_str(msg.get("role")),
+                            "text": _as_str(msg.get("text")),
+                        }
+                    )
+    return out
+
+
+def _dialogue(target: Path, cli_project: str) -> str:
+    project = _resolve_project_dir(target, cli_project)
+    store_rows: list[str] = []
+    conversation = (
+        project / "copilot" / "conversation.json" if project is not None else None
+    )
+    if conversation is not None and conversation.exists():
+        try:
+            data = json.loads(conversation.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            data = {}
+        messages = data.get("messages", []) if isinstance(data, dict) else []
+        store_rows = _dialogue_rows(
+            [
+                {"role": _as_str(m.get("role")), "text": _as_str(m.get("text"))}
+                for m in messages
+                if isinstance(m, dict)
+            ]
+        )
+    # `clear_context()` ARCHIVES then re-saves an EMPTY store to the same path, so "the file is
+    # there" is no proof the dialogue is complete — a wiped run reads as zero messages. Fall back
+    # to the per-turn dumps whenever the store holds FEWER rows than the dumps already recorded.
+    dump_msgs = _dumps_dialogue(target)
+    dump_rows = _dialogue_rows(dump_msgs)
+    if len(store_rows) >= len(dump_rows) and store_rows:
+        source = f"`{conversation}` (the UI chat store — what the user SAW)"
+        rows = store_rows
+    else:
+        source = (
+            f"the per-turn dumps of `{target}` (the chat store is missing or was wiped by "
+            "clear_context; pre-wipe content is also archived under "
+            "`<project>/copilot/archive/conversation_<stamp>.json`)"
+        )
+        rows = dump_rows
+    head = f"### Dialogue\n\nSource: {source}.\n"
+    body = "\n\n".join(rows) if rows else "(no user-visible messages found)"
+    return f"{head}\n{body}"
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("target", help="a run data dir, a .transcript, or a quoted glob")
@@ -772,10 +1030,23 @@ def main() -> None:
     ap.add_argument("--template", default="")
     ap.add_argument("--report-out", default="")
     ap.add_argument("--model", default="")
+    ap.add_argument(
+        "--scenario", default="", help="scenario name for the report's slot"
+    )
+    ap.add_argument(
+        "--dialogue",
+        action="store_true",
+        help="print the run's user-visible dialogue and exit",
+    )
+    ap.add_argument("--project", default="", help="project dir override for --dialogue")
     args = ap.parse_args()
 
+    if args.dialogue:
+        print(_dialogue(Path(args.target), args.project))
+        return
+
     an = analyze(Path(args.target), args.model)
-    auto = _auto_fields(an)
+    auto = _auto_fields(an, args.scenario)
     payload = asdict(an)
     payload["auto_fields"] = auto
     payload["per_turn"] = [
