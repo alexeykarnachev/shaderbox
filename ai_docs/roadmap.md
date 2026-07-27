@@ -39,14 +39,16 @@ eviction; truthful torn-stream/cancel/handoff errors. 3-round spec review + 3+1-
 3090 now): ASK parse 9/9, the 054 flag over-claim is DEAD (model honestly reports gaps), one full
 not-met→fix→met arc observed.
 
-**NEXT — next copilot slice (maintainer + agent, in progress):** the flag dogfood exposed the two
-follow-up classes (056 spec Review history): the eye is blind to MOTION COHERENCE (canton waved
-independently of the stripes and two not-met verdicts missed it), and the craft block lacks "one
-object = ONE deformation field". Plan: ground-truth-checkable dogfood fixtures (physics/logic/3D
-base cases — bounce2d/pong/spin3d sketches in chat 2026-07-27) → then the eye/craft fixes. The HN
-post remains maintainer-paced (unchanged from v0.25.0: GIF, itch cover, Show HN). `todo.md`:
-053+056 live-UI [VERIFY], `reset_to_shipped` stale-file [BUG], 052 orphaned-media [DEBT],
-full-pytest X-crash [BUG].
+**NEXT — feature 057, dogfood axes & ground-truth scenarios (research done, spec pending):** the
+flag dogfood exposed two copilot follow-up classes (056 Review history: motion-coherence-blind eye;
+no "one object = ONE deformation field" craft lesson), and the agreed order is measuring stick
+FIRST — a 5-axis run report (fidelity/motion/logic/honesty/process) + a ground-truth scenario
+ladder (bounce2d/pong/spin3d) + 3 infra gaps (render_strip, analyze.py verdict extraction, numeric
+script probe). **Cold-start brief: `ai_docs/features/057_dogfood_axes_and_scenarios/00_research.md`**
+— read it, draft the spec, plan-lock. The eye/craft fixes are the feature AFTER, validated against
+057's fixtures. The HN post remains maintainer-paced (unchanged from v0.25.0). `todo.md`: 053+056
+live-UI [VERIFY], `reset_to_shipped` stale-file [BUG], 052 orphaned-media [DEBT], full-pytest
+X-crash [BUG].
 
 **Last LIVE on itch (context):** v0.21.0 — feature 050 + render-divergence cleanup + YT Shorts presets
 + the bugs/debt fix wave. (Previously v0.20.0 — node-dir live auto-sync + math-symbol text glyphs.
