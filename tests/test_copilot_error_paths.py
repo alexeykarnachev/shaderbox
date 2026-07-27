@@ -187,7 +187,9 @@ def test_eye_verdict_reaches_the_persisted_summary(tmp_path: Path) -> None:
     sess = _session(tmp_path)
     try:
         sess._commit_turn(
-            "go", TurnSummary(reply="done", eye="eye: ask not-met after 2 looks -- x"), ""
+            "go",
+            TurnSummary(reply="done", eye="eye: ask not-met after 2 looks -- x"),
+            "",
         )
         assert "ask not-met" in (sess.history[1].content or "")
     finally:

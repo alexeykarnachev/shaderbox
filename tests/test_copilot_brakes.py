@@ -187,7 +187,10 @@ def test_second_write_script_in_one_batch_is_rejected() -> None:
     write = CopilotBackend.write_script.__get__(stub)
     assert write("first", "").ok is True
     second = write("second", "")
-    assert second.ok is False and "already edited earlier in this same step" in second.error
+    assert (
+        second.ok is False
+        and "already edited earlier in this same step" in second.error
+    )
     assert "edit_script" in second.error  # steers at the script editor, not edit_shader
     assert written == [("n1", "first")]
 

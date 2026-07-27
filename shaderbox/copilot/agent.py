@@ -1,5 +1,6 @@
 import json
 import threading
+import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 
@@ -608,6 +609,9 @@ def run_turn(
         )
         final_reply_text.append(buf.strip())
 
+    turn_started = time.monotonic()
+    time_budget_hit = False
+
     for iteration in range(config.max_iterations):
         if cancel.is_set():
             logger.debug(f"copilot turn cancelled at iteration {iteration}")
@@ -620,6 +624,13 @@ def run_turn(
                 ),
             )
             return
+        if (
+            config.turn_time_budget_s > 0
+            and iteration > 0
+            and time.monotonic() - turn_started > config.turn_time_budget_s
+        ):
+            time_budget_hit = True
+            break
 
         text_buf = ""
         builders: dict[int, _ToolCallBuilder] = {}
@@ -1238,8 +1249,26 @@ def run_turn(
             )
             return
 
+    if time_budget_hit:
+        cutoff = "time_budget"
+        cutoff_cause = (
+            f"You reached the per-turn time budget of {config.turn_time_budget_s}s"
+        )
+        cutoff_note = (
+            f"I hit the per-turn time budget ({config.turn_time_budget_s}s) without "
+            "finishing this turn. Ask me to continue, or rephrase what you need."
+        )
+    else:
+        cutoff = "max_iterations"
+        cutoff_cause = (
+            f"You reached the per-turn limit of {config.max_iterations} tool-call steps"
+        )
+        cutoff_note = (
+            f"I stopped after {config.max_iterations} steps without finishing this "
+            "turn. Ask me to continue, or rephrase what you need."
+        )
     logger.warning(
-        f"copilot turn hit max_iterations={config.max_iterations} | "
+        f"copilot turn hit {cutoff} | "
         f"tool_calls={total_tool_calls} total_in={usage.input_tokens} "
         f"cost=${usage.cost_usd:.6f}"
     )
@@ -1253,22 +1282,17 @@ def run_turn(
             ),
         )
         return
-    yield from stream_final_reply(
-        f"You reached the per-turn limit of {config.max_iterations} tool-call steps"
-    )
+    yield from stream_final_reply(cutoff_cause)
     tr.event(
         "turn_done",
-        cutoff="max_iterations",
+        cutoff=cutoff,
         iterations=config.max_iterations,
         tool_calls=total_tool_calls,
         usage=usage,
     )
     reply = final_reply_text[-1] if final_reply_text else ""
     if not reply:
-        reply = (
-            f"I stopped after {config.max_iterations} steps without finishing this "
-            "turn. Ask me to continue, or rephrase what you need."
-        )
+        reply = cutoff_note
         yield AgentError(
             reply,
             summary=_build_turn_summary(reply, ran, registry),

@@ -1123,3 +1123,61 @@ def test_mid_stream_cancel_terminates_without_firing_tools() -> None:
     # The turn ended cancelled, and NO tool card was emitted (the partial tool call was discarded).
     assert isinstance(events[-1], AgentCancelled)
     assert not [e for e in events if isinstance(e, AgentToolCard)]
+
+
+def test_turn_time_budget_forces_a_final_reply(monkeypatch) -> None:
+    # max_iterations bounds step COUNT; the wall-clock budget bounds their DURATION. A clock
+    # jumping past the budget after iteration 0 must end the turn via the forced no-tools
+    # reply (same shape as max_iterations exhaustion), never run all scripted iterations.
+    clock = iter(range(0, 100_000, 200))
+    monkeypatch.setattr(
+        "shaderbox.copilot.agent.time.monotonic", lambda: float(next(clock))
+    )
+    read = _tool_call("cr", "read_shader", "{}")
+    scripts: list[list[LLMStreamEvent]] = [read]
+    scripts.append(
+        [LLMTextDelta("Ran out of time; here is where I got."), LLMDone("stop")]
+    )
+    caps = _fake_caps(edit_errors=[])
+    registry = build_registry(caps)
+    events = list(
+        run_turn(
+            _FakeClient(scripts),
+            registry,
+            replace(COPILOT_CONFIG, turn_time_budget_s=100),
+            _fake_context(),
+            history=[],
+            user_text="read forever",
+            gate=GateChannel(),
+            cancel=threading.Event(),
+        )
+    )
+    assert isinstance(events[-1], AgentTurnDone)
+    assert "here is where I got" in events[-1].summary.reply
+    ran_tools = [e for e in events if isinstance(e, AgentToolCard)]
+    assert len(ran_tools) == 1
+
+
+def test_turn_time_budget_zero_is_off(monkeypatch) -> None:
+    clock = iter(range(0, 10_000_000, 500))
+    monkeypatch.setattr(
+        "shaderbox.copilot.agent.time.monotonic", lambda: float(next(clock))
+    )
+    read = _tool_call("cr", "read_shader", "{}")
+    scripts: list[list[LLMStreamEvent]] = [read] * COPILOT_CONFIG.max_iterations
+    scripts.append([LLMTextDelta("done reading"), LLMDone("stop")])
+    caps = _fake_caps(edit_errors=[])
+    registry = build_registry(caps)
+    events = list(
+        run_turn(
+            _FakeClient(scripts),
+            registry,
+            replace(COPILOT_CONFIG, turn_time_budget_s=0),
+            _fake_context(),
+            history=[],
+            user_text="read forever",
+            gate=GateChannel(),
+            cancel=threading.Event(),
+        )
+    )
+    assert isinstance(events[-1], AgentTurnDone)

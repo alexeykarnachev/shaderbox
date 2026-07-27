@@ -9,6 +9,10 @@ class CopilotConfig:
     # `apply_user_limits` (startup + Settings edit) — every consumer holds this
     # instance, so a change takes effect immediately. The rest stay constants.
     max_iterations: int = 16
+    # Wall-clock ceiling for ONE turn (seconds; 0 = off). max_iterations bounds the COUNT of
+    # steps, not their duration — a slow reasoning stream makes 14 legal iterations stretch past
+    # 10 minutes. Checked at iteration boundaries, so a turn overshoots by at most one iteration.
+    turn_time_budget_s: int = 180
     max_input_tokens: int = 150_000
     # Reasoning models bill hidden thinking into the output budget; creative
     # generations need headroom beyond the visible reply + tool args.
