@@ -80,7 +80,7 @@ rates (cheap model; corrections would fix most fails — this measures raw relia
 |---|---|---|
 | 03 circles | count/visibility 3/3 AFTER the domain amendment (was 1/3: hard-coded +-0.6/0.8 layouts fell off the SQUARE canvas after aspect correction); balance ~1/3 | layout balance = known model limit |
 | 04 orbit | 3/3 exact (period 2.000s each) | rock stable |
-| 05 bounce | 2/3 | 1x FLOOR PENETRATION (y integrated to -0.68, rest below frame — collision clamp/sign) |
+| 05 bounce | 3/3 (a claimed floor-penetration was RETRACTED — a judge error, see below) | — |
 | 08 grid | builds 5/6 (1x plan-loop: replied with a SECOND plan to "go ahead"); rows correct 2/2 built runs AFTER the uv-y line (1/3 before); per-cell motion bugs in most runs (static red square 2x, wrong blink rate 2x, one static magenta, one empty cell) | compound per-cell reliability is the base gap |
 | 09 stopwatch | 1/3 one-shot, +1 after go-ahead, 1 stuck (token-limit turn, failed continue) | of the BUILT runs: dial aspect 1.0 in 3/3, hand period correct 2/2 measured |
 
@@ -95,6 +95,13 @@ rates (cheap model; corrections would fix most fails — this measures raw relia
   unchanged from the start of this turn" — no fabrication.
 
 **Open classes for the next wave (evidence-ranked):** (1) compound per-cell motion reliability
-(blink rates, cells going static) — the dominant base-echelon gap; (2) script floor-collision
-robustness (1/3 penetration); (3) plan-loop on go-ahead (1x, watch); (4) layout balance (model
-limit, revisit on model change).
+(blink rates, cells going static) — the dominant base-echelon gap; (2) plan-loop on go-ahead (1x,
+watch); (3) layout balance (model limit, revisit on model change).
+
+**JUDGE LESSON (the sweep's most expensive mistake, 2026-07-28):** the "floor penetration" class
+was a JUDGE artifact — `script_values` returns RAW script values whose coordinate frame is
+unknowable without reading the shader (that run's script+shader shared a centered frame; the ball
+was on-screen the whole time). Three symptom corrections gaslit the model about a non-existent
+bug, and a candidate SCRIPTING prompt line was added and then removed when the retraction landed.
+THE RULE: judge POSITIONS from PIXELS (renders/strips — frame-independent truth); use raw script
+values only for rates/periods/monotony, never for on-screen-ness. Filed in the dogfood skill.
