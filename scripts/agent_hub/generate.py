@@ -52,9 +52,17 @@ def config_rows() -> list[tuple[str, str, str]]:
             continue
         m = re.match(r"(\w+):\s*[\w\[\]\., |]+=\s*(.+)$", stripped)
         if m and m.group(1) in {f.name for f in fields(CopilotConfig)}:
-            rows.append((m.group(1), str(getattr(COPILOT_CONFIG, m.group(1))), " ".join(pending)))
+            rows.append(
+                (
+                    m.group(1),
+                    str(getattr(COPILOT_CONFIG, m.group(1))),
+                    " ".join(pending),
+                )
+            )
             pending = []
-        elif stripped and not stripped.startswith(("class ", '"""', "from ", "import ")):
+        elif stripped and not stripped.startswith(
+            ("class ", '"""', "from ", "import ")
+        ):
             pending = []
     return rows
 
@@ -69,7 +77,10 @@ def tool_sections() -> str:
             break
     assert items
     out = []
-    for tier, flag in (("Eager — в каждом запросе", True), ("Lazy — подключаются через load_tools", False)):
+    for tier, flag in (
+        ("Eager — в каждом запросе", True),
+        ("Lazy — подключаются через load_tools", False),
+    ):
         rows = []
         for d in sorted((x for x in items if x.eager == flag), key=lambda x: x.name):
             schema = d.args_model.model_json_schema()
@@ -77,8 +88,13 @@ def tool_sections() -> str:
             req = set(schema.get("required", []))
             parts = []
             for n, p in props.items():
-                t = p.get("type") or ("|".join(a.get("type", "?") for a in p.get("anyOf", [])) or "any")
-                parts.append(f"{n}: {t}" + ("" if n in req else f" = {json.dumps(p.get('default'))}"))
+                t = p.get("type") or (
+                    "|".join(a.get("type", "?") for a in p.get("anyOf", [])) or "any"
+                )
+                parts.append(
+                    f"{n}: {t}"
+                    + ("" if n in req else f" = {json.dumps(p.get('default'))}")
+                )
             flags = []
             if d.mutating:
                 flags.append("mutating")
@@ -103,8 +119,12 @@ def dialogue_html(project_dir: Path) -> str:
     if not conv.exists():
         return "<p class='dim'>(диалог не сохранился)</p>"
     data = json.loads(conv.read_text(encoding="utf-8"))
-    role_map = {"user": ("Юзер", "u"), "assistant": ("Копайлот", "a"), "error": ("Копайлот [движок]", "e"),
-                "tool_status": ("[движок]", "t")}
+    role_map = {
+        "user": ("Юзер", "u"),
+        "assistant": ("Копайлот", "a"),
+        "error": ("Копайлот [движок]", "e"),
+        "tool_status": ("[движок]", "t"),
+    }
     out = []
     for m in data.get("messages", []):
         role, text = m.get("role"), (m.get("text") or "").strip()
@@ -146,7 +166,9 @@ def md_lite(text: str) -> str:
             if not in_table:
                 lines_out.append("<table>")
                 in_table = True
-            lines_out.append("<tr>" + "".join(f"<{tag}>{c}</{tag}>" for c in cells) + "</tr>")
+            lines_out.append(
+                "<tr>" + "".join(f"<{tag}>{c}</{tag}>" for c in cells) + "</tr>"
+            )
             continue
         if in_table:
             lines_out.append("</table>")
@@ -157,7 +179,7 @@ def md_lite(text: str) -> str:
                 in_list = True
             lines_out.append(f"<li>{line[2:]}</li>")
             continue
-        if in_list and not raw.startswith(("  ", "- ")) :
+        if in_list and not raw.startswith(("  ", "- ")):
             lines_out.append("</ul>")
             in_list = False
         if raw.startswith("### "):
@@ -178,50 +200,119 @@ def md_lite(text: str) -> str:
 # ---- Curated run manifest: the session's judgment (verdicts are human, not derivable) ----
 
 RUNS: list[dict] = [
-    dict(key="s03", num="03", title="Пять кругов (статика, чистый GLSL)", proj="proj-qqqszf1y",
-         verdict="PASS, 3 сообщения",
-         media=["proj-qqqszf1y/renders/*.png"],
-         notes="Замерено: центр ряда y=199.5/200, шаг 75px... финал: маржи 14/15 ≈ зазоры 15px, Ø62-63. "
-               "Слабость: «качель» раскладки — чинит одну констрейнту, ломая другую (2 корректировки). "
-               "Sweep убрал мёртвые uniform'ы, поведение не тронул (пиксель-идентично)."),
-    dict(key="s04", num="04", title="Орбита (u_time, период 2с)", proj="proj-a2xdljvt",
-         verdict="PASS с одного сообщения; период 2.000с (пиксельно); стабильность 3/3 в свипе",
-         media=["proj-a2xdljvt/renders/*.mp4"],
-         notes="Правильный выбор инструмента (без скрипта), aspect-коррекция применена, период через π."),
-    dict(key="s05", num="05", title="Bounce (физика в script.py)", proj="proj-qogzoom0",
-         verdict="PASS с одного go-ahead; свип 3/3 (класс «сквозь пол» ретрагирован — ошибка судьи)",
-         media=["proj-qogzoom0/renders/*.mp4"],
-         notes="Euler-интеграция, явный at_rest, restitution; траектория сверена численно: пики 0.357→0.169, покой."),
-    dict(key="s08", num="08", title="Mixed grid 3×3 (компаунд из простых)", proj="proj-h_kod9m6",
-         verdict="Ре-ран пост-058: 11/11 БЕЗ корректировок (пилот: 3 фейла)",
-         media=["proj-h_kod9m6/renders/*.mp4"],
-         notes="Сам решил y-flip (`2 - int(cell.y)`), вынес rotate()/PI, switch-диспетчер клеток. "
-               "В стабилити-свипе компаунды дают 1-2 тайминг-слипа на прогон (блинк-рейт, замирание клетки)."),
-    dict(key="s09", num="09", title="Секундомер (неявные аффордансы, канвас 640×360)", proj="proj-u9zhg_9p",
-         verdict="One-shot PASS: циферблат 1.000 аспект, штрихи 1.05px, период 60.0с — ни один uniform не назван",
-         media=["proj-u9zhg_9p/renders/*.mp4"],
-         notes="u_aspect/u_time/u_resolution применены сами, с гардом min(res)>=1. Дизайн сценария — мейнтейнера."),
-    dict(key="s10", num="10", title="Pong (state-машина, AI-ракетки, счёт)", proj="proj-muddu21x",
-         verdict="FAIL-at-budget* по счёту → после пост-бюджетного «Double the ball speed» счёт ожил (точка на ~40с)",
-         media=["proj-muddu21x/renders/*.mp4"],
-         notes="*одну корректировку сжёг судейский live-tick артефакт. Код-финдинг: dead-store правки "
-               "(константа перезатирается _reset_ball) дважды заявлены как эффект → добавлен движковый "
-               "value-no-op детект. Проводка счёта была корректна end-to-end с самого начала."),
-    dict(key="s11", num="11", title="Кость 3D (raymarching, пипсы, тень)", proj="proj-gyw22jya",
-         verdict="FAIL-at-budget по пипсам (2/2 прогонов); куб/вращение/свет/тень — есть",
-         media=["proj-04dlzons/renders/*.mp4", "proj-gyw22jya/renders/*strip_t1-5*.png"],
-         notes="После урока «локальные рамы» модель ВПЕРВЫЕ вырезает пипсы в правильной локальной системе — "
-               "но зарывает их на 0.09 под поверхность (забыла, что sdRoundBox(b,r) раздувает бокс до b+r) "
-               "и не может отладить с симптомов. Потолок дешёвой модели; триггер — сильная модель."),
-    dict(key="s12", num="12", title="Радар (полярные координаты)", proj="proj-t_sol1wq",
-         verdict="PASS с 1 корректировкой; развёртка ровно 4.0с, послесвечение направленное (+47% за лучом)",
-         media=["proj-t_sol1wq/renders/*.mp4"],
-         notes="Перпендикулярная ось тест-сета (полярка) — уроков не потребовала."),
+    dict(
+        key="s03",
+        num="03",
+        title="Пять кругов (статика, чистый GLSL)",
+        proj="proj-qqqszf1y",
+        verdict="PASS, 3 сообщения",
+        media=["proj-qqqszf1y/renders/*.png"],
+        notes="Замерено: центр ряда y=199.5/200, шаг 75px... финал: маржи 14/15 ≈ зазоры 15px, Ø62-63. "
+        "Слабость: «качель» раскладки — чинит одну констрейнту, ломая другую (2 корректировки). "
+        "Sweep убрал мёртвые uniform'ы, поведение не тронул (пиксель-идентично).",
+    ),
+    dict(
+        key="s04",
+        num="04",
+        title="Орбита (u_time, период 2с)",
+        proj="proj-a2xdljvt",
+        verdict="PASS с одного сообщения; период 2.000с (пиксельно); стабильность 3/3 в свипе",
+        media=["proj-a2xdljvt/renders/*.mp4"],
+        notes="Правильный выбор инструмента (без скрипта), aspect-коррекция применена, период через π.",
+    ),
+    dict(
+        key="s05",
+        num="05",
+        title="Bounce (физика в script.py)",
+        proj="proj-qogzoom0",
+        verdict="PASS с одного go-ahead; свип 3/3 (класс «сквозь пол» ретрагирован — ошибка судьи)",
+        media=["proj-qogzoom0/renders/*.mp4"],
+        notes="Euler-интеграция, явный at_rest, restitution; траектория сверена численно: пики 0.357→0.169, покой.",
+    ),
+    dict(
+        key="s08",
+        num="08",
+        title="Mixed grid 3×3 (компаунд из простых)",
+        proj="proj-h_kod9m6",
+        verdict="Ре-ран пост-058: 11/11 БЕЗ корректировок (пилот: 3 фейла)",
+        media=["proj-h_kod9m6/renders/*.mp4"],
+        notes="Сам решил y-flip (`2 - int(cell.y)`), вынес rotate()/PI, switch-диспетчер клеток. "
+        "В стабилити-свипе компаунды дают 1-2 тайминг-слипа на прогон (блинк-рейт, замирание клетки).",
+    ),
+    dict(
+        key="s09",
+        num="09",
+        title="Секундомер (неявные аффордансы, канвас 640×360)",
+        proj="proj-u9zhg_9p",
+        verdict="One-shot PASS: циферблат 1.000 аспект, штрихи 1.05px, период 60.0с — ни один uniform не назван",
+        media=["proj-u9zhg_9p/renders/*.mp4"],
+        notes="u_aspect/u_time/u_resolution применены сами, с гардом min(res)>=1. Дизайн сценария — мейнтейнера.",
+    ),
+    dict(
+        key="s10",
+        num="10",
+        title="Pong (state-машина, AI-ракетки, счёт)",
+        proj="proj-muddu21x",
+        verdict="FAIL-at-budget* по счёту → после пост-бюджетного «Double the ball speed» счёт ожил (точка на ~40с)",
+        media=["proj-muddu21x/renders/*.mp4"],
+        notes="*одну корректировку сжёг судейский live-tick артефакт. Код-финдинг: dead-store правки "
+        "(константа перезатирается _reset_ball) дважды заявлены как эффект → добавлен движковый "
+        "value-no-op детект. Проводка счёта была корректна end-to-end с самого начала.",
+    ),
+    dict(
+        key="s11",
+        num="11",
+        title="Кость 3D (raymarching, пипсы, тень)",
+        proj="proj-gyw22jya",
+        verdict="FAIL-at-budget по пипсам (2/2 прогонов); куб/вращение/свет/тень — есть",
+        media=["proj-04dlzons/renders/*.mp4", "proj-gyw22jya/renders/*strip_t1-5*.png"],
+        notes="После урока «локальные рамы» модель ВПЕРВЫЕ вырезает пипсы в правильной локальной системе — "
+        "но зарывает их на 0.09 под поверхность (забыла, что sdRoundBox(b,r) раздувает бокс до b+r) "
+        "и не может отладить с симптомов. Потолок дешёвой модели; триггер — сильная модель.",
+    ),
+    dict(
+        key="s12",
+        num="12",
+        title="Радар (полярные координаты)",
+        proj="proj-t_sol1wq",
+        verdict="PASS с 1 корректировкой; развёртка ровно 4.0с, послесвечение направленное (+47% за лучом)",
+        media=["proj-t_sol1wq/renders/*.mp4"],
+        notes="Перпендикулярная ось тест-сета (полярка) — уроков не потребовала.",
+    ),
+    dict(
+        key="s13",
+        num="13",
+        title="ФИНАЛЬНЫЙ ЭКЗАМЕН — пульт подлодки (все оси в одной сцене)",
+        proj="proj-v4r16iqv",
+        verdict="PASS по fidelity/motion/logic/honesty; process WEAK, code MIXED. 12 ходов, $0.60, 3 коррекции",
+        media=[
+            "proj-v4r16iqv/renders/*.mp4",
+            "proj-v4r16iqv/renders/*strip_t1-14.5*.png",
+        ],
+        notes="Сонар (полярка, период РОВНО 4.0с, послесвечение позади луча, контакты вспыхивают при "
+        "проходе) + 3D мина рейммарчем + шкала глубины со скриптовой state-машиной (50->300 при "
+        "50 м/с, холд 3.0с, обратно, холд 3.0с — численно точно) на канвасе 800x450. "
+        "Главная находка: строка фактов рендера — ГЛОБАЛЬНОЕ среднее по кадру, поэтому мелкий "
+        "элемент (лампа, ~2% площади) для модели невидим: она починила лампу и три хода подряд "
+        "честно писала «лампа всё ещё не видна». Плюс: ход 1 вывалил в чат свой черновик мышления "
+        "(12k токенов, ноль тулов), а finalный sweep-ход УДАЛИЛ 7 строк, но ДОБАВИЛ две "
+        "неиспользуемые функции.",
+    ),
 ]
 
 FINDINGS_DOCS = [
-    ("Пилот cornerstone-сценариев + стабилити-свип + фиксы", "ai_docs/features/057_dogfood_axes_and_scenarios/02_rerun_post058.md"),
-    ("Эшелон-2 (pong, die3d) + промпт-обучение", "ai_docs/features/057_dogfood_axes_and_scenarios/03_echelon2.md"),
+    (
+        "Пилот cornerstone-сценариев + стабилити-свип + фиксы",
+        "ai_docs/features/057_dogfood_axes_and_scenarios/02_rerun_post058.md",
+    ),
+    (
+        "Эшелон-2 (pong, die3d) + промпт-обучение",
+        "ai_docs/features/057_dogfood_axes_and_scenarios/03_echelon2.md",
+    ),
+    (
+        "Финальный экзамен (пульт подлодки)",
+        "ai_docs/features/057_dogfood_axes_and_scenarios/04_final_exam.md",
+    ),
 ]
 
 CSS = """
@@ -256,15 +347,21 @@ details { margin:8px 0; } summary { cursor:pointer; color:var(--accent); }
 
 def section(sid: str, title: str, body: str, toc: list[tuple[str, str]]) -> str:
     toc.append((sid, title))
-    return f"<h2 id='{sid}'><a class='anchor' href='#{sid}'>§</a>{esc(title)}</h2>\n{body}"
+    return (
+        f"<h2 id='{sid}'><a class='anchor' href='#{sid}'>§</a>{esc(title)}</h2>\n{body}"
+    )
 
 
 def main() -> None:
     if SITE.exists():
         shutil.rmtree(SITE)
     SITE.mkdir(parents=True)
-    commit = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=ROOT,
-                            capture_output=True, text=True).stdout.strip()
+    commit = subprocess.run(
+        ["git", "rev-parse", "--short", "HEAD"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
     toc: list[tuple[str, str]] = []
     parts: list[str] = []
 
@@ -289,10 +386,32 @@ def main() -> None:
         "(сообщение юзера + WORKING SET: полный нумерованный исходник каждой ноды в работе, канвас, uniform'ы, "
         "ошибки, script.py — пересобирается каждый шаг, LRU-кап 6 членов с объявлением эвикций).</p>"
     )
-    parts.append(section("config", "Конфиг и рамки движка", ctx_model + f"<table><tr><th>ручка</th><th>значение</th><th>что делает</th></tr>{cfg_rows}</table>", toc))
+    parts.append(
+        section(
+            "config",
+            "Конфиг и рамки движка",
+            ctx_model
+            + f"<table><tr><th>ручка</th><th>значение</th><th>что делает</th></tr>{cfg_rows}</table>",
+            toc,
+        )
+    )
 
-    parts.append(section("prompt", "Системный промпт (дословно)", f"<pre>{esc(_SYSTEM_PROMPT)}</pre>", toc))
-    parts.append(section("conventions", "Conventions-блок (RARE-тир, дословно)", f"<pre>{esc(_CONVENTIONS)}</pre>", toc))
+    parts.append(
+        section(
+            "prompt",
+            "Системный промпт (дословно)",
+            f"<pre>{esc(_SYSTEM_PROMPT)}</pre>",
+            toc,
+        )
+    )
+    parts.append(
+        section(
+            "conventions",
+            "Conventions-блок (RARE-тир, дословно)",
+            f"<pre>{esc(_CONVENTIONS)}</pre>",
+            toc,
+        )
+    )
     parts.append(section("tools", "Тулы (из реестра)", tool_sections(), toc))
 
     run_parts = []
@@ -304,12 +423,26 @@ def main() -> None:
             + media_html(r["key"], r["media"])
             + f"<details open><summary>Диалог</summary>{dialogue_html(proj)}</details>"
         )
-    parts.append(section("runs", "Тестовые прогоны: вердикты, медиа, диалоги", "\n".join(run_parts), toc))
+    parts.append(
+        section(
+            "runs",
+            "Тестовые прогоны: вердикты, медиа, диалоги",
+            "\n".join(run_parts),
+            toc,
+        )
+    )
 
     for title, rel in FINDINGS_DOCS:
         p = ROOT / rel
         if p.exists():
-            parts.append(section(re.sub(r"\W+", "-", rel), f"Находки: {title}", md_lite(p.read_text(encoding='utf-8')), toc))
+            parts.append(
+                section(
+                    re.sub(r"\W+", "-", rel),
+                    f"Находки: {title}",
+                    md_lite(p.read_text(encoding="utf-8")),
+                    toc,
+                )
+            )
 
     nav = "\n".join(f"<a href='#{sid}'>{esc(t)}</a>" for sid, t in toc)
     page = (
@@ -322,7 +455,7 @@ def main() -> None:
     )
     (SITE / "index.html").write_text(page, encoding="utf-8")
     total = sum(f.stat().st_size for f in SITE.rglob("*") if f.is_file())
-    print(f"site -> {SITE} ({total/1e6:.1f} MB, {len(list(SITE.rglob('*')))} files)")
+    print(f"site -> {SITE} ({total / 1e6:.1f} MB, {len(list(SITE.rglob('*')))} files)")
 
 
 if __name__ == "__main__":

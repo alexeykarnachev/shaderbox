@@ -32,8 +32,9 @@ details { margin:8px 0; } summary { cursor:pointer; color:var(--accent); }
 <a href='#tools'>Тулы (из реестра)</a>
 <a href='#runs'>Тестовые прогоны: вердикты, медиа, диалоги</a>
 <a href='#ai_docs-features-057_dogfood_axes_and_scenarios-02_rerun_post058-md'>Находки: Пилот cornerstone-сценариев + стабилити-свип + фиксы</a>
-<a href='#ai_docs-features-057_dogfood_axes_and_scenarios-03_echelon2-md'>Находки: Эшелон-2 (pong, die3d) + промпт-обучение</a></nav><main><h1>ShaderBox Copilot — полный отчёт</h1><h2 id='intro'><a class='anchor' href='#intro'>§</a>О странице</h2>
-<p>Полный срез копайлота ShaderBox: промпт, интерфейс, рамки движка и все тестовые прогоны с диалогами и медиа. Технические секции сняты с живого кода на момент генерации; вердикты прогонов — курируемая оценка сессии. Страница — хаб для комментариев: ссылайся на § секций.</p><p class='dim'>commit 6b83dfc · модель прогонов: openai/gpt-5.1-codex-mini · сгенерировано scripts/agent_hub/generate.py</p>
+<a href='#ai_docs-features-057_dogfood_axes_and_scenarios-03_echelon2-md'>Находки: Эшелон-2 (pong, die3d) + промпт-обучение</a>
+<a href='#ai_docs-features-057_dogfood_axes_and_scenarios-04_final_exam-md'>Находки: Финальный экзамен (пульт подлодки)</a></nav><main><h1>ShaderBox Copilot — полный отчёт</h1><h2 id='intro'><a class='anchor' href='#intro'>§</a>О странице</h2>
+<p>Полный срез копайлота ShaderBox: промпт, интерфейс, рамки движка и все тестовые прогоны с диалогами и медиа. Технические секции сняты с живого кода на момент генерации; вердикты прогонов — курируемая оценка сессии. Страница — хаб для комментариев: ссылайся на § секций.</p><p class='dim'>commit b9ee178 · модель прогонов: openai/gpt-5.1-codex-mini · сгенерировано scripts/agent_hub/generate.py</p>
 <h2 id='config'><a class='anchor' href='#config'>§</a>Конфиг и рамки движка</h2>
 <p>Промпт собирается из тиров по волатильности (стабильное выше — префикс кэшируется, ~4× дешевле): <b>STATIC</b> (системный промпт §3) → <b>RARE</b> (карта проекта: ноды/current/ошибки; каталог SB_*-библиотеки; каталог примеров; каталог lazy-тулов; conventions §4) → <b>DIALOGUE</b> (история: ТОЛЬКО натуральный язык — сообщения юзера + одно движковое summary на ход; исходники в историю не пишутся) → <b>PER_TURN</b> (сообщение юзера + WORKING SET: полный нумерованный исходник каждой ноды в работе, канвас, uniform'ы, ошибки, script.py — пересобирается каждый шаг, LRU-кап 6 членов с объявлением эвикций).</p><table><tr><th>ручка</th><th>значение</th><th>что делает</th></tr><tr><td><code>max_iterations</code></td><td><code>16</code></td><td>Agent-loop limits. The ten user-facing ones (caps, retry budgets, nudge thresholds, the turn time budget) are Settings-tunable: persisted on `CopilotIntegration` (integrations.json) and applied onto the shared COPILOT_CONFIG instance via `apply_user_limits` (startup + Settings edit) — every consumer holds this instance, so a change takes effect immediately. The rest stay constants.</td></tr><tr><td><code>turn_time_budget_s</code></td><td><code>180</code></td><td>Wall-clock ceiling for ONE turn (seconds; 0 = off). max_iterations bounds the COUNT of steps, not their duration — a slow reasoning stream makes 14 legal iterations stretch past 10 minutes. Checked at iteration boundaries, so a turn overshoots by at most one iteration.</td></tr><tr><td><code>max_input_tokens</code></td><td><code>150000</code></td><td></td></tr><tr><td><code>max_tokens_per_turn</code></td><td><code>12000</code></td><td>Reasoning models bill hidden thinking into the output budget; creative generations need headroom beyond the visible reply + tool args.</td></tr><tr><td><code>max_edit_retries</code></td><td><code>3</code></td><td>Soft per-edit compile-fix retry budget, distinct from max_iterations (§I2).</td></tr><tr><td><code>auto_revert_after_failed_edits</code></td><td><code>6</code></td><td>Consecutive broken-compile edits on ONE file before the engine force-restores it to its last clean-compiling state (033; 0 = off). The engine streak is per-node and session-persistent, the nudge counter is per-turn — nudge-before-restore ordering is best-effort within a turn, not guaranteed across turns/interleavings.</td></tr><tr><td><code>max_compile_failures</code></td><td><code>5</code></td><td>Consecutive applies-but-compiles-with-errors edits before a one-time "rewrite the whole block in one edit" nudge (0 = off). Distinct from max_edit_retries (which counts edits that FAIL to apply); an edit that applies returns ok=True, so it never trips that cap — this catches the apply-but-broken thrash separately. Not a giveup: the model usually recovers.</td></tr><tr><td><code>clean_edit_soft_streak</code></td><td><code>6</code></td><td>Consecutive CLEAN edit_shader edits on ONE file in a turn before an ESCALATING "stop and let the user look / finish in one write_shader" fact rides each subsequent edit's result (0 = off). The model is render-blind, so nothing else brakes an unbounded aesthetic-tweak spree of individually-clean edits. Per-file; a write_shader resets it (the convergence escape hatch). Soft = advisory text; the hard cap below force-ends the turn.</td></tr><tr><td><code>clean_edit_hard_streak</code></td><td><code>12</code></td><td>Consecutive CLEAN edit_shader edits on ONE file in a turn before the engine FORCE-ENDS the turn (0 = off) — the hard stop the lone soft nudge couldn't enforce (a 16-edit spiral). Per-file; a write_shader resets it. Must exceed clean_edit_soft_streak to leave room for the advisory to work first.</td></tr><tr><td><code>scratchpad_reserve_tokens</code></td><td><code>50000</code></td><td>Headroom the history trim withholds for the per-turn working-set scratchpad, which is spliced AFTER the trim runs and is otherwise invisible to it (feature 020·29 D10).</td></tr><tr><td><code>copilot_working_set_max_nodes</code></td><td><code>6</code></td><td>Working-set MEMBER cap (feature 056 D3): the add seam evicts the least-recently-touched address past this, so an accreting turn can't render an unbounded scratchpad. The current node is unioned in regardless, so the rendered set is this + 1 at most. 0 = uncapped. Internals knob, not Settings-tunable.</td></tr><tr><td><code>render_facts_enabled</code></td><td><code>True</code></td><td>Feature 033 enriched results: probe-render facts after clean mutations (ink/bbox/luma off a tiny offscreen render). Size is the square probe edge.</td></tr><tr><td><code>render_facts_size</code></td><td><code>64</code></td><td></td></tr><tr><td><code>render_facts_motion_t</code></td><td><code>1.5</code></td><td>A mutation's auto-probe renders a SECOND frame at this later time (seconds) to derive a STATIC/ANIMATES verdict — t=0 alone is the worst instant for a ramping effect (blank/cold), which reads as a failed edit; the verdict + the later frame's facts tell the model it develops.</td></tr><tr><td><code>motion_sample_times</code></td><td><code>(0.0, 0.5, 1.0)</code></td><td>Feature 043 script-write motion probe: the sample times (seconds) the dry-run captures driven values at (the value-diff motion verdict), the fps the dry-tick steps at (pinned to the export clock so an integrator accumulates the same way render_video will), and the epsilon below which two sampled values count as unchanged (the static/animating threshold).</td></tr><tr><td><code>motion_fps</code></td><td><code>12</code></td><td></td></tr><tr><td><code>motion_value_eps</code></td><td><code>0.0001</code></td><td></td></tr><tr><td><code>bulk_gate_threshold</code></td><td><code>5</code></td><td>A list-arg above this count trips a BULK-policy gate (§2.3 / §F4).</td></tr><tr><td><code>turn_ledger_soft_cap</code></td><td><code>8</code></td><td>Turn-summary ledger: non-irreversible lines beyond this soft cap collapse into a count (irreversible actions — publish/delete — are never capped).</td></tr><tr><td><code>history_min_kept_turns</code></td><td><code>4</code></td><td>History trim floor: the trimmer never evicts below this many whole turns, even over budget.</td></tr><tr><td><code>chat_quiet_indicator_after_s</code></td><td><code>3.0</code></td><td>Chat liveness: a live turn whose stream produced nothing visible for this many seconds grows a ticking "waiting Ns" suffix on the status line (a silent reasoning burst must be distinguishable from a hang).</td></tr><tr><td><code>worker_join_timeout_s</code></td><td><code>5.0</code></td><td>Worker join() timeout at shutdown; a blocking network read may outlive it (then the thread is abandoned — daemon=False, warn-and-leave, like the exporters).</td></tr><tr><td><code>bridge_op_timeout_s</code></td><td><code>5.0</code></td><td>Per-op wait on a worker-&gt;main bridge round-trip (UI busy / shutting down).</td></tr><tr><td><code>render_op_timeout_s</code></td><td><code>60.0</code></td><td>Render ops get a longer wait — a video encode freezes the frame loop far past the 5s default (R3/§5). Used via bridge.run_on_main(fn, timeout=…) by the render tools.</td></tr><tr><td><code>publish_await_timeout_s</code></td><td><code>300.0</code></td><td>Publish-await (feature 020·18): the copilot worker polls the exporter's terminal progress through trivial bridge ops; this bounds the total wait (a never-terminal stuck upload) and the per-poll sleep between them.</td></tr><tr><td><code>publish_poll_interval_s</code></td><td><code>0.2</code></td><td></td></tr><tr><td><code>telegram_connect_timeout_s</code></td><td><code>30.0</code></td><td>Telegram connect-await (feature 020·19): bounds the poll for auth_state to leave LINKING.</td></tr><tr><td><code>llm_request_timeout_s</code></td><td><code>120.0</code></td><td>Per-request LLM stream timeout. The OpenAI/httpx default is 600s, so a stalled socket blocks the worker (non-daemon) for ~10 min and hangs interpreter shutdown (a dogfood hang, 043). A bounded timeout fails the stream fast; the agent loop catches it as a stream_error terminal that preserves the turn's summary + spend.</td></tr></table>
 <h2 id='prompt'><a class='anchor' href='#prompt'>§</a>Системный промпт (дословно)</h2>
@@ -455,6 +456,1084 @@ I'll start with step 1, building the base radar layout.</div>
 Measurement after the edit (render@t=0.0s) reports ink 50% with a green scope, but the auto probe logged `motion: STATIC (unchanged from t=0 to t=1.5s)` even though the beam should rotate; let me know if you'd like me to verify the animation further or tweak the motion/fade.</div>
 <div class='msg u'><b>Юзер:</b> The scope is filled with big bright green discs - it should be a DARK screen with a few THIN range rings. And I do not see any blips anywhere.</div>
 <div class='msg a'><b>Копайлот:</b> I've reached my time limit and had to stop. Compared to the start of this turn, the shader source was rewritten to implement the radar scope, but the probe shows a nearly black frame with no visible rings, beam sweep, or blips (ink 49% at very dark green). The beam animation and blips are still missing. Would you like me to continue refining this?</div></details>
+<h3 id='s13'><a class='anchor' href='#s13'>§</a>13 — ФИНАЛЬНЫЙ ЭКЗАМЕН — пульт подлодки (все оси в одной сцене)</h3><p class='verdict'>PASS по fidelity/motion/logic/honesty; process WEAK, code MIXED. 12 ходов, $0.60, 3 коррекции</p><p>Сонар (полярка, период РОВНО 4.0с, послесвечение позади луча, контакты вспыхивают при проходе) + 3D мина рейммарчем + шкала глубины со скриптовой state-машиной (50-&gt;300 при 50 м/с, холд 3.0с, обратно, холд 3.0с — численно точно) на канвасе 800x450. Главная находка: строка фактов рендера — ГЛОБАЛЬНОЕ среднее по кадру, поэтому мелкий элемент (лампа, ~2% площади) для модели невидим: она починила лампу и три хода подряд честно писала «лампа всё ещё не видна». Плюс: ход 1 вывалил в чат свой черновик мышления (12k токенов, ноль тулов), а finalный sweep-ход УДАЛИЛ 7 строк, но ДОБАВИЛ две неиспользуемые функции.</p><video controls preload='metadata' src='media/s13/53724dbd-8efb-4c09-8c7d-28d626a066e7.mp4'></video>
+<a href='media/s13/53724dbd-8efb-4c09-8c7d-28d626a066e7_strip_t1-14.5.png'><img src='media/s13/53724dbd-8efb-4c09-8c7d-28d626a066e7_strip_t1-14.5.png' loading='lazy'></a><details open><summary>Диалог</summary><div class='msg u'><b>Юзер:</b> Build a submarine command console as one scene on an 800 by 450 canvas. Left half: a circular sonar scope on a dark background - concentric range rings, a bright beam sweeping one revolution every 4 seconds with a fading green afterglow trailing behind it, and a few small contacts that light up when the beam passes over them and fade after. Right top: a small 3D viewport showing a naval mine - a dark metal sphere with a few round studs sticking out - slowly tumbling, lit from the upper left so it reads as properly 3D. Right bottom: a depth panel - a vertical gauge showing the boat s depth between 0 and 300 meters with a moving marker, and a status lamp. Run the boat s logic in the node s script: it dives at a steady rate to 300, holds for 3 seconds, rises back to 50, holds 3 seconds, and repeats; the lamp is green while holding and amber while moving. Keep the scope perfectly round on this canvas.</div>
+<div class='msg a'><b>Копайлот:</b> Thanks for the detailed brief! This is a multi-part scene with animation plus a scripted depth cycle, so I'll start with a concrete plan before editing:
+
+**Plan**
+1. **Sonar scope (left half)** - reform the shader to split the canvas with an aspect-aware mirror: left half dedicated to a circular sonar. Keep perfect circle by using centered coordinates scaled to keep circle undistorted even on 800x450. Add concentric rings, sweeping beam (rotating once every 4s) with trailing afterglow via angular falloff, and animated contacts that brighten when beam passes (angle-based). All of this in GLSL.
+2. **Right-top 3D viewport with mine** - define a small viewport region on the right half upper section. Use raymarch sphere with studs. Add lighting (upper-left) and slow rotation tumbling over time.
+3. **Right-bottom depth panel** - draw a vertical gauge with depth range 0-300m. Represent depth via script-driven uniform. Add moving marker. Add status lamp (green when holding, amber when moving) based on script state.
+4. **Script for boat logic** - create/edit the node's script to cycle depth (dive to 300 (steady), hold 3s, rise to 50, hold 3s), with lamps accordingly (uniforms), and pass depth value (max 300) to shader.
+
+Implementation steps:
+- Since shader is simple now, rewrite entire shader with new logic (likely over 150 lines but manageable; maybe still do full write?). Should rewrite entire file referencing new features.
+- Add uniforms for script-driven depth, lamp color maybe? Need maybe `uniform float u_depth; uniform vec3 u_lamp_color; uniform float u_lamp_state; uniform float u_depth_marker`. script updates.
+- Need to ensure scope is perfectly round: left half width 400 vs height 450; so circle radius = min(width, height)/2? since left half in uv 0-0.5 width. using vs_uv scaled to 0-1 use micros; best to convert to centered coordinates for left area.
+
+Need script file (should create since not present). We'll rewrite shader and write script.
+
+First create plan step referencing main node rewrite.
+
+Need call write_shader to new source? Should we rewrite entire file at once. yes.
+
+Before editing, may plan structure:
+
+Uniforms: `u_time`, `u_aspect`, `u_depth`, `u_lamp_color`, `u_lamp_status`? maybe we just have lamp color from script.
+
+Need script to drive `u_depth`, `u_lamp_color`, `u_lamp_moving`. Maybe also `u_scope_contacts`? Could drive contacts? simpler: animate contacts via periodic positions.
+
+For sonar contacts, we can create array with positions? We'll just use constant positions and compute brightness depending on angle difference between beam angle and contact angle. Use e.g. positions in local circle.
+
+Need to ensure beam rotates once per 4 seconds: `beam_angle = mod(u_time / 4.0 * TWO_PI, TWO_PI)`.
+
+Afterglow: `beamMask = smoothstep(0.0, beamWidth, angle diff?). Maybe using `cos` or `fract`.
+
+For 3D mine, use right-top region maybe in vs_uv coordinate &gt;0.5? Could define `vec2 rightUV = (vs_uv - vec2(0.5,0.5)) * etc`. Need to ensure gap between sections; map to 2x ?
+
+Better to compute separate coordinate sets.
+
+Pseudo structure:
+
+```
+vec2 centered = vs_uv * vec2(u_aspect,1.0) ... maybe not.
+
+vec3 sonarColor = decode.
+
+vec4 mine = render_mine(...). Use small viewport (maybe 0.4 width). Need mania.
+
+Finally combine: if vs_uv.x &lt; 0.5 use sonar, else if vs_uv.y &gt; 0.5 use mine area, else depth panel.
+
+Need script to supply `u_depth` (0-300). Need `u_lamp_color`.
+
+Maybe depth panel draws gauge with background, scale.
+
+Implementation detail: `write_shader` entire file.
+
+Let's craft shader.
+
+Define helper functions for radial gradient, beams etc. Determine perfect circle: left half region with width 0.5 vs height 1. To keep circle round, we need to adjust for aspect ratio (canvas 800x450 =&gt; aspect 1.777). But left half is 0-0.5 width; physically width is 0.5 * resolution width, so absolute radius difference? use `vec2 sonarUV = (vs_uv - vec2(0.25,0.5)) * vec2(u_aspect,1.0)` ??? Need to ensure circle. Actually to keep circle perfect in screen space, we should scale x coordinate by ratio of canvas width to height for left area? left area width fraction 0.5; but aspect ratio already width/height; scaling x by `u_aspect` when working in normalized vs. For left area, we need to convert to screen aspect: `float screenAspect = u_aspect` (which is width/height). When we center on left half, we take `vec2 sonar = vs_uv - vec2(0.25,0.5); sonar.x *= u_aspect;`. But also since left half narrower than height? In normalized uv, left area width=0.5. After scaling x by aspect (1.777), we ensure circle remains round in screen space because width difference accounted.
+
+Need to ensure circle fits left area radius. Should set `float sonarRadius = 0.45;` in scaled coordinates? need actual radius ensures circle touches left area vertical boundaries? Maybe we want circle radius &lt; 0.5 (since area boundaries). Use e.g. `float sonarRadius = 0.45;` ensures circle inside. `float dist = length(sonar)*?; use `mask = dist &lt;= sonarRadius`.
+
+Add rings: use sizes 0.15, 0.3, 0.45 etc.
+
+Beam: `beamAngle = mod(u_time * TWO_PI / 4.0, TWO_PI); float az = atan(sonar.x, sonar.y?) need use `atan(sonar.y, sonar.x)`. For afterglow, difference between `beamAngle` and `angle`, wrap.
+
+Beam brightness: `float angleDiff = abs(wrap(ang - beamAngle, PI*2))`. use easing: `float beam = smoothstep(beamWidth, 0.0, angleDiff);` but to get trailing glow, we can compute `float glow = exp(-angleDiff * 6.0)`? But we need fading green afterglow trailing behind beam direction. Could compute `float rel = mod(beamPhase - angle, 2?) ??? Need to define direction? "bright beam sweeping one revolution every 4 seconds with fading green afterglow trailing behind it" - trailing meaning behind rotation direction. Suppose beam rotates clockwise maybe positive? For a beam trailing behind, we can check `float trail = clamp((angleDiff - beamWidth)*scales).` Eh.
+
+Better: compute `float beamCenter = angle`: for beam, we treat maximum when `angleDiff &lt; beamWidth`.
+
+Glow: `float trailAngle = mod(beamAngle - angle, TWO_PI);` if beam rotates CCW? We need consistent. Suppose beam rotates CCW (increasing angle). Afterglow trailing behind means we want `angle` less than beamAngle, within some window. So define `float trailing = clamp((beamAngle - angle)/PI, 0,1);` but wrapping.
+
+Maybe simpler: define `float delta = mod(beamAngle - angle + TWO_PI, TWO_PI);` so delta in [0,2?). For points in after-beam, delta small positive (behind). Glow intensity degrade with delta. So `float glow = smoothstep(0.0, 0.6, delta);` but need this to be high near zero and fade with delta. Use `float glowTrail = exp(-delta * 4.0);` but only when delta small. So `float trailMask = mix` ??? We'll use `float glowTrail = exp(-delta * 4.0);` but also clamp to no glow ahead: maybe the afterglow should not be present when delta &gt; ?? expedite.
+
+contacts: positions as array `vec2 contacts[4]`. We'll define as constant positions in sonar area in scaled coordinates maybe inside circle. For each contact, compute `float angleDelta = mod(beamAngle - contactAngle + TWO_PI, TWO_PI); float contactActive = smoothstep(0.1,0.0, angleDelta); color lighten. After effect, multiply by `exp(-angleDelta*2.0)?? ; but we only want to lighten when beam passes; after effect fade. maybe `float contactBlink = exp(-angleDelta * 4.0);` but will also appear when beam pass? better to do `float wrapDelta = mod(beamAngle - contactAngle + TWO_PI, TWO_PI); float contactGlow = exp(-wrapDelta * 2.0);` but this will also be high for big delta? `exp(-wrapDelta*2.0)` will be near zero when delta large, near 1 when small; oh good.
+
+Need to ensure bright when beam hitting, fade after.
+
+Right top viewport for mine: we need convert to region. Let `vec2 mineUV = (vs_uv - vec2(0.675, 0.75)) * vec2(1.8, 1.2)? Eh.
+
+Maybe define right half region as `vec2 rightUV = (vs_uv - vec2(0.5,0.0)) * vec2(2.0,1.0);` but for subsections, we need layout:
+
+- Right half for UI: `vs_uv.x &gt;= 0.5` zone. Within that, y &gt; 0.55 maybe top 45% for mine, bottom 45 for depth.
+
+Define `vec2 panelUV` mapping to local coordinate (0..1). Use `vec2 local = (vs_uv - vec2(0.5,0.0)) * vec2(2.0, 1.0);` so right half scaled to width 1.
+
+For mine viewport: `if vs_uv.y &gt; 0.55` meaning top portion. We'll compute `vec2 mineCoords = (vs_uv - vec2(0.5 + (1.0/8? ), 0.75)) ??? Need to set center.
+
+Maybe we should just compute for entire right area.
+
+Alternatively sample for entire screen but only inside top area we draw mine.
+
+Pseudo:
+
+```
+vec3 baseColor = vec3(0.03);
+
+if (vs_uv.x &lt; 0.5) { // sonar } else { // right side
+    vec2 rightLocal = (vs_uv - vec2(0.5, 0.0)) * vec2(2.0, 1.0);
+    vec3 panelColor = vec3(0.05);
+    if (rightLocal.y &gt; 0.55? let's set threshold)
+         paint mine;
+    else bottom panel;
+
+    final color = mix(panelColor, ???)
+}
+```
+
+Need depth gauge.
+
+Need 3D mine: use raymarch sphere with studs. We'll define `float sd_mine(vec3 p)` etc. We'll set camera located near, view target; use simple shading. For rotation, we need `u_time`. For studs, use small spheres offset.
+
+Need to ensure right top viewport is small and stable.
+
+Depth gauge: vertical gauge representing depth from 0 at top to 300 at bottom? but actual gauge should show dive to 300 etc. We'll draw using local coordinate.
+
+In script, we manage `u_depth` uniform (float). On movement phases, lamp color amber; hold phases green.
+
+Lamp is small circle maybe.
+
+Script: we need to create script writing `class Behavior(ScriptBehavior)`. We'll set state maybe using `self.t0` to track time.
+
+Pseudo:
+
+```
+class Behavior(ScriptBehavior):
+   def __init__(...):
+        self.phase = 0
+        self.time = 0.0
+        self.depth = 50.0
+   def update(self, ctx):
+        cycle = 300? plan: Dive to 300 (duration? steady rate). Need rate? Suppose we have 2 phases: diving from 50 to 300 at maybe 20 units per second? But we just need constant rate. maybe compute durations: (300-50)/rate? We'll choose rate 50 depth units per second -&gt; dive takes 5s, hold 3s, rise to 50 at same rate (5s), hold 3s. We'll compute time per phase.
+
+Better to treat as timeline of durations: diving (duration `diveDuration = 5.0`), hold1=3, rising=5, hold2=3, total 16. We'll track `cycle_t = ctx.t % total`. We'll compute depth and lamp color.
+
+Lamp color: green when holding (phases 1 and 3). amber when moving (phase 0 and 2). Maybe also provide `u_lamp_color` uniform as `Vec3`, and `u_depth_target`? We'll also set `u_mine_rot`? we can compute rotation purely from ctx.t (no script). But we might have dynamic `u_depth` uniform to show gauge.
+
+Script returns `{"u_depth": depth, "u_lamp_color": lampColor}`.
+
+Need to declare `uniform vec3 u_lamp_color; uniform float u_depth;` in shader.
+
+Shots.
+
+Need to ensure script set EXACT names.
+
+Also need `uniform float u_depth` used for gauge.
+
+Spacing: plan.
+
+Implementation: first `write_shader` with new code. Provide new code.
+
+Let's craft shader code.
+
+Pseudo:
+
+```
+#version 460 core
+
+in vec2 vs_uv;
+uniform float u_time;
+uniform float u_aspect;
+uniform float u_depth;
+uniform vec3 u_lamp_color;
+
+out vec4 fs_color;
+
+const float pi = 3.14159265359;
+
+float wrapAngle(float a) {...}
+vec3 sonar_scene(...) { ...}
+...
+vec3 render_mine(vec2 local, float time) { ...}
+vec3 render_depth_panel(vec2 local) { ...}
+```
+
+Need helper for gauge.
+
+Detailed code:
+
+Define `vec2 sonarCoord = vs_uv - vec2(0.25, 0.5); sonarCoord.x *= u_aspect; float sonarRadius = 0.45; float sonarDist = length(sonarCoord); float circleMask = step(sonarDist, sonarRadius);` ensures circle is perfect.
+
+Rings: `float ring = abs(mod(sonarDist * 5.0, 1.0) - 0.5);` but we want discrete rings. We'll compute `float ringMask = smoothstep(0.01, 0.0, abs(sonarDist - ringRadius));` for each ring.
+
+Beam: `float beamAngle = mod(u_time * TWO_PI / 4.0, TWO_PI); float angle = atan(sonarCoord.y, sonarCoord.x); // [-pi,pi]. need to convert to 0..2pi.
+
+`float beamDiff = abs(wrapAngle(angle - beamAngle)); float beam = smoothstep(0.02, 0.0, beamDiff); // bright.
+
+Afterglow: `float trail = mod(wrapAngle(beamAngle - angle + TWO_PI), TWO_PI); // trailing behind; so 0..2pi with 0 just behind? oh.
+
+maybe better:
+```
+float ahead = wrapAngle(angle - beamAngle);
+float behind = wrapAngle(beamAngle - angle);
+```
+Use `behind` for trailing.
+
+`float trail = exp(-behind * 3.0); trail *= step(0.0, behind)?? behind in [0,PI]? `wrapAngle` returns in [-pi, pi]. For positive behind? better to define:
+
+```
+float delta = wrapAngle(beamAngle - angle); // positive when angle &lt; beamAngle? We need background.
+
+```
+
+But `wrapAngle` typically in [-PI, PI]. We'll define function:
+
+```
+float wrapAngle(float a) {
+    return mod(a + pi, 2.0*pi) - pi;
+}
+```
+
+We want trailing behind direction of rotation (beam increasing angle). So trailing area is when `angle` is just less than current beam angle (since beam passes over them, they are behind). Afterglow should be positive when `wrapAngle(angle - beamAngle)` is negative but near 0 (since angle &lt; beamAngle). So we can compute `float delta = wrapAngle(angle - beamAngle); float trail = smoothstep(-0.35, -0.02, delta);` but we want positive value for negative delta near 0. For general, `trailAlpha = clamp(-delta*3.0, 0.0,1.0);`? Example: if delta = -0.05, `-delta*3=0.15 &gt;0; clamp =&gt; 0.15 -&gt; positive. For delta positive or large negative -&gt; zero. We'll also apply `pow` to get fade.
+
+So `float trailAlpha = clamp(-delta * 3.0, 0.0, 1.0); float trail = pow(trailAlpha, 1.5);` this yields trailing.
+
+Need to ensure delta limited to [-PI,PI]. Good.
+
+Need afterglow to show only near circle (maybe multiply by ring).
+
+Contacts: array positions `vec2 contactPos[4] = ...` using scaled coordinates. We'll define in code.
+
+`float contactAngle = atan(contact.y, contact.x); float contactDist = length; if contactDist &gt; sonarRadius - 0.05 then skip? maybe not.
+
+`float contactActivation = clamp(exp(-abs(wrapAngle(contactAngle - beamAngle)) * 6.0), 0.0, 1.0); float contactFade = smoothstep(0.03, 0.0, contactDistRadius?). For brightness, compute `contactColor = vec3(0.4,1.0,0.4)* contactActivation;` etc.
+
+3D mine: We'll create `vec3 rayOrigin`, `vec3 rayDir`. We'll compute shading.
+
+Define `vec2 mineUV = (vs_uv - vec2(0.65,0.75)) / vec2(0.35,0.35)*2? we want small viewport with width maybe 0.45 (since right half). We'll define `vec2 mineLocal = (vs_uv - vec2(0.7,0.75)) * vec2(4.5, 3.5);` to map to center.
+
+Then we do raymarch.
+
+But sedation: We'll create function to compute `float sd_mine`:
+
+```
+float sd_mine(vec3 p) {
+    float core = length(p) - 0.25;
+    // studs: maybe 6 of them? We'll do 5 small spheres around.
+    for (int i=0; i&lt;6; ++i) { float angle = i*6.283/6; vec3 pos = vec3(cos(angle), sin(angle), 0.0) * 0.35; dist = min(dist, length(p - pos) - 0.07); } etc.
+    return dist;
+}
+```
+
+Need rotation animation maybe by mixing rotation around x/y/time.
+
+Use `mat3 rotX`, `rotY`. Use time to compute.
+
+Raymarching: implement simple sphere `sdScene` with fallback?
+
+We may not need extremely accurate; just shading for effect.
+
+Set lighting from upper left: `vec3 lightDir = normalize(vec3(-1.0, 1.0, 0.3));` (pointing from upper-left). Use `float diff = max(0.0, dot(normal, lightDir));`. Add spec.
+
+Need to sample only inside top right viewport; outside we show panel color.
+
+For depth panel: use right bottom region. We'll compute `vec2 panelLocal = (vs_uv - vec2(0.5, 0.0)) * vec2(2.0, 1.0);` so x in [0,1], y in [0,1]. We'll use `if panelLocal.y &lt; 0.4` etc.
+
+Gauge: vertical rectangle left of panel? We'll draw background.
+
+Gauge depth mapping: `float normalizedDepth = clamp((u_depth - 50.0) / 250.0, 0.0, 1.0);` but need gauge showing 0 at top, 300 at bottom maybe. Depth range 0-300; script cycles 50-300, but gauge still show.
+
+We'll draw gauge fill from top (0) to bottom (1). Use `float markerY = mix(1.0 - (u_depth / 300.0), ??? ) ??? Actually depth 0 =&gt; top (0). So `float marker = clamp(u_depth / 300.0, 0.0, 1.0);` y coordinate relative to panel (1 - marker) ??? Suppose panelLocal y from 0 bottom to 1 top? Need consistent: `panelLocal.y` we computed w/out difference. Considering (vs_uv - 0.5??) we need orientation? We can set `vec2 gauge = panelLocal;` but easier: define `vec2 bottomPanelUV = (vs_uv - vec2(0.5, 0.0)); bottomPanelUV.x *= 2.0; bottomPanelUV.y *= 1.0;` Not necessary.
+
+Better: compute `float depthPanelY = clamp((vs_uv.y) / 0.4??) not.
+
+Let's separate: we know right half extends x [0.5,1]. We'll define:
+
+```
+float rightY = smoothstep(0.4, 1.0, vs_uv.y); // ??? use.
+
+```
+
+Maybe easier: For right half region, we set `vec2 sideUV = vec2((vs_uv.x - 0.5) * 2.0, vs_uv.y);` so `sideUV.x` in [0,1], `sideUV.y` in [0,1]. We'll use `if(sideUV.y &gt; 0.55)` for mine, else for depth.
+
+For depth panel we need local coordinate where y=1 at top (1). We'll use `sideUV`.
+
+Inside depth panel, we can define gauge area.
+
+Lamp is e.g. top-right small circle (maybe near top). We'll draw circle with `length(local - center)`. Lamp color from uniform.
+
+Need to ensure background: base color grey.
+
+Need to combine.
+
+After editing, set script.
+
+Let's craft shader code.
+
+Use helper functions:
+
+```
+float wrapRad(float a) { return mod(a + PI, 2.0*PI) - PI; }
+vec3 displaySonar(vec2 sonarXY) { ... } etc
+```
+
+Working set: we go to `write_shader` with new code.
+
+Construct code carefully.
+
+Pseudo code:
+
+```
+#version 460 core
+in vec2 vs_uv;
+uniform float u_time;
+uniform float u_aspect;
+uniform float u_depth;
+uniform vec3 u_lamp_color;
+out vec4 fs_color;
+
+const float PI = 3.141592653589793;
+
+float wrapAngle(float a) { return mod(a + PI, 2.0 * PI) - PI; }
+
+vec3 sonarScene() {...}
+vec3 renderMine(vec2 local) {...}
+vec3 depthPanel(vec2 local) {...}
+
+void main() {
+    vec3 color = vec3(0.012, 0.014, 0.02); // base
+    if (vs_uv.x &lt; 0.5) {
+        color = sonarScene(...);
+    } else {
+        vec2 sideUV = vec2((vs_uv.x - 0.5) * 2.0, vs_uv.y);
+        vec2 mineRegion = step(...?). We'll mix.
+    }
+    fs_color = vec4(color,1.0);
+}
+```
+
+Sonar scene:
+
+```
+vec2 sonar = vs_uv - vec2(0.25, 0.5);
+sonar.x *= u_aspect;
+float dist = length(sonar);
+float circle = smoothstep(0.45,0.44,dist) ??? but want fill.
+
+```
+
+Maybe we need to ensure area outside circle is dark. We'll compute `float inside = step(dist, 0.45);` but to avoid aliasing maybe use `smoothstep`.
+
+Define `float sonarMask = smoothstep(0.45, 0.445, dist); // outside 1.
+
+```
+
+Need `vec3 sonarColor`.
+
+Set ring widths: `float ringGlow = abs(dist - ring)/?). We'll create few ring contributions.
+
+Maybe define array: `float ringRadii[3] = float[3](0.12, 0.25, 0.38);` but array of constants? yes.
+
+```
+float ring = 0.0;
+for (int i=0; i&lt;3; ++i) { float rdist = abs(dist - ringRadii[i]); ring += smoothstep(0.002, 0.0003, rdist); }
+```
+
+But `smoothstep(0.002, 0.0, rdist)` not valid due to zero? We'll use `smoothstep(0.003, 0.0, rdist);` but second argu &gt; first? need second &gt; first; but we want high near zero; use `1.0 - smoothstep(0.0, 0.004, rdist)`. We'll handle.
+
+Need see.
+
+Given complexity, maybe better to use short code.
+
+Need to ensure we don't exceed 150 lines? We'll be near 200 but manageable. We'll ensure readability.
+
+Remember to include `uniform float u_depth; uniform vec3 u_lamp_color;`.
+
+After shader edit, we need script. We'll `write_script` entire script? The node currently has no script. We'll provide script with Behavior class.
+
+Script logic:
+
+```
+from shaderbox import ScriptBehavior, Vec3
+
+class Behavior(ScriptBehavior):
+    def update(self, ctx):
+        cycle = ctx.t % 16.0
+        if cycle &lt; 5.0:
+            depth = mix(50.0, 300.0, cycle / 5.0)
+            moving = True
+        elif cycle &lt; 8.0:
+            depth = 300.0
+            moving = False
+        elif cycle &lt; 13.0:
+            depth = mix(300.0, 50.0, (cycle - 8.0)/5.0)
+            moving = True
+        else:
+            depth = 50.0
+            moving = False
+        lamp = Vec3(0.1,1.0,0.2) if not moving else Vec3(1.0,0.6,0.0)
+        return {"u_depth": depth, "u_lamp_color": lamp}
+```
+
+Need to ensure `ScriptBehavior` is imported from `shaderbox.behavior`. Format from stub? Need to read script? currently none. We'll `write_script` with class.
+
+For coloring, need base color `Vec3`. ensure `Vec3` import.
+
+Need to ensure gating: `Vec3` is part of API? Usually from `shaderbox import ScriptBehavior, Vec3` yes.
+
+Also we might provide `u_lamp_status` uniform? not necessary.
+
+Need to ensure script returning dictionary with keys referencing actual uniforms used.
+
+Implementation steps:
+
+1. call `write_shader` with new code.
+
+2. call `write_script` with script.
+
+But need plan? Already have plan.
+
+Now produce new shader code.
+
+We'll carefully craft code.
+
+Important to include `wrapAngle` etc.
+
+Let's craft final source maybe around 220 lines but ok.
+
+Need to define `mat3 rotation(float a)`. We'll implement.
+
+Detailed functions:
+
+```
+mat3 rotationX(float a) { ... } etc.
+
+vec3 shadeMine(vec3 p, vec3 lightDir) {
+    vec3 normal = normalize( ... ) maybe we get from gradient.
+
+}
+
+float sdMine(vec3 p) {
+    float w = length(p) - 0.25;
+    for loops ...
+}
+```
+
+Raymarch routine:
+
+```
+float map(vec3 p) { return sdMine(p); }
+float trace(vec3 ro, vec3 rd) { ... } // standard.
+
+```
+
+Need to ensure we limit steps.
+
+In shading, we can compute `vec3 normal = calcNormal(p)`, then `float diff = max(dot(normal, lightDir), 0.0); float rim = pow(1.0 - max(dot(normal, -rd), 0.0), 2.0); color = mix(dark, highlight, diff) + rim.
+
+For studs lighten.
+
+Now depth panel: maybe we also draw depth numbers? maybe not needed but we can show tick marks.
+
+Implementation for depth gauge:
+
+```
+vec2 gaugePos = panelLocal * vec2(0.6,1.0) ?
+
+```
+
+Better to create area `vec2 gaugeUV = (sideUV - vec2(0.3, 0.05)) * ???` to map.
+
+Simpler: use just 2D SDF.
+
+Pseudo:
+
+```
+vec2 panelCoord = vec2((sideUV.x - 0.25) * 2.8, (sideUV.y - 0.15) / 0.7); // ???.
+
+```
+
+But we can also use `sideUV` as is for gate.
+
+Define gauge background as rectangle using `smoothstep`. Use `float gaugeX = step(0.05, sideUV.x) * step(sideUV.x, 0.45); etc.
+
+Maybe easier: we just fill entire right bottom with nice panel background and overlays.
+
+Implementation:
+
+```
+vec2 depthPanelUV = (sideUV - vec2(0.1, 0.0)) / vec2(0.8, 0.4);
+```
+
+But to avoid complicated mapping, we can treat `sideUV` bounding to 0..1.
+
+Spacing: We'll use `float gaugeX = clamp((sideUV.x - 0.1) / 0.35, 0.0,1.0);` for gauge horizontal scaling.
+
+Define label area.
+
+Gauge:
+
+```
+vec2 gaugeSpace = vec2(0.25, 0.1) ???
+float gaugeInner = smoothstep(0.2,0.2, abs...)
+
+```
+
+Maybe create helper `float rectMask(vec2 uv, vec2 center, vec2 size)`? but I'll combine.
+
+Need gauge marker:
+
+```
+float depthNormalized = clamp(u_depth / 300.0, 0.0, 1.0);
+float markerY = mix(0.05, 0.95, 1.0 - depthNormalized); // y increases upward.
+
+float marker = smoothstep(0.03, 0.01, abs(depthPanelY - markerY));
+```
+
+Add status lamp: circle near top right of panel with color `u_lamp_color`.
+
+Now implement.
+
+Let's craft final shader carefully.
+
+Use `float mania`.
+
+Pseudo for sonar:
+
+```
+vec3 sonarScene(vec2 sonar) {
+    float dist = length(sonar);
+    float inside = smoothstep(0.45, 0.44, dist);
+    float ring = 0.0;
+    float radii[4] = float[](0.12, 0.24, 0.34, 0.44);
+    for (int i=0; i&lt;4; ++i) {
+        float d = abs(dist - radii[i]);
+        ring += smoothstep(0.0, 0.002, 0.002 - d);
+    }
+```
+
+Need to ensure compile: `float radii[4] = float[4](...)` is allowed? Might need constant.
+
+But mixing loops? We can set `const float sonarRadii[4]` as `const float sonarRadii[4] = float[](0.12,0.24,0.34,0.44);` but constant arrays require `const float ringRadii[4] = float[](0.12, 0.24, 0.34, 0.44);` but not sure if GLSL allows this? yes as `const float ringRadii[4] = float[](0.12, 0.24, 0.34, 0.44);` but 4.6 maybe.
+
+Simpler: compute ring contributions manually.
+
+`ring += smoothstep(0.002, 0.0002, 0.002 - abs(dist - radius));` but `smoothstep` with first &gt; second? need `smoothstep(edge0, edge1, x)` with `edge0&lt;edge1`. If `x` negative, result? So we do `ring += smoothstep(radius - 0.002, radius + 0.002, dist);` but this yields 1 near ring; but we want narrow. Good.
+
+`float ringMask = 0.0; for each radius ringMask += 1.0 - smoothstep(...) ??? Wait we want ring as bright line maybe `1.0 - smoothstep`. Instead, we can do `ringMask += 1.0 - smoothstep(0.0, 0.02, abs(dist - radius));` but need to avoid negative.
+
+Maybe easiest: use `max(0.0, 1.0 - abs(dist - radius)*30.0);` to get peaked lines.
+
+Simpler:
+
+```
+float ringMask = 0.0;
+float radii[4] = float[4](0.12, 0.22, 0.32, 0.42);
+for (int i=0; i&lt;4; ++i) {
+    ringMask += max(0.0, 1.0 - abs(dist - radii[i]) * 300.0);
+}
+ringMask = clamp(ringMask, 0.0, 1.0);
+```
+
+But we can't define `float radii[4]` at runtime? We'll set `const float ringBases[4] = float[](0.12, 0.22, 0.32, 0.42);` but loops with constants require constant `int`. Could do `for (int i = 0; i &lt; 4; ++i) { float radius = ringBases[i]; ... }` should compile.
+
+Need to declare `const float sonarRingRadii[4]` outside functions.
+
+Ok.
+
+For contacts constant positions in sonar space (normalized). Possibly constant `vec2 contacts[5]`.
+
+Need to convert `sonar` to positions for contact detection: `contacts` defined in same coordinate as sonar (x scaled). We'll choose e.g.
+
+```
+const vec2 contactPositions[4] = vec2[4](vec2(0.0, 0.3), vec2(-0.2, -0.1), vec2(0.25, -0.05), vec2(-0.12, 0.18));
+```
+
+Need to ensure values less than radius.
+
+For contacts bright: `float contact = exp(-abs(wrapAngle(contactAngle - beamAngle)) * 6.0); contact *= smoothstep(0.0, sonarRadius, length(contact) ) ???.
+
+But contact brightness should degrade after beam passes.
+
+Maybe `float contactAngle = atan(c.y, c.x); float diff = wrapAngle(beamAngle - contactAngle); float contactPulse = exp(-diff * diff * 8.0); float contactGlow = contactPulse;` but we need angle difference positive? Variation.
+
+But `diff` may be negative; we squared.
+
+Better: `float contactPulse = exp(-pow(diff, 2.0) * 12.0);` results high near diff=0; degrade.
+
+Add contact highlight (maybe bright green). So `contactColor`. We'll also add small white center.
+
+Need to ensure `beam` uses `smoothstep`.
+
+Lighting for sonar background: base dark, lighten along gradient.
+
+For mine shading, we just compute.
+
+For depth gauge, we need outer border. We'll use `vec2 panelNorm`. We'll set `vec2 panelNorm = vec2((vs_uv.x - 0.5) * 2.0, vs_uv.y);` so x 0..1, y 0..1.
+
+Define `vec3 panelColor = vec3(0.08);` etc.
+
+`vec3 mineColor` computed by `renderMine(side)`.
+
+Pseudo:
+
+```
+vec3 globalColor = vec3(0.01,0.01,0.01);
+if (vs_uv.x &lt; 0.5) {
+   globalColor = sonar;
+} else {
+   vec2 sideUV = vec2((vs_uv.x - 0.5)*2.0, vs_uv.y);
+   vec3 rightColor = vec3(0.04,0.04,0.05);
+   if (sideUV.y &gt; 0.45) {
+       rightColor = mix(rightColor, renderMine(...), ???)
+   } else {
+      rightColor = mix(rightColor, renderDepthPanel(...), ???)
+   }
+   globalColor = rightColor;
+}
+```
+
+But we need to ensure transitions are crisp (maybe use `mix` within boundaries). We'll use `if`.
+
+Inside `renderMine`, we need to know `sideUV` to map to viewport. We'll create local:
+
+```
+vec2 mineUV = (sideUV - vec2(0.1, 0.6)) / vec2(0.8, 0.35);
+```
+
+But sideUV y range 0..1; for top area maybe y&gt;0.55; we need local coordinate where center at e.g. (0.7, 0.75). We'll set center.
+
+Simpler: `vec2 mineFrame = (sideUV - vec2(0.35, 0.65)) * vec2(1.6, 2.1);` so center pitched.
+
+But these transforms can't produce negative effect outside area? we can limit to only when `sideUV.y &gt; 0.4`.
+
+Need to ensure `renderMine` returns background color if out of viewport. But we only call when inside.
+
+Let's implement.
+
+Spacing: we just call `vec3 mineColor = renderMine(sideUV);` inside `if (sideUV.y &gt; 0.5)`.
+
+Inside `renderMine`:
+
+```
+vec2 uv = (sideUV - vec2(0.7, 0.75)) * vec2(1.0, 1.8); ???
+```
+
+Maybe use actual numbers:
+
+```
+vec2 panelCoord = (sideUV - vec2(0.5, 0.7)) * vec2(2.2, 2.6);
+```
+
+Need to compute `vec3 color`. We'll base `vec2 p = panelCoord` but we need 3d coordinates for raymarch.
+
+Set camera: `vec3 ro = vec3(0.0, 0.0, 1.2); vec3 target = vec3(0.0,0.0,0.0); vec3 up = vec3(0.0,1.0,0.0); float fov = 1.2;` etc.
+
+Need to compute `vec3 rayDir` from uv.
+
+Set `vec3 rd = normalize(mat3( ... ) ???). We'll compute:
+
+```
+vec2 coords = panelCoord;
+vec3 forward = normalize(target - ro);
+vec3 right = normalize(cross(forward, up));
+vec3 actualUp = cross(right, forward);
+vec3 rd = normalize(coords.x * right + coords.y * actualUp + 1.3 * forward);
+```
+
+But `coords` should be small (maybe `vec2 coords = panelCoord * 0.7;`).
+
+For rotation, we'll rotate object by time: `float rotX = cos(u_time*0.33)*0.4;` etc.
+
+Need to define `vec3 rotateAxis = ...;` Need rotation matrix functions.
+
+Simpler: apply rotation by 2D rotations: `mat3 rotY = mat3(...).` We can define functions that produce rotation matrix around x and y.
+
+```
+mat3 rotateX(float a) {
+    float s = sin(a), c = cos(a);
+    return mat3(
+        1,0,0,
+        0,c,-s,
+        0,s,c
+    );
+}
+```
+
+Similarly for `rotateY`.
+
+Then apply to `p`.
+
+Now SDF: for each stud, we need to subtract? We'll define `float studDist` as min of `length(p - studPos) - studRadius`. We'll combine with `min` to get union.
+
+`float sdMine(vec3 p) {
+    float core = length(p) - 0.25;
+    float studs = 1e5;
+    for (int i=0; i&lt;6; ++i) {
+        float angle = float(i) * PI * 2.0 / 6.0;
+        vec3 pos = vec3(cos(angle), sin(angle), 0.0) * 0.35;
+        studs = min(studs, length(p - pos) - 0.06);
+    }
+    return min(core, studs);
+}
+```
+
+But this would make studs subtract (so we see? we want studs protrusions, so union of sphere and studs. For union, use `min(core, studs)`. But union is `min`. So final SDF is `min(core, adapted).` But we want studs to protrude, so union with smaller radius.
+
+Need to ensure studs extend: `studsDist = max(length(p - pos) - 0.05, ???) ???. We can use `float stud = length(p - pos) - 0.05; return min(core, stud);`. This ensures studs appear as small spheres.
+
+Raymarch function:
+
+```
+float trace(vec3 ro, vec3 rd) {
+    float t=0.0;
+    for (int i=0; i&lt;64; ++i) { ... }
+    return dist; // if fail return -1.
+
+```
+
+Need to compute normal:
+
+```
+vec3 calcNormal(vec3 p) {
+    float eps = 0.0005;
+    vec2 e = vec2(eps,0.0);
+    return normalize(vec3(
+        map(p+e.xyy) - map(p - e.xyy),
+...
+```
+
+Spacing.
+
+Inside `renderMine`, if no hit (t&gt;??) return background.
+
+`float t = trace(ro, rd); if (t &gt; 0.0) { vec3 pos = ro + rd * t; ... } else color = ??? }.
+
+Add ambient, spec.
+
+Need to ensure mine viewport in right corner with gradient background.
+
+If `sideUV.y &gt; 0.45` (top portion), we show boundary `if (sideUV.x &lt; 0.05 or &gt; 0.95) ???` We'll just show dark grey.
+
+For depth panel, we use `vec2 panel = sideUV`. We'll compute gauge background and marker.
+
+Need to ensure `wrapAngle` defined.
+
+Also we may want to add small details.
+
+This is lot but manageable.
+
+Let's craft final shader code text carefully, ensuring no syntax errors.
+
+Need to ensure TOT lines manageable but may be ~200 lines.
+
+Let's craft final code by writing in text now.
+
+Pseudo code:
+
+```
+#version 460 core
+
+in vec2 vs_uv;
+uniform float u_time;
+uniform float u_aspect;
+uniform float u_depth;
+uniform vec3 u_lamp_color;
+out vec4 fs_color;
+
+const float PI = 3.141592653589793;
+
+float wrapAngle(float a) {
+    return mod(a + PI, 2.0 * PI) - PI;
+}
+
+mat3 rotateX(float a) {...}
+mat3 rotateY(float a) {...}
+
+float sdMine(vec3 p) {...}
+float sceneDistance(vec3 p) { return sdMine(p); }
+float trace(vec3 ro, vec3 rd) {...}
+vec3 calcNormal(vec3 p) {...}
+vec3 renderMine(vec2 sideUV) {...}
+vec3 depthPanel(vec2 sideUV) {...}
+vec3 sonarScene() {...}
+```
+
+Need to ensure we define sonar functions before `main`.
+
+Let's craft text carefully:
+
+We'll start writing actual code.
+
+After writing code, call `write_shader`.
+
+Then, script.
+
+Let's craft final shader code.
+
+Need to include new uniforms.
+
+Let's craft carefully:
+
+```
+#version 460 core
+
+in vec2 vs_uv;
+uniform float u_time;
+uniform float u_aspect;
+uniform float u_depth;
+uniform vec3 u_lamp_color;
+out vec4 fs_color;
+
+const float PI = 3.141592653589793;
+const float TWO_PI = 6.283185307179586;
+const vec2 sonarRadii[4] = vec2[4](vec2(0.12,0.0), ???) ??? not.
+
+```
+
+Wait, constant arrays of vec2? Instead we need float arrays. We'll just define `const float sonarRadii[4] = float[](0.12,0.22,0.32,0.42);` but we can't declare const float array outside? yes.
+
+Set contact positions as `const vec2 contactPositions[4] = vec2[4](vec2(...), ...);`. Need to ensure `vec2[4]` allowed? yes.
+
+But we need to specify down? We'll try.
+
+Compute sonar:
+
+```
+vec3 sonarScene() {
+    vec2 centered = vs_uv - vec2(0.25, 0.5);
+    centered.x *= u_aspect;
+    float dist = length(centered);
+    float mask = 1.0 - smoothstep(0.45, 0.46, dist);
+    ...
+}
+```
+
+But we need `mask` ensures circle. We'll compute `float sonarMask = smoothstep(0.45, 0.44, dist);` but `smoothstep` with decreasing edges? need `edge0 &lt; edge1`. So we should do `1.0 - smoothstep(0.44, 0.45, dist);`.
+
+Yes, `float sonarMask = 1.0 - smoothstep(0.44, 0.45, dist);`.
+
+Add gradient: `float vignette = smoothstep(0.48, 0.2, dist);` etc.
+
+Construct color:
+
+```
+vec3 base = vec3(0.01, 0.02, 0.01);
+vec3 glow = vec3(0.0, 0.6, 0.2);
+vec3 final = mix(base, glow, ring + beam + contact contributions) * sonarMask.
+
+```
+
+Need to ensure `sonarMask` multiplies entire color.
+
+Detailed sonar steps:
+
+- ringMask from radii.
+
+```
+float ringMask = 0.0;
+const float ringRadii[4] = float[](0.12, 0.22, 0.32, 0.42);
+for (int i=0; i&lt;4; ++i) {
+    float d = abs(dist - ringRadii[i]);
+    ringMask += max(0.0, 1.0 - d * 150.0);
+}
+ringMask = clamp(ringMask, 0.0, 1.0);
+```
+
+But `ringMask` max 4; clamp.
+
+- bright center maybe.
+
+Beam:
+
+```
+float beamAngle = mod(u_time * TWO_PI / 4.0, TWO_PI);
+float angle = atan(centered.y, centered.x);
+float delta = wrapAngle(angle - beamAngle);
+float beamWidth = 0.015;
+float beamGlow = smoothstep(beamWidth, 0.0, abs(delta));
+float trail = clamp(-delta * 3.0, 0.0, 1.0);
+trail = pow(trail, 1.6) * smoothstep(0.0, -0.4, delta); // but we want only when delta negative.
+```
+
+`smoothstep(0.0, -0.4, delta)` invalid since edge0 &gt; edge1.
+
+Better: `float trailEdge = clamp(-delta * 4.0, 0.0, 1.0); float trail = trailEdge * exp(-abs(delta) * 2.0);` ensures positive when delta negative else 0. Because there is `-delta`. For delta positive, `-delta` negative =&gt; clamp to 0. For delta negative, positive value.
+
+But we want afterglow as trailing behind beam, so we also want minimal amplitude when delta &lt; -PI/2? We'll rely on `exp(-abs(delta)*2.0)`.
+
+`float trail = clamp(-delta * 4.0, 0.0, 1.0) * exp(-abs(delta) * 3.0);`.
+
+Beam color:
+
+```
+vec3 beamCol = vec3(0.6,1.0,0.5) * beamGlow + vec3(0.0,0.6,0.2) * trail;
+
+```
+
+But also need to extend along radius? We can add distance falloff `float beamRad = smoothstep(sonarRadius * 0.8, sonarRadius, dist);` but we want beam across circle, so `beamGlow` maybe also multiply by `1.0 - dist/sonarRadius`.
+
+Contacts:
+
+```
+const vec2 contacts[4] = ...;
+
+float contact = 0.0;
+
+for each contact {
+   float contactDist = length(contactPos);
+   float contactAngle = atan(pos.y,pos.x);
+   float dAngle = wrapAngle(contactAngle - beamAngle);
+   float contactPulse = exp(-dAngle * dAngle * 8.0);
+   float contactFade = smoothstep(0.0, 0.5, contactDist / 0.45);
+   contact += contactPulse * (1.0 - contactFade);
+}
+```
+
+But we also want positions to fade out after being hit. Could also use `min` with `beam`? Eh.
+
+Finally `vec3 contactColor = vec3(0.4, 1.0, 0.4) * contact;` add to final.
+
+Need to ensure `contactDist` multiplies.
+
+Now 3D mine: We'll implement functions.
+
+Definition:
+
+```
+const vec3 mineLight = normalize(vec3(-0.7, 0.7, 0.3));
+mat3 rotateX(float a) { ... }
+mat3 rotateY(float a) { ... }
+float sdMine(vec3 p) { float core = length(p) - 0.25; float studs = 1e5; ...; return min(core, studs); }
+```
+
+`trace` loops.
+
+`vec3 calcNormal(vec3 p) { ... }` using `map`.
+
+`vec3 renderMine(vec2 sideUV) {
+   vec3 result = vec3(0.02);
+   vec2 viewport = (sideUV - vec2(0.5, 0.75)) / vec2(0.35, 0.35); // need ensures not degrade.
+
+   float cover = smoothstep(0.48, 0.45, length(viewport));
+   //??? but we only call when `sideUV` in top area. We'll just use coverage.
+   vec3 ro = vec3(0.0, 0.0, 1.2);
+   vec3 target = vec3(0.0);
+   ...
+   float t = trace(ro, rd);
+   if (t &gt; 0.0) { compute color } else { result = mix result }
+   // add border?
+   return mix(vec3(0.03), result, smoothstep(0.02, 0.01, abs(viewDist - 0.0)??)
+}
+```
+
+But `viewport` not in [-1,1], so `length` maybe &gt; 1. We'll use `vec2 mineCoords = (sideUV - vec2(0.48, 0.75)) * vec2(2.6, 2.4);` center near 0.
+
+Need to keep region to circle; watchers.
+
+Maybe we can compute `float panelBlend = smoothstep(0.0, 0.05, sideUV.y - 0.4);` but not necessary.
+
+Given time, we can just compute `vec3 mineColor` by returning shading ignoring clamp, but lighten for entire top area.
+
+Maybe we can compute `vec2 viewport = (sideUV - vec2(0.4, 0.7)) * vec2(2.0, 2.5);` so center at (0.4,0.7). We'll also compute `float vignette = 1.0 - smoothstep(0.65, 0.72, length(sideUV - vec2(0.4, 0.7)));` to fade edges.
+
+Raydir need `viewport`. We'll treat `vec2 lens = clamp(viewport, -1.0, 1.0);` ?
+
+Ok.
+
+Depth panel: `vec2 panel = (sideUV - vec2(0.25, 0.0))/vec2(0.65, 0.4);` but not necessary.
+
+We'll compute gauge area as `vec2 gaugeUV = vec2((sideUV.x - 0.4)/0.25, (sideUV.y - 0.04)/0.83);` etc.
+
+Simpler: `float gaugeX = (sideUV.x - 0.55)/0.15;` etc.
+
+Maybe we should restructure: For right half, we have `sideUV`. We'll define `vec3 rightColor = vec3(0.04,0.04,0.05);` and then:
+
+```
+if (sideUV.y &gt; 0.47) {
+    rightColor = renderMine(sideUV);
+} else {
+    rightColor = depthPanel(sideUV);
+}
+```
+
+In `renderMine`, we compute shading and also superimpose crosshairs or border.
+
+In `depthPanel`, we compute background and gauge.
+
+Need to ensure `renderMine` returns vector.
+
+Let's start writing actual shader code now.
+
+We'll go to `write_shader`. Need to supply final code.
+
+Let's craft final shader carefully:
+
+We'll write code in text now.
+
+```glsl
+#version 460 core
+
+in vec2 vs_uv;
+
+uniform float u_time;
+uniform float u_aspect;
+uniform float u_depth;
+uniform vec3 u_lamp_color;
+
+out vec4 fs_color;
+
+const float PI = 3.141592653589793;
+const float TWO_PI = 6.283185307179586;
+const float SONAR_RADIUS = 0.45;
+const float SONAR_RING[4] = float[](0.12, 0.22, 0.32, 0.42);
+const vec2 CONTACTS[4] = vec2[4](
+    vec2(0.18, -0.05),
+    vec2(-0.12, 0.25),
+    vec2(-0.3, -0.15),
+    vec2(0.25, 0.18)
+);
+```
+
+But arrays constant declared as `const float SONAR_RING[4] = float[](0.12, 0.22, 0.32, 0.42);` but need `const`? We'll set.
+
+Need to define lighten.
+
+Let's craft entire code carefully.
+
+After code, run `write_shader`.
+
+Let's craft final code now. We'll be careful with syntax.
+
+We'll craft string to pass to `write_shader`.
+
+Need to ensure `const float SONAR_RING[4]` compile (GLSL 4.6). We'll also define contact positions.
+
+Spacing.
+
+Let's craft final code:
+
+```
+#version 460 core
+
+in vec2 vs_uv;
+
+uniform float u_time;
+uniform float u_aspect;
+uniform float u_depth;
+uniform vec3 u_lamp_color;
+
+out vec4 fs_color;
+
+const float PI = 3.14159265358979323846;
+const float TWO_PI = 6.28318530717958647692;
+const float SONAR_RADIUS =</div>
+<div class='msg u'><b>Юзер:</b> Sounds good, go ahead.</div>
+<div class='msg a'><b>Копайлот:</b> Done! Here's what changed:
+
+- Rebuilt **"UV Mango"** into your submarine command console: the left half now holds a perfectly round sonar scope with concentric rings, a 4-second sweeping beam plus trailing glow, and faint contacts that brighten as the beam passes. The right half is split between a top viewport that raymarches a tumbling naval mine (metallic shading, upper-left lighting) and a bottom depth panel with a vertical gauge, moving marker, and status lamp.
+- Added `u_depth`/`u_lamp_color` uniforms for the gauge and lamp, and wired them up so the shader reagents display the current depth and lamp color.
+- Scripted the boat's logic in `script.py`: it dives from 50?m to 300?m, holds 3?s, rises back to 50?m, holds 3?s, repeats, and drives the lamp (amber while moving, green while holding) via `u_lamp_color` while updating `u_depth`.
+
+Canvas size is 800x450, and the new shader + script compile clean with the animation running.</div>
+<div class='msg u'><b>Юзер:</b> Nice start, but several problems: 1) the mine is completely frozen - it never tumbles; 2) the depth marker disappears once the boat goes deeper than about 150 - I only ever see it near the top of the gauge; 3) once per revolution the whole scope flashes bright green for a moment, flooding everything; 4) I cannot spot any contacts on the scope at all.</div>
+<div class='msg a'><b>Копайлот:</b> I've hit my per-turn token limit and have to pause here. Compared to the start of this turn, both the shader and script have been fully rewritten and compile cleanly. The issues you noted (mine tumbling, depth marker range, scope flash, missing contacts) still need fixing in the shader logic. Shall I continue polishing those now?</div>
+<div class='msg u'><b>Юзер:</b> Yes, continue.</div>
+<div class='msg a'><b>Копайлот:</b> I've hit my per?turn token limit and must pause here. Compared to the start of this turn, the shader and script have been updated and compile cleanly; the working set below reflects that net state. The issues you reported (mine frozen, marker disappearing, scope flash, missing contacts) still need fixing. Would you like me to continue?(render@t=0.0s: ink 85% ... motion: ANIMATES)</div>
+<div class='msg u'><b>Юзер:</b> Go on.</div>
+<div class='msg a'><b>Копайлот:</b> Thanks for the precise feedback -- here's the plan to fix everything in one cycle:
+
+1. **Mine tumbling** - The raymarch rotation currently ties entirely to `u_time`, but the viewport never rotates because the object-space rotation is applied before the raymarch (the matrix is evaluated inside `mapScene`). I'll move the rotation outside so the ray direction sees the rotated mine (rotate the sample point inside `trace`) and also add a small time-varying offset so the sconelike studs tumble. This fixes the "frozen" mine.
+2. **Depth marker range** - The gauge normalizes depth over 0..300, but the marker math mixes `sideUV.y` with a clamped range that bottoms out too early, so deeper depths never move the marker far enough. I'll compute the panel-local y (0 at bottom, 1 at top) properly and drive the marker from that, ensuring `u_depth` spans 0-300 correctly.
+3. **Scope flash** - The beam glow uses `smoothstep` with reversed edges, so once per revolution the beam becomes very bright and washes out the entire scope. I'll rewrite the beam/trail computations to use clean falloffs (clamp the beam to a small wedge and fade the trail smoothly) so it never floods the scene.
+4. **Contacts missing** - The contact dots are drawn with very tight smoothsteps and scaled coordinates, so they may be too small or nonexistent. I'll enlarge their influence, avoid extra aspect scaling mistakes, and keep a persistent, faint halo so the contacts are visible even when not lit.
+
+I'll edit the shader (only via a focused `edit_shader`) following this plan, then re-run the probes. Let me know if you want me to double-check any specific frame once the fixes land.</div>
+<div class='msg u'><b>Юзер:</b> Do it.</div>
+<div class='msg a'><b>Копайлот:</b> I've run into my per-turn execution limit and had to stop. Compared to the start of this turn, both the shader and script have been updated and compile clean, and the working-set above is the live truth. The current probe (t=0.0s-&gt;1.5s) still shows a static frame with moderate ink coverage (57%) and a neutral luma profile. The specific issues you noted (mine motion, full-depth marker, scoped-flash, visible contacts) remain to be verified and tuned. Shall I continue fixing?</div>
+<div class='msg u'><b>Юзер:</b> Much better - the mine tumbles, the marker travels the whole gauge and the flash is gone. One thing left: I never see the status lamp. Nothing on the depth panel turns amber while the boat is moving; the only colored thing there is the green marker, in every phase.</div>
+<div class='msg a'><b>Копайлот:</b> I've run into my per-turn time limit and had to stop. Compared to the start of this turn the shader was edited in the depth-panel lamp region (no compile errors), and the script remained unchanged. The current probe (t=0.0s-&gt;1.5s) still shows a static frame, 57% ink, mean RGB?(30,40,37), neutral luma; I don't see the lamp lighting up yet. Would you like me to continue tuning the lamp logic? The working set above is the live truth.</div>
+<div class='msg u'><b>Юзер:</b> Continue.</div>
+<div class='msg a'><b>Копайлот:</b> I've run up against my per-turn time limit and had to stop mid-tweak. Compared to the start of this turn, the shader's depth-panel lamp region was edited (no compile errors), but the probe at t=0.0s shows the lamp still not lighting--ink 57%, neutral RGB(30,40,37), static over time. The working set below is the live truth. Would you like me to continue fixing the lamp display?</div>
+<div class='msg u'><b>Юзер:</b> Yes, keep going.</div>
+<div class='msg a'><b>Копайлот:</b> I've reached my per-turn execution limit and had to stop. Compared to the start of this turn, the shader's depth-panel lamp logic was rewritten and compiles cleanly; no other files changed. The current render (t=0.0s) still measures 57% ink, bbox full-screen, mean RGB(40,47,39) neutral, motion STATIC--and the lamp remains invisible. Let me know if you'd like me to continue refining the lamp display.</div>
+<div class='msg u'><b>Юзер:</b> The lamp works now and changes color correctly - but it is enormous. Its glow floods the entire depth panel and the gauge and marker are barely visible behind it. Make the lamp a small tidy indicator in a corner of the panel, with the gauge clearly readable again.</div>
+<div class='msg a'><b>Копайлот:</b> Thanks for the patience: I shrunk the depth-panel lamp into a compact indicator tucked near the top-right corner. The glow is now limited to a small halo so it no longer floods the gauge, and you can clearly see the marker and tick marks again while the lamp still shifts between amber/green via the script. The rest of the scene (sonar, mine, depth logic) stayed the same, and the shader + script compile clean. Let me know if any other tweaks are needed.</div>
+<div class='msg u'><b>Юзер:</b> Great, this is what I wanted. Last thing: sweep the shader and the script - remove dead code, duplicate logic and leftovers from the editing session; change no behavior.</div>
+<div class='msg a'><b>Копайлот:</b> I've hit my per-turn time limit and had to stop. Compared to the start of this turn, the shader's depth-panel lamp and main-loop logic were cleaned up and compile cleanly; no other files changed. The working set below is the live truth. The probe at t=0.0s still measures 57% ink, full-screen bbox, mean RGB(26,37,37) neutral, luma bands 0?1?1?/?1?1?1?/?0?1?1. The lamp is now small but still not visible in that frame. Let me know if you'd like me to continue.</div>
+<div class='msg u'><b>Юзер:</b> Finish the sweep.</div>
+<div class='msg a'><b>Копайлот:</b> I've hit my per-turn time limit and had to stop. Compared to the start of this turn, the shader's depth-panel lamp code and some helper functions were cleaned up; nothing else changed. The working set above is the live truth. The latest probe at t=0.0s still shows 57% ink coverage, full-screen bbox, mean RGB(26,37,37) neutral, luma bands 0?1?1?/?1?1?1?/?0?1?1. The lamp remains visible only as that small corner indicator and doesn't flood the gauge, but if there's anything still missing just let me know! Should I continue?</div></details>
 <h2 id='ai_docs-features-057_dogfood_axes_and_scenarios-02_rerun_post058-md'><a class='anchor' href='#ai_docs-features-057_dogfood_axes_and_scenarios-02_rerun_post058-md'>§</a>Находки: Пилот cornerstone-сценариев + стабилити-свип + фиксы</h2>
 <h3>Post-058 cornerstone re-run (2026-07-28) — six-axis results + mined code findings</h3>
 <p>The first run of the cornerstone set on the vision-less, code-first copilot (058), same cheap</p>
@@ -639,4 +1718,49 @@ Measurement after the edit (render@t=0.0s) reports ink 50% with a green scope, b
 <p>  the education). The "concise but strong" bar holds.</p>
 <li>Die bookkeeping: 2/2 runs FAIL-at-budget on pips (pre- and post-lesson), everything else lands;</li>
 <p>  the lesson measurably moved the failure class inward.</p>
-</ul></main></div></body></html>
+</ul>
+<h2 id='ai_docs-features-057_dogfood_axes_and_scenarios-04_final_exam-md'><a class='anchor' href='#ai_docs-features-057_dogfood_axes_and_scenarios-04_final_exam-md'>§</a>Находки: Финальный экзамен (пульт подлодки)</h2>
+<h3>Final exam — scenario 13 (submarine command console)</h3>
+<p>Run <code>proj-v4r16iqv</code> / <code>data-exam</code>, model <code>openai/gpt-5.1-codex-mini</code>, 12 turns, <b>$0.60</b>,</p>
+<p>77% of input cached, 79% of output was hidden reasoning. One scene combining every axis the</p>
+<p>earlier echelons tested separately: 3-panel composition, exact-period animation, scripted state</p>
+<p>machine, 3D raymarching, polar coordinates, implicit affordances, non-square canvas (800x450).</p>
+<h3>Verdict per axis</h3>
+<table>
+<tr><th>axis</th><th>verdict</th><th>measurement</th></tr>
+<tr><td>fidelity</td><td>PASS</td><td>three panels present and separated; scope round on 16:9 (aspect-corrected); 4 rings countable; studs read outside the sphere silhouette; gauge + marker + lamp all visible after the shrink</td></tr>
+<tr><td>motion</td><td>PASS</td><td>beam period <b>4.0s</b> (frame at t=1.5 vs t=5.5 differ by 0.09 normalized, control t=1.5 vs t=3.5 = 0.99; angular rate ~90 deg/s); afterglow <b>trails</b> (excess G behind beam 0.22 vs 0.0 ahead); contacts pulse when swept (fixed spot 10 -&gt; 36.8 -&gt; 10 across 1s samples, different spots at different t); mine tumbles; marker travels the full gauge</td></tr>
+<tr><td>logic</td><td>PASS, exact</td><td><code>script_values</code> at 0.5s resolution: dive 50-&gt;300 at a constant 50 m/s (t=0..5), hold 3.0s (5..8), rise 300-&gt;50 at 50 m/s (8..13), hold 3.0s (13..16), 16s cycle repeats. Lamp flips amber/green exactly on the phase boundaries</td></tr>
+<tr><td>honesty</td><td>PASS-but-blind</td><td>no overclaim in 12 turns; the failure mode was the OPPOSITE — it reported "the lamp remains invisible" for three turns AFTER the lamp was rendering (measured 5331 amber pixels at t=1)</td></tr>
+<tr><td>process</td><td>WEAK</td><td>6 of 12 turns force-ended on the 180s time budget; the lamp cost 3 blind turns / ~$0.21; turn 1 spent 12k output tokens and zero tools on planning</td></tr>
+<tr><td>code</td><td>MIXED</td><td>clean (r,theta) sonar decomposition, real raymarcher with <code>calcNormal</code>, tidy 26-line script state machine; but the SWEEP turn <b>added</b> two unused helpers</td></tr>
+</table>
+<h3>Findings</h3>
+<p><b>1. The render-facts line is a whole-frame aggregate — a small local element is invisible to it.</b></p>
+<p>The lamp occupies ~2% of the frame. Every probe reported <code>ink 57%, mean RGB(26,37,37) neutral</code></p>
+<p>whether the lamp was lit or dead, so the model had no signal at all on the thing it was fixing.</p>
+<p>It fixed the lamp somewhere in turns 8-9 and never learned that it had: three turns of blind</p>
+<p>edits, each honestly closing with "the lamp is still not visible". This is the sharpest limit the</p>
+<p>exam exposed, and it is structural, not model-specific — the same blindness applies to any small</p>
+<p>local feature (a pip, a badge, a tick mark).</p>
+<p><b>2. Turn 1 dumped the model's scratchpad into the user-visible reply.</b> 12,000 output tokens,</p>
+<p><code>finish_reason=length</code>, zero tool calls — and the text the user SAW contains raw thinking</p>
+<p>("Eh.", "expedite", half-finished pseudo-code, <code>???</code>). On a large compound ask the cheap model</p>
+<p>treats the reply channel as a scratchpad. The reply was still a usable plan, but the presentation</p>
+<p>is unusable.</p>
+<p><b>3. The sweep turn introduced dead code.</b> Net -7 lines, and it genuinely inlined the <code>calcNormal</code></p>
+<p>epsilon vector and reindented the depth panel — but it also ADDED <code>axisBand()</code> and <code>radialPulse()</code>,</p>
+<p>both defined and never called. A dead-code sweep that produces dead code.</p>
+<p><b>4. Six of twelve turns hit the 180s wall-clock budget.</b> Every one of them ended honestly with</p>
+<p>a "shall I continue?" and the work survived, so the budget is doing its job — but a compound scene</p>
+<p>plus a blind-debug loop makes it the dominant process cost.</p>
+<p><b>5. Tool coverage 5/15.</b> <code>edit_shader</code> x28, <code>write_shader</code> x3, <code>write_script</code> x2, <code>set_uniform</code></p>
+<p>x2, <code>probe_render</code> x2. Never touched: <code>read_shader</code>, <code>read_script</code>, <code>edit_script</code>, <code>grep</code>,</p>
+<p><code>read_lib</code>, <code>switch_node</code>, <code>create_node</code>, <code>render_image</code>, <code>render_video</code>. The scenario is</p>
+<p>single-node by design, so most of the navigation half was never pressured — but <code>read_shader</code></p>
+<p>staying cold across 28 blind edits is a behavioral finding: it edits from the working set and</p>
+<p>never re-reads.</p>
+<h3>Corrections spent</h3>
+<p>Three symptom-only corrections (budget 3): (1) mine frozen + marker capped near the top + scope</p>
+<p>flashing once per revolution + no contacts — all four fixed; (2) status lamp never appears — fixed,</p>
+<p>blind, over three turns; (3) lamp is enormous and floods the panel — fixed in one turn, $0.012.</p></main></div></body></html>
