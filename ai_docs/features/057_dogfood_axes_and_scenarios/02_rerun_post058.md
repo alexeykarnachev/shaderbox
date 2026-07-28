@@ -45,3 +45,28 @@ WEAKNESSES (the next wave's candidates, each seen at least once):
   `judge.py` angles measured the 3.000s rotation period AND direction, per-cell `region_diff`
   verified every motion; `farthest_bright_angle` needs off-symmetry sample times for square/cross
   shapes (corner ties at poses like -45deg) — judge-tooling note, not a defect.
+
+## Fix wave (2026-07-28, same session) — experiment-gated
+
+Of the four mined weaknesses, two were dropped without code (naming drift, minor duplication —
+better-model territory, zero functional harm) and two went through necessity+actionability
+experiments:
+
+- **u_aspect (weakness 2): FIXED, A/B-validated.** Necessity: "a centered circle" on a 640x360
+  canvas rendered as an ellipse tracking the canvas (bbox aspect 1.782) — the prompt only said
+  u_aspect EXISTS, never when it's required. Fix: ONE generalized line in the `_CONVENTIONS`
+  block ("the canvas is NOT square in general … aspect-corrected coordinates before the shape
+  math"). Re-run: aspect 1.000. Marker test guards the line (`test_craft_prompt.py`).
+- **Layout see-saw (weakness 1): fix candidate KILLED by its own experiment.** With a
+  LAYOUT-IS-ONE-EQUATION craft line present, turn-1 was WORSE (margins 0/1) and the
+  single-symptom correction still didn't re-solve (margins 1/2, gaps 33→13 — the edit missed the
+  complaint entirely). Verdict: cheap-model capability limit, not a knowledge gap; the line was
+  REMOVED (no unproven prompt tax). **Trigger to revisit:** the default model changes, or the
+  see-saw appears on a stronger model.
+
+**New scenario `09_implicit_affordances`** (maintainer-designed): a 640x360 fixture + a stopwatch
+ask where `u_aspect`/`u_time`/`u_resolution` are each physically REQUIRED but never named. First
+run: ONE-SHOT PASS — dial aspect 1.000, tick strokes median 1.05px (asked "exactly one pixel"),
+hand period exactly 60.0s, all three uniforms used idiomatically in source (incl. a
+`max(min(res.x,res.y),1.0)` guard). One cosmetic miss logged: an unrelated fixture run had
+inverted fg/bg colors once (single instance, no class).

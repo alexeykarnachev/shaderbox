@@ -20,6 +20,9 @@ _CONVENTIONS = """\
   (`SB_fill`/`SB_fill_aa`/`SB_glow`) -> 0..1 mask. Compose: source -> ops -> render.
 - Uniforms: `u_` prefix. `u_time`/`u_aspect`/`u_resolution` are engine-driven (read, never set)
   but MUST still be declared — an undeclared one fails the compile (nothing is auto-injected).
+- The canvas is NOT square in general: `vs_uv` is [0,1] on BOTH axes, so anything that must keep
+  true proportions (a circle staying round, a square staying square, even spacing) needs
+  aspect-corrected coordinates — e.g. center then `uv.x *= u_aspect` — before the shape math.
 - Keep helpers small/single-purpose so they factor into the library."""
 
 

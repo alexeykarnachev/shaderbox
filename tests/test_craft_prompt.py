@@ -34,3 +34,12 @@ def test_system_prompt_states_the_agent_cannot_see_its_render() -> None:
     p = _SYSTEM_PROMPT
     assert "You never SEE your render" in p
     assert "let the USER" in p
+
+
+def test_conventions_carry_the_aspect_correction_rule() -> None:
+    # A/B-validated (2026-07-28): without this line a "centered circle" on a 16:9 canvas renders
+    # as an ellipse tracking the canvas (aspect 1.78); with it, round (1.00). Guard the wire.
+    from shaderbox.copilot.prompt_context import _CONVENTIONS
+
+    assert "aspect-corrected coordinates" in _CONVENTIONS
+    assert "NOT square" in _CONVENTIONS
