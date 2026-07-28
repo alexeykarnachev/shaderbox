@@ -70,3 +70,31 @@ run: ONE-SHOT PASS — dial aspect 1.000, tick strokes median 1.05px (asked "exa
 hand period exactly 60.0s, all three uniforms used idiomatically in source (incl. a
 `max(min(res.x,res.y),1.0)` guard). One cosmetic miss logged: an unrelated fixture run had
 inverted fg/bg colors once (single instance, no class).
+
+## Base-echelon stability sweep (2026-07-28, 3 one-shot runs per scenario, no corrections)
+
+The maintainer's bar: the base set must WORK before harder scenarios are added. One-shot pass
+rates (cheap model; corrections would fix most fails — this measures raw reliability):
+
+| Scenario | One-shot result | Classes seen |
+|---|---|---|
+| 03 circles | count/visibility 3/3 AFTER the domain amendment (was 1/3: hard-coded +-0.6/0.8 layouts fell off the SQUARE canvas after aspect correction); balance ~1/3 | layout balance = known model limit |
+| 04 orbit | 3/3 exact (period 2.000s each) | rock stable |
+| 05 bounce | 2/3 | 1x FLOOR PENETRATION (y integrated to -0.68, rest below frame — collision clamp/sign) |
+| 08 grid | builds 5/6 (1x plan-loop: replied with a SECOND plan to "go ahead"); rows correct 2/2 built runs AFTER the uv-y line (1/3 before); per-cell motion bugs in most runs (static red square 2x, wrong blink rate 2x, one static magenta, one empty cell) | compound per-cell reliability is the base gap |
+| 09 stopwatch | 1/3 one-shot, +1 after go-ahead, 1 stuck (token-limit turn, failed continue) | of the BUILT runs: dial aspect 1.0 in 3/3, hand period correct 2/2 measured |
+
+**Prompt-line validations (all experiment-gated):**
+- Aspect line + DOMAIN amendment ("x spans +-u_aspect/2, derive layout from the live range"): the
+  initial line alone CAUSED off-frame layouts on square canvases (religious correction + wide-canvas
+  constants) — caught only by the sweep, fixed by the amendment; zero ellipse/off-frame cases since.
+- uv-y direction line ("y=0 is the BOTTOM; 'top row' = high y"): revived by sweep evidence (the
+  earlier minimal-ask non-repro was misleading — the GRID context reproduces 60%); 2/2 correct after.
+  Both lines carry marker tests in `test_craft_prompt.py`.
+- 058 honesty observed live: a token-limited turn correctly reported "the shader source is
+  unchanged from the start of this turn" — no fabrication.
+
+**Open classes for the next wave (evidence-ranked):** (1) compound per-cell motion reliability
+(blink rates, cells going static) — the dominant base-echelon gap; (2) script floor-collision
+robustness (1/3 penetration); (3) plan-loop on go-ahead (1x, watch); (4) layout balance (model
+limit, revisit on model change).

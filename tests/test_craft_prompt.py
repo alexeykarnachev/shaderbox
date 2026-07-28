@@ -43,3 +43,12 @@ def test_conventions_carry_the_aspect_correction_rule() -> None:
 
     assert "aspect-corrected coordinates" in _CONVENTIONS
     assert "NOT square" in _CONVENTIONS
+
+
+def test_conventions_carry_the_uv_y_direction_rule() -> None:
+    # Sweep-validated (2026-07-28): grid runs put the "top row" at the uv-y bottom in 3 of 5
+    # runs without this line; 2 of 2 built runs placed rows correctly with it.
+    from shaderbox.copilot.prompt_context import _CONVENTIONS
+
+    assert "y=0 is the BOTTOM" in _CONVENTIONS
+    assert "top row" in _CONVENTIONS

@@ -39,7 +39,7 @@ no "Resolved YYYY-MM-DD" headers).
 ## [VERIFY] Copilot live-only UI checks, unverified on this box
 
 - **Trigger:** next `make run` on a machine with a display. Do it before the next itch cut.
-- 🔴 FIRST, on EVERY box (Pi / dev box; this WSL box verified clean): if
+- 🔴 FIRST on the DEV BOX only (WSL + Pi verified clean 2026-07-28, no file / no stale keys): if
   `~/.local/share/shaderbox/integrations.json` still carries the 058-removed keys
   (`vision_enabled` / `vision_model` / `copilot_convergence_max_looks`), DELETE those keys by hand
   before launching — `IntegrationsStore.load()` fail-softs an unparseable file to DEFAULTS, and the

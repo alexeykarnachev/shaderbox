@@ -23,6 +23,11 @@ _CONVENTIONS = """\
 - The canvas is NOT square in general: `vs_uv` is [0,1] on BOTH axes, so anything that must keep
   true proportions (a circle staying round, a square staying square, even spacing) needs
   aspect-corrected coordinates — e.g. center then `uv.x *= u_aspect` — before the shape math.
+  After that correction x spans +-u_aspect/2 (y stays +-0.5): DERIVE layout positions and sizes
+  from that live range, never from fixed constants that assume a wide (or square) canvas.
+- `vs_uv.y` grows UPWARD: y=0 is the BOTTOM of the screen, y=1 the TOP. The user's spatial words
+  are SCREEN words — "top row" / "upper left" mean HIGH y — so map row/placement indices through
+  that inversion explicitly (top row = the highest-y band).
 - Keep helpers small/single-purpose so they factor into the library."""
 
 
