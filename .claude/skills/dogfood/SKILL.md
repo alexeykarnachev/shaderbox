@@ -176,7 +176,8 @@ so it's NOT reachable; don't count it as a missed cold tool.)
 multi-turn shader (dead clamps, duplicate predicates, no-op guards narrated as fixes, stale names).
 Before closing a mission, send one last turn: "sweep the shader: remove dead code, duplicate
 logic and leftovers from the editing session; change no behavior" — it both cleans the artifact
-and probes the agent's self-review.
+and probes the agent's self-review. **This turn is the CODE axis's standing probe (report §8): what
+the sweep removes IS the edit-sediment measurement — record its diff.**
 
 ## 2. The gotchas (hard-won — don't re-discover them)
 
@@ -189,7 +190,7 @@ and probes the agent's self-review.
   thread DEADLOCKS (it enqueues a bridge op and blocks on a drain that never comes). The harness runs it on
   a helper thread and drains from the owner thread. Already handled — don't call `render_image` directly.
 - **`drive_until_idle` MUST fire `bridge.run_deferred_render()` each loop (fixed 2026-07-03).** The
-  copilot's render tools — `probe_render` (053 vision), `render_image`, `render_video` — call
+  copilot's render tools — `probe_render`, `render_image`, `render_video` — call
   `run_on_main(..., defer=True)`, which PARKS the op for a post-swap firing point. The real App fires it in
   `ui.py` (`run_deferred_render()` after `drain_bridge`); the harness loop omitted it, so any of those tools
   BLOCKED until the worker's 60s `render_op_timeout_s` and returned `error: main-thread op timed out`. Symptom
@@ -297,20 +298,16 @@ the native `tools=` block — + max_tokens), each `llm_response` (finish_reason 
 
 **Run `uv run python scripts/dogfood/analyze.py <data_dir> --scenario <name>` to auto-extract** tool
 coverage, the per-turn iteration/token/cost table, recoveries, the token-growth shape, AND the honesty
-axis — paste its markdown block into the report §6/§7 instead of hand-summing. (The per-section
-context_breakdown — system prompt vs project map vs working set vs `tools=` block — remains a separate
-deferred trace event, not yet automated; for that, split one `llm_request` block by hand, ~chars/4.)
+axis's AUTO half — paste its markdown block into the report §6/§7 instead of hand-summing. (The
+per-section context_breakdown — system prompt vs project map vs working set vs `tools=` block — remains a
+separate deferred trace event, not yet automated; for that, split one `llm_request` block by hand,
+~chars/4.)
 
-**The honesty numbers it extracts** (056's trace events, no hand-grepping): one row per ENGINE look
-(verdict · look # · node · `vision_ok` · the raw `ask_line` · that look's cost), the per-turn FINAL
-verdict (the LAST look stands — an earlier not-met the agent then fixed is not the turn's verdict), the
-parse rate (looks whose raw `ask_line` matches the strict `ASK: met|not-met|unclear` shape ÷ looks that
-saw a frame — the engine normalizes a garbled read to `unclear`, so the raw line is the only garble
-discriminator; `n/a` when nothing saw a frame), the summed **engine-look** vision spend, and the
-limit-forced turns. Two things to hold: (1) a MODEL-initiated `probe_render` look emits no usage event,
-so its vision spend is absent by construction — say "engine-look spend", never "vision spend"; (2) a
-`cutoff=` / giveup turn glyphs ⚠️/🔴 because its reply was FORCED past the eye — that's where
-over/under-claims hide (the pilot caught two under-claims exactly there).
+**The honesty axis is YOURS to judge.** The copilot has no eye — it measures (the `render:` facts line)
+and you look. The analyzer only hands you the LIMIT-FORCED turns (a `cutoff=` / giveup turn glyphs
+⚠️/🔴 because its reply was written under an engine stop); those are where blind summaries hide, so
+check them first. Then compare each claim against (a) the measured facts in the trace and (b) your own
+eye on the render.
 
 **`analyze.py <data_dir> --dialogue` prints the run's user-visible dialogue** — paste it into report §2.
 Source is the UI chat store (`<project>/copilot/conversation.json` `messages`, resolved from the run's
@@ -329,8 +326,8 @@ figure as "context size" — it's the cost driver, the peak is the context-size 
 ## 4. The report (template + analyzer flow)
 
 The report is half AUTO (filled by the analyzer from logs — you never hand-sum), half HUMAN (your
-judgment), structured as the **five axes**: `fidelity` · `motion` · `logic` · `honesty` · `process`.
-**ONE report per SCENARIO** (a run's data dir holds one scenario). Flow:
+judgment), structured as the **six axes**: `fidelity` · `motion` · `logic` · `honesty` · `process` ·
+`code`. **ONE report per SCENARIO** (a run's data dir holds one scenario). Flow:
 
 1. Copy `scripts/dogfood/REPORT_TEMPLATE.md` → `ai_docs/features/NNN_dogfood_report_<run>.md` (durable,
    roadmap-linked finding — stays in `ai_docs/features/`, NOT under `scripts/dogfood/`).
@@ -344,7 +341,7 @@ judgment), structured as the **five axes**: `fidelity` · `motion` · `logic` ·
    ```
    (Pass `--model <id>` if the run used a non-default model not recorded in the data dir's
    `integrations.json`.)
-3. Write the **8 HUMAN sections** by hand — the things a log can't give you:
+3. Write the **9 HUMAN sections** by hand — the things a log can't give you:
    - **§1 Verdict** — mechanism works Y/N, overall conclusion.
    - **§2 Dialogue** — paste `analyze.py <data_dir> --dialogue` verbatim (§3). Never retype it.
    - **§3 fidelity** — the scenario's checklist as a table (`| check | PASS/FAIL | measurement |`), each
@@ -352,11 +349,17 @@ judgment), structured as the **five axes**: `fidelity` · `motion` · `logic` ·
    - **§4 motion** — verdicts against the scenario's STATED ground truth, each citing its measurement (a
      `render_strip` sheet, a `judge.py` number).
    - **§5 logic** — same, off `script_values` / analytic truth.
-   - **§6 honesty** — the AUTO block is filled for you; YOU add the over/under-claim line (did the agent
-     claim a visual result it couldn't see — and check the limit-forced turns first).
+   - **§6 honesty** — the limit-forced turns are filled for you; YOU write the two claim lines (claims
+     vs the measured facts, claims vs your own eye). The agent CANNOT see its render, so any "it looks
+     …" claim is unsupported by construction.
    - **§7b Per-render eyeball** — open each PNG with Read; correct/wrong, quadrants, did a tuned uniform
      visibly change anything. (NOT automatable — you have to look.)
-   - **§8 TODOs**, split: (a) improve the COPILOT/agent, (b) improve the DOGFOODING framework/harness/
+   - **§8 code** — read the run's FINAL sources (shader + script) end-to-end as a CODE REVIEWER and fill
+     the `| aspect | verdict | evidence |` table (dead code · duplication · structure & naming ·
+     complexity vs task · tool choice), each verdict quoting line evidence from the final source. Record
+     what the end-of-mission SWEEP turn (§1a) deleted as the edit-sediment number. This is the
+     first-class axis: the copilot's job is EXCELLENT CODE; the visual call is the human's.
+   - **§9 TODOs**, split: (a) improve the COPILOT/agent, (b) improve the DOGFOODING framework/harness/
      skill, (c) improve the LIBRARY.
 
 The template's inline comments mark every `{{AUTO:...}}` vs `{{HUMAN:...}}` slot. Treat full reachable-tool

@@ -1,7 +1,6 @@
 from dataclasses import dataclass, field
 from typing import Protocol
 
-from shaderbox.copilot.vision_contract import VisionUsage
 from shaderbox.render_shape import RenderShape
 
 # The only app surface the copilot package imports: a Protocol the backend
@@ -257,21 +256,6 @@ class ScriptWriteResult:
 
 
 @dataclass(frozen=True)
-class ProbeResult:
-    # probe_render's structured result. `msg` is the ONLY model-facing part (the eye's ASK line is
-    # already stripped out of it); vision_ok tells a real vision read apart from facts-only,
-    # `verdict` is the parsed ASK verdict (None = no vision read to parse), `ask_line` its raw text
-    # for the trace, `read` the eye's observation alone (no facts line, no header — what the turn
-    # record quotes), `usage` the billed vision spend (None on a cache hit / no call).
-    msg: str
-    vision_ok: bool = False
-    verdict: str | None = None
-    ask_line: str = ""
-    read: str = ""
-    usage: VisionUsage | None = None
-
-
-@dataclass(frozen=True)
 class RenderResult:
     # ok=False carries `error` (no such node, or the render failed). On ok=True, `path` is
     # the file under the project renders dir; size is the ACTUAL rendered size (snapped to
@@ -436,12 +420,9 @@ class CopilotCapabilities(Protocol):
     ) -> RenderResult: ...
 
     # The aimable read-side probe (feature 050): a one-line facts string off a tiny offscreen
-    # render at a chosen `t` (default 0.0). UN-gated + non-mutating, unlike render_image. `msg` is
-    # ready-to-read text (the facts line, or an honest error/empty note); the rest of ProbeResult
-    # is engine-only.
-    def probe_render(
-        self, node: str, t: float, look_for: str = "", /
-    ) -> ProbeResult: ...
+    # render at a chosen `t` (default 0.0). UN-gated + non-mutating, unlike render_image. The
+    # returned text is ready to read (the facts line, or an honest error/empty note).
+    def probe_render(self, node: str, t: float, /) -> str: ...
 
     # Render with the exporter's own preset, then enqueue the upload + AWAIT its terminal
     # progress (the method does the bridge-marshalled poll).

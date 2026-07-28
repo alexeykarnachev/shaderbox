@@ -19,12 +19,15 @@ single-process gate rule are all in the **`/dogfood` skill** (the operating manu
 here. All run artifacts live under `scripts/dogfood/runs/` (gitignored).
 
 After a run, produce a FINAL REPORT (`ai_docs/features/NNN_dogfood_report_<run>.md`, ONE per scenario)
-from `scripts/dogfood/REPORT_TEMPLATE.md` — five axes (fidelity · motion · logic · honesty · process) +
-the dialogue — with follow-up TODOs: what's next + ideas to improve (a) the copilot AGENT, (b) the
-dogfooding FRAMEWORK, (c) the library. Send it to the maintainer.
+from `scripts/dogfood/REPORT_TEMPLATE.md` — six axes (fidelity · motion · logic · honesty · process ·
+code) + the dialogue — with follow-up TODOs: what's next + ideas to improve (a) the copilot AGENT, (b) the
+dogfooding FRAMEWORK, (c) the library. Send it to the maintainer. The `code` axis grades the run's FINAL
+sources as a code reviewer (dead code, duplication, structure, complexity, tool choice) — the copilot's
+job is EXCELLENT CODE; the visual call is the human's.
 
 **Judge tooling** (don't hand-roll it — that's what the 043 run did three times):
-`analyze.py <data_dir> --scenario <name>` fills the AUTO slots incl. the honesty axis;
+`analyze.py <data_dir> --scenario <name>` fills the AUTO slots (incl. the honesty axis's limit-forced
+turns);
 `analyze.py <data_dir> --dialogue` prints the dialogue; `h.render_strip(times, node_id)` is the motion
 contact sheet; `h.script_values(times, node_id)` the logic probe; `scripts/dogfood/judge.py` the pixel
 primitives (centroids, column runs, region diffs, rotation angle).

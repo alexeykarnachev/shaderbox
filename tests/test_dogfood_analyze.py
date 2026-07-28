@@ -6,8 +6,8 @@ Two halves, both driven by synthetic transcripts in tmp_path plus a round-trip t
 - the recovery detector (027) — an edit that APPLIES but compiles WITH errors (`ok: True` +
   "compiled with errors", the `_applied_result` quirk) followed by a later clean edit IN THE SAME
   TURN is a recovery; run 3 reported 0 for a run that visibly self-corrected three times.
-- the 057 honesty axis — engine-look verdict rows, the strict-`ask_line` parse rate, cross-segment
-  vision spend, the cutoff/giveup terminal classification, `--dialogue`, and the template-slot pin.
+- the 057 report tooling — the cutoff/giveup terminal classification (the honesty axis's AUTO half),
+  `--dialogue`, and the template-slot pin.
 """
 
 import json
@@ -26,7 +26,6 @@ from scripts.dogfood.analyze import (
     analyze,
 )
 from shaderbox.copilot.trace import TraceLog
-from shaderbox.copilot.vision_contract import ASK_NOT_MET
 
 
 def _write_trace(data_dir: Path, body: str) -> None:
@@ -470,8 +469,6 @@ def test_trace_turn_start_and_gate_events_round_trip(tmp_path: Path) -> None:
     # The trace PRODUCER (TraceLog.event) and the analyzer PARSER are one contract for the new
     # turn_start `model` field and the gate_approved event — render with the real producer, parse
     # with the real consumer.
-    from shaderbox.copilot.trace import TraceLog
-
     data_dir = tmp_path / "data-rt"
     traces = data_dir / "copilot_traces"
     traces.mkdir(parents=True)
@@ -507,91 +504,6 @@ def test_trace_turn_start_and_gate_events_round_trip(tmp_path: Path) -> None:
     assert an.tool_counts.get("render_image") == 1
 
 
-# Two looks in ONE turn: a clean strict ask_line, then a GARBLED one the engine normalized to
-# `unclear`. Both saw a frame, so parse rate is 1/2 — the raw line is the only discriminator.
-_VERDICT_TRACE_A = """\
-### turn_start  ·  2026-01-01T00:00:00.000
-user_text: draw a red circle
-
-### llm_response  ·  2026-01-01T00:00:01.000
-iteration: 1
-finish_reason: tool_calls
-usage: in=100 out=10 cost=$0.001000
-
-### engine_look_usage  ·  2026-01-01T00:00:01.500
-iteration: 1
-input_tokens: 1000
-output_tokens: 40
-cost_usd: 0.00200000
-
-### ask_verdict  ·  2026-01-01T00:00:01.500
-iteration: 1
-verdict: not-met
-ask_line: ASK: not-met
-node: 5372
-look: 1
-vision_ok: True
-
-### llm_response  ·  2026-01-01T00:00:02.000
-iteration: 2
-finish_reason: stop
-usage: in=110 out=10 cost=$0.001100
-
-### engine_look_usage  ·  2026-01-01T00:00:02.500
-iteration: 2
-input_tokens: 900
-output_tokens: 30
-cost_usd: 0.00100000
-
-### ask_verdict  ·  2026-01-01T00:00:02.500
-iteration: 2
-verdict: unclear
-ask_line: ASK: I think it might be met, hard to say
-node: (current)
-look: 2
-vision_ok: True
-
-### turn_done  ·  2026-01-01T00:00:03.000
-iterations: 2
-tool_calls: 0
-reply: done
-usage: in=210 out=20 cost=$0.002100
-"""
-
-# A SECOND transcript segment of the same run (a clear_context/reload rotates the trace): a BLIND
-# look — no frame came back, so it must not enter the parse-rate denominator, and its spend still
-# sums into the run total.
-_VERDICT_TRACE_B = """\
-### turn_start  ·  2026-01-01T00:00:10.000
-user_text: try again
-
-### llm_response  ·  2026-01-01T00:00:11.000
-iteration: 1
-finish_reason: stop
-usage: in=100 out=10 cost=$0.001000
-
-### engine_look_usage  ·  2026-01-01T00:00:11.500
-iteration: 1
-input_tokens: 500
-output_tokens: 10
-cost_usd: 0.00050000
-
-### ask_verdict  ·  2026-01-01T00:00:11.500
-iteration: 1
-verdict: none
-ask_line:
-node: (current)
-look: 1
-vision_ok: False
-
-### turn_done  ·  2026-01-01T00:00:12.000
-iterations: 1
-tool_calls: 0
-reply: done
-usage: in=100 out=10 cost=$0.001000
-"""
-
-
 def _write_two_segments(data_dir: Path, first: str, second: str) -> None:
     traces = data_dir / "copilot_traces"
     traces.mkdir(parents=True)
@@ -601,90 +513,6 @@ def _write_two_segments(data_dir: Path, first: str, second: str) -> None:
     (traces / "copilot_test_2026-01-01_00-00-10_000002.transcript").write_text(
         textwrap.dedent(second), encoding="utf-8"
     )
-
-
-def test_verdict_rows_parse_rate_and_cross_segment_spend(tmp_path: Path) -> None:
-    data_dir = tmp_path / "data-verdict"
-    _write_two_segments(data_dir, _VERDICT_TRACE_A, _VERDICT_TRACE_B)
-    an = analyze(data_dir, "")
-
-    assert [lk.verdict for lk in an.looks] == ["not-met", "unclear", "none"]
-    assert [lk.look for lk in an.looks] == [1, 2, 1]
-    assert [lk.node for lk in an.looks] == ["5372", "(current)", "(current)"]
-    assert [lk.vision_ok for lk in an.looks] == [True, True, False]
-    # engine_look_usage pairs with the ask_verdict of the SAME iteration.
-    assert [lk.input_tokens for lk in an.looks] == [1000, 900, 500]
-    assert [lk.output_tokens for lk in an.looks] == [40, 30, 10]
-    # `cost_usd:` is NOT a `usage: in=… cost=$…` line — _USAGE_RE never matches it; the sum spans
-    # BOTH transcript segments of the run.
-    assert abs(an.engine_look_cost_usd - 0.0035) < 1e-9
-    # 2 looks saw a frame; only the strict `ASK: not-met` counts as parsed. The `unclear` verdict
-    # with a GARBLED line does not — the engine already normalized it.
-    assert an.parse_rate.startswith("1/2")
-    assert an.turns[0].looks[-1].verdict == "unclear"  # the turn's FINAL verdict
-
-
-def test_unclear_verdict_with_a_strict_line_counts_as_parsed(tmp_path: Path) -> None:
-    # The falsifier for "unclear == unparsed": an `unclear` the eye reported in the demanded FORMAT
-    # is a clean read, not a garbled one.
-    data_dir = tmp_path / "data-unclear"
-    _write_trace(
-        data_dir,
-        _VERDICT_TRACE_A.replace(
-            "ask_line: ASK: I think it might be met, hard to say",
-            "ask_line: ASK: unclear",
-        ),
-    )
-    an = analyze(data_dir, "")
-    assert an.parse_rate.startswith("2/2")
-
-
-def test_parse_rate_is_na_when_no_look_saw_a_frame(tmp_path: Path) -> None:
-    data_dir = tmp_path / "data-blind"
-    _write_trace(data_dir, _VERDICT_TRACE_B)
-    an = analyze(data_dir, "")
-    assert an.parse_rate.startswith("n/a")
-    assert abs(an.engine_look_cost_usd - 0.0005) < 1e-9
-
-
-def test_ask_verdict_round_trips_through_the_real_trace_producer(
-    tmp_path: Path,
-) -> None:
-    # The 056 EMITTER and this parser are one contract — render with the real producer, parse with
-    # the real consumer, so a field rename in agent.py breaks here instead of silently emptying the
-    # honesty slot.
-    data_dir = tmp_path / "data-verdict-rt"
-    traces = data_dir / "copilot_traces"
-    traces.mkdir(parents=True)
-    tr = TraceLog(traces / "copilot_test_2026-01-01_00-00-00_000001.transcript")
-    tr.event("turn_start", model="m", user_text="go", history=[], eager_tools=[])
-    tr.event(
-        "engine_look_usage",
-        iteration=3,
-        input_tokens=1234,
-        output_tokens=56,
-        cost_usd=0.00229,
-    )
-    tr.event(
-        "ask_verdict",
-        iteration=3,
-        verdict=ASK_NOT_MET,
-        ask_line=f"ASK: {ASK_NOT_MET}",
-        node="(current)",
-        look=1,
-        vision_ok=True,
-    )
-    tr.event("turn_done", iterations=3, tool_calls=0, reply="done")
-    tr.close()
-
-    an = analyze(data_dir, "")
-    assert len(an.looks) == 1
-    look = an.looks[0]
-    assert look.verdict == ASK_NOT_MET and look.ask_line == f"ASK: {ASK_NOT_MET}"
-    assert look.vision_ok is True and look.look == 1 and look.iteration == 3
-    assert look.input_tokens == 1234 and look.output_tokens == 56
-    assert abs(an.engine_look_cost_usd - 0.00229) < 1e-9
-    assert an.parse_rate.startswith("1/1")
 
 
 _CUTOFF_TRACE = """\

@@ -76,16 +76,6 @@ def _tool_card_outcome(ev: AgentToolCard) -> str:
     return ""
 
 
-def _engine_look_line(ev: AgentToolCard) -> str:
-    # The attributed line for an engine-initiated look — only when the eye actually SAW something;
-    # a blind or failed look must not claim a check happened. "" = not an engine look (or a blind
-    # one), so the caller falls through.
-    payload = ev.payload or {}
-    if not (payload.get("engine_look") and payload.get("vision_ok")):
-        return ""
-    return "the engine checked the render against your ask"
-
-
 def _tool_card_line(ev: AgentToolCard, verb: str) -> str:
     outcome = _tool_card_outcome(ev)
     return f"{verb}  -  {outcome}" if outcome else verb
@@ -239,15 +229,13 @@ class CopilotSession:
                             result_widget=ev.widget,
                         )
                     )
-                elif _engine_look_line(ev) or (ev.payload or {}).get("handoff"):
-                    # Two payload-shape lines with no widget: the engine's own look (a billed step
-                    # the user never asked for) and a precheck handoff (otherwise an unexplained
-                    # empty step). A blind engine look claims no check happened.
+                elif (ev.payload or {}).get("handoff"):
+                    # A precheck handoff has no widget and would otherwise show as an unexplained
+                    # empty step.
                     self.state.messages.append(
                         Message(
                             role="tool_status",
-                            text=_engine_look_line(ev)
-                            or _tool_card_line(ev, self.registry.label_for(ev.name)),
+                            text=_tool_card_line(ev, self.registry.label_for(ev.name)),
                         )
                     )
                 # A successful delete attaches the Recover affordance to its (resolved-Yes)
@@ -464,17 +452,14 @@ class CopilotSession:
         )
 
     def _render_summary(self, summary: TurnSummary, error_text: str) -> str:
-        # The NL assistant message persisted for a turn: reply prose (sanitized ASCII) + the eye's
-        # closing verdict + a terse action ledger + the nodes touched, so the next turn can resolve
-        # "it" / not re-publish / inherit an honest visual state. A turn that produced nothing still
-        # gets a placeholder — a null assistant content 400s on some providers, and dropping the
-        # message alone would break the user/assistant pairing.
+        # The NL assistant message persisted for a turn: reply prose (sanitized ASCII) + a terse
+        # action ledger + the nodes touched, so the next turn can resolve "it" / not re-publish.
+        # A turn that produced nothing still gets a placeholder — a null assistant content 400s on
+        # some providers, and dropping the message alone would break the user/assistant pairing.
         parts: list[str] = []
         reply = summary.reply or error_text
         if reply:
             parts.append(sanitize_display(reply))
-        if summary.eye:
-            parts.append(summary.eye)
         if summary.ledger:
             parts.append("(this turn: " + "; ".join(summary.ledger) + ")")
         if summary.nodes:

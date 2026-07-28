@@ -38,8 +38,6 @@ def test_resolved_card_and_persistence_are_redacted(tmp_path: Path) -> None:
     client = OpenRouterLLMClient(
         get_api_key=lambda: "",
         get_model=lambda: "stub",
-        get_vision_enabled=lambda: False,
-        get_vision_model=lambda: "stub-vision",
     )
     session = CopilotSession(
         caps=minimal_caps(),

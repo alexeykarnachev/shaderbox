@@ -25,7 +25,6 @@ from shaderbox.copilot.capabilities import (
     NodeImportResult,
     NodeOpResult,
     NodeTreeEntry,
-    ProbeResult,
     PublishResult,
     RenderResult,
     ScriptView,
@@ -72,7 +71,7 @@ class _FakeCaps:
     import_node: Callable[[bool], NodeImportResult]
     render_image: Callable[[str, RenderShape], RenderResult]
     render_video: Callable[[str, float, int, RenderShape], RenderResult]
-    probe_render: Callable[[str, float, str], ProbeResult]
+    probe_render: Callable[[str, float], str]
     publish_telegram: Callable[[str], PublishResult]
     publish_youtube: Callable[[str, str, RenderShape], PublishResult]
     has_current_node: Callable[[], bool]
@@ -123,9 +122,7 @@ def minimal_caps(**overrides: Any) -> CopilotCapabilities:
         ),
         "render_image": lambda _n, _shape: RenderResult(ok=True),
         "render_video": lambda _n, _s, _f, _shape: RenderResult(ok=True),
-        "probe_render": lambda _n, _t, _lf="": ProbeResult(
-            msg="render@t=0.0s: ink 0% (probe)"
-        ),
+        "probe_render": lambda _n, _t: "render@t=0.0s: ink 0% (probe)",
         "publish_telegram": lambda _e: PublishResult(ok=True),
         "publish_youtube": lambda _t, _d, _shape: PublishResult(ok=True),
         "has_current_node": lambda: True,

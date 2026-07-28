@@ -25,7 +25,6 @@ from shaderbox.copilot.prompt_context import CopilotContext
 from shaderbox.copilot.state import RESULT_WIDGET_KINDS, ResultWidget, TurnStats
 from shaderbox.copilot.tools.registry import LOAD_TOOLS_NAME, ToolRegistry
 from shaderbox.copilot.trace import NULL_TRACE, TraceLog
-from shaderbox.copilot.vision_contract import ASK_NOT_MET, VisionUsage
 
 # The agent loop: own a growing conversation, stream one assistant turn, execute any tool
 # calls, append the results, re-stream until the model stops calling tools or a limit trips.
@@ -43,18 +42,43 @@ _MODEL_INCOMPATIBLE_MSG = (
 _TORN_STREAM_MSG = "The connection dropped mid-reply — try again. Any actions shown above did complete."
 
 
-def _final_reply_nudge(cause: str) -> str:
+def _final_reply_nudge(cause: str, facts: str = "") -> str:
     # The closing no-tools nudge at a FORCED turn-end. `cause` names the ENGINE limit that ended
     # the turn (NOT a user pause) so the reply owns the stop ("I hit my own limit and stopped")
     # instead of crediting the user with a pause they didn't make (feature 050: the "you're right
-    # to pause now" misattribution). Stays plain ASCII - it is engine text injected as the user.
+    # to pause now" misattribution). `facts` is a fresh measurement of the frame the turn leaves
+    # behind ("" when the turn authored no render or the probe failed) — without it the forced
+    # reply summarizes from intentions alone. Stays plain ASCII - it is engine text injected as
+    # the user.
     return (
         f"[engine] {cause} (this is an engine limit, NOT a pause the user asked for). The turn "
         "is ending now. Reply to the USER, plain text: tell them you hit your own limit and "
         "stopped, state the file's NET state vs the start of the turn (the working set below is "
         "the live truth) and what is still missing, and ask if they want you to continue. Do not "
         "state intentions as done and do not claim visual results. Short. No tool calls."
+        + _measured_clause(facts)
     )
+
+
+def _measured_clause(facts: str) -> str:
+    if not facts:
+        return ""
+    return (
+        f"\n\nthe frame currently measures: {facts}\n"
+        "State the NET result from THESE measurements, not from what you meant to do."
+    )
+
+
+def _forced_reply_facts(registry: ToolRegistry, ran: "_RunLog") -> str:
+    # One fresh numeric probe of the node the turn last authored, for the forced reply's
+    # measured clause. "" when the turn authored no render, or the probe errored — a failed
+    # measurement must never block the reply.
+    if not ran.mutated():
+        return ""
+    ok, msg, _ = registry.execute(
+        "probe_render", {"node": ran.last_render_target(), "t": 0.0}, ""
+    )
+    return msg if ok else ""
 
 
 _COMPILE_THRASH_NUDGE = (
@@ -71,66 +95,13 @@ _RENDER_AUTHORING_TOOLS = frozenset(
 )
 
 
-def _turn_intent_look_for(user_text: str) -> str:
-    # Aim the turn-end auto-look at the ACTUAL ask (054): an empty look_for gave the eye only a bland
-    # baseline read that couldn't tell whether the result matches what was requested. Carrying the ask
-    # makes the eye critique against the goal ("stripes muddy, no stars visible"). Empty/whitespace ask
-    # -> "" (fall back to the baseline; don't fabricate an intent). Bounded so a long ask can't bloat.
-    ask = " ".join(user_text.split())[: COPILOT_CONFIG.auto_look_intent_max_chars]
-    if not ask:
-        return ""
-    return f'does the current frame actually achieve what the user asked: "{ask}"'
-
-
-def _auto_look_fact(
-    look_line: str, round_index: int, node_label: str, not_met: bool
-) -> str:
-    # Injected as the USER role after an ENGINE look. The provenance is stated THREE ways ("you did
-    # NOT call this" / "the engine took a look FOR you" / "engine-injected data, not something you
-    # did") so the model is never confused about who looked. Every clause must be TRUE in context:
-    # the round is named (the model may have looked itself, and later rounds are not "the first"),
-    # and a probed node that is NOT the current one is named instead of claiming "the current
-    # frame". Plain ASCII (engine text on the user channel).
-    which = "ONE vision look" if round_index <= 1 else f"vision look #{round_index}"
-    where = f"at node {node_label}" if node_label else "on the current frame"
-    framing = (
-        "The engine's eye reports the ask is NOT met. Fix it, or reply honestly stating what is "
-        "missing -- do NOT claim it is done. (An honest staged reply -- what landed, what is "
-        "next -- is fine; a done-claim the read does not support is not.)\n"
-        if not_met
-        else ""
-    )
-    return (
-        "[automatic visual check -- you did NOT call this] You changed the render this turn, so the "
-        f"engine took {which} FOR you {where}, aimed at what the USER asked (this is engine-injected "
-        "data, not a look you performed):\n\n"
-        f"{look_line}\n\n"
-        f"{framing}"
-        "Treat it as the eye's OBSERVATION, not a verdict and not a beauty judgment. If it contradicts "
-        "what you intended, fix it now before the user sees it; if it matches, briefly tell the user "
-        "what the render shows. Do NOT call probe_render again just to repeat this same look.\n"
-        "CRITICAL: do NOT claim in your reply anything this read does not support. If the thing you just "
-        "changed is NOT visible here (a pole, a colour, stars, a whole element), then it did NOT land -- "
-        "say so plainly and either fix it or tell the user it is still missing. NEVER assert a result the "
-        "eye does not show."
-    )
-
-
-def _eye_summary_line(looks: int, read: str) -> str:
-    # The not-met verdict's durable trace in the turn record: without it the history keeps only the
-    # model's claim and the eye has no counter-voice next turn.
-    return f"eye: ask not-met after {looks} look{'s' if looks != 1 else ''} -- {_trunc(' '.join(read.split()), COPILOT_CONFIG.eye_summary_max_chars)}"
-
-
 def _clean_streak_fact(n: int) -> str:
     # Escalating per-file nudge: rides EVERY clean edit_shader result past the soft threshold,
     # getting more imperative — the one-shot version (a single soft nudge) was blown past in a
-    # 16-edit spiral. The model is render-blind between looks, so nothing else brakes a clean
-    # micro-edit spree.
+    # 16-edit spiral. The model is render-blind, so nothing else brakes a clean micro-edit spree.
     return (
         f"\n\n[hint] {n} clean edits to this file in a row, none of which the user has seen "
-        "(the engine's eye checks the frame at turn-end, but that is a bounded check, not the "
-        "user looking). Unless something is still broken, STOP: "
+        "(and you can't see the visual result either). Unless something is still broken, STOP: "
         "if more changes remain, make them in ONE write_shader, then reply with a short summary "
         "and let the user look before iterating further."
     )
@@ -208,9 +179,6 @@ class TurnSummary:
     reply: str = ""
     ledger: list[str] = field(default_factory=list)
     nodes: list[str] = field(default_factory=list)
-    # The engine eye's closing verdict line, set only when the turn's FINAL engine look reported
-    # the ask not met — so the record carries the eye's voice, not just the model's claim.
-    eye: str = ""
 
 
 # The terminal events carry the engine-derived NL TurnSummary for _commit_turn to persist as one
@@ -290,9 +258,6 @@ class _RunLog:
     # turn-summary persisted to history.
     def __init__(self) -> None:
         self._entries: list[_RunEntry] = []
-        # The eye's not-met line for the turn record, rewritten by each engine look (only the
-        # FINAL verdict is reported).
-        self.eye_note: str = ""
 
     def record(
         self, name: str, ok: bool, msg: str, args: dict, payload: dict | None
@@ -303,23 +268,15 @@ class _RunLog:
         # True once any tool has run this turn — the "did work worth preserving on an error" signal.
         return bool(self._entries)
 
-    def last_index(self) -> int:
-        return len(self._entries) - 1
-
-    def mutated_since(self, index: int) -> bool:
-        # A render-authoring tool ran ok AFTER `index` (-1 = the whole turn). Explicit index rather
-        # than a tool-name scan: the engine's own look records as `probe_render` exactly like the
-        # model's, so a name scan would let a model probe reopen the window.
-        return any(
-            e.ok and e.name in _RENDER_AUTHORING_TOOLS
-            for e in self._entries[index + 1 :]
-        )
+    def mutated(self) -> bool:
+        # A render-authoring tool ran ok this turn — the turn produced a visual result.
+        return any(e.ok and e.name in _RENDER_AUTHORING_TOOLS for e in self._entries)
 
     def last_render_target(self) -> str:
-        # The raw node-address the LAST successful render-authoring call targeted, for aiming the
-        # engine look at the node the turn actually changed. "" = the current node — including when
-        # that call targeted a lib/example address, which the probe resolver can't resolve (a look
-        # at the current frame beats erroring the look away).
+        # The raw node-address the LAST successful render-authoring call targeted, for aiming a
+        # probe at the node the turn actually changed. "" = the current node — including when
+        # that call targeted a lib/example address, which the probe resolver can't resolve (a
+        # measurement of the current frame beats erroring the probe away).
         for e in reversed(self._entries):
             if not (e.ok and e.name in _RENDER_AUTHORING_TOOLS):
                 continue
@@ -391,7 +348,6 @@ def _build_turn_summary(
         reply=reply,
         ledger=run_log.summary_lines(registry),
         nodes=run_log.referenced_nodes(),
-        eye=run_log.eye_note,
     )
 
 
@@ -526,12 +482,6 @@ def run_turn(
     ran = _RunLog()
     total_tool_calls = 0
     consecutive_failed_edits = 0  # self-correction cap (reset on any other outcome)
-    # Convergence loop (056): engine looks taken this turn, the _RunLog index at the last one (the
-    # window the next look's mutation gate reads), and the visible reply of each round the engine
-    # re-opened (the screen accumulates them, so the turn record must too).
-    looks_used = 0
-    last_look_index = -1
-    round_replies: list[str] = []
     consecutive_compile_failures = 0  # applies-but-broken thrash counter
     compile_nudge_sent = (
         False  # latched once the nudge fires; re-armed by a non-thrash step
@@ -555,21 +505,16 @@ def run_turn(
 
     final_reply_text: list[str] = []
 
-    def turn_reply(last_text: str) -> str:
-        # The turn's whole visible prose: every earlier CONV round's reply plus this one, in the
-        # order the user saw them stream.
-        return "\n\n".join([p for p in (*round_replies, last_text.strip()) if p])
-
     def stream_final_reply(cause: str) -> "Iterator[AgentEvent]":
         # One extra NO-TOOLS stream so a forced turn-end still ends with the model addressing the
         # USER (3/10 round-3 turns ended silent — feature 033). `cause` names the engine limit so
-        # the closing reply owns the stop, not the user (feature 050). Appends nothing durable;
-        # usage folds into the turn total.
+        # the closing reply owns the stop, not the user (feature 050); a turn that authored a
+        # render also carries ONE fresh measurement of it, so the summary is not written blind
+        # (058). Appends nothing durable; usage folds into the turn total.
         nonlocal usage
+        nudge = _final_reply_nudge(cause, _forced_reply_facts(registry, ran))
         request_messages = (
-            messages
-            + render_scratchpad()
-            + [LLMMessage(role="user", content=_final_reply_nudge(cause))]
+            messages + render_scratchpad() + [LLMMessage(role="user", content=nudge)]
         )
         tr.event(
             "llm_request",
@@ -616,7 +561,7 @@ def run_turn(
         if cancel.is_set():
             logger.debug(f"copilot turn cancelled at iteration {iteration}")
             yield AgentCancelled(
-                _build_turn_summary(turn_reply(""), ran, registry),
+                _build_turn_summary("", ran, registry),
                 stats=TurnStats(
                     context_tokens=first_input_tokens or 0,
                     reply_tokens=usage.output_tokens,
@@ -721,7 +666,7 @@ def run_turn(
             # accumulated summary + spend, before executing any partial tool calls.
             tr.event("turn_cancelled", iteration=iteration)
             yield AgentCancelled(
-                _build_turn_summary(turn_reply(text_buf), ran, registry),
+                _build_turn_summary(text_buf.strip(), ran, registry),
                 stats=TurnStats(
                     context_tokens=first_input_tokens or 0,
                     reply_tokens=usage.output_tokens,
@@ -810,7 +755,7 @@ def run_turn(
                 tr.event("turn_truncated", iteration=iteration, reason=fr)
                 if cancel.is_set():
                     yield AgentCancelled(
-                        _build_turn_summary(turn_reply(""), ran, registry),
+                        _build_turn_summary("", ran, registry),
                         stats=TurnStats(
                             context_tokens=first_input_tokens or 0,
                             reply_tokens=usage.output_tokens,
@@ -841,96 +786,10 @@ def run_turn(
                     cost_usd=usage.cost_usd,
                 )
                 yield AgentTurnDone(
-                    summary=_build_turn_summary(turn_reply(reply), ran, registry),
+                    summary=_build_turn_summary(reply, ran, registry),
                     stats=stats,
                 )
                 return
-            # Convergence loop (056): the turn changed the render since the last ENGINE look, so the
-            # engine takes an aimed look FOR the model and injects the observation (as data, with
-            # round- and target-aware provenance), giving it one more iteration. UNCONDITIONAL on the
-            # model's own probes — its look answers ITS question, not the user's ask. Bounded by the
-            # cap and gated on tool facts alone. With vision OFF the block is skipped whole: no
-            # render, no card, no line — a vision-less user pays nothing new.
-            if (
-                config.copilot_vision_enabled
-                and looks_used < config.copilot_convergence_max_looks
-                and fr == "stop"
-                and text_buf.strip()
-                and iteration + 1 < config.max_iterations
-                and not cancel.is_set()
-                and ran.mutated_since(last_look_index)
-            ):
-                look_node = ran.last_render_target()
-                look_args: dict[str, object] = {
-                    "node": look_node,
-                    "t": 0.0,
-                    "look_for": _turn_intent_look_for(user_text),
-                }
-                ok_l, look_msg, look_payload = registry.execute(
-                    "probe_render", look_args, ""
-                )
-                looks_used += 1
-                ran.record("probe_render", ok_l, look_msg, look_args, look_payload)
-                last_look_index = ran.last_index()
-                payload = look_payload or {}
-                vision_ok = ok_l and bool(payload.get("vision_ok"))
-                verdict = payload.get("verdict")
-                not_met = vision_ok and verdict == ASK_NOT_MET
-                look_usage = payload.get("usage")
-                if isinstance(look_usage, VisionUsage):
-                    # COST only: the vision tokens are a different model's and must not move the
-                    # main model's reply gauge.
-                    usage += LLMUsage(cost_usd=look_usage.cost_usd)
-                    tr.event(
-                        "engine_look_usage",
-                        iteration=iteration,
-                        input_tokens=look_usage.input_tokens,
-                        output_tokens=look_usage.output_tokens,
-                        cost_usd=look_usage.cost_usd,
-                    )
-                # Every engine look leaves a verdict event, blind ones included ("none") — a look
-                # that came back sightless is exactly what a trace review needs to see.
-                tr.event(
-                    "ask_verdict",
-                    iteration=iteration,
-                    verdict=verdict if vision_ok and verdict is not None else "none",
-                    ask_line=payload.get("ask_line", ""),
-                    node=look_node or "(current)",
-                    look=looks_used,
-                    vision_ok=vision_ok,
-                )
-                # The eye's note tracks THIS look: a not-met from an earlier round must not survive
-                # a later look that saw the ask met (or saw nothing) into the turn record.
-                ran.eye_note = (
-                    _eye_summary_line(looks_used, str(payload.get("read", "")))
-                    if not_met
-                    else ""
-                )
-                yield AgentToolCard(
-                    "probe_render",
-                    ok_l,
-                    {**payload, "engine_look": True},
-                    result=look_msg,
-                    widget=None,
-                    display="",
-                )
-                if vision_ok:
-                    logger.info(
-                        f"copilot engine look #{looks_used} | verdict={verdict}"
-                    )
-                    round_replies.append(text_buf.strip())
-                    if text_buf.strip():
-                        yield AgentTextDelta("\n\n")
-                    messages.append(_assistant_message(text_buf, []))
-                    messages.append(
-                        LLMMessage(
-                            role="user",
-                            content=_auto_look_fact(
-                                look_msg, looks_used, look_node, not_met
-                            ),
-                        )
-                    )
-                    continue
             logger.info(
                 f"copilot turn done | iterations={iteration + 1} "
                 f"tool_calls={total_tool_calls} reply={len(text_buf)}ch "
@@ -951,7 +810,7 @@ def run_turn(
             )
             # text_buf is the agent's final reply, carrying its stated assumption.
             yield AgentTurnDone(
-                summary=_build_turn_summary(turn_reply(text_buf), ran, registry),
+                summary=_build_turn_summary(text_buf.strip(), ran, registry),
                 stats=stats,
             )
             return
@@ -1022,7 +881,7 @@ def run_turn(
             if cancel.is_set():
                 logger.debug(f"copilot turn cancelled before tool {tc.name}")
                 yield AgentCancelled(
-                    _build_turn_summary(turn_reply(text_buf), ran, registry),
+                    _build_turn_summary(text_buf.strip(), ran, registry),
                     stats=TurnStats(
                         context_tokens=first_input_tokens or 0,
                         reply_tokens=usage.output_tokens,
@@ -1062,7 +921,7 @@ def run_turn(
                     logger.debug(f"copilot turn cancelled at gate for {tc.name}")
                     tr.event("gate_cancelled", name=tc.name)
                     yield AgentCancelled(
-                        _build_turn_summary(turn_reply(text_buf), ran, registry),
+                        _build_turn_summary(text_buf.strip(), ran, registry),
                         stats=TurnStats(
                             context_tokens=first_input_tokens or 0,
                             reply_tokens=usage.output_tokens,
@@ -1085,11 +944,6 @@ def run_turn(
                 tr.event("gate_approved", name=tc.name)
                 secret = resp.secret
             ok, msg, payload = registry.execute(tc.name, args, secret)
-            tool_usage = (payload or {}).get("usage")
-            if isinstance(tool_usage, VisionUsage):
-                # A tool that made its OWN billed vision call (the model's probe_render) — same
-                # cost-only fold as the engine look, or half the turn's vision spend is invisible.
-                usage += LLMUsage(cost_usd=tool_usage.cost_usd)
             total_tool_calls += 1
             logger.info(f"copilot tool #{total_tool_calls} {tc.name} -> ok={ok}")
             logger.debug(f"copilot tool #{total_tool_calls} args={args} result={msg!r}")
@@ -1212,6 +1066,9 @@ def run_turn(
                     "churning while you can't see the result. If more is needed, tell me to "
                     "continue and I'll finish in one rewrite."
                 )
+                # No measured-facts clause here: this note is USER-facing engine text, and the
+                # user can see the live render — raw probe telemetry adds nothing for them. The
+                # facts clause rides only the MODEL-facing forced-reply nudges.
             else:
                 logger.warning(
                     f"copilot edit giveup after {consecutive_failed_edits} failed "
@@ -1274,7 +1131,7 @@ def run_turn(
     )
     if cancel.is_set():
         yield AgentCancelled(
-            _build_turn_summary(turn_reply(""), ran, registry),
+            _build_turn_summary("", ran, registry),
             stats=TurnStats(
                 context_tokens=first_input_tokens or 0,
                 reply_tokens=usage.output_tokens,
@@ -1308,6 +1165,4 @@ def run_turn(
         reply_tokens=usage.output_tokens,
         cost_usd=usage.cost_usd,
     )
-    yield AgentTurnDone(
-        summary=_build_turn_summary(turn_reply(reply), ran, registry), stats=stats
-    )
+    yield AgentTurnDone(summary=_build_turn_summary(reply, ran, registry), stats=stats)

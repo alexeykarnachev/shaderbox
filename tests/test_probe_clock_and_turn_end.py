@@ -8,7 +8,6 @@ import types
 from shaderbox.copilot import backend as backend_mod
 from shaderbox.copilot.agent import _final_reply_nudge
 from shaderbox.copilot.backend import CopilotBackend
-from shaderbox.copilot.capabilities import ProbeResult
 from shaderbox.copilot.config import COPILOT_CONFIG
 from shaderbox.copilot.tools.inspect import inspect_tools
 from shaderbox.copilot.tools.registry import build_registry
@@ -73,22 +72,17 @@ def test_probe_render_tool_is_ungated_and_non_mutating() -> None:
 
 
 def test_probe_render_in_registry_and_reaches_capability() -> None:
-    # Also the look_for WIRE (feature 053): the tool's look_for arg must reach the capability verbatim,
-    # else the vision look is grounded in an empty hint. Falsifier: a dropped/renamed arg.
-    calls: list[tuple[str, float, str]] = []
+    # The (node, t) wire: both args must reach the capability verbatim, and the facts string comes
+    # back as the whole model-facing result. Falsifier: a dropped/renamed arg.
+    calls: list[tuple[str, float]] = []
     caps = minimal_caps(
-        probe_render=lambda n, t, lf: (
-            calls.append((n, t, lf)) or ProbeResult(msg="render@t=2.5s: ink 5%")
-        )
+        probe_render=lambda n, t: calls.append((n, t)) or "render@t=2.5s: ink 5%"
     )
     reg = build_registry(caps)
-    ok, msg, payload = reg.execute(
-        "probe_render", {"node": "n1", "t": 2.5, "look_for": "reads HELLO"}, ""
-    )
+    ok, msg, payload = reg.execute("probe_render", {"node": "n1", "t": 2.5}, "")
     assert ok and "render@t=2.5s" in msg
-    assert calls == [("n1", 2.5, "reads HELLO")]
-    # The structured half rides the payload, which never reaches the model.
-    assert payload is not None and payload["vision_ok"] is False
+    assert calls == [("n1", 2.5)]
+    assert payload is None
 
 
 def test_forced_turn_end_nudge_names_engine_cause_and_denies_user_pause() -> None:

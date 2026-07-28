@@ -20,43 +20,22 @@ class _ProbeRenderArgs(ToolArgs):
         "user renders to a file. Aim it at a specific moment to inspect an animated shader "
         "past t=0 (e.g. t=2.5 to see the flame mid-rise).",
     )
-    look_for: str = Field(
-        default="",
-        description="OPTIONAL - what you are trying to achieve or check, in your own words "
-        "(e.g. 'the text should read HELLO and be upright', 'a teardrop-shaped flame tip', "
-        "'the glow should pulse'). The eye answers it as a skeptical observation (says NO if it "
-        "can't clearly see it). Leave empty for just the baseline read. YOU judge whether your "
-        "intent was met - the eye only reports what's on the pixels.",
-    )
 
 
 _PROBE_RENDER_DESC = (
-    "A read-only look at a shader's frame at a chosen time `t`: returns the measured facts line "
-    "(ink %, bbox, mean colour, luma, or FLAT) AND a VISION read of the frame — a real inspection of "
-    "its CORRECTNESS (coherent structure vs noise/speckle, orientation/mirroring, content off-frame, "
-    "text legibility, obvious artifacts), NOT beauty (that stays the user's eye). This is your only "
-    "actual SIGHT of your output: use it to check an animated shader past t=0, re-look after a "
-    "set_uniform, and ESPECIALLY before you claim a visual result or report a visual task done. "
-    "Unlike render_image (a heavy, gated, file-writing deliverable) it never confirms or writes a "
-    "file. It does cost a little (a vision call) — glance when you need to SEE, not every step."
+    "A read-only MEASUREMENT of a shader's frame at a chosen time `t`: the facts line (ink %, "
+    "bbox, ink mean colour, luma rows, or FLAT — one uniform colour). Use it to check an animated "
+    "shader past t=0, to re-measure after a set_uniform, and before you state what the frame "
+    "contains. Unlike render_image (a heavy, gated, file-writing deliverable) it never confirms or "
+    "writes a file, and it is free. It measures — it does not SEE: the numbers are all you get, "
+    "and how the result LOOKS stays the user's judgment."
 )
 
 
 def inspect_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
     def probe_render(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
-        # `msg` is the whole model-facing result (the eye's ASK line is stripped backend-side);
-        # the verdict / vision availability / billed usage ride the payload, which the engine
-        # reads and the model never sees.
-        result = caps.probe_render(args["node"], args["t"], args["look_for"])
-        ok = not result.msg.startswith("error:")
-        payload = {
-            "vision_ok": result.vision_ok,
-            "verdict": result.verdict,
-            "ask_line": result.ask_line,
-            "read": result.read,
-            "usage": result.usage,
-        }
-        return ok, result.msg, payload
+        msg = caps.probe_render(args["node"], args["t"])
+        return not msg.startswith("error:"), msg, None
 
     return [
         ToolDefinition(

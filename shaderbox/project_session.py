@@ -147,10 +147,6 @@ class ProjectSession:
             client=OpenRouterLLMClient(
                 get_api_key=lambda: self.integrations_store.copilot.openrouter_key,
                 get_model=lambda: self.integrations_store.copilot.model,
-                get_vision_enabled=lambda: (
-                    self.integrations_store.copilot.vision_enabled
-                ),
-                get_vision_model=lambda: self.integrations_store.copilot.vision_model,
             ),
             get_project_slug=lambda: getattr(self, "project_dir", Path("project")).name,
             get_checkpoints_root=lambda: self.paths.copilot_checkpoints_dir,
@@ -165,10 +161,6 @@ class ProjectSession:
         self.copilot_backend = CopilotBackend(
             get_bridge=lambda: self.copilot.bridge,
             get_gate=lambda: self.copilot.gate,
-            describe_image=lambda png, hint, is_strip: (
-                self.copilot.client.describe_image(png, hint, is_strip)
-            ),
-            vision_enabled=lambda: self.integrations_store.copilot.vision_enabled,
             node_examples_dir=self.node_examples_dir,
             starter_example_id=self._starter_example_id,
             get_renders_dir=lambda: self.paths.renders_dir,

@@ -1,4 +1,3 @@
-import base64
 from collections.abc import Callable, Iterator
 from typing import Any
 
@@ -20,66 +19,8 @@ from shaderbox.copilot.llm.api import (
     LLMToolSpec,
     LLMUsage,
 )
-from shaderbox.copilot.vision_contract import ASK_CONTRACT_INSTRUCTION, VisionUsage
 
 _OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-
-_VISION_SYSTEM = (
-    "You are the EYES of a coding agent that is BLIND to its own shader render. Report OBSERVATIONS "
-    "only — terse, factual. NEVER an aesthetic/beauty judgment and NEVER a verdict that the shader is "
-    "'correct' / 'good' / 'done' — the agent decides that; you only report what is on the pixels. The "
-    "one exception is the final ASK line defined below: it is not a quality or doneness opinion "
-    "either, only a factual report of whether the named look_for content is present on the pixels.\n"
-    "ALWAYS give a baseline read as ONE compact line with these labels: "
-    "coherent: <coherent subject/structure vs random noise/speckle/garbage> | "
-    "readability: <is the MAIN subject clearly readable, or muddy / too dark / washed-out / "
-    "low-contrast / smeared> | "
-    "orientation: <upright / upside-down / mirrored / sideways> | "
-    "framing: <fully in frame vs cut off at an edge> | "
-    "text: <any text, in quotes, + legible & right-way-up?> | "
-    "artifacts: <banding / tiling seams / single flat color / aliasing / none>.\n"
-    "If the agent asks you to LOOK FOR something specific, add a final `look_for:` segment answering it "
-    "as an OBSERVATION under a SKEPTICAL default — if you cannot CLEARLY see the asked-for thing, say it "
-    "is NOT present / NOT achieved; do not assume success, do not be agreeable, describe what you "
-    "actually see instead. Only answer YES/present if you can point to the specific pixels that show it; "
-    "if you are guessing or inferring from the request, answer NO. Do not invent detail you cannot see. "
-    "The skeptical default applies to presence-claims about VISIBLE content only; anything the frame "
-    "cannot decide is reported as unclear, never as absent. Keep the whole reply to a few short lines.\n"
-    + ASK_CONTRACT_INSTRUCTION
-)
-
-
-def fetch_model_image_support(api_key: str) -> dict[str, bool] | None:
-    # Free capability metadata (NOT a billed image call, feature 053): map every OpenRouter model id ->
-    # whether it accepts IMAGE input, from GET /models `architecture.input_modalities`. Returns the FULL
-    # dict so the caller can tell three states apart: id present & True (supports vision), id present &
-    # False (text-only), id absent (unknown/typo). Returns None on a transient failure (no key / offline
-    # / timeout / 5xx) — a transient error is not a negative result, so the caller shows "couldn't
-    # verify", never a false "no". NEVER raises.
-    if not api_key:
-        return None
-    try:
-        resp = httpx.get(
-            f"{_OPENROUTER_BASE_URL}/models",
-            headers={"Authorization": f"Bearer {api_key}"},
-            timeout=httpx.Timeout(
-                COPILOT_CONFIG.vision_models_fetch_timeout_s, connect=5.0
-            ),
-        )
-        resp.raise_for_status()
-        data = resp.json().get("data", [])
-    except Exception as exc:
-        logger.debug(f"copilot vision model-support fetch failed: {type(exc).__name__}")
-        return None
-    support: dict[str, bool] = {}
-    for m in data:
-        mid = m.get("id")
-        if not isinstance(mid, str):
-            continue
-        arch = m.get("architecture") or {}
-        mods = arch.get("input_modalities") or []
-        support[mid] = "image" in mods
-    return support
 
 
 def _to_wire_message(m: LLMMessage) -> dict[str, Any]:
@@ -121,18 +62,6 @@ class LLMUpstreamError(Exception):
         self.status_code: int = status_code
 
 
-def _vision_usage(usage: object) -> VisionUsage:
-    # `cost` is OpenRouter's own field on the usage object (absent on a plain OpenAI-shaped
-    # response), same read as the streaming path.
-    if usage is None:
-        return VisionUsage()
-    return VisionUsage(
-        input_tokens=int(getattr(usage, "prompt_tokens", 0) or 0),
-        output_tokens=int(getattr(usage, "completion_tokens", 0) or 0),
-        cost_usd=float(getattr(usage, "cost", 0.0) or 0.0),
-    )
-
-
 def _log_upstream_error(exc: Exception) -> None:
     # NEVER log the response body (§J4) — OpenRouter error bodies echo the prompt, which
     # carries the user's shader source + the key context. Status/class only.
@@ -153,13 +82,9 @@ class OpenRouterLLMClient(LLMClient):
         self,
         get_api_key: Callable[[], str],
         get_model: Callable[[], str],
-        get_vision_enabled: Callable[[], bool],
-        get_vision_model: Callable[[], str],
     ) -> None:
         self._get_api_key = get_api_key
         self._get_model = get_model
-        self._get_vision_enabled = get_vision_enabled
-        self._get_vision_model = get_vision_model
 
     @property
     def model(self) -> str:
@@ -178,53 +103,6 @@ class OpenRouterLLMClient(LLMClient):
             timeout=timeout,
             max_retries=0,
         )
-
-    def describe_image(
-        self, png_bytes: bytes, hint: str = "", is_strip: bool = False
-    ) -> tuple[str, VisionUsage]:
-        # Advisory vision look for probe_render (feature 053): a cheap multimodal model describes the
-        # frame's CORRECTNESS (coherence/orientation/off-frame/legibility/artifacts, never beauty).
-        # `hint` is the copilot's look_for (intent as data); `is_strip` marks a left->right time strip
-        # of an animation so the eye reads motion, not separate scenes. Enable + model are read LIVE
-        # (the same seam as get_model/get_api_key) so a Settings change takes effect on the next look.
-        # NEVER raises — an enrichment, not a load-bearing result; returns "" on any failure so a
-        # vision-model outage / a non-vision key / vision-off never breaks a probe. The billed
-        # usage rides back so the look's cost reaches the turn stats.
-        if not self._get_vision_enabled() or not self._get_api_key():
-            return "", VisionUsage()
-        text = "Look for: " + hint if hint else "Inspect this render."
-        if is_strip:
-            text = (
-                "This image is a LEFT-TO-RIGHT time strip of ONE animation (early -> late): the same "
-                "shader at different times, not separate scenes — read how it CHANGES across the "
-                "panels.\n" + text
-            )
-        try:
-            b64 = base64.b64encode(png_bytes).decode()
-            resp = self._client().chat.completions.create(
-                model=self._get_vision_model(),
-                max_tokens=COPILOT_CONFIG.copilot_vision_max_tokens,
-                messages=[
-                    {"role": "system", "content": _VISION_SYSTEM},
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": text},
-                            {
-                                "type": "image_url",
-                                "image_url": {"url": f"data:image/png;base64,{b64}"},
-                            },
-                        ],
-                    },
-                ],
-                extra_body={"usage": {"include": True}},
-            )
-            return (resp.choices[0].message.content or "").strip(), _vision_usage(
-                resp.usage
-            )
-        except Exception as exc:
-            logger.debug(f"copilot vision look skipped: {exc}")
-            return "", VisionUsage()
 
     def stream(
         self,

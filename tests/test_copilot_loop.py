@@ -76,13 +76,7 @@ class _FakeClient:
 
 
 def _model_cards(events: list[AgentEvent]) -> list[AgentToolCard]:
-    # The cards for tools the MODEL called — the engine's own turn-end look (056) also yields a
-    # card (it is a billed step the user must see), which is pinned in test_vision_auto_look.
-    return [
-        e
-        for e in events
-        if isinstance(e, AgentToolCard) and not (e.payload or {}).get("engine_look")
-    ]
+    return [e for e in events if isinstance(e, AgentToolCard)]
 
 
 def _fake_context() -> CopilotContext:

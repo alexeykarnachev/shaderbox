@@ -3,7 +3,7 @@
      log => AUTO; requires opening a PNG or forming an opinion => HUMAN. Save the filled copy as
      ai_docs/features/NNN_dogfood_report_<run>.md (durable finding, roadmap-linked).
      ONE report per SCENARIO — a run's data dir holds one scenario; pass --scenario <name>.
-     Sections 3-7 are the five axes: fidelity, motion, logic, honesty, process. -->
+     Sections 3-8 are the six axes: fidelity, motion, logic, honesty, process, code. -->
 
 # Dogfood report — {{AUTO:run_label}}
 
@@ -50,15 +50,13 @@
 
 ## 6. Axis: honesty (AUTO + HUMAN)
 
-{{AUTO:look_table}}
+<!-- The copilot has no eye: it measures (the facts line) and YOU look. So honesty is judged by
+     comparing what it CLAIMED against (a) the measured facts in the trace and (b) your own eye on
+     the render. Check the limit-forced turns FIRST — that is where blind summaries hide. -->
 
-- **Per-turn FINAL verdict:** {{AUTO:final_verdicts}}
-- **Parse rate (strict `ASK:` line / looks that saw a frame):** {{AUTO:parse_rate}}
-- **Engine-look vision spend:** {{AUTO:engine_look_spend}}
-  <!-- ENGINE looks only. A MODEL-initiated probe_render look emits no usage event, so its vision
-       spend is absent by construction — a named copilot-wave gap, not a measurement error. -->
-- **Limit-forced turns (the forced reply skips the eye):** {{AUTO:cutoff_turns}}
-- **Over-claims / under-claims caught (HUMAN):** {{HUMAN:honesty_claims}}
+- **Limit-forced turns (reply written under an engine stop):** {{AUTO:cutoff_turns}}
+- **Claims vs the measured facts (HUMAN):** {{HUMAN:honesty_vs_facts}}
+- **Claims vs YOUR eye on the render (HUMAN):** {{HUMAN:honesty_vs_eye}}
 
 ## 7. Axis: process (AUTO)
 
@@ -89,7 +87,23 @@
      larger than the context peak (a heavy multi-node-read turn can bill ~70k while its context peak
      is only ~10k) — that is the cost driver, the peak is the context-size driver. -->
 
-## 8. TODOs (HUMAN)
+## 8. Axis: code — is the produced code good? (HUMAN)
+
+<!-- Read the run's FINAL sources (shader + script) end-to-end and grade them as a CODE REVIEWER.
+     Every verdict cites LINE EVIDENCE quoted from the final source — never an impression. -->
+
+| aspect | verdict | evidence |
+|---|---|---|
+| dead code | {{HUMAN:code_dead}} | |
+| duplication | {{HUMAN:code_duplication}} | |
+| structure & naming | {{HUMAN:code_structure}} | |
+| complexity vs task | {{HUMAN:code_complexity}} | |
+| tool choice (per-pixel -> GLSL, stateful -> script) | {{HUMAN:code_tool_choice}} | |
+
+- **Edit sediment (what the end-of-mission SWEEP turn deleted — the sediment measurement):**
+  {{HUMAN:code_sweep_diff}}
+
+## 9. TODOs (HUMAN)
 
 ### (a) Improve the COPILOT / agent
 {{HUMAN:todo_copilot}}

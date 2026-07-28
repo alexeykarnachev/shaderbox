@@ -132,14 +132,6 @@ _FIELD_KEYS: frozenset[str] = frozenset(
         "tool_calls",
         "reply",
         "cutoff",
-        "verdict",
-        "ask_line",
-        "node",
-        "look",
-        "vision_ok",
-        "input_tokens",
-        "output_tokens",
-        "cost_usd",
     }
 )
 
@@ -149,10 +141,6 @@ _USAGE_RE = re.compile(
     r"^usage: in=(\d+) out=(\d+)(?: rsn=(\d+))?(?: cache=(\d+))? cost=\$([\d.]+)"
 )
 _INVOKE_RE = re.compile(r"^\s*-> tool_call (?P<name>\w+)\(id=(?P<id>call_\w+)\)")
-# The eye's demanded final line, verbatim (shaderbox/copilot/vision_contract.py). A look whose
-# ask_line misses this shape is a GARBLED read — the engine normalizes the verdict to `unclear`,
-# so the raw line is the only discriminator left.
-_ASK_STRICT_RE = re.compile(r"^ASK\s*:\s*(met|not-met|unclear)\.?$", re.IGNORECASE)
 # The UI chat roles the dialogue prints, and the label each gets. `error` is a VISIBLE copilot
 # reply (a limit-cutoff note), not a dropped row.
 _DIALOGUE_LABELS: dict[str, str] = {
@@ -187,24 +175,6 @@ class Iteration:
 
 
 @dataclass
-class LookVerdict:
-    # One ENGINE look (feature 056's ask_verdict event) + the vision usage of the same iteration.
-    # `verdict` is already normalized by the engine (garbled -> unclear, blind -> none), so
-    # `ask_line` is what tells a garbled read from a clean one.
-    segment: str
-    turn_index: int
-    iteration: int
-    verdict: str
-    ask_line: str
-    node: str
-    look: int
-    vision_ok: bool
-    input_tokens: int
-    output_tokens: int
-    cost_usd: float
-
-
-@dataclass
 class Turn:
     user_text: str
     model: str
@@ -231,7 +201,6 @@ class Turn:
     gate_declines: int
     errored: bool
     recovered: bool
-    looks: list[LookVerdict] = field(default_factory=list)
 
 
 @dataclass
@@ -258,9 +227,6 @@ class RunAnalysis:
     recoveries: list[Recovery]
     errored_attempts: list[ToolAttempt]
     recovery_summary: str
-    looks: list[LookVerdict]
-    engine_look_cost_usd: float
-    parse_rate: str
     total_cost_usd: float
     total_billed_in_tokens: int
     total_out_tokens: int
@@ -295,11 +261,6 @@ def _as_str(value: object) -> str:
     return str(value) if value is not None else ""
 
 
-def _as_bool(value: object) -> bool:
-    # The trace renders python bools with str(), so the field arrives as the text "True"/"False".
-    return _as_str(value).strip().lower() == "true"
-
-
 def _collect_transcripts(target: Path) -> list[Path]:
     if target.is_dir():
         files = list((target / "copilot_traces").glob("*.transcript"))
@@ -321,9 +282,6 @@ def _parse_transcript(path: Path, turns: list[Turn], warnings: list[str]) -> Non
     kind = ""
     cur: dict[str, object] = {}
     cur_turn: Turn | None = None
-    # engine_look_usage is emitted immediately BEFORE the ask_verdict of the same iteration (the
-    # vision call's own billing); hold it until that verdict closes so one look = one row.
-    pending_look: dict[str, object] = {}
 
     def _finalize_turn(t: Turn | None) -> None:
         # An error terminal (giveup / stream_error / truncated / model_incompatible) never emits a
@@ -337,10 +295,9 @@ def _parse_transcript(path: Path, turns: list[Turn], warnings: list[str]) -> Non
         t.peak_iter_in_tokens = max(it.in_tokens for it in t.iterations)
 
     def _close_section() -> None:
-        nonlocal cur_turn, pending_look
+        nonlocal cur_turn
         if kind == "turn_start":
             _finalize_turn(cur_turn)
-            pending_look = {}  # iteration numbers restart per turn
             cur_turn = Turn(
                 user_text=_as_str(cur.get("user_text", "")),
                 model=_as_str(cur.get("model", "")),
@@ -390,31 +347,6 @@ def _parse_transcript(path: Path, turns: list[Turn], warnings: list[str]) -> Non
             cur_turn.gate_approvals += 1
         elif kind == "gate_declined" and cur_turn is not None:
             cur_turn.gate_declines += 1
-        elif kind == "engine_look_usage":
-            pending_look = dict(cur)
-        elif kind == "ask_verdict" and cur_turn is not None:
-            paired = (
-                pending_look
-                if _as_int(pending_look.get("iteration"))
-                == _as_int(cur.get("iteration"))
-                else {}
-            )
-            pending_look = {}
-            cur_turn.looks.append(
-                LookVerdict(
-                    segment=path.name,
-                    turn_index=len(turns),
-                    iteration=_as_int(cur.get("iteration")),
-                    verdict=_as_str(cur.get("verdict", "")),
-                    ask_line=_as_str(cur.get("ask_line", "")),
-                    node=_as_str(cur.get("node", "")),
-                    look=_as_int(cur.get("look")),
-                    vision_ok=_as_bool(cur.get("vision_ok")),
-                    input_tokens=_as_int(paired.get("input_tokens")),
-                    output_tokens=_as_int(paired.get("output_tokens")),
-                    cost_usd=_as_float(paired.get("cost_usd")),
-                )
-            )
         if kind in _TERMINAL_KINDS and cur_turn is not None:
             cur_turn.terminal_kind = kind
         if kind == "turn_done" and cur_turn is not None:
@@ -459,8 +391,7 @@ def _parse_transcript(path: Path, turns: list[Turn], warnings: list[str]) -> Non
         ):
             cur["result_head"] = line.strip()
             continue
-        # simple `key: value` field lines. engine_look_usage's `cost_usd:` rides this path — it is
-        # NOT a `usage: in=… cost=$…` line, so _USAGE_RE never sees it.
+        # simple `key: value` field lines.
         if ":" in line and not line.startswith(" "):
             key, _, val = line.partition(":")
             key = key.strip()
@@ -591,17 +522,6 @@ def _load_dumps(runs_dir: Path, data_dir: Path) -> list[dict[str, object]]:
     return dumps
 
 
-def _parse_rate(looks: list[LookVerdict]) -> str:
-    # The engine already normalizes a garbled read to `unclear` and a blind one to `none`, so the
-    # RAW ask_line is the only garble discriminator. Denominator = the looks that actually saw a
-    # frame; a run with none prints n/a rather than dividing by zero.
-    seen = [lk for lk in looks if lk.vision_ok]
-    if not seen:
-        return "n/a (no look returned a frame)"
-    ok = sum(1 for lk in seen if _ASK_STRICT_RE.match(lk.ask_line.strip()) is not None)
-    return f"{ok}/{len(seen)} ({ok / len(seen):.0%})"
-
-
 def _growth_shape(turns: list[Turn]) -> str:
     # Peak context (max per-iteration in=) per turn. A context wipe does NOT shrink the peak (the system
     # prompt + working-set dominate), so don't infer a wipe from a peak drop — the wipe shows in the dump
@@ -655,7 +575,6 @@ def analyze(target: Path, cli_model: str) -> RunAnalysis:
     reachable_used = [t for t in REACHABLE_TOOLS if t in tool_counts]
     reachable_gap = [t for t in REACHABLE_TOOLS if t not in tool_counts]
     recoveries, errored = _find_recoveries(turns)
-    looks = [lk for t in turns for lk in t.looks]
 
     runs_dir = target.parent
     dumps = _load_dumps(runs_dir, target) if runs_dir.is_dir() else []
@@ -717,9 +636,6 @@ def analyze(target: Path, cli_model: str) -> RunAnalysis:
         recoveries=recoveries,
         errored_attempts=errored,
         recovery_summary=recovery_summary,
-        looks=looks,
-        engine_look_cost_usd=round(sum(lk.cost_usd for lk in looks), 6),
-        parse_rate=_parse_rate(looks),
         total_cost_usd=round(total_cost, 6),
         total_billed_in_tokens=sum(t.billed_in_tokens for t in turns),
         total_out_tokens=sum(t.reply_tokens for t in turns),
@@ -775,34 +691,10 @@ def _coverage_table(an: RunAnalysis) -> str:
     return "\n".join(rows)
 
 
-def _look_table(an: RunAnalysis) -> str:
-    if not an.looks:
-        return "(no engine look fired this run)"
-    rows = [
-        "| turn | look # | node | verdict | vision_ok | ask_line | look cost |",
-        "|---|---|---|---|---|---|---|",
-    ]
-    for lk in an.looks:
-        rows.append(
-            f"| {lk.turn_index} | {lk.look} | {lk.node} | {lk.verdict} | "
-            f"{'✅' if lk.vision_ok else '❌'} | `{lk.ask_line}` | ${lk.cost_usd:.5f} |"
-        )
-    return "\n".join(rows)
-
-
-def _final_verdicts(an: RunAnalysis) -> str:
-    # The turn's LAST look is the one that stands: an earlier not-met the agent then fixed must not
-    # read as the turn's verdict.
-    finals = [
-        f"turn {i}: {t.looks[-1].verdict}" for i, t in enumerate(an.turns, 1) if t.looks
-    ]
-    return " · ".join(finals) or "(no engine look fired this run)"
-
-
 def _cutoff_turns(an: RunAnalysis) -> str:
-    # LIMITS only (iteration/time cutoff, churn hard-stop) — a limit-forced reply skips the eye, so
-    # these turns are where over/under-claims hide. A crash terminal is a different failure and
-    # belongs to the recovery summary, not here.
+    # LIMITS only (iteration/time cutoff, churn hard-stop) — a limit-forced reply summarizes under
+    # pressure, so these turns are where over/under-claims hide. A crash terminal is a different
+    # failure and belongs to the recovery summary, not here.
     hits = [
         f"turn {i} ({t.cutoff or t.terminal_kind})"
         for i, t in enumerate(an.turns, 1)
@@ -864,14 +756,8 @@ def _markdown_block(an: RunAnalysis) -> str:
 **Recoveries:**
 {rec_lines or "(none)"}
 
-### Engine-look verdicts
-{_look_table(an)}
-
-Per-turn FINAL verdict: {_final_verdicts(an)}.
-Parse rate (strict `ASK:` line / looks that saw a frame): {an.parse_rate}.
-Engine-look vision spend: **${an.engine_look_cost_usd:.5f}** (engine looks ONLY — a
-MODEL-initiated probe_render look leaves no usage event, so its vision spend is not in this figure).
-Limit-forced turns: {_cutoff_turns(an)}.
+### Honesty
+Limit-forced turns (the reply was written under an engine stop): {_cutoff_turns(an)}.
 
 ### Token growth
 Per-turn peak context: {pmin}-{pmax}. {an.growth_shape}.
@@ -915,10 +801,6 @@ def _auto_fields(an: RunAnalysis, scenario: str = "") -> dict[str, str]:
         "dearest_turn": str(dearest),
         "token_growth_note": an.growth_shape,
         "recovery_summary": an.recovery_summary,
-        "look_table": _look_table(an),
-        "final_verdicts": _final_verdicts(an),
-        "parse_rate": an.parse_rate,
-        "engine_look_spend": f"${an.engine_look_cost_usd:.5f}",
         "cutoff_turns": _cutoff_turns(an),
     }
 

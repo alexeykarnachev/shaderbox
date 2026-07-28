@@ -56,24 +56,6 @@ class CopilotConfig:
     # STATIC/ANIMATES verdict — t=0 alone is the worst instant for a ramping effect (blank/cold),
     # which reads as a failed edit; the verdict + the later frame's facts tell the model it develops.
     render_facts_motion_t: float = 1.5
-    # Vision look on probe_render (the agent's only REAL sight of its render): a cheap multimodal
-    # describes the frame's CORRECTNESS — coherent structure vs noise/speckle, orientation, off-frame,
-    # text legibility, obvious artifacts — NOT beauty (that stays the user's eye). On-demand
-    # (probe_render only, NOT the per-edit auto-probe) to bound cost (~$0.001-0.004/look).
-    copilot_vision_enabled: bool = True
-    copilot_vision_model: str = "openai/gpt-4o-mini"
-    copilot_vision_probe_size: int = 320
-    copilot_vision_max_tokens: int = 220
-    # Convergence enforcement (feature 056): TOTAL engine vision looks per turn. At turn-end, if a
-    # render-authoring tool succeeded since the last engine look, the engine takes an aimed look FOR
-    # the model and injects the observation as data — so a visual result is never declared blind and
-    # a `not-met` read re-opens the turn for a bounded number of rounds. 0 = off (the master switch);
-    # 1 = a single aimed look. Unconditional on the model's OWN probes (its look answers its own
-    # question, not the user's ask).
-    copilot_convergence_max_looks: int = 3
-    # Settings capability check: bound the GET /models fetch that classifies whether the chosen vision
-    # model accepts image input (free metadata, not a billed probe). A transient miss -> "couldn't verify".
-    vision_models_fetch_timeout_s: float = 15.0
     # Feature 043 script-write motion probe: the sample times (seconds) the dry-run captures
     # driven values at (the value-diff motion verdict), the fps the dry-tick steps at (pinned to
     # the export clock so an integrator accumulates the same way render_video will), and the
@@ -83,11 +65,6 @@ class CopilotConfig:
     motion_value_eps: float = 1e-4
     # A list-arg above this count trips a BULK-policy gate (§2.3 / §F4).
     bulk_gate_threshold: int = 5
-    # Turn-end aimed look: the user's ask is whitespace-normalized and cut to this many chars
-    # before riding into the eye's look_for (bounds the vision prompt, keeps the intent).
-    auto_look_intent_max_chars: int = 240
-    # The eye's not-met read is cut to this many chars in the turn's durable summary line.
-    eye_summary_max_chars: int = 200
     # Turn-summary ledger: non-irreversible lines beyond this soft cap collapse into a count
     # (irreversible actions — publish/delete — are never capped).
     turn_ledger_soft_cap: int = 8
@@ -132,7 +109,6 @@ def apply_user_limits(
     clean_edit_soft_streak: int,
     clean_edit_hard_streak: int,
     auto_revert_after_failed_edits: int,
-    copilot_convergence_max_looks: int,
     turn_time_budget_s: int,
 ) -> None:
     # The Settings -> live-config seam. Values arrive pre-clamped by the Settings UI;
@@ -148,6 +124,3 @@ def apply_user_limits(
         0, auto_revert_after_failed_edits
     )  # 0 = off
     COPILOT_CONFIG.turn_time_budget_s = max(0, turn_time_budget_s)  # 0 = off
-    COPILOT_CONFIG.copilot_convergence_max_looks = max(
-        0, copilot_convergence_max_looks
-    )  # 0 = off

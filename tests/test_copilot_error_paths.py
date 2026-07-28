@@ -1,7 +1,7 @@
 """Feature 056 slices C3 + E: what the USER is shown. A torn stream is not an incompatible model,
 a cancelled turn's screen keeps what history keeps, an all-empty turn still persists an assistant
-message, a precheck handoff is a visible neutral card, and the engine's own look is attributed.
-Bare objects — no app fixture, no GL, no LLM."""
+message, and a precheck handoff is a visible neutral card. Bare objects — no app fixture, no GL,
+no LLM."""
 
 import threading
 from collections.abc import Iterator
@@ -136,38 +136,6 @@ def test_empty_turn_persists_a_placeholder_assistant_message(tmp_path: Path) -> 
         sess.release()
 
 
-def test_engine_look_card_renders_an_attributed_line(tmp_path: Path) -> None:
-    # C3: the engine's look is a billed step the user never asked for — without the line it is an
-    # anonymous square. The payload SHAPE is the trigger, not the tool name.
-    sess = _session(tmp_path)
-    try:
-        sess.enqueue_turn("go")
-        sess._apply_event(
-            AgentToolCard(
-                "probe_render",
-                True,
-                {"engine_look": True, "vision_ok": True},
-                result="render@t=0.0s",
-            )
-        )
-        lines = [m for m in sess.state.messages if m.role == "tool_status"]
-        assert len(lines) == 1 and "engine checked the render" in lines[0].text
-        # A model-called probe stays an anonymous square...
-        sess._apply_event(AgentToolCard("probe_render", True, None, result="x"))
-        # ...and a BLIND engine look claims no check happened (vision off / outage).
-        sess._apply_event(
-            AgentToolCard(
-                "probe_render",
-                True,
-                {"engine_look": True, "vision_ok": False},
-                result="facts only",
-            )
-        )
-        assert len([m for m in sess.state.messages if m.role == "tool_status"]) == 1
-    finally:
-        sess.release()
-
-
 def test_handoff_card_reads_as_handed_off_not_failed(tmp_path: Path) -> None:
     card = AgentToolCard("publish_telegram", True, {"handoff": True}, result="no creds")
     assert _tool_card_outcome(card) == "handed off"
@@ -179,18 +147,5 @@ def test_handoff_card_reads_as_handed_off_not_failed(tmp_path: Path) -> None:
         sess._apply_event(card)
         lines = [m for m in sess.state.messages if m.role == "tool_status"]
         assert len(lines) == 1 and "handed off" in lines[0].text
-    finally:
-        sess.release()
-
-
-def test_eye_verdict_reaches_the_persisted_summary(tmp_path: Path) -> None:
-    sess = _session(tmp_path)
-    try:
-        sess._commit_turn(
-            "go",
-            TurnSummary(reply="done", eye="eye: ask not-met after 2 looks -- x"),
-            "",
-        )
-        assert "ask not-met" in (sess.history[1].content or "")
     finally:
         sess.release()

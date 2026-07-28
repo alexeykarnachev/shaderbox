@@ -36,22 +36,20 @@ no "Resolved YYYY-MM-DD" headers).
 
 ---
 
-## [VERIFY] Features 053+056 vision/copilot — LIVE-only UI checks, unverified on this box
+## [VERIFY] Copilot live-only UI checks, unverified on this box
 
 - **Trigger:** next `make run` on a machine with a display. Do it before the next itch cut.
-- The classifier, the look_for wire, the vision cache, and the forward-time contact sheet are all
-  headless-gated in `tests/test_vision_probe.py`. NOT verifiable headless (imgui-ui §0): the Settings →
-  Copilot → Vision badge RENDERING — set a known vision model → `supports vision`; a text-only id → `no
-  image input`; a typo → `model not recognized`; pull the network → `couldn't verify`. Confirm the
-  `status_slot` height never jitters as status changes and rapid model-field edits cause no daemon-thread
-  re-kick storm. Also eyeball one real `probe_render(look_for=...)` on an animated node (the 3-frame strip
-  read) against a live OpenRouter key.
-- Feature 056 additions in the same run: the chat shows the attributed engine-look line ("the engine
-  checked the render against your ask") only on turns where a vision read happened; a deflected
-  publish (no credentials) renders a neutral "handed off" line, not a red failure; the Settings →
-  Copilot row for `copilot_convergence_max_looks` renders and persists.
-- Liveness counter (todo-drain 2026-07-27): during a quiet stream stretch the live status line
-  grows a ticking "waiting Ns" suffix after ~3s of silence, and it disappears when deltas resume.
+- 🔴 FIRST, on EVERY box (Pi / dev box; this WSL box verified clean): if
+  `~/.local/share/shaderbox/integrations.json` still carries the 058-removed keys
+  (`vision_enabled` / `vision_model` / `copilot_convergence_max_looks`), DELETE those keys by hand
+  before launching — `IntegrationsStore.load()` fail-softs an unparseable file to DEFAULTS, and the
+  next save would silently wipe the OpenRouter/Telegram/YouTube creds. Hand-fix only (no-migration
+  hard rule).
+- NOT verifiable headless (imgui-ui §0), all small: a deflected publish (no credentials) renders a
+  neutral "handed off" line, not a red failure; the Settings → Copilot rows render after the 058
+  vision-block removal (no orphaned gap; the "Turn time budget (s)" row present and persisting);
+  the liveness counter — during a quiet stream stretch the live status line grows a ticking
+  "waiting Ns" suffix after ~3s of silence and it disappears when deltas resume.
 - Dev-box only, same session: run `make test` (now MESA-override + one-context-recipe; the
   WSL-verified fix for the "GL modules segfault / every module passes alone" class — the explicit-
   EGL release in `test_script_engine_gl` poisoned the process's EGL display, fixed 2026-07-27,

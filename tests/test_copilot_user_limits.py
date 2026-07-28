@@ -28,7 +28,6 @@ _LIMIT_FIELDS = (
     "clean_edit_soft_streak",
     "clean_edit_hard_streak",
     "auto_revert_after_failed_edits",
-    "copilot_convergence_max_looks",
     "turn_time_budget_s",
 )
 
@@ -48,9 +47,6 @@ def test_integration_defaults_mirror_config_defaults() -> None:
     defaults = CopilotConfig()
     for f in _LIMIT_FIELDS:
         assert getattr(cfg, f) == getattr(defaults, f), f
-    # Feature 053: vision fields also mirror config (read via live getters, so no apply_limits push).
-    assert cfg.vision_enabled == defaults.copilot_vision_enabled
-    assert cfg.vision_model == defaults.copilot_vision_model
 
 
 def test_apply_limits_reaches_the_live_config_with_floors() -> None:
@@ -65,7 +61,6 @@ def test_apply_limits_reaches_the_live_config_with_floors() -> None:
             clean_edit_soft_streak=9,
             clean_edit_hard_streak=15,
             auto_revert_after_failed_edits=0,
-            copilot_convergence_max_looks=0,  # 0 = off, legal
         ).apply_limits()
         assert COPILOT_CONFIG.max_iterations == 1
         assert COPILOT_CONFIG.max_input_tokens == 50_000
@@ -75,7 +70,6 @@ def test_apply_limits_reaches_the_live_config_with_floors() -> None:
         assert COPILOT_CONFIG.clean_edit_soft_streak == 9
         assert COPILOT_CONFIG.clean_edit_hard_streak == 15
         assert COPILOT_CONFIG.auto_revert_after_failed_edits == 0
-        assert COPILOT_CONFIG.copilot_convergence_max_looks == 0
     finally:
         _restore(snap)
 
