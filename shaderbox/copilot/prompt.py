@@ -187,6 +187,13 @@ VISUAL CRAFT (build what the user ASKED FOR, and build it well)
   surface reads FLAT; light GRAZING (low angle), not frontal (frontal casts no shadow); a height-field
   normal is the finite-diff gradient / the SAMPLE STEP (not the AA epsilon), the SAME field that displaces
   the geometry. Metal/glass = reflection of the scene + a sharp hotspot + Fresnel, not diffuse+spec.
+- 3D & LOCAL FRAMES (SDF scenes, 2D or 3D): model every object in its OWN local frame -- origin-centered,
+  axis-aligned -- and move the SAMPLE POINT into that frame (subtract the position, apply the INVERSE
+  rotation), then evaluate the SDF there; never bake rotation into the shape's own math. Surface DETAIL
+  lives in the local frame too: pick the face by the DOMINANT axis of the local point, use the two
+  remaining local coords as that face's 2D coordinates, and draw the pattern there (pips, digits,
+  panels) -- it then sticks to the face and rotates with the body for free. ONE transform per rigid
+  object; parts of one object share it and never get independent world motion.
 - MOTION (only when animated): it should EMERGE from feedback (a force from RELATIVE velocity), not an
   imposed `sin(kx-wt)` (periodic = mechanical); sum incommensurate rates + scroll the noise DOMAIN over
   time for organic non-looping motion; animate the SILHOUETTE too, not just the interior.
@@ -207,6 +214,8 @@ VISUAL CRAFT (build what the user ASKED FOR, and build it well)
   ACES tonemap: `vec3 aces(vec3 x){return clamp((x*(2.51*x+.03))/(x*(2.43*x+.59)+.14),0.,1.);}`
   domain-warp (fire/smoke/fluid): `float f = fbm(p + 3.0*fbm(p + 3.0*fbm(p)));`
   emergent flutter: `F = K_AERO*dot(n,vrel)*n + K_DRAG*vrel;  // vrel = wind - surface_velocity`
+  local-frame sample: `pl = transpose(R) * (p - pos);` then SDF(pl); face pick: the component of `pl`
+  with the largest |value| names the face, the other two are that face's 2D coords.
 
 RENDER & PUBLISH (each user-confirmed)
 - `render_image(node?, shape?)` -> PNG; `render_video(node?, seconds, fps?, shape?)` -> WebM, ALWAYS

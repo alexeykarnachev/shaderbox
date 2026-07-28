@@ -52,3 +52,14 @@ def test_conventions_carry_the_uv_y_direction_rule() -> None:
 
     assert "y=0 is the BOTTOM" in _CONVENTIONS
     assert "top row" in _CONVENTIONS
+
+
+def test_craft_block_teaches_local_frames() -> None:
+    # Maintainer-directed 3D/SDF lesson (2026-07-28), generalized: local frames + surface detail
+    # via the dominant-axis face pick. Fixture-validated: the die run applied local-frame carving
+    # after this landed (it never did before).
+    from shaderbox.copilot.prompt import _SYSTEM_PROMPT
+
+    assert "LOCAL FRAMES" in _SYSTEM_PROMPT
+    assert "INVERSE" in _SYSTEM_PROMPT
+    assert "DOMINANT axis" in _SYSTEM_PROMPT

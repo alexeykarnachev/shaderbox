@@ -70,3 +70,27 @@ there's no visible shadow" against their own facts.
   a model change or if the next echelon needs it.
 - **Model-facing script probe tool: maintainer's decision pending** — tool-count tax vs
   emergent-behavior blindness; not built.
+
+## Prompt-education wave (2026-07-28, maintainer-directed: teach via prompt, no new tools)
+
+Directive: maximize the weak model's LOWER BOUND through a concise-but-strong prompt; no new
+tools/features (surface area, bugs, support); tests stay diversified and mutually perpendicular.
+
+- **3D & LOCAL FRAMES lesson added to VISUAL CRAFT** (~9 lines + 1 formula; generalized: local
+  frame per object, inverse-transform the sample point, surface detail via the dominant-axis face
+  pick — pips/digits/panels are examples, not the rule). Fixture validation (fresh die run):
+  the model now CARVES PIPS IN THE CORRECT LOCAL FRAME (never did in any pre-lesson run) — but
+  they stayed invisible: it centered pip spheres against the un-inflated box half-size while
+  `sdRoundBox(b, r)`'s surface sits at b+r, burying the pips 0.09 under the surface, and two
+  symptom corrections couldn't surface them. Class progressed from "no per-face concept" to
+  "SDF-primitive semantics slip + can't debug buried geometry" — a cheap-model limit; trigger:
+  the stronger-model pass.
+- **Scenario 12_radar added** (the maintainer's perpendicular-axis directive: polar/radial 2D) and
+  run: PASS with 1 correction — sweep period exactly 4.0s, DIRECTIONAL afterglow (trailing sector
+  +47% brighter, measured), blips, clean dark scope after one look-correction. Polar craft needs
+  no lesson at this tier.
+- **Prompt size audit:** 20,507 chars (~5.1k tokens) TOTAL system prompt — net +435 chars vs the
+  pre-058 baseline despite three conventions lines + the 3D lesson (the vision removal paid for
+  the education). The "concise but strong" bar holds.
+- Die bookkeeping: 2/2 runs FAIL-at-budget on pips (pre- and post-lesson), everything else lands;
+  the lesson measurably moved the failure class inward.
