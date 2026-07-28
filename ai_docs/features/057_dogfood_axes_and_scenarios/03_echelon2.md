@@ -51,3 +51,22 @@ there's no visible shadow" against their own facts.
    outcomes of its sims. Candidate: a model-facing script probe tool (the driver-side
    `script_values` exists; the MODEL has no equivalent) — a real feature decision, maintainer's
    call, cost/complexity nontrivial.
+
+## Fix wave (2026-07-28, same session)
+
+- **Dead-store class: FIXED engine-side, the data-channel way.** Script edits now get the shader
+  no-op's structural twin: `_apply_script_text` compares the clean dry-run samples against the
+  node's previous clean edit and appends "this edit changed NOTHING in the driven values..." when
+  identical (`backend._last_script_samples`; unit-tested both directions in
+  `test_content_editing.py`). Deterministic truth on the existing channel — no prompt tax.
+- **Live coda:** re-asked the pong "Double the ball speed" — the model went STRAIGHT to the
+  effective formula in `_reset_ball` this time (the no-op line never needed to fire), replay
+  confirmed 2x speed, and with the faster ball the paddles finally MISS: the first score dot
+  lights at t~40s (brightness 32 -> 186). The full game loop — pace, misses, scoring, display —
+  works end-to-end. (Original run stays FAIL-at-budget in the books; this was a post-budget
+  experiment turn.)
+- **Pips (per-face 3D detail): DEFERRED with trigger** — 3 failed attempts with focused
+  corrections say a single craft line won't lift the cheap model (see-saw precedent); revisit on
+  a model change or if the next echelon needs it.
+- **Model-facing script probe tool: maintainer's decision pending** — tool-count tax vs
+  emergent-behavior blindness; not built.

@@ -527,6 +527,11 @@ class CopilotBackend:
         # Per-node last probe frames (raw0, raw1) — a mutation whose frames match the previous
         # ones changed NOTHING on screen (dead code / wrong target / script-overridden value).
         self._last_probe: dict[str, tuple[bytes, bytes]] = {}
+        # The script twin of _last_probe: per-node last clean dry-run samples. A script edit whose
+        # sampled driven values match the previous clean edit's changed NOTHING behaviorally (a
+        # dead store an own later line overwrites, a text-only change) — the value-diff is the only
+        # channel that can catch it (frame-pair facts are pace-blind).
+        self._last_script_samples: dict[str, object] = {}
         # 033 force-restore bookkeeping: per-node consecutive broken-compile edits +
         # the last source text that compiled clean (the restore target).
         self._broken_streak: dict[str, int] = {}
@@ -1966,6 +1971,18 @@ class CopilotBackend:
         render_line = self._script_render_line(
             self._get_ui_nodes()[node_id].node, probe.samples
         )
+        prev_samples = self._last_script_samples.get(node_id)
+        self._last_script_samples[node_id] = probe.samples
+        motion_facts = _motion_verdict(
+            probe, render_line, COPILOT_CONFIG.motion_value_eps
+        )
+        if prev_samples is not None and prev_samples == probe.samples:
+            motion_facts += (
+                "\nthis edit changed NOTHING in the driven values vs the edit before it "
+                "(identical sampled values) — a dead store your own later code overwrites, "
+                "dead code, or a text-only change. Do NOT re-apply the same edit; find where "
+                "the EFFECTIVE value is computed."
+            )
         return ScriptWriteResult(
             ok=True,
             driven=sorted(probe.driven),
@@ -1973,9 +1990,7 @@ class CopilotBackend:
                 f"{name}: {err.message}" for name, err in probe.per_key_errors
             ],
             orphan_keys=[f"{name}: {err.message}" for name, err in probe.orphan_keys],
-            motion_facts=_motion_verdict(
-                probe, render_line, COPILOT_CONFIG.motion_value_eps
-            ),
+            motion_facts=motion_facts,
         )
 
     def _script_broken_write(self, node_id: str, error: str) -> ScriptWriteResult:

@@ -564,3 +564,46 @@ def test_write_shader_arg_order_pinned_through_loop() -> None:
     assert card.ok is True
     listing = caps.read_shaders([])[0].listing
     assert "// sentinel-039" in listing
+
+
+def _clean_script_stub(sample_sets: list[list]) -> types.SimpleNamespace:
+    # Each apply() consumes the next ScriptProbe sample set (all clean compiles).
+    from shaderbox.scripting import ScriptProbe
+
+    feed = list(sample_sets)
+
+    def write_script_source(_node_id: str, _text: str) -> ScriptProbe:
+        return ScriptProbe(None, {"u_x"}, [], [], feed.pop(0))
+
+    return types.SimpleNamespace(
+        _working_set_add=lambda _a: None,
+        _batch_mutated=set(),
+        _capture_script=lambda _id: None,
+        _write_script_source=write_script_source,
+        _script_render_line=lambda _n, _s: "",
+        _get_ui_nodes=lambda: {"n1": types.SimpleNamespace(node=None)},
+        _script_broken_streak={},
+        _script_last_clean={},
+        _last_script_samples={},
+    )
+
+
+def test_script_edit_with_identical_samples_reports_a_value_noop() -> None:
+    # The script twin of the shader's "changed NOTHING on screen": an edit whose sampled driven
+    # values match the previous clean edit's (a dead store overwritten downstream, a text-only
+    # change) gets a truthful no-op line. Falsifier: drop the compare and this goes red.
+    same = [(0.0, {"u_x": 1.0}), (0.5, {"u_x": 2.0})]
+    stub = _clean_script_stub([list(same), list(same)])
+    apply = CopilotBackend._apply_script_text.__get__(stub)
+    first = apply("n1", "v1")
+    assert "changed NOTHING in the driven values" not in first.motion_facts
+    second = apply("n1", "v2: same behavior, different text")
+    assert "changed NOTHING in the driven values" in second.motion_facts
+
+
+def test_script_edit_with_changed_samples_has_no_noop_line() -> None:
+    stub = _clean_script_stub([[(0.0, {"u_x": 1.0})], [(0.0, {"u_x": 5.0})]])
+    apply = CopilotBackend._apply_script_text.__get__(stub)
+    apply("n1", "v1")
+    second = apply("n1", "v2 actually faster")
+    assert "changed NOTHING in the driven values" not in second.motion_facts
