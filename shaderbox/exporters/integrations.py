@@ -71,6 +71,7 @@ class CopilotIntegration(BaseModel):
     clean_edit_hard_streak: int = CopilotConfig.clean_edit_hard_streak
     auto_revert_after_failed_edits: int = CopilotConfig.auto_revert_after_failed_edits
     copilot_convergence_max_looks: int = CopilotConfig.copilot_convergence_max_looks
+    turn_time_budget_s: int = CopilotConfig.turn_time_budget_s
 
     model_config = {"extra": "forbid"}
 
@@ -86,6 +87,7 @@ class CopilotIntegration(BaseModel):
             clean_edit_hard_streak=self.clean_edit_hard_streak,
             auto_revert_after_failed_edits=self.auto_revert_after_failed_edits,
             copilot_convergence_max_looks=self.copilot_convergence_max_looks,
+            turn_time_budget_s=self.turn_time_budget_s,
         )
 
 

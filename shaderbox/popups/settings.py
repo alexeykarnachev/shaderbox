@@ -219,6 +219,15 @@ _COPILOT_LIMITS: list[tuple[str, str, str, int, int]] = [
         1_000,
     ),
     (
+        "Turn time budget (s)",
+        "turn_time_budget_s",
+        "Wall-clock ceiling for one of your messages: past it the agent stops "
+        "using tools and replies with what it has (0 = no time limit). Steps are "
+        "also capped by Max steps.",
+        0,
+        30,
+    ),
+    (
         "Max steps per turn",
         "max_iterations",
         "Tool-call steps the agent may take for one of your messages before it is "

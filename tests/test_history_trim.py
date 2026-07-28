@@ -1,12 +1,11 @@
 """History-window trim (resolves the unbounded-history BLOCKER). build_messages drops whole leading
-TURNS once the request estimate exceeds max_input_tokens, always keeping the last _MIN_KEPT_TURNS and
+TURNS once the request estimate exceeds max_input_tokens, always keeping the last COPILOT_CONFIG.history_min_kept_turns and
 never splitting an assistant->tool_call->tool group (an orphaned tool_call_id 400s the provider). Pure:
 exercises _trim_history / _split_turns directly with hand-built LLMMessages."""
 
 from shaderbox.copilot.config import COPILOT_CONFIG
 from shaderbox.copilot.llm.api import LLMMessage, LLMToolCall
 from shaderbox.copilot.prompt import (
-    _MIN_KEPT_TURNS,
     _split_turns,
     _trim_history,
 )
@@ -47,10 +46,10 @@ def test_over_budget_drops_leading_turns_keeps_min() -> None:
     trimmed = _trim_history(history, fixed_overhead_tokens=0)
     kept_turns = _split_turns(trimmed)
     # Trimmed down to the floor (each turn alone already saturates the budget).
-    assert len(kept_turns) == _MIN_KEPT_TURNS
+    assert len(kept_turns) == COPILOT_CONFIG.history_min_kept_turns
     # The KEPT turns are the most RECENT ones (oldest dropped from the front).
     assert kept_turns[-1][0].content == "u19"
-    assert kept_turns[0][0].content == f"u{20 - _MIN_KEPT_TURNS}"
+    assert kept_turns[0][0].content == f"u{20 - COPILOT_CONFIG.history_min_kept_turns}"
 
 
 def test_trim_never_orphans_a_tool_call() -> None:

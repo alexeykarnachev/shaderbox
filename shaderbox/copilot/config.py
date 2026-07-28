@@ -3,8 +3,8 @@ from dataclasses import dataclass
 
 @dataclass
 class CopilotConfig:
-    # Agent-loop limits. The nine user-facing ones (caps, retry budgets, nudge
-    # thresholds) are Settings-tunable: persisted on `CopilotIntegration`
+    # Agent-loop limits. The ten user-facing ones (caps, retry budgets, nudge
+    # thresholds, the turn time budget) are Settings-tunable: persisted on `CopilotIntegration`
     # (integrations.json) and applied onto the shared COPILOT_CONFIG instance via
     # `apply_user_limits` (startup + Settings edit) — every consumer holds this
     # instance, so a change takes effect immediately. The rest stay constants.
@@ -83,6 +83,20 @@ class CopilotConfig:
     motion_value_eps: float = 1e-4
     # A list-arg above this count trips a BULK-policy gate (§2.3 / §F4).
     bulk_gate_threshold: int = 5
+    # Turn-end aimed look: the user's ask is whitespace-normalized and cut to this many chars
+    # before riding into the eye's look_for (bounds the vision prompt, keeps the intent).
+    auto_look_intent_max_chars: int = 240
+    # The eye's not-met read is cut to this many chars in the turn's durable summary line.
+    eye_summary_max_chars: int = 200
+    # Turn-summary ledger: non-irreversible lines beyond this soft cap collapse into a count
+    # (irreversible actions — publish/delete — are never capped).
+    turn_ledger_soft_cap: int = 8
+    # History trim floor: the trimmer never evicts below this many whole turns, even over budget.
+    history_min_kept_turns: int = 4
+    # Chat liveness: a live turn whose stream produced nothing visible for this many seconds
+    # grows a ticking "waiting Ns" suffix on the status line (a silent reasoning burst must be
+    # distinguishable from a hang).
+    chat_quiet_indicator_after_s: float = 3.0
     # Worker join() timeout at shutdown; a blocking network read may outlive it
     # (then the thread is abandoned — daemon=False, warn-and-leave, like the exporters).
     worker_join_timeout_s: float = 5.0
@@ -119,6 +133,7 @@ def apply_user_limits(
     clean_edit_hard_streak: int,
     auto_revert_after_failed_edits: int,
     copilot_convergence_max_looks: int,
+    turn_time_budget_s: int,
 ) -> None:
     # The Settings -> live-config seam. Values arrive pre-clamped by the Settings UI;
     # a hand-edited integrations.json gets a floor here so a 0 cap can't wedge the loop.
@@ -132,6 +147,7 @@ def apply_user_limits(
     COPILOT_CONFIG.auto_revert_after_failed_edits = max(
         0, auto_revert_after_failed_edits
     )  # 0 = off
+    COPILOT_CONFIG.turn_time_budget_s = max(0, turn_time_budget_s)  # 0 = off
     COPILOT_CONFIG.copilot_convergence_max_looks = max(
         0, copilot_convergence_max_looks
     )  # 0 = off

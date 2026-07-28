@@ -29,6 +29,7 @@ _LIMIT_FIELDS = (
     "clean_edit_hard_streak",
     "auto_revert_after_failed_edits",
     "copilot_convergence_max_looks",
+    "turn_time_budget_s",
 )
 
 

@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from loguru import logger
 
 from shaderbox.copilot.address import is_example_address, is_lib_address
-from shaderbox.copilot.config import CopilotConfig
+from shaderbox.copilot.config import COPILOT_CONFIG, CopilotConfig
 from shaderbox.copilot.errors import CopilotConfigError
 from shaderbox.copilot.gate import GateChannel, GateKind, GateRequest
 from shaderbox.copilot.llm.api import (
@@ -76,7 +76,7 @@ def _turn_intent_look_for(user_text: str) -> str:
     # baseline read that couldn't tell whether the result matches what was requested. Carrying the ask
     # makes the eye critique against the goal ("stripes muddy, no stars visible"). Empty/whitespace ask
     # -> "" (fall back to the baseline; don't fabricate an intent). Bounded so a long ask can't bloat.
-    ask = " ".join(user_text.split())[:240]
+    ask = " ".join(user_text.split())[: COPILOT_CONFIG.auto_look_intent_max_chars]
     if not ask:
         return ""
     return f'does the current frame actually achieve what the user asked: "{ask}"'
@@ -119,7 +119,7 @@ def _auto_look_fact(
 def _eye_summary_line(looks: int, read: str) -> str:
     # The not-met verdict's durable trace in the turn record: without it the history keeps only the
     # model's claim and the eye has no counter-voice next turn.
-    return f"eye: ask not-met after {looks} look{'s' if looks != 1 else ''} -- {_trunc(' '.join(read.split()), 200)}"
+    return f"eye: ask not-met after {looks} look{'s' if looks != 1 else ''} -- {_trunc(' '.join(read.split()), COPILOT_CONFIG.eye_summary_max_chars)}"
 
 
 def _clean_streak_fact(n: int) -> str:
@@ -281,7 +281,6 @@ class _RunEntry:
 
 # Max non-irreversible mutating lines kept in a turn-summary ledger; irreversible (publish/delete)
 # lines are always kept verbatim (the don't-re-do safety invariant).
-_LEDGER_SOFT_CAP: int = 8
 # Tool-arg keys that name a node (every node touched or referenced this turn).
 _NODE_ARG_KEYS: tuple[str, ...] = ("node", "target", "nodes")
 
@@ -364,9 +363,10 @@ class _RunLog:
                 other.append(f"{e.name}: {e.msg}")
             else:
                 other.append(f"{e.name} FAILED: {e.msg}")
-        if len(other) > _LEDGER_SOFT_CAP:
-            kept = other[:_LEDGER_SOFT_CAP]
-            kept.append(f"... and {len(other) - _LEDGER_SOFT_CAP} more edits")
+        cap = COPILOT_CONFIG.turn_ledger_soft_cap
+        if len(other) > cap:
+            kept = other[:cap]
+            kept.append(f"... and {len(other) - cap} more edits")
             other = kept
         return irreversible + other
 

@@ -10,7 +10,6 @@ from shaderbox.copilot.llm.api import LLMMessage
 from shaderbox.copilot.prompt_context import CopilotContext
 
 # Min turns the trim keeps even over budget. A turn = user msg + one assistant summary (NL-only history).
-_MIN_KEPT_TURNS: int = 4
 # Threshold-only char->token ratio (no in-tree tokenizer; real counts arrive only post-send).
 _CHARS_PER_TOKEN: int = 4
 
@@ -404,13 +403,13 @@ def _split_turns(history: list[LLMMessage]) -> list[list[LLMMessage]]:
 def _trim_history(
     history: list[LLMMessage], fixed_overhead_tokens: int
 ) -> list[LLMMessage]:
-    # Drop leading turns until it fits max_input_tokens, always keeping _MIN_KEPT_TURNS.
+    # Drop leading turns until it fits max_input_tokens, always keeping COPILOT_CONFIG.history_min_kept_turns.
     # fixed_overhead_tokens = the non-history prefix, so the budget covers the whole request.
     budget = COPILOT_CONFIG.max_input_tokens
     if fixed_overhead_tokens + _estimate_tokens(history) <= budget:
         return history
     turns = _split_turns(history)
-    while len(turns) > _MIN_KEPT_TURNS:
+    while len(turns) > COPILOT_CONFIG.history_min_kept_turns:
         kept = [m for turn in turns for m in turn]
         if fixed_overhead_tokens + _estimate_tokens(kept) <= budget:
             break
