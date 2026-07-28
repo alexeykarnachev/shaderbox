@@ -282,6 +282,14 @@ the sweep removes IS the edit-sediment measurement — record its diff.**
   passthrough returning `(t, {uniform: value})` per sample, with the live node left byte-identical.
   That's the logic axis's ground-truth check (a trajectory, a period, a state machine's phase) without
   spending an LLM turn or squinting at a render.
+  🔴 But raw values live in whatever coordinate frame the script+shader privately agreed on
+  (centered [-1,1] one run, uv [0,1] the next) — reading them as uv "proved" a ball rested
+  off-screen while the replay showed it bouncing in frame, and three corrections gaslit the agent
+  (2026-07-28). Use raw values for rates/periods/monotony/counters ONLY; ON-SCREEN-ness and
+  positions come from `render_strip` replay pixels. Same day, the mirror mistake: a `render_at`
+  position series read a pong ball as 70x too slow (live single-ticks, not time) and the "speed
+  up" correction gaslit the agent again — for a stateful script, `render_strip` is the ONLY
+  time-faithful pixel source.
 - **For pixel measurements: `scripts/dogfood/judge.py`** (GL-free, PIL+numpy) — `load_rgb`, `grid_cell`
   (split a grid render into cells), `region_diff`, `bright_centroid`, `color_mask_centroid`,
   `column_runs` (the blob counter), `farthest_bright_angle` (rotation direction; image y grows DOWN,
