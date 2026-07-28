@@ -174,6 +174,7 @@ def _backend_stub() -> tuple[types.SimpleNamespace, list[tuple[str, str]]]:
         _write_script_source=_write,
         _script_broken_streak={},
         _script_last_clean={},
+        _last_script_samples={},
         _script_render_line=lambda node, samples: "",
         _get_ui_nodes=lambda: {"n1": types.SimpleNamespace(node=object())},
         _read_script_source=lambda node_id: ("old body\n", False),
