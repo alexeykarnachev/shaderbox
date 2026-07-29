@@ -18,11 +18,10 @@ The watershed text DOES list "a collision response" as state; the model missed i
 (old prompt, "physics -> script, never faked with GLSL time math"): script, PASS in 3 messages at
 1/10th the cost.
 
-Candidate amendment (NOT applied — maintainer call, anti-overfit rule): strengthen the watershed's
-state list with the practicality clause, e.g. "bounces/collisions/friction are STATE even though a
-closed form may exist — simulate in a script rather than reconstructing segment math in GLSL."
-Risk of applying: pushes borderline time-pure asks back toward scripts (the old bias). Risk of
-not: this exact class (cheap model grinding on closed-form physics) recurs.
+Maintainer decision (2026-07-30): NO amendment. Closed form is a legitimate route for simple
+tasks; one-shot quality is the USER's responsibility via a tighter spec (if they want a script,
+they say so — as the original hinted 05 does). The watershed text stays as landed. The de-hinted
+route flip is recorded as expected-behavior, not a defect.
 
 ## Non-watershed observations
 
