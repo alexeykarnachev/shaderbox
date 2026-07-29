@@ -316,6 +316,18 @@ FINDINGS_DOCS = [
         "Финальный экзамен (пульт подлодки)",
         "ai_docs/features/057_dogfood_axes_and_scenarios/04_final_exam.md",
     ),
+    (
+        "Reasoning effort=none: замеры и эшелон-гейт (волна 1)",
+        "ai_docs/features/057_dogfood_axes_and_scenarios/05_reasoning_none.md",
+    ),
+    (
+        "059 контролы: текущий промпт @ effort=none (де-хинт-05, pong, экзамен, 03)",
+        "ai_docs/features/059_prompt_refactor/02_controls.md",
+    ),
+    (
+        "059 гейты волны A: новый промпт vs контролы",
+        "ai_docs/features/059_prompt_refactor/03_wave_a_gates.md",
+    ),
 ]
 
 CSS = """
