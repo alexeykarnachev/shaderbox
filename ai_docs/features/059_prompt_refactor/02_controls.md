@@ -46,3 +46,16 @@ effort=none); correction 1 fixed fit but circles touched; correction 2 landed th
 quality (widths 5x63px, gaps 15px, margins 12/12 — minimal-baseline was gaps 15, dia 62-63).
 Signal: at effort=none the model applies learned prompt lessons LESS reliably on the first shot,
 but converges to the same final under the same correction budget.
+
+## 13 final exam — proj-5fph6ws9 (effort=none, max_tokens_per_turn=30000)
+
+10 messages, $0.31, 2 corrections (vs minimal-exam: 12 msgs, $0.60, 3 corrections).
+BETTER than minimal: lamp phase-correct on the FIRST build (minimal burned 4 blind turns on it);
+no once-per-rev flood; depth cycle exact from the start (24 m/s steady, holds 3.0s, state flips on
+boundaries); sweep removed real dead code (rot2, merged hold branches) and ADDED nothing.
+WORSE: plan-loop needed 2 unstick messages; afterglow initially LED the beam (excess G 21.0 ahead /
+0.0 behind, CCW) — fixed by correction 2 (8.3 behind / 0.8 ahead after). Beam/contacts/mine
+visibility took correction 1.
+Cross-control conclusion: effort=none + 30k budget = comparable-or-better quality at half cost;
+the pathologies are plan-loop (3/3 compound controls) and 12k starvation (2/3) — both engine-side,
+not prompt-side.

@@ -43,3 +43,4 @@ shaderbox-design-handoff-*.tar.gz
 .claude/scheduled_tasks.lock
 tabbar_spike.ini
 scripts/agent_hub/site/
+.claude/worktrees/
