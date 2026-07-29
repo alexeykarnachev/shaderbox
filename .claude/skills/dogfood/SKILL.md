@@ -261,7 +261,20 @@ the sweep removes IS the edit-sediment measurement — record its diff.**
   slow reasoning grind force-ends with an honest final reply at the budget, so `timeout 300` on the
   command is enough again — if a turn still exceeds it, that's a REAL finding (a hung stream, not a
   long grind). Pre-budget history: debug-shaped correction turns legally ground past 10 minutes
-  (14+ iterations x 30-70s reasoning streams; observed 2026-07-27).
+  (14+ iterations x 30-70s reasoning streams; observed 2026-07-27). CAVEAT: the budget is checked
+  at ITERATION boundaries, so one long stream still overshoots it — with an in-run
+  `max_tokens_per_turn` raised to 30k, a single reasoning-burst iteration legally streams ~500s;
+  use `timeout 900` on such runs. (The forced FINAL reply is separately capped by
+  `COPILOT_ENGINE.final_reply_max_tokens` since 2026-07-29 — before that it could stream the full
+  turn budget PAST the wall clock.)
+- **🔴 effort=none quirks (gpt-5.1-codex-mini, observed 2026-07-29, `059/02_controls.md`):**
+  (1) on COMPOUND asks the model reasons anyway and can burn the whole 12k default turn budget as
+  hidden reasoning with zero text/tools (`out=rsn` in the trace, turn loops with nothing landing) —
+  set `COPILOT_CONFIG.max_tokens_per_turn = 30000` after `create()` for compound scenarios;
+  (2) PLAN-LOOP: it answers go-aheads with re-stated plans (zero tools) — unstick with an
+  imperative verb ("Stop planning. Make the edits now."), observed 3/3 compound runs;
+  (3) first-shot prompt-lesson application is weaker (aspect/layout slips return) but corrections
+  converge to baseline quality at ~half the cost of effort=minimal.
 - **🔴 ALWAYS wrap a turn process in `timeout` (`... timeout 300 uv run python -c …`).** A stalled LLM
   stream could leave the non-daemon copilot worker blocked, and interpreter `_shutdown` then hangs
   joining it — a process that never exits, never dumps. The per-delta stream cancel + the 120s client
