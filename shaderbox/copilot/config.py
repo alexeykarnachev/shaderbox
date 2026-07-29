@@ -111,6 +111,11 @@ class CopilotEngineConfig:
     # IGNORES "minimal" on tool-bearing requests — reasoning ate ~100% of output tokens — while
     # "none" is honored (2026-07-29, measured).
     llm_reasoning_effort: str = "none"
+    # Cap for the forced final NO-TOOLS reply (stream_final_reply). The full max_tokens_per_turn
+    # there lets a token-budget-cut turn stream up to ~400s of closing text PAST the wall-clock
+    # budget (checked only at iteration boundaries) — a dogfood turn died to an external kill
+    # mid-stream (2026-07-29). A closing user-facing message needs a fraction of the turn budget.
+    final_reply_max_tokens: int = 1_500
 
 
 COPILOT_CONFIG = CopilotConfig()

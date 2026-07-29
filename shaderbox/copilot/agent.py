@@ -521,7 +521,7 @@ def run_turn(
             iteration=-1,
             messages=request_messages,
             tools=[],
-            max_tokens=config.max_tokens_per_turn,
+            max_tokens=COPILOT_ENGINE.final_reply_max_tokens,
         )
         buf = ""
         done: LLMDone | None = None
@@ -530,7 +530,9 @@ def run_turn(
         # while a propagated exception would drop both at the session boundary.
         try:
             for ev in client.stream(
-                request_messages, tools=None, max_tokens=config.max_tokens_per_turn
+                request_messages,
+                tools=None,
+                max_tokens=COPILOT_ENGINE.final_reply_max_tokens,
             ):
                 match ev:
                     case LLMTextDelta():
