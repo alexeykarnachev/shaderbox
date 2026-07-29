@@ -78,7 +78,7 @@ and **wave A does not proceed to wave B until its gate passes**:
 |---|---|---:|---|
 | **A** | D1 (watershed) + D2 (implementation details out) + D9 (test rewrite) + the D1 half of the tool descriptions | 19 096 | de-hinted 05, 04, 08, 10, 13 (see Validation) |
 | **B** | D3 (SCRIPT API block) + D4 (TEXT-rule resolution) + D5 (dedup cuts + the schema-error fixes) | 15 511 | 13, plus the four micro-probes |
-| **C** | D7 (legend trim + splice) | 14 428 | 03 + 04 honesty axis; the splice unit test |
+| **C** | D7 (legend trim + splice) | 14 428 | 03 + 04 honesty axis (03 needs a control — see Validation); the splice unit test |
 
 Wave A carries the tool-description watershed edits (D1a) because leaving them a wave behind would
 put the corrected rule and its negation in the same context window — the exact defect being fixed.
@@ -156,7 +156,8 @@ the two statements agree by construction.
   integrator, an accumulator, a phase machine, a score. A pure function of time belongs in the shader
   (u_time), not here. BEST FOR a fresh script or a full rewrite; for a localized change prefer
   edit_script. Send the COMPLETE script — I compile + motion-probe it and return the verdict."
-- `_EDIT_SCRIPT_DESC` — no watershed language; unchanged except the path strip (D2).
+- `_EDIT_SCRIPT_DESC` — no watershed language and no path (only the bare `script.py` artifact name,
+  which D2 keeps): unchanged.
 
 **D1b — the fresh-node stub under the corrected rule.** `script_stub_for`'s emitted BODY is already
 neutral (commented value examples, `return {}`) — no change needed there, which is the honest answer;
@@ -187,13 +188,30 @@ The maintainer's point is context pollution: "зачем ему полютить
    error line in the working set and in every edit result reads
    `/home/…/projects/dev/nodes/<uuid>/shader.frag.glsl:12: …`. This is the largest leak of the four
    (per error, per step) and was not named in the review. The path is load-bearing for exactly one
-   thing: telling a root-source error from a spliced lib-file error. So it maps to a LABEL, not to
-   nothing — the node's short id for the root source, `lib:<path-relative-to-the-lib-root>` for a lib
-   source (the address the agent already uses), `""` unchanged for the synthetic no-node error.
-   Script errors already carry the bare label `script.py` and are unchanged.
-   **This is the one D2 item with real behavioural surface** — it changes the text of every compile
-   error the agent reads. Falsifier: a unit test asserting a lib-originated error still renders a
-   `lib:` address and a node error renders the node's short id.
+   model-facing thing: telling a root-source error from a spliced lib-file error. So it becomes a
+   LABEL, not nothing — the node's short id for the root source, `lib:<path-relative-to-the-lib-root>`
+   for a lib source (the address the agent already uses), `""` unchanged for the synthetic no-node
+   error. Script errors already carry the bare label `script.py` and are unchanged.
+
+   **The mapping happens at RENDER time, not on the value object.** `CompileErrorInfo.path` has two
+   INTERNAL consumers that read it as a real filesystem path, and rewriting the field would silently
+   break both: `backend.py::_cross_file_note` uses `Path(e.path).resolve() == edited` as its
+   own-file guard and `Path(p).relative_to(shader_lib_root())` to label the foreign file, and
+   `_edit_error_hints` drops the brace-balance hint whenever that note is non-empty. With a short-id
+   label the guard can never match, so EVERY same-file compile error would emit the misleading
+   "the error is in …, which this shader pulls in — the file you edited may be fine" note AND lose
+   the brace hint — a strict regression on the most common error path. So `_to_error_infos` keeps
+   the absolute path on the info object (internal contract unchanged), and the label is applied by
+   the six model-facing renderers: `prompt.py::_format_compile_errors`,
+   `tools/shader.py::_format_errors`, `tools/script.py::_fmt_errors`, the two inline joins in
+   `tools/node_ops.py` (duplicate_node, import_node), and the restore-errors join inside
+   `backend.py::_force_restore`. One shared helper, called at each — not a
+   per-renderer f-string, so a seventh renderer cannot re-leak the path by omission.
+
+   **This is the one D2 item with real behavioural surface.** Falsifiers, both required:
+   (i) a lib-originated error still renders a `lib:` address and a node error renders the node's
+   short id; (ii) **a same-file compile error emits NO cross-file note and DOES emit the brace hint**
+   — cut the render/value split and (ii) goes red.
 
 **Risk:** the agent asks the user where a script lives, or hallucinates a path into an arg. Low — THE
 SANDBOX's "You NEVER type a filesystem path" survives verbatim and every script tool takes a node id.
@@ -221,8 +239,8 @@ So a fresh-node turn today puts a correct statement and its exact negation in th
 window, and it went unnoticed for four weeks. Hand-correcting produces a third hand-maintained copy;
 the maintainer's ask is explicitly for the mechanism that makes the fourth one impossible. The build
 stays minimal per the two items below. **Honest net cost:** the generated block is 1 214 chars in
-RARE against ~700 chars of STATIC prose it replaces — about **+500 chars overall**, bought for
-drift-proofing. Every other D-item is a net cut; this one is not, and it is the only one.
+RARE against ~700 chars of STATIC prose it replaces — about **+500 chars overall** (the STATIC+RARE
+row above nets to -4 654 only because every other D-item is a cut), bought for drift-proofing. Every other D-item is a net cut; this one is not, and it is the only one.
 
 **Where it lives.** New leaf module `shaderbox/scripting/api_doc.py`, beside the types it describes,
 exporting `script_api_summary() -> str`. `prompt_context.py` imports **`from
@@ -394,8 +412,8 @@ LAZY, in which case the coverage is spelled out:
 | `read_lib(names)` returns full bodies | `_READ_LIB_DESC` (eager) |
 | `grep(query)`: token across nodes + lib, origin-labeled file:line | `_GREP_DESC` (eager, verbatim) |
 | render `shape` vocabulary (`native` / `short_*` / `wide_*`, never raw pixels) | `_SHAPE_DESC` on all three render/publish arg models (eager) |
-| render_video "ALWAYS from t=0" / "briefly pauses" / "user confirms" / "renders the LIVE source" | `_RENDER_VIDEO_DESC` + `_RENDER_IMAGE_DESC` (eager) — the live-source clause only after the wave-B fix above |
-| "you never get the file path/URL — a button is shown" (the tool-result FACT half) | the four corrected descriptions (eager) — **valid only post-fix** |
+| render_video "ALWAYS from t=0" / "briefly pauses" / "renders the LIVE source" | `_RENDER_VIDEO_DESC` + `_RENDER_IMAGE_DESC` (eager) — the live-source clause only after the wave-B fix above. ("user confirms" is NOT cut: it survives compressed as the retained section header "RENDER & PUBLISH (each user-confirmed)".) |
+| "a button is shown to the user" (the tool-result FACT half only) | the four corrected descriptions (eager) — **valid only post-fix**. The REPLY-BEHAVIOUR half ("you never get the path/URL — never invent one") is NOT cut; it survives in the block below. |
 | `rename_node` / `duplicate_node` / `set_canvas_size` / `import_node` one-liners | LAZY: discovery via their `catalog_summary` rows inside `load_tools`'s description; full description at load time |
 | MEDIA/TEXTURES paragraph | LAZY: `bind_media`/`unbind_media` are NOT in `tools=` until loaded, so coverage is (a) their `catalog_summary` rows for discovery, (b) the **retained** cross-tool bullet "declare `uniform sampler2D u_tex;` FIRST, then bind_media" in the prompt, (c) the full description once loaded. The paragraph's other clauses (picker semantics, the `<- (WxH, image)` row) rest on (a)+(c). |
 | Telegram/YouTube step-by-step (bot Start, pack list/create/select/delete) | LAZY: the six/one `catalog_summary` rows; the full descriptions at load time; and — at the moment it matters — the `telegram_precheck` / `youtube_precheck` handoff messages, which are `precheck` callables ON `publish_telegram`/`publish_youtube` (not tools of their own) and fire before the gate when creds/pack are missing. The **retained** "never deflect to Settings / never invent integration state" bullet stays in the prompt because no precheck fires on a bare "connect my telegram" ask. |
@@ -590,7 +608,7 @@ EDITING
 | **`_SYSTEM_PROMPT`** (sections + 12 separators) | **20 507** | **14 428** | **-6 079 (-29.6%)** | |
 | `_CONVENTIONS` (RARE) | 1 394 | 1 605 | +211 (D4) | B |
 | `SCRIPT API` (RARE, new) | 0 | 1 214 | +1 214 | B |
-| **STATIC + RARE** | **21 901** | **17 249** | **-4 652 (-21.2%)** | |
+| **STATIC + RARE** | **21 901** | **17 247** | **-4 654 (-21.3%)** | |
 | legend (PER_TURN, at most once per turn) | 0 | 407 | +407 on a turn that renders | C |
 
 Per wave: A 20 507 -> 19 096; B -> 15 511 (+1 425 RARE); C -> 14 428.
@@ -655,10 +673,14 @@ hoisted in the same wave (one line each).
 - `shaderbox/scripting/engine.py` — `_UPDATE_DOC`'s stale Vec paragraph out, the state line in;
   `_stub_kind` unchanged.
 - `shaderbox/copilot/tools/script.py` — `_READ_SCRIPT_DESC`, `_WRITE_SCRIPT_DESC` (wave A);
-  `_EDIT_SCRIPT_DESC` path strip.
+  `_fmt_errors` gains the shared path->label helper (D2 item 4). `_EDIT_SCRIPT_DESC` unchanged.
 - `shaderbox/copilot/tools/publish.py` — the four wrong return claims, the YouTube-Settings
   deflection, render_video's live-source clause (wave B).
-- `shaderbox/copilot/backend.py` — `_to_error_infos` path -> label (D2 item 4).
+- `shaderbox/copilot/backend.py` — the shared path->label render helper + its use in
+  `_force_restore`'s error join (D2 item 4). `_to_error_infos`, `_cross_file_note` and
+  `_edit_error_hints` are UNCHANGED — the info object keeps the absolute path.
+- `shaderbox/copilot/tools/node_ops.py` — the two inline error joins (duplicate_node, import_node)
+  route through the same helper (D2 item 4).
 - `shaderbox/copilot/agent.py` — the per-turn legend flag + splice, `_forced_reply_facts` routing
   (wave C).
 - `tests/test_craft_prompt.py` (rewrite + the three body-import hoists), new
@@ -687,6 +709,9 @@ So, **before wave A lands**, run controls on the CURRENT prompt at `effort=none`
 1. **de-hinted 05** (new variant — see below): the variant itself is new, so it has no baseline.
 2. **10 (pong)**: baseline was `effort=minimal`.
 3. **13 (final exam)**: baseline was `effort=minimal`.
+4. **03 (static comp)**: baseline was `effort=minimal`, and wave C's honesty gate cites it. It is a
+   3-message static-composition run — the cheapest control in the set, so it is added rather than
+   demoting the gate row to an observation.
 
 04, 05 and 08 need no new control. **A gate row may only cite a scenario that has an `effort=none`
 control.** Any scenario without one is an observation, not a gate — stated explicitly so a later
@@ -729,13 +754,13 @@ worded accordingly rather than as over-correction rows.
 | D5 Telegram deflection | B | credential-cleared Telegram probe | the reply points at Settings instead of calling `set_telegram_token` |
 | D5 YouTube deflection | B | credential-cleared YouTube probe | the reply points at Settings instead of calling `set_youtube_credentials` |
 | D5 publish targeting | B | publish probe with a non-current node named | publish fires without a preceding `switch_node` |
-| D7 legend splice | C | unit test (g) + **04**/**03** honesty axis | a second facts line repeats the legend; a mis-stated FLAT/ANIMATES reading |
+| D7 legend splice | C | unit test (g) + **04** (baselined) / **03** (control run first) honesty axis | a second facts line repeats the legend; a mis-stated FLAT/ANIMATES reading |
 
 The four micro-probes are single-turn harness drives, not full scenarios; they need no baseline
 because their assertion is on the tool call made, not on a visual outcome.
 
-**Order.** Controls (de-hinted 05, 10, 13) -> wave A -> its gate -> wave B -> its gate -> wave C -> its
-gate. D1 is the only change that can regress a base capability outright; the later cuts are cheap to
+**Order.** Controls (de-hinted 05, 10, 13, 03) -> wave A -> its gate -> wave B -> its gate -> wave C ->
+its gate. Only 03's control is needed before wave C, so it can be run any time before then. D1 is the only change that can regress a base capability outright; the later cuts are cheap to
 re-land if the watershed has to be re-tuned.
 
 ---

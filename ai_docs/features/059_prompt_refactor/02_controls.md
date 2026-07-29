@@ -37,3 +37,12 @@ Process findings (the real payload of this control):
 ## 13 final exam control — NOT YET RUN
 
 Required before wave-A rows citing 13. Run next.
+
+## 03 static comp — proj-ge19pnm3
+
+PASS with 2 corrections, 3 messages, $0.02. Turn 1 regressed to the CLIPPED-circles class (row
+wider than the frame — the aspect-domain lesson is IN the prompt but was not applied at
+effort=none); correction 1 fixed fit but circles touched; correction 2 landed the exact baseline
+quality (widths 5x63px, gaps 15px, margins 12/12 — minimal-baseline was gaps 15, dia 62-63).
+Signal: at effort=none the model applies learned prompt lessons LESS reliably on the first shot,
+but converges to the same final under the same correction budget.
