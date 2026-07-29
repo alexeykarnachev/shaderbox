@@ -30,3 +30,13 @@ route flip is recorded as expected-behavior, not a defect.
 - Plan-loop persists on compound asks (13 gate needed one "no more plans" push).
 - All engine-side pathologies (12k starvation, plan-loop) are pre-existing effort=none behavior,
   not wave-A effects: 04/05/08 routing and quality track their controls.
+
+# Wave-B gates (prompt 15517: SCRIPT API block, dedup cuts, conventions moves)
+
+| gate | verdict |
+|---|---|
+| 04 orbit | PASS one-shot, no script, period exactly 2.0s (expensive turn — reasoning variance, content clean) |
+| de-hinted 05 | PASS, 3 msgs, $0.037 — routed to a SCRIPT this time (decaying bounces, rest); the SCRIPT API block in RARE plausibly raised script salience vs wave-A's 9-msg GLSL grind |
+| 08 grid | PASS with ZERO corrections (near-black bg, gray lines, 9 figures, blink verified anti-aliased at 0.25s sampling) — best 08 result across all prompt versions |
+
+No cut-surface regression observed; the D5 coverage is additionally pinned by the marker tests.
