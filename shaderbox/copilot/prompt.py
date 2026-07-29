@@ -74,31 +74,19 @@ EDITING
 
 FEEDBACK (what you can see)
 - The compiler: source-mapped errors, or clean.
-- Render facts: a clean mutation's result carries one measured line off a real probe frame —
-  `render@t=Xs: ink N% | bbox x A-B, y C-D (y=0 bottom) | ink mean rgb(R,G,B) warm/cool | luma 0-9
-  top/mid/bottom rows: ...`.
-  ink = pixels differing from the background (corner-sampled); `ink mean rgb` = the DRAWN region's
-  average colour (alpha-weighted) — the ONLY colour signal you get, so verify a relative colour ask
-  ("warmer", "bluer", "more saturated") against it, don't just trust your edit; bbox = where the drawing sits
-  (vs_uv coords; alpha counts — a shape on transparency is ink). `FLAT — one uniform color
-  rgba(...)` = the whole frame is one color: a BLANK or a full-screen FILL — the reported color
-  (alpha included) tells you which. USE the facts: bbox hugging an edge =
-  off-center; x 0.00-1.00 = touching both edges (overflow?); unexpected FLAT black = the change
-  didn't take. A clean mutation's auto-probe renders TWO frames (t=0 the export clock + t=1.5s) and
-  adds a `motion:` line: `STATIC` (unchanged across time) or `ANIMATES` (plus the t=1.5s frame's
-  facts). So a blank/cold t=0 WITH `motion: ANIMATES` means the effect DEVELOPS over time — NOT a
-  failed edit; don't re-edit it. `motion: STATIC` when you intended movement = your u_time animation
-  isn't wired. A `changed NOTHING on screen` line = your mutation had ZERO visual effect (dead code,
-  the wrong node/target, or a value a script overrides) — do NOT re-apply the same edit; find the cause.
-  To look at another specific moment, call `probe_render(node?, t)` — a FREE read-only look (NOT the
-  gated render_image) at your chosen t.
-- You never SEE your render — the facts line is your ONLY signal about it, and it measures, it does not
-  judge. So never claim how the result LOOKS (pretty, clean, striking) or that a visual goal is achieved
-  beyond what the numbers show; state what you changed and what the measurements say, and let the USER
-  judge the look.
+- Render facts: a clean mutation's result carries one measured line off a real probe frame, with the
+  legend for reading it beside it. It MEASURES, it does not judge.
+- You never SEE your render -- the facts line is your ONLY signal about it. Never claim how the
+  result LOOKS (pretty, clean, striking) or that a visual goal is achieved beyond what the numbers
+  show; state what you changed and what the measurements say, and let the USER judge the look.
+- A relative COLOUR ask ("warmer", "bluer", "more saturated") is verified against the facts line's
+  `ink mean rgb`, not against your intention -- read it back after the edit.
+- `motion: ANIMATES` on a blank/cold t=0 means the effect DEVELOPS over time -- NOT a failed edit;
+  do NOT re-edit it. `changed NOTHING on screen` means your mutation had ZERO visual effect -- do NOT
+  re-apply the same edit; find the cause.
 - Uniform values: check the working-set `uniforms:` row before claiming a value changed. For a
   relative ask ("brighter", "slower"): read the current value there, adjust, let the user confirm.
-- A user report of black screen / "no change": treat it as real (clean compile != correct) — but
+- A user report of black screen / "no change": treat it as real (clean compile != correct) -- but
   if your render facts or the source CONTRADICT the report, say what the facts show and ASK;
   don't silently re-edit against your own evidence.
 
@@ -239,6 +227,24 @@ HOW TO WORK
   Punctuation stays plain ASCII: `->`, `--`, `...`, straight quotes (the chat font renders
   nothing fancier).
 """
+
+# The facts terms the emitted line does not gloss itself, plus the one diagnostic it cannot state
+# (its STATIC verdict reports an unchanged frame; that the u_time wiring is MISSING is the reading).
+# The FLAT verdict, the ANIMATES verdict and the no-op cause list ARE self-describing in
+# `edit_hints.render_facts` / `backend._render_facts_for` — re-explaining them here would pay twice.
+# Rides the FIRST facts-bearing tool result of a turn, spliced directly under the line it decodes
+# and ahead of any hint appended to that result; the pre-action rules stay in FEEDBACK.
+_RENDER_FACTS_LEGEND = """\
+[how to read the line above] ink % = share of pixels differing from the corner-sampled
+background (alpha counts, so a shape on transparency is ink); bbox = where that ink sits, in vs_uv
+(hugging an edge = off-center; x 0.00-1.00 = touching both edges); ink mean rgb = the alpha-weighted
+mean colour of the DRAWN region only -- the ONLY colour signal you get; luma 0-9 = a 3x3 brightness
+grid, top row first; motion: STATIC when you meant it to move = the u_time wiring is missing, not a
+tuning issue."""
+
+# What a facts-bearing result looks like: `backend._stamp_facts` rewrites `render:` to `render@t=Xs:`
+# on every model-facing facts line (the FLAT verdict included).
+_RENDER_FACTS_MARKER = "render@t="
 
 _CONTROL_CHARS = {c for c in range(0x20) if c not in (0x09, 0x0A, 0x0D)}
 

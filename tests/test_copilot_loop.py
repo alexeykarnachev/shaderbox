@@ -39,6 +39,7 @@ from shaderbox.copilot.llm.api import (
     LLMToolSpec,
     LLMUsage,
 )
+from shaderbox.copilot.prompt import _RENDER_FACTS_LEGEND
 from shaderbox.copilot.prompt_context import CopilotContext
 from shaderbox.copilot.tools.registry import build_registry
 from shaderbox.copilot.trace import TraceLog
@@ -1176,3 +1177,86 @@ def test_turn_time_budget_zero_is_off(monkeypatch) -> None:
         )
     )
     assert isinstance(events[-1], AgentTurnDone)
+
+
+_FACTS_A = (
+    "render@t=0.0s: ink 12% | bbox x 0.10-0.90, y 0.20-0.80 (y=0 bottom) | "
+    "ink mean rgb(200,40,40) warm | luma 0-9 top/mid/bottom rows: 1 1 1 / 2 2 2 / 3 3 3"
+)
+_FACTS_B = (
+    "render@t=0.0s: ink 30% | bbox x 0.05-0.95, y 0.05-0.95 (y=0 bottom) | "
+    "ink mean rgb(40,40,200) cool | luma 0-9 top/mid/bottom rows: 4 4 4 / 5 5 5 / 6 6 6"
+)
+
+
+_STREAK_HINT = "clean edits to this file in a row"
+
+
+def test_render_facts_legend_rides_only_the_first_facts_result() -> None:
+    # D7 (059): the legend is spliced onto the FIRST facts-bearing result of the TURN and only that
+    # one — it decodes the non-self-glossing terms once, beside the line, instead of riding STATIC on
+    # every request or repeating per result. It must also land BETWEEN the facts and any hint
+    # appended to the same result: "[how to read the line above]" pointing at a streak nudge would
+    # gloss the wrong text. The soft streak is set to 1 so a hint is present on both results.
+    edit = _tool_call(
+        "cx",
+        "edit_shader",
+        '{"old_str": "vec3 p = u_pos;", "new_str": "vec3 p = u_pos;"}',
+    )
+    facts = iter([_FACTS_A, _FACTS_B])
+
+    def apply_edit(
+        old_str: str, new_str: str, replace_all: bool, target: str
+    ) -> EditResult:
+        _ = (old_str, new_str, replace_all, target)
+        return EditResult(matches=1, errors=[], render_facts=next(facts))
+
+    client = _CapturingClient(
+        [edit, edit, [LLMTextDelta("both landed."), LLMDone("stop")]]
+    )
+    events = list(
+        run_turn(
+            client,
+            build_registry(minimal_caps(apply_shader_edit=apply_edit)),
+            replace(COPILOT_CONFIG, clean_edit_soft_streak=1),
+            _fake_context(),
+            history=[],
+            user_text="make it red, then blue",
+            gate=GateChannel(),
+            cancel=threading.Event(),
+        )
+    )
+    assert isinstance(events[-1], AgentTurnDone)
+    tool_msgs = [m.content or "" for m in client.requests[-1] if m.role == "tool"]
+    assert len(tool_msgs) == 2
+    assert _FACTS_A in tool_msgs[0] and _RENDER_FACTS_LEGEND in tool_msgs[0]
+    assert _FACTS_B in tool_msgs[1] and _RENDER_FACTS_LEGEND not in tool_msgs[1]
+    # facts -> legend -> hint, on the result that carries all three.
+    assert _STREAK_HINT in tool_msgs[0] and _STREAK_HINT in tool_msgs[1]
+    assert (
+        tool_msgs[0].index(_FACTS_A)
+        < tool_msgs[0].index(_RENDER_FACTS_LEGEND)
+        < tool_msgs[0].index(_STREAK_HINT)
+    )
+
+
+def test_render_facts_legend_absent_from_a_turn_that_never_renders() -> None:
+    # Zero cost on a read-only turn: no facts line, no legend anywhere in the context.
+    read = _tool_call("cr", "read_shader", "{}")
+    client = _CapturingClient([read, [LLMTextDelta("read it."), LLMDone("stop")]])
+    events = list(
+        run_turn(
+            client,
+            build_registry(_fake_caps(edit_errors=[])),
+            COPILOT_CONFIG,
+            _fake_context(),
+            history=[],
+            user_text="what does it do?",
+            gate=GateChannel(),
+            cancel=threading.Event(),
+        )
+    )
+    assert isinstance(events[-1], AgentTurnDone)
+    assert all(
+        _RENDER_FACTS_LEGEND not in (m.content or "") for m in client.requests[-1]
+    )

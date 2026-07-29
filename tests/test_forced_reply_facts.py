@@ -23,6 +23,7 @@ from shaderbox.copilot.llm.api import (
     LLMToolSpec,
     LLMUsage,
 )
+from shaderbox.copilot.prompt import _RENDER_FACTS_LEGEND
 from shaderbox.copilot.tools.registry import build_registry
 from tests._caps import minimal_caps
 from tests.test_copilot_loop import _fake_context, _tool_call
@@ -73,6 +74,7 @@ def _drive(
     scripts: list[list[LLMStreamEvent]],
     probe: str = _FACTS,
     config: CopilotConfig = COPILOT_CONFIG,
+    edit_facts: str = "",
 ) -> tuple[_NudgeSpy, list[tuple[str, float]], list[Any]]:
     probes: list[tuple[str, float]] = []
 
@@ -81,7 +83,9 @@ def _drive(
         return probe
 
     caps = minimal_caps(
-        apply_shader_edit=lambda _o, _n, _r, _t: EditResult(matches=1, errors=[]),
+        apply_shader_edit=lambda _o, _n, _r, _t: EditResult(
+            matches=1, errors=[], render_facts=edit_facts
+        ),
         probe_render=_probe,
     )
     client = _NudgeSpy(scripts)
@@ -167,3 +171,27 @@ def test_no_render_authored_means_no_probe_and_no_line() -> None:
     assert isinstance(events[-1], AgentTurnDone)
     assert probes == []
     assert _MEASURED not in client.nudges[0]
+
+
+def test_forced_reply_facts_carry_the_legend_when_they_are_the_turns_first() -> None:
+    # D7 (059): the legend routes through the SAME per-turn flag as the tool-result splice, so a
+    # forced-end reply whose probe is the turn's first facts line is not left glossing nothing.
+    scripts: list[list[LLMStreamEvent]] = [
+        _EDIT,
+        [LLMDone("length", LLMUsage(output_tokens=900))],
+    ]
+    client, _probes, events = _drive(scripts)
+    assert isinstance(events[-1], AgentTurnDone)
+    assert _FACTS in client.nudges[0] and _RENDER_FACTS_LEGEND in client.nudges[0]
+
+
+def test_forced_reply_does_not_repeat_a_legend_an_earlier_result_carried() -> None:
+    # The flag is per TURN, not per emission site: the edit's own facts line already took the
+    # legend, so the forced reply's facts must arrive bare.
+    scripts: list[list[LLMStreamEvent]] = [
+        _EDIT,
+        [LLMDone("length", LLMUsage(output_tokens=900))],
+    ]
+    client, _probes, events = _drive(scripts, edit_facts=_FACTS)
+    assert isinstance(events[-1], AgentTurnDone)
+    assert _FACTS in client.nudges[0] and _RENDER_FACTS_LEGEND not in client.nudges[0]

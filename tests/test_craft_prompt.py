@@ -2,7 +2,7 @@
 (a silent revert would quietly regress the whole capability). Marker-string checks -- cheap, and
 they fail loudly if the block is dropped or a section is gutted."""
 
-from shaderbox.copilot.prompt import _SYSTEM_PROMPT
+from shaderbox.copilot.prompt import _RENDER_FACTS_LEGEND, _SYSTEM_PROMPT
 from shaderbox.copilot.prompt_context import _CONVENTIONS
 from shaderbox.copilot.tools.publish import (
     _PUBLISH_TELEGRAM_DESC,
@@ -148,3 +148,32 @@ def test_craft_block_teaches_local_frames() -> None:
     assert "LOCAL FRAMES" in _SYSTEM_PROMPT
     assert "INVERSE" in _SYSTEM_PROMPT
     assert "DOMINANT axis" in _SYSTEM_PROMPT
+
+
+def test_feedback_keeps_the_pre_action_rules_and_sheds_the_legend() -> None:
+    # 059 D7: only the POST-action gloss travels with the facts line. The three pre-action rules
+    # each fix a recorded regression (618af96 relative-colour verify, c39caac blank-cold-t0-develops,
+    # 2ff249f no-op-don't-reapply) and must stay in STATIC — on the turn the user says "make it
+    # warmer" there is no facts line yet to carry them.
+    p = _SYSTEM_PROMPT
+    for stays in (
+        "ink mean rgb",  # 618af96: verify a relative colour ask against the measurement
+        "read it back after the edit",
+        "DEVELOPS over time",  # c39caac: blank/cold t=0 + ANIMATES is not a failed edit
+        "re-apply the same edit",  # 2ff249f: a no-op means find the cause, don't repeat it
+        "It MEASURES, it does not judge",
+    ):
+        assert stays in p, stays
+    # The self-non-glossing terms ride the facts line instead (option C) — including the one
+    # DIAGNOSTIC the emitted verdict cannot state (STATIC reports an unchanged frame; that the
+    # u_time wiring is missing is the reading). None of them may survive in STATIC too.
+    for moved in (
+        "how to read the line above",
+        "share of pixels differing",
+        "corner-sampled",
+        "alpha-weighted",
+        "3x3 brightness",
+        "motion: STATIC when you meant it to move",
+    ):
+        assert moved not in p, moved
+        assert moved in _RENDER_FACTS_LEGEND, moved
