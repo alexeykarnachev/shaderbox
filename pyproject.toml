@@ -69,6 +69,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]  # unused imports
+"scripts/agent_hub/generate.py" = ["RUF001"]  # Russian page copy trips the ambiguous-unicode check
 
 [tool.ruff.lint.isort]
 known-first-party = ["shaderbox"]

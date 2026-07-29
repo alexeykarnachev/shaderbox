@@ -141,7 +141,9 @@ class OpenRouterLLMClient(LLMClient):
             "stream": True,
             "stream_options": {"include_usage": True},
             "max_completion_tokens": max_tokens,
-            "extra_body": {"reasoning": {"effort": "minimal"}},
+            "extra_body": {
+                "reasoning": {"effort": COPILOT_CONFIG.llm_reasoning_effort}
+            },
         }
         if tools:
             kwargs["tools"] = [_tool_to_wire(t) for t in tools]

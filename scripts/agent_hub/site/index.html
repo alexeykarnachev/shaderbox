@@ -34,9 +34,9 @@ details { margin:8px 0; } summary { cursor:pointer; color:var(--accent); }
 <a href='#ai_docs-features-057_dogfood_axes_and_scenarios-02_rerun_post058-md'>Находки: Пилот cornerstone-сценариев + стабилити-свип + фиксы</a>
 <a href='#ai_docs-features-057_dogfood_axes_and_scenarios-03_echelon2-md'>Находки: Эшелон-2 (pong, die3d) + промпт-обучение</a>
 <a href='#ai_docs-features-057_dogfood_axes_and_scenarios-04_final_exam-md'>Находки: Финальный экзамен (пульт подлодки)</a></nav><main><h1>ShaderBox Copilot — полный отчёт</h1><h2 id='intro'><a class='anchor' href='#intro'>§</a>О странице</h2>
-<p>Полный срез копайлота ShaderBox: промпт, интерфейс, рамки движка и все тестовые прогоны с диалогами и медиа. Технические секции сняты с живого кода на момент генерации; вердикты прогонов — курируемая оценка сессии. Страница — хаб для комментариев: ссылайся на § секций.</p><p class='dim'>commit b9ee178 · модель прогонов: openai/gpt-5.1-codex-mini · сгенерировано scripts/agent_hub/generate.py</p>
+<p>Полный срез копайлота ShaderBox: промпт, интерфейс, рамки движка и все тестовые прогоны с диалогами и медиа. Технические секции сняты с живого кода на момент генерации; вердикты прогонов — курируемая оценка сессии. Страница — хаб для комментариев: ссылайся на § секций.</p><p class='dim'>commit 761cdae · модель прогонов: openai/gpt-5.1-codex-mini · сгенерировано scripts/agent_hub/generate.py</p>
 <h2 id='config'><a class='anchor' href='#config'>§</a>Конфиг и рамки движка</h2>
-<p>Промпт собирается из тиров по волатильности (стабильное выше — префикс кэшируется, ~4× дешевле): <b>STATIC</b> (системный промпт §3) → <b>RARE</b> (карта проекта: ноды/current/ошибки; каталог SB_*-библиотеки; каталог примеров; каталог lazy-тулов; conventions §4) → <b>DIALOGUE</b> (история: ТОЛЬКО натуральный язык — сообщения юзера + одно движковое summary на ход; исходники в историю не пишутся) → <b>PER_TURN</b> (сообщение юзера + WORKING SET: полный нумерованный исходник каждой ноды в работе, канвас, uniform'ы, ошибки, script.py — пересобирается каждый шаг, LRU-кап 6 членов с объявлением эвикций).</p><table><tr><th>ручка</th><th>значение</th><th>что делает</th></tr><tr><td><code>max_iterations</code></td><td><code>16</code></td><td>Agent-loop limits. The ten user-facing ones (caps, retry budgets, nudge thresholds, the turn time budget) are Settings-tunable: persisted on `CopilotIntegration` (integrations.json) and applied onto the shared COPILOT_CONFIG instance via `apply_user_limits` (startup + Settings edit) — every consumer holds this instance, so a change takes effect immediately. The rest stay constants.</td></tr><tr><td><code>turn_time_budget_s</code></td><td><code>180</code></td><td>Wall-clock ceiling for ONE turn (seconds; 0 = off). max_iterations bounds the COUNT of steps, not their duration — a slow reasoning stream makes 14 legal iterations stretch past 10 minutes. Checked at iteration boundaries, so a turn overshoots by at most one iteration.</td></tr><tr><td><code>max_input_tokens</code></td><td><code>150000</code></td><td></td></tr><tr><td><code>max_tokens_per_turn</code></td><td><code>12000</code></td><td>Reasoning models bill hidden thinking into the output budget; creative generations need headroom beyond the visible reply + tool args.</td></tr><tr><td><code>max_edit_retries</code></td><td><code>3</code></td><td>Soft per-edit compile-fix retry budget, distinct from max_iterations (§I2).</td></tr><tr><td><code>auto_revert_after_failed_edits</code></td><td><code>6</code></td><td>Consecutive broken-compile edits on ONE file before the engine force-restores it to its last clean-compiling state (033; 0 = off). The engine streak is per-node and session-persistent, the nudge counter is per-turn — nudge-before-restore ordering is best-effort within a turn, not guaranteed across turns/interleavings.</td></tr><tr><td><code>max_compile_failures</code></td><td><code>5</code></td><td>Consecutive applies-but-compiles-with-errors edits before a one-time "rewrite the whole block in one edit" nudge (0 = off). Distinct from max_edit_retries (which counts edits that FAIL to apply); an edit that applies returns ok=True, so it never trips that cap — this catches the apply-but-broken thrash separately. Not a giveup: the model usually recovers.</td></tr><tr><td><code>clean_edit_soft_streak</code></td><td><code>6</code></td><td>Consecutive CLEAN edit_shader edits on ONE file in a turn before an ESCALATING "stop and let the user look / finish in one write_shader" fact rides each subsequent edit's result (0 = off). The model is render-blind, so nothing else brakes an unbounded aesthetic-tweak spree of individually-clean edits. Per-file; a write_shader resets it (the convergence escape hatch). Soft = advisory text; the hard cap below force-ends the turn.</td></tr><tr><td><code>clean_edit_hard_streak</code></td><td><code>12</code></td><td>Consecutive CLEAN edit_shader edits on ONE file in a turn before the engine FORCE-ENDS the turn (0 = off) — the hard stop the lone soft nudge couldn't enforce (a 16-edit spiral). Per-file; a write_shader resets it. Must exceed clean_edit_soft_streak to leave room for the advisory to work first.</td></tr><tr><td><code>scratchpad_reserve_tokens</code></td><td><code>50000</code></td><td>Headroom the history trim withholds for the per-turn working-set scratchpad, which is spliced AFTER the trim runs and is otherwise invisible to it (feature 020·29 D10).</td></tr><tr><td><code>copilot_working_set_max_nodes</code></td><td><code>6</code></td><td>Working-set MEMBER cap (feature 056 D3): the add seam evicts the least-recently-touched address past this, so an accreting turn can't render an unbounded scratchpad. The current node is unioned in regardless, so the rendered set is this + 1 at most. 0 = uncapped. Internals knob, not Settings-tunable.</td></tr><tr><td><code>render_facts_enabled</code></td><td><code>True</code></td><td>Feature 033 enriched results: probe-render facts after clean mutations (ink/bbox/luma off a tiny offscreen render). Size is the square probe edge.</td></tr><tr><td><code>render_facts_size</code></td><td><code>64</code></td><td></td></tr><tr><td><code>render_facts_motion_t</code></td><td><code>1.5</code></td><td>A mutation's auto-probe renders a SECOND frame at this later time (seconds) to derive a STATIC/ANIMATES verdict — t=0 alone is the worst instant for a ramping effect (blank/cold), which reads as a failed edit; the verdict + the later frame's facts tell the model it develops.</td></tr><tr><td><code>motion_sample_times</code></td><td><code>(0.0, 0.5, 1.0)</code></td><td>Feature 043 script-write motion probe: the sample times (seconds) the dry-run captures driven values at (the value-diff motion verdict), the fps the dry-tick steps at (pinned to the export clock so an integrator accumulates the same way render_video will), and the epsilon below which two sampled values count as unchanged (the static/animating threshold).</td></tr><tr><td><code>motion_fps</code></td><td><code>12</code></td><td></td></tr><tr><td><code>motion_value_eps</code></td><td><code>0.0001</code></td><td></td></tr><tr><td><code>bulk_gate_threshold</code></td><td><code>5</code></td><td>A list-arg above this count trips a BULK-policy gate (§2.3 / §F4).</td></tr><tr><td><code>turn_ledger_soft_cap</code></td><td><code>8</code></td><td>Turn-summary ledger: non-irreversible lines beyond this soft cap collapse into a count (irreversible actions — publish/delete — are never capped).</td></tr><tr><td><code>history_min_kept_turns</code></td><td><code>4</code></td><td>History trim floor: the trimmer never evicts below this many whole turns, even over budget.</td></tr><tr><td><code>chat_quiet_indicator_after_s</code></td><td><code>3.0</code></td><td>Chat liveness: a live turn whose stream produced nothing visible for this many seconds grows a ticking "waiting Ns" suffix on the status line (a silent reasoning burst must be distinguishable from a hang).</td></tr><tr><td><code>worker_join_timeout_s</code></td><td><code>5.0</code></td><td>Worker join() timeout at shutdown; a blocking network read may outlive it (then the thread is abandoned — daemon=False, warn-and-leave, like the exporters).</td></tr><tr><td><code>bridge_op_timeout_s</code></td><td><code>5.0</code></td><td>Per-op wait on a worker-&gt;main bridge round-trip (UI busy / shutting down).</td></tr><tr><td><code>render_op_timeout_s</code></td><td><code>60.0</code></td><td>Render ops get a longer wait — a video encode freezes the frame loop far past the 5s default (R3/§5). Used via bridge.run_on_main(fn, timeout=…) by the render tools.</td></tr><tr><td><code>publish_await_timeout_s</code></td><td><code>300.0</code></td><td>Publish-await (feature 020·18): the copilot worker polls the exporter's terminal progress through trivial bridge ops; this bounds the total wait (a never-terminal stuck upload) and the per-poll sleep between them.</td></tr><tr><td><code>publish_poll_interval_s</code></td><td><code>0.2</code></td><td></td></tr><tr><td><code>telegram_connect_timeout_s</code></td><td><code>30.0</code></td><td>Telegram connect-await (feature 020·19): bounds the poll for auth_state to leave LINKING.</td></tr><tr><td><code>llm_request_timeout_s</code></td><td><code>120.0</code></td><td>Per-request LLM stream timeout. The OpenAI/httpx default is 600s, so a stalled socket blocks the worker (non-daemon) for ~10 min and hangs interpreter shutdown (a dogfood hang, 043). A bounded timeout fails the stream fast; the agent loop catches it as a stream_error terminal that preserves the turn's summary + spend.</td></tr></table>
+<p>Промпт собирается из тиров по волатильности (стабильное выше — префикс кэшируется, ~4× дешевле): <b>STATIC</b> (системный промпт §3) → <b>RARE</b> (карта проекта: ноды/current/ошибки; каталог SB_*-библиотеки; каталог примеров; каталог lazy-тулов; conventions §4) → <b>DIALOGUE</b> (история: ТОЛЬКО натуральный язык — сообщения юзера + одно движковое summary на ход; исходники в историю не пишутся) → <b>PER_TURN</b> (сообщение юзера + WORKING SET: полный нумерованный исходник каждой ноды в работе, канвас, uniform'ы, ошибки, script.py — пересобирается каждый шаг, LRU-кап 6 членов с объявлением эвикций).</p><table><tr><th>ручка</th><th>значение</th><th>что делает</th></tr><tr><td><code>max_iterations</code></td><td><code>16</code></td><td>Agent-loop limits. The ten user-facing ones (caps, retry budgets, nudge thresholds, the turn time budget) are Settings-tunable: persisted on `CopilotIntegration` (integrations.json) and applied onto the shared COPILOT_CONFIG instance via `apply_user_limits` (startup + Settings edit) — every consumer holds this instance, so a change takes effect immediately. The rest stay constants.</td></tr><tr><td><code>turn_time_budget_s</code></td><td><code>180</code></td><td>Wall-clock ceiling for ONE turn (seconds; 0 = off). max_iterations bounds the COUNT of steps, not their duration — a slow reasoning stream makes 14 legal iterations stretch past 10 minutes. Checked at iteration boundaries, so a turn overshoots by at most one iteration.</td></tr><tr><td><code>max_input_tokens</code></td><td><code>150000</code></td><td></td></tr><tr><td><code>max_tokens_per_turn</code></td><td><code>12000</code></td><td>Reasoning models bill hidden thinking into the output budget; creative generations need headroom beyond the visible reply + tool args.</td></tr><tr><td><code>max_edit_retries</code></td><td><code>3</code></td><td>Soft per-edit compile-fix retry budget, distinct from max_iterations (§I2).</td></tr><tr><td><code>auto_revert_after_failed_edits</code></td><td><code>6</code></td><td>Consecutive broken-compile edits on ONE file before the engine force-restores it to its last clean-compiling state (033; 0 = off). The engine streak is per-node and session-persistent, the nudge counter is per-turn — nudge-before-restore ordering is best-effort within a turn, not guaranteed across turns/interleavings.</td></tr><tr><td><code>max_compile_failures</code></td><td><code>5</code></td><td>Consecutive applies-but-compiles-with-errors edits before a one-time "rewrite the whole block in one edit" nudge (0 = off). Distinct from max_edit_retries (which counts edits that FAIL to apply); an edit that applies returns ok=True, so it never trips that cap — this catches the apply-but-broken thrash separately. Not a giveup: the model usually recovers.</td></tr><tr><td><code>clean_edit_soft_streak</code></td><td><code>6</code></td><td>Consecutive CLEAN edit_shader edits on ONE file in a turn before an ESCALATING "stop and let the user look / finish in one write_shader" fact rides each subsequent edit's result (0 = off). The model is render-blind, so nothing else brakes an unbounded aesthetic-tweak spree of individually-clean edits. Per-file; a write_shader resets it (the convergence escape hatch). Soft = advisory text; the hard cap below force-ends the turn.</td></tr><tr><td><code>clean_edit_hard_streak</code></td><td><code>12</code></td><td>Consecutive CLEAN edit_shader edits on ONE file in a turn before the engine FORCE-ENDS the turn (0 = off) — the hard stop the lone soft nudge couldn't enforce (a 16-edit spiral). Per-file; a write_shader resets it. Must exceed clean_edit_soft_streak to leave room for the advisory to work first.</td></tr><tr><td><code>scratchpad_reserve_tokens</code></td><td><code>50000</code></td><td>Headroom the history trim withholds for the per-turn working-set scratchpad, which is spliced AFTER the trim runs and is otherwise invisible to it (feature 020·29 D10).</td></tr><tr><td><code>copilot_working_set_max_nodes</code></td><td><code>6</code></td><td>Working-set MEMBER cap (feature 056 D3): the add seam evicts the least-recently-touched address past this, so an accreting turn can't render an unbounded scratchpad. The current node is unioned in regardless, so the rendered set is this + 1 at most. 0 = uncapped. Internals knob, not Settings-tunable.</td></tr><tr><td><code>render_facts_enabled</code></td><td><code>True</code></td><td>Feature 033 enriched results: probe-render facts after clean mutations (ink/bbox/luma off a tiny offscreen render). Size is the square probe edge.</td></tr><tr><td><code>render_facts_size</code></td><td><code>64</code></td><td></td></tr><tr><td><code>render_facts_motion_t</code></td><td><code>1.5</code></td><td>A mutation's auto-probe renders a SECOND frame at this later time (seconds) to derive a STATIC/ANIMATES verdict — t=0 alone is the worst instant for a ramping effect (blank/cold), which reads as a failed edit; the verdict + the later frame's facts tell the model it develops.</td></tr><tr><td><code>motion_sample_times</code></td><td><code>(0.0, 0.5, 1.0)</code></td><td>Feature 043 script-write motion probe: the sample times (seconds) the dry-run captures driven values at (the value-diff motion verdict), the fps the dry-tick steps at (pinned to the export clock so an integrator accumulates the same way render_video will), and the epsilon below which two sampled values count as unchanged (the static/animating threshold).</td></tr><tr><td><code>motion_fps</code></td><td><code>12</code></td><td></td></tr><tr><td><code>motion_value_eps</code></td><td><code>0.0001</code></td><td></td></tr><tr><td><code>bulk_gate_threshold</code></td><td><code>5</code></td><td>A list-arg above this count trips a BULK-policy gate (§2.3 / §F4).</td></tr><tr><td><code>turn_ledger_soft_cap</code></td><td><code>8</code></td><td>Turn-summary ledger: non-irreversible lines beyond this soft cap collapse into a count (irreversible actions — publish/delete — are never capped).</td></tr><tr><td><code>history_min_kept_turns</code></td><td><code>4</code></td><td>History trim floor: the trimmer never evicts below this many whole turns, even over budget.</td></tr><tr><td><code>chat_quiet_indicator_after_s</code></td><td><code>3.0</code></td><td>Chat liveness: a live turn whose stream produced nothing visible for this many seconds grows a ticking "waiting Ns" suffix on the status line (a silent reasoning burst must be distinguishable from a hang).</td></tr><tr><td><code>worker_join_timeout_s</code></td><td><code>5.0</code></td><td>Worker join() timeout at shutdown; a blocking network read may outlive it (then the thread is abandoned — daemon=False, warn-and-leave, like the exporters).</td></tr><tr><td><code>bridge_op_timeout_s</code></td><td><code>5.0</code></td><td>Per-op wait on a worker-&gt;main bridge round-trip (UI busy / shutting down).</td></tr><tr><td><code>render_op_timeout_s</code></td><td><code>60.0</code></td><td>Render ops get a longer wait — a video encode freezes the frame loop far past the 5s default (R3/§5). Used via bridge.run_on_main(fn, timeout=…) by the render tools.</td></tr><tr><td><code>publish_await_timeout_s</code></td><td><code>300.0</code></td><td>Publish-await (feature 020·18): the copilot worker polls the exporter's terminal progress through trivial bridge ops; this bounds the total wait (a never-terminal stuck upload) and the per-poll sleep between them.</td></tr><tr><td><code>publish_poll_interval_s</code></td><td><code>0.2</code></td><td></td></tr><tr><td><code>telegram_connect_timeout_s</code></td><td><code>30.0</code></td><td>Telegram connect-await (feature 020·19): bounds the poll for auth_state to leave LINKING.</td></tr><tr><td><code>llm_request_timeout_s</code></td><td><code>120.0</code></td><td>Per-request LLM stream timeout. The OpenAI/httpx default is 600s, so a stalled socket blocks the worker (non-daemon) for ~10 min and hangs interpreter shutdown (a dogfood hang, 043). A bounded timeout fails the stream fast; the agent loop catches it as a stream_error terminal that preserves the turn's summary + spend.</td></tr><tr><td><code>llm_reasoning_effort</code></td><td><code>none</code></td><td>Sent verbatim as OpenRouter `reasoning.effort`. "none" (not "minimal"): gpt-5.1-codex-mini IGNORES "minimal" on tool-bearing requests — reasoning ate ~100% of output tokens — while "none" is honored (2026-07-29, measured). Internals knob, not Settings-tunable.</td></tr></table>
 <h2 id='prompt'><a class='anchor' href='#prompt'>§</a>Системный промпт (дословно)</h2>
 <pre>You are ShaderBox's in-app coding copilot. ShaderBox: a real-time GLSL fragment-shader playground
 — the user authors `.frag.glsl` "nodes"; uniforms introspect into live UI controls. Your workspace
@@ -555,7 +555,7 @@ if (vs_uv.x &lt; 0.5) { // sonar } else { // right side
     vec2 rightLocal = (vs_uv - vec2(0.5, 0.0)) * vec2(2.0, 1.0);
     vec3 panelColor = vec3(0.05);
     if (rightLocal.y &gt; 0.55? let's set threshold)
-         paint mine;
+         paint mine; 
     else bottom panel;
 
     final color = mix(panelColor, ???)
@@ -643,7 +643,7 @@ Beam: `float beamAngle = mod(u_time * TWO_PI / 4.0, TWO_PI); float angle = atan(
 
 Afterglow: `float trail = mod(wrapAngle(beamAngle - angle + TWO_PI), TWO_PI); // trailing behind; so 0..2pi with 0 just behind? oh.
 
-maybe better:
+maybe better: 
 ```
 float ahead = wrapAngle(angle - beamAngle);
 float behind = wrapAngle(beamAngle - angle);
@@ -774,7 +774,7 @@ vec3 depthPanel(vec2 local) {...}
 void main() {
     vec3 color = vec3(0.012, 0.014, 0.02); // base
     if (vs_uv.x &lt; 0.5) {
-        color = sonarScene(...);
+        color = sonarScene(...); 
     } else {
         vec2 sideUV = vec2((vs_uv.x - 0.5) * 2.0, vs_uv.y);
         vec2 mineRegion = step(...?). We'll mix.
@@ -879,12 +879,12 @@ Detailed functions:
 ```
 mat3 rotationX(float a) { ... } etc.
 
-vec3 shadeMine(vec3 p, vec3 lightDir) {
+vec3 shadeMine(vec3 p, vec3 lightDir) { 
     vec3 normal = normalize( ... ) maybe we get from gradient.
 
 }
 
-float sdMine(vec3 p) {
+float sdMine(vec3 p) { 
     float w = length(p) - 0.25;
     for loops ...
 }
@@ -945,7 +945,7 @@ Define label area.
 Gauge:
 
 ```
-vec2 gaugeSpace = vec2(0.25, 0.1) ???
+vec2 gaugeSpace = vec2(0.25, 0.1) ??? 
 float gaugeInner = smoothstep(0.2,0.2, abs...)
 
 ```
@@ -1087,7 +1087,7 @@ Spacing: we just call `vec3 mineColor = renderMine(sideUV);` inside `if (sideUV.
 Inside `renderMine`:
 
 ```
-vec2 uv = (sideUV - vec2(0.7, 0.75)) * vec2(1.0, 1.8); ???
+vec2 uv = (sideUV - vec2(0.7, 0.75)) * vec2(1.0, 1.8); ??? 
 ```
 
 Maybe use actual numbers:
@@ -1105,8 +1105,8 @@ Need to compute `vec3 rayDir` from uv.
 Set `vec3 rd = normalize(mat3( ... ) ???). We'll compute:
 
 ```
-vec2 coords = panelCoord;
-vec3 forward = normalize(target - ro);
+vec2 coords = panelCoord; 
+vec3 forward = normalize(target - ro); 
 vec3 right = normalize(cross(forward, up));
 vec3 actualUp = cross(right, forward);
 vec3 rd = normalize(coords.x * right + coords.y * actualUp + 1.3 * forward);
@@ -1158,7 +1158,7 @@ Raymarch function:
 ```
 float trace(vec3 ro, vec3 rd) {
     float t=0.0;
-    for (int i=0; i&lt;64; ++i) { ... }
+    for (int i=0; i&lt;64; ++i) { ... } 
     return dist; // if fail return -1.
 
 ```
@@ -1351,7 +1351,7 @@ const vec2 contacts[4] = ...;
 
 float contact = 0.0;
 
-for each contact {
+for each contact { 
    float contactDist = length(contactPos);
    float contactAngle = atan(pos.y,pos.x);
    float dAngle = wrapAngle(contactAngle - beamAngle);
@@ -1382,7 +1382,7 @@ float sdMine(vec3 p) { float core = length(p) - 0.25; float studs = 1e5; ...; re
 
 `vec3 calcNormal(vec3 p) { ... }` using `map`.
 
-`vec3 renderMine(vec2 sideUV) {
+`vec3 renderMine(vec2 sideUV) { 
    vec3 result = vec3(0.02);
    vec2 viewport = (sideUV - vec2(0.5, 0.75)) / vec2(0.35, 0.35); // need ensures not degrade.
 
@@ -1392,8 +1392,8 @@ float sdMine(vec3 p) { float core = length(p) - 0.25; float studs = 1e5; ...; re
    vec3 target = vec3(0.0);
    ...
    float t = trace(ro, rd);
-   if (t &gt; 0.0) { compute color } else { result = mix result }
-   // add border?
+   if (t &gt; 0.0) { compute color } else { result = mix result } 
+   // add border? 
    return mix(vec3(0.03), result, smoothstep(0.02, 0.01, abs(viewDist - 0.0)??)
 }
 ```

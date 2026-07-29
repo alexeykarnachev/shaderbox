@@ -94,6 +94,10 @@ class CopilotConfig:
     # 043). A bounded timeout fails the stream fast; the agent loop catches it as a stream_error
     # terminal that preserves the turn's summary + spend.
     llm_request_timeout_s: float = 120.0
+    # Sent verbatim as OpenRouter `reasoning.effort`. "none" (not "minimal"): gpt-5.1-codex-mini
+    # IGNORES "minimal" on tool-bearing requests — reasoning ate ~100% of output tokens — while
+    # "none" is honored (2026-07-29, measured). Internals knob, not Settings-tunable.
+    llm_reasoning_effort: str = "none"
 
 
 COPILOT_CONFIG = CopilotConfig()
