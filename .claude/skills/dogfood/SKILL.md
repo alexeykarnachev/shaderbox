@@ -215,9 +215,12 @@ the sweep removes IS the edit-sediment measurement — record its diff.**
   nudge and won't naturally spiral, so the hard-stop / max_iterations / forced-turn-end paths REQUIRE
   such an override to exercise live.
   Engine internals (probe knobs, `llm_reasoning_effort`, `bulk_gate_threshold`, the timeouts) live on a
-  SECOND singleton `COPILOT_ENGINE` (`from shaderbox.copilot.config import COPILOT_CONFIG, COPILOT_ENGINE`)
-  — override them the same post-create way. Both dataclasses are slotted, so assigning a knob to the
-  wrong singleton raises `AttributeError` instead of silently no-opping.
+  SECOND singleton `COPILOT_ENGINE` (`from shaderbox.copilot.config import COPILOT_CONFIG, COPILOT_ENGINE`).
+  Override those post-create too — one habit for both — but note the reason differs: nothing ever clobbers
+  `COPILOT_ENGINE` (it is not persisted and `apply_user_limits` never touches it), so a pre-create
+  assignment would survive; only `COPILOT_CONFIG` has the clobbering seam above. Both dataclasses are
+  slotted, so assigning a knob to the wrong singleton raises `AttributeError` instead of silently
+  no-opping.
 - **Resume = same project_dir + same SHADERBOX_DATA_DIR.** `create(project_dir=<existing>)` skips seeding,
   reloads the shaders, restores the conversation from `<project_dir>/copilot/conversation.json` (zero LLM
   calls). The data dir (lib + integrations) is separate and env-only — both must point at turn 1's dirs or
@@ -243,7 +246,8 @@ the sweep removes IS the edit-sediment measurement — record its diff.**
 - **🔴 `GLError 1282 (invalid operation) glUseProgram(0)` is a REAL pipeline bug, not harness noise.** It
   fires sporadically on bridge-marshalled create_node/write_shader (the persist→render path) under the
   standalone context — the same headless GL-quirk as node teardown. The copilot RECOVERS (retries), so a
-  run still completes, but log it as a finding (a known headless-GL quirk; re-file in `todo.md` if it grows). Don't mistake it for a harness fault.
+  run still completes, but log it as a finding (a known headless-GL quirk; record it in the run's report
+  §9(a) if it grows). Don't mistake it for a harness fault.
 - **Multi-file read needs an UNSOLVABLE-without-reading task.** "Merge node A and B" is solved from the
   model's own knowledge — a cheap model won't bother to `read_shader` the references. To actually exercise
   multi-file read, the task must REQUIRE the other node's content (e.g. "use the EXACT color/constant from
@@ -268,13 +272,17 @@ the sweep removes IS the edit-sediment measurement — record its diff.**
   `COPILOT_ENGINE.final_reply_max_tokens` since 2026-07-29 — before that it could stream the full
   turn budget PAST the wall clock.)
 - **🔴 effort=none quirks (gpt-5.1-codex-mini, observed 2026-07-29, `059/02_controls.md`):**
-  (1) on COMPOUND asks the model reasons anyway and can burn the whole 12k default turn budget as
-  hidden reasoning with zero text/tools (`out=rsn` in the trace, turn loops with nothing landing) —
-  set `COPILOT_CONFIG.max_tokens_per_turn = 30000` after `create()` for compound scenarios;
+  (1) on COMPOUND asks the model reasons anyway and can burn the whole turn budget as hidden reasoning
+  with zero text/tools (`out=rsn` in the trace, turn loops with nothing landing — measured against the
+  12k default in force then) — 30k is what passes: `COPILOT_CONFIG.max_tokens_per_turn = 30000` after
+  `create()` if a run pins anything lower;
   (2) PLAN-LOOP: it answers go-aheads with re-stated plans (zero tools) — unstick with an
   imperative verb ("Stop planning. Make the edits now."), observed 3/3 compound runs;
   (3) first-shot prompt-lesson application is weaker (aspect/layout slips return) but corrections
-  converge to baseline quality at ~half the cost of effort=minimal.
+  converge to baseline quality at ~half the cost of effort=minimal;
+  (4) the in-app default `max_tokens_per_turn` is now **30k** (was 12k — raised after these starvation
+  measurements), so a fresh harness run already carries the headroom; the override above only matters
+  when a run pins a lower cap.
 - **🔴 ALWAYS wrap a turn process in `timeout` (`... timeout 300 uv run python -c …`).** A stalled LLM
   stream could leave the non-daemon copilot worker blocked, and interpreter `_shutdown` then hangs
   joining it — a process that never exits, never dumps. The per-delta stream cancel + the 120s client
@@ -307,6 +315,12 @@ the sweep removes IS the edit-sediment measurement — record its diff.**
   position series read a pong ball as 70x too slow (live single-ticks, not time) and the "speed
   up" correction gaslit the agent again — for a stateful script, `render_strip` is the ONLY
   time-faithful pixel source.
+  🔴 Third member of the same class, DRIVER-side (2026-07-30): a broken nested-quote substitution
+  passed `project_dir="."` on a resume, so the turn ran against an EMPTY root project — and the
+  model's truthful "there aren't any shader nodes" got logged as a hallucination. Before judging a
+  "weird" model claim about project STATE, verify the dump's `project_dir` is the one you think
+  you resumed; never build a resume path via nested `$(python3 -c "...")` inside an already-quoted
+  `bash -ic` string — read the path in a prior step and paste it literally.
 - **For pixel measurements: `scripts/dogfood/judge.py`** (GL-free, PIL+numpy) — `load_rgb`, `grid_cell`
   (split a grid render into cells), `region_diff`, `bright_centroid`, `color_mask_centroid`,
   `column_runs` (the blob counter), `farthest_bright_angle` (rotation direction; image y grows DOWN,
@@ -327,6 +341,12 @@ axis's AUTO half — paste its markdown block into the report §6/§7 instead of
 per-section context_breakdown — system prompt vs project map vs working set vs `tools=` block — remains a
 separate deferred trace event, not yet automated; for that, split one `llm_request` block by hand,
 ~chars/4.)
+
+**A facts-bearing tool result carries a 500-char legend — that is expected, not prompt bloat.** Since
+059 wave C, the FIRST result of each turn whose text holds a `render@t=` facts line gets
+`[how to read the line above] …` appended (`prompt.py::_RENDER_FACTS_LEGEND`, one per-turn flag shared
+with the forced-reply path). Seeing it once per turn in the trace is correct; seeing it on a SECOND
+facts line in the same turn is a bug.
 
 **The honesty axis is YOURS to judge.** The copilot has no eye — it measures (the `render:` facts line)
 and you look. The analyzer only hands you the LIMIT-FORCED turns (a `cutoff=` / giveup turn glyphs
@@ -398,12 +418,13 @@ No throwaway driver to delete (the one-blocking-call-per-turn shape has none). A
 next run; the dumps are the stray `*.json`). NOTE: these data dirs hold the LIVE OpenRouter key in their
 `integrations.json`, so purging them is also key hygiene. Keep the report (durable, in `ai_docs/features/`);
 if a reviewer needs your trace, copy the specific `trace_path` somewhere durable before the purge. The
-harness + analyzer + template + scenarios + this skill stay. File prioritized findings into `todo.md` with
-concrete triggers.
+harness + analyzer + template + scenarios + this skill stay. Prioritized findings live in the REPORT (§9,
+split copilot/framework) and their durable half goes to the feature ledger / spec or
+`conventions.md` — `todo.md` is frozen drain-only and takes no new entries.
 
 ## 6. Improve this skill
 
 This is a LIVING skill. Each run, if you hit a new gotcha or the report format wants a new section, ADD it
 here so the next run is smoother. The maintainer wants the dogfooding itself to get more convenient over
-time — the report's "improve the DOGFOODING framework" TODO bucket (report §8 (b)) is where those
+time — the report's "improve the DOGFOODING framework" TODO bucket (report §9 (b)) is where those
 findings start, and they flow back HERE (the skill) or into `scripts/dogfood/analyze.py` (the analyzer).

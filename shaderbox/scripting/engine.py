@@ -32,7 +32,7 @@ from shaderbox.scripting.behavior import (
     _user_error_line,
     coerce_one,
 )
-from shaderbox.scripting.context import EngineContext
+from shaderbox.scripting.context import EXPORT_MOUSE, EngineContext
 from shaderbox.scripting.errors import ScriptError
 from shaderbox.uniform_coerce import is_text_array
 
@@ -174,7 +174,8 @@ _UPDATE_DOC = (
     "            ctx.t: Elapsed seconds since start.\n"
     "            ctx.dt: Delta seconds since the previous frame.\n"
     "            ctx.frame: Frame index.\n"
-    "            ctx.mouse: Cursor over the canvas (x, y in 0..1, y-up; 0.5,0.5 on export).\n"
+    "            ctx.mouse: Cursor over the canvas (x, y in 0..1, y-up; "
+    f"{EXPORT_MOUSE.x:g},{EXPORT_MOUSE.y:g} on export).\n"
     '        """\n'
 )
 _INIT_DOC = (

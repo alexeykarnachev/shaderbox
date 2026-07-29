@@ -188,16 +188,18 @@ def test_compile_errors_pass_non_path_labels_through(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A script error already carries the bare `script.py` label and the synthetic no-node error an
-    # empty one — both unchanged by the mapping.
+    # empty one — both unchanged by the mapping. line 0 = unmapped: no location is printed at all
+    # (an empty label leaves the bare message).
     monkeypatch.setattr(
         "shaderbox.copilot.error_render.shader_lib_root", lambda: tmp_path / "lib"
     )
     errors = [
         CompileErrorInfo(path="script.py", line=2, message="bad"),
+        CompileErrorInfo(path="script.py", line=0, message="unmapped"),
         CompileErrorInfo(path="", line=0, message="no node found for 'zzzz'"),
     ]
     assert format_compile_errors(errors) == (
-        "script.py:2: bad\n:0: no node found for 'zzzz'"
+        "script.py:2: bad\nscript.py: unmapped\nno node found for 'zzzz'"
     )
 
 

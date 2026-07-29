@@ -9,6 +9,7 @@ from shaderbox.copilot import backend as backend_mod
 from shaderbox.copilot.agent import _final_reply_nudge
 from shaderbox.copilot.backend import CopilotBackend
 from shaderbox.copilot.config import COPILOT_CONFIG
+from shaderbox.copilot.edit_hints import STAMPED_FACTS_PREFIX
 from shaderbox.copilot.tools.inspect import inspect_tools
 from shaderbox.copilot.tools.registry import build_registry
 from tests._caps import minimal_caps
@@ -76,11 +77,13 @@ def test_probe_render_in_registry_and_reaches_capability() -> None:
     # back as the whole model-facing result. Falsifier: a dropped/renamed arg.
     calls: list[tuple[str, float]] = []
     caps = minimal_caps(
-        probe_render=lambda n, t: calls.append((n, t)) or "render@t=2.5s: ink 5%"
+        probe_render=lambda n, t: (
+            calls.append((n, t)) or f"{STAMPED_FACTS_PREFIX}2.5s: ink 5%"
+        )
     )
     reg = build_registry(caps)
     ok, msg, payload = reg.execute("probe_render", {"node": "n1", "t": 2.5}, "")
-    assert ok and "render@t=2.5s" in msg
+    assert ok and f"{STAMPED_FACTS_PREFIX}2.5s" in msg
     assert calls == [("n1", 2.5)]
     assert payload is None
 

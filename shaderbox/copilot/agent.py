@@ -20,11 +20,7 @@ from shaderbox.copilot.llm.api import (
     LLMToolCallStarted,
     LLMUsage,
 )
-from shaderbox.copilot.prompt import (
-    _RENDER_FACTS_LEGEND,
-    _RENDER_FACTS_MARKER,
-    build_messages,
-)
+from shaderbox.copilot.prompt import build_messages, facts_legend_splicer
 from shaderbox.copilot.prompt_context import CopilotContext
 from shaderbox.copilot.state import RESULT_WIDGET_KINDS, ResultWidget, TurnStats
 from shaderbox.copilot.tools.registry import LOAD_TOOLS_NAME, ToolRegistry
@@ -508,16 +504,9 @@ def run_turn(
     )
 
     final_reply_text: list[str] = []
-    legend_emitted = False
-
-    def with_facts_legend(msg: str) -> str:
-        # The render-facts legend rides the FIRST facts-bearing result of the turn and only that one:
-        # the gloss sits beside the line it decodes, and a turn that never renders pays nothing.
-        nonlocal legend_emitted
-        if legend_emitted or _RENDER_FACTS_MARKER not in msg:
-            return msg
-        legend_emitted = True
-        return f"{msg}\n{_RENDER_FACTS_LEGEND}"
+    # One splicer per turn: the legend rides the turn's FIRST facts-bearing result and only that
+    # one, so the gloss sits beside the line it decodes and a turn that never renders pays nothing.
+    splice_facts_legend = facts_legend_splicer()
 
     def stream_final_reply(cause: str) -> "Iterator[AgentEvent]":
         # One extra NO-TOOLS stream so a forced turn-end still ends with the model addressing the
@@ -527,7 +516,7 @@ def run_turn(
         # (058). Appends nothing durable; usage folds into the turn total.
         nonlocal usage
         nudge = _final_reply_nudge(
-            cause, with_facts_legend(_forced_reply_facts(registry, ran))
+            cause, splice_facts_legend(_forced_reply_facts(registry, ran))
         )
         request_messages = (
             messages + render_scratchpad() + [LLMMessage(role="user", content=nudge)]
@@ -988,7 +977,7 @@ def run_turn(
             # Before any nudge appends below, so the legend sits directly under the facts/motion
             # block it decodes rather than under a hint. The card above already went out, so the
             # legend stays model-only.
-            msg = with_facts_legend(msg)
+            msg = splice_facts_legend(msg)
 
             # Self-correction cap: a model stuck on an edit (an old_str that keeps not matching, a
             # line range that keeps not resolving) would otherwise retry to the max_iterations

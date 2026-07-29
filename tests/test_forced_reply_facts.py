@@ -14,6 +14,7 @@ from typing import Any
 from shaderbox.copilot.agent import AgentError, AgentTurnDone, run_turn
 from shaderbox.copilot.capabilities import EditResult
 from shaderbox.copilot.config import COPILOT_CONFIG, CopilotConfig
+from shaderbox.copilot.edit_hints import STAMPED_FACTS_PREFIX
 from shaderbox.copilot.gate import GateChannel
 from shaderbox.copilot.llm.api import (
     LLMDone,
@@ -29,7 +30,7 @@ from tests._caps import minimal_caps
 from tests.test_copilot_loop import _fake_context, _tool_call
 
 _FACTS = (
-    "render@t=0.0s: ink 34% | bbox x 0.08-0.92, y 0.11-0.88 (y=0 bottom) | ink mean "
+    f"{STAMPED_FACTS_PREFIX}0.0s: ink 34% | bbox x 0.08-0.92, y 0.11-0.88 (y=0 bottom) | ink mean "
     "rgb(31,64,140) cool | luma 0-9 top/mid/bottom rows: 112/223 441/552 663/774"
 )
 _MEASURED = "the frame currently measures:"

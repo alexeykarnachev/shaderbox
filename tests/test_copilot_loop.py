@@ -27,6 +27,7 @@ from shaderbox.copilot.capabilities import (
     ShaderView,
 )
 from shaderbox.copilot.config import COPILOT_CONFIG
+from shaderbox.copilot.edit_hints import STAMPED_FACTS_PREFIX
 from shaderbox.copilot.gate import GateChannel, GateRequest, GateResponse
 from shaderbox.copilot.glsl_lex import token_match
 from shaderbox.copilot.llm.api import (
@@ -1180,11 +1181,11 @@ def test_turn_time_budget_zero_is_off(monkeypatch) -> None:
 
 
 _FACTS_A = (
-    "render@t=0.0s: ink 12% | bbox x 0.10-0.90, y 0.20-0.80 (y=0 bottom) | "
+    f"{STAMPED_FACTS_PREFIX}0.0s: ink 12% | bbox x 0.10-0.90, y 0.20-0.80 (y=0 bottom) | "
     "ink mean rgb(200,40,40) warm | luma 0-9 top/mid/bottom rows: 1 1 1 / 2 2 2 / 3 3 3"
 )
 _FACTS_B = (
-    "render@t=0.0s: ink 30% | bbox x 0.05-0.95, y 0.05-0.95 (y=0 bottom) | "
+    f"{STAMPED_FACTS_PREFIX}0.0s: ink 30% | bbox x 0.05-0.95, y 0.05-0.95 (y=0 bottom) | "
     "ink mean rgb(40,40,200) cool | luma 0-9 top/mid/bottom rows: 4 4 4 / 5 5 5 / 6 6 6"
 )
 

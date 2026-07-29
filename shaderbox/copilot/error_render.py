@@ -9,13 +9,14 @@ from shaderbox.paths import shader_lib_root
 # sees a label in ITS address space — `lib:<rel>` for a library file, the node's short id for a
 # node source, and any non-absolute label (`script.py`, "") verbatim. Every renderer routes
 # through here so a new one cannot re-leak the filesystem by omission.
+# Under a short-id collision the map grows every id past NODE_SHORT_ID_LEN while this label stays
+# 4 chars — acceptable: the agent addresses nodes from the map, the label only names the breakage.
 
 
-def _error_label(path: str) -> str:
+def _error_label(path: str, root: Path) -> str:
     if not path or not Path(path).is_absolute():
         return path
     p = Path(path)
-    root = shader_lib_root()
     try:
         return lib_address(p.relative_to(root))
     except ValueError:
@@ -27,4 +28,12 @@ def _error_label(path: str) -> str:
 
 
 def format_compile_errors(errors: list[CompileErrorInfo]) -> str:
-    return "\n".join(f"{_error_label(e.path)}:{e.line}: {e.message}" for e in errors)
+    # `line` 0 = unmapped (an unparsed compiler message, a script error the mapper couldn't place):
+    # print no location rather than a ":0:" the agent would try to edit at.
+    root = shader_lib_root()
+    lines: list[str] = []
+    for e in errors:
+        label = _error_label(e.path, root)
+        loc = f"{label}:{e.line}" if e.line > 0 else label
+        lines.append(f"{loc}: {e.message}" if loc else e.message)
+    return "\n".join(lines)

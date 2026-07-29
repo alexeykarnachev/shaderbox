@@ -34,10 +34,6 @@ Process findings (the real payload of this control):
    showed 20:28 — its probe samples t=0/1.5 where no points exist yet. Same whole-frame/short-t
    blindness class as the exam's lamp.
 
-## 13 final exam control — NOT YET RUN
-
-Required before wave-A rows citing 13. Run next.
-
 ## 03 static comp — proj-ge19pnm3
 
 PASS with 2 corrections, 3 messages, $0.02. Turn 1 regressed to the CLIPPED-circles class (row

@@ -16,6 +16,8 @@ this file by `Trigger` before starting work in an area.**
 `[BUG]` = an observable defect (wrong output, crash, freeze, data loss, silent corruption).
 `[DEBT]` = a structural weakness we must harden — a latent bug the current code only narrowly avoids,
 or an invariant a future change can silently break.
+`[VERIFY]` = a shipped change whose check cannot run on this box (needs a display, real secrets, other
+hardware) — it stays until someone runs it on a machine that can.
 
 What makes a good Trigger: it fires at a moment that *demands attention* —
 - ❌ "before the next release" / "when we have time" / "eventually" — passes silently, never fires.

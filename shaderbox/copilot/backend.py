@@ -60,7 +60,12 @@ from shaderbox.copilot.capabilities import (
 )
 from shaderbox.copilot.checkpoint import TurnCheckpoint
 from shaderbox.copilot.config import COPILOT_CONFIG, COPILOT_ENGINE
-from shaderbox.copilot.edit_hints import compile_hints, render_facts
+from shaderbox.copilot.edit_hints import (
+    FACTS_PREFIX,
+    STAMPED_FACTS_PREFIX,
+    compile_hints,
+    render_facts,
+)
 from shaderbox.copilot.error_render import format_compile_errors
 from shaderbox.copilot.errors import CopilotToolError
 from shaderbox.copilot.gate import GateChannel, GateKind, GateRequest
@@ -110,7 +115,9 @@ _MOTION_EPS = 1.5
 
 def _stamp_facts(facts: str, t: float) -> str:
     # Stamp the probe's sample time onto the facts line ("render:" -> "render@t=Xs:").
-    return facts.replace("render:", f"render@t={t:.1f}s:", 1) if facts else ""
+    if not facts:
+        return ""
+    return facts.replace(FACTS_PREFIX, f"{STAMPED_FACTS_PREFIX}{t:.1f}s:", 1)
 
 
 _COPILOT_FULL_ID_LEN = 36
@@ -139,13 +146,6 @@ def _script_error_info(err: ScriptError) -> CompileErrorInfo:
 def _no_node_error(handle: str) -> CompileErrorInfo:
     where = f"'{handle}'" if handle else "the current node (none selected)"
     return CompileErrorInfo(path="", line=0, message=f"no node found for {where}")
-
-
-def _format_script_error(err: ScriptError) -> str:
-    # The agent-facing compile/runtime error line for a script write (feature 043), mirroring the
-    # shader "path:line: message" shape; omit the :line when unmapped.
-    loc = f"script.py:{err.line}" if err.line > 0 else "script.py"
-    return f"{loc}: {err.message}"
 
 
 def _cross_file_note(edited_path: Path, errors: list[CompileErrorInfo]) -> str:
@@ -1378,7 +1378,7 @@ class CopilotBackend:
         base = "".join(
             c if c.isalnum() or c in "-_" else "_" for c in node.ui_state.ui_name
         )
-        short = self._copilot_short_ids().get(node.id, node.id[:4])
+        short = self._copilot_short_ids().get(node.id, node.id[:NODE_SHORT_ID_LEN])
         renders = self._get_renders_dir()
         n = 0
         while True:
@@ -1953,10 +1953,11 @@ class CopilotBackend:
         self._capture_script(node_id)
         probe = self._write_script_source(node_id, new_text)
         broken = (
-            _format_script_error(probe.compile_error)
+            format_compile_errors([_script_error_info(probe.compile_error)])
             if probe.compile_error
             else (
-                "ran, then " + _format_script_error(probe.runtime_error)
+                "ran, then "
+                + format_compile_errors([_script_error_info(probe.runtime_error)])
                 if probe.runtime_error
                 else ""
             )

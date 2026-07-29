@@ -1,6 +1,9 @@
 from dataclasses import dataclass
 
 
+# slots=True on both: the shared instances are mutated by name through the Settings seam
+# (`apply_user_limits`), and slots make a misspelled field raise there instead of silently
+# growing a new attribute nothing ever reads.
 @dataclass(slots=True)
 class CopilotConfig:
     """The user-facing agent-loop limits: caps, retry budgets, nudge thresholds, the turn budget.
@@ -18,9 +21,13 @@ class CopilotConfig:
     # 10 minutes. Checked at iteration boundaries, so a turn overshoots by at most one iteration.
     turn_time_budget_s: int = 180
     max_input_tokens: int = 150_000
-    # Reasoning models bill hidden thinking into the output budget; creative
-    # generations need headroom beyond the visible reply + tool args.
-    max_tokens_per_turn: int = 12_000
+    # Output-token cap per LLM step. Reasoning models bill hidden thinking into this budget: at
+    # reasoning_effort="none" gpt-5.1-codex-mini still reasons on a compound ask, and 12k went
+    # ENTIRELY to hidden reasoning (out=11968 rsn=11968 — zero text, zero tool calls, the turn
+    # loops with nothing landing); 30k leaves room for the reply + tool args. The interplay: a
+    # bigger budget also lengthens the worst single stream, which can only be cut at an iteration
+    # boundary — so turn_time_budget_s overshoots further.
+    max_tokens_per_turn: int = 30_000
     # Soft per-edit compile-fix retry budget, distinct from max_iterations (§I2).
     max_edit_retries: int = 3
     # Consecutive broken-compile edits on ONE file before the engine force-restores it to
@@ -112,9 +119,9 @@ class CopilotEngineConfig:
     # "none" is honored (2026-07-29, measured).
     llm_reasoning_effort: str = "none"
     # Cap for the forced final NO-TOOLS reply (stream_final_reply). The full max_tokens_per_turn
-    # there lets a token-budget-cut turn stream up to ~400s of closing text PAST the wall-clock
-    # budget (checked only at iteration boundaries) — a dogfood turn died to an external kill
-    # mid-stream (2026-07-29). A closing user-facing message needs a fraction of the turn budget.
+    # there lets a token-budget-cut turn stream minutes of closing text PAST the wall-clock budget,
+    # which is only checked at iteration boundaries. A closing user-facing message needs a fraction
+    # of the turn budget.
     final_reply_max_tokens: int = 1_500
 
 

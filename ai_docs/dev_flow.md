@@ -108,8 +108,10 @@ corrects.
    for a high-blast-radius diff a *spec-fidelity audit* (walks the spec end-to-end against the diff —
    every locked decision actually landed). Each reviewer runs `git show --stat <impl-commit>` first to
    know the full surface, reads every changed file end-to-end, and states which it skipped and why (a
-   finding list without a coverage statement = under-read). Findings → triage → fix inline / file as
-   `todo.md` deferral with a trigger / promote new design decisions to `conventions.md ## Design decisions`.
+   finding list without a coverage statement = under-read). Findings → triage → **fix inline in this
+   wave** (`todo.md` is frozen drain-only — a real finding does NOT get filed for later) / record the
+   durable knowledge in the feature's ledger or spec / promote new design decisions to
+   `conventions.md ## Design decisions`.
    The "2-3" is a FLOOR for a mid feature, not a ceiling — for high-blast-radius diffs, finalize
    sweeps, or a docs-harness audit, escalate to a larger parallel **swarm run as a convergence
    loop** (spawn all reviewers in one message; triage real-vs-false-positive; re-spawn the same
@@ -140,13 +142,19 @@ corrects.
      mechanically greppable: grep the symbol for a READER, not just its definition. Make this an
      explicit line in the spec's Manual-verification section — for each safety guarantee, the call site
      that reads it + the test that exercises that consumer.
+   - **A behavioural gate may only cite a baseline produced under the SAME actor configuration**
+     (model id, engine flags — reasoning effort, token/time budgets). Changing one of those flags
+     INVALIDATES every prior baseline: the comparison then measures the flag, not the change. Run a
+     fresh control BEFORE the change, or demote the gate to an observation and say so.
 
 8. **Sanitization sweep** — the `/sanitize` skill. Separate commit (or its own line in the commit
    message).
 
 9. **Done** — add or flip the feature's `roadmap.md` row (status + `Spec:` pointer) and **rewrite**
-   the Active-context banner if "what's next" changed; move open items to `todo.md` with concrete
-   triggers. The story stays in the feature spec / commit message — the row is one line.
+   the Active-context banner if "what's next" changed. Anything still open lands in the feature's
+   ledger / spec (or `conventions.md` if it's a durable decision or quirk) — `todo.md` is frozen
+   drain-only and takes no new entries. The story stays in the feature spec / commit message — the
+   row is one line.
 
 ---
 
@@ -510,11 +518,12 @@ the narrative was useless noise; the durable facts are the spec + the row + the 
 history kept for traceability" is the append-rot anti-pattern — git log is traceability. Banned
 phrases inside the banner: "carry-over from earlier banner", "previous-action (archived…)".
 
-### `todo.md` is a grep-by-trigger index
-Each entry names a concrete observable trigger (a file/code touch, a count threshold, a user
-complaint with a measurable surface, a specific upstream change). Designs don't go here — they go in
-the feature spec or `conventions.md`. If N entries fire on the same trigger, they're ONE rolling
-entry, not N.
+### `todo.md` is FROZEN — a grep-by-trigger index that only shrinks
+No new entries, ever (maintainer call, 2026-07-27): a defect found in a wave is FIXED in that wave,
+and its durable knowledge goes to the feature ledger / spec or `conventions.md`. The remaining
+entries each name a concrete observable trigger (a file/code touch, a count threshold, a user
+complaint with a measurable surface, a specific upstream change) — grep by `Trigger` before working
+in an area, and delete an entry in the commit that resolves it. Designs never went here anyway.
 
 ### Code comments state the now, not the history
 A comment names what's non-obvious about the code as it currently is — a GL invariant, an

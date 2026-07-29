@@ -78,7 +78,7 @@ and **wave A does not proceed to wave B until its gate passes**:
 |---|---|---:|---|
 | **A** | D1 (watershed) + D2 (implementation details out) + D9 (test rewrite) + the D1 half of the tool descriptions | 19 096 | de-hinted 05, 04, 08, 10, 13 (see Validation) |
 | **B** | D3 (SCRIPT API block) + D4 (TEXT-rule resolution) + D5 (dedup cuts + the schema-error fixes) | 15 511 | 13, plus the four micro-probes |
-| **C** | D7 (legend trim + splice) | 14 428 | 03 + 04 honesty axis (03 needs a control — see Validation); the splice unit test |
+| **C** | D7 (legend trim + splice) | 14 435 | 03 + 04 honesty axis (03 needs a control — see Validation); the splice unit test |
 
 Wave A carries the tool-description watershed edits (D1a) because leaving them a wave behind would
 put the corrected rule and its negation in the same context window — the exact defect being fixed.
@@ -516,22 +516,25 @@ to t=1.5s)" / "ANIMATES (the frame changes over time)"); and the no-op line with
 ("dead code, the wrong node/target, a value a script overrides, or a change only visible between t=0
 and t=1.5s"). Re-explaining those in a legend is paying twice. The genuinely non-obvious residue is
 four terms — what `ink %` counts, what `bbox` is measured in, what `ink mean rgb` averages over, and
-what the `luma 0-9` grid is:
+what the `luma 0-9` grid is — plus the one diagnostic that only makes sense next to the measured
+motion word (a `STATIC` you did not intend = missing `u_time` wiring, not a tuning problem). As
+landed (`prompt.py::_RENDER_FACTS_LEGEND`):
 
 ```
 [how to read the line above] ink % = share of pixels differing from the corner-sampled
 background (alpha counts, so a shape on transparency is ink); bbox = where that ink sits, in vs_uv
 (hugging an edge = off-center; x 0.00-1.00 = touching both edges); ink mean rgb = the alpha-weighted
 mean colour of the DRAWN region only -- the ONLY colour signal you get; luma 0-9 = a 3x3 brightness
-grid, top row first.
+grid, top row first; motion: STATIC when you meant it to move = the u_time wiring is missing, not a
+tuning issue.
 ```
 
-**407 chars (~102 tok)** — versus 1 240 for the full legend and 1 629 for the current bullet.
+**500 chars (~125 tok)** — versus 1 240 for the full legend and 1 629 for the current bullet.
 
-**Cost.** Under C with a 407-char legend: ~102 tokens, emitted at most once per turn, re-sent on each
+**Cost.** Under C with the 500-char legend: ~125 tokens, emitted at most once per turn, re-sent on each
 remaining iteration of that turn (the within-turn tool tail is re-sent but discarded at the turn
 boundary — the NL-only history invariant is untouched), and **zero on turns that never render** (a
-greeting, a pure read, a question). Option A (keep in STATIC, cached) pays ~102 tok in the cached
+greeting, a pure read, a question). Option A (keep in STATIC, cached) pays ~125 tok in the cached
 prefix on every request of every turn. At observed turn shapes the two are within noise of each
 other; C is chosen for the attention clustering the review asked for ("прямо рядом с рендер-фактами…
 чтобы attention был скластеризован"), not for the token saving.
@@ -605,13 +608,13 @@ EDITING
 | ADDRESSING | 407 | 262 | -145 | B |
 | THE SANDBOX | 523 | 523 | 0 | — |
 | HOW TO WORK | 1 844 | 1 844 | 0 | — |
-| **`_SYSTEM_PROMPT`** (sections + 12 separators) | **20 507** | **14 428** | **-6 079 (-29.6%)** | |
+| **`_SYSTEM_PROMPT`** (sections + 12 separators) | **20 507** | **14 435** | **-6 072 (-29.6%)** | |
 | `_CONVENTIONS` (RARE) | 1 394 | 1 605 | +211 (D4) | B |
 | `SCRIPT API` (RARE, new) | 0 | 1 214 | +1 214 | B |
-| **STATIC + RARE** | **21 901** | **17 247** | **-4 654 (-21.3%)** | |
-| legend (PER_TURN, at most once per turn) | 0 | 407 | +407 on a turn that renders | C |
+| **STATIC + RARE** | **21 901** | **17 254** | **-4 647 (-21.2%)** | |
+| legend (PER_TURN, at most once per turn) | 0 | 500 | +500 on a turn that renders | C |
 
-Per wave: A 20 507 -> 19 096; B -> 15 511 (+1 425 RARE); C -> 14 428.
+Per wave: A 20 507 -> 19 096; B -> 15 511 (+1 425 RARE); C -> 14 435.
 Token estimate at the repo's `_CHARS_PER_TOKEN = 4`: STATIC 5 126 -> 3 607 tok.
 
 **Advisory ceiling, not a gate.** ~15 000 chars post-wave-C is the target. An overshoot is allowed but
@@ -694,6 +697,9 @@ hoisted in the same wave (one line each).
 
 `make check` + `make test` are the floor; the behavioural gate is the dogfood echelon driven per the
 `/dogfood` skill.
+
+**Results:** `02_controls.md` (the controls) + `03_wave_a_gates.md` (all three wave gates + the four
+micro-probes).
 
 ### Control discipline — which scenarios can gate anything
 

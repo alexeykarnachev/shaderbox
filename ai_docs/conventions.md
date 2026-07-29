@@ -605,6 +605,14 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   could carry paths/secrets), full traceback to the debug log. A tool handler signals an expected
   failure by `raise CopilotToolError(<model-facing message>)`, never by returning a bare string through
   the generic path. Revisit if a third class (e.g. a retryable-vs-terminal distinction) earns a branch.
+- **The copilot config splits by TUNABILITY, not by topic.** `CopilotConfig`/`COPILOT_CONFIG` holds
+  ONLY the knobs Settings exposes and persists — every field must appear in `apply_user_limits`
+  (test-pinned, so a new field without a Settings seam goes red). `CopilotEngineConfig`/`COPILOT_ENGINE`
+  holds engine internals, in-code only (probe knobs, `llm_reasoning_effort`, timeouts, the final-reply
+  cap) — nothing persists them and `apply_user_limits` never touches them. Both dataclasses are
+  `slots=True`, so assigning a knob to the WRONG singleton raises `AttributeError` instead of silently
+  no-opping. A new knob picks its home by one question: *would the maintainer tune this from the UI?*
+  Revisit if a knob needs per-project rather than per-install scope.
 
 *(Each bullet is a generic constraint on future code + a revisit trigger — NOT a feature changelog.
 The `/sanitize` noise audit deletes bullets that narrate a one-off implementation choice; per-feature
@@ -710,6 +718,20 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   ptb's default `HTTPXRequest` timeouts are **5s** (read/connect/write), which a VPN/tunnel routinely
   exceeds → `ReadTimeout`/`TimedOut`. `_ipv4_request()` passes generous explicit timeouts (30s + 120s
   `media_write_timeout` for the upload).
+- **A provider's reasoning-effort flag is honored per-ASK, not per-request.** `gpt-5.1-codex-mini`
+  via OpenRouter honors `reasoning.effort="none"` on simple asks, and reasons anyway on compound
+  ones — where it can burn the ENTIRE turn budget as hidden reasoning and emit zero text and zero
+  tool calls (measured `out=11968 rsn=11968`: 12k starves the turn, 30k passes, so the shipped
+  default `max_tokens_per_turn` is now 30k). Measurement:
+  `ai_docs/features/059_prompt_refactor/02_controls.md`. Corollary for any such flag: a bare-probe
+  measurement ("effort=none is honored") proves nothing about hard tool-bearing turns — measure it
+  on a compound ask or don't claim it.
+- **`@dataclass(slots=True)` removes class-level defaults.** `Cls.field` on a slotted dataclass
+  returns a `member_descriptor`, not the default VALUE — the default only exists on an instance.
+  Anything sourcing defaults from the class (a pydantic model mirroring a config dataclass) must read
+  them off an INSTANCE: `exporters/integrations.py` keeps one `_COPILOT_DEFAULTS = CopilotConfig()`
+  module-level instance and every field default reads `_COPILOT_DEFAULTS.<name>`. Reading the class
+  attribute instead type-checks fine and ships a `member_descriptor` as the default.
 - **The sanctioned `# type: ignore` allowlist (upstream stub gaps only).** The no-suppression rule
   has exactly these exceptions — all are missing/wrong annotations in third-party stubs, never our
   own type errors. New markers outside this list are a design smell; fix the design, don't add to

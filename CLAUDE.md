@@ -11,7 +11,7 @@ For ANY work, follow this chain in order. Don't read sideways, don't pre-read au
 
 1. **This file.** Stack, hard rules, navigation, skills.
 2. **`ai_docs/roadmap.md`** — what's built and what's next (the Active-context banner is "what's next?").
-3. **`ai_docs/todo.md`** — known blockers/deferrals, each with a **Trigger**. Grep by `Trigger` before working in an area.
+3. **`ai_docs/todo.md`** — known blockers/deferrals, each with a **Trigger**. Grep by `Trigger` before working in an area. **FROZEN drain-only — never add entries; new defects are fixed in the wave that finds them.**
 4. **`ai_docs/dev_flow.md`** — the single source of truth for HOW work happens (feature flow, recipes, doc discipline, maintainer habits).
 
 Quick routing (full version → `dev_flow.md`):
@@ -45,7 +45,8 @@ Full design decisions, library quirks, and the sanctioned type-ignore allowlist 
 
 - `/sanitize` — closing-out sweep (run before "done").
 - `/imgui-ui` — read at the START of ANY UI work. Single source of truth for imgui patterns (button tiers, jitter, modals, context menus, imgui-bundle quirks).
-- `/dogfood` — run the headless copilot dogfood harness (drive the real engine on the Pi, render + eyeball, produce a findings report). The operating manual for feature 026 + every gotcha already hit.
+- `/copilot-llm-agent-design` — read at the START of ANY copilot / LLM-agent design work. The actor model every copilot decision hangs off (prompt tiers, tool count, guards, secrets, cost).
+- `/dogfood` — run the headless copilot dogfood harness (drive the real engine headless, render + eyeball, produce a findings report). The operating manual for feature 026 + every gotcha already hit.
 - `/shader-lab` — iterative step-by-step shader-effect development (build an effect as versioned steps the user watches evolve live or via MP4), to mine reusable techniques for the copilot/lib/app. Lab projects live gitignored in `projects/_lab/`.
 - `/ship` — release-to-itch.io procedure. Maintainer-triggered only.
 

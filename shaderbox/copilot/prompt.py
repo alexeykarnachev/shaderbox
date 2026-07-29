@@ -6,6 +6,7 @@ from loguru import logger
 
 from shaderbox.copilot.capabilities import WorkingSetView
 from shaderbox.copilot.config import COPILOT_CONFIG, COPILOT_ENGINE
+from shaderbox.copilot.edit_hints import STAMPED_FACTS_PREFIX
 from shaderbox.copilot.error_render import format_compile_errors
 from shaderbox.copilot.llm.api import LLMMessage
 from shaderbox.copilot.prompt_context import CopilotContext
@@ -242,9 +243,22 @@ mean colour of the DRAWN region only -- the ONLY colour signal you get; luma 0-9
 grid, top row first; motion: STATIC when you meant it to move = the u_time wiring is missing, not a
 tuning issue."""
 
-# What a facts-bearing result looks like: `backend._stamp_facts` rewrites `render:` to `render@t=Xs:`
-# on every model-facing facts line (the FLAT verdict included).
-_RENDER_FACTS_MARKER = "render@t="
+
+def facts_legend_splicer() -> Callable[[str], str]:
+    """One turn's legend splicer: appends the legend to the FIRST facts-bearing result, then never
+    again. A facts-bearing result is one carrying `edit_hints.STAMPED_FACTS_PREFIX` (the stamped
+    prefix every model-facing facts line gets, the FLAT verdict included)."""
+    emitted = False
+
+    def splice(msg: str) -> str:
+        nonlocal emitted
+        if emitted or STAMPED_FACTS_PREFIX not in msg:
+            return msg
+        emitted = True
+        return f"{msg}\n{_RENDER_FACTS_LEGEND}"
+
+    return splice
+
 
 _CONTROL_CHARS = {c for c in range(0x20) if c not in (0x09, 0x0A, 0x0D)}
 

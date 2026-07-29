@@ -1,4 +1,6 @@
-# Wave-A gates: new prompt @ effort=none vs the 02_controls baselines (2026-07-29)
+# 059 gates: new prompt @ effort=none vs the 02_controls baselines
+
+# Wave-A gates (2026-07-29)
 
 | gate | verdict | vs control |
 |---|---|---|
@@ -49,3 +51,23 @@ No cut-surface regression observed; the D5 coverage is additionally pinned by th
 | 03 circles | PASS with 1 correction (edge-tangent circles -> margins 35/35, widths 5x51, gaps 18-19) — best 03 across all versions |
 
 059 complete: prompt 20507 -> 14435 (-29.6%), all three waves landed with green echelon gates.
+
+# D5 micro-probes (RUN 2026-07-30, project data-mp)
+
+Single-turn harness drives on the landed prompt; each asserts on the TOOL CALL made, not a visual
+outcome (no baseline needed).
+
+| probe | verdict |
+|---|---|
+| bind_media discoverability ("put this image in the shader") | **PASS** — loaded the lazy tool and bound the picker-canned photo unprompted |
+| Telegram deflection (credentials cleared) | **PASS** — the reply routes to `set_telegram_token`'s secure prompt, zero Settings deflection |
+| YouTube deflection (credentials cleared) | **PASS** — the reply routes to `set_youtube_credentials`'s secure prompt, zero Settings deflection |
+| publish targeting (non-current node named) | **INCONCLUSIVE — blocked at credentials**: the flow correctly stops at the credential step, before any `switch_node` question arises. The harness has no exporters, so nothing further is reachable. |
+
+Correction (post-run): probes 2-4 accidentally ran against an EMPTY project at the repo root — a
+driver fixture bug (broken nested-quote substitution passed project_dir="."), not the seeded
+project. The model's "there aren't any shader nodes in the project" was therefore TRUTHFUL, not a
+hallucination — the third instance of the driver/judge-gaslights-the-model class (after the bounce
+values misread and the pong live-tick misread). The deflection verdicts stand: they assert on
+where the reply routes credentials, which does not depend on project content. The stray root
+project was deleted.

@@ -14,11 +14,11 @@ from shaderbox.copilot.prompt_context import build_context
 from shaderbox.scripting import api_doc
 from shaderbox.scripting.api_doc import (
     _CTX_GLOSS,
-    VALUE_SHAPE_GLOSS,
-    VEC_OPERATOR_GLOSS,
+    _VALUE_SHAPE_GLOSS,
+    _VEC_OPERATOR_GLOSS,
     script_api_summary,
 )
-from shaderbox.scripting.context import EngineContext, MouseState
+from shaderbox.scripting.context import EXPORT_MOUSE, EngineContext, MouseState
 from shaderbox.scripting.engine import _stub_kind
 from shaderbox.scripting.outputs import Array, Text, Vec2, Vec3, Vec4, _Vec
 from tests._caps import minimal_caps
@@ -86,10 +86,10 @@ def test_the_vec_member_check_actually_fails_on_an_undocumented_member() -> None
 def test_operator_dunders_match_the_allowlist_and_all_reach_the_summary() -> None:
     # Both directions: dropping `__truediv__` from outputs.py goes red, and adding `__mod__` without
     # documenting it goes red too.
-    assert _operator_dunders(_VEC_CLASSES) == set(VEC_OPERATOR_GLOSS)
+    assert _operator_dunders(_VEC_CLASSES) == set(_VEC_OPERATOR_GLOSS)
     # The map IS the rendered operator list, so this half fails if the bullet is dropped or reworded.
     summary = _flat(script_api_summary())
-    for dunder, gloss in VEC_OPERATOR_GLOSS.items():
+    for dunder, gloss in _VEC_OPERATOR_GLOSS.items():
         assert gloss in summary, dunder
 
 
@@ -109,7 +109,8 @@ def test_summary_lists_every_ctx_field_and_the_mouse_subfields() -> None:
 def test_the_mouse_gloss_carries_the_frozen_at_center_caveat() -> None:
     # 17ab552 inlined this fact next to the ctx intro because a live leak showed the agent trusting
     # mouse motion in a probe. The ctx intro moved to the generated block; the caveat moves with it.
-    caveat = "FROZEN at 0.5,0.5 on export and in the headless probe"
+    at = f"{EXPORT_MOUSE.x:g},{EXPORT_MOUSE.y:g}"
+    caveat = f"FROZEN at {at} on export and in the headless probe"
     assert caveat in _CTX_GLOSS["mouse"]
     assert caveat in _flat(script_api_summary())
 
@@ -129,7 +130,7 @@ def test_every_stub_kind_type_name_has_a_value_shape_gloss() -> None:
                     assert isinstance(first, ast.Constant), ast.dump(first)
                     returned.add(str(first.value))
     assert returned, "found no type names in _stub_kind"
-    assert returned <= set(VALUE_SHAPE_GLOSS), returned - set(VALUE_SHAPE_GLOSS)
+    assert returned <= set(_VALUE_SHAPE_GLOSS), returned - set(_VALUE_SHAPE_GLOSS)
 
 
 def test_array_and_text_are_described_by_their_real_constructor_params() -> None:

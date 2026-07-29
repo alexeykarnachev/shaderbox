@@ -3,8 +3,8 @@ Python side of a node script, rendered FROM the live types so the block cannot d
 
 Names, signatures and field types come from the code; the semantics beside them are authored, and
 `tests/test_script_api_doc.py` pins the join: `_CTX_GLOSS`'s keys must equal the ctx dataclass
-fields, every type name `engine.py::_stub_kind` can return must be a key in `VALUE_SHAPE_GLOSS`, and
-every public `Vec` member plus every operator dunder must reach the rendered text.
+fields, every type name `engine.py::_stub_kind` can return must be a key in `_VALUE_SHAPE_GLOSS`,
+and every public `Vec` member plus every operator dunder must reach the rendered text.
 
 This module reaches only for the GL-free halves of the package (`context` + `outputs`) — never
 `engine`/`behavior`, which import `moderngl`. A runtime `sys.modules` assertion cannot express that:
@@ -33,7 +33,7 @@ _VEC_FORMS: str = " / ".join(_call_form(c, c.__new__) for c in (Vec2, Vec3, Vec4
 # Type name (as `engine.py::_stub_kind` names it) -> its one-line value-shape prose. Names that share
 # a shape share the gloss verbatim; the render de-dupes in insertion order, so the printed list groups
 # exactly as this map does.
-VALUE_SHAPE_GLOSS: dict[str, str] = {
+_VALUE_SHAPE_GLOSS: dict[str, str] = {
     "float": "float|int -> scalar",
     "int": "float|int -> scalar",
     "Vec2": f"{_VEC_FORMS} -> vec2/3/4",
@@ -49,7 +49,7 @@ VALUE_SHAPE_GLOSS: dict[str, str] = {
 # The `_Vec` operator dunders, each mapped to the prose the block prints for it — this map IS the
 # rendered operator list, so a dunder on the Vec classes that is missing here (or here and not on
 # them) fails the coverage test. Dunders sharing an arity/semantics share their prose verbatim.
-VEC_OPERATOR_GLOSS: dict[str, str] = {
+_VEC_OPERATOR_GLOSS: dict[str, str] = {
     "__add__": "`+ -` (same length)",
     "__sub__": "`+ -` (same length)",
     "__mul__": "`* /` (scalar or component-wise)",
@@ -121,11 +121,11 @@ def script_api_summary() -> str:
         "runs every frame and returns {uniform_name: value}. State on `self.*` persists across "
         "frames; a key you omit (or map to None) stays MANUAL.",
         f"- ctx: {_ctx_fields()}.",
-        f"- Legal value shapes: {_dedup_join(VALUE_SHAPE_GLOSS.values(), '; ')}. A bare FLAT list "
+        f"- Legal value shapes: {_dedup_join(_VALUE_SHAPE_GLOSS.values(), '; ')}. A bare FLAT list "
         "also coerces (a vec, or an exact-length numeric array); a NESTED bare list does not -- that "
         "is what Array is for.",
         f"- Vec2/Vec3/Vec4 are real vectors: `.x .y .z .w`, "
-        f"{_dedup_join(VEC_OPERATOR_GLOSS.values(), ', ')}, `.dot(o)`, `.length()`, "
+        f"{_dedup_join(_VEC_OPERATOR_GLOSS.values(), ', ')}, `.dot(o)`, `.length()`, "
         "`.normalized()`; Vec3 also `.cross(o)`.",
         f"- `from shaderbox.scripting import {_IMPORT_NAMES}` (the engine injects these too); a "
         "script is plain Python -- `import math` and the stdlib work.",

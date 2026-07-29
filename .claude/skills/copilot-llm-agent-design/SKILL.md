@@ -114,6 +114,16 @@ Three ways to influence the actor, in descending reliability:
   known class is NOT a trigger for another round; a new CLASS in a different session is. (The 020·29
   overfit audit cut 3.5 of 6 proposed guards under this rule.)
 
+- **A rule's HOME follows WHEN it fires: pre-action stays STATIC, post-action rides the line it decodes.**
+  A rule that governs what the model does BEFORE (or instead of) acting must live in the static prompt —
+  on the turn where the user says "make it warmer" there may be no tool result yet, so a rule parked on a
+  result is absent exactly when it's needed. A pure GLOSS (it only explains how to read a line the model
+  is already looking at) belongs WITH that line: splice it onto the line, once per turn, behind a flag, so
+  a turn that never renders pays nothing and attention stays clustered where the numbers are. Classify
+  every clause of a fat prompt block this way before trimming it — the split is what makes the cut safe
+  (059 D7's reusable form: three pre-action clauses stayed in STATIC, the four-term-plus-diagnostic
+  residue became a per-turn legend).
+
 Locked detail: `conventions.md` "A copilot tooling/prompt GUARD earns its place only if a strictly
 BETTER model would still need it." The stopping rule + convergence discipline are exercised in `/dogfood`.
 
@@ -142,6 +152,12 @@ through a normal arg. Locked detail: `conventions.md` (the `GateKind.CREDENTIAL`
   cold AND warm.
 - **A visualization must answer exactly ONE named question.** If you can't name the question (028's "when
   do I compact?"), you're showing data, not signal — don't build it.
+- **A provider's reasoning flag can be silently IGNORED, and its effect is ASK-dependent.** `effort="none"`
+  is a request, not a contract: the same model honors it on a simple ask and reasons anyway on a compound
+  tool-bearing one, where hidden reasoning can consume the entire turn budget and emit nothing. So hidden
+  reasoning is a third cost/latency variable beside input and output — and it must be measured on the hard
+  turn shape you actually run, never on a bare one-shot probe. Locked detail + the numbers:
+  `conventions.md ## Known quirks` (the per-ASK reasoning-effort entry).
 
 ---
 

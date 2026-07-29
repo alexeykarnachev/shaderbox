@@ -13,6 +13,11 @@ from shaderbox.copilot.tools.publish import (
 from shaderbox.copilot.tools.script import _READ_SCRIPT_DESC, _WRITE_SCRIPT_DESC
 
 
+def _flat(text: str) -> str:
+    # Collapse the prompt's hard wrapping so a phrase pin matches content, not layout.
+    return " ".join(text.split())
+
+
 def test_system_prompt_carries_the_visual_craft_block() -> None:
     p = _SYSTEM_PROMPT
     assert "VISUAL CRAFT" in p
@@ -155,7 +160,10 @@ def test_feedback_keeps_the_pre_action_rules_and_sheds_the_legend() -> None:
     # each fix a recorded regression (618af96 relative-colour verify, c39caac blank-cold-t0-develops,
     # 2ff249f no-op-don't-reapply) and must stay in STATIC — on the turn the user says "make it
     # warmer" there is no facts line yet to carry them.
-    p = _SYSTEM_PROMPT
+    # Both texts are hard-wrapped, so a multi-word phrase can straddle a line break — assert
+    # against the unwrapped text or a pin fails on layout rather than on content.
+    p = _flat(_SYSTEM_PROMPT)
+    legend = _flat(_RENDER_FACTS_LEGEND)
     for stays in (
         "ink mean rgb",  # 618af96: verify a relative colour ask against the measurement
         "read it back after the edit",
@@ -176,4 +184,4 @@ def test_feedback_keeps_the_pre_action_rules_and_sheds_the_legend() -> None:
         "motion: STATIC when you meant it to move",
     ):
         assert moved not in p, moved
-        assert moved in _RENDER_FACTS_LEGEND, moved
+        assert moved in legend, moved

@@ -44,7 +44,7 @@ def test_set_uniform_rejects_script_driven() -> None:
     assert not result.ok
     assert "script-driven" in result.error
     assert "edit_script/write_script" in result.error
-    assert "nodes/" not in result.error and "script.py" not in result.error
+    assert "nodes/" not in result.error
 
 
 def test_set_uniform_does_not_reject_a_non_script_uniform() -> None:

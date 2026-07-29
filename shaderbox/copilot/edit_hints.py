@@ -11,6 +11,12 @@ import re
 
 from shaderbox.shader_lib import parser
 
+# The facts-line prefix, owned here (the producer). `backend._stamp_facts` rewrites FACTS_PREFIX to
+# `<STAMPED_FACTS_PREFIX>Xs:` on every model-facing line, so STAMPED_FACTS_PREFIX is what a
+# facts-bearing tool result is recognised by downstream (prompt.py splices the legend on it).
+FACTS_PREFIX = "render:"
+STAMPED_FACTS_PREFIX = "render@t="
+
 # Duplicate-declaration wordings across the closed vendor set (Mesa GLSL-IR,
 # glslang/Apple/Intel-Windows, NVIDIA, AMD) — the hint itself is source-verified
 # (fires only when >=2 declaration lines actually exist), so broad matching is safe.
@@ -211,7 +217,8 @@ def render_facts(rgba: bytes, width: int, height: int) -> str:
                 if dev > max_dev:
                     max_dev = dev
         return (
-            f"render: FLAT — one uniform color rgba({bg[0]},{bg[1]},{bg[2]},{bg[3]}), "
+            f"{FACTS_PREFIX} FLAT — one uniform color "
+            f"rgba({bg[0]},{bg[1]},{bg[2]},{bg[3]}), "
             f"max pixel deviation {max_dev}/1020 (a blank OR a full-screen fill)"
             " NOTHING is visible: do not describe a scene — fix it, or report the "
             "flat frame and ask."
@@ -228,7 +235,8 @@ def render_facts(rgba: bytes, width: int, height: int) -> str:
     mr, mg, mb = (round(c / ink_w) for c in ink_rgb) if ink_w > 0 else (0, 0, 0)
     tone = "warm" if mr > mb + 25 else "cool" if mb > mr + 25 else "neutral"
     return (
-        f"render: ink {pct}% | bbox x {min_x / width:.2f}-{(max_x + 1) / width:.2f}, "
+        f"{FACTS_PREFIX} ink {pct}% | "
+        f"bbox x {min_x / width:.2f}-{(max_x + 1) / width:.2f}, "
         f"y {min_y / height:.2f}-{(max_y + 1) / height:.2f} (y=0 bottom) | "
         f"ink mean rgb({mr},{mg},{mb}) {tone} | "
         f"luma 0-9 top/mid/bottom rows: {grid_str}"

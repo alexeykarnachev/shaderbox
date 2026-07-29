@@ -6,9 +6,12 @@ context-assembly model) plus every dogfood run's dialogue, media and verdicts. R
 `uv run python scripts/agent_hub/generate.py`; output is `scripts/agent_hub/site/` (gitignored —
 static HTML + copied media, servable by any HTTP server on any box: WSL, the Pi, Ubuntu).
 
-Everything technical is pulled LIVE from the code (prompt/config/tools import; config field docs
-parsed from config.py's own comments), so the page cannot drift from the tree. Run verdicts and
-narratives are curated in RUNS below — they are the session's judgment, not derivable from code.
+The technical sections are pulled LIVE from the code at generation time — the system prompt, the
+conventions block, the generated SCRIPT API block, the render-facts legend, both config singletons
+(field docs parsed from config.py's own comments) and every tool signature off the registry — so a
+regenerated page reflects the current tree. The narrative parts around them (this docstring, the
+context-assembly prose, the run verdicts in RUNS below) are curated by hand and CAN go stale: they
+are the session's judgment, not derivable from code.
 """
 
 import html
@@ -27,8 +30,9 @@ RUNS_DIR = ROOT / "scripts" / "dogfood" / "runs"
 sys.path.insert(0, str(ROOT))
 
 from shaderbox.copilot.config import COPILOT_CONFIG, COPILOT_ENGINE  # noqa: E402
-from shaderbox.copilot.prompt import _SYSTEM_PROMPT  # noqa: E402
+from shaderbox.copilot.prompt import _RENDER_FACTS_LEGEND, _SYSTEM_PROMPT  # noqa: E402
 from shaderbox.copilot.prompt_context import _CONVENTIONS  # noqa: E402
+from shaderbox.scripting.api_doc import script_api_summary  # noqa: E402
 
 sys.path.insert(0, str(ROOT / "tests"))
 from _caps import minimal_caps  # noqa: E402
@@ -68,14 +72,7 @@ def config_rows() -> list[tuple[str, str, str, str]]:
 
 
 def tool_sections() -> str:
-    reg = build_registry(minimal_caps())
-    items = None
-    for attr in ("_defs", "_definitions", "_tools", "_by_name"):
-        v = getattr(reg, attr, None)
-        if v:
-            items = list(v.values()) if isinstance(v, dict) else list(v)
-            break
-    assert items
+    items = build_registry(minimal_caps()).definitions()
     out = []
     for tier, flag in (
         ("Eager — в каждом запросе", True),
@@ -325,7 +322,7 @@ FINDINGS_DOCS = [
         "ai_docs/features/059_prompt_refactor/02_controls.md",
     ),
     (
-        "059 гейты волны A: новый промпт vs контролы",
+        "059 гейты волн A/B/C + микропробы",
         "ai_docs/features/059_prompt_refactor/03_wave_a_gates.md",
     ),
 ]
@@ -406,11 +403,13 @@ def main() -> None:
         )
     ctx_model = (
         "<p>Промпт собирается из тиров по волатильности (стабильное выше — префикс кэшируется, ~4× дешевле): "
-        "<b>STATIC</b> (системный промпт §3) → <b>RARE</b> (карта проекта: ноды/current/ошибки; каталог SB_*-библиотеки; "
-        "каталог примеров; каталог lazy-тулов; conventions §4) → <b>DIALOGUE</b> (история: ТОЛЬКО натуральный язык — "
+        "<b>STATIC</b> (системный промпт) → <b>RARE</b> (карта проекта: ноды/current/ошибки; каталог SB_*-библиотеки; "
+        "каталог примеров; SCRIPT API блок; каталог lazy-тулов; conventions) → <b>DIALOGUE</b> (история: ТОЛЬКО натуральный язык — "
         "сообщения юзера + одно движковое summary на ход; исходники в историю не пишутся) → <b>PER_TURN</b> "
         "(сообщение юзера + WORKING SET: полный нумерованный исходник каждой ноды в работе, канвас, uniform'ы, "
-        "ошибки, script.py — пересобирается каждый шаг, LRU-кап 6 членов с объявлением эвикций).</p>"
+        "ошибки, script.py — пересобирается каждый шаг, LRU-кап 6 членов с объявлением эвикций). "
+        "Плюс к PER_TURN: легенда чтения рендер-фактов приклеивается к ПЕРВОМУ за ход результату тула, "
+        "несущему строку фактов (один раз за ход; на ходах без рендера не стоит ничего).</p>"
     )
     parts.append(
         section(
@@ -434,6 +433,22 @@ def main() -> None:
             "conventions",
             "Conventions-блок (RARE-тир, дословно)",
             f"<pre>{esc(_CONVENTIONS)}</pre>",
+            toc,
+        )
+    )
+    parts.append(
+        section(
+            "script-api",
+            "SCRIPT API блок (RARE, генерируется из кода)",
+            f"<pre>{esc(script_api_summary())}</pre>",
+            toc,
+        )
+    )
+    parts.append(
+        section(
+            "facts-legend",
+            "Легенда рендер-фактов (PER_TURN, приклеивается к первому за ход результату с фактами)",
+            f"<pre>{esc(_RENDER_FACTS_LEGEND)}</pre>",
             toc,
         )
     )

@@ -37,6 +37,7 @@ from shaderbox.copilot.capabilities import (
     TelegramPackInfo,
     WorkingSetView,
 )
+from shaderbox.copilot.edit_hints import STAMPED_FACTS_PREFIX
 from shaderbox.render_shape import RenderShape
 
 
@@ -122,7 +123,7 @@ def minimal_caps(**overrides: Any) -> CopilotCapabilities:
         ),
         "render_image": lambda _n, _shape: RenderResult(ok=True),
         "render_video": lambda _n, _s, _f, _shape: RenderResult(ok=True),
-        "probe_render": lambda _n, _t: "render@t=0.0s: ink 0% (probe)",
+        "probe_render": lambda _n, _t: f"{STAMPED_FACTS_PREFIX}0.0s: ink 0% (probe)",
         "publish_telegram": lambda _e: PublishResult(ok=True),
         "publish_youtube": lambda _t, _d, _shape: PublishResult(ok=True),
         "has_current_node": lambda: True,
