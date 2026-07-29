@@ -1,7 +1,7 @@
 """User-tunable copilot limits (034 F12): store fields <-> live config seam."""
 
 import threading
-from dataclasses import replace
+from dataclasses import fields, replace
 from pathlib import Path
 
 from shaderbox.copilot.agent import AgentTurnDone, run_turn
@@ -39,6 +39,13 @@ def _snapshot() -> dict[str, int]:
 def _restore(snap: dict[str, int]) -> None:
     for f, v in snap.items():
         setattr(COPILOT_CONFIG, f, v)
+
+
+def test_copilot_config_holds_exactly_the_settings_tunable_knobs() -> None:
+    # CopilotConfig is the USER surface: every field must be Settings-tunable (reachable through
+    # apply_user_limits + persisted on CopilotIntegration). An untunable knob belongs on
+    # CopilotEngineConfig — landing it here would silently widen the Settings contract.
+    assert {f.name for f in fields(CopilotConfig)} == set(_LIMIT_FIELDS)
 
 
 def test_integration_defaults_mirror_config_defaults() -> None:

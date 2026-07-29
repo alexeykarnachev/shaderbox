@@ -6,7 +6,7 @@ from loguru import logger
 from openai import APIStatusError, OpenAI
 from openai.types.chat import ChatCompletionChunk
 
-from shaderbox.copilot.config import COPILOT_CONFIG
+from shaderbox.copilot.config import COPILOT_ENGINE
 from shaderbox.copilot.errors import CopilotConfigError
 from shaderbox.copilot.llm.api import (
     LLMClient,
@@ -96,7 +96,7 @@ class OpenRouterLLMClient(LLMClient):
         # the full value. So: an explicit httpx.Timeout (small connect, llm_request_timeout_s for
         # read/write/pool) + max_retries=0 (a copilot turn wants a fast-fail stream_error, not three
         # silent slow retries the per-delta cancel can't interrupt mid-create()).
-        timeout = httpx.Timeout(COPILOT_CONFIG.llm_request_timeout_s, connect=5.0)
+        timeout = httpx.Timeout(COPILOT_ENGINE.llm_request_timeout_s, connect=5.0)
         return OpenAI(
             base_url=_OPENROUTER_BASE_URL,
             api_key=self._get_api_key(),
@@ -142,7 +142,7 @@ class OpenRouterLLMClient(LLMClient):
             "stream_options": {"include_usage": True},
             "max_completion_tokens": max_tokens,
             "extra_body": {
-                "reasoning": {"effort": COPILOT_CONFIG.llm_reasoning_effort}
+                "reasoning": {"effort": COPILOT_ENGINE.llm_reasoning_effort}
             },
         }
         if tools:

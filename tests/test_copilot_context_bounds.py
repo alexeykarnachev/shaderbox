@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from shaderbox.copilot.backend import CopilotBackend
-from shaderbox.copilot.config import COPILOT_CONFIG
+from shaderbox.copilot.config import COPILOT_ENGINE
 from shaderbox.copilot.llm.openrouter import OpenRouterLLMClient
 from shaderbox.copilot.session import CopilotSession
 from shaderbox.project_session import ProjectSession
@@ -64,7 +64,7 @@ def test_reset_clears_the_eviction_record_too() -> None:
 def test_add_seam_evicts_the_least_recently_touched() -> None:
     stub = _ws_stub()
     add = _add(stub)
-    cap = COPILOT_CONFIG.copilot_working_set_max_nodes
+    cap = COPILOT_ENGINE.copilot_working_set_max_nodes
     names = [f"n{i}" for i in range(cap)]
     for name in names:
         add(name)
@@ -81,7 +81,7 @@ def test_a_re_added_member_leaves_the_eviction_record() -> None:
     # block, so claiming it was dropped would be a false statement on the model channel.
     stub = _ws_stub()
     add = _add(stub)
-    cap = COPILOT_CONFIG.copilot_working_set_max_nodes
+    cap = COPILOT_ENGINE.copilot_working_set_max_nodes
     for i in range(cap + 1):
         add(f"n{i}")
     assert stub._copilot_working_set_evicted == ["n0"]
@@ -95,13 +95,13 @@ def test_zero_cap_means_uncapped() -> None:
     # just appended, so the working set would render nothing but "dropped" lines).
     stub = _ws_stub()
     add = _add(stub)
-    original = COPILOT_CONFIG.copilot_working_set_max_nodes
-    COPILOT_CONFIG.copilot_working_set_max_nodes = 0
+    original = COPILOT_ENGINE.copilot_working_set_max_nodes
+    COPILOT_ENGINE.copilot_working_set_max_nodes = 0
     try:
         for i in range(original + 4):
             add(f"n{i}")
     finally:
-        COPILOT_CONFIG.copilot_working_set_max_nodes = original
+        COPILOT_ENGINE.copilot_working_set_max_nodes = original
     assert len(stub._copilot_working_set) == original + 4
     assert stub._copilot_working_set_evicted == []
 
@@ -154,7 +154,7 @@ def test_an_evicted_but_still_rendered_address_is_not_reported_dropped() -> None
 def test_no_eviction_under_the_cap() -> None:
     stub = _ws_stub()
     add = _add(stub)
-    for i in range(COPILOT_CONFIG.copilot_working_set_max_nodes):
+    for i in range(COPILOT_ENGINE.copilot_working_set_max_nodes):
         add(f"n{i}")
     add("n0")  # a re-touch is not a growth
     assert stub._copilot_working_set_evicted == []

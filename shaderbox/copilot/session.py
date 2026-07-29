@@ -22,7 +22,7 @@ from shaderbox.copilot.agent import (
 from shaderbox.copilot.bridge import CopilotBridge
 from shaderbox.copilot.capabilities import CopilotCapabilities
 from shaderbox.copilot.checkpoint import CheckpointStore
-from shaderbox.copilot.config import COPILOT_CONFIG
+from shaderbox.copilot.config import COPILOT_CONFIG, COPILOT_ENGINE
 from shaderbox.copilot.errors import CopilotConfigError
 from shaderbox.copilot.gate import GateChannel, GateResponse
 from shaderbox.copilot.llm.api import LLMMessage
@@ -550,7 +550,7 @@ class CopilotSession:
         self.gate.cancel_all()
         self._turn_queue.put(_SHUTDOWN)  # unblock worker.get() so join can return
         if self._worker is not None and self._worker.is_alive():
-            self._worker.join(timeout=COPILOT_CONFIG.worker_join_timeout_s)
+            self._worker.join(timeout=COPILOT_ENGINE.worker_join_timeout_s)
             if self._worker.is_alive():
                 logger.warning("Copilot worker did not exit in time; abandoning")
         self.trace.close()

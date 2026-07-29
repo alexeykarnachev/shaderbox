@@ -26,7 +26,7 @@ RUNS_DIR = ROOT / "scripts" / "dogfood" / "runs"
 
 sys.path.insert(0, str(ROOT))
 
-from shaderbox.copilot.config import COPILOT_CONFIG, CopilotConfig  # noqa: E402
+from shaderbox.copilot.config import COPILOT_CONFIG, COPILOT_ENGINE  # noqa: E402
 from shaderbox.copilot.prompt import _SYSTEM_PROMPT  # noqa: E402
 from shaderbox.copilot.prompt_context import _CONVENTIONS  # noqa: E402
 
@@ -40,10 +40,17 @@ def esc(s: str) -> str:
     return html.escape(str(s), quote=False)
 
 
-def config_rows() -> list[tuple[str, str, str]]:
-    # (name, value, doc) — docs parsed from the comment block right above each field in config.py.
+def config_rows() -> list[tuple[str, str, str, str]]:
+    # (group, name, value, doc) — docs parsed from the comment block DIRECTLY above each field in
+    # config.py, across both singletons. Any other line (blank, docstring, class, decorator) drops
+    # the pending block, so class-level prose can't bleed into the first field's doc.
     src = (ROOT / "shaderbox" / "copilot" / "config.py").read_text(encoding="utf-8")
-    rows: list[tuple[str, str, str]] = []
+    owner: dict[str, tuple[str, object]] = {
+        f.name: (group, obj)
+        for group, obj in (("user", COPILOT_CONFIG), ("engine", COPILOT_ENGINE))
+        for f in fields(obj)
+    }
+    rows: list[tuple[str, str, str, str]] = []
     pending: list[str] = []
     for line in src.splitlines():
         stripped = line.strip()
@@ -51,19 +58,12 @@ def config_rows() -> list[tuple[str, str, str]]:
             pending.append(stripped.lstrip("# "))
             continue
         m = re.match(r"(\w+):\s*[\w\[\]\., |]+=\s*(.+)$", stripped)
-        if m and m.group(1) in {f.name for f in fields(CopilotConfig)}:
+        if m and m.group(1) in owner:
+            group, obj = owner[m.group(1)]
             rows.append(
-                (
-                    m.group(1),
-                    str(getattr(COPILOT_CONFIG, m.group(1))),
-                    " ".join(pending),
-                )
+                (group, m.group(1), str(getattr(obj, m.group(1))), " ".join(pending))
             )
-            pending = []
-        elif stripped and not stripped.startswith(
-            ("class ", '"""', "from ", "import ")
-        ):
-            pending = []
+        pending = []
     return rows
 
 
@@ -377,10 +377,21 @@ def main() -> None:
     )
     parts.append(section("intro", "О странице", intro, toc))
 
-    cfg_rows = "".join(
-        f"<tr><td><code>{esc(n)}</code></td><td><code>{esc(v)}</code></td><td>{esc(doc)}</td></tr>"
-        for n, v, doc in config_rows()
-    )
+    rows = config_rows()
+    cfg_tables = ""
+    for group, heading in (
+        ("user", "Пользовательские ручки (Settings)"),
+        ("engine", "Внутренние движковые константы"),
+    ):
+        body = "".join(
+            f"<tr><td><code>{esc(n)}</code></td><td><code>{esc(v)}</code></td><td>{esc(doc)}</td></tr>"
+            for g, n, v, doc in rows
+            if g == group
+        )
+        cfg_tables += (
+            f"<h3>{esc(heading)}</h3>"
+            f"<table><tr><th>ручка</th><th>значение</th><th>что делает</th></tr>{body}</table>"
+        )
     ctx_model = (
         "<p>Промпт собирается из тиров по волатильности (стабильное выше — префикс кэшируется, ~4× дешевле): "
         "<b>STATIC</b> (системный промпт §3) → <b>RARE</b> (карта проекта: ноды/current/ошибки; каталог SB_*-библиотеки; "
@@ -393,8 +404,7 @@ def main() -> None:
         section(
             "config",
             "Конфиг и рамки движка",
-            ctx_model
-            + f"<table><tr><th>ручка</th><th>значение</th><th>что делает</th></tr>{cfg_rows}</table>",
+            ctx_model + cfg_tables,
             toc,
         )
     )

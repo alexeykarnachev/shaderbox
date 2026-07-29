@@ -38,7 +38,7 @@ class LLMUsage:
     input_tokens: int = 0
     output_tokens: int = 0
     # Hidden thinking tokens (billed inside output_tokens). The request asks for
-    # COPILOT_CONFIG.llm_reasoning_effort; this field makes any burst visible in traces/stats.
+    # COPILOT_ENGINE.llm_reasoning_effort; this field makes any burst visible in traces/stats.
     reasoning_tokens: int = 0
     # Provider-cached prompt tokens (inside input_tokens, charged at the cache rate) —
     # makes the cache hit-rate visible in traces/stats.

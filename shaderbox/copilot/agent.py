@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from loguru import logger
 
 from shaderbox.copilot.address import is_example_address, is_lib_address
-from shaderbox.copilot.config import COPILOT_CONFIG, CopilotConfig
+from shaderbox.copilot.config import COPILOT_ENGINE, CopilotConfig
 from shaderbox.copilot.errors import CopilotConfigError
 from shaderbox.copilot.gate import GateChannel, GateKind, GateRequest
 from shaderbox.copilot.llm.api import (
@@ -320,7 +320,7 @@ class _RunLog:
                 other.append(f"{e.name}: {e.msg}")
             else:
                 other.append(f"{e.name} FAILED: {e.msg}")
-        cap = COPILOT_CONFIG.turn_ledger_soft_cap
+        cap = COPILOT_ENGINE.turn_ledger_soft_cap
         if len(other) > cap:
             kept = other[:cap]
             kept.append(f"... and {len(other) - cap} more edits")
@@ -912,7 +912,7 @@ def run_turn(
             # execute and the consecutive_failed_edits logic, so a user decline never counts toward
             # the edit-retry cap.
             secret = ""  # a CREDENTIAL gate's typed key, forwarded to execute
-            if registry.requires_gate(tc.name, args, config):
+            if registry.requires_gate(tc.name, args):
                 req = build_gate(registry, tc.name, args)
                 tr.event("gate_open", name=tc.name, prompt=req.prompt)
                 yield AgentGateOpened(req)

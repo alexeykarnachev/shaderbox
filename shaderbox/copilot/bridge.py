@@ -6,7 +6,7 @@ from typing import Any
 
 from loguru import logger
 
-from shaderbox.copilot.config import COPILOT_CONFIG
+from shaderbox.copilot.config import COPILOT_ENGINE
 from shaderbox.copilot.errors import CopilotCancelled, CopilotToolError
 
 # Worker->main marshalling seam for GL/main-thread WORK (run a closure, return its result).
@@ -59,7 +59,7 @@ class CopilotBridge:
             raise CopilotCancelled("copilot shutting down")
         op = MainThreadOp(fn=fn, defer=defer)
         self._ops.put(op)
-        wait_s = timeout if timeout is not None else COPILOT_CONFIG.bridge_op_timeout_s
+        wait_s = timeout if timeout is not None else COPILOT_ENGINE.bridge_op_timeout_s
         if not op.done.wait(wait_s):
             raise CopilotToolError("main-thread op timed out")
         if op.error is not None:

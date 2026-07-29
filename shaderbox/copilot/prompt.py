@@ -5,7 +5,7 @@ from enum import IntEnum
 from loguru import logger
 
 from shaderbox.copilot.capabilities import CompileErrorInfo, WorkingSetView
-from shaderbox.copilot.config import COPILOT_CONFIG
+from shaderbox.copilot.config import COPILOT_CONFIG, COPILOT_ENGINE
 from shaderbox.copilot.llm.api import LLMMessage
 from shaderbox.copilot.prompt_context import CopilotContext
 
@@ -406,13 +406,13 @@ def _split_turns(history: list[LLMMessage]) -> list[list[LLMMessage]]:
 def _trim_history(
     history: list[LLMMessage], fixed_overhead_tokens: int
 ) -> list[LLMMessage]:
-    # Drop leading turns until it fits max_input_tokens, always keeping COPILOT_CONFIG.history_min_kept_turns.
+    # Drop leading turns until it fits max_input_tokens, always keeping COPILOT_ENGINE.history_min_kept_turns.
     # fixed_overhead_tokens = the non-history prefix, so the budget covers the whole request.
     budget = COPILOT_CONFIG.max_input_tokens
     if fixed_overhead_tokens + _estimate_tokens(history) <= budget:
         return history
     turns = _split_turns(history)
-    while len(turns) > COPILOT_CONFIG.history_min_kept_turns:
+    while len(turns) > COPILOT_ENGINE.history_min_kept_turns:
         kept = [m for turn in turns for m in turn]
         if fixed_overhead_tokens + _estimate_tokens(kept) <= budget:
             break
@@ -440,7 +440,7 @@ def build_messages(
     # the reserve a near-budget history would overflow every stream by the full scratchpad.
     overhead = (
         _estimate_tokens([static, rare, new_user])
-        + COPILOT_CONFIG.scratchpad_reserve_tokens
+        + COPILOT_ENGINE.scratchpad_reserve_tokens
     )
     blocks = [
         PromptBlock("static", Volatility.STATIC, lambda: [static]),

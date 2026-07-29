@@ -24,7 +24,7 @@ from loguru import logger
 
 from shaderbox.copilot.backend import CopilotBackend
 from shaderbox.copilot.capabilities import CopilotCapabilities
-from shaderbox.copilot.config import COPILOT_CONFIG
+from shaderbox.copilot.config import COPILOT_ENGINE
 from shaderbox.copilot.llm.openrouter import OpenRouterLLMClient
 from shaderbox.copilot.persistence import archive_conversation
 from shaderbox.copilot.revert import RevertExecutor
@@ -287,7 +287,7 @@ class ProjectSession:
         self._copilot_working_set.append(address)
         if address in self._copilot_working_set_evicted:
             self._copilot_working_set_evicted.remove(address)
-        cap = COPILOT_CONFIG.copilot_working_set_max_nodes
+        cap = COPILOT_ENGINE.copilot_working_set_max_nodes
         while cap > 0 and len(self._copilot_working_set) > cap:  # 0 = uncapped
             dropped = self._copilot_working_set.pop(0)
             if dropped not in self._copilot_working_set_evicted:
@@ -585,8 +585,8 @@ class ProjectSession:
         return self.script_engine.dry_run(
             node_id,
             ui_node.node,
-            COPILOT_CONFIG.motion_sample_times,
-            COPILOT_CONFIG.motion_fps,
+            COPILOT_ENGINE.motion_sample_times,
+            COPILOT_ENGINE.motion_fps,
         )
 
     def script_source_view(self, node_id: str) -> tuple[str, ScriptStatus | None]:

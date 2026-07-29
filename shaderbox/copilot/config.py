@@ -1,13 +1,17 @@
 from dataclasses import dataclass
 
 
-@dataclass
+@dataclass(slots=True)
 class CopilotConfig:
-    # Agent-loop limits. The ten user-facing ones (caps, retry budgets, nudge
-    # thresholds, the turn time budget) are Settings-tunable: persisted on `CopilotIntegration`
-    # (integrations.json) and applied onto the shared COPILOT_CONFIG instance via
-    # `apply_user_limits` (startup + Settings edit) — every consumer holds this
-    # instance, so a change takes effect immediately. The rest stay constants.
+    """The user-facing agent-loop limits: caps, retry budgets, nudge thresholds, the turn budget.
+
+    Settings-tunable — persisted on `CopilotIntegration` (integrations.json) and applied onto the
+    shared COPILOT_CONFIG instance via `apply_user_limits` (startup + Settings edit); every
+    consumer holds that instance, so a change takes effect immediately. Every field here MUST be
+    in `apply_user_limits` (pinned by a test) — an untunable knob belongs on CopilotEngineConfig.
+    """
+
+    # Hard cap on tool-call steps in ONE turn; the loop ends with a forced reply on reaching it.
     max_iterations: int = 16
     # Wall-clock ceiling for ONE turn (seconds; 0 = off). max_iterations bounds the COUNT of
     # steps, not their duration — a slow reasoning stream makes 14 legal iterations stretch past
@@ -40,13 +44,22 @@ class CopilotConfig:
     # Per-file; a write_shader resets it. Must exceed clean_edit_soft_streak to leave room for the
     # advisory to work first.
     clean_edit_hard_streak: int = 12
+
+
+@dataclass(slots=True)
+class CopilotEngineConfig:
+    """Engine internals: timeouts, probe knobs and context-assembly constants nobody tunes.
+
+    Not Settings-exposed and not persisted — the values below ARE the configuration, change them
+    here. Consumers read the shared COPILOT_ENGINE instance directly.
+    """
+
     # Headroom the history trim withholds for the per-turn working-set scratchpad, which is
     # spliced AFTER the trim runs and is otherwise invisible to it (feature 020·29 D10).
     scratchpad_reserve_tokens: int = 50_000
     # Working-set MEMBER cap (feature 056 D3): the add seam evicts the least-recently-touched
     # address past this, so an accreting turn can't render an unbounded scratchpad. The current
     # node is unioned in regardless, so the rendered set is this + 1 at most. 0 = uncapped.
-    # Internals knob, not Settings-tunable.
     copilot_working_set_max_nodes: int = 6
     # Feature 033 enriched results: probe-render facts after clean mutations
     # (ink/bbox/luma off a tiny offscreen render). Size is the square probe edge.
@@ -96,11 +109,12 @@ class CopilotConfig:
     llm_request_timeout_s: float = 120.0
     # Sent verbatim as OpenRouter `reasoning.effort`. "none" (not "minimal"): gpt-5.1-codex-mini
     # IGNORES "minimal" on tool-bearing requests — reasoning ate ~100% of output tokens — while
-    # "none" is honored (2026-07-29, measured). Internals knob, not Settings-tunable.
+    # "none" is honored (2026-07-29, measured).
     llm_reasoning_effort: str = "none"
 
 
 COPILOT_CONFIG = CopilotConfig()
+COPILOT_ENGINE = CopilotEngineConfig()
 
 
 def apply_user_limits(

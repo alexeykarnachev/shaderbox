@@ -214,6 +214,10 @@ the sweep removes IS the edit-sediment measurement — record its diff.**
   (verified 2026-06-16 — cost a wasted turn). NOTE: a well-behaved cheap model self-limits on the soft
   nudge and won't naturally spiral, so the hard-stop / max_iterations / forced-turn-end paths REQUIRE
   such an override to exercise live.
+  Engine internals (probe knobs, `llm_reasoning_effort`, `bulk_gate_threshold`, the timeouts) live on a
+  SECOND singleton `COPILOT_ENGINE` (`from shaderbox.copilot.config import COPILOT_CONFIG, COPILOT_ENGINE`)
+  — override them the same post-create way. Both dataclasses are slotted, so assigning a knob to the
+  wrong singleton raises `AttributeError` instead of silently no-opping.
 - **Resume = same project_dir + same SHADERBOX_DATA_DIR.** `create(project_dir=<existing>)` skips seeding,
   reloads the shaders, restores the conversation from `<project_dir>/copilot/conversation.json` (zero LLM
   calls). The data dir (lib + integrations) is separate and env-only — both must point at turn 1's dirs or

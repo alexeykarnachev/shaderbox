@@ -6,7 +6,7 @@ import pyperclip
 from imgui_bundle import imgui, imgui_ctx
 
 from shaderbox.app import App
-from shaderbox.copilot.config import COPILOT_CONFIG
+from shaderbox.copilot.config import COPILOT_ENGINE
 from shaderbox.copilot.gate import GateKind
 from shaderbox.copilot.sanitize import sanitize_display
 from shaderbox.copilot.state import (
@@ -478,7 +478,7 @@ def _draw_turn_snippet(app: App, msg: Message, idx: int, is_last_snippet: bool) 
             # A silent stream (hidden reasoning burst) shows a ticking wait counter, so a
             # quiet minute is visibly alive, not indistinguishable from a hang.
             quiet = time.monotonic() - app.copilot.state.last_activity_at
-            if quiet > COPILOT_CONFIG.chat_quiet_indicator_after_s:
+            if quiet > COPILOT_ENGINE.chat_quiet_indicator_after_s:
                 line = f"{line}  -  waiting {int(quiet)}s"
             wrapped_caption(line, COLOR.FG_DIM)
         elif st is not None:

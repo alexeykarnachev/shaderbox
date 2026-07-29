@@ -58,7 +58,7 @@ from shaderbox.copilot.capabilities import (
     WorkingSetView,
 )
 from shaderbox.copilot.checkpoint import TurnCheckpoint
-from shaderbox.copilot.config import COPILOT_CONFIG
+from shaderbox.copilot.config import COPILOT_CONFIG, COPILOT_ENGINE
 from shaderbox.copilot.edit_hints import compile_hints, render_facts
 from shaderbox.copilot.errors import CopilotToolError
 from shaderbox.copilot.gate import GateChannel, GateKind, GateRequest
@@ -1409,7 +1409,7 @@ class CopilotBackend:
             )
 
         return self._bridge.run_on_main(
-            _on_main, timeout=COPILOT_CONFIG.render_op_timeout_s, defer=True
+            _on_main, timeout=COPILOT_ENGINE.render_op_timeout_s, defer=True
         )
 
     def render_video(
@@ -1437,7 +1437,7 @@ class CopilotBackend:
             )
 
         return self._bridge.run_on_main(
-            _on_main, timeout=COPILOT_CONFIG.render_op_timeout_s, defer=True
+            _on_main, timeout=COPILOT_ENGINE.render_op_timeout_s, defer=True
         )
 
     def probe_render(self, node: str, t: float) -> str:
@@ -1453,7 +1453,7 @@ class CopilotBackend:
             return facts or "probe rendered, but produced no readable facts (advisory)."
 
         return self._bridge.run_on_main(
-            _on_main, timeout=COPILOT_CONFIG.render_op_timeout_s, defer=True
+            _on_main, timeout=COPILOT_ENGINE.render_op_timeout_s, defer=True
         )
 
     def _copilot_render_target(self, node: str) -> UINode | None:
@@ -1495,17 +1495,17 @@ class CopilotBackend:
             # Held for the whole wait so the terminal can't be a different object at the same address.
             baseline = self._bridge.run_on_main(
                 _render_and_enqueue,
-                timeout=COPILOT_CONFIG.render_op_timeout_s,
+                timeout=COPILOT_ENGINE.render_op_timeout_s,
                 defer=True,
             )
         except CopilotToolError:
             return PublishResult(ok=False, error="render failed (see logs)", kind=kind)
 
-        deadline = time.monotonic() + COPILOT_CONFIG.publish_await_timeout_s
+        deadline = time.monotonic() + COPILOT_ENGINE.publish_await_timeout_s
         while time.monotonic() < deadline:
             if self._get_is_cancelled():
                 return PublishResult(ok=False, error="cancelled", kind=kind)
-            time.sleep(COPILOT_CONFIG.publish_poll_interval_s)
+            time.sleep(COPILOT_ENGINE.publish_poll_interval_s)
             try:
                 status: ExporterStatus = self._bridge.run_on_main(
                     lambda: (exporter.update(None), exporter.status())[1]
@@ -1637,11 +1637,11 @@ class CopilotBackend:
             return TelegramConnectResult(
                 ok=False, error="Telegram exporter unavailable"
             )
-        deadline = time.monotonic() + COPILOT_CONFIG.telegram_connect_timeout_s
+        deadline = time.monotonic() + COPILOT_ENGINE.telegram_connect_timeout_s
         while time.monotonic() < deadline:
             if self._get_is_cancelled():
                 return TelegramConnectResult(ok=False, error="cancelled")
-            time.sleep(COPILOT_CONFIG.publish_poll_interval_s)
+            time.sleep(COPILOT_ENGINE.publish_poll_interval_s)
             try:
                 status: ExporterStatus = self._bridge.run_on_main(
                     lambda t=tg: (t.update(None), t.status())[1]
@@ -1718,11 +1718,11 @@ class CopilotBackend:
             baseline = self._bridge.run_on_main(_enqueue)
         except CopilotToolError as e:
             return TelegramOpResult(ok=False, error=str(e))
-        deadline = time.monotonic() + COPILOT_CONFIG.publish_await_timeout_s
+        deadline = time.monotonic() + COPILOT_ENGINE.publish_await_timeout_s
         while time.monotonic() < deadline:
             if self._get_is_cancelled():
                 return TelegramOpResult(ok=False, error="cancelled")
-            time.sleep(COPILOT_CONFIG.publish_poll_interval_s)
+            time.sleep(COPILOT_ENGINE.publish_poll_interval_s)
             tg = self._copilot_telegram()
             if tg is None:
                 return TelegramOpResult(ok=False, error="Telegram exporter unavailable")
@@ -1852,10 +1852,10 @@ class CopilotBackend:
         # `motion=True` (mutation auto-probes): also render a SECOND frame at render_facts_motion_t
         # and append a STATIC/ANIMATES verdict — t=0 alone is blank for a ramping effect and reads
         # as a failed edit; the verdict + the later frame's facts say it develops over time.
-        if not COPILOT_CONFIG.render_facts_enabled:
+        if not COPILOT_ENGINE.render_facts_enabled:
             return ""
         try:
-            size = COPILOT_CONFIG.render_facts_size
+            size = COPILOT_ENGINE.render_facts_size
             # Match the node's canvas aspect — a square probe would lay out
             # aspect-corrected shaders (u_aspect) differently from the preview.
             cw, ch = node.canvas.texture.size
@@ -1871,7 +1871,7 @@ class CopilotBackend:
             line0 = _stamp_facts(render_facts(raw0, size, h), t)
             if not motion or not line0:
                 return line0
-            t2 = COPILOT_CONFIG.render_facts_motion_t
+            t2 = COPILOT_ENGINE.render_facts_motion_t
             node.render(u_time=t2, canvas=self._probe_canvas)
             raw1 = self._probe_canvas.texture.read()
             a0 = np.frombuffer(raw0, dtype=np.uint8).astype(np.int16)
@@ -1908,7 +1908,7 @@ class CopilotBackend:
         # Rebinds node.uniform_values to a merged copy (the live dict OBJECT is never mutated; sampler/
         # Video values are shared and may advance a frame, same as the 033 facts probe), restores it in
         # finally. Advisory — never raises.
-        if not samples or not COPILOT_CONFIG.render_facts_enabled:
+        if not samples or not COPILOT_ENGINE.render_facts_enabled:
             return ""
         mid = samples[len(samples) // 2]
         saved = node.uniform_values
@@ -1974,7 +1974,7 @@ class CopilotBackend:
         prev_samples = self._last_script_samples.get(node_id)
         self._last_script_samples[node_id] = probe.samples
         motion_facts = _motion_verdict(
-            probe, render_line, COPILOT_CONFIG.motion_value_eps
+            probe, render_line, COPILOT_ENGINE.motion_value_eps
         )
         if prev_samples is not None and prev_samples == probe.samples:
             motion_facts += (
@@ -2029,7 +2029,7 @@ class CopilotBackend:
             return self._apply_script_text(node_id, new_text)
 
         return self._bridge.run_on_main(
-            _on_main, timeout=COPILOT_CONFIG.render_op_timeout_s
+            _on_main, timeout=COPILOT_ENGINE.render_op_timeout_s
         )
 
     def apply_script_edit(
@@ -2065,7 +2065,7 @@ class CopilotBackend:
             return self._apply_script_text(node_id, new_text)
 
         return self._bridge.run_on_main(
-            _on_main, timeout=COPILOT_CONFIG.render_op_timeout_s
+            _on_main, timeout=COPILOT_ENGINE.render_op_timeout_s
         )
 
     def _resolve_node_or_current(self, node: str) -> str | None:
