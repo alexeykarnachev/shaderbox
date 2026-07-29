@@ -48,6 +48,7 @@ def _ctx() -> CopilotContext:
         node_tree="- s (id: n1) [current]",
         lib_catalog="(empty)",
         example_catalog="(none)",
+        script_api="",
         conventions="",
     )
 

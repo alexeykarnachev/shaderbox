@@ -32,9 +32,10 @@ waves.** Wave A (LANDED): the SCRIPTING watershed corrected to STATE — a scrip
 depending on the previous frame; a pure function of time is GLSL via u_time (the old "values that
 change over time -> script" mis-teaching is gone from the prompt AND the eager tool descriptions);
 implementation details stripped (script path, error absolute paths -> short labels via one shared
-GL-free helper). Waves B (generated SCRIPT API block in RARE, conventions moves, schema-dedup cuts
-+ four wrong tool descriptions fixed) and C (trimmed 407-char render-facts legend spliced onto the
-first facts-bearing result) are specced and review-converged. Preceded by: reasoning effort=none
+GL-free helper). Wave B (LANDED): generated SCRIPT API block in RARE (from `scripting/api_doc.py`, names from
+code + authored glosses pinned by coverage tests), conventions moves, schema-dedup cuts, four
+wrong tool descriptions fixed. Wave C (trimmed 407-char render-facts legend spliced onto the
+first facts-bearing result) is specced and review-converged. Preceded by: reasoning effort=none
 (engine knob; honored on simple asks, IGNORED by the model on compound asks — needs ~30k turn
 budget there), the user/engine config split, the final-reply token cap, and the agent-hub report
 page (`scripts/agent_hub/`) which is now the maintainer sync surface.

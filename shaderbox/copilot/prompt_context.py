@@ -6,6 +6,7 @@ from shaderbox.copilot.capabilities import (
     LibCatalogEntry,
     NodeTreeEntry,
 )
+from shaderbox.scripting.api_doc import script_api_summary
 
 # Per-turn app-state snapshot, GL-FREE so it builds off-main. Rendered to text here so
 # prompt.py stays a pure assembler. Current shader source is NOT here — it enters via the
@@ -28,6 +29,9 @@ _CONVENTIONS = """\
 - `vs_uv.y` grows UPWARD: y=0 is the BOTTOM of the screen, y=1 the TOP. The user's spatial words
   are SCREEN words — "top row" / "upper left" mean HIGH y — so map row/placement indices through
   that inversion explicitly (top row = the highest-y band).
+- TEXT content: a caption is `uniform uint u_text[64];` fed by set_uniform -- NEVER a const array in
+  source (a dynamically indexed const array is demoted to per-thread local memory on NVIDIA, ~100x
+  slower).
 - Keep helpers small/single-purpose so they factor into the library."""
 
 
@@ -38,6 +42,7 @@ class CopilotContext:
     example_catalog: (
         str  # rendered example-library block (name/example: handle/description)
     )
+    script_api: str  # generated SCRIPT API block (the Python side of a node script)
     conventions: str
 
 
@@ -82,5 +87,6 @@ def build_context(caps: CopilotCapabilities) -> CopilotContext:
         node_tree=_render_node_tree(caps.node_tree()),
         lib_catalog=_render_lib_catalog(caps.lib_catalog()),
         example_catalog=_render_example_catalog(caps.example_catalog()),
+        script_api=script_api_summary(),
         conventions=_CONVENTIONS,
     )

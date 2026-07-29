@@ -66,23 +66,29 @@ class _PublishYoutubeArgs(ToolArgs):
 _RENDER_IMAGE_DESC = (
     "Render the node's CURRENT frame to an image file (PNG) under the project's renders "
     "folder. The app pauses briefly while it encodes, and the user confirms first. Returns the "
-    "file path + the actual size. You render the live source — land your edits before rendering."
+    "actual (codec-snapped) size; the file itself becomes a 'Reveal render' button shown to the "
+    "USER — you get NEITHER the path nor a look at the image. You render the live source — land "
+    "your edits before rendering."
 )
 _RENDER_VIDEO_DESC = (
     "Render `seconds` of the node's animation (always from t=0) to a video file (WebM) under "
     "the project's renders folder. The app pauses while it encodes; the user confirms first. "
-    "Returns the path + duration. You cannot pick a start time other than 0."
+    "Returns the actual size + duration; the file itself becomes a 'Reveal render' button shown "
+    "to the USER — you get NEITHER the path nor a look at the video. You render the live source — "
+    "land your edits before rendering. You cannot pick a start time other than 0."
 )
 _PUBLISH_TELEGRAM_DESC = (
     "Render the current shader as a Telegram sticker (3s WebM) and add it to the user's "
     "selected sticker pack. EXTERNAL + LIVE — the user confirms first. Needs Telegram connected "
     "+ a pack selected — both of which YOU do (set_telegram_token, create/select_telegram_pack), "
-    "not the user in Settings. Returns the pack URL."
+    "not the user in Settings. The pack becomes an 'Open in Telegram' button shown to the USER — "
+    "you do NOT get the URL."
 )
 _PUBLISH_YOUTUBE_DESC = (
     "Render the current shader as a video and upload it to the user's YouTube channel (as a "
-    "private video they publish from Studio). EXTERNAL + LIVE — the user confirms first. "
-    "YouTube must be connected in Settings. Returns the Studio URL."
+    "private video they publish from Studio). EXTERNAL + LIVE — the user confirms first. Needs "
+    "YouTube connected, which YOU do (set_youtube_credentials), not the user in Settings. The "
+    "upload becomes an 'Open in YouTube' button shown to the USER — you do NOT get the Studio URL."
 )
 
 

@@ -84,6 +84,7 @@ def _fake_context() -> CopilotContext:
         node_tree="- shader (id: node-1)  [current]",
         lib_catalog="(library is empty)",
         example_catalog="(no examples)",
+        script_api="",
         conventions="",
     )
 
