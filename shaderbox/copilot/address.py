@@ -10,6 +10,10 @@ EXAMPLE_PREFIX = "example:"
 # there is no collision-growth (the shipped set is tiny; the resolver prefix-matches).
 _EXAMPLE_HANDLE_LEN = 4
 
+# Node short-id floor: the id length the agent sees. The backend grows ALL ids past it together
+# on collision (CopilotBackend._copilot_short_ids).
+NODE_SHORT_ID_LEN = 4
+
 
 def is_lib_address(address: str) -> bool:
     return address.startswith(LIB_PREFIX)

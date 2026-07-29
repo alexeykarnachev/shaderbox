@@ -4,12 +4,12 @@ from pydantic import Field
 
 from shaderbox.copilot.address import is_lib_address
 from shaderbox.copilot.capabilities import (
-    CompileErrorInfo,
     CopilotCapabilities,
     EditResult,
     GrepHit,
     ShaderView,
 )
+from shaderbox.copilot.error_render import format_compile_errors
 from shaderbox.copilot.tools.base import GatePolicy, ToolArgs, ToolDefinition
 
 # The shader tool surface. Handlers do GL-free text work on the worker thread and call a
@@ -207,10 +207,6 @@ _SWITCH_NODE_DESC = (
 )
 
 
-def _format_errors(errors: list[CompileErrorInfo]) -> str:
-    return "\n".join(f"{e.path}:{e.line}: {e.message}" for e in errors)
-
-
 def _view_summary(view: ShaderView) -> str:
     # The terse chat line for a read: name + size + uniform count + compile state (the full
     # listing goes to the agent's context, not the chat).
@@ -250,7 +246,7 @@ def _applied_result(result: EditResult) -> tuple[bool, str, dict]:
     elif result.lib_note:
         head = result.lib_note
     elif result.errors:
-        head = "compiled with errors:\n" + _format_errors(result.errors)
+        head = "compiled with errors:\n" + format_compile_errors(result.errors)
         if result.error_hints:
             head += "\n" + "\n".join(result.error_hints)
     else:
@@ -300,7 +296,7 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
         all_errors = [e for v in node_views for e in v.errors]
         states: list[str] = []
         if all_errors:
-            states.append("compile errors:\n" + _format_errors(all_errors))
+            states.append("compile errors:\n" + format_compile_errors(all_errors))
         elif node_views:
             states.append("all compiled clean.")
         if lib_views:
@@ -379,7 +375,7 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
         # success stays True even with compile errors — the node IS created; the agent reads
         # the errors and fixes them with an edit.
         status = (
-            "compiled with errors:\n" + _format_errors(errors)
+            "compiled with errors:\n" + format_compile_errors(errors)
             if errors
             else "compiled clean"
         )

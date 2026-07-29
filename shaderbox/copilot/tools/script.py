@@ -3,11 +3,11 @@ from typing import Any
 from pydantic import Field
 
 from shaderbox.copilot.capabilities import (
-    CompileErrorInfo,
     CopilotCapabilities,
     ScriptView,
     ScriptWriteResult,
 )
+from shaderbox.copilot.error_render import format_compile_errors
 from shaderbox.copilot.tools.base import GatePolicy, ToolArgs, ToolDefinition
 
 # The node script authoring surface (feature 043): read_script / write_script. Mirrors shader_tools —
@@ -45,19 +45,20 @@ class _EditScriptArgs(ToolArgs):
 
 
 _READ_SCRIPT_DESC = (
-    "Read a node's Python script (nodes/<id>/scripts/script.py) — the `update(self, ctx)` "
-    "that drives uniforms over time. Returns the source line-numbered. A node with NO script yet "
-    "returns a STUB (the node's drivable uniforms + their value shapes + one ctx.t example to "
-    "ADAPT) — read it, then write_script a real body. Read this before editing a script you did "
-    "not just write."
+    "Read a node's Python script — the `update(self, ctx)` that drives uniforms from CPU state. "
+    "Returns the source line-numbered. A node with NO script yet returns a STUB (its drivable "
+    "uniforms + their value shapes + an empty `update` to fill in) — read it, then write_script a "
+    "real body. Read this before editing a script you did not just write."
 )
 
 _WRITE_SCRIPT_DESC = (
-    "Create or replace a node's Python script (script.py): a `class Behavior(ScriptBehavior)` whose "
-    "`update(self, ctx) -> dict` returns {uniform_name: value} to DRIVE those uniforms every frame "
-    "(ANIMATION / state over time; self.* persists). BEST FOR a fresh script or a full rewrite; for a "
-    "localized change prefer edit_script. Send the COMPLETE script — I compile + motion-probe it and "
-    "return the verdict."
+    "Create or replace a node's Python script: a `class Behavior(ScriptBehavior)` whose "
+    "`update(self, ctx) -> dict` returns {uniform_name: value} to drive those uniforms every "
+    "frame. For STATE the shader cannot hold — a value that depends on the PREVIOUS frame "
+    "(`self.*` persists): an integrator, an accumulator, a phase machine, a score. A pure function "
+    "of time belongs in the shader (u_time), not here. BEST FOR a fresh script or a full rewrite; "
+    "for a localized change prefer edit_script. Send the COMPLETE script — I compile + motion-probe "
+    "it and return the verdict."
 )
 
 _EDIT_SCRIPT_DESC = (
@@ -67,10 +68,6 @@ _EDIT_SCRIPT_DESC = (
     "replace_all=true). For a localized tweak; use write_script for a fresh script or a full rewrite. "
     "I re-compile + motion-probe and return the same verdict as write_script."
 )
-
-
-def _fmt_errors(errors: list[CompileErrorInfo]) -> str:
-    return "\n".join(f"{e.path}:{e.line}: {e.message}" for e in errors)
 
 
 def _format_write_result(result: ScriptWriteResult) -> tuple[bool, str, dict | None]:
@@ -111,18 +108,19 @@ def script_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
     def read_script(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
         view: ScriptView = caps.read_script(args["node"])
         if not view.node_id:
-            return False, f"error: {_fmt_errors(view.errors)}", None
+            return False, f"error: {format_compile_errors(view.errors)}", None
         lines = view.listing.count("\n") + 1 if view.listing else 0
         if view.is_stub:
             # The stub is NOT persisted, so the working set can't render it — inline is its
             # only channel (a node WITH a script rides the working set, mirroring read_shader).
             body = (
                 f"{view.name} has no script yet — here is the STUB to adapt + write_script "
-                f"(its drivable uniforms + one ctx.t example):\n{view.listing}"
+                f"(its drivable uniforms + their value shapes + an empty `update` to fill "
+                f"in):\n{view.listing}"
             )
         else:
             state = (
-                f"{len(view.errors)} error(s):\n{_fmt_errors(view.errors)}"
+                f"{len(view.errors)} error(s):\n{format_compile_errors(view.errors)}"
                 if view.errors
                 else "compiles clean"
             )

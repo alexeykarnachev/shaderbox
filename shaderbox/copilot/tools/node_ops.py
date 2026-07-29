@@ -3,6 +3,7 @@ from typing import Any
 from pydantic import Field
 
 from shaderbox.copilot.capabilities import CopilotCapabilities
+from shaderbox.copilot.error_render import format_compile_errors
 from shaderbox.copilot.tools.base import GatePolicy, ToolArgs, ToolDefinition
 
 # Node file-management tools (feature 052 slice 3): rename / resize-canvas / duplicate. All mutate
@@ -56,7 +57,7 @@ def node_ops_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
         )
         head = f"duplicated to node {new_id}"
         if errors:
-            body = "\n".join(f"{e.path}:{e.line}: {e.message}" for e in errors)
+            body = format_compile_errors(errors)
             return True, f"{head} ({len(errors)} compile error(s)):\n{body}", None
         return True, f"{head}.\n{extra}" if extra else f"{head}.", None
 
@@ -72,7 +73,7 @@ def node_ops_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             return False, f"error: {res.error}", None
         head = f"imported {res.basename} -> node {res.node_id}"
         if res.errors:
-            body = "\n".join(f"{e.path}:{e.line}: {e.message}" for e in res.errors)
+            body = format_compile_errors(res.errors)
             return True, f"{head} ({len(res.errors)} compile error(s)):\n{body}", None
         return True, f"{head}.", None
 

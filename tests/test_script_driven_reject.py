@@ -36,13 +36,15 @@ def _stub(script_driven: set[str]) -> Any:
 
 
 def test_set_uniform_rejects_script_driven() -> None:
-    # One script per node (048): a driven uniform's reject always points at scripts/script.py.
+    # One script per node (048): a driven uniform's reject points at the script edit TOOLS, never
+    # at the file's path (059 D2 — the agent gets handles, not implementation detail).
     stub = _stub({"u_wave"})
     set_uniform = CopilotBackend.set_uniform.__get__(stub)
     result = set_uniform("u_wave", 0.5, "n0")
     assert not result.ok
     assert "script-driven" in result.error
-    assert "scripts/script.py" in result.error
+    assert "edit_script/write_script" in result.error
+    assert "nodes/" not in result.error and "script.py" not in result.error
 
 
 def test_set_uniform_does_not_reject_a_non_script_uniform() -> None:

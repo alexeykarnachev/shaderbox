@@ -130,7 +130,8 @@ def test_render_working_set_carries_script_section() -> None:
         script_errors=[CompileErrorInfo(path="script.py", line=2, message="bad")],
     )
     body = (render_working_set([scripted], [])[0].content) or ""
-    assert "Drift SCRIPT (scripts/script.py)" in body
+    assert "Drift SCRIPT ===" in body
+    assert "scripts/script.py" not in body  # 059 D2: no filesystem path in the header
     assert "class Behavior(ScriptBehavior)" in body
     assert "script.py:2: bad" in body
     assert "u_center vec2 = <driven by script.py>" in body

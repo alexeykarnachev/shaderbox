@@ -16,10 +16,13 @@ from shaderbox.copilot.backend import (
     _CopilotEditTarget,
     _cross_file_note,
     _edit_error_hints,
+    _to_error_infos,
 )
 from shaderbox.copilot.capabilities import CompileErrorInfo, EditResult, ShaderView
+from shaderbox.copilot.error_render import format_compile_errors
 from shaderbox.copilot.tools.registry import ToolRegistry, build_registry
 from shaderbox.copilot.tools.shader import _applied_result
+from shaderbox.shader_errors import ShaderError
 from tests._caps import minimal_caps
 
 _LABEL = "node 'Text Rendering' (f90f)"
@@ -138,10 +141,64 @@ def test_edit_error_hints_suppress_brace_hint_on_foreign_errors(
 
 
 def test_edit_error_hints_keep_brace_hint_for_local_errors(tmp_path: Path) -> None:
+    # 059 D2 falsifier (ii): _to_error_infos keeps the ABSOLUTE path on the info object, so the
+    # own-file guard still matches — a same-file error gets no cross-file note and keeps the brace
+    # hint. Label the value object instead of labelling at render time and this goes red.
     edited = tmp_path / "shader.frag.glsl"
-    err = CompileErrorInfo(path=str(edited), line=1, message="syntax error")
-    hints = _edit_error_hints(edited, "void main() {", [err])
+    infos = _to_error_infos([ShaderError(path=edited, line=0, message="syntax error")])
+    assert _cross_file_note(edited, infos) == ""
+    hints = _edit_error_hints(edited, "void main() {", infos)
     assert any("'{'" in h for h in hints)
+    assert not any("which this shader pulls in" in h for h in hints)
+
+
+# ---- the model-facing error label (059 D2 item 4) ----
+
+
+def test_compile_errors_render_a_lib_address_not_a_filesystem_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 059 D2 falsifier (i), lib half: the agent must still be able to tell WHICH lib file broke —
+    # the `lib:` address it already edits by is the label, never the absolute path.
+    root = tmp_path / "lib"
+    monkeypatch.setattr("shaderbox.copilot.error_render.shader_lib_root", lambda: root)
+    err = CompileErrorInfo(
+        path=str(root / "draw" / "neon_ring.glsl"), line=3, message="boom"
+    )
+    assert format_compile_errors([err]) == "lib:draw/neon_ring.glsl:3: boom"
+
+
+def test_compile_errors_render_a_node_source_as_its_short_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 059 D2 falsifier (i), node half: a node source renders as the short id the project map uses.
+    monkeypatch.setattr(
+        "shaderbox.copilot.error_render.shader_lib_root", lambda: tmp_path / "lib"
+    )
+    node_dir = tmp_path / "proj" / "nodes" / "f90f1111-2222-3333-4444-555566667777"
+    err = CompileErrorInfo(
+        path=str(node_dir / "shader.frag.glsl"), line=12, message="boom"
+    )
+    rendered = format_compile_errors([err])
+    assert rendered == "f90f:12: boom"
+    assert str(tmp_path) not in rendered
+
+
+def test_compile_errors_pass_non_path_labels_through(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A script error already carries the bare `script.py` label and the synthetic no-node error an
+    # empty one — both unchanged by the mapping.
+    monkeypatch.setattr(
+        "shaderbox.copilot.error_render.shader_lib_root", lambda: tmp_path / "lib"
+    )
+    errors = [
+        CompileErrorInfo(path="script.py", line=2, message="bad"),
+        CompileErrorInfo(path="", line=0, message="no node found for 'zzzz'"),
+    ]
+    assert format_compile_errors(errors) == (
+        "script.py:2: bad\n:0: no node found for 'zzzz'"
+    )
 
 
 # ---- honest lib-read summaries ----

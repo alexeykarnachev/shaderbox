@@ -26,23 +26,22 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-07-28 (058 landing on dev; product thesis pivot; todo drain-only, 1 entry). -->
-**ACTIVE: feature 058 — the vision layer is REMOVED whole (product thesis pivot, maintainer call):
-the copilot's job is EXCELLENT CODE for visual applications; visual tuning and judgment are the
-HUMAN's.** The 053 eye + 056 convergence loop are deleted (no dead code, no compat); what remains
-as the copilot's only sight is the FREE numeric facts pipeline (ink/bbox/rgb/luma, no-op detect,
-STATIC/ANIMATES). Kept from the 056/057 arc: all robustness fixes (script brakes, working-set
-reset+LRU, truthful error paths, `turn_time_budget_s`), all judge tooling. New: a limit-forced
-final reply now quotes the MEASURED facts line (three observed dishonest limit-endings closed,
-zero billed calls), and the dogfood report gains the **CODE axis** — the driver grades the
-produced sources as a code reviewer (dead code / duplication / structure / tool choice; the sweep
-turn is its probe). Validation discipline that shaped this: cheap falsification experiments killed
-3 of 4 proposed fixes before they were built.
+<!-- As of 2026-07-29 (059 wave A landed; reasoning=none; config split; agent-hub page live). -->
+**ACTIVE: feature 059 — prompt refactor (maintainer hub-feedback), landing in three bisectable
+waves.** Wave A (LANDED): the SCRIPTING watershed corrected to STATE — a script exists for a value
+depending on the previous frame; a pure function of time is GLSL via u_time (the old "values that
+change over time -> script" mis-teaching is gone from the prompt AND the eager tool descriptions);
+implementation details stripped (script path, error absolute paths -> short labels via one shared
+GL-free helper). Waves B (generated SCRIPT API block in RARE, conventions moves, schema-dedup cuts
++ four wrong tool descriptions fixed) and C (trimmed 407-char render-facts legend spliced onto the
+first facts-bearing result) are specced and review-converged. Preceded by: reasoning effort=none
+(engine knob; honored on simple asks, IGNORED by the model on compound asks — needs ~30k turn
+budget there), the user/engine config split, the final-reply token cap, and the agent-hub report
+page (`scripts/agent_hub/`) which is now the maintainer sync surface.
 
-**NEXT — copilot quality, code-first:** re-run the cornerstone set (03/04/05/08) grading the CODE
-axis as the first-class signal; mine the produced sources for the copilot's real code weaknesses
-(sediment, duplication, tool misuse) and fix THOSE. Then the next scenario echelon. The HN post
-remains maintainer-paced (unchanged from v0.25.0).
+**NEXT:** wave-A dogfood gates on the new prompt (04 / de-hinted 05 / 08 / 10 / 13 vs the recorded
+effort=none controls in `059/02_controls.md`), then waves B and C, then the render-facts value
+observation (wave 4 of the feedback plan). The HN post remains maintainer-paced.
 
 **Last LIVE on itch (context):** v0.21.0 — feature 050 + render-divergence cleanup + YT Shorts presets
 + the bugs/debt fix wave. (Previously v0.20.0 — node-dir live auto-sync + math-symbol text glyphs.
@@ -60,6 +59,7 @@ verified live. **No open BLOCKERs.**
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 059 | prompt_refactor | in progress | The hub-feedback prompt refactor in three bisectable waves: A (landed) corrects the SCRIPTING watershed to STATE-not-time across prompt + eager tool descriptions and replaces model-facing absolute error paths with short labels via a shared GL-free helper; B adds the generated SCRIPT API block (RARE tier) + conventions moves + schema-dedup cuts; C splices a trimmed render-facts legend onto the first facts-bearing result per turn; controls for the effort=none actor recorded before landing. Spec: `ai_docs/features/059_prompt_refactor/01_spec.md`. |
 | 058 | remove_vision_layer | done | The product-thesis pivot: the copilot ships EXCELLENT CODE, the human is the visual judge — so the vision layer (053 eye + 056 ASK-verdict convergence loop, models, Settings badge, contracts, ~8 config knobs) is DELETED whole, grep-clean, no compat; the free NUMERIC facts pipeline stays as the copilot's only sight and `probe_render(node, t)` reverts to the 050 numeric contract. Added: a limit-forced final reply (token/time/iteration cutoffs) quotes the MEASURED facts line so the model states the net result from data (three observed dishonest limit-endings closed, zero billed calls), and the dogfood report gains the CODE axis (driver grades the produced sources: dead code / duplication / structure / tool choice; the sweep turn is its probe). Validation-first: cheap falsification experiments killed 3 of 4 candidate fixes before any code. Spec: `ai_docs/features/058_remove_vision_layer.md`. |
 | 057 | dogfood_axes_and_scenarios | done | The dogfood measuring stick: the multi-axis report (now six axes per 058: fidelity/motion/logic/honesty/process/code + a dialogue section; the AUTO honesty half is the limit-forced-turns list), `analyze.py --dialogue` (UI-store source, dumps fallback for wipe runs) + `--scenario`, the cornerstone scenario type (03/04/05/08 — opening message verbatim, <=2 corrections, ground truth per checklist; pilot: 4/4 PASS) + judge tooling: `render_strip` (per-sample REPLAY through export-isolation — a live-tick strip lies for stateful scripts), `script_values` (dry_run passthrough), `judge.py` pixel primitives, lazy package init (no more key-bearing `data-*` litter on import). Fixed en route: `turn_time_budget_s` engine wall-clock bound; the GL-segfault class (llvmpipe-4.5 vs `#version 460` + the explicit-EGL release poison) — full suite green headless for the first time. Spec: `ai_docs/features/057_dogfood_axes_and_scenarios/`. |
 | 056 | copilot_convergence_and_robustness | done | The turn-end eye becomes a bounded convergence loop (engine-parsed+stripped `ASK: met\|not-met\|unclear` verdict via `vision_contract.py`, unconditional aimed look, mutation-gated re-looks under `copilot_convergence_max_looks`, final not-met lands in the turn record) + a robustness wave: auto-look targets the mutated node, script-edit brake parity (tuple keys, write_script resets, broken-edit signals un-inverted, batch guard), structured `ProbeResult` plumbing (vision cost billed + truthful failure suffix + user-visible engine look), working-set reset at `enqueue_turn` + LRU cap with loud eviction, truthful torn-stream/cancel/`content=null`/handoff paths. 3-round spec review + 3+1-round post-impl review (Opus), GPU micro-dogfood: ASK parse 9/9, 054's over-claim dead, one not-met→fix→met arc. Half 1 (the ASK-verdict convergence loop) was REMOVED by 058 with the vision layer; Half 2 (the robustness wave) is live. Spec: `ai_docs/features/056_copilot_convergence_and_robustness.md`; superseder of half 1: `ai_docs/features/058_remove_vision_layer.md`. |

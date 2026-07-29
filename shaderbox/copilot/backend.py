@@ -24,6 +24,7 @@ from OpenGL.GL import GL_SAMPLER_2D, GL_UNSIGNED_INT
 
 from shaderbox.constants import DEFAULT_IMAGE_FILE_PATH
 from shaderbox.copilot.address import (
+    NODE_SHORT_ID_LEN,
     example_address,
     is_example_address,
     is_lib_address,
@@ -60,6 +61,7 @@ from shaderbox.copilot.capabilities import (
 from shaderbox.copilot.checkpoint import TurnCheckpoint
 from shaderbox.copilot.config import COPILOT_CONFIG, COPILOT_ENGINE
 from shaderbox.copilot.edit_hints import compile_hints, render_facts
+from shaderbox.copilot.error_render import format_compile_errors
 from shaderbox.copilot.errors import CopilotToolError
 from shaderbox.copilot.gate import GateChannel, GateKind, GateRequest
 from shaderbox.copilot.glsl_lex import glsl_lex, span_drops_comment, token_match
@@ -101,7 +103,6 @@ from shaderbox.uniform_coerce import (
 )
 from shaderbox.util import try_to_release
 
-# Node-id prefix shown to the agent; _copilot_short_ids grows it past the floor only on collision.
 # Mean abs per-channel pixel delta (0-255) between two probe frames above which a shader counts as
 # ANIMATING — small enough to catch any real u_time motion, large enough to ignore FP noise.
 _MOTION_EPS = 1.5
@@ -112,7 +113,6 @@ def _stamp_facts(facts: str, t: float) -> str:
     return facts.replace("render:", f"render@t={t:.1f}s:", 1) if facts else ""
 
 
-_COPILOT_SHORT_ID_LEN = 4
 _COPILOT_FULL_ID_LEN = 36
 # Canvas-size clamp for set_canvas_size (feature 052): a sane render-resolution range.
 _MIN_CANVAS_PX = 16
@@ -628,10 +628,10 @@ class CopilotBackend:
             cp.snapshot_lib(ws_address, pre_edit_source)
 
     def _copilot_short_ids(self) -> dict[str, str]:
-        # full node-id -> shortest unique prefix (>=_COPILOT_SHORT_ID_LEN); on collision ALL ids grow
+        # full node-id -> shortest unique prefix (>=NODE_SHORT_ID_LEN); on collision ALL ids grow
         # together so display + resolve stay consistent.
         ids = list(self._get_ui_nodes())
-        n = _COPILOT_SHORT_ID_LEN
+        n = NODE_SHORT_ID_LEN
         while n < _COPILOT_FULL_ID_LEN:
             prefixes = [i[:n] for i in ids]
             if len(set(prefixes)) == len(prefixes):
@@ -826,7 +826,7 @@ class CopilotBackend:
                 for handle in (
                     address
                     if is_lib_address(address)
-                    else short.get(address, address[:_COPILOT_SHORT_ID_LEN])
+                    else short.get(address, address[:NODE_SHORT_ID_LEN])
                     for address in self._working_set_evicted()
                 )
                 if handle not in rendered
@@ -978,8 +978,8 @@ class CopilotBackend:
                 return SetUniformResult(
                     ok=False,
                     error=f"'{name}' is script-driven (the node script computes its value each "
-                    f"frame) — a set here would be overwritten next tick; edit the node script "
-                    f"at nodes/{node_id}/scripts/script.py instead",
+                    "frame) — a set here would be overwritten next tick; edit it with "
+                    "edit_script/write_script instead",
                 )
             target = self._get_ui_nodes()[node_id].node
             uniform = next(
@@ -1819,9 +1819,7 @@ class CopilotBackend:
             "the restored source). Re-read it and rewrite the whole block in ONE edit."
         )
         if restore_errors:
-            err_lines = "\n".join(
-                f"{e.path}:{e.line}: {e.message}" for e in restore_errors
-            )
+            err_lines = format_compile_errors(restore_errors)
             note = (
                 f"EDIT UNDONE — {streak} consecutive edits left compile errors; the "
                 "file was restored to an earlier state, which itself no longer "
@@ -2126,7 +2124,7 @@ class CopilotBackend:
                 unresolved_reason="that shader no longer exists — check the project map for ids",
             )
         ui_node = self._get_ui_nodes()[node_id]
-        short = self._copilot_short_ids().get(node_id, node_id[:_COPILOT_SHORT_ID_LEN])
+        short = self._copilot_short_ids().get(node_id, node_id[:NODE_SHORT_ID_LEN])
         label = f"node '{ui_node.ui_state.ui_name}' ({short})"
         if not target:
             label += " — target was empty, so this hit the CURRENT node"

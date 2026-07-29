@@ -4,8 +4,9 @@ from enum import IntEnum
 
 from loguru import logger
 
-from shaderbox.copilot.capabilities import CompileErrorInfo, WorkingSetView
+from shaderbox.copilot.capabilities import WorkingSetView
 from shaderbox.copilot.config import COPILOT_CONFIG, COPILOT_ENGINE
+from shaderbox.copilot.error_render import format_compile_errors
 from shaderbox.copilot.llm.api import LLMMessage
 from shaderbox.copilot.prompt_context import CopilotContext
 
@@ -134,41 +135,26 @@ VALUES, NODES, LIBRARY
   a calling node recompiles; confirm by touching a consumer node.
 - `grep(query)`: find a token across nodes + lib (origin-labeled file:line). Locate, then read.
 
-SCRIPTING (node scripts -- driving uniforms over time)
-- A node can have ONE Python script at nodes/<id>/scripts/script.py: its `update(self, ctx)` returns
-  a dict {uniform_name: value} that drives those uniforms EVERY frame. Omitted (or None) keys stay
-  MANUAL. self.* persists across frames; ctx gives t (seconds), dt, frame, and mouse (FROZEN at center
-  on export + in the headless probe -- a mouse-driven uniform reads STATIC even when correct, so drive
-  AUTONOMOUS animation from ctx.t; mouse is for live-only interactive motion).
-- WHICH tool sets a value -- pick by what the user wants:
-    "make it pulse / drift / animate / react over time"   -> write_script (value from ctx.t)
-    "make it brighter / bigger / slower" (one fixed value) -> set_uniform
-    "add a u_glow uniform"        -> edit_shader to declare it, THEN write_script to drive it
-    "change what the shader DOES with a value" (logic)    -> edit_shader (source)
-  A script is for VALUES THAT CHANGE; set_uniform / an inline default is for a value that sits.
-- PHYSICS / stateful heavy compute (a cloth Verlet sim, particles, a boids flock) belongs in a SCRIPT,
-  never faked per-pixel in GLSL: step the CPU state each frame and push the result to the shader as an
-  ARRAY uniform (`Array([..flat..])` -> `uniform vecN arr[M];`). Verify the sim's ranges/stability before
-  rendering (a blow-up shows only as a black frame). Per-pixel work (noise, ramps, lighting, SDF) stays
-  GLSL. (See VISUAL CRAFT for when a real model is worth the sim.)
-- The script tools MIRROR the shader tools, for script.py instead of GLSL: read_script(node?) reads it
-  (a FRESH node returns the STUB -- its uniforms + each value shape + a ctx.t example to ADAPT),
-  write_script(node?, new_text) create-or-overwrites the whole script, edit_script (old_str/new_str)
-  tweaks a region. Use edit_script for a localized change, write_script for a fresh script or rewrite.
-- A returned VALUE is shaped to the uniform: a float = a bare number; a vec = `Vec2(x,y)` /
-  `Vec3(...)` / `Vec4(...)`; array = `Array([..flat..])`; text = a plain string. `Vec2/3/4` ARE real
-  vectors -- `.x/.y/.z/.w`, component-wise `+ - *`, scalar `* /`, `.dot()`, `.length()`,
-  `.normalized()`, `Vec3.cross()` -- so a physics/geometry sim reads naturally (build a cloth/particle
-  state out of them). A bare `[x,y]` also coerces for a vec, NOT for an array. The stub seeds the import
-  -- you never type it.
+SCRIPTING (node scripts -- CPU state the shader cannot hold)
+- THE WATERSHED: a script exists for STATE -- a value that depends on the PREVIOUS frame (an
+  integrator, an accumulator, a state-machine phase, a score, a collision response). A value that is
+  a PURE FUNCTION OF TIME -- a pulse, an orbit, a spin, a colour cycle, a wave -- is computed IN THE
+  SHADER from u_time and needs NO script. Ask "does this frame's value need last frame's value?":
+  yes -> a script; no -> GLSL. One build can need both: script the stateful parts, leave the
+  time-pure parts in GLSL.
+- The one special case: HEAVY stateful compute (a cloth Verlet sim, particles, a boids flock) --
+  step the CPU state each frame and push the result as an ARRAY uniform (`Array([..flat..])` ->
+  `uniform vecN arr[M];`), never faked per-pixel. Per-pixel work (noise, ramps, lighting, SDF) stays
+  GLSL. Check the sim's ranges/stability before rendering (a blow-up shows only as a black frame).
+- INSIDE a script, drive motion from ctx.t, never ctx.mouse: mouse is frozen at center on export and
+  in the headless probe, so a mouse-driven uniform reads STATIC even when it is correct.
 - A script-DRIVEN uniform is NOT set_uniform-able (a set is overwritten next tick and rejected). To
-  change a driven value, edit update -- not the shader default (once driven, the default only seeds the
-  initial value). The script writes VALUES only: it cannot add a uniform or change a control's look.
-  Declare a new uniform in the SHADER first, then drive it.
-- You SEE a node's script live in the WORKING SET (its own SCRIPT sub-section, rebuilt every step) --
-  no separate read for the current node. A write/edit returns its probe verdict -- the scripting analog
-  of the shader render facts: the compile result (fix it FIRST, like a shader compile), the uniforms it
-  now drives (0 driven = animates NOTHING), and a motion verdict ANIMATING/STATIC.
+  change a driven value, edit update -- not the shader default (once driven, the default only seeds
+  the initial value). A script writes VALUES only: to add a uniform, edit the SHADER first.
+- You SEE a node's script in the WORKING SET (its own SCRIPT sub-section, rebuilt every step) -- no
+  separate read for the current node. A write/edit returns its probe verdict: the compile result
+  (fix it FIRST, like a shader compile), the uniforms it now drives (0 driven = animates NOTHING),
+  and a motion verdict ANIMATING/STATIC.
 
 VISUAL CRAFT (build what the user ASKED FOR, and build it well)
 - FIDELITY FIRST: deliver the LOOK they asked for -- photoreal, stylized, flat cartoon, abstract. The ask
@@ -338,24 +324,20 @@ def _render_working_set_member(view: WorkingSetView) -> str:
     mark = " [current]" if view.is_current else ""
     canvas = f" canvas {view.canvas}" if view.canvas else ""
     uniforms = "\n".join(view.uniforms) if view.uniforms else "(none)"
-    errors = _format_compile_errors(view.errors) if view.errors else "none"
+    errors = format_compile_errors(view.errors) if view.errors else "none"
     member = (
         f"=== {view.name} (id: {view.address}){mark}{canvas} ===\n{view.listing}\n"
         f"uniforms:\n{uniforms}\nerrors:\n{errors}"
     )
     if view.script_listing:
         script_errors = (
-            _format_compile_errors(view.script_errors) if view.script_errors else "none"
+            format_compile_errors(view.script_errors) if view.script_errors else "none"
         )
         member += (
-            f"\n=== {view.name} SCRIPT (scripts/script.py) ===\n{view.script_listing}\n"
+            f"\n=== {view.name} SCRIPT ===\n{view.script_listing}\n"
             f"script errors:\n{script_errors}"
         )
     return member
-
-
-def _format_compile_errors(errors: list[CompileErrorInfo]) -> str:
-    return "\n".join(f"{e.path}:{e.line}: {e.message}" for e in errors)
 
 
 def render_working_set(
