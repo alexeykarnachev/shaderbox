@@ -40,3 +40,12 @@ route flip is recorded as expected-behavior, not a defect.
 | 08 grid | PASS with ZERO corrections (near-black bg, gray lines, 9 figures, blink verified anti-aliased at 0.25s sampling) — best 08 result across all prompt versions |
 
 No cut-surface regression observed; the D5 coverage is additionally pinned by the marker tests.
+
+# Wave-C gates (prompt 14435 + 500-char legend spliced per turn)
+
+| gate | verdict |
+|---|---|
+| 04 orbit | PASS one-shot, $0.005, period exactly 2.0s; legend rides the turn exactly once (trace-verified) |
+| 03 circles | PASS with 1 correction (edge-tangent circles -> margins 35/35, widths 5x51, gaps 18-19) — best 03 across all versions |
+
+059 complete: prompt 20507 -> 14435 (-29.6%), all three waves landed with green echelon gates.
