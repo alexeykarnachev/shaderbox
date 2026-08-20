@@ -6,8 +6,10 @@ setting, never their credentials. Pure: no GL, no network; SHADERBOX_DATA_DIR re
 
 import json
 from pathlib import Path
+from typing import get_args, get_origin
 
 import pytest
+from pydantic import BaseModel
 
 from shaderbox.integrations import IntegrationsStore
 
@@ -90,3 +92,33 @@ def test_retired_key_inside_a_pack_entry_does_not_wipe_credentials(
     assert loaded.telegram.bot_token == _BOT
     assert loaded.copilot.openrouter_key == _KEY
     assert [p.set_name for p in loaded.telegram.packs] == ["p1"]
+
+
+def test_pruner_covers_every_nested_model_shape_in_the_store() -> None:
+    # _drop_unknown handles two shapes: a bare nested model and list[Model]. If a field ever lands
+    # with a shape it does NOT walk (dict[str, Model], tuple[Model, ...], Model | None), a retired
+    # key under it would again fail-soft the whole store to empty credentials — silently, because
+    # every other test here would still pass. Falsifier: add such a field and this goes red.
+    covered: set[type | None] = {None, list}
+    unhandled: list[str] = []
+
+    def walk(model: type[BaseModel], path: str, seen: set[type[BaseModel]]) -> None:
+        if model in seen:
+            return
+        seen.add(model)
+        for name, field in model.model_fields.items():
+            args = get_args(field.annotation)
+            nested = [
+                a
+                for a in (args or (field.annotation,))
+                if isinstance(a, type) and issubclass(a, BaseModel)
+            ]
+            if not nested:
+                continue
+            if get_origin(field.annotation) not in covered:
+                unhandled.append(f"{path}.{name}: {field.annotation}")
+            for model_arg in nested:
+                walk(model_arg, f"{path}.{name}", seen)
+
+    walk(IntegrationsStore, "integrations", set())
+    assert not unhandled, f"_drop_unknown does not walk these shapes: {unhandled}"
