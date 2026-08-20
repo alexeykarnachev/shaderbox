@@ -14,8 +14,8 @@ import pytest
 
 from shaderbox.core import Node
 from shaderbox.media import MediaDetails
+from shaderbox.render_job import render_for
 from shaderbox.render_preset import FitPolicy, RenderPreset, ResolutionPolicy
-from shaderbox.tabs.share_state import render_for
 
 
 @pytest.fixture(scope="module")

@@ -8,8 +8,9 @@ from shaderbox.exporters.base import (
     RenderControl,
     RenderedArtifact,
 )
+from shaderbox.render_job import render_for
 from shaderbox.render_preset import RenderPreset
-from shaderbox.tabs.share_state import OutletRenderState, TabState, render_for
+from shaderbox.tabs.share_state import OutletRenderState, TabState
 from shaderbox.theme import COLOR, SPACE
 from shaderbox.ui_models import UINode
 

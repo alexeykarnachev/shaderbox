@@ -11,6 +11,7 @@ A leaf: imports only `glsl_lex` + stdlib, so `backend.py` pulls it in without a 
 
 from shaderbox.copilot.glsl_lex import glsl_lex
 
+
 def ws_normalize(text: str) -> tuple[str, list[int]]:
     # Collapse horizontal-whitespace runs to one space (dropped adjacent to a newline) and
     # return the normalized text + a per-char map back to original indices, so a normalized-space

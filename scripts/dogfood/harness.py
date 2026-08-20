@@ -114,6 +114,7 @@ from shaderbox.exporters.registry import ExporterRegistry  # noqa: E402
 from shaderbox.media import texture_to_pil  # noqa: E402
 from shaderbox.notifications import Notifications  # noqa: E402
 from shaderbox.project_session import ProjectSession  # noqa: E402
+from shaderbox.render_job import render_to  # noqa: E402
 from shaderbox.render_preset import (  # noqa: E402
     FitPolicy,
     RenderPreset,
@@ -121,7 +122,6 @@ from shaderbox.render_preset import (  # noqa: E402
 )
 from shaderbox.scripting import EngineContext  # noqa: E402
 from shaderbox.shader_lib.file_ops import ShaderLibFileManager  # noqa: E402
-from shaderbox.tabs.share_state import render_to  # noqa: E402
 
 
 def _strip_cell(texture: moderngl.Texture, t: float, size: int) -> PILImage.Image:

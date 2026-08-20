@@ -21,6 +21,7 @@ import moderngl
 import numpy as np
 from loguru import logger
 
+from shaderbox import render_job
 from shaderbox.constants import DEFAULT_IMAGE_FILE_PATH
 from shaderbox.copilot.address import (
     NODE_SHORT_ID_LEN,
@@ -106,7 +107,6 @@ from shaderbox.scripting import (
 from shaderbox.shader_errors import ShaderError
 from shaderbox.shader_lib import ShaderLibIndex, parser
 from shaderbox.shader_lib.file_ops import ShaderLibFileManager
-from shaderbox.tabs import share_state
 from shaderbox.ui_models import UINode, load_node_from_dir
 from shaderbox.uniform_coerce import (
     coerce_uniform_value,
@@ -1231,7 +1231,7 @@ class CopilotBackend:
                 shape, is_video=False, fps=None, container=None, duration_max=None
             )
             out = self._copilot_render_path(ui_node, "png")
-            art = share_state.render_to(ui_node.node, preset, 0.0, out)
+            art = render_job.render_to(ui_node.node, preset, 0.0, out)
             if art is None:
                 return RenderResult(ok=False, error="render failed (see logs)")
             return RenderResult(
@@ -1258,7 +1258,7 @@ class CopilotBackend:
                 shape, is_video=True, fps=fps, container=".webm", duration_max=None
             )
             out = self._copilot_render_path(ui_node, "webm")
-            art = share_state.render_to(ui_node.node, preset, seconds, out)
+            art = render_job.render_to(ui_node.node, preset, seconds, out)
             if art is None:
                 return RenderResult(ok=False, error="render failed (see logs)")
             return RenderResult(
@@ -1317,8 +1317,8 @@ class CopilotBackend:
 
         def _render_and_enqueue() -> ExportProgress | None:
             duration = float(settings.get("seconds", preset.duration_max or 3.0))
-            out = self._copilot_render_path(ui_node, share_state.preset_ext(preset))
-            art = share_state.render_to(ui_node.node, preset, duration, out)
+            out = self._copilot_render_path(ui_node, render_job.preset_ext(preset))
+            art = render_job.render_to(ui_node.node, preset, duration, out)
             if art is None:
                 raise CopilotToolError("render failed")
             baseline = exporter.status().last_progress
