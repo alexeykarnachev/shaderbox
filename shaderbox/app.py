@@ -15,9 +15,7 @@ from loguru import logger
 from shaderbox.commands import (
     COMMAND_SPECS,
     SPEC_BY_ID,
-    ActiveRegion,
     CommandId,
-    NodeTab,
     chord_to_str,
 )
 from shaderbox.constants import (
@@ -66,6 +64,7 @@ from shaderbox.ui_models import (
     UINodeState,
     load_node_from_dir,
 )
+from shaderbox.ui_regions import ActiveRegion, NodeTab
 from shaderbox.util import (
     open_in_file_manager,
     pfd_block,

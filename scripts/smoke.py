@@ -19,11 +19,11 @@ from imgui_bundle import imgui
 from loguru import logger
 
 from shaderbox.app import App, PopupState
-from shaderbox.commands import ActiveRegion, NodeTab
 from shaderbox.constants import EXAMPLE_ORDER, NODE_EXAMPLES_DIR
 from shaderbox.help_content import help_sections
 from shaderbox.logging_setup import configure_logging
 from shaderbox.ui import update_and_draw
+from shaderbox.ui_regions import ActiveRegion, NodeTab
 
 N_FRAMES: int = 200
 

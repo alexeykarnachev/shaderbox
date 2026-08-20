@@ -1,7 +1,6 @@
 from imgui_bundle import imgui, imgui_ctx
 
 from shaderbox.app import App
-from shaderbox.commands import ActiveRegion
 from shaderbox.constants import STARTER_EXAMPLE_ID
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_models import UINode
@@ -10,6 +9,7 @@ from shaderbox.ui_primitives import (
     active_region_outline,
     preview_cell,
 )
+from shaderbox.ui_regions import ActiveRegion
 
 
 def draw_node_preview_button(

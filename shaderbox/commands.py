@@ -58,21 +58,6 @@ CATEGORY_ORDER: list["CommandCategory"] = [
 ]
 
 
-class ActiveRegion(StrEnum):
-    # The three keyboard-nav focus regions; CYCLE_REGION moves between them and
-    # nav operates within the focused one.
-    EDITOR = auto()
-    GRID = auto()
-    PANEL = auto()
-
-
-class NodeTab(StrEnum):
-    # The settings-panel inner tabs; FOCUS_TAB_* jump to one directly.
-    NODE = auto()
-    RENDER = auto()
-    SHARE = auto()
-
-
 class CommandScope(StrEnum):
     # Fires anywhere EXCEPT while a modal popup is open (the dispatcher applies
     # the explicit any_popup_open() gate — routing alone does not suppress it).

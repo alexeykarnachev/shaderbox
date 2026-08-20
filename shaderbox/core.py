@@ -1,12 +1,12 @@
 import base64
 import contextlib
 import json
+import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
-import glfw
 import imageio
 import moderngl
 import numpy as np
@@ -344,7 +344,9 @@ class Node:
             return
 
         texture_unit = 0
-        time = u_time if u_time is not None else glfw.get_time()
+        # No glfw here: this module is imported by the headless core, and the caller passes an
+        # explicit u_time on every real render path (the live loop, export, the probe).
+        render_time = u_time if u_time is not None else time.monotonic()
         self.seed_uniform_values()
         for uniform in self.get_active_uniforms():
             if uniform.name in TABLE_UNIFORMS:  # program-resident, set at compile
@@ -359,7 +361,7 @@ class Node:
 
             elif getattr(uniform, "gl_type", None) == GL_SAMPLER_2D:
                 if isinstance(value, MediaWithTexture):
-                    value.update(time)
+                    value.update(render_time)
                     texture = value.texture
                 elif isinstance(value, moderngl.Texture):
                     texture = value
@@ -373,7 +375,7 @@ class Node:
                 texture_unit += 1
 
             elif uniform.name == "u_time":
-                value = time
+                value = render_time
                 value_for_program = value
 
             elif uniform.name == "u_aspect":

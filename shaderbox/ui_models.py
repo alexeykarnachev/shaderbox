@@ -10,7 +10,6 @@ from loguru import logger
 from OpenGL.GL import GL_SAMPLER_2D, GL_UNSIGNED_INT
 from pydantic import BaseModel, ValidationError, model_validator
 
-from shaderbox.commands import NodeTab
 from shaderbox.constants import (
     DEFAULT_TEMPORAL_SIGMA,
     DEFAULT_TEMPORAL_WINDOW_SIZE,
@@ -18,6 +17,7 @@ from shaderbox.constants import (
 from shaderbox.copilot.state import CopilotLayout
 from shaderbox.core import _NODE_SHADER_BASENAME, ENGINE_DRIVEN_UNIFORMS, Node
 from shaderbox.media import MediaDetails, MediaWithTexture, is_default_image
+from shaderbox.ui_regions import NodeTab
 
 UIUniformInputType = Literal[
     "texture", "buffer", "array", "color", "text", "drag", "auto"

@@ -11,7 +11,7 @@ from imgui_bundle import portable_file_dialogs as pfd
 from loguru import logger
 
 from shaderbox.app import App, PopupState
-from shaderbox.commands import ActiveRegion, CommandId, NodeTab, chord_to_str
+from shaderbox.commands import CommandId, chord_to_str
 from shaderbox.constants import (
     GLSL_EXTENSIONS,
     MEDIA_EXTENSIONS,
@@ -40,6 +40,7 @@ from shaderbox.ui_primitives import (
     rendering_overlay,
     toggle_button,
 )
+from shaderbox.ui_regions import ActiveRegion, NodeTab
 from shaderbox.util import adjust_size
 from shaderbox.watch import maybe_rebuild_lib_index, reload_node_if_changed
 from shaderbox.widgets import cheatsheet, copilot_chat
