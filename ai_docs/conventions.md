@@ -44,7 +44,7 @@ belong in the feature spec (`ai_docs/features/NNN_*.md`). This file is not a cha
   **symbol** instead of a line (`App.save`, `widgets/uniform.py::draw_ui_uniform` — greppable, survives
   edits); for size triggers, describe the condition qualitatively ("when it grows a clearly separable
   cluster" / "when editing it feels painful"), not a line count. If a number truly must appear, it's a
-  smell — prefer the symbol/condition. (Generic restatement: `dev_flow.md ## Cite by section name`.)
+  smell — prefer the symbol/condition. (Generic restatement: `dev_flow.md ### Cite by section name, not line number`.)
 - Don't sidestep a convention with `# noqa` / `# pyright: ignore` / `# type: ignore` / inline import /
   circular-import hack — a collision means the design is wrong. The sanctioned type-suppression
   allowlist (upstream library-stub gaps only) is in `## Known quirks`.
@@ -152,8 +152,11 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
 - **`ProjectSession` is the headless project + copilot core; `App` owns one and forwards to it.** The
   project lifecycle (paths, nodes, app_state, lib index + cross-project stores, integrations) and the
   whole copilot cluster (`CopilotSession`/`CopilotBackend`/`RevertExecutor` + the capability wiring)
-  live in `project_session.py`, which imports no imgui/glfw and creates no glfw window / imgui context
-  — so a headless harness (feature 026) constructs it on a standalone EGL context without `App`. `App`
+  live in `project_session.py`, which creates no glfw window and no imgui context at import — so a
+  headless harness (feature 026) constructs it on a standalone EGL context without `App`. (The
+  *import graph* is not imgui-free: `shader_lib/file_ops.py` owns UI state and `copilot/backend.py`
+  drives the exporters, so both pull imgui in transitively. The invariant is no CONTEXT/WINDOW, not
+  no import; the harness therefore needs imgui-bundle + glfw installed, just never initialized.) `App`
   holds one `self.session` and forwards project state/ops via explicit `@property` accessors (NOT
   `__getattr__` — pyright must see the surface). **UI side effects of a core mutation ride injected
   `on_*` callbacks the core invokes** (`on_current_node_changed` / `on_node_source_synced` /
@@ -243,9 +246,9 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   organizational convention, not a polymorphic contract — no `Widget` ABC, no shared return shape;
   each gets the shape that fits its job. Revisit if a polymorphic `list[Widget]` dispatcher materializes.
 - **`popups/*.py`: free `draw(app: App)` functions; open/closed state lives on `App` as a single
-  `PopupState` enum field.** The four modal popups (examples browser, settings, emoji picker,
-  shader-lib picker) share one `app.popup_state` field — `CLOSED` / `EXAMPLES` / `SETTINGS` / `EMOJI_PICKER`
-  / `SHADER_LIB_PICKER`. Each `app.open_*()` helper sets `popup_state`; the single field IS the mutex
+  `PopupState` enum field.** The five modal popups (examples browser, help, settings, emoji
+  picker, shader-lib picker) share one `app.popup_state` field — `CLOSED` / `EXAMPLES` / `HELP` /
+  `SETTINGS` / `EMOJI_PICKER` / `SHADER_LIB_PICKER`. Each `app.open_*()` helper sets `popup_state`; the single field IS the mutex
   ("at most one modal open" holds by construction — one field can't be two states). A new modal popup
   adds an enum member + its `open_*()` + a self-close to `CLOSED`. `app.any_popup_open()`
   (`popup_state != CLOSED`) is the render-gate question. The command palette (`is_palette_open`) stays
@@ -333,10 +336,13 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   dry-tick (feature 043).** `read_script`/`write_script`/`edit_script` ↔
   `read_shader`/`write_shader`/`edit_shader` — a SEPARATE trio, NOT a `target:"script:"` overload. The
   split is structural, not symmetry: a script is a different LANGUAGE (Python, not GLSL → `edit_script`
-  matches PLAIN TEXT via `_plain_text_spans`, NOT the GLSL `token_match` — Python indentation is
-  semantic, so whitespace-tolerance is unsafe; `comment_loss`/the near-match hint are correctly omitted
-  for the same reason — under exact-match the risks they defend can't occur). The GENERIC resilience
-  ports: `edit_script`/`write_script` share the 0/1/N-match contract, the `_splice`, the same write tail
+  matches PLAIN TEXT via `script_match_spans` (`copilot/edit_match.py`), NOT the GLSL `token_match` —
+  Python indentation is semantic, so GLSL-style whitespace collapsing is unsafe: the matcher tries an
+  exact substring first, then an indent-LEVEL structural fallback that forgives only a uniformly
+  re-typed leading indent and re-indents the replacement to the matched block.
+  `comment_loss`/the near-match hint stay omitted — the GLSL risks they defend don't arise here).
+  The GENERIC resilience
+  ports: `edit_script`/`write_script` share the 0/1/N-match contract, the `splice`, the same write tail
   (`_apply_script_text` — an edit and a write give identical feedback), and the 033 force-restore (N
   broken edits → revert to last clean; a script has TWO failure modes, compile + runtime, so it is at
   least as loop-prone as a shader). A different result type (`ScriptError{compile|runtime}` not

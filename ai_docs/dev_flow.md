@@ -17,9 +17,10 @@ per-feature branches); `master` is the line actually released to itch and only a
 So `dev` can sit many commits ahead with no version bump — the bump happens once, when `dev` is
 ship-ready (`## Build / ship to itch.io`).
 
-**Lab worktree / `lab` branch.** Shader-lab experiments run in a separate git *worktree*
-(`~/src/shaderbox2`) checked out on the `lab` branch, sharing one `.git` with the main tree
-(`~/src/shaderbox`, on `dev`). The experiments themselves stay gitignored drafts under
+**Lab worktree / `lab` branch.** Shader-lab experiments run in a separate git *worktree* checked
+out on the `lab` branch, sharing one `.git` with the main tree (`~/src/shaderbox`, on `dev`). The
+worktree is per-machine and may not exist yet — `git worktree add ~/src/shaderbox2 lab` creates it
+(`origin/lab` is the durable half). The experiments themselves stay gitignored drafts under
 `projects/_lab/`; when a run yields something worth keeping — a promoted node dir (`git add -f`) or
 harvest into the skill / lib / a feature — commit it on `lab` and **push to `origin/lab`**. The
 maintainer then merges `lab` into the main line from the main tree. Keep lab work on `lab`; don't
@@ -116,7 +117,7 @@ corrects.
    sweeps, or a docs-harness audit, escalate to a larger parallel **swarm run as a convergence
    loop** (spawn all reviewers in one message; triage real-vs-false-positive; re-spawn the same
    reviewers against the patched state; repeat until every reviewer returns PASS). The mechanics
-   + the late-round-fabricated-gaps warning are the canonical home of the `/review-agent-loop`
+   + the late-round-fabricated-gaps warning are the canonical home of the `agent-spawn-discipline`
    skill (global) — don't restate them here. One hard-won rule worth repeating: at least one
    reviewer must anchor to an artifact you did NOT author (a sibling file, the running app, the
    user's verbatim message) — an all-self-authored swarm ratifies its own contradictions.
@@ -195,7 +196,7 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   `#include` resolution) + `shader_errors`.
 - **`project_session.py`** — `ProjectSession`: the headless project + copilot CORE (paths, nodes,
   app_state, lib index + cross-project stores, integrations, the `CopilotSession`/`CopilotBackend`/
-  `RevertExecutor` cluster). Imports no imgui/glfw, creates no window/context — a headless harness
+  `RevertExecutor` cluster). Creates no glfw window and no imgui context — a headless harness
   (feature 026) constructs it on a standalone EGL context without `App`. UI reactions ride injected
   `on_*` callbacks (the seam + why a return-value seam is wrong: `conventions.md ## Design decisions`,
   the `ProjectSession` bullet). Feature 025. Owns the `ScriptEngine` (feature 041) + drives its
@@ -227,7 +228,7 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
 - **`ui.py`** — thin entrypoint + orchestrator. `run(app)`, `update_and_draw(app)` (the imgui frame
   loop: render gates + the main-window left/right split — LEFT = code editor via `code_tab.draw`,
   RIGHT = `_draw_app_panel`), `_draw_splitter`, `_draw_app_panel`, `_draw_node_settings`
-  (Node/Render/Share tab-bar dispatcher), the **Shader Library** menu, `main()`. No tab bodies /
+  (Node/Render/Share tab-bar dispatcher), the **Library** menu (Browse…), `main()`. No tab bodies /
   widget logic / hotkey dispatch — those live in `tabs/`, `widgets/`, `popups/`, `hotkeys.py`.
 - **`commands.py`** — leaf (imports `imgui` only, never `App`): the command registry that drives all
   keyboard control (feature 018). `CommandId`/`CommandScope` StrEnums, the frozen `CommandSpec` + the
@@ -292,6 +293,21 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   **Integrations** credential blocks), `emoji_data.py` + `emoji_picker.py` (monochrome glyph grid),
   `lib_picker/` (package: `__init__` entry+orchestrator, `tree`, `preview`, `search`, `filtering` —
   the tree+preview shader-library browser with right-click file/dir/function context menus).
+- **The small leaves** — one concept each, imported across packages:
+  **`theme.py`** (the ONLY home for colour/size/spacing tokens: `COLOR` / `SIZE` / `SPACE`; every
+  UI module reads these, nothing hard-codes a literal) / **`ui_regions.py`** (`ActiveRegion` +
+  `NodeTab` — the nav/tab enums, kept out of `commands.py` so the persisted model layer doesn't
+  pull in imgui) / **`render_preset.py`** (the pydantic `RenderPreset` value type) /
+  **`render_shape.py`** (the shape/aspect table shared by the Share tab + the copilot) /
+  **`render_defer.py`** (the one-frame render latch `ui.py` reads) / **`render_job.py`**
+  (`render_to` / `render_for` / `preset_ext` — the UI-free render-to-file job behind BOTH the Share
+  tab and the copilot's render tools) / **`integrations.py`** (`IntegrationsStore`: the Telegram +
+  YouTube + copilot credential/config store at `app_data_dir()/integrations.json`; peer to
+  `paths.py`, NOT an exporter) / **`shader_source.py`** (`ShaderSource`: the on-disk text + mtime
+  a Node edits against) / **`glyph_tables.py`** (GENERATED stroke data for the SDF text shader —
+  regenerate via `scripts/gen_glyphs.py`, never hand-edit) / **`help_content.py`** (the F1 help
+  panel's static copy) / **`logging_setup.py`** (loguru sinks: console + the rotating file in
+  `app_data_dir()/logs`).
 - **`ui_primitives.py`** (imgui+theme draw helpers: button
   tiers + shared draw primitives — `context_menu_style()`, `pill_button`, `preview_cell`, …) /
   **`util.py`** (non-UI helpers: `adjust_size`, `select_next_value`, `get_uniform_hash`, `pfd_block`,
@@ -303,10 +319,15 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   package + worker thread + queues + a worker→main GL `bridge`. `App` owns a `CopilotSession` handle + drains
   it per frame; the chat is a floating window (`widgets/copilot_chat.py`) launched from the editor bottom bar.
   The seams (`capabilities` Protocol / `llm.api` / `bridge` / queues / `state`), the `agent` loop, the
-  `prompt`, the `trace`, and the eager tools (`tools/shader.py` — read_shader / edit_shader +
-  write_shader / set_uniform / create_node / grep / read_lib / delete_node / switch_node; `tools/publish.py` — render_image / render_video
-  / publish_telegram / publish_youtube; `tools/telegram.py` — set_telegram_token / telegram_connect + pack
-  CRUD list/select/create/delete; `tools/youtube.py` — set_youtube_credentials) are built. The node-id/edit/uniform/delete + render/publish + telegram
+  `prompt`, the `trace`, and the tool set are built. EAGER (in `tools=` from turn start):
+  `tools/shader.py` — read_shader / edit_shader / write_shader / set_uniform / create_node / grep /
+  read_lib / delete_node / switch_node; `tools/script.py` — read_script / write_script / edit_script;
+  `tools/inspect.py` — probe_render; `tools/publish.py` — render_image / render_video /
+  publish_telegram / publish_youtube; plus the `load_tools` meta-tool. LAZY (loaded on demand by
+  `load_tools`, feature 052): `tools/node_ops.py` — rename_node / set_canvas_size / duplicate_node /
+  import_node / bind_media / unbind_media / delete_lib_file; `tools/telegram.py` — set_telegram_token /
+  telegram_connect + pack CRUD; `tools/youtube.py` — set_youtube_credentials. The eager/lazy flag
+  lives on each `ToolDefinition`; `registry.assemble_specs` builds the per-iteration `tools=`. The node-id/edit/uniform/delete + render/publish + telegram
   machinery lives in `backend.py` (`CopilotBackend` — feature 023, extracted from `App`; explicit deps +
   injected getters/callbacks, never imports `App`); `ProjectSession._build_copilot_capabilities`
   constructs it, and the backend itself satisfies the `CopilotCapabilities` Protocol (feature 031 —
@@ -315,9 +336,9 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   Yes/No (`delete_node` + publish + pack mutations) and CREDENTIAL, a masked secret input
   (`set_telegram_token`, the token redacted to a prefix everywhere but the live store —
   `19_credential_pack_tools.md`). `checkpoint.py` (`TurnCheckpoint`/`CheckpointStore`) backs per-turn
-  rollback (feature 030): a best-effort capture at each mutation seam in `backend.py` (serialize the
-  LIVE node, never the on-disk dir) + `App.restore_checkpoint` reload-and-replace; the Revert glyph +
-  modal live in `copilot_chat.py`. Full design: `ai_docs/features/020_copilot_agent/`
+  rollback (`020_copilot_agent/30_turn_rollback.md`): a best-effort capture at each mutation seam in
+  `backend.py` (serialize the LIVE node, never the on-disk dir) + `RevertExecutor.restore_checkpoint`
+  (`copilot/revert.py`) reload-and-replace; the Revert glyph + modal live in `copilot_chat.py`. Full design: `ai_docs/features/020_copilot_agent/`
   (`30_turn_rollback.md` is the latest; `10_skeleton_plan.md` for the original structure).
 - **`scripts/gen_glyphs.py`** — generator for the data-driven glyph tables in
   `shaderbox/resources/shader_lib/text/glyphs.glsl` (edit the python stroke tables, regenerate —
@@ -569,5 +590,5 @@ Why the docs are shaped this way. Short list, kept honest:
   trade-off so the user can choose.
 - **Audit before "done" on big sweeps.** A substantial refactor, a docs-harness sweep, a
   multi-file feature → don't self-certify with one read. Spawn an adversarial review swarm anchored
-  to a checklist (`/review-agent-loop`), converge, THEN declare done. A sympathetic single pass is
+  to a checklist (the `agent-spawn-discipline` skill), converge, THEN declare done. A sympathetic single pass is
   how a "done" stamp lands on incomplete work.

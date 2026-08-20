@@ -26,23 +26,28 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-07-30 (059 all three waves landed + gates green; reasoning=none; config split; agent-hub page live). -->
-**ACTIVE: feature 059 — prompt refactor (maintainer hub-feedback): all three bisectable waves
-landed, every wave gate green.** `_SYSTEM_PROMPT` 20 507 -> 14 435 chars (-29.6%) — SCRIPTING
-watershed corrected to STATE-not-time, implementation details out, generated SCRIPT API in RARE, the
-render-facts legend spliced per turn instead of held in STATIC (per-wave detail: the 059 row + its
-spec dir). Preceded by reasoning effort=none (ignored on compound asks — they need ~30k turn budget),
-the user/engine config split, the final-reply cap, and the agent-hub page — now the maintainer sync
-surface.
+<!-- As of 2026-08-20 (060 rot audit landed; suite green + order-independent for the first time). -->
+**ACTIVE: feature 060 — rot audit & reorg, landed.** After a long pause, a 10-agent audit (5
+architecture, 5 rot) swept the repo; every finding was re-verified first-hand before acting. The
+architectural verdict is a NULL result worth keeping: the layout is sound, the import graph is
+acyclic, `app.py`/`ui_primitives.py` stay whole — only three boundary moves earned their churn
+(`copilot/edit_match.py`, `render_job.py`, `integrations.py` out of `exporters/`). The rot was real:
+a retired key in `integrations.json` silently wiped every credential on next quit; the copilot read
+`ivec3` uniforms as `vec3`; `make test` had been red for four releases (a glfw X socket inherited
+through `pytest-forked`) AND could not report it; the dogfood coverage metric had 8 tools outside its
+own denominator. Each fix carries a mutation-tested guard.
 
-**NEXT:** (1) the render-facts VALUE observation (wave 4 of the hub-feedback plan) — its trigger has
-fired: 059 is in and the base echelon is re-baselined at effort=none; (2) a stronger-model pass over
-the exam echelon — two cheap-model ceilings recorded (sdRoundBox pip semantics, the layout see-saw)
-that only a better actor can separate from prompt gaps. HN post stays maintainer-paced.
+**NEXT:** (1) the render-facts VALUE observation (wave 4 of the hub-feedback plan) — trigger still
+fired; (2) a stronger-model pass over the exam echelon. Two 060 findings deferred with reasons in the
+spec: the `exporters/telegram.py` worker-half split, and 5 wired-but-unfalsifiable copilot brakes.
+HN post stays maintainer-paced.
 
 **Last LIVE on itch (context):** v0.21.0 — feature 050 + render-divergence cleanup + YT Shorts presets
-+ the bugs/debt fix wave. (Previously v0.20.0 — node-dir live auto-sync + math-symbol text glyphs.
-v0.19.0 was tagged then dropped at upload and never went public — a permanently skipped label.)
++ the bugs/debt fix wave. (v0.19.0 was tagged then dropped at upload and never went public — a
+permanently skipped label.) **`master` is TAGGED to v0.25.0** (v0.22.0/0.22.1/0.23.0/0.24.0/0.25.0 —
+lazy tool catalogue, Vec math + Array rows, node examples rework, the F1 help panel); v0.22.0's
+commit records "itch upload deferred" and no later commit records an upload, so the git line is four
+releases ahead of what is known-public. Confirm on the itch dashboard at the next ship.
 **No open BLOCKERs.**
 
 ## Features
@@ -51,6 +56,7 @@ v0.19.0 was tagged then dropped at upload and never went public — a permanentl
 |---|---|---|---|
 | — | copilot_engine_tuning | done | reasoning effort=none engine knob (+30k turn budget: effort flag is ignored on compound asks — measured), user/engine config split with slots enforcement, final-reply token cap. Spec: commits 289c12f + 6ed3c4d + 779d4b2 + this wave. |
 | — | agent_hub | done | the maintainer sync page: full prompt/tools/config/knowledge surfaces + all dogfood runs with dialogues and media, regenerated from live code. Spec: scripts/agent_hub/generate.py docstring. |
+| 060 | rot_audit_and_reorg | done | A 10-agent rot + architecture audit of the whole repo, then the fixes it earned: the credential-wipe on any retired `integrations.json` key, the copilot's `ivec3`-as-`vec3` uniform mislabel, the test suite that had gone silently red (an `app`-fixture X socket inherited by `fork()`), a dogfood coverage metric blind to 8 of its own tools, an unbounded in-frame ffmpeg call, an orphaned video-export writer, a gate lost-wakeup that could latch the copilot for good, plus three boundary moves (`edit_match.py`, `render_job.py`, `integrations.py`) and a doc-harness fact-check. Verdict on the big question: the layout is SOUND — no broad reorg. Spec: `ai_docs/features/060_rot_audit_and_reorg/spec.md`. |
 | 059 | prompt_refactor | done | The hub-feedback prompt refactor in three bisectable waves, all landed: A corrects the SCRIPTING watershed to STATE-not-time across prompt + eager tool descriptions and replaces model-facing absolute error paths with short labels via a shared GL-free helper; B adds the generated SCRIPT API block (RARE tier) + conventions moves + schema-dedup cuts; C trims FEEDBACK to its pre-action rules and splices the 500-char legend (four term glosses + the STATIC-means-unwired diagnostic) onto the first facts-bearing result per turn, ahead of any hint on that result (one per-turn flag shared with the forced-reply path) — `_SYSTEM_PROMPT` 20 507 -> 14 435 chars; controls for the effort=none actor recorded before landing. Spec: `ai_docs/features/059_prompt_refactor/01_spec.md`. |
 | 058 | remove_vision_layer | done | The product-thesis pivot: the copilot ships EXCELLENT CODE, the human is the visual judge — so the vision layer (053 eye + 056 ASK-verdict convergence loop, models, Settings badge, contracts, ~8 config knobs) is DELETED whole, grep-clean, no compat; the free NUMERIC facts pipeline stays as the copilot's only sight and `probe_render(node, t)` reverts to the 050 numeric contract. Added: a limit-forced final reply (token/time/iteration cutoffs) quotes the MEASURED facts line so the model states the net result from data (three observed dishonest limit-endings closed, zero billed calls), and the dogfood report gains the CODE axis (driver grades the produced sources: dead code / duplication / structure / tool choice; the sweep turn is its probe). Validation-first: cheap falsification experiments killed 3 of 4 candidate fixes before any code. Spec: `ai_docs/features/058_remove_vision_layer.md`. |
 | 057 | dogfood_axes_and_scenarios | done | The dogfood measuring stick: the multi-axis report (now six axes per 058: fidelity/motion/logic/honesty/process/code + a dialogue section; the AUTO honesty half is the limit-forced-turns list), `analyze.py --dialogue` (UI-store source, dumps fallback for wipe runs) + `--scenario`, the cornerstone scenario type (03/04/05/08 — opening message verbatim, <=2 corrections, ground truth per checklist; pilot: 4/4 PASS) + judge tooling: `render_strip` (per-sample REPLAY through export-isolation — a live-tick strip lies for stateful scripts), `script_values` (dry_run passthrough), `judge.py` pixel primitives, lazy package init (no more key-bearing `data-*` litter on import). Fixed en route: `turn_time_budget_s` engine wall-clock bound; the GL-segfault class (llvmpipe-4.5 vs `#version 460` + the explicit-EGL release poison) — full suite green headless for the first time. Spec: `ai_docs/features/057_dogfood_axes_and_scenarios/`. |
