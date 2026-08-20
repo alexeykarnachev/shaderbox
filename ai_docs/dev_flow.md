@@ -325,8 +325,9 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   `tools/inspect.py` — probe_render; `tools/publish.py` — render_image / render_video /
   publish_telegram / publish_youtube; plus the `load_tools` meta-tool. LAZY (loaded on demand by
   `load_tools`, feature 052): `tools/node_ops.py` — rename_node / set_canvas_size / duplicate_node /
-  import_node / bind_media / unbind_media / delete_lib_file; `tools/telegram.py` — set_telegram_token /
-  telegram_connect + pack CRUD; `tools/youtube.py` — set_youtube_credentials. The eager/lazy flag
+  import_node; `tools/media.py` — bind_media / unbind_media; `tools/shader.py` — delete_lib_file;
+  `tools/telegram.py` — set_telegram_token / telegram_connect + pack CRUD; `tools/youtube.py` —
+  set_youtube_credentials. The eager/lazy flag
   lives on each `ToolDefinition`; `registry.assemble_specs` builds the per-iteration `tools=`. The node-id/edit/uniform/delete + render/publish + telegram
   machinery lives in `backend.py` (`CopilotBackend` — feature 023, extracted from `App`; explicit deps +
   injected getters/callbacks, never imports `App`); `ProjectSession._build_copilot_capabilities`

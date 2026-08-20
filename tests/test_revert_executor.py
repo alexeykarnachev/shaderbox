@@ -10,7 +10,7 @@ These run IN-PROCESS. They must not be marked `forked`: the `app` fixture leaves
 display socket, and a forked child inherits it — two processes on one Xlib connection kills it
 (`XIO: fatal IO error`), so every test after the first `app` module fails. The GL bleed that once
 justified forking (a deleted program left GL-current) is handled at its source by the
-`glUseProgram(0)` suppress in `core.py::release_program`."""
+`glUseProgram(0)` suppress in `core.py::Node.invalidate`."""
 
 from typing import Any
 

@@ -1,7 +1,7 @@
 import json
 import threading
 from pathlib import Path
-from typing import Any, Self
+from typing import Any, Self, get_args
 
 from loguru import logger
 from pydantic import BaseModel, ValidationError
@@ -98,14 +98,18 @@ def _drop_unknown(model: type[BaseModel], data: dict[str, Any], path: str) -> No
         logger.warning(f"Ignoring unknown {path} key: {key}")
         data.pop(key)
     for key, field in model.model_fields.items():
-        nested = field.annotation
         value = data.get(key)
-        if (
-            isinstance(value, dict)
-            and isinstance(nested, type)
-            and issubclass(nested, BaseModel)
-        ):
-            _drop_unknown(nested, value, f"{path}.{key}")
+        # `or (annotation,)` covers a bare nested model; get_args covers list[Model] (telegram.packs),
+        # whose elements are their own extra="forbid" models.
+        for nested in get_args(field.annotation) or (field.annotation,):
+            if not (isinstance(nested, type) and issubclass(nested, BaseModel)):
+                continue
+            if isinstance(value, dict):
+                _drop_unknown(nested, value, f"{path}.{key}")
+            elif isinstance(value, list):
+                for index, item in enumerate(value):
+                    if isinstance(item, dict):
+                        _drop_unknown(nested, item, f"{path}.{key}[{index}]")
 
 
 class IntegrationsStore(BaseModel):

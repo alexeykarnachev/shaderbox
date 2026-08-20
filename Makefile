@@ -32,10 +32,8 @@ check:
 # harness sets). GLCONTEXT_LINUX_LIBGL avoids the libGL.so dev-symlink dlopen
 # failure on boxes without libgl-dev.
 test:
-	@set -e
 	env MESA_GL_VERSION_OVERRIDE=4.6 MESA_GLSL_VERSION_OVERRIDE=460 \
-		GLCONTEXT_LINUX_LIBGL=libGL.so.1 uv run pytest tests/ \
-		|| { echo "=== TESTS RED ==="; exit 1; }
+		GLCONTEXT_LINUX_LIBGL=libGL.so.1 uv run pytest tests/
 
 # Headless smoke test — runs ~200 frames of update_and_draw against a THROWAWAY tmp project
 # in an invisible glfw window. Catches import errors, callback dispatch failures,

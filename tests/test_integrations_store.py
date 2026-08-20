@@ -68,3 +68,25 @@ def test_genuinely_bad_typed_value_still_falls_back(store_path: Path) -> None:
 def test_missing_file_is_defaults(store_path: Path) -> None:
     assert not store_path.exists()
     assert IntegrationsStore.load().telegram.bot_token == ""
+
+
+def test_retired_key_inside_a_pack_entry_does_not_wipe_credentials(
+    store_path: Path,
+) -> None:
+    # `telegram.packs` is a list[PackEntry], and PackEntry forbids extras too — so the pruner has to
+    # descend into LIST elements, not just nested dicts. Falsifier: drop the list branch from
+    # _drop_unknown and the bot token below comes back empty.
+    _write(
+        store_path,
+        {
+            "copilot": {"openrouter_key": _KEY},
+            "telegram": {
+                "bot_token": _BOT,
+                "packs": [{"set_name": "p1", "title": "T", "retired_field": 1}],
+            },
+        },
+    )
+    loaded = IntegrationsStore.load()
+    assert loaded.telegram.bot_token == _BOT
+    assert loaded.copilot.openrouter_key == _KEY
+    assert [p.set_name for p in loaded.telegram.packs] == ["p1"]

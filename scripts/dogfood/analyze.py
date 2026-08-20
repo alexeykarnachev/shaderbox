@@ -73,8 +73,7 @@ CANONICAL_TOOLS: frozenset[str] = frozenset(
 HISTORICAL_TOOLS: frozenset[str] = frozenset({"replace_lines", "insert_after"})
 # The ONLY tools kept out of the coverage denominator, each with the reason it cannot run here.
 # Everything else in CANONICAL_TOOLS counts — a NEW tool therefore defaults INTO the metric and
-# shows up as a gap until a run exercises it. (A hand-listed reachable set silently shrank the
-# denominator instead: 8 tools added by feature 052 were invisible to coverage for four releases.)
+# shows up as a gap until a run exercises it, rather than being silently absent from the denominator.
 _UNREACHABLE_IN_HARNESS: frozenset[str] = frozenset(
     {
         # Precheck-fail on the empty ExporterRegistry the harness builds.

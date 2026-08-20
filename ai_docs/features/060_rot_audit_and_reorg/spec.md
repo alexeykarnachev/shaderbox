@@ -70,9 +70,14 @@ and the named test goes red.
    took out pytest's own summary (`-rf` and `--junitxml` both produced nothing), which is *why* it
    stayed invisible. The marker was obsolete: the `glUseProgram(0)` bleed it defended against is
    suppressed at source in `core.py::release_program`, and `git merge-base` confirms that suppress
-   landed *after* the marker. Removed -> **668 passed, order-independent, and faster**. The
-   visibility half is fixed too: a `[tool.pytest.ini_options]` block (there was none at all) with
-   `-ra`, plus `set -e` and an explicit `|| exit 1` in the Makefile target — verified with a canary.
+   landed *after* the marker. Removed -> **passing, order-independent, and faster**.
+   A `[tool.pytest.ini_options]` block was added (there was none at all): `-ra`, `testpaths`,
+   `xfail_strict`. **Correction from post-impl review:** the "and it could not report it" half of
+   this finding was WRONG about the Makefile. A reviewer reconstructed the original recipe and
+   showed pytest prints its summary under `-q` anyway and make already exited non-zero; my canary
+   "verified" a wrapper that changed nothing. The `set -e` + `|| exit 1` wrapper has been reverted.
+   What DID hide the failure is real and unchanged: the fork crash killed pytest before it could
+   print any summary at all (`-rf` and `--junitxml` both produced nothing).
 4. **[HIGH] The dogfood coverage metric was blind to 8 of its own tools.** `REACHABLE_TOOLS` was a
    hand-listed 15-name tuple used as the coverage DENOMINATOR, and its comment only justified
    excluding the 9 telegram/youtube/publish tools. The other 8 (`bind_media`, `unbind_media`,
@@ -92,9 +97,14 @@ and the named test goes red.
 7. **[MED] Gate lost-wakeup could latch the copilot permanently.** `ask()` checked `_shutdown`, THEN
    published its slot; a `cancel_all()` landing between the two swept two empty slots and released
    nothing, and the worker blocked on an event nobody would set. On a project switch `_ensure_worker`
-   then saw the thread alive and every later turn was queued and silently never ran. Publish +
-   check now happen under one lock. Guard drives the exact interleaving (a plain thread race never
-   lands in the window) and fails in 5s rather than hanging.
+   then saw the thread alive and every later turn was queued and silently never ran. **Two rounds:**
+   the first fix (publish + check under one lock) was caught by BOTH post-impl reviewers as
+   insufficient — it closes the race only when `_shutdown` latches, i.e. `reusable=False`, while the
+   Stop button and reset-conversation both call `cancel_all(reusable=True)` where nothing catches a
+   late publisher. The landed fix adds a `_generation` counter bumped by every sweep: a worker
+   samples it before building its request and re-checks under the lock, so a cancel that landed in
+   between cancels this request too. Guards drive the exact interleaving for BOTH `ask` and
+   `ask_file` (a plain thread race never lands in the window) and fail in 5s rather than hanging.
 8. **[MED] Dead code drained.** `DEFAULT_DURATION`, `SIZE.CHEATSHEET_W`,
    `_ResolveState.flattened_lines` (never read AND never written), and `ToolRegistry.specs_for`
    (superseded by `assemble_specs`, which additionally sorts for prefix-cache stability — following
@@ -110,6 +120,14 @@ and the named test goes red.
    exporters) — purging them is a large refactor with real risk and no user-visible payoff, so the
    DOCS were corrected instead to state the invariant that actually holds and that the harness
    depends on: **no imgui context and no glfw window is created at import** (verified).
+
+10. **[MED] `Node.release()` leaked every uniform-held resource.** It freed the program and canvas
+   but never touched `uniform_values`, which owns the `Image`/`Video` bound to each sampler (a
+   texture each, plus an open `cv2.VideoCapture` for a video), the default `Image`, and the
+   uniform-block `Buffer`. One leak per reload — and the file watcher reloads on every external
+   `node.json` touch, plus one per revert and per project switch (which also leaked the examples).
+   Verified nothing shares those objects (`load_from_dir` and `duplicate_node` both build fresh
+   ones), so releasing them is safe. Guard: `test_release_frees_uniform_held_resources`.
 
 ## Doc harness fact-check
 
@@ -182,11 +200,18 @@ Automated gates cover the rest: `make check` green, `make test` **670 passed** (
 error) and order-independent, `make smoke` OK (200 frames, 6 nodes).
 
 **Verified-by-falsifier** (each mutation-tested — bug reintroduced, named test goes red, restored):
-credential wipe -> `test_integrations_store.py` (2 tests); `ivec3` label ->
-`test_int_family_labels_are_not_collapsed_to_float`; coverage denominator ->
+credential wipe -> `test_integrations_store.py` (3 tests, incl. the `packs` list case); `ivec3`
+label -> `test_int_family_labels_are_not_collapsed_to_float`; coverage denominator ->
 `test_dogfood_coverage_denominator_holds_every_tool_but_the_named_exclusions`; gate race ->
-`test_ask_racing_cancel_all_never_blocks_forever` (fails in 5s, does not hang); red-run visibility ->
-a deliberate canary confirmed `make test` names the failure and exits non-zero.
+`test_ask_racing_cancel_all_never_blocks_forever` AND
+`test_ask_file_racing_cancel_all_never_blocks_forever` (both fail in 5s, neither hangs); resource
+leak -> `test_release_frees_uniform_held_resources`; suite pollution -> re-adding the `forked`
+marker reproduces 6 failed + 1 error.
+
+**Knowingly unguarded** (stated, not hidden): the ffmpeg timeout and the video-writer cleanup have
+NO automated coverage — a reviewer reverted both and the suite stayed green. Both need a real ffmpeg
+failure to exercise; the honest status is "fixed, untested". **Trigger:** if either regresses, the
+fix is a fake-ffmpeg fixture, not another manual check.
 
 ## Review history
 
@@ -204,6 +229,16 @@ Corrections made to agent findings before acting — recorded because the patter
   custom palette cannot ship. Re-checked against the installed 1.92.801 — still only `.get`, no
   setter — so the tokens correctly stay; only the misleading "palette wiring" comment was corrected.
 - **The copilot lane undercounted** the invisible dogfood tools (7; it is 8 — `load_tools` too).
+- **Post-impl review caught my own gate fix as insufficient, twice over.** Both reviewers
+  independently built a falsifier proving the first fix left the `reusable=True` path (the Stop
+  button) still able to latch the copilot permanently — the exact defect class this wave was
+  convened to kill, shipped inside the fix for it. A third gap (`ask_file` untested) came from the
+  guard-audit lane. All three are closed above.
+- **Post-impl review also proved one of my findings partly FALSE.** I claimed `make test` "could not
+  report" its failures and added a Makefile wrapper for it; the reviewer reconstructed the original
+  recipe and showed it already named the failed tests and exited non-zero. The wrapper was reverted
+  and finding 3 corrected. Lesson: I verified the canary against the NEW Makefile only — a control
+  run against the OLD one would have caught it immediately.
 - **The topology lane's `integrations.py` move reverses feature 017 §11**, whose stated premise
   ("4 of its 5 importers are under `exporters/`") still holds today, 4-vs-2. Kept anyway: a
   package-level dependency inversion outweighs a weak majority-by-count, and the store is not an

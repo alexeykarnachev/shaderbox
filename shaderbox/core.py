@@ -41,6 +41,7 @@ from shaderbox.shader_errors import ShaderError, SourceMap, parse_shader_errors
 from shaderbox.shader_lib import active as active_lib_index
 from shaderbox.shader_lib import resolve_usage
 from shaderbox.shader_source import ShaderSource
+from shaderbox.util import try_to_release
 
 _NODE_SHADER_BASENAME = "shader.frag.glsl"
 # Engine-driven: never node-intrinsic defaults — seed_uniform_values skips them and
@@ -231,6 +232,12 @@ class Node:
 
     def release(self) -> None:
         self.release_program()
+        # The node OWNS its uniform values: the Image/Video bound to a sampler (each holding a
+        # texture, and a Video an open capture), the default Image, and the uniform-block Buffer.
+        # Without this every reload (the file watcher, a revert, a project switch) leaks them.
+        for value in self.uniform_values.values():
+            try_to_release(value)
+        self.uniform_values.clear()
         self.canvas.release()
 
     def get_active_uniforms(self) -> list[moderngl.Uniform | moderngl.UniformBlock]:

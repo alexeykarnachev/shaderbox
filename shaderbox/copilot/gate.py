@@ -61,10 +61,14 @@ class GateChannel:
         self._pending: queue.Queue[_GatePending] = queue.Queue()
         self._current: _GatePending | None = None
         self._shutdown: threading.Event = threading.Event()
-        # Serializes publish-then-check against cancel_all's release sweep: without it a worker
-        # that passed the _shutdown check can publish its slot AFTER the sweep has already run,
-        # then block on an event nobody will ever set (the copilot latches for good).
+        # Serializes publish against cancel_all's release sweep. `_generation` is bumped by every
+        # sweep: a worker samples it before building its request and re-checks under the lock, so a
+        # cancel that landed in between cancels this request too. Without that, a slot published
+        # just after a sweep waits on an event nobody will ever set — and under
+        # cancel_all(reusable=True) (the Stop button) there is no _shutdown latch to catch it, so
+        # the copilot stays latched and every later turn is queued and never runs.
         self._lock: threading.Lock = threading.Lock()
+        self._generation: int = 0
         # FILE gate: a SEPARATE slot (feature 052). A FILE gate is raised mid-`execute` (no
         # AgentGateOpened yield), so it can't ride the CONFIRM/CREDENTIAL `_pending`/`take_pending`
         # path (which pump_events drives off that yield); the UI polls this slot every frame instead.
@@ -78,9 +82,11 @@ class GateChannel:
 
     def ask(self, request: GateRequest) -> GateResponse:
         # WORKER THREAD. Enqueue + block until the UI answers or cancel fires.
+        with self._lock:
+            generation = self._generation
         pending = _GatePending(request=request)
         with self._lock:
-            if self._shutdown.is_set():
+            if self._shutdown.is_set() or generation != self._generation:
                 return GateResponse(cancelled=True)
             self._current = pending
             self._pending.put(pending)
@@ -106,9 +112,11 @@ class GateChannel:
     def ask_file(self, request: GateRequest) -> GateResponse:
         # WORKER THREAD (feature 052). Enqueue a FILE request onto its own slot + block until the UI
         # poll answers or cancel fires.
+        with self._lock:
+            generation = self._generation
         pending = _GatePending(request=request)
         with self._lock:
-            if self._shutdown.is_set():
+            if self._shutdown.is_set() or generation != self._generation:
                 return GateResponse(cancelled=True)
             self._file_current = pending
             self._file_pending.put(pending)
@@ -143,19 +151,20 @@ class GateChannel:
         # MAIN THREAD. Release every wait with cancelled=True. `reusable=True` leaves the
         # channel live; the default latches `_shutdown` so a late ask() can't block.
         with self._lock:
+            self._generation += 1
             if not reusable:
                 self._shutdown.set()
-        for slot in ("_current", "_file_current"):
-            pending = getattr(self, slot)
-            if pending is not None:
-                pending.response = GateResponse(cancelled=True)
-                pending.done.set()
-                setattr(self, slot, None)
-        for q in (self._pending, self._file_pending):
-            while True:
-                try:
-                    pending = q.get_nowait()
-                except queue.Empty:
-                    break
-                pending.response = GateResponse(cancelled=True)
-                pending.done.set()
+            for slot in ("_current", "_file_current"):
+                pending = getattr(self, slot)
+                if pending is not None:
+                    pending.response = GateResponse(cancelled=True)
+                    pending.done.set()
+                    setattr(self, slot, None)
+            for q in (self._pending, self._file_pending):
+                while True:
+                    try:
+                        pending = q.get_nowait()
+                    except queue.Empty:
+                        break
+                    pending.response = GateResponse(cancelled=True)
+                    pending.done.set()

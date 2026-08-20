@@ -136,3 +136,20 @@ def test_seed_skips_engine_uniforms(gl_ctx: moderngl.Context) -> None:
         "u_aspect" not in node.uniform_values
     )  # engine-driven: valued only in render()
     _teardown(node)
+
+
+def test_release_frees_uniform_held_resources(gl_ctx: moderngl.Context) -> None:
+    # Node.release() used to free only the program + canvas, leaking every texture (and, for a
+    # Video, an open capture) parked in uniform_values — one leak per reload, and the file watcher
+    # reloads on every external node.json touch. Falsifier: drop the uniform_values loop from
+    # Node.release and the sampler's default Image keeps a live texture below.
+    node = _node_from_source(gl_ctx, _SAMPLER_SRC)
+    node.seed_uniform_values()
+    image = node.uniform_values["u_image"]
+    assert (
+        image.texture is not None
+    )  # touch it: the texture is created lazily on first access
+
+    node.release()
+    assert not node.uniform_values  # dropped, not merely unreferenced
+    assert image._texture is None  # the texture it owned was released, not leaked

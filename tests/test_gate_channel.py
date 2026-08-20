@@ -7,6 +7,7 @@ buttons. This drives the real ask() across a worker/main split (a direct run_tur
 misses it)."""
 
 import threading
+from typing import Any
 
 import pytest
 
@@ -71,14 +72,14 @@ def test_ask_racing_cancel_all_never_blocks_forever(
     fired = threading.Event()
     real_pending = gate_module._GatePending
 
-    def _cancel_mid_ask(*args: object, **kwargs: object) -> object:
+    def _cancel_mid_ask(*args: Any, **kwargs: Any) -> Any:
         # Runs inside ask(), after the _shutdown check and before the slot is published.
         if not fired.is_set():
             fired.set()
             canceller = threading.Thread(target=gate.cancel_all)
             canceller.start()
             canceller.join(timeout=2.0)
-        return real_pending(*args, **kwargs)  # type: ignore[arg-type]
+        return real_pending(*args, **kwargs)
 
     monkeypatch.setattr(gate_module, "_GatePending", _cancel_mid_ask)
 
@@ -92,5 +93,73 @@ def test_ask_racing_cancel_all_never_blocks_forever(
     t.join(timeout=5.0)
     assert not t.is_alive(), (
         "ask() blocked forever — cancel_all swept before the slot existed"
+    )
+    assert answered and answered[0].cancelled
+
+
+def test_reusable_cancel_all_racing_ask_never_blocks_forever(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The Stop button calls cancel_all(reusable=True) (session.py) — no _shutdown latch, so nothing
+    # incidentally rescues a worker whose slot was published after the sweep. The whole sweep must
+    # therefore run under the lock, not just the latch. Falsifier: narrow the `with self._lock:` in
+    # cancel_all back to the `_shutdown.set()` line and this join expires with the worker alive.
+    gate = GateChannel()
+    answered: list[GateResponse] = []
+    fired = threading.Event()
+    real_pending = gate_module._GatePending
+
+    def _cancel_mid_ask(*args: Any, **kwargs: Any) -> Any:
+        if not fired.is_set():
+            fired.set()
+            canceller = threading.Thread(target=lambda: gate.cancel_all(reusable=True))
+            canceller.start()
+            canceller.join(timeout=2.0)
+        return real_pending(*args, **kwargs)
+
+    monkeypatch.setattr(gate_module, "_GatePending", _cancel_mid_ask)
+
+    def _worker() -> None:
+        answered.append(gate.ask(GateRequest(kind=GateKind.CONFIRM, prompt="ok?")))
+
+    t = threading.Thread(target=_worker, daemon=True)
+    t.start()
+    t.join(timeout=5.0)
+    assert not t.is_alive(), (
+        "ask() blocked forever under a reusable cancel_all (Stop button)"
+    )
+    assert answered and answered[0].cancelled
+
+
+def test_ask_file_racing_cancel_all_never_blocks_forever(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # ask_file is the FILE-gate twin of ask (feature 052) and carries the identical
+    # sample-build-publish shape, so it needs the identical guard — a race test that covers only
+    # one of a symmetric pair is the narrowed-domain checker CLAUDE.md warns about. Falsifier:
+    # remove the generation re-check from ask_file and this join expires with the worker alive.
+    gate = GateChannel()
+    answered: list[GateResponse] = []
+    fired = threading.Event()
+    real_pending = gate_module._GatePending
+
+    def _cancel_mid_ask(*args: Any, **kwargs: Any) -> Any:
+        if not fired.is_set():
+            fired.set()
+            canceller = threading.Thread(target=lambda: gate.cancel_all(reusable=True))
+            canceller.start()
+            canceller.join(timeout=2.0)
+        return real_pending(*args, **kwargs)
+
+    monkeypatch.setattr(gate_module, "_GatePending", _cancel_mid_ask)
+
+    def _worker() -> None:
+        answered.append(gate.ask_file(GateRequest(kind=GateKind.FILE, prompt="pick?")))
+
+    t = threading.Thread(target=_worker, daemon=True)
+    t.start()
+    t.join(timeout=5.0)
+    assert not t.is_alive(), (
+        "ask_file() blocked forever — cancel swept before the slot existed"
     )
     assert answered and answered[0].cancelled
