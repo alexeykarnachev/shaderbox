@@ -165,8 +165,14 @@ so the banner now states both facts rather than guessing which is public.
   **Trigger:** before plan-locking any feature that changes a brake's semantics — add the falsifier
   first. Cheapest durable form is one parametrized test walking each config field.
 - **Two node-handle resolvers with different ambiguity rules.** `tools/shader.py::_resolve_node_name`
-  takes the first prefix hit (and matches in both directions) where `backend._copilot_resolve_node_id`
+  takes the first prefix hit (and matches in BOTH directions) where `backend._copilot_resolve_node_id`
   requires a UNIQUE prefix; the loose one names the node in the destructive-delete confirmation.
+  Bounded on inspection: `_copilot_short_ids` grows every short id until unique, so the divergence
+  needs the model to pass a handle SHORTER than the presented short id — then the gate shows the
+  first prefix match while the backend resolves `None`. Demonstrated: two nodes `ab12`/`ab34`, handle
+  `"ab"` -> gate says "Keeper", backend resolves nothing. So the user sees a confirm-then-error, NOT
+  a wrong deletion (the backend refuses rather than deleting the wrong node) — which is why this is a
+  deferral and not a fix in this wave.
   **Trigger:** first user report of a delete gate naming the wrong node, or the next edit to either.
 - **On-disk node filenames re-spelled beside their own constants** — `"node.json"` has no constant at
   all (5 sites); `sync_nodes_from_disk`'s half-written-node guard uses its own literals, so a rename
