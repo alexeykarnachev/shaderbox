@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from shaderbox.exporters.integrations import IntegrationsStore
+from shaderbox.integrations import IntegrationsStore
 
 _KEY = "sk-or-fake-openrouter-key"
 _BOT = "1234567890:AAfake_bot_token"

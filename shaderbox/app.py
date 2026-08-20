@@ -40,11 +40,11 @@ from shaderbox.editor_types import (
     HoverMark,
     JumpRequest,
 )
-from shaderbox.exporters.integrations import IntegrationsStore
 from shaderbox.exporters.registry import ExporterRegistry
 from shaderbox.exporters.telegram import TelegramExporter
 from shaderbox.exporters.youtube import YouTubeExporter
 from shaderbox.help_content import help_sections
+from shaderbox.integrations import IntegrationsStore
 from shaderbox.notifications import Notifications
 from shaderbox.paths import ProjectPaths, app_data_dir, shader_lib_root
 from shaderbox.project_session import ProjectSession

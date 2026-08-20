@@ -1,7 +1,7 @@
 from typing import Any
 
 from shaderbox.exporters.base import Exporter
-from shaderbox.exporters.integrations import IntegrationsStore
+from shaderbox.integrations import IntegrationsStore
 
 
 class ExporterRegistry:

@@ -19,8 +19,8 @@ from shaderbox.exporters.base import (
     ExporterValueError,
     RenderedArtifact,
 )
-from shaderbox.exporters.integrations import IntegrationsStore
 from shaderbox.exporters.youtube import YouTubeExporter, _AuthEvent, _ConnectEvent, _Job
+from shaderbox.integrations import IntegrationsStore
 from shaderbox.render_shape import RenderShape
 
 
@@ -59,7 +59,7 @@ def test_connect_happy(tmp_path: Path) -> None:
 
     with (
         patch(
-            "shaderbox.exporters.integrations._file_path",
+            "shaderbox.integrations._file_path",
             return_value=tmp_path / "i.json",
         ),
         patch(
@@ -92,7 +92,7 @@ def test_connect_empty_channel_list(tmp_path: Path) -> None:
 
     with (
         patch(
-            "shaderbox.exporters.integrations._file_path",
+            "shaderbox.integrations._file_path",
             return_value=tmp_path / "i.json",
         ),
         patch(
@@ -134,7 +134,7 @@ def test_upload_happy_emits_studio_url(tmp_path: Path) -> None:
 
     with (
         patch(
-            "shaderbox.exporters.integrations._file_path",
+            "shaderbox.integrations._file_path",
             return_value=tmp_path / "i.json",
         ),
         patch(
@@ -174,7 +174,7 @@ def test_upload_refresh_error_emits_auth_error(tmp_path: Path) -> None:
 
     with (
         patch(
-            "shaderbox.exporters.integrations._file_path",
+            "shaderbox.integrations._file_path",
             return_value=tmp_path / "i.json",
         ),
         patch(
@@ -253,7 +253,7 @@ def test_upload_refreshes_expired_token(tmp_path: Path) -> None:
 
     with (
         patch(
-            "shaderbox.exporters.integrations._file_path",
+            "shaderbox.integrations._file_path",
             return_value=tmp_path / "i.json",
         ),
         patch(
@@ -298,9 +298,7 @@ def test_disconnect_clears_identity_keeps_client(tmp_path: Path) -> None:
     store.youtube.channel_id = "UC123"
     exp = YouTubeExporter()
     exp.set_integrations(store)
-    with patch(
-        "shaderbox.exporters.integrations._file_path", return_value=tmp_path / "i.json"
-    ):
+    with patch("shaderbox.integrations._file_path", return_value=tmp_path / "i.json"):
         exp.disconnect()
     assert store.youtube.token_json == ""
     assert store.youtube.channel_id == ""
@@ -316,9 +314,7 @@ def test_clear_credentials_wipes_client_key(tmp_path: Path) -> None:
     store.youtube.channel_id = "UC123"
     exp = YouTubeExporter()
     exp.set_integrations(store)
-    with patch(
-        "shaderbox.exporters.integrations._file_path", return_value=tmp_path / "i.json"
-    ):
+    with patch("shaderbox.integrations._file_path", return_value=tmp_path / "i.json"):
         exp.clear_credentials()
     # Unlike disconnect(), clear wipes the client key too (instructions reappear).
     assert store.youtube.client_id == ""
@@ -332,9 +328,7 @@ def test_ingest_client_secret_valid_and_invalid(tmp_path: Path) -> None:
     exp = YouTubeExporter()
     exp.set_integrations(store)
     good = json.dumps({"installed": {"client_id": "abc", "client_secret": "xyz"}})
-    with patch(
-        "shaderbox.exporters.integrations._file_path", return_value=tmp_path / "i.json"
-    ):
+    with patch("shaderbox.integrations._file_path", return_value=tmp_path / "i.json"):
         exp._ingest_client_secret(good)
     assert store.youtube.client_id == "abc"
     assert exp._render_state.paste_error == ""

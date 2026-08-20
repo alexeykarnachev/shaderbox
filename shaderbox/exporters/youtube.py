@@ -27,7 +27,6 @@ from shaderbox.exporters.base import (
     RenderControl,
     RenderedArtifact,
 )
-from shaderbox.exporters.integrations import IntegrationsStore, YouTubeIntegration
 from shaderbox.exporters.youtube_util import (
     CATEGORY_CHOICES,
     DEFAULT_CATEGORY_ID,
@@ -40,6 +39,7 @@ from shaderbox.exporters.youtube_util import (
     parse_tags,
     studio_edit_url,
 )
+from shaderbox.integrations import IntegrationsStore, YouTubeIntegration
 from shaderbox.render_preset import RenderPreset, resolve_dims
 from shaderbox.render_shape import (
     MENU_SHAPES,

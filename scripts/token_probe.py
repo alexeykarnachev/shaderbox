@@ -34,7 +34,7 @@ from shaderbox.copilot.capabilities import CopilotCapabilities
 from shaderbox.copilot.llm.api import LLMToolSpec
 from shaderbox.copilot.prompt import _SYSTEM_PROMPT
 from shaderbox.copilot.tools.registry import build_registry
-from shaderbox.exporters.integrations import CopilotIntegration
+from shaderbox.integrations import CopilotIntegration
 
 _BASE_URL = "https://openrouter.ai/api/v1"
 

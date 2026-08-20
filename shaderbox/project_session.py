@@ -30,8 +30,8 @@ from shaderbox.copilot.persistence import archive_conversation
 from shaderbox.copilot.revert import RevertExecutor
 from shaderbox.copilot.session import CopilotSession
 from shaderbox.core import ENGINE_DRIVEN_UNIFORMS, Node
-from shaderbox.exporters.integrations import IntegrationsStore
 from shaderbox.exporters.registry import ExporterRegistry
+from shaderbox.integrations import IntegrationsStore
 from shaderbox.paths import ProjectPaths, shader_lib_root
 from shaderbox.scripting import (
     EXPORT_MOUSE,

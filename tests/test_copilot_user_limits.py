@@ -10,7 +10,7 @@ from shaderbox.copilot.gate import GateChannel
 from shaderbox.copilot.llm.api import LLMDone, LLMStreamEvent, LLMTextDelta
 from shaderbox.copilot.tools.registry import build_registry
 from shaderbox.copilot.trace import TraceLog
-from shaderbox.exporters.integrations import CopilotIntegration
+from shaderbox.integrations import CopilotIntegration
 from tests.test_copilot_loop import (
     _fake_caps,
     _fake_context,
