@@ -11,6 +11,10 @@ from OpenGL.GL import GL_SAMPLER_2D, GL_UNSIGNED_INT
 from pydantic import BaseModel, ValidationError, model_validator
 
 from shaderbox.commands import NodeTab
+from shaderbox.constants import (
+    DEFAULT_TEMPORAL_SIGMA,
+    DEFAULT_TEMPORAL_WINDOW_SIZE,
+)
 from shaderbox.copilot.state import CopilotLayout
 from shaderbox.core import _NODE_SHADER_BASENAME, ENGINE_DRIVEN_UNIFORMS, Node
 from shaderbox.media import MediaDetails, MediaWithTexture, is_default_image
@@ -131,8 +135,8 @@ class UINodeState(BaseModel):
     uniform_sort_key: UniformSortKey = "code"
     uniform_sort_desc: bool = False
 
-    video_to_video_smoothing_window: int = 5
-    video_to_video_smoothing_sigma: float = 1.0
+    video_to_video_smoothing_window: int = DEFAULT_TEMPORAL_WINDOW_SIZE
+    video_to_video_smoothing_sigma: float = DEFAULT_TEMPORAL_SIGMA
 
     # Play/stop (feature 048): the uniform NAMES the user has STOPPED — frozen for manual edit. A
     # stopped uniform's script value is not applied (the script still ticks; the manual value sticks).

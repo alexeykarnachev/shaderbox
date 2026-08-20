@@ -71,24 +71,26 @@ CANONICAL_TOOLS: frozenset[str] = frozenset(
 # Tools that existed in PAST runs but not the live registry — recognized when parsing a
 # historical transcript (no unknown-tool warning), never part of the coverage denominator.
 HISTORICAL_TOOLS: frozenset[str] = frozenset({"replace_lines", "insert_after"})
-# Coverage is measured against these — the telegram/youtube/publish set precheck-fails on the
-# empty ExporterRegistry the harness builds, so it's excluded from the gap metric.
-REACHABLE_TOOLS: tuple[str, ...] = (
-    "read_shader",
-    "edit_shader",
-    "write_shader",
-    "set_uniform",
-    "read_script",
-    "write_script",
-    "edit_script",
-    "create_node",
-    "delete_node",
-    "switch_node",
-    "grep",
-    "read_lib",
-    "probe_render",
-    "render_image",
-    "render_video",
+# The ONLY tools kept out of the coverage denominator, each with the reason it cannot run here.
+# Everything else in CANONICAL_TOOLS counts — a NEW tool therefore defaults INTO the metric and
+# shows up as a gap until a run exercises it. (A hand-listed reachable set silently shrank the
+# denominator instead: 8 tools added by feature 052 were invisible to coverage for four releases.)
+_UNREACHABLE_IN_HARNESS: frozenset[str] = frozenset(
+    {
+        # Precheck-fail on the empty ExporterRegistry the harness builds.
+        "set_telegram_token",
+        "telegram_connect",
+        "create_telegram_pack",
+        "select_telegram_pack",
+        "list_telegram_packs",
+        "delete_telegram_pack",
+        "publish_telegram",
+        "set_youtube_credentials",
+        "publish_youtube",
+    }
+)
+REACHABLE_TOOLS: tuple[str, ...] = tuple(
+    sorted(CANONICAL_TOOLS - _UNREACHABLE_IN_HARNESS)
 )
 # Node-mutating edit tools — a broken edit recovered by ANY later clean one of these (same turn)
 # counts as a compile-error recovery, even across tool names.

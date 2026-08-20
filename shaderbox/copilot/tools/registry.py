@@ -54,9 +54,6 @@ class ToolRegistry:
         # Turn-start tools= set: eager-core only (long-tail loads lazily).
         return [d.spec() for d in self._by_name.values() if d.eager]
 
-    def specs_for(self, names: list[str]) -> list[LLMToolSpec]:
-        return [self._by_name[n].spec() for n in names if n in self._by_name]
-
     def assemble_specs(self, loaded: set[str]) -> list[LLMToolSpec]:
         # The `tools=` for a turn iteration: the eager core + any lazily-loaded tools, SORTED by name
         # so the block is byte-stable (prefix-cacheable) regardless of load order (feature 052 §3).

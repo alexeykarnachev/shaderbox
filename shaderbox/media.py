@@ -17,6 +17,9 @@ from pydantic import BaseModel
 from shaderbox.constants import (
     DEFAULT_FPS,
     DEFAULT_IMAGE_FILE_PATH,
+    DEFAULT_TEMPORAL_QUALITY,
+    DEFAULT_TEMPORAL_SIGMA,
+    DEFAULT_TEMPORAL_WINDOW_SIZE,
     IMAGE_EXTENSIONS,
     MP4_CRF_VALUES,
     MP4_PRESETS,
@@ -254,9 +257,9 @@ class Video(MediaWithTexture):
     def apply_temporal_smoothing(
         self,
         output_file_path: Path,
-        window_size: int = 5,
-        sigma: float = 1.0,
-        quality: int = 2,
+        window_size: int = DEFAULT_TEMPORAL_WINDOW_SIZE,
+        sigma: float = DEFAULT_TEMPORAL_SIGMA,
+        quality: int = DEFAULT_TEMPORAL_QUALITY,
     ) -> None:
         kernel = np.exp(
             -(np.arange(-(window_size // 2), window_size // 2 + 1) ** 2)

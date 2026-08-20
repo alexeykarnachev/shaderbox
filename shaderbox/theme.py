@@ -153,7 +153,10 @@ class _ColorBag:
     FAVS: tuple[float, float, float, float] = _P["yellow_b"]
     RESET_PILL: tuple[float, float, float, float] = _P["purple_n"]
 
-    # syntax (imgui_color_text_edit palette wiring)
+    # Syntax tokens for the inline editor. NOT applied: imgui_bundle's TextEditor.Palette is
+    # read-only from Python (`.get` only, no per-slot setter), so the editor runs the library's
+    # stock dark palette. Kept for when a palette-write path exists — the intended
+    # Color->SYN_* mapping is in ai_docs/features/006_inline_editor.md section 5.
     SYN_KEYWORD: tuple[float, float, float, float] = _P["red_b"]
     SYN_TYPE: tuple[float, float, float, float] = _P["yellow_b"]
     SYN_BUILTIN: tuple[float, float, float, float] = _P["green_b"]
@@ -245,7 +248,6 @@ class SIZE:
     GRAB_MIN: int = 10
 
     # Keyboard cheatsheet floating overlay.
-    CHEATSHEET_W: int = 230
     CHEATSHEET_MARGIN: int = 12  # gap from the window's bottom-right corner
 
     # Copilot chat floating window: corner-preset box + bottom-strip height.

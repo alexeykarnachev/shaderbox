@@ -44,7 +44,6 @@ DEFAULT_TEMPORAL_QUALITY = 2
 
 # Default video settings
 DEFAULT_FPS = 30
-DEFAULT_DURATION = 1.0
 
 # File extensions
 IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".bmp", ".webp"]

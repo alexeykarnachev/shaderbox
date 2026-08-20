@@ -28,7 +28,6 @@ class ResolveError:
 
 @dataclass
 class _ResolveState:
-    flattened_lines: list[str] = field(default_factory=list)
     sources: list[ShaderSource] = field(default_factory=list)
     file_id_to_path: dict[int, Path] = field(default_factory=dict)
     path_to_file_id: dict[Path, int] = field(default_factory=dict)
