@@ -6,7 +6,7 @@ the load-bearing ones — they prove the matcher REJECTS what it must, not only 
 matches what it should.
 """
 
-from shaderbox.copilot.backend import _splice
+from shaderbox.copilot.edit_match import splice
 from shaderbox.copilot.glsl_lex import (
     TokenKind,
     comments_in,
@@ -235,7 +235,7 @@ _DUP_SRC = (
 
 def test_leading_comment_not_duplicated_by_splice() -> None:
     # An edit whose old_str LEADS with a comment above its code: the matched span must include the
-    # comment so _splice REPLACES it, instead of leaving the file's original beside new_str's copy
+    # comment so splice REPLACES it, instead of leaving the file's original beside new_str's copy
     # (the 1->2 duplication that spiraled to 16). Verified end-to-end on the real splice.
     old = "    // Step 2: animate\n    float heat = fire_heat_distorted(p, u_time);\n"
     new = (
@@ -245,7 +245,7 @@ def test_leading_comment_not_duplicated_by_splice() -> None:
     )
     spans = token_match(_DUP_SRC, old)
     assert len(spans) == 1
-    out = _splice(_DUP_SRC, spans, new)
+    out = splice(_DUP_SRC, spans, new)
     assert out.count("// Step 2: animate") == 1  # NOT 2
 
 
@@ -255,7 +255,7 @@ def test_cleanup_of_dupes_converges_not_grows() -> None:
     src = "void main() {\n    // Step 2\n        // Step 2\n    float heat = h(p);\n}\n"
     old = "    // Step 2\n        // Step 2\n    float heat = h(p);\n"
     new = "    // Step 2\n    float heat = h(p);\n"
-    out = _splice(src, token_match(src, old), new)
+    out = splice(src, token_match(src, old), new)
     assert out.count("// Step 2") == 1
 
 
@@ -265,7 +265,7 @@ def test_leading_comment_rename_still_lands() -> None:
     src = "void f() {\n    // old label\n    int x = 1;\n}\n"
     old = "    // old label\n    int x = 1;\n"
     new = "    // new label\n    int x = 1;\n"
-    out = _splice(src, token_match(src, old), new)
+    out = splice(src, token_match(src, old), new)
     assert "old label" not in out
     assert out.count("// new label") == 1
 
@@ -290,7 +290,7 @@ def test_trailing_comment_grow_does_not_duplicate() -> None:
     src = "void f() {\n    int x = 1;\n    // trailing note\n}\n"
     old = "    int x = 1;\n    // trailing note\n"
     new = "    int x = 2;\n    // trailing note\n"
-    out = _splice(src, token_match(src, old), new)
+    out = splice(src, token_match(src, old), new)
     assert out.count("// trailing note") == 1
     assert "int x = 2;" in out
 
@@ -303,6 +303,6 @@ def test_block_comment_not_grown_known_limit() -> None:
     src = "void f() {\n    /* note line1\n       note line2 */\n    int x = 1;\n}\n"
     old = "    /* note line1\n       note line2 */\n    int x = 1;\n"
     new = "    /* note line1\n       note line2 */\n    int x = 2;\n"
-    out = _splice(src, token_match(src, old), new)
+    out = splice(src, token_match(src, old), new)
     # Not grown -> the block survives above AND new_str re-inserts it -> duplicated (the known limit).
     assert out.count("note line1") == 2

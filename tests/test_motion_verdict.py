@@ -5,12 +5,10 @@ corroborating pixel render (the visible/FLAT case) is GL and exercised live in t
 
 from shaderbox.copilot.backend import (
     _motion_verdict,
-    _reindent,
-    _script_match_spans,
-    _splice_script,
     _uniform_changes,
     _values_differ,
 )
+from shaderbox.copilot.edit_match import reindent, script_match_spans, splice_script
 from shaderbox.scripting import ScriptProbe, normalize_script_tabs
 
 _EPS = 1e-4
@@ -86,10 +84,10 @@ def test_verdict_carries_the_render_line() -> None:
 
 def test_exact_match_fast_path() -> None:
     src = "a = 1\nb = 1\nc = 2\n"
-    spans = _script_match_spans(src, "= 1")
+    spans = script_match_spans(src, "= 1")
     assert [(s, e) for s, e, _ in spans] == [(2, 5), (8, 11)]  # all occurrences
-    assert _script_match_spans(src, "nope") == []
-    assert _script_match_spans(src, "") == []  # empty matches nothing
+    assert script_match_spans(src, "nope") == []
+    assert script_match_spans(src, "") == []  # empty matches nothing
 
 
 def test_indent_forgiving_match_8_vs_6_spaces() -> None:
@@ -106,10 +104,10 @@ def test_indent_forgiving_match_8_vs_6_spaces() -> None:
         "      if hit:\n          self.b[c] = 0.0\n"  # 6-vs-8 step, NOT in src verbatim
     )
     assert old.rstrip("\n") not in src  # the exact path can't find it
-    spans = _script_match_spans(src, old)
+    spans = script_match_spans(src, old)
     assert len(spans) == 1
     new = "      if hit:\n          self.b[c] = 1.0\n"
-    out = _splice_script(src, spans, new)
+    out = splice_script(src, spans, new)
     # the replacement landed at the source's real 12/16-space columns, not the agent's 6/8
     assert "            if hit:\n                self.b[c] = 1.0\n" in out
 
@@ -120,7 +118,7 @@ def test_structural_match_rejects_different_nesting() -> None:
     src = "for i in x:\n  a = 1\n  b = 2\n"  # a, b at the SAME 2-space level
     old = "a = 1\n      b = 2\n"  # b nested deeper than a -> different structure; not a substring
     assert old.rstrip("\n") not in src
-    assert _script_match_spans(src, old) == []
+    assert script_match_spans(src, old) == []
 
 
 def test_duplicate_structural_form_is_multi_match() -> None:
@@ -128,7 +126,7 @@ def test_duplicate_structural_form_is_multi_match() -> None:
     # surface as >1 (loud reject upstream), never a silent wrong-region edit.
     src = "if a:\n    x = 1\nif b:\n        x = 1\n"  # x at 4 and at 8 spaces
     old = "  x = 1\n"  # 2-space — not verbatim at either site -> structural path, both forms match
-    assert len(_script_match_spans(src, old)) == 2
+    assert len(script_match_spans(src, old)) == 2
 
 
 def test_normalize_tabs() -> None:
@@ -136,6 +134,6 @@ def test_normalize_tabs() -> None:
 
 
 def test_reindent_shifts_block() -> None:
-    assert _reindent("a\n    b\n", 4) == "    a\n        b\n"
-    assert _reindent("        a\n            b\n", -4) == "    a\n        b\n"
-    assert _reindent("a\n\nb\n", 2) == "  a\n\n  b\n"  # blank lines untouched
+    assert reindent("a\n    b\n", 4) == "    a\n        b\n"
+    assert reindent("        a\n            b\n", -4) == "    a\n        b\n"
+    assert reindent("a\n\nb\n", 2) == "  a\n\n  b\n"  # blank lines untouched
