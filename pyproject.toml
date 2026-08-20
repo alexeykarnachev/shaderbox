@@ -74,6 +74,13 @@ ignore = [
 [tool.ruff.lint.isort]
 known-first-party = ["shaderbox"]
 
+[tool.pytest.ini_options]
+# -ra so a red run always prints WHICH tests failed: this suite went silently red once because
+# `-q` printed only a dot-line and nobody read the exit code.
+addopts = "-ra"
+testpaths = ["tests"]
+xfail_strict = true
+
 [tool.pyright]
 venvPath = "."
 venv = ".venv"

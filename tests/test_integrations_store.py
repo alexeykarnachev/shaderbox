@@ -31,7 +31,11 @@ def test_retired_nested_key_does_not_wipe_credentials(store_path: Path) -> None:
     _write(
         store_path,
         {
-            "copilot": {"openrouter_key": _KEY, "vision_enabled": True, "vision_model": "m"},
+            "copilot": {
+                "openrouter_key": _KEY,
+                "vision_enabled": True,
+                "vision_model": "m",
+            },
             "telegram": {"bot_token": _BOT},
         },
     )
@@ -48,7 +52,9 @@ def test_retired_nested_key_does_not_wipe_credentials(store_path: Path) -> None:
 
 
 def test_retired_top_level_section_does_not_wipe_credentials(store_path: Path) -> None:
-    _write(store_path, {"copilot": {"openrouter_key": _KEY}, "retired_section": {"a": 1}})
+    _write(
+        store_path, {"copilot": {"openrouter_key": _KEY}, "retired_section": {"a": 1}}
+    )
     assert IntegrationsStore.load().copilot.openrouter_key == _KEY
 
 

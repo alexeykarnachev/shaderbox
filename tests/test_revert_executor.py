@@ -4,17 +4,15 @@ through a real App — the live-Node / GL / ui_nodes reload the executor perform
 
 Runs against a throwaway tmp project (NOT the shared projects/dev sandbox): snapshot_node ->
 save_ui_node writes into the project's checkpoints dir, so an in-sandbox App would corrupt the
-maintainer's project. Needs a GL context."""
+maintainer's project. Needs a GL context.
+
+These run IN-PROCESS. They must not be marked `forked`: the `app` fixture leaves an open X11
+display socket, and a forked child inherits it — two processes on one Xlib connection kills it
+(`XIO: fatal IO error`), so every test after the first `app` module fails. The GL bleed that once
+justified forking (a deleted program left GL-current) is handled at its source by the
+`glUseProgram(0)` suppress in `core.py::release_program`."""
 
 from typing import Any
-
-import pytest
-
-# The shared `app` fixture (conftest.py) runs against a throwaway tmp project. Each test forks its
-# own process: these exercise destructive GL ops (release_program / node delete) that leave the
-# shared glfw context unbound, bleeding across App instances in one process (glUseProgram(0) ->
-# GL_INVALID_OPERATION in a later test). Forking isolates the GL.
-pytestmark = pytest.mark.forked
 
 
 def test_restore_checkpoint_reverts_an_edited_node(app: Any) -> None:
