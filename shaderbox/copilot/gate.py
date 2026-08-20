@@ -61,6 +61,10 @@ class GateChannel:
         self._pending: queue.Queue[_GatePending] = queue.Queue()
         self._current: _GatePending | None = None
         self._shutdown: threading.Event = threading.Event()
+        # Serializes publish-then-check against cancel_all's release sweep: without it a worker
+        # that passed the _shutdown check can publish its slot AFTER the sweep has already run,
+        # then block on an event nobody will ever set (the copilot latches for good).
+        self._lock: threading.Lock = threading.Lock()
         # FILE gate: a SEPARATE slot (feature 052). A FILE gate is raised mid-`execute` (no
         # AgentGateOpened yield), so it can't ride the CONFIRM/CREDENTIAL `_pending`/`take_pending`
         # path (which pump_events drives off that yield); the UI polls this slot every frame instead.
@@ -74,11 +78,12 @@ class GateChannel:
 
     def ask(self, request: GateRequest) -> GateResponse:
         # WORKER THREAD. Enqueue + block until the UI answers or cancel fires.
-        if self._shutdown.is_set():
-            return GateResponse(cancelled=True)
         pending = _GatePending(request=request)
-        self._current = pending
-        self._pending.put(pending)
+        with self._lock:
+            if self._shutdown.is_set():
+                return GateResponse(cancelled=True)
+            self._current = pending
+            self._pending.put(pending)
         pending.done.wait()
         return pending.response
 
@@ -101,11 +106,12 @@ class GateChannel:
     def ask_file(self, request: GateRequest) -> GateResponse:
         # WORKER THREAD (feature 052). Enqueue a FILE request onto its own slot + block until the UI
         # poll answers or cancel fires.
-        if self._shutdown.is_set():
-            return GateResponse(cancelled=True)
         pending = _GatePending(request=request)
-        self._file_current = pending
-        self._file_pending.put(pending)
+        with self._lock:
+            if self._shutdown.is_set():
+                return GateResponse(cancelled=True)
+            self._file_current = pending
+            self._file_pending.put(pending)
         pending.done.wait()
         return pending.response
 
@@ -136,8 +142,9 @@ class GateChannel:
     def cancel_all(self, *, reusable: bool = False) -> None:
         # MAIN THREAD. Release every wait with cancelled=True. `reusable=True` leaves the
         # channel live; the default latches `_shutdown` so a late ask() can't block.
-        if not reusable:
-            self._shutdown.set()
+        with self._lock:
+            if not reusable:
+                self._shutdown.set()
         for slot in ("_current", "_file_current"):
             pending = getattr(self, slot)
             if pending is not None:

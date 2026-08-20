@@ -504,18 +504,25 @@ class Node:
         self.restart_video_uniforms()
         n_frames = int(details.duration * details.fps)
         dt = 1.0 / details.fps
-        for i in range(n_frames):
-            if self.on_pre_render is not None:
-                self.on_pre_render(i / details.fps, dt, i)
-            self.render(i / details.fps, canvas=canvas)
+        try:
+            for i in range(n_frames):
+                if self.on_pre_render is not None:
+                    self.on_pre_render(i / details.fps, dt, i)
+                self.render(i / details.fps, canvas=canvas)
 
-            texture_data = canvas.texture.read()
-            frame = np.frombuffer(texture_data, dtype=np.uint8).reshape(
-                canvas.texture.height, canvas.texture.width, 4
-            )
-            frame = np.flipud(frame)
-            writer.append_data(frame)
-
+                texture_data = canvas.texture.read()
+                frame = np.frombuffer(texture_data, dtype=np.uint8).reshape(
+                    canvas.texture.height, canvas.texture.width, 4
+                )
+                frame = np.flipud(frame)
+                writer.append_data(frame)
+        except Exception:
+            # Close ffmpeg's pipe, then drop the partial file: a half-written .mp4 left on disk is
+            # indistinguishable from a finished export.
+            with contextlib.suppress(Exception):
+                writer.close()
+            Path(file_path).unlink(missing_ok=True)
+            raise
         writer.close()
         logger.info(f"Video saved: {details.file_details.path}")
 

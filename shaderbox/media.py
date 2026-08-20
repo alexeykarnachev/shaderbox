@@ -81,6 +81,13 @@ class MediaWithTexture(ABC):
         pass
 
 
+class MediaError(Exception):
+    """A media operation failed in a way the UI should report, not crash on."""
+
+
+_FFMPEG_TIMEOUT_SEC = 120
+
+
 class Image(MediaWithTexture):
     def __init__(
         self, src: PathLike | PILImage.Image | moderngl.Texture | np.ndarray | IO[bytes]
@@ -289,12 +296,22 @@ class Video(MediaWithTexture):
             str(output_file_path),
         ]
 
-        subprocess.run(
-            ffmpeg_cmd,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
+        # Bounded + typed: this runs from the imgui frame (widgets/media_ops.py), so a hang would
+        # freeze the app and an escaping exception would skip the shutdown save().
+        try:
+            subprocess.run(
+                ffmpeg_cmd,
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=_FFMPEG_TIMEOUT_SEC,
+            )
+        except subprocess.CalledProcessError as e:
+            raise MediaError(f"ffmpeg smoothing failed: {e.stderr[-400:]}") from e
+        except subprocess.TimeoutExpired as e:
+            raise MediaError(
+                f"ffmpeg smoothing timed out after {_FFMPEG_TIMEOUT_SEC}s"
+            ) from e
 
 
 def media_class_for(suffix: str) -> type[Image] | type[Video]:

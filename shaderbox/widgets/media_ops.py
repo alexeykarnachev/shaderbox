@@ -3,8 +3,8 @@ from pathlib import Path
 from imgui_bundle import imgui, imgui_ctx
 
 from shaderbox.app import App
-from shaderbox.media import Video
-from shaderbox.theme import SIZE, SPACE
+from shaderbox.media import MediaError, Video
+from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_primitives import ghost_button, row_label, small_caption
 
 
@@ -42,11 +42,15 @@ def draw_video_filters(app: App, input_video: Video) -> Video:
             output_file_path = (app.paths.trash_dir / name).with_suffix(
                 input_file_path.suffix
             )
-            input_video.apply_temporal_smoothing(
-                output_file_path=output_file_path,
-                window_size=w,
-                sigma=s,
-            )
-            output_video = Video(output_file_path)
+            try:
+                input_video.apply_temporal_smoothing(
+                    output_file_path=output_file_path,
+                    window_size=w,
+                    sigma=s,
+                )
+            except MediaError as e:
+                app.notifications.push(str(e), COLOR.STATE_ERROR[:3])
+            else:
+                output_video = Video(output_file_path)
 
     return output_video or input_video
