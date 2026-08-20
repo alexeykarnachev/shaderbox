@@ -14,6 +14,7 @@ from OpenGL.GL import (
     GL_INT_VEC2,
     GL_INT_VEC3,
     GL_INT_VEC4,
+    GL_SAMPLER_2D,
     GL_UNSIGNED_INT,
     GL_UNSIGNED_INT_VEC2,
     GL_UNSIGNED_INT_VEC3,
@@ -50,11 +51,17 @@ def is_text_array(uniform: moderngl.Uniform) -> bool:
     )
 
 
-def gl_type_label(uniform: moderngl.Uniform) -> str:
-    # A human GLSL-ish name for the uniform's shape — for the shape-mismatch message.
+def gl_type_label(uniform: moderngl.Uniform | moderngl.UniformBlock) -> str:
+    # A human GLSL-ish name for the uniform's shape — for the shape-mismatch message and the
+    # copilot's project map. A sampler is a live Uniform but not a settable scalar/vector, so it
+    # gets its own label the set_uniform reject path matches on.
+    if isinstance(uniform, moderngl.UniformBlock):
+        return "block"
     dim = uniform.dimension
     n = uniform.array_length
     gl_type = uniform.gl_type  # type: ignore[attr-defined]
+    if gl_type == GL_SAMPLER_2D:
+        return "sampler2D"
     base = (
         "uint"
         if gl_type in _UINT_GL_TYPES

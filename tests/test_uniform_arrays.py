@@ -5,10 +5,15 @@ logic, not a GL write — the GL write is verified in-app + by the headless prob
 
 import types
 
-from shaderbox.uniform_coerce import coerce_uniform_value
+from shaderbox.uniform_coerce import coerce_uniform_value, gl_type_label
 
 _GL_FLOAT = 0x1406
 _GL_UINT = 0x1405
+_GL_INT = 0x1404
+_GL_INT_VEC3 = 0x8B54
+_GL_UINT_VEC3 = 0x8DC7
+_GL_FLOAT_VEC3 = 0x8B51
+_GL_SAMPLER_2D = 0x8B5E
 
 
 def _u(dim: int, n: int, gl_type: int = _GL_FLOAT) -> types.SimpleNamespace:
@@ -77,3 +82,24 @@ def test_uint_array_stays_int_for_node_json_round_trip() -> None:
     # the loader tuple-izes the JSON list, and moderngl's uint write needs ints (struct.pack('I')).
     out = coerce_uniform_value("Hi", _u(1, 4, _GL_UINT))
     assert isinstance(out, list) and all(isinstance(x, int) for x in out)
+
+
+# ---- gl_type_label: the ONE label producer (feature 060) ----
+# The copilot's project map and its set_uniform reject message both read this. A second producer in
+# copilot/backend.py collapsed every non-uint type to "float", so an ivec3 was advertised as "vec3"
+# and the agent wrote floats into an int uniform. Falsifier: reintroduce that fallthrough and the
+# int/ivec3/uvec3/int[4] rows below go red.
+
+
+def test_int_family_labels_are_not_collapsed_to_float() -> None:
+    assert gl_type_label(_u(1, 1, _GL_INT)) == "int"
+    assert gl_type_label(_u(3, 1, _GL_INT_VEC3)) == "ivec3"
+    assert gl_type_label(_u(3, 1, _GL_UINT_VEC3)) == "uvec3"
+    assert gl_type_label(_u(1, 4, _GL_INT)) == "int[4]"
+
+
+def test_float_and_sampler_and_block_labels() -> None:
+    assert gl_type_label(_u(3, 1, _GL_FLOAT_VEC3)) == "vec3"
+    assert gl_type_label(_u(1, 4)) == "float[4]"
+    # A sampler is a live Uniform but not settable — set_uniform matches this exact label to reject.
+    assert gl_type_label(_u(1, 1, _GL_SAMPLER_2D)) == "sampler2D"

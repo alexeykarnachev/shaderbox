@@ -1,7 +1,7 @@
 import json
 import threading
 from pathlib import Path
-from typing import Self
+from typing import Any, Self
 
 from loguru import logger
 from pydantic import BaseModel, ValidationError
@@ -89,6 +89,25 @@ class CopilotIntegration(BaseModel):
         )
 
 
+def _drop_unknown(model: type[BaseModel], data: dict[str, Any], path: str) -> None:
+    # Prune keys no field claims, recursing into nested models, BEFORE constructing: the store is
+    # extra="forbid", and a hard fail here means load() returns empty credentials that the next
+    # save() writes over the real ones. A retired field (a removed feature's key) must cost the user
+    # that setting, never their tokens.
+    for key in [k for k in data if k not in model.model_fields]:
+        logger.warning(f"Ignoring unknown {path} key: {key}")
+        data.pop(key)
+    for key, field in model.model_fields.items():
+        nested = field.annotation
+        value = data.get(key)
+        if (
+            isinstance(value, dict)
+            and isinstance(nested, type)
+            and issubclass(nested, BaseModel)
+        ):
+            _drop_unknown(nested, value, f"{path}.{key}")
+
+
 class IntegrationsStore(BaseModel):
     telegram: TelegramIntegration = TelegramIntegration()
     youtube: YouTubeIntegration = YouTubeIntegration()
@@ -109,6 +128,7 @@ class IntegrationsStore(BaseModel):
                 f"Unreadable integrations.json ({e}); falling back to defaults"
             )
             return cls()
+        _drop_unknown(cls, data, "integrations")
         try:
             return cls(**data)
         except ValidationError as e:

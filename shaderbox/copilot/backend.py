@@ -20,7 +20,6 @@ from typing import Any
 import moderngl
 import numpy as np
 from loguru import logger
-from OpenGL.GL import GL_SAMPLER_2D, GL_UNSIGNED_INT
 
 from shaderbox.constants import DEFAULT_IMAGE_FILE_PATH
 from shaderbox.copilot.address import (
@@ -104,6 +103,7 @@ from shaderbox.tabs import share_state
 from shaderbox.ui_models import UINode, load_node_from_dir
 from shaderbox.uniform_coerce import (
     coerce_uniform_value,
+    gl_type_label,
     uniform_shape_hint,
 )
 from shaderbox.util import try_to_release
@@ -384,19 +384,6 @@ def _splice(src: str, spans: list[tuple[int, int]], new_str: str) -> str:
     return "".join(out)
 
 
-def _uniform_type_label(u: moderngl.Uniform | moderngl.UniformBlock) -> str:
-    if isinstance(u, moderngl.UniformBlock):
-        return "block"
-    # moderngl stub gap: Uniform.gl_type (conventions.md sanctioned allowlist).
-    gl_type = u.gl_type  # type: ignore
-    # A sampler is a live Uniform but not a settable scalar/vector — labelled so set_uniform rejects it.
-    if gl_type == GL_SAMPLER_2D:
-        return "sampler2D"
-    base = "uint" if gl_type == GL_UNSIGNED_INT else "float"
-    scalar = base if u.dimension == 1 else f"vec{u.dimension}"
-    return f"{scalar}[{u.array_length}]" if u.array_length > 1 else scalar
-
-
 def _format_uniforms(node: Node, driven: set[str]) -> list[str]:
     # "name type = value" rows. Blocks have no scalar value. The shown value comes from the node's
     # uniform_values cache (the same source tabs/node.py reads) — NOT live u.value, which Node.render()
@@ -409,7 +396,7 @@ def _format_uniforms(node: Node, driven: set[str]) -> list[str]:
     for u in node.get_active_uniforms():
         if u.name in TABLE_UNIFORMS:
             continue
-        label = _uniform_type_label(u)
+        label = gl_type_label(u)
         if isinstance(u, moderngl.UniformBlock):
             rows.append(f"{u.name} {label}")
         elif u.name in driven:
@@ -991,7 +978,7 @@ class CopilotBackend:
                     error=f"node has no active uniform '{name}' — read_shader it to see its "
                     "uniforms",
                 )
-            label = _uniform_type_label(uniform)
+            label = gl_type_label(uniform)
             if not isinstance(uniform, moderngl.Uniform) or label.startswith("sampler"):
                 return SetUniformResult(
                     ok=False,
@@ -1246,7 +1233,7 @@ class CopilotBackend:
             samplers = [
                 u.name
                 for u in n.get_active_uniforms()
-                if _uniform_type_label(u) == "sampler2D"
+                if gl_type_label(u) == "sampler2D"
             ]
             if uniform not in samplers:
                 listed = ", ".join(samplers) or "(none)"
@@ -1317,7 +1304,7 @@ class CopilotBackend:
             if n.program is None:
                 n.compile()
             is_sampler = any(
-                u.name == uniform and _uniform_type_label(u) == "sampler2D"
+                u.name == uniform and gl_type_label(u) == "sampler2D"
                 for u in n.get_active_uniforms()
             )
             if not is_sampler:
