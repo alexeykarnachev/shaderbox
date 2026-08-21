@@ -466,6 +466,12 @@ holds only the two *facts* that constrain code (not procedure): the bundle shape
 invariant. The bundle is a **source distribution** (ships `shaderbox/` + `uv.lock`; the user's machine
 runs `uv sync` + `uv run` via `run.sh`/`run.bat` on first launch) — not a frozen binary.
 
+**No GitHub Releases.** A version is recorded by its git TAG (`make release`) and shipped to itch —
+that is the whole distribution path. Don't publish a GitHub release page: it is a second channel with
+nothing to put in it (the bundle is built by `build.sh` and uploaded by butler), and no tag has one,
+so adding it means either a permanent per-ship obligation or a history where one version looks
+released and the rest don't. Tag, then ship.
+
 **Clean-bundle invariant.** The bundle is an explicit allowlist (`shaderbox/` package +
 `pyproject.toml` / `uv.lock` / `.python-version` / `LICENSE` + the launcher + `scripts/README.md`).
 NO coding-agent or dev-flow files ship — `CLAUDE.md`, `ai_docs/`, `.claude/`, `Makefile`,
