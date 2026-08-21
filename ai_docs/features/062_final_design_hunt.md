@@ -125,6 +125,19 @@ Checked with evidence and found sound — recorded so a future wave does not re-
 - **Rejected by the skeptic:** the mid-turn project-switch race (guarded by `_copilot_busy_blocked`,
   already ruled on in 022 amendment A1) — the best-argued finding of the wave, and wrong.
 
+## Manual verification (needs a display — not verifiable headless)
+
+Everything else here is pinned by a mutation-tested guard. These three are UI-visible and ride the
+same trigger as the `todo.md` [VERIFY] entry — **next `make run` on a machine with a display**:
+
+- **A failed render toasts.** Bind a node to an unwritable render path (or a preset that cannot
+  encode) and hit Render in both the Render and Share tabs: a red toast appears, and the Share tab's
+  publish button does NOT stay enabled on the stale artifact.
+- **Tab anchoring.** Open four editor tabs, focus the third, close the first: the editor must stay on
+  the file you were editing (not shift one along), and Ctrl+S must save THAT file.
+- **Video playback is smooth.** Open the video example with "Render all" on and several nodes: the
+  editor should not lurch. (The seek fix is measured and guarded, but the felt result is the point.)
+
 ## Explicitly NOT done
 
 - **`exporters/telegram.py` worker-half split.** The shared worker machinery is already extracted;
