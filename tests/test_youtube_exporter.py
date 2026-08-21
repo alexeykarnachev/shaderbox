@@ -31,12 +31,11 @@ def _video(tmp_path: Path, size: tuple[int, int] = (608, 1088)) -> RenderedArtif
 
 
 def _drain(exp: YouTubeExporter) -> list[Any]:
+    # Reads the worker's event queue through its own accessor: a bare try/except here once
+    # turned a broken probe into a clean empty list, which reads exactly like "no events".
     events: list[Any] = []
-    while True:
-        try:
-            events.append(exp._progress_queue.get_nowait())
-        except Exception:
-            break
+    while (event := exp._worker.poll_event()) is not None:
+        events.append(event)
     return events
 
 

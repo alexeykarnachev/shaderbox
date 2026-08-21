@@ -5,6 +5,10 @@ from typing import Self
 
 from platformdirs import user_data_dir
 
+# The two files that constitute a node on disk. A node dir is loadable only once BOTH exist.
+NODE_JSON_BASENAME = "node.json"
+NODE_SHADER_BASENAME = "shader.frag.glsl"
+
 
 def app_data_dir() -> Path:
     # Root for all on-disk state (projects, the active-project pointer, logs,
@@ -84,6 +88,12 @@ class ProjectPaths:
             copilot_conversation_path=copilot_dir / "conversation.json",
             copilot_checkpoints_dir=copilot_dir / "checkpoints",
         )
+
+    def node_json_for(self, node_id: str) -> Path:
+        return self.nodes_dir / node_id / NODE_JSON_BASENAME
+
+    def node_shader_for(self, node_id: str) -> Path:
+        return self.nodes_dir / node_id / NODE_SHADER_BASENAME
 
     def scripts_dir_for(self, node_id: str) -> Path:
         # The CPU-script engine's per-node behavior scripts (feature 040): nodes/<id>/scripts/.

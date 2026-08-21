@@ -15,8 +15,9 @@ from shaderbox.constants import (
     DEFAULT_TEMPORAL_WINDOW_SIZE,
 )
 from shaderbox.copilot.state import CopilotLayout
-from shaderbox.core import _NODE_SHADER_BASENAME, ENGINE_DRIVEN_UNIFORMS, Node
+from shaderbox.core import ENGINE_DRIVEN_UNIFORMS, Node
 from shaderbox.media import MediaDetails, MediaWithTexture, is_default_image
+from shaderbox.paths import NODE_JSON_BASENAME, NODE_SHADER_BASENAME
 from shaderbox.ui_regions import NodeTab
 
 UIUniformInputType = Literal[
@@ -268,7 +269,21 @@ class UINode(BaseModel):
             "ui_state": self.ui_state.model_dump(),
         }
 
-        fs_file_path = dir / _NODE_SHADER_BASENAME
+        # The uniform block below is rebuilt from the LIVE program, so with no program there
+        # is nothing to enumerate and every tuned value would be written away as {}. That
+        # window is ordinary, not exotic: release_program() nulls the program and returns
+        # without recompiling (the recompile rides the next render), so an external shader
+        # edit followed by a quit lands here. Keep what is already on disk instead.
+        if self.node.program is None:
+            existing = dir / NODE_JSON_BASENAME
+            if existing.is_file():
+                try:
+                    with existing.open() as f:
+                        meta["uniforms"] = json.load(f).get("uniforms", {})
+                except (OSError, json.JSONDecodeError) as e:
+                    logger.warning(f"Could not carry uniform values forward: {e}")
+
+        fs_file_path = dir / NODE_SHADER_BASENAME
         with fs_file_path.open("w") as f:
             f.write(self.node.source.text)
         # Rebind the live source to its on-disk location + fresh mtime, so the mtime watcher and
@@ -341,7 +356,7 @@ class UINode(BaseModel):
                     f"Can't to save unsupported uniform type for {uniform.name}: {type(value)}"
                 )
 
-        with (dir / "node.json").open("w") as f:
+        with (dir / NODE_JSON_BASENAME).open("w") as f:
             json.dump(meta, f, indent=4)
 
         return dir

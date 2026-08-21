@@ -32,7 +32,12 @@ from shaderbox.copilot.session import CopilotSession
 from shaderbox.core import ENGINE_DRIVEN_UNIFORMS, Node
 from shaderbox.exporters.registry import ExporterRegistry
 from shaderbox.integrations import IntegrationsStore
-from shaderbox.paths import ProjectPaths, shader_lib_root
+from shaderbox.paths import (
+    NODE_JSON_BASENAME,
+    NODE_SHADER_BASENAME,
+    ProjectPaths,
+    shader_lib_root,
+)
 from shaderbox.scripting import (
     EXPORT_MOUSE,
     EngineContext,
@@ -221,7 +226,9 @@ class ProjectSession:
         # straight back as an external "change" and clobber the live node next frame.
         if root_dir == self.paths.nodes_dir:
             with contextlib.suppress(OSError):
-                self._node_json_mtimes[dir.name] = (dir / "node.json").lstat().st_mtime
+                self._node_json_mtimes[dir.name] = (
+                    (dir / NODE_JSON_BASENAME).lstat().st_mtime
+                )
         logger.info(f"Node '{ui_node.ui_state.ui_name}' saved: {dir}")
         return dir
 
@@ -354,7 +361,7 @@ class ProjectSession:
         # sees no spurious "changed". A node whose dir/json vanished between load and seed is skipped.
         self._node_json_mtimes = {}
         for node_id in self.ui_nodes:
-            meta = self.paths.nodes_dir / node_id / "node.json"
+            meta = self.paths.node_json_for(node_id)
             try:
                 self._node_json_mtimes[node_id] = meta.lstat().st_mtime
             except OSError:
@@ -370,8 +377,8 @@ class ProjectSession:
         # node.json. Cheap when nothing changed: one glob + a stat per dir.
         current: dict[str, float] = {}
         for node_dir in self.paths.nodes_dir.iterdir():
-            meta = node_dir / "node.json"
-            shader = node_dir / "shader.frag.glsl"
+            meta = node_dir / NODE_JSON_BASENAME
+            shader = node_dir / NODE_SHADER_BASENAME
             # A dir is loadable only once BOTH files exist — skip a half-written node (e.g. a node.json
             # already on disk while its shader is still being written); it syncs in once complete.
             if not node_dir.is_dir() or not meta.is_file() or not shader.is_file():

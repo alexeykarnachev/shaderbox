@@ -1,6 +1,4 @@
 import json
-import queue
-import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -27,6 +25,7 @@ from shaderbox.exporters.base import (
     RenderControl,
     RenderedArtifact,
 )
+from shaderbox.exporters.worker import DRAIN_TIMEOUT_SEC, ExporterWorker
 from shaderbox.exporters.youtube_util import (
     CATEGORY_CHOICES,
     DEFAULT_CATEGORY_ID,
@@ -70,12 +69,9 @@ from shaderbox.ui_primitives import (
 )
 from shaderbox.util import pfd_block
 
-_QUEUE_MAXSIZE = 64
-_DRAIN_TIMEOUT_SEC = 5.0
 _CONNECT_TIMEOUT_SEC = 180
 _LONG_MAX_DURATION_SEC = 600.0
 _DESC_INPUT_H = 60
-_STOP_SENTINEL = "__stop__"
 _OPEN_SETTINGS_KEY = "open_settings"
 
 # Both gate the buttons, or an upload could enqueue behind a connect blocked on
@@ -146,12 +142,9 @@ class YouTubeExporter(Exporter):
     def __init__(self) -> None:
         self._store = IntegrationsStore()
         self._render_state = _RenderState()
-        self._job_queue: queue.Queue[_Job | str] = queue.Queue(maxsize=_QUEUE_MAXSIZE)
-        self._progress_queue: queue.Queue[
-            ExportProgress | _AuthEvent | _ConnectEvent
-        ] = queue.Queue(maxsize=_QUEUE_MAXSIZE)
-        self._worker: threading.Thread | None = None
-        self._worker_lock = threading.Lock()
+        self._worker: ExporterWorker[
+            _Job, ExportProgress | _AuthEvent | _ConnectEvent
+        ] = ExporterWorker("YouTubeExporter")
 
     @property
     def exporter_id(self) -> str:
@@ -389,9 +382,8 @@ class YouTubeExporter(Exporter):
     def update(self, current_node: UINode | None) -> None:
         _ = current_node
         while True:
-            try:
-                ev = self._progress_queue.get_nowait()
-            except queue.Empty:
+            ev = self._worker.poll_event()
+            if ev is None:
                 break
             self._apply_event(ev)
 
@@ -547,32 +539,15 @@ class YouTubeExporter(Exporter):
 
     # -------------------------------------------------------------- worker thread
     def _enqueue(self, job: _Job) -> None:
-        self._ensure_worker()
-        try:
-            self._job_queue.put_nowait(job)
-            if job.kind in _BUSY_KINDS:
-                self._render_state.in_flight = True
-        except queue.Full:
-            logger.warning("YouTubeExporter job queue full; dropping job")
-
-    def _ensure_worker(self) -> None:
-        with self._worker_lock:
-            if self._worker is not None and self._worker.is_alive():
-                return
-            self._worker = threading.Thread(
-                target=self._worker_main,
-                name="YouTubeExporter-worker",
-                daemon=False,
-            )
-            self._worker.start()
+        if self._worker.submit(job, self._worker_main) and job.kind in _BUSY_KINDS:
+            self._render_state.in_flight = True
 
     def _worker_main(self) -> None:
         while True:
-            job = self._job_queue.get()
-            if job == _STOP_SENTINEL:
+            job = self._worker.next_job()
+            if job is None:
                 return
-            if isinstance(job, _Job):
-                self._handle_job(job)
+            self._handle_job(job)
 
     def _handle_job(self, job: _Job) -> None:
         try:
@@ -739,31 +714,14 @@ class YouTubeExporter(Exporter):
         )
 
     def release(self) -> None:
-        with self._worker_lock:
-            worker = self._worker
-            if worker is not None and worker.is_alive():
-                self._job_queue.put(_STOP_SENTINEL)
-                worker.join(timeout=_DRAIN_TIMEOUT_SEC)
-                if worker.is_alive():
-                    logger.warning(
-                        "YouTubeExporter worker did not exit within "
-                        f"{_DRAIN_TIMEOUT_SEC}s (a Connect may be blocked on the "
-                        "browser); abandoning."
-                    )
-                self._worker = None
+        if self._worker.stop() is not None:
+            logger.warning(
+                f"YouTubeExporter worker did not exit within {DRAIN_TIMEOUT_SEC}s "
+                "(a Connect may be blocked on the browser); abandoning."
+            )
 
     def _push_progress(self, progress: ExportProgress) -> None:
-        try:
-            self._progress_queue.put_nowait(progress)
-        except queue.Full:
-            try:
-                self._progress_queue.get_nowait()
-                self._progress_queue.put_nowait(progress)
-            except (queue.Empty, queue.Full):
-                pass
+        self._worker.push_progress(progress)
 
     def _push_event(self, event: _AuthEvent | _ConnectEvent) -> None:
-        try:
-            self._progress_queue.put_nowait(event)
-        except queue.Full:
-            logger.debug("YouTubeExporter progress queue full; event dropped")
+        self._worker.push_event(event)

@@ -7,7 +7,9 @@ invariants and the publish precheck handoffs (all counts derived from the regist
 literals).
 """
 
+from functools import partial
 from pathlib import Path
+from types import SimpleNamespace
 
 import shaderbox
 from scripts.dogfood.analyze import (
@@ -15,6 +17,7 @@ from scripts.dogfood.analyze import (
     CANONICAL_TOOLS,
     REACHABLE_TOOLS,
 )
+from shaderbox.copilot.backend import CopilotBackend
 from shaderbox.copilot.capabilities import NodeTreeEntry
 from shaderbox.copilot.gate import GateKind
 from shaderbox.copilot.tools.base import GatePolicy, ToolDefinition
@@ -198,3 +201,49 @@ def test_dogfood_coverage_denominator_holds_every_tool_but_the_named_exclusions(
     # empty ExporterRegistry. Anything else must earn its exclusion here, visibly.
     for name in _UNREACHABLE_IN_HARNESS:
         assert "telegram" in name or "youtube" in name or name.startswith("publish_")
+
+
+def test_delete_gate_and_backend_resolvers_accept_the_same_handles() -> None:
+    # The gate NAMES the node; the backend re-resolves the raw handle and DELETES it. The two
+    # ran different ambiguity rules (first-prefix-hit vs unique-prefix), so an ambiguous handle
+    # opened a confirm dialog naming one node and then errored. Pin the two predicates to each
+    # other rather than to examples — the defect class is "two checks that must agree, don't".
+    ids = [
+        "ab12cd00-1111-4111-8111-111111111111",
+        "ab34ef00-2222-4222-8222-222222222222",
+    ]
+    names = {ids[0]: "Keeper", ids[1]: "Doomed"}
+    holder = SimpleNamespace(_get_ui_nodes=lambda: dict.fromkeys(ids))
+    short_ids = CopilotBackend._copilot_short_ids(holder)
+    resolve_strict = partial(CopilotBackend._copilot_resolve_node_id, holder)
+
+    registry = build_registry(
+        minimal_caps(
+            node_tree=lambda: [
+                NodeTreeEntry(
+                    node_id=short_ids[nid],
+                    name=names[nid],
+                    has_errors=False,
+                    is_current=False,
+                )
+                for nid in ids
+            ]
+        )
+    )
+    definition = registry.definition_for("delete_node")
+    assert definition is not None and definition.gate_prompt is not None
+
+    handles = ["", "a", "ab", "ab1", "ab12", "ab12cd", ids[0], ids[1], "zz"]
+    for handle in handles:
+        strict = resolve_strict(handle)
+        prompt = definition.gate_prompt({"node": handle})
+        precheck = registry.precheck("delete_node", {"node": handle})
+        if strict is None:
+            # The backend would refuse this handle, so no confirm dialog may name a node:
+            # the precheck has to fail fast first.
+            assert precheck is not None, handle
+            assert names[ids[0]] not in prompt, handle
+            assert names[ids[1]] not in prompt, handle
+        else:
+            assert precheck is None, handle
+            assert names[strict] in prompt, handle

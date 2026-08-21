@@ -415,12 +415,19 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
         return True, body, {"read": list(found)}
 
     def _resolve_node_name(node: str) -> str | None:
-        # NAME for a node handle via the project map (read_shader's prefix rule). None = no match.
+        # NAME for a node handle via the project map. None = no match OR an ambiguous one.
+        # The uniqueness rule mirrors the backend's resolver: this name goes in the delete
+        # gate while the backend re-resolves the raw handle to decide what actually dies, so
+        # a handle the backend would refuse must not reach a confirm dialog naming a node.
+        # The match stays bidirectional — node_tree carries SHORT ids, so a full-uuid handle
+        # only meets its row via `node.startswith(e.node_id)`.
         # GL-free + worker-safe (node_tree is the per-iteration context read).
-        for e in caps.node_tree():
-            if e.node_id.startswith(node) or node.startswith(e.node_id):
-                return e.name
-        return None
+        matches = [
+            e
+            for e in caps.node_tree()
+            if e.node_id.startswith(node) or node.startswith(e.node_id)
+        ]
+        return matches[0].name if len(matches) == 1 else None
 
     def _node_display(node: str) -> str:
         # Gate-prompt display name; falls back to the raw arg — a wrong id still shows the user

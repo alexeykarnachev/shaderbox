@@ -1,7 +1,5 @@
 import asyncio
-import queue
 import subprocess
-import threading
 from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -26,6 +24,7 @@ from shaderbox.exporters.base import (
     RenderedArtifact,
 )
 from shaderbox.exporters.telegram_util import derive_set_name
+from shaderbox.exporters.worker import DRAIN_TIMEOUT_SEC, ExporterWorker
 from shaderbox.integrations import (
     IntegrationsStore,
     PackEntry,
@@ -52,8 +51,6 @@ from shaderbox.ui_primitives import (
     unconnected_gate,
 )
 
-_QUEUE_MAXSIZE = 128
-_DRAIN_TIMEOUT_SEC = 5.0
 _FFMPEG_TIMEOUT_SEC = 60
 _PREVIEW_THUMB_HEIGHT = 110
 _GRID_COLUMNS = 4
@@ -156,7 +153,6 @@ class _StickerListEvent:
 
 
 _LINK_SENTINEL = "__link__"
-_STOP_SENTINEL = "__stop__"
 
 
 @dataclass
@@ -181,14 +177,10 @@ class TelegramExporter(Exporter):
         self._store = IntegrationsStore()
         self._render_state = _RenderState()
 
-        self._job_queue: queue.Queue[_Job | str] = queue.Queue(maxsize=_QUEUE_MAXSIZE)
-        self._progress_queue: queue.Queue[
-            ExportProgress | _AuthEvent | _LinkEvent | _StickerListEvent
-        ] = queue.Queue(maxsize=_QUEUE_MAXSIZE)
-
-        self._worker: threading.Thread | None = None
+        self._worker: ExporterWorker[
+            _Job, ExportProgress | _AuthEvent | _LinkEvent | _StickerListEvent
+        ] = ExporterWorker("TelegramExporter")
         self._worker_loop: asyncio.AbstractEventLoop | None = None
-        self._worker_lock = threading.Lock()
         self._current_async_task: asyncio.Task[Any] | None = None
 
     @property
@@ -261,7 +253,6 @@ class TelegramExporter(Exporter):
         # connect-await return instantly.
         self._render_state.auth_state = AuthState.LINKING
         self._render_state.auth_message = ""
-        self._ensure_worker()
         self._enqueue(_Job(kind=_LINK_SENTINEL))
 
     def set_token(self, token: str) -> None:
@@ -405,9 +396,8 @@ class TelegramExporter(Exporter):
     def update(self, current_node: UINode | None) -> None:
         _ = current_node
         while True:
-            try:
-                ev = self._progress_queue.get_nowait()
-            except queue.Empty:
+            ev = self._worker.poll_event()
+            if ev is None:
                 break
             self._apply_event(ev)
 
@@ -858,24 +848,19 @@ class TelegramExporter(Exporter):
         )
 
     def release(self) -> None:
-        with self._worker_lock:
-            worker = self._worker
-            loop = self._worker_loop
-            task = self._current_async_task
-            if worker is not None and worker.is_alive():
-                if loop is not None and task is not None and not task.done():
-                    loop.call_soon_threadsafe(task.cancel)
-                self._job_queue.put(_STOP_SENTINEL)
-                worker.join(timeout=_DRAIN_TIMEOUT_SEC)
-                if worker.is_alive():
-                    logger.warning(
-                        "TelegramExporter worker did not exit within "
-                        f"{_DRAIN_TIMEOUT_SEC}s; abandoning (uploads in flight "
-                        "may leak file descriptors)."
-                    )
-                self._worker = None
-                self._worker_loop = None
-                self._current_async_task = None
+        # Cancel the in-flight coroutine FIRST: the worker blocks in run_until_complete, so
+        # the STOP job alone would not reach it until the network op finished on its own.
+        loop = self._worker_loop
+        task = self._current_async_task
+        if loop is not None and task is not None and not task.done():
+            loop.call_soon_threadsafe(task.cancel)
+        if self._worker.stop() is not None:
+            logger.warning(
+                f"TelegramExporter worker did not exit within {DRAIN_TIMEOUT_SEC}s; "
+                "abandoning (uploads in flight may leak file descriptors)."
+            )
+        self._worker_loop = None
+        self._current_async_task = None
 
         self._release_sticker_slots()
         self._render_state.sticker_slots = []
@@ -889,29 +874,16 @@ class TelegramExporter(Exporter):
                 slot.video.release()
                 slot.video = None
 
-    def _ensure_worker(self) -> None:
-        with self._worker_lock:
-            if self._worker is not None and self._worker.is_alive():
-                return
-            self._worker = threading.Thread(
-                target=self._worker_main,
-                name="TelegramExporter-worker",
-                daemon=False,
-            )
-            self._worker.start()
-
     # Mutating ops drive the in-flight gate; refresh/link are background fetches
     # whose results aren't terminal ExportProgress events.
     _UPLOAD_KINDS = frozenset({"add", "delete", "delete_pack", "set_emoji"})
 
     def _enqueue(self, job: _Job) -> None:
-        self._ensure_worker()
-        try:
-            self._job_queue.put_nowait(job)
-            if job.kind in self._UPLOAD_KINDS:
-                self._render_state.in_flight = True
-        except queue.Full:
-            logger.warning("TelegramExporter job queue full; dropping job")
+        if (
+            self._worker.submit(job, self._worker_main)
+            and job.kind in self._UPLOAD_KINDS
+        ):
+            self._render_state.in_flight = True
 
     def _worker_main(self) -> None:
         loop: asyncio.AbstractEventLoop = asyncio.new_event_loop()
@@ -919,11 +891,10 @@ class TelegramExporter(Exporter):
         asyncio.set_event_loop(loop)
         try:
             while True:
-                job = self._job_queue.get()
-                if job == _STOP_SENTINEL:
+                job = self._worker.next_job()
+                if job is None:
                     return
-                if isinstance(job, _Job):
-                    self._handle_job(job)
+                self._handle_job(job)
         finally:
             try:
                 loop.close()
@@ -1230,20 +1201,10 @@ class TelegramExporter(Exporter):
                 logger.warning(f"Failed to cleanup {path}: {e}")
 
     def _push_progress(self, progress: ExportProgress) -> None:
-        try:
-            self._progress_queue.put_nowait(progress)
-        except queue.Full:
-            try:
-                self._progress_queue.get_nowait()
-                self._progress_queue.put_nowait(progress)
-            except (queue.Empty, queue.Full):
-                pass
+        self._worker.push_progress(progress)
 
     def _push_event(self, event: _AuthEvent | _LinkEvent | _StickerListEvent) -> None:
-        try:
-            self._progress_queue.put_nowait(event)
-        except queue.Full:
-            logger.debug("TelegramExporter progress queue full; event dropped")
+        self._worker.push_event(event)
 
     def _apply_event(
         self, ev: ExportProgress | _AuthEvent | _LinkEvent | _StickerListEvent

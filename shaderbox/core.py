@@ -36,6 +36,7 @@ from shaderbox.media import (
     media_class_for,
     texture_to_pil,
 )
+from shaderbox.paths import NODE_JSON_BASENAME, NODE_SHADER_BASENAME
 from shaderbox.render_preset import FitPolicy, RenderPreset, resolve_dims
 from shaderbox.shader_errors import ShaderError, SourceMap, parse_shader_errors
 from shaderbox.shader_lib import active as active_lib_index
@@ -43,7 +44,6 @@ from shaderbox.shader_lib import resolve_usage
 from shaderbox.shader_source import ShaderSource
 from shaderbox.util import try_to_release
 
-_NODE_SHADER_BASENAME = "shader.frag.glsl"
 # Engine-driven: never node-intrinsic defaults — seed_uniform_values skips them and
 # UINode.save excludes them. Two kinds: per-frame values Node.render() recomputes
 # from time/canvas, and the program-resident glyph tables Node.compile() writes once
@@ -159,12 +159,12 @@ class Node:
         gl: moderngl.Context | None = None,
     ) -> tuple["Node", dict[str, Any]]:
         node_dir = Path(node_dir)
-        with (node_dir / "node.json").open() as f:
+        with (node_dir / NODE_JSON_BASENAME).open() as f:
             metadata = json.load(f)
 
         node = Node(
             gl=gl,
-            source=ShaderSource.load(node_dir / _NODE_SHADER_BASENAME),
+            source=ShaderSource.load(node_dir / NODE_SHADER_BASENAME),
             canvas_size=metadata.get("canvas_size"),
         )
 
