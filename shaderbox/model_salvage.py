@@ -45,7 +45,35 @@ def drop_invalid(model: type[BaseModel], data: dict[str, Any], path: str) -> Non
 
     Each candidate is validated ALONE against its field, so one malformed value can't
     implicate its siblings. A dropped key falls back to the field's default.
+
+    Descends into nested models FIRST, mirroring `drop_unknown`: a nested block is validated
+    as a whole, so without the descent one bad row inside it takes the entire block with it —
+    a malformed pack entry would cost the user the Telegram token sitting beside it.
     """
+    for key, field in model.model_fields.items():
+        value = data.get(key)
+        for nested in get_args(field.annotation) or (field.annotation,):
+            if not (isinstance(nested, type) and issubclass(nested, BaseModel)):
+                continue
+            if isinstance(value, dict):
+                drop_invalid(nested, value, f"{path}.{key}")
+            elif isinstance(value, list):
+                # A list element that stays invalid after its own salvage is dropped
+                # whole — keeping it would fail the list's validation and cost every sibling.
+                kept: list[Any] = []
+                for index, item in enumerate(value):
+                    if not isinstance(item, dict):
+                        kept.append(item)
+                        continue
+                    drop_invalid(nested, item, f"{path}.{key}[{index}]")
+                    try:
+                        nested(**item)
+                    except ValidationError:
+                        logger.warning(f"Ignoring invalid {path}.{key}[{index}]")
+                        continue
+                    kept.append(item)
+                data[key] = kept
+
     for key in list(data):
         field = model.model_fields.get(key)
         if field is None:

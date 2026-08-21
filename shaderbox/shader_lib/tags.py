@@ -73,7 +73,22 @@ class ShaderLibTagsStore:
         try:
             with path.open() as f:
                 raw = json.load(f)
-            return cls(tags={name: set(tags) for name, tags in raw.items()})
         except (OSError, json.JSONDecodeError) as e:
             logger.warning(f"Unreadable {_STORE_FILE} ({e}); falling back to empty")
             return cls()
+
+        # Salvage PER ROW. This store lives in app_data_dir, outside git, with no backup, and
+        # is loaded unguarded from ProjectSession.__init__ — so a malformed row must cost the
+        # user that row, never the whole store and never the app's ability to start.
+        if not isinstance(raw, dict):
+            logger.warning(
+                f"Malformed {_STORE_FILE} (not an object); falling back to empty"
+            )
+            return cls()
+        tags: dict[str, set[str]] = {}
+        for name, values in raw.items():
+            if not isinstance(name, str) or not isinstance(values, list):
+                logger.warning(f"Ignoring malformed {_STORE_FILE} row: {name!r}")
+                continue
+            tags[name] = {v for v in values if isinstance(v, str) and v.strip()}
+        return cls(tags=tags)

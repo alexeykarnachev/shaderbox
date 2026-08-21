@@ -49,7 +49,15 @@ class ShaderLibFavoritesStore:
         try:
             with path.open() as f:
                 data = json.load(f)
-            return cls(favorites=set(data.get("favorites", [])))
         except (OSError, json.JSONDecodeError) as e:
             logger.warning(f"Unreadable {_STORE_FILE} ({e}); falling back to empty")
             return cls()
+
+        # Salvage PER ENTRY — same reasoning as the tags store: no backup, and loaded
+        # unguarded at startup, so a malformed entry must not take the app down with it.
+        entries = data.get("favorites") if isinstance(data, dict) else None
+        if not isinstance(entries, list):
+            if entries is not None:
+                logger.warning(f"Malformed {_STORE_FILE}; falling back to empty")
+            return cls()
+        return cls(favorites={e for e in entries if isinstance(e, str) and e.strip()})

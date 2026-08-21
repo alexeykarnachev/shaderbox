@@ -154,3 +154,65 @@ def test_out_of_range_editor_settings_reset_only_themselves(tmp_path: Path) -> N
     assert state.editor_settings.font_size == 16
     assert state.current_node_id == "abc-123"
     assert state.global_target_fps == 144
+
+
+def test_a_bad_nested_value_does_not_cost_the_block_around_it() -> None:
+    # drop_invalid validates a nested block AS A WHOLE, so without descending into it first,
+    # one malformed row takes every sibling with it — here, the real bot token sitting beside
+    # a corrupt pack entry. The store is the thing this module exists to protect.
+    data: dict[str, Any] = {
+        "telegram": {
+            "bot_token": "MY-REAL-TOKEN",
+            "user_id": "u1",
+            "packs": ["not-a-pack-at-all"],
+        }
+    }
+    drop_unknown(IntegrationsStore, data, "integrations")
+    drop_invalid(IntegrationsStore, data, "integrations")
+    store = IntegrationsStore(**data)
+
+    assert store.telegram.bot_token == "MY-REAL-TOKEN"
+    assert store.telegram.user_id == "u1"
+    assert store.telegram.packs == []
+
+
+def test_one_bad_row_in_a_list_does_not_cost_the_good_rows() -> None:
+    data: dict[str, Any] = {
+        "telegram": {
+            "bot_token": "REAL",
+            "packs": [
+                {"set_name": "keeper", "title": "Keeper"},
+                {"set_name": 123, "title": "corrupt"},
+            ],
+        }
+    }
+    drop_unknown(IntegrationsStore, data, "integrations")
+    drop_invalid(IntegrationsStore, data, "integrations")
+    store = IntegrationsStore(**data)
+
+    assert store.telegram.bot_token == "REAL"
+    assert [p.set_name for p in store.telegram.packs] == ["keeper", ""]
+
+
+def test_drop_invalid_recurses_wherever_drop_unknown_does() -> None:
+    # The two helpers must cover the same shape of data, or the pair has a hole: an
+    # unknown key deep in the tree is pruned while a malformed one beside it wipes its block.
+    class Inner(BaseModel):
+        good: int = 1
+
+    class Outer(BaseModel):
+        inner: Inner = Inner()
+        rows: list[Inner] = []
+        top: int = 0
+
+    data: dict[str, Any] = {
+        "inner": {"good": "bad"},
+        "rows": [{"good": 2}, {"good": "bad"}],
+        "top": 5,
+    }
+    drop_invalid(Outer, data, "outer")
+    built = Outer(**data)
+
+    assert built.top == 5, "a sibling of the bad nested value was collateral damage"
+    assert built.inner.good == 1
+    assert [r.good for r in built.rows] == [2, 1]
