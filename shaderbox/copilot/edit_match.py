@@ -154,7 +154,13 @@ def splice_script(src: str, spans: list[tuple[int, int, int]], new_str: str) -> 
     cursor = 0
     for start, end, shift in spans:
         out.append(src[cursor:start])
-        out.append(reindent(new_str, shift))
+        # `start` sits AFTER the matched region's first-line indent (script_match_spans skips it so
+        # the span begins at the first real character), so the column is already in `src[:start]`.
+        # The replacement's own first line must therefore contribute NO leading whitespace — laying
+        # its indent on top of the column already there produced invalid Python on the exact path
+        # the indent-forgiving fallback exists to serve.
+        shifted = reindent(new_str, shift)
+        out.append(shifted.lstrip(" "))
         cursor = end
     out.append(src[cursor:])
     return "".join(out)

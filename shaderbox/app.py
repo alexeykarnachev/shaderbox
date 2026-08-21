@@ -466,11 +466,11 @@ class App:
         # A node's dir was trashed by the core; drop its editor session + close any of its open
         # tabs (the shader + its scripts) + clear a pending delete-arm if it matched.
         self.editor_sessions.pop(source_path, None)
+        active = self._active_tab()
         self.editor_tabs = [
             t for t in self.editor_tabs if t.node_id != node_id or t.kind == "lib"
         ]
-        self.active_tab_index = min(self.active_tab_index, len(self.editor_tabs) - 1)
-        self.tab_select_pending = True
+        self._reanchor_active_tab(active)
         if node_id == self.node_delete_armed:
             self.node_delete_armed = ""
 
@@ -1038,14 +1038,34 @@ class App:
             self.active_tab_index = index
             self.editor_was_ever_focused = False
 
-    def close_tab(self, index: int) -> None:
-        # Remove a tab from the open list (the EditorSession is kept — reopening re-focuses it).
-        # Clamp the active index so it stays valid (or -1-equivalent when the list empties).
-        if not (0 <= index < len(self.editor_tabs)):
-            return
-        self.editor_tabs.pop(index)
+    def _reanchor_active_tab(self, active: EditorTab | None) -> None:
+        # Keep the SAME tab active across a removal. A bare clamp only keeps the index VALID:
+        # removing a tab to the LEFT shifts every later tab down one, so the index silently
+        # addresses a different file while current_node_id stays put — and the next
+        # flush_current_editor() (Ctrl+S, or quit) then flushes the wrong tab, dropping the
+        # edits the user was actually looking at.
+        if active is not None:
+            for i, tab in enumerate(self.editor_tabs):
+                if tab is active:
+                    self.active_tab_index = i
+                    self.tab_select_pending = True
+                    return
         self.active_tab_index = min(self.active_tab_index, len(self.editor_tabs) - 1)
         self.tab_select_pending = True
+
+    def _active_tab(self) -> "EditorTab | None":
+        if 0 <= self.active_tab_index < len(self.editor_tabs):
+            return self.editor_tabs[self.active_tab_index]
+        return None
+
+    def close_tab(self, index: int) -> None:
+        # Remove a tab from the open list (the EditorSession is kept — reopening re-focuses it).
+        if not (0 <= index < len(self.editor_tabs)):
+            return
+        active = self._active_tab()
+        closing_active = index == self.active_tab_index
+        self.editor_tabs.pop(index)
+        self._reanchor_active_tab(None if closing_active else active)
 
     def open_shader_lib_file(self, path: Path) -> EditorSession:
         # Open (or focus) a lib file as a tab; return its session.

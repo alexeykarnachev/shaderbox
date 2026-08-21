@@ -113,3 +113,18 @@ def test_a_backwards_gap_seeks(gl) -> None:
     video.update(2 / video._fps)
 
     assert counting.seeks == 1, "a backwards jump cannot be reached by decoding forward"
+
+
+def test_first_texture_access_survives_an_end_of_stream_capture(gl) -> None:
+    # `texture` ignored grab()'s return value, so a capture parked past the last frame
+    # retrieved None and crashed inside cvtColor — taking the whole node load with it
+    # (load_from_dir warm-renders, which touches .texture). Forward-decoding makes an
+    # end-of-stream position reachable, so this went from latent to a ~25% flake.
+    video = Video(_VIDEO)
+    video._cap.set(cv2.CAP_PROP_POS_FRAMES, video._n_frames)
+    assert not video._cap.grab(), "the capture must really be at end-of-stream"
+
+    fresh = Video(_VIDEO)
+    fresh._cap.set(cv2.CAP_PROP_POS_FRAMES, fresh._n_frames)
+
+    assert fresh.texture is not None  # rewinds and shows frame 0 rather than crashing

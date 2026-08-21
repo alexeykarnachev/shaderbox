@@ -3,6 +3,8 @@ side of the make-or-break "is it animating" signal: drives-0, STATIC, ANIMATING,
 "which one is constant" detail — the four ways the agent reads its own animation headlessly. The one
 corroborating pixel render (the visible/FLAT case) is GL and exercised live in the dogfood drive."""
 
+import ast
+
 from shaderbox.copilot.backend import (
     _motion_verdict,
     _uniform_changes,
@@ -108,8 +110,11 @@ def test_indent_forgiving_match_8_vs_6_spaces() -> None:
     assert len(spans) == 1
     new = "      if hit:\n          self.b[c] = 1.0\n"
     out = splice_script(src, spans, new)
-    # the replacement landed at the source's real 12/16-space columns, not the agent's 6/8
-    assert "            if hit:\n                self.b[c] = 1.0\n" in out
+    # the replacement landed at the source's real 12/16-space columns, not the agent's 6/8.
+    # Asserted as an EXACT line, not a substring: the double-indent bug produced a 24-space
+    # first line, and a substring check passes on that because it contains the 12-space form.
+    assert "            if hit:" in out.split("\n")
+    assert "                self.b[c] = 1.0" in out.split("\n")
 
 
 def test_structural_match_rejects_different_nesting() -> None:
@@ -137,3 +142,26 @@ def test_reindent_shifts_block() -> None:
     assert reindent("a\n    b\n", 4) == "    a\n        b\n"
     assert reindent("        a\n            b\n", -4) == "    a\n        b\n"
     assert reindent("a\n\nb\n", 2) == "  a\n\n  b\n"  # blank lines untouched
+
+
+def test_structural_splice_always_produces_parseable_python() -> None:
+    # The indent-forgiving fallback exists precisely for the case where the model quotes a body
+    # at a different indent than the file has. It used to double the first line's indent there,
+    # so the copilot wrote a syntax error onto the exact path meant to rescue it. Parse the
+    # result rather than pattern-match it — a shape assertion missed this for the same reason
+    # the substring assertion above did.
+    src = (
+        "class Behavior(ScriptBehavior):\n"
+        "    def update(self, ctx):\n"
+        "        x = 1\n"
+        "        return {'u_a': x}\n"
+    )
+    old = "x = 1\nreturn {'u_a': x}\n"  # quoted at column 0; the file has it at 8
+    spans = script_match_spans(src, old)
+    assert len(spans) == 1
+
+    out = splice_script(src, spans, "x = 2\nreturn {'u_a': x}\n")
+
+    ast.parse(out)  # raises SyntaxError if the indent is wrong
+    assert "        x = 2" in out.split("\n")
+    assert "        return {'u_a': x}" in out.split("\n")

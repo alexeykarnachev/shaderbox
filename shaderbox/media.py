@@ -229,8 +229,19 @@ class Video(MediaWithTexture):
     @property
     def texture(self) -> moderngl.Texture:
         if self._texture is None:
-            self._cap.grab()
-            self._upload_frame(self._cap.retrieve()[1])
+            # A capture parked at end-of-stream grabs nothing and retrieves None, which used to
+            # crash inside cvtColor and take the whole node load down with it. Rewind and retry:
+            # the first frame is always a valid one to show.
+            if not self._cap.grab():
+                self.restart()
+                self._cap.grab()
+            ok, frame = self._cap.retrieve()
+            if not ok or frame is None:
+                raise MediaError(
+                    f"Could not decode a frame from {self._details.file_details.path}"
+                )
+            self._upload_frame(frame)
+            self._last_frame_idx = 0
         assert self._texture is not None  # _upload_frame creates it on first frame
         return self._texture
 

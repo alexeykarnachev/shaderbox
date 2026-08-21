@@ -123,7 +123,17 @@ def _draw_outlet(
     def _do_render() -> None:
         # Defer the encode one frame so the "Rendering..." cue (and any modal) paints before the
         # synchronous encode freezes the loop — same path as the Render tab (tabs/render.py).
-        app.render_defer.submit(lambda: _render(outlet, preset, current_node, state))
+        # Capture the node ID, not the UINode: the run frame is a frame LATER, and a delete or
+        # project switch in between releases that node's GL program, so a captured object would
+        # encode a released node (a black artifact, published with no error).
+        node_id = app.current_node_id
+
+        def _run() -> None:
+            target = app.ui_nodes.get(node_id)
+            if target is not None:
+                _render(outlet, preset, target, state)
+
+        app.render_defer.submit(_run)
 
     def _set_duration(value: float) -> None:
         outlet.duration = value
