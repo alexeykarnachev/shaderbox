@@ -49,7 +49,6 @@ def mask_secret(s: str) -> str:
 class GatePolicy(StrEnum):
     # When a tool call must block on the user before running (§F4 / §2.3).
     NONE = auto()  # single reversible edits / reads — flow free
-    BULK = auto()  # confirm when an arg count exceeds bulk_gate_threshold
     ALWAYS = auto()  # destructive ops + external publish — always confirm
 
 

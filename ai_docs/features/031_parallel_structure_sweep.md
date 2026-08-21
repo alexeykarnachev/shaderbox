@@ -149,9 +149,14 @@ committable; run `make check` + tests per item, `make smoke` after the UI-touchi
   signaling expected failure via a generic *throw*, not via the handler tuple's `ok=False`
   (the tuple IS the primary result channel); most "unprefixed" evidence was false; some
   messages (partial-success token-set) can't carry an `error:` prefix.
-- **Delete GatePolicy.BULK + GateRequest.options scaffold** — REFUTED: recorded
-  deliberate trigger-gated deferral in `020_copilot_agent/17_gate_ui.md ## Out of scope`
-  ("stays built"), re-ratified by 029's gate_prompt fallback comment.
+- **Delete GatePolicy.BULK + GateRequest.options scaffold** — REFUTED here (a recorded
+  trigger-gated deferral in `020_copilot_agent/17_gate_ui.md`, "stays built"), but the BULK
+  half was **carried out in feature 061**. Worth knowing why the refutation did not hold: it
+  cited an earlier DECISION rather than evidence, and neither spec argued the mechanism had
+  value. 061 measured that the branch was unreachable (no tool ever declared BULK) and applied
+  the speculative-machinery rule in `conventions.md` — a model-visible enum you must teach gets
+  CUT at zero consumers; only inert code with a NAMED near-future consumer stays dormant, and
+  017's trigger was hypothetical. `GateRequest.options` is untouched and still refuted.
 - Dropped (low value-to-blast / parked-area collisions): command_callbacks completeness assert
   (no drift, no payer); exporter `_UPLOAD_KINDS`/`_BUSY_KINDS` busy-field fold (same-file,
   exporter decomposition is todo-parked); exporter worker/queue plumbing extraction (brushes the

@@ -125,8 +125,8 @@ Two lanes overturned the register they were auditing. Both corrections are the f
   `auto_revert_after_failed_edits` ALREADY have falsifiers
   (`test_copilot_context_bounds.py`, `test_content_editing.py`); those should never have been on the
   list. Of the remaining three, `bulk_gate_threshold` turned out **unreachable, not merely
-  untested** — no tool declares `GatePolicy.BULK`, so the branch is dead in the live registry. Its
-  guard now pins that fact and goes red the moment a tool adopts BULK.
+  untested** — no tool declared `GatePolicy.BULK`, so the branch was dead in the live registry.
+  **Deleted** (see below).
 
 ## Deliberately NOT done
 
@@ -138,8 +138,31 @@ Two lanes overturned the register they were auditing. Both corrections are the f
   **Trigger:** when a 5th distinct domain wants in.
 - **Dependency bumps.** Not rot-fixing; each needs a manual render/copilot check. **Trigger:**
   unchanged.
-- **`bulk_gate_threshold`'s fate.** Dead config with a live reader. Deleting it or giving a tool
-  BULK is a maintainer call, not a drive-by — the guard makes either choice loud.
+- **`GateRequest.options` scaffold.** The sibling of the BULK deletion below; still refuted, still
+  unused. **Trigger:** a gate that genuinely needs more than Yes/No.
+
+## Follow-up: GatePolicy.BULK deleted (maintainer call)
+
+`bulk_gate_threshold` was dead config with a live-but-unreachable reader. On the maintainer's call it
+was removed whole: the `GatePolicy.BULK` enum member, `requires_gate`'s BULK branch, the config knob,
+and the two comments that promised "future BULK-gated tools". Gating is now a two-state decision.
+
+Two things this surfaced, both worth keeping:
+
+- **The deletion had been proposed once and REFUTED** (`031_parallel_structure_sweep.md`, under a
+  "do NOT re-propose" heading). That refutation cited 017's "stays built" deferral — i.e. it ratified
+  a decision by pointing at the decision, and neither spec ever argued the mechanism had value. The
+  new evidence that overturned it: the branch is unreachable, and `conventions.md`'s
+  speculative-machinery rule cuts a model-visible enum at zero consumers unless a NAMED near-future
+  consumer exists (017's trigger was hypothetical). Both specs now record the reversal, so the next
+  sweep does not re-derive the debate from the stale citation.
+- **Removing the branch left `requires_gate(name, args)` and `requires_gate_always(name)` as the
+  identical predicate.** Collapsed to one (`requires_gate(name)`); the dead `args` param went with
+  it. A deletion that leaves two names for one question has not finished.
+
+The replacement guard pins the two-state model AND that both states are in use — a registry where
+every tool gated (or none did) would pass a subset check while meaning the gate had stopped
+discriminating.
 
 ## Files touched
 

@@ -39,9 +39,11 @@ it had no tool to do so.
   type-only stub. The only live need is CONFIRM. The OpenRouter key is already gated pre-turn by the
   `unconnected_gate` in `copilot_chat.py`; Telegram/YouTube keys have no copilot publish tool yet.
   *Trigger:* the publish-tools wave (`§7.2/§F5`, the lazy telegram/youtube tools land).
-- **BULK gate policy** — the mechanism (`requires_gate` BULK branch, `bulk_gate_threshold`) is ALREADY
-  built and stays built; no tool sets `GatePolicy.BULK` this wave. *Trigger:* a tool whose args carry
-  a list whose length should auto-confirm (folds into the batched-confirm UX wave above).
+- **BULK gate policy** — ~~the mechanism stays built~~. **DELETED in feature 061**: the trigger never
+  fired in ~40 features, no tool ever set `GatePolicy.BULK`, so the branch was unreachable and its
+  threshold unfalsifiable. Gating is now a two-state decision (NONE / ALWAYS), pinned by
+  `tests/test_brake_falsifiers.py`. Re-adding it means a real consumer first, then the reader, then a
+  test that drives the threshold — not scaffolding ahead of a use case.
 - **Progress bar (`§8`)** — the non-blocking sibling of the gate family; separate wave. N/A here.
 
 ## Design decisions (locked)

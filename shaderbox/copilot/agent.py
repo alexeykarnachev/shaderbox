@@ -311,7 +311,7 @@ class _RunLog:
         for e in self._entries:
             if not registry.is_mutating(e.name):
                 continue
-            if registry.requires_gate_always(e.name):
+            if registry.requires_gate(e.name):
                 ident = _identity_from_payload(e.payload)
                 status = "" if e.ok else " (FAILED)"
                 tail = f" [{ident}]" if ident else ""
@@ -426,8 +426,7 @@ def _tool_message(tool_call_id: str, content: str) -> LLMMessage:
 def build_gate(registry: ToolRegistry, name: str, args: dict) -> GateRequest:
     # Engine-built gate request: the engine owns the prompt phrasing so it's accurate, not the model.
     # A CREDENTIAL tool (gate_kind) gets a secret-input gate; everything else the CONFIRM Yes/No.
-    # Falls back to a generic line for a gated tool without a gate_prompt (unknown names +
-    # future BULK-gated tools, whose right prompt is plausibly the count-aware generic line).
+    # Falls back to a generic line for a gated tool without a gate_prompt (an unknown name).
     tool = registry.definition_for(name)
     prompt = (
         tool.gate_prompt(args)
@@ -919,7 +918,7 @@ def run_turn(
             # execute and the consecutive_failed_edits logic, so a user decline never counts toward
             # the edit-retry cap.
             secret = ""  # a CREDENTIAL gate's typed key, forwarded to execute
-            if registry.requires_gate(tc.name, args):
+            if registry.requires_gate(tc.name):
                 req = build_gate(registry, tc.name, args)
                 tr.event("gate_open", name=tc.name, prompt=req.prompt)
                 yield AgentGateOpened(req)

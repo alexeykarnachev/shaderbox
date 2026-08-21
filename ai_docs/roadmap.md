@@ -44,8 +44,8 @@ unreachable, not untested. Each fix carries a mutation-tested guard.
 
 **NEXT:** (1) the render-facts VALUE observation (wave 4 of the hub-feedback plan) — trigger still
 fired; (2) a stronger-model pass over the exam echelon. Open with triggers in the 061 spec: the
-`telegram.py` worker-half split, `backend.py`'s size, dependency bumps, and `bulk_gate_threshold`'s
-fate (dead config with a live reader — a maintainer call). HN post stays maintainer-paced.
+`telegram.py` worker-half split, `backend.py`'s size, and dependency bumps. (`GatePolicy.BULK` +
+`bulk_gate_threshold` were deleted as dead on the maintainer's call.) HN post stays maintainer-paced.
 
 **Last LIVE on itch (context):** v0.21.0 — feature 050 + render-divergence cleanup + YT Shorts presets
 + the bugs/debt fix wave. (v0.19.0 was tagged then dropped at upload and never went public — a

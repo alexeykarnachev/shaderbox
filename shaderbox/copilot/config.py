@@ -83,8 +83,6 @@ class CopilotEngineConfig:
     motion_sample_times: tuple[float, ...] = (0.0, 0.5, 1.0)
     motion_fps: int = 12
     motion_value_eps: float = 1e-4
-    # A list-arg above this count trips a BULK-policy gate (§2.3 / §F4).
-    bulk_gate_threshold: int = 5
     # Turn-summary ledger: non-irreversible lines beyond this soft cap collapse into a count
     # (irreversible actions — publish/delete — are never capped).
     turn_ledger_soft_cap: int = 8

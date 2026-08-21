@@ -4,7 +4,6 @@ from loguru import logger
 from pydantic import Field, ValidationError
 
 from shaderbox.copilot.capabilities import CopilotCapabilities
-from shaderbox.copilot.config import COPILOT_ENGINE
 from shaderbox.copilot.errors import CopilotToolError
 from shaderbox.copilot.gate import GateKind
 from shaderbox.copilot.llm.api import LLMToolSpec
@@ -73,10 +72,6 @@ class ToolRegistry:
         tool = self._by_name.get(name)
         return tool is not None and tool.is_edit
 
-    def requires_gate_always(self, name: str) -> bool:
-        tool = self._by_name.get(name)
-        return tool is not None and tool.gate_policy is GatePolicy.ALWAYS
-
     def definition_for(self, name: str) -> ToolDefinition | None:
         return self._by_name.get(name)
 
@@ -97,16 +92,9 @@ class ToolRegistry:
             return None
         return tool.precheck(args)
 
-    def requires_gate(self, name: str, args: dict[str, Any]) -> bool:
+    def requires_gate(self, name: str) -> bool:
         tool = self._by_name.get(name)
-        if tool is None:
-            return False
-        if tool.gate_policy is GatePolicy.ALWAYS:
-            return True
-        if tool.gate_policy is GatePolicy.BULK:
-            counts = [len(v) for v in args.values() if isinstance(v, list)]
-            return bool(counts) and max(counts) > COPILOT_ENGINE.bulk_gate_threshold
-        return False
+        return tool is not None and tool.gate_policy is GatePolicy.ALWAYS
 
     def status_for(self, name: str, args: dict[str, Any] | None) -> str:
         # Live status-pill phrase. `args` is the seam for arg-aware phrasing

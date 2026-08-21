@@ -214,7 +214,7 @@ the sweep removes IS the edit-sediment measurement — record its diff.**
   (verified 2026-06-16 — cost a wasted turn). NOTE: a well-behaved cheap model self-limits on the soft
   nudge and won't naturally spiral, so the hard-stop / max_iterations / forced-turn-end paths REQUIRE
   such an override to exercise live.
-  Engine internals (probe knobs, `llm_reasoning_effort`, `bulk_gate_threshold`, the timeouts) live on a
+  Engine internals (probe knobs, `llm_reasoning_effort`, `turn_ledger_soft_cap`, the timeouts) live on a
   SECOND singleton `COPILOT_ENGINE` (`from shaderbox.copilot.config import COPILOT_CONFIG, COPILOT_ENGINE`).
   Override those post-create too — one habit for both — but note the reason differs: nothing ever clobbers
   `COPILOT_ENGINE` (it is not persisted and `apply_user_limits` never touches it), so a pre-create

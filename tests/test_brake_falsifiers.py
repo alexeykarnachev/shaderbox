@@ -10,39 +10,29 @@ import numpy as np
 import pytest
 
 from shaderbox.copilot.backend import _MOTION_EPS
-from shaderbox.copilot.config import COPILOT_ENGINE
 from shaderbox.copilot.tools.base import GatePolicy
 from shaderbox.copilot.tools.registry import build_registry
 from tests._caps import minimal_caps
 
 
-def test_bulk_gate_policy_has_no_subscribers() -> None:
-    # bulk_gate_threshold is unfalsifiable because NOTHING reaches it: no tool declares
-    # GatePolicy.BULK, so requires_gate's BULK branch is unreachable in the live registry.
-    # If a tool ever adopts BULK this goes red — and the threshold then needs a real
-    # falsifier (assert the gate flips either side of the configured count).
-    policies = {d.gate_policy for d in build_registry(minimal_caps()).definitions()}
-    assert GatePolicy.BULK not in policies, (
-        "a tool now uses GatePolicy.BULK — bulk_gate_threshold became reachable and needs "
-        "a test that drives the gate across the threshold"
-    )
+def test_gating_is_a_two_state_decision() -> None:
+    # GatePolicy.BULK ("confirm when a list arg exceeds bulk_gate_threshold") was built in
+    # 020 and never adopted: no tool ever declared it, so requires_gate's BULK branch was
+    # unreachable and its threshold unfalsifiable. Removed in 061 along with the knob. What
+    # remains is a two-state decision, and this pins that — a third policy would need a
+    # reachable reader and a test that drives it.
+    assert {p.name for p in GatePolicy} == {"NONE", "ALWAYS"}
 
-
-def test_the_bulk_branch_reacts_to_the_threshold_when_reached() -> None:
-    # The reader itself, exercised directly so the brake is covered even while no tool opts
-    # in. Both sides of the bound, so a threshold change moves the verdict.
     registry = build_registry(minimal_caps())
-    definition = registry.definitions()[0]
-    object.__setattr__(definition, "gate_policy", GatePolicy.BULK)
-    try:
-        # The counts are LITERAL, not derived from the config: a test that sizes its own
-        # input from the cap moves with the cap and can only prove the reader agrees with
-        # itself. These pin the intended number, so changing it is a deliberate edit here.
-        assert COPILOT_ENGINE.bulk_gate_threshold == 5
-        assert not registry.requires_gate(definition.name, {"ids": ["x"] * 5})
-        assert registry.requires_gate(definition.name, {"ids": ["x"] * 6})
-    finally:
-        object.__setattr__(definition, "gate_policy", GatePolicy.NONE)
+    policies = {d.gate_policy for d in registry.definitions()}
+    assert policies <= {GatePolicy.NONE, GatePolicy.ALWAYS}
+    # Both states are actually in use — a registry where every tool gated (or none did)
+    # would pass a subset check while meaning the gate had stopped discriminating.
+    assert policies == {GatePolicy.NONE, GatePolicy.ALWAYS}
+
+    gated = [d.name for d in registry.definitions() if registry.requires_gate(d.name)]
+    assert "delete_node" in gated
+    assert "read_shader" not in gated
 
 
 @pytest.mark.parametrize(
