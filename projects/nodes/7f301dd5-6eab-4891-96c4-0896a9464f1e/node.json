@@ -22,22 +22,6 @@
             "duration": 1.0
         },
         "ui_uniforms": {
-            "260085533400259490348506664942395818974": {
-                "name": "u_aspect",
-                "is_ubo": false,
-                "gl_type": 5126,
-                "dimension": 1,
-                "array_length": 1,
-                "input_type": "auto"
-            },
-            "28817900879564012086563967923611592100": {
-                "name": "u_zoomout",
-                "is_ubo": false,
-                "gl_type": 5126,
-                "dimension": 1,
-                "array_length": 1,
-                "input_type": "drag"
-            },
             "37154164850612245702881750831795076973": {
                 "name": "u_time",
                 "is_ubo": false,

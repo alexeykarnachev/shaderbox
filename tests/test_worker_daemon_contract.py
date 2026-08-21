@@ -26,9 +26,9 @@ def _thread_spawns() -> list[tuple[str, int, bool | None]]:
             if not isinstance(node, ast.Call):
                 continue
             func = node.func
-            is_thread = (
-                isinstance(func, ast.Attribute) and func.attr == "Thread"
-            ) or (isinstance(func, ast.Name) and func.id == "Thread")
+            is_thread = (isinstance(func, ast.Attribute) and func.attr == "Thread") or (
+                isinstance(func, ast.Name) and func.id == "Thread"
+            )
             if not is_thread:
                 continue
             daemon: bool | None = None
@@ -51,7 +51,9 @@ def test_the_enumeration_actually_finds_the_known_workers() -> None:
 
 
 @pytest.mark.parametrize("module,lineno,daemon", _thread_spawns())
-def test_worker_threads_are_daemon(module: str, lineno: int, daemon: bool | None) -> None:
+def test_worker_threads_are_daemon(
+    module: str, lineno: int, daemon: bool | None
+) -> None:
     assert daemon is True, (
         f"{module}:{lineno} spawns a non-daemon worker. A worker abandoned after a "
         "join timeout is re-joined by interpreter shutdown and hangs process exit; "

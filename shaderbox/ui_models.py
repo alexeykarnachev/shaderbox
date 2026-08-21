@@ -8,7 +8,7 @@ from uuid import uuid4
 import moderngl
 from loguru import logger
 from OpenGL.GL import GL_SAMPLER_2D, GL_UNSIGNED_INT
-from pydantic import BaseModel, ValidationError, model_validator
+from pydantic import BaseModel, model_validator
 
 from shaderbox.constants import (
     DEFAULT_TEMPORAL_SIGMA,
@@ -16,9 +16,12 @@ from shaderbox.constants import (
 )
 from shaderbox.copilot.state import CopilotLayout
 from shaderbox.core import ENGINE_DRIVEN_UNIFORMS, Node
+from shaderbox.glyph_tables import TABLE_UNIFORMS
 from shaderbox.media import MediaDetails, MediaWithTexture, is_default_image
+from shaderbox.model_salvage import load_model
 from shaderbox.paths import NODE_JSON_BASENAME, NODE_SHADER_BASENAME
 from shaderbox.ui_regions import NodeTab
+from shaderbox.util import get_uniform_hash
 
 UIUniformInputType = Literal[
     "texture", "buffer", "array", "color", "text", "drag", "auto"
@@ -213,30 +216,14 @@ class UIAppState(BaseModel):
         app_state_dict = self.model_dump()
         with Path(file_path).open("w") as f:
             json.dump(app_state_dict, f, indent=4)
+            f.write("\n")
 
     @classmethod
     def load(cls, file_path: str | Path) -> Self:
-        # Fail-soft: an unreadable / incompatible file degrades to defaults + a WARNING.
-        # A future build's unknown key is dropped (not a hard fail under extra="forbid");
-        # only a genuinely bad typed value falls through to the defaults.
-        try:
-            with Path(file_path).open("r") as f:
-                data = json.load(f)
-        except (OSError, json.JSONDecodeError) as e:
-            logger.warning(f"Unreadable app_state ({e}); falling back to defaults")
-            return cls()
-
-        unknown = [k for k in data if k not in cls.model_fields]
-        if unknown:
-            logger.warning(f"Ignoring unknown app_state keys: {unknown}")
-            for k in unknown:
-                data.pop(k)
-
-        try:
-            return cls(**data)
-        except ValidationError as e:
-            logger.warning(f"Incompatible app_state ({e}); falling back to defaults")
-            return cls()
+        # Fail-soft PER KEY: a retired key or a wrong-typed value costs the user that one
+        # setting, not the whole file. The app writes this state back on quit, so a
+        # whole-file reset is silent data loss (the IntegrationsStore credential-wipe class).
+        return load_model(cls, file_path, "app_state")
 
 
 class UINode(BaseModel):
@@ -294,6 +281,29 @@ class UINode(BaseModel):
             self.node.source = replace(
                 self.node.source, path=fs_file_path, mtime=fs_file_path.lstat().st_mtime
             )
+
+        # ----------------------------------------------------------------
+        # Drop UI rows for uniforms the shader no longer has. The row key is a hash of the
+        # uniform's NAME AND SHAPE, and rows are created lazily in the uniform draw loop, so
+        # every rename and every retype strands its predecessor — the dict only ever grew
+        # (shipped examples carry rows for uniforms their shader dropped long ago). Pruned
+        # here rather than in the draw loop because save is the funnel every path reaches,
+        # including headless ones that never draw a row. Skipped with no live program: there
+        # would be nothing to prune against, and the answer would be "delete all of them".
+        if self.node.program is not None:
+            live_rows = {
+                get_uniform_hash(u)
+                for u in self.node.get_active_uniforms()
+                if u.name not in TABLE_UNIFORMS
+            }
+            stale = [h for h in self.ui_state.ui_uniforms if h not in live_rows]
+            for hash_key in stale:
+                self.ui_state.ui_uniforms.pop(hash_key)
+            if stale:
+                logger.debug(
+                    f"Dropped {len(stale)} stale uniform row(s) from {dir.name}"
+                )
+            meta["ui_state"] = self.ui_state.model_dump()
 
         # ----------------------------------------------------------------
         # Save uniforms
@@ -358,6 +368,7 @@ class UINode(BaseModel):
 
         with (dir / NODE_JSON_BASENAME).open("w") as f:
             json.dump(meta, f, indent=4)
+            f.write("\n")
 
         return dir
 

@@ -122,30 +122,6 @@
                 "array_length": 1,
                 "input_type": "drag"
             },
-            "37154164850612245702881750831795076973": {
-                "name": "u_time",
-                "is_ubo": false,
-                "gl_type": 5126,
-                "dimension": 1,
-                "array_length": 1,
-                "input_type": "auto"
-            },
-            "202866653389117650863463432680324663425": {
-                "name": "u_animation_period",
-                "is_ubo": false,
-                "gl_type": 5126,
-                "dimension": 1,
-                "array_length": 1,
-                "input_type": "drag"
-            },
-            "175179654276849601846676263067783849850": {
-                "name": "u_blink_speed",
-                "is_ubo": false,
-                "gl_type": 5126,
-                "dimension": 1,
-                "array_length": 1,
-                "input_type": "drag"
-            },
             "236213899470479700316631155775786327073": {
                 "name": "u_char_scale",
                 "is_ubo": false,
@@ -161,22 +137,6 @@
                 "dimension": 2,
                 "array_length": 1,
                 "input_type": "drag"
-            },
-            "329687756358551023569655392199314929713": {
-                "name": "u_text[0]",
-                "is_ubo": false,
-                "gl_type": 5125,
-                "dimension": 1,
-                "array_length": 64,
-                "input_type": "text"
-            },
-            "35376269741260153526277969501082733192": {
-                "name": "u_text[1]",
-                "is_ubo": false,
-                "gl_type": 5125,
-                "dimension": 1,
-                "array_length": 64,
-                "input_type": "array"
             },
             "251013143038755702551577541197126192762": {
                 "name": "u_text_smoothness",
@@ -219,7 +179,11 @@
                 "input_type": "text"
             }
         },
+        "uniform_sort_key": "code",
+        "uniform_sort_desc": false,
         "video_to_video_smoothing_window": 5,
-        "video_to_video_smoothing_sigma": 1.0
+        "video_to_video_smoothing_sigma": 1.0,
+        "stopped_uniforms": [],
+        "all_stopped": false
     }
 }

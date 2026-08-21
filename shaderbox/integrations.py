@@ -1,12 +1,13 @@
 import json
 import threading
 from pathlib import Path
-from typing import Any, Self, get_args
+from typing import Self
 
 from loguru import logger
 from pydantic import BaseModel, ValidationError
 
 from shaderbox.copilot.config import CopilotConfig, apply_user_limits
+from shaderbox.model_salvage import drop_invalid, drop_unknown
 from shaderbox.paths import app_data_dir
 
 _STORE_FILE = "integrations.json"
@@ -89,29 +90,6 @@ class CopilotIntegration(BaseModel):
         )
 
 
-def _drop_unknown(model: type[BaseModel], data: dict[str, Any], path: str) -> None:
-    # Prune keys no field claims, recursing into nested models, BEFORE constructing: the store is
-    # extra="forbid", and a hard fail here means load() returns empty credentials that the next
-    # save() writes over the real ones. A retired field (a removed feature's key) must cost the user
-    # that setting, never their tokens.
-    for key in [k for k in data if k not in model.model_fields]:
-        logger.warning(f"Ignoring unknown {path} key: {key}")
-        data.pop(key)
-    for key, field in model.model_fields.items():
-        value = data.get(key)
-        # `or (annotation,)` covers a bare nested model; get_args covers list[Model] (telegram.packs),
-        # whose elements are their own extra="forbid" models.
-        for nested in get_args(field.annotation) or (field.annotation,):
-            if not (isinstance(nested, type) and issubclass(nested, BaseModel)):
-                continue
-            if isinstance(value, dict):
-                _drop_unknown(nested, value, f"{path}.{key}")
-            elif isinstance(value, list):
-                for index, item in enumerate(value):
-                    if isinstance(item, dict):
-                        _drop_unknown(nested, item, f"{path}.{key}[{index}]")
-
-
 class IntegrationsStore(BaseModel):
     telegram: TelegramIntegration = TelegramIntegration()
     youtube: YouTubeIntegration = YouTubeIntegration()
@@ -132,7 +110,10 @@ class IntegrationsStore(BaseModel):
                 f"Unreadable integrations.json ({e}); falling back to defaults"
             )
             return cls()
-        _drop_unknown(cls, data, "integrations")
+        # The store is extra="forbid": a hard fail here returns empty credentials that
+        # the next save() writes over the real tokens.
+        drop_unknown(cls, data, "integrations")
+        drop_invalid(cls, data, "integrations")
         try:
             return cls(**data)
         except ValidationError as e:
@@ -147,3 +128,4 @@ class IntegrationsStore(BaseModel):
             path.parent.mkdir(parents=True, exist_ok=True)
             with path.open("w") as f:
                 json.dump(self.model_dump(), f, indent=4)
+                f.write("\n")
