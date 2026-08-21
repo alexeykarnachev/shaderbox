@@ -42,9 +42,10 @@ library** (`/shader-lab` mines techniques into `SB_*`). Separately, deferred *ma
 `telegram.py` split, `backend.py`'s size, dep bumps, the degenerate-frame freeze — each has a trigger
 in its spec and is not a feature direction.
 
-**Release state:** `dev` tagged **v0.25.2** (fixes-only) and pushed; `master` still **v0.25.1**, 17
-commits behind — dev->master happens at ship time via `/ship` (maintainer-triggered). Tags are the
-release record; no GitHub Releases (`dev_flow.md`). **Last known-public itch build is v0.21.0**;
+**Release state:** `dev` tagged **v0.25.2** (fixes-only) and pushed; `master` still **v0.25.1** and
+well behind (`git log master..dev`) — dev->master happens at ship time via `/ship`
+(maintainer-triggered). Tags are the release record; no GitHub Releases (`dev_flow.md`).
+**Last known-public itch build is v0.21.0**;
 v0.22.0 records "itch upload deferred" and no later commit records an upload, so git runs ahead of
 what users have — confirm on the itch dashboard at the next ship. **No open BLOCKERs.**
 
