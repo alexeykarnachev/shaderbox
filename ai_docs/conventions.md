@@ -116,6 +116,26 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   dogfood harness were the falsifiers — both were silently red until the eager-create). Revisit if row
   creation ever moves to an eager load-time pass (then the trap can't fire).
 
+- **Fail-soft persistence is PER KEY, and derived state is pruned at the SAVE funnel (feature 061).**
+  Every on-disk model here degrades rather than crashes — and the app writes what it loaded back on
+  quit, so "fall back to defaults" on one bad key is silent DATA LOSS, not resilience. The rule, first
+  paid for by the credential wipe and re-paid by `app_state.json`: **a retired or malformed field costs
+  the user THAT setting, never the rest of the file.** One implementation, `model_salvage.py`
+  (`drop_unknown` prunes keys no field claims, recursing into nested models; `drop_invalid` then drops
+  keys whose value their own field rejects; `load_model` wraps both) — a new persisted store uses it
+  rather than growing a second `try: construct / except: return cls()`. Bounds belong on the MODEL, not
+  only on the widget that edits it: a hand-edited or half-written file never passes a widget, and the
+  frame loop divides by `global_target_fps`.
+  The mirror rule for derived state: a dict/list keyed by something the user can RENAME or RETYPE
+  (`ui_uniforms` is keyed by a hash of name AND shape) accumulates forever unless something prunes it,
+  and the prune belongs in `UINode.save` — the funnel every path reaches, including headless ones that
+  never draw — never in the draw loop that lazily CREATES the rows (that is the lazy-row trap two
+  bullets down). Same for on-disk assets: sweep by "what does the freshly built metadata reference",
+  never by "what does each live uniform name", because a name-scoped sweep structurally cannot see the
+  thing that was renamed away. Both sides of the bound need a test — that stale entries go, AND that a
+  clean subject loses nothing. Revisit if a store needs to PRESERVE unknown keys (a plugin format);
+  then the salvage takes an opt-out, it does not get bypassed.
+
 - **The shader library is layered around SIGNED distance (feature 032).** Sources `SB_sd_*` return
   an SDF (negative inside; documented exceptions like the zero-width `SB_sd_segment`); operators
   `SB_op_*` map SDF->SDF; renderers (`SB_fill`/`SB_fill_aa`/`SB_glow`) map SDF->mask. A new public
@@ -304,6 +324,15 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   blocked in a stalled stream past the join timeout would be re-joined by interpreter `_shutdown` and hang
   the process forever, the 043 headless hang; the cancel-before-join already tells it to stop, so abandoning
   it is safe). A new such primitive carries the whole bundle, not just the happy-path round-trip.
+  **The exporters' half of this lives in `exporters/worker.py`** (`ExporterWorker` — thread +
+  job/event queues + spawn + teardown, shared by both network exporters; the asyncio layer stays
+  subclass-side). Two lessons are encoded there rather than written here: a STOP marker carries
+  the GENERATION it was addressed to, because a `stop()` whose join times out leaves its STOP in
+  the queue and the next worker would eat it and exit, stranding the job the user just queued;
+  and a state event EVICTS a progress item rather than dropping itself, because the lossy-newest
+  progress path keeps the queue permanently full — exactly when the event that clears
+  `in_flight` would have been dropped. `tests/test_worker_daemon_contract.py` enumerates the
+  spawn sites from the AST, so a new worker defaults INTO the daemon check.
 - **The "current node" is a first-class subject; how a copilot tool addresses a node scales with the
   side effect's reversibility.** The app has exactly one selected node (`App.current_node_id`); the UI
   shows it, the editor binds to it; `switch_node` is the one tool whose job is to change it. A NEW

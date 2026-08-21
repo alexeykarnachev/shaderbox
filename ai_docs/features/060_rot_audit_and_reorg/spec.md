@@ -148,6 +148,9 @@ so the banner now states both facts rather than guessing which is public.
 
 ## Out of scope (deferred, with triggers)
 
+**Drained by feature 061** (`ai_docs/features/061_design_review_and_deferral_drain.md`): the exporter worker-machinery duplication (extracted to `exporters/worker.py`, and the `daemon=False` noted below was a live contract violation), the node-filename constants, and the node-handle resolvers. Two entries were CORRECTED there rather than drained — the resolvers are provably safe (no wrong-node path exists), and only 3 of the 5 brakes below lacked a falsifier (one of those is unreachable, not untested). The rest stand.
+
+
 - **`exporters/telegram.py` worker-half split** (1283 L -> ~780 + a `telegram_api.py`). Real, but the
   reviewing agent's supporting detail was partly fabricated (it claimed three `# ----` banners "already
   mark the seam" — the file has none) and the coupling is slightly wider than reported (`_with_bot`

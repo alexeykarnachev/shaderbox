@@ -266,6 +266,11 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   `app_data_dir()`. `file_ops.py` (`ShaderLibFileManager`) — picker inline-input/filter state +
   file/dir CRUD (create/rename/delete-to-trash); explicit-args verbs (no `App` import — editor-session
   cleanup flows back via injected callbacks). NONE of `shader_lib/` imports `app.py`.
+- **`exporters/worker.py`** — `ExporterWorker`: the worker half both network exporters share
+  (daemon thread + bounded job/event queues + lazy spawn + STOP-sentinel teardown + the
+  progress/event push helpers). Telegram layers its asyncio loop on top in its own
+  `_worker_main`; the teardown contract + the two encoded lessons are in
+  `conventions.md` (the worker↔main primitive bullet).
 - **`exporters/`** — `Exporter` ABC + `RenderedArtifact` value type (`base.py`), `ExporterRegistry`
   (`registry.py`), `TelegramExporter` (`telegram.py` — own worker thread + asyncio loop + sticker
   panel UI) + `YouTubeExporter` (`youtube.py` — worker thread, no asyncio). `integrations.py` =
@@ -273,7 +278,12 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   `app_data_dir()/integrations.json`. `telegram_util.py` (`derive_set_name`, pure) + `youtube_util.py`
   (metadata builders + constants) — exporter-specific helpers. Adding an exporter: subclass `Exporter`,
   register in `App.__init__`. Worker thread MUST NOT touch moderngl (thread-affinity contract).
-- **`paths.py`** — `app_data_dir()`, `shader_lib_root()`, `shader_lib_trash_dir()` + `ProjectPaths`
+- **`model_salvage.py`** — leaf: `drop_unknown` / `drop_invalid` / `load_model`, the shared
+  per-key salvage every persisted pydantic store loads through (`UIAppState`,
+  `IntegrationsStore`). One bad or retired key costs that setting, never the file.
+- **`paths.py`** — `app_data_dir()`, `shader_lib_root()`, `shader_lib_trash_dir()`, the node-dir
+  basenames (`NODE_JSON_BASENAME` / `NODE_SHADER_BASENAME` — the ONE home; never re-spell them)
+  + `ProjectPaths`
   (frozen value object for one project dir's layout; `for_root` eagerly mkdirs the 5 subdirs;
   `App.paths` holds the live one) (leaf, no `App`).
 - **`tabs/`** — `draw(app: App)` UI modules + optional `update(app: App)` (pre-imgui GL work).

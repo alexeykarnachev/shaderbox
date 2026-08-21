@@ -26,21 +26,26 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-08-20 (060 rot audit landed; suite green + order-independent for the first time). -->
-**ACTIVE: feature 060 — rot audit & reorg, landed.** After a long pause, a 10-agent audit (5
-architecture, 5 rot) swept the repo; every finding was re-verified first-hand before acting. The
-architectural verdict is a NULL result worth keeping: the layout is sound, the import graph is
-acyclic, `app.py`/`ui_primitives.py` stay whole — only three boundary moves earned their churn
-(`copilot/edit_match.py`, `render_job.py`, `integrations.py` out of `exporters/`). The rot was real:
-a retired key in `integrations.json` silently wiped every credential on next quit; the copilot read
-`ivec3` uniforms as `vec3`; `make test` had been red for four releases (a glfw X socket inherited
-through `pytest-forked`) AND could not report it; the dogfood coverage metric had 8 tools outside its
-own denominator. Each fix carries a mutation-tested guard.
+<!-- As of 2026-08-21 (061 design review landed; 714 tests, make check + smoke green). -->
+**ACTIVE: feature 061 — design review & deferral drain, landed.** 060 audited the module LAYOUT and
+found it sound; 061 drained the register 060 deferred and swept the level a layout audit cannot see:
+runtime contracts, concurrency, lifecycle, persisted-model integrity. The architectural verdict is
+unchanged and independently re-derived — no boundary moved. What was broken was contracts no test
+held to. Worst: a save with no live program wiped every tuned uniform value (an ordinary
+external-edit-then-quit path), and one bad key in `app_state.json` cost the user every setting — the
+060 credential-wipe class, one file over, whose already-solved twin was in-tree. Both exporter
+workers violated the stated daemon teardown contract (measured: a 30s hang at exit), and the shared
+`ExporterWorker` extracted from them inherited a stale-STOP bug that a lane then found in it. Also:
+stale UI uniform rows pruned (295 repo-wide, two SHIPPED examples), orphaned media swept, retired ids
+dropped, and a masked test that passed only via `COPILOT_CONFIG` singleton leakage. Two 060
+deferrals were CORRECTED rather than drained: the node-handle resolvers are safe (22M probes, zero
+wrong-node cases) and only 3 of the 5 "unfalsifiable" brakes were real — one of those turned out
+unreachable, not untested. Each fix carries a mutation-tested guard.
 
 **NEXT:** (1) the render-facts VALUE observation (wave 4 of the hub-feedback plan) — trigger still
-fired; (2) a stronger-model pass over the exam echelon. Two 060 findings deferred with reasons in the
-spec: the `exporters/telegram.py` worker-half split, and 5 wired-but-unfalsifiable copilot brakes.
-HN post stays maintainer-paced.
+fired; (2) a stronger-model pass over the exam echelon. Open with triggers in the 061 spec: the
+`telegram.py` worker-half split, `backend.py`'s size, dependency bumps, and `bulk_gate_threshold`'s
+fate (dead config with a live reader — a maintainer call). HN post stays maintainer-paced.
 
 **Last LIVE on itch (context):** v0.21.0 — feature 050 + render-divergence cleanup + YT Shorts presets
 + the bugs/debt fix wave. (v0.19.0 was tagged then dropped at upload and never went public — a
@@ -56,6 +61,7 @@ releases ahead of what is known-public. Confirm on the itch dashboard at the nex
 |---|---|---|---|
 | — | copilot_engine_tuning | done | reasoning effort=none engine knob (+30k turn budget: effort flag is ignored on compound asks — measured), user/engine config split with slots enforcement, final-reply token cap. Spec: commits 289c12f + 6ed3c4d + 779d4b2 + this wave. |
 | — | agent_hub | done | the maintainer sync page: full prompt/tools/config/knowledge surfaces + all dogfood runs with dialogues and media, regenerated from live code. Spec: scripts/agent_hub/generate.py docstring. |
+| 061 | design_review_and_deferral_drain | done | Drained the 060 deferral register and swept contracts/concurrency/persistence; layout unchanged. Spec: `ai_docs/features/061_design_review_and_deferral_drain.md`. |
 | 060 | rot_audit_and_reorg | done | A 10-agent rot + architecture audit after a long pause, then the fixes it earned — a silent credential wipe, an `ivec3` uniform mislabel, a suite that had gone red unnoticed, a coverage metric blind to 8 of its own tools, and three boundary moves; the architectural verdict is that the layout is sound and no reorg is warranted. Spec: `ai_docs/features/060_rot_audit_and_reorg/spec.md`. |
 | 059 | prompt_refactor | done | The hub-feedback prompt refactor in three bisectable waves, all landed: A corrects the SCRIPTING watershed to STATE-not-time across prompt + eager tool descriptions and replaces model-facing absolute error paths with short labels via a shared GL-free helper; B adds the generated SCRIPT API block (RARE tier) + conventions moves + schema-dedup cuts; C trims FEEDBACK to its pre-action rules and splices the 500-char legend (four term glosses + the STATIC-means-unwired diagnostic) onto the first facts-bearing result per turn, ahead of any hint on that result (one per-turn flag shared with the forced-reply path) — `_SYSTEM_PROMPT` 20 507 -> 14 435 chars; controls for the effort=none actor recorded before landing. Spec: `ai_docs/features/059_prompt_refactor/01_spec.md`. |
 | 058 | remove_vision_layer | done | The product-thesis pivot: the copilot ships EXCELLENT CODE, the human is the visual judge — so the vision layer (053 eye + 056 ASK-verdict convergence loop, models, Settings badge, contracts, ~8 config knobs) is DELETED whole, grep-clean, no compat; the free NUMERIC facts pipeline stays as the copilot's only sight and `probe_render(node, t)` reverts to the 050 numeric contract. Added: a limit-forced final reply (token/time/iteration cutoffs) quotes the MEASURED facts line so the model states the net result from data (three observed dishonest limit-endings closed, zero billed calls), and the dogfood report gains the CODE axis (driver grades the produced sources: dead code / duplication / structure / tool choice; the sweep turn is its probe). Validation-first: cheap falsification experiments killed 3 of 4 candidate fixes before any code. Spec: `ai_docs/features/058_remove_vision_layer.md`. |
