@@ -444,6 +444,14 @@ friction; `[tool.pyright]` in `pyproject.toml`, basic mode). `.pre-commit-config
 of truth for the config. Run before declaring anything done. Both ruff and pyright **block on
 failure** — the repo is currently at 0 pyright errors; keep it that way.
 
+### `make test`
+The unit suite — `pytest tests/`, ~14s. The three env vars the target sets are **load-bearing, not
+noise**: `MESA_GL_VERSION_OVERRIDE=4.6` + `MESA_GLSL_VERSION_OVERRIDE=460` because compiling this
+repo's `#version 460` shaders on a bare llvmpipe 4.5 context SEGFAULTS Mesa, and
+`GLCONTEXT_LINUX_LIBGL=libGL.so.1` to avoid a dlopen failure on boxes without libgl-dev. Run it
+through `make test` rather than a bare `pytest` so you inherit them. Modules using the `app` fixture
+skip without a display. Not wired into `make check` (needs a GL context).
+
 ### `make smoke`
 Headless smoke test (`scripts/smoke.py`) — runs ~200 frames of `update_and_draw` against a THROWAWAY
 tmp project (seeded with the shipped example nodes + one script-driven-uniform node so the feature-040

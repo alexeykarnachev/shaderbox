@@ -15,7 +15,7 @@ For ANY work, follow this chain in order. Don't read sideways, don't pre-read au
 4. **`ai_docs/dev_flow.md`** — the single source of truth for HOW work happens (feature flow, recipes, doc discipline, maintainer habits).
 
 Quick routing (full version → `dev_flow.md`):
-- **small / mechanical change** → just do it + `make check` (+ `make smoke` if it touched UI/lifecycle code — roster in `dev_flow.md ### make smoke`).
+- **small / mechanical change** → just do it + `make check` + `make test` (+ `make smoke` if it touched UI/lifecycle code — roster in `dev_flow.md ### make smoke`).
 - **feature** → the feature flow in `dev_flow.md`.
 - **research / brainstorm** → chat report; don't half-start an implementation.
 
@@ -27,6 +27,8 @@ Quick routing (full version → `dev_flow.md`):
 - **NO backward-compatibility / migration code, EVER — unless the maintainer explicitly asks.** Nothing pre-release ships to users (the only data is the dev sandbox). When a change reshapes a model / file / on-disk format, just CHANGE it and **fix the `projects/dev/` files BY HAND** (hand-edit them, or regenerate via the normal load+save path) and `git add projects/dev` in the same wave — never write a migration path, a compat shim, an old-format reader, a "fold the old thing in" step, or a deprecation. Manual is the ONLY sanctioned fix; not even a throwaway one-off migration script is warranted unless the maintainer explicitly asks. The persistence-evolution posture (`conventions.md`) is about a model staying *loadable*, NOT about migrating old data. If a spec/review/swarm proposes migration code, that's the signal to delete the proposal. (Full rule: `conventions.md ## Design decisions`.)
 - **`uv`, not `python`/`pip`** — `uv sync`, `uv add <pkg>`, `uv add --group dev <pkg>`, `uv run …`.
 - **Run `make check` before declaring anything done** — ruff + pyright, both block on failure.
+  Run **`make test`** too when the change touches logic (never a bare `pytest` — the target's
+  MESA env vars are load-bearing; `dev_flow.md ### make test`).
 - **Don't sidestep a convention.** A convention collision means the design is wrong — fix the design, don't `# noqa` / `# type: ignore` / inline-import past it. Sanctioned suppression allowlist (upstream stub gaps only) is in `conventions.md ## Known quirks`.
 
 ## Code rules (the ones that fire on every edit)
