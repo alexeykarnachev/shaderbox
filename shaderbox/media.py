@@ -163,6 +163,12 @@ def is_default_image(value: object) -> bool:
     )
 
 
+# Forward-decode budget for Video.update: a gap up to this many frames is closed with
+# grab() instead of a random-access seek (~50x cheaper per frame). Beyond it, seeking
+# wins, so a real scrub or a wrap-around still takes the seek path.
+_MAX_GRAB_AHEAD = 8
+
+
 class Video(MediaWithTexture):
     def __init__(self, file_path: PathLike) -> None:
         self._cap = cv2.VideoCapture(str(file_path))
@@ -235,9 +241,19 @@ class Video(MediaWithTexture):
         if self._last_frame_idx == target_frame_idx:
             return
 
-        # Skip part of the video, because our t is faster than the video's framerate
-        if self._last_frame_idx == -1 or target_frame_idx - self._last_frame_idx != 1:
+        # Close the gap by DECODING FORWARD when the target is just ahead; seek only for a
+        # jump backwards, a wrap, or a distance where seeking finally wins. A seek costs ~50x
+        # a grab, and demanding an exact +1 made every short skip pay it — which is
+        # self-reinforcing, because the seek lengthens the frame, the longer frame skips a
+        # video frame, and the wider gap forces the next seek. Below the video's own fps that
+        # tips from ~0% to ~100% of updates.
+        delta = target_frame_idx - self._last_frame_idx
+        if self._last_frame_idx == -1 or not (0 < delta <= _MAX_GRAB_AHEAD):
             self._cap.set(cv2.CAP_PROP_POS_FRAMES, target_frame_idx)
+        else:
+            # grab() advances the decoder without converting the frame — the cheap half.
+            for _ in range(delta - 1):
+                self._cap.grab()
 
         is_frame, frame = self._cap.read()
         if is_frame:
