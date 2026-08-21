@@ -110,6 +110,11 @@ class IntegrationsStore(BaseModel):
                 f"Unreadable integrations.json ({e}); falling back to defaults"
             )
             return cls()
+        if not isinstance(data, dict):
+            logger.warning(
+                "Malformed integrations.json (not an object); falling back to defaults"
+            )
+            return cls()
         # The store is extra="forbid": a hard fail here returns empty credentials that
         # the next save() writes over the real tokens.
         drop_unknown(cls, data, "integrations")

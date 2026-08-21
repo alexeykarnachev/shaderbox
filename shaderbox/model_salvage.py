@@ -21,7 +21,14 @@ from pydantic import BaseModel, ValidationError
 
 
 def drop_unknown(model: type[BaseModel], data: dict[str, Any], path: str) -> None:
-    """Prune keys no field claims, recursing into nested models and lists of models."""
+    """Prune keys no field claims, recursing into nested models and lists of models.
+
+    A non-dict `data` is left alone rather than raising: callers that parse a file themselves
+    can hand us `null` or a list, and a TypeError here escapes into whatever loads the store
+    — for the credential store that is ProjectSession.__init__, i.e. the app failing to start.
+    """
+    if not isinstance(data, dict):
+        return
     for key in [k for k in data if k not in model.model_fields]:
         logger.warning(f"Ignoring unknown {path} key: {key}")
         data.pop(key)
@@ -50,6 +57,8 @@ def drop_invalid(model: type[BaseModel], data: dict[str, Any], path: str) -> Non
     as a whole, so without the descent one bad row inside it takes the entire block with it —
     a malformed pack entry would cost the user the Telegram token sitting beside it.
     """
+    if not isinstance(data, dict):
+        return
     for key, field in model.model_fields.items():
         value = data.get(key)
         for nested in get_args(field.annotation) or (field.annotation,):

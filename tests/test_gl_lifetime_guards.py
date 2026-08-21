@@ -6,7 +6,6 @@ cheap to write and the thing they protect is invisible until it is expensive —
 as the app slowly eating VRAM, not as a failure anyone can point at.
 """
 
-import shutil
 from pathlib import Path
 
 import moderngl
@@ -120,12 +119,11 @@ def test_snapshot_script_ignores_a_missing_script(tmp_path: Path) -> None:
 def test_node_release_frees_uniform_held_media(gl: moderngl.Context) -> None:
     # The 060 fix, pinned from the other side: the uniform values own textures/captures, and
     # every reload releases the node.
-    source = _EXAMPLE
-    node, _ = Node.load_from_dir(source)
-    held = [v for v in node.uniform_values.values() if hasattr(v, "release")]
+    node, _ = Node.load_from_dir(_EXAMPLE)
+    held = [v for v in node.uniform_values.values() if isinstance(v, moderngl.Texture)]
 
     node.release()
 
     assert node.uniform_values == {}
-    assert held or True  # the example may hold none; the emptied dict is the invariant
-    shutil.rmtree(source / "__pycache__", ignore_errors=True)
+    for texture in held:
+        assert _released(texture), "a uniform-held texture outlived Node.release()"
