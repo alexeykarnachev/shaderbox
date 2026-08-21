@@ -8,7 +8,7 @@ import types
 from shaderbox.copilot import backend as backend_mod
 from shaderbox.copilot.agent import _final_reply_nudge
 from shaderbox.copilot.backend import CopilotBackend
-from shaderbox.copilot.config import COPILOT_CONFIG
+from shaderbox.copilot.config import CopilotConfig
 from shaderbox.copilot.edit_hints import STAMPED_FACTS_PREFIX
 from shaderbox.copilot.tools.inspect import inspect_tools
 from shaderbox.copilot.tools.registry import build_registry
@@ -99,5 +99,9 @@ def test_forced_turn_end_nudge_names_engine_cause_and_denies_user_pause() -> Non
 
 
 def test_clean_streak_config_defaults_sane() -> None:
-    # The hard stop must leave room for the soft advisory to work first.
-    assert COPILOT_CONFIG.clean_edit_hard_streak > COPILOT_CONFIG.clean_edit_soft_streak
+    # The hard stop must leave room for the soft advisory to work first. Asserted against a
+    # FRESH instance, not the live singleton: loading a project pushes the persisted user
+    # limits onto COPILOT_CONFIG, so a singleton read here tests whatever the last test left
+    # behind — it passed in a full run while failing alone.
+    defaults = CopilotConfig()
+    assert defaults.clean_edit_hard_streak > defaults.clean_edit_soft_streak

@@ -12,6 +12,7 @@ from typing import Any
 import pytest
 
 from shaderbox.constants import EXAMPLE_ORDER, NODE_EXAMPLES_DIR, STARTER_EXAMPLE_ID
+from shaderbox.copilot.config import COPILOT_CONFIG
 
 # LOAD-BEARING, read at GL-context creation (not at import): compiling this repo's #version 460
 # shaders on a bare llvmpipe 4.5 context SEGFAULTS Mesa — see the Makefile's `test` note. `make
@@ -49,3 +50,17 @@ def app(tmp_path: Path) -> Iterator[Any]:
     yield a
     with contextlib.suppress(Exception):
         a.release()
+
+
+@pytest.fixture(autouse=True)
+def _restore_copilot_config() -> Iterator[None]:
+    # COPILOT_CONFIG is a process-wide mutable singleton, and loading ANY project pushes the
+    # persisted per-user limits onto it (ProjectSession -> IntegrationsStore.apply_limits).
+    # Nothing restores it, so a test that builds an App silently rewrites the config every
+    # later test reads — which lets an assertion about a config default pass because an
+    # earlier test repaired the value, and go red only when run alone.
+    fields = [f for f in dir(COPILOT_CONFIG) if not f.startswith("_")]
+    before = {f: getattr(COPILOT_CONFIG, f) for f in fields}
+    yield
+    for field, value in before.items():
+        setattr(COPILOT_CONFIG, field, value)

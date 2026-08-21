@@ -721,6 +721,15 @@ class App:
         self._register_palette_commands()
 
     def _merge_effective_bindings(self) -> None:
+        # Drop rebindings for commands that no longer exist. The merge below already ignores
+        # them (it walks COMMAND_SPECS), so they are inert at read time — but nothing else
+        # ever removes them, so a retired command's chord would sit in the user's state file
+        # forever and silently re-collide if the id were ever reused.
+        live = {spec.id.value for spec in COMMAND_SPECS}
+        for retired in [k for k in self.app_state.key_bindings if k not in live]:
+            logger.warning(f"Dropping rebinding for retired command: {retired}")
+            self.app_state.key_bindings.pop(retired)
+
         self.effective_bindings = {
             spec.id: self.app_state.key_bindings.get(spec.id.value, spec.default_chord)
             for spec in COMMAND_SPECS
@@ -1281,10 +1290,14 @@ class App:
                         f"Save failed: {e!s}", COLOR.STATE_ERROR[:3]
                     )
 
-        for eid in self.exporter_registry.ids():
-            exporter = self.exporter_registry.get(eid)
-            if exporter is not None:
-                self.app_state.exporter_settings[eid] = exporter.current_settings()
+        # REBUILT, not mutated in place: writing each live exporter's settings into the
+        # existing dict leaves a retired exporter's block behind forever (a removed exporter's
+        # id outlived it in the tracked sandbox state).
+        self.app_state.exporter_settings = {
+            eid: exporter.current_settings()
+            for eid in self.exporter_registry.ids()
+            if (exporter := self.exporter_registry.get(eid)) is not None
+        }
         self.app_state.active_exporter_id = self.exporter_registry.active_id
 
         telegram = self.exporter_registry.get("telegram")

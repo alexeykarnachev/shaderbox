@@ -4,8 +4,7 @@
     "is_render_all_nodes": true,
     "exporter_settings": {
         "telegram": {},
-        "youtube": {},
-        "x": {}
+        "youtube": {}
     },
     "active_exporter_id": "telegram",
     "telegram_default_pack": "zdarova_patc_shaderbox_by_shaderbox_bot",
