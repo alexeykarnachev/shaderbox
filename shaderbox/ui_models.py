@@ -8,7 +8,7 @@ from uuid import uuid4
 import moderngl
 from loguru import logger
 from OpenGL.GL import GL_SAMPLER_2D, GL_UNSIGNED_INT
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 from shaderbox.constants import (
     DEFAULT_TEMPORAL_SIGMA,
@@ -139,8 +139,12 @@ class UINodeState(BaseModel):
     uniform_sort_key: UniformSortKey = "code"
     uniform_sort_desc: bool = False
 
-    video_to_video_smoothing_window: int = DEFAULT_TEMPORAL_WINDOW_SIZE
-    video_to_video_smoothing_sigma: float = DEFAULT_TEMPORAL_SIGMA
+    video_to_video_smoothing_window: int = Field(
+        default=DEFAULT_TEMPORAL_WINDOW_SIZE, ge=1
+    )
+    video_to_video_smoothing_sigma: float = Field(
+        default=DEFAULT_TEMPORAL_SIGMA, gt=0.0
+    )
 
     # Play/stop (feature 048): the uniform NAMES the user has STOPPED — frozen for manual edit. A
     # stopped uniform's script value is not applied (the script still ticks; the manual value sticks).
@@ -172,12 +176,16 @@ class UINodeState(BaseModel):
 
 
 class EditorSettings(BaseModel):
+    # The numeric bounds mirror the Settings sliders. They live on the MODEL, not only on the
+    # widget, because a hand-edited or half-written file reaches the loader without passing
+    # any widget — and a per-key salvage turns an out-of-range value into "that one setting
+    # resets", instead of a value the UI could never have produced.
     show_whitespace: bool = False
     show_line_numbers: bool = True
     show_matching_brackets: bool = True
-    font_size: int = 16
-    tab_size: int = 4
-    line_spacing: float = 1.0
+    font_size: int = Field(default=16, ge=8, le=48)
+    tab_size: int = Field(default=4, ge=1, le=8)
+    line_spacing: float = Field(default=1.0, ge=1.0, le=3.0)
 
 
 class UIAppState(BaseModel):
@@ -189,13 +197,15 @@ class UIAppState(BaseModel):
     active_exporter_id: str = "telegram"
     telegram_default_pack: str = ""
 
-    global_target_fps: int = 60
+    # Bounded because the frame loop divides by it: a 0 here raises inside update_and_draw,
+    # which skips the save()/release() tail and costs the user their session state.
+    global_target_fps: int = Field(default=60, ge=30, le=240)
 
-    editor_split_fraction: float = 0.5
+    editor_split_fraction: float = Field(default=0.5, ge=0.0, le=1.0)
     editor_settings: EditorSettings = EditorSettings()
     # Chat input height in px, set by the feed/input splitter (the input keeps this height on
     # window resize; the feed above flexes). Clamped at draw.
-    copilot_input_h: float = 48.0
+    copilot_input_h: float = Field(default=48.0, ge=0.0)
 
     # Persisted UI layout prefs (the App holds the live copies; synced at load/save).
     # NOT active_region / copilot_focused — those are transient-by-design (focus on
@@ -365,6 +375,25 @@ class UINode(BaseModel):
                 logger.warning(
                     f"Can't to save unsupported uniform type for {uniform.name}: {type(value)}"
                 )
+
+        # Drop media/texture files no surviving uniform refers to. The unbind cleanup above
+        # is keyed by the uniform's OWN name, so it can only ever visit names the shader
+        # still has — a sampler that was renamed away is never looked at, and its file stays
+        # forever (and rides along duplicate_node). Skipped with no live program, where the
+        # uniform block was carried forward rather than rebuilt.
+        if self.node.program is not None:
+            referenced = {
+                Path(entry["file_path"]).name
+                for entry in meta["uniforms"].values()
+                if isinstance(entry, dict) and "file_path" in entry
+            }
+            for asset_dir in (dir / "media", dir / "textures"):
+                if not asset_dir.is_dir():
+                    continue
+                for asset in asset_dir.iterdir():
+                    if asset.is_file() and asset.name not in referenced:
+                        logger.debug(f"Dropping orphaned asset {asset.name}")
+                        asset.unlink()
 
         with (dir / NODE_JSON_BASENAME).open("w") as f:
             json.dump(meta, f, indent=4)

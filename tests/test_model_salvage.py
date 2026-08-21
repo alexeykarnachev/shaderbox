@@ -127,3 +127,30 @@ def test_the_credential_store_shares_the_same_salvage(tmp_path: Path) -> None:
     drop_invalid(IntegrationsStore, data, "integrations")
     store = IntegrationsStore(**data)
     assert store.telegram.bot_token == "secret"
+
+
+@pytest.mark.parametrize("bad_value", [0, -99999, 10, 999])
+def test_target_fps_stays_safe_to_divide_by(tmp_path: Path, bad_value: int) -> None:
+    # ui.py's frame loop computes 1.0 / global_target_fps twice. A 0 raises inside
+    # update_and_draw, which skips the save()/release() tail — so the bound belongs on the
+    # model, which every loader passes through, not only on the Settings slider.
+    state = UIAppState.load(
+        _write(tmp_path, {**_POPULATED, "global_target_fps": bad_value})
+    )
+    assert state.global_target_fps >= 30
+    assert 1.0 / state.global_target_fps > 0
+    assert state.current_node_id == "abc-123", (
+        "an out-of-range fps cost an unrelated setting"
+    )
+
+
+def test_out_of_range_editor_settings_reset_only_themselves(tmp_path: Path) -> None:
+    state = UIAppState.load(
+        _write(
+            tmp_path,
+            {**_POPULATED, "editor_settings": {"font_size": 999, "tab_size": 8}},
+        )
+    )
+    assert state.editor_settings.font_size == 16
+    assert state.current_node_id == "abc-123"
+    assert state.global_target_fps == 144
