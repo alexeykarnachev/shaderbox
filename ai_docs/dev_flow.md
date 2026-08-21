@@ -280,7 +280,9 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   register in `App.__init__`. Worker thread MUST NOT touch moderngl (thread-affinity contract).
 - **`model_salvage.py`** — leaf: `drop_unknown` / `drop_invalid` / `load_model`, the shared
   per-key salvage every persisted pydantic store loads through (`UIAppState`,
-  `IntegrationsStore`). One bad or retired key costs that setting, never the file.
+  `IntegrationsStore`). One bad or retired key costs that setting, never the file; both helpers
+  recurse into nested models and no-op on a non-dict. Coverage is enumerated by
+  `tests/test_persistence_completeness.py`, which also fails on an unrostered JSON loader.
 - **`paths.py`** — `app_data_dir()`, `shader_lib_root()`, `shader_lib_trash_dir()`, the node-dir
   basenames (`NODE_JSON_BASENAME` / `NODE_SHADER_BASENAME` — the ONE home; never re-spell them)
   + `ProjectPaths`

@@ -135,6 +135,13 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   thing that was renamed away. Both sides of the bound need a test — that stale entries go, AND that a
   clean subject loses nothing. Revisit if a store needs to PRESERVE unknown keys (a plugin format);
   then the salvage takes an opt-out, it does not get bypassed.
+  **A loader must also survive a file that isn't an object at all** (`null`, a list, a scalar). These
+  run from `ProjectSession.__init__` UNGUARDED, so a `TypeError` there is not a degraded load — it is
+  an app that will not start, naming no file (two stores shipped that way). The salvage helpers no-op
+  on a non-dict, so every caller inherits the guard. **New stores are ENUMERATED, not remembered:**
+  `tests/test_persistence_completeness.py` drives every rostered store against one corruption battery
+  AND fails when a module reads JSON without being rostered or explicitly exempted with a reason. Add
+  a store there rather than re-deriving the rules — it caught a live startup crash on its first run.
 
 - **The shader library is layered around SIGNED distance (feature 032).** Sources `SB_sd_*` return
   an SDF (negative inside; documented exceptions like the zero-width `SB_sd_segment`); operators
