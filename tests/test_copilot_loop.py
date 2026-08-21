@@ -753,13 +753,13 @@ class _AlwaysDeclineGate(GateChannel):
     # ask() returns a decline without blocking — no UI thread in the test.
     def ask(self, request: GateRequest) -> GateResponse:
         _ = request
-        return GateResponse(approved=False, option="No")
+        return GateResponse(approved=False)
 
 
 class _ApproveGate(GateChannel):
     def ask(self, request: GateRequest) -> GateResponse:
         _ = request
-        return GateResponse(approved=True, option="Yes")
+        return GateResponse(approved=True)
 
 
 class _DeleteThenStopClient:

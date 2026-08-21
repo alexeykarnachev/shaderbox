@@ -46,7 +46,7 @@ def test_reopen_after_release_blocks_and_answers() -> None:
             break
         tick.wait(0.01)
     assert pending is not None, "reopen did not re-arm the gate — ask() short-circuited"
-    gate.answer(GateResponse(approved=True, option="Yes"))
+    gate.answer(GateResponse(approved=True))
     t.join(timeout=2.0)
     assert not t.is_alive(), "ask() never unblocked after reopen + answer"
     assert answered and answered[0].approved and not answered[0].cancelled

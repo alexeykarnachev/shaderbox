@@ -442,7 +442,7 @@ def build_gate(registry: ToolRegistry, name: str, args: dict) -> GateRequest:
         return GateRequest(
             kind=GateKind.CONFIG, prompt=prompt, secret_field=tool.secret_field
         )
-    return GateRequest(kind=GateKind.CONFIRM, prompt=prompt, options=["Yes", "No"])
+    return GateRequest(kind=GateKind.CONFIRM, prompt=prompt)
 
 
 def run_turn(

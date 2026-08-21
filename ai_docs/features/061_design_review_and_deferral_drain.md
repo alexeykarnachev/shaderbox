@@ -138,10 +138,8 @@ Two lanes overturned the register they were auditing. Both corrections are the f
   **Trigger:** when a 5th distinct domain wants in.
 - **Dependency bumps.** Not rot-fixing; each needs a manual render/copilot check. **Trigger:**
   unchanged.
-- **`GateRequest.options` scaffold.** The sibling of the BULK deletion below; still refuted, still
-  unused. **Trigger:** a gate that genuinely needs more than Yes/No.
 
-## Follow-up: GatePolicy.BULK deleted (maintainer call)
+## Follow-up: the gate scaffolding deleted (maintainer call)
 
 `bulk_gate_threshold` was dead config with a live-but-unreachable reader. On the maintainer's call it
 was removed whole: the `GatePolicy.BULK` enum member, `requires_gate`'s BULK branch, the config knob,
@@ -163,6 +161,14 @@ Two things this surfaced, both worth keeping:
 The replacement guard pins the two-state model AND that both states are in use — a registry where
 every tool gated (or none did) would pass a subset check while meaning the gate had stopped
 discriminating.
+
+The same call removed the entry's other half, `GateRequest.options` (the `["Yes", "No"]` list a
+CONFIRM gate was to offer) and its `GateResponse.option` twin. Both were **write-only**: `build_gate`
+set the list, `GateChannel.answer` set the chosen label, and nothing in the engine or the chat UI ever
+read either — the UI draws Yes/No buttons and the loop branches on `approved`. Deleting the request
+half alone would have left an answer labelled against nothing, so both went together, along with the
+`GateKind.CONFIRM` comment promising "a procedurally-generated option list". A gate that ever needs
+more than Yes/No re-adds the field with the reader that consumes it, in the same change.
 
 ## Files touched
 

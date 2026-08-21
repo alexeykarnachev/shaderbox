@@ -329,9 +329,7 @@ class CopilotSession:
         if card is not None:
             card.resolved = True
             card.gate_outcome = "Yes" if approved else "No"
-        self.gate.answer(
-            GateResponse(approved=approved, option="Yes" if approved else "No")
-        )
+        self.gate.answer(GateResponse(approved=approved))
 
     def answer_gate_credential(self, secret: str) -> None:
         # MAIN THREAD (Save on a CREDENTIAL gate). The secret rides GateResponse back to the

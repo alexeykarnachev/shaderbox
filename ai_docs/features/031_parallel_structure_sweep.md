@@ -156,7 +156,8 @@ committable; run `make check` + tests per item, `make smoke` after the UI-touchi
   value. 061 measured that the branch was unreachable (no tool ever declared BULK) and applied
   the speculative-machinery rule in `conventions.md` — a model-visible enum you must teach gets
   CUT at zero consumers; only inert code with a NAMED near-future consumer stays dormant, and
-  017's trigger was hypothetical. `GateRequest.options` is untouched and still refuted.
+  017's trigger was hypothetical. `GateRequest.options` (and its `GateResponse.option` twin) went
+  the same way in 061: both were write-only — every site set them, nothing ever read them.
 - Dropped (low value-to-blast / parked-area collisions): command_callbacks completeness assert
   (no drift, no payer); exporter `_UPLOAD_KINDS`/`_BUSY_KINDS` busy-field fold (same-file,
   exporter decomposition is todo-parked); exporter worker/queue plumbing extraction (brushes the

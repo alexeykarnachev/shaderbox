@@ -11,7 +11,7 @@ from shaderbox.copilot.capabilities import MediaBindResult, NodeImportResult
 
 
 class GateKind(StrEnum):
-    CONFIRM = auto()  # yes/no or a procedurally-generated option list
+    CONFIRM = auto()  # a Yes/No confirmation
     CREDENTIAL = auto()  # an inline secret field for a missing integration key
     CONFIG = auto()  # an inline integration setup panel (reuses the exporter's draw_config_ui) + Cancel
     FILE = (
@@ -23,7 +23,6 @@ class GateKind(StrEnum):
 class GateRequest:
     kind: GateKind
     prompt: str
-    options: list[str] = field(default_factory=lambda: ["Yes", "No"])  # CONFIRM
     secret_field: str = ""  # CREDENTIAL: which integration key
     # FILE gate targeting: the action ("" = bind_media; "import_node"), the bind target
     # (node_id/uniform), the pickable kinds ("image"/"video"/"glsl"), and switch_to for import.
@@ -37,7 +36,6 @@ class GateRequest:
 @dataclass(frozen=True)
 class GateResponse:
     approved: bool = False
-    option: str = ""
     secret: str = ""  # CREDENTIAL: typed key — never logged/traced/persisted
     cancelled: bool = False  # the wait was released without an answer
     media_result: MediaBindResult | None = None  # FILE bind: the path-free bind outcome
