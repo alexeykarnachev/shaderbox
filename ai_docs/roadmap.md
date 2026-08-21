@@ -26,26 +26,23 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-08-21 (061 design review landed; 714 tests, make check + smoke green). -->
-**ACTIVE: feature 061 — design review & deferral drain, landed.** 060 audited the module LAYOUT and
-found it sound; 061 drained the register 060 deferred and swept the level a layout audit cannot see:
-runtime contracts, concurrency, lifecycle, persisted-model integrity. The architectural verdict is
-unchanged and independently re-derived — no boundary moved. What was broken was contracts no test
-held to. Worst: a save with no live program wiped every tuned uniform value (an ordinary
-external-edit-then-quit path), and one bad key in `app_state.json` cost the user every setting — the
-060 credential-wipe class, one file over, whose already-solved twin was in-tree. Both exporter
-workers violated the stated daemon teardown contract (measured: a 30s hang at exit), and the shared
-`ExporterWorker` extracted from them inherited a stale-STOP bug that a lane then found in it. Also:
-stale UI uniform rows pruned (295 repo-wide, two SHIPPED examples), orphaned media swept, retired ids
-dropped, and a masked test that passed only via `COPILOT_CONFIG` singleton leakage. Two 060
-deferrals were CORRECTED rather than drained: the node-handle resolvers are safe (22M probes, zero
-wrong-node cases) and only 3 of the 5 "unfalsifiable" brakes were real — one of those turned out
-unreachable, not untested. Each fix carries a mutation-tested guard.
+<!-- As of 2026-08-21 (062 final design hunt landed; 792 tests, check + smoke green). -->
+**ACTIVE: feature 062 — final design hunt, landed. The codebase is READY FOR FEATURE WORK.**
+A 12-agent swarm (8 anchored finders -> an opus skeptic per finding -> a readiness judge) asked one
+question: proceed, or keep improving? Verdict: proceed, after ~1 day of leaf-code fixes, all landed.
+**Zero architectural findings, third wave running** — the layout is closed. Three CRITICALs: the
+`drop_invalid` helper did not recurse (one bad nested value wiped the credentials, in the module
+written to prevent that — 061's own code), the shader-lib sidecar stores crashed the app AT STARTUP
+on a malformed row, and `IntegrationsStore` crashed on a non-dict file. Plus a video seek
+death-spiral (15.6x faster, seeks 200->7), a Share-tab closure encoding a released node, a
+copilot script edit writing invalid Python, a tab clamp losing unsaved edits, and five guards over
+correct code that no test observed. The real signal: 3 findings were 061's own fix class at sites 061
+did not sweep, so a **persistence completeness battery** now enumerates every store and every
+corruption shape — it found the third CRITICAL on its first run.
 
-**NEXT:** (1) the render-facts VALUE observation (wave 4 of the hub-feedback plan) — trigger still
-fired; (2) a stronger-model pass over the exam echelon. Open with triggers in the 061 spec: the
-`telegram.py` worker-half split, `backend.py`'s size, and dependency bumps. (`GatePolicy.BULK` +
-`bulk_gate_threshold` were deleted as dead on the maintainer's call.) HN post stays maintainer-paced.
+**NEXT: new features.** Auditing has hit diminishing returns and a fourth wave is not warranted (the
+reasoning is in the 062 spec). Open with triggers there: the `telegram.py` worker-half split,
+`backend.py`'s size, dependency bumps, the degenerate-frame freeze. HN post stays maintainer-paced.
 
 **Last LIVE on itch (context):** v0.21.0 — feature 050 + render-divergence cleanup + YT Shorts presets
 + the bugs/debt fix wave. (v0.19.0 was tagged then dropped at upload and never went public — a
@@ -61,6 +58,7 @@ releases ahead of what is known-public. Confirm on the itch dashboard at the nex
 |---|---|---|---|
 | — | copilot_engine_tuning | done | reasoning effort=none engine knob (+30k turn budget: effort flag is ignored on compound asks — measured), user/engine config split with slots enforcement, final-reply token cap. Spec: commits 289c12f + 6ed3c4d + 779d4b2 + this wave. |
 | — | agent_hub | done | the maintainer sync page: full prompt/tools/config/knowledge surfaces + all dogfood runs with dialogues and media, regenerated from live code. Spec: scripts/agent_hub/generate.py docstring. |
+| 062 | final_design_hunt | done | A 12-agent verified swarm asked whether the codebase is ready for features; verdict yes, after three CRITICAL loader fixes, a video seek spiral, and a persistence completeness battery. Spec: `ai_docs/features/062_final_design_hunt.md`. |
 | 061 | design_review_and_deferral_drain | done | Drained the 060 deferral register and swept contracts/concurrency/persistence; layout unchanged. Spec: `ai_docs/features/061_design_review_and_deferral_drain.md`. |
 | 060 | rot_audit_and_reorg | done | A 10-agent rot + architecture audit after a long pause, then the fixes it earned — a silent credential wipe, an `ivec3` uniform mislabel, a suite that had gone red unnoticed, a coverage metric blind to 8 of its own tools, and three boundary moves; the architectural verdict is that the layout is sound and no reorg is warranted. Spec: `ai_docs/features/060_rot_audit_and_reorg/spec.md`. |
 | 059 | prompt_refactor | done | The hub-feedback prompt refactor in three bisectable waves, all landed: A corrects the SCRIPTING watershed to STATE-not-time across prompt + eager tool descriptions and replaces model-facing absolute error paths with short labels via a shared GL-free helper; B adds the generated SCRIPT API block (RARE tier) + conventions moves + schema-dedup cuts; C trims FEEDBACK to its pre-action rules and splices the 500-char legend (four term glosses + the STATIC-means-unwired diagnostic) onto the first facts-bearing result per turn, ahead of any hint on that result (one per-turn flag shared with the forced-reply path) — `_SYSTEM_PROMPT` 20 507 -> 14 435 chars; controls for the effort=none actor recorded before landing. Spec: `ai_docs/features/059_prompt_refactor/01_spec.md`. |

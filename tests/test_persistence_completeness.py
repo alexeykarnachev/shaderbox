@@ -66,7 +66,9 @@ _STORES: dict[str, tuple[str, Callable[[Path], object]]] = {
 
 
 @pytest.mark.parametrize("store", sorted(_STORES))
-@pytest.mark.parametrize("label,content", _CORRUPTIONS, ids=[c[0] for c in _CORRUPTIONS])
+@pytest.mark.parametrize(
+    "label,content", _CORRUPTIONS, ids=[c[0] for c in _CORRUPTIONS]
+)
 def test_a_malformed_file_never_takes_the_app_down(
     monkeypatch: Any, tmp_path: Path, store: str, label: str, content: str
 ) -> None:
@@ -111,9 +113,7 @@ def test_the_roster_covers_every_module_that_loads_a_persisted_store() -> None:
     }
 
     loaders = {
-        path.name
-        for path in pkg.rglob("*.py")
-        if "json.load" in path.read_text()
+        path.name for path in pkg.rglob("*.py") if "json.load" in path.read_text()
     }
     unaccounted = loaders - rostered - exempt
 
