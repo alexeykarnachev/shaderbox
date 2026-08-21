@@ -26,31 +26,27 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-08-21 (062 final design hunt landed; 792 tests, check + smoke green). -->
-**ACTIVE: feature 062 — final design hunt, landed. The codebase is READY FOR FEATURE WORK.**
-A 12-agent swarm (8 anchored finders -> an opus skeptic per finding -> a readiness judge) asked one
-question: proceed, or keep improving? Verdict: proceed, after ~1 day of leaf-code fixes, all landed.
-**Zero architectural findings, third wave running** — the layout is closed. Three CRITICALs: the
-`drop_invalid` helper did not recurse (one bad nested value wiped the credentials, in the module
-written to prevent that — 061's own code), the shader-lib sidecar stores crashed the app AT STARTUP
-on a malformed row, and `IntegrationsStore` crashed on a non-dict file. Plus a video seek
-death-spiral (15.6x faster, seeks 200->7), a Share-tab closure encoding a released node, a
-copilot script edit writing invalid Python, a tab clamp losing unsaved edits, and five guards over
-correct code that no test observed. The real signal: 3 findings were 061's own fix class at sites 061
-did not sweep, so a **persistence completeness battery** now enumerates every store and every
-corruption shape — it found the third CRITICAL on its first run.
+<!-- As of 2026-08-21 (062 landed; 792 tests, check + smoke green; dev tagged v0.25.2). -->
+**ACTIVE: nothing in flight. The codebase is READY FOR FEATURE WORK — the next session picks a
+direction with the maintainer.**
 
-**NEXT: new features.** Auditing has hit diminishing returns and a fourth wave is not warranted (the
-reasoning is in the 062 spec). Open with triggers there: the `telegram.py` worker-half split,
-`backend.py`'s size, dependency bumps, the degenerate-frame freeze. HN post stays maintainer-paced.
+Three audit waves are closed (060 layout, 061 contracts, 062 verified swarm) with **zero
+architectural findings across all three** — don't re-open "should we reorganise modules", and read
+`062_final_design_hunt.md ## What came back CLEAN` before proposing any audit; it records what was
+checked with evidence. 062's verdict: further auditing has hit diminishing returns.
 
-**Last LIVE on itch (context):** v0.21.0 — feature 050 + render-divergence cleanup + YT Shorts presets
-+ the bugs/debt fix wave. (v0.19.0 was tagged then dropped at upload and never went public — a
-permanently skipped label.) **`master` is TAGGED to v0.25.0** (v0.22.0/0.22.1/0.23.0/0.24.0/0.25.0 —
-lazy tool catalogue, Vec math + Array rows, node examples rework, the F1 help panel); v0.22.0's
-commit records "itch upload deferred" and no later commit records an upload, so the git line is four
-releases ahead of what is known-public. Confirm on the itch dashboard at the next ship.
-**No open BLOCKERs.**
+**NEXT: brainstorm a direction.** Nothing is chosen. Starting material: the **product surface** (what
+a shader author hits next — README + `help_content.py` carry the current pitch); the **copilot**, the
+largest and least user-validated subsystem (`/dogfood` drives it against a real LLM); the **shader
+library** (`/shader-lab` mines techniques into `SB_*`). Separately, deferred *maintenance* — the
+`telegram.py` split, `backend.py`'s size, dep bumps, the degenerate-frame freeze — each has a trigger
+in its spec and is not a feature direction.
+
+**Release state:** `dev` tagged **v0.25.2** (fixes-only) and pushed; `master` still **v0.25.1**, 17
+commits behind — dev->master happens at ship time via `/ship` (maintainer-triggered). Tags are the
+release record; no GitHub Releases (`dev_flow.md`). **Last known-public itch build is v0.21.0**;
+v0.22.0 records "itch upload deferred" and no later commit records an upload, so git runs ahead of
+what users have — confirm on the itch dashboard at the next ship. **No open BLOCKERs.**
 
 ## Features
 
