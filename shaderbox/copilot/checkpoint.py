@@ -23,6 +23,7 @@ from pathlib import Path
 from loguru import logger
 
 from shaderbox.copilot.address import strip_lib_prefix
+from shaderbox.paths import NODE_SCRIPT_BASENAME
 from shaderbox.ui_models import UINode
 
 # A node snapshot subdir name is the node id; a lib snapshot is stored by a sanitized address.
@@ -177,7 +178,7 @@ class TurnCheckpoint:
         # nothing — the dest already holds the pre-turn bytes).
         if node_id in self.created_nodes or node_id in self.created_scripts:
             return
-        dest = self.turn_dir / node_id / "scripts" / "script.py"
+        dest = self.turn_dir / node_id / "scripts" / NODE_SCRIPT_BASENAME
         if dest.exists() or not script_path.is_file():
             return
         try:

@@ -3,7 +3,7 @@ from loguru import logger
 
 from shaderbox.app import App
 from shaderbox.media import MediaDetails
-from shaderbox.theme import SIZE, SPACE
+from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_primitives import caption_text, centered_image, primary_button
 from shaderbox.widgets.details import draw_media_details
 
@@ -59,7 +59,10 @@ def _draw_render_button(app: App, details: MediaDetails) -> MediaDetails:
             try:
                 target.ui_state.render_media_details = target.node.render_media(pending)
             except Exception as e:
+                # A toast, not just a log: the "Rendering..." cue clears either way, so a
+                # silent failure is indistinguishable from a finished render.
                 logger.error(f"Failed to render media: {e}")
+                app.notifications.push(f"Render failed: {e!s}", COLOR.STATE_ERROR[:3])
 
         app.render_defer.submit(_run_render)
     imgui.end_disabled()

@@ -95,7 +95,7 @@ from shaderbox.media import (
     is_default_image,
     media_class_for,
 )
-from shaderbox.paths import shader_lib_root
+from shaderbox.paths import NODE_SCRIPT_BASENAME, shader_lib_root
 from shaderbox.render_preset import RenderPreset
 from shaderbox.render_shape import RenderShape, shape_to_preset
 from shaderbox.scripting import (
@@ -146,7 +146,9 @@ def _to_error_infos(errors: list[ShaderError]) -> list[CompileErrorInfo]:
 def _script_error_info(err: ScriptError) -> CompileErrorInfo:
     # ScriptError.line is 1-based already (the user source line; -1 = unmapped). Report 0 for unmapped.
     return CompileErrorInfo(
-        path="script.py", line=err.line if err.line > 0 else 0, message=err.message
+        path=NODE_SCRIPT_BASENAME,
+        line=err.line if err.line > 0 else 0,
+        message=err.message,
     )
 
 

@@ -8,6 +8,8 @@ from platformdirs import user_data_dir
 # The two files that constitute a node on disk. A node dir is loadable only once BOTH exist.
 NODE_JSON_BASENAME = "node.json"
 NODE_SHADER_BASENAME = "shader.frag.glsl"
+# The node's CPU behaviour script, under nodes/<id>/scripts/ (feature 048: one per node).
+NODE_SCRIPT_BASENAME = "script.py"
 
 
 def app_data_dir() -> Path:
@@ -94,6 +96,9 @@ class ProjectPaths:
 
     def node_shader_for(self, node_id: str) -> Path:
         return self.nodes_dir / node_id / NODE_SHADER_BASENAME
+
+    def node_script_for(self, node_id: str) -> Path:
+        return self.scripts_dir_for(node_id) / NODE_SCRIPT_BASENAME
 
     def scripts_dir_for(self, node_id: str) -> Path:
         # The CPU-script engine's per-node behavior scripts (feature 040): nodes/<id>/scripts/.

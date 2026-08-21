@@ -131,7 +131,7 @@ def _draw_outlet(
         def _run() -> None:
             target = app.ui_nodes.get(node_id)
             if target is not None:
-                _render(outlet, preset, target, state)
+                _render(app, outlet, preset, target, state)
 
         app.render_defer.submit(_run)
 
@@ -158,6 +158,7 @@ def _draw_outlet(
 
 
 def _render(
+    app: App,
     outlet: OutletRenderState,
     preset: RenderPreset,
     current_node: UINode | None,
@@ -169,6 +170,14 @@ def _render(
         current_node.node, preset, outlet.duration, state.scratch_dir
     )
     if new_artifact is None:
+        # STALE-ARTIFACT GUARD, not just feedback: artifact_is_fresh is only ever set by
+        # set_artifact, so returning here leaves the PREVIOUS render's True in place — and
+        # the publish buttons gate on that flag. Silence here lets a user publish the old
+        # artifact believing it is the one they just rendered.
+        outlet.artifact_is_fresh = False
+        app.notifications.push(
+            "Render failed — nothing to publish", COLOR.STATE_ERROR[:3]
+        )
         return
     prev: RenderedArtifact | None = outlet.current_artifact
     outlet.set_artifact(new_artifact)

@@ -34,6 +34,7 @@ from shaderbox.exporters.registry import ExporterRegistry
 from shaderbox.integrations import IntegrationsStore
 from shaderbox.paths import (
     NODE_JSON_BASENAME,
+    NODE_SCRIPT_BASENAME,
     NODE_SHADER_BASENAME,
     ProjectPaths,
     shader_lib_root,
@@ -535,11 +536,11 @@ class ProjectSession:
     def has_script(self, node_id: str) -> bool:
         # Whether the node's `script.py` exists on disk (the open-script glyph state + the play/stop
         # affordance gate). Disk presence so a create lands instantly, before the next reload.
-        return (self.paths.scripts_dir_for(node_id) / "script.py").is_file()
+        return self.paths.node_script_for(node_id).is_file()
 
     def script_has_error(self, node_id: str) -> bool:
         # Whether the node's script has a recorded compile/run error (the open-script glyph error tint).
-        return (node_id, "script.py") in self.script_engine.errors
+        return (node_id, NODE_SCRIPT_BASENAME) in self.script_engine.errors
 
     def _scriptable_uniforms_for(self, node_id: str) -> list[moderngl.Uniform]:
         # The uniforms a script can drive: scriptable + not engine-owned. The engine silently drops a
@@ -565,7 +566,7 @@ class ProjectSession:
 
     def script_path_for(self, node_id: str) -> Path:
         # The scripts/ path for the node script `script.py` (048 — one script per node).
-        return self.paths.scripts_dir_for(node_id) / "script.py"
+        return self.paths.node_script_for(node_id)
 
     def read_script_source(self, node_id: str) -> tuple[str, bool]:
         # The copilot read_script source (feature 043): the live scripts/script.py text, or — when the

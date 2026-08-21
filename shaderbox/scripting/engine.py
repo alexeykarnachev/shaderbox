@@ -26,6 +26,7 @@ import moderngl
 from loguru import logger
 from OpenGL.GL import GL_INT, GL_SAMPLER_2D, GL_UNSIGNED_INT
 
+from shaderbox.paths import NODE_SCRIPT_BASENAME
 from shaderbox.scripting.behavior import (
     PythonBehavior,
     _RuntimeScriptError,
@@ -39,7 +40,7 @@ from shaderbox.uniform_coerce import is_text_array
 # The single node script: one stateful class whose update returns a dict driving many uniforms.
 # One script per node (048 — the per-uniform `u_<name>__<tag>.py` scheme of 044/047 is removed). The
 # error key is `(node_id, _SCRIPT_FILE)`.
-_SCRIPT_FILE = "script.py"
+_SCRIPT_FILE = NODE_SCRIPT_BASENAME
 
 
 def normalize_script_tabs(text: str) -> str:

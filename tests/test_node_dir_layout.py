@@ -15,6 +15,7 @@ import pytest
 
 from shaderbox.paths import (
     NODE_JSON_BASENAME,
+    NODE_SCRIPT_BASENAME,
     NODE_SHADER_BASENAME,
     ProjectPaths,
 )
@@ -35,7 +36,12 @@ def _modules_with_literal(literal: str) -> list[str]:
     return hits
 
 
-@pytest.mark.parametrize("literal", [NODE_JSON_BASENAME, NODE_SHADER_BASENAME])
+@pytest.mark.parametrize(
+    "literal",
+    # EVERY member of the node dir, not the two that happened to be in hand: a guard that
+    # advertises a closed class while covering part of it is the defect it exists to catch.
+    [NODE_JSON_BASENAME, NODE_SHADER_BASENAME, NODE_SCRIPT_BASENAME],
+)
 def test_basename_is_never_respelled(literal: str) -> None:
     hits = _modules_with_literal(literal)
     assert hits == [], (
@@ -48,5 +54,7 @@ def test_project_paths_agree_with_the_basenames(tmp_path: Path) -> None:
     paths = ProjectPaths.for_root(tmp_path / "proj")
     assert paths.node_json_for("abc").name == NODE_JSON_BASENAME
     assert paths.node_shader_for("abc").name == NODE_SHADER_BASENAME
+    assert paths.node_script_for("abc").name == NODE_SCRIPT_BASENAME
     assert paths.node_json_for("abc").parent == paths.nodes_dir / "abc"
     assert paths.node_shader_for("abc").parent == paths.nodes_dir / "abc"
+    assert paths.node_script_for("abc").parent == paths.scripts_dir_for("abc")

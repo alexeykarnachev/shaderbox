@@ -6,6 +6,7 @@ from loguru import logger
 
 from shaderbox.copilot.address import strip_lib_prefix
 from shaderbox.copilot.checkpoint import CheckpointStore, RevertResult
+from shaderbox.paths import NODE_SCRIPT_BASENAME
 from shaderbox.shader_lib.file_ops import ShaderLibFileManager
 from shaderbox.ui_models import UINode, load_node_from_dir
 
@@ -162,7 +163,7 @@ class RevertExecutor:
         # Reverse a scripts/script.py the turn CREATED on a node that had none: delete the file +
         # reload the node so the live engine drops the script (binding is by file existence, 048).
         # Path-absent-graceful — a node also snapshotted this turn already restored to no-script.
-        path = self._get_nodes_dir() / node_id / "scripts" / "script.py"
+        path = self._get_nodes_dir() / node_id / "scripts" / NODE_SCRIPT_BASENAME
         if not path.exists():
             return False
         path.unlink()
