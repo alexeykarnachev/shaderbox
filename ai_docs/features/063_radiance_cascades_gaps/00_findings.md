@@ -10,13 +10,19 @@ executed rather than reasoned), then whichever inventory you need.
 
 ## The one-paragraph answer
 
-ShaderBox cannot run radiance cascades today, but **not for the reason it looks like.** The GPU
-can already do everything RC needs — float targets, per-target filtering, and a 19-pass chain
-at 3% of a frame budget — all verified by running code on this box. What is missing is
-**sequencing**: nothing in ShaderBox renders one node's output into another node's sampler.
-Every piece of that plumbing exists and is exercised; there is simply no producer wiring them
-together. The second gap is **input**: RC's demo is a painting app, and the preview submits no
-interactive imgui item, so a click on the render reaches nothing.
+**Radiance cascades already runs in ShaderBox, unmodified, today** — 6 cascades, float
+ping-pong targets, coarse-to-fine merge, real shadows, at 0.45 ms/frame (2212 fps) at 512x512,
+driven from a `script.py`. Proof and renders are committed beside this doc; see
+`12_it_already_works.md`, which supersedes the framing the rest of these documents were written
+under. The GPU capability was always there, the raw-`Texture` sampler branch was always
+plumbed, and the unsandboxed script is a locked design decision — nobody had connected them.
+What is genuinely missing is small: a **sanctioned** way for a script to reach its `Node` (one
+field on `EngineContext`; today it is a `sys._getframe()` walk), a one-line `ctx.gc_mode` fix
+for a real GL leak, and mouse buttons **only if** the mouse-painting interaction is wanted.
+
+The rest of this document is the gap analysis as written before that proof existed. It remains
+accurate about the engine's *sanctioned surface*, and that surface is what a first-class
+feature would eventually have to extend — but it overstates what is required to start playing.
 
 ---
 
@@ -149,9 +155,11 @@ and ping-pongs it — the same introspect-and-generate mechanism ShaderBox alrea
 extended from uniforms to buffers. Its cost is exposing no per-pass format/filter/resolution,
 which is exactly what RC needs, so it cannot be adopted whole.
 
-## The open decision
+## The open decision — NOT urgent (see `12_it_already_works.md`)
 
-Not *whether* it is feasible — that is settled. **Which seam expresses a pass chain.** The
+Not *whether* it is feasible — that is settled, and more strongly than this document assumed.
+The question is **which seam expresses a pass chain**, and it can be answered *after* playing
+with the working script version, from use rather than from guesswork. The
 options differ in what they cost the product's grain:
 
 - **Inference from uniform names** (glslViewer) — zero config, `node.json` untouched, but no
