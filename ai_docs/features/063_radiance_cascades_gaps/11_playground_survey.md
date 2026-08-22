@@ -116,3 +116,79 @@ and other-read mean "this frame".
 - Mesa trims array uniforms to the elements actually indexed while NVIDIA reports full declared
   length; since `make test` runs under MESA overrides, an `iChannelResolution[4]`-style uniform
   is a tripwire. (This is the same class as the already-recorded glyph-table quirk.)
+
+## Corroboration and corrections (second independent pass)
+
+A second survey was run independently. It agrees on the two convergences and on the grain
+verdict, and adds three things worth keeping.
+
+**Explicit UNVERIFIED markers.** Both passes hit the same walls; recording them so nobody
+re-runs the work: shadertoy.com 403s automated fetch (Shadertoy facts are from
+shadertoyunofficial, the de-facto community reference, and are secondary); **KodeLife's
+per-pass framebuffer settings (size/format/filter) could not be read** — the manual is a
+JS-rendered SPA whose "Pass" page body never arrives, so KodeLife's input model is solid but
+its buffer config is UNVERIFIED; Synthclipse was not reached at all; the Khronos wiki 403s, so
+the OpenGL feedback-loop rule is unsourced background here.
+
+**The offline-shadertoy parser, read rather than trusted** (`lib/find-buffers.js`), confirming
+the mechanism is real and not documentation drift:
+
+```js
+const reUniform = /uniform\s+sampler2D\s+([^;]+).*\/\/(.*)/g;
+const reFilter  = /filter:\s*(\w+)/;
+const reWrap    = /wrap:\s*(\w+)/;
+filter: getMatch(uniformMatch[2], reFilter, 1, 'linear'),
+wrap:   getMatch(uniformMatch[2], reWrap,   1, 'clamp'),
+```
+
+Defaults are `linear`/`clamp`. This matters because it is the concrete precedent for the hybrid
+below.
+
+**KodeLife's input model is a genuinely distinct third idea** (verbatim from its Parameters
+manual page, which DID load): a "Previous Render Pass" **typed parameter** whose dropdown
+selects any pass in the project — "**If the selected render pass is the current one, the most
+recently rendered frame will be used.**" Same implicit self-reference as Shadertoy, reached
+through a typed parameter rather than a channel slot.
+
+Also confirmed by cloning: Bonzomatic has **zero `glGenFramebuffers` in `src/`** — the
+deliberate null option, single-pass forever by design. And `einarf/shadertoy` (moderngl's own
+maintainer) is **96 lines, no buffers** — there is genuinely no Python/moderngl multipass
+playground to copy.
+
+## The hybrid worth considering
+
+The second pass names a middle option the first did not, and it is the strongest candidate if
+per-pass control is ever needed: **glslViewer's inference PLUS offline-shadertoy's line
+comment.**
+
+```glsl
+uniform sampler2D u_buffer0;   // pass, filter: linear, wrap: clamp
+uniform sampler2D u_bloom;     // pass, scale: 0.25, float
+```
+
+Declaration and configuration on **one line**, parsed from source. Still one file, still no
+manifest, still deleted-with-the-uniform — so it cannot drift, which is the failure mode every
+separate-manifest model has. It buys back per-pass resolution and format, the exact two things
+pure glslViewer inference cannot express and RC needs.
+
+Cost: a bespoke micro-syntax no other tooling understands. But the `#pragma` alternatives share
+that cost, and this one keeps config adjacent to the thing it configures instead of in a header
+block that drifts from it.
+
+## Why ISF fights the grain, stated precisely
+
+Sharpened by the second pass: ShaderBox would end up with **authored JSON inside the `.glsl`
+and derived JSON in `node.json` — two formats with opposite provenance**, confusing to explain
+and easy to desynchronise. The pass list must also be maintained by hand in parallel with the
+code using it: add an `#ifdef` branch, remember to add the dict. That is the classic
+manifest-drift bug.
+
+## Two implementation decisions to make deliberately
+
+1. **Set `repeat_x = repeat_y = False` on every buffer texture.** moderngl defaults to `True`
+   (GL_REPEAT); for a feedback buffer this wraps edges and produces subtle border artifacts
+   that read as a shader bug rather than a config bug.
+2. **Decide resize behaviour explicitly.** Shadertoy's own reference admits persistent buffers
+   "won't keep valid if resolution changes while running". ShaderBox's `Canvas.set_size`
+   already releases and recreates the texture, so buffers will **silently clear on canvas
+   resize**. Accept and document it, or preserve contents — but pick, rather than inherit it.
