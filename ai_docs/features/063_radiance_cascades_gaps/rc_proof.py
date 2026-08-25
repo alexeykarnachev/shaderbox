@@ -94,9 +94,10 @@ void main(){
     vec3 r=hit.rgb;
     if(hit.a<0.5 && u_c<u_count-1.0){
       vec3 m=vec3(0.0);
-      for(float j=0.0;j<4.0;j++){
-        float ui=idx*4.0+j;
-        float uS=mod(ui,usp*usp);
+      {
+        // Upper writes acc*0.25 (the MEAN of its 4 directions), so upper slot S already
+        // holds directions 4S..4S+3. idx's angular children ARE slot idx -- one tap.
+        float uS=idx;
         vec2 uSlot=vec2(mod(uS,usp),floor(uS/usp));
         vec2 base=floor(upf), fr=fract(upf);
         vec2 lim=vec2(u_res/usp-1.0);
@@ -106,7 +107,7 @@ void main(){
         vec2 c11=clamp(base+vec2(1,1),vec2(0.0),lim)*usp+uSlot+0.5;
         m+=mix(mix(texture(u_up,c00/u_res).rgb,texture(u_up,c10/u_res).rgb,fr.x),
                mix(texture(u_up,c01/u_res).rgb,texture(u_up,c11/u_res).rgb,fr.x),fr.y);}
-      r+=m*0.25;}
+      r+=m;}
     acc+=r;}
   fs_color=vec4(acc*0.25,1.0);}
 """
