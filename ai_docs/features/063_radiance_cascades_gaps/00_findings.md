@@ -1,10 +1,12 @@
 # Radiance Cascades in ShaderBox — what's missing, what isn't
 
-**Status: research only. No implementation, no plan-lock, no decision taken.**
+**Status: research CLOSED. No code was written. The direction was decided
+(`17_direction.md`) and the work handed to feature 064.**
 This is the summary; the numbered docs beside it carry the evidence.
 
-Read order: this file. Then `09_measurements.md` and `10_script_route.md` (the two that were
-executed rather than reasoned), then whichever inventory you need.
+**Read `README.md` first** — it is the folder index and carries the supersession map. Then this
+file's VERDICT block below. `09_measurements.md`, `15_fidelity.md` and `16_stress_test.md` were
+executed rather than reasoned; `13`-`17` are the review that changed the conclusion.
 
 ---
 
@@ -67,23 +69,12 @@ or it inherits the same lying verdict. Not a weekend.
 set `gc_mode` first, and **turn the copilot off for it** — a lying preview plus a broken undo is
 the worst possible pairing.
 
-## The one-paragraph answer
+## The one-paragraph answer (SUPERSEDED — kept for history)
 
-**Radiance cascades already runs in ShaderBox, unmodified, today** — 6 cascades, float
-ping-pong targets, coarse-to-fine merge, real shadows, at 0.45 ms/frame (2212 fps) at 512x512,
-driven from a `script.py`. Proof and renders are committed beside this doc; see
-`12_it_already_works.md`, which supersedes the framing the rest of these documents were written
-under. The GPU capability was always there, the raw-`Texture` sampler branch was always
-plumbed, and the unsandboxed script is a locked design decision — nobody had connected them.
-What is genuinely missing is small: a **sanctioned** way for a script to reach its `Node` (one
-field on `EngineContext`; today it is a `sys._getframe()` walk), a one-line `ctx.gc_mode` fix
-for a real GL leak, and mouse buttons **only if** the mouse-painting interaction is wanted.
-
-The rest of this document is the gap analysis as written before that proof existed. It remains
-accurate about the engine's *sanctioned surface*, and that surface is what a first-class
-feature would eventually have to extend — but it overstates what is required to start playing.
-
----
+> **This paragraph is the PRE-REVIEW framing and is retracted.** It called the missing pieces
+> "small" and recommended playing with the script route. The five-agent review (`13`-`16`)
+> established that route crashes on save, destroys live GL on revert, and corrupts `dry_run`.
+> **The current answer is the VERDICT block above.** Kept only so the reasoning arc is legible.
 
 ## What RC actually requires
 
@@ -214,11 +205,10 @@ and ping-pongs it — the same introspect-and-generate mechanism ShaderBox alrea
 extended from uniforms to buffers. Its cost is exposing no per-pass format/filter/resolution,
 which is exactly what RC needs, so it cannot be adopted whole.
 
-## The open decision — NOT urgent (see `12_it_already_works.md`)
+## The open decision — handed to feature 064
 
-Not *whether* it is feasible — that is settled, and more strongly than this document assumed.
-The question is **which seam expresses a pass chain**, and it can be answered *after* playing
-with the working script version, from use rather than from guesswork. The
+Not *whether* it is feasible — that is settled. The question is **which seam expresses a pass
+chain**; it is `064_multipass/01_spec.md`'s Q1. The
 options differ in what they cost the product's grain:
 
 - **Inference from uniform names** (glslViewer) — zero config, `node.json` untouched, but no

@@ -15,7 +15,7 @@ cascades, blur/bloom chains, reaction-diffusion, feedback trails — are authore
 already authors everything else: **write a shader, get controls, see errors in the strip, hot-reload
 on save.**
 
-The research (feature 063, 21 documents) established that the GPU capability is entirely present —
+The research (feature 063 — 18 numbered documents plus a `README.md` index) established that the GPU capability is entirely present —
 float targets, per-target filtering, ping-pong and a 19-pass chain at 0.52 ms are all **measured
 working** on this box (`063_radiance_cascades_gaps/09_measurements.md`). Nothing here is a GPU
 question. What is missing is that the ENGINE has no representation of a pass chain, so a shader
@@ -27,7 +27,9 @@ calls outside the engine.
 
 ## What 063 established that this spec inherits
 
-Read `063_radiance_cascades_gaps/00_findings.md` first; its verdict block is the summary. The
+Read `063_radiance_cascades_gaps/README.md` first — it is the index and carries the
+supersession map (some early docs' recommendations are retracted). Then `00_findings.md`'s
+VERDICT block. The
 load-bearing conclusions:
 
 - **Cost is a non-issue.** 19 passes at 256x256 f2 with per-frame readback = 0.52 ms/frame
@@ -112,35 +114,49 @@ stale frame is strictly worse than a blank one, which the agent is trained to re
   engaged, not reversed silently.
 - **3D cascades / texture arrays.** Trigger: 2D RC is done and the maintainer wants depth.
 
-## The three fixes owed regardless
+## The fixes owed regardless
 
 Each is a **latent defect in today's codebase**, independent of this feature. They may land as a
 separate prior commit or inside this wave, but they must not be deferred:
 
-1. **`ctx.gc_mode = "auto"`** at context creation — `grep -rn "gc_mode" shaderbox/` returns
-   nothing, so moderngl's `None` default applies and dropped GL objects never free. Measured 103
-   textures / ~206 MiB after 50 script edits. Caveat (`16_stress_test.md`): `auto` leaves a bounded
-   GC residual because the VAO<->program<->buffer graph is cyclic — a lag, not a leak.
+1. **`ctx.gc_mode = "auto"`** — `grep -rn "gc_mode" shaderbox/` returns nothing, so moderngl's
+   `None` default applies and dropped GL objects never free. Measured 103 textures / ~206 MiB
+   after 50 script edits. Caveat (`16_stress_test.md`): `auto` leaves a bounded GC residual
+   because the VAO<->program<->buffer graph is cyclic — a lag, not a leak.
+   **Siting is an open detail:** the codebase never CREATES a moderngl context — it only calls
+   `moderngl.get_context()` (`core.py::Canvas.__init__`, `core.py::Node.__init__`,
+   `media.py`). The setter needs a real home; `App.__init__` right after
+   `glfw.make_context_current(window)` is the likely one, but confirm rather than assume.
 2. **The `textures/` mkdir** in `ui_models.py::UINode.save` — the raw-`Texture` branch writes
    `textures/<name>.bin` but only `dir` is mkdir'd. The branch has demonstrably never executed;
    it raises `FileNotFoundError` on first contact.
-3. **The missing `dtype`** in `core.py::Node.load_from_dir`'s texture reconstruction — verified
-   `data size mismatch 512 != 256` for an `f2` texture. The round-trip is broken for anything but
-   `f1`, and D8 makes non-`f1` targets a first-class case.
+3. **The missing `dtype`** — verified `data size mismatch 512 != 256` for an `f2` texture. The
+   round-trip is broken for anything but `f1`, and D8 makes non-`f1` targets a first-class case.
+   **BOTH sides need it:** `core.py::Node.load_from_dir` passes no `dtype` to
+   `gl.texture(...)`, AND `ui_models.py::UINode.save` never records one — it writes only
+   `file_path`/`size`/`components`. Fixing the loader alone is impossible; there is nothing to
+   read.
+
+4. **The false comment in `core.py::Node.render`** — it claims "the caller passes an explicit
+   `u_time` on every real render path (the live loop, export, the probe)". The live loop does
+   **not**: both live sites call `render()` bare, so live `u_time` is `time.monotonic()`. 064
+   rewrites that exact funnel, so its trigger has fired. (The sibling stale comment in
+   `paths.py::shader_lib_root`, describing an `#include` mechanism that does not exist, is
+   unrelated to this feature — fix it in whatever wave touches that file.)
 
 ## Files touched (anticipated)
 
 - `shaderbox/core.py` — `Canvas` gains format/filter/wrap params; `Node` gains the pass chain and
   its evaluation; `load_from_dir` texture `dtype` fix.
 - `shaderbox/ui_models.py` — `UINode.save` persists pass state (D9) + the `textures/` mkdir fix.
-- `shaderbox/app.py` — `gc_mode` at context creation.
+- `shaderbox/app.py` — the `gc_mode` setter (siting per fix 1 below).
 - The uniform panel (`tabs/node.py`, `widgets/uniform.py`) — pass uniforms as controls (D3).
 - `shaderbox/copilot/backend.py` — `_render_facts_for` pass-awareness (D10).
 - Wherever pass declarations are parsed — depends on Q1 below.
 - `shaderbox/help_content.py` — the contract is user-facing and generated docs must not rot.
 - Tests: pass ordering + memoization (D7), format round-trip, persistence completeness.
 
-**Cycle-from-types watch** (`dev_flow.md`): if a new pass module needs `app: App`, the
+**Watch for the cycle-from-types signal** (`dev_flow.md`): if a new pass module needs `app: App`, the
 no-`TYPE_CHECKING` rule forces a structural split — anticipate it in the spec ("module X holds the
 type, module Y the orchestration"), don't discover it at impl time.
 
@@ -164,8 +180,12 @@ Each check must fail for exactly one reason, and each names its falsifier.
 
 ## Open questions for the user (MUST be answered at plan-lock)
 
-**Q1 — Where do pass declarations live?** The biggest seam decision; `11_playground_survey.md`
-prices four options.
+**Q1 — Where do pass declarations live?** The biggest seam decision — but **not a neutral
+menu.** The research recommends **(b)**, and **D8 rules out (a)** (it cannot express per-pass
+format, which the f2 requirement needs). Both `11_playground_survey.md` and
+`063/00_findings.md`'s recommendation name (b); every OTHER element of that same recommendation
+sentence is already locked here as D4/D5/D6/D7. So: **confirm (b), or say why (d).**
+`11_playground_survey.md` prices all four.
 
 - **(a) Inferred from the shader source** (glslViewer): declare `uniform sampler2D u_buffer0;` and
   the engine infers a pass. Zero config, `node.json` untouched, deleted-with-the-uniform so it

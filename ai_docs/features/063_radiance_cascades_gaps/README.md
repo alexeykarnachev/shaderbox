@@ -6,6 +6,7 @@
 
 **Start here → `00_findings.md`** (its VERDICT block is the whole summary).
 **Then → `17_direction.md`** (the maintainer's call).
+**The work continues in → `../064_multipass/01_spec.md`.**
 Everything else is evidence. Don't read it linearly.
 
 ## Reading order by question

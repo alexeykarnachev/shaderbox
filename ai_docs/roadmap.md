@@ -32,8 +32,9 @@ feature; brief points at the superseder).
 (Q1 is the real decision: where pass declarations live). Nothing is implemented.
 
 **Why:** the maintainer wants to build and play with radiance cascades in ShaderBox. Feature 063
-was a 21-document research wave (no code) that answered whether the engine can host it. Verdict in
-`063_radiance_cascades_gaps/00_findings.md`: **the GPU capability is entirely present and
+was a research wave (no code) that answered whether the engine can host it. Its index +
+supersession map is `063_radiance_cascades_gaps/README.md` — **read that before any doc in the
+folder**, since some early recommendations are retracted. Verdict in `00_findings.md`: **the GPU capability is entirely present and
 measured** (float targets, per-target filtering, 19 passes at 0.52 ms) — what is missing is that
 the engine has no *representation* of a pass chain.
 
@@ -56,7 +57,7 @@ ship. **No open BLOCKERs.**
 | # | Name | Status | Brief |
 |---|---|---|---|
 | 064 | multipass | spec | Engine-native render-pass chains per node so cascade/blur/feedback effects are authored as normal shaders with normal controls and normal errors. Spec: `ai_docs/features/064_multipass/01_spec.md`. |
-| 063 | radiance_cascades_gaps | done | Research-only wave (no code): can ShaderBox host radiance cascades, and what is actually missing — GPU capability all present and measured, the script-GL route proven unusable, the seam decision handed to 064. Spec: `ai_docs/features/063_radiance_cascades_gaps/00_findings.md`. |
+| 063 | radiance_cascades_gaps | done | Research-only wave (no code): can ShaderBox host radiance cascades, and what is actually missing — GPU capability all present and measured, the script-GL route proven unusable, the seam decision handed to 064. Spec: `ai_docs/features/063_radiance_cascades_gaps/README.md`. |
 | — | copilot_engine_tuning | done | reasoning effort=none engine knob (+30k turn budget: effort flag is ignored on compound asks — measured), user/engine config split with slots enforcement, final-reply token cap. Spec: commits 289c12f + 6ed3c4d + 779d4b2 + this wave. |
 | — | agent_hub | done | the maintainer sync page: full prompt/tools/config/knowledge surfaces + all dogfood runs with dialogues and media, regenerated from live code. Spec: scripts/agent_hub/generate.py docstring. |
 | 062 | final_design_hunt | done | A 12-agent verified swarm asked whether the codebase is ready for features; verdict yes, after three CRITICAL loader fixes, a video seek spiral, and a persistence completeness battery. Spec: `ai_docs/features/062_final_design_hunt.md`. |
