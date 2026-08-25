@@ -26,26 +26,31 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-08-25 (063 research closed; 064 spec drafted, NOT plan-locked). -->
-**ACTIVE: 064 multipass — spec drafted, awaiting plan-lock.** Start at
-`ai_docs/features/064_multipass/01_spec.md` and answer its `## Open questions for the user`
-(Q1 is the real decision: where pass declarations live). Nothing is implemented.
+<!-- As of 2026-08-25 (063 research closed; the 064 pass-chain spec was DELETED, approach revised). -->
+**ACTIVE: 064 multi-step nodes — scenario-first redesign, nothing locked, nothing implemented.**
+Start at `ai_docs/features/064_multistep/00_scenario.md`.
 
-**Why:** the maintainer wants to build and play with radiance cascades in ShaderBox. Feature 063
-was a research wave (no code) that answered whether the engine can host it. Its index +
-supersession map is `063_radiance_cascades_gaps/README.md` — **read that before any doc in the
-folder**, since some early recommendations are retracted. Verdict in `00_findings.md`: **the GPU capability is entirely present and
-measured** (float targets, per-target filtering, 19 passes at 0.52 ms) — what is missing is that
-the engine has no *representation* of a pass chain.
+**Why the reset.** A pass-chain spec was drafted and then deleted unimplemented: it asked where
+pass declarations live before establishing what the feature must be able to express. The revised
+approach fixes the order — a single **superset scenario** (one node combining cascades, bloom,
+trails and a smoke sim) pins the requirements; the **UI/UX** is designed against that scenario;
+the **backend** is designed against the locked UI. Every downstream decision must trace to a
+numbered requirement in `00_scenario.md` or it is invention.
 
-A working RC ran from a node `script.py` by grabbing GL directly. That route is **abandoned, not
-adopted** (`17_direction.md`): it crashes on Ctrl+S, revert destroys live GL with no self-heal,
-`dry_run` corrupts 25% of pixels invisibly, and the copilot's feedback is inverted (`STATIC` on an
-animating node). `rc_proof.py` stays as *evidence and a correct algorithm reference* — its merge
-was miswired (1364/1364 directions wrong, 30.3% error) and is fixed — but nothing builds on it.
+**Why the feature at all:** the maintainer wants radiance cascades authored natively in ShaderBox.
+Feature 063 (research, no code) established the GPU capability is entirely present and measured
+(float targets, per-target filtering, 19 passes at 0.52 ms) — what is missing is that the engine
+has no *representation* of a multi-step chain. Read `063_radiance_cascades_gaps/README.md` before
+any doc in that folder; some early recommendations are retracted, and its `17_direction.md`
+abandons the script-GL route (its failure modes are the negative spec).
 
-**Three fixes are owed regardless**, each a latent defect today: `gc_mode="auto"`, the `textures/`
-mkdir in `UINode.save`, the missing `dtype` in `load_from_dir`. See 064 spec.
+**Scope note:** this is expected to be TWO features — the engine capability first, the authoring
+surface second. Cascades is the acceptance test, not the first milestone.
+
+**Three fixes are owed regardless**, each a latent defect today, landing as their own commit before
+any feature code: `ctx.gc_mode = "auto"` (never set, so dropped GL objects never free), the missing
+`textures/` mkdir in `ui_models.py::UINode.save`, and the missing `dtype` on BOTH sides of the
+raw-texture round-trip (`core.py::Node.load_from_dir` + `UINode.save`).
 
 **Release state:** `dev` tagged **v0.25.2** and pushed; `master` still v0.25.1 and well behind
 (`git log master..dev`) — dev->master happens at ship time via `/ship`. **Last known-public itch
@@ -56,7 +61,6 @@ ship. **No open BLOCKERs.**
 
 | # | Name | Status | Brief |
 |---|---|---|---|
-| 064 | multipass | spec | Engine-native render-pass chains per node so cascade/blur/feedback effects are authored as normal shaders with normal controls and normal errors. Spec: `ai_docs/features/064_multipass/01_spec.md`. |
 | 063 | radiance_cascades_gaps | done | Research-only wave (no code): can ShaderBox host radiance cascades, and what is actually missing — GPU capability all present and measured, the script-GL route proven unusable, the seam decision handed to 064. Spec: `ai_docs/features/063_radiance_cascades_gaps/README.md`. |
 | — | copilot_engine_tuning | done | reasoning effort=none engine knob (+30k turn budget: effort flag is ignored on compound asks — measured), user/engine config split with slots enforcement, final-reply token cap. Spec: commits 289c12f + 6ed3c4d + 779d4b2 + this wave. |
 | — | agent_hub | done | the maintainer sync page: full prompt/tools/config/knowledge surfaces + all dogfood runs with dialogues and media, regenerated from live code. Spec: scripts/agent_hub/generate.py docstring. |

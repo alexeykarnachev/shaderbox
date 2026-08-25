@@ -208,7 +208,8 @@ which is exactly what RC needs, so it cannot be adopted whole.
 ## The open decision — handed to feature 064
 
 Not *whether* it is feasible — that is settled. The question is **which seam expresses a pass
-chain**; it is `064_multipass/01_spec.md`'s Q1. The
+chain**. Feature 064 revised its approach: the seam is decided AFTER a superset scenario
+pins the requirements and the UI is designed against it (`../064_multistep/00_scenario.md`). The
 options differ in what they cost the product's grain:
 
 - **Inference from uniform names** (glslViewer) — zero config, `node.json` untouched, but no
