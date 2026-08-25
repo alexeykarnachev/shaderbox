@@ -4,15 +4,24 @@ with the node's own shader.frag.glsl doing the final gather. Zero engine changes
 Also measures: does the engine's per-frame overhead (script tick + Node.render)
 leave room at 60fps, and does the node's unconditional clear() break anything?
 """
-import os, time
-os.environ.setdefault("MESA_GL_VERSION_OVERRIDE","4.6"); os.environ.setdefault("MESA_GLSL_VERSION_OVERRIDE","460")
-import tempfile, pathlib, moderngl, numpy as np
+
+import os
+import time
+
+os.environ.setdefault("MESA_GL_VERSION_OVERRIDE", "4.6")
+os.environ.setdefault("MESA_GLSL_VERSION_OVERRIDE", "460")
+import pathlib
+import tempfile
+
+import moderngl
+import numpy as np
 from PIL import Image
+
 from shaderbox.core import Node
 from shaderbox.scripting import EngineContext, ScriptEngine
 
 ctx = moderngl.create_standalone_context()
-W=H=512
+W = H = 512
 
 # The NODE's shader: the final gather + tonemap. NOTE: hand-rolled SDFs, NOT SB_* --
 # resolve_usage runs only inside Node.compile(), so a script's own gl.program() gets NO lib splicing.
@@ -37,9 +46,11 @@ node = Node(gl=ctx)
 node.release_program(NODE_SRC)
 node.compile()
 print("node compile errors:", node.compile_unit.errors if node.compile_unit else "n/a")
-node.canvas.set_size((W,H))
+node.canvas.set_size((W, H))
 
-tmp = pathlib.Path(tempfile.mkdtemp()); sd = tmp/"scripts"; sd.mkdir()
+tmp = pathlib.Path(tempfile.mkdtemp())
+sd = tmp / "scripts"
+sd.mkdir()
 
 SCRIPT = r'''
 import sys, moderngl, numpy as np
@@ -154,19 +165,26 @@ class Behavior(ScriptBehavior):
             n.uniform_values["u_cascade0"]=self.tex[src]
         return {"u_exposure":1.0}
 '''
-(sd/"script.py").write_text(SCRIPT)
-eng=ScriptEngine(); eng.reload("n1", sd, node)
-print("script compile errors:", {k:v.message for k,v in eng.errors.items()})
+(sd / "script.py").write_text(SCRIPT)
+eng = ScriptEngine()
+eng.reload("n1", sd, node)
+print("script compile errors:", {k: v.message for k, v in eng.errors.items()})
 
-inst=eng._nodes["n1"].behavior._instance
-N=60; t0=time.perf_counter()
+inst = eng._nodes["n1"].behavior._instance
+N = 60
+t0 = time.perf_counter()
 for i in range(N):
-    eng.tick("n1", node, EngineContext(t=i/60.0, dt=1/60, frame=i))
-    node.render(u_time=i/60.0)
-ctx.finish(); t1=time.perf_counter()
-print("tick errors:", {k:v.message for k,v in eng.errors.items()})
-print(f"FULL engine loop (script multipass + Node.render): {(t1-t0)/N*1000:.2f} ms/frame -> {N/(t1-t0):.0f} fps @{W}x{H}")
+    eng.tick("n1", node, EngineContext(t=i / 60.0, dt=1 / 60, frame=i))
+    node.render(u_time=i / 60.0)
+ctx.finish()
+t1 = time.perf_counter()
+print("tick errors:", {k: v.message for k, v in eng.errors.items()})
+print(
+    f"FULL engine loop (script multipass + Node.render): {(t1 - t0) / N * 1000:.2f} ms/frame -> {N / (t1 - t0):.0f} fps @{W}x{H}"
+)
 print(f"  of which the cascade chain alone: {inst.ms:.2f} ms")
-img=np.frombuffer(node.canvas.texture.read(),dtype=np.uint8).reshape(H,W,4)
-Image.fromarray(img[::-1]).save("/tmp/claude-1000/-home-akarnachev-src-shaderbox/1813baee-fc8a-4631-84e8-8f89a2f19822/scratchpad/final.png")
-print("node canvas mean:",img[...,:3].mean().round(1))
+img = np.frombuffer(node.canvas.texture.read(), dtype=np.uint8).reshape(H, W, 4)
+Image.fromarray(img[::-1]).save(
+    "/tmp/claude-1000/-home-akarnachev-src-shaderbox/1813baee-fc8a-4631-84e8-8f89a2f19822/scratchpad/final.png"
+)
+print("node canvas mean:", img[..., :3].mean().round(1))
