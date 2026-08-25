@@ -14,8 +14,8 @@ from shaderbox.scripting import EngineContext, ScriptEngine
 ctx = moderngl.create_standalone_context()
 W=H=512
 
-# The NODE's shader: the final gather + tonemap. Uses the real SB_* lib names so the
-# lib resolver splices them (proving the analytic-scene route uses shipped library code).
+# The NODE's shader: the final gather + tonemap. NOTE: hand-rolled SDFs, NOT SB_* --
+# resolve_usage runs only inside Node.compile(), so a script's own gl.program() gets NO lib splicing.
 NODE_SRC = """#version 460 core
 in vec2 vs_uv;
 uniform sampler2D u_cascade0;
