@@ -119,9 +119,17 @@ Building a node graph or a `PASSES` block *before* that is designing the abstrac
 meeting the use case. The costs of waiting are two one-line fixes; the cost of guessing wrong
 is a persistence format and a UI to live with.
 
-**Caveat, stated plainly:** the script route works but reaches around the engine's contract —
-`10_script_route.md` records why that matters (`dry_run` promises the live node is unchanged
-after probing; `export_isolation` would allocate a second GL set per export; script-owned
-textures escape `UINode.save` and copilot revert). Those are real and unresolved. They are
-arguments for eventually giving pass chains a sanctioned home — **not** arguments against
-playing with it now.
+**SUPERSEDED BY LATER REVIEW — read `13_reliability.md`, `15_fidelity.md`, `16_stress_test.md`.**
+This document's closing understated the cost in two ways, both since verified:
+
+1. **Two of the "unresolved caveats" are HARD FAILURES on ordinary user actions**, not
+   theoretical contract breaches: `UINode.save` **crashes** on every Ctrl+S (and every copilot
+   checkpoint), and revert / external-node.json-edit **destroys the live GL and never
+   self-heals**. See `13_reliability.md` and `16_stress_test.md`.
+2. **The merge in `rc_proof.py` was miswired** — 1364/1364 directions read the wrong slot, 30.3%
+   error against a 65536-ray ground truth. Fixed since; see `15_fidelity.md`. The render below
+   convinced me because it showed shadows and beat brute force, and **neither was evidence the
+   merge was correct.**
+
+The GPU-capability conclusion of this document still stands and survived attack. Its
+"play with it now" recommendation does not.
