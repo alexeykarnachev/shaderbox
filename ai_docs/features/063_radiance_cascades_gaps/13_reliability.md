@@ -145,3 +145,73 @@ gate is a wish.** Four ungated rules on a solo project over a year is not a work
 needed. But the honest fix list is four small changes, not two, and item (3) is what converts
 this from clever to safe.** It is still far cheaper than a node graph, and unlike the
 discipline list, it holds without anyone remembering it.
+
+## Second review: two further defects, and the timing argument
+
+An independent reviewer arguing the opposite case (build the engine feature NOW) confirmed the
+above and added two defects. Both reproduced first-hand here.
+
+**Defect 6 — the texture round-trip is impossible even with the mkdir fixed.**
+
+```
+f2 8x8x4 -> save writes 512 bytes
+reconstruct -> Error: data size mismatch 512 != 256
+```
+
+`save` writes raw `f2` bytes; `load_from_dir` reconstructs with no `dtype`, so `f1`. **The
+project cannot be reopened.** Defect 3 is a crash on save; this is unrecoverable data loss one
+layer beneath it. And since `checkpoint.py::snapshot_node` calls the same `save_ui_node` and
+**swallows the exception**, the copilot's Revert cannot restore such a node and reports
+"could not restore" only after the damage.
+
+**Defect 7 — export corrupts the live preview.** `ProjectSession._make_export_isolation`'s
+`finally` restores **only `on_pre_render`**. The fresh export behaviour has already written its
+own texture into the live `node.uniform_values`, and nothing restores the previous value. After
+any export the live preview reads a buffer the export owned and abandoned — and with
+`gc_mode=None` those resources are never freed (GL names monotonic `[1,2,3,4,5,6]` vs
+`[1,1,1,1,1,1]` under `"auto"`).
+
+**The copilot probe measured, not argued.** On a node whose pass output demonstrably ramps with
+`t`: `copilot motion probe |diff| = 0.0 -> verdict: STATIC`. With `cache_key` set,
+`_render_facts_for` additionally emits *"this mutation changed NOTHING on screen... dead code,
+the wrong node/target..."* — a confident, specific, wrong diagnosis. Roughly **12 of 31 tools
+degraded, 7 actively lying.**
+
+**The engine already forbids this in writing.** `prompt.py` states the contract verbatim:
+**"A script writes VALUES only."** `_binding_reject` refuses sampler keys on purpose. The route
+exists *only* because it evades that check via a side effect. This is not a grey area the docs
+overlooked — it is a documented prohibition circumvented through a hole.
+
+**The timing argument — the no-migration rule cuts toward building.** `CLAUDE.md`: "NO
+backward-compatibility / migration code, EVER", whose sanctioned fix is hand-editing
+`projects/dev/`. But a script-driven multipass node is **not hand-fixable** into a declarative
+pass chain — its behaviour is imperative Python GL calls; there is no field to edit. Every such
+node must be rewritten from scratch when a real feature lands, **and per defects 3+6 there is
+no on-disk artifact to rewrite from** — only the script source, whose GLSL is a Python string.
+
+**The deferral names a learning objective the activity cannot serve.** The open seam question
+is "declaration in shader source vs `node.json`". A `script.py` **has no UI seam, generates no
+controls, and bypasses `node.json` entirely**. Months of scripting would end with exactly the
+four options `00_findings.md` already lists and no new evidence to choose between them.
+
+Set against that, the reviewer concedes honestly: this is not a weekend. `dev_flow.md` triages
+it as a feature AND high-blast-radius (upper-end review, spec-fidelity auditor, mandatory
+sanitization sweep), the copilot needs a pass-aware probe or it inherits the same lying
+verdict, and the seam decision is a real judgement call — `node.json` is app-written derived
+state today, and making it hand-authored genuinely changes what the file means.
+
+## Three fixes owed NOW, regardless of the verdict
+
+Each is a latent defect in today's codebase, independent of multipass:
+
+1. `ctx.gc_mode = "auto"` at context creation — every GL-touching script leaks on every save.
+2. The `textures/` mkdir in `ui_models.py::save` — that branch crashes on first contact.
+3. The missing `dtype` in `core.py::load_from_dir`'s texture reconstruction — the round-trip
+   is broken for any non-`f1` texture.
+
+## Revised bottom line
+
+"Play with it now, decide later" is **too generous by one category**. Defects 3, 6 and 7 are
+not unresolved concerns — they are a crash on save, unrecoverable data loss, and live-state
+corruption after export. Playing with it now means **building things you cannot save, reload,
+revert, or export**, in order to learn something the exercise does not teach.
