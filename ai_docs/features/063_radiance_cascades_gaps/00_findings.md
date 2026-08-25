@@ -8,6 +8,65 @@ executed rather than reasoned), then whichever inventory you need.
 
 ---
 
+## VERDICT (after a 5-agent reliability review)
+
+Read `13_reliability.md`, `15_fidelity.md`, `16_stress_test.md`, `14_ergonomics.md` for the
+evidence. The short version:
+
+**The GPU capability is real and survived attack.** Performance, correctness, canvas resize,
+multi-node isolation and mid-pass error recovery all PASS, several bit-exactly. Radiance
+cascades genuinely runs in the unmodified engine.
+
+**The script route is not a way to work.** Not because of taste — because of hard failures on
+ordinary user actions, each verified independently:
+
+| | |
+|---|---|
+| `UINode.save` **crashes** | every Ctrl+S and every copilot checkpoint. Fix the mkdir and it writes 2 MB of garbage per save, then hard-crashes on load (`512 != 256`, no `dtype`) |
+| revert / external node.json edit | **destroys live GL, never self-heals** — 100 frames later still wrong, error points nowhere near the cause |
+| `dry_run` isolation | **25% of pixels change** with no tick between; invisible (no error, no log); **not fixable small** |
+| copilot feedback | **inverted, not degraded** — `STATIC` on a demonstrably animating node, plus a confident "dead code" diagnosis. ~12/31 tools degraded, 7 lying |
+| the editor and the sliders | GLSL errors mislocated + node freezes black; one slider needs a **decoy uniform with a no-op multiply** in a second file |
+
+**And the proof itself was miswired** — 1364/1364 merge directions read the wrong slot, 30.3%
+error vs a 65536-ray ground truth, now fixed to 4.5%. It had convinced me because it rendered
+shadows and beat brute force 16:1. **Neither was evidence the merge was correct.**
+
+### Three fixes owed NOW, independent of any decision
+
+Each is a latent defect in today's codebase:
+
+1. `ctx.gc_mode = "auto"` at context creation — every GL-touching script leaks on every save
+   (206 MiB / 50 edits). Caveat: leaves a bounded GC residual, not a flat line.
+2. The `textures/` mkdir in `ui_models.py::save` — that branch crashes on first contact.
+3. The missing `dtype` in `core.py::load_from_dir` — the round-trip is broken for any non-`f1`
+   texture.
+
+### The recommendation
+
+**Build the minimal engine feature; do not "play with the script first."** The deferral's stated
+purpose was to learn what the UI needs — but a script **has no UI seam, generates no controls,
+and bypasses `node.json` entirely**, which is exactly where the open question lives. It cannot
+teach the thing it was meant to teach.
+
+What the experiment DID teach, and it is worth the whole wave: **friction concentrates in
+authoring and tuning, not in the pass chain.** A first-class design must deliver **parameters
+and error locality** — not a DAG.
+
+The shape, from the survey's two convergences and the maintainer's own prior art: source-inferred
+passes (glslViewer) with config riding the uniform declaration (offline-shadertoy), implicit
+ping-pong, ratio-of-output sizing through the existing `RenderShape`, bound **by name**, and
+evaluation by **topological sort with memoization** (the deleted DAG had order without
+memoization; freska had memoization without order).
+
+Honest cost: `dev_flow.md` triages this as a feature AND high-blast-radius — upper-end review, a
+spec-fidelity auditor, a mandatory sanitization sweep, and the copilot needs a pass-aware probe
+or it inherits the same lying verdict. Not a weekend.
+
+**If working the script way anyway before those land:** one node only, never save or export it,
+set `gc_mode` first, and **turn the copilot off for it** — a lying preview plus a broken undo is
+the worst possible pairing.
+
 ## The one-paragraph answer
 
 **Radiance cascades already runs in ShaderBox, unmodified, today** — 6 cascades, float
