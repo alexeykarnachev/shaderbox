@@ -26,33 +26,37 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-08-21 (062 landed; 792 tests, check + smoke green; dev tagged v0.25.2). -->
-**ACTIVE: nothing in flight. The codebase is READY FOR FEATURE WORK — the next session picks a
-direction with the maintainer.**
+<!-- As of 2026-08-25 (063 research closed; 064 spec drafted, NOT plan-locked). -->
+**ACTIVE: 064 multipass — spec drafted, awaiting plan-lock.** Start at
+`ai_docs/features/064_multipass/01_spec.md` and answer its `## Open questions for the user`
+(Q1 is the real decision: where pass declarations live). Nothing is implemented.
 
-Three audit waves are closed (060 layout, 061 contracts, 062 verified swarm) with **zero
-architectural findings across all three** — don't re-open "should we reorganise modules", and read
-`062_final_design_hunt.md ## What came back CLEAN` before proposing any audit; it records what was
-checked with evidence. 062's verdict: further auditing has hit diminishing returns.
+**Why:** the maintainer wants to build and play with radiance cascades in ShaderBox. Feature 063
+was a 21-document research wave (no code) that answered whether the engine can host it. Verdict in
+`063_radiance_cascades_gaps/00_findings.md`: **the GPU capability is entirely present and
+measured** (float targets, per-target filtering, 19 passes at 0.52 ms) — what is missing is that
+the engine has no *representation* of a pass chain.
 
-**NEXT: brainstorm a direction.** Nothing is chosen. Starting material: the **product surface** (what
-a shader author hits next — README + `help_content.py` carry the current pitch); the **copilot**, the
-largest and least user-validated subsystem (`/dogfood` drives it against a real LLM); the **shader
-library** (`/shader-lab` mines techniques into `SB_*`). Separately, deferred *maintenance* — the
-`telegram.py` split, `backend.py`'s size, dep bumps, the degenerate-frame freeze — each has a trigger
-in its spec and is not a feature direction.
+A working RC ran from a node `script.py` by grabbing GL directly. That route is **abandoned, not
+adopted** (`17_direction.md`): it crashes on Ctrl+S, revert destroys live GL with no self-heal,
+`dry_run` corrupts 25% of pixels invisibly, and the copilot's feedback is inverted (`STATIC` on an
+animating node). `rc_proof.py` stays as *evidence and a correct algorithm reference* — its merge
+was miswired (1364/1364 directions wrong, 30.3% error) and is fixed — but nothing builds on it.
 
-**Release state:** `dev` tagged **v0.25.2** (fixes-only) and pushed; `master` still **v0.25.1** and
-well behind (`git log master..dev`) — dev->master happens at ship time via `/ship`
-(maintainer-triggered). Tags are the release record; no GitHub Releases (`dev_flow.md`).
-**Last known-public itch build is v0.21.0**;
-v0.22.0 records "itch upload deferred" and no later commit records an upload, so git runs ahead of
-what users have — confirm on the itch dashboard at the next ship. **No open BLOCKERs.**
+**Three fixes are owed regardless**, each a latent defect today: `gc_mode="auto"`, the `textures/`
+mkdir in `UINode.save`, the missing `dtype` in `load_from_dir`. See 064 spec.
+
+**Release state:** `dev` tagged **v0.25.2** and pushed; `master` still v0.25.1 and well behind
+(`git log master..dev`) — dev->master happens at ship time via `/ship`. **Last known-public itch
+build is v0.21.0**, so git runs ahead of what users have; confirm on the itch dashboard at the next
+ship. **No open BLOCKERs.**
 
 ## Features
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 064 | multipass | spec | Engine-native render-pass chains per node so cascade/blur/feedback effects are authored as normal shaders with normal controls and normal errors. Spec: `ai_docs/features/064_multipass/01_spec.md`. |
+| 063 | radiance_cascades_gaps | done | Research-only wave (no code): can ShaderBox host radiance cascades, and what is actually missing — GPU capability all present and measured, the script-GL route proven unusable, the seam decision handed to 064. Spec: `ai_docs/features/063_radiance_cascades_gaps/00_findings.md`. |
 | — | copilot_engine_tuning | done | reasoning effort=none engine knob (+30k turn budget: effort flag is ignored on compound asks — measured), user/engine config split with slots enforcement, final-reply token cap. Spec: commits 289c12f + 6ed3c4d + 779d4b2 + this wave. |
 | — | agent_hub | done | the maintainer sync page: full prompt/tools/config/knowledge surfaces + all dogfood runs with dialogues and media, regenerated from live code. Spec: scripts/agent_hub/generate.py docstring. |
 | 062 | final_design_hunt | done | A 12-agent verified swarm asked whether the codebase is ready for features; verdict yes, after three CRITICAL loader fixes, a video seek spiral, and a persistence completeness battery. Spec: `ai_docs/features/062_final_design_hunt.md`. |
