@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import glfw
+import moderngl
 from imgui_bundle import imgui
 from imgui_bundle import imgui_color_text_edit as text_edit
 from imgui_bundle import imgui_command_palette as imcmd
@@ -153,6 +154,11 @@ class App:
             glfw.maximize_window(window)
 
         glfw.make_context_current(window)
+
+        # moderngl defaults to gc_mode=None, which never frees dropped GL objects: 50 script
+        # edits leaked 103 textures / ~206 MiB. "auto" leaves a bounded residual because the
+        # VAO<->program<->buffer graph is cyclic -- a lag, not a leak.
+        moderngl.get_context().gc_mode = "auto"
 
         imgui.create_context()
         # Persist imgui layout under the app data dir, not the launch CWD (the default

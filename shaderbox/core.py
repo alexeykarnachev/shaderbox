@@ -186,6 +186,7 @@ class Node:
                             size=value["size"],
                             components=value["components"],
                             data=data,
+                            dtype=value.get("dtype", "f1"),
                         )
                     else:
                         raise ValueError(
@@ -351,8 +352,8 @@ class Node:
             return
 
         texture_unit = 0
-        # No glfw here: this module is imported by the headless core, and the caller passes an
-        # explicit u_time on every real render path (the live loop, export, the probe).
+        # No glfw here: this module is imported by the headless core. The live loop renders
+        # bare, so it falls through to the monotonic clock; export and the probe pass u_time.
         render_time = u_time if u_time is not None else time.monotonic()
         self.seed_uniform_values()
         for uniform in self.get_active_uniforms():

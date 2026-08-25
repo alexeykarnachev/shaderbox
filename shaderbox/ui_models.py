@@ -342,12 +342,15 @@ class UINode(BaseModel):
                     local_file_path = f"media/{file_path.name}"
                     size = value.texture.size
                     components = value.texture.components
+                    dtype = value.texture.dtype
                 elif isinstance(value, moderngl.Texture):
                     data = value.read()
                     local_file_path = f"textures/{file_name_wo_ext}.bin"
                     file_path = dir / local_file_path
                     size = value.size
                     components = value.components
+                    dtype = value.dtype
+                    file_path.parent.mkdir(exist_ok=True, parents=True)
                     file_path.write_bytes(data)
                 else:
                     raise ValueError(
@@ -358,6 +361,7 @@ class UINode(BaseModel):
                     "file_path": local_file_path,
                     "size": size,
                     "components": components,
+                    "dtype": dtype,
                 }
 
             elif isinstance(value, int | float):
