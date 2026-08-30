@@ -53,12 +53,35 @@ class MediaDetails(BaseModel):
     duration: float = 1.0
 
 
-def texture_to_pil(texture: moderngl.Texture) -> PILImage.Image:
-    size = (texture.width, texture.height)
+_DTYPE_TO_NP: dict[str, type[np.floating] | type[np.integer]] = {
+    "f1": np.uint8,
+    "f2": np.float16,
+    "f4": np.float32,
+}
 
+
+def texture_to_rgba8(texture: moderngl.Texture) -> np.ndarray:
+    """Read a texture as (h, w, 4) uint8, tonemapping float targets.
+
+    A float target holds values outside [0, 1]; PIL and the video writer both want
+    8-bit. Reading one as uint8 truncates the buffer to its first half and yields a
+    plausible-looking wrong image, so the dtype has to drive the read.
+    """
+    np_dtype = _DTYPE_TO_NP.get(texture.dtype, np.uint8)
+    frame = np.frombuffer(texture.read(), dtype=np_dtype).reshape(
+        texture.height, texture.width, texture.components
+    )
+    if np_dtype is not np.uint8:
+        # nan_to_num first: an unwritten float target can hold NaN, clip passes it
+        # through, and casting NaN to uint8 is undefined. Benign on this driver, so no
+        # test can pin it -- kept because the next driver need not agree.
+        frame = (np.nan_to_num(frame).clip(0.0, 1.0) * 255.0).astype(np.uint8)
+    return frame
+
+
+def texture_to_pil(texture: moderngl.Texture) -> PILImage.Image:
     # Flip image when reading from texture (opengl)
-    image = ImageOps.flip(PILImage.frombytes("RGBA", size, texture.read()))
-    return image
+    return ImageOps.flip(PILImage.fromarray(texture_to_rgba8(texture), "RGBA"))
 
 
 class MediaWithTexture(ABC):

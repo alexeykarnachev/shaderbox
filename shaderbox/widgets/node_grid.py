@@ -19,6 +19,7 @@ def draw_node_preview_button(
     selected: bool = False,
     armed: bool = False,
     nav_flatten: bool = False,
+    stale: bool = False,
 ) -> PreviewCellResult:
     return preview_cell(
         id_=f"node_{id(ui_node)}",
@@ -30,6 +31,7 @@ def draw_node_preview_button(
         border_color=border_color,
         footer=ui_node.ui_state.ui_name,
         nav_flatten=nav_flatten,
+        stale=stale,
     )
 
 
@@ -98,6 +100,10 @@ def draw_node_preview_grid(app: App, width: float, height: float) -> None:
                 selected=id == app.current_node_id,
                 armed=app.node_delete_armed == id,
                 nav_flatten=True,
+                # Mirrors the render gate in ui.py: with "Render all" off, a non-current
+                # node stops ticking and its texture is a photograph of the past.
+                stale=not app.app_state.is_render_all_nodes
+                and id != app.current_node_id,
             )
             if result.clicked:
                 app.select_node(id)

@@ -932,6 +932,7 @@ def preview_cell(
     footer: str = "",
     overlay: Callable[[float], None] | None = None,
     nav_flatten: bool = False,
+    stale: bool = False,
 ) -> PreviewCellResult:
     """A bordered preview tile: a `cell_w`-wide square image + whole-cell click
     target + selection border + a top-right delete-✕ arming an in-cell `Delete?` wash.
@@ -945,6 +946,9 @@ def preview_cell(
     `nav_flatten` lets keyboard-nav cross the per-tile child border so a grid traverses
     as one ring; the click target is a `selectable` (a nav stop, unlike an
     `invisible_button`) with a transparent fill so the image/border carries the visual.
+
+    `stale` marks a texture that is no longer being rendered — the tile dims and takes a
+    corner tick, so a frozen picture cannot be read as a live one.
     """
     footer_h: float = imgui.get_text_line_height_with_spacing() if footer else 0.0
     cell_h: float = cell_w + footer_h
@@ -984,7 +988,18 @@ def preview_cell(
                 (ix + dw, iy + dh),
                 (0, 1),
                 (1, 0),
+                imgui.color_convert_float4_to_u32(
+                    COLOR.STALE_TINT if stale else COLOR.WHITE
+                ),
             )
+            if stale:
+                mark = SIZE.STALE_MARK
+                dl.add_rect_filled(
+                    (origin.x + avail.x - mark - SPACE.XS, origin.y + SPACE.XS),
+                    (origin.x + avail.x - SPACE.XS, origin.y + SPACE.XS + mark),
+                    imgui.color_convert_float4_to_u32(COLOR.STALE_MARK),
+                    mark * 0.5,
+                )
 
         # selectable (not invisible_button) so keyboard-nav can land on the cell;
         # transparent fill; allow_overlap so the buttons drawn on top win the click.

@@ -58,7 +58,9 @@ def test_raw_texture_uniform_round_trips(
 
     with (node_dir / NODE_JSON_BASENAME).open() as f:
         record = json.load(f)["uniforms"][name]
-    assert record["dtype"] == dtype, "the dtype must be recorded, or the loader cannot recover it"
+    assert record["dtype"] == dtype, (
+        "the dtype must be recorded, or the loader cannot recover it"
+    )
     assert (node_dir / record["file_path"]).is_file()
 
     reloaded = load_node_from_dir(node_dir)

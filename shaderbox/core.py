@@ -35,6 +35,7 @@ from shaderbox.media import (
     Video,
     media_class_for,
     texture_to_pil,
+    texture_to_rgba8,
 )
 from shaderbox.paths import NODE_JSON_BASENAME, NODE_SHADER_BASENAME
 from shaderbox.render_preset import FitPolicy, RenderPreset, resolve_dims
@@ -77,8 +78,16 @@ class Canvas:
         self,
         gl: moderngl.Context | None = None,
         size: tuple[int, int] | None = None,
+        dtype: str = "f1",
+        filter: tuple[int, int] = (moderngl.LINEAR, moderngl.LINEAR),
+        wrap: bool = False,
     ) -> None:
         self._gl = gl or moderngl.get_context()
+        self.dtype = dtype
+        self.filter = filter
+        # moderngl defaults repeat_x/y to True; a feedback border needs clamp, so the
+        # default here is the opposite of the library's.
+        self.wrap = wrap
 
         self.texture: moderngl.Texture
         self.fbo: moderngl.Framebuffer
@@ -86,7 +95,12 @@ class Canvas:
         self._init(size)
 
     def _init(self, size: tuple[int, int] | None) -> None:
-        self.texture = self._gl.texture(size or DEFAULT_CANVAS_SIZE, 4)
+        self.texture = self._gl.texture(
+            size or DEFAULT_CANVAS_SIZE, 4, dtype=self.dtype
+        )
+        self.texture.filter = self.filter
+        self.texture.repeat_x = self.wrap
+        self.texture.repeat_y = self.wrap
         self.fbo = self._gl.framebuffer(color_attachments=[self.texture])
 
     def release(self) -> None:
@@ -520,11 +534,7 @@ class Node:
                     self.on_pre_render(i / details.fps, dt, i)
                 self.render(i / details.fps, canvas=canvas)
 
-                texture_data = canvas.texture.read()
-                frame = np.frombuffer(texture_data, dtype=np.uint8).reshape(
-                    canvas.texture.height, canvas.texture.width, 4
-                )
-                frame = np.flipud(frame)
+                frame = np.flipud(texture_to_rgba8(canvas.texture))
                 writer.append_data(frame)
         except Exception:
             # Close ffmpeg's pipe, then drop the partial file: a half-written .mp4 left on disk is

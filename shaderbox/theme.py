@@ -109,6 +109,14 @@ class _ColorBag:
     # fully transparent fill (e.g. an invisible selectable carrying its own visual)
     TRANSPARENT: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
 
+    # untinted image blit; the neutral value for a draw-list image tint
+    WHITE: tuple[float, float, float, float] = (1.0, 1.0, 1.0, 1.0)
+
+    # a preview whose texture is no longer being rendered: the tile dims and takes a
+    # corner tick, so a frozen picture cannot be misread as a live one.
+    STALE_TINT: tuple[float, float, float, float] = (0.55, 0.55, 0.62, 1.0)
+    STALE_MARK: tuple[float, float, float, float] = (0.62, 0.70, 0.85, 0.85)
+
     # neutrals
     BG_APP: tuple[float, float, float, float] = _P["bg_0"]
     BG_SURFACE: tuple[float, float, float, float] = _P["bg_0h"]
@@ -229,6 +237,8 @@ class SIZE:
 
     THUMB_SM: int = 90
     THUMB_LG: int = 150
+
+    STALE_MARK: int = 7  # corner tick on a preview tile that is not being rendered
 
     PREVIEW_W: int = 200
     PANEL_CTRL_MINH: int = 600
