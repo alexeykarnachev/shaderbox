@@ -58,8 +58,12 @@ def resolve_usage(
     state.errors.extend(_unknown_name_errors(root, index))
     used = _collect_used_lib_names(root, index)
     if not used:
-        # Fast path: no lib functions referenced; the flattened text IS the root.
-        flattened = root.text
+        # No lib functions referenced, so the body is the root verbatim -- but it still
+        # gets a `#line` restore after the header. Without one, anything later spliced
+        # in above the body (a `#define`) shifts every reported error line by exactly
+        # the number of lines injected.
+        header_end, header_lines, body_lines = parser.split_root_header(root.text)
+        flattened = "\n".join([*header_lines, f"#line {header_end + 1} 0", *body_lines])
         source_map = SourceMap(file_id_to_path=dict(state.file_id_to_path))
         return flattened, list(state.sources), source_map, list(state.errors)
 

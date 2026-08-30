@@ -215,13 +215,17 @@ def test_missing_lib_root_returns_empty_index(tmp_path: Path) -> None:
 # ----------------------------------------------------------------------------
 
 
-def test_no_usage_passes_through_unchanged(tmp_path: Path) -> None:
+def test_no_usage_keeps_the_root_body_and_its_line_numbering(tmp_path: Path) -> None:
     lib = tmp_path / "lib"
     idx = _make_lib(lib, {"hash.glsl": "float SB_hash() { return 0.0; }\n"})
-    root = _write(tmp_path / "root.glsl", "void main() {}\n")
+    root = _write(tmp_path / "root.glsl", "#version 330\nvoid main() {}\n")
     flattened, sources, smap, errors = resolve_usage(root, idx)
     assert errors == []
-    assert flattened == "void main() {}\n"
+    # The body is the root verbatim, but carries a `#line` restore after the header so
+    # a later injected line (a `#define`) cannot shift reported error lines.
+    assert "void main() {}" in flattened
+    assert "#line 2 0" in flattened
+    assert flattened.index("#line 2 0") < flattened.index("void main() {}")
     assert len(sources) == 1
     assert sources[0].path == root.path
     assert smap.file_id_to_path == {0: root.path}
