@@ -1703,7 +1703,10 @@ class CopilotBackend:
                 self._probe_canvas = Canvas(size=(size, h))
             else:
                 self._probe_canvas.set_size((size, h))
-            node.render(u_time=t, canvas=self._probe_canvas)
+            # A probe must not advance a feedback step: the second render would carry
+            # the first's accumulation, so a static chain reports ANIMATES and the
+            # no-op detector can never fire again.
+            node.render(u_time=t, canvas=self._probe_canvas, advance_state=False)
             raw0 = self._probe_canvas.texture.read()
             # Stamp the sample time: an animated shader's facts change with phase,
             # which otherwise reads as an edit effect.
@@ -1711,7 +1714,7 @@ class CopilotBackend:
             if not motion or not line0:
                 return line0
             t2 = COPILOT_ENGINE.render_facts_motion_t
-            node.render(u_time=t2, canvas=self._probe_canvas)
+            node.render(u_time=t2, canvas=self._probe_canvas, advance_state=False)
             raw1 = self._probe_canvas.texture.read()
             a0 = np.frombuffer(raw0, dtype=np.uint8).astype(np.int16)
             a1 = np.frombuffer(raw1, dtype=np.uint8).astype(np.int16)

@@ -211,7 +211,11 @@ def update_and_draw(app: App) -> None:
         )
 
         app.preview_canvas.set_size(preview_size)
-        ui_node.node.render(canvas=app.preview_canvas)
+        # The current node renders TWICE per frame -- here into the preview canvas, then
+        # below into its own. Only one may advance a feedback step's ping-pong, or the
+        # focused node's simulation runs at 2x every other node's and changes rate the
+        # moment you select something else.
+        ui_node.node.render(canvas=app.preview_canvas, advance_state=False)
 
         try:
             share_tab.update(app)
