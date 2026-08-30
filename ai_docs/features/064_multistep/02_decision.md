@@ -96,9 +96,17 @@ the preview shows **white**. Bright-extract: **white**. The float format that ma
 possible is what makes it unviewable.
 
 Two proposals (A §8.4, D §10.5) named the gap and filed it as a known cost; two did not see it; all
-four marked R7 COVERED. **A view transform on the preview path — exposure/tonemap toggle, per-channel
-isolate, ideally a value readout — is design-independent and a prerequisite, not polish.**
-`texture_to_rgba8` (`e2cbb03`) is the export half; the live-preview half is still owed.
+four marked R7 COVERED.
+
+**Refined after the engine landed, by measurement.** The MAIN preview is NOT affected: it draws the
+node's `f1` canvas, which the user's own `main()` has already tonemapped — a step writing `7.0`
+composited through `main()` shows a correct 7..216 gradient, not white. The gap opens only where a
+float STEP TARGET is displayed RAW, which is precisely what a step strip or contact sheet does.
+
+So the view transform is a prerequisite **of the surface feature**, not a debt owed now, and the
+surface feature must carry it or every step worth debugging previews as pure white. The export half
+landed in `e2cbb03` (`texture_to_rgba8`, which tonemaps out-of-range values rather than truncating
+the buffer).
 
 ## What ships in which order
 

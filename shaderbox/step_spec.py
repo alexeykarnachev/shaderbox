@@ -407,6 +407,7 @@ def plan_steps(
     def visit(name: str, trail: list[str]) -> None:
         mark = state.get(name)
         if mark == 1:
+            order.append(name)
             return  # memoized: a shared ancestor is emitted once, not per consumer
         if mark == 0:
             cycle = " -> ".join([*trail[trail.index(name) :], name])

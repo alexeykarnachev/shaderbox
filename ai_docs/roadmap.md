@@ -26,41 +26,42 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-08-25 (063 research closed; the 064 pass-chain spec was DELETED, approach revised). -->
-**ACTIVE: 064 multi-step nodes — scenario-first redesign, nothing locked, nothing implemented.**
-Start at `ai_docs/features/064_multistep/00_scenario.md`.
+<!-- As of 2026-08-30 (064 engine landed; the authoring surface is the next feature). -->
+**ACTIVE: 064 multi-step nodes — the ENGINE is landed and green; the authoring SURFACE is next.**
+Start at `ai_docs/features/064_multistep/02_decision.md` (what was chosen and why), then
+`03_engine_spec.md` (D1-D16, all implemented).
 
-**Why the reset.** A pass-chain spec was drafted and then deleted unimplemented: it asked where
-pass declarations live before establishing what the feature must be able to express. The revised
-approach fixes the order — a single **superset scenario** (one node combining cascades, bloom,
-trails and a smoke sim) pins the requirements; the **UI/UX** is designed against that scenario;
-the **backend** is designed against the locked UI. Every downstream decision must trace to a
-numbered requirement in `00_scenario.md` or it is invention.
+**What works today.** A node declares extra render steps by riding a comment on the sampler that
+reads them — `uniform sampler2D u_blur;  // step, scale: 0.5, f2` plus a
+`void step_blur(out vec4 o)` body in the same file. The engine compiles one program per step from
+that one source, orders them by what the DRIVER reports each variant reads, evaluates each once per
+frame into its own target, and hands a self-reading step its previous frame (ping-pong, no pair to
+manage). **Acceptance test passed:** a six-level radiance cascade authored this way renders — levels
+at 16x16 through 256x256, float targets holding 8.0 and 7.75 where 8-bit would have clamped at 1.0.
 
-**Why the feature at all:** the maintainer wants radiance cascades authored natively in ShaderBox.
-Feature 063 (research, no code) established the GPU capability is entirely present and measured
-(float targets, per-target filtering, 19 passes at 0.52 ms) — what is missing is that the engine
-has no *representation* of a multi-step chain. Read `063_radiance_cascades_gaps/README.md` before
-any doc in that folder; some early recommendations are retracted, and its `17_direction.md`
-abandons the script-GL route (its failure modes are the negative spec).
+**What is deliberately absent.** No UI. No step strip, no rows, no chips — a step is invisible in
+the panel except that its uniforms appear (the union) and its sampler does not (it is engine-wired).
+The surface is the next feature, decided with a working cascade on screen; the four judged proposals
+are in `design_round/` and B (a list in the node panel) and D (a contact sheet of live thumbnails)
+are the live candidates.
 
-**Scope note:** this is expected to be TWO features — the engine capability first, the authoring
-surface second. Cascades is the acceptance test, not the first milestone.
+**One prerequisite belongs to the surface feature: an HDR view transform.** R7 and R9 together
+demand it and none of the four designs served it. Measured: the MAIN preview is fine — it draws the
+node's `f1` canvas, which the user's own `main()` has already tonemapped, and it shows a correct
+gradient. The gap opens only where a float STEP TARGET is displayed directly, which is exactly what
+a step strip or contact sheet does. So it is a prerequisite OF the surface, not a debt owed now, and
+the surface feature must carry it: without it every step worth debugging previews as pure white.
+The export half already landed (`texture_to_rgba8`, commit `e2cbb03`).
 
-**Three fixes are owed regardless**, each a latent defect today, landing as their own commit before
-any feature code: `ctx.gc_mode = "auto"` (never set, so dropped GL objects never free), the missing
-`textures/` mkdir in `ui_models.py::UINode.save`, and the missing `dtype` on BOTH sides of the
-raw-texture round-trip (`core.py::Node.load_from_dir` + `UINode.save`).
-
-**Release state:** `dev` tagged **v0.25.2** and pushed; `master` still v0.25.1 and well behind
-(`git log master..dev`) — dev->master happens at ship time via `/ship`. **Last known-public itch
-build is v0.21.0**, so git runs ahead of what users have; confirm on the itch dashboard at the next
-ship. **No open BLOCKERs.**
+**Release state:** `dev` is ahead of `master`, which is still v0.25.1 (`git log master..dev`);
+dev->master happens at ship time via `/ship`. **Last known-public itch build is v0.21.0.**
+**No open BLOCKERs.**
 
 ## Features
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 064 | multistep | partial | Engine-native render-step chains per node: a `// step` rider on a sampler declares a draw, order comes from the driver's own dataflow, self-reads are implicit ping-pong, float targets by default. Engine landed and green (6-level cascade renders); the authoring UI and the live HDR view transform are owed. Spec: `ai_docs/features/064_multistep/03_engine_spec.md`. |
 | 063 | radiance_cascades_gaps | done | Research-only wave (no code): can ShaderBox host radiance cascades, and what is actually missing — GPU capability all present and measured, the script-GL route proven unusable, the seam decision handed to 064. Spec: `ai_docs/features/063_radiance_cascades_gaps/README.md`. |
 | — | copilot_engine_tuning | done | reasoning effort=none engine knob (+30k turn budget: effort flag is ignored on compound asks — measured), user/engine config split with slots enforcement, final-reply token cap. Spec: commits 289c12f + 6ed3c4d + 779d4b2 + this wave. |
 | — | agent_hub | done | the maintainer sync page: full prompt/tools/config/knowledge surfaces + all dogfood runs with dialogues and media, regenerated from live code. Spec: scripts/agent_hub/generate.py docstring. |
