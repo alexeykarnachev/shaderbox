@@ -38,7 +38,7 @@ no "Resolved YYYY-MM-DD" headers).
 
 ---
 
-## [VERIFY] Copilot live-only UI checks, unverified on this box
+## [VERIFY] Live-only UI checks, unverified on this box
 
 - **Trigger:** next `make run` on a machine with a display. Do it before the next itch cut.
 - NOT verifiable headless (imgui-ui §0), all small: a deflected publish (no credentials) renders a
@@ -46,3 +46,6 @@ no "Resolved YYYY-MM-DD" headers).
   vision-block removal (no orphaned gap; the "Turn time budget (s)" row present and persisting);
   the liveness counter — during a quiet stream stretch the live status line grows a ticking
   "waiting Ns" suffix after ~3s of silence and it disappears when deltas resume.
+- Feature 065's checks 13-15 fire at the same moment, and the spec states them:
+  `ai_docs/features/065_pass_graph/01_spec.md ## Verification`. Plus the pass panel's own look —
+  it was written to a spec and driven headlessly, never seen.

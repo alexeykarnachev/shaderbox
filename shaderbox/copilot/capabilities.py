@@ -170,7 +170,7 @@ class LibFunctionBody:
 @dataclass(frozen=True)
 class WorkingSetView:
     # One working-set member's live view for the per-turn scratchpad: in-memory source
-    # listing + compile-coherent errors, rebuilt every iteration. A NODE carries uniform
+    # listing + compile-coherent errors, rebuilt every iteration. A DOCUMENT carries uniform
     # rows + errors; a LIB file carries only the listing (no standalone compile). GL-FREE
     # value object — read_working_set marshals the GL/recompile work on the main thread.
     address: (

@@ -486,3 +486,35 @@ def test_a_scaled_pass_keeps_its_size_across_frames(gl_ctx: moderngl.Context) ->
     doc.render(u_time=1.0)
     assert doc.passes["half"].canvas.texture is texture, "the target was reallocated"
     doc.release()
+
+
+def test_a_resize_moves_every_pass_together(gl_ctx: moderngl.Context) -> None:
+    # `canvas_size` is what every non-output pass scales FROM, so a resize that only touches the
+    # output canvas leaves the rest of the graph sizing off the old dimensions. The falsifier is
+    # the field, not the textures: render() re-derives the others from it every frame, which is
+    # exactly why a stale field is silent.
+    graph = PassGraph(
+        output="out",
+        passes={
+            "half": PassEntry(target=TargetConfig(scale=0.5)),
+            "full": PassEntry(),
+            "out": PassEntry(inputs={"u_a": "half", "u_b": "full"}),
+        },
+    )
+    doc = _document(
+        gl_ctx,
+        {"half": _CONST % "1.0", "full": _CONST % "0.5", "out": _SUM},
+        graph,
+        size=(64, 64),
+    )
+    doc.render(u_time=0.0)
+    doc.set_canvas_size((32, 32))
+    doc.render(u_time=0.0)
+    assert doc.canvas_size == (32, 32)
+    assert doc.passes["out"].canvas.texture.size == (32, 32)
+    assert doc.passes["full"].canvas.texture.size == (32, 32)
+    assert doc.passes["half"].canvas.texture.size == (16, 16)
+    assert _red(doc) == pytest.approx(
+        255, abs=2
+    )  # 1.0 + 0.5, tonemapped by nothing -> clamps
+    doc.release()

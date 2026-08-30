@@ -170,6 +170,33 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   AND fails when a module reads JSON without being rostered or explicitly exempted with a reason. Add
   a store there rather than re-deriving the rules — it caught a live startup crash on its first run.
 
+- **A document is N passes; a Pass owns everything about ONE shader (feature 065).** `core.Pass` =
+  source + program + render target + uniform values + compile + draw; `document.Document` = the
+  passes, the `PassGraph` wiring them, the output choice, the script hook and export. The canvas
+  travels DOWN with the pass (each needs its own target); the document owns the canvas SIZE and
+  applies each pass's `scale`, so a pass never sizes itself from a number it does not hold. Two
+  rules a new consumer must not break: **evaluation is memoized** — a shared ancestor draws once
+  per frame, never once per consuming path (`assert_plan_invariants` runs inside `evaluation_order`,
+  the function that actually draws, because a duplicated pass renders the CORRECT picture N times
+  and reads as slow rather than wrong); and **feedback swaps at the FRAME boundary**
+  (`Document.begin_frame(frame)`), never inside `render()` — the live loop draws a document twice
+  per frame and the copilot probe twice back to back. `begin_frame` takes the frame NUMBER and is
+  idempotent within one, so a second call site cannot corrupt the history: correctness by call
+  COUNT was unfalsifiable, because the preview render passes its own canvas and an extra swap
+  cancelled out. Revisit if a pass ever needs to draw more than once per frame (MRT, ping-pong
+  within a frame) — then the memo key stops being the pass name.
+
+- **An unfilled pass input reads BLACK, and something must BIND that black (feature 065).** D3's
+  graceful degradation is what keeps a half-built graph usable, and it is only safe because the
+  panel wires from a closed set of the document's own pass names — an input can never name a pass
+  that does not exist by typo. The corollary that is easy to miss: "reads black" has to be an
+  explicit 1x1 zero texture bound for the draw, NOT an unbound sampler. An unbound sampler falls
+  through to the pass's own default, which is a 960x1280 photo, so a mis-wire would show a picture
+  rather than nothing. The same rule makes DELETE and RENAME transactional: an edge left naming a
+  gone or renamed pass reads black and says nothing, so both verbs rewrite every edge, the output
+  choice and the open editor tab together. Revisit if a "no input" state ever needs to be visibly
+  distinct from "black input" (then it is an error state, not a default).
+
 - **The shader library is layered around SIGNED distance (feature 032).** Sources `SB_sd_*` return
   an SDF (negative inside; documented exceptions like the zero-width `SB_sd_segment`); operators
   `SB_op_*` map SDF->SDF; renderers (`SB_fill`/`SB_fill_aa`/`SB_glow`) map SDF->mask. A new public
@@ -688,6 +715,16 @@ The `/sanitize` noise audit deletes bullets that narrate a one-off implementatio
 mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
 
 ## Known quirks (library / SDK footguns + the workaround)
+
+- **Read a render target through `media.texture_to_rgba8`, never `texture.read()[0]`.** A raw read
+  returns the texture's OWN bytes, so on an `f2` target the first "pixel" is half of one float16
+  channel — a plausible small integer, never an exception. It bit three separate times while
+  building the pass graph, each time as a test that compared two numbers which were both wrong in
+  the same direction, and each time it looked like a rendering bug rather than a reading one. The
+  trap has teeth now because `TargetConfig`'s default is `f2` (D9), so any pass built from a graph
+  entry is float while a bare document canvas stays `f1` — the same assertion passes in one test
+  file and lies in the next. `texture_to_rgba8` reads the dtype and tonemaps; it is the only
+  correct way to turn a target into comparable 8-bit pixels.
 
 - **A dynamically-indexed `const` array is NOT constant storage on NVIDIA — big lookup tables
   must be UNIFORM arrays (engine-bound).** Measured on the glyph stroke tables (RTX 3090,

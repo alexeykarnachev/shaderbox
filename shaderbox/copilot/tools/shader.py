@@ -168,7 +168,7 @@ _SET_UNIFORM_DESC = (
     "you cannot see the result — report the value you set, not how it looks."
 )
 
-_CREATE_NODE_DESC = (
+_CREATE_DOCUMENT_DESC = (
     "Create a new shader document, then compile it and return the result — compile errors at their "
     "exact line, or that it compiled clean (same feedback as an edit). Leave source empty for a "
     "ready-made starter shader you then edit; or pass full GLSL (follow the project shader "
@@ -191,7 +191,7 @@ _READ_LIB_DESC = (
     "before calling it, or to read it before editing it."
 )
 
-_DELETE_NODE_DESC = (
+_DELETE_DOCUMENT_DESC = (
     "Delete a shader document. Pass the document id (from the project map) — required, never empty. "
     "This is destructive, so the user is shown a Yes/No confirmation before it happens; if they "
     "decline you'll get 'user declined' and should stop and explain. The document moves to the project "
@@ -199,7 +199,7 @@ _DELETE_NODE_DESC = (
     "the document is gone from the project map; do not read or edit it again."
 )
 
-_SWITCH_NODE_DESC = (
+_SWITCH_DOCUMENT_DESC = (
     "Make a document the CURRENT shader (the one the user is viewing). The publish and render tools, "
     "and edits with no target, all act on the current shader — so to publish/render a DIFFERENT "
     "document, switch to it first. Pass the document id from the project map. Non-destructive: the user's "
@@ -236,7 +236,7 @@ def _unresolved_result(result: EditResult) -> tuple[bool, str, None] | None:
 
 def _applied_result(result: EditResult) -> tuple[bool, str, dict]:
     # The shared success/compile-error message for any applied edit. A LIB edit returns the
-    # "no standalone compile" note instead of a compile result; a NODE edit returns compile
+    # "no standalone compile" note instead of a compile result; a DOCUMENT edit returns compile
     # errors or "compiled clean". Region count only for a multi-span replace_all; a
     # whole-file rewrite's removed-names fact trails.
     if result.restored_note:
@@ -539,7 +539,7 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             name="create_document",
             label_live="Creating document",
             label_done="Created document",
-            description=_CREATE_NODE_DESC,
+            description=_CREATE_DOCUMENT_DESC,
             args_model=_CreateDocumentArgs,
             handler=create_document,
             mutating=True,
@@ -572,7 +572,7 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             name="delete_document",
             label_live="Deleting document",
             label_done="Deleted document",
-            description=_DELETE_NODE_DESC,
+            description=_DELETE_DOCUMENT_DESC,
             args_model=_DeleteDocumentArgs,
             handler=delete_document,
             mutating=True,
@@ -587,7 +587,7 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             name="switch_document",
             label_live="Switching document",
             label_done="Switched document",
-            description=_SWITCH_NODE_DESC,
+            description=_SWITCH_DOCUMENT_DESC,
             args_model=_SwitchDocumentArgs,
             handler=switch_document,
             mutating=False,

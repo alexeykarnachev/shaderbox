@@ -244,6 +244,17 @@ class Document:
             self._black.release()
             self._black = None
 
+    def set_canvas_size(self, size: tuple[int, int]) -> None:
+        """Resize the document: its output target now, its other passes on the next render.
+
+        The single funnel, because `canvas_size` is what every other pass scales FROM. A caller
+        that resized `render_pass.canvas` directly — which is what the copilot's set_canvas_size
+        did — left this field stale, so the rest of the graph kept sizing off the old dimensions
+        and the output sampled mismatched targets.
+        """
+        self.canvas_size = size
+        self.render_pass.canvas.set_size(size)
+
     def begin_frame(self, frame: int | None = None) -> None:
         """Advance feedback history to `frame`, at most once per frame.
 

@@ -1,6 +1,7 @@
 # 065 — The pass graph: specification
 
-**Status: PLAN-LOCKED.** Reviewed by three agents (completeness, adversarial design, cold-start);
+**Status: LANDED — all nine stages; checks 13-16 owed (a display, and a dogfood run).**
+Plan-locked before implementation and reviewed by three agents (completeness, adversarial design, cold-start);
 D10b, D11, D12, D15 and D16 were added or corrected in response, and the verification list was made
 falsifiable. ALL NINE STAGES ARE LANDED; checks 13-16 need a display and a dogfood run. Anchor for facts: `00_facts.md` (six-agent round, verified by
 hand where load-bearing). Predecessor: `064_multistep/` — built, reverted (`34f6d19`), kept for the
@@ -323,7 +324,7 @@ lesson is that the surface should be judged against a working engine, not design
 
 **Nothing is migrated.** Maintainer decision: build from scratch.
 
-- The five shipped examples in `shaderbox/resources/node_examples/` are re-authored by hand as
+- The five shipped examples in `shaderbox/resources/document_examples/` are re-authored by hand as
   single-pass documents. (A sixth, "Render Steps", shipped 064's syntax and was deleted with the
   rest of the residue.) They are the app's first-run content and the examples browser's contents,
   so they cannot simply be dropped.

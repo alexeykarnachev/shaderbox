@@ -223,7 +223,7 @@ def _number_lines(text: str) -> str:
 
 @dataclass
 class _CopilotEditTarget:
-    # A resolved edit target: a NODE (recompiles) or a LIB file (written, no standalone compile).
+    # A resolved edit target: a DOCUMENT (recompiles) or a LIB file (written, no standalone compile).
     # `source` is the current text to edit against ("" for a not-yet-created lib file).
     # `ws_address` is the working-set + per-batch-guard key (document full-id, or the "lib:" address).
     # `label` names the target in result messages (EditResult.target_label).
@@ -557,7 +557,7 @@ class CopilotBackend:
         return named[0] if len(named) == 1 else None
 
     def _copilot_resolve_source(self, handle: str) -> tuple[str, str | None]:
-        # read/grep addressing: `example:` -> EXAMPLE, else NODE. Returns (kind, full_id|None).
+        # read/grep addressing: `example:` -> EXAMPLE, else DOCUMENT. Returns (kind, full_id|None).
         # lib: falls through to the document resolver and returns None (read_shaders short-circuits
         # lib addresses before calling this).
         if is_example_address(handle):
@@ -1082,7 +1082,7 @@ class CopilotBackend:
             self._capture_document(
                 document_id
             )  # pre-change rollback snapshot (best-effort)
-            ui_document.document.render_pass.canvas.set_size((w, h))
+            ui_document.document.set_canvas_size((w, h))
             self._save_ui_document(ui_document)
             logger.info(f"copilot set canvas of {document_id} -> {w}x{h}")
             return DocumentOpResult(ok=True, width=w, height=h)
@@ -2168,7 +2168,7 @@ class CopilotBackend:
     def _copilot_persist_target(
         self, tgt: "_CopilotEditTarget", new_text: str, matches: int
     ) -> EditResult:
-        # Persist an applied edit. A NODE recompiles + returns errors; a LIB file is written + returns
+        # Persist an applied edit. A DOCUMENT recompiles + returns errors; a LIB file is written + returns
         # the "no standalone compile" note. On success the target joins the working set + is batch-mutated.
         # Model-supplied text is CRLF-normalized here, the seam every edit write flows through.
         new_text = new_text.replace("\r\n", "\n").replace("\r", "\n")
