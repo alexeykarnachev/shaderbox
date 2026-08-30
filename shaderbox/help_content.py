@@ -143,6 +143,53 @@ def help_sections() -> list[HelpSection]:
             ),
         ),
         HelpSection(
+            key="render_steps",
+            title="Several draws in one node",
+            body=(
+                "Some effects need more than one draw: a blur chain, bloom, radiance cascades, "
+                "trails, a simulation. Declare a **step** by riding a comment on the sampler that "
+                "reads it, and write its body as `void step_<name>(out vec4 o)`.\n"
+                "\n"
+                "ShaderBox works out the order from who reads whom, so you never list it. A step "
+                "that reads **itself** gets its own previous frame — that is feedback, and there "
+                "is no second buffer to manage.\n"
+                "\n"
+                "Options after `step`, all optional: `scale: N` or `size: WxH` for the target "
+                "size; `f1`/`f2`/`f4` for precision (**`f2` is the default** — 8-bit saturates "
+                "immediately when you accumulate); `linear`/`nearest`; `clamp`/`repeat`.\n"
+                "\n"
+                "A typo in the rider is an error, not a silent miss: a step whose body is missing, "
+                "an unknown option, or a marker that merely looks like `step` all stop the compile "
+                "and point at the line."
+            ),
+            snippet=(
+                "#version 460 core\n"
+                "\n"
+                "in vec2 vs_uv;\n"
+                "out vec4 fs_color;\n"
+                "\n"
+                "uniform sampler2D u_bright;  // step, scale: 0.5, f2\n"
+                "uniform sampler2D u_trail;   // step, f2\n"
+                "uniform float u_threshold;\n"
+                "uniform float u_fade;\n"
+                "\n"
+                "void step_bright(out vec4 o) {\n"
+                "    vec3 c = vec3(vs_uv, 0.5);\n"
+                "    o = vec4(max(c - u_threshold, 0.0), 1.0);\n"
+                "}\n"
+                "\n"
+                "void step_trail(out vec4 o) {\n"
+                "    // reads ITSELF: last frame, handed over automatically\n"
+                "    vec4 prev = texture(u_trail, vs_uv) * u_fade;\n"
+                "    o = max(texture(u_bright, vs_uv), prev);\n"
+                "}\n"
+                "\n"
+                "void main() {\n"
+                "    fs_color = vec4(texture(u_trail, vs_uv).rgb, 1.0);\n"
+                "}"
+            ),
+        ),
+        HelpSection(
             key="shader_library",
             title="The SB_ library",
             body=(
