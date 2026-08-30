@@ -34,7 +34,7 @@ config without existing in the code, because the config is keyed off what the co
 a config naming a step the shader dropped is simply unused.
 
 **S3. One state field, one primitive, one widget module.** The whole feature is `viewed_step` on
-`UINodeState` plus `widgets/step_list.py::draw_step_list(app)`. That matches the locked layering
+`App` (transient, per S4) plus `widgets/step_list.py::draw_step_list(app)`. That matches the locked layering
 (`widgets/*.py` are free functions taking `app`), so nothing new is invented and the section can be
 deleted in one commit if the design changes.
 
@@ -63,11 +63,11 @@ every colour and size. No new colour literals, no hand-rolled `push_style_color`
 | R3 | the row's `reads:` line, naming its sources | — |
 | R4 | `reads:` naming non-adjacent steps IS the branch | no spatial view; B's judge called the 3-way merge "interrogated, not seen" and that stands |
 | R5 | a `feedback` mark on a self-reading row | — |
-| R6 | a `persist` mark, and the reset action | — |
+| R6 | the row's `on edit` combo (keep / clear), which is `persist` labelled by its effect | — |
 | R7 | the row's `format` combo (f1/f2/f4) + the HDR transform (S5) | — |
 | R8 | the row's `filter` and `edge` combos | — |
 | **R9** | **the view pin: click a row's thumbnail, the big preview shows that step** | — |
-| R10 | already served by the engine's uniform union; the rows make ownership legible by naming which step each uniform belongs to | — |
+| R10 | served by the engine's uniform union: a uniform declared in any step gets a control and persists | attribution — the panel does NOT name which step owns a uniform. Deliberate: a uniform of the same name in two steps is ONE row driving both (`03_engine_spec.md` D4), so there is no single owner to name |
 
 ## Files touched
 

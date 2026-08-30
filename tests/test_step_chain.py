@@ -603,3 +603,51 @@ def test_exporting_a_feedback_node_twice_gives_the_same_frames(
         node.render(u_time=0.0)
     second = _export("b.png")
     assert first == second
+
+
+def test_a_six_level_cascade_renders(gl: moderngl.Context, tmp_path: Path) -> None:
+    """The feature's acceptance test, as a test rather than a claim.
+
+    The roadmap says a multi-level cascade renders; nothing in the repo demonstrated it.
+    Every level reads the scene AND the level below, at half the resolution, which is the
+    shape 063 measured as needing float targets: 8-bit saturates on the first merge.
+    """
+    decls = ["uniform sampler2D u_step_scene;"]
+    bodies = ["void step_scene(out vec4 o) { o = vec4(4.0, 0.0, 0.0, 1.0); }"]
+    configs = {"scene": StepConfig(dtype="f4")}
+    for level in range(5, -1, -1):
+        decls.append(f"uniform sampler2D u_step_c{level};")
+        below = f" + texture(u_step_c{level + 1}, vs_uv) * 0.5" if level < 5 else ""
+        bodies.append(
+            f"void step_c{level}(out vec4 o) {{ "
+            f"o = texture(u_step_scene, vs_uv) * 0.5{below}; }}"
+        )
+        configs[f"c{level}"] = StepConfig(scale=2.0**-level, dtype="f4")
+
+    node = _node(
+        gl,
+        tmp_path,
+        "#version 330\nout vec4 f_color;\nin vec2 vs_uv;\n"
+        + "\n".join(decls)
+        + "\n"
+        + "\n".join(bodies)
+        + "\nvoid main() { f_color = texture(u_step_c0, vs_uv); }\n",
+        configs=configs,
+    )
+    assert node.compile_unit.errors == [], node.compile_unit.errors
+
+    # Coarsest merges upward into the finest, so c5 precedes c0.
+    order = node.step_plan.order
+    for level in range(5, 0, -1):
+        assert order.index(f"c{level}") < order.index(f"c{level - 1}")
+
+    node.render(u_time=0.0)
+    # Each level halves: 16, 8, 4, 2, 1, 1 (clamped -- a deep level must not hit zero).
+    assert node._step_targets["c0"][0].texture.size == (16, 16)
+    assert node._step_targets["c4"][0].texture.size == (1, 1)
+
+    finest = node.step_texture("c0")
+    assert finest is not None
+    value = float(np.frombuffer(finest.read(), dtype=np.float32)[0])
+    # The merge accumulates past 1.0, which is why the targets are float at all.
+    assert value > 1.0

@@ -200,25 +200,28 @@ program on failure, so the picture keeps rendering while the error strip shows t
 dangerous inverse: compiling a single variant with step samplers left as ordinary textures binds
 them to the default image — the silent wrong picture D2 exists to forbid.
 
-**D15. Test the silent regressions, not just the loud ones.** Three existing tests keep passing while
-the behaviour underneath them breaks, so each needs a twin in this wave:
-`test_gl_lifetime_guards.py` asserts only the canvas is freed (N step targets can leak with it
-green — and the count must be asserted, or dropping variant N-1 passes);
-`test_uniform_row_pruning.py::test_every_surviving_row_names_a_live_uniform` is a subset check with
-no lower bound, so the union makes it pass MORE easily while the data loss D4 prevents stays
-invisible; `test_render_for.py::test_render_media_preset_none_byte_identical` is the natural D10
-falsifier but its fixture is step-free, so it must be parametrized over a chain node.
-`test_raw_texture_round_trip.py` needs a negative twin: a step sampler must NOT write a
-`textures/*.bin`.
+**D15. Test the silent regressions, not just the loud ones.** Four existing tests keep passing while
+the behaviour underneath them breaks. Each earned a twin, and the twins live in the 064 test files
+rather than beside the tests that inspired them:
+
+| The blind existing test | Why it cannot see the regression | Its twin |
+|---|---|---|
+| `test_gl_lifetime_guards.py` | asserts only the canvas is freed | `test_step_chain.py::test_release_frees_every_step_target` — count-checked, so dropping one target fails |
+| `test_uniform_row_pruning.py::test_every_surviving_row_names_a_live_uniform` | a subset check with no lower bound, so a larger union passes MORE easily | `test_step_persistence.py::test_a_uniform_only_in_a_step_is_visible_and_persists` |
+| `test_raw_texture_round_trip.py` | proves the raw-Texture save branch WORKS, which is why D11's leak would be silent | `test_step_persistence.py::test_a_step_sampler_writes_no_texture_file` |
+| `test_render_for.py::test_render_media_preset_none_byte_identical` | its fixture is step-free | `test_step_chain.py::test_exporting_a_feedback_node_twice_gives_the_same_frames` — a stronger check than parametrizing the original, since it renders a FEEDBACK node twice with live frames in between |
 
 **D16. State the measured ceiling.** 063's "19 passes at 0.52 ms" is ONE node's chain and does not
 extrapolate. Measured on this box: **20 nodes x 15 steps at 512x512 `f2` = 7.28 ms/frame** (44% of a
 16.6 ms budget, GPU work alone) and **629 MB of VRAM** — before ping-pong doubles the self-reading
-targets. **VRAM is the real ceiling, and `f2` is what makes it steep.** Recompiling 15 variants costs
-57.8 ms against 1.5 ms for one, so every Ctrl+S on a deep chain is a ~60 ms main-thread stall, paid
-again per node by the copilot's opportunistic `compile()` calls. Not a blocker for this wave; a
-bound on total step-target allocation is a real follow-up, and the existing stale-mark makes
-"don't render every node's full chain" the honest default.
+targets. **VRAM is the real ceiling, and `f2` is what makes it steep.**
+
+The recompile cost is NOT a concern, and the spec previously said it was: a pre-impl reviewer's
+57.8 ms estimate for 15 variants was carried in here and never re-measured against the built
+engine. Measured on the real implementation with `SB_fbm` bodies, 15 variants recompile in **2.3 ms**
+median against 0.3 ms for one — roughly 25x cheaper than the figure that was used to argue Ctrl+S
+would stall. A bound on total step-target ALLOCATION is still a real follow-up; a bound on compile
+time is not.
 
 ## Out of scope for this wave
 

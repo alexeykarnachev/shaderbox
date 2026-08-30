@@ -14,10 +14,51 @@ authoring SURFACE are separable, and should be separated.
 | Grain fit | **B > D > A > C** | Only B rated NATIVE; it extends seams `conventions.md` names as its own revisit triggers |
 | Build cost / ship odds | **A >> D > B >> C** | A is ~half the next-shortest path and the only one where a working cascade exists BEFORE any UI |
 
+## THE REWORK: steps are named, not commented (supersedes the seam chosen below)
+
+**Read this before the rest of the file.** Everything below chose proposal A's seam, in which a step
+was declared by a comment on its sampler — `uniform sampler2D u_blur;  // step, scale: 0.5, f2`.
+**That seam was replaced after it was built.** The rest of the document is kept as the record of how
+the four proposals were judged, which is still the reasoning behind everything EXCEPT the seam.
+
+**Why it changed.** The maintainer had already answered this question before the design round ran:
+
+> "this should be a special uniform name and type like for example: `uniform sampler2D
+> u_pass0_blablabla` or `u_pass_blablabla` something like this. **We don't use comments for a
+> semanticly bearing stuff.** When a pass defined in the code we just provide the default
+> parameters, the user can change them later in the editor."
+
+The design round then produced four proposals, the judges compared them, and A's comment rider was
+adopted from that comparison — without noticing it contradicted a decision already taken. The
+instruction was not re-read; the agents' framing won.
+
+**The instruction was also the better design, and the evidence is what the rider cost.** A comment is
+not part of the language, so it cannot be checked. To stop an ordinary English comment from breaking
+a shader, the rider needed near-miss detection (`// stp`), transposition handling (`setp`), orphan
+inference, reserved-name checks, and a scoping rule so `// stop` on a texture sampler did not refuse
+the compile — two of which shipped as real regressions and were found by post-impl review. A name
+deletes that apparatus rather than hardening it: `step_spec.py` went 460 -> 292 lines and the entire
+typo error class went with it.
+
+**The rider had also inverted the instruction's second half.** Parameters lived in the shader and the
+panel was read-only; the instruction said defaults in code, changed later in the editor. Now a
+step's target (scale, format, filter, edge, persist) is `UINodeState.step_configs` with working
+defaults, edited by combos in the Steps rows and saved to `node.json`.
+
+**Current design, in one line:** a sampler named `u_step_<name>` is a step, its body is
+`void step_<name>(out vec4 o)`, and its target is configured in the panel. See `03_engine_spec.md`
+D1/D2.
+
+**The process lesson, which is the durable part:** a decision the maintainer already made is not
+re-opened by a later exploration of the same question. The design round should have been given that
+answer as a constraint rather than as one option among four. Filed at fleet level, not here, because
+it is not about shaders.
+
 ## The decision
 
 **Build A's seam as the engine. Build B's or D's surface on top of it, later, as a separate
-feature.** They are not rivals — both B and D say so themselves:
+feature.** *(The seam was later replaced — see the rework section above. The surface half of this
+decision stands and shipped.)* They are not rivals — both B and D say so themselves:
 
 - B: *"if a text form is wanted later, the chips writing that comment line is the natural
   serialization."*
