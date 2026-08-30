@@ -16,6 +16,7 @@ from shaderbox.ui_primitives import (
     small_caption,
 )
 from shaderbox.util import format_auto_value, get_resolution_str, get_uniform_hash
+from shaderbox.widgets.step_list import draw_step_list
 from shaderbox.widgets.uniform import draw_ui_uniform, uniform_name_label
 
 
@@ -118,6 +119,10 @@ def draw(app: App) -> None:
 
     imgui.dummy((0, SPACE.MD))
     _draw_entry_points(app)
+
+    if ui_node.node.steps:
+        imgui.dummy((0, SPACE.MD))
+        draw_step_list(app)
 
     _section_break()
 

@@ -124,6 +124,24 @@ class Canvas:
         return True
 
 
+@dataclass(frozen=True)
+class StepView:
+    """One step's facts, as the UI sees them. Read-only by construction."""
+
+    name: str
+    order_index: int
+    sampler: str
+    size: tuple[int, int]
+    dtype: str
+    filter_linear: bool
+    wrap: bool
+    persist: bool
+    reads: list[str]
+    reads_self: bool
+    read_by_output: bool
+    texture_glo: int | None
+
+
 UniformValue = (
     int
     | float
@@ -303,6 +321,42 @@ class Node:
         # to the front rather than suppress.
         front = pair[self._step_front.get(step_name, 0)] or pair[0]
         return front.texture
+
+    def step_views(self) -> list["StepView"]:
+        """Read-only facts about each step, in evaluation order.
+
+        The UI's whole window onto the chain. Returning a value object rather than
+        letting a widget walk `_step_targets` keeps the panel from depending on how the
+        engine stores its targets -- the ping-pong pair, the front index and the
+        program map stay private, and the surface can be rewritten without touching
+        either side.
+        """
+        by_name = {step.name: step for step in self.steps}
+        views: list[StepView] = []
+        for order_index, name in enumerate(self.step_plan.order):
+            spec = by_name.get(name)
+            if spec is None:
+                continue
+            texture = self.step_texture(name)
+            views.append(
+                StepView(
+                    name=name,
+                    order_index=order_index,
+                    sampler=spec.sampler,
+                    size=texture.size
+                    if texture
+                    else spec.target_size(self.canvas.texture.size),
+                    dtype=spec.dtype,
+                    filter_linear=spec.filter_linear,
+                    wrap=spec.wrap,
+                    persist=spec.persist,
+                    reads=sorted(self.step_plan.reads.get(name, set())),
+                    reads_self=name in self.step_plan.self_reads,
+                    read_by_output=name in self.step_plan.final_reads,
+                    texture_glo=texture.glo if texture else None,
+                )
+            )
+        return views
 
     def _release_step_gl(self, keep_persist: bool = False) -> None:
         for program in self._step_programs.values():

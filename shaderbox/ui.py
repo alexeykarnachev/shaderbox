@@ -522,7 +522,17 @@ def _draw_app_panel(app: App) -> None:
             avail.y - control_panel_min_height - 10,
         )
         max_image_width = avail.x
-        image_aspect = np.divide(*ui_node.node.canvas.texture.size)
+        # A pinned step (064) shows in place of the node's output. A float target is
+        # tonemapped on the way -- blitting one raw is pure white for exactly the steps
+        # worth looking at.
+        shown_texture = ui_node.node.canvas.texture
+        if app.viewed_step:
+            step_texture = ui_node.node.step_texture(app.viewed_step)
+            if step_texture is None:
+                app.viewed_step = ""  # the chain changed under the pin
+            else:
+                shown_texture = app.step_preview.texture_for(step_texture)
+        image_aspect = np.divide(*shown_texture.size)
         image_width = min(max_image_width, max_image_height * image_aspect)
         image_height = min(max_image_height, max_image_width / image_aspect)
 
@@ -530,7 +540,7 @@ def _draw_app_panel(app: App) -> None:
         # surfaces in the editor pane strip.
         img_min = imgui.get_cursor_screen_pos()
         imgui.image_with_bg(
-            imgui.ImTextureRef(ui_node.node.canvas.texture.glo),
+            imgui.ImTextureRef(shown_texture.glo),
             image_size=(image_width, image_height),
             uv0=(0, 1),
             uv1=(1, 0),

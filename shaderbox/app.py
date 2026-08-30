@@ -56,6 +56,7 @@ from shaderbox.shader_lib.file_ops import ShaderLibFileManager
 from shaderbox.shader_lib.seed import sync_shipped_lib
 from shaderbox.shader_lib.tags import ShaderLibTagsStore
 from shaderbox.shader_source import ShaderSource
+from shaderbox.step_preview import StepPreview
 from shaderbox.tabs import share_state
 from shaderbox.theme import COLOR, apply_theme
 from shaderbox.ui_models import (
@@ -303,6 +304,11 @@ class App:
         # Where a picked emoji is delivered (set by whoever opens the picker).
         self.emoji_pick_target: Callable[[str], None] | None = None
         self.node_delete_armed: str = ""  # node id pending delete-confirm
+        # The step whose output the big preview is showing, "" for the node's own output
+        # (064). Transient by design: reloading a project into "showing cascade level 4"
+        # is a confusing state to inherit, and a pinned intermediate that survived a
+        # restart would read as a broken shader.
+        self.viewed_step: str = ""
         self.render_defer = RenderDefer()
         self.editor_focused: bool = False
         # Sticky variant: stays True while the editor is a real interaction target (even
@@ -886,6 +892,9 @@ class App:
         return self.ui_nodes[node_id].ui_state
 
     def set_current_node_id(self, id: str = "") -> None:
+        # The single funnel for switching nodes, so the view pin cannot survive onto a
+        # node whose chain does not have that step.
+        self.viewed_step = ""
         self.session.set_current_node_id(id)
 
     def set_node_delete_armed(self, id: str = "") -> None:
@@ -900,6 +909,8 @@ class App:
         self.release()
 
         self.preview_canvas = Canvas()
+        # Lazily built: nothing is allocated until a float step is actually viewed.
+        self.step_preview = StepPreview()
 
         self.frame_idx = 0
         # Wall-clock of the previous script-engine tick (feature 040), for the per-frame dt.
@@ -1366,6 +1377,8 @@ class App:
         for node in self.ui_node_examples.values():
             node.node.release()
 
+        if hasattr(self, "step_preview"):
+            self.step_preview.release()
         if hasattr(self, "preview_canvas"):
             self.preview_canvas.release()
 
