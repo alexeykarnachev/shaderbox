@@ -16,7 +16,15 @@ _PATH = Path("node.frag.glsl")
 def _plan(source: str):
     parsed = parse_steps(source, _PATH)
     assert parsed.errors == [], parsed.errors
-    return plan_steps(source, parsed.steps, _PATH)
+    plan, errors = plan_steps(source, parsed.steps, _PATH)
+    if not errors:
+        # THE memoization invariant, asserted on every plan this module builds rather
+        # than in one test: a step appears in the order exactly once, so it draws once
+        # per frame. A duplicate re-renders a shared ancestor per consuming path -- the
+        # defect the deleted DAG shipped, and one that reads as "slow" rather than
+        # "wrong" because the picture stays correct.
+        assert len(plan.order) == len(set(plan.order)), plan.order
+    return plan, errors
 
 
 def test_a_linear_chain_orders_producers_first() -> None:
