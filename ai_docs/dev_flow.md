@@ -194,8 +194,11 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
 - **`core.py`** — `Canvas`, `Node`: GL program lifecycle, uniform introspection + binding,
   render-to-texture, image/video export. Needs a live GL context. Imports `shader_lib` (compile-time
   `#include` resolution) + `shader_errors`.
-
-
+- **`pass_graph.py`** — leaf, GL-free (feature 065): the `graph.json` model (`PassGraph` /
+  `PassEntry` / `TargetConfig` / `PassLayout`) plus the planner — `plan_passes` (topological order,
+  cycle detection per pass, feedback marking, unresolved inputs), `evaluation_order` (the passes one
+  output actually needs) and `assert_plan_invariants` (the draw-once guard `evaluation_order` runs on
+  every plan). Pure data: no GL, no imgui, importable anywhere.
 
 - **`project_session.py`** — `ProjectSession`: the headless project + copilot CORE (paths, nodes,
   app_state, lib index + cross-project stores, integrations, the `CopilotSession`/`CopilotBackend`/

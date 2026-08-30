@@ -2,7 +2,7 @@
 
 **Status: PLAN-LOCKED.** Reviewed by three agents (completeness, adversarial design, cold-start);
 D10b, D11, D12, D15 and D16 were added or corrected in response, and the verification list was made
-falsifiable. Nothing implemented — start at stage 1 of the implementation order. Anchor for facts: `00_facts.md` (six-agent round, verified by
+falsifiable. Stage 1 (`pass_graph.py`) is landed; start at stage 2. Anchor for facts: `00_facts.md` (six-agent round, verified by
 hand where load-bearing). Predecessor: `064_multistep/` — built, reverted (`34f6d19`), kept for the
 record of what was tried and what it cost.
 
@@ -245,10 +245,11 @@ that pass, never the document.
 
 Each stage leaves the tree green and is verifiable on its own.
 
-1. **`pass_graph.py`** — the graph model plus topological order, cycle detection and feedback
+1. **`pass_graph.py`** — DONE. The graph model plus topological order, cycle detection and feedback
    marking. GL-free, pure data, fully unit-testable. **The memoization invariant is asserted on every
-   plan the test module builds** (D5); this bug has shipped twice in this repo and tests caught it
-   neither time.
+   plan the test module builds** (D5) AND inside `evaluation_order`, the function the renderer calls;
+   this bug has shipped twice in this repo and tests caught it neither time. Landed with a mutation
+   battery: each guarantee's falsifier is a mutant the suite kills.
 2. **`Pass`** — split out of `Node`: source, program, target, uniforms, compile, draw. Verified by
    rendering one pass headlessly, which is what today's `Node` already does.
 3. **`Document`** — owns the passes, the graph, the output, the script hook, export. Chain evaluation
@@ -365,6 +366,6 @@ Each check fails for exactly one reason, and each names its falsifier.
 
 ## Fixtures that do not exist yet
 
-Checks 2-9 need a hand-authored multi-pass document checked into `tests/`. `projects/dev/nodes/`
-still carries a node with dead 064 `step_configs` in its `node.json` and `u_step_*` in its shader —
-nothing reads either any more. It is the natural candidate to become the multi-pass fixture.
+Checks 2-9 need a hand-authored multi-pass document checked into `tests/`. The dev sandbox has no
+candidate to promote — `e0bdb82` removed the 064 residue an earlier draft named here — so the
+fixture is authored from scratch alongside stage 3.

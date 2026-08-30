@@ -26,12 +26,17 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-08-30 (064 reverted; 065 spec plan-locked, implementation not started). -->
-**ACTIVE: 065 pass graph — spec PLAN-LOCKED, nothing implemented. Start at stage 1 of the
-implementation order: `shaderbox/pass_graph.py`, the GL-free graph model.** Read
-`ai_docs/features/065_pass_graph/01_spec.md` (D1-D16, the `graph.json` schema, the nine-stage
-order, sixteen falsifiable checks); `00_facts.md` beside it is the verified evidence it was written
-against, including three corrections to claims made earlier in the work.
+<!-- As of 2026-08-30 (064 reverted; 065 stage 1 of nine landed). -->
+**ACTIVE: 065 pass graph — stage 1 of nine is landed. Next is stage 2: `Pass`, split out of
+`Node` (source, program, target, uniforms, compile, draw), verified by rendering one pass
+headlessly.** Read `ai_docs/features/065_pass_graph/01_spec.md` (D1-D16, the `graph.json` schema,
+the nine-stage order, sixteen falsifiable checks); `00_facts.md` beside it is the verified evidence
+it was written against, including three corrections to claims made earlier in the work.
+
+**Stage 1 shipped** `shaderbox/pass_graph.py`: the `graph.json` model plus the planner — topological
+order, per-pass cycle errors, feedback marking, unresolved inputs, and `evaluation_order` for one
+output's passes. GL-free, no consumer yet (stage 3 wires it). The draw-once invariant is asserted
+inside `evaluation_order`, not only in tests.
 
 **What happened to 064.** It shipped a multi-pass engine where every pass was a function inside ONE
 shader file. The maintainer used it and rejected the shape: *"we need the genuine separate shader;
@@ -60,7 +65,7 @@ v0.21.0.** **No open BLOCKERs.**
 
 | # | Name | Status | Brief |
 |---|---|---|---|
-| 065 | pass_graph | pending | A document holds several passes forming a DAG, each pass its own `.glsl` file with its own `main()` and render target; "node" is retired for `document` + `pass`. Spec plan-locked after three review rounds; nothing implemented. Spec: `ai_docs/features/065_pass_graph/01_spec.md`. |
+| 065 | pass_graph | in progress | A document holds several passes forming a DAG, each pass its own `.glsl` file with its own `main()` and render target; "node" is retired for `document` + `pass`. Stage 1 of nine landed (`pass_graph.py`, the GL-free model + planner); stage 2 is the `Pass` split. Spec: `ai_docs/features/065_pass_graph/01_spec.md`. |
 | 064 | multistep | superseded | Multi-pass steps as functions inside ONE shader file. Built, reviewed to convergence, then REVERTED (`34f6d19`) when the maintainer used it: separate shader files per pass are what every surveyed tool does. Nine bug fixes it surfaced were kept. Superseder: `ai_docs/features/065_pass_graph/`. Spec: `ai_docs/features/064_multistep/02_decision.md`. |
 | 063 | radiance_cascades_gaps | done | Research-only wave (no code): can ShaderBox host radiance cascades, and what is actually missing — GPU capability all present and measured, the script-GL route proven unusable, the seam decision handed to 064. Spec: `ai_docs/features/063_radiance_cascades_gaps/README.md`. |
 | — | copilot_engine_tuning | done | reasoning effort=none engine knob (+30k turn budget: effort flag is ignored on compound asks — measured), user/engine config split with slots enforcement, final-reply token cap. Spec: commits 289c12f + 6ed3c4d + 779d4b2 + this wave. |
