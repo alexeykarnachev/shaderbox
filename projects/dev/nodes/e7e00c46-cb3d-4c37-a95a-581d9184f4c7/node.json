@@ -3,7 +3,9 @@
         1280,
         960
     ],
-    "uniforms": {},
+    "uniforms": {
+        "main": {}
+    },
     "ui_state": {
         "ui_name": "UV Mango",
         "description": "The default blank-canvas starter: a minimal shader that colours the screen by UV coordinate + time. Start here for a shader from scratch.",

@@ -2,7 +2,7 @@
 
 **Status: PLAN-LOCKED.** Reviewed by three agents (completeness, adversarial design, cold-start);
 D10b, D11, D12, D15 and D16 were added or corrected in response, and the verification list was made
-falsifiable. Stages 1-3 are landed (the engine); start at stage 4. Anchor for facts: `00_facts.md` (six-agent round, verified by
+falsifiable. Stages 1-4 are landed (the engine + persistence); start at stage 5. Anchor for facts: `00_facts.md` (six-agent round, verified by
 hand where load-bearing). Predecessor: `064_multistep/` — built, reverted (`34f6d19`), kept for the
 record of what was tried and what it cost.
 
@@ -264,8 +264,13 @@ Each stage leaves the tree green and is verifiable on its own.
    NUMBER, so a second call for the same frame is a no-op. Call-count alone was unfalsifiable —
    because the preview render passes its own canvas, an extra swap per render cancelled out and a
    wrong call site passed every gate.
-4. **Persistence** — `graph.json` load/save with per-key salvage, plus the pass-namespaced media
-   layout. Verified by a round-trip and a hostile-file battery.
+4. **Persistence** — DONE. `graph.json` load/save with per-key salvage, `passes/<name>.frag.glsl`,
+   and `media/<pass>/` + `textures/<pass>/`. Checks 10-12 pass. Two bugs the round-trip caught, both
+   silent: `drop_unknown` walks a nested model's FIELD names, so running it over `passes` read every
+   pass NAME as an unknown key and pruned the whole graph to empty — the keyed-dict fields are now
+   held out of the whole-model pass and salvaged per entry; and `UINode.save` skipped a pass with no
+   program, which is every pass off the OUTPUT's path, so their tuned uniforms were written away as
+   `{}` — save now compiles a pass that has not drawn, and keeps what is on disk if it cannot.
 5. **The rename** — `node` -> `document`/`pass` across the package, on-disk paths, and the tests. Its
    own commit, mechanical, no behaviour change.
 6. **Editor and hot reload** — a `pass` tab kind, per-pass recompile (D8), `watch.py` generalised off

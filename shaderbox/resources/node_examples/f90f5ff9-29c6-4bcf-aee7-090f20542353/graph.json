@@ -1,0 +1,17 @@
+{
+    "version": 1,
+    "output": "main",
+    "passes": {
+        "main": {
+            "inputs": {},
+            "target": {
+                "scale": 1.0,
+                "dtype": "f1",
+                "filter_linear": true,
+                "wrap": false,
+                "persist": false
+            }
+        }
+    },
+    "layout": {}
+}

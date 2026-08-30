@@ -16,7 +16,9 @@ def _fake_node(name: str = "Node") -> object:
 def _fake_save(name: str):
     # Stand-in for UINode.save(dir.parent, dir.name): write one marker file into the dest dir.
     def _save(_node: object, dest: Path) -> None:
-        (dest / "shader.frag.glsl").write_text(name, encoding="utf-8")
+        shader = dest / "passes/main.frag.glsl"
+        shader.parent.mkdir(parents=True, exist_ok=True)
+        shader.write_text(name, encoding="utf-8")
 
     return _save
 
@@ -30,7 +32,9 @@ def test_snapshot_node_is_first_touch_only(tmp_path: Path) -> None:
     assert cp.snapshotted_nodes == {"n1": "N1"}
     snap = cp.node_snapshot_dir("n1")
     assert snap is not None
-    assert (snap / "shader.frag.glsl").read_text() == "v1"  # the pre-turn (first) state
+    assert (
+        snap / "passes/main.frag.glsl"
+    ).read_text() == "v1"  # the pre-turn (first) state
 
 
 def test_snapshot_does_not_rebind_live_source(tmp_path: Path) -> None:
@@ -38,19 +42,23 @@ def test_snapshot_does_not_rebind_live_source(tmp_path: Path) -> None:
     # dir it writes. The capture MUST pass rebind=False (here: a save_into that leaves the live path
     # alone) so the snapshot holds pre-edit bytes AND the live node keeps pointing at its real dir
     # — else a later edit writes the snapshot and Revert restores the edit.
-    real_path = tmp_path / "nodes" / "n1" / "shader.frag.glsl"
+    real_path = tmp_path / "nodes" / "n1" / "passes/main.frag.glsl"
     live = SimpleNamespace(
         ui_state=SimpleNamespace(ui_name="N"), source_path=real_path, text="ORIGINAL"
     )
 
     def _save_no_rebind(n: object, dest: Path) -> None:
-        (dest / "shader.frag.glsl").write_text(n.text, encoding="utf-8")  # type: ignore[attr-defined]
+        shader = dest / "passes/main.frag.glsl"
+        shader.parent.mkdir(parents=True, exist_ok=True)
+        shader.write_text(n.text, encoding="utf-8")  # type: ignore[attr-defined]
 
     cp = TurnCheckpoint(turn_id="t", root=tmp_path)
     cp.snapshot_node("n1", live, _save_no_rebind)
     snap = cp.node_snapshot_dir("n1")
     assert snap is not None
-    assert (snap / "shader.frag.glsl").read_text() == "ORIGINAL"  # pre-edit captured
+    assert (
+        snap / "passes/main.frag.glsl"
+    ).read_text() == "ORIGINAL"  # pre-edit captured
     assert (
         live.source_path == real_path
     )  # live node NOT repointed into the snapshot dir

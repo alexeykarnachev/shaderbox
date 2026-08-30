@@ -107,7 +107,8 @@ doc change) and let them decide. Don't silently build on another session's in-fl
 ## The project lives in `projects/_lab/<name>/` (gitignored)
 
 - Create one fresh ShaderBox project **per experiment** under `projects/_lab/<slug>/` — it's a
-  collection of nodes (each node = a `node.json` + `shader.frag.glsl` + optional `scripts/script.py`).
+  collection of documents (each = a `node.json` + `passes/<name>.frag.glsl` + optional `graph.json`
+  and `scripts/script.py`).
 - `projects/_lab/` is **gitignored** (`.gitignore`), so nothing here pollutes the repo. A worthwhile
   result is promoted **by hand at the very end** — only if the user decides to keep it. Two targets:
   a real project (move the node dir + `git add`), or — for a polished showcase — a **shipped
@@ -121,7 +122,8 @@ doc change) and let them decide. Don't silently build on another session's in-fl
 
 ### Project / node layout to write
 
-A node dir is `node.json` + `shader.frag.glsl` (+ optional `scripts/script.py` for CPU-driven
+A document dir is `node.json` + `passes/<name>.frag.glsl` (+ optional `graph.json` when it has more
+than one pass, and `scripts/script.py` for CPU-driven
 uniforms). `SB_*` helpers resolve from the live shader lib automatically. The smallest valid
 `node.json`:
 
@@ -158,7 +160,7 @@ uniforms). `SB_*` helpers resolve from the live shader lib automatically. The sm
 ## The live-preview contract (live mode) — why it Just Works, and the one requirement
 
 ShaderBox's per-frame mtime watcher (`watch.py::reload_node_if_changed`, called for EVERY loaded node
-in `ui.py::update_and_draw`) **recompiles a node the instant its `shader.frag.glsl` mtime changes on
+in `ui.py::update_and_draw`) **recompiles a pass the instant its `.frag.glsl` mtime changes on
 disk**, and `reload_scripts()` does the same for `script.py`. AND ShaderBox reconciles `nodes/` to
 disk every frame (disk is the source of truth), so a node dir you CREATE / DELETE on disk syncs into
 the grid AUTOMATICALLY — no reload, no bookkeeping. Together that means:
@@ -184,9 +186,9 @@ nothing is ever lost.
 
 ```
 projects/_lab/<slug>/
-  nodes/<id-1>/shader.frag.glsl   # v01 — its own grid cell, named "<effect> v01 (<short-name>)"
-  nodes/<id-2>/shader.frag.glsl   # v02
-  nodes/<id-3>/shader.frag.glsl   # v03
+  nodes/<id-1>/passes/main.frag.glsl   # v01 — its own grid cell, named "<effect> v01 (<short-name>)"
+  nodes/<id-2>/passes/main.frag.glsl   # v02
+  nodes/<id-3>/passes/main.frag.glsl   # v03
   nodes/<id-3>/scripts/script.py  # if that version had a script
   ...
   NOTES.md                        # the experiment log (see below)
@@ -195,7 +197,7 @@ projects/_lab/<slug>/
 **Each step:** (1) create a NEW `nodes/<id>/` (the dir name is the node id — any readable string like
 `v03-warp`, not a uuid; the grid sorts by creation time, not name; copy the node.json shape from an
 existing node and set `ui_state.ui_name` to `"<effect> vNN (<short-name>)"` so the grid reads as a
-progression); (2) write its `shader.frag.glsl` (+ `scripts/script.py` if any) — it appears in the grid
+progression); (2) write its `passes/main.frag.glsl` (+ `scripts/script.py` if any) — it appears in the grid
 on its own (the per-frame disk-sync from `## The live-preview contract`); (3) append a NOTES.md entry.
 All versions sit side-by-side as their own grid cells, so "I like v3's tip but v5's color, take both"
 is just opening both — every version stays a live node to diff and cherry-pick from.
@@ -224,7 +226,7 @@ Entry shape (effect-agnostic skeleton; `vNN` so a draft doesn't pollute the outl
 ## vNN — <short name> (node <id or ui_name>)
 - Change: <the mechanical diff in plain words — the term/function/formula that changed>.
 - Source: <technique name> <URL>        # only when researched
-- Shader: nodes/<id>/shader.frag.glsl   # link the code so the entry IS a reference
+- Shader: nodes/<id>/passes/main.frag.glsl   # link the code so the entry IS a reference
 - User verdict: <verbatim, or "pending review">
 ```
 
@@ -282,7 +284,7 @@ relevant `projects/_lab/<slug>/NOTES.md` FIRST.
   NOTES were complete; the skill digest was not, and I lazily read the digest.) The skill points you AT
   the source; the NOTES entry + shader ARE the source. Open them.
 - **So the duty cuts both ways: NOTES must be COMPLETE (record the mechanic — formula, split, the
-  numbers — not just the maintainer's verdict), and they must LINK their shader** (`nodes/<v>/shader.frag.glsl`)
+  numbers — not just the maintainer's verdict), and they must LINK their shader** (`nodes/<v>/passes/main.frag.glsl`)
   for the exact code. A reusable lesson that only lives as a verdict ("added a night key") forces a
   re-derivation next time.
 
@@ -656,7 +658,7 @@ The experiment's *output* is knowledge, not just a pretty node. At the end:
 ## Past labs — the technique REFERENCE MAP (the code lives here, not in this skill)
 
 A lab is a kept, working REFERENCE: when you need a technique, open the lab that already solved it —
-read its `NOTES.md` for the evolution + verdicts, then open the cited `nodes/<id>/shader.frag.glsl`
+read its `NOTES.md` for the evolution + verdicts, then open the cited `nodes/<id>/passes/*.frag.glsl`
 for the real code. This is WHY labs are saved; do not re-derive or paste snippets when a reference
 exists. When the user references "the X lab", it's `projects/_lab/X/`. (COMMITTED labs travel via git
 and are reliable references on any machine; LOCAL-ONLY labs exist only where they were made.)

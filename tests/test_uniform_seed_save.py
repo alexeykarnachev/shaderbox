@@ -72,8 +72,8 @@ def test_save_seeds_scalar_uniforms_without_render(
     ui_node = UINode(node=node, id="scalar")
     ui_node.save(tmp_path)  # pre-fix: KeyError: 'u_bg_color'
     reloaded, meta = Node.load_from_dir(tmp_path / "scalar", gl=gl_ctx)
-    assert "u_bg_color" in meta["uniforms"]
-    assert "u_radius" in meta["uniforms"]
+    assert "u_bg_color" in meta["uniforms"]["main"]
+    assert "u_radius" in meta["uniforms"]["main"]
     _teardown(node)
     _teardown(reloaded)
 
@@ -88,9 +88,9 @@ def test_save_skips_default_sampler_and_reload_reseeds(
     node = _node_from_source(gl_ctx, _SAMPLER_SRC)
     ui_node = UINode(node=node, id="sampler")
     ui_node.save(tmp_path)  # must not raise
-    assert not (tmp_path / "sampler" / "media" / "u_image.png").exists()
+    assert not (tmp_path / "sampler" / "media" / "main" / "u_image.png").exists()
     reloaded, meta = Node.load_from_dir(tmp_path / "sampler", gl=gl_ctx)
-    assert "u_image" not in meta["uniforms"]  # default sampler skipped
+    assert "u_image" not in meta["uniforms"]["main"]  # default sampler skipped
     assert is_default_image(
         reloaded.render_pass.uniform_values["u_image"]
     )  # re-seeded to default on load
@@ -109,9 +109,9 @@ def test_save_persists_user_bound_sampler(
     )  # non-default
     ui_node = UINode(node=node, id="bound")
     ui_node.save(tmp_path)
-    assert (tmp_path / "bound" / "media" / "u_image.png").exists()
+    assert (tmp_path / "bound" / "media" / "main" / "u_image.png").exists()
     reloaded, meta = Node.load_from_dir(tmp_path / "bound", gl=gl_ctx)
-    assert "u_image" in meta["uniforms"]
+    assert "u_image" in meta["uniforms"]["main"]
     assert not is_default_image(reloaded.render_pass.uniform_values["u_image"])
     _teardown(node)
     _teardown(reloaded)

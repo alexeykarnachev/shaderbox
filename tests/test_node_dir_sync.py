@@ -46,14 +46,14 @@ def test_half_written_dir_does_not_crash(app: Any) -> None:
     nodes_dir = app.paths.nodes_dir
     new_id = "half-written-node"
     shutil.copytree(nodes_dir / STARTER_EXAMPLE_ID, nodes_dir / new_id)
-    (nodes_dir / new_id / "shader.frag.glsl").unlink()
+    (nodes_dir / new_id / "passes" / "main.frag.glsl").unlink()
 
     app.session.sync_nodes_from_disk()  # must not raise
     assert new_id not in app.ui_nodes
 
     shutil.copy(
-        nodes_dir / STARTER_EXAMPLE_ID / "shader.frag.glsl",
-        nodes_dir / new_id / "shader.frag.glsl",
+        nodes_dir / STARTER_EXAMPLE_ID / "passes" / "main.frag.glsl",
+        nodes_dir / new_id / "passes" / "main.frag.glsl",
     )
     app.session.sync_nodes_from_disk()
     assert new_id in app.ui_nodes

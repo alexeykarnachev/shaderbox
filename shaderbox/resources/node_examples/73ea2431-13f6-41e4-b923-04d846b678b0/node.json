@@ -4,26 +4,28 @@
         1280
     ],
     "uniforms": {
-        "u_color": [
-            1.0,
-            1.0,
-            1.0
-        ],
-        "u_image": {
-            "file_path": "media/u_image.png",
-            "size": [
-                960,
-                1280
+        "main": {
+            "u_color": [
+                1.0,
+                1.0,
+                1.0
             ],
-            "components": 4
-        },
-        "u_video": {
-            "file_path": "media/u_video.mp4",
-            "size": [
-                384,
-                384
-            ],
-            "components": 4
+            "u_image": {
+                "file_path": "media/main/u_image.png",
+                "size": [
+                    960,
+                    1280
+                ],
+                "components": 4
+            },
+            "u_video": {
+                "file_path": "media/main/u_video.mp4",
+                "size": [
+                    384,
+                    384
+                ],
+                "components": 4
+            }
         }
     },
     "ui_state": {

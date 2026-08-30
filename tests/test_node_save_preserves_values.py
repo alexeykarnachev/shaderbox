@@ -15,7 +15,12 @@ from pathlib import Path
 import moderngl
 import pytest
 
-from shaderbox.paths import NODE_JSON_BASENAME, NODE_SHADER_BASENAME, shader_lib_root
+from shaderbox.paths import (
+    NODE_JSON_BASENAME,
+    PASSES_DIR_NAME,
+    pass_shader_name,
+    shader_lib_root,
+)
 from shaderbox.shader_lib import ShaderLibIndex, set_active
 from shaderbox.ui_models import load_node_from_dir
 
@@ -34,7 +39,7 @@ def gl() -> moderngl.Context:
 
 def _values(node_dir: Path) -> dict:
     with (node_dir / NODE_JSON_BASENAME).open() as f:
-        return json.load(f)["uniforms"]
+        return json.load(f)["uniforms"]["main"]
 
 
 def test_save_without_a_live_program_keeps_the_values_on_disk(
@@ -48,7 +53,7 @@ def test_save_without_a_live_program_keeps_the_values_on_disk(
 
     # What the file watcher does on an external shader edit.
     ui_node.node.render_pass.release_program(
-        (node_dir / NODE_SHADER_BASENAME).read_text()
+        (node_dir / PASSES_DIR_NAME / pass_shader_name("main")).read_text()
     )
     assert ui_node.node.render_pass.program is None
     assert ui_node.node.render_pass.get_active_uniforms() == []

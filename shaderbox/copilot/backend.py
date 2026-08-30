@@ -79,7 +79,7 @@ from shaderbox.copilot.gate import GateChannel, GateKind, GateRequest
 from shaderbox.copilot.glsl_lex import span_drops_comment, token_match
 from shaderbox.copilot.sanitize import sanitize_display
 from shaderbox.core import ENGINE_DRIVEN_UNIFORMS, Canvas
-from shaderbox.document import Node
+from shaderbox.document import Node, document_dir_of
 from shaderbox.exporters.base import (
     AuthState,
     Exporter,
@@ -1020,7 +1020,7 @@ class CopilotBackend:
             self._save_ui_node(
                 source_node
             )  # persist live state so the load is a full copy
-            src_dir = source_node.node.render_pass.source.path.parent
+            src_dir = document_dir_of(source_node.node)
             new_node = load_node_from_dir(src_dir)
             new_node.reset_id()
             name = new_name.strip() or f"{source_node.ui_state.ui_name} copy"

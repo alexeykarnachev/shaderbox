@@ -18,7 +18,7 @@ import pytest
 from shaderbox import media
 from shaderbox.media import Video
 
-_VIDEO = "shaderbox/resources/node_examples/73ea2431-13f6-41e4-b923-04d846b678b0/media/u_video.mp4"
+_VIDEO = "shaderbox/resources/node_examples/73ea2431-13f6-41e4-b923-04d846b678b0/media/main/u_video.mp4"
 
 
 @pytest.fixture(scope="module")

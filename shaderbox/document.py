@@ -13,12 +13,13 @@ import contextlib
 import json
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
 
 import imageio
 import moderngl
 import numpy as np
 from loguru import logger
+from pydantic import BaseModel, ValidationError
 
 from shaderbox.constants import (
     DEFAULT_CANVAS_SIZE,
@@ -39,6 +40,7 @@ from shaderbox.media import (
     texture_to_pil,
     texture_to_rgba8,
 )
+from shaderbox.model_salvage import drop_invalid, drop_unknown
 from shaderbox.pass_graph import (
     GraphError,
     PassEntry,
@@ -46,11 +48,126 @@ from shaderbox.pass_graph import (
     plan_for_output,
     plan_passes,
 )
-from shaderbox.paths import NODE_JSON_BASENAME, NODE_SHADER_BASENAME
+from shaderbox.paths import (
+    GRAPH_JSON_BASENAME,
+    NODE_JSON_BASENAME,
+    PASS_SHADER_SUFFIX,
+    PASSES_DIR_NAME,
+    pass_name_of,
+)
 from shaderbox.render_preset import FitPolicy, RenderPreset, resolve_dims
 from shaderbox.shader_source import ShaderSource
 
 DEFAULT_PASS_NAME = "main"
+
+
+def _keyed_entry_fields() -> dict[str, type[BaseModel]]:
+    """PassGraph's `dict[str, <Model>]` fields, as {field name: element model}."""
+    fields: dict[str, type[BaseModel]] = {}
+    for name, field in PassGraph.model_fields.items():
+        args = get_args(field.annotation)
+        element = args[-1] if args else None
+        if isinstance(element, type) and issubclass(element, BaseModel):
+            fields[name] = element
+    return fields
+
+
+def load_graph(path: Path) -> PassGraph:
+    """Read `graph.json`, salvaging per key.
+
+    A malformed entry costs THAT pass's wiring, never the document: the pass still loads, still
+    compiles and still draws — it just starts unwired, which the panel can fix. A file that is
+    absent (or is not an object at all) yields an empty graph, which `load_from_dir` then fills
+    with a default entry per pass file it found.
+    """
+    if not path.is_file():
+        return PassGraph()
+    try:
+        with path.open() as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError) as e:
+        logger.warning(f"Unreadable {path.name} ({e}); the document loads unwired")
+        return PassGraph()
+    if not isinstance(data, dict):
+        logger.warning(
+            f"Malformed {path.name} (not an object); the document loads unwired"
+        )
+        return PassGraph()
+
+    # Per ENTRY, before the whole-model salvage: every dict-of-model field is keyed by pass name,
+    # so one bad entry validated as part of the whole would cost every sibling. Enumerated from
+    # the model rather than listed by hand — a field added later inherits the salvage instead of
+    # waiting for someone to remember it.
+    for key, model in _keyed_entry_fields().items():
+        entries = data.get(key)
+        if not isinstance(entries, dict):
+            data.pop(key, None)
+            continue
+        for name in list(entries):
+            row = entries[name]
+            if not isinstance(row, dict):
+                logger.warning(f"{path.name}: dropping malformed {key} entry '{name}'")
+                entries.pop(name)
+                continue
+            drop_unknown(model, row, f"{path.name}.{key}.{name}")
+            drop_invalid(model, row, f"{path.name}.{key}.{name}")
+            try:
+                model(**row)
+            except ValidationError as e:
+                logger.warning(
+                    f"{path.name}: dropping invalid {key} entry '{name}' ({e})"
+                )
+                entries.pop(name)
+
+    # The keyed-dict fields are already salvaged per entry above, and they must be held OUT of
+    # the whole-model pass: `drop_unknown` walks a nested model's FIELD names, so it reads every
+    # pass NAME as an unknown key and prunes the entire graph to empty.
+    keyed = {key: data.pop(key) for key in _keyed_entry_fields() if key in data}
+    drop_unknown(PassGraph, data, path.name)
+    drop_invalid(PassGraph, data, path.name)
+    data.update(keyed)
+    try:
+        return PassGraph(**data)
+    except ValidationError as e:
+        logger.warning(f"Incompatible {path.name} ({e}); the document loads unwired")
+        return PassGraph()
+
+
+def _uniforms_by_pass(metadata: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    # `uniforms` is keyed by pass name, then by uniform name: each pass owns its uniforms (D4),
+    # so two passes may legitimately both declare `u_tex` with different values.
+    uniforms = metadata.get("uniforms")
+    if not isinstance(uniforms, dict):
+        return {}
+    return {name: rows for name, rows in uniforms.items() if isinstance(rows, dict)}
+
+
+def _load_uniform_value(gl: moderngl.Context, node_dir: Path, value: Any) -> Any:
+    if isinstance(value, list):
+        return tuple(value)
+    if not isinstance(value, dict):
+        return value
+
+    local_file_path = value.get("file_path")
+    value_base64 = value.get("base64")
+    if local_file_path is not None:
+        file_path = node_dir / local_file_path
+        kind = Path(local_file_path).parts[0]
+        if kind == MEDIA_DIR_NAME:
+            return media_class_for(file_path.suffix)(file_path)
+        if kind == TEXTURES_DIR_NAME:
+            return gl.texture(
+                size=value["size"],
+                components=value["components"],
+                data=file_path.read_bytes(),
+                dtype=value.get("dtype", "f1"),
+            )
+        raise ValueError(
+            f"asset must live under '{MEDIA_DIR_NAME}' or '{TEXTURES_DIR_NAME}', not '{kind}'"
+        )
+    if value_base64 is not None:
+        return gl.buffer(base64.b64decode(value_base64))
+    raise ValueError("unknown uniform dict format")
 
 
 class Node:
@@ -219,50 +336,68 @@ class Node:
         node_dir: Path | str,
         gl: moderngl.Context | None = None,
     ) -> tuple["Node", dict[str, Any]]:
+        """Read a document: its graph, every pass file, and each pass's uniforms.
+
+        A pass file that cannot be read costs THAT pass, never the document (D14), and a
+        malformed `graph.json` costs the wiring, never the passes — an unwired document still
+        opens with its shaders intact, which is what makes it fixable.
+        """
         node_dir = Path(node_dir)
         with (node_dir / NODE_JSON_BASENAME).open() as f:
             metadata = json.load(f)
 
-        node = Node(
-            gl=gl,
-            source=ShaderSource.load(node_dir / NODE_SHADER_BASENAME),
-            canvas_size=metadata.get("canvas_size"),
+        node = Node(gl=gl, canvas_size=metadata.get("canvas_size"))
+        graph = load_graph(node_dir / GRAPH_JSON_BASENAME)
+        uniforms_by_pass = _uniforms_by_pass(metadata)
+
+        for render_pass in node.passes.values():
+            render_pass.release()
+        node.passes = {}
+        for shader_path in sorted(
+            (node_dir / PASSES_DIR_NAME).glob(f"*{PASS_SHADER_SUFFIX}")
+        ):
+            name = pass_name_of(shader_path)
+            entry = graph.passes.get(name)
+            try:
+                node.passes[name] = Pass(
+                    gl=node._gl,
+                    source=ShaderSource.load(shader_path),
+                    canvas_size=metadata.get("canvas_size"),
+                    target=entry.target if entry is not None else None,
+                )
+            except OSError as e:
+                logger.error(f"Skipping unreadable pass '{name}': {e}")
+        if not node.passes:
+            raise ValueError(f"{node_dir.name}: no readable pass file")
+
+        # A graph entry naming a file that does not exist is reported and dropped, so the plan
+        # never orders a pass nothing can draw.
+        missing = [name for name in graph.passes if name not in node.passes]
+        if missing:
+            logger.warning(
+                f"{node_dir.name}: graph names {sorted(missing)}, which have no pass file"
+            )
+        # One entry per pass FILE: the files are the passes, so a graph entry with no file is
+        # dropped (above) and a file with no entry gets defaults.
+        node.graph = PassGraph(
+            version=graph.version,
+            output=graph.output,
+            passes={name: graph.passes.get(name, PassEntry()) for name in node.passes},
+            layout=graph.layout,
         )
 
-        # ----------------------------------------------------------------
-        for uniform_name, value in metadata["uniforms"].items():
-            if isinstance(value, dict):
-                local_file_path = value.get("file_path")
-                value_base64 = value.get("base64")
-
-                if local_file_path is not None:
-                    file_path = node_dir / local_file_path
-                    dir_name = file_path.parent.name
-
-                    if dir_name == MEDIA_DIR_NAME:
-                        value = media_class_for(file_path.suffix)(file_path)
-                    elif dir_name == TEXTURES_DIR_NAME:
-                        data = file_path.read_bytes()
-                        value = node._gl.texture(
-                            size=value["size"],
-                            components=value["components"],
-                            data=data,
-                            dtype=value.get("dtype", "f1"),
-                        )
-                    else:
-                        raise ValueError(
-                            f"Failed to load uniform data from dir '{dir_name}': it should be stored in '{MEDIA_DIR_NAME}' or '{TEXTURES_DIR_NAME}' dir"
-                        )
-                elif value_base64 is not None:
-                    value_bytes = base64.b64decode(value_base64)
-                    value = node._gl.buffer(value_bytes)
-                else:
-                    raise ValueError("Unknown uniform dict format")
-
-            elif isinstance(value, list):
-                value = tuple(value)
-
-            node.render_pass.uniform_values[uniform_name] = value
+        for pass_name, render_pass in node.passes.items():
+            for uniform_name, value in uniforms_by_pass.get(pass_name, {}).items():
+                try:
+                    render_pass.uniform_values[uniform_name] = _load_uniform_value(
+                        node._gl, node_dir, value
+                    )
+                except Exception as e:
+                    # Per uniform: one unreadable asset costs that binding, not the pass.
+                    logger.warning(
+                        f"{node_dir.name}/{pass_name}: dropping uniform "
+                        f"'{uniform_name}' ({e})"
+                    )
 
         node.render()  # warm-up
         return node, metadata
@@ -422,3 +557,13 @@ class Node:
             return self._render_video(details, canvas)
         else:
             return self._render_image(details, canvas)
+
+
+def document_dir_of(node: Node) -> Path:
+    """The directory a document was loaded from / last saved to.
+
+    Derived from a pass file's location, which sits one level down in `passes/` — so this is the
+    single place that knows the depth, rather than every caller doing `.parent` and being wrong
+    by one the day the layout changes.
+    """
+    return next(iter(node.passes.values())).source.path.parent.parent

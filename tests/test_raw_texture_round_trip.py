@@ -57,7 +57,7 @@ def test_raw_texture_uniform_round_trips(
     ui_node.save(node_dir.parent, node_dir.name)
 
     with (node_dir / NODE_JSON_BASENAME).open() as f:
-        record = json.load(f)["uniforms"][name]
+        record = json.load(f)["uniforms"]["main"][name]
     assert record["dtype"] == dtype, (
         "the dtype must be recorded, or the loader cannot recover it"
     )

@@ -18,7 +18,12 @@ import pytest
 from PIL import Image as PILImage
 
 from shaderbox.media import Image
-from shaderbox.paths import NODE_JSON_BASENAME, NODE_SHADER_BASENAME, shader_lib_root
+from shaderbox.paths import (
+    NODE_JSON_BASENAME,
+    PASSES_DIR_NAME,
+    pass_shader_name,
+    shader_lib_root,
+)
 from shaderbox.shader_lib import ShaderLibIndex, set_active
 from shaderbox.ui_models import UIUniform, load_node_from_dir
 from shaderbox.util import get_uniform_hash
@@ -59,7 +64,7 @@ def test_every_surviving_row_names_a_live_uniform(gl, tmp_path: Path) -> None:
 
 def test_a_retype_does_not_strand_the_old_row(gl, tmp_path: Path) -> None:
     node_dir = _copy(tmp_path, _TEXT_EXAMPLE)
-    shader = node_dir / NODE_SHADER_BASENAME
+    shader = node_dir / PASSES_DIR_NAME / pass_shader_name("main")
     shader.write_text(
         shader.read_text().replace(
             "uniform float u_zoomout = 10.0;", "uniform vec2 u_zoomout = vec2(10.0);"
@@ -102,7 +107,7 @@ def test_no_prune_without_a_live_program(gl, tmp_path: Path) -> None:
     ui_node = load_node_from_dir(node_dir)
     before = _rows(node_dir)
     ui_node.node.render_pass.release_program(
-        (node_dir / NODE_SHADER_BASENAME).read_text()
+        (node_dir / PASSES_DIR_NAME / pass_shader_name("main")).read_text()
     )
     assert ui_node.node.render_pass.program is None
 
@@ -129,29 +134,33 @@ def test_renaming_a_sampler_does_not_orphan_its_media_file(gl, tmp_path: Path) -
     # the shader still has — a renamed-away sampler's file was never looked at again and
     # stayed on disk forever (riding along duplicate_node).
     node_dir = tmp_path / "node"
-    node_dir.mkdir()
+    (node_dir / PASSES_DIR_NAME).mkdir(parents=True)
     (node_dir / NODE_JSON_BASENAME).write_text(
         json.dumps({"canvas_size": [64, 64], "uniforms": {}, "ui_state": {}})
     )
 
     for name in ("u_tex0", "u_tex1", "u_tex2"):
-        (node_dir / NODE_SHADER_BASENAME).write_text(_SAMPLER_SHADER.format(name=name))
+        (node_dir / PASSES_DIR_NAME / pass_shader_name("main")).write_text(
+            _SAMPLER_SHADER.format(name=name)
+        )
         ui_node = load_node_from_dir(node_dir)
         ui_node.node.render_pass.uniform_values[name] = _bind_image(tmp_path, name)
         ui_node.save(node_dir.parent, node_dir.name, rebind=False)
 
-    on_disk = sorted(p.name for p in (node_dir / "media").iterdir())
+    on_disk = sorted(p.name for p in (node_dir / "media" / "main").iterdir())
     assert on_disk == ["u_tex2.png"], f"orphaned media survived: {on_disk}"
 
     with (node_dir / NODE_JSON_BASENAME).open() as f:
-        assert sorted(json.load(f)["uniforms"]) == ["u_tex2"]
+        assert sorted(json.load(f)["uniforms"]["main"]) == ["u_tex2"]
 
 
 def test_a_bound_sampler_keeps_its_file(gl, tmp_path: Path) -> None:
     # The other side of the bound: the sweep must not delete an asset a uniform still uses.
     node_dir = tmp_path / "node"
-    node_dir.mkdir()
-    (node_dir / NODE_SHADER_BASENAME).write_text(_SAMPLER_SHADER.format(name="u_tex"))
+    (node_dir / PASSES_DIR_NAME).mkdir(parents=True)
+    (node_dir / PASSES_DIR_NAME / pass_shader_name("main")).write_text(
+        _SAMPLER_SHADER.format(name="u_tex")
+    )
     (node_dir / NODE_JSON_BASENAME).write_text(
         json.dumps({"canvas_size": [64, 64], "uniforms": {}, "ui_state": {}})
     )
@@ -161,4 +170,4 @@ def test_a_bound_sampler_keeps_its_file(gl, tmp_path: Path) -> None:
     ui_node.save(node_dir.parent, node_dir.name, rebind=False)
     ui_node.save(node_dir.parent, node_dir.name, rebind=False)  # idempotent
 
-    assert [p.name for p in (node_dir / "media").iterdir()] == ["u_tex.png"]
+    assert [p.name for p in (node_dir / "media" / "main").iterdir()] == ["u_tex.png"]

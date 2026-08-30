@@ -13,6 +13,8 @@ from pydantic import BaseModel, Field, ValidationError, model_validator
 from shaderbox.constants import (
     DEFAULT_TEMPORAL_SIGMA,
     DEFAULT_TEMPORAL_WINDOW_SIZE,
+    MEDIA_DIR_NAME,
+    TEXTURES_DIR_NAME,
 )
 from shaderbox.copilot.state import CopilotLayout
 from shaderbox.core import ENGINE_DRIVEN_UNIFORMS
@@ -20,7 +22,14 @@ from shaderbox.document import Node
 from shaderbox.glyph_tables import TABLE_UNIFORMS
 from shaderbox.media import MediaDetails, MediaWithTexture, is_default_image
 from shaderbox.model_salvage import drop_invalid, load_model
-from shaderbox.paths import NODE_JSON_BASENAME, NODE_SHADER_BASENAME
+from shaderbox.paths import (
+    GRAPH_JSON_BASENAME,
+    NODE_JSON_BASENAME,
+    PASS_SHADER_SUFFIX,
+    PASSES_DIR_NAME,
+    pass_name_of,
+    pass_shader_name,
+)
 from shaderbox.ui_regions import NodeTab
 from shaderbox.util import get_uniform_hash
 
@@ -248,6 +257,81 @@ class UIAppState(BaseModel):
         return load_model(cls, file_path, "app_state")
 
 
+def _existing_rows(dir: Path, pass_name: str) -> dict[str, Any]:
+    """One pass's uniform rows as already persisted, for a pass with nothing compiled."""
+    existing = dir / NODE_JSON_BASENAME
+    if not existing.is_file():
+        return {}
+    try:
+        with existing.open() as f:
+            rows = json.load(f).get("uniforms", {}).get(pass_name, {})
+    except (OSError, json.JSONDecodeError) as e:
+        logger.warning(f"Could not carry '{pass_name}' uniform values forward: {e}")
+        return {}
+    return rows if isinstance(rows, dict) else {}
+
+
+# Sentinel: this uniform contributes no row (an unbound sampler holding the shipped default).
+_SKIP: Any = object()
+
+
+def _uniform_entry(
+    dir: Path,
+    pass_name: str,
+    uniform: moderngl.Uniform | moderngl.UniformBlock,
+    value: Any,
+) -> Any:
+    """One uniform's serialized form, writing its asset under `<kind>/<pass>/` (D16)."""
+    if getattr(uniform, "gl_type", None) == GL_SAMPLER_2D:
+        # An unbound sampler holds the shipped default; persisting a per-node copy is pointless
+        # and would make it read back as "bound" on reload. Skip it — load's seed_uniform_values
+        # re-establishes the default. A file left by a PREVIOUS bind is deleted with the skip
+        # (load ignores it, but it would linger on disk and ride along duplicate_node).
+        if is_default_image(value):
+            for kind in (MEDIA_DIR_NAME, TEXTURES_DIR_NAME):
+                for stale in (dir / kind / pass_name).glob(f"{uniform.name}.*"):
+                    stale.unlink()
+            return _SKIP
+
+        if isinstance(value, MediaWithTexture):
+            file_path = value.save(dir / MEDIA_DIR_NAME / pass_name, uniform.name)
+            local_file_path = f"{MEDIA_DIR_NAME}/{pass_name}/{file_path.name}"
+            size = value.texture.size
+            components = value.texture.components
+            dtype = value.texture.dtype
+        elif isinstance(value, moderngl.Texture):
+            local_file_path = f"{TEXTURES_DIR_NAME}/{pass_name}/{uniform.name}.bin"
+            file_path = dir / local_file_path
+            size = value.size
+            components = value.components
+            dtype = value.dtype
+            file_path.parent.mkdir(exist_ok=True, parents=True)
+            file_path.write_bytes(value.read())
+        else:
+            raise ValueError(
+                f"Uniform value must have a type MediaWithTexture or moderngl.Texture, "
+                f"but this one is {type(value)}"
+            )
+        return {
+            "file_path": local_file_path,
+            "size": size,
+            "components": components,
+            "dtype": dtype,
+        }
+
+    if isinstance(value, int | float):
+        return value
+    if isinstance(value, tuple | list):
+        return list(value)
+    if isinstance(value, moderngl.Buffer):
+        return {"base64": base64.b64encode(value.read()).decode("utf-8")}
+
+    logger.warning(
+        f"Can't save unsupported uniform type for {uniform.name}: {type(value)}"
+    )
+    return _SKIP
+
+
 class UINode(BaseModel):
     node: Node
     id: str = ""
@@ -278,12 +362,13 @@ class UINode(BaseModel):
             "ui_state": self.ui_state.model_dump(),
         }
 
-        # The uniform block below is rebuilt from the LIVE program, so with no program there
-        # is nothing to enumerate and every tuned value would be written away as {}. That
-        # window is ordinary, not exotic: release_program() nulls the program and returns
-        # without recompiling (the recompile rides the next render), so an external shader
-        # edit followed by a quit lands here. Keep what is already on disk instead.
-        if self.node.render_pass.program is None:
+        # The uniform block below is rebuilt from the LIVE programs, so with nothing compiled
+        # there is nothing to enumerate and every tuned value would be written away as {}. That
+        # window is ordinary, not exotic: release_program() nulls the program and returns without
+        # recompiling (the recompile rides the next render), so an external shader edit followed
+        # by a quit lands here. Keep what is already on disk instead.
+        live = any(p.program is not None for p in self.node.passes.values())
+        if not live:
             existing = dir / NODE_JSON_BASENAME
             if existing.is_file():
                 try:
@@ -292,126 +377,113 @@ class UINode(BaseModel):
                 except (OSError, json.JSONDecodeError) as e:
                     logger.warning(f"Could not carry uniform values forward: {e}")
 
-        fs_file_path = dir / NODE_SHADER_BASENAME
-        with fs_file_path.open("w") as f:
-            f.write(self.node.render_pass.source.text)
-        # Rebind the live source to its on-disk location + fresh mtime, so the mtime watcher and
-        # any subsequent load read consistent state. A rollback-checkpoint snapshot passes
-        # rebind=False: it serializes a COPY into the snapshot dir and must NOT repoint the live
-        # node into it (else the next edit writes the snapshot, not nodes/<id>).
-        if rebind:
-            self.node.render_pass.source = replace(
-                self.node.render_pass.source,
-                path=fs_file_path,
-                mtime=fs_file_path.lstat().st_mtime,
-            )
+        passes_dir = dir / PASSES_DIR_NAME
+        passes_dir.mkdir(exist_ok=True, parents=True)
+        for pass_name, render_pass in self.node.passes.items():
+            fs_file_path = passes_dir / pass_shader_name(pass_name)
+            with fs_file_path.open("w") as f:
+                f.write(render_pass.source.text)
+            # Rebind the live source to its on-disk location + fresh mtime, so the mtime watcher
+            # and any subsequent load read consistent state. A rollback-checkpoint snapshot
+            # passes rebind=False: it serializes a COPY into the snapshot dir and must NOT
+            # repoint the live pass into it (else the next edit writes the snapshot).
+            if rebind:
+                render_pass.source = replace(
+                    render_pass.source,
+                    path=fs_file_path,
+                    mtime=fs_file_path.lstat().st_mtime,
+                )
+        # A pass file for a pass the document no longer has would load back as a pass (the
+        # loader enumerates FILES), resurrecting a deletion on the next open.
+        for stale in passes_dir.glob(f"*{PASS_SHADER_SUFFIX}"):
+            if pass_name_of(stale) not in self.node.passes:
+                logger.debug(f"Dropping pass file for removed pass {stale.name}")
+                stale.unlink()
+
+        with (dir / GRAPH_JSON_BASENAME).open("w") as f:
+            json.dump(self.node.graph.model_dump(), f, indent=4)
+            f.write("\n")
 
         # ----------------------------------------------------------------
-        # Drop UI rows for uniforms the shader no longer has. The row key is a hash of the
+        # Drop UI rows for uniforms no shader has any more. The row key is a hash of the
         # uniform's NAME AND SHAPE, and rows are created lazily in the uniform draw loop, so
         # every rename and every retype strands its predecessor — the dict only ever grew
         # (shipped examples carry rows for uniforms their shader dropped long ago). Pruned
         # here rather than in the draw loop because save is the funnel every path reaches,
-        # including headless ones that never draw a row. Skipped with no live program: there
+        # including headless ones that never draw a row. Skipped with nothing compiled: there
         # would be nothing to prune against, and the answer would be "delete all of them".
-        if self.node.render_pass.program is not None:
+        if live:
             live_rows = {
                 get_uniform_hash(u)
-                for u in self.node.render_pass.get_active_uniforms()
+                for render_pass in self.node.passes.values()
+                for u in render_pass.get_active_uniforms()
                 if u.name not in TABLE_UNIFORMS
             }
-            stale = [h for h in self.ui_state.ui_uniforms if h not in live_rows]
-            for hash_key in stale:
+            stale_rows = [h for h in self.ui_state.ui_uniforms if h not in live_rows]
+            for hash_key in stale_rows:
                 self.ui_state.ui_uniforms.pop(hash_key)
-            if stale:
+            if stale_rows:
                 logger.debug(
-                    f"Dropped {len(stale)} stale uniform row(s) from {dir.name}"
+                    f"Dropped {len(stale_rows)} stale uniform row(s) from {dir.name}"
                 )
             meta["ui_state"] = self.ui_state.model_dump()
 
         # ----------------------------------------------------------------
-        # Save uniforms
-        self.node.render_pass.seed_uniform_values()
-        for uniform in self.node.render_pass.get_active_uniforms():
-            if uniform.name in ENGINE_DRIVEN_UNIFORMS:
+        # Save uniforms, keyed by PASS then by uniform. Each pass owns its uniforms (D4), so two
+        # passes may both bind `u_tex`; assets are namespaced by pass for the same reason (D16),
+        # since a flat layout would have them overwrite each other and the sweep below would
+        # delete the survivor's file.
+        for pass_name, render_pass in self.node.passes.items():
+            if render_pass.program is None:
+                # A pass off the output's path never drew, so it has no program and its uniform
+                # set is unknown — saving it as {} would silently drop every value the user
+                # tuned on it. Compile it here; a pass whose SOURCE is broken still has no
+                # program afterwards and keeps whatever is already on disk.
+                render_pass.compile()
+            if render_pass.program is None:
+                existing = _existing_rows(dir, pass_name)
+                if existing:
+                    meta["uniforms"][pass_name] = existing
                 continue
-
-            value = self.node.render_pass.uniform_values[uniform.name]
-
-            if getattr(uniform, "gl_type", None) == GL_SAMPLER_2D:
-                # An unbound sampler holds the shipped default; persisting a per-node copy is pointless
-                # and would make it read back as "bound" on reload. Skip it — load's seed_uniform_values
-                # re-establishes the default. A file left by a PREVIOUS bind is deleted with the
-                # skip (load ignores it, but it would linger on disk and ride along duplicate_node).
-                if is_default_image(value):
-                    for stale_dir in (dir / "media", dir / "textures"):
-                        for stale in stale_dir.glob(f"{uniform.name}.*"):
-                            stale.unlink()
+            rows: dict[str, Any] = {}
+            render_pass.seed_uniform_values()
+            for uniform in render_pass.get_active_uniforms():
+                if uniform.name in ENGINE_DRIVEN_UNIFORMS:
                     continue
+                value = render_pass.uniform_values[uniform.name]
+                entry = _uniform_entry(dir, pass_name, uniform, value)
+                if entry is not _SKIP:
+                    rows[uniform.name] = entry
+            meta["uniforms"][pass_name] = rows
 
-                file_name_wo_ext = uniform.name
-
-                if isinstance(value, MediaWithTexture):
-                    file_path = value.save(dir / "media", file_name_wo_ext)
-                    local_file_path = f"media/{file_path.name}"
-                    size = value.texture.size
-                    components = value.texture.components
-                    dtype = value.texture.dtype
-                elif isinstance(value, moderngl.Texture):
-                    data = value.read()
-                    local_file_path = f"textures/{file_name_wo_ext}.bin"
-                    file_path = dir / local_file_path
-                    size = value.size
-                    components = value.components
-                    dtype = value.dtype
-                    file_path.parent.mkdir(exist_ok=True, parents=True)
-                    file_path.write_bytes(data)
-                else:
-                    raise ValueError(
-                        f"Uniform value must have a type MediaWithTexture or moderngl.Texture, but this one is {type(value)}"
-                    )
-
-                meta["uniforms"][uniform.name] = {
-                    "file_path": local_file_path,
-                    "size": size,
-                    "components": components,
-                    "dtype": dtype,
-                }
-
-            elif isinstance(value, int | float):
-                meta["uniforms"][uniform.name] = value
-
-            elif isinstance(value, tuple | list):
-                meta["uniforms"][uniform.name] = list(value)
-
-            elif isinstance(value, moderngl.Buffer):
-                meta["uniforms"][uniform.name] = {
-                    "base64": base64.b64encode(value.read()).decode("utf-8"),
-                }
-
-            else:
-                logger.warning(
-                    f"Can't to save unsupported uniform type for {uniform.name}: {type(value)}"
-                )
-
-        # Drop media/texture files no surviving uniform refers to. The unbind cleanup above
-        # is keyed by the uniform's OWN name, so it can only ever visit names the shader
-        # still has — a sampler that was renamed away is never looked at, and its file stays
-        # forever (and rides along duplicate_node). Skipped with no live program, where the
-        # uniform block was carried forward rather than rebuilt.
-        if self.node.render_pass.program is not None:
+        # ----------------------------------------------------------------
+        # Drop media/texture files no surviving uniform refers to. The unbind cleanup in
+        # _uniform_entry is keyed by the uniform's OWN name, so it can only ever visit names the
+        # shader still has — a sampler that was renamed away is never looked at, and its file
+        # would stay forever (and ride along duplicate_node). Scoped per pass, so one pass's
+        # sweep cannot delete another's asset. Skipped with nothing compiled, where the uniform
+        # block was carried forward rather than rebuilt.
+        if live:
             referenced = {
-                Path(entry["file_path"]).name
-                for entry in meta["uniforms"].values()
-                if isinstance(entry, dict) and "file_path" in entry
+                Path(row["file_path"]).name
+                for rows in meta["uniforms"].values()
+                if isinstance(rows, dict)
+                for row in rows.values()
+                if isinstance(row, dict) and "file_path" in row
             }
-            for asset_dir in (dir / "media", dir / "textures"):
-                if not asset_dir.is_dir():
+            for asset_root in (dir / MEDIA_DIR_NAME, dir / TEXTURES_DIR_NAME):
+                if not asset_root.is_dir():
                     continue
-                for asset in asset_dir.iterdir():
-                    if asset.is_file() and asset.name not in referenced:
-                        logger.debug(f"Dropping orphaned asset {asset.name}")
-                        asset.unlink()
+                for pass_dir in asset_root.iterdir():
+                    if not pass_dir.is_dir():
+                        continue
+                    keep = pass_dir.name in self.node.passes
+                    for asset in pass_dir.iterdir():
+                        if asset.is_file() and (
+                            not keep or asset.name not in referenced
+                        ):
+                            logger.debug(f"Dropping orphaned asset {asset.name}")
+                            asset.unlink()
 
         with (dir / NODE_JSON_BASENAME).open("w") as f:
             json.dump(meta, f, indent=4)

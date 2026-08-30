@@ -5,11 +5,25 @@ from typing import Self
 
 from platformdirs import user_data_dir
 
-# The two files that constitute a node on disk. A node dir is loadable only once BOTH exist.
+# What constitutes a document on disk. A document dir is loadable once node.json and at least one
+# pass file exist (feature 065).
 NODE_JSON_BASENAME = "node.json"
-NODE_SHADER_BASENAME = "shader.frag.glsl"
-# The node's CPU behaviour script, under nodes/<id>/scripts/ (feature 048: one per node).
+# One ordinary fragment shader per pass, each with its own main().
+PASSES_DIR_NAME = "passes"
+PASS_SHADER_SUFFIX = ".frag.glsl"
+# The document's CPU behaviour script, under nodes/<id>/scripts/ (feature 048: one per node).
 NODE_SCRIPT_BASENAME = "script.py"
+# The pass graph: which passes exist, what fills each input, each target's configuration, and
+# which pass is the output. App-written derived state, exactly as node.json is.
+GRAPH_JSON_BASENAME = "graph.json"
+
+
+def pass_shader_name(pass_name: str) -> str:
+    return f"{pass_name}{PASS_SHADER_SUFFIX}"
+
+
+def pass_name_of(shader_path: Path) -> str:
+    return shader_path.name[: -len(PASS_SHADER_SUFFIX)]
 
 
 def app_data_dir() -> Path:
@@ -94,8 +108,14 @@ class ProjectPaths:
     def node_json_for(self, node_id: str) -> Path:
         return self.nodes_dir / node_id / NODE_JSON_BASENAME
 
-    def node_shader_for(self, node_id: str) -> Path:
-        return self.nodes_dir / node_id / NODE_SHADER_BASENAME
+    def passes_dir_for(self, node_id: str) -> Path:
+        return self.nodes_dir / node_id / PASSES_DIR_NAME
+
+    def pass_shader_for(self, node_id: str, pass_name: str) -> Path:
+        return self.passes_dir_for(node_id) / pass_shader_name(pass_name)
+
+    def graph_json_for(self, node_id: str) -> Path:
+        return self.nodes_dir / node_id / GRAPH_JSON_BASENAME
 
     def node_script_for(self, node_id: str) -> Path:
         return self.scripts_dir_for(node_id) / NODE_SCRIPT_BASENAME

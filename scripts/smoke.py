@@ -24,6 +24,7 @@ from shaderbox.document import Node
 from shaderbox.help_content import help_sections
 from shaderbox.logging_setup import configure_logging
 from shaderbox.pass_graph import PassEntry, PassGraph
+from shaderbox.paths import PASSES_DIR_NAME, pass_shader_name
 from shaderbox.ui import update_and_draw
 from shaderbox.ui_regions import ActiveRegion, NodeTab
 
@@ -93,8 +94,10 @@ def _seed_tmp_project(root: Path) -> Path:
     # freeze/determinism/play-stop — is the pure-CPU unit test's job; smoke proves the App loop +
     # the binding + the stopped-skip wire.)
     script_node = nodes / "script_node"
-    script_node.mkdir()
-    (script_node / "shader.frag.glsl").write_text(_SCRIPT_SHADER, encoding="utf-8")
+    (script_node / PASSES_DIR_NAME).mkdir(parents=True)
+    (script_node / PASSES_DIR_NAME / pass_shader_name("main")).write_text(
+        _SCRIPT_SHADER, encoding="utf-8"
+    )
     (script_node / "node.json").write_text(
         json.dumps(_SCRIPT_NODE_JSON), encoding="utf-8"
     )

@@ -36,7 +36,8 @@ from shaderbox.integrations import IntegrationsStore
 from shaderbox.paths import (
     NODE_JSON_BASENAME,
     NODE_SCRIPT_BASENAME,
-    NODE_SHADER_BASENAME,
+    PASS_SHADER_SUFFIX,
+    PASSES_DIR_NAME,
     ProjectPaths,
     shader_lib_root,
 )
@@ -380,10 +381,15 @@ class ProjectSession:
         current: dict[str, float] = {}
         for node_dir in self.paths.nodes_dir.iterdir():
             meta = node_dir / NODE_JSON_BASENAME
-            shader = node_dir / NODE_SHADER_BASENAME
-            # A dir is loadable only once BOTH files exist — skip a half-written node (e.g. a node.json
-            # already on disk while its shader is still being written); it syncs in once complete.
-            if not node_dir.is_dir() or not meta.is_file() or not shader.is_file():
+            passes = node_dir / PASSES_DIR_NAME
+            # A dir is loadable only once node.json AND at least one pass file exist — skip a
+            # half-written document (a node.json already on disk while its passes are still
+            # being written); it syncs in once complete.
+            if (
+                not node_dir.is_dir()
+                or not meta.is_file()
+                or not any(passes.glob(f"*{PASS_SHADER_SUFFIX}"))
+            ):
                 continue
             try:
                 current[node_dir.name] = meta.lstat().st_mtime

@@ -375,8 +375,11 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   an invisible glfw window via `App(headless=True)` (which sets the `VISIBLE=FALSE` window hint —
   WITHOUT it `App` creates a visible MAXIMIZED window that pops up + hangs the loop on a real
   display). Any offscreen driver should use `App(headless=True)`, not a hand-rolled hidden window.
-- **Node-dir data format:** a project lives in `<project>/nodes/<uuid>/{node.json, shader.frag.glsl,
-  media/, textures/}` + `<project>/app_state.json`. The active-project pointer is
+- **Document-dir data format:** a project lives in `<project>/nodes/<uuid>/{node.json, graph.json,
+  passes/<name>.frag.glsl, media/<pass>/, textures/<pass>/}` + `<project>/app_state.json`. One `.glsl`
+  per pass, each with its own `main()`; `graph.json` says which pass fills which input, how each
+  target is configured and which pass is the output; media and textures are namespaced by pass, since
+  each pass owns its uniforms and two could otherwise collide on one name (feature 065). The active-project pointer is
   `~/.local/share/shaderbox/project_dir`; shipped examples live under `shaderbox/resources/node_examples/`.
   Exporter render-output scratch files live in `<project>/exporter_scratch/` (cleaned per export).
 
@@ -423,15 +426,18 @@ can't judge anyway — hand it to a `make run` pass. If a headless assertion is 
 narrow object or a bare GL+imgui context, never a whole `App`.
 
 ### Authoring / debugging nodes directly (from Claude Code, no app/copilot)
-A node is just files on disk — `<project>/nodes/<uuid>/{node.json, shader.frag.glsl, scripts/script.py}`
-+ `<project>/app_state.json` (format under "Node-dir data format" above). So you can author/edit/debug
+A document is just files on disk — `<project>/nodes/<uuid>/{node.json, graph.json,
+passes/<name>.frag.glsl, scripts/script.py}` + `<project>/app_state.json` (format under
+"Document-dir data format" above). So you can author/edit/debug
 a node directly for ad-hoc shader work, a repro, or a `/shader-lab` session — no `App`, no copilot. The
 mechanics that avoid the foot-guns hit in practice:
 
-- **Write a node dir ATOMICALLY: `shader.frag.glsl` BEFORE `node.json`** (or temp-dir + rename). A
+- **Write a document dir ATOMICALLY: the pass files BEFORE `node.json`** (or temp-dir + rename). A
   running app reconciles `nodes/` every frame (`sync_nodes_from_disk`); a dir with `node.json` but no
-  shader is a half-written node the sync tries to load. The sync now skips an incomplete dir (both
-  files required), but writing shader-first closes the window regardless of the user's build.
+  pass file is a half-written document the sync tries to load. The sync skips an incomplete dir
+  (node.json plus at least one pass file required), but writing passes-first closes the window
+  regardless of the user's build. `graph.json` is optional — a pass file with no entry gets defaults,
+  so a hand-authored single-pass document needs only `passes/main.frag.glsl` + `node.json`.
 - **Never `git checkout -- <file>` to undo your OWN uncommitted edit** mid-task (e.g. a verify step:
   revert-fix → confirm-the-test-goes-red → restore). Checkout restores the *committed* version and
   silently eats your uncommitted fix; re-apply via Edit instead.

@@ -252,7 +252,7 @@ def test_unbind_then_save_removes_the_orphan_media_file(
     CopilotBackend.bind_picked_media.__get__(stub)(node_id, "u_image", img_path)
     ui = stub._get_ui_nodes()[node_id]
     ui.save(tmp_path / "proj")
-    media_dir = tmp_path / "proj" / node_id / "media"
+    media_dir = tmp_path / "proj" / node_id / "media" / "main"
     assert list(media_dir.glob("u_image.*"))
 
     CopilotBackend.unbind_media.__get__(stub)("", "u_image")

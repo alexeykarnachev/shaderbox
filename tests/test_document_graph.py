@@ -15,13 +15,12 @@ from pathlib import Path
 
 import moderngl
 import pytest
-
 from PIL import Image as PILImage
 
 from shaderbox.constants import DEFAULT_FS_FILE_PATH
 from shaderbox.core import Canvas, Pass
-from shaderbox.media import MediaDetails, texture_to_rgba8
 from shaderbox.document import DEFAULT_PASS_NAME, Node
+from shaderbox.media import MediaDetails, texture_to_rgba8
 from shaderbox.pass_graph import PassEntry, PassGraph, TargetConfig
 from shaderbox.shader_source import ShaderSource
 
@@ -168,7 +167,9 @@ def test_a_feedback_pass_accumulates_once_per_frame(gl_ctx: moderngl.Context) ->
     for _ in range(4):
         doc.begin_frame()
         doc.render(u_time=0.0)
-        doc.render(u_time=0.0)  # the second draw of the same frame (preview + own canvas)
+        doc.render(
+            u_time=0.0
+        )  # the second draw of the same frame (preview + own canvas)
     # Four frames of +0.1 each, not eight.
     assert _red(doc) == pytest.approx(102, abs=3)
     doc.release()
@@ -217,9 +218,7 @@ def test_an_unfilled_input_reads_black_and_the_document_renders(
     doc = _document(
         gl_ctx,
         {"blur": _HALVE},
-        PassGraph(
-            output="blur", passes={"blur": PassEntry(inputs={"u_src": "ghost"})}
-        ),
+        PassGraph(output="blur", passes={"blur": PassEntry(inputs={"u_src": "ghost"})}),
     )
     doc.render(u_time=0.0)
     assert _red(doc) == 0

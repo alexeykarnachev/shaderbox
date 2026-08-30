@@ -140,7 +140,7 @@ def test_create_node_from_source_does_not_touch_starter_example(
     # the source to the new node's own dir. This pins the contract: the starter file is
     # byte-unchanged, and the new dir holds the agent's source.
     starter = NODE_EXAMPLES_DIR / STARTER_EXAMPLE_ID
-    starter_shader = starter / "shader.frag.glsl"
+    starter_shader = starter / "passes" / "main.frag.glsl"
     before = starter_shader.read_bytes()
 
     agent_source = "void main() { gl_FragColor = vec4(1.0); }\n"
@@ -152,8 +152,10 @@ def test_create_node_from_source_does_not_touch_starter_example(
     saved_dir = new_node.save(tmp_path)
 
     assert starter_shader.read_bytes() == before, "starter example was clobbered"
-    assert (saved_dir / "shader.frag.glsl").read_text() == agent_source
-    assert new_node.node.render_pass.source.path == saved_dir / "shader.frag.glsl"
+    assert (saved_dir / "passes" / "main.frag.glsl").read_text() == agent_source
+    assert (
+        new_node.node.render_pass.source.path == saved_dir / "passes" / "main.frag.glsl"
+    )
 
 
 def test_create_node_compiles_and_surfaces_errors(gl_ctx: moderngl.Context) -> None:
