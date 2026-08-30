@@ -466,12 +466,9 @@ class App:
         if new_id:
             self.ensure_shader_tab(new_id)
 
-    def _on_document_source_synced(self, document_id: str, source: str) -> None:
-        # The mtime watcher rebuilt a document's source on disk; push the new text into its live
-        # editor session (path-keyed; the document's source.path is unchanged, only text/mtime).
-        if document_id not in self.ui_documents:
-            return
-        path = self.ui_documents[document_id].document.render_pass.source.path
+    def _on_document_source_synced(self, path: Path, source: str) -> None:
+        # The mtime watcher rebuilt a pass's source on disk; push the new text into its live
+        # editor session (path-keyed; the pass's source.path is unchanged, only text/mtime).
         session = self.editor_sessions.get(path)
         if session is None:
             return
@@ -1043,14 +1040,18 @@ class App:
         self.tab_select_pending = True
         self.editor_was_ever_focused = False
 
-    def ensure_shader_tab(self, document_id: str) -> None:
-        # On document-select: focus (or open) the document's shader tab so selecting a document shows its
-        # shader, the pre-045 default. Other open tabs (scripts / libs / other documents' shaders) stay.
+    def ensure_shader_tab(self, document_id: str, pass_name: str = "") -> None:
+        # On document-select: focus (or open) a pass's shader tab so selecting a document shows a
+        # shader, the pre-045 default. Other open tabs (scripts / libs / other documents' passes)
+        # stay. `pass_name` empty means the OUTPUT pass, which is what a document opens on.
         if document_id not in self.ui_documents:
             return
-        path = self.ui_documents[document_id].document.render_pass.source.path
+        document = self.ui_documents[document_id].document
+        render_pass = document.passes.get(pass_name) or document.render_pass
         self._focus_or_add_tab(
-            EditorTab(path=path, kind="shader", document_id=document_id)
+            EditorTab(
+                path=render_pass.source.path, kind="shader", document_id=document_id
+            )
         )
 
     def set_active_tab(self, index: int) -> None:
@@ -1219,8 +1220,8 @@ class App:
                 return
         session.saved_undo = session.editor.get_undo_index()
 
-    def sync_editor_from_disk(self, document_id: str, source: str) -> None:
-        self.session.sync_editor_from_disk(document_id, source)
+    def sync_editor_from_disk(self, path: Path, source: str) -> None:
+        self.session.sync_editor_from_disk(path, source)
 
     def open_current_document_dir(self) -> None:
         if not self.current_document_id:

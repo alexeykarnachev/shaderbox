@@ -2,7 +2,7 @@
 
 **Status: PLAN-LOCKED.** Reviewed by three agents (completeness, adversarial design, cold-start);
 D10b, D11, D12, D15 and D16 were added or corrected in response, and the verification list was made
-falsifiable. Stages 1-5 are landed; start at stage 6. Anchor for facts: `00_facts.md` (six-agent round, verified by
+falsifiable. Stages 1-6 are landed; start at stage 7. Anchor for facts: `00_facts.md` (six-agent round, verified by
 hand where load-bearing). Predecessor: `064_multistep/` — built, reverted (`34f6d19`), kept for the
 record of what was tried and what it cost.
 
@@ -280,8 +280,14 @@ Each stage leaves the tree green and is verifiable on its own.
    (a scripting protocol whose subject is now a `Pass`), the lib picker's filesystem tree nodes, and
    imgui's own `tree_node_ex`. `NodeTab` did NOT stay — its `NODE` member is the document tab, so it
    is domain, not a namesake, and became `DocumentTab.DOCUMENT`.
-6. **Editor and hot reload** — a `pass` tab kind, per-pass recompile (D8), `watch.py` generalised off
-   its privileged index 0.
+6. **Editor and hot reload** — DONE. `watch.py` polls EVERY pass, not just the output's, and
+   identifies a root by PATH rather than by index 0. Check 7 passes, counted. Two things the spec
+   expected that turned out not to be needed: a `pass` tab KIND (a pass tab is a shader tab keyed
+   by its own path, which is what `EditorTab` already was — `ensure_shader_tab` just takes an
+   optional pass name), and work to make recompilation per-pass (the stage-2 split gave it, since
+   each `Pass` owns its program). What DID need work was the editor-sync callback, which keyed on
+   `document_id` and so could only ever address one file per document; it keys on the PATH now,
+   which is what an editor session was always keyed by.
 7. **The panel** — the pass list with inputs and target config.
 8. **The copilot** — the fourth address kind, and the working set learning to show a document's
    passes with per-pass errors.

@@ -248,7 +248,7 @@ def test_persist_normalizes_crlf() -> None:
     )
     stub = types.SimpleNamespace(
         _capture_document=lambda _id: None,
-        _copilot_persist_shader=lambda _id, _document, text: (
+        _copilot_persist_shader=lambda _document, text: (
             captured.update(text=text) or []
         ),
         _working_set_add=lambda _a: None,
@@ -286,9 +286,7 @@ def test_persist_force_restores_after_streak_on_real_path() -> None:
     err = CompileErrorInfo(path="n.frag.glsl", line=1, message="boom")
     limit = COPILOT_CONFIG.auto_revert_after_failed_edits
 
-    def persist_shader(
-        _id: str, _document: object, text: str
-    ) -> list[CompileErrorInfo]:
+    def persist_shader(_document: object, text: str) -> list[CompileErrorInfo]:
         writes.append(text)
         # Every model edit compiles broken; the restore write itself is clean. Mirrors
         # production: the write updates the document's compile state (prev_clean reads it).
@@ -532,7 +530,7 @@ def test_persist_normalizes_lone_cr() -> None:
     )
     stub = types.SimpleNamespace(
         _capture_document=lambda _id: None,
-        _copilot_persist_shader=lambda _id, _document, text: (
+        _copilot_persist_shader=lambda _document, text: (
             captured.update(text=text) or []
         ),
         _working_set_add=lambda _a: None,

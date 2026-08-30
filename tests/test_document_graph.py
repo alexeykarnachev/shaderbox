@@ -10,7 +10,7 @@ overrides (set at process top, read at context creation); skips cleanly if no co
 """
 
 import os
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import moderngl
@@ -407,4 +407,39 @@ def test_begin_frame_without_a_number_advances_every_call(
         doc.begin_frame()
         doc.render(u_time=0.0)
     assert _red(doc) == pytest.approx(77, abs=3)
+    doc.release()
+
+
+def test_editing_one_pass_recompiles_only_that_pass(
+    gl_ctx: moderngl.Context, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Check 7 (D8). The observable is a COUNT, not an eyeball: recompiling every pass on every
+    # edit renders the identical picture, and only shows up as a hitch — measured at ~1.3 ms per
+    # program, so sixteen passes is a ~21 ms stall on each keystroke-save.
+    doc = _document(
+        gl_ctx,
+        {"a": _CONST % "0.8", "b": _HALVE},
+        PassGraph(
+            output="b", passes={"a": PassEntry(), "b": PassEntry(inputs={"u_src": "a"})}
+        ),
+    )
+    doc.render(u_time=0.0)
+
+    compiles: dict[str, int] = dict.fromkeys(doc.passes, 0)
+
+    def counting(name: str, render_pass: Pass) -> Callable[[], None]:
+        original = render_pass.compile
+
+        def wrapped() -> None:
+            compiles[name] += 1
+            original()
+
+        return wrapped
+
+    for name, render_pass in doc.passes.items():
+        monkeypatch.setattr(render_pass, "compile", counting(name, render_pass))
+
+    doc.passes["b"].release_program(_HALVE.replace("0.5", "0.25"))
+    doc.render(u_time=0.0)
+    assert compiles == {"a": 0, "b": 1}, f"an edit to b recompiled {compiles}"
     doc.release()

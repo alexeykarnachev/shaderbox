@@ -81,7 +81,7 @@ def _noop_current_document_changed(old_id: str, new_id: str) -> None:
     pass
 
 
-def _noop_document_source_synced(document_id: str, source: str) -> None:
+def _noop_document_source_synced(path: Path, source: str) -> None:
     pass
 
 
@@ -105,7 +105,7 @@ class ProjectSession:
             [str, str], None
         ] = _noop_current_document_changed,
         on_document_source_synced: Callable[
-            [str, str], None
+            [Path, str], None
         ] = _noop_document_source_synced,
         on_document_deleted: Callable[[str, Path], None] = _noop_document_deleted,
     ) -> None:
@@ -237,10 +237,11 @@ class ProjectSession:
         logger.info(f"Document '{ui_document.ui_state.ui_name}' saved: {dir}")
         return dir
 
-    def sync_editor_from_disk(self, document_id: str, source: str) -> None:
+    def sync_editor_from_disk(self, path: Path, source: str) -> None:
         # The whole reaction is UI (push new disk text into the live editor session), so the
-        # core just fires the callback; the owner's handler does the editor work.
-        self._on_document_source_synced(document_id, source)
+        # core just fires the callback; the owner's handler does the editor work. Keyed by PATH,
+        # which is what an editor session is keyed by — a document has one file per pass.
+        self._on_document_source_synced(path, source)
 
     def _delete_document_unguarded(self, document_id: str) -> str:
         # Teardown shared by the public + copilot delete: release GL, drop the editor session,
@@ -441,9 +442,10 @@ class ProjectSession:
             ui_document.document.render_pass,
         )
         self._wire_document_hooks(document_id, ui_document.document)
-        self._on_document_source_synced(
-            document_id, ui_document.document.render_pass.source.text
-        )
+        for render_pass in ui_document.document.passes.values():
+            self._on_document_source_synced(
+                render_pass.source.path, render_pass.source.text
+            )
 
     def _wire_document_hooks(self, document_id: str, document: Document) -> None:
         # Inject the export-isolation factory (Document.render_media enters it around every export, so an

@@ -26,10 +26,11 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-08-30 (064 reverted; 065 stages 1-5 of nine landed). -->
-**ACTIVE: 065 pass graph — stages 1-5 of nine are landed. Next is stage 6: the EDITOR and hot
-reload — a `pass` tab kind, per-pass recompile (D8), and `watch.py` generalised off its privileged
-index 0. This is the first stage a person can see.** Read
+<!-- As of 2026-08-30 (064 reverted; 065 stages 1-6 of nine landed). -->
+**ACTIVE: 065 pass graph — stages 1-6 of nine are landed. Next is stage 7: the PANEL — the pass
+list with its inputs and target config, and the six verbs of D15 (add / delete / rename / set
+output / wire / unwire). It is the first stage a person can see, and the first that needs a display
+to verify.** Read
 `ai_docs/features/065_pass_graph/01_spec.md` (D1-D16, the `graph.json` schema, the nine-stage order,
 sixteen falsifiable checks); `00_facts.md` beside it is the verified evidence it was written
 against, including three corrections to claims made earlier in the work.
@@ -50,7 +51,9 @@ the dogfood harness.
 `documents/<id>/`, with `document.json` beside `graph.json`. `EngineNode` (a scripting protocol)
 and the lib picker's filesystem tree nodes are unrelated namesakes and stay.
 
-**No UI yet** — a multi-pass document can only be authored by editing files. Stage 7 is the panel.
+**Editing any pass file hot-reloads that pass**, and only that pass recompiles (D8, check 7 —
+counted, not eyeballed). **No UI yet**: a multi-pass document can only be authored by editing files
+on disk. Stage 7 is the panel.
 
 **What happened to 064.** It shipped a multi-pass engine where every pass was a function inside ONE
 shader file. The maintainer used it and rejected the shape: *"we need the genuine separate shader;
@@ -79,7 +82,7 @@ v0.21.0.** **No open BLOCKERs.**
 
 | # | Name | Status | Brief |
 |---|---|---|---|
-| 065 | pass_graph | in progress | A document holds several passes forming a DAG, each pass its own `.glsl` file with its own `main()` and render target; "node" is retired for `document` + `pass`. Stages 1-5 of nine landed — the GL-free graph model + planner, the `Pass`/`Document` split, chain evaluation with feedback and cold exports, the `passes/` + `graph.json` + per-pass-asset layout, and the `node` -> `document` rename across the package and on-disk paths; stage 6 is the editor + hot reload. Spec: `ai_docs/features/065_pass_graph/01_spec.md`. |
+| 065 | pass_graph | in progress | A document holds several passes forming a DAG, each pass its own `.glsl` file with its own `main()` and render target; "node" is retired for `document` + `pass`. Stages 1-5 of nine landed — the GL-free graph model + planner, the `Pass`/`Document` split, chain evaluation with feedback and cold exports, the `passes/` + `graph.json` + per-pass-asset layout, the `node` -> `document` rename across the package and on-disk paths, and per-pass hot reload; stage 7 is the panel. Spec: `ai_docs/features/065_pass_graph/01_spec.md`. |
 | 064 | multistep | superseded | Multi-pass steps as functions inside ONE shader file. Built, reviewed to convergence, then REVERTED (`34f6d19`) when the maintainer used it: separate shader files per pass are what every surveyed tool does. Nine bug fixes it surfaced were kept. Superseder: `ai_docs/features/065_pass_graph/`. Spec: `ai_docs/features/064_multistep/02_decision.md`. |
 | 063 | radiance_cascades_gaps | done | Research-only wave (no code): can ShaderBox host radiance cascades, and what is actually missing — GPU capability all present and measured, the script-GL route proven unusable, the seam decision handed to 064. Spec: `ai_docs/features/063_radiance_cascades_gaps/README.md`. |
 | — | copilot_engine_tuning | done | reasoning effort=none engine knob (+30k turn budget: effort flag is ignored on compound asks — measured), user/engine config split with slots enforcement, final-reply token cap. Spec: commits 289c12f + 6ed3c4d + 779d4b2 + this wave. |

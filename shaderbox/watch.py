@@ -3,15 +3,25 @@ from dataclasses import replace
 from loguru import logger
 
 from shaderbox.app import App
+from shaderbox.core import Pass
 from shaderbox.paths import shader_lib_root
 from shaderbox.shader_lib import is_shader_lib_path
 from shaderbox.ui_models import UIDocument
 
 
 def reload_document_if_changed(app: App, name: str, ui_document: UIDocument) -> None:
-    # sources[0] is the root (resolve_includes seeds it first); sources[1:] are lib
-    # files in first-seen order. Root and lib reloads differ — see inline.
-    for i, src in enumerate(ui_document.document.render_pass.compile_unit.sources):
+    # Every pass, not just the output: a document is N files now, and the one you are editing is
+    # often not the one that draws last.
+    for render_pass in list(ui_document.document.passes.values()):
+        _reload_pass_if_changed(app, name, render_pass)
+
+
+def _reload_pass_if_changed(app: App, name: str, render_pass: Pass) -> None:
+    # `sources` is this pass's own root plus the lib files it includes. The root is identified by
+    # PATH rather than by index 0 — the position happens to be right, but a positional rule is
+    # wrong-by-construction the moment anything reorders the list.
+    root_path = render_pass.source.path
+    for i, src in enumerate(render_pass.compile_unit.sources):
         path = src.path
         if not path.exists():
             continue
@@ -19,21 +29,16 @@ def reload_document_if_changed(app: App, name: str, ui_document: UIDocument) -> 
         if disk_mtime == src.mtime:
             continue
 
-        if i == 0:
-            # Root reload: re-sync the open editor session from disk.
-            logger.debug(f"Reloading document {name} (root shader changed)")
+        if path == root_path:
+            logger.debug(f"Reloading document {name} ({path.name} changed)")
             try:
                 new_text = path.read_text()
-                ui_document.document.render_pass.release_program(new_text)
-                ui_document.document.render_pass.source = replace(
-                    ui_document.document.render_pass.source, mtime=disk_mtime
-                )
-                app.sync_editor_from_disk(name, new_text)
+                render_pass.release_program(new_text)
+                render_pass.source = replace(render_pass.source, mtime=disk_mtime)
+                app.sync_editor_from_disk(path, new_text)
             except Exception as e:
                 logger.error(f"Failed to reload document {name}: {e}")
-                ui_document.document.render_pass.source = replace(
-                    ui_document.document.render_pass.source, mtime=disk_mtime
-                )
+                render_pass.source = replace(render_pass.source, mtime=disk_mtime)
             # release_program() rebuilt `sources` — stop iterating the stale list.
             return
 
@@ -41,10 +46,8 @@ def reload_document_if_changed(app: App, name: str, ui_document: UIDocument) -> 
         # include. If an open session's text diverges from disk, re-sync (external edit);
         # if it matches, the user saved in-app — don't clobber their undo history.
         logger.debug(f"Reloading document {name} (lib changed: {path.name})")
-        ui_document.document.render_pass.compile_unit.sources[i] = replace(
-            src, mtime=disk_mtime
-        )
-        ui_document.document.render_pass.invalidate()
+        render_pass.compile_unit.sources[i] = replace(src, mtime=disk_mtime)
+        render_pass.invalidate()
         session = app.editor_sessions.get(path)
         if session is not None:
             try:
@@ -76,9 +79,10 @@ def maybe_rebuild_lib_index(app: App) -> bool:
     if current == cached:
         return False
     app.rebuild_shader_lib_index()
-    # Invalidate every document that pulled in a lib file so its next render recompiles
-    # against the new index (a referenced function may have changed or disappeared).
+    # Invalidate every pass that pulled in a lib file so its next render recompiles against the
+    # new index (a referenced function may have changed or disappeared).
     for ui_document in app.ui_documents.values():
-        if len(ui_document.document.render_pass.compile_unit.sources) > 1:
-            ui_document.document.render_pass.invalidate()
+        for render_pass in ui_document.document.passes.values():
+            if len(render_pass.compile_unit.sources) > 1:
+                render_pass.invalidate()
     return True

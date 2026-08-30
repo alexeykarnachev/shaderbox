@@ -349,7 +349,7 @@ class CopilotBackend:
         write_script_source: Callable[[str, str], ScriptProbe],
         set_current_document_id: Callable[[str], None],
         save_ui_document: Callable[[UIDocument], object],
-        sync_editor_from_disk: Callable[[str, str], None],
+        sync_editor_from_disk: Callable[[Path, str], None],
         delete_document_unguarded: Callable[[str], str],
         example_description: Callable[[str], str],
         working_set_reader: Callable[[], list[str]],
@@ -1695,7 +1695,7 @@ class CopilotBackend:
         # clean-compiling state and tell the agent as a fact. Resets the streak so the
         # next broken run gets a fresh budget.
         restore_errors = self._copilot_persist_shader(
-            document_id, document, self._last_clean[document_id]
+            document, self._last_clean[document_id]
         )
         self._broken_streak[document_id] = 0
         logger.info(
@@ -1979,15 +1979,15 @@ class CopilotBackend:
         return full_id if kind == "document" and full_id is not None else None
 
     def _copilot_persist_shader(
-        self, document_id: str, document: Document, new_text: str
+        self, document: Document, new_text: str
     ) -> list[CompileErrorInfo]:
         # Adopt new_text, recompile, persist, refresh the editor — the shared tail of every document edit.
-        # sync_editor must key on `document_id` (the edit TARGET), not the current document, else a non-current
-        # edit syncs the wrong session; it no-ops when the target has no open editor.
+        # sync_editor keys on the edited FILE's path, not the current document, else a non-current
+        # edit syncs the wrong session; it no-ops when that file has no open editor.
         document.render_pass.release_program(new_text)
         document.render_pass.compile()
         document.render_pass.source.path.write_text(new_text, encoding="utf-8")
-        self._sync_editor_from_disk(document_id, new_text)
+        self._sync_editor_from_disk(document.render_pass.source.path, new_text)
         return _to_error_infos(document.render_pass.compile_unit.errors)
 
     def _copilot_resolve_target(
@@ -2101,9 +2101,7 @@ class CopilotBackend:
                 not tgt.document.render_pass.compile_unit.errors
                 and tgt.document.render_pass.program is not None
             )
-            errors = self._copilot_persist_shader(
-                tgt.document_id, tgt.document, new_text
-            )
+            errors = self._copilot_persist_shader(tgt.document, new_text)
             self._working_set_add(tgt.ws_address)
             self._batch_mutated.add(tgt.ws_address)
             if errors:

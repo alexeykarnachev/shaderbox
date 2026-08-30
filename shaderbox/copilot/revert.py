@@ -43,7 +43,7 @@ class RevertExecutor:
         get_checkpoints: Callable[[], CheckpointStore],
         get_shader_lib_files: Callable[[], ShaderLibFileManager],
         set_current_document_id: Callable[[str], None],
-        sync_editor_from_disk: Callable[[str, str], None],
+        sync_editor_from_disk: Callable[[Path, str], None],
         delete_document_unguarded: Callable[[str], str],
         invalidate_lib_consumers: Callable[[Path], None],
     ) -> None:
@@ -89,7 +89,10 @@ class RevertExecutor:
             old.document.release()
         fresh = load_document_from_dir(document_dir)
         ui_documents[document_id] = fresh
-        self._sync_editor_from_disk(document_id, fresh.document.render_pass.source.text)
+        for render_pass in fresh.document.passes.values():
+            self._sync_editor_from_disk(
+                render_pass.source.path, render_pass.source.text
+            )
 
     def restore_checkpoint(self, turn_id: str) -> RevertResult:
         # MAIN THREAD (the chat's Revert button, gated on not-in-flight). Rewind every document this
