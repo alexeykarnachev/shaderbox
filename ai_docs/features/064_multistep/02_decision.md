@@ -31,9 +31,10 @@ comment syntax must round-trip-write the user's shader text.
 ### Why the seam decision goes to A even though A ranked last on two lenses
 
 The deciding fact is structural and no designer weighed it: **the codebase is singular everywhere.**
-`node.source`, `node.compile_unit` (~15 call sites each, six of them in `copilot/backend.py`),
+`node.source` and `node.compile_unit` are reached from across the codebase, several of those in
+`copilot/backend.py`;
 `EditorTabKind` (11 string-compared sites, so pyright catches nothing when a member is added),
-`watch.py:14-40` hardcoding `sources[0]` as "the root shader", and `copilot/address.py` carrying
+`watch.py::reload_node_if_changed` hardcoding `sources[0]` as "the root shader", and `copilot/address.py` carrying
 three address kinds with **no slot for a step**.
 
 B, C and D each multiply files and pay 150-300 lines of pure plumbing in the highest-blast-radius
@@ -114,7 +115,7 @@ the buffer).
 2. **The engine seam (A's shape)** — step declarations, multi-variant compile, the scheduler
    (topological order + memoization + implicit ping-pong), per-step targets, the union-uniform
    panel. Verified working: `#define` variants compile and introspect per-variant, and a `#line`
-   restore keeps error lines exact — but `resolver.py:60-64`'s no-lib FAST PATH emits no `#line` at
+   restore keeps error lines exact — but `resolve_usage`'s no-lib FAST PATH emitted no `#line` at
    all, so injecting a define there shifts every error by one. **3-line fix, owed.**
 3. **The live HDR view transform** — the R7xR9 gap above.
 4. **The authoring surface** — B's list or D's sheet, decided with a working cascade on screen.

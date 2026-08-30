@@ -298,7 +298,11 @@ class Node:
         pair = self._step_targets.get(step_name)
         if pair is None:
             return None
-        return pair[self._step_front.get(step_name, 0)].texture  # type: ignore[union-attr]
+        # Index 1 exists only for a ping-pong pair, and `_step_front` only ever names it
+        # when it does -- but that is an invariant the type cannot carry, so fall back
+        # to the front rather than suppress.
+        front = pair[self._step_front.get(step_name, 0)] or pair[0]
+        return front.texture
 
     def _release_step_gl(self, keep_persist: bool = False) -> None:
         for program in self._step_programs.values():

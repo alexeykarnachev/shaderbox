@@ -36,7 +36,8 @@ reads them — `uniform sampler2D u_blur;  // step, scale: 0.5, f2` plus a
 `void step_blur(out vec4 o)` body in the same file. The engine compiles one program per step from
 that one source, orders them by what the DRIVER reports each variant reads, evaluates each once per
 frame into its own target, and hands a self-reading step its previous frame (ping-pong, no pair to
-manage). **Acceptance test passed:** a six-level radiance cascade authored this way renders — levels
+manage). **To see it: the `steps demo` node in `projects/dev`** (emitter -> quarter-res blur -> a
+trail reading itself). **Acceptance test passed:** a six-level radiance cascade authored this way renders — levels
 at 16x16 through 256x256, float targets holding 8.0 and 7.75 where 8-bit would have clamped at 1.0.
 
 **What is deliberately absent.** No UI. No step strip, no rows, no chips — a step is invisible in
@@ -61,7 +62,7 @@ dev->master happens at ship time via `/ship`. **Last known-public itch build is 
 
 | # | Name | Status | Brief |
 |---|---|---|---|
-| 064 | multistep | partial | Engine-native render-step chains per node: a `// step` rider on a sampler declares a draw, order comes from the driver's own dataflow, self-reads are implicit ping-pong, float targets by default. Engine landed and green (6-level cascade renders); the authoring UI and the live HDR view transform are owed. Spec: `ai_docs/features/064_multistep/03_engine_spec.md`. |
+| 064 | multistep | partial | Engine-native render-step chains per node: a `// step` rider on a sampler declares a draw, order comes from the driver's own dataflow, self-reads are implicit ping-pong, float targets by default. Engine landed and green (6-level cascade renders); the authoring UI is the next feature and carries the HDR view transform with it. Spec: `ai_docs/features/064_multistep/03_engine_spec.md`. |
 | 063 | radiance_cascades_gaps | done | Research-only wave (no code): can ShaderBox host radiance cascades, and what is actually missing — GPU capability all present and measured, the script-GL route proven unusable, the seam decision handed to 064. Spec: `ai_docs/features/063_radiance_cascades_gaps/README.md`. |
 | — | copilot_engine_tuning | done | reasoning effort=none engine knob (+30k turn budget: effort flag is ignored on compound asks — measured), user/engine config split with slots enforcement, final-reply token cap. Spec: commits 289c12f + 6ed3c4d + 779d4b2 + this wave. |
 | — | agent_hub | done | the maintainer sync page: full prompt/tools/config/knowledge surfaces + all dogfood runs with dialogues and media, regenerated from live code. Spec: scripts/agent_hub/generate.py docstring. |

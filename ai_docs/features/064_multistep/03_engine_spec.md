@@ -87,9 +87,9 @@ Measured, and it is the evidence for D4: the final variant introspects `['u_blur
 the step variant introspects `['u_radius']` — **disjoint sets**, so the union is mandatory, not an
 optimisation. The `#line` anchor (`d1781b5`) keeps error lines exact under the injection.
 
-Why not N files: `node.source` and `node.compile_unit` are singular at ~15 call sites each (six in
-`copilot/backend.py`), `watch.py` hardcodes `sources[0]` as the root, and `copilot/address.py` has
-no slot for a step. One file keeps all of it, and the copilot authors a whole chain with **zero new
+Why not N files: `node.source` and `node.compile_unit` are singular and reached from across the
+codebase (`copilot/backend.py` most of all), `watch.py` hardcodes `sources[0]` as the root, and
+`copilot/address.py` has no slot for a step. One file keeps all of it, and the copilot authors a whole chain with **zero new
 tools** because `write_shader` already writes that file. See `02_decision.md`.
 
 **D4. The uniform panel shows the UNION across variants, and writes go to every variant declaring
@@ -176,17 +176,17 @@ chain wiring), and `copilot/backend.py`'s `bind_media` sampler lists. It also re
 double-release: `release()` calls `try_to_release` on every `uniform_values` entry, and
 `invalidate()` would free the same target again.
 
-**D12. Step targets are sized off `self.canvas`, never off a passed canvas.** `ui.py:214` is the
+**D12. Step targets are sized off `self.canvas`, never off a passed canvas.** the preview render in `ui.py::update_and_draw` is the
 ONLY external-canvas caller in shipped code (`render(canvas=app.preview_canvas)`) and it renders at
 `adjust_size(..., width=200)` — a different resolution. Sizing off the passed canvas would
 thrash-reallocate every target between 200px and full every frame. The consequence, accepted and
 stated: **the small preview is a downscale of a full-resolution chain**, which is correct for a
 scale-dependent blur/cascade chain and is what the node-grid thumbnail already shows.
-`render_media`'s preset branch (`core.py:561`) takes the same rule.
+`render_media`'s preset branch takes the same rule.
 
 **D13. The ping-pong swap is tied to a FRAME, not to a `render()` call.** The current node renders
-twice per frame (`ui.py:214` into the preview canvas, then `ui.py:247/250` into its own), and the
-copilot probe renders twice back-to-back (`backend.py:1701/1709`). Swapping per call would make the
+twice per frame (`ui.py::update_and_draw` renders it into the preview canvas, then again into its
+own), and the copilot probe renders twice back-to-back (`backend.py::_render_facts_for`). Swapping per call would make the
 current node's feedback advance at 2x every other node's — so a decay constant tuned while a node is
 selected evolves at half the rate once it is not, and toggling "Render all" changes it again. Worse,
 the probe's second frame would carry the first's accumulation, so `_MOTION_EPS` reports ANIMATES for
