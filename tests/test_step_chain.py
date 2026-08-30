@@ -459,3 +459,102 @@ def test_a_multi_step_node_exports_its_chain(
     assert pixels[:, :, :3].max() > 0, "the chain did not run: exported black"
     # The step writes a uv gradient, so opposite corners must differ.
     assert tuple(pixels[0, 0][:3]) != tuple(pixels[-1, -1][:3])
+
+
+def test_a_persist_step_survives_a_recompile(
+    gl: moderngl.Context, tmp_path: Path
+) -> None:
+    """`persist` means "survives a recompile", and every real flow is a recompile.
+
+    Ctrl+S, a lib hot-reload and a copilot edit are all invalidate-then-compile, so a
+    target preserved by the first call and freed by the second makes the flag a no-op --
+    which is what it was, while the Help panel advertised it.
+    """
+    node = _node(
+        gl,
+        tmp_path,
+        "#version 330\n"
+        "out vec4 f_color;\n"
+        "in vec2 vs_uv;\n"
+        "uniform sampler2D u_acc;  // step, f4, persist\n"
+        "void step_acc(out vec4 o) { o = texture(u_acc, vs_uv) + vec4(1.0, 0.0, 0.0, 1.0); }\n"
+        "void main() { f_color = texture(u_acc, vs_uv); }\n",
+    )
+    for _ in range(3):
+        node.render(u_time=0.0)
+    accumulated = node.step_texture("acc")
+    assert accumulated is not None
+    assert np.frombuffer(accumulated.read(), dtype=np.float32)[0] == pytest.approx(3.0)
+
+    node.invalidate()
+    node.compile()
+    node.render(u_time=0.0)
+
+    after = node.step_texture("acc")
+    assert after is not None
+    # 4.0 = the accumulation continued. 1.0 would mean it restarted cold.
+    assert np.frombuffer(after.read(), dtype=np.float32)[0] == pytest.approx(4.0)
+
+
+def test_a_non_persist_step_restarts_cold_on_a_recompile(
+    gl: moderngl.Context, tmp_path: Path
+) -> None:
+    node = _node(
+        gl,
+        tmp_path,
+        "#version 330\n"
+        "out vec4 f_color;\n"
+        "in vec2 vs_uv;\n"
+        "uniform sampler2D u_acc;  // step, f4\n"
+        "void step_acc(out vec4 o) { o = texture(u_acc, vs_uv) + vec4(1.0, 0.0, 0.0, 1.0); }\n"
+        "void main() { f_color = texture(u_acc, vs_uv); }\n",
+    )
+    for _ in range(3):
+        node.render(u_time=0.0)
+    node.invalidate()
+    node.compile()
+    node.render(u_time=0.0)
+    after = node.step_texture("acc")
+    assert after is not None
+    assert np.frombuffer(after.read(), dtype=np.float32)[0] == pytest.approx(1.0)
+
+
+def test_exporting_a_feedback_node_twice_gives_the_same_frames(
+    gl: moderngl.Context, tmp_path: Path
+) -> None:
+    """D10: an export must not depend on how long the app has been open.
+
+    `export_isolation` already re-instantiates a stateful SCRIPT per export for exactly
+    this reason. A feedback step is the same class of state, so without a reset the same
+    node exported before and after a few minutes of live preview produces different
+    video -- measured at 13 vs 255 before this landed.
+    """
+    node = _node(
+        gl,
+        tmp_path,
+        "#version 330\n"
+        "out vec4 f_color;\n"
+        "in vec2 vs_uv;\n"
+        "uniform sampler2D u_acc;  // step, f4\n"
+        "void step_acc(out vec4 o) { o = texture(u_acc, vs_uv) + vec4(0.05, 0.0, 0.0, 1.0); }\n"
+        "void main() { f_color = vec4(texture(u_acc, vs_uv).r, 0.0, 0.0, 1.0); }\n",
+    )
+
+    def _export(name: str) -> bytes:
+        out = tmp_path / name
+        node.render_media(
+            MediaDetails(
+                file_details=FileDetails(path=str(out)),
+                resolution_details=ResolutionDetails(width=16, height=16),
+                duration=0.0,
+                fps=1.0,
+                is_video=False,
+            )
+        )
+        return out.read_bytes()
+
+    first = _export("a.png")
+    for _ in range(20):  # the app being left open
+        node.render(u_time=0.0)
+    second = _export("b.png")
+    assert first == second

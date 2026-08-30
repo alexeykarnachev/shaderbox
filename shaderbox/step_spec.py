@@ -30,7 +30,11 @@ _WRAPS = ("clamp", "repeat")
 _SAMPLER_RE = re.compile(
     r"^\s*uniform\s+sampler2D\s+(?P<name>\w+)\s*;\s*(?://\s*(?P<rider>.*))?$"
 )
-_STEP_FN_RE = re.compile(r"^\s*void\s+(?P<name>step_\w+)\s*\(", re.MULTILINE)
+# The step signature exactly: `void step_x(out vec4 <name>)`. A helper that merely
+# starts with `step_` is an ordinary name and must not be read as a forgotten rider.
+_STEP_FN_RE = re.compile(
+    r"^\s*void\s+(?P<name>step_\w+)\s*\(\s*out\s+vec4\s+\w+\s*\)", re.MULTILINE
+)
 
 
 # f2, not f1: 063 measured f1 saturating at 255 on the FIRST accumulate pass where f2
@@ -76,7 +80,7 @@ class StepParseResult:
 def _is_transposition(a: str, b: str) -> bool:
     if len(a) != len(b):
         return False
-    diff = [i for i, (x, y) in enumerate(zip(a, b)) if x != y]
+    diff = [i for i, (x, y) in enumerate(zip(a, b, strict=True)) if x != y]
     if len(diff) != 2:
         return False
     i, j = diff
@@ -101,12 +105,9 @@ def _levenshtein_le_1(a: str, b: str) -> bool:
     if abs(la - lb) > 1:
         return False
     if la == lb:
-        return sum(x != y for x, y in zip(a, b)) == 1
+        return sum(x != y for x, y in zip(a, b, strict=True)) == 1
     short, long = (a, b) if la < lb else (b, a)
-    for i in range(len(long)):
-        if short == long[:i] + long[i + 1 :]:
-            return True
-    return False
+    return any(short == long[:i] + long[i + 1 :] for i in range(len(long)))
 
 
 def _sampler_to_step_name(sampler: str) -> str:
@@ -144,6 +145,28 @@ def parse_steps(source: str, path: Path) -> StepParseResult:
     """
     result = StepParseResult()
     declared_fns = {m.group("name") for m in _STEP_FN_RE.finditer(source)}
+    # Every diagnostic below is scoped to a shader that is AUTHORING steps -- one that
+    # carries a valid rider, or a `step_*` body which is the giveaway that a rider was
+    # meant. A shader with neither is not using the feature, so `// stop` on a texture
+    # sampler is an ordinary English comment and a `void step_forward(...)` helper is an
+    # ordinary name; neither may break a shader that predates the feature.
+    #
+    # Both halves are needed: keying only on a valid rider would miss the shader whose
+    # ONLY step is misspelled, which is the case D2 exists for.
+    #
+    # The cost, taken deliberately: `void step_x(out vec4 o)` in a shader with no rider
+    # is read as a forgotten rider, not as a helper that happens to be named that way.
+    # The two are textually identical, so one of them has to lose, and a forgotten rider
+    # is both likelier and worse -- it means a step the author wrote that never runs,
+    # with nothing on screen to say so. The error names the fix in one line, and any
+    # other signature (`void step_x()`, `float step_x(...)`) is left alone.
+    has_valid_rider = any(
+        _SAMPLER_RE.match(line)
+        and "//" in line
+        and line.split("//", 1)[1].strip().split(",")[0].strip().lower() == STEP_MARKER
+        for line in source.splitlines()
+    )
+    uses_steps = has_valid_rider or bool(declared_fns)
     seen: dict[str, int] = {}
     # A near-miss marker already reports itself; its body would otherwise be reported a
     # second time as an orphan, which is one typo wearing two errors.
@@ -163,8 +186,8 @@ def parse_steps(source: str, path: Path) -> StepParseResult:
         head = tokens[0].lower()
 
         if head != STEP_MARKER:
-            # Only complain about a near-miss; an ordinary comment is left alone.
-            if _looks_like_marker(head):
+            # Only complain about a near-miss, and only where steps are in play.
+            if uses_steps and _looks_like_marker(head):
                 near_missed.add(_sampler_to_step_name(match.group("name")))
                 result.errors.append(
                     ShaderError(
@@ -207,9 +230,10 @@ def parse_steps(source: str, path: Path) -> StepParseResult:
         seen[name] = line_idx
         result.steps.append(spec)
 
-    _report_orphan_bodies(
-        source, declared_fns, seen | dict.fromkeys(near_missed, -1), path, result
-    )
+    if uses_steps:
+        _report_orphan_bodies(
+            source, declared_fns, seen | dict.fromkeys(near_missed, -1), path, result
+        )
     if result.steps:
         # Only when steps exist: without them nothing is injected and the name is free.
         _report_reserved_names(source, path, result)

@@ -17,6 +17,7 @@ from pathlib import Path
 import moderngl
 import pytest
 
+from shaderbox.copilot.backend import _format_uniforms
 from shaderbox.paths import NODE_JSON_BASENAME, NODE_SHADER_BASENAME, shader_lib_root
 from shaderbox.shader_lib import ShaderLibIndex, set_active
 from shaderbox.ui_models import load_node_from_dir
@@ -119,3 +120,26 @@ def test_reload_does_not_resurrect_a_stale_step_frame(
     reloaded = load_node_from_dir(node_dir)
     assert "u_mid" not in reloaded.node.uniform_values
     assert reloaded.node.is_step_sampler("u_mid")
+
+
+def test_the_copilot_sees_step_samplers_as_engine_wired(
+    gl: moderngl.Context, tmp_path: Path
+) -> None:
+    """The working-set rows the model reads.
+
+    A step sampler labelled "(no media bound)" would invite the model to bind a file
+    over the chain -- and `bind_media` must not offer it either. Meanwhile the union
+    must surface uniforms from every step, or the model cannot see the controls it just
+    authored.
+    """
+    node_dir = _make_node_dir(tmp_path)
+    ui_node = load_node_from_dir(node_dir)
+    ui_node.node.render(u_time=0.0)
+
+    rows = _format_uniforms(ui_node.node, set())
+    joined = "\n".join(rows)
+    assert "u_mid sampler2D <- (step output)" in joined
+    assert "no media bound" not in joined
+    # Both tunables, from different variants, are visible.
+    assert any(r.startswith("u_only_in_step ") for r in rows)
+    assert any(r.startswith("u_final_gain ") for r in rows)

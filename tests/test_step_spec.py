@@ -225,3 +225,69 @@ def test_a_reserved_name_is_free_in_a_shader_with_no_steps() -> None:
     src = "#version 330\nvoid sb_step_out() { }\nvoid main() {}\n"
     result = parse_steps(src, _PATH)
     assert result.errors == []
+
+
+# --- A shader that does NOT use steps must be left completely alone. ---------------
+# These are regressions found by a post-impl reviewer: the diagnostics helped someone
+# authoring a chain and broke everyone who was not.
+
+
+@pytest.mark.parametrize("comment", ["steps", "stop", "stem", "ste", "setp"])
+def test_an_ordinary_sampler_comment_is_untouched_without_steps(comment: str) -> None:
+    src = f"#version 330\nuniform sampler2D u_tex;  // {comment}\nvoid main() {{}}\n"
+    result = parse_steps(src, _PATH)
+    assert result.errors == []
+    assert result.steps == []
+
+
+@pytest.mark.parametrize(
+    "helper",
+    [
+        "void step_warp() { }",
+        "float step_curve(float x) { return x; }",
+        "void step_march(vec2 p) { }",
+        "vec4 step_sample(sampler2D s) { return vec4(0.0); }",
+    ],
+)
+def test_a_step_prefixed_helper_is_untouched_without_steps(helper: str) -> None:
+    # `step_` is an ordinary prefix in shader code (step functions, marching, curves).
+    src = f"#version 330\n{helper}\nvoid main() {{}}\n"
+    result = parse_steps(src, _PATH)
+    assert result.errors == []
+
+
+def test_a_forgotten_rider_is_still_reported() -> None:
+    # The deliberate cost: `void step_x(out vec4 o)` with no rider is read as a
+    # forgotten rider, because that is likelier and worse than a helper coincidentally
+    # matching the exact step signature -- it means a step that never runs.
+    src = (
+        "#version 330\nvoid step_blur(out vec4 o) { o = vec4(1.0); }\nvoid main() {}\n"
+    )
+    result = parse_steps(src, _PATH)
+    assert any("is never run" in e.message for e in result.errors)
+
+
+def test_a_typo_is_still_reported_when_a_step_body_exists() -> None:
+    # The shader whose ONLY step is misspelled: keying purely on a VALID rider would
+    # miss it, which is the case D2 exists for.
+    src = (
+        "#version 330\n"
+        "uniform sampler2D u_blur;  // stp\n"
+        "void step_blur(out vec4 o) { o = vec4(1.0); }\n"
+        "void main() {}\n"
+    )
+    result = parse_steps(src, _PATH)
+    assert any("did you mean" in e.message for e in result.errors)
+
+
+def test_a_typo_on_a_second_sampler_is_reported_beside_a_valid_step() -> None:
+    src = (
+        "#version 330\n"
+        "uniform sampler2D u_a;  // step\n"
+        "uniform sampler2D u_b;  // setp\n"
+        "void step_a(out vec4 o) { o = vec4(1.0); }\n"
+        "void main() {}\n"
+    )
+    result = parse_steps(src, _PATH)
+    assert len(result.steps) == 1
+    assert any("did you mean" in e.message for e in result.errors)

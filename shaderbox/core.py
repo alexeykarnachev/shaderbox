@@ -319,6 +319,26 @@ class Node:
                 back.release()
             self._step_front.pop(name, None)
 
+    def _reset_step_targets(self) -> None:
+        """Clear every step target to black, so an export starts from a defined state."""
+        for front, back in self._step_targets.values():
+            for canvas in (front, back):
+                if canvas is None:
+                    continue
+                canvas.fbo.use()
+                self._gl.clear()
+        self._step_front = dict.fromkeys(self._step_front, 0)
+
+    def _make_step_canvas(self, spec: StepSpec, size: tuple[int, int]) -> "Canvas":
+        filter_mode = moderngl.LINEAR if spec.filter_linear else moderngl.NEAREST
+        return Canvas(
+            gl=self._gl,
+            size=size,
+            dtype=spec.dtype,
+            filter=(filter_mode, filter_mode),
+            wrap=spec.wrap,
+        )
+
     def _sync_step_targets(self, canvas_size: tuple[int, int]) -> None:
         """Allocate/resize one target per step (two for a self-reader).
 
@@ -353,19 +373,10 @@ class Node:
                 if back is not None:
                     back.release()
 
-            def make() -> Canvas:
-                filter_mode = (
-                    moderngl.LINEAR if spec.filter_linear else moderngl.NEAREST
-                )
-                return Canvas(
-                    gl=self._gl,
-                    size=size,
-                    dtype=spec.dtype,
-                    filter=(filter_mode, filter_mode),
-                    wrap=spec.wrap,
-                )
-
-            self._step_targets[name] = (make(), make() if needs_pair else None)
+            self._step_targets[name] = (
+                self._make_step_canvas(spec, size),
+                self._make_step_canvas(spec, size) if needs_pair else None,
+            )
             self._step_front[name] = 0
 
     def get_active_uniforms(self) -> list[moderngl.Uniform | moderngl.UniformBlock]:
@@ -549,8 +560,13 @@ class Node:
         return 0
 
     def _build_step_variants(self, unit: CompileUnit, steps: list[StepSpec]) -> None:
-        self._release_step_gl()
+        # `self.steps` first: _release_step_gl reads it to decide what `persist` covers,
+        # and the answer must come from the NEW declarations. Freeing before the swap
+        # would drop a persisted target on every recompile -- and since every real flow
+        # (Ctrl+S, hot-reload, a copilot edit) is invalidate-then-compile, that made the
+        # flag a no-op no matter what invalidate preserved.
         self.steps = steps
+        self._release_step_gl(keep_persist=True)
         if not steps:
             self.step_plan = StepPlan(
                 order=[], reads={}, self_reads=set(), final_reads=set()
@@ -745,10 +761,8 @@ class Node:
                     if step_texture is None:
                         continue
                     step_texture.use(location=texture_unit)
-                    try:
+                    with contextlib.suppress(Exception):
                         self.program[uniform.name] = texture_unit
-                    except Exception:
-                        pass
                     texture_unit += 1
                     continue
                 if isinstance(value, MediaWithTexture):
@@ -932,6 +946,11 @@ class Node:
     ) -> MediaDetails:
         # Every export funnels through here (Render tab / Share scratch / copilot tools), so the
         # script-isolation bracket lives here ONCE — no export caller can bypass it (feature 041).
+        # Step targets get the same treatment for the same reason: a feedback step carries however
+        # long the app has been open, so without this the same node exported twice differs. Sited
+        # here rather than in export_isolation because the targets are Node's own state, and that
+        # context manager is a ProjectSession hook a bare Node does not have.
+        self._reset_step_targets()
         with self.export_isolation():
             if preset is None or preset.fit is FitPolicy.SCALE_DISTORT:
                 canvas = self.canvas
