@@ -32,9 +32,10 @@ action is a `make run` visual check on a real display.** Start at
 `ai_docs/features/064_multistep/02_decision.md` (what was chosen and why), then `03_engine_spec.md`
 (the engine, D1-D16) and `04_surface_spec.md` (the panel, S1-S6). All implemented.
 
-**What works.** A node declares extra render steps by riding a comment on the sampler that reads
-them — `uniform sampler2D u_blur;  // step, scale: 0.5, f2` plus a `void step_blur(out vec4 o)` body
-in the same file. The engine compiles one program per step from that one source, orders them by what
+**What works.** A node declares extra render steps by NAME: a sampler called `u_step_blur` is a
+step, and its body is `void step_blur(out vec4 o)` in the same file. Comments carry no meaning
+anywhere. Each step's target — size, format, filter, edge, and what happens to it on recompile — is
+node state with working defaults, edited in the Steps panel and saved to `node.json`. The engine compiles one program per step from that one source, orders them by what
 the DRIVER reports each variant reads, evaluates each once per frame into its own target, and hands
 a self-reading step its previous frame (ping-pong, no pair to manage). The Node panel shows a
 **Steps** section — one row per step in evaluation order with a live thumbnail, its resolved
@@ -48,10 +49,10 @@ distinct tone levels than a raw blit, which crushes the bright end). **To see it
 but layout and aesthetics cannot be confirmed without a display — this box has no WM. Run `make run`,
 open the "Render Steps" example, and judge the Steps rows.
 
-**Deliberately absent, with the trigger for revisiting in `04_surface_spec.md` S2:** the surface is
-READ-ONLY over structure. No chips that write a step's size/format/filter, no drag-to-reorder, no
-add/delete-step buttons — the shader is the single author of what a step IS, and a widget writing
-back into GLSL text would be a second author of the same fact.
+**Deliberately absent (`04_surface_spec.md` S2):** the panel edits a step's TARGET, never the
+chain's STRUCTURE. No add/delete-step buttons, no drag-to-reorder, no renaming — which steps exist
+and what each reads is introspected from the shader, and a widget editing those would have to write
+back into GLSL text, making a second author of the same fact.
 
 **Release state:** `dev` is ahead of `master` (still v0.25.1); dev->master happens at ship time via
 `/ship`. **Last known-public itch build is v0.21.0.** **No open BLOCKERs.**
@@ -60,7 +61,7 @@ back into GLSL text would be a second author of the same fact.
 
 | # | Name | Status | Brief |
 |---|---|---|---|
-| 064 | multistep | partial | Engine-native render-step chains per node: a `// step` rider on a sampler declares a draw, order comes from the driver's own dataflow, self-reads are implicit ping-pong, float targets by default. Engine + panel landed and green (6-level cascade renders; a Steps section with per-step thumbnails and a view pin that tonemaps float targets). A maintainer visual check is owed. Spec: `ai_docs/features/064_multistep/03_engine_spec.md` + `04_surface_spec.md`. |
+| 064 | multistep | partial | Engine-native render-step chains per node: a sampler named `u_step_<name>` declares a draw, its target is editable node state, order comes from the driver's own dataflow, self-reads are implicit ping-pong, float targets by default. Engine + panel landed and green (6-level cascade renders; a Steps section with per-step thumbnails and a view pin that tonemaps float targets). A maintainer visual check is owed. Spec: `ai_docs/features/064_multistep/03_engine_spec.md` + `04_surface_spec.md`. |
 | 063 | radiance_cascades_gaps | done | Research-only wave (no code): can ShaderBox host radiance cascades, and what is actually missing — GPU capability all present and measured, the script-GL route proven unusable, the seam decision handed to 064. Spec: `ai_docs/features/063_radiance_cascades_gaps/README.md`. |
 | — | copilot_engine_tuning | done | reasoning effort=none engine knob (+30k turn budget: effort flag is ignored on compound asks — measured), user/engine config split with slots enforcement, final-reply token cap. Spec: commits 289c12f + 6ed3c4d + 779d4b2 + this wave. |
 | — | agent_hub | done | the maintainer sync page: full prompt/tools/config/knowledge surfaces + all dogfood runs with dialogues and media, regenerated from live code. Spec: scripts/agent_hub/generate.py docstring. |

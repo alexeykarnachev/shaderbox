@@ -49,6 +49,7 @@ from shaderbox.step_spec import (
     StepConfig,
     StepPlan,
     StepSpec,
+    declaration_line_of,
     find_steps,
     plan_steps,
 )
@@ -620,10 +621,7 @@ class Node:
         )
 
     def _declaration_line(self, step: StepSpec) -> int:
-        for i, line in enumerate(self.source.text.splitlines()):
-            if step.sampler in line and "step" in line:
-                return i
-        return 0
+        return declaration_line_of(self.source.text, step.sampler)
 
     def _build_step_variants(self, unit: CompileUnit, steps: list[StepSpec]) -> None:
         # `self.steps` first: _release_step_gl reads it to decide what `persist` covers,

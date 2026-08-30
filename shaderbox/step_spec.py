@@ -84,6 +84,19 @@ class StepParseResult:
     errors: list[ShaderError] = field(default_factory=list)
 
 
+def declaration_line_of(source: str, sampler: str) -> int:
+    """The 0-based line where `sampler` is declared, or 0 when it is not found.
+
+    Matches the DECLARATION rather than any line mentioning the name, so a header comment
+    naming the sampler cannot win.
+    """
+    for i, line in enumerate(source.splitlines()):
+        match = _SAMPLER_RE.match(line)
+        if match is not None and match.group("name") == sampler:
+            return i
+    return 0
+
+
 def step_name_for(sampler: str) -> str | None:
     """The step a sampler names, or None when it is an ordinary texture input."""
     if not sampler.startswith(STEP_PREFIX):

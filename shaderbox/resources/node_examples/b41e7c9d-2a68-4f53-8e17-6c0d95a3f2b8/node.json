@@ -35,6 +35,7 @@
                 "wrap": false,
                 "persist": false
             }
-        }
+        },
+        "description": "Several draws in one node: sparks feed a bright-extract, a quarter-res blur, and a trail that reads its own last frame. Name a sampler u_step_<name> and write step_<name>() to add a draw; set each step's size and format in the Steps panel."
     }
 }

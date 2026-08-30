@@ -5,13 +5,14 @@ step syntax is discoverable by clicking rather than by reading, so a rot in it i
 than a rot in a test -- it teaches the feature wrong.
 """
 
+import json
 from pathlib import Path
 
 import moderngl
 import numpy as np
 import pytest
 
-from shaderbox.constants import EXAMPLE_ORDER
+from shaderbox.constants import EXAMPLE_ORDER, NODE_EXAMPLES_DIR
 from shaderbox.media import texture_to_rgba8
 from shaderbox.paths import shader_lib_root
 from shaderbox.shader_lib import ShaderLibIndex, set_active
@@ -95,3 +96,20 @@ def test_the_example_sparks_actually_move(gl: moderngl.Context) -> None:
     node.render(u_time=3.0)
     second = texture_to_rgba8(node.step_texture("sparks"))
     assert not np.array_equal(first, second)
+
+
+def test_every_shipped_example_has_a_description() -> None:
+    """The examples browser renders "(no description)" for one that lacks it.
+
+    Pinned for every example, not just this one: the browser is where a user meets the
+    app, and the slot exists to be filled.
+    """
+    missing = []
+    for example_dir in sorted(NODE_EXAMPLES_DIR.iterdir()):
+        if not example_dir.is_dir():
+            continue
+        meta = json.loads((example_dir / "node.json").read_text())
+        state = meta.get("ui_state", {})
+        if not state.get("description", "").strip():
+            missing.append(state.get("ui_name", example_dir.name))
+    assert missing == [], f"examples with no description: {missing}"

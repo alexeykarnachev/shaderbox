@@ -15,6 +15,7 @@ import pytest
 from shaderbox.step_spec import (
     DEFAULT_DTYPE,
     StepConfig,
+    declaration_line_of,
     find_steps,
     step_name_for,
 )
@@ -208,3 +209,22 @@ def test_errors_carry_the_declaration_line_for_click_to_jump() -> None:
 )
 def test_step_name_for(sampler: str, expected: str | None) -> None:
     assert step_name_for(sampler) == expected
+
+
+def test_a_comment_naming_the_sampler_does_not_win_the_declaration_line() -> None:
+    # The line feeds the `#line` on the generated dispatcher. A header comment that
+    # mentions the sampler would otherwise point it at prose instead of code -- the last
+    # place a comment could still influence behaviour.
+    src = (
+        "#version 330\n"
+        "// this shader uses u_step_blur as a step\n"
+        "out vec4 f_color;\n"
+        "uniform sampler2D u_step_blur;\n"
+        "void step_blur(out vec4 o) { o = vec4(1.0); }\n"
+        "void main() {}\n"
+    )
+    assert declaration_line_of(src, "u_step_blur") == 3
+
+
+def test_a_missing_sampler_falls_back_to_the_top() -> None:
+    assert declaration_line_of("#version 330\nvoid main() {}\n", "u_step_x") == 0

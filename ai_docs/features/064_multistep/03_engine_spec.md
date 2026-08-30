@@ -230,7 +230,7 @@ bound on total step-target allocation is a real follow-up, and the existing stal
 
 ## Files touched
 
-- `shaderbox/step_spec.py` (new) — the rider parser + step model. GL-free, no `App` import, so no
+- `shaderbox/step_spec.py` (new) — the step finder + the step/config model. GL-free, no `App` import, so no
   cycle-from-types pressure.
 - `shaderbox/core.py` — `Node`: per-step programs, targets, order, ping-pong; `compile` builds N
   variants; `render` evaluates the chain; `release` frees step targets.
@@ -241,7 +241,7 @@ bound on total step-target allocation is a real follow-up, and the existing stal
 
 Each check fails for exactly one reason.
 
-1. Rider parsing: every token, defaults, and each of D2's four malformed cases -> one error each.
+1. Step finding: every token, defaults, and each of D2's four malformed cases -> one error each.
 2. A 2-step chain renders B-reads-A, not A alone. Falsifier: the output equals step A's.
 3. Order is topological on a diamond, and the shared ancestor renders ONCE (memoization).
 4. A self-read gets last frame's content; the value advances across frames and does not read its

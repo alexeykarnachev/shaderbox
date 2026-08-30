@@ -10,9 +10,9 @@ The engine ships and works; steps are invisible in the app. This is the surface 
 ## What ships
 
 A **Steps section** in the Node panel listing each step with a live thumbnail, its resolved size and
-format, and what it reads — plus a **view pin** that retargets the big preview to any step so an
-intermediate can be looked at. Read-only over the chain's structure: the shader stays the only place
-a step is declared or configured.
+what it reads, plus combos editing that step's target — and a **view pin** that retargets the big
+preview to any step so an intermediate can be looked at. The shader stays the only place a step is
+DECLARED; the panel is where its target is configured.
 
 ## The shape, and why
 
