@@ -18,7 +18,7 @@ from shaderbox.copilot.state import CopilotLayout
 from shaderbox.core import ENGINE_DRIVEN_UNIFORMS, Node
 from shaderbox.glyph_tables import TABLE_UNIFORMS
 from shaderbox.media import MediaDetails, MediaWithTexture, is_default_image
-from shaderbox.model_salvage import load_model
+from shaderbox.model_salvage import drop_invalid, load_model
 from shaderbox.paths import NODE_JSON_BASENAME, NODE_SHADER_BASENAME
 from shaderbox.step_spec import StepConfig
 from shaderbox.ui_regions import NodeTab
@@ -188,6 +188,8 @@ class UINodeState(BaseModel):
         if isinstance(configs, dict):
             for name in list(configs):
                 entry = configs[name]
+                if isinstance(entry, StepConfig):
+                    continue  # already validated; only raw values need checking
                 if not isinstance(entry, dict):
                     configs.pop(name)
                     continue
@@ -452,6 +454,14 @@ def load_node_from_dir(node_dir: Path) -> UINode:
 
     filtered_ui_state = {k: v for k, v in ui_state_dict.items() if k in fields}
     filtered_ui_state.setdefault("ui_name", dir_name)
+    # Salvage per KEY, the way `UIAppState` and `IntegrationsStore` already load: the
+    # filter above only prunes UNKNOWN keys, so a known key with a wrong-typed value
+    # raised and `load_nodes_from_dir` swallowed that by dropping the whole node -- the
+    # shader, the name and every tuned uniform, over one field. `_reset_out_of_range_values`
+    # had been growing a hand-written allowlist one field at a time (uniform_sort_key,
+    # input_type, step_configs); this covers every field including the ones nobody has
+    # thought to add yet.
+    drop_invalid(UINodeState, filtered_ui_state, f"node '{dir_name}'")
     ui_state = UINodeState(**filtered_ui_state)
 
     # `Node.load_from_dir` already compiled with the engine defaults, since the configs

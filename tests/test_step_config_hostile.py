@@ -100,3 +100,67 @@ def test_every_listed_dtype_is_accepted() -> None:
     # Guards the constraint against narrowing below what the panel offers.
     for dtype in DTYPES:
         assert StepConfig(dtype=dtype).dtype == dtype
+
+
+def test_an_already_validated_config_object_is_not_discarded() -> None:
+    """The salvage guard must not eat what it was written to protect.
+
+    Its `isinstance(entry, dict)` test read a `StepConfig` INSTANCE as garbage and popped
+    it — silent loss inside the guard that exists to prevent silent loss. No live caller
+    hits it today (the app builds this model from JSON), which is exactly why it needs a
+    test rather than a comment.
+    """
+    from shaderbox.ui_models import UINodeState
+
+    state = UINodeState(
+        step_configs={
+            "kept_instance": StepConfig(scale=0.25),
+            "kept_dict": {"scale": 0.5},
+            "dropped": {"scale": "not a number"},
+        }
+    )
+    assert set(state.step_configs) == {"kept_instance", "kept_dict"}
+    assert state.step_configs["kept_instance"].scale == 0.25
+    assert state.step_configs["kept_dict"].scale == 0.5
+
+
+def test_a_round_trip_through_the_model_preserves_configs() -> None:
+    from shaderbox.ui_models import UINodeState
+
+    original = UINodeState(step_configs={"a": StepConfig(scale=0.5, dtype="f4")})
+    revived = UINodeState(**original.model_dump())
+    assert revived.step_configs["a"] == original.step_configs["a"]
+
+
+@pytest.mark.parametrize(
+    "patch",
+    [
+        {"ui_name": 5},
+        {"uniform_sort_desc": "not a bool"},
+        {"step_configs": None},
+        {"step_configs": [1, 2]},
+        {"video_to_video_smoothing_window": 0},
+        {"ui_uniforms": [1]},
+    ],
+)
+def test_any_wrong_typed_ui_state_field_costs_that_field_not_the_node(
+    gl: moderngl.Context, tmp_path: Path, patch: dict
+) -> None:
+    """Pre-existing class, reachable through this feature's new field.
+
+    The key filter in `load_node_from_dir` prunes UNKNOWN keys only, so a known key with a
+    wrong-typed value raised and `load_nodes_from_dir` swallowed it by dropping the whole
+    node. `_reset_out_of_range_values` had been answering this one field at a time; the
+    load now salvages per key the way `UIAppState` and `IntegrationsStore` already did.
+    """
+    root = tmp_path / "root"
+    root.mkdir()
+    shutil.copytree(_EXAMPLE, root / "n1")
+    meta_path = root / "n1" / NODE_JSON_BASENAME
+    meta = json.loads(meta_path.read_text())
+    meta["ui_state"].update(patch)
+    meta_path.write_text(json.dumps(meta))
+
+    nodes = load_nodes_from_dir(root)
+    assert list(nodes) == ["n1"], f"{patch} dropped the whole node"
+    nodes["n1"].node.render(u_time=0.0)
