@@ -294,14 +294,16 @@ def _report_orphan_bodies(
 
 
 def read_samplers(body: str, sampler_names: set[str]) -> set[str]:
-    """Which of `sampler_names` a step body reads.
+    """Which of `sampler_names` a step body mentions, by whole-word match on its text.
 
-    Whole-word matching on the body text. A read the engine MISSES would order a step
-    before its input (a stale frame); a read it INVENTS only adds an edge that orders a
-    step later than strictly needed, or reports a cycle that is not one. Both are
-    visible; neither corrupts silently, and over-detection is the safer failure, so the
-    match is deliberately generous -- any mention of the name counts, including one
-    inside a helper call.
+    A TEXT-SCAN FALLBACK ONLY, used when no compiled program is available (tests, and a
+    chain whose variants failed to build). It is measurably incomplete: it cannot see a
+    read through a `#define`, through a helper that takes a `sampler2D` parameter, or
+    through any other indirection -- measured missing 2 of 3 real edges on ordinary GLSL.
+
+    The real edge set comes from the driver (`plan_steps(..., active_by_step=)`), which
+    has already done exact dataflow analysis. Prefer it always; a missed edge orders a
+    step before its input and renders a lagged frame, which is invisible.
     """
     found: set[str] = set()
     for name in sampler_names:
@@ -338,9 +340,17 @@ class StepPlan:
 
 
 def plan_steps(
-    source: str, steps: list[StepSpec], path: Path
+    source: str,
+    steps: list[StepSpec],
+    path: Path,
+    active_by_step: dict[str, set[str]] | None = None,
 ) -> tuple[StepPlan, list[ShaderError]]:
     """Topologically order `steps` by which of each other's outputs they read.
+
+    `active_by_step` maps a step name (and `""` for the final `main` variant) to the
+    sampler names GL reports ACTIVE in that step's compiled program. That is the real
+    edge set: the driver resolves `#define`s, helper calls and `sampler2D` parameters
+    that no text scan can follow. Falls back to the text scan only when it is absent.
 
     A step reading ITSELF is ping-pong, not a cycle: it consumes the previous frame, so
     it contributes no ordering constraint at all. Excluding the self-edge from the cycle
@@ -350,18 +360,21 @@ def plan_steps(
     by_sampler = {s.sampler: s.name for s in steps}
     sampler_names = set(by_sampler)
 
+    def samplers_for(step_name: str, fn_name: str) -> set[str]:
+        if active_by_step is not None:
+            return active_by_step.get(step_name, set()) & sampler_names
+        return read_samplers(extract_fn_body(source, fn_name), sampler_names)
+
     reads: dict[str, set[str]] = {}
     self_reads: set[str] = set()
     for step in steps:
-        body = extract_fn_body(source, step.fn_name)
-        read_names = {by_sampler[s] for s in read_samplers(body, sampler_names)}
+        read_names = {by_sampler[s] for s in samplers_for(step.name, step.fn_name)}
         if step.name in read_names:
             self_reads.add(step.name)
             read_names.discard(step.name)  # previous frame: no ordering constraint
         reads[step.name] = read_names
 
-    main_body = extract_fn_body(source, "main")
-    final_reads = {by_sampler[s] for s in read_samplers(main_body, sampler_names)}
+    final_reads = {by_sampler[s] for s in samplers_for("", "main")}
 
     order: list[str] = []
     state: dict[str, int] = {}  # 0 = visiting, 1 = done

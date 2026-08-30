@@ -111,8 +111,22 @@ consumer); freska had per-node targets but iterated an `unordered_map` under its
 `// TODO: this is incorrect!`, lagging an N-step chain by N-1 frames nondeterministically. Neither
 got both.
 
-The edge set is derived from which `u_*` step samplers each `step_*` body reads, resolved on the
-flattened source so `SB_*` lib splicing is already applied.
+**The edge set comes from the DRIVER, not from scanning the body text.** Each variant is compiled
+anyway (D3), so the engine asks GL which step samplers are ACTIVE in each step's program. The driver
+has already done exact dataflow analysis; a text scan has not.
+
+This was measured after a text-scan version was written and committed. On ordinary GLSL --
+`#define MY_SRC u_a`, a helper taking a `sampler2D` parameter -- the scan missed the `#define` hop
+entirely, and caught the helper only because the name happened to appear in the body: right by
+coincidence, not by analysis. GL reported all four variants exactly, self-edge included.
+
+The asymmetry is what makes this a correctness fix rather than a refinement. An INVENTED edge orders
+a step later than needed or reports a cycle that is not one -- both loud. A MISSED edge orders a step
+before its input, so it renders a frame of lag per hop and the picture still looks plausible. That is
+precisely the freska bug this spec diagnoses (`02_decision.md`), reintroduced through a different
+door, and D8's visible ordering does not catch it because the order is self-consistent with a wrong
+edge set. The text scan survives as a GL-free fallback for tests and for a chain whose variants
+failed to build.
 
 **D6. A step reading itself is implicit ping-pong.** The engine double-buffers that step and hands
 the previous frame's texture; the user never names a pair. The survey's single strongest

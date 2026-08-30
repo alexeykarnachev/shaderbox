@@ -141,7 +141,7 @@ def test_the_eight_level_cascade_orders_coarse_to_fine() -> None:
     decls = ["uniform sampler2D u_scene;  // step"]
     bodies = ["void step_scene(out vec4 o) { o = vec4(1.0); }"]
     for i in range(7, -1, -1):
-        decls.append(f"uniform sampler2D u_c{i};  // step, scale: {2.0 ** -i}, f2")
+        decls.append(f"uniform sampler2D u_c{i};  // step, scale: {2.0**-i}, f2")
         below = f" + texture(u_c{i + 1}, vec2(0.0))" if i < 7 else ""
         bodies.append(
             f"void step_c{i}(out vec4 o) {{ o = texture(u_scene, vec2(0.0)){below}; }}"
@@ -194,3 +194,70 @@ def test_a_step_nobody_reads_still_runs() -> None:
     assert errors == []
     assert plan.order == ["a"]
     assert plan.final_reads == set()
+
+
+def test_the_text_scan_misses_indirect_reads_and_the_driver_does_not() -> None:
+    """Why the edge set comes from GL, not from scanning the body text.
+
+    A read through a `#define` is invisible to a text scan, and a read it does catch it
+    catches by coincidence -- the name happening to appear -- not by analysis. A MISSED
+    edge orders a step before its input and renders a frame of lag per hop -- the exact freska bug
+    this scheduler exists to avoid, and it is invisible because the picture still looks
+    plausible. The driver has already done exact dataflow analysis; ask it.
+    """
+    src = (
+        "#version 330\n"
+        "#define MY_SRC u_a\n"
+        "uniform sampler2D u_a;  // step\n"
+        "uniform sampler2D u_b;  // step\n"
+        "uniform sampler2D u_c;  // step\n"
+        "vec4 helper(sampler2D s) { return texture(s, vec2(0.0)); }\n"
+        "void step_a(out vec4 o) { o = vec4(1.0); }\n"
+        "void step_b(out vec4 o) { o = texture(MY_SRC, vec2(0.0)); }\n"
+        "void step_c(out vec4 o) { o = helper(u_b); }\n"
+        "void main() { gl_FragColor = texture(u_c, vec2(0.0)); }\n"
+    )
+    parsed = parse_steps(src, _PATH)
+    assert parsed.errors == []
+
+    # Text-scan fallback: the `#define` hop is invisible to it. (It happens to catch
+    # `helper(u_b)` because the name appears literally -- which is exactly why a text
+    # scan is untrustworthy: it is right by coincidence, not by analysis.)
+    text_plan, _ = plan_steps(src, parsed.steps, _PATH)
+    assert text_plan.reads["b"] == set()  # MISSED: read via `#define MY_SRC u_a`
+
+    # What the driver reports for the same shader (measured on a real context).
+    active = {
+        "a": set(),
+        "b": {"u_a"},
+        "c": {"u_b"},
+        "": {"u_c"},
+    }
+    gl_plan, errors = plan_steps(src, parsed.steps, _PATH, active_by_step=active)
+    assert errors == []
+    assert gl_plan.reads["b"] == {"a"}
+    assert gl_plan.reads["c"] == {"b"}
+    assert gl_plan.order == ["a", "b", "c"]
+    assert gl_plan.final_reads == {"c"}
+
+
+def test_the_driver_edge_set_still_treats_a_self_read_as_ping_pong() -> None:
+    src = (
+        "#version 330\n"
+        "uniform sampler2D u_scene;  // step\n"
+        "uniform sampler2D u_trail;  // step\n"
+        "void step_scene(out vec4 o) { o = vec4(1.0); }\n"
+        "void step_trail(out vec4 o) { o = vec4(0.0); }\n"
+        "void main() {}\n"
+    )
+    parsed = parse_steps(src, _PATH)
+    plan, errors = plan_steps(
+        src,
+        parsed.steps,
+        _PATH,
+        active_by_step={"scene": set(), "trail": {"u_scene", "u_trail"}, "": set()},
+    )
+    assert errors == []
+    assert plan.self_reads == {"trail"}
+    assert plan.reads["trail"] == {"scene"}
+    assert plan.order == ["scene", "trail"]
