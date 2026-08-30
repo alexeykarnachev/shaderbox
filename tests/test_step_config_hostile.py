@@ -164,3 +164,33 @@ def test_any_wrong_typed_ui_state_field_costs_that_field_not_the_node(
     nodes = load_nodes_from_dir(root)
     assert list(nodes) == ["n1"], f"{patch} dropped the whole node"
     nodes["n1"].node.render(u_time=0.0)
+
+
+def test_one_bad_uniform_row_costs_that_row_not_every_tuned_value(
+    gl: moderngl.Context, tmp_path: Path
+) -> None:
+    """Same shape as the step-config case, found by the same review.
+
+    `ui_uniforms` is validated as a whole, so a single malformed row reset ALL of them --
+    every tuned value on the node. The salvage only knew about `input_type`; any other
+    bad field in a row took its siblings down.
+    """
+    from shaderbox.constants import NODE_EXAMPLES_DIR
+
+    example = NODE_EXAMPLES_DIR / "f90f5ff9-29c6-4bcf-aee7-090f20542353"
+    root = tmp_path / "root"
+    root.mkdir()
+    shutil.copytree(example, root / "n1")
+    meta_path = root / "n1" / NODE_JSON_BASENAME
+    meta = json.loads(meta_path.read_text())
+    rows = meta["ui_state"]["ui_uniforms"]
+    assert len(rows) > 1, "the example must ship several rows for this to mean anything"
+    rows[next(iter(rows))]["name"] = 12345  # wrong type, and NOT input_type
+    meta_path.write_text(json.dumps(meta))
+
+    nodes = load_nodes_from_dir(root)
+    assert list(nodes) == ["n1"]
+    kept = nodes["n1"].ui_state.ui_uniforms
+    assert len(kept) == len(rows) - 1, (
+        "the bad row should cost itself, not its siblings"
+    )

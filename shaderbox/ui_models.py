@@ -175,11 +175,22 @@ class UINodeState(BaseModel):
             data.pop("uniform_sort_key", None)
         uniforms = data.get("ui_uniforms")
         if isinstance(uniforms, dict):
-            for u in uniforms.values():
-                if isinstance(u, dict) and u.get("input_type") not in get_args(
-                    UIUniformInputType
-                ):
-                    u.pop("input_type", None)
+            for key in list(uniforms):
+                row = uniforms[key]
+                if isinstance(row, UIUniform):
+                    continue
+                if not isinstance(row, dict):
+                    uniforms.pop(key)
+                    continue
+                if row.get("input_type") not in get_args(UIUniformInputType):
+                    row.pop("input_type", None)
+                try:
+                    UIUniform(**row)
+                except ValidationError:
+                    # Per ROW, like step_configs: one malformed row used to cost every
+                    # tuned value on the node, because the dict is validated as a whole.
+                    logger.warning(f"Dropped unreadable uniform row '{key}'")
+                    uniforms.pop(key)
         # A step config is six constrained fields written into a file a user can open, so
         # any of them can arrive malformed. Drop the offending ENTRY, not the node: losing
         # a step's tuning costs a re-pick, while losing the node costs the shader and every
