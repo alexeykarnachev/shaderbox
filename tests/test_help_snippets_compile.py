@@ -43,7 +43,5 @@ def test_a_help_snippet_compiles_and_renders(
     path.write_text(section.snippet, encoding="utf-8")  # type: ignore[attr-defined]
     node = Node(gl=gl, source=ShaderSource.load(path), canvas_size=(32, 32))
     node.compile()
-    assert node.compile_unit.errors == [], [
-        e.message for e in node.compile_unit.errors
-    ]
+    assert node.compile_unit.errors == [], [e.message for e in node.compile_unit.errors]
     node.render(u_time=0.0)

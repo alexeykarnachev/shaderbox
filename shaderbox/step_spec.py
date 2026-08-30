@@ -113,6 +113,28 @@ def _sampler_to_step_name(sampler: str) -> str:
     return sampler[2:] if sampler.startswith("u_") else sampler
 
 
+_RESERVED = (USER_MAIN_ALIAS, STEP_OUT_NAME)
+
+
+def _report_reserved_names(source: str, path: Path, result: StepParseResult) -> None:
+    """A shader using an engine-reserved name gets a message naming the reason.
+
+    The driver already rejects it (`declaration of "sb_step_out" conflicts`), but that
+    error says nothing about steps, so a user has no way to learn why the name is taken.
+    """
+    for line_idx, line in enumerate(source.splitlines()):
+        for reserved in _RESERVED:
+            if re.search(rf"\b{re.escape(reserved)}\b", line):
+                result.errors.append(
+                    ShaderError(
+                        path,
+                        line_idx,
+                        f"'{reserved}' is reserved: the engine injects it when building "
+                        f"a step variant. Rename this one.",
+                    )
+                )
+
+
 def parse_steps(source: str, path: Path) -> StepParseResult:
     """Read every `// step` rider out of `source`.
 
@@ -188,6 +210,9 @@ def parse_steps(source: str, path: Path) -> StepParseResult:
     _report_orphan_bodies(
         source, declared_fns, seen | dict.fromkeys(near_missed, -1), path, result
     )
+    if result.steps:
+        # Only when steps exist: without them nothing is injected and the name is free.
+        _report_reserved_names(source, path, result)
     return result
 
 

@@ -332,3 +332,89 @@ def test_evaluation_order_beats_declaration_order_on_a_real_render(
     late = node.step_texture("late")
     assert late is not None
     assert np.frombuffer(late.read(), dtype=np.float32)[0] == pytest.approx(0.75)
+
+
+def test_step_targets_follow_a_canvas_resize(
+    gl: moderngl.Context, tmp_path: Path
+) -> None:
+    # A scale-derived target that does not track the canvas samples at the wrong ratio,
+    # with no error to show for it.
+    node = _node(
+        gl,
+        tmp_path,
+        "#version 330\n"
+        "out vec4 f_color;\n"
+        "in vec2 vs_uv;\n"
+        "uniform sampler2D u_half;  // step, scale: 0.5, f4\n"
+        "void step_half(out vec4 o) { o = vec4(3.0, 0.0, 0.0, 1.0); }\n"
+        "void main() { f_color = texture(u_half, vs_uv); }\n",
+    )
+    node.render(u_time=0.0)
+    assert node._step_targets["half"][0].texture.size == (8, 8)
+
+    node.canvas.set_size((64, 64))
+    node.render(u_time=0.0)
+    assert node._step_targets["half"][0].texture.size == (32, 32)
+    texture = node.step_texture("half")
+    assert texture is not None
+    assert np.frombuffer(texture.read(), dtype=np.float32)[0] == pytest.approx(3.0)
+
+
+def test_an_observer_step_sees_a_self_readers_current_frame(
+    gl: moderngl.Context, tmp_path: Path
+) -> None:
+    # The ping-pong swap must land before downstream steps read: a self-reader gets its
+    # PREVIOUS frame, while everyone else gets its CURRENT one.
+    node = _node(
+        gl,
+        tmp_path,
+        "#version 330\n"
+        "out vec4 f_color;\n"
+        "in vec2 vs_uv;\n"
+        "uniform sampler2D u_acc;    // step, f4\n"
+        "uniform sampler2D u_watch;  // step, f4\n"
+        "void step_acc(out vec4 o) { o = texture(u_acc, vs_uv) + vec4(1.0, 0.0, 0.0, 1.0); }\n"
+        "void step_watch(out vec4 o) { o = texture(u_acc, vs_uv); }\n"
+        "void main() { f_color = texture(u_watch, vs_uv); }\n",
+    )
+    assert node.compile_unit.errors == [], node.compile_unit.errors
+    assert node.step_plan.self_reads == {"acc"}
+    for expected in (1.0, 2.0, 3.0):
+        node.render(u_time=0.0)
+        acc = node.step_texture("acc")
+        watch = node.step_texture("watch")
+        assert acc is not None and watch is not None
+        assert np.frombuffer(acc.read(), dtype=np.float32)[0] == pytest.approx(expected)
+        assert np.frombuffer(watch.read(), dtype=np.float32)[0] == pytest.approx(
+            expected
+        )
+
+
+def test_a_step_reading_three_others_binds_distinct_texture_units(
+    gl: moderngl.Context, tmp_path: Path
+) -> None:
+    # R3. A unit collision would make the sum wrong while everything still renders.
+    node = _node(
+        gl,
+        tmp_path,
+        "#version 330\n"
+        "out vec4 f_color;\n"
+        "in vec2 vs_uv;\n"
+        "uniform sampler2D u_a;    // step, f4\n"
+        "uniform sampler2D u_b;    // step, f4\n"
+        "uniform sampler2D u_c;    // step, f4\n"
+        "uniform sampler2D u_sum;  // step, f4\n"
+        "void step_a(out vec4 o) { o = vec4(1.0, 0.0, 0.0, 1.0); }\n"
+        "void step_b(out vec4 o) { o = vec4(2.0, 0.0, 0.0, 1.0); }\n"
+        "void step_c(out vec4 o) { o = vec4(4.0, 0.0, 0.0, 1.0); }\n"
+        "void step_sum(out vec4 o) {\n"
+        "    o = texture(u_a, vs_uv) + texture(u_b, vs_uv) + texture(u_c, vs_uv);\n"
+        "}\n"
+        "void main() { f_color = texture(u_sum, vs_uv); }\n",
+    )
+    assert node.compile_unit.errors == [], node.compile_unit.errors
+    node.render(u_time=0.0)
+    total = node.step_texture("sum")
+    assert total is not None
+    # 1 + 2 + 4: any collision gives a different, still-plausible number.
+    assert np.frombuffer(total.read(), dtype=np.float32)[0] == pytest.approx(7.0)

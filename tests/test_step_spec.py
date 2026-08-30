@@ -203,3 +203,25 @@ def test_errors_carry_the_declaration_line_for_click_to_jump() -> None:
     result = parse_steps(src, _PATH)
     assert result.errors[0].line == 3
     assert result.errors[0].path == _PATH
+
+
+@pytest.mark.parametrize("reserved", ["sb_user_main", "sb_step_out"])
+def test_an_engine_reserved_name_is_reported_with_its_reason(reserved: str) -> None:
+    # The driver rejects these anyway, but its message says nothing about steps, so a
+    # user has no way to learn why the name is taken.
+    src = (
+        "#version 330\n"
+        "uniform sampler2D u_blur;  // step\n"
+        f"void {reserved}() {{ }}\n"
+        "void step_blur(out vec4 o) { o = vec4(1.0); }\n"
+        "void main() {}\n"
+    )
+    result = parse_steps(src, _PATH)
+    assert any("reserved" in e.message for e in result.errors)
+
+
+def test_a_reserved_name_is_free_in_a_shader_with_no_steps() -> None:
+    # Nothing is injected without steps, so the name genuinely is not taken.
+    src = "#version 330\nvoid sb_step_out() { }\nvoid main() {}\n"
+    result = parse_steps(src, _PATH)
+    assert result.errors == []
