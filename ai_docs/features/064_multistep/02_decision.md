@@ -88,7 +88,16 @@ writes the one file that contains the steps. Under C it cannot author one at all
 ### Why C is dead
 
 Not a judgement call — **falsified by experiment.** `imgui_node_editor` hard-asserts on
-`BeginChild`, `BeginListbox` and `InputTextMultiline` inside its canvas. Reproduced:
+`BeginChild` inside its canvas. Reproduced:
+
+**Corrected later, and the correction matters for any future graph UI:** the library PRINTS a
+notice naming three widgets as incompatible, but only `BeginChild` actually asserts —
+`BeginListBox` and `InputTextMultiline` return cleanly and simply do nothing, which is harder to
+notice, not easier. And `ed.suspend()` / `ed.resume()` is a sanctioned escape: a `begin_child`
+wrapped in that pair runs with no assert (verified). What it costs is the canvas's coordinate
+space — content drawn that way is an overlay ON the canvas, not a widget inside a node body that
+pans and zooms with the graph. So the ban is on child windows living INSIDE a zoomed node, not on
+child windows near a graph.
 
 ```
 RuntimeError: IM_ASSERT( false && "ImGui::BeginChild should not be called inside a
