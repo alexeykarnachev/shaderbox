@@ -96,10 +96,17 @@ def test_a_step_with_no_config_gets_working_defaults() -> None:
     assert step.target_size((1280, 960)) == (1280, 960)
 
 
-def test_an_absolute_size_wins_over_scale() -> None:
-    configs = {"blur": StepConfig(scale=0.5, size=(320, 240))}
-    result = find_steps(_src("uniform sampler2D u_step_blur;"), _PATH, configs=configs)
-    assert result.steps[0].target_size((1280, 960)) == (320, 240)
+def test_every_config_field_is_reachable_from_the_panel() -> None:
+    """No field the user cannot set.
+
+    `StepConfig` previously carried an absolute `size` that nothing could write, which is
+    a field nobody maintains and every reader has to reason about. The panel's combos are
+    the contract: what the panel can set is what the config holds.
+    """
+    from dataclasses import fields
+
+    settable = {"scale", "dtype", "filter_linear", "wrap", "persist"}
+    assert {f.name for f in fields(StepConfig)} == settable
 
 
 def test_a_scaled_target_never_rounds_to_zero() -> None:

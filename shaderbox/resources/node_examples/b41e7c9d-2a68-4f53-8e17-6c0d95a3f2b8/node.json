@@ -9,7 +9,6 @@
         "step_configs": {
             "sparks": {
                 "scale": 1.0,
-                "size": null,
                 "dtype": "f2",
                 "filter_linear": true,
                 "wrap": false,
@@ -17,7 +16,6 @@
             },
             "bright": {
                 "scale": 0.5,
-                "size": null,
                 "dtype": "f2",
                 "filter_linear": true,
                 "wrap": false,
@@ -25,7 +23,6 @@
             },
             "blur": {
                 "scale": 0.25,
-                "size": null,
                 "dtype": "f2",
                 "filter_linear": true,
                 "wrap": false,
@@ -33,7 +30,6 @@
             },
             "trail": {
                 "scale": 1.0,
-                "size": null,
                 "dtype": "f2",
                 "filter_linear": true,
                 "wrap": false,

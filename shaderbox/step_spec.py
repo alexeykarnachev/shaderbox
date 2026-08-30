@@ -50,15 +50,12 @@ class StepConfig:
     """
 
     scale: float = DEFAULT_SCALE
-    size: tuple[int, int] | None = None  # absolute; wins over scale when set
     dtype: str = DEFAULT_DTYPE
     filter_linear: bool = DEFAULT_FILTER_LINEAR
     wrap: bool = DEFAULT_WRAP
     persist: bool = False
 
     def target_size(self, canvas_size: tuple[int, int]) -> tuple[int, int]:
-        if self.size is not None:
-            return self.size
         return (
             max(1, round(canvas_size[0] * self.scale)),
             max(1, round(canvas_size[1] * self.scale)),

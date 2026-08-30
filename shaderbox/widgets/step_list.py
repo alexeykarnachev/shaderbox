@@ -38,6 +38,9 @@ _SCALES: tuple[tuple[str, float], ...] = (
 )
 _FILTERS = ("linear", "nearest")
 _WRAPS = ("clamp", "repeat")
+# What happens to a feedback step's accumulated picture when the shader recompiles.
+# "keep" is `persist`; the label says the effect rather than the flag's name.
+_PERSIST = ("keep", "clear")
 
 
 def _scale_index(scale: float) -> int:
@@ -142,21 +145,30 @@ def _draw_step_row(app: App, ui_node: UINode, view: StepView) -> None:
     changed_wrap, wrap_idx = labeled_combo(
         "edge", 1 if config.wrap else 0, list(_WRAPS), _COMBO_W
     )
+    imgui.same_line()
+    changed_persist, persist_idx = labeled_combo(
+        "on edit", 0 if config.persist else 1, list(_PERSIST), _COMBO_W
+    )
 
     imgui.end_group()
     imgui.end_group()
 
-    if changed_scale or changed_dtype or changed_filter or changed_wrap:
+    if (
+        changed_scale
+        or changed_dtype
+        or changed_filter
+        or changed_wrap
+        or changed_persist
+    ):
         _apply_config(
             ui_node,
             view.name,
             StepConfig(
                 scale=_SCALES[scale_idx][1],
-                size=config.size,
                 dtype=DTYPES[dtype_idx],
                 filter_linear=filter_idx == 0,
                 wrap=wrap_idx == 1,
-                persist=config.persist,
+                persist=persist_idx == 0,
             ),
         )
 
