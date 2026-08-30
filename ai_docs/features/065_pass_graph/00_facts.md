@@ -169,3 +169,62 @@ invert, not adopt. It also BANS same-node links, so it has no feedback concept a
   sharing mechanism.
 - **Rename if beneficial.** "Node" currently means both the document and the render unit, and that
   collision is what pushed back on every attempt to add a second render unit.
+
+## The copilot: what a multi-file document breaks
+
+Verified. This is the most under-priced part of the rework, and it is where 064's post-mortem
+already pointed.
+
+**Everything resolves to exactly one shader.** `copilot/address.py` has two prefixed kinds
+(`lib:`, `example:`) plus a bare node id and an `""` sentinel meaning "the current node" — **no
+slot for a sub-unit**. `_copilot_resolve_target` builds a `_CopilotEditTarget` carrying a single
+`source: str`. So `edit_shader(target=...)` has no second axis on which to name a pass.
+
+**The working set has no repeat axis.** `WorkingSetView` carries ONE listing, ONE canvas string,
+ONE uniforms list, ONE errors list, one optional script pair. A document with three passes, each
+with its own compile errors, cannot be represented without changing that shape.
+
+**`_render_facts_for` returns one text line for one frame.** It is the model's ONLY visual channel
+(the 058 pivot deleted the vision layer deliberately). It cannot say which pass a frame came from,
+nor report anything about an intermediate pass.
+
+**`node_tree()` is a flat list** of (id, name, has_errors, is_current). The PROJECT MAP the model
+reads has no way to express "document X has passes A -> B -> C".
+
+**Directory-granular operations.** `create_node`, `duplicate_node`, `delete_node` all treat one
+directory as the atomic unit; `duplicate_node` is a directory deep-copy that assumes copying one
+shader is duplicating the thing.
+
+**Checkpoint/revert scales for free, but only coarsely.** Snapshots are whole node directories, so
+N pass files ride along automatically — but the manifest has no per-pass granularity, so a revert
+restores the whole document at turn start, never one pass.
+
+**Tool budget.** 31 tools + `load_tools`; 18 eager. The roadmap records that ">16 eager" was a named
+threshold already blown at 24, which is what motivated the lazy catalogue. **Any pass-addressing
+design that needs new tools is expensive; one that extends the ADDRESS SCHEME is nearly free** --
+`address.py` is explicitly "the single round-trip parse/build point", so a fourth kind is a small,
+contained change and every existing tool inherits it.
+
+## The scripting engine's 1:1 assumption, located exactly
+
+`ScriptEngine._nodes: dict[str, NodeScripts]` keyed by node id; `NodeScripts` holds ONE
+`behavior`, not a collection; `reload(node_id, scripts_dir, node)` resolves one fixed filename with
+no per-pass identifier; the `EngineNode` protocol exposes one `uniform_values` dict.
+
+`export_isolation` is one `Callable` per node, isolating one script instance around one
+`render_media`. 064 had to teach it that a feedback target is the same class of state as a script.
+For N passes it must isolate N passes' worth of feedback state per export.
+
+## Export and publish
+
+`render_job.py::render_to/render_for` take a single `Node`. The exporters themselves are already
+clean — `Exporter` operates on a `RenderedArtifact` (bytes, GL-free) and does not care where the
+image came from. **The one-node assumption lives at the render_for CALL SITE, not inside the
+exporters**, which is why that subsystem survives untouched.
+
+## The one place malformation still costs a whole node
+
+`load_nodes_from_dir` catches any exception from `load_node_from_dir` and skips the node dir. Every
+layer above it is now per-key salvaged, but an unreadable `node.json` or a genuinely broken shader
+file still drops the whole thing. With N pass files per document, one bad pass file must not cost
+the document -- this is a known shape with a known fix.
