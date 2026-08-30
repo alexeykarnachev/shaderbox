@@ -9,8 +9,10 @@ from pathlib import Path
 import moderngl
 import numpy as np
 import pytest
+from PIL import Image as PILImage
 
 from shaderbox.core import Canvas, Node
+from shaderbox.media import FileDetails, MediaDetails, ResolutionDetails
 from shaderbox.paths import shader_lib_root
 from shaderbox.shader_lib import ShaderLibIndex, set_active
 from shaderbox.shader_source import ShaderSource
@@ -418,3 +420,42 @@ def test_a_step_reading_three_others_binds_distinct_texture_units(
     assert total is not None
     # 1 + 2 + 4: any collision gives a different, still-plausible number.
     assert np.frombuffer(total.read(), dtype=np.float32)[0] == pytest.approx(7.0)
+
+
+def test_a_multi_step_node_exports_its_chain(
+    gl: moderngl.Context, tmp_path: Path
+) -> None:
+    """Export must run the chain, not the bare final shader.
+
+    Every export funnels through `render_media`, which brackets itself in
+    `export_isolation`. A chain that did not run leaves the final step sampling an
+    unwritten target, so the file exports black -- plausible, and wrong.
+    """
+
+    node = _node(
+        gl,
+        tmp_path,
+        "#version 330\n"
+        "out vec4 f_color;\n"
+        "in vec2 vs_uv;\n"
+        "uniform sampler2D u_a;  // step, f4, scale: 0.5\n"
+        "void step_a(out vec4 o) { o = vec4(vs_uv.x, vs_uv.y, 0.5, 1.0); }\n"
+        "void main() { f_color = texture(u_a, vs_uv); }\n",
+    )
+    assert node.compile_unit.errors == [], node.compile_unit.errors
+
+    out = tmp_path / "out.png"
+    node.render_media(
+        MediaDetails(
+            file_details=FileDetails(path=str(out)),
+            resolution_details=ResolutionDetails(width=16, height=16),
+            duration=0.0,
+            fps=1.0,
+            is_video=False,
+        )
+    )
+    assert out.is_file()
+    pixels = np.array(PILImage.open(out))
+    assert pixels[:, :, :3].max() > 0, "the chain did not run: exported black"
+    # The step writes a uv gradient, so opposite corners must differ.
+    assert tuple(pixels[0, 0][:3]) != tuple(pixels[-1, -1][:3])
