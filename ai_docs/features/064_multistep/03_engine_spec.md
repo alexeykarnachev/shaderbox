@@ -58,11 +58,34 @@ silent-corruption class `17_direction.md` bans. So:
 All four route through `CompileUnit.errors`, so they land in the existing error strip with
 click-to-jump and cost no new UI. The parser is GL-free and unit-testable without a context.
 
-**D3. One program per step, compiled from ONE source via `#define`.** `resolve_usage` runs once;
-the flattened text is compiled N+1 times with `#define SB_STEP <i>` injected after the header. The
-step bodies and `main()` are guarded so each variant contains one entry point. Verified working:
-variants compile and introspect independently, and the `#line` anchor (`d1781b5`) keeps error lines
-exact under injection.
+**D3. One program per step, compiled from ONE source by aliasing `main`.** `resolve_usage` runs
+once; the flattened text is compiled N+1 times. A fragment shader needs exactly one `main`, so for a
+step variant the engine injects, after the header and before the body:
+
+```glsl
+#define main sb_user_main
+```
+
+and appends, after the body:
+
+```glsl
+#undef main
+out vec4 sb_step_out;
+void main() { step_<name>(sb_step_out); }
+```
+
+The final variant injects nothing and compiles the source as-is.
+
+**The engine never modifies user text — it only brackets it.** Three shapes were probed on a real
+context; all three compile, and this one was chosen because it neither edits the user's source (a
+textual `void main()` rename breaks on unusual formatting) nor duplicates the body inside an `#if`
+(which doubles the error-line mapping). The C preprocessor substitutes whole tokens only, verified
+adversarially: a shader declaring `u_main_scale` and `domain_warp` compiles unchanged in both
+variants.
+
+Measured, and it is the evidence for D4: the final variant introspects `['u_blur','u_gain']` while
+the step variant introspects `['u_radius']` — **disjoint sets**, so the union is mandatory, not an
+optimisation. The `#line` anchor (`d1781b5`) keeps error lines exact under the injection.
 
 Why not N files: `node.source` and `node.compile_unit` are singular at ~15 call sites each (six in
 `copilot/backend.py`), `watch.py` hardcodes `sources[0]` as the root, and `copilot/address.py` has
