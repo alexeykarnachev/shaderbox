@@ -17,46 +17,49 @@ copilot, export — keeps working unchanged, because a step chain is still one d
 
 ## D-decisions
 
-**D1. A step is declared by a sampler uniform plus a `// step` rider.**
+**D1. A step is declared by a NAME, not by a comment.** A sampler whose name starts with
+`u_step_` is a render step; its body is `void step_<name>(out vec4 o)` in the same file.
 
 ```glsl
-uniform sampler2D u_blur;   // step, scale: 0.5, f2, linear
+uniform sampler2D u_step_blur;          // an ordinary comment, ignored
+void step_blur(out vec4 o) { ... }
 ```
 
-The rider configures the declaration it rides on, so the two cannot desync — the survey's named
-hybrid, and the failure mode KodeLife documents (a declaration drifting from its parameter) is
-structurally impossible. The step's body is `void step_blur(out vec4 o)` in the same file.
-`00_scenario.md` R1.
+**Maintainer decision, and the reason is the important part: comments do not carry semantics.**
+A comment is not part of the language — it cannot be checked, it collides with English prose a user
+writes for themselves, and a typo in it is indistinguishable from a sentence. A name is a real GLSL
+token: `u_step_blur` either has the prefix or it does not, so there is no near-miss class, no
+"did you mean" heuristic, and no way for a shader that never heard of steps to be broken by one.
 
-Rider grammar, all optional after the `step` marker:
+This replaces an earlier draft that put the marker and its parameters in a trailing comment. That
+draft was written from a survey of other tools rather than from the decision already taken here, and
+it was wrong twice over: it contradicted the instruction, and it generated an entire error-handling
+apparatus — near-miss detection, orphan-body inference, reserved-name checks — that exists only to
+compensate for a comment being unparseable. **A naming convention deletes that apparatus rather than
+hardening it.**
 
-| Token | Meaning | Default |
+**D2. A step's parameters are node state with defaults, edited in the panel.** Size, format, filter,
+wrap and persistence are NOT in the shader. The engine gives every new step a working default; the
+values live in `node.json` under the node's UI state and are edited through the Steps rows.
+
+| Parameter | Default | Why that default |
 |---|---|---|
-| `scale: N` | target size = `max(1, round(canvas * N))` | `1.0` |
-| `size: WxH` | absolute target size | — |
-| `f1` / `f2` / `f4` | target dtype | **`f2`** |
-| `linear` / `nearest` | filter | `linear` |
-| `clamp` / `repeat` | wrap | `clamp` |
-| `persist` | target survives a recompile | off |
+| scale | `1.0` (canvas size) | the obvious starting point; a chain author changes the few that shrink |
+| format | **`f2`** | 063 measured `f1` saturating at 255 on the FIRST accumulate pass where `f2` reached exactly 7.0, so the safe value is the default |
+| filter | `linear` | what a blur or an upsample wants; `nearest` is the deliberate case |
+| wrap | `clamp` | inverts moderngl's `repeat_x/y = True`, which is wrong for a feedback border |
+| persist | off | a target that survives a recompile is the exception |
 
-**`f2` is the default, not `f1`.** 8-bit is measured fatal for accumulation (063: `f1` saturated at
-255 on the first pass where `f2` reached exactly 7.0), and R7 exists because of that measurement.
-The safe value is the default and `f1` is the opt-in. Proposal D reached the same conclusion
-independently. `clamp` inverts moderngl's `repeat_x/y = True`, which is wrong for a feedback border.
+The shader says WHAT the steps are and how they connect; `node.json` says how each target is
+configured. Two files, two different kinds of fact, neither able to contradict the other — a step
+cannot exist in the config without existing in the code, because the config is keyed off what the
+compiler reports.
 
-**D2. A malformed rider is a loud error, never a silent wrong picture.** This is the one defect
-every judge flagged in proposal A: `// stp, scale: 0.5` would fall through to an ordinary texture
-uniform bound to the shipped default image, so a picture appears and it is the wrong one — the
-silent-corruption class `17_direction.md` bans. So:
+This also makes the Steps rows editable rather than read-only, and it keeps the copilot first-class:
+`node.json` is a file it already reads and writes, so it can tune a step without reaching a UI.
 
-- A `//` rider on a `sampler2D` whose first token is within edit distance 1 of `step` and is not
-  `step` -> a synthetic `ShaderError` on the declaration's line.
-- An unrecognised token after a valid `step` marker -> likewise.
-- A `step` marker with no matching `void step_<name>(out vec4)` body -> likewise.
-- A `step_<name>` body with no matching declared step -> likewise.
-
-All four route through `CompileUnit.errors`, so they land in the existing error strip with
-click-to-jump and cost no new UI. The parser is GL-free and unit-testable without a context.
+An unknown step in the config (its sampler was renamed or deleted) is dropped on load; a step with
+no config gets the defaults. Neither is an error.
 
 **D3. One program per step, compiled from ONE source by aliasing `main`.** `resolve_usage` runs
 once; the flattened text is compiled N+1 times. A fragment shader needs exactly one `main`, so for a

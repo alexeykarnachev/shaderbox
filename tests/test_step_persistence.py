@@ -20,17 +20,18 @@ import pytest
 from shaderbox.copilot.backend import _format_uniforms
 from shaderbox.paths import NODE_JSON_BASENAME, NODE_SHADER_BASENAME, shader_lib_root
 from shaderbox.shader_lib import ShaderLibIndex, set_active
+from shaderbox.step_spec import StepConfig
 from shaderbox.ui_models import load_node_from_dir
 
 _CHAIN = (
     "#version 330\n"
     "out vec4 f_color;\n"
     "in vec2 vs_uv;\n"
-    "uniform sampler2D u_mid;  // step, f4\n"
+    "uniform sampler2D u_step_mid;\n"
     "uniform float u_only_in_step;\n"
     "uniform float u_final_gain;\n"
     "void step_mid(out vec4 o) { o = vec4(u_only_in_step, 0.0, 0.0, 1.0); }\n"
-    "void main() { f_color = texture(u_mid, vs_uv) * u_final_gain; }\n"
+    "void main() { f_color = texture(u_step_mid, vs_uv) * u_final_gain; }\n"
 )
 
 
@@ -90,7 +91,7 @@ def test_a_step_sampler_writes_no_texture_file(
     ui_node.save(node_dir.parent, node_dir.name)
 
     saved = _meta(node_dir)["uniforms"]
-    assert "u_mid" not in saved, "a step sampler must not be serialized"
+    assert "u_step_mid" not in saved, "a step sampler must not be serialized"
     textures_dir = node_dir / "textures"
     assert not textures_dir.exists() or not list(textures_dir.glob("*.bin"))
 
@@ -103,7 +104,7 @@ def test_a_step_sampler_gets_no_uniform_row(
     ui_node.save(node_dir.parent, node_dir.name)
     # Rows are keyed by uniform hash, so check the names the rows were built from.
     rows = _meta(node_dir)["ui_state"].get("ui_uniforms", {})
-    assert all(row.get("name") != "u_mid" for row in rows.values())
+    assert all(row.get("name") != "u_step_mid" for row in rows.values())
 
 
 def test_reload_does_not_resurrect_a_stale_step_frame(
@@ -118,8 +119,8 @@ def test_reload_does_not_resurrect_a_stale_step_frame(
     ui_node.save(node_dir.parent, node_dir.name)
 
     reloaded = load_node_from_dir(node_dir)
-    assert "u_mid" not in reloaded.node.uniform_values
-    assert reloaded.node.is_step_sampler("u_mid")
+    assert "u_step_mid" not in reloaded.node.uniform_values
+    assert reloaded.node.is_step_sampler("u_step_mid")
 
 
 def test_the_copilot_sees_step_samplers_as_engine_wired(
@@ -138,7 +139,7 @@ def test_the_copilot_sees_step_samplers_as_engine_wired(
 
     rows = _format_uniforms(ui_node.node, set())
     joined = "\n".join(rows)
-    assert "u_mid sampler2D <- (step output)" in joined
+    assert "u_step_mid sampler2D <- (step output)" in joined
     assert "no media bound" not in joined
     # Both tunables, from different variants, are visible.
     assert any(r.startswith("u_only_in_step ") for r in rows)
@@ -154,5 +155,52 @@ def test_the_copilot_cannot_unbind_a_step_sampler(
     node_dir = _make_node_dir(tmp_path)
     ui_node = load_node_from_dir(node_dir)
     ui_node.node.render(u_time=0.0)
-    assert ui_node.node.is_step_sampler("u_mid")
-    assert "u_mid" not in ui_node.node.uniform_values
+    assert ui_node.node.is_step_sampler("u_step_mid")
+    assert "u_step_mid" not in ui_node.node.uniform_values
+
+
+def test_a_step_config_survives_save_and_reload(
+    gl: moderngl.Context, tmp_path: Path
+) -> None:
+    """A step's target settings are node state, so the panel can edit them.
+
+    The shader says WHAT the steps are; this says how each target is set up. Without the
+    round-trip a user's size and format choices revert on every load, which is what
+    putting them in the shader was avoiding.
+    """
+    node_dir = _make_node_dir(tmp_path)
+    ui_node = load_node_from_dir(node_dir)
+    ui_node.node.render(u_time=0.0)
+    # The shipped default: full size, f2.
+    assert ui_node.node._step_targets["mid"][0].texture.size == (16, 16)
+
+    edited = StepConfig(scale=0.5, dtype="f4", filter_linear=False)
+    ui_node.ui_state.step_configs["mid"] = edited
+    ui_node.node.step_configs["mid"] = edited
+    ui_node.node.invalidate()
+    ui_node.node.compile()
+    ui_node.save(node_dir.parent, node_dir.name)
+
+    saved = _meta(node_dir)["ui_state"]["step_configs"]["mid"]
+    assert saved["scale"] == 0.5
+    assert saved["dtype"] == "f4"
+
+    reloaded = load_node_from_dir(node_dir)
+    reloaded.node.render(u_time=0.0)
+    target = reloaded.node._step_targets["mid"][0].texture
+    assert target.size == (8, 8)
+    assert target.dtype == "f4"
+
+
+def test_a_config_for_a_step_that_no_longer_exists_is_harmless(
+    gl: moderngl.Context, tmp_path: Path
+) -> None:
+    # A sampler was renamed; its stale config must not resurrect it or raise.
+    node_dir = _make_node_dir(tmp_path)
+    ui_node = load_node_from_dir(node_dir)
+    ui_node.ui_state.step_configs["ghost"] = StepConfig(scale=0.25)
+    ui_node.save(node_dir.parent, node_dir.name)
+
+    reloaded = load_node_from_dir(node_dir)
+    assert reloaded.node.compile_unit.errors == []
+    assert [s.name for s in reloaded.node.steps] == ["mid"]

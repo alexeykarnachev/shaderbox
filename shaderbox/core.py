@@ -46,9 +46,10 @@ from shaderbox.shader_source import ShaderSource
 from shaderbox.step_spec import (
     STEP_OUT_NAME,
     USER_MAIN_ALIAS,
+    StepConfig,
     StepPlan,
     StepSpec,
-    parse_steps,
+    find_steps,
     plan_steps,
 )
 from shaderbox.util import try_to_release
@@ -194,6 +195,11 @@ class Node:
         # Multi-step state (064). Empty for the overwhelming majority of nodes, which
         # declare no steps and behave exactly as they did before.
         self.steps: list[StepSpec] = []
+        # Per-step target configuration, keyed by step name. Node state the panel edits,
+        # NOT shader text -- the shader says what the steps are and how they connect,
+        # this says how each target is set up. A step with no entry gets the defaults, so
+        # a freshly-declared step renders correctly before anyone opens the panel.
+        self.step_configs: dict[str, StepConfig] = {}
         self.step_plan: StepPlan = StepPlan(
             order=[], reads={}, self_reads=set(), final_reads=set()
         )
@@ -346,10 +352,10 @@ class Node:
                     size=texture.size
                     if texture
                     else spec.target_size(self.canvas.texture.size),
-                    dtype=spec.dtype,
-                    filter_linear=spec.filter_linear,
-                    wrap=spec.wrap,
-                    persist=spec.persist,
+                    dtype=spec.config.dtype,
+                    filter_linear=spec.config.filter_linear,
+                    wrap=spec.config.wrap,
+                    persist=spec.config.persist,
                     reads=sorted(self.step_plan.reads.get(name, set())),
                     reads_self=name in self.step_plan.self_reads,
                     read_by_output=name in self.step_plan.final_reads,
@@ -366,7 +372,9 @@ class Node:
             vao.release()
         self._step_vaos.clear()
         persist_names = (
-            {s.name for s in self.steps if s.persist} if keep_persist else set()
+            {st.name for st in self.steps if st.config.persist}
+            if keep_persist
+            else set()
         )
         for name in list(self._step_targets):
             if name in persist_names:
@@ -388,13 +396,13 @@ class Node:
         self._step_front = dict.fromkeys(self._step_front, 0)
 
     def _make_step_canvas(self, spec: StepSpec, size: tuple[int, int]) -> "Canvas":
-        filter_mode = moderngl.LINEAR if spec.filter_linear else moderngl.NEAREST
+        filter_mode = moderngl.LINEAR if spec.config.filter_linear else moderngl.NEAREST
         return Canvas(
             gl=self._gl,
             size=size,
-            dtype=spec.dtype,
+            dtype=spec.config.dtype,
             filter=(filter_mode, filter_mode),
-            wrap=spec.wrap,
+            wrap=spec.config.wrap,
         )
 
     def _sync_step_targets(self, canvas_size: tuple[int, int]) -> None:
@@ -422,7 +430,7 @@ class Node:
                 front, back = pair
                 fits = (
                     front.texture.size == size
-                    and front.dtype == spec.dtype
+                    and front.dtype == spec.config.dtype
                     and (back is not None) == needs_pair
                 )
                 if fits:
@@ -490,7 +498,7 @@ class Node:
             self.compile_unit = unit
             return
 
-        parsed = parse_steps(self.source.text, self.source.path)
+        parsed = find_steps(self.source.text, self.source.path, self.step_configs)
         if parsed.errors:
             # D14: refuse the whole compile. Building the final variant alone would leave
             # the step samplers as ordinary textures bound to the shipped default image --

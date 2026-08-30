@@ -20,18 +20,19 @@ from shaderbox.paths import shader_lib_root
 from shaderbox.shader_lib import ShaderLibIndex, set_active
 from shaderbox.shader_source import ShaderSource
 from shaderbox.step_preview import StepPreview
+from shaderbox.step_spec import StepConfig
 
 _CHAIN = (
     "#version 330\n"
     "out vec4 f_color;\n"
     "in vec2 vs_uv;\n"
-    "uniform sampler2D u_a;      // step, f4\n"
-    "uniform sampler2D u_half;   // step, scale: 0.5, f2, nearest, repeat\n"
-    "uniform sampler2D u_loop;   // step, f4, persist\n"
+    "uniform sampler2D u_step_a;\n"
+    "uniform sampler2D u_step_half;\n"
+    "uniform sampler2D u_step_loop;\n"
     "void step_a(out vec4 o) { o = vec4(1.0); }\n"
-    "void step_half(out vec4 o) { o = texture(u_a, vs_uv); }\n"
-    "void step_loop(out vec4 o) { o = texture(u_loop, vs_uv) + vec4(0.1); }\n"
-    "void main() { f_color = texture(u_half, vs_uv) + texture(u_loop, vs_uv); }\n"
+    "void step_half(out vec4 o) { o = texture(u_step_a, vs_uv); }\n"
+    "void step_loop(out vec4 o) { o = texture(u_step_loop, vs_uv) + vec4(0.1); }\n"
+    "void main() { f_color = texture(u_step_half, vs_uv) + texture(u_step_loop, vs_uv); }\n"
 )
 
 
@@ -42,10 +43,18 @@ def gl() -> moderngl.Context:
     return ctx
 
 
+_CONFIGS = {
+    "a": StepConfig(dtype="f4"),
+    "half": StepConfig(scale=0.5, dtype="f2", filter_linear=False, wrap=True),
+    "loop": StepConfig(dtype="f4", persist=True),
+}
+
+
 def _node(gl: moderngl.Context, tmp_path: Path, text: str) -> Node:
     path = tmp_path / "n.frag.glsl"
     path.write_text(text, encoding="utf-8")
     node = Node(gl=gl, source=ShaderSource.load(path), canvas_size=(32, 32))
+    node.step_configs = dict(_CONFIGS)
     node.compile()
     return node
 
@@ -72,7 +81,7 @@ def test_views_carry_every_fact_the_panel_shows(
     assert views["half"].filter_linear is False
     assert views["half"].wrap is True
     assert views["half"].reads == ["a"]
-    assert views["half"].sampler == "u_half"
+    assert views["half"].sampler == "u_step_half"
 
     assert views["loop"].persist is True
     assert views["loop"].reads_self is True

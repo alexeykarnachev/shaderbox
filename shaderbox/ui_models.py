@@ -20,6 +20,7 @@ from shaderbox.glyph_tables import TABLE_UNIFORMS
 from shaderbox.media import MediaDetails, MediaWithTexture, is_default_image
 from shaderbox.model_salvage import load_model
 from shaderbox.paths import NODE_JSON_BASENAME, NODE_SHADER_BASENAME
+from shaderbox.step_spec import StepConfig
 from shaderbox.ui_regions import NodeTab
 from shaderbox.util import get_uniform_hash
 
@@ -135,6 +136,13 @@ class UINodeState(BaseModel):
 
     render_media_details: MediaDetails = MediaDetails()
     ui_uniforms: dict[int, UIUniform] = {}
+
+    # Per-step target configuration (064), keyed by step name. The shader says WHAT the
+    # steps are and how they connect; this says how each target is set up, so the panel
+    # can edit size/format/filter without writing back into GLSL text. A step with no
+    # entry gets the engine's defaults; an entry naming a step the shader no longer
+    # declares is simply unused.
+    step_configs: dict[str, StepConfig] = {}
 
     uniform_sort_key: UniformSortKey = "code"
     uniform_sort_desc: bool = False
@@ -427,6 +435,15 @@ def load_node_from_dir(node_dir: Path) -> UINode:
     filtered_ui_state = {k: v for k, v in ui_state_dict.items() if k in fields}
     filtered_ui_state.setdefault("ui_name", dir_name)
     ui_state = UINodeState(**filtered_ui_state)
+
+    # `Node.load_from_dir` already compiled with the engine defaults, since the configs
+    # live in ui_state which is only readable here. Hand them over and rebuild, so a
+    # node opens with the sizes and formats the user set rather than reverting to them
+    # on every load.
+    if ui_state.step_configs:
+        node.step_configs = dict(ui_state.step_configs)
+        node.invalidate()
+        node.compile()
 
     return UINode(
         id=dir_name,

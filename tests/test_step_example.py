@@ -53,11 +53,15 @@ def test_the_example_compiles_and_declares_its_chain(gl: moderngl.Context) -> No
 def test_the_example_exercises_every_part_of_the_feature(gl: moderngl.Context) -> None:
     ui_node = load_node_from_dir(_EXAMPLE_DIR)
     by_name = {s.name: s for s in ui_node.node.steps}
-    # Differing resolutions (R2), float targets (R7), and a filter choice (R8).
-    assert by_name["bright"].scale == 0.5
-    assert by_name["blur"].scale == 0.25
-    assert by_name["blur"].filter_linear is True
-    assert all(s.dtype == "f2" for s in ui_node.node.steps)
+    # Differing resolutions (R2), float targets (R7), and a filter choice (R8) -- all of
+    # it from node state, since the shader carries no configuration.
+    assert by_name["bright"].config.scale == 0.5
+    assert by_name["blur"].config.scale == 0.25
+    assert by_name["blur"].config.filter_linear is True
+    assert all(s.config.dtype == "f2" for s in ui_node.node.steps)
+    # And the shipped configs actually reached the engine's targets.
+    ui_node.node.render(u_time=0.0)
+    assert ui_node.node._step_targets["blur"][0].texture.size == (240, 180)
 
 
 def test_the_example_renders_and_its_trail_accumulates(gl: moderngl.Context) -> None:

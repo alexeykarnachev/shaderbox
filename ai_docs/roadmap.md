@@ -39,8 +39,8 @@ the DRIVER reports each variant reads, evaluates each once per frame into its ow
 a self-reading step its previous frame (ping-pong, no pair to manage). The Node panel shows a
 **Steps** section — one row per step in evaluation order with a live thumbnail, its resolved
 size/format, and what it reads; clicking a thumbnail retargets the big preview to that step, and a
-float target is tonemapped on the way (raw, a step holding 8.0 collapses to 9 tone levels; the
-transform keeps 43). **To see it: the shipped "Render Steps" example**, or the `steps demo` node in
+float target is tonemapped on the way (a step holding values up to 8.0 keeps several times more
+distinct tone levels than a raw blit, which crushes the bright end). **To see it: the shipped "Render Steps" example**, or the `steps demo` node in
 `projects/dev`.
 
 **The one thing owed: a visual check.** The panel was verified by driving the real app loop headless

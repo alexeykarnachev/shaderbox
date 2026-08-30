@@ -1,14 +1,17 @@
-"""Parsing of `// step` riders on sampler declarations, and the step model.
+"""Finding a node's render steps, and ordering them (064).
 
-A node declares an extra render step by riding a comment on the sampler that reads it:
+A sampler named `u_step_<name>` IS a render step; its body is `void step_<name>(out vec4 o)`
+in the same file. Nothing is parsed out of comments: a comment is not part of the
+language, so it cannot be checked, it collides with prose a user writes for themselves,
+and a typo in one is indistinguishable from a sentence. A name is a real token -- the
+prefix is either there or it is not.
 
-    uniform sampler2D u_blur;   // step, scale: 0.5, f2, linear
+A step's TARGET is configured separately (`StepConfig`), with defaults, as node state the
+panel edits. The shader says what the steps are and how they connect; `node.json` says how
+each target is set up.
 
-The rider configures the declaration it sits on, so the two cannot desync. The step's body
-is `void step_blur(out vec4 o)` in the same file.
-
-GL-free by design: the parser runs on source text, so it is unit-testable without a context
-and importable from anywhere without a cycle.
+GL-free by design: this runs on source text and on the uniform names GL reports, so it is
+unit-testable without a context and importable from anywhere without a cycle.
 """
 
 import re
@@ -17,25 +20,12 @@ from pathlib import Path
 
 from shaderbox.shader_errors import ShaderError
 
-STEP_MARKER = "step"
+STEP_PREFIX = "u_step_"
 STEP_FN_PREFIX = "step_"
 STEP_OUT_NAME = "sb_step_out"
 USER_MAIN_ALIAS = "sb_user_main"
 
-_DTYPES = ("f1", "f2", "f4")
-_FILTERS = ("linear", "nearest")
-_WRAPS = ("clamp", "repeat")
-
-# `uniform sampler2D u_name;  // rider`
-_SAMPLER_RE = re.compile(
-    r"^\s*uniform\s+sampler2D\s+(?P<name>\w+)\s*;\s*(?://\s*(?P<rider>.*))?$"
-)
-# The step signature exactly: `void step_x(out vec4 <name>)`. A helper that merely
-# starts with `step_` is an ordinary name and must not be read as a forgotten rider.
-_STEP_FN_RE = re.compile(
-    r"^\s*void\s+(?P<name>step_\w+)\s*\(\s*out\s+vec4\s+\w+\s*\)", re.MULTILINE
-)
-
+DTYPES = ("f1", "f2", "f4")
 
 # f2, not f1: 063 measured f1 saturating at 255 on the FIRST accumulate pass where f2
 # reached exactly 7.0, so the safe value is the default and f1 is the opt-in. clamp
@@ -43,24 +33,28 @@ _STEP_FN_RE = re.compile(
 DEFAULT_DTYPE = "f2"
 DEFAULT_FILTER_LINEAR = True
 DEFAULT_WRAP = False
+DEFAULT_SCALE = 1.0
+
+_SAMPLER_RE = re.compile(r"^\s*uniform\s+sampler2D\s+(?P<name>\w+)\s*;", re.MULTILINE)
+_STEP_FN_RE = re.compile(
+    r"^\s*void\s+(?P<name>step_\w+)\s*\(\s*out\s+vec4\s+\w+\s*\)", re.MULTILINE
+)
 
 
 @dataclass(frozen=True)
-class StepSpec:
-    """One declared step: the sampler that reads it plus its target's format."""
+class StepConfig:
+    """How one step's target is set up. Node state, not shader text.
 
-    name: str  # the bare name, e.g. "blur" for `u_blur` / `step_blur`
-    sampler: str  # the uniform that reads this step's output
-    scale: float = 1.0
-    size: tuple[int, int] | None = None  # absolute, wins over scale
+    Every field has a working default, so a step declared in the shader renders correctly
+    before anyone opens the panel.
+    """
+
+    scale: float = DEFAULT_SCALE
+    size: tuple[int, int] | None = None  # absolute; wins over scale when set
     dtype: str = DEFAULT_DTYPE
     filter_linear: bool = DEFAULT_FILTER_LINEAR
     wrap: bool = DEFAULT_WRAP
     persist: bool = False
-
-    @property
-    def fn_name(self) -> str:
-        return f"{STEP_FN_PREFIX}{self.name}"
 
     def target_size(self, canvas_size: tuple[int, int]) -> tuple[int, int]:
         if self.size is not None:
@@ -71,143 +65,61 @@ class StepSpec:
         )
 
 
+@dataclass(frozen=True)
+class StepSpec:
+    """One step: the sampler that reads it, plus its target's configuration."""
+
+    name: str  # the bare name, e.g. "blur" for `u_step_blur` / `step_blur`
+    sampler: str
+    config: StepConfig = field(default_factory=StepConfig)
+
+    @property
+    def fn_name(self) -> str:
+        return f"{STEP_FN_PREFIX}{self.name}"
+
+    def target_size(self, canvas_size: tuple[int, int]) -> tuple[int, int]:
+        return self.config.target_size(canvas_size)
+
+
 @dataclass
 class StepParseResult:
     steps: list[StepSpec] = field(default_factory=list)
     errors: list[ShaderError] = field(default_factory=list)
 
 
-def _is_transposition(a: str, b: str) -> bool:
-    if len(a) != len(b):
-        return False
-    diff = [i for i, (x, y) in enumerate(zip(a, b, strict=True)) if x != y]
-    if len(diff) != 2:
-        return False
-    i, j = diff
-    return j == i + 1 and a[i] == b[j] and a[j] == b[i]
+def step_name_for(sampler: str) -> str | None:
+    """The step a sampler names, or None when it is an ordinary texture input."""
+    if not sampler.startswith(STEP_PREFIX):
+        return None
+    name = sampler[len(STEP_PREFIX) :]
+    return name or None
 
 
-def _looks_like_marker(token: str) -> bool:
-    """A typo of `step`, near enough that silence would be the wrong answer.
+def find_steps(
+    source: str,
+    path: Path,
+    configs: dict[str, StepConfig] | None = None,
+) -> StepParseResult:
+    """Every `u_step_*` sampler in `source`, paired with its configuration.
 
-    Transpositions count: `setp` is two substitutions away but is the likeliest typo
-    of all, and it is exactly the case a distance-1 check misses.
-    """
-    return _levenshtein_le_1(token, STEP_MARKER) or _is_transposition(
-        token, STEP_MARKER
-    )
-
-
-def _levenshtein_le_1(a: str, b: str) -> bool:
-    if a == b:
-        return True
-    la, lb = len(a), len(b)
-    if abs(la - lb) > 1:
-        return False
-    if la == lb:
-        return sum(x != y for x, y in zip(a, b, strict=True)) == 1
-    short, long = (a, b) if la < lb else (b, a)
-    return any(short == long[:i] + long[i + 1 :] for i in range(len(long)))
-
-
-def _sampler_to_step_name(sampler: str) -> str:
-    return sampler[2:] if sampler.startswith("u_") else sampler
-
-
-_RESERVED = (USER_MAIN_ALIAS, STEP_OUT_NAME)
-
-
-def _report_reserved_names(source: str, path: Path, result: StepParseResult) -> None:
-    """A shader using an engine-reserved name gets a message naming the reason.
-
-    The driver already rejects it (`declaration of "sb_step_out" conflicts`), but that
-    error says nothing about steps, so a user has no way to learn why the name is taken.
-    """
-    for line_idx, line in enumerate(source.splitlines()):
-        for reserved in _RESERVED:
-            if re.search(rf"\b{re.escape(reserved)}\b", line):
-                result.errors.append(
-                    ShaderError(
-                        path,
-                        line_idx,
-                        f"'{reserved}' is reserved: the engine injects it when building "
-                        f"a step variant. Rename this one.",
-                    )
-                )
-
-
-def parse_steps(source: str, path: Path) -> StepParseResult:
-    """Read every `// step` rider out of `source`.
-
-    A malformed rider is an error, never a silently-ignored comment: a rider that merely
-    looks like a step would otherwise leave an ordinary sampler bound to the default
-    image, so the user gets a picture and it is the wrong one.
+    The only failure worth reporting is a mismatch between the two halves of a
+    declaration -- a sampler with no body, or a body no sampler names. Both mean a step
+    the author intended does not run, with nothing on screen to say so.
     """
     result = StepParseResult()
+    configs = configs or {}
     declared_fns = {m.group("name") for m in _STEP_FN_RE.finditer(source)}
-    # Every diagnostic below is scoped to a shader that is AUTHORING steps -- one that
-    # carries a valid rider, or a `step_*` body which is the giveaway that a rider was
-    # meant. A shader with neither is not using the feature, so `// stop` on a texture
-    # sampler is an ordinary English comment and a `void step_forward(...)` helper is an
-    # ordinary name; neither may break a shader that predates the feature.
-    #
-    # Both halves are needed: keying only on a valid rider would miss the shader whose
-    # ONLY step is misspelled, which is the case D2 exists for.
-    #
-    # The cost, taken deliberately: `void step_x(out vec4 o)` in a shader with no rider
-    # is read as a forgotten rider, not as a helper that happens to be named that way.
-    # The two are textually identical, so one of them has to lose, and a forgotten rider
-    # is both likelier and worse -- it means a step the author wrote that never runs,
-    # with nothing on screen to say so. The error names the fix in one line, and any
-    # other signature (`void step_x()`, `float step_x(...)`) is left alone.
-    has_valid_rider = any(
-        _SAMPLER_RE.match(line)
-        and "//" in line
-        and line.split("//", 1)[1].strip().split(",")[0].strip().lower() == STEP_MARKER
-        for line in source.splitlines()
-    )
-    uses_steps = has_valid_rider or bool(declared_fns)
     seen: dict[str, int] = {}
-    # A near-miss marker already reports itself; its body would otherwise be reported a
-    # second time as an orphan, which is one typo wearing two errors.
-    near_missed: set[str] = set()
+    lines = source.splitlines()
 
-    for line_idx, line in enumerate(source.splitlines()):
+    for line_idx, line in enumerate(lines):
         match = _SAMPLER_RE.match(line)
         if match is None:
             continue
-        rider = (match.group("rider") or "").strip()
-        if not rider:
-            continue
-
-        tokens = [t.strip() for t in rider.split(",") if t.strip()]
-        if not tokens:
-            continue
-        head = tokens[0].lower()
-
-        if head != STEP_MARKER:
-            # Only complain about a near-miss, and only where steps are in play.
-            if uses_steps and _looks_like_marker(head):
-                near_missed.add(_sampler_to_step_name(match.group("name")))
-                result.errors.append(
-                    ShaderError(
-                        path,
-                        line_idx,
-                        f"did you mean '// {STEP_MARKER}'? "
-                        f"'{tokens[0]}' is not a step marker, so this sampler stays an "
-                        f"ordinary texture input",
-                    )
-                )
-            continue
-
         sampler = match.group("name")
-        name = _sampler_to_step_name(sampler)
-        spec = _parse_rider_tokens(tokens[1:], name, sampler, path, line_idx, result)
-        if spec is None:
-            # The rider is already reported; don't also report its body as an orphan.
-            near_missed.add(name)
+        name = step_name_for(sampler)
+        if name is None:
             continue
-
         if name in seen:
             result.errors.append(
                 ShaderError(
@@ -217,129 +129,47 @@ def parse_steps(source: str, path: Path) -> StepParseResult:
                 )
             )
             continue
-        if spec.fn_name not in declared_fns:
+        fn_name = f"{STEP_FN_PREFIX}{name}"
+        if fn_name not in declared_fns:
             result.errors.append(
                 ShaderError(
                     path,
                     line_idx,
-                    f"step '{name}' has no body: add `void {spec.fn_name}(out vec4 o)`",
+                    f"step '{name}' has no body: add `void {fn_name}(out vec4 o)`",
                 )
             )
             continue
-
         seen[name] = line_idx
-        result.steps.append(spec)
-
-    if uses_steps:
-        _report_orphan_bodies(
-            source, declared_fns, seen | dict.fromkeys(near_missed, -1), path, result
-        )
-    if result.steps:
-        # Only when steps exist: without them nothing is injected and the name is free.
-        _report_reserved_names(source, path, result)
-    return result
-
-
-def _parse_rider_tokens(
-    tokens: list[str],
-    name: str,
-    sampler: str,
-    path: Path,
-    line_idx: int,
-    result: StepParseResult,
-) -> StepSpec | None:
-    scale = 1.0
-    size: tuple[int, int] | None = None
-    dtype = DEFAULT_DTYPE
-    filter_linear = DEFAULT_FILTER_LINEAR
-    wrap = DEFAULT_WRAP
-    persist = False
-
-    for raw in tokens:
-        token = raw.lower()
-        if token.startswith("scale:"):
-            value = token.split(":", 1)[1].strip()
-            try:
-                scale = float(value)
-            except ValueError:
-                result.errors.append(
-                    ShaderError(path, line_idx, f"step '{name}': bad scale '{value}'")
-                )
-                return None
-            if scale <= 0.0:
-                result.errors.append(
-                    ShaderError(
-                        path, line_idx, f"step '{name}': scale must be > 0, got {scale}"
-                    )
-                )
-                return None
-        elif token.startswith("size:"):
-            value = token.split(":", 1)[1].strip()
-            parts = value.split("x")
-            if len(parts) != 2 or not all(p.strip().isdigit() for p in parts):
-                result.errors.append(
-                    ShaderError(
-                        path, line_idx, f"step '{name}': bad size '{value}', want WxH"
-                    )
-                )
-                return None
-            size = (int(parts[0]), int(parts[1]))
-            if min(size) < 1:
-                result.errors.append(
-                    ShaderError(path, line_idx, f"step '{name}': size must be >= 1x1")
-                )
-                return None
-        elif token in _DTYPES:
-            dtype = token
-        elif token in _FILTERS:
-            filter_linear = token == "linear"
-        elif token in _WRAPS:
-            wrap = token == "repeat"
-        elif token == "persist":
-            persist = True
-        else:
-            result.errors.append(
-                ShaderError(path, line_idx, f"step '{name}': unknown option '{raw}'")
+        result.steps.append(
+            StepSpec(
+                name=name,
+                sampler=sampler,
+                config=configs.get(name, StepConfig()),
             )
-            return None
+        )
 
-    return StepSpec(
-        name=name,
-        sampler=sampler,
-        scale=scale,
-        size=size,
-        dtype=dtype,
-        filter_linear=filter_linear,
-        wrap=wrap,
-        persist=persist,
-    )
-
-
-def _report_orphan_bodies(
-    source: str,
-    declared_fns: set[str],
-    seen: dict[str, int],
-    path: Path,
-    result: StepParseResult,
-) -> None:
-    # A `step_x` body with no `// step` rider would never run; that is a typo, not intent.
     for fn_name in sorted(declared_fns):
         name = fn_name[len(STEP_FN_PREFIX) :]
         if name in seen:
             continue
-        line_idx = 0
-        for i, line in enumerate(source.splitlines()):
-            if re.match(rf"^\s*void\s+{re.escape(fn_name)}\s*\(", line):
-                line_idx = i
-                break
+        line_idx = next(
+            (
+                i
+                for i, line in enumerate(lines)
+                if re.match(rf"^\s*void\s+{re.escape(fn_name)}\s*\(", line)
+            ),
+            0,
+        )
         result.errors.append(
             ShaderError(
                 path,
                 line_idx,
                 f"'{fn_name}' is never run: no sampler declares it. Add "
-                f"`uniform sampler2D u_{name};  // step`",
+                f"`uniform sampler2D {STEP_PREFIX}{name};`",
             )
         )
+
+    return result
 
 
 def read_samplers(body: str, sampler_names: set[str]) -> set[str]:

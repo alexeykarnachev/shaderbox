@@ -16,6 +16,7 @@ from shaderbox.media import FileDetails, MediaDetails, ResolutionDetails
 from shaderbox.paths import shader_lib_root
 from shaderbox.shader_lib import ShaderLibIndex, set_active
 from shaderbox.shader_source import ShaderSource
+from shaderbox.step_spec import StepConfig
 
 
 @pytest.fixture(scope="module")
@@ -25,10 +26,26 @@ def gl() -> moderngl.Context:
     return ctx
 
 
-def _node(gl: moderngl.Context, tmp_path: Path, text: str, name: str = "n") -> Node:
+def _node(
+    gl: moderngl.Context,
+    tmp_path: Path,
+    text: str,
+    name: str = "n",
+    configs: dict[str, StepConfig] | None = None,
+) -> Node:
+    """A node built the way the app builds one: source from disk, configs from state.
+
+    Steps default to `f4` here rather than the engine's `f2`, because these tests read
+    exact float values back out of a target and half-float would round them. A test that
+    cares about the DEFAULT format says so explicitly.
+    """
     path = tmp_path / f"{name}.frag.glsl"
     path.write_text(text, encoding="utf-8")
     node = Node(gl=gl, source=ShaderSource.load(path), canvas_size=(16, 16))
+    node.compile()  # a first pass so the step names are known
+    node.step_configs = {step.name: StepConfig(dtype="f4") for step in node.steps}
+    if configs:
+        node.step_configs.update(configs)
     node.compile()
     return node
 
@@ -66,9 +83,10 @@ def test_a_two_step_chain_reads_the_earlier_step(
         "#version 330\n"
         "out vec4 f_color;\n"
         "in vec2 vs_uv;\n"
-        "uniform sampler2D u_a;  // step, f4\n"
+        "uniform sampler2D u_step_a;\n"
         "void step_a(out vec4 o) { o = vec4(0.25, 0.0, 0.0, 1.0); }\n"
-        "void main() { f_color = vec4(texture(u_a, vs_uv).r * 2.0, 0.0, 0.0, 1.0); }\n",
+        "void main() { f_color = vec4(texture(u_step_a, vs_uv).r * 2.0, 0.0, 0.0, 1.0); }\n",
+        configs={"a": StepConfig(dtype="f4")},
     )
     assert node.compile_unit.errors == [], node.compile_unit.errors
     assert [s.name for s in node.steps] == ["a"]
@@ -86,11 +104,11 @@ def test_a_three_step_chain_composes_in_order(
         "#version 330\n"
         "out vec4 f_color;\n"
         "in vec2 vs_uv;\n"
-        "uniform sampler2D u_a;  // step, f4\n"
-        "uniform sampler2D u_b;  // step, f4\n"
+        "uniform sampler2D u_step_a;\n"
+        "uniform sampler2D u_step_b;\n"
         "void step_a(out vec4 o) { o = vec4(0.1, 0.0, 0.0, 1.0); }\n"
-        "void step_b(out vec4 o) { o = texture(u_a, vs_uv) + vec4(0.2, 0.0, 0.0, 1.0); }\n"
-        "void main() { f_color = texture(u_b, vs_uv); }\n",
+        "void step_b(out vec4 o) { o = texture(u_step_a, vs_uv) + vec4(0.2, 0.0, 0.0, 1.0); }\n"
+        "void main() { f_color = texture(u_step_b, vs_uv); }\n",
     )
     assert node.compile_unit.errors == [], node.compile_unit.errors
     assert node.step_plan.order == ["a", "b"]
@@ -100,20 +118,26 @@ def test_a_three_step_chain_composes_in_order(
     assert px[8, 8, 0] == pytest.approx(77, abs=3)
 
 
-def test_a_step_target_honours_its_declared_format(
+def test_a_step_target_honours_its_configured_format(
     gl: moderngl.Context, tmp_path: Path
 ) -> None:
+    # Format, scale and filter are node state, not shader text: the shader says WHAT the
+    # steps are, the config says how each target is set up.
     node = _node(
         gl,
         tmp_path,
         "#version 330\n"
         "out vec4 f_color;\n"
         "in vec2 vs_uv;\n"
-        "uniform sampler2D u_big;   // step, f4, scale: 1.0\n"
-        "uniform sampler2D u_half;  // step, f2, scale: 0.5, nearest\n"
+        "uniform sampler2D u_step_big;\n"
+        "uniform sampler2D u_step_half;\n"
         "void step_big(out vec4 o) { o = vec4(1.0); }\n"
         "void step_half(out vec4 o) { o = vec4(1.0); }\n"
-        "void main() { f_color = texture(u_big, vs_uv) + texture(u_half, vs_uv); }\n",
+        "void main() { f_color = texture(u_step_big, vs_uv) + texture(u_step_half, vs_uv); }\n",
+        configs={
+            "big": StepConfig(dtype="f4"),
+            "half": StepConfig(scale=0.5, dtype="f2", filter_linear=False),
+        },
     )
     assert node.compile_unit.errors == [], node.compile_unit.errors
     node.render(u_time=0.0)
@@ -136,9 +160,9 @@ def test_a_float_step_target_exceeds_one(gl: moderngl.Context, tmp_path: Path) -
         "#version 330\n"
         "out vec4 f_color;\n"
         "in vec2 vs_uv;\n"
-        "uniform sampler2D u_hot;  // step, f4\n"
+        "uniform sampler2D u_step_hot;\n"
         "void step_hot(out vec4 o) { o = vec4(7.0, 0.0, 0.0, 1.0); }\n"
-        "void main() { f_color = texture(u_hot, vs_uv); }\n",
+        "void main() { f_color = texture(u_step_hot, vs_uv); }\n",
     )
     assert node.compile_unit.errors == [], node.compile_unit.errors
     node.render(u_time=0.0)
@@ -156,9 +180,9 @@ def test_a_self_reading_step_gets_two_buffers_and_accumulates(
         "#version 330\n"
         "out vec4 f_color;\n"
         "in vec2 vs_uv;\n"
-        "uniform sampler2D u_acc;  // step, f4\n"
-        "void step_acc(out vec4 o) { o = texture(u_acc, vs_uv) + vec4(1.0, 0.0, 0.0, 1.0); }\n"
-        "void main() { f_color = texture(u_acc, vs_uv); }\n",
+        "uniform sampler2D u_step_acc;\n"
+        "void step_acc(out vec4 o) { o = texture(u_step_acc, vs_uv) + vec4(1.0, 0.0, 0.0, 1.0); }\n"
+        "void main() { f_color = texture(u_step_acc, vs_uv); }\n",
     )
     assert node.compile_unit.errors == [], node.compile_unit.errors
     assert node.step_plan.self_reads == {"acc"}
@@ -184,9 +208,9 @@ def test_advance_state_false_does_not_move_the_feedback_clock(
         "#version 330\n"
         "out vec4 f_color;\n"
         "in vec2 vs_uv;\n"
-        "uniform sampler2D u_acc;  // step, f4\n"
-        "void step_acc(out vec4 o) { o = texture(u_acc, vs_uv) + vec4(1.0, 0.0, 0.0, 1.0); }\n"
-        "void main() { f_color = texture(u_acc, vs_uv); }\n",
+        "uniform sampler2D u_step_acc;\n"
+        "void step_acc(out vec4 o) { o = texture(u_step_acc, vs_uv) + vec4(1.0, 0.0, 0.0, 1.0); }\n"
+        "void main() { f_color = texture(u_step_acc, vs_uv); }\n",
     )
     preview = Canvas(gl=gl, size=(8, 8))
     for _ in range(3):
@@ -210,9 +234,10 @@ def test_step_targets_size_off_the_node_canvas_not_the_passed_one(
         "#version 330\n"
         "out vec4 f_color;\n"
         "in vec2 vs_uv;\n"
-        "uniform sampler2D u_a;  // step, scale: 0.5\n"
+        "uniform sampler2D u_step_a;\n"
         "void step_a(out vec4 o) { o = vec4(1.0); }\n"
-        "void main() { f_color = texture(u_a, vs_uv); }\n",
+        "void main() { f_color = texture(u_step_a, vs_uv); }\n",
+        configs={"a": StepConfig(scale=0.5)},
     )
     small = Canvas(gl=gl, size=(4, 4))
     node.render(u_time=0.0, canvas=small)
@@ -231,22 +256,22 @@ def test_a_step_sampler_never_enters_uniform_values(
         "#version 330\n"
         "out vec4 f_color;\n"
         "in vec2 vs_uv;\n"
-        "uniform sampler2D u_a;  // step\n"
+        "uniform sampler2D u_step_a;\n"
         "uniform float u_gain;\n"
         "void step_a(out vec4 o) { o = vec4(1.0); }\n"
-        "void main() { f_color = texture(u_a, vs_uv) * u_gain; }\n",
+        "void main() { f_color = texture(u_step_a, vs_uv) * u_gain; }\n",
     )
     node.render(u_time=0.0)
-    assert node.is_step_sampler("u_a") is True
+    assert node.is_step_sampler("u_step_a") is True
     assert node.is_step_sampler("u_gain") is False
-    assert "u_a" not in node.uniform_values
+    assert "u_step_a" not in node.uniform_values
     assert "u_gain" in node.uniform_values
 
 
-def test_a_malformed_rider_refuses_the_whole_compile(
+def test_a_step_with_no_body_refuses_the_whole_compile(
     gl: moderngl.Context, tmp_path: Path
 ) -> None:
-    # D14: compiling the final variant alone would leave u_a an ordinary sampler bound
+    # Compiling the final variant alone would leave u_step_a an ordinary sampler bound
     # to the default image -- a picture that looks fine and is wrong.
     node = _node(
         gl,
@@ -254,13 +279,31 @@ def test_a_malformed_rider_refuses_the_whole_compile(
         "#version 330\n"
         "out vec4 f_color;\n"
         "in vec2 vs_uv;\n"
-        "uniform sampler2D u_a;  // stp\n"
-        "void step_a(out vec4 o) { o = vec4(1.0); }\n"
-        "void main() { f_color = texture(u_a, vs_uv); }\n",
+        "uniform sampler2D u_step_a;\n"
+        "void main() { f_color = texture(u_step_a, vs_uv); }\n",
     )
     assert node.compile_unit.errors
     assert node.steps == []
-    assert any("did you mean" in e.message for e in node.compile_unit.errors)
+    assert any("has no body" in e.message for e in node.compile_unit.errors)
+
+
+def test_an_ordinary_sampler_with_any_comment_still_compiles(
+    gl: moderngl.Context, tmp_path: Path
+) -> None:
+    # The reason steps are named rather than commented: a shader that never heard of the
+    # feature cannot be broken by what it writes in its own comments.
+    node = _node(
+        gl,
+        tmp_path,
+        "#version 330\n"
+        "out vec4 f_color;\n"
+        "in vec2 vs_uv;\n"
+        "uniform sampler2D u_image;  // step, scale: 0.5, f2 -- inert prose\n"
+        "void main() { f_color = texture(u_image, vs_uv); }\n",
+    )
+    assert node.compile_unit.errors == [], node.compile_unit.errors
+    assert node.steps == []
+    assert node.program is not None
 
 
 def test_release_frees_every_step_target(gl: moderngl.Context, tmp_path: Path) -> None:
@@ -270,11 +313,11 @@ def test_release_frees_every_step_target(gl: moderngl.Context, tmp_path: Path) -
         "#version 330\n"
         "out vec4 f_color;\n"
         "in vec2 vs_uv;\n"
-        "uniform sampler2D u_a;  // step\n"
-        "uniform sampler2D u_b;  // step\n"
+        "uniform sampler2D u_step_a;\n"
+        "uniform sampler2D u_step_b;\n"
         "void step_a(out vec4 o) { o = vec4(1.0); }\n"
-        "void step_b(out vec4 o) { o = texture(u_a, vs_uv); }\n"
-        "void main() { f_color = texture(u_b, vs_uv); }\n",
+        "void step_b(out vec4 o) { o = texture(u_step_a, vs_uv); }\n"
+        "void main() { f_color = texture(u_step_b, vs_uv); }\n",
     )
     node.render(u_time=0.0)
     assert len(node._step_targets) == 2
@@ -293,11 +336,11 @@ def test_a_cycle_between_steps_is_reported(
         "#version 330\n"
         "out vec4 f_color;\n"
         "in vec2 vs_uv;\n"
-        "uniform sampler2D u_a;  // step\n"
-        "uniform sampler2D u_b;  // step\n"
-        "void step_a(out vec4 o) { o = texture(u_b, vs_uv); }\n"
-        "void step_b(out vec4 o) { o = texture(u_a, vs_uv); }\n"
-        "void main() { f_color = texture(u_b, vs_uv); }\n",
+        "uniform sampler2D u_step_a;\n"
+        "uniform sampler2D u_step_b;\n"
+        "void step_a(out vec4 o) { o = texture(u_step_b, vs_uv); }\n"
+        "void step_b(out vec4 o) { o = texture(u_step_a, vs_uv); }\n"
+        "void main() { f_color = texture(u_step_b, vs_uv); }\n",
     )
     assert any("cycle" in e.message for e in node.compile_unit.errors)
 
@@ -319,11 +362,11 @@ def test_evaluation_order_beats_declaration_order_on_a_real_render(
         "out vec4 f_color;\n"
         "in vec2 vs_uv;\n"
         # consumer first, producer second
-        "uniform sampler2D u_late;   // step, f4\n"
-        "uniform sampler2D u_early;  // step, f4\n"
-        "void step_late(out vec4 o) { o = texture(u_early, vs_uv) + vec4(0.5, 0.0, 0.0, 1.0); }\n"
+        "uniform sampler2D u_step_late;\n"
+        "uniform sampler2D u_step_early;\n"
+        "void step_late(out vec4 o) { o = texture(u_step_early, vs_uv) + vec4(0.5, 0.0, 0.0, 1.0); }\n"
         "void step_early(out vec4 o) { o = vec4(0.25, 0.0, 0.0, 1.0); }\n"
-        "void main() { f_color = texture(u_late, vs_uv); }\n",
+        "void main() { f_color = texture(u_step_late, vs_uv); }\n",
     )
     assert node.compile_unit.errors == [], node.compile_unit.errors
     assert node.step_plan.order == ["early", "late"]
@@ -347,9 +390,10 @@ def test_step_targets_follow_a_canvas_resize(
         "#version 330\n"
         "out vec4 f_color;\n"
         "in vec2 vs_uv;\n"
-        "uniform sampler2D u_half;  // step, scale: 0.5, f4\n"
+        "uniform sampler2D u_step_half;\n"
         "void step_half(out vec4 o) { o = vec4(3.0, 0.0, 0.0, 1.0); }\n"
-        "void main() { f_color = texture(u_half, vs_uv); }\n",
+        "void main() { f_color = texture(u_step_half, vs_uv); }\n",
+        configs={"half": StepConfig(scale=0.5, dtype="f4")},
     )
     node.render(u_time=0.0)
     assert node._step_targets["half"][0].texture.size == (8, 8)
@@ -373,11 +417,11 @@ def test_an_observer_step_sees_a_self_readers_current_frame(
         "#version 330\n"
         "out vec4 f_color;\n"
         "in vec2 vs_uv;\n"
-        "uniform sampler2D u_acc;    // step, f4\n"
-        "uniform sampler2D u_watch;  // step, f4\n"
-        "void step_acc(out vec4 o) { o = texture(u_acc, vs_uv) + vec4(1.0, 0.0, 0.0, 1.0); }\n"
-        "void step_watch(out vec4 o) { o = texture(u_acc, vs_uv); }\n"
-        "void main() { f_color = texture(u_watch, vs_uv); }\n",
+        "uniform sampler2D u_step_acc;\n"
+        "uniform sampler2D u_step_watch;\n"
+        "void step_acc(out vec4 o) { o = texture(u_step_acc, vs_uv) + vec4(1.0, 0.0, 0.0, 1.0); }\n"
+        "void step_watch(out vec4 o) { o = texture(u_step_acc, vs_uv); }\n"
+        "void main() { f_color = texture(u_step_watch, vs_uv); }\n",
     )
     assert node.compile_unit.errors == [], node.compile_unit.errors
     assert node.step_plan.self_reads == {"acc"}
@@ -402,17 +446,17 @@ def test_a_step_reading_three_others_binds_distinct_texture_units(
         "#version 330\n"
         "out vec4 f_color;\n"
         "in vec2 vs_uv;\n"
-        "uniform sampler2D u_a;    // step, f4\n"
-        "uniform sampler2D u_b;    // step, f4\n"
-        "uniform sampler2D u_c;    // step, f4\n"
-        "uniform sampler2D u_sum;  // step, f4\n"
+        "uniform sampler2D u_step_a;\n"
+        "uniform sampler2D u_step_b;\n"
+        "uniform sampler2D u_step_c;\n"
+        "uniform sampler2D u_step_sum;\n"
         "void step_a(out vec4 o) { o = vec4(1.0, 0.0, 0.0, 1.0); }\n"
         "void step_b(out vec4 o) { o = vec4(2.0, 0.0, 0.0, 1.0); }\n"
         "void step_c(out vec4 o) { o = vec4(4.0, 0.0, 0.0, 1.0); }\n"
         "void step_sum(out vec4 o) {\n"
-        "    o = texture(u_a, vs_uv) + texture(u_b, vs_uv) + texture(u_c, vs_uv);\n"
+        "    o = texture(u_step_a, vs_uv) + texture(u_step_b, vs_uv) + texture(u_step_c, vs_uv);\n"
         "}\n"
-        "void main() { f_color = texture(u_sum, vs_uv); }\n",
+        "void main() { f_color = texture(u_step_sum, vs_uv); }\n",
     )
     assert node.compile_unit.errors == [], node.compile_unit.errors
     node.render(u_time=0.0)
@@ -438,9 +482,9 @@ def test_a_multi_step_node_exports_its_chain(
         "#version 330\n"
         "out vec4 f_color;\n"
         "in vec2 vs_uv;\n"
-        "uniform sampler2D u_a;  // step, f4, scale: 0.5\n"
+        "uniform sampler2D u_step_a;\n"
         "void step_a(out vec4 o) { o = vec4(vs_uv.x, vs_uv.y, 0.5, 1.0); }\n"
-        "void main() { f_color = texture(u_a, vs_uv); }\n",
+        "void main() { f_color = texture(u_step_a, vs_uv); }\n",
     )
     assert node.compile_unit.errors == [], node.compile_unit.errors
 
@@ -476,9 +520,10 @@ def test_a_persist_step_survives_a_recompile(
         "#version 330\n"
         "out vec4 f_color;\n"
         "in vec2 vs_uv;\n"
-        "uniform sampler2D u_acc;  // step, f4, persist\n"
-        "void step_acc(out vec4 o) { o = texture(u_acc, vs_uv) + vec4(1.0, 0.0, 0.0, 1.0); }\n"
-        "void main() { f_color = texture(u_acc, vs_uv); }\n",
+        "uniform sampler2D u_step_acc;\n"
+        "void step_acc(out vec4 o) { o = texture(u_step_acc, vs_uv) + vec4(1.0, 0.0, 0.0, 1.0); }\n"
+        "void main() { f_color = texture(u_step_acc, vs_uv); }\n",
+        configs={"acc": StepConfig(dtype="f4", persist=True)},
     )
     for _ in range(3):
         node.render(u_time=0.0)
@@ -505,9 +550,9 @@ def test_a_non_persist_step_restarts_cold_on_a_recompile(
         "#version 330\n"
         "out vec4 f_color;\n"
         "in vec2 vs_uv;\n"
-        "uniform sampler2D u_acc;  // step, f4\n"
-        "void step_acc(out vec4 o) { o = texture(u_acc, vs_uv) + vec4(1.0, 0.0, 0.0, 1.0); }\n"
-        "void main() { f_color = texture(u_acc, vs_uv); }\n",
+        "uniform sampler2D u_step_acc;\n"
+        "void step_acc(out vec4 o) { o = texture(u_step_acc, vs_uv) + vec4(1.0, 0.0, 0.0, 1.0); }\n"
+        "void main() { f_color = texture(u_step_acc, vs_uv); }\n",
     )
     for _ in range(3):
         node.render(u_time=0.0)
@@ -535,9 +580,9 @@ def test_exporting_a_feedback_node_twice_gives_the_same_frames(
         "#version 330\n"
         "out vec4 f_color;\n"
         "in vec2 vs_uv;\n"
-        "uniform sampler2D u_acc;  // step, f4\n"
-        "void step_acc(out vec4 o) { o = texture(u_acc, vs_uv) + vec4(0.05, 0.0, 0.0, 1.0); }\n"
-        "void main() { f_color = vec4(texture(u_acc, vs_uv).r, 0.0, 0.0, 1.0); }\n",
+        "uniform sampler2D u_step_acc;\n"
+        "void step_acc(out vec4 o) { o = texture(u_step_acc, vs_uv) + vec4(0.05, 0.0, 0.0, 1.0); }\n"
+        "void main() { f_color = vec4(texture(u_step_acc, vs_uv).r, 0.0, 0.0, 1.0); }\n",
     )
 
     def _export(name: str) -> bytes:
