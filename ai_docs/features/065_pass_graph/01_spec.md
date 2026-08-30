@@ -86,23 +86,65 @@ saved in `graph.json`. Defaults: full canvas size, **`f2`** (063 measured `f1` s
 the first accumulate pass where `f2` reached 7.0), linear, clamp (moderngl defaults to repeat, which
 is wrong for a feedback border). A pass renders correctly before anyone opens the panel.
 
-**D10. Export renders the output pass, and starts cold.** `export_isolation` already re-instantiates
-a stateful script per export so a render does not depend on how long the app has been open; a
-feedback target is the same class of state and 064 had to learn this the hard way (the same document
-exported twice differed).
+**D10. Export renders the output pass, and starts cold.** `export_isolation` already
+re-instantiates a stateful script per export so a render does not depend on how long the app has
+been open; a feedback target is the same class of state and 064 had to learn this the hard way (the
+same document exported twice differed).
 
-**D11. The copilot addresses a pass through the ADDRESS SCHEME, not through new tools.**
-`copilot/address.py` is explicitly "the single round-trip parse/build point" and has two prefixed
-kinds today. A fourth kind naming a pass is a small contained change that every existing tool
-inherits. This matters because the tool budget is already over its own threshold — 31 tools, 18
-eager, against a ">16 eager" trigger the roadmap records as blown at 24. **A design needing new tools
-is expensive; one extending the address scheme is nearly free.**
+**D10b. Viewing an intermediate pass is separate from choosing the output, and goes through a
+tonemap.** Added during review. Exactly one pass is the output, but a debugging user needs to LOOK
+at pass 4 without changing which pass the document exports — otherwise the only way to inspect is to
+mutate saved document state and change it back.
 
-**D12. One script per document, not per pass.** The scripting engine keys `dict[node_id, NodeScripts]`
-with a single `behavior` per entry and reaches the engine only through a two-member protocol. A
-script drives uniform VALUES over time; splitting it per pass would multiply the surface for no
-stated need, and 048 already spent five feature numbers converging on one-script-per-unit. Revisit
-trigger: a real effect wants two passes driven by genuinely independent CPU state.
+So: a **view selection** in session state (never `graph.json` — a debug view is not a document
+edit), defaulting to the output. And displaying a float target goes through Reinhard + sRGB, because
+D9 makes `f2` the default and **a float target blitted raw is pure white** — 064 measured exactly
+this, and its own post-mortem ruled that the view transform belongs to whichever feature ships the
+surface. 065 is that feature.
+
+**D11. The copilot addresses a pass through the address scheme — AND the working set becomes
+document-grouped.** The address half is contained: `copilot/address.py` is the single round-trip
+parse/build point, so a fourth kind is a small change every tool inherits. That matters because the
+tool budget is over its own threshold — 31 tools, 18 eager, against a ">16 eager" trigger the
+roadmap records as blown at 24.
+
+**But the address scheme alone is insufficient, and the first draft stopped there.** Three verified
+blockers, all in `00_facts.md` and all dropped from the first draft:
+
+- **The working set caps at SIX members** (`copilot_working_set_max_nodes`, enforced by an eviction
+  loop in `project_session.py`). If a PASS is a member, an 8-pass document cannot fit at all — the
+  model would evict passes of the very document it is editing. The fix is not a bigger number: one
+  member becomes one DOCUMENT, rendering its passes as sub-sections, which is the shape
+  `WorkingSetView` already uses for its optional script listing.
+- **`node_tree()` is flat** — `(id, name, has_errors, is_current)`. The model would never be SHOWN
+  that a document has passes, so it could not construct a pass address it has never seen. The entry
+  gains a pass list.
+- **Errors are one flat list per member.** Per-pass errors need a per-pass slot, or the model edits
+  a pass blind and cannot attribute what comes back.
+
+The headline still holds — no new tools — but this is a shape change to `WorkingSetView` and
+`NodeTreeEntry`, not a contained change to a 43-line module.
+
+**D12. One script per PASS, keyed `(document, pass)`.** Corrected during review; the first draft
+said one script per document and that was wrong.
+
+The engine resolves a script's returned dict against a flat name map --
+`active = {u.name: u for u in node.get_active_uniforms()}` -- and rejects an unmatched key as an
+"orphan key". With D4 making every uniform pass-scoped, a document-scoped script has **no way to
+name which pass's `u_ray_count` it drives**. That is the same addressing hole D11 fixes for the
+copilot, left open in the other subsystem.
+
+The 048 citation in the first draft was also used wrongly. 048 converged on *one script per unit,
+bound by existence* -- and under D1 the unit that owns uniforms is the PASS. Keeping 048's number
+while changing what the unit is meets the number and discards the form.
+
+So: `scripts/<pass>.py`, bound by existence exactly as today, keyed `(document_id, pass_name)` in
+the engine's dict. `EngineNode` is satisfied by a `Pass`, which is the protocol's natural fit --
+`uniform_values` plus `get_active_uniforms()` are pass-level under D4. The engine stays the
+shallowest subsystem in the codebase; it just keys on a pair.
+
+Revisit trigger: a real effect wants ONE piece of CPU state driving uniforms across several passes,
+and repeating the script per pass is genuinely worse than a shared one.
 
 **D13. `Document` and `Pass` are separate types.** The facts round found only THREE methods fusing
 shader-identity with canvas-identity — `render`, `compile`, `get_active_uniforms` — so the split is
@@ -114,20 +156,54 @@ not up: each pass needs its own target.
 exception and skips the whole directory. With N pass files, a document loads with the passes it can
 read and reports the ones it cannot.
 
+**D15. The panel's six verbs, and wiring as a closed set.** Added during review — the first draft
+specified the engine to the millimetre and the surface in one sentence, which is the same imbalance
+that produced 064's rejection.
+
+The pass list supports exactly six verbs: **add** a pass (creates `passes/<name>.glsl` from a stub
+and an entry in `graph.json`), **delete**, **rename**, **set output**, **wire an input**, **unwire**.
+
+**Wiring is a closed-set selector over existing pass names**, never a free-text field. This is
+KodeLife's model, it makes SHADERed's positional footgun impossible, and it means an input can never
+name a pass that does not exist.
+
+**Rename rewrites every edge that references the pass, renames the file, and re-points any open
+editor tab** (tab identity is the PATH). Without that, D3's silent-black rule — which is what keeps a
+half-built graph usable — would make a rename fail invisibly. The graceful-degradation rule and the
+silent-breakage risk are the same rule, so rename must be transactional.
+
+**D16. Media and textures are namespaced by pass.** `UINode.save` writes `media/<uniform>.*` and
+`textures/<uniform>.bin` flat per directory, and its orphan sweep deletes any asset no surviving
+uniform references. With D4 making uniforms pass-scoped, two passes both binding `u_tex` would
+overwrite each other's file and the sweep would delete the survivor's asset — **silent data loss**,
+and a direct consequence of D4 that the first draft did not price. Assets live under
+`media/<pass>/<uniform>.*` and `textures/<pass>/<uniform>.bin`, and the sweep scopes to one pass.
+
+## Open questions for the user
+
+None blocking. Two judgement calls made during review that are worth overruling if you disagree:
+
+- **D12 flipped to one script per PASS.** The first draft said per document; the engine's flat
+  name-resolution makes that unaddressable under D4. If you would rather have one script driving
+  several passes, the mechanism is pass-qualified keys (`{"blur.u_radius": 0.5}`) — say so and I will
+  spec that instead.
+- **D10b adds a view selection** the first draft omitted. If you would rather debug by re-pointing
+  the output, it is fewer moving parts — but it makes a read into a document write.
+
 ## The on-disk shape
 
 ```
 projects/<project>/documents/<uuid>/
     graph.json              app-written; the graph, the targets, the output choice
     passes/<name>.glsl      one ordinary fragment shader per pass, its own main()
-    scripts/script.py       optional, one per DOCUMENT (D12)
+    scripts/<pass>.py       optional, one per PASS (D12), bound by existence
     media/<pass>/<uniform>.*        a sampler's bound media
     textures/<pass>/<uniform>.bin   a raw texture bound to a sampler
 ```
 
-**Media and textures are namespaced BY PASS.** Today they are flat per node, keyed by uniform name.
-With N passes in one directory, two passes reusing a uniform name would collide — a real bug the
-flat layout would produce silently.
+**Media and textures are namespaced BY PASS** (D16). Today they are flat per node, keyed by uniform
+name; with N passes in one directory, two passes reusing a uniform name would overwrite each other
+and the orphan sweep would delete the survivor's file.
 
 `graph.json`:
 
@@ -220,12 +296,24 @@ New: `shaderbox/document.py` (the `Document`/`Pass` model + the graph), `shaderb
 (topological order, cycle detection, feedback), `shaderbox/widgets/pass_list.py` (the panel).
 
 Reshaped: `core.py` (`Node` splits into `Pass` + what `Document` owns), `ui_models.py`,
-`project_session.py`, `watch.py`, `paths.py`, `copilot/address.py` + the tool surface, `tabs/node.py`
--> the document panel, `editor_types.py` (a `pass` tab kind).
+`project_session.py`, `watch.py` (its "index 0 is the root" branch early-RETURNS, so it is
+wrong-by-construction with N roots, not merely in need of generalising), `paths.py`,
+`copilot/address.py` + `backend.py`'s working set + `node_tree`, `tabs/node.py` -> the document
+panel, `editor_types.py` (a `pass` tab kind — string-compared at ~11 sites with no exhaustiveness
+check, so the new kind needs a guard that fails loudly), `app.py` (`current_node_id` is reached at
+~89 sites and every one must decide document-or-pass), `copilot/checkpoint.py` + `revert.py` (the
+snapshot path writes one shader file and needs the pass loop), `scripting/engine.py` (keys on a
+pair per D12 — NOT untouched, as the first draft claimed).
 
 Untouched, verified design-independent: the exporters (they consume a `RenderedArtifact` — bytes,
-GL-free), `shader_lib/` and the resolver, `shader_errors.py`, `model_salvage.py`,
-`ui_primitives.py`/`theme.py`, the scripting engine's protocol seam.
+GL-free, and the one-node assumption lives at the `render_job.py` CALL SITE), `shader_lib/` and the
+resolver, `shader_errors.py`, `model_salvage.py`, `ui_primitives.py`/`theme.py`.
+
+**Scale, honestly:** ~1,970 case-insensitive `node` mentions across 62 package files, with
+`copilot/backend.py` (442), `project_session.py` (259) and `app.py` (179) heaviest. The rename
+itself is mechanical; the expensive part is the ~10 sites where "node" is load-bearing SEMANTICS —
+current-node, checkpoint unit, script key, working-set member, export unit — each of which must
+decide document-or-pass.
 
 ## Verification
 
