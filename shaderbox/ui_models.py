@@ -20,7 +20,6 @@ from shaderbox.glyph_tables import TABLE_UNIFORMS
 from shaderbox.media import MediaDetails, MediaWithTexture, is_default_image
 from shaderbox.model_salvage import drop_invalid, load_model
 from shaderbox.paths import NODE_JSON_BASENAME, NODE_SHADER_BASENAME
-from shaderbox.step_spec import StepConfig
 from shaderbox.ui_regions import NodeTab
 from shaderbox.util import get_uniform_hash
 
@@ -137,13 +136,6 @@ class UINodeState(BaseModel):
     render_media_details: MediaDetails = MediaDetails()
     ui_uniforms: dict[int, UIUniform] = {}
 
-    # Per-step target configuration (064), keyed by step name. The shader says WHAT the
-    # steps are and how they connect; this says how each target is set up, so the panel
-    # can edit size/format/filter without writing back into GLSL text. A step with no
-    # entry gets the engine's defaults; an entry naming a step the shader no longer
-    # declares is simply unused.
-    step_configs: dict[str, StepConfig] = {}
-
     uniform_sort_key: UniformSortKey = "code"
     uniform_sort_desc: bool = False
 
@@ -187,30 +179,10 @@ class UINodeState(BaseModel):
                 try:
                     UIUniform(**row)
                 except ValidationError:
-                    # Per ROW, like step_configs: one malformed row used to cost every
+                    # Per ROW: one malformed row used to cost every
                     # tuned value on the node, because the dict is validated as a whole.
                     logger.warning(f"Dropped unreadable uniform row '{key}'")
                     uniforms.pop(key)
-        # A step config is six constrained fields written into a file a user can open, so
-        # any of them can arrive malformed. Drop the offending ENTRY, not the node: losing
-        # a step's tuning costs a re-pick, while losing the node costs the shader and every
-        # uniform on it.
-        configs = data.get("step_configs")
-        if isinstance(configs, dict):
-            for name in list(configs):
-                entry = configs[name]
-                if isinstance(entry, StepConfig):
-                    continue  # already validated; only raw values need checking
-                if not isinstance(entry, dict):
-                    configs.pop(name)
-                    continue
-                try:
-                    StepConfig(**entry)
-                except ValidationError:
-                    logger.warning(
-                        f"Reset unreadable step config '{name}' to its defaults"
-                    )
-                    configs.pop(name)
         return data
 
 
@@ -360,11 +332,6 @@ class UINode(BaseModel):
         for uniform in self.node.get_active_uniforms():
             if uniform.name in ENGINE_DRIVEN_UNIFORMS:
                 continue
-            # A step sampler's texture is engine-owned and transient. It would otherwise
-            # fall into the raw-Texture branch below and write megabytes of float target
-            # into textures/*.bin on every save, reloaded next session as a stale frame.
-            if self.node.is_step_sampler(uniform.name):
-                continue
 
             value = self.node.uniform_values[uniform.name]
 
@@ -470,19 +437,10 @@ def load_node_from_dir(node_dir: Path) -> UINode:
     # raised and `load_nodes_from_dir` swallowed that by dropping the whole node -- the
     # shader, the name and every tuned uniform, over one field. `_reset_out_of_range_values`
     # had been growing a hand-written allowlist one field at a time (uniform_sort_key,
-    # input_type, step_configs); this covers every field including the ones nobody has
+    # input_type); this covers every field including the ones nobody has
     # thought to add yet.
     drop_invalid(UINodeState, filtered_ui_state, f"node '{dir_name}'")
     ui_state = UINodeState(**filtered_ui_state)
-
-    # `Node.load_from_dir` already compiled with the engine defaults, since the configs
-    # live in ui_state which is only readable here. Hand them over and rebuild, so a
-    # node opens with the sizes and formats the user set rather than reverting to them
-    # on every load.
-    if ui_state.step_configs:
-        node.step_configs = dict(ui_state.step_configs)
-        node.invalidate()
-        node.compile()
 
     return UINode(
         id=dir_name,

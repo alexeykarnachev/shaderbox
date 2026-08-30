@@ -29,24 +29,13 @@ def _facts_for(t: float | None) -> str:
     # Run the REAL _render_facts_for bound to a stub backend: record the u_time the probe renders
     # at, and feed render_facts a stand-in so the stamp logic runs without GL. Returns the stamp.
     rendered_at: list[float] = []
-    advance_flags: list[bool] = []
-
-    def _render(u_time: float, canvas: object, advance_state: bool = True) -> None:
-        rendered_at.append(u_time)
-        advance_flags.append(advance_state)
-
     node = types.SimpleNamespace(
         canvas=types.SimpleNamespace(texture=types.SimpleNamespace(size=(64, 64))),
-        render=_render,
-        _advance_flags=advance_flags,
+        render=lambda u_time, canvas: rendered_at.append(u_time),
     )
     stub = types.SimpleNamespace(_probe_canvas=_FakeCanvas())
     fn = CopilotBackend._render_facts_for.__get__(stub)
     out = fn(node) if t is None else fn(node, t=t)
-    # A probe must never advance a feedback step: its second render would carry the
-    # first's accumulation, so a static chain reports ANIMATES and the no-op detector
-    # stops firing.
-    assert all(flag is False for flag in advance_flags), advance_flags
     return f"rendered_at={rendered_at[0]}|{out}"
 
 

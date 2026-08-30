@@ -251,12 +251,7 @@ def _format_uniforms(node: Node, driven: set[str]) -> list[str]:
         elif u.name in driven:
             rows.append(f"{u.name} {label} = <driven by script.py>")
         elif label == "sampler2D":
-            if node.is_step_sampler(u.name):
-                # Engine-wired: telling the model "(no media bound)" would invite it to
-                # bind a file over the chain.
-                rows.append(f"{u.name} {label} <- (step output)")
-            else:
-                rows.append(f"{u.name} {label} <- {_sampler_binding(node, u.name)}")
+            rows.append(f"{u.name} {label} <- {_sampler_binding(node, u.name)}")
         else:
             value = node.uniform_values.get(u.name, u.value)
             rows.append(f"{u.name} {label} = {value}")
@@ -1087,7 +1082,7 @@ class CopilotBackend:
             samplers = [
                 u.name
                 for u in n.get_active_uniforms()
-                if gl_type_label(u) == "sampler2D" and not n.is_step_sampler(u.name)
+                if gl_type_label(u) == "sampler2D"
             ]
             if uniform not in samplers:
                 listed = ", ".join(samplers) or "(none)"
@@ -1164,17 +1159,6 @@ class CopilotBackend:
             if not is_sampler:
                 return MediaBindResult(
                     ok=False, error=f"'{uniform}' is not a sampler2D on this node"
-                )
-            # Engine-wired (064). Its sibling bind_media filters these out of the list
-            # it offers; unbinding one would write the default image into
-            # uniform_values, which is the state D11 exists to keep out of there.
-            if n.is_step_sampler(uniform):
-                return MediaBindResult(
-                    ok=False,
-                    error=(
-                        f"'{uniform}' is a step output, wired by the engine — there is "
-                        f"no media on it to unbind."
-                    ),
                 )
             self._capture_node(node_id)
             try_to_release(n.uniform_values.get(uniform))
@@ -1714,10 +1698,7 @@ class CopilotBackend:
                 self._probe_canvas = Canvas(size=(size, h))
             else:
                 self._probe_canvas.set_size((size, h))
-            # A probe must not advance a feedback step: the second render would carry
-            # the first's accumulation, so a static chain reports ANIMATES and the
-            # no-op detector can never fire again.
-            node.render(u_time=t, canvas=self._probe_canvas, advance_state=False)
+            node.render(u_time=t, canvas=self._probe_canvas)
             raw0 = self._probe_canvas.texture.read()
             # Stamp the sample time: an animated shader's facts change with phase,
             # which otherwise reads as an edit effect.
@@ -1725,7 +1706,7 @@ class CopilotBackend:
             if not motion or not line0:
                 return line0
             t2 = COPILOT_ENGINE.render_facts_motion_t
-            node.render(u_time=t2, canvas=self._probe_canvas, advance_state=False)
+            node.render(u_time=t2, canvas=self._probe_canvas)
             raw1 = self._probe_canvas.texture.read()
             a0 = np.frombuffer(raw0, dtype=np.uint8).astype(np.int16)
             a1 = np.frombuffer(raw1, dtype=np.uint8).astype(np.int16)

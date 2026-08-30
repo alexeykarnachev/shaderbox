@@ -16,7 +16,6 @@ from shaderbox.ui_primitives import (
     small_caption,
 )
 from shaderbox.util import format_auto_value, get_resolution_str, get_uniform_hash
-from shaderbox.widgets.step_list import draw_step_list
 from shaderbox.widgets.uniform import draw_ui_uniform, uniform_name_label
 
 
@@ -67,10 +66,6 @@ def draw(app: App) -> None:
     uniform_sizes = set()
     for uniform in ui_node.node.get_active_uniforms():
         if getattr(uniform, "gl_type", None) == GL_SAMPLER_2D:
-            # Engine-driven: no media behind it, and its value is a bare texture with no
-            # `.texture` attribute to read.
-            if ui_node.node.is_step_sampler(uniform.name):
-                continue
             value = ui_node.node.uniform_values[uniform.name]
 
             w, h = value.texture.size
@@ -120,10 +115,6 @@ def draw(app: App) -> None:
     imgui.dummy((0, SPACE.MD))
     _draw_entry_points(app)
 
-    if ui_node.node.steps:
-        imgui.dummy((0, SPACE.MD))
-        draw_step_list(app)
-
     _section_break()
 
     ui_uniforms = node_ui_state.ui_uniforms
@@ -134,11 +125,6 @@ def draw(app: App) -> None:
         if (
             uniform.name in TABLE_UNIFORMS
         ):  # engine glyph tables — pure machinery, no row
-            continue
-        # A step sampler is wired by the engine. A media row for it would offer a "Load"
-        # button that overwrites the chain, and its texture-branch draw asserts on a
-        # value that is a bare texture, not a MediaWithTexture.
-        if ui_node.node.is_step_sampler(uniform.name):
             continue
         hash = get_uniform_hash(uniform)
         if hash not in ui_uniforms:

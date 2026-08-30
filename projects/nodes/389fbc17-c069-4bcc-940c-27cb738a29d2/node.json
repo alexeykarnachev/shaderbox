@@ -13,7 +13,7 @@
     },
     "ui_state": {
         "ui_name": "Render Steps",
-        "description": "",
+        "description": "Several draws in one node: sparks feed a bright-extract, a quarter-res blur, and a trail that reads its own last frame. Name a sampler u_step_<name> and write step_<name>() to add a draw; set each step's size and format in the Steps panel.",
         "render_media_details": {
             "is_video": true,
             "file_details": {
@@ -21,8 +21,8 @@
                 "size": 0
             },
             "resolution_details": {
-                "width": 960,
-                "height": 720
+                "width": 0,
+                "height": 0
             },
             "quality": 0,
             "fps": 30,
@@ -92,6 +92,36 @@
                 "dimension": 1,
                 "array_length": 1,
                 "input_type": "drag"
+            }
+        },
+        "step_configs": {
+            "sparks": {
+                "scale": 1.0,
+                "dtype": "f2",
+                "filter_linear": true,
+                "wrap": false,
+                "persist": false
+            },
+            "bright": {
+                "scale": 0.5,
+                "dtype": "f2",
+                "filter_linear": true,
+                "wrap": false,
+                "persist": false
+            },
+            "blur": {
+                "scale": 0.25,
+                "dtype": "f2",
+                "filter_linear": true,
+                "wrap": false,
+                "persist": false
+            },
+            "trail": {
+                "scale": 1.0,
+                "dtype": "f2",
+                "filter_linear": true,
+                "wrap": false,
+                "persist": false
             }
         },
         "uniform_sort_key": "code",
