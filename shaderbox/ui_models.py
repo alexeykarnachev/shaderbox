@@ -8,7 +8,7 @@ from uuid import uuid4
 import moderngl
 from loguru import logger
 from OpenGL.GL import GL_SAMPLER_2D, GL_UNSIGNED_INT
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from shaderbox.constants import (
     DEFAULT_TEMPORAL_SIGMA,
@@ -180,6 +180,24 @@ class UINodeState(BaseModel):
                     UIUniformInputType
                 ):
                     u.pop("input_type", None)
+        # A step config is six constrained fields written into a file a user can open, so
+        # any of them can arrive malformed. Drop the offending ENTRY, not the node: losing
+        # a step's tuning costs a re-pick, while losing the node costs the shader and every
+        # uniform on it.
+        configs = data.get("step_configs")
+        if isinstance(configs, dict):
+            for name in list(configs):
+                entry = configs[name]
+                if not isinstance(entry, dict):
+                    configs.pop(name)
+                    continue
+                try:
+                    StepConfig(**entry)
+                except ValidationError:
+                    logger.warning(
+                        f"Reset unreadable step config '{name}' to its defaults"
+                    )
+                    configs.pop(name)
         return data
 
 

@@ -396,6 +396,10 @@ class Node:
                 self._gl.clear()
         self._step_front = dict.fromkeys(self._step_front, 0)
 
+    def _filter_pair(self, linear: bool) -> tuple[int, int]:
+        mode = moderngl.LINEAR if linear else moderngl.NEAREST
+        return (mode, mode)
+
     def _make_step_canvas(self, spec: StepSpec, size: tuple[int, int]) -> "Canvas":
         filter_mode = moderngl.LINEAR if spec.config.filter_linear else moderngl.NEAREST
         return Canvas(
@@ -429,9 +433,15 @@ class Node:
             pair = self._step_targets.get(name)
             if pair is not None:
                 front, back = pair
+                # Filter and wrap belong in this comparison, not just size and dtype: a
+                # `persist` target survives invalidate() by design, so a reused one would
+                # otherwise keep its old sampler state while the panel showed the new
+                # value -- the combo changing and the picture not.
                 fits = (
                     front.texture.size == size
                     and front.dtype == spec.config.dtype
+                    and front.filter == self._filter_pair(spec.config.filter_linear)
+                    and front.wrap == spec.config.wrap
                     and (back is not None) == needs_pair
                 )
                 if fits:

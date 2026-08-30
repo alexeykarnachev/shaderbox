@@ -651,3 +651,43 @@ def test_a_six_level_cascade_renders(gl: moderngl.Context, tmp_path: Path) -> No
     value = float(np.frombuffer(finest.read(), dtype=np.float32)[0])
     # The merge accumulates past 1.0, which is why the targets are float at all.
     assert value > 1.0
+
+
+def test_a_persist_target_picks_up_a_filter_or_wrap_edit(
+    gl: moderngl.Context, tmp_path: Path
+) -> None:
+    """A reused target must not keep sampler state the panel says it changed.
+
+    `_sync_step_targets` reuses a target whose size and dtype still fit. A `persist`
+    target survives `invalidate()` by design, so without filter and wrap in that
+    comparison the combo changes and the picture does not -- the one path where the
+    panel and GL can disagree.
+    """
+    node = _node(
+        gl,
+        tmp_path,
+        "#version 330\n"
+        "out vec4 f_color;\n"
+        "in vec2 vs_uv;\n"
+        "uniform sampler2D u_step_acc;\n"
+        "void step_acc(out vec4 o) { o = texture(u_step_acc, vs_uv) + vec4(0.1); }\n"
+        "void main() { f_color = texture(u_step_acc, vs_uv); }\n",
+        configs={
+            "acc": StepConfig(dtype="f4", persist=True, filter_linear=True, wrap=False)
+        },
+    )
+    node.render(u_time=0.0)
+    texture = node._step_targets["acc"][0].texture
+    assert texture.filter == (moderngl.LINEAR, moderngl.LINEAR)
+    assert texture.repeat_x is False
+
+    node.step_configs["acc"] = StepConfig(
+        dtype="f4", persist=True, filter_linear=False, wrap=True
+    )
+    node.invalidate()
+    node.compile()
+    node.render(u_time=0.0)
+
+    texture = node._step_targets["acc"][0].texture
+    assert texture.filter == (moderngl.NEAREST, moderngl.NEAREST)
+    assert texture.repeat_x is True

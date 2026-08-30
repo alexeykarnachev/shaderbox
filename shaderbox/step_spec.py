@@ -17,6 +17,9 @@ unit-testable without a context and importable from anywhere without a cycle.
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field
 
 from shaderbox.shader_errors import ShaderError
 
@@ -41,16 +44,25 @@ _STEP_FN_RE = re.compile(
 )
 
 
-@dataclass(frozen=True)
-class StepConfig:
+class StepConfig(BaseModel):
     """How one step's target is set up. Node state, not shader text.
 
     Every field has a working default, so a step declared in the shader renders correctly
     before anyone opens the panel.
+
+    CONSTRAINED, because these knobs moved out of GLSL where the compiler checked them
+    into `node.json` where nothing does. An unbounded `scale` allocates a framebuffer
+    that fails to complete and takes the render loop down; a `dtype` outside this set
+    either raises in `ctx.texture` or loads fine and then crashes the panel's combo. The
+    file is app-written, but it is a file on disk a user can open.
     """
 
-    scale: float = DEFAULT_SCALE
-    dtype: str = DEFAULT_DTYPE
+    model_config = ConfigDict(frozen=True)
+
+    # Upper bound as well as lower: a step LARGER than the canvas has no use case and is
+    # the shape that exhausts VRAM (D16's real ceiling).
+    scale: float = Field(default=DEFAULT_SCALE, gt=0.0, le=1.0)
+    dtype: Literal["f1", "f2", "f4"] = DEFAULT_DTYPE
     filter_linear: bool = DEFAULT_FILTER_LINEAR
     wrap: bool = DEFAULT_WRAP
     persist: bool = False

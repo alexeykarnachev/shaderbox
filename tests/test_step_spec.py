@@ -104,10 +104,8 @@ def test_every_config_field_is_reachable_from_the_panel() -> None:
     a field nobody maintains and every reader has to reason about. The panel's combos are
     the contract: what the panel can set is what the config holds.
     """
-    from dataclasses import fields
-
     settable = {"scale", "dtype", "filter_linear", "wrap", "persist"}
-    assert {f.name for f in fields(StepConfig)} == settable
+    assert set(StepConfig.model_fields) == settable
 
 
 def test_a_scaled_target_never_rounds_to_zero() -> None:
