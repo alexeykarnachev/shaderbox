@@ -26,43 +26,41 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-08-30 (064 engine landed; the authoring surface is the next feature). -->
-**ACTIVE: 064 multi-step nodes — the ENGINE is landed and green; the authoring SURFACE is next.**
-Start at `ai_docs/features/064_multistep/02_decision.md` (what was chosen and why), then
-`03_engine_spec.md` (D1-D16, all implemented).
+<!-- As of 2026-08-30 (064 engine + surface both landed; next is a maintainer visual check). -->
+**ACTIVE: 064 multi-step nodes — engine AND authoring surface landed, green, pushed. The next
+action is a `make run` visual check on a real display.** Start at
+`ai_docs/features/064_multistep/02_decision.md` (what was chosen and why), then `03_engine_spec.md`
+(the engine, D1-D16) and `04_surface_spec.md` (the panel, S1-S6). All implemented.
 
-**What works today.** A node declares extra render steps by riding a comment on the sampler that
-reads them — `uniform sampler2D u_blur;  // step, scale: 0.5, f2` plus a
-`void step_blur(out vec4 o)` body in the same file. The engine compiles one program per step from
-that one source, orders them by what the DRIVER reports each variant reads, evaluates each once per
-frame into its own target, and hands a self-reading step its previous frame (ping-pong, no pair to
-manage). **To see it: the `steps demo` node in `projects/dev`** (emitter -> quarter-res blur -> a
-trail reading itself). **Acceptance test passed:** a six-level radiance cascade authored this way renders — levels
-at 16x16 through 256x256, float targets holding 8.0 and 7.75 where 8-bit would have clamped at 1.0.
+**What works.** A node declares extra render steps by riding a comment on the sampler that reads
+them — `uniform sampler2D u_blur;  // step, scale: 0.5, f2` plus a `void step_blur(out vec4 o)` body
+in the same file. The engine compiles one program per step from that one source, orders them by what
+the DRIVER reports each variant reads, evaluates each once per frame into its own target, and hands
+a self-reading step its previous frame (ping-pong, no pair to manage). The Node panel shows a
+**Steps** section — one row per step in evaluation order with a live thumbnail, its resolved
+size/format, and what it reads; clicking a thumbnail retargets the big preview to that step, and a
+float target is tonemapped on the way (raw, a step holding 8.0 collapses to 9 tone levels; the
+transform keeps 43). **To see it: the shipped "Render Steps" example**, or the `steps demo` node in
+`projects/dev`.
 
-**What is deliberately absent.** No UI. No step strip, no rows, no chips — a step is invisible in
-the panel except that its uniforms appear (the union) and its sampler does not (it is engine-wired).
-The surface is the next feature, decided with a working cascade on screen; the four judged proposals
-are in `design_round/` and B (a list in the node panel) and D (a contact sheet of live thumbnails)
-are the live candidates.
+**The one thing owed: a visual check.** The panel was verified by driving the real app loop headless
+(section draws, a float step pins and tonemaps, node switch clears the pin, a stale pin self-heals),
+but layout and aesthetics cannot be confirmed without a display — this box has no WM. Run `make run`,
+open the "Render Steps" example, and judge the Steps rows.
 
-**One prerequisite belongs to the surface feature: an HDR view transform.** R7 and R9 together
-demand it and none of the four designs served it. Measured: the MAIN preview is fine — it draws the
-node's `f1` canvas, which the user's own `main()` has already tonemapped, and it shows a correct
-gradient. The gap opens only where a float STEP TARGET is displayed directly, which is exactly what
-a step strip or contact sheet does. So it is a prerequisite OF the surface, not a debt owed now, and
-the surface feature must carry it: without it every step worth debugging previews as pure white.
-The export half already landed (`texture_to_rgba8`, commit `e2cbb03`).
+**Deliberately absent, with the trigger for revisiting in `04_surface_spec.md` S2:** the surface is
+READ-ONLY over structure. No chips that write a step's size/format/filter, no drag-to-reorder, no
+add/delete-step buttons — the shader is the single author of what a step IS, and a widget writing
+back into GLSL text would be a second author of the same fact.
 
-**Release state:** `dev` is ahead of `master`, which is still v0.25.1 (`git log master..dev`);
-dev->master happens at ship time via `/ship`. **Last known-public itch build is v0.21.0.**
-**No open BLOCKERs.**
+**Release state:** `dev` is ahead of `master` (still v0.25.1); dev->master happens at ship time via
+`/ship`. **Last known-public itch build is v0.21.0.** **No open BLOCKERs.**
 
 ## Features
 
 | # | Name | Status | Brief |
 |---|---|---|---|
-| 064 | multistep | partial | Engine-native render-step chains per node: a `// step` rider on a sampler declares a draw, order comes from the driver's own dataflow, self-reads are implicit ping-pong, float targets by default. Engine landed and green (6-level cascade renders); the authoring UI is the next feature and carries the HDR view transform with it. Spec: `ai_docs/features/064_multistep/03_engine_spec.md`. |
+| 064 | multistep | partial | Engine-native render-step chains per node: a `// step` rider on a sampler declares a draw, order comes from the driver's own dataflow, self-reads are implicit ping-pong, float targets by default. Engine + panel landed and green (6-level cascade renders; a Steps section with per-step thumbnails and a view pin that tonemaps float targets). A maintainer visual check is owed. Spec: `ai_docs/features/064_multistep/03_engine_spec.md` + `04_surface_spec.md`. |
 | 063 | radiance_cascades_gaps | done | Research-only wave (no code): can ShaderBox host radiance cascades, and what is actually missing — GPU capability all present and measured, the script-GL route proven unusable, the seam decision handed to 064. Spec: `ai_docs/features/063_radiance_cascades_gaps/README.md`. |
 | — | copilot_engine_tuning | done | reasoning effort=none engine knob (+30k turn budget: effort flag is ignored on compound asks — measured), user/engine config split with slots enforcement, final-reply token cap. Spec: commits 289c12f + 6ed3c4d + 779d4b2 + this wave. |
 | — | agent_hub | done | the maintainer sync page: full prompt/tools/config/knowledge surfaces + all dogfood runs with dialogues and media, regenerated from live code. Spec: scripts/agent_hub/generate.py docstring. |

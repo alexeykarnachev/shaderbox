@@ -13,7 +13,7 @@ from imgui_bundle import imgui
 
 from shaderbox.app import App
 from shaderbox.core import StepView
-from shaderbox.theme import COLOR, SIZE, SPACE
+from shaderbox.theme import COLOR, SPACE
 from shaderbox.ui_primitives import (
     caption_text,
     ghost_button,

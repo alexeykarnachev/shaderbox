@@ -59,9 +59,7 @@ class StepPreview:
             return
         self._program = self._gl.program(vertex_shader=_VS, fragment_shader=_FS)
         self._vbo = self._gl.buffer(np.array(_QUAD, dtype="f4"))
-        self._vao = self._gl.vertex_array(
-            self._program, [(self._vbo, "2f", "a_pos")]
-        )
+        self._vao = self._gl.vertex_array(self._program, [(self._vbo, "2f", "a_pos")])
 
     def texture_for(
         self, source: moderngl.Texture, exposure: float = 1.0
