@@ -17,6 +17,7 @@ EXAMPLE_ORDER = [
     "f90f5ff9-29c6-4bcf-aee7-090f20542353",  # Text Rendering
     "0b0d16bb-f014-4a85-b155-6be74c33eded",  # Fire
     "8d454b7b-bd48-49dc-aebe-58b9e31cfc28",  # Night City
+    "b41e7c9d-2a68-4f53-8e17-6c0d95a3f2b8",  # Render Steps
 ]
 STARTER_EXAMPLE_ID = EXAMPLE_ORDER[0]
 

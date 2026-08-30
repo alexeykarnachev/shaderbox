@@ -1,0 +1,10 @@
+{
+    "canvas_size": [
+        960,
+        720
+    ],
+    "uniforms": {},
+    "ui_state": {
+        "ui_name": "Render Steps"
+    }
+}
