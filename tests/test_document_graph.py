@@ -443,3 +443,46 @@ def test_editing_one_pass_recompiles_only_that_pass(
     doc.render(u_time=0.0)
     assert compiles == {"a": 0, "b": 1}, f"an edit to b recompiled {compiles}"
     doc.release()
+
+
+def test_a_pass_scale_shrinks_its_target(gl_ctx: moderngl.Context) -> None:
+    # `scale` was DEFINED on TargetConfig and read by nothing — a knob the panel could set, the
+    # file could persist, and the renderer ignored. The document applies it, since it is the
+    # thing that owns the canvas size.
+    graph = PassGraph(
+        output="out",
+        passes={
+            "half": PassEntry(target=TargetConfig(scale=0.5)),
+            "out": PassEntry(inputs={"u_src": "half"}),
+        },
+    )
+    doc = _document(
+        gl_ctx, {"half": _CONST % "1.0", "out": _HALVE}, graph, size=(64, 64)
+    )
+    doc.render(u_time=0.0)
+    assert doc.passes["half"].canvas.texture.size == (32, 32)
+    # The OUTPUT keeps full size whatever its own scale says: it is what the preview and the
+    # export read, and a half-size output would silently halve every render.
+    assert doc.passes["out"].canvas.texture.size == (64, 64)
+    assert _red(doc) == pytest.approx(128, abs=2)  # and the chain still resolves
+    doc.release()
+
+
+def test_a_scaled_pass_keeps_its_size_across_frames(gl_ctx: moderngl.Context) -> None:
+    # Falsifier for a resize that runs every frame: a set_size call reallocates, so a canvas that
+    # is re-sized each frame drops a feedback pass's history silently.
+    graph = PassGraph(
+        output="out",
+        passes={
+            "half": PassEntry(target=TargetConfig(scale=0.5)),
+            "out": PassEntry(inputs={"u_src": "half"}),
+        },
+    )
+    doc = _document(
+        gl_ctx, {"half": _CONST % "1.0", "out": _HALVE}, graph, size=(64, 64)
+    )
+    doc.render(u_time=0.0)
+    texture = doc.passes["half"].canvas.texture
+    doc.render(u_time=1.0)
+    assert doc.passes["half"].canvas.texture is texture, "the target was reallocated"
+    doc.release()

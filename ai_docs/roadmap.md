@@ -26,12 +26,10 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-08-30 (064 reverted; 065 stages 1-8 of nine landed). -->
-**ACTIVE: 065 pass graph — stages 1-8 of nine are landed. Only stage 9 remains: CONTENT — a
-shipped example that is actually multi-pass, so the shape ships as something to open rather than
-something to build from scratch. Two things are owed first and neither can be done here: a
-maintainer's eye on the panel (checks 13-15) and a `/dogfood` run for check 16 (real API cost).**
-Read
+<!-- As of 2026-08-30 (065 complete in code; two checks owed that this box cannot run). -->
+**ACTIVE: 065 pass graph — all nine stages are landed. What remains is two checks this box
+cannot run: a maintainer's `make run` for checks 13-15 and the panel's look, and a `/dogfood` run
+for check 16 (real API cost). Do those before starting anything new.** Read
 `ai_docs/features/065_pass_graph/01_spec.md` (D1-D16, the `graph.json` schema, the nine-stage order,
 sixteen falsifiable checks); `00_facts.md` beside it is the verified evidence it was written
 against, including three corrections to claims made earlier in the work.
@@ -65,11 +63,20 @@ collapses to its document, so an 8-pass document cannot evict its own passes out
 cap), each carrying its own listing, uniforms, wiring and errors; the project map lists a
 document's passes and marks the output. A single-pass document's prompt is unchanged.
 
+**The shipped content includes a real multi-pass document**: "Bloom Chain" — a scene of orbiting
+blobs, a bright-pass and a blur at half size that turn its highlights into bloom, a feedback pass
+that leaves trails, and a composite that adds them and tonemaps. Five passes, every part of the
+graph's vocabulary (a chain, a fan-in, a scaled target, feedback, an output that is not the last
+pass authored).
+
 **Owed to the maintainer, needs a display** (`make run`): checks 13-15 — an error in pass 2 lands
 in the strip with pass 2's file and line and click-to-jump works; a rename rewrites every edge and
-re-points an open tab (the engine half is tested, the TAB half is only smoke-verified); the shipped
-examples still load and the browser is populated. Plus the panel's own look: row rhythm, the
-combos' width, whether the expanded block reads as belonging to its row.
+re-points an open tab (the engine half is tested, the TAB half is only smoke-verified); the six
+shipped examples still load and the browser is populated. Plus the panel's own look: row rhythm,
+the combos' width, whether the expanded block reads as belonging to its row.
+
+**Owed too, needs real API cost**: check 16 — the copilot authors a two-pass document with no new
+tools, via `/dogfood`.
 
 **What happened to 064.** It shipped a multi-pass engine where every pass was a function inside ONE
 shader file. The maintainer used it and rejected the shape: *"we need the genuine separate shader;
@@ -98,7 +105,7 @@ v0.21.0.** **No open BLOCKERs.**
 
 | # | Name | Status | Brief |
 |---|---|---|---|
-| 065 | pass_graph | in progress | A document holds several passes forming a DAG, each pass its own `.glsl` file with its own `main()` and render target; "node" is retired for `document` + `pass`. Stages 1-5 of nine landed — the GL-free graph model + planner, the `Pass`/`Document` split, chain evaluation with feedback and cold exports, the `passes/` + `graph.json` + per-pass-asset layout, the `node` -> `document` rename across the package and on-disk paths, per-pass hot reload, the pass-list panel with D15's six verbs, and the copilot's `<id>#<pass>` address with a pass-aware working set; stage 9 is content. Spec: `ai_docs/features/065_pass_graph/01_spec.md`. |
+| 065 | pass_graph | partial | A document holds several passes forming a DAG, each pass its own `.glsl` file with its own `main()` and render target; "node" is retired for `document` + `pass`. Stages 1-5 of nine landed — the GL-free graph model + planner, the `Pass`/`Document` split, chain evaluation with feedback and cold exports, the `passes/` + `graph.json` + per-pass-asset layout, the `node` -> `document` rename across the package and on-disk paths, per-pass hot reload, the pass-list panel with D15's six verbs, the copilot's `<id>#<pass>` address with a pass-aware working set, and a five-pass "Bloom Chain" example. All nine stages landed; checks 13-16 need a display and a dogfood run. Spec: `ai_docs/features/065_pass_graph/01_spec.md`. |
 | 064 | multistep | superseded | Multi-pass steps as functions inside ONE shader file. Built, reviewed to convergence, then REVERTED (`34f6d19`) when the maintainer used it: separate shader files per pass are what every surveyed tool does. Nine bug fixes it surfaced were kept. Superseder: `ai_docs/features/065_pass_graph/`. Spec: `ai_docs/features/064_multistep/02_decision.md`. |
 | 063 | radiance_cascades_gaps | done | Research-only wave (no code): can ShaderBox host radiance cascades, and what is actually missing — GPU capability all present and measured, the script-GL route proven unusable, the seam decision handed to 064. Spec: `ai_docs/features/063_radiance_cascades_gaps/README.md`. |
 | — | copilot_engine_tuning | done | reasoning effort=none engine knob (+30k turn budget: effort flag is ignored on compound asks — measured), user/engine config split with slots enforcement, final-reply token cap. Spec: commits 289c12f + 6ed3c4d + 779d4b2 + this wave. |

@@ -17,6 +17,7 @@ EXAMPLE_ORDER = [
     "f90f5ff9-29c6-4bcf-aee7-090f20542353",  # Text Rendering
     "0b0d16bb-f014-4a85-b155-6be74c33eded",  # Fire
     "8d454b7b-bd48-49dc-aebe-58b9e31cfc28",  # Night City
+    "1c4f8a20-7b6e-4d31-9a55-2f0e6b8c31d4",  # Bloom Chain (multi-pass)
 ]
 STARTER_EXAMPLE_ID = EXAMPLE_ORDER[0]
 

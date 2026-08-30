@@ -2,7 +2,7 @@
 
 **Status: PLAN-LOCKED.** Reviewed by three agents (completeness, adversarial design, cold-start);
 D10b, D11, D12, D15 and D16 were added or corrected in response, and the verification list was made
-falsifiable. Stages 1-8 are landed; start at stage 9. Anchor for facts: `00_facts.md` (six-agent round, verified by
+falsifiable. ALL NINE STAGES ARE LANDED; checks 13-16 need a display and a dogfood run. Anchor for facts: `00_facts.md` (six-agent round, verified by
 hand where load-bearing). Predecessor: `064_multistep/` — built, reverted (`34f6d19`), kept for the
 record of what was tried and what it cost.
 
@@ -308,7 +308,13 @@ Each stage leaves the tree green and is verifiable on its own.
    `_broken_streak` were keyed by document id, which now aliases across a document's passes, and
    are keyed by working-set address; and `_format_uniforms` / `_sampler_binding` took a Document
    when uniforms are pass-scoped (D4), so they take a Pass. Check 16 still needs `/dogfood`.
-9. **Content** — the shipped examples and the dev sandbox, re-authored by hand in the new shape.
+9. **Content** — DONE. The five existing examples and the dev sandbox were re-authored in the new
+   shape at stage 4 (by hand, no migration), and stage 9 added "Bloom Chain": a five-pass document
+   exercising a chain, a fan-in, a half-scale target, feedback, and an output that is not the last
+   pass authored. Authoring it caught `TargetConfig.scale` being DEFINED and read by nothing —
+   a knob the panel could set and the file could persist while the renderer ignored it. The
+   document applies it (it owns the canvas size), the output keeps full size, and two tests pin
+   both halves.
 
 Stages 1-4 are the engine and can be built and tested with no UI at all. That is deliberate: 064's
 lesson is that the surface should be judged against a working engine, not designed alongside one.

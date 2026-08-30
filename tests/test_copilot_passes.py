@@ -129,7 +129,7 @@ def test_an_unknown_pass_is_refused_with_the_names_that_exist(app: Any) -> None:
 
 
 def test_the_working_set_shows_a_document_s_passes(app: Any) -> None:
-    document_id = _two_pass(app)
+    _two_pass(app)
     views, _ = app.copilot_backend.read_working_set()
     view = next(v for v in views if not v.is_lib)
     assert [p.name for p in view.passes] == ["composite", "scene"]
@@ -187,8 +187,7 @@ def test_a_pass_address_in_the_working_set_collapses_to_its_document(app: Any) -
 
 
 def test_a_broken_pass_reports_its_own_errors(app: Any) -> None:
-    document_id = _two_pass(app)
-    document = app.ui_documents[document_id].document
+    document = app.ui_documents[_two_pass(app)].document
     document.passes["scene"].release_program("#version 460 core\nnot glsl at all\n")
     document.passes["scene"].compile()
     views, _ = app.copilot_backend.read_working_set()
@@ -216,8 +215,13 @@ def test_the_project_map_lists_passes_and_marks_the_output(app: Any) -> None:
 def test_the_map_says_nothing_about_passes_for_a_single_pass_document(
     app: Any,
 ) -> None:
-    rendered = _render_document_tree(app.copilot_backend.document_tree())
-    assert "passes:" not in rendered
+    # A single-pass document's row is what it always was — the pass line appears only where there
+    # is a graph to describe (the seeded project also ships a multi-pass example, which does get
+    # one, so this checks the ROW rather than the whole map).
+    entries = app.copilot_backend.document_tree()
+    single = [e for e in entries if len(e.passes) < 2]
+    assert single, "no single-pass document to check"
+    assert "passes:" not in _render_document_tree(single)
 
 
 def test_a_document_with_a_broken_non_output_pass_reports_errors(app: Any) -> None:

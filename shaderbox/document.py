@@ -320,6 +320,13 @@ class Document:
         for name in order:
             render_pass = self.passes[name]
             entry = self.graph.passes.get(name, PassEntry())
+            # The document owns the canvas size, so it applies each pass's scale — a pass cannot
+            # size itself from a number it does not hold, and doing it in both places would fight.
+            # The OUTPUT keeps full size: it is what the preview and export read.
+            if name != output:
+                wanted = entry.target.target_size(self.canvas_size)
+                if render_pass.canvas.texture.size != wanted:
+                    render_pass.canvas.set_size(wanted)
             inputs: dict[str, moderngl.Texture] = {}
             for uniform, source_name in entry.inputs.items():
                 if source_name == name:
