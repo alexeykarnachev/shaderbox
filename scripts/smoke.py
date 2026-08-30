@@ -20,8 +20,10 @@ from loguru import logger
 
 from shaderbox.app import App, PopupState
 from shaderbox.constants import EXAMPLE_ORDER, NODE_EXAMPLES_DIR
+from shaderbox.document import Node
 from shaderbox.help_content import help_sections
 from shaderbox.logging_setup import configure_logging
+from shaderbox.pass_graph import PassEntry, PassGraph
 from shaderbox.ui import update_and_draw
 from shaderbox.ui_regions import ActiveRegion, NodeTab
 
@@ -124,6 +126,38 @@ def _check_invariants(app: App, frame_idx: int) -> None:
     )
 
 
+_ACCUMULATE_SRC = """#version 460 core
+in vec2 vs_uv;
+uniform sampler2D u_prev;
+out vec4 fs_color;
+void main() { fs_color = vec4(texture(u_prev, vs_uv).r + 0.02, 0.0, 0.0, 1.0); }
+"""
+
+
+def _arm_feedback_canary(app: App) -> Node:
+    """Turn one node into a feedback document so the frame loop's swap has an observable.
+
+    A feedback pass advances once per FRAME, but the loop renders the current document twice
+    (preview canvas, then its own), so a swap tied to the render call would run at the wrong
+    rate — and a still image looks identical either way. This gives the rate a number.
+    """
+    node_id = next(iter(app.ui_nodes))
+    node = app.ui_nodes[node_id].node
+    name = next(iter(node.passes))
+    node.passes[name].release_program(_ACCUMULATE_SRC)
+    node.passes[name].compile()
+    assert node.passes[name].compile_unit.errors == [], (
+        f"smoke: the feedback canary shader did not compile: "
+        f"{node.passes[name].compile_unit.errors}"
+    )
+    node.graph = PassGraph(
+        output=name, passes={name: PassEntry(inputs={"u_prev": name})}
+    )
+    node.reset_feedback()
+    app.set_current_node_id(node_id)
+    return node
+
+
 def main() -> int:
     configure_logging()
 
@@ -156,6 +190,7 @@ def main() -> int:
             assert (
                 imgui.get_io().config_flags & imgui.ConfigFlags_.nav_enable_keyboard
             ), "nav_enable_keyboard not set"
+            feedback_node = _arm_feedback_canary(app)
             for frame_idx in range(N_FRAMES):
                 update_and_draw(app)
                 _check_invariants(app, frame_idx)
@@ -218,6 +253,14 @@ def main() -> int:
             assert script_node_obj.render_pass.uniform_values["u_b"] != b_before, (
                 "smoke: the un-stopped u_b did not advance while u_a was stopped — the stop is "
                 "freezing the whole script, not just the one uniform"
+            )
+            # The feedback canary: N frames of +0.02 on an 8-bit target reach ~255 well before
+            # the loop ends, so the check is that it advanced AT ALL and did not stall at one
+            # step — a missing begin_frame freezes it at 5.
+            canary_red = feedback_node.render_pass.canvas.texture.read()[0]
+            assert canary_red > 32, (
+                f"smoke: the feedback pass advanced to {canary_red} over {N_FRAMES} frames — "
+                "the frame loop is not calling Document.begin_frame"
             )
             app.release()
             logger.info(f"smoke: OK ({N_FRAMES} frames, {len(app.ui_nodes)} nodes)")

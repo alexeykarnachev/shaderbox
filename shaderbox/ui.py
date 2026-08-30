@@ -201,6 +201,11 @@ def update_and_draw(app: App) -> None:
     if not app.any_popup_open() and renders_all:
         tick_nodes = list(app.ui_nodes.keys())
     app.session.tick(tick_nodes, now, dt, app.frame_idx, mouse=app.script_mouse)
+    # Advance feedback history ONCE per frame, over the same node set the tick covers. A
+    # document is drawn twice per frame below (preview + own canvas), so a swap inside render()
+    # would advance a feedback pass at 2x.
+    for node_id in tick_nodes:
+        app.ui_nodes[node_id].node.begin_frame(app.frame_idx)
 
     # ----------------------------------------------------------------
     # Render previews

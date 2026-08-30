@@ -291,6 +291,15 @@ def assert_plan_invariants(plan: PassPlan, graph: PassGraph) -> None:
         )
 
 
+def plan_for_output(
+    graph: PassGraph, target: str
+) -> tuple[list[str], list[GraphError]]:
+    """`evaluation_order` plus the graph's errors, so a renderer plans the graph ONCE per frame."""
+    plan, errors = plan_passes(graph)
+    assert_plan_invariants(plan, graph)
+    return _order_for(plan, errors, target), errors
+
+
 def evaluation_order(graph: PassGraph, target: str) -> list[str]:
     """The passes to draw, in order, to produce `target` -- and nothing else.
 
@@ -300,8 +309,10 @@ def evaluation_order(graph: PassGraph, target: str) -> list[str]:
     This is the function the renderer calls, so it asserts the plan itself rather than trusting a
     test to have done it: the draw-once invariant has to hold on the path that actually draws.
     """
-    plan, errors = plan_passes(graph)
-    assert_plan_invariants(plan, graph)
+    return plan_for_output(graph, target)[0]
+
+
+def _order_for(plan: PassPlan, errors: list[GraphError], target: str) -> list[str]:
     if errors and any(e.pass_name == target for e in errors):
         return []
     if target not in plan.order:

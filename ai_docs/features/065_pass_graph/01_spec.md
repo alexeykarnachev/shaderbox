@@ -2,7 +2,7 @@
 
 **Status: PLAN-LOCKED.** Reviewed by three agents (completeness, adversarial design, cold-start);
 D10b, D11, D12, D15 and D16 were added or corrected in response, and the verification list was made
-falsifiable. Stages 1-2 are landed; start at stage 3. Anchor for facts: `00_facts.md` (six-agent round, verified by
+falsifiable. Stages 1-3 are landed (the engine); start at stage 4. Anchor for facts: `00_facts.md` (six-agent round, verified by
 hand where load-bearing). Predecessor: `064_multistep/` — built, reverted (`34f6d19`), kept for the
 record of what was tried and what it cost.
 
@@ -256,8 +256,14 @@ Each stage leaves the tree green and is verifiable on its own.
    verification check 1 passes byte-exactly against the pre-split engine. An unconfigured pass keeps
    the 8-bit canvas: `TargetConfig`'s `f2` (D9) is what a pass IN A GRAPH gets, and applying it
    universally would reformat every document's canvas that the export path reads as 8-bit.
-3. **`Document`** — owns the passes, the graph, the output, the script hook, export. Chain evaluation
-   lands here. Verified by a two-pass chain and a feedback pass rendering correct pixels.
+3. **`Document`** — DONE. `Node` in `document.py` owns `passes` + the `PassGraph`, draws them in
+   dependency order, resolves `render_pass` to the output, and owns feedback. Engine checks 1-6 and
+   8-9 pass. Two decisions the implementation forced: an unresolved input binds an explicit BLACK
+   texture rather than being left unbound (leaving it unbound falls through to the sampler's default
+   photo, so a mis-wire showed an image instead of nothing); and `begin_frame(frame)` takes the frame
+   NUMBER, so a second call for the same frame is a no-op. Call-count alone was unfalsifiable —
+   because the preview render passes its own canvas, an extra swap per render cancelled out and a
+   wrong call site passed every gate.
 4. **Persistence** — `graph.json` load/save with per-key salvage, plus the pass-namespaced media
    layout. Verified by a round-trip and a hostile-file battery.
 5. **The rename** — `node` -> `document`/`pass` across the package, on-disk paths, and the tests. Its

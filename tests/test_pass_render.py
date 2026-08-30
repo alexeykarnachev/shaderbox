@@ -108,7 +108,9 @@ def test_a_pass_carries_its_own_compile_errors(gl_ctx: moderngl.Context) -> None
 def test_a_target_config_shapes_the_pass_target(gl_ctx: moderngl.Context) -> None:
     target = TargetConfig(dtype="f2", filter_linear=False, wrap=True)
     render_pass = _pass(gl_ctx, target=target)
-    assert render_pass.target is target  # kept, so stage 3 can re-read what a pass was built with
+    assert (
+        render_pass.target is target
+    )  # kept, so stage 3 can re-read what a pass was built with
     assert render_pass.canvas.texture.dtype == "f2"
     assert render_pass.canvas.filter == (moderngl.NEAREST, moderngl.NEAREST)
     assert render_pass.canvas.texture.repeat_x and render_pass.canvas.texture.repeat_y

@@ -295,8 +295,21 @@ class Pass:
             return Image(self._DEFAULT_IMAGE_FILE_PATH)
         return uniform.value
 
-    def render(self, u_time: float | None = None, canvas: Canvas | None = None) -> None:
+    def render(
+        self,
+        u_time: float | None = None,
+        canvas: Canvas | None = None,
+        inputs: dict[str, moderngl.Texture] | None = None,
+    ) -> None:
+        """Draw this pass into `canvas`, or into its own target.
+
+        `inputs` binds sampler uniforms to textures another pass produced. They are applied for
+        THIS draw only and never enter `uniform_values`: the graph owns those bindings, the pass
+        owns the ones the user set, and a document-owned texture persisted into a pass's state
+        would be saved and then released underneath it.
+        """
         canvas = canvas or self.canvas
+        inputs = inputs or {}
 
         if not self.program or not self.vbo or not self.vao:
             self.compile()
@@ -312,7 +325,7 @@ class Pass:
         for uniform in self.get_active_uniforms():
             if uniform.name in TABLE_UNIFORMS:  # program-resident, set at compile
                 continue
-            value = self.uniform_values.get(uniform.name)
+            value = inputs.get(uniform.name, self.uniform_values.get(uniform.name))
 
             value_for_program = None
 
@@ -350,7 +363,8 @@ class Pass:
             else:
                 value_for_program = value
 
-            self.uniform_values[uniform.name] = value
+            if uniform.name not in inputs:
+                self.uniform_values[uniform.name] = value
 
             if value_for_program is not None:
                 try:

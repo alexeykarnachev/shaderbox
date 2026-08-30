@@ -194,15 +194,19 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
 - **`core.py`** — `Canvas`, `Pass`: one shader, one target, one draw. GL program lifecycle, uniform
   introspection + binding, render-to-texture. Needs a live GL context. Imports `shader_lib`
   (compile-time `#include` resolution) + `shader_errors`.
-- **`document.py`** — `Node`: what you open, save and export. Owns its `Pass` (`render_pass`), the
-  injected script hook + export isolation, `load_from_dir`, and the export plumbing
-  (`render_media` → `_render_image` / `_render_video`). Imports `core`, never the reverse. Feature
-  065 stage 2 split it out of `core.py`; stage 3 gives it a graph of several passes.
+- **`document.py`** — `Node`: what you open, save and export. Owns `passes` (name → `Pass`) plus
+  the `PassGraph` that wires them, and draws them in dependency order — `render_pass` resolves the
+  OUTPUT pass, `begin_frame(frame)` advances feedback history at most once per frame,
+  `reset_feedback` starts an export cold. Also the injected script hook + export isolation,
+  `load_from_dir`, and the export plumbing (`render_media` → `_render_image` / `_render_video`).
+  Imports `core`, never the reverse. Feature 065 stage 2 split it out of `core.py`; stage 3 gave it
+  the graph.
 - **`pass_graph.py`** — leaf, GL-free (feature 065): the `graph.json` model (`PassGraph` /
   `PassEntry` / `TargetConfig` / `PassLayout`) plus the planner — `plan_passes` (topological order,
   cycle detection per pass, feedback marking, unresolved inputs), `evaluation_order` (the passes one
-  output actually needs) and `assert_plan_invariants` (the draw-once guard `evaluation_order` runs on
-  every plan). Pure data: no GL, no imgui, importable anywhere.
+  output actually needs; `plan_for_output` returns that order AND the errors, so a renderer plans
+  once per frame) and `assert_plan_invariants` (the draw-once guard both run on every plan). Pure
+  data: no GL, no imgui, importable anywhere.
 
 - **`project_session.py`** — `ProjectSession`: the headless project + copilot CORE (paths, nodes,
   app_state, lib index + cross-project stores, integrations, the `CopilotSession`/`CopilotBackend`/
