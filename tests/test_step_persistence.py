@@ -143,3 +143,16 @@ def test_the_copilot_sees_step_samplers_as_engine_wired(
     # Both tunables, from different variants, are visible.
     assert any(r.startswith("u_only_in_step ") for r in rows)
     assert any(r.startswith("u_final_gain ") for r in rows)
+
+
+def test_the_copilot_cannot_unbind_a_step_sampler(
+    gl: moderngl.Context, tmp_path: Path
+) -> None:
+    # bind_media filters step samplers out of the list it offers; unbind_media took a
+    # name directly and would have written the default image into uniform_values --
+    # exactly the state D11 keeps out of there, and it would break the chain silently.
+    node_dir = _make_node_dir(tmp_path)
+    ui_node = load_node_from_dir(node_dir)
+    ui_node.node.render(u_time=0.0)
+    assert ui_node.node.is_step_sampler("u_mid")
+    assert "u_mid" not in ui_node.node.uniform_values

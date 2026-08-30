@@ -211,6 +211,11 @@ def update_and_draw(app: App) -> None:
         )
 
         app.preview_canvas.set_size(preview_size)
+        # With a popup open the node-render loop below is skipped entirely, so this is
+        # the only render and a feedback step holds its state until the popup closes.
+        # That is the behaviour we want -- a simulation should not run on behind a modal
+        # the user is reading -- but it falls out of advance_state rather than being
+        # asked for, so it is stated here.
         # The current node renders TWICE per frame -- here into the preview canvas, then
         # below into its own. Only one may advance a feedback step's ping-pong, or the
         # focused node's simulation runs at 2x every other node's and changes rate the

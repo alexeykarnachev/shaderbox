@@ -1165,6 +1165,17 @@ class CopilotBackend:
                 return MediaBindResult(
                     ok=False, error=f"'{uniform}' is not a sampler2D on this node"
                 )
+            # Engine-wired (064). Its sibling bind_media filters these out of the list
+            # it offers; unbinding one would write the default image into
+            # uniform_values, which is the state D11 exists to keep out of there.
+            if n.is_step_sampler(uniform):
+                return MediaBindResult(
+                    ok=False,
+                    error=(
+                        f"'{uniform}' is a step output, wired by the engine — there is "
+                        f"no media on it to unbind."
+                    ),
+                )
             self._capture_node(node_id)
             try_to_release(n.uniform_values.get(uniform))
             n.uniform_values[uniform] = Image(DEFAULT_IMAGE_FILE_PATH)
