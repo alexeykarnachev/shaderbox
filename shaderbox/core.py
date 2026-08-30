@@ -159,6 +159,19 @@ class Pass:
         self.vbo: moderngl.Buffer | None = None
         self.vao: moderngl.VertexArray | None = None
 
+    def set_target(self, target: TargetConfig) -> None:
+        """Adopt a new target configuration, reallocating the canvas when its format changed.
+
+        Size is NOT applied here: a pass's canvas is sized by the document (its canvas size times
+        the target's scale), so applying `scale` from two places would fight.
+        """
+        if self.target == target:
+            return
+        size = self.canvas.texture.size
+        self.target = target
+        self.canvas.release()
+        self.canvas = Canvas(size=size, gl=self._gl, **_canvas_kwargs_for(target))
+
     def release_program(self, new_fs_source: str = "") -> None:
         # Path is the stable identity; only text + mtime change.
         self.source = replace(self.source, text=new_fs_source, mtime=self.source.mtime)

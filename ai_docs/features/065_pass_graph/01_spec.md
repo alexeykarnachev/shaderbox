@@ -2,7 +2,7 @@
 
 **Status: PLAN-LOCKED.** Reviewed by three agents (completeness, adversarial design, cold-start);
 D10b, D11, D12, D15 and D16 were added or corrected in response, and the verification list was made
-falsifiable. Stages 1-6 are landed; start at stage 7. Anchor for facts: `00_facts.md` (six-agent round, verified by
+falsifiable. Stages 1-7 are landed; start at stage 8. Anchor for facts: `00_facts.md` (six-agent round, verified by
 hand where load-bearing). Predecessor: `064_multistep/` — built, reverted (`34f6d19`), kept for the
 record of what was tried and what it cost.
 
@@ -288,7 +288,16 @@ Each stage leaves the tree green and is verifiable on its own.
    each `Pass` owns its program). What DID need work was the editor-sync callback, which keyed on
    `document_id` and so could only ever address one file per document; it keys on the PATH now,
    which is what an editor session was always keyed by.
-7. **The panel** — the pass list with inputs and target config.
+7. **The panel** — DONE (headlessly; the visual pass is owed to the maintainer). `widgets/
+   pass_list.py` in the Document tab: a row per pass, a right-click menu, an inline add/rename, a
+   closed-set input combo per sampler, and the target controls. D15's six verbs live on
+   `ProjectSession` (`add_pass` / `delete_pass` / `rename_pass` / `set_output_pass` /
+   `wire_pass_input` + `set_pass_target`), each mutating the live document AND saving, so
+   `passes/` and `graph.json` cannot disagree with the screen; `tests/test_pass_verbs.py` drives
+   them headlessly and reloads from disk to prove it. Rename is transactional as D15 demands, and
+   the tab-repointing half rides a new `on_pass_renamed` hook. Smoke drives the panel's non-default
+   paths (expanded row, both inline inputs) because none of them draw in the collapsed default and
+   none can be screenshotted here.
 8. **The copilot** — the fourth address kind, and the working set learning to show a document's
    passes with per-pass errors.
 9. **Content** — the shipped examples and the dev sandbox, re-authored by hand in the new shape.

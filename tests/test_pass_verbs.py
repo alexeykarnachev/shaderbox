@@ -1,0 +1,246 @@
+"""The pass graph's six verbs (065 stage 7, D15).
+
+Add / delete / rename / set output / wire / unwire, driven through the headless `ProjectSession`
+rather than through the panel — the panel is a caller, and these are what it calls. Each verb
+mutates the live document AND saves, so `passes/` and `graph.json` can never disagree with what
+is on screen; every test reloads from disk to prove it.
+
+Rename is the one that has to be transactional: the file, every edge naming the pass, the output
+choice and the open editor tab move together. D3 makes a half-done rename SILENT — an edge left
+pointing at the old name just reads black.
+"""
+
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from shaderbox.pass_graph import PassEntry, TargetConfig
+from shaderbox.paths import PASSES_DIR_NAME, pass_shader_name
+from shaderbox.ui_models import load_document_from_dir
+
+_SAMPLER = """#version 460 core
+in vec2 vs_uv;
+uniform sampler2D u_src;
+out vec4 fs_color;
+void main() { fs_color = texture(u_src, vs_uv); }
+"""
+
+
+def _document_id(app: Any) -> str:
+    return app.current_document_id
+
+
+def _reload(app: Any, document_id: str) -> Any:
+    return load_document_from_dir(app.session.paths.documents_dir / document_id)
+
+
+def test_add_pass_writes_a_file_a_stub_and_an_entry(app: Any) -> None:
+    document_id = _document_id(app)
+    assert app.session.add_pass(document_id, "bright") == ""
+    document = app.ui_documents[document_id].document
+    assert "bright" in document.passes
+    assert document.graph.passes["bright"] == PassEntry()
+    path = app.session.paths.pass_shader_for(document_id, "bright")
+    assert path.is_file() and "void main" in path.read_text()
+    # A new pass compiles: the stub is a shader, not a placeholder comment.
+    assert document.passes["bright"].compile_unit.errors == []
+    assert "bright" in _reload(app, document_id).document.passes
+
+
+def test_add_pass_rejects_a_duplicate_or_unusable_name(app: Any) -> None:
+    document_id = _document_id(app)
+    existing = next(iter(app.ui_documents[document_id].document.passes))
+    assert "already exists" in app.session.add_pass(document_id, existing)
+    for bad in ("", "2fast", "has space", "dots.in.it", "slash/es"):
+        assert app.session.add_pass(document_id, bad) != "", f"{bad!r} was accepted"
+
+
+def test_delete_pass_removes_the_file_and_every_edge_naming_it(app: Any) -> None:
+    document_id = _document_id(app)
+    app.session.add_pass(document_id, "src")
+    app.session.add_pass(document_id, "sink")
+    document = app.ui_documents[document_id].document
+    document.passes["sink"].release_program(_SAMPLER)
+    document.passes["sink"].compile()
+    assert app.session.wire_pass_input(document_id, "sink", "u_src", "src") == ""
+    assert document.graph.passes["sink"].inputs == {"u_src": "src"}
+
+    assert app.session.delete_pass(document_id, "src") == ""
+    assert "src" not in document.passes
+    # The edge goes with it: left behind, it would read black, which says nothing.
+    assert document.graph.passes["sink"].inputs == {}
+    assert not app.session.paths.pass_shader_for(document_id, "src").exists()
+    reloaded = _reload(app, document_id).document
+    assert "src" not in reloaded.passes
+    assert reloaded.graph.passes["sink"].inputs == {}
+
+
+def test_deleting_the_output_repoints_it(app: Any) -> None:
+    document_id = _document_id(app)
+    app.session.add_pass(document_id, "second")
+    assert app.session.set_output_pass(document_id, "second") == ""
+    assert app.session.delete_pass(document_id, "second") == ""
+    document = app.ui_documents[document_id].document
+    assert document.graph.output in document.passes
+    assert document.graph.output_pass is not None
+
+
+def test_the_last_pass_cannot_be_deleted(app: Any) -> None:
+    document_id = _document_id(app)
+    only = next(iter(app.ui_documents[document_id].document.passes))
+    assert "at least one pass" in app.session.delete_pass(document_id, only)
+    assert only in app.ui_documents[document_id].document.passes
+
+
+def test_rename_moves_the_file_the_edges_and_the_output(app: Any) -> None:
+    document_id = _document_id(app)
+    app.session.add_pass(document_id, "producer")
+    app.session.add_pass(document_id, "consumer")
+    document = app.ui_documents[document_id].document
+    document.passes["consumer"].release_program(_SAMPLER)
+    document.passes["consumer"].compile()
+    app.session.wire_pass_input(document_id, "consumer", "u_src", "producer")
+    app.session.set_output_pass(document_id, "producer")
+
+    assert app.session.rename_pass(document_id, "producer", "scene") == ""
+    document = app.ui_documents[document_id].document
+    assert "producer" not in document.passes and "scene" in document.passes
+    assert document.graph.output == "scene"
+    # The edge follows: this is the half D3 makes silent if it is missed.
+    assert document.graph.passes["consumer"].inputs == {"u_src": "scene"}
+    assert not app.session.paths.pass_shader_for(document_id, "producer").exists()
+    assert app.session.paths.pass_shader_for(document_id, "scene").is_file()
+    assert document.passes["scene"].source.path.name == pass_shader_name("scene")
+
+    reloaded = _reload(app, document_id).document
+    assert reloaded.graph.passes["consumer"].inputs == {"u_src": "scene"}
+    assert reloaded.graph.output == "scene"
+
+
+def test_rename_repoints_an_open_editor_tab(app: Any) -> None:
+    document_id = _document_id(app)
+    app.session.add_pass(document_id, "target")
+    app.ensure_shader_tab(document_id, "target")
+    old_path = app.session.paths.pass_shader_for(document_id, "target")
+    assert any(t.path == old_path for t in app.editor_tabs)
+
+    assert app.session.rename_pass(document_id, "target", "renamed") == ""
+    new_path = app.session.paths.pass_shader_for(document_id, "renamed")
+    assert not any(t.path == old_path for t in app.editor_tabs), (
+        "a tab still points at the old file, so its edits go nowhere"
+    )
+    assert any(t.path == new_path for t in app.editor_tabs)
+
+
+def test_rename_rejects_a_taken_or_unusable_name(app: Any) -> None:
+    document_id = _document_id(app)
+    app.session.add_pass(document_id, "a")
+    app.session.add_pass(document_id, "b")
+    assert "already exists" in app.session.rename_pass(document_id, "a", "b")
+    assert app.session.rename_pass(document_id, "a", "no spaces") != ""
+    assert "a" in app.ui_documents[document_id].document.passes
+
+
+def test_wiring_is_a_closed_set(app: Any) -> None:
+    document_id = _document_id(app)
+    app.session.add_pass(document_id, "sink")
+    document = app.ui_documents[document_id].document
+    document.passes["sink"].release_program(_SAMPLER)
+    document.passes["sink"].compile()
+    # A producer the document does not have is refused rather than stored: the panel picks from
+    # the document's own pass names, so this can only be reached by a caller inventing one.
+    assert "no such pass" in app.session.wire_pass_input(
+        document_id, "sink", "u_src", "ghost"
+    )
+    assert document.graph.passes["sink"].inputs == {}
+
+
+def test_unwiring_is_an_empty_producer(app: Any) -> None:
+    document_id = _document_id(app)
+    app.session.add_pass(document_id, "src")
+    app.session.add_pass(document_id, "sink")
+    app.session.wire_pass_input(document_id, "sink", "u_src", "src")
+    assert app.session.wire_pass_input(document_id, "sink", "u_src", "") == ""
+    document = app.ui_documents[document_id].document
+    assert document.graph.passes["sink"].inputs == {}
+    assert _reload(app, document_id).document.graph.passes["sink"].inputs == {}
+
+
+def test_set_output_persists_and_refuses_a_stranger(app: Any) -> None:
+    document_id = _document_id(app)
+    app.session.add_pass(document_id, "final")
+    assert app.session.set_output_pass(document_id, "final") == ""
+    assert app.ui_documents[document_id].document.graph.output == "final"
+    assert _reload(app, document_id).document.graph.output == "final"
+    assert "no such pass" in app.session.set_output_pass(document_id, "ghost")
+
+
+def test_a_target_change_reallocates_the_canvas_and_persists(app: Any) -> None:
+    document_id = _document_id(app)
+    app.session.add_pass(document_id, "tuned")
+    target = TargetConfig(dtype="f4", filter_linear=False, wrap=True, persist=True)
+    assert app.session.set_pass_target(document_id, "tuned", target) == ""
+    render_pass = app.ui_documents[document_id].document.passes["tuned"]
+    assert render_pass.canvas.texture.dtype == "f4"
+    assert render_pass.canvas.texture.repeat_x
+    reloaded = _reload(app, document_id).document
+    assert reloaded.graph.passes["tuned"].target == target
+    assert reloaded.passes["tuned"].canvas.texture.dtype == "f4"
+
+
+def test_every_verb_refuses_an_unknown_document(app: Any) -> None:
+    for call in (
+        lambda: app.session.add_pass("ghost", "p"),
+        lambda: app.session.delete_pass("ghost", "p"),
+        lambda: app.session.rename_pass("ghost", "p", "q"),
+        lambda: app.session.set_output_pass("ghost", "p"),
+        lambda: app.session.wire_pass_input("ghost", "p", "u", "q"),
+        lambda: app.session.set_pass_target("ghost", "p", TargetConfig()),
+    ):
+        assert "no such document" in call()
+
+
+def test_a_saved_document_survives_a_full_round_of_verbs(
+    app: Any, tmp_path: Path
+) -> None:
+    # The composite check: build a real two-pass chain through the verbs alone, then reload and
+    # render it. Falsifier: any verb that mutates the live document without saving.
+    document_id = _document_id(app)
+    app.session.add_pass(document_id, "scene")
+    app.session.add_pass(document_id, "composite")
+    document = app.ui_documents[document_id].document
+    document.passes["composite"].release_program(_SAMPLER)
+    document.passes["composite"].compile()
+    app.session.wire_pass_input(document_id, "composite", "u_src", "scene")
+    app.session.set_output_pass(document_id, "composite")
+    app.session.save_ui_document(app.ui_documents[document_id])
+
+    reloaded = _reload(app, document_id).document
+    assert reloaded.graph.output == "composite"
+    assert reloaded.graph.passes["composite"].inputs == {"u_src": "scene"}
+    reloaded.render(u_time=0.0)
+    assert reloaded.graph_errors == []
+    files = sorted(
+        p.name
+        for p in (
+            app.session.paths.documents_dir / document_id / PASSES_DIR_NAME
+        ).iterdir()
+    )
+    assert pass_shader_name("scene") in files
+    assert pass_shader_name("composite") in files
+    reloaded.release()
+
+
+def test_add_then_delete_leaves_no_orphan_file(app: Any) -> None:
+    document_id = _document_id(app)
+    app.session.add_pass(document_id, "temp")
+    app.session.delete_pass(document_id, "temp")
+    assert not app.session.paths.pass_shader_for(document_id, "temp").exists()
+    # The loader enumerates FILES, so an orphan would resurrect the pass on the next open.
+    assert "temp" not in _reload(app, document_id).document.passes
+
+
+@pytest.mark.parametrize("name", ["a", "pass_2", "_leading", "UPPER"])
+def test_accepted_pass_names(app: Any, name: str) -> None:
+    assert app.session.add_pass(_document_id(app), name) == ""

@@ -214,6 +214,10 @@ class Document:
         )
 
     @property
+    def gl(self) -> moderngl.Context:
+        return self._gl
+
+    @property
     def render_pass(self) -> Pass:
         """The output pass — what the preview shows and what export renders (D10).
 

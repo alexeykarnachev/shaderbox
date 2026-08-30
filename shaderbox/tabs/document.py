@@ -16,6 +16,7 @@ from shaderbox.ui_primitives import (
     small_caption,
 )
 from shaderbox.util import format_auto_value, get_resolution_str, get_uniform_hash
+from shaderbox.widgets import pass_list
 from shaderbox.widgets.uniform import draw_ui_uniform, uniform_name_label
 
 
@@ -207,25 +208,19 @@ def _draw_entry_points(app: App) -> None:
     present = app.session.has_script(document_id)
     error = present and app.session.script_has_error(document_id)
     active = app.active_tab
-    shader_active = (
-        active is not None
-        and active.kind == "shader"
-        and active.document_id == document_id
-    )
     script_active = (
         active is not None
         and active.kind == "script"
         and active.document_id == document_id
     )
 
+    pass_list.draw(
+        app, document_id, lambda name: app.ensure_shader_tab(document_id, name)
+    )
+
+    imgui.dummy((0, float(SPACE.MD)))
     imgui.begin_disabled(app.copilot_turn_active)
     small_caption(app.font_12, "Entry points")
-
-    _entry_row_label(shader_active, "Shader")
-    if ghost_button("open##entry_shader"):
-        app.ensure_shader_tab(document_id)
-    if imgui.is_item_hovered():
-        imgui.set_tooltip("Open the fragment shader (GPU)")
 
     _entry_row_label(script_active, "Script")
     open_tooltip = (

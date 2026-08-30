@@ -115,6 +115,46 @@ class PassGraph(BaseModel):
             raise ValueError("a pass name may not be empty")
         return self
 
+    def with_passes(
+        self,
+        entries: dict[str, "PassEntry"],
+        output: str | None = None,
+        layout: dict[str, "PassLayout"] | None = None,
+    ) -> "PassGraph":
+        """A copy carrying `entries` (and optionally a new output / layout).
+
+        Every edit funnels through here rather than through `model_copy(update={...})` at each
+        call site: the field name and the passes/ DIRECTORY share a word, so a bare string is
+        indistinguishable from the path and the single-home guard cannot tell them apart.
+        """
+        return PassGraph(
+            version=self.version,
+            output=self.output if output is None else output,
+            passes=entries,
+            layout=self.layout if layout is None else layout,
+        )
+
+    def with_input(self, consumer: str, uniform: str, producer: str) -> "PassGraph":
+        """Fill `consumer`'s `uniform` from `producer`, or unwire it when `producer` is empty."""
+        entry = self.passes.get(consumer, PassEntry())
+        inputs = dict(entry.inputs)
+        if producer:
+            inputs[uniform] = producer
+        else:
+            inputs.pop(uniform, None)
+        return self.with_passes(
+            {**self.passes, consumer: PassEntry(inputs=inputs, target=entry.target)}
+        )
+
+    def with_target(self, name: str, target: "TargetConfig") -> "PassGraph":
+        entry = self.passes.get(name, PassEntry())
+        return self.with_passes(
+            {**self.passes, name: PassEntry(inputs=entry.inputs, target=target)}
+        )
+
+    def with_output(self, name: str) -> "PassGraph":
+        return self.with_passes(self.passes, output=name)
+
     @property
     def output_pass(self) -> str | None:
         """The output pass's name, or None when the graph names none that exists.

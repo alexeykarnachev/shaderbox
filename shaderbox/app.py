@@ -37,6 +37,7 @@ from shaderbox.editor_types import (
     EditorSession,
     EditorTab,
     HoverMark,
+    InlineInput,
     JumpRequest,
 )
 from shaderbox.exporters.registry import ExporterRegistry
@@ -235,7 +236,14 @@ class App:
             on_current_document_changed=self._on_current_document_changed,
             on_document_source_synced=self._on_document_source_synced,
             on_document_deleted=self._on_document_deleted,
+            on_pass_renamed=self._on_pass_renamed,
         )
+
+        # The pass list's two inline inputs (rename an existing pass / name a new one) and which
+        # row has its inputs + target expanded. Mutually exclusive: an opener closes the other.
+        self.pass_rename: InlineInput = InlineInput()
+        self.pass_add: InlineInput = InlineInput()
+        self.pass_expanded: str = ""
 
         # copilot_focus_pending: one-shot driving window + input focus, consumed at the input draw.
         self.is_copilot_open: bool = False
@@ -474,6 +482,17 @@ class App:
             return
         session.editor.set_text(source)
         session.saved_undo = session.editor.get_undo_index()
+
+    def _on_pass_renamed(self, old_path: Path, new_path: Path) -> None:
+        # A pass file moved; both the editor SESSION and any open TAB are keyed by path, so
+        # without this the tab points at a file that no longer exists and its edits go nowhere.
+        session = self.editor_sessions.pop(old_path, None)
+        if session is not None:
+            session.source = replace(session.source, path=new_path)
+            self.editor_sessions[new_path] = session
+        for i, tab in enumerate(self.editor_tabs):
+            if tab.path == old_path:
+                self.editor_tabs[i] = replace(tab, path=new_path)
 
     def _on_document_deleted(self, document_id: str, source_path: Path) -> None:
         # A document's dir was trashed by the core; drop its editor session + close any of its open

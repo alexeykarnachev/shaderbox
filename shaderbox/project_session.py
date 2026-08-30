@@ -14,9 +14,11 @@ current on the constructing thread before any document load (Document/Canvas do
 """
 
 import contextlib
+import re
 import shutil
 import time
 from collections.abc import Callable, Iterator
+from dataclasses import replace
 from pathlib import Path
 
 import moderngl
@@ -29,10 +31,11 @@ from shaderbox.copilot.llm.openrouter import OpenRouterLLMClient
 from shaderbox.copilot.persistence import archive_conversation
 from shaderbox.copilot.revert import RevertExecutor
 from shaderbox.copilot.session import CopilotSession
-from shaderbox.core import ENGINE_DRIVEN_UNIFORMS
+from shaderbox.core import ENGINE_DRIVEN_UNIFORMS, Pass
 from shaderbox.document import Document
 from shaderbox.exporters.registry import ExporterRegistry
 from shaderbox.integrations import IntegrationsStore
+from shaderbox.pass_graph import PassEntry, PassGraph, TargetConfig
 from shaderbox.paths import (
     DOCUMENT_JSON_BASENAME,
     DOCUMENT_SCRIPT_BASENAME,
@@ -57,6 +60,7 @@ from shaderbox.shader_lib import set_active as set_active_lib_index
 from shaderbox.shader_lib.favorites import ShaderLibFavoritesStore
 from shaderbox.shader_lib.file_ops import ShaderLibFileManager
 from shaderbox.shader_lib.tags import ShaderLibTagsStore
+from shaderbox.shader_source import ShaderSource
 from shaderbox.ui_models import (
     UIAppState,
     UIDocument,
@@ -85,8 +89,70 @@ def _noop_document_source_synced(path: Path, source: str) -> None:
     pass
 
 
+def _noop_pass_renamed(old_path: Path, new_path: Path) -> None:
+    pass
+
+
 def _noop_document_deleted(document_id: str, source_path: Path) -> None:
     pass
+
+
+# A new pass draws nothing until it is wired or authored: opaque black, so the first render is a
+# blank slate rather than an error strip.
+PASS_STUB = """#version 460 core
+
+in vec2 vs_uv;
+out vec4 fs_color;
+
+void main() {
+    fs_color = vec4(0.0, 0.0, 0.0, 1.0);
+}
+"""
+
+# A pass name is a FILENAME and a graph key, so it stays to the characters both accept.
+_PASS_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _pass_name_error(name: str, existing: dict[str, Pass]) -> str:
+    if not _PASS_NAME_RE.match(name):
+        return (
+            "a pass name starts with a letter and holds letters, digits and underscores"
+        )
+    if name in existing:
+        return f"'{name}' already exists"
+    return ""
+
+
+def _graph_without(graph: PassGraph, removed: str, kept: dict[str, Pass]) -> PassGraph:
+    entries = {
+        name: entry.model_copy(
+            update={
+                "inputs": {u: src for u, src in entry.inputs.items() if src != removed}
+            }
+        )
+        for name, entry in graph.passes.items()
+        if name != removed
+    }
+    output = graph.output if graph.output != removed else next(iter(kept), "")
+    layout = {n: pos for n, pos in graph.layout.items() if n != removed}
+    return graph.with_passes(entries, output=output, layout=layout)
+
+
+def _graph_renamed(graph: PassGraph, old: str, new: str) -> PassGraph:
+    def moved(entry: PassEntry) -> PassEntry:
+        inputs = {u: (new if src == old else src) for u, src in entry.inputs.items()}
+        return entry.model_copy(update={"inputs": inputs})
+
+    entries = {
+        (new if name == old else name): moved(entry)
+        for name, entry in graph.passes.items()
+    }
+    layout = {(new if n == old else n): pos for n, pos in graph.layout.items()}
+    return graph.with_passes(
+        entries,
+        output=new if graph.output == old else graph.output,
+        layout=layout,
+    )
 
 
 class ProjectSession:
@@ -108,6 +174,7 @@ class ProjectSession:
             [Path, str], None
         ] = _noop_document_source_synced,
         on_document_deleted: Callable[[str, Path], None] = _noop_document_deleted,
+        on_pass_renamed: Callable[[Path, Path], None] = _noop_pass_renamed,
     ) -> None:
         self._document_examples_dir = document_examples_dir
         self._starter_example_id = starter_example_id
@@ -120,6 +187,7 @@ class ProjectSession:
         # UI-reaction callbacks the core invokes after a mutation (the owner does the imgui work).
         self._on_current_document_changed = on_current_document_changed
         self._on_document_source_synced = on_document_source_synced
+        self._on_pass_renamed = on_pass_renamed
         self._on_document_deleted = on_document_deleted
 
         # ---- per-project state, (re)populated by _load ----
@@ -685,6 +753,120 @@ class ProjectSession:
         self.copilot.clear_checkpoints()
         self.copilot.reset_conversation()
         self.copilot.save_conversation(self.paths.copilot_conversation_path)
+
+    # ---- the pass graph's six verbs (D15) -------------------------------------------------
+    # Every one mutates the live document AND saves, so `passes/` and `graph.json` never
+    # disagree with what is on screen. Each returns an error string, or "" on success.
+
+    def add_pass(self, document_id: str, name: str) -> str:
+        ui_document = self.ui_documents.get(document_id)
+        if ui_document is None:
+            return f"no such document '{document_id}'"
+        error = _pass_name_error(name, ui_document.document.passes)
+        if error:
+            return error
+        document = ui_document.document
+        source_path = self.paths.pass_shader_for(document_id, name)
+        source_path.parent.mkdir(parents=True, exist_ok=True)
+        source_path.write_text(PASS_STUB, encoding="utf-8")
+        render_pass = Pass(
+            gl=document.gl,
+            source=ShaderSource.load(source_path),
+            canvas_size=document.canvas_size,
+            target=TargetConfig(),
+        )
+        render_pass.compile()
+        document.passes[name] = render_pass
+        document.graph = document.graph.with_passes(
+            {**document.graph.passes, name: PassEntry()}
+        )
+        self.save_ui_document(ui_document)
+        return ""
+
+    def delete_pass(self, document_id: str, name: str) -> str:
+        ui_document = self.ui_documents.get(document_id)
+        if ui_document is None:
+            return f"no such document '{document_id}'"
+        document = ui_document.document
+        if name not in document.passes:
+            return f"no such pass '{name}'"
+        if len(document.passes) == 1:
+            return "a document needs at least one pass"
+        document.passes.pop(name).release()
+        # Every edge that named it goes too: an input left pointing at a deleted pass would read
+        # black (D3), which is silent — the panel's own delete must not leave that behind.
+        document.graph = _graph_without(document.graph, name, document.passes)
+        self.save_ui_document(ui_document)
+        return ""
+
+    def rename_pass(self, document_id: str, old: str, new: str) -> str:
+        ui_document = self.ui_documents.get(document_id)
+        if ui_document is None:
+            return f"no such document '{document_id}'"
+        document = ui_document.document
+        if old not in document.passes:
+            return f"no such pass '{old}'"
+        if new == old:
+            return ""
+        error = _pass_name_error(new, document.passes)
+        if error:
+            return error
+        # Transactional (D15): the file, every edge that references it, the output choice, and the
+        # open editor tab move together. Any one of them left behind fails SILENTLY — an edge
+        # naming a pass that no longer exists just reads black.
+        render_pass = document.passes.pop(old)
+        old_path = render_pass.source.path
+        new_path = self.paths.pass_shader_for(document_id, new)
+        old_path.replace(new_path)
+        render_pass.source = replace(render_pass.source, path=new_path)
+        document.passes[new] = render_pass
+        document.graph = _graph_renamed(document.graph, old, new)
+        self._on_pass_renamed(old_path, new_path)
+        self.save_ui_document(ui_document)
+        return ""
+
+    def set_output_pass(self, document_id: str, name: str) -> str:
+        ui_document = self.ui_documents.get(document_id)
+        if ui_document is None:
+            return f"no such document '{document_id}'"
+        document = ui_document.document
+        if name not in document.passes:
+            return f"no such pass '{name}'"
+        document.graph = document.graph.with_output(name)
+        self.save_ui_document(ui_document)
+        return ""
+
+    def wire_pass_input(
+        self, document_id: str, consumer: str, uniform: str, producer: str
+    ) -> str:
+        """Fill `consumer`'s `uniform` from `producer`, or unwire it when `producer` is empty.
+
+        A closed set by construction: the caller picks `producer` from the document's own pass
+        names, which is what makes SHADERed's positional-slot footgun impossible here.
+        """
+        ui_document = self.ui_documents.get(document_id)
+        if ui_document is None:
+            return f"no such document '{document_id}'"
+        document = ui_document.document
+        if consumer not in document.passes:
+            return f"no such pass '{consumer}'"
+        if producer and producer not in document.passes:
+            return f"no such pass '{producer}'"
+        document.graph = document.graph.with_input(consumer, uniform, producer)
+        self.save_ui_document(ui_document)
+        return ""
+
+    def set_pass_target(self, document_id: str, name: str, target: TargetConfig) -> str:
+        ui_document = self.ui_documents.get(document_id)
+        if ui_document is None:
+            return f"no such document '{document_id}'"
+        document = ui_document.document
+        if name not in document.passes:
+            return f"no such pass '{name}'"
+        document.graph = document.graph.with_target(name, target)
+        document.passes[name].set_target(target)
+        self.save_ui_document(ui_document)
+        return ""
 
     def seed_starter_document(self, seed_current: Callable[[str], None]) -> None:
         # First-run only: seed a starter into an empty project. A document load + save + select;
