@@ -204,3 +204,45 @@ def test_a_config_for_a_step_that_no_longer_exists_is_harmless(
     reloaded = load_node_from_dir(node_dir)
     assert reloaded.node.compile_unit.errors == []
     assert [s.name for s in reloaded.node.steps] == ["mid"]
+
+
+def test_a_step_authored_as_plain_glsl_works_with_no_configuration(
+    gl: moderngl.Context, tmp_path: Path
+) -> None:
+    """What the copilot can do with `write_shader` alone.
+
+    The naming convention means a step is ordinary GLSL: no bespoke syntax to synthesize,
+    no config file to write, no new tool. It renders on the defaults, and the panel is
+    where a human tunes it afterwards -- which is the whole shape the maintainer asked
+    for, and the half the earlier comment-based design had inverted.
+    """
+    node_dir = tmp_path / "authored"
+    node_dir.mkdir()
+    (node_dir / NODE_SHADER_BASENAME).write_text(
+        "#version 330\n"
+        "out vec4 fs_color;\n"
+        "in vec2 vs_uv;\n"
+        "uniform sampler2D u_step_glow;\n"
+        "uniform float u_strength;\n"
+        "void step_glow(out vec4 o) {\n"
+        "    o = vec4(vec3(smoothstep(0.4, 0.0, length(vs_uv - 0.5))) * u_strength, 1.0);\n"
+        "}\n"
+        "void main() { fs_color = texture(u_step_glow, vs_uv); }\n",
+        encoding="utf-8",
+    )
+    (node_dir / NODE_JSON_BASENAME).write_text(
+        json.dumps({"canvas_size": [32, 32], "uniforms": {}, "ui_state": {}}),
+        encoding="utf-8",
+    )
+
+    ui_node = load_node_from_dir(node_dir)
+    assert ui_node.node.compile_unit.errors == [], ui_node.node.compile_unit.errors
+    (step,) = ui_node.node.steps
+    assert step.name == "glow"
+    # Working defaults with no config written anywhere.
+    assert step.config.dtype == "f2"
+    assert step.config.scale == 1.0
+
+    ui_node.node.uniform_values["u_strength"] = 2.0
+    ui_node.node.render(u_time=0.0)
+    assert ui_node.node.step_texture("glow") is not None
