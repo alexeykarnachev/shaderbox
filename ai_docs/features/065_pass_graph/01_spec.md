@@ -317,17 +317,51 @@ decide document-or-pass.
 
 ## Verification
 
-Each check fails for exactly one reason.
+Each check fails for exactly one reason, and each names its falsifier.
 
-1. A document with one pass behaves exactly as a node does today, including its editor tab.
-2. A two-pass chain renders B-reads-A, not A alone.
-3. Order is topological on a diamond, and the shared ancestor draws ONCE. Asserted on every plan.
-4. A feedback pass reads its own previous frame and accumulates across frames.
-5. A non-self cycle reports an error per pass and does not hang.
-6. An error in pass 2 lands in the strip with pass 2's file and line, and click-to-jump works.
-7. Editing one pass recompiles only that pass.
-8. An unfilled input reads black; the document still renders.
-9. A malformed pass file costs that pass, not the document.
-10. Export renders the output pass, and two exports of a feedback document are identical.
-11. The copilot can author a two-pass document with no new tools.
-12. Save/reload round-trips the graph, the target configs, and every pass's uniforms.
+**Engine (headless, no UI needed):**
+
+1. **A one-pass document renders the same pixels as today's node for the same shader at the same
+   `u_time`.** Falsifier: any difference. Note the target format changes to `f2` (D9), so the
+   comparison is on the tonemapped output, not the raw target.
+2. **A two-pass chain shows B-reads-A.** Falsifier: the output equals A's own image.
+3. **A diamond orders topologically and the shared ancestor draws ONCE.** Asserted on EVERY plan the
+   test module builds, not in one test — this bug has shipped twice here and reads as slow, not
+   wrong.
+4. **A feedback pass accumulates across frames**, and the swap happens once per frame even though
+   the live loop renders twice. Falsifier: the value advances at 2x, or not at all.
+5. **A non-self cycle reports an error per pass and does not hang.**
+6. **An unfilled input reads black and the document still renders.** Falsifier: an exception, or the
+   default image appearing.
+7. **Editing one pass recompiles ONLY that pass.** Falsifier: a compile counter shows more than one.
+   The observable is a count, so the test must count rather than eyeball.
+8. **Two exports of a feedback document are byte-identical**, with live frames rendered in between.
+9. **Export renders the OUTPUT pass.** Falsifier: build a document whose output is not the
+   last-authored pass; picking the wrong one gives a visibly different image.
+
+**Persistence:**
+
+10. **`graph.json` round-trips** the graph, every target config, and every pass's uniforms.
+11. **A malformed pass file costs that pass, not the document** — and a malformed `graph.json` entry
+    costs that entry, not the document.
+12. **Two passes binding a sampler of the same name keep separate media**, and the orphan sweep
+    deletes neither (D16).
+
+**UI (manual, needs a display):**
+
+13. **An error in pass 2 lands in the strip with pass 2's file and line**, and click-to-jump works.
+14. **Rename rewrites every edge**, renames the file, and re-points an open tab. Falsifier: an edge
+    still names the old pass, and per D3 it silently reads black.
+15. **The six shipped examples still load and render**, and the examples browser is populated. This
+    is the highest-probability breakage of the whole wave.
+
+**Copilot (needs the dogfood harness and real API cost — not a green-tree check):**
+
+16. **The copilot authors a two-pass document with no new tools**, and can see per-pass errors in
+    its working set. Runs under `/dogfood`, not `make test`.
+
+## Fixtures that do not exist yet
+
+Checks 2-9 need a hand-authored multi-pass document checked into `tests/`. `projects/dev/nodes/`
+still carries a node with dead 064 `step_configs` in its `node.json` and `u_step_*` in its shader —
+nothing reads either any more. It is the natural candidate to become the multi-pass fixture.
