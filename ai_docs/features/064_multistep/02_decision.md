@@ -120,3 +120,45 @@ the buffer).
 4. **The authoring surface** — B's list or D's sheet, decided with a working cascade on screen.
 
 Cascades is the acceptance test, not the first milestone.
+
+## Post-impl review: what three reviewers found
+
+Three adversarial reviewers (spec fidelity, correctness hunt, regression sweep) ran against the
+landed engine. Every finding was reproduced before it was fixed. The engine core — variant
+compilation, driver-sourced edges, memoized topological evaluation, ping-pong, the union, the D11
+predicate — came back faithful, each verified on a real GL context rather than read.
+
+**Four real defects, all fixed:**
+
+1. **`make check` was RED and being reported green.** Eight ruff errors sat behind a grep of
+   pyright's summary line that never looked at the exit code. The most expensive kind of process
+   failure — a gate that appears to pass. Now checked by exit code.
+2. **`persist` was a no-op.** `invalidate()` preserved the target and the next `compile()` freed it
+   unconditionally; since every real flow is invalidate-then-compile, the flag never once worked
+   while the Help panel advertised it. The fix depends on ordering: `self.steps` is assigned before
+   the release, so the persist set comes from the new declarations.
+3. **Export did not start cold.** A feedback step carried however long the app had been open, so the
+   same node exported twice differed (measured 13 vs 255). `export_isolation` already re-instantiates
+   a stateful SCRIPT for exactly this reason; a step target is the same class of state.
+4. **Two regressions in the step diagnostics.** `// stop` on a texture sampler is an ordinary English
+   comment and `void step_march(vec2 p)` an ordinary helper name; both refused the whole compile.
+   The checks helped an author writing a chain and broke everyone who was not, so they are now scoped
+   to a shader actually authoring steps.
+
+**The process finding, which matters more than any of them.** A memoization bug — a shared ancestor
+re-rendered once per consuming path, the exact defect the deleted DAG shipped — reached `dev` and
+survived four commits under a green 870-test suite. It came from a reviewer mutation-testing in the
+live worktree while the implementer committed, and it was caught by *rendering the effect and reading
+the printed evaluation order*, not by the suite.
+
+Two mechanisms now close that class:
+
+- **The invariant is asserted on every plan the test module builds**, not in one case. The diamond
+  test asserted `order.count("base") == 1` — one name, one case — while eleven other tests built
+  plans and never checked for duplicates. Reintroducing the bug now turns 8 of 12 red where it
+  previously turned 0.
+- **A mutation test verifies its own restore before anything else runs.** A green suite that predates
+  a file write proves nothing about what is on disk.
+
+Worth stating why this class hides: a duplicated step still renders the *correct picture*, just N
+times. It reads as "slow", not "wrong", so no visual check finds it. Only the order itself shows it.
