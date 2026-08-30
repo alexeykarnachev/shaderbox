@@ -142,6 +142,67 @@ re-instantiated fresh per export. Step targets obey the same discipline or the s
 twice differs by how long the app has been open. A warm-up control belongs with the UI feature, not
 here.
 
+## D11-D16: precautions from the blast-radius review
+
+A pre-impl reviewer swept every call site depending on the assumptions this spec changes, and
+measured the resource ceiling. Six findings became decisions; each names the site that forced it.
+
+**D11. Step samplers NEVER enter `uniform_values`, enforced by ONE predicate on `Node`.**
+This is where D4's union and D9's ban on serialization meet, and the spec did not name the meeting
+point. Verified: `core.py::_default_uniform_value` hands any `GL_SAMPLER_2D` an
+`Image(DEFAULT_IMAGE_FILE_PATH)`, and `ui_models.py::UINode.save` writes any `moderngl.Texture` in
+`uniform_values` to `textures/<name>.bin` recording size/components/dtype — a real, tested path
+(`test_raw_texture_round_trip.py`). So without a guard: a 512x512 `f2` target is ~1 MB per step per
+save, reloaded next session as a frozen stale frame bound to the sampler, with no error anywhere.
+
+The same predicate is consulted by `seed_uniform_values`, the `save` serialization loop, the
+`live_rows` prune, `tabs/node.py`'s row + resolution loops (which would otherwise `AttributeError`
+on `value.texture.size` for a bare `Texture`, and offer a "Load media" button that overwrites the
+chain wiring), and `copilot/backend.py`'s `bind_media` sampler lists. It also removes a
+double-release: `release()` calls `try_to_release` on every `uniform_values` entry, and
+`invalidate()` would free the same target again.
+
+**D12. Step targets are sized off `self.canvas`, never off a passed canvas.** `ui.py:214` is the
+ONLY external-canvas caller in shipped code (`render(canvas=app.preview_canvas)`) and it renders at
+`adjust_size(..., width=200)` — a different resolution. Sizing off the passed canvas would
+thrash-reallocate every target between 200px and full every frame. The consequence, accepted and
+stated: **the small preview is a downscale of a full-resolution chain**, which is correct for a
+scale-dependent blur/cascade chain and is what the node-grid thumbnail already shows.
+`render_media`'s preset branch (`core.py:561`) takes the same rule.
+
+**D13. The ping-pong swap is tied to a FRAME, not to a `render()` call.** The current node renders
+twice per frame (`ui.py:214` into the preview canvas, then `ui.py:247/250` into its own), and the
+copilot probe renders twice back-to-back (`backend.py:1701/1709`). Swapping per call would make the
+current node's feedback advance at 2x every other node's — so a decay constant tuned while a node is
+selected evolves at half the rate once it is not, and toggling "Render all" changes it again. Worse,
+the probe's second frame would carry the first's accumulation, so `_MOTION_EPS` reports ANIMATES for
+a static chain and the no-op detector can never fire — both feed the model's beliefs directly.
+
+**D14. A step-parse error refuses the whole compile.** `compile()` already preserves the last-good
+program on failure, so the picture keeps rendering while the error strip shows the problem. The
+dangerous inverse: compiling a single variant with step samplers left as ordinary textures binds
+them to the default image — the silent wrong picture D2 exists to forbid.
+
+**D15. Test the silent regressions, not just the loud ones.** Three existing tests keep passing while
+the behaviour underneath them breaks, so each needs a twin in this wave:
+`test_gl_lifetime_guards.py` asserts only the canvas is freed (N step targets can leak with it
+green — and the count must be asserted, or dropping variant N-1 passes);
+`test_uniform_row_pruning.py::test_every_surviving_row_names_a_live_uniform` is a subset check with
+no lower bound, so the union makes it pass MORE easily while the data loss D4 prevents stays
+invisible; `test_render_for.py::test_render_media_preset_none_byte_identical` is the natural D10
+falsifier but its fixture is step-free, so it must be parametrized over a chain node.
+`test_raw_texture_round_trip.py` needs a negative twin: a step sampler must NOT write a
+`textures/*.bin`.
+
+**D16. State the measured ceiling.** 063's "19 passes at 0.52 ms" is ONE node's chain and does not
+extrapolate. Measured on this box: **20 nodes x 15 steps at 512x512 `f2` = 7.28 ms/frame** (44% of a
+16.6 ms budget, GPU work alone) and **629 MB of VRAM** — before ping-pong doubles the self-reading
+targets. **VRAM is the real ceiling, and `f2` is what makes it steep.** Recompiling 15 variants costs
+57.8 ms against 1.5 ms for one, so every Ctrl+S on a deep chain is a ~60 ms main-thread stall, paid
+again per node by the copilot's opportunistic `compile()` calls. Not a blocker for this wave; a
+bound on total step-target allocation is a real follow-up, and the existing stale-mark makes
+"don't render every node's full chain" the honest default.
+
 ## Out of scope for this wave
 
 - **Any UI.** No strip, no rows, no chips. The panel change is D4's union only, which is a change to

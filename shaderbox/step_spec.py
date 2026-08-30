@@ -177,8 +177,7 @@ def parse_steps(source: str, path: Path) -> StepParseResult:
                 ShaderError(
                     path,
                     line_idx,
-                    f"step '{name}' has no body: add "
-                    f"`void {spec.fn_name}(out vec4 o)`",
+                    f"step '{name}' has no body: add `void {spec.fn_name}(out vec4 o)`",
                 )
             )
             continue
@@ -186,7 +185,9 @@ def parse_steps(source: str, path: Path) -> StepParseResult:
         seen[name] = line_idx
         result.steps.append(spec)
 
-    _report_orphan_bodies(source, declared_fns, seen | dict.fromkeys(near_missed, -1), path, result)
+    _report_orphan_bodies(
+        source, declared_fns, seen | dict.fromkeys(near_missed, -1), path, result
+    )
     return result
 
 
@@ -290,3 +291,105 @@ def _report_orphan_bodies(
                 f"`uniform sampler2D u_{name};  // step`",
             )
         )
+
+
+def read_samplers(body: str, sampler_names: set[str]) -> set[str]:
+    """Which of `sampler_names` a step body reads.
+
+    Whole-word matching on the body text. A read the engine MISSES would order a step
+    before its input (a stale frame); a read it INVENTS only adds an edge that orders a
+    step later than strictly needed, or reports a cycle that is not one. Both are
+    visible; neither corrupts silently, and over-detection is the safer failure, so the
+    match is deliberately generous -- any mention of the name counts, including one
+    inside a helper call.
+    """
+    found: set[str] = set()
+    for name in sampler_names:
+        if re.search(rf"\b{re.escape(name)}\b", body):
+            found.add(name)
+    return found
+
+
+def extract_fn_body(source: str, fn_name: str) -> str:
+    """The text of `fn_name`'s body, brace-counted. Empty when it is not defined."""
+    match = re.search(rf"\bvoid\s+{re.escape(fn_name)}\s*\([^)]*\)\s*\{{", source)
+    if match is None:
+        return ""
+    start = match.end() - 1
+    depth = 0
+    for i in range(start, len(source)):
+        if source[i] == "{":
+            depth += 1
+        elif source[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return source[start : i + 1]
+    return source[start:]
+
+
+@dataclass(frozen=True)
+class StepPlan:
+    """The resolved evaluation order plus each step's inputs."""
+
+    order: list[str]  # step names, producers before consumers
+    reads: dict[str, set[str]]  # step name -> step names it reads
+    self_reads: set[str]  # steps reading their own previous frame (ping-pong)
+    final_reads: set[str]  # steps `main()` reads
+
+
+def plan_steps(
+    source: str, steps: list[StepSpec], path: Path
+) -> tuple[StepPlan, list[ShaderError]]:
+    """Topologically order `steps` by which of each other's outputs they read.
+
+    A step reading ITSELF is ping-pong, not a cycle: it consumes the previous frame, so
+    it contributes no ordering constraint at all. Excluding the self-edge from the cycle
+    check while keeping it in the model is the trap that sinks a naive implementation.
+    """
+    errors: list[ShaderError] = []
+    by_sampler = {s.sampler: s.name for s in steps}
+    sampler_names = set(by_sampler)
+
+    reads: dict[str, set[str]] = {}
+    self_reads: set[str] = set()
+    for step in steps:
+        body = extract_fn_body(source, step.fn_name)
+        read_names = {by_sampler[s] for s in read_samplers(body, sampler_names)}
+        if step.name in read_names:
+            self_reads.add(step.name)
+            read_names.discard(step.name)  # previous frame: no ordering constraint
+        reads[step.name] = read_names
+
+    main_body = extract_fn_body(source, "main")
+    final_reads = {by_sampler[s] for s in read_samplers(main_body, sampler_names)}
+
+    order: list[str] = []
+    state: dict[str, int] = {}  # 0 = visiting, 1 = done
+
+    def visit(name: str, trail: list[str]) -> None:
+        mark = state.get(name)
+        if mark == 1:
+            return  # memoized: a shared ancestor is emitted once, not per consumer
+        if mark == 0:
+            cycle = " -> ".join([*trail[trail.index(name) :], name])
+            errors.append(
+                ShaderError(
+                    path,
+                    0,
+                    f"steps form a cycle: {cycle}. A step may read ITSELF (that is the "
+                    f"previous frame), but a loop between steps has no order.",
+                )
+            )
+            return
+        state[name] = 0
+        for dep in sorted(reads.get(name, set())):
+            visit(dep, [*trail, name])
+        state[name] = 1
+        order.append(name)
+
+    for step in steps:
+        visit(step.name, [])
+
+    return StepPlan(
+        order=order, reads=reads, self_reads=self_reads, final_reads=final_reads
+    ), errors

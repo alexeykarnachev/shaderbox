@@ -46,7 +46,9 @@ def test_bare_marker_uses_every_default() -> None:
 
 def test_every_option_parses() -> None:
     result = parse_steps(
-        _src("uniform sampler2D u_blur;  // step, scale: 0.25, f4, nearest, repeat, persist"),
+        _src(
+            "uniform sampler2D u_blur;  // step, scale: 0.25, f4, nearest, repeat, persist"
+        ),
         _PATH,
     )
     assert result.errors == []
@@ -97,7 +99,9 @@ def test_a_sampler_with_no_comment_is_left_alone() -> None:
 def test_a_near_miss_marker_is_a_loud_error(typo: str) -> None:
     # D2: the whole point. Without this the sampler silently stays an ordinary
     # texture input and renders the default image.
-    result = parse_steps(_src(f"uniform sampler2D u_blur;  // {typo}, scale: 0.5"), _PATH)
+    result = parse_steps(
+        _src(f"uniform sampler2D u_blur;  // {typo}, scale: 0.5"), _PATH
+    )
     assert result.steps == []
     assert len(result.errors) == 1
     assert "did you mean" in result.errors[0].message
@@ -105,9 +109,7 @@ def test_a_near_miss_marker_is_a_loud_error(typo: str) -> None:
 
 
 def test_an_unknown_option_is_an_error() -> None:
-    result = parse_steps(
-        _src("uniform sampler2D u_blur;  // step, floaty"), _PATH
-    )
+    result = parse_steps(_src("uniform sampler2D u_blur;  // step, floaty"), _PATH)
     assert result.steps == []
     assert any("unknown option" in e.message for e in result.errors)
 
@@ -140,7 +142,10 @@ def test_a_declared_step_with_no_body_is_an_error() -> None:
 def test_a_body_with_no_declaration_is_an_error() -> None:
     # A `step_x` body nobody declares would never run -- a typo, not intent.
     result = parse_steps(
-        _src("uniform sampler2D u_other;", body="void step_blur(out vec4 o) { o = vec4(1.0); }"),
+        _src(
+            "uniform sampler2D u_other;",
+            body="void step_blur(out vec4 o) { o = vec4(1.0); }",
+        ),
         _PATH,
     )
     assert result.steps == []
