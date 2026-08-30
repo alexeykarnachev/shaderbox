@@ -44,12 +44,12 @@ no "Resolved YYYY-MM-DD" headers).
 - The Steps section (`widgets/step_list.py`) was verified by driving the real app loop headless --
   it draws, a float step pins and tonemaps, a node switch clears the pin, a stale pin self-heals --
   but layout and aesthetics cannot be judged without a display and this box has no WM.
-- Open the shipped "Render Steps" example and look at: whether a 56px thumbnail beside two dim
-  caption lines reads as a row or as clutter at four steps; whether the two captions
-  (`480x360 . f2 . linear` and `reads: sparks`) are worth two lines or want one; whether the
-  selected row's accent border is legible against the panel; and whether the pinned-step preview
-  needs a visible marker beyond the row's border, since a pinned intermediate can otherwise be
-  misread as a broken shader.
+- Open the shipped "Render Steps" example and look at: whether a row (a 56px thumbnail, a caption,
+  and FOUR combos for size/format/filter/edge) reads as a row or as clutter at four steps — this is
+  the most likely thing to be wrong, since four combos per row is a lot of widget for a side panel;
+  whether the combos want to be behind a per-row expander instead; whether the selected row's accent
+  border is legible against the panel; and whether the pinned-step preview needs a marker beyond the
+  row border, since a pinned intermediate can otherwise be misread as a broken shader.
 
 ## [VERIFY] Copilot live-only UI checks, unverified on this box
 

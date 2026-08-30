@@ -1,6 +1,9 @@
 # 064 — The authoring surface: implementation spec
 
-**Status: PLAN-LOCKED** (maintainer: "let's build already something, we will iterate and re-design
+**Status: LANDED** (S1-S6 implemented, reviewed to convergence, gates green; a maintainer visual
+check on a real display is the one thing owed — `todo.md`).
+
+**Originally plan-locked as:** (maintainer: "let's build already something, we will iterate and re-design
 later if we need... write generalizable, robust, flexible code with clear separation of concerns").
 Anchor: `00_scenario.md` R1-R10. Engine: `03_engine_spec.md` (landed). Judged proposals:
 `design_round/`.

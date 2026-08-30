@@ -26,33 +26,35 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-08-30 (064 engine + surface both landed; next is a maintainer visual check). -->
-**ACTIVE: 064 multi-step nodes — engine AND authoring surface landed, green, pushed. The next
-action is a `make run` visual check on a real display.** Start at
-`ai_docs/features/064_multistep/02_decision.md` (what was chosen and why), then `03_engine_spec.md`
-(the engine, D1-D16) and `04_surface_spec.md` (the panel, S1-S6). All implemented.
+<!-- As of 2026-08-30 (064 engine + surface landed and reviewed; next is a maintainer visual check). -->
+**ACTIVE: 064 multi-step nodes — engine AND authoring surface landed, reviewed to convergence,
+green, pushed. The next action is a `make run` visual check on a real display.** Start at
+`ai_docs/features/064_multistep/02_decision.md` — its FIRST section records a mid-feature rework and
+supersedes the seam the rest of that file argues for. Then `03_engine_spec.md` (the engine, D1-D16)
+and `04_surface_spec.md` (the panel, S1-S6).
 
-**What works.** A node declares extra render steps by NAME: a sampler called `u_step_blur` is a
-step, and its body is `void step_blur(out vec4 o)` in the same file. Comments carry no meaning
-anywhere. Each step's target — size, format, filter, edge, and what happens to it on recompile — is
-node state with working defaults, edited in the Steps panel and saved to `node.json`. The engine compiles one program per step from that one source, orders them by what
-the DRIVER reports each variant reads, evaluates each once per frame into its own target, and hands
-a self-reading step its previous frame (ping-pong, no pair to manage). The Node panel shows a
-**Steps** section — one row per step in evaluation order with a live thumbnail, its resolved
-size/format, and what it reads; clicking a thumbnail retargets the big preview to that step, and a
-float target is tonemapped on the way (a step holding values up to 8.0 keeps several times more
-distinct tone levels than a raw blit, which crushes the bright end). **To see it: the shipped "Render Steps" example**, or the `steps demo` node in
-`projects/dev`.
+**The design.** A sampler named `u_step_<name>` IS a render step; its body is
+`void step_<name>(out vec4 o)` in the same shader. **Comments carry no meaning anywhere** — that was
+a maintainer decision, and the rework that enforced it deleted a whole class of typo-detection the
+earlier comment-based design had needed. Each step's target (scale, format, filter, edge, and what
+happens to it on recompile) is node state with working defaults, edited by combos in the Steps rows
+and saved to `node.json`.
 
-**The one thing owed: a visual check.** The panel was verified by driving the real app loop headless
-(section draws, a float step pins and tonemaps, node switch clears the pin, a stale pin self-heals),
-but layout and aesthetics cannot be confirmed without a display — this box has no WM. Run `make run`,
-open the "Render Steps" example, and judge the Steps rows.
+**What works.** The engine compiles one program per step from the one source, orders them by what the
+DRIVER reports each variant reads, evaluates each once per frame into its own target, and hands a
+self-reading step its previous frame (ping-pong, no pair to manage). The Node panel shows a **Steps**
+section — a row per step with a live thumbnail, what it reads, and its target's combos; clicking a
+thumbnail retargets the big preview to that step, tonemapping float targets on the way. **To see it:
+the shipped "Render Steps" example**, or the `steps demo` node in `projects/dev`.
 
-**Deliberately absent (`04_surface_spec.md` S2):** the panel edits a step's TARGET, never the
-chain's STRUCTURE. No add/delete-step buttons, no drag-to-reorder, no renaming — which steps exist
-and what each reads is introspected from the shader, and a widget editing those would have to write
-back into GLSL text, making a second author of the same fact.
+**The one thing owed: a visual check.** Verified by driving the real app loop headless; layout and
+aesthetics cannot be judged without a display, and this box has no WM. `ai_docs/todo.md` carries the
+entry with what to look at.
+
+**Deliberately absent (`04_surface_spec.md` S2):** the panel edits a step's TARGET, never the chain's
+STRUCTURE. No add/delete-step buttons, no drag-to-reorder, no renaming — which steps exist and what
+each reads is introspected from the shader, and a widget editing those would have to write back into
+GLSL text, making a second author of the same fact.
 
 **Release state:** `dev` is ahead of `master` (still v0.25.1); dev->master happens at ship time via
 `/ship`. **Last known-public itch build is v0.21.0.** **No open BLOCKERs.**

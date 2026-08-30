@@ -1,6 +1,9 @@
 # 064 — The engine seam: implementation spec
 
-**Status: PLAN-LOCKED (maintainer delegated the review: "I will not review the spec manually, but
+**Status: LANDED** (all of D1-D16 implemented, reviewed to convergence, gates green). D1/D2 were
+rewritten mid-feature when the seam changed — see `02_decision.md`'s first section.
+
+**Originally plan-locked as:** (maintainer delegated the review: "I will not review the spec manually, but
 you should implement it for the sake of a robust process").** Anchor: `00_scenario.md` R1-R10.
 Seam decision + why: `02_decision.md`.
 
