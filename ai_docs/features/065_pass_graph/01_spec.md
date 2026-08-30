@@ -1,6 +1,8 @@
 # 065 — The pass graph: specification
 
-**Status: DRAFT, awaiting plan-lock.** Anchor for facts: `00_facts.md` (six-agent round, verified by
+**Status: PLAN-LOCKED.** Reviewed by three agents (completeness, adversarial design, cold-start);
+D10b, D11, D12, D15 and D16 were added or corrected in response, and the verification list was made
+falsifiable. Nothing implemented — start at stage 1 of the implementation order. Anchor for facts: `00_facts.md` (six-agent round, verified by
 hand where load-bearing). Predecessor: `064_multistep/` — built, reverted (`34f6d19`), kept for the
 record of what was tried and what it cost.
 
@@ -270,7 +272,8 @@ lesson is that the surface should be judged against a working engine, not design
 **Nothing is migrated.** Maintainer decision: build from scratch.
 
 - The five shipped examples in `shaderbox/resources/node_examples/` are re-authored by hand as
-  single-pass documents. They are the app's first-run content and the examples browser's contents,
+  single-pass documents. (A sixth, "Render Steps", shipped 064's syntax and was deleted with the
+  rest of the residue.) They are the app's first-run content and the examples browser's contents,
   so they cannot simply be dropped.
 - `projects/dev/` is the maintainer's sandbox; its nodes are re-authored or discarded at the
   maintainer's discretion, and the tree is committed in the same wave per the sandbox rule.
@@ -309,7 +312,7 @@ Untouched, verified design-independent: the exporters (they consume a `RenderedA
 GL-free, and the one-node assumption lives at the `render_job.py` CALL SITE), `shader_lib/` and the
 resolver, `shader_errors.py`, `model_salvage.py`, `ui_primitives.py`/`theme.py`.
 
-**Scale, honestly:** ~1,970 case-insensitive `node` mentions across 62 package files, with
+**Scale, honestly:** 871 case-insensitive `node` mentions across 56 package files, with
 `copilot/backend.py` (442), `project_session.py` (259) and `app.py` (179) heaviest. The rename
 itself is mechanical; the expensive part is the ~10 sites where "node" is load-bearing SEMANTICS —
 current-node, checkpoint unit, script key, working-set member, export unit — each of which must

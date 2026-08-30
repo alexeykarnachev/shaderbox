@@ -1,6 +1,8 @@
 # 064 — Multi-step nodes: the superset scenario
 
-**Status: DRAFT, awaiting maintainer sign-off.** Nothing downstream may start until this is signed.
+**Status: HISTORICAL.** The scenario and its R1-R10 are still the right requirements and 065 is
+measured against them, but 064's answer to them was reverted (`34f6d19`). Current work:
+`ai_docs/features/065_pass_graph/`.
 
 This document exists to be the **anchor**. It defines ONE scenario chosen to be a superset of the
 effect family ShaderBox is for, and derives a numbered requirement list from it. Every downstream

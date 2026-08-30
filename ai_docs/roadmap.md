@@ -34,9 +34,10 @@ against, including three corrections to claims made earlier in the work.
 
 **What happened to 064.** It shipped a multi-pass engine where every pass was a function inside ONE
 shader file. The maintainer used it and rejected the shape: *"we need the genuine separate shader;
-everything clamped inside a single shader is a fucking mess."* Reverted in `34f6d19`; nine bug fixes
-it surfaced were kept (float targets, the silent export corruption, the GL leak, both salvage
-layers, the stale-thumbnail mark, the resolver anchor).
+everything clamped inside a single shader is a fucking mess."* Reverted in `34f6d19`; five commits' worth of bug
+fixes it surfaced were kept — float targets and dtype-aware export, the raw-texture round-trip and
+the GL leak, the resolver `#line` anchor, per-key and per-row model salvage, and the
+stale-thumbnail mark.
 
 **What 065 is.** A **document** holds several **passes** forming a DAG. Each pass is its own `.glsl`
 file with its own `main()` and its own render target; one pass is the document's output. A project
@@ -44,7 +45,8 @@ holds several documents, as it holds several nodes today.
 
 **"Node" is retired from the domain.** It has meant both the document you open and the thing that
 renders, and that collision is what pushed back on every attempt to add a second render unit. The
-rename is part of the feature, not a follow-up: 871 mentions across 56 of 114 package files.
+rename is part of the feature, not a follow-up: 871 mentions across 56 of 114 package files and 47
+of 82 test files.
 
 **Constraints already settled by the maintainer:** no migration, build from scratch; no comments
 carrying semantics (engine-level machinery only); each pass owns its uniforms, with no

@@ -192,20 +192,11 @@ roadmap-banner touch (if even that) + the cold-context glance is enough; for a f
 this is the orientation `arch.md` would have been. Reshaped by feature 017.)
 
 - **`core.py`** — `Canvas`, `Node`: GL program lifecycle, uniform introspection + binding,
-  render-to-texture, image/video export, and (feature 064) the multi-step chain — one program per
-  step compiled from the one source, per-step targets, ping-pong for a step that reads itself. Needs a live GL context. Imports `shader_lib` (compile-time
+  render-to-texture, image/video export. Needs a live GL context. Imports `shader_lib` (compile-time
   `#include` resolution) + `shader_errors`.
-- **`step_spec.py`** — multi-step nodes (feature 064), GL-free: finds a node's steps (a sampler
-  named `u_step_<name>`, whose body is `void step_<name>(out vec4 o)`), holds `StepConfig` (a step
-  target's scale/format/filter/edge/persist, defaulted), and orders steps topologically with
-  memoization. The edge set comes from the DRIVER — which step samplers GL reports active in each
-  compiled variant — not from scanning body text, which cannot see through a `#define` or a helper.
-- **`step_preview.py`** — tonemaps a float step target for display (Reinhard + sRGB). An `f1`
-  texture passes through untouched, so the final composite and every step-free node are unchanged.
-  Owns HOW a step is shown; `ui.py` owns WHEN.
-- **`widgets/step_list.py`** — the Steps section of the node panel: a row per step with a live
-  thumbnail, a click-to-pin that retargets the big preview, and combos editing that step's target.
-  Reads `Node.step_views()` (value objects) rather than the engine's private target state.
+
+
+
 - **`project_session.py`** — `ProjectSession`: the headless project + copilot CORE (paths, nodes,
   app_state, lib index + cross-project stores, integrations, the `CopilotSession`/`CopilotBackend`/
   `RevertExecutor` cluster). Creates no glfw window and no imgui context — a headless harness

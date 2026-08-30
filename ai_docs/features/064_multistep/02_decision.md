@@ -1,6 +1,7 @@
 # 064 — The UI/UX decision, and why
 
-**Status: DECIDED (maintainer: "proceed in the most logical and structurally correct and robust
+**Status: HISTORICAL.** Kept for the record of what was tried, why it was rejected, and the process
+lesson. Current work: `ai_docs/features/065_pass_graph/`.
 way"). Supersedes nothing; `00_scenario.md` R1-R10 remain the anchor.**
 
 Four UI/UX proposals were produced against `00_scenario.md` (saved verbatim in `design_round/`),

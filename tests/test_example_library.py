@@ -33,7 +33,6 @@ def test_catalogue_has_all_prefixed_unique_examples(app: Any) -> None:
         "Text Rendering",
         "Fire",
         "Night City",
-        "Render Steps",
     }
 
 

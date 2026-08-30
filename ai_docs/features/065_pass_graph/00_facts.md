@@ -293,5 +293,6 @@ turn-progress UI. It is NOT a render pass. Whatever the new unit is called, it m
 this, and "step" is now doubly spent — 064 used it, and the copilot uses it for something else.
 
 Counts for the rename decision: **871** case-insensitive `node` mentions across 56 of 114 package
-files; 50 of 80 test files; 142 in `ai_docs`. 17 classes are named `*Node*`, most unrelated
+files, and 47 of 82 test files. (The `ai_docs` figure quoted in an earlier draft was wrong; the
+measured number is ~2150 lines, most of it historical 064 prose rather than live architecture.) 17 classes are named `*Node*`, most unrelated
 (`NodeTab` is a UI region, `TreeNode` a file-tree widget, `EngineNode` a scripting protocol).
