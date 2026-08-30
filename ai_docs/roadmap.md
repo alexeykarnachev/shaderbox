@@ -27,8 +27,10 @@ feature; brief points at the superseder).
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
 <!-- As of 2026-08-30 (064 reverted; 065 pass-graph rework in the facts/spec stage). -->
-**ACTIVE: 065 pass graph — the multi-pass rework, at the facts stage. Nothing implemented.**
-Start at `ai_docs/features/065_pass_graph/00_facts.md`.
+**ACTIVE: 065 pass graph — spec drafted and reviewed, nothing implemented. Start at stage 1 of the
+implementation order.** Read `ai_docs/features/065_pass_graph/01_spec.md` (D1-D14, the on-disk
+shape, the nine-stage order); `00_facts.md` beside it is the verified evidence the spec was written
+against, including three corrections to claims made earlier in the work.
 
 **What happened to 064.** It shipped a multi-pass engine where every pass was a function inside ONE
 shader file. The maintainer used it and rejected the shape: *"we need the genuine separate shader;
@@ -36,10 +38,13 @@ everything clamped inside a single shader is a fucking mess."* Reverted in `34f6
 it surfaced were kept (float targets, the silent export corruption, the GL leak, both salvage
 layers, the stale-thumbnail mark, the resolver anchor).
 
-**What 065 is.** A document holds SEVERAL render passes forming a DAG. Each pass is its own shader
-file with its own `main()` and its own render target. The word "node" currently means both the
-document you open AND the thing that renders, and that collision is what pushed back on every
-attempt to add a second render unit — so a rename is in scope.
+**What 065 is.** A **document** holds several **passes** forming a DAG. Each pass is its own `.glsl`
+file with its own `main()` and its own render target; one pass is the document's output. A project
+holds several documents, as it holds several nodes today.
+
+**"Node" is retired from the domain.** It has meant both the document you open and the thing that
+renders, and that collision is what pushed back on every attempt to add a second render unit. The
+rename is part of the feature, not a follow-up: 871 mentions across 56 of 114 package files.
 
 **Constraints already settled by the maintainer:** no migration, build from scratch; no comments
 carrying semantics (engine-level machinery only); each pass owns its uniforms, with no
@@ -52,6 +57,7 @@ v0.21.0.** **No open BLOCKERs.**
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 065 | pass_graph | spec | A document holds several passes forming a DAG, each pass its own `.glsl` file with its own `main()` and render target; "node" is retired for `document` + `pass`. Spec drafted and reviewed, nothing implemented. Spec: `ai_docs/features/065_pass_graph/01_spec.md`. |
 | 064 | multistep | superseded | Multi-pass steps as functions inside ONE shader file. Built, reviewed to convergence, then REVERTED (`34f6d19`) when the maintainer used it: separate shader files per pass are what every surveyed tool does. Nine bug fixes it surfaced were kept. Superseder: `ai_docs/features/065_pass_graph/`. Spec: `ai_docs/features/064_multistep/02_decision.md`. |
 | 063 | radiance_cascades_gaps | done | Research-only wave (no code): can ShaderBox host radiance cascades, and what is actually missing — GPU capability all present and measured, the script-GL route proven unusable, the seam decision handed to 064. Spec: `ai_docs/features/063_radiance_cascades_gaps/README.md`. |
 | — | copilot_engine_tuning | done | reasoning effort=none engine knob (+30k turn budget: effort flag is ignored on compound asks — measured), user/engine config split with slots enforcement, final-reply token cap. Spec: commits 289c12f + 6ed3c4d + 779d4b2 + this wave. |
