@@ -114,6 +114,93 @@ not up: each pass needs its own target.
 exception and skips the whole directory. With N pass files, a document loads with the passes it can
 read and reports the ones it cannot.
 
+## The on-disk shape
+
+```
+projects/<project>/documents/<uuid>/
+    graph.json              app-written; the graph, the targets, the output choice
+    passes/<name>.glsl      one ordinary fragment shader per pass, its own main()
+    scripts/script.py       optional, one per DOCUMENT (D12)
+    media/<pass>/<uniform>.*        a sampler's bound media
+    textures/<pass>/<uniform>.bin   a raw texture bound to a sampler
+```
+
+**Media and textures are namespaced BY PASS.** Today they are flat per node, keyed by uniform name.
+With N passes in one directory, two passes reusing a uniform name would collide — a real bug the
+flat layout would produce silently.
+
+`graph.json`:
+
+```json
+{
+  "version": 1,
+  "output": "composite",
+  "passes": {
+    "scene":     { "inputs": {},
+                   "target": {"scale": 1.0, "dtype": "f2", "filter_linear": true,
+                              "wrap": false, "persist": false} },
+    "bright":    { "inputs": {"u_src": "scene"},
+                   "target": {"scale": 0.5, "dtype": "f2", "filter_linear": true,
+                              "wrap": false, "persist": false} },
+    "trail":     { "inputs": {"u_src": "scene", "u_prev": "trail"},
+                   "target": {"scale": 1.0, "dtype": "f2", "filter_linear": true,
+                              "wrap": false, "persist": true} },
+    "composite": { "inputs": {"u_lit": "scene", "u_glow": "bright", "u_trail": "trail"},
+                   "target": {"scale": 1.0, "dtype": "f1", "filter_linear": true,
+                              "wrap": false, "persist": false} }
+  },
+  "layout": {"scene": {"x": 0, "y": 0}, "bright": {"x": 200, "y": -60}}
+}
+```
+
+Reading it: `inputs` maps THIS pass's sampler uniform name to the pass that fills it, so
+`"u_prev": "trail"` inside `trail` is feedback. `output` names the pass the preview and export show.
+`layout` is cosmetic and separate, so losing it never costs the effect — freska's split, which it
+got right. A pass file with no entry in `passes` gets defaults; an entry naming a file that does not
+exist is reported and skipped.
+
+**Everything in `graph.json` is derived, app-written state**, exactly as `node.json` is today. It is
+never hand-authored, so per-key salvage (`model_salvage.py`) applies: a malformed pass entry costs
+that pass, never the document.
+
+## Implementation order
+
+Each stage leaves the tree green and is verifiable on its own.
+
+1. **`pass_graph.py`** — the graph model plus topological order, cycle detection and feedback
+   marking. GL-free, pure data, fully unit-testable. **The memoization invariant is asserted on every
+   plan the test module builds** (D5); this bug has shipped twice in this repo and tests caught it
+   neither time.
+2. **`Pass`** — split out of `Node`: source, program, target, uniforms, compile, draw. Verified by
+   rendering one pass headlessly, which is what today's `Node` already does.
+3. **`Document`** — owns the passes, the graph, the output, the script hook, export. Chain evaluation
+   lands here. Verified by a two-pass chain and a feedback pass rendering correct pixels.
+4. **Persistence** — `graph.json` load/save with per-key salvage, plus the pass-namespaced media
+   layout. Verified by a round-trip and a hostile-file battery.
+5. **The rename** — `node` -> `document`/`pass` across the package, on-disk paths, and the tests. Its
+   own commit, mechanical, no behaviour change.
+6. **Editor and hot reload** — a `pass` tab kind, per-pass recompile (D8), `watch.py` generalised off
+   its privileged index 0.
+7. **The panel** — the pass list with inputs and target config.
+8. **The copilot** — the fourth address kind, and the working set learning to show a document's
+   passes with per-pass errors.
+9. **Content** — the shipped examples and the dev sandbox, re-authored by hand in the new shape.
+
+Stages 1-4 are the engine and can be built and tested with no UI at all. That is deliberate: 064's
+lesson is that the surface should be judged against a working engine, not designed alongside one.
+
+## What happens to today's data
+
+**Nothing is migrated.** Maintainer decision: build from scratch.
+
+- The five shipped examples in `shaderbox/resources/node_examples/` are re-authored by hand as
+  single-pass documents. They are the app's first-run content and the examples browser's contents,
+  so they cannot simply be dropped.
+- `projects/dev/` is the maintainer's sandbox; its nodes are re-authored or discarded at the
+  maintainer's discretion, and the tree is committed in the same wave per the sandbox rule.
+- **An empty project must start.** Verify this early — `App._init` seeds a starter example on first
+  run, and that path must work with the new format before anything else can be tested by hand.
+
 ## What is deliberately NOT in this feature
 
 - **A spatial graph editor.** The graph is edited as a list of passes with their inputs. A canvas UI
