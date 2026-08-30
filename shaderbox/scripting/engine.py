@@ -5,7 +5,7 @@ Per node it resolves a single `nodes/<id>/scripts/script.py` (the node script) w
 `update(self, ctx) -> dict[str, value]` drives MANY uniforms from ONE stateful instance. The engine
 compiles it once (cached by `(path, mtime)`, holding its own state instance), and on each `tick` calls
 `update`, fans the returned dict into `(name, value)` pairs, coerces each against the live uniform, and
-writes it into `node.uniform_values` BEFORE `Node.render()` reads them. A broken script never raises
+writes it into the pass's `uniform_values` BEFORE `Pass.render()` reads them. A broken script never raises
 into the frame loop: the uniform freezes at last-good and a `ScriptError` is recorded.
 
 Play/stop (048): the live tick takes a `stopped: set[str]` of uniform NAMES the user has frozen for
@@ -13,8 +13,10 @@ manual edit — a stopped name still ticks the script (state advances, the name 
 WRITE is skipped, so the manual value sticks. Export ticks a fresh per-export instance with NO stopped
 set (an export always plays the script).
 
-The engine imports no imgui/glfw/App and no concrete `Node` type — it works against the `EngineNode`
+The engine imports no imgui/glfw/App and no concrete type — it works against the `EngineNode`
 protocol (the `uniform_values` dict + `get_active_uniforms()`), so it stays in the 025 headless core.
+Under 065 that protocol is satisfied by a `Pass`, which is where uniforms live; callers hand it
+`ui_node.node.render_pass`.
 """
 
 from collections.abc import Iterable
@@ -91,7 +93,7 @@ def is_scriptable(uniform: object) -> TypeGuard[moderngl.Uniform]:
 
 
 class EngineNode(Protocol):
-    # The slice of Node the engine touches — nothing GL-program-specific.
+    # The slice of a render pass the engine touches — nothing GL-program-specific.
     uniform_values: dict[str, Any]
 
     def get_active_uniforms(
@@ -372,7 +374,7 @@ class ScriptEngine:
         ctx: EngineContext,
         stopped: frozenset[str] = frozenset(),
     ) -> None:
-        # Tick the LIVE script: it writes node.uniform_values[name] before Node.render() reads it. A
+        # Tick the LIVE script: it writes node.uniform_values[name] before Pass.render() reads it. A
         # name in `stopped` (the user froze it for manual edit, 048) still ticks the script + counts as
         # driven, but its WRITE is skipped so the manual value sticks. A runtime/shape error freezes
         # the uniform at last-good and records a ScriptError; the frame always continues.

@@ -2,7 +2,7 @@
 
 **Status: PLAN-LOCKED.** Reviewed by three agents (completeness, adversarial design, cold-start);
 D10b, D11, D12, D15 and D16 were added or corrected in response, and the verification list was made
-falsifiable. Stage 1 (`pass_graph.py`) is landed; start at stage 2. Anchor for facts: `00_facts.md` (six-agent round, verified by
+falsifiable. Stages 1-2 are landed; start at stage 3. Anchor for facts: `00_facts.md` (six-agent round, verified by
 hand where load-bearing). Predecessor: `064_multistep/` — built, reverted (`34f6d19`), kept for the
 record of what was tried and what it cost.
 
@@ -250,8 +250,12 @@ Each stage leaves the tree green and is verifiable on its own.
    plan the test module builds** (D5) AND inside `evaluation_order`, the function the renderer calls;
    this bug has shipped twice in this repo and tests caught it neither time. Landed with a mutation
    battery: each guarantee's falsifier is a mutant the suite kills.
-2. **`Pass`** — split out of `Node`: source, program, target, uniforms, compile, draw. Verified by
-   rendering one pass headlessly, which is what today's `Node` already does.
+2. **`Pass`** — DONE. Split out of `Node`: source, program, target, uniforms, compile, draw, in
+   `core.py`; `Node` moved to `document.py` with the document concerns and holds one `Pass` as
+   `render_pass`. Verified by rendering a bare pass headlessly (`tests/test_pass_render.py`), and
+   verification check 1 passes byte-exactly against the pre-split engine. An unconfigured pass keeps
+   the 8-bit canvas: `TargetConfig`'s `f2` (D9) is what a pass IN A GRAPH gets, and applying it
+   universally would reformat every document's canvas that the export path reads as 8-bit.
 3. **`Document`** — owns the passes, the graph, the output, the script hook, export. Chain evaluation
    lands here. Verified by a two-pass chain and a feedback pass rendering correct pixels.
 4. **Persistence** — `graph.json` load/save with per-key salvage, plus the pass-namespaced media

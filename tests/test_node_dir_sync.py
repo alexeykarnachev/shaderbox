@@ -36,7 +36,7 @@ def test_added_dir_appears(app: Any) -> None:
     app.session.sync_nodes_from_disk()
 
     assert new_id in app.ui_nodes
-    assert app.ui_nodes[new_id].node.program is not None  # warm-compiled
+    assert app.ui_nodes[new_id].node.render_pass.program is not None  # warm-compiled
 
 
 def test_half_written_dir_does_not_crash(app: Any) -> None:
@@ -84,12 +84,18 @@ def test_removed_current_dir_reselects(app: Any) -> None:
 
 def test_changed_node_json_reloads(app: Any) -> None:
     target = EXAMPLE_ORDER[1]
-    assert tuple(app.ui_nodes[target].node.canvas.texture.size) != (123, 123)
+    assert tuple(app.ui_nodes[target].node.render_pass.canvas.texture.size) != (
+        123,
+        123,
+    )
     _bump_node_json(app.paths.nodes_dir / target)
 
     app.session.sync_nodes_from_disk()
 
-    assert tuple(app.ui_nodes[target].node.canvas.texture.size) == (123, 123)
+    assert tuple(app.ui_nodes[target].node.render_pass.canvas.texture.size) == (
+        123,
+        123,
+    )
 
 
 def test_quiet_frame_is_a_noop(app: Any) -> None:

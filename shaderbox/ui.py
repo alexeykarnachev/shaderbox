@@ -171,7 +171,7 @@ def update_and_draw(app: App) -> None:
     # Check for per-node shader file changes (root + every prepended lib file).
     for name in list(app.ui_nodes.keys()):
         ui_node = app.ui_nodes[name]
-        if not ui_node.node.source.path.exists():
+        if not ui_node.node.render_pass.source.path.exists():
             # Degenerate frame (a node's shader file vanished): nothing draws/swaps, so the cue
             # can't paint — but a parked copilot render must still fire to unblock its waiting
             # worker, or the turn stalls until the op times out.
@@ -207,7 +207,7 @@ def update_and_draw(app: App) -> None:
     if app.current_node_id in app.ui_nodes:
         ui_node = app.ui_nodes[app.current_node_id]
         preview_size = adjust_size(
-            ui_node.node.canvas.texture.size, width=SIZE.PREVIEW_W
+            ui_node.node.render_pass.canvas.texture.size, width=SIZE.PREVIEW_W
         )
 
         app.preview_canvas.set_size(preview_size)
@@ -513,7 +513,7 @@ def _draw_app_panel(app: App) -> None:
             avail.y - control_panel_min_height - 10,
         )
         max_image_width = avail.x
-        image_aspect = np.divide(*ui_node.node.canvas.texture.size)
+        image_aspect = np.divide(*ui_node.node.render_pass.canvas.texture.size)
         image_width = min(max_image_width, max_image_height * image_aspect)
         image_height = min(max_image_height, max_image_width / image_aspect)
 
@@ -521,7 +521,7 @@ def _draw_app_panel(app: App) -> None:
         # surfaces in the editor pane strip.
         img_min = imgui.get_cursor_screen_pos()
         imgui.image_with_bg(
-            imgui.ImTextureRef(ui_node.node.canvas.texture.glo),
+            imgui.ImTextureRef(ui_node.node.render_pass.canvas.texture.glo),
             image_size=(image_width, image_height),
             uv0=(0, 1),
             uv1=(1, 0),

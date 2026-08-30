@@ -146,12 +146,14 @@ def test_create_node_from_source_does_not_touch_starter_example(
     agent_source = "void main() { gl_FragColor = vec4(1.0); }\n"
     new_node = load_node_from_dir(starter)
     new_node.reset_id()
-    new_node.node.release_program(agent_source)  # sets source.text, NOT a disk write
+    new_node.node.render_pass.release_program(
+        agent_source
+    )  # sets source.text, NOT a disk write
     saved_dir = new_node.save(tmp_path)
 
     assert starter_shader.read_bytes() == before, "starter example was clobbered"
     assert (saved_dir / "shader.frag.glsl").read_text() == agent_source
-    assert new_node.node.source.path == saved_dir / "shader.frag.glsl"
+    assert new_node.node.render_pass.source.path == saved_dir / "shader.frag.glsl"
 
 
 def test_create_node_compiles_and_surfaces_errors(gl_ctx: moderngl.Context) -> None:
@@ -162,16 +164,18 @@ def test_create_node_compiles_and_surfaces_errors(gl_ctx: moderngl.Context) -> N
 
     # Full broken source -> compile surfaces errors.
     broken = load_node_from_dir(starter)
-    broken.node.release_program("void main() { this is not glsl }\n")
-    broken.node.compile()
-    assert broken.node.compile_unit.errors, (
+    broken.node.render_pass.release_program("void main() { this is not glsl }\n")
+    broken.node.render_pass.compile()
+    assert broken.node.render_pass.compile_unit.errors, (
         "broken source should produce compile errors"
     )
 
     # Empty source -> the starter's own (clean) program compiles clean.
     starter_node = load_node_from_dir(starter)
-    starter_node.node.compile()
-    assert not starter_node.node.compile_unit.errors, "starter must compile clean"
+    starter_node.node.render_pass.compile()
+    assert not starter_node.node.render_pass.compile_unit.errors, (
+        "starter must compile clean"
+    )
 
 
 def _id_stub(ids: list[str]) -> types.SimpleNamespace:

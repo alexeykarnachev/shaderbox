@@ -80,8 +80,10 @@ def draw_resolution_details(
     details.width = new_width
     details.height = new_height
 
-    full_w, full_h = ui_node.node.canvas.texture.size
-    half_w, half_h = adjust_size(ui_node.node.canvas.texture.size, max_size=512)
+    full_w, full_h = ui_node.node.render_pass.canvas.texture.size
+    half_w, half_h = adjust_size(
+        ui_node.node.render_pass.canvas.texture.size, max_size=512
+    )
 
     row_label(app.font_12, "Presets")
     if ghost_button(f"{full_w}x{full_h}") or not details.width or not details.height:
@@ -101,7 +103,7 @@ def draw_media_details(
     aspect = None
 
     if ui_node := app.ui_nodes.get(app.current_node_id):
-        aspect = np.divide(*ui_node.node.canvas.texture.size)
+        aspect = np.divide(*ui_node.node.render_pass.canvas.texture.size)
 
     output_type_name = "video" if details.is_video else "image"
     options = ["video", "image"]

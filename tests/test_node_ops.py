@@ -34,7 +34,7 @@ def test_set_canvas_size_applies_and_clamps(app: Any) -> None:
     node_id = app.current_node_id
     res = app.copilot_backend.set_canvas_size(node_id, 128, 200)
     assert res.ok and (res.width, res.height) == (128, 200)
-    assert app.ui_nodes[node_id].node.canvas.texture.size == (128, 200)
+    assert app.ui_nodes[node_id].node.render_pass.canvas.texture.size == (128, 200)
     # Clamp both ends.
     clamped = app.copilot_backend.set_canvas_size(node_id, 99999, 4)
     assert (clamped.width, clamped.height) == (4096, 16)
@@ -52,14 +52,16 @@ def test_duplicate_node_forks_independently(app: Any) -> None:
     fork_id = next(i for i, n in app.ui_nodes.items() if n.ui_state.ui_name == "Fork")
     assert fork_id != app.current_node_id  # switch_to=False -> current unchanged
     # Editing the fork does not touch the original.
-    original_src = app.ui_nodes[app.current_node_id].node.source.text
+    original_src = app.ui_nodes[app.current_node_id].node.render_pass.source.text
     app.copilot_backend.apply_shader_edit(
         "void main",
         "void main /*fork*/",
         False,
         app.copilot_backend._copilot_short_ids()[fork_id],
     )
-    assert app.ui_nodes[app.current_node_id].node.source.text == original_src
+    assert (
+        app.ui_nodes[app.current_node_id].node.render_pass.source.text == original_src
+    )
 
 
 def test_unknown_node_rejects(app: Any) -> None:
@@ -85,7 +87,7 @@ def _stub_with_starter(project: Path) -> tuple[types.SimpleNamespace, str]:
     # node-op methods touch (bridge inlined, checkpoint None).
     node = load_node_from_dir(NODE_EXAMPLES_DIR / STARTER_EXAMPLE_ID)
     node.reset_id()
-    node.node.compile()
+    node.node.render_pass.compile()
     node.save(project)  # rebinds source.path into project/nodes/<id>/
     nodes: dict[str, UINode] = {node.id: node}
     current = {"id": node.id}
@@ -117,7 +119,10 @@ def test_backend_rename_and_canvas_run(
     assert ren.ok and stub._get_ui_nodes()[node_id].ui_state.ui_name == "Aurora"
     cv = CopilotBackend.set_canvas_size.__get__(stub)("", 320, 99999)
     assert (cv.width, cv.height) == (320, 4096)
-    assert stub._get_ui_nodes()[node_id].node.canvas.texture.size == (320, 4096)
+    assert stub._get_ui_nodes()[node_id].node.render_pass.canvas.texture.size == (
+        320,
+        4096,
+    )
 
 
 def test_backend_duplicate_forks(gl_ctx: moderngl.Context, tmp_path: Path) -> None:

@@ -12,7 +12,7 @@ from uuid import uuid4
 from loguru import logger
 
 from shaderbox.constants import DEFAULT_FPS
-from shaderbox.core import Node
+from shaderbox.document import Node
 from shaderbox.exporters.base import RenderedArtifact
 from shaderbox.media import MediaDetails
 from shaderbox.render_preset import RenderPreset

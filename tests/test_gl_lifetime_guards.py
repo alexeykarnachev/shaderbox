@@ -12,7 +12,8 @@ import moderngl
 import pytest
 
 from shaderbox.copilot.checkpoint import TurnCheckpoint
-from shaderbox.core import Canvas, Node
+from shaderbox.core import Canvas
+from shaderbox.document import Node
 from shaderbox.paths import NODE_SCRIPT_BASENAME, shader_lib_root
 from shaderbox.shader_lib import ShaderLibIndex, set_active
 
@@ -44,8 +45,8 @@ def test_node_release_frees_the_canvas(gl: moderngl.Context) -> None:
     # The one test naming Node.release checks only the uniform-values half, so dropping
     # `self.canvas.release()` leaked a texture + FBO per reload with the suite still green.
     node, _ = Node.load_from_dir(_EXAMPLE)
-    texture = node.canvas.texture
-    fbo = node.canvas.fbo
+    texture = node.render_pass.canvas.texture
+    fbo = node.render_pass.canvas.fbo
 
     node.release()
 
@@ -56,12 +57,20 @@ def test_node_release_frees_the_canvas(gl: moderngl.Context) -> None:
 def test_invalidate_frees_the_program_and_its_buffers(gl: moderngl.Context) -> None:
     # invalidate() runs on every hot-reload and every lib change; leaking here leaks per edit.
     node, _ = Node.load_from_dir(_EXAMPLE)
-    assert node.program is not None
-    program, vbo, vao = node.program, node.vbo, node.vao
+    assert node.render_pass.program is not None
+    program, vbo, vao = (
+        node.render_pass.program,
+        node.render_pass.vbo,
+        node.render_pass.vao,
+    )
 
-    node.invalidate()
+    node.render_pass.invalidate()
 
-    assert node.program is None and node.vbo is None and node.vao is None
+    assert (
+        node.render_pass.program is None
+        and node.render_pass.vbo is None
+        and node.render_pass.vao is None
+    )
     assert _released(program), "the GL program outlived invalidate()"
     for name, obj in (("vbo", vbo), ("vao", vao)):
         if obj is not None:
@@ -120,10 +129,14 @@ def test_node_release_frees_uniform_held_media(gl: moderngl.Context) -> None:
     # The 060 fix, pinned from the other side: the uniform values own textures/captures, and
     # every reload releases the node.
     node, _ = Node.load_from_dir(_EXAMPLE)
-    held = [v for v in node.uniform_values.values() if isinstance(v, moderngl.Texture)]
+    held = [
+        v
+        for v in node.render_pass.uniform_values.values()
+        if isinstance(v, moderngl.Texture)
+    ]
 
     node.release()
 
-    assert node.uniform_values == {}
+    assert node.render_pass.uniform_values == {}
     for texture in held:
         assert _released(texture), "a uniform-held texture outlived Node.release()"

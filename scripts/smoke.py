@@ -205,17 +205,17 @@ def main() -> int:
             # value sticks) while u_a stays driven AND the un-stopped u_b still advances. A dead
             # `stopped` wire would keep writing u_a and green-wash the play/stop model.
             script_node_obj = app.ui_nodes["script_node"].node
-            script_node_obj.uniform_values["u_a"] = -999.0
-            b_before = script_node_obj.uniform_values["u_b"]
+            script_node_obj.render_pass.uniform_values["u_a"] = -999.0
+            b_before = script_node_obj.render_pass.uniform_values["u_b"]
             app.session.set_uniform_stopped("script_node", "u_a", True)
             app.session.tick(["script_node"], t=1.0, dt=0.5, frame=999)
-            assert script_node_obj.uniform_values["u_a"] == -999.0, (
+            assert script_node_obj.render_pass.uniform_values["u_a"] == -999.0, (
                 "smoke: a stopped uniform was overwritten — the tick(stopped=) skip is unwired"
             )
             assert "u_a" in engine.script_driven_uniforms("script_node"), (
                 "smoke: a stopped uniform fell out of the driven set (its play button would vanish)"
             )
-            assert script_node_obj.uniform_values["u_b"] != b_before, (
+            assert script_node_obj.render_pass.uniform_values["u_b"] != b_before, (
                 "smoke: the un-stopped u_b did not advance while u_a was stopped — the stop is "
                 "freezing the whole script, not just the one uniform"
             )

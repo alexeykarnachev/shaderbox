@@ -17,7 +17,7 @@ from pathlib import Path
 import moderngl
 import pytest
 
-from shaderbox.core import Node
+from shaderbox.document import Node
 from shaderbox.media import MediaDetails, ResolutionDetails
 from shaderbox.scripting import EngineContext, ScriptEngine
 
@@ -51,8 +51,8 @@ def gl_ctx() -> Iterator[moderngl.Context]:
 
 def _node(gl: moderngl.Context, src: str = _SRC) -> Node:
     node = Node(gl=gl)
-    node.release_program(src)
-    node.compile()
+    node.render_pass.release_program(src)
+    node.render_pass.compile()
     node.render(u_time=0.0)  # warm-up so get_active_uniforms is populated
     return node
 
@@ -64,7 +64,7 @@ def _write_script(scripts_dir: Path, body: str) -> None:
 
 
 def _pixel(node: Node) -> tuple[int, int, int, int]:
-    data = node.canvas.texture.read()
+    data = node.render_pass.canvas.texture.read()
     return tuple(data[:4])  # type: ignore[return-value]
 
 
@@ -97,16 +97,16 @@ def test_script_value_reaches_gpu(gl_ctx: moderngl.Context, tmp_path: Path) -> N
     _write_script(scripts_dir, _WAVE_SCRIPT)
     node = _node(gl_ctx)
     eng = ScriptEngine()
-    eng.reload("n", scripts_dir, node)
+    eng.reload("n", scripts_dir, node.render_pass)
 
-    eng.tick("n", node, EngineContext(t=0.0, dt=0.0, frame=0))
-    assert abs(node.uniform_values["u_wave"] - 0.5) < 1e-6
-    assert node.uniform_values["u_offset"] == (0.25, 0.75)
+    eng.tick("n", node.render_pass, EngineContext(t=0.0, dt=0.0, frame=0))
+    assert abs(node.render_pass.uniform_values["u_wave"] - 0.5) < 1e-6
+    assert node.render_pass.uniform_values["u_offset"] == (0.25, 0.75)
     node.render(u_time=0.0)
     px_a = _pixel(node)
 
     eng.tick(
-        "n", node, EngineContext(t=1.5708, dt=0.0, frame=1)
+        "n", node.render_pass, EngineContext(t=1.5708, dt=0.0, frame=1)
     )  # sin(pi/2)=1 -> u_wave≈1.0
     node.render(u_time=1.5708)
     px_b = _pixel(node)
@@ -157,12 +157,14 @@ def test_script_shape_mismatch_freezes_and_records(
         "        return {'u_wave': Vec3(0.1, 0.2, 0.3)}\n",  # vec3 into a float uniform
     )
     node = _node(gl_ctx)
-    node.seed_uniform_values()
-    seeded = node.uniform_values.get("u_wave")
+    node.render_pass.seed_uniform_values()
+    seeded = node.render_pass.uniform_values.get("u_wave")
     eng = ScriptEngine()
-    eng.reload("n", scripts_dir, node)
-    eng.tick("n", node, EngineContext(t=0.0, dt=0.0, frame=0))
-    assert node.uniform_values.get("u_wave") == seeded  # frozen, not corrupted
+    eng.reload("n", scripts_dir, node.render_pass)
+    eng.tick("n", node.render_pass, EngineContext(t=0.0, dt=0.0, frame=0))
+    assert (
+        node.render_pass.uniform_values.get("u_wave") == seeded
+    )  # frozen, not corrupted
     assert eng.errors[("n", "u_wave")].kind == "runtime"
 
     with contextlib.suppress(Exception):
@@ -179,28 +181,32 @@ def test_fresh_export_instance_renders_clean(
     _write_script(scripts_dir, _RAMP_SCRIPT)
     node = _node(gl_ctx)
     eng = ScriptEngine()
-    eng.reload("n", scripts_dir, node)
+    eng.reload("n", scripts_dir, node.render_pass)
 
     # Cold-start reference: a fresh instance, one tick at frame 0.
     cold = eng.fresh_behavior_for("n")
     assert cold is not None
-    eng.tick_export("n", node, EngineContext(t=0.0, dt=1 / 60, frame=0), cold)
+    eng.tick_export(
+        "n", node.render_pass, EngineContext(t=0.0, dt=1 / 60, frame=0), cold
+    )
     node.render(u_time=0.0)
     px_cold = _pixel(node)
 
     # Warm the LIVE instance well past the ramp's wrap.
     for i in range(120):
-        eng.tick("n", node, EngineContext(t=i / 60, dt=1 / 60, frame=i))
-    live_wave = node.uniform_values["u_wave"]
+        eng.tick("n", node.render_pass, EngineContext(t=i / 60, dt=1 / 60, frame=i))
+    live_wave = node.render_pass.uniform_values["u_wave"]
 
     # A fresh export instance must reproduce the cold value, not the warmed one.
     fresh = eng.fresh_behavior_for("n")
     assert fresh is not None
-    eng.tick_export("n", node, EngineContext(t=0.0, dt=1 / 60, frame=0), fresh)
+    eng.tick_export(
+        "n", node.render_pass, EngineContext(t=0.0, dt=1 / 60, frame=0), fresh
+    )
     node.render(u_time=0.0)
     px_export = _pixel(node)
     assert px_export == px_cold
-    assert node.uniform_values["u_wave"] != live_wave
+    assert node.render_pass.uniform_values["u_wave"] != live_wave
 
     with contextlib.suppress(Exception):
         node.release()
@@ -218,7 +224,7 @@ def test_render_media_auto_enters_export_isolation(
     _write_script(scripts_dir, _RAMP_SCRIPT)
     node = _node(gl_ctx)
     eng = ScriptEngine()
-    eng.reload("n", scripts_dir, node)
+    eng.reload("n", scripts_dir, node.render_pass)
 
     entered = {"count": 0}
 
@@ -229,7 +235,7 @@ def test_render_media_auto_enters_export_isolation(
         fresh = eng.fresh_behavior_for("n")
         assert fresh is not None
         node.on_pre_render = lambda t, dt, f: eng.tick_export(
-            "n", node, EngineContext(t=t, dt=dt, frame=f), fresh
+            "n", node.render_pass, EngineContext(t=t, dt=dt, frame=f), fresh
         )
         try:
             yield
@@ -237,24 +243,24 @@ def test_render_media_auto_enters_export_isolation(
             node.on_pre_render = live_hook
 
     node.on_pre_render = lambda t, dt, f: eng.tick(
-        "n", node, EngineContext(t=t, dt=dt, frame=f)
+        "n", node.render_pass, EngineContext(t=t, dt=dt, frame=f)
     )
     node.export_isolation = _isolation
 
     # Warm the live instance well past the ramp wrap.
     for i in range(120):
-        eng.tick("n", node, EngineContext(t=i / 60, dt=1 / 60, frame=i))
-    live_wave = node.uniform_values["u_wave"]
+        eng.tick("n", node.render_pass, EngineContext(t=i / 60, dt=1 / 60, frame=i))
+    live_wave = node.render_pass.uniform_values["u_wave"]
 
     out = tmp_path / "out.png"
-    cw, ch = node.canvas.texture.size
+    cw, ch = node.render_pass.canvas.texture.size
     details = MediaDetails(
         is_video=False, resolution_details=ResolutionDetails(width=cw, height=ch)
     )
     details.file_details.path = str(out)
     node.render_media(details)
     assert entered["count"] == 1, "render_media did not enter export_isolation"
-    assert node.uniform_values["u_wave"] != live_wave
+    assert node.render_pass.uniform_values["u_wave"] != live_wave
     assert out.exists()
 
     with contextlib.suppress(Exception):
@@ -288,17 +294,20 @@ def test_script_int_uniforms_reach_gpu_not_popped(
         "        return {'u_i': 2.7, 'u_count': 4.2, 'u_iv': Vec2(1.6, 2.4)}\n",
     )
     node = Node(gl=gl_ctx)
-    node.release_program(_INT_SRC)
-    node.compile()
+    node.render_pass.release_program(_INT_SRC)
+    node.render_pass.compile()
     node.render(u_time=0.0)
     eng = ScriptEngine()
-    eng.reload("n", scripts_dir, node)
-    eng.tick("n", node, EngineContext(t=0.0, dt=0.0, frame=0))
+    eng.reload("n", scripts_dir, node.render_pass)
+    eng.tick("n", node.render_pass, EngineContext(t=0.0, dt=0.0, frame=0))
     node.render(u_time=0.0)
     # If a write raised, render's except pops the value — these reads would be missing.
-    assert node.uniform_values["u_i"] == 3
-    assert node.uniform_values["u_count"] == 4
-    assert node.uniform_values["u_iv"] == (2, 2)  # round(1.6)=2, round(2.4)=2
+    assert node.render_pass.uniform_values["u_i"] == 3
+    assert node.render_pass.uniform_values["u_count"] == 4
+    assert node.render_pass.uniform_values["u_iv"] == (
+        2,
+        2,
+    )  # round(1.6)=2, round(2.4)=2
     assert not any(k[0] == "n" for k in eng.errors)
 
     with contextlib.suppress(Exception):
@@ -316,13 +325,15 @@ def test_script_drives_two_uniforms_to_gpu_and_export_clean(
     _write_script(scripts_dir, _RAMP_SCRIPT)
     node = _node(gl_ctx)
     eng = ScriptEngine()
-    eng.reload("n", scripts_dir, node)
+    eng.reload("n", scripts_dir, node.render_pass)
 
     # Cold-start reference: a fresh instance, one tick at frame 0.
     cold = eng.fresh_behavior_for("n")
     assert cold is not None
-    eng.tick_export("n", node, EngineContext(t=0.0, dt=1 / 60, frame=0), cold)
-    assert node.uniform_values["u_offset"] == (
+    eng.tick_export(
+        "n", node.render_pass, EngineContext(t=0.0, dt=1 / 60, frame=0), cold
+    )
+    assert node.render_pass.uniform_values["u_offset"] == (
         0.25,
         0.75,
     )  # both driven from one script
@@ -331,8 +342,8 @@ def test_script_drives_two_uniforms_to_gpu_and_export_clean(
 
     # Warm the LIVE instance past the ramp wrap.
     for i in range(120):
-        eng.tick("n", node, EngineContext(t=i / 60, dt=1 / 60, frame=i))
-    live_wave = node.uniform_values["u_wave"]
+        eng.tick("n", node.render_pass, EngineContext(t=i / 60, dt=1 / 60, frame=i))
+    live_wave = node.render_pass.uniform_values["u_wave"]
     node.render(u_time=2.0)
     px_warm = _pixel(node)
     assert px_warm[0] != px_cold[0], "scripted u_wave did not reach the GPU"
@@ -340,10 +351,12 @@ def test_script_drives_two_uniforms_to_gpu_and_export_clean(
     # A fresh export instance reproduces the cold pixel, NOT the warmed value.
     fresh = eng.fresh_behavior_for("n")
     assert fresh is not None
-    eng.tick_export("n", node, EngineContext(t=0.0, dt=1 / 60, frame=0), fresh)
+    eng.tick_export(
+        "n", node.render_pass, EngineContext(t=0.0, dt=1 / 60, frame=0), fresh
+    )
     node.render(u_time=0.0)
     assert _pixel(node) == px_cold
-    assert node.uniform_values["u_wave"] != live_wave
+    assert node.render_pass.uniform_values["u_wave"] != live_wave
 
     with contextlib.suppress(Exception):
         node.release()

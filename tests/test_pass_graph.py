@@ -175,9 +175,7 @@ def test_evaluation_order_asserts_the_plan_it_was_handed(
         feedback=good.feedback,
         unresolved_inputs=good.unresolved_inputs,
     )
-    monkeypatch.setattr(
-        pass_graph, "plan_passes", lambda _graph: (doubled, [])
-    )
+    monkeypatch.setattr(pass_graph, "plan_passes", lambda _graph: (doubled, []))
     with pytest.raises(AssertionError, match="appears twice"):
         evaluation_order(graph, "top")
 

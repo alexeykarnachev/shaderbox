@@ -38,7 +38,7 @@ def _draw_auto_row(app: App, uniforms: list[UIUniform]) -> None:
             app, u.name, name_w, text_color=COLOR.STATE_INFO, accent=COLOR.STATE_INFO
         )
         imgui.same_line(spacing=float(SPACE.MD))
-        value = ui_node.node.uniform_values.get(u.name)
+        value = ui_node.node.render_pass.uniform_values.get(u.name)
         imgui.text_colored(COLOR.FG_DIM, format_auto_value(value))
     imgui.pop_font()
 
@@ -58,15 +58,15 @@ def draw(app: App) -> None:
         (3440, 1440),
     ]
 
-    cw, ch = ui_node.node.canvas.texture.size
+    cw, ch = ui_node.node.render_pass.canvas.texture.size
     current_size: tuple[int, int] = (cw, ch)
 
     uniform_resolutions = []
     matching_uniforms = []
     uniform_sizes = set()
-    for uniform in ui_node.node.get_active_uniforms():
+    for uniform in ui_node.node.render_pass.get_active_uniforms():
         if getattr(uniform, "gl_type", None) == GL_SAMPLER_2D:
-            value = ui_node.node.uniform_values[uniform.name]
+            value = ui_node.node.render_pass.uniform_values[uniform.name]
 
             w, h = value.texture.size
             if (w, h) == current_size:
@@ -107,7 +107,7 @@ def draw(app: App) -> None:
     new_res_idx = imgui.combo("##resolution", 0, resolution_items)[1]
     if new_res_idx != 0:
         w, h = resolution_sizes[new_res_idx]
-        ui_node.node.canvas.set_size((w, h))
+        ui_node.node.render_pass.canvas.set_size((w, h))
         app.notifications.push(
             f"Canvas resolution changed: {resolution_items[new_res_idx]}"
         )
@@ -121,7 +121,7 @@ def draw(app: App) -> None:
 
     active_uniform_hashes = []
     auto_hashes = []
-    for uniform in ui_node.node.get_active_uniforms():
+    for uniform in ui_node.node.render_pass.get_active_uniforms():
         if (
             uniform.name in TABLE_UNIFORMS
         ):  # engine glyph tables — pure machinery, no row

@@ -1,7 +1,7 @@
 """Library of reusable GLSL helpers, auto-resolved by identifier.
 
 `set_active(index)` / `active()` hold module-level state for the loaded
-`ShaderLibIndex`; `App` rebuilds on mtime change, `Node.compile()` reads `active()`.
+`ShaderLibIndex`; `App` rebuilds on mtime change, `Pass.compile()` reads `active()`.
 Single-process GUI app — no concurrency concern.
 
 A shader calls `SB_perlin_noise_3(...)` directly (no `#include`); on compile the host

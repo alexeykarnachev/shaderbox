@@ -5,7 +5,7 @@ the transitive closure over the lib call graph, topo-sorts it, and splices the
 needed function bodies into a preamble after the shader's `#version`/`#extension`
 header — emitting `#line N M` directives so driver errors remap back to source.
 
-Pure functions, no GL, no imgui. `Node.compile()` is the single integration site.
+Pure functions, no GL, no imgui. `Pass.compile()` is the single integration site.
 """
 
 import difflib

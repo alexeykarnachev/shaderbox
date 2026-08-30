@@ -24,7 +24,7 @@ os.environ.setdefault("MESA_GLSL_VERSION_OVERRIDE", "460")
 
 import moderngl
 
-from shaderbox.core import Node
+from shaderbox.document import Node
 from shaderbox.media import FileDetails, MediaDetails, ResolutionDetails, texture_to_pil
 from shaderbox.paths import shader_lib_root
 from shaderbox.scripting.outputs import normalize_output
@@ -62,17 +62,19 @@ def _apply_driven(node: Node, driven: dict[str, object]) -> None:
     # Coerce each script output into the program-ready shape exactly as the live engine does
     # (normalize the typed output, then chunk a vecN[M]/array per the live Uniform) — core.render
     # writes uniform_values straight to the program without coercing, so this must mirror it.
-    if not node.program:
-        node.compile()
-    uniforms = {u.name: u for u in node.get_active_uniforms()}
+    if not node.render_pass.program:
+        node.render_pass.compile()
+    uniforms = {u.name: u for u in node.render_pass.get_active_uniforms()}
     for name, val in driven.items():
         normalized = normalize_output(val)
         uniform = uniforms.get(name)
         if uniform is None:
-            node.uniform_values[name] = normalized
+            node.render_pass.uniform_values[name] = normalized
             continue
         coerced = coerce_uniform_value(normalized, uniform)
-        node.uniform_values[name] = normalized if coerced is None else coerced
+        node.render_pass.uniform_values[name] = (
+            normalized if coerced is None else coerced
+        )
 
 
 def _apply_script_at(node: Node, node_dir: str, t: float) -> None:
@@ -90,10 +92,10 @@ def _apply_script_at(node: Node, node_dir: str, t: float) -> None:
 
 def render_image(node_dir: str, out_path: str, t: float, size: int) -> None:
     node = _load(node_dir)
-    node.canvas.set_size((size, size))
+    node.render_pass.canvas.set_size((size, size))
     _apply_script_at(node, node_dir, t)
-    node.render(u_time=t, canvas=node.canvas)
-    texture_to_pil(node.canvas.texture).save(out_path)
+    node.render(u_time=t, canvas=node.render_pass.canvas)
+    texture_to_pil(node.render_pass.canvas.texture).save(out_path)
     print(f"wrote {out_path} ({size}x{size}, t={t})")
 
 
@@ -103,7 +105,7 @@ def render_video(
     if not out_path.endswith(".mp4"):
         raise SystemExit("offscreen deliverable must be .mp4 (WebM won't play on iPad)")
     node = _load(node_dir)
-    node.canvas.set_size((size, size))
+    node.render_pass.canvas.set_size((size, size))
 
     # A bare Node has no ProjectSession, so nothing wires on_pre_render — without it render_media's
     # per-frame loop never ticks the script and the sim stays frozen at its __init__ state. Wire a

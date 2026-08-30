@@ -83,7 +83,7 @@ def _locate_uniform_declaration(app: App, name: str) -> tuple[Path, int] | None:
             return session.source.path, line
     if ui_node := app.ui_nodes.get(app.current_node_id):
         active_path = session.source.path if session is not None else None
-        for source in ui_node.node.compile_unit.sources:
+        for source in ui_node.node.render_pass.compile_unit.sources:
             if source.path == active_path:
                 continue
             line = find_uniform_declaration_line(source.text, name)
@@ -174,7 +174,9 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
     if not (ui_node := app.ui_nodes.get(app.current_node_id)):
         return
 
-    current_value: UniformValue = ui_node.node.uniform_values[ui_uniform.name]
+    current_value: UniformValue = ui_node.node.render_pass.uniform_values[
+        ui_uniform.name
+    ]
     new_value = None
     name = ui_uniform.name
     hidden = f"##{name}"
@@ -308,4 +310,4 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
     # written back here (the tick wins); a stopped/manual slot's edit always applies.
     if new_value is not None and not playing:
         try_to_release(current_value)
-        ui_node.node.uniform_values[ui_uniform.name] = new_value
+        ui_node.node.render_pass.uniform_values[ui_uniform.name] = new_value

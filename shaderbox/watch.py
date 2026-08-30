@@ -11,7 +11,7 @@ from shaderbox.ui_models import UINode
 def reload_node_if_changed(app: App, name: str, ui_node: UINode) -> None:
     # sources[0] is the root (resolve_includes seeds it first); sources[1:] are lib
     # files in first-seen order. Root and lib reloads differ — see inline.
-    for i, src in enumerate(ui_node.node.compile_unit.sources):
+    for i, src in enumerate(ui_node.node.render_pass.compile_unit.sources):
         path = src.path
         if not path.exists():
             continue
@@ -24,12 +24,16 @@ def reload_node_if_changed(app: App, name: str, ui_node: UINode) -> None:
             logger.debug(f"Reloading node {name} (root shader changed)")
             try:
                 new_text = path.read_text()
-                ui_node.node.release_program(new_text)
-                ui_node.node.source = replace(ui_node.node.source, mtime=disk_mtime)
+                ui_node.node.render_pass.release_program(new_text)
+                ui_node.node.render_pass.source = replace(
+                    ui_node.node.render_pass.source, mtime=disk_mtime
+                )
                 app.sync_editor_from_disk(name, new_text)
             except Exception as e:
                 logger.error(f"Failed to reload node {name}: {e}")
-                ui_node.node.source = replace(ui_node.node.source, mtime=disk_mtime)
+                ui_node.node.render_pass.source = replace(
+                    ui_node.node.render_pass.source, mtime=disk_mtime
+                )
             # release_program() rebuilt `sources` — stop iterating the stale list.
             return
 
@@ -37,8 +41,10 @@ def reload_node_if_changed(app: App, name: str, ui_node: UINode) -> None:
         # include. If an open session's text diverges from disk, re-sync (external edit);
         # if it matches, the user saved in-app — don't clobber their undo history.
         logger.debug(f"Reloading node {name} (lib changed: {path.name})")
-        ui_node.node.compile_unit.sources[i] = replace(src, mtime=disk_mtime)
-        ui_node.node.invalidate()
+        ui_node.node.render_pass.compile_unit.sources[i] = replace(
+            src, mtime=disk_mtime
+        )
+        ui_node.node.render_pass.invalidate()
         session = app.editor_sessions.get(path)
         if session is not None:
             try:
@@ -73,6 +79,6 @@ def maybe_rebuild_lib_index(app: App) -> bool:
     # Invalidate every node that pulled in a lib file so its next render recompiles
     # against the new index (a referenced function may have changed or disappeared).
     for ui_node in app.ui_nodes.values():
-        if len(ui_node.node.compile_unit.sources) > 1:
-            ui_node.node.invalidate()
+        if len(ui_node.node.render_pass.compile_unit.sources) > 1:
+            ui_node.node.render_pass.invalidate()
     return True

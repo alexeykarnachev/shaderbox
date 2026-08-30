@@ -78,7 +78,8 @@ from shaderbox.copilot.errors import CopilotToolError
 from shaderbox.copilot.gate import GateChannel, GateKind, GateRequest
 from shaderbox.copilot.glsl_lex import span_drops_comment, token_match
 from shaderbox.copilot.sanitize import sanitize_display
-from shaderbox.core import ENGINE_DRIVEN_UNIFORMS, Canvas, Node
+from shaderbox.core import ENGINE_DRIVEN_UNIFORMS, Canvas
+from shaderbox.document import Node
 from shaderbox.exporters.base import (
     AuthState,
     Exporter,
@@ -235,14 +236,14 @@ class _CopilotEditTarget:
 
 def _format_uniforms(node: Node, driven: set[str]) -> list[str]:
     # "name type = value" rows. Blocks have no scalar value. The shown value comes from the node's
-    # uniform_values cache (the same source tabs/node.py reads) — NOT live u.value, which Node.render()
+    # uniform_values cache (the same source tabs/node.py reads) — NOT live u.value, which Pass.render()
     # overwrites every frame, so a just-set_uniform value would read back stale and the agent loops.
     # Engine glyph tables are skipped outright: their u.value is ~14KB of stroke data the agent
     # can neither set nor learn from. A `driven` uniform shows a marker, not a phantom value: the
     # copilot path never ticks the script, so its uniform_values entry is the stale manual default —
     # showing it as a number contradicts the write that said the script drives it (feature 043).
     rows: list[str] = []
-    for u in node.get_active_uniforms():
+    for u in node.render_pass.get_active_uniforms():
         if u.name in TABLE_UNIFORMS:
             continue
         label = gl_type_label(u)
@@ -253,7 +254,7 @@ def _format_uniforms(node: Node, driven: set[str]) -> list[str]:
         elif label == "sampler2D":
             rows.append(f"{u.name} {label} <- {_sampler_binding(node, u.name)}")
         else:
-            value = node.uniform_values.get(u.name, u.value)
+            value = node.render_pass.uniform_values.get(u.name, u.value)
             rows.append(f"{u.name} {label} = {value}")
     return rows
 
@@ -261,7 +262,7 @@ def _format_uniforms(node: Node, driven: set[str]) -> list[str]:
 def _sampler_binding(node: Node, name: str) -> str:
     # What a sampler is bound to, for the working-set row. NEVER the source path (corollary-1: the abs
     # path is a model-visible leak); only "(no media bound)" for the default, else dims + kind.
-    value = node.uniform_values.get(name)
+    value = node.render_pass.uniform_values.get(name)
     if value is None or is_default_image(value):
         return "(no media bound)"
     if isinstance(value, MediaWithTexture):
@@ -495,7 +496,7 @@ class CopilotBackend:
             NodeTreeEntry(
                 node_id=short[nid],
                 name=ui_node.ui_state.ui_name,
-                has_errors=bool(ui_node.node.compile_unit.errors),
+                has_errors=bool(ui_node.node.render_pass.compile_unit.errors),
                 is_current=(nid == current),
             )
             for nid, ui_node in self._get_ui_nodes().items()
@@ -608,9 +609,9 @@ class CopilotBackend:
                     ui_node = self._get_ui_nodes()[full_id]
                     view_id = short[full_id]
                 node = ui_node.node
-                if node.program is None:
-                    node.compile()
-                text = node.source.text
+                if node.render_pass.program is None:
+                    node.render_pass.compile()
+                text = node.render_pass.source.text
                 if kind == "node":
                     self._working_set_add(full_id)
                 driven = (
@@ -624,7 +625,7 @@ class CopilotBackend:
                         name=ui_node.ui_state.ui_name,
                         listing=_number_lines(text),
                         uniforms=_format_uniforms(node, driven),
-                        errors=_to_error_infos(node.compile_unit.errors),
+                        errors=_to_error_infos(node.render_pass.compile_unit.errors),
                     )
                 )
             return views
@@ -678,8 +679,8 @@ class CopilotBackend:
         if ui_node is None:
             return None
         node = ui_node.node
-        if node.program is None:
-            node.compile()
+        if node.render_pass.program is None:
+            node.render_pass.compile()
         script_text, status = self._get_script_source_view(full_id)
         script_errors: list[CompileErrorInfo] = []
         if status is not None and status.sentinel_error is not None:
@@ -687,14 +688,14 @@ class CopilotBackend:
         return WorkingSetView(
             address=short.get(full_id, full_id),
             name=ui_node.ui_state.ui_name,
-            listing=_number_lines(node.source.text),
+            listing=_number_lines(node.render_pass.source.text),
             is_current=(full_id == current),
             is_lib=False,
             uniforms=_format_uniforms(node, self._get_script_driven_uniforms(full_id)),
-            errors=_to_error_infos(node.compile_unit.errors),
+            errors=_to_error_infos(node.render_pass.compile_unit.errors),
             script_listing=_number_lines(script_text) if script_text else "",
             script_errors=script_errors,
-            canvas=f"{node.canvas.texture.size[0]}x{node.canvas.texture.size[1]}",
+            canvas=f"{node.render_pass.canvas.texture.size[0]}x{node.render_pass.canvas.texture.size[1]}",
         )
 
     def _copilot_lib_working_view(self, address: str) -> WorkingSetView | None:
@@ -727,7 +728,9 @@ class CopilotBackend:
         hits: list[GrepHit] = []
         for node_id, ui_node in self._get_ui_nodes().items():
             label = f"node '{ui_node.ui_state.ui_name}'"
-            for i, line in enumerate(ui_node.node.source.text.split("\n"), start=1):
+            for i, line in enumerate(
+                ui_node.node.render_pass.source.text.split("\n"), start=1
+            ):
                 if query in line:
                     hits.append(
                         GrepHit(
@@ -740,7 +743,9 @@ class CopilotBackend:
         for tid, ui_node in self._get_ui_node_examples().items():
             origin = example_address(tid)
             label = f"example '{ui_node.ui_state.ui_name}'"
-            for i, line in enumerate(ui_node.node.source.text.split("\n"), start=1):
+            for i, line in enumerate(
+                ui_node.node.render_pass.source.text.split("\n"), start=1
+            ):
                 if query in line:
                     hits.append(
                         GrepHit(
@@ -819,7 +824,8 @@ class CopilotBackend:
                 )
             target = self._get_ui_nodes()[node_id].node
             uniform = next(
-                (u for u in target.get_active_uniforms() if u.name == name), None
+                (u for u in target.render_pass.get_active_uniforms() if u.name == name),
+                None,
             )
             if uniform is None:
                 return SetUniformResult(
@@ -840,8 +846,8 @@ class CopilotBackend:
                     ok=False, error=uniform_shape_hint(uniform, label, value)
                 )
             self._capture_node(node_id)  # pre-change rollback snapshot (best-effort)
-            try_to_release(target.uniform_values.get(name))
-            target.uniform_values[name] = coerced
+            try_to_release(target.render_pass.uniform_values.get(name))
+            target.render_pass.uniform_values[name] = coerced
             return SetUniformResult(
                 ok=True,
                 type_label=label,
@@ -876,13 +882,13 @@ class CopilotBackend:
         if source.strip():
             # release_program sets source.text; save_ui_node writes + rebinds source.path. Do NOT
             # write through source.path here — it still points at the shared starter example.
-            new_node.node.release_program(
+            new_node.node.render_pass.release_program(
                 source.replace("\r\n", "\n").replace("\r", "\n")
             )
         # Compile (GL, main-thread) BEFORE save so the persisted program matches the reported errors.
-        new_node.node.compile()
+        new_node.node.render_pass.compile()
         # source.path still points at the example dir here; save rebinds it.
-        pre_save_path = str(new_node.node.source.path)
+        pre_save_path = str(new_node.node.render_pass.source.path)
         self._save_ui_node(new_node)
         self._get_ui_nodes()[new_node.id] = new_node
         cp = self._get_active_checkpoint()
@@ -891,10 +897,10 @@ class CopilotBackend:
         if switch_to:
             self._set_current_node_id(new_node.id)
         self._working_set_add(new_node.id)
-        persisted_path = str(new_node.node.source.path)
+        persisted_path = str(new_node.node.render_pass.source.path)
         errors = [
             replace(e, path=persisted_path) if e.path == pre_save_path else e
-            for e in _to_error_infos(new_node.node.compile_unit.errors)
+            for e in _to_error_infos(new_node.node.render_pass.compile_unit.errors)
         ]
         logger.info(
             f"copilot created node {new_node.id} (switch_to={switch_to}, "
@@ -902,11 +908,13 @@ class CopilotBackend:
         )
         if errors:
             extra = "\n".join(
-                compile_hints(new_node.node.source.text, [e.message for e in errors])
+                compile_hints(
+                    new_node.node.render_pass.source.text, [e.message for e in errors]
+                )
             )
         else:
             extra = self._render_facts_for(new_node.node, motion=True)
-            self._last_clean[new_node.id] = new_node.node.source.text
+            self._last_clean[new_node.id] = new_node.node.render_pass.source.text
         # Short id, computed after insert so it's in the current id set.
         return self._copilot_short_ids()[new_node.id], errors, extra
 
@@ -992,7 +1000,7 @@ class CopilotBackend:
             h = max(_MIN_CANVAS_PX, min(_MAX_CANVAS_PX, height))
             ui_node = self._get_ui_nodes()[node_id]
             self._capture_node(node_id)  # pre-change rollback snapshot (best-effort)
-            ui_node.node.canvas.set_size((w, h))
+            ui_node.node.render_pass.canvas.set_size((w, h))
             self._save_ui_node(ui_node)
             logger.info(f"copilot set canvas of {node_id} -> {w}x{h}")
             return NodeOpResult(ok=True, width=w, height=h)
@@ -1012,13 +1020,13 @@ class CopilotBackend:
             self._save_ui_node(
                 source_node
             )  # persist live state so the load is a full copy
-            src_dir = source_node.node.source.path.parent
+            src_dir = source_node.node.render_pass.source.path.parent
             new_node = load_node_from_dir(src_dir)
             new_node.reset_id()
             name = new_name.strip() or f"{source_node.ui_state.ui_name} copy"
             new_node.ui_state.ui_name = name
-            new_node.node.compile()
-            pre_save_path = str(new_node.node.source.path)
+            new_node.node.render_pass.compile()
+            pre_save_path = str(new_node.node.render_pass.source.path)
             self._save_ui_node(new_node)
             self._get_ui_nodes()[new_node.id] = new_node
             cp = self._get_active_checkpoint()
@@ -1027,21 +1035,22 @@ class CopilotBackend:
             if switch_to:
                 self._set_current_node_id(new_node.id)
             self._working_set_add(new_node.id)
-            persisted_path = str(new_node.node.source.path)
+            persisted_path = str(new_node.node.render_pass.source.path)
             errors = [
                 replace(e, path=persisted_path) if e.path == pre_save_path else e
-                for e in _to_error_infos(new_node.node.compile_unit.errors)
+                for e in _to_error_infos(new_node.node.render_pass.compile_unit.errors)
             ]
             logger.info(f"copilot duplicated {node_id} -> {new_node.id} ({name!r})")
             if errors:
                 extra = "\n".join(
                     compile_hints(
-                        new_node.node.source.text, [e.message for e in errors]
+                        new_node.node.render_pass.source.text,
+                        [e.message for e in errors],
                     )
                 )
             else:
                 extra = self._render_facts_for(new_node.node, motion=True)
-                self._last_clean[new_node.id] = new_node.node.source.text
+                self._last_clean[new_node.id] = new_node.node.render_pass.source.text
             return self._copilot_short_ids()[new_node.id], errors, extra
 
         return self._bridge.run_on_main(_on_main)
@@ -1077,11 +1086,11 @@ class CopilotBackend:
             if node_id is None or node_id not in self._get_ui_nodes():
                 return "", f"no such node '{node}' — check the project map for ids"
             n = self._get_ui_nodes()[node_id].node
-            if n.program is None:
-                n.compile()
+            if n.render_pass.program is None:
+                n.render_pass.compile()
             samplers = [
                 u.name
-                for u in n.get_active_uniforms()
+                for u in n.render_pass.get_active_uniforms()
                 if gl_type_label(u) == "sampler2D"
             ]
             if uniform not in samplers:
@@ -1125,8 +1134,8 @@ class CopilotBackend:
             return MediaBindResult(
                 ok=False, error=f"could not load '{path.name}' ({type(exc).__name__})"
             )
-        try_to_release(ui_node.node.uniform_values.get(uniform))
-        ui_node.node.uniform_values[uniform] = media
+        try_to_release(ui_node.node.render_pass.uniform_values.get(uniform))
+        ui_node.node.render_pass.uniform_values[uniform] = media
         self._save_ui_node(ui_node)
         d = media.details
         logger.info(f"copilot bound media -> {node_id}.{uniform} ({path.name})")
@@ -1150,19 +1159,19 @@ class CopilotBackend:
                 )
             ui_node = self._get_ui_nodes()[node_id]
             n = ui_node.node
-            if n.program is None:
-                n.compile()
+            if n.render_pass.program is None:
+                n.render_pass.compile()
             is_sampler = any(
                 u.name == uniform and gl_type_label(u) == "sampler2D"
-                for u in n.get_active_uniforms()
+                for u in n.render_pass.get_active_uniforms()
             )
             if not is_sampler:
                 return MediaBindResult(
                     ok=False, error=f"'{uniform}' is not a sampler2D on this node"
                 )
             self._capture_node(node_id)
-            try_to_release(n.uniform_values.get(uniform))
-            n.uniform_values[uniform] = Image(DEFAULT_IMAGE_FILE_PATH)
+            try_to_release(n.render_pass.uniform_values.get(uniform))
+            n.render_pass.uniform_values[uniform] = Image(DEFAULT_IMAGE_FILE_PATH)
             self._save_ui_node(ui_node)
             logger.info(f"copilot unbound media on {node_id}.{uniform}")
             return MediaBindResult(ok=True)
@@ -1692,7 +1701,7 @@ class CopilotBackend:
             size = COPILOT_ENGINE.render_facts_size
             # Match the node's canvas aspect — a square probe would lay out
             # aspect-corrected shaders (u_aspect) differently from the preview.
-            cw, ch = node.canvas.texture.size
+            cw, ch = node.render_pass.canvas.texture.size
             h = min(4 * size, max(8, round(size * ch / cw))) if cw else size
             if self._probe_canvas is None:
                 self._probe_canvas = Canvas(size=(size, h))
@@ -1745,15 +1754,15 @@ class CopilotBackend:
         if not samples or not COPILOT_ENGINE.render_facts_enabled:
             return ""
         mid = samples[len(samples) // 2]
-        saved = node.uniform_values
+        saved = node.render_pass.uniform_values
         try:
-            node.uniform_values = {**saved, **mid[1]}
+            node.render_pass.uniform_values = {**saved, **mid[1]}
             return self._render_facts_for(node, t=mid[0])
         except Exception as exc:
             logger.debug(f"copilot script render facts skipped: {exc}")
             return ""
         finally:
-            node.uniform_values = saved
+            node.render_pass.uniform_values = saved
 
     def read_script(self, node: str, /) -> ScriptView:
         def _on_main() -> ScriptView:
@@ -1918,11 +1927,11 @@ class CopilotBackend:
         # Adopt new_text, recompile, persist, refresh the editor — the shared tail of every node edit.
         # sync_editor must key on `node_id` (the edit TARGET), not the current node, else a non-current
         # edit syncs the wrong session; it no-ops when the target has no open editor.
-        node.release_program(new_text)
-        node.compile()
-        node.source.path.write_text(new_text, encoding="utf-8")
+        node.render_pass.release_program(new_text)
+        node.render_pass.compile()
+        node.render_pass.source.path.write_text(new_text, encoding="utf-8")
         self._sync_editor_from_disk(node_id, new_text)
-        return _to_error_infos(node.compile_unit.errors)
+        return _to_error_infos(node.render_pass.compile_unit.errors)
 
     def _copilot_resolve_target(
         self, target: str, *, allow_create: bool
@@ -1970,7 +1979,7 @@ class CopilotBackend:
             kind="node",
             node_id=node_id,
             node=node,
-            source=node.source.text,
+            source=node.render_pass.source.text,
             ws_address=node_id,
             label=label,
         )
@@ -2028,7 +2037,8 @@ class CopilotBackend:
             # "Clean" requires a LIVE program: an invalidated compile_unit has
             # errors=[] without one (e.g. after a lib edit) and must not anchor.
             prev_clean = (
-                not tgt.node.compile_unit.errors and tgt.node.program is not None
+                not tgt.node.render_pass.compile_unit.errors
+                and tgt.node.render_pass.program is not None
             )
             errors = self._copilot_persist_shader(tgt.node_id, tgt.node, new_text)
             self._working_set_add(tgt.ws_address)
@@ -2043,7 +2053,9 @@ class CopilotBackend:
                     streak = self._broken_streak.get(tgt.node_id, 0) + 1
                 self._broken_streak[tgt.node_id] = streak
                 limit = COPILOT_CONFIG.auto_revert_after_failed_edits
-                hints = _edit_error_hints(tgt.node.source.path, new_text, errors)
+                hints = _edit_error_hints(
+                    tgt.node.render_pass.source.path, new_text, errors
+                )
                 if limit > 0 and streak >= limit:
                     if tgt.node_id in self._last_clean:
                         return self._force_restore(
@@ -2115,8 +2127,11 @@ class CopilotBackend:
             node = self._get_ui_nodes().get(address)
             if node is None:
                 continue
-            if any(s.path.resolve() == target for s in node.node.compile_unit.sources):
-                node.node.invalidate()
+            if any(
+                s.path.resolve() == target
+                for s in node.node.render_pass.compile_unit.sources
+            ):
+                node.node.render_pass.invalidate()
 
     def apply_full_rewrite(self, new_text: str, target: str) -> EditResult:
         # Whole-file rewrite/create. The removed-names fact makes a truncated rewrite

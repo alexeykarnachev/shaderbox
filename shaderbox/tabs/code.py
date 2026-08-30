@@ -179,14 +179,14 @@ def draw_chrome(app: App) -> None:
         imgui.text_colored(COLOR.FG_DIM, "No node selected")
         return
     if tab.kind == "shader":
-        full_file_path = ui_node.node.source.path
+        full_file_path = ui_node.node.render_pass.source.path
         local_file_path = full_file_path.relative_to(app.project_dir)
         if draw_copyable_text(str(local_file_path), copy_value=str(full_file_path)):
             app.notifications.push("Copied to clipboard!")
         if app.is_current_editor_dirty():
             imgui.same_line()
             imgui.text_colored(COLOR.STATE_WARN, "(unsaved)")
-        elif not ui_node.node.compile_unit.error_raw:
+        elif not ui_node.node.render_pass.compile_unit.error_raw:
             imgui.same_line()
             imgui.text_colored(COLOR.STATE_OK, "compiled")
         imgui.same_line(spacing=float(SPACE.LG))
@@ -221,7 +221,7 @@ def draw(app: App) -> None:
     session = app.editor_sessions.get(current_path)
     if session is None:
         session = (
-            app.get_session(ui_node.node.source)
+            app.get_session(ui_node.node.render_pass.source)
             if tab.kind == "shader"
             else app.open_shader_lib_file(current_path)
             if tab.kind == "lib"
@@ -235,7 +235,7 @@ def draw(app: App) -> None:
     errors = (
         _script_errors_for(app, tab)
         if tab.kind == "script"
-        else ui_node.node.compile_unit.errors
+        else ui_node.node.render_pass.compile_unit.errors
     )
     _apply_markers(editor, errors, app.editor_hover_line, current_path)
     app.editor_hover_line = None
@@ -332,8 +332,8 @@ def draw(app: App) -> None:
     # Cursor-following tooltip for words that are live uniforms; also lights up the panel row.
     if cursor_over_editor and editor.is_mouse_pos_over_glyph(imgui.get_mouse_pos()):
         word = editor.get_word_at_mouse_pos(imgui.get_mouse_pos())
-        if word in ui_node.node.uniform_values:
-            value = ui_node.node.uniform_values[word]
+        if word in ui_node.node.render_pass.uniform_values:
+            value = ui_node.node.render_pass.uniform_values[word]
             imgui.set_tooltip(f"{word}: {format_auto_value(value)}")
             app.code_hovered_uniform = word
 

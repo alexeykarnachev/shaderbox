@@ -461,7 +461,7 @@ class App:
         # editor session (path-keyed; the node's source.path is unchanged, only text/mtime).
         if node_id not in self.ui_nodes:
             return
-        path = self.ui_nodes[node_id].node.source.path
+        path = self.ui_nodes[node_id].node.render_pass.source.path
         session = self.editor_sessions.get(path)
         if session is None:
             return
@@ -546,7 +546,9 @@ class App:
         session = self.get_current_session_if_exists()
         if session is None or self.current_node_id not in self.ui_nodes:
             return
-        errors = self.ui_nodes[self.current_node_id].node.compile_unit.errors
+        errors = self.ui_nodes[
+            self.current_node_id
+        ].node.render_pass.compile_unit.errors
         if not errors:
             return
         caret = session.editor.get_current_cursor_position().line
@@ -1034,7 +1036,7 @@ class App:
         # shader, the pre-045 default. Other open tabs (scripts / libs / other nodes' shaders) stay.
         if node_id not in self.ui_nodes:
             return
-        path = self.ui_nodes[node_id].node.source.path
+        path = self.ui_nodes[node_id].node.render_pass.source.path
         self._focus_or_add_tab(EditorTab(path=path, kind="shader", node_id=node_id))
 
     def set_active_tab(self, index: int) -> None:
@@ -1129,7 +1131,7 @@ class App:
         node_id = self.current_node_id
         if not node_id or node_id not in self.ui_nodes:
             return None
-        return self.get_session(self.ui_nodes[node_id].node.source)
+        return self.get_session(self.ui_nodes[node_id].node.render_pass.source)
 
     def _apply_editor_settings_to(self, editor: text_edit.TextEditor) -> None:
         settings: EditorSettings = self.app_state.editor_settings
@@ -1177,11 +1179,14 @@ class App:
         # lib / script tab (or no current node — all nodes deleted, id "") falls to the disk-write
         # else (no `ui_nodes[node_id]` lookup, which would KeyError on the empty id).
         ui_node = self.ui_nodes.get(node_id)
-        if ui_node is not None and session.source.path == ui_node.node.source.path:
+        if (
+            ui_node is not None
+            and session.source.path == ui_node.node.render_pass.source.path
+        ):
             node = ui_node.node
             # Saving the node's own shader: replace its source, drop the program; the next
             # render's compile() picks up the new text + re-resolves.
-            node.release_program(text)
+            node.render_pass.release_program(text)
             # Re-render to bind a valid program — a freed program left GL-current crashes
             # the imgui renderer's restore (GLError 1281).
             node.render()

@@ -47,9 +47,11 @@ def test_save_without_a_live_program_keeps_the_values_on_disk(
     assert before, "the example must ship tuned values for this test to mean anything"
 
     # What the file watcher does on an external shader edit.
-    ui_node.node.release_program((node_dir / NODE_SHADER_BASENAME).read_text())
-    assert ui_node.node.program is None
-    assert ui_node.node.get_active_uniforms() == []
+    ui_node.node.render_pass.release_program(
+        (node_dir / NODE_SHADER_BASENAME).read_text()
+    )
+    assert ui_node.node.render_pass.program is None
+    assert ui_node.node.render_pass.get_active_uniforms() == []
 
     ui_node.save(node_dir.parent, node_dir.name)
 
@@ -64,9 +66,9 @@ def test_save_with_a_live_program_still_rebuilds_from_the_program(
     node_dir = tmp_path / "node"
     shutil.copytree(_EXAMPLE, node_dir)
     ui_node = load_node_from_dir(node_dir)
-    assert ui_node.node.program is not None
+    assert ui_node.node.render_pass.program is not None
 
-    ui_node.node.uniform_values["u_zoomout"] = 42.0
+    ui_node.node.render_pass.uniform_values["u_zoomout"] = 42.0
     ui_node.save(node_dir.parent, node_dir.name)
 
     assert _values(node_dir)["u_zoomout"] == 42.0

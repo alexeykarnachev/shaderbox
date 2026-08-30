@@ -46,13 +46,13 @@ def test_raw_texture_uniform_round_trips(
     ui_node = load_node_from_dir(node_dir)
 
     name = _SAMPLER
-    assert name in {u.name for u in ui_node.node.get_active_uniforms()}, (
+    assert name in {u.name for u in ui_node.node.render_pass.get_active_uniforms()}, (
         "the example must declare this sampler for the test to exercise the branch"
     )
 
     size = (4, 4)
     texture = gl.texture(size, 4, dtype=dtype)
-    ui_node.node.uniform_values[name] = texture
+    ui_node.node.render_pass.uniform_values[name] = texture
 
     ui_node.save(node_dir.parent, node_dir.name)
 
@@ -64,7 +64,7 @@ def test_raw_texture_uniform_round_trips(
     assert (node_dir / record["file_path"]).is_file()
 
     reloaded = load_node_from_dir(node_dir)
-    value = reloaded.node.uniform_values[name]
+    value = reloaded.node.render_pass.uniform_values[name]
     assert isinstance(value, moderngl.Texture)
     assert value.dtype == dtype
     assert tuple(value.size) == size
@@ -79,18 +79,18 @@ def test_float_texture_survives_values_outside_unorm(
     ui_node = load_node_from_dir(node_dir)
 
     name = _SAMPLER
-    assert name in {u.name for u in ui_node.node.get_active_uniforms()}, (
+    assert name in {u.name for u in ui_node.node.render_pass.get_active_uniforms()}, (
         "the example must declare this sampler for the test to exercise the branch"
     )
 
     payload = np.array([7.0, -2.0, 4.5, 1.0] * 4, dtype=np.float32)
     texture = gl.texture((2, 2), 4, data=payload.tobytes(), dtype="f4")
-    ui_node.node.uniform_values[name] = texture
+    ui_node.node.render_pass.uniform_values[name] = texture
 
     ui_node.save(node_dir.parent, node_dir.name)
     reloaded = load_node_from_dir(node_dir)
 
-    value = reloaded.node.uniform_values[name]
+    value = reloaded.node.render_pass.uniform_values[name]
     assert isinstance(value, moderngl.Texture)
     got = np.frombuffer(value.read(), dtype=np.float32)
     assert got[0] == pytest.approx(7.0)

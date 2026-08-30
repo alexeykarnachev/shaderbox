@@ -18,7 +18,7 @@ from typing import Any
 def test_restore_checkpoint_reverts_an_edited_node(app: Any) -> None:
     node_id = app.current_node_id
     node = app.ui_nodes[node_id].node
-    original = node.source.text
+    original = node.render_pass.source.text
 
     # Capture the pre-edit snapshot the way the backend does at an edit seam (rebind=False keeps
     # the live node's source.path on the project, not the snapshot dir — feature 020·30), then seal.
@@ -33,14 +33,14 @@ def test_restore_checkpoint_reverts_an_edited_node(app: Any) -> None:
 
     # Mutate on disk + in memory (mirrors a copilot edit landing).
     edited = original + "\n// copilot edit\n"
-    node.source.path.write_text(edited, encoding="utf-8")
-    node.release_program(edited)
+    node.render_pass.source.path.write_text(edited, encoding="utf-8")
+    node.render_pass.release_program(edited)
     app.copilot.checkpoints.seal()
 
     result = app.revert_executor.restore_checkpoint("turn_x")
 
     assert app.ui_nodes[node_id].ui_state.ui_name in result.restored_nodes
-    assert app.ui_nodes[node_id].node.source.text == original
+    assert app.ui_nodes[node_id].node.render_pass.source.text == original
     assert (
         app.copilot.checkpoints.get("turn_x") is None
     )  # dropped after a successful revert

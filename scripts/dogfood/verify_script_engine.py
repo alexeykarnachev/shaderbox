@@ -120,7 +120,7 @@ def main() -> int:
     luma_cold = _mean_luma(p_cold)
     for i in range(120):  # warm the LIVE instance well past the ramp's wrap
         h.session.tick(["scripted"], i / 60.0, 1.0 / 60.0, i)
-    live_wave = h.session.ui_nodes["scripted"].node.uniform_values["u_wave"]
+    live_wave = h.session.ui_nodes["scripted"].node.render_pass.uniform_values["u_wave"]
     p_export = h.export_at(0.0, "scripted")
     luma_export = _mean_luma(p_export)
     print(

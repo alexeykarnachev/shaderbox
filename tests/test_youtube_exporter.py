@@ -207,8 +207,11 @@ def test_size_gate_rejects_mismatched_artifact() -> None:
         class texture:
             size = node_canvas
 
-    class _Node:
+    class _Pass:
         canvas = _Canvas()
+
+    class _Node:
+        render_pass = _Pass()
 
     class _UINode:
         node = _Node()

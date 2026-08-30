@@ -52,7 +52,9 @@ def test_set_uniform_does_not_reject_a_non_script_uniform() -> None:
     # path; with no matching active uniform it returns the ordinary "no active uniform" error,
     # NOT the script-driven one — proving the reject is scoped to the script set.
     node = types.SimpleNamespace(
-        node=types.SimpleNamespace(get_active_uniforms=lambda: [])
+        node=types.SimpleNamespace(
+            render_pass=types.SimpleNamespace(get_active_uniforms=lambda: [])
+        )
     )
     stub = _stub({"u_wave"})  # u_wave is script-driven; u_x is not
     stub._get_ui_nodes = lambda: {"n0": node}

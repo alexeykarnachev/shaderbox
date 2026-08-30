@@ -83,7 +83,7 @@ def test_deleting_a_node_keeps_an_unrelated_tab_active(app: Any) -> None:
     # The sibling removal path: _on_node_deleted sweeps that node's tabs out of the list.
     # A lib tab the user is editing must stay active, not be swapped by an index shift.
     node_id = app.current_node_id
-    node_source = app.ui_nodes[node_id].node.source.path
+    node_source = app.ui_nodes[node_id].node.render_pass.source.path
     app.editor_tabs = [
         EditorTab(path=node_source, kind="shader", node_id=node_id),
         EditorTab(path=Path("/tmp/keep.glsl"), kind="lib"),

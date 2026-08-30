@@ -608,8 +608,8 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   terse `logger.info("copilot tool #N <name> -> ok")` line is for the console, the full args/result go to
   the trace, never spelled out in a log line. Revisit if a module genuinely needs its own format/sink
   (none does today). Spec: `021_logging_refactor.md`.
-- **`Node.render()` owns per-type uniform defaulting; a persist path SEEDS, it never relies on a prior
-  render.** A node's `uniform_values` dict is filled by `Node.seed_uniform_values()` (block → zero
+- **`Pass.render()` owns per-type uniform defaulting; a persist path SEEDS, it never relies on a prior
+  render.** A pass's `uniform_values` dict is filled by `Pass.seed_uniform_values()` (block → zero
   buffer, sampler → default `Image`, scalar/vector → `uniform.value`) — the single home for "default of
   a uniform of type X". `render()` calls it; so must any code that reads `uniform_values` for an active
   uniform without a guaranteed prior render — `UINode.save` does. A new persist/serialize path that
@@ -697,7 +697,7 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   (~30 ms @300px) but chokes on the INLINED alternative (the pre-032 glyph switch cost ~20 s of
   codegen), which is why tables exist at all. The plumbing: `scripts/gen_glyphs.py` emits
   `text/glyphs.glsl` (uniform declarations + readers) together with `shaderbox/glyph_tables.py`
-  (the packed values); `Node.compile()` writes them into any program that uses them;
+  (the packed values); `Pass.compile()` writes them into any program that uses them;
   `ENGINE_DRIVEN_UNIFORMS` keeps them off save/seed/UI/set_uniform. The shader-lib index
   extracts top-level `const`/`uniform` declarations as spliceable entries
   (`shader_lib/parser.py::DECL_SIG_RE`, one declarator per line). Small consts (an `SB_PI`)
@@ -705,7 +705,7 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   lib/table shader is mysteriously slow on one vendor only, check WHERE its table data lives
   first. Mesa's linker also constant-folds a compile-time-constant glyph index and TRIMS the
   uniform array's ACTIVE size to a prefix of the declaration (verified on Mesa 24.2.8/V3D:
-  `array_length` reports 1, a full-size `write` raises and the table stays zero) — `Node.compile()`
+  `array_length` reports 1, a full-size `write` raises and the table stays zero) — `Pass.compile()`
   clamps the table write to `array_length * element_size`. The deeper reason tables beat branches here:
   V3D defers final GPU codegen to the FIRST DRAW (it benchmarks up to ~13 register-allocation
   strategies then), so a big branchy `switch`/`if`-ladder pays its whole codegen as a one-time

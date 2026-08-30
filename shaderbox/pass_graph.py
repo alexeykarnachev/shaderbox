@@ -273,12 +273,16 @@ def assert_plan_invariants(plan: PassPlan, graph: PassGraph) -> None:
             f"{sorted(expected)}"
         )
         for dep in expected:
-            assert dep in position, f"'{name}' is ordered before its input '{dep}' is drawn"
+            assert dep in position, (
+                f"'{name}' is ordered before its input '{dep}' is drawn"
+            )
             assert position[dep] < position[name], (
                 f"'{name}' draws before its input '{dep}'"
             )
     for name in plan.feedback:
-        assert name in graph.passes, f"feedback names a pass that does not exist: '{name}'"
+        assert name in graph.passes, (
+            f"feedback names a pass that does not exist: '{name}'"
+        )
         assert name in graph.passes[name].inputs.values(), (
             f"'{name}' is marked feedback but wires no input to itself"
         )

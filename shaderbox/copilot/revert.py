@@ -89,7 +89,7 @@ class RevertExecutor:
             old.node.release()
         fresh = load_node_from_dir(node_dir)
         ui_nodes[node_id] = fresh
-        self._sync_editor_from_disk(node_id, fresh.node.source.text)
+        self._sync_editor_from_disk(node_id, fresh.node.render_pass.source.text)
 
     def restore_checkpoint(self, turn_id: str) -> RevertResult:
         # MAIN THREAD (the chat's Revert button, gated on not-in-flight). Rewind every node this

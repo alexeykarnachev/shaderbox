@@ -11,8 +11,9 @@ from pathlib import Path
 
 import moderngl
 import pytest
+from PIL import Image as PILImage
 
-from shaderbox.core import Node
+from shaderbox.document import Node
 from shaderbox.media import MediaDetails
 from shaderbox.render_job import render_for
 from shaderbox.render_preset import FitPolicy, RenderPreset, ResolutionPolicy
@@ -43,7 +44,7 @@ def node(gl_ctx: moderngl.Context) -> Iterator[Node]:
 def _image_details(node: Node, path: Path) -> MediaDetails:
     details = MediaDetails(is_video=False, duration=1.0)
     details.file_details.path = str(path)
-    w, h = node.canvas.texture.size
+    w, h = node.render_pass.canvas.texture.size
     details.resolution_details.width = w
     details.resolution_details.height = h
     return details
@@ -87,6 +88,35 @@ def test_render_for_respects_longest_edge(node: Node, tmp_path: Path) -> None:
     assert artifact is not None
     # Default canvas is 64x64; longest_edge=32 halves it (16-aligned → 32).
     assert max(artifact.size) <= 32
+
+
+_MAGENTA = """#version 460 core
+in vec2 vs_uv;
+out vec4 fs_color;
+void main() { fs_color = vec4(1.0, 0.0, 1.0, 1.0); }
+"""
+
+
+def test_an_off_size_export_renders_the_shader_not_a_blank(
+    node: Node, tmp_path: Path
+) -> None:
+    # A RENDER_AT_TARGET preset draws into a SCRATCH canvas, so the document must hand that
+    # canvas down to its pass. Asserting only the size passes on a fully transparent image:
+    # the resize runs either way, and a blank export is the exact shape of a dropped canvas.
+    node.render_pass.release_program(_MAGENTA)
+    node.render_pass.compile()
+    assert node.render_pass.compile_unit.errors == []
+    preset = RenderPreset(
+        is_video=False,
+        container=".png",
+        resolution_policy=ResolutionPolicy.LONGEST_EDGE,
+        longest_edge=32,
+        fit=FitPolicy.RENDER_AT_TARGET,
+    )
+    artifact = render_for(node, preset, duration=1.0, scratch_dir=tmp_path)
+    assert artifact is not None
+    pixel = PILImage.open(artifact.path).convert("RGBA").getpixel((0, 0))
+    assert pixel == (255, 0, 255, 255)
 
 
 def test_render_for_cleans_up_on_render_failure(

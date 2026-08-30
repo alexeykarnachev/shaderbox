@@ -22,7 +22,7 @@ from shaderbox.copilot.gate import (
     GateResponse,
 )
 from shaderbox.copilot.tools.registry import build_registry
-from shaderbox.core import Node
+from shaderbox.document import Node
 from shaderbox.media import is_default_image
 from shaderbox.ui_models import UINode
 from tests._caps import minimal_caps
@@ -133,9 +133,9 @@ def _sampler_stub(
     gl: moderngl.Context, project: Path
 ) -> tuple[types.SimpleNamespace, str]:
     node = Node(gl=gl)
-    node.release_program(_SAMPLER_SRC)
-    node.compile()
-    node.seed_uniform_values()
+    node.render_pass.release_program(_SAMPLER_SRC)
+    node.render_pass.compile()
+    node.render_pass.seed_uniform_values()
     ui = UINode(node=node, id="samplernode")
     ui.save(project)
     nodes = {ui.id: ui}
@@ -168,7 +168,7 @@ def test_bind_picked_media_binds_and_is_path_free(
     assert (outcome.width, outcome.height) == (8, 8)
     # The bind took: the sampler no longer holds the default.
     assert not is_default_image(
-        stub._get_ui_nodes()[node_id].node.uniform_values["u_image"]
+        stub._get_ui_nodes()[node_id].node.render_pass.uniform_values["u_image"]
     )
     # Corollary-1: the absolute path / sentinel dir is nowhere in the result.
     assert "SENTINEL_SECRET_DIR" not in str(outcome)
@@ -188,11 +188,11 @@ def test_unbind_resets_to_default(gl_ctx: moderngl.Context, tmp_path: Path) -> N
     PILImage.new("RGB", (8, 8), (0, 255, 0)).save(img_path)
     CopilotBackend.bind_picked_media.__get__(stub)(node_id, "u_image", img_path)
     node = stub._get_ui_nodes()[node_id].node
-    assert not is_default_image(node.uniform_values["u_image"])
+    assert not is_default_image(node.render_pass.uniform_values["u_image"])
 
     res = CopilotBackend.unbind_media.__get__(stub)("", "u_image")
     assert res.ok
-    assert is_default_image(node.uniform_values["u_image"])
+    assert is_default_image(node.render_pass.uniform_values["u_image"])
 
     # A non-sampler / unknown uniform rejects honestly.
     assert not CopilotBackend.unbind_media.__get__(stub)("", "u_nope").ok

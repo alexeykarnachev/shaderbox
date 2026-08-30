@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 
 from shaderbox.copilot.backend import _format_uniforms
-from shaderbox.core import Node
+from shaderbox.document import Node
 from shaderbox.media import Image, is_default_image
 from shaderbox.ui_models import UINode
 
@@ -52,8 +52,8 @@ def gl_ctx() -> Iterator[moderngl.Context]:
 def _node_from_source(gl: moderngl.Context, source: str) -> Node:
     # Mirror create_node's path: swap in source, compile, but DO NOT render.
     node = Node(gl=gl)
-    node.release_program(source)
-    node.compile()
+    node.render_pass.release_program(source)
+    node.render_pass.compile()
     return node
 
 
@@ -66,7 +66,9 @@ def test_save_seeds_scalar_uniforms_without_render(
     gl_ctx: moderngl.Context, tmp_path: Path
 ) -> None:
     node = _node_from_source(gl_ctx, _SCALAR_SRC)
-    assert "u_bg_color" not in node.uniform_values  # unseeded: no render happened
+    assert (
+        "u_bg_color" not in node.render_pass.uniform_values
+    )  # unseeded: no render happened
     ui_node = UINode(node=node, id="scalar")
     ui_node.save(tmp_path)  # pre-fix: KeyError: 'u_bg_color'
     reloaded, meta = Node.load_from_dir(tmp_path / "scalar", gl=gl_ctx)
@@ -90,7 +92,7 @@ def test_save_skips_default_sampler_and_reload_reseeds(
     reloaded, meta = Node.load_from_dir(tmp_path / "sampler", gl=gl_ctx)
     assert "u_image" not in meta["uniforms"]  # default sampler skipped
     assert is_default_image(
-        reloaded.uniform_values["u_image"]
+        reloaded.render_pass.uniform_values["u_image"]
     )  # re-seeded to default on load
     _teardown(node)
     _teardown(reloaded)
@@ -101,8 +103,8 @@ def test_save_persists_user_bound_sampler(
 ) -> None:
     # A user-BOUND sampler (non-default) IS persisted and round-trips as bound.
     node = _node_from_source(gl_ctx, _SAMPLER_SRC)
-    node.seed_uniform_values()
-    node.uniform_values["u_image"] = Image(
+    node.render_pass.seed_uniform_values()
+    node.render_pass.uniform_values["u_image"] = Image(
         np.zeros((8, 8, 3), dtype=np.uint8)
     )  # non-default
     ui_node = UINode(node=node, id="bound")
@@ -110,7 +112,7 @@ def test_save_persists_user_bound_sampler(
     assert (tmp_path / "bound" / "media" / "u_image.png").exists()
     reloaded, meta = Node.load_from_dir(tmp_path / "bound", gl=gl_ctx)
     assert "u_image" in meta["uniforms"]
-    assert not is_default_image(reloaded.uniform_values["u_image"])
+    assert not is_default_image(reloaded.render_pass.uniform_values["u_image"])
     _teardown(node)
     _teardown(reloaded)
 
@@ -118,10 +120,12 @@ def test_save_persists_user_bound_sampler(
 def test_sampler_awareness_row_default_vs_bound(gl_ctx: moderngl.Context) -> None:
     # Feature 052 slice 1: the working-set uniform row shows a sampler's binding, NOT a source path.
     node = _node_from_source(gl_ctx, _SAMPLER_SRC)
-    node.seed_uniform_values()
+    node.render_pass.seed_uniform_values()
     default_rows = _format_uniforms(node, set())
     assert any("u_image sampler2D <- (no media bound)" in r for r in default_rows)
-    node.uniform_values["u_image"] = Image(np.zeros((8, 8, 3), dtype=np.uint8))
+    node.render_pass.uniform_values["u_image"] = Image(
+        np.zeros((8, 8, 3), dtype=np.uint8)
+    )
     bound_rows = _format_uniforms(node, set())
     assert any("u_image sampler2D <- (8x8, image)" in r for r in bound_rows)
     # Corollary-1: no absolute path leaks into the row.
@@ -131,9 +135,9 @@ def test_sampler_awareness_row_default_vs_bound(gl_ctx: moderngl.Context) -> Non
 
 def test_seed_skips_engine_uniforms(gl_ctx: moderngl.Context) -> None:
     node = _node_from_source(gl_ctx, _SCALAR_SRC)
-    node.seed_uniform_values()
+    node.render_pass.seed_uniform_values()
     assert (
-        "u_aspect" not in node.uniform_values
+        "u_aspect" not in node.render_pass.uniform_values
     )  # engine-driven: valued only in render()
     _teardown(node)
 
@@ -144,12 +148,12 @@ def test_release_frees_uniform_held_resources(gl_ctx: moderngl.Context) -> None:
     # reloads on every external node.json touch. Falsifier: drop the uniform_values loop from
     # Node.release and the sampler's default Image keeps a live texture below.
     node = _node_from_source(gl_ctx, _SAMPLER_SRC)
-    node.seed_uniform_values()
-    image = node.uniform_values["u_image"]
+    node.render_pass.seed_uniform_values()
+    image = node.render_pass.uniform_values["u_image"]
     assert (
         image.texture is not None
     )  # touch it: the texture is created lazily on first access
 
     node.release()
-    assert not node.uniform_values  # dropped, not merely unreferenced
+    assert not node.render_pass.uniform_values  # dropped, not merely unreferenced
     assert image._texture is None  # the texture it owned was released, not leaked

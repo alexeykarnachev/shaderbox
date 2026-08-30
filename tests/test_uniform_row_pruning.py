@@ -50,7 +50,7 @@ def test_every_surviving_row_names_a_live_uniform(gl, tmp_path: Path) -> None:
     ui_node = load_node_from_dir(node_dir)
     ui_node.save(node_dir.parent, node_dir.name)
 
-    live = {u.name for u in ui_node.node.get_active_uniforms()}
+    live = {u.name for u in ui_node.node.render_pass.get_active_uniforms()}
     survivors = {row["name"] for row in _rows(node_dir).values()}
     assert survivors <= live, (
         f"rows describe uniforms the program lacks: {survivors - live}"
@@ -67,7 +67,7 @@ def test_a_retype_does_not_strand_the_old_row(gl, tmp_path: Path) -> None:
     )
     ui_node = load_node_from_dir(node_dir)
     # Stand in for the uniform draw loop, which is where rows are actually born.
-    for uniform in ui_node.node.get_active_uniforms():
+    for uniform in ui_node.node.render_pass.get_active_uniforms():
         ui_node.ui_state.ui_uniforms.setdefault(
             get_uniform_hash(uniform), UIUniform.from_uniform(uniform)
         )
@@ -101,8 +101,10 @@ def test_no_prune_without_a_live_program(gl, tmp_path: Path) -> None:
     node_dir = _copy(tmp_path, _TEXT_EXAMPLE)
     ui_node = load_node_from_dir(node_dir)
     before = _rows(node_dir)
-    ui_node.node.release_program((node_dir / NODE_SHADER_BASENAME).read_text())
-    assert ui_node.node.program is None
+    ui_node.node.render_pass.release_program(
+        (node_dir / NODE_SHADER_BASENAME).read_text()
+    )
+    assert ui_node.node.render_pass.program is None
 
     ui_node.save(node_dir.parent, node_dir.name)
     assert _rows(node_dir).keys() == before.keys()
@@ -135,7 +137,7 @@ def test_renaming_a_sampler_does_not_orphan_its_media_file(gl, tmp_path: Path) -
     for name in ("u_tex0", "u_tex1", "u_tex2"):
         (node_dir / NODE_SHADER_BASENAME).write_text(_SAMPLER_SHADER.format(name=name))
         ui_node = load_node_from_dir(node_dir)
-        ui_node.node.uniform_values[name] = _bind_image(tmp_path, name)
+        ui_node.node.render_pass.uniform_values[name] = _bind_image(tmp_path, name)
         ui_node.save(node_dir.parent, node_dir.name, rebind=False)
 
     on_disk = sorted(p.name for p in (node_dir / "media").iterdir())
@@ -154,7 +156,7 @@ def test_a_bound_sampler_keeps_its_file(gl, tmp_path: Path) -> None:
         json.dumps({"canvas_size": [64, 64], "uniforms": {}, "ui_state": {}})
     )
     ui_node = load_node_from_dir(node_dir)
-    ui_node.node.uniform_values["u_tex"] = _bind_image(tmp_path, "u_tex")
+    ui_node.node.render_pass.uniform_values["u_tex"] = _bind_image(tmp_path, "u_tex")
 
     ui_node.save(node_dir.parent, node_dir.name, rebind=False)
     ui_node.save(node_dir.parent, node_dir.name, rebind=False)  # idempotent

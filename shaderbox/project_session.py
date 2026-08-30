@@ -29,7 +29,8 @@ from shaderbox.copilot.llm.openrouter import OpenRouterLLMClient
 from shaderbox.copilot.persistence import archive_conversation
 from shaderbox.copilot.revert import RevertExecutor
 from shaderbox.copilot.session import CopilotSession
-from shaderbox.core import ENGINE_DRIVEN_UNIFORMS, Node
+from shaderbox.core import ENGINE_DRIVEN_UNIFORMS
+from shaderbox.document import Node
 from shaderbox.exporters.registry import ExporterRegistry
 from shaderbox.integrations import IntegrationsStore
 from shaderbox.paths import (
@@ -252,7 +253,7 @@ class ProjectSession:
 
         # Capture the source path BEFORE the pop (it's gone after; the owner's editor sessions
         # are path-keyed). The on_node_deleted handler drops the editor session + delete-arm.
-        path = self.ui_nodes[node_id].node.source.path
+        path = self.ui_nodes[node_id].node.render_pass.source.path
         self.ui_nodes.pop(node_id).node.release()
         self._node_json_mtimes.pop(node_id, None)
         self.script_engine.drop_node(
@@ -307,7 +308,7 @@ class ProjectSession:
 
     def rebuild_shader_lib_index(self) -> None:
         # Walk shader_lib_root, extract every top-level function, publish via the module-level
-        # accessor that Node.compile() reads.
+        # accessor that Pass.compile() reads.
         self.shader_lib_index = ShaderLibIndex.build(shader_lib_root())
         set_active_lib_index(self.shader_lib_index)
         logger.debug(f"Lib index: {len(self.shader_lib_index.functions)} functions")
@@ -353,7 +354,7 @@ class ProjectSession:
             self.script_engine.reload(
                 node_id,
                 self.paths.scripts_dir_for(node_id),
-                ui_node.node,
+                ui_node.node.render_pass,
             )
             self._wire_node_hooks(node_id, ui_node.node)
 
@@ -400,7 +401,7 @@ class ProjectSession:
             return
 
         for node_id in removed:
-            path = self.ui_nodes[node_id].node.source.path
+            path = self.ui_nodes[node_id].node.render_pass.source.path
             self.ui_nodes.pop(node_id).node.release()
             self.script_engine.drop_node(node_id)
             self._node_json_mtimes.pop(node_id, None)
@@ -427,10 +428,10 @@ class ProjectSession:
         ui_node = load_node_from_dir(self.paths.nodes_dir / node_id)
         self.ui_nodes[node_id] = ui_node
         self.script_engine.reload(
-            node_id, self.paths.scripts_dir_for(node_id), ui_node.node
+            node_id, self.paths.scripts_dir_for(node_id), ui_node.node.render_pass
         )
         self._wire_node_hooks(node_id, ui_node.node)
-        self._on_node_source_synced(node_id, ui_node.node.source.text)
+        self._on_node_source_synced(node_id, ui_node.node.render_pass.source.text)
 
     def _wire_node_hooks(self, node_id: str, node: Node) -> None:
         # Inject the export-isolation factory (Node.render_media enters it around every export, so an
@@ -467,7 +468,10 @@ class ProjectSession:
                 # EXPORT_MOUSE (the EngineContext default) freezes the cursor at center so an
                 # exported render is deterministic. No stopped set — an export always plays the script.
                 self.script_engine.tick_export(
-                    node_id, node, EngineContext(t=t, dt=dt, frame=frame), behavior
+                    node_id,
+                    node.render_pass,
+                    EngineContext(t=t, dt=dt, frame=frame),
+                    behavior,
                 )
 
             node.on_pre_render = _export_pre_render
@@ -487,7 +491,7 @@ class ProjectSession:
             self.script_engine.reload(
                 node_id,
                 self.paths.scripts_dir_for(node_id),
-                ui_node.node,
+                ui_node.node.render_pass,
             )
             self._wire_node_hooks(node_id, ui_node.node)
 
@@ -509,7 +513,7 @@ class ProjectSession:
                 continue
             self.script_engine.tick(
                 node_id,
-                ui_node.node,
+                ui_node.node.render_pass,
                 EngineContext(t=t, dt=dt, frame=frame, mouse=mouse),
                 self._stopped_for(node_id),
             )
@@ -548,7 +552,7 @@ class ProjectSession:
         # (the legibility gap 048 targets).
         return [
             u
-            for u in self.ui_nodes[node_id].node.get_active_uniforms()
+            for u in self.ui_nodes[node_id].node.render_pass.get_active_uniforms()
             if is_scriptable(u) and u.name not in ENGINE_DRIVEN_UNIFORMS
         ]
 
@@ -588,11 +592,11 @@ class ProjectSession:
         path.write_text(normalize_script_tabs(new_text), encoding="utf-8")
         ui_node = self.ui_nodes[node_id]
         self.script_engine.reload(
-            node_id, self.paths.scripts_dir_for(node_id), ui_node.node
+            node_id, self.paths.scripts_dir_for(node_id), ui_node.node.render_pass
         )
         return self.script_engine.dry_run(
             node_id,
-            ui_node.node,
+            ui_node.node.render_pass,
             COPILOT_ENGINE.motion_sample_times,
             COPILOT_ENGINE.motion_fps,
         )

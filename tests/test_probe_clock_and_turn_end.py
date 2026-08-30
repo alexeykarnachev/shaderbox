@@ -30,7 +30,9 @@ def _facts_for(t: float | None) -> str:
     # at, and feed render_facts a stand-in so the stamp logic runs without GL. Returns the stamp.
     rendered_at: list[float] = []
     node = types.SimpleNamespace(
-        canvas=types.SimpleNamespace(texture=types.SimpleNamespace(size=(64, 64))),
+        render_pass=types.SimpleNamespace(
+            canvas=types.SimpleNamespace(texture=types.SimpleNamespace(size=(64, 64)))
+        ),
         render=lambda u_time, canvas: rendered_at.append(u_time),
     )
     stub = types.SimpleNamespace(_probe_canvas=_FakeCanvas())

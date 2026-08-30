@@ -15,7 +15,8 @@ from shaderbox.constants import (
     DEFAULT_TEMPORAL_WINDOW_SIZE,
 )
 from shaderbox.copilot.state import CopilotLayout
-from shaderbox.core import ENGINE_DRIVEN_UNIFORMS, Node
+from shaderbox.core import ENGINE_DRIVEN_UNIFORMS
+from shaderbox.document import Node
 from shaderbox.glyph_tables import TABLE_UNIFORMS
 from shaderbox.media import MediaDetails, MediaWithTexture, is_default_image
 from shaderbox.model_salvage import drop_invalid, load_model
@@ -272,7 +273,7 @@ class UINode(BaseModel):
         dir.mkdir(exist_ok=True, parents=True)
 
         meta: dict[str, Any] = {
-            "canvas_size": list(self.node.canvas.texture.size),
+            "canvas_size": list(self.node.render_pass.canvas.texture.size),
             "uniforms": {},
             "ui_state": self.ui_state.model_dump(),
         }
@@ -282,7 +283,7 @@ class UINode(BaseModel):
         # window is ordinary, not exotic: release_program() nulls the program and returns
         # without recompiling (the recompile rides the next render), so an external shader
         # edit followed by a quit lands here. Keep what is already on disk instead.
-        if self.node.program is None:
+        if self.node.render_pass.program is None:
             existing = dir / NODE_JSON_BASENAME
             if existing.is_file():
                 try:
@@ -293,14 +294,16 @@ class UINode(BaseModel):
 
         fs_file_path = dir / NODE_SHADER_BASENAME
         with fs_file_path.open("w") as f:
-            f.write(self.node.source.text)
+            f.write(self.node.render_pass.source.text)
         # Rebind the live source to its on-disk location + fresh mtime, so the mtime watcher and
         # any subsequent load read consistent state. A rollback-checkpoint snapshot passes
         # rebind=False: it serializes a COPY into the snapshot dir and must NOT repoint the live
         # node into it (else the next edit writes the snapshot, not nodes/<id>).
         if rebind:
-            self.node.source = replace(
-                self.node.source, path=fs_file_path, mtime=fs_file_path.lstat().st_mtime
+            self.node.render_pass.source = replace(
+                self.node.render_pass.source,
+                path=fs_file_path,
+                mtime=fs_file_path.lstat().st_mtime,
             )
 
         # ----------------------------------------------------------------
@@ -311,10 +314,10 @@ class UINode(BaseModel):
         # here rather than in the draw loop because save is the funnel every path reaches,
         # including headless ones that never draw a row. Skipped with no live program: there
         # would be nothing to prune against, and the answer would be "delete all of them".
-        if self.node.program is not None:
+        if self.node.render_pass.program is not None:
             live_rows = {
                 get_uniform_hash(u)
-                for u in self.node.get_active_uniforms()
+                for u in self.node.render_pass.get_active_uniforms()
                 if u.name not in TABLE_UNIFORMS
             }
             stale = [h for h in self.ui_state.ui_uniforms if h not in live_rows]
@@ -328,12 +331,12 @@ class UINode(BaseModel):
 
         # ----------------------------------------------------------------
         # Save uniforms
-        self.node.seed_uniform_values()
-        for uniform in self.node.get_active_uniforms():
+        self.node.render_pass.seed_uniform_values()
+        for uniform in self.node.render_pass.get_active_uniforms():
             if uniform.name in ENGINE_DRIVEN_UNIFORMS:
                 continue
 
-            value = self.node.uniform_values[uniform.name]
+            value = self.node.render_pass.uniform_values[uniform.name]
 
             if getattr(uniform, "gl_type", None) == GL_SAMPLER_2D:
                 # An unbound sampler holds the shipped default; persisting a per-node copy is pointless
@@ -396,7 +399,7 @@ class UINode(BaseModel):
         # still has — a sampler that was renamed away is never looked at, and its file stays
         # forever (and rides along duplicate_node). Skipped with no live program, where the
         # uniform block was carried forward rather than rebuilt.
-        if self.node.program is not None:
+        if self.node.render_pass.program is not None:
             referenced = {
                 Path(entry["file_path"]).name
                 for entry in meta["uniforms"].values()

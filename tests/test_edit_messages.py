@@ -73,7 +73,11 @@ def test_applied_result_success_names_target() -> None:
 
 
 def _resolve_stub() -> types.SimpleNamespace:
-    node = types.SimpleNamespace(source=types.SimpleNamespace(text="void main() {}"))
+    node = types.SimpleNamespace(
+        render_pass=types.SimpleNamespace(
+            source=types.SimpleNamespace(text="void main() {}")
+        )
+    )
     ui_node = types.SimpleNamespace(
         ui_state=types.SimpleNamespace(ui_name="Text Rendering"), node=node
     )

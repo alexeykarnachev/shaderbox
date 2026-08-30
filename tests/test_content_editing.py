@@ -234,7 +234,9 @@ def test_rewrite_lib_create_path_invalidates_consumers() -> None:
 def test_persist_normalizes_crlf() -> None:
     captured: dict[str, str] = {}
     node = types.SimpleNamespace(
-        compile_unit=types.SimpleNamespace(errors=[]), program=object()
+        render_pass=types.SimpleNamespace(
+            compile_unit=types.SimpleNamespace(errors=[]), program=object()
+        )
     )
     tgt = _CopilotEditTarget(
         kind="node",
@@ -267,9 +269,11 @@ def test_persist_force_restores_after_streak_on_real_path() -> None:
     # broken edits put the file back at its last clean state and reset the streak.
     writes: list[str] = []
     node = types.SimpleNamespace(
-        compile_unit=types.SimpleNamespace(errors=[]),
-        program=object(),
-        source=types.SimpleNamespace(path=Path("n.frag.glsl")),
+        render_pass=types.SimpleNamespace(
+            compile_unit=types.SimpleNamespace(errors=[]),
+            program=object(),
+            source=types.SimpleNamespace(path=Path("n.frag.glsl")),
+        )
     )
     tgt = _CopilotEditTarget(
         kind="node",
@@ -287,7 +291,7 @@ def test_persist_force_restores_after_streak_on_real_path() -> None:
         # Every model edit compiles broken; the restore write itself is clean. Mirrors
         # production: the write updates the node's compile state (prev_clean reads it).
         errs = [] if text == "void main() { }" else [err]
-        node.compile_unit.errors = errs
+        node.render_pass.compile_unit.errors = errs
         return errs
 
     stub = types.SimpleNamespace(
@@ -512,7 +516,9 @@ def test_lib_write_warns_on_brace_imbalance() -> None:
 def test_persist_normalizes_lone_cr() -> None:
     captured: dict[str, str] = {}
     node = types.SimpleNamespace(
-        compile_unit=types.SimpleNamespace(errors=[]), program=object()
+        render_pass=types.SimpleNamespace(
+            compile_unit=types.SimpleNamespace(errors=[]), program=object()
+        )
     )
     tgt = _CopilotEditTarget(
         kind="node",

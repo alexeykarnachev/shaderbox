@@ -533,7 +533,7 @@ class YouTubeExporter(Exporter):
         if artifact is None:
             return False
         expected: tuple[int, int] = resolve_dims(
-            self.render_preset(), current_node.node.canvas.texture.size
+            self.render_preset(), current_node.node.render_pass.canvas.texture.size
         )
         return artifact.size == expected
 

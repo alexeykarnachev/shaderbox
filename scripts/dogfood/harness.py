@@ -415,7 +415,7 @@ class DogfoodHarness:
         if ui_node is None:
             print(f"    [render_video_mp4 FAILED: no node '{target}']")
             return ""
-        ui_node.node.canvas.set_size((size, size))
+        ui_node.node.render_pass.canvas.set_size((size, size))
         # FIXED_DIMS + RENDER_AT_TARGET so (size, size) drives the output (a FREE preset leaves
         # resolution_details at 0 -> ffmpeg gets a stray `-s 0x0` and the pipe breaks).
         preset = RenderPreset(
@@ -451,12 +451,12 @@ class DogfoodHarness:
             print(f"    [render_at FAILED: no node '{target}']")
             return ""
         node = ui_node.node
-        node.canvas.set_size((size, size))
+        node.render_pass.canvas.set_size((size, size))
         self.session.tick([target], t, 1.0 / 60.0, 0)
         node.render(u_time=t)
         out_path = self.session.paths.renders_dir / f"{target}_t{t:.3f}.png"
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        texture_to_pil(node.canvas.texture).save(out_path)
+        texture_to_pil(node.render_pass.canvas.texture).save(out_path)
         print(f"    [rendered {target} @t={t:.3f} -> {out_path}]")
         self._last_render_path = str(out_path)
         return str(out_path)
@@ -473,14 +473,14 @@ class DogfoodHarness:
             print(f"    [export_at FAILED: no node '{target}']")
             return ""
         node = ui_node.node
-        node.canvas.set_size((size, size))
+        node.render_pass.canvas.set_size((size, size))
         with node.export_isolation():
             if node.on_pre_render is not None:
                 node.on_pre_render(t, 1.0 / 60.0, 0)
             node.render(u_time=t)
         out_path = self.session.paths.renders_dir / f"{target}_export_t{t:.3f}.png"
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        texture_to_pil(node.canvas.texture).save(out_path)
+        texture_to_pil(node.render_pass.canvas.texture).save(out_path)
         print(f"    [exported {target} @t={t:.3f} -> {out_path}]")
         self._last_render_path = str(out_path)
         return str(out_path)
@@ -517,11 +517,11 @@ class DogfoodHarness:
             return ""
         node = ui_node.node
         engine = self.session.script_engine
-        saved_size = node.canvas.texture.size
-        saved_values = dict(node.uniform_values)
+        saved_size = node.render_pass.canvas.texture.size
+        saved_values = dict(node.render_pass.uniform_values)
         dt = 1.0 / fps
         cells: list[PILImage.Image] = []
-        node.canvas.set_size((size, size))
+        node.render_pass.canvas.set_size((size, size))
         try:
             for t in times:
                 behavior = engine.fresh_behavior_for(target)
@@ -529,16 +529,16 @@ class DogfoodHarness:
                     for frame in range(round(t * fps) + 1):
                         engine.tick_export(
                             target,
-                            node,
+                            node.render_pass,
                             EngineContext(t=frame * dt, dt=dt, frame=frame),
                             behavior,
                         )
                 node.render(u_time=t)
-                cells.append(_strip_cell(node.canvas.texture, t, size))
+                cells.append(_strip_cell(node.render_pass.canvas.texture, t, size))
         finally:
-            node.canvas.set_size(saved_size)
-            node.uniform_values.clear()
-            node.uniform_values.update(saved_values)
+            node.render_pass.canvas.set_size(saved_size)
+            node.render_pass.uniform_values.clear()
+            node.render_pass.uniform_values.update(saved_values)
 
         gutter = 4
         sheet = PILImage.new(
@@ -576,7 +576,7 @@ class DogfoodHarness:
             print(f"    [script_values FAILED: no node '{target}']")
             return []
         probe = self.session.script_engine.dry_run(
-            target, ui_node.node, tuple(times), fps
+            target, ui_node.node.render_pass, tuple(times), fps
         )
         if probe.compile_error is not None:
             print(f"    [script_values: compile error {probe.compile_error.message}]")
