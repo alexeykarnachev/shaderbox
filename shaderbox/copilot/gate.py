@@ -3,7 +3,7 @@ import threading
 from dataclasses import dataclass, field
 from enum import StrEnum, auto
 
-from shaderbox.copilot.capabilities import MediaBindResult, NodeImportResult
+from shaderbox.copilot.capabilities import DocumentImportResult, MediaBindResult
 
 # Worker->main marshalling seam for USER answers (confirm/credential): the worker pushes a
 # request + Event and blocks; the main thread draws the widget, fills the response slot, sets
@@ -24,9 +24,9 @@ class GateRequest:
     kind: GateKind
     prompt: str
     secret_field: str = ""  # CREDENTIAL: which integration key
-    # FILE gate targeting: the action ("" = bind_media; "import_node"), the bind target
-    # (node_id/uniform), the pickable kinds ("image"/"video"/"glsl"), and switch_to for import.
-    node_id: str = ""
+    # FILE gate targeting: the action ("" = bind_media; "import_document"), the bind target
+    # (document_id/uniform), the pickable kinds ("image"/"video"/"glsl"), and switch_to for import.
+    document_id: str = ""
     uniform: str = ""
     file_kinds: tuple[str, ...] = ()
     file_action: str = ""
@@ -39,7 +39,7 @@ class GateResponse:
     secret: str = ""  # CREDENTIAL: typed key — never logged/traced/persisted
     cancelled: bool = False  # the wait was released without an answer
     media_result: MediaBindResult | None = None  # FILE bind: the path-free bind outcome
-    import_result: NodeImportResult | None = (
+    import_result: DocumentImportResult | None = (
         None  # FILE import: the path-free import outcome
     )
 
@@ -131,7 +131,7 @@ class GateChannel:
     def file_gate_active(self) -> bool:
         # MAIN THREAD (feature 052). True while a worker is blocked on a FILE pick. Goes False the
         # instant cancel_all fires (Stop/reset) — the UI poll checks this so a dialog still open when
-        # the turn was cancelled is ABANDONED (its late pick never mutates a node, never mis-wires the
+        # the turn was cancelled is ABANDONED (its late pick never mutates a document, never mis-wires the
         # next turn's gate).
         return self._file_current is not None
 

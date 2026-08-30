@@ -5,7 +5,7 @@ not the identity: removing a tab to the LEFT shifts every later tab down one, so
 silently addresses a different file. `flush_current_editor()` then flushes the wrong tab on
 Ctrl+S and on quit — the user loses edits to the file they were looking at.
 
-Both removal paths (an explicit close, and a node deletion sweeping its tabs) go through the
+Both removal paths (an explicit close, and a document deletion sweeping its tabs) go through the
 same re-anchor helper, so they cannot drift apart.
 """
 
@@ -79,19 +79,19 @@ def test_closing_the_last_tab_leaves_a_valid_index(app: Any) -> None:
     assert app.active_tab_index == -1
 
 
-def test_deleting_a_node_keeps_an_unrelated_tab_active(app: Any) -> None:
-    # The sibling removal path: _on_node_deleted sweeps that node's tabs out of the list.
+def test_deleting_a_document_keeps_an_unrelated_tab_active(app: Any) -> None:
+    # The sibling removal path: _on_document_deleted sweeps that document's tabs out of the list.
     # A lib tab the user is editing must stay active, not be swapped by an index shift.
-    node_id = app.current_node_id
-    node_source = app.ui_nodes[node_id].node.render_pass.source.path
+    document_id = app.current_document_id
+    document_source = app.ui_documents[document_id].document.render_pass.source.path
     app.editor_tabs = [
-        EditorTab(path=node_source, kind="shader", node_id=node_id),
+        EditorTab(path=document_source, kind="shader", document_id=document_id),
         EditorTab(path=Path("/tmp/keep.glsl"), kind="lib"),
     ]
     app.active_tab_index = 1
     active_before = app.editor_tabs[1]
 
-    app._on_node_deleted(node_id, node_source)
+    app._on_document_deleted(document_id, document_source)
 
     assert _tabs(app) == ["keep.glsl"]
     assert app.editor_tabs[app.active_tab_index] is active_before

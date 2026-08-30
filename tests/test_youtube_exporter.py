@@ -197,31 +197,31 @@ def test_upload_refresh_error_emits_auth_error(tmp_path: Path) -> None:
 def test_size_gate_rejects_mismatched_artifact() -> None:
     # A long-form (landscape) artifact must not satisfy the Short gate, and vice
     # versa. _artifact_matches_shape compares artifact.size to resolve_dims of the
-    # current shape's preset against the node's canvas.
+    # current shape's preset against the document's canvas.
     from shaderbox.render_preset import resolve_dims
 
     exp = YouTubeExporter()
-    node_canvas: tuple[int, int] = (1920, 1080)
+    document_canvas: tuple[int, int] = (1920, 1080)
 
     class _Canvas:
         class texture:
-            size = node_canvas
+            size = document_canvas
 
     class _Pass:
         canvas = _Canvas()
 
-    class _Node:
+    class _Document:
         render_pass = _Pass()
 
-    class _UINode:
-        node = _Node()
+    class _UIDocument:
+        document = _Document()
 
-    ui_node: Any = _UINode()
+    ui_document: Any = _UIDocument()
 
     exp._render_state.shape = RenderShape.SHORT_1080
-    short_expected = resolve_dims(exp.render_preset(), node_canvas)
+    short_expected = resolve_dims(exp.render_preset(), document_canvas)
     exp._render_state.shape = RenderShape.NATIVE
-    long_expected = resolve_dims(exp.render_preset(), node_canvas)
+    long_expected = resolve_dims(exp.render_preset(), document_canvas)
     assert short_expected != long_expected  # the two shapes resolve differently
 
     # Landscape artifact (matches long) while toggle is a Short -> gate fails.
@@ -229,12 +229,12 @@ def test_size_gate_rejects_mismatched_artifact() -> None:
         path=Path("x.mp4"), is_video=True, duration=4.0, size=long_expected
     )
     exp._render_state.shape = RenderShape.SHORT_1080
-    assert not exp._artifact_matches_shape(landscape, ui_node)
+    assert not exp._artifact_matches_shape(landscape, ui_document)
     # Same artifact while toggle is long-form -> gate passes.
     exp._render_state.shape = RenderShape.NATIVE
-    assert exp._artifact_matches_shape(landscape, ui_node)
+    assert exp._artifact_matches_shape(landscape, ui_document)
     # None artifact never passes.
-    assert not exp._artifact_matches_shape(None, ui_node)
+    assert not exp._artifact_matches_shape(None, ui_document)
 
 
 def test_upload_refreshes_expired_token(tmp_path: Path) -> None:

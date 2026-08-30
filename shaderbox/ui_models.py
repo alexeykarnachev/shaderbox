@@ -18,19 +18,19 @@ from shaderbox.constants import (
 )
 from shaderbox.copilot.state import CopilotLayout
 from shaderbox.core import ENGINE_DRIVEN_UNIFORMS
-from shaderbox.document import Node
+from shaderbox.document import Document
 from shaderbox.glyph_tables import TABLE_UNIFORMS
 from shaderbox.media import MediaDetails, MediaWithTexture, is_default_image
 from shaderbox.model_salvage import drop_invalid, load_model
 from shaderbox.paths import (
+    DOCUMENT_JSON_BASENAME,
     GRAPH_JSON_BASENAME,
-    NODE_JSON_BASENAME,
     PASS_SHADER_SUFFIX,
     PASSES_DIR_NAME,
     pass_name_of,
     pass_shader_name,
 )
-from shaderbox.ui_regions import NodeTab
+from shaderbox.ui_regions import DocumentTab
 from shaderbox.util import get_uniform_hash
 
 UIUniformInputType = Literal[
@@ -137,10 +137,10 @@ def sort_uniform_hashes(
     return ordered
 
 
-class UINodeState(BaseModel):
+class UIDocumentState(BaseModel):
     ui_name: str = ""
-    # A human/agent-facing one-line summary of what a node (esp. a shipped EXAMPLE) is for;
-    # on a shipped example's node.json it's maintainer-authored, read-only.
+    # A human/agent-facing one-line summary of what a document (esp. a shipped EXAMPLE) is for;
+    # on a shipped example's document.json it's maintainer-authored, read-only.
     description: str = ""
 
     render_media_details: MediaDetails = MediaDetails()
@@ -158,19 +158,19 @@ class UINodeState(BaseModel):
 
     # Play/stop (feature 048): the uniform NAMES the user has STOPPED — frozen for manual edit. A
     # stopped uniform's script value is not applied (the script still ticks; the manual value sticks).
-    # Stored as a LIST, not a set: UINode.save serializes via model_dump() -> json.dump, which raises
+    # Stored as a LIST, not a set: UIDocument.save serializes via model_dump() -> json.dump, which raises
     # on a Python set. Coerced to a set per-frame in ProjectSession.tick.
     stopped_uniforms: list[str] = []
-    # Node-level stop: freezes EVERY driven uniform's write at once (the script keeps ticking, so a
-    # later node-play resumes from advanced state, not stale state). Born False.
+    # Document-level stop: freezes EVERY driven uniform's write at once (the script keeps ticking, so a
+    # later document-play resumes from advanced state, not stale state). Born False.
     all_stopped: bool = False
 
     @model_validator(mode="before")
     @classmethod
     def _reset_out_of_range_values(cls, data: Any) -> Any:
         # A known key with an out-of-Literal VALUE (a stale uniform_sort_key, a bad input_type from a
-        # narrowed Literal) would raise ValidationError, which load_nodes_from_dir swallows by dropping
-        # the WHOLE node. Reset such values to defaults so the node survives the upgrade instead.
+        # narrowed Literal) would raise ValidationError, which load_documents_from_dir swallows by dropping
+        # the WHOLE document. Reset such values to defaults so the document survives the upgrade instead.
         if not isinstance(data, dict):
             return data
         if data.get("uniform_sort_key") not in get_args(UniformSortKey):
@@ -190,7 +190,7 @@ class UINodeState(BaseModel):
                     UIUniform(**row)
                 except ValidationError:
                     # Per ROW: one malformed row used to cost every
-                    # tuned value on the node, because the dict is validated as a whole.
+                    # tuned value on the document, because the dict is validated as a whole.
                     logger.warning(f"Dropped unreadable uniform row '{key}'")
                     uniforms.pop(key)
         return data
@@ -210,9 +210,9 @@ class EditorSettings(BaseModel):
 
 
 class UIAppState(BaseModel):
-    current_node_id: str = ""
+    current_document_id: str = ""
     selected_example_id: str = ""
-    is_render_all_nodes: bool = True
+    is_render_all_documents: bool = True
 
     exporter_settings: dict[str, dict[str, Any]] = {}
     active_exporter_id: str = "telegram"
@@ -231,7 +231,7 @@ class UIAppState(BaseModel):
     # Persisted UI layout prefs (the App holds the live copies; synced at load/save).
     # NOT active_region / copilot_focused — those are transient-by-design (focus on
     # launch is a separate UX decision; see todo.md feature-019 deferral).
-    active_node_tab: NodeTab = NodeTab.NODE
+    active_document_tab: DocumentTab = DocumentTab.DOCUMENT
     is_copilot_open: bool = False
     copilot_layout: CopilotLayout = CopilotLayout.CORNER
 
@@ -259,7 +259,7 @@ class UIAppState(BaseModel):
 
 def _existing_rows(dir: Path, pass_name: str) -> dict[str, Any]:
     """One pass's uniform rows as already persisted, for a pass with nothing compiled."""
-    existing = dir / NODE_JSON_BASENAME
+    existing = dir / DOCUMENT_JSON_BASENAME
     if not existing.is_file():
         return {}
     try:
@@ -283,10 +283,10 @@ def _uniform_entry(
 ) -> Any:
     """One uniform's serialized form, writing its asset under `<kind>/<pass>/` (D16)."""
     if getattr(uniform, "gl_type", None) == GL_SAMPLER_2D:
-        # An unbound sampler holds the shipped default; persisting a per-node copy is pointless
+        # An unbound sampler holds the shipped default; persisting a per-document copy is pointless
         # and would make it read back as "bound" on reload. Skip it — load's seed_uniform_values
         # re-establishes the default. A file left by a PREVIOUS bind is deleted with the skip
-        # (load ignores it, but it would linger on disk and ride along duplicate_node).
+        # (load ignores it, but it would linger on disk and ride along duplicate_document).
         if is_default_image(value):
             for kind in (MEDIA_DIR_NAME, TEXTURES_DIR_NAME):
                 for stale in (dir / kind / pass_name).glob(f"{uniform.name}.*"):
@@ -332,11 +332,11 @@ def _uniform_entry(
     return _SKIP
 
 
-class UINode(BaseModel):
-    node: Node
+class UIDocument(BaseModel):
+    document: Document
     id: str = ""
 
-    ui_state: UINodeState = UINodeState()
+    ui_state: UIDocumentState = UIDocumentState()
 
     model_config = {"arbitrary_types_allowed": True}
 
@@ -357,7 +357,7 @@ class UINode(BaseModel):
         dir.mkdir(exist_ok=True, parents=True)
 
         meta: dict[str, Any] = {
-            "canvas_size": list(self.node.render_pass.canvas.texture.size),
+            "canvas_size": list(self.document.render_pass.canvas.texture.size),
             "uniforms": {},
             "ui_state": self.ui_state.model_dump(),
         }
@@ -367,9 +367,9 @@ class UINode(BaseModel):
         # window is ordinary, not exotic: release_program() nulls the program and returns without
         # recompiling (the recompile rides the next render), so an external shader edit followed
         # by a quit lands here. Keep what is already on disk instead.
-        live = any(p.program is not None for p in self.node.passes.values())
+        live = any(p.program is not None for p in self.document.passes.values())
         if not live:
-            existing = dir / NODE_JSON_BASENAME
+            existing = dir / DOCUMENT_JSON_BASENAME
             if existing.is_file():
                 try:
                     with existing.open() as f:
@@ -379,7 +379,7 @@ class UINode(BaseModel):
 
         passes_dir = dir / PASSES_DIR_NAME
         passes_dir.mkdir(exist_ok=True, parents=True)
-        for pass_name, render_pass in self.node.passes.items():
+        for pass_name, render_pass in self.document.passes.items():
             fs_file_path = passes_dir / pass_shader_name(pass_name)
             with fs_file_path.open("w") as f:
                 f.write(render_pass.source.text)
@@ -396,12 +396,12 @@ class UINode(BaseModel):
         # A pass file for a pass the document no longer has would load back as a pass (the
         # loader enumerates FILES), resurrecting a deletion on the next open.
         for stale in passes_dir.glob(f"*{PASS_SHADER_SUFFIX}"):
-            if pass_name_of(stale) not in self.node.passes:
+            if pass_name_of(stale) not in self.document.passes:
                 logger.debug(f"Dropping pass file for removed pass {stale.name}")
                 stale.unlink()
 
         with (dir / GRAPH_JSON_BASENAME).open("w") as f:
-            json.dump(self.node.graph.model_dump(), f, indent=4)
+            json.dump(self.document.graph.model_dump(), f, indent=4)
             f.write("\n")
 
         # ----------------------------------------------------------------
@@ -415,7 +415,7 @@ class UINode(BaseModel):
         if live:
             live_rows = {
                 get_uniform_hash(u)
-                for render_pass in self.node.passes.values()
+                for render_pass in self.document.passes.values()
                 for u in render_pass.get_active_uniforms()
                 if u.name not in TABLE_UNIFORMS
             }
@@ -433,7 +433,7 @@ class UINode(BaseModel):
         # passes may both bind `u_tex`; assets are namespaced by pass for the same reason (D16),
         # since a flat layout would have them overwrite each other and the sweep below would
         # delete the survivor's file.
-        for pass_name, render_pass in self.node.passes.items():
+        for pass_name, render_pass in self.document.passes.items():
             if render_pass.program is None:
                 # A pass off the output's path never drew, so it has no program and its uniform
                 # set is unknown — saving it as {} would silently drop every value the user
@@ -460,7 +460,7 @@ class UINode(BaseModel):
         # Drop media/texture files no surviving uniform refers to. The unbind cleanup in
         # _uniform_entry is keyed by the uniform's OWN name, so it can only ever visit names the
         # shader still has — a sampler that was renamed away is never looked at, and its file
-        # would stay forever (and ride along duplicate_node). Scoped per pass, so one pass's
+        # would stay forever (and ride along duplicate_document). Scoped per pass, so one pass's
         # sweep cannot delete another's asset. Skipped with nothing compiled, where the uniform
         # block was carried forward rather than rebuilt.
         if live:
@@ -477,7 +477,7 @@ class UINode(BaseModel):
                 for pass_dir in asset_root.iterdir():
                     if not pass_dir.is_dir():
                         continue
-                    keep = pass_dir.name in self.node.passes
+                    keep = pass_dir.name in self.document.passes
                     for asset in pass_dir.iterdir():
                         if asset.is_file() and (
                             not keep or asset.name not in referenced
@@ -485,56 +485,56 @@ class UINode(BaseModel):
                             logger.debug(f"Dropping orphaned asset {asset.name}")
                             asset.unlink()
 
-        with (dir / NODE_JSON_BASENAME).open("w") as f:
+        with (dir / DOCUMENT_JSON_BASENAME).open("w") as f:
             json.dump(meta, f, indent=4)
             f.write("\n")
 
         return dir
 
 
-def load_node_from_dir(node_dir: Path) -> UINode:
-    node, meta = Node.load_from_dir(node_dir)
-    dir_name = node_dir.name
+def load_document_from_dir(document_dir: Path) -> UIDocument:
+    document, meta = Document.load_from_dir(document_dir)
+    dir_name = document_dir.name
 
     ui_state_dict = meta.get("ui_state", {})
-    fields = UINodeState.model_fields
+    fields = UIDocumentState.model_fields
 
     invalid_keys = [k for k in ui_state_dict if k not in fields]
     if invalid_keys:
         logger.warning(
-            f"Ignored invalid UINodeState keys for node '{dir_name}': {invalid_keys}"
+            f"Ignored invalid UIDocumentState keys for document '{dir_name}': {invalid_keys}"
         )
 
     filtered_ui_state = {k: v for k, v in ui_state_dict.items() if k in fields}
     filtered_ui_state.setdefault("ui_name", dir_name)
     # Salvage per KEY, the way `UIAppState` and `IntegrationsStore` already load: the
     # filter above only prunes UNKNOWN keys, so a known key with a wrong-typed value
-    # raised and `load_nodes_from_dir` swallowed that by dropping the whole node -- the
+    # raised and `load_documents_from_dir` swallowed that by dropping the whole document -- the
     # shader, the name and every tuned uniform, over one field. `_reset_out_of_range_values`
     # had been growing a hand-written allowlist one field at a time (uniform_sort_key,
     # input_type); this covers every field including the ones nobody has
     # thought to add yet.
-    drop_invalid(UINodeState, filtered_ui_state, f"node '{dir_name}'")
-    ui_state = UINodeState(**filtered_ui_state)
+    drop_invalid(UIDocumentState, filtered_ui_state, f"document '{dir_name}'")
+    ui_state = UIDocumentState(**filtered_ui_state)
 
-    return UINode(
+    return UIDocument(
         id=dir_name,
-        node=node,
+        document=document,
         ui_state=ui_state,
     )
 
 
-def load_nodes_from_dir(root_dir: Path) -> dict[str, UINode]:
-    ui_nodes = {}
+def load_documents_from_dir(root_dir: Path) -> dict[str, UIDocument]:
+    ui_documents = {}
 
-    node_dirs = sorted(root_dir.iterdir(), key=lambda x: x.stat().st_ctime)
+    document_dirs = sorted(root_dir.iterdir(), key=lambda x: x.stat().st_ctime)
 
-    for node_dir in node_dirs:
-        if not node_dir.is_dir():
+    for document_dir in document_dirs:
+        if not document_dir.is_dir():
             continue
         try:
-            ui_nodes[node_dir.name] = load_node_from_dir(node_dir)
+            ui_documents[document_dir.name] = load_document_from_dir(document_dir)
         except Exception as e:
-            logger.error(f"Skipping unreadable node '{node_dir.name}': {e}")
+            logger.error(f"Skipping unreadable document '{document_dir.name}': {e}")
 
-    return ui_nodes
+    return ui_documents

@@ -1,5 +1,5 @@
 """The generated SCRIPT API block the copilot prompt's RARE tier carries (feature 059 D3) — the
-Python side of a node script, rendered FROM the live types so the block cannot drift from them.
+Python side of a document script, rendered FROM the live types so the block cannot drift from them.
 
 Names, signatures and field types come from the code; the semantics beside them are authored, and
 `tests/test_script_api_doc.py` pins the join: `_CTX_GLOSS`'s keys must equal the ctx dataclass
@@ -130,5 +130,5 @@ def script_api_summary() -> str:
         f"- `from shaderbox.scripting import {_IMPORT_NAMES}` (the engine injects these too); a "
         "script is plain Python -- `import math` and the stdlib work.",
     ]
-    header = "SCRIPT API (generated from shaderbox/scripting -- the Python side of a node script):"
+    header = "SCRIPT API (generated from shaderbox/scripting -- the Python side of a document script):"
     return "\n".join([header, *(_bullet(b) for b in bullets)])

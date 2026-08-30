@@ -2,7 +2,7 @@
 
 A HAND-DRIVEN driver: a human (Claude) imports this, constructs a real `ProjectSession`
 on a standalone EGL context (no App, no glfw window), drives `session.copilot` turn by
-turn against a REAL LLM, renders nodes to small PNGs, and EYEBALLS them. The judge is the
+turn against a REAL LLM, renders documents to small PNGs, and EYEBALLS them. The judge is the
 human reading the printed events / the trace transcript + looking at the rendered images —
 there are NO code assertions and no pass/fail. The point is dogfooding: surface where the
 copilot is weak, where context wastes tokens, what's missing from context.
@@ -39,7 +39,7 @@ Usage (from a REPL / chat-driven loop, with OPENROUTER_API_KEY exported):
     h = DogfoodHarness.create()                 # fresh run project, EGL context, real copilot
     h.send("Create a shader that draws a filled white circle in the center.")
     h.drive_until_idle()                        # pump; auto-prints events + any gate
-    png = h.render()                            # 400x400 PNG of the current node
+    png = h.render()                            # 400x400 PNG of the current document
     # ...open png with Read, eyeball it...
 
 Interactive one-blocking-call-per-turn (feature 027): resume a prior run + emit a structured
@@ -101,8 +101,8 @@ from PIL import ImageDraw  # noqa: E402
 glfw.set_error_callback(lambda code, desc: None)
 
 from shaderbox.constants import (  # noqa: E402
+    DOCUMENT_EXAMPLES_DIR,
     EXAMPLE_ORDER,
-    NODE_EXAMPLES_DIR,
     STARTER_EXAMPLE_ID,
 )
 from shaderbox.copilot.capabilities import RenderResult  # noqa: E402
@@ -158,28 +158,28 @@ class DogfoodHarness:
         """Build the EGL context + a real `ProjectSession` + restore the conversation if resuming.
 
         `project_dir=None` -> a fresh mkdtemp'd project (seeded unless `seed_examples=False`).
-        `project_dir=<existing run dir>` -> RESUME: skip seeding (the nodes persist from prior
+        `project_dir=<existing run dir>` -> RESUME: skip seeding (the documents persist from prior
         turns), reload the shaders, and restore the conversation from disk (zero LLM calls) so a
         per-turn process keeps full state. The caller must also point `SHADERBOX_DATA_DIR` at the
         same prior data dir (command-line env — read at import), so the lib + integrations match.
         """
         # Create + leave-current the EGL context on THIS thread (the context owner). No
         # make_current call is needed — create_standalone_context leaves it current, and
-        # Node/Canvas pick it up via moderngl.get_context(). (moderngl's stub types **kwargs
+        # Document/Canvas pick it up via moderngl.get_context(). (moderngl's stub types **kwargs
         # as a dict, so `backend=` trips pyright — an upstream stub gap.)
         ctx = moderngl.create_standalone_context(backend="egl")  # type: ignore[arg-type]
 
         resuming = project_dir is not None
         if project_dir is None:
             project_dir = Path(tempfile.mkdtemp(prefix="proj-", dir=_RUNS_DIR))
-        nodes_dir = project_dir / "nodes"
-        nodes_dir.mkdir(parents=True, exist_ok=True)
-        # On resume the nodes already exist on disk; seeding only applies to a fresh project.
+        documents_dir = project_dir / "documents"
+        documents_dir.mkdir(parents=True, exist_ok=True)
+        # On resume the documents already exist on disk; seeding only applies to a fresh project.
         if seed_examples and not resuming:
             for tid in EXAMPLE_ORDER:
-                src = NODE_EXAMPLES_DIR / tid
+                src = DOCUMENT_EXAMPLES_DIR / tid
                 if src.is_dir():
-                    shutil.copytree(src, nodes_dir / tid)
+                    shutil.copytree(src, documents_dir / tid)
 
         # The injected imgui-coupled services (App-side in the live app). ExporterRegistry is
         # left EMPTY (publish tools precheck-fail gracefully; registering the real exporters
@@ -193,7 +193,7 @@ class DogfoodHarness:
         # then the manager (closing over the session), exposed through a mutable slot.
         slot: dict[str, ShaderLibFileManager] = {}
         session = ProjectSession(
-            node_examples_dir=NODE_EXAMPLES_DIR,
+            document_examples_dir=DOCUMENT_EXAMPLES_DIR,
             starter_example_id=STARTER_EXAMPLE_ID,
             example_order=EXAMPLE_ORDER,
             get_exporter_registry=lambda: exporters,
@@ -208,13 +208,13 @@ class DogfoodHarness:
             on_path_renamed=lambda old, new: None,
         )
 
-        # Load the project (paths/lib-index/nodes/app_state/integrations). The node warm-up
+        # Load the project (paths/lib-index/documents/app_state/integrations). The document warm-up
         # compiles run here, so the EGL context must be current — it is (created above on this
-        # thread). On resume, load() restores app_state -> current_node_id from disk; only pick a
-        # default when it's unset (a fresh project) so a resumed turn keeps its current node.
+        # thread). On resume, load() restores app_state -> current_document_id from disk; only pick a
+        # default when it's unset (a fresh project) so a resumed turn keeps its current document.
         session.load(project_dir)
-        if session.ui_nodes and not session.current_node_id:
-            session.set_current_node_id(next(iter(session.ui_nodes)))
+        if session.ui_documents and not session.current_document_id:
+            session.set_current_document_id(next(iter(session.ui_documents)))
 
         harness = cls(ctx, session, project_dir)
         if resuming:
@@ -225,8 +225,8 @@ class DogfoodHarness:
     def _install_kill_persist(self) -> None:
         # An external kill (the command-line `timeout`, Ctrl-C) must not lose the in-flight
         # turn's conversation while its tool edits already landed on disk — that leaves the next
-        # resume half-restored (nodes changed, history unaware). Persist the conversation before
-        # dying; node/app_state saves are skipped (GL state is not signal-safe; edits are already
+        # resume half-restored (documents changed, history unaware). Persist the conversation before
+        # dying; document/app_state saves are skipped (GL state is not signal-safe; edits are already
         # on disk).
         def _persist_and_die(signum: int, frame: object) -> None:
             try:
@@ -292,10 +292,10 @@ class DogfoodHarness:
         self._copilot.answer_gate(False)
         print("    [declined]")
 
-    # ---- FILE gate (feature 052): auto-answer a bind_media/import_node pick ----
+    # ---- FILE gate (feature 052): auto-answer a bind_media/import_document pick ----
 
     def _pump_file_gate(self) -> None:
-        """Auto-answer a mid-turn FILE gate (bind_media / import_node) with a CANNED asset — the
+        """Auto-answer a mid-turn FILE gate (bind_media / import_document) with a CANNED asset — the
         headless harness has no UI file picker, so this simulates the user's pick (the real app's
         `ui.py::_pump_file_gate` does this with a native dialog). Runs on the context-owning thread
         (the load+bind / read+create are GL/FS on main), same as the app's frame-loop poll.
@@ -305,16 +305,16 @@ class DogfoodHarness:
         if req is None:
             return
         backend = self.session.copilot_backend
-        if req.file_action == "import_node":
-            result = backend.import_picked_node(self._canned_glsl(), req.switch_to)
+        if req.file_action == "import_document":
+            result = backend.import_picked_document(self._canned_glsl(), req.switch_to)
             gate.answer_file(GateResponse(import_result=result))
             print(
-                f"    [file-gate: import_node <- canned.glsl -> "
-                f"{result.node_id or result.error}]"
+                f"    [file-gate: import_document <- canned.glsl -> "
+                f"{result.document_id or result.error}]"
             )
         else:
             result = backend.bind_picked_media(
-                req.node_id, req.uniform, self._canned_image()
+                req.document_id, req.uniform, self._canned_image()
             )
             gate.answer_file(GateResponse(media_result=result))
             tag = f"{result.width}x{result.height}" if result.ok else result.error
@@ -331,7 +331,7 @@ class DogfoodHarness:
         return p
 
     def _canned_glsl(self) -> Path:
-        # A trivially-valid fragment shader on disk (generated once) that import_node creates a node from.
+        # A trivially-valid fragment shader on disk (generated once) that import_document creates a document from.
         p = self.project_dir / "dogfood_canned.frag.glsl"
         if not p.exists():
             p.write_text(
@@ -343,9 +343,9 @@ class DogfoodHarness:
 
     # ---- rendering ----
 
-    def render(self, node_id: str = "", *, size: int = 400) -> str:
-        """Render a node's static (t=0) frame to a `size`x`size` PNG (the driver's eyeball helper);
-        return + print the exact path. `node_id` empty = the current node.
+    def render(self, document_id: str = "", *, size: int = 400) -> str:
+        """Render a document's static (t=0) frame to a `size`x`size` PNG (the driver's eyeball helper);
+        return + print the exact path. `document_id` empty = the current document.
 
         Uses the DIRECT context-thread render (`render_at` at t=0) — GL on the owning thread, no
         bridge — so it is robust on any GL backend (the bridge-marshalled `render_image` path is
@@ -353,11 +353,11 @@ class DogfoodHarness:
         `render_image` tool is exercised separately when the AGENT calls it (see /dogfood §1a) — this
         helper does not need to route through it just to give the driver a PNG to look at.
         """
-        return self.render_at(0.0, node_id, size=size)
+        return self.render_at(0.0, document_id, size=size)
 
     def render_video(
         self,
-        node_id: str = "",
+        document_id: str = "",
         *,
         seconds: float = 2.0,
         fps: int = 24,
@@ -366,10 +366,10 @@ class DogfoodHarness:
         """Render a SHORT low-res WebM (the deliverable a scripted animation produces) and return its
         path so the driver can send it to the maintainer. Uses the REAL `render_video` capability — it
         animates the CPU-script engine frame by frame from t=0 (the same path the agent's render_video
-        rides), so a script-driven node moves across the clip. Off-thread + bridge drain like `render`.
+        rides), so a script-driven document moves across the clip. Off-thread + bridge drain like `render`.
         Keep `seconds`/`size` small — a video freezes the loop and large frames are slow on V3D.
         """
-        target = node_id or self.session.current_node_id
+        target = document_id or self.session.current_document_id
         out: dict[str, RenderResult] = {}
 
         def _do() -> None:
@@ -398,7 +398,7 @@ class DogfoodHarness:
 
     def render_video_mp4(
         self,
-        node_id: str = "",
+        document_id: str = "",
         *,
         seconds: float = 3.0,
         fps: int = 24,
@@ -410,12 +410,12 @@ class DogfoodHarness:
         export-isolation seam (a stateful script accumulates from a clean __init__). No bridge — unlike
         the copilot render_video (which is webm-only). Keep seconds/size small on V3D.
         """
-        target = node_id or self.session.current_node_id
-        ui_node = self.session.ui_nodes.get(target)
-        if ui_node is None:
-            print(f"    [render_video_mp4 FAILED: no node '{target}']")
+        target = document_id or self.session.current_document_id
+        ui_document = self.session.ui_documents.get(target)
+        if ui_document is None:
+            print(f"    [render_video_mp4 FAILED: no document '{target}']")
             return ""
-        ui_node.node.render_pass.canvas.set_size((size, size))
+        ui_document.document.render_pass.canvas.set_size((size, size))
         # FIXED_DIMS + RENDER_AT_TARGET so (size, size) drives the output (a FREE preset leaves
         # resolution_details at 0 -> ffmpeg gets a stray `-s 0x0` and the pipe breaks).
         preset = RenderPreset(
@@ -429,7 +429,7 @@ class DogfoodHarness:
         )
         out = self.session.paths.renders_dir / f"{target}.mp4"
         out.parent.mkdir(parents=True, exist_ok=True)
-        art = render_to(ui_node.node, preset, seconds, out)
+        art = render_to(ui_document.document, preset, seconds, out)
         if art is None:
             print("    [render_video_mp4 FAILED: render error]")
             return ""
@@ -439,48 +439,48 @@ class DogfoodHarness:
         self._last_render_path = str(art.path)
         return str(art.path)
 
-    def render_at(self, t: float, node_id: str = "", *, size: int = 400) -> str:
-        """Tick the CPU-script engine to `t`, then render the node at that `t` to a PNG (feature
+    def render_at(self, t: float, document_id: str = "", *, size: int = 400) -> str:
+        """Tick the CPU-script engine to `t`, then render the document at that `t` to a PNG (feature
         040 determinism check). Unlike `render` (the copilot tool, fixed at the exporter's t=0),
         this advances the engine clock so a scripted uniform animates — the seam decision 4 needs.
         GL runs on THIS (context-owning) thread; no bridge marshalling (no copilot worker involved).
         """
-        target = node_id or self.session.current_node_id
-        ui_node = self.session.ui_nodes.get(target)
-        if ui_node is None:
-            print(f"    [render_at FAILED: no node '{target}']")
+        target = document_id or self.session.current_document_id
+        ui_document = self.session.ui_documents.get(target)
+        if ui_document is None:
+            print(f"    [render_at FAILED: no document '{target}']")
             return ""
-        node = ui_node.node
-        node.render_pass.canvas.set_size((size, size))
+        document = ui_document.document
+        document.render_pass.canvas.set_size((size, size))
         self.session.tick([target], t, 1.0 / 60.0, 0)
-        node.render(u_time=t)
+        document.render(u_time=t)
         out_path = self.session.paths.renders_dir / f"{target}_t{t:.3f}.png"
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        texture_to_pil(node.render_pass.canvas.texture).save(out_path)
+        texture_to_pil(document.render_pass.canvas.texture).save(out_path)
         print(f"    [rendered {target} @t={t:.3f} -> {out_path}]")
         self._last_render_path = str(out_path)
         return str(out_path)
 
-    def export_at(self, t: float, node_id: str = "", *, size: int = 400) -> str:
-        """Render a node at `t` through the EXPORT-ISOLATION seam (feature 041): entering the node's
-        `export_isolation()` (the same factory Node.render_media enters) swaps on_pre_render to a FRESH
+    def export_at(self, t: float, document_id: str = "", *, size: int = 400) -> str:
+        """Render a document at `t` through the EXPORT-ISOLATION seam (feature 041): entering the document's
+        `export_isolation()` (the same factory Document.render_media enters) swaps on_pre_render to a FRESH
         per-export behavior set, so a stateful script starts from a clean __init__ regardless of how
         long the live preview ran. Unlike `render_at` (the LIVE tick path), this proves export-state
         isolation. GL on THIS (context-owning) thread."""
-        target = node_id or self.session.current_node_id
-        ui_node = self.session.ui_nodes.get(target)
-        if ui_node is None:
-            print(f"    [export_at FAILED: no node '{target}']")
+        target = document_id or self.session.current_document_id
+        ui_document = self.session.ui_documents.get(target)
+        if ui_document is None:
+            print(f"    [export_at FAILED: no document '{target}']")
             return ""
-        node = ui_node.node
-        node.render_pass.canvas.set_size((size, size))
-        with node.export_isolation():
-            if node.on_pre_render is not None:
-                node.on_pre_render(t, 1.0 / 60.0, 0)
-            node.render(u_time=t)
+        document = ui_document.document
+        document.render_pass.canvas.set_size((size, size))
+        with document.export_isolation():
+            if document.on_pre_render is not None:
+                document.on_pre_render(t, 1.0 / 60.0, 0)
+            document.render(u_time=t)
         out_path = self.session.paths.renders_dir / f"{target}_export_t{t:.3f}.png"
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        texture_to_pil(node.render_pass.canvas.texture).save(out_path)
+        texture_to_pil(document.render_pass.canvas.texture).save(out_path)
         print(f"    [exported {target} @t={t:.3f} -> {out_path}]")
         self._last_render_path = str(out_path)
         return str(out_path)
@@ -488,40 +488,40 @@ class DogfoodHarness:
     def render_strip(
         self,
         times: Sequence[float],
-        node_id: str = "",
+        document_id: str = "",
         *,
         size: int = 300,
         fps: int = 30,
     ) -> str:
-        """One horizontal contact sheet of the node at each `t` — the motion-axis measurement.
+        """One horizontal contact sheet of the document at each `t` — the motion-axis measurement.
 
-        Each sample is a REPLAY, never a live tick: a scripted node gets a FRESH behavior per
+        Each sample is a REPLAY, never a live tick: a scripted document gets a FRESH behavior per
         sample, stepped through frames `0..round(t*fps)` on the export-isolation seam, so a
         stateful integrator (one that reads `ctx.dt`) samples its real trajectory and two calls
-        with the same times give the same sheet. A script-less node renders directly at each `t`.
+        with the same times give the same sheet. A script-less document renders directly at each `t`.
 
         Frames alpha-composite onto (25,25,40) — deliberately NOT the eye's (40,40,40), so a
         strip is never mistaken for what the copilot saw — with a 4px gutter and a `t=` label per
         cell. The sheet lands in the project's renders dir so `dump()`'s `last_render_path` finds
         it. Both pieces of state the sampling touches are saved and restored: the canvas size and
-        `node.uniform_values` (`tick_export` writes the driven uniforms into the LIVE node) — a
-        later `dump()` would otherwise persist the last sample's frame into node.json.
+        `document.uniform_values` (`tick_export` writes the driven uniforms into the LIVE document) — a
+        later `dump()` would otherwise persist the last sample's frame into document.json.
         """
-        target = node_id or self.session.current_node_id
-        ui_node = self.session.ui_nodes.get(target)
-        if ui_node is None:
-            print(f"    [render_strip FAILED: no node '{target}']")
+        target = document_id or self.session.current_document_id
+        ui_document = self.session.ui_documents.get(target)
+        if ui_document is None:
+            print(f"    [render_strip FAILED: no document '{target}']")
             return ""
         if not times:
             print("    [render_strip FAILED: no sample times]")
             return ""
-        node = ui_node.node
+        document = ui_document.document
         engine = self.session.script_engine
-        saved_size = node.render_pass.canvas.texture.size
-        saved_values = dict(node.render_pass.uniform_values)
+        saved_size = document.render_pass.canvas.texture.size
+        saved_values = dict(document.render_pass.uniform_values)
         dt = 1.0 / fps
         cells: list[PILImage.Image] = []
-        node.render_pass.canvas.set_size((size, size))
+        document.render_pass.canvas.set_size((size, size))
         try:
             for t in times:
                 behavior = engine.fresh_behavior_for(target)
@@ -529,16 +529,16 @@ class DogfoodHarness:
                     for frame in range(round(t * fps) + 1):
                         engine.tick_export(
                             target,
-                            node.render_pass,
+                            document.render_pass,
                             EngineContext(t=frame * dt, dt=dt, frame=frame),
                             behavior,
                         )
-                node.render(u_time=t)
-                cells.append(_strip_cell(node.render_pass.canvas.texture, t, size))
+                document.render(u_time=t)
+                cells.append(_strip_cell(document.render_pass.canvas.texture, t, size))
         finally:
-            node.render_pass.canvas.set_size(saved_size)
-            node.render_pass.uniform_values.clear()
-            node.render_pass.uniform_values.update(saved_values)
+            document.render_pass.canvas.set_size(saved_size)
+            document.render_pass.uniform_values.clear()
+            document.render_pass.uniform_values.update(saved_values)
 
         gutter = 4
         sheet = PILImage.new(
@@ -558,25 +558,25 @@ class DogfoodHarness:
         return str(out_path)
 
     def script_values(
-        self, times: Sequence[float], node_id: str = "", *, fps: int = 30
+        self, times: Sequence[float], document_id: str = "", *, fps: int = 30
     ) -> list[tuple[float, dict[str, Any]]]:
         """The logic-axis numeric probe: the script-driven uniform VALUES at each `t`.
 
         A passthrough to `ScriptEngine.dry_run` — one fresh script stepped continuously through
-        the export clock, every write into a throwaway sink, so the live node and engine are
+        the export clock, every write into a throwaway sink, so the live document and engine are
         byte-identical afterwards. Returns `(t, {uniform: value})` per sample.
 
         Every probe failure is PRINTED (compile, runtime, per-key shape, orphan key): a broken
         probe yields empty sample dicts, which read as "the script drove nothing" — the logic axis
         must never mistake that for a measurement.
         """
-        target = node_id or self.session.current_node_id
-        ui_node = self.session.ui_nodes.get(target)
-        if ui_node is None:
-            print(f"    [script_values FAILED: no node '{target}']")
+        target = document_id or self.session.current_document_id
+        ui_document = self.session.ui_documents.get(target)
+        if ui_document is None:
+            print(f"    [script_values FAILED: no document '{target}']")
             return []
         probe = self.session.script_engine.dry_run(
-            target, ui_node.node.render_pass, tuple(times), fps
+            target, ui_document.document.render_pass, tuple(times), fps
         )
         if probe.compile_error is not None:
             print(f"    [script_values: compile error {probe.compile_error.message}]")
@@ -611,11 +611,11 @@ class DogfoodHarness:
 
     # ---- inspection ----
 
-    def nodes(self) -> dict[str, str]:
-        """node_id -> display name, for picking a target."""
+    def documents(self) -> dict[str, str]:
+        """document_id -> display name, for picking a target."""
         return {
-            nid: ui_node.ui_state.ui_name
-            for nid, ui_node in self.session.ui_nodes.items()
+            nid: ui_document.ui_state.ui_name
+            for nid, ui_document in self.session.ui_documents.items()
         }
 
     @property
@@ -648,14 +648,14 @@ class DogfoodHarness:
         """
         cop = self._copilot
         cop.save_conversation(self.session.paths.copilot_conversation_path)
-        # Persist app_state too, so a switch_node'd current node survives the next resume (load()
-        # restores it; without this the resume falls back to the oldest node).
+        # Persist app_state too, so a switch_document'd current document survives the next resume (load()
+        # restores it; without this the resume falls back to the oldest document).
         self.session.app_state.save(self.session.paths.app_state_file)
-        # Persist every node (uniform VALUES live in node.json, written only on save) — without
+        # Persist every document (uniform VALUES live in document.json, written only on save) — without
         # this each per-turn process loses the previous turn's set_uniform values, forcing the
         # agent to re-set them and burn its step budget (033; observed exp-1 turn 3).
-        for ui_node in self.session.ui_nodes.values():
-            self.session.save_ui_node(ui_node)
+        for ui_document in self.session.ui_documents.values():
+            self.session.save_ui_document(ui_document)
         msgs = cop.state.messages
         new = [
             {"role": m.role, "text": (m.text or "").strip()}
@@ -693,7 +693,7 @@ class DogfoodHarness:
         """Wipe the conversation — a FRESH agent on the SAME project (the context-wipe technique).
 
         Archives + resets the chat (via the engine seam `ProjectSession.clear_conversation`), so the
-        copilot resumes with ZERO memory of prior turns; only the nodes on disk remain. The next turn
+        copilot resumes with ZERO memory of prior turns; only the documents on disk remain. The next turn
         forces real tool-use (read_shader / grep) because nothing is in history. Resets both message
         cursors since the chat is now empty.
         """

@@ -103,7 +103,7 @@ def draw(app: App) -> None:
         return
 
     # Hold focus on the chat while a turn runs: the editor steals focus when the copilot
-    # creates/switches the current node (TextEditor first-render grab, /imgui-ui §8), which
+    # creates/switches the current document (TextEditor first-render grab, /imgui-ui §8), which
     # would route a keystroke into the editor. Re-assert every frame, not just the one-shot.
     if should_grab_chat_focus(
         focus_pending=app.copilot_focus_pending,
@@ -186,7 +186,7 @@ def _draw_revert_modal(app: App) -> None:
         imgui.dummy(imgui.ImVec2(0, float(SPACE.XS)))
         caption_text(
             "Shaders edited since that message are restored to their state before it. "
-            "This undoes the assistant's work on those nodes.",
+            "This undoes the assistant's work on those documents.",
         )
         imgui.dummy(imgui.ImVec2(0, float(SPACE.SM)))
         if primary_button("Revert"):
@@ -594,20 +594,22 @@ def _draw_pending_action(app: App, msg: Message, idx: int) -> None:
     # The recover affordance rides the outcome line ("You chose: Yes  <icon>"), its own
     # line only on a pre-v10 card with no structured outcome.
     if recover.done:
-        # Node back in ui_nodes = recovered; gone = the trash was cleared.
+        # Document back in ui_documents = recovered; gone = the trash was cleared.
         if drew_outcome:
             imgui.same_line(spacing=float(SPACE.MD))
         caption_text(
-            "Recovered" if recover.node_id in app.ui_nodes else "No longer recoverable"
+            "Recovered"
+            if recover.document_id in app.ui_documents
+            else "No longer recoverable"
         )
         return
     if drew_outcome:
         imgui.same_line(spacing=float(SPACE.MD))
-    # Disabled while a turn runs: a recover mutates ui_nodes, which the in-flight turn owns.
+    # Disabled while a turn runs: a recover mutates ui_documents, which the in-flight turn owns.
     disabled = app.copilot.state.in_flight
     imgui.begin_disabled(disabled)
     if revert_icon_button(f"gate_recover_{idx}", float(SIZE.ICON_SM)):
-        app.recover_deleted_node(msg)
+        app.recover_deleted_document(msg)
     imgui.end_disabled()
     if not disabled and imgui.is_item_hovered():
         imgui.set_tooltip("Recover from trash")

@@ -13,10 +13,10 @@ from shaderbox.render_shape import RenderShape
 
 
 @dataclass(frozen=True)
-class NodeTreeEntry:
-    # GL-FREE per-node row for the prompt project map. No uniform names — that's a GL
+class DocumentTreeEntry:
+    # GL-FREE per-document row for the prompt project map. No uniform names — that's a GL
     # read; has_errors reads cached compile_unit.errors so the tree builds off-main.
-    node_id: str
+    document_id: str
     name: str
     has_errors: bool
     is_current: bool
@@ -36,8 +36,8 @@ class LibCatalogEntry:
 
 @dataclass(frozen=True)
 class ExampleEntry:
-    # One shipped node example in the prompt catalogue: name + description + a
-    # `example:<short>` handle passed to create_node / read_shader / grep. GL-free.
+    # One shipped document example in the prompt catalogue: name + description + a
+    # `example:<short>` handle passed to create_document / read_shader / grep. GL-free.
     example_id: str  # the `example:<4-char>` handle (NOT the 36-char dir uuid)
     name: str
     description: str
@@ -52,10 +52,10 @@ class CompileErrorInfo:
 
 @dataclass(frozen=True)
 class ShaderView:
-    # One node's full view for read_shader: identity + line-numbered listing + uniform
-    # rows + compile errors. The read STAMPS the node's freshness so a subsequent edit
+    # One document's full view for read_shader: identity + line-numbered listing + uniform
+    # rows + compile errors. The read STAMPS the document's freshness so a subsequent edit
     # passes the guard.
-    node_id: str
+    document_id: str
     name: str
     listing: str  # cat -n style
     uniforms: list[str]  # "name type = value" rows
@@ -75,20 +75,20 @@ class SetUniformResult:
 
 
 @dataclass(frozen=True)
-class DeleteNodeResult:
-    # ok=False carries `error` (no such node). On ok=True, node_id + trash_name feed the
+class DeleteDocumentResult:
+    # ok=False carries `error` (no such document). On ok=True, document_id + trash_name feed the
     # recover card. trash_name is the dir-NAME under the project trash, NOT an absolute
     # path — the project dir is relocatable.
     ok: bool
     error: str = ""
     deleted_name: str = ""
-    node_id: str = ""
+    document_id: str = ""
     trash_name: str = ""
 
 
 @dataclass(frozen=True)
-class SwitchNodeResult:
-    # Makes a node current so the per-current tools (publish/render/edit-without-target)
+class SwitchDocumentResult:
+    # Makes a document current so the per-current tools (publish/render/edit-without-target)
     # act on it. ok=False carries `error`.
     ok: bool
     error: str = ""
@@ -96,9 +96,9 @@ class SwitchNodeResult:
 
 
 @dataclass(frozen=True)
-class NodeOpResult:
-    # Shared result for the small node-file ops (feature 052): rename (name set) and set_canvas_size
-    # (width/height = the APPLIED, clamped size). ok=False carries `error` (no such node / bad size).
+class DocumentOpResult:
+    # Shared result for the small document-file ops (feature 052): rename (name set) and set_canvas_size
+    # (width/height = the APPLIED, clamped size). ok=False carries `error` (no such document / bad size).
     ok: bool
     error: str = ""
     name: str = ""
@@ -122,14 +122,14 @@ class MediaBindResult:
 
 
 @dataclass(frozen=True)
-class NodeImportResult:
-    # import_node outcome (feature 052 slice 4), carried back through the FILE gate. NO source path:
-    # the picked file is read on the main thread inside import_picked_node. `basename` = the source
-    # filename (no directory). `node_id` = the new node's short id; `errors` = its post-compile errors.
+class DocumentImportResult:
+    # import_document outcome (feature 052 slice 4), carried back through the FILE gate. NO source path:
+    # the picked file is read on the main thread inside import_picked_document. `basename` = the source
+    # filename (no directory). `document_id` = the new document's short id; `errors` = its post-compile errors.
     ok: bool = False
     cancelled: bool = False
     error: str = ""
-    node_id: str = ""
+    document_id: str = ""
     errors: list[CompileErrorInfo] = field(default_factory=list)
     basename: str = ""
 
@@ -143,10 +143,10 @@ class LibFileResult:
 
 @dataclass(frozen=True)
 class GrepHit:
-    # One grep match. `origin` is an addressable handle for a read/edit tool: a node id
+    # One grep match. `origin` is an addressable handle for a read/edit tool: a document id
     # or a "lib:<path>" address.
     origin: str
-    location: str  # human label, e.g. "node 'gradient'" or "lib:noise.glsl"
+    location: str  # human label, e.g. "document 'gradient'" or "lib:noise.glsl"
     line: int  # 1-based
     text: str  # the matched line, stripped
 
@@ -167,39 +167,41 @@ class WorkingSetView:
     # listing + compile-coherent errors, rebuilt every iteration. A NODE carries uniform
     # rows + errors; a LIB file carries only the listing (no standalone compile). GL-FREE
     # value object — read_working_set marshals the GL/recompile work on the main thread.
-    address: str  # the agent-facing handle: a short node id, or a "lib:<path>" address
-    name: str  # node display name; the lib: address itself for a lib file
+    address: (
+        str  # the agent-facing handle: a short document id, or a "lib:<path>" address
+    )
+    name: str  # document display name; the lib: address itself for a lib file
     listing: str  # cat -n style, from live source.text
     is_current: bool
     is_lib: bool
-    uniforms: list[str]  # "name type = value" rows (node only; [] for a lib)
+    uniforms: list[str]  # "name type = value" rows (document only; [] for a lib)
     errors: list[CompileErrorInfo]
-    # The node's scripts/script.py live source (cat -n; "" = no script) + its compile/run error
+    # The document's scripts/script.py live source (cat -n; "" = no script) + its compile/run error
     # (feature 043). Appended (defaulted) so existing constructors stay valid; a lib view leaves both
-    # at default. Rendered as a "=== <node> SCRIPT ===" sub-section only when script_listing is set.
+    # at default. Rendered as a "=== <document> SCRIPT ===" sub-section only when script_listing is set.
     script_listing: str = ""
     script_errors: list[CompileErrorInfo] = field(default_factory=list)
-    # The node's canvas resolution ("WxH"; "" for a lib view) — the render size the user gets
-    # (feature 052). Rendered in the working-set node header so the model can see it.
+    # The document's canvas resolution ("WxH"; "" for a lib view) — the render size the user gets
+    # (feature 052). Rendered in the working-set document header so the model can see it.
     canvas: str = ""
 
 
 @dataclass(frozen=True)
 class EditResult:
     # The outcome of an edit_shader apply. Match + replace + recompile happen against the
-    # node's authoritative source on the main thread, so the handler never re-reads it.
+    # document's authoritative source on the main thread, so the handler never re-reads it.
     matches: int  # token-run matches of old_str (0 = not found, >1 = ambiguous)
     errors: list[CompileErrorInfo]  # 1-based; only meaningful when the edit applied
     # On a 0-match, the exact source bytes of the unique region that matches old_str
     # ignoring whitespace — the model copies this instead of re-guessing. "" when there
     # is no unique whitespace-only near-match.
     hint: str = ""
-    # Unresolvable-target reject: bad target (unknown node id / invalid lib path), a read-only
+    # Unresolvable-target reject: bad target (unknown document id / invalid lib path), a read-only
     # example, the intra-batch rewrite guard, or a failed lib write. An argument/operation
     # error that DOES count toward the edit-retry cap. unresolved_reason is the message. matches==0.
     unresolved: bool = False
     unresolved_reason: str = ""
-    # The honest "no standalone compile" note for a lib: edit target. Empty for a node
+    # The honest "no standalone compile" note for a lib: edit target. Empty for a document
     # edit (which returns real errors).
     lib_note: str = ""
     # Feature 033 enriched results: structural compile hints (range bookkeeping,
@@ -214,9 +216,9 @@ class EditResult:
     # whitespace-invariant match can't see — refused so author content isn't silently
     # destroyed; the model is steered to re-quote including the comment. matches==0.
     comment_loss: bool = False
-    # The RESOLVED target's display label ("node 'Wave' (f90f)" / "lib:a.glsl"), set once
+    # The RESOLVED target's display label ("document 'Wave' (f90f)" / "lib:a.glsl"), set once
     # the target resolved — so a failure names WHICH file was checked (an empty target
-    # silently means the current node, the dogfooded giveup cause).
+    # silently means the current document, the dogfooded giveup cause).
     target_label: str = ""
     # Whole-file rewrite fact (feature 039): the top-level functions/declarations the
     # rewrite REMOVED, appended to the result so a truncated rewrite is loud. "" otherwise.
@@ -225,10 +227,10 @@ class EditResult:
 
 @dataclass(frozen=True)
 class ScriptView:
-    # read_script result (feature 043): the node's scripts/script.py source line-numbered + its
-    # compile/run error. is_stub = the node had no script, so `listing` is the generated stub (not
-    # persisted) the agent adapts; node_id resolves the node it belongs to.
-    node_id: str
+    # read_script result (feature 043): the document's scripts/script.py source line-numbered + its
+    # compile/run error. is_stub = the document had no script, so `listing` is the generated stub (not
+    # persisted) the agent adapts; document_id resolves the document it belongs to.
+    document_id: str
     name: str
     listing: str  # cat -n style
     errors: list[CompileErrorInfo]
@@ -257,7 +259,7 @@ class ScriptWriteResult:
 
 @dataclass(frozen=True)
 class RenderResult:
-    # ok=False carries `error` (no such node, or the render failed). On ok=True, `path` is
+    # ok=False carries `error` (no such document, or the render failed). On ok=True, `path` is
     # the file under the project renders dir; size is the ACTUAL rendered size (snapped to
     # codec alignment); duration is video-only.
     ok: bool
@@ -307,17 +309,17 @@ class TelegramPackInfo:
 
 
 class CopilotCapabilities(Protocol):
-    # ---- GL-FREE context reads — safe on the worker thread (no bridge). node_tree excludes
-    # uniforms ON PURPOSE (uniform names need a GL read; see NodeTreeEntry).
-    def node_tree(self) -> list[NodeTreeEntry]: ...
+    # ---- GL-FREE context reads — safe on the worker thread (no bridge). document_tree excludes
+    # uniforms ON PURPOSE (uniform names need a GL read; see DocumentTreeEntry).
+    def document_tree(self) -> list[DocumentTreeEntry]: ...
     def lib_catalog(self) -> list[LibCatalogEntry]: ...
-    # Shipped node examples for create_node(example=...). GL-free.
+    # Shipped document examples for create_document(example=...). GL-free.
     def example_catalog(self) -> list[ExampleEntry]: ...
 
     # ---- cross-project reads ----
     # read_shaders marshals (force-compile + uniform read are GL) and STAMPS freshness per
-    # node. grep + read_lib are GL-FREE (string reads over the parsed index / in-memory).
-    def read_shaders(self, node_ids: list[str], /) -> list[ShaderView]: ...
+    # document. grep + read_lib are GL-FREE (string reads over the parsed index / in-memory).
+    def read_shaders(self, document_ids: list[str], /) -> list[ShaderView]: ...
     def grep(self, query: str, /) -> list[GrepHit]: ...
     def read_lib(self, names: list[str], /) -> list[LibFunctionBody]: ...
     # The per-turn working set: every shader/lib touched this turn, rebuilt from live source
@@ -334,9 +336,9 @@ class CopilotCapabilities(Protocol):
     # Backend methods wrapping bridge.run_on_main(...) (the worker blocks for the result);
     # the marshalling is hidden inside the method, so the tool layer just calls them.
     #
-    # Match old_str against the TARGET's CURRENT source, replace, recompile (node) / write
+    # Match old_str against the TARGET's CURRENT source, replace, recompile (document) / write
     # (lib), persist, refresh the editor — all on the main thread. `target` "" = current
-    # node, a node-id, or a "lib:<path>" address.
+    # document, a document-id, or a "lib:<path>" address.
     def apply_shader_edit(
         self, old_str: str, new_str: str, replace_all: bool, target: str, /
     ) -> EditResult: ...
@@ -346,51 +348,51 @@ class CopilotCapabilities(Protocol):
     # carries the removed top-level names fact in rewrite_note.
     def apply_full_rewrite(self, new_text: str, target: str, /) -> EditResult: ...
 
-    # Set a uniform VALUE. node "" = current. Rejects sampler/block/engine-driven with an
+    # Set a uniform VALUE. document "" = current. Rejects sampler/block/engine-driven with an
     # explicit error.
     def set_uniform(
-        self, name: str, value: object, node: str, /
+        self, name: str, value: object, document: str, /
     ) -> SetUniformResult: ...
 
-    # ---- scripting (feature 043): the node script authoring surface ----
-    # read_script returns the node's scripts/script.py source (a fresh node returns the generated
+    # ---- scripting (feature 043): the document script authoring surface ----
+    # read_script returns the document's scripts/script.py source (a fresh document returns the generated
     # stub, unpersisted). write_script create-or-overwrites the whole script, recompiles, dry-runs it,
     # and returns the compile + motion facts. Both marshal main-thread (the dry-tick reads the GL
-    # program for active uniforms). node "" = current.
-    def read_script(self, node: str, /) -> ScriptView: ...
-    def write_script(self, new_text: str, node: str, /) -> ScriptWriteResult: ...
+    # program for active uniforms). document "" = current.
+    def read_script(self, document: str, /) -> ScriptView: ...
+    def write_script(self, new_text: str, document: str, /) -> ScriptWriteResult: ...
     # edit_script: a substring edit (plain-text match), the script mirror of edit_shader; returns the
     # same ScriptWriteResult as write_script so an edit and a write give identical feedback.
     def apply_script_edit(
-        self, old_str: str, new_str: str, replace_all: bool, node: str, /
+        self, old_str: str, new_str: str, replace_all: bool, document: str, /
     ) -> ScriptWriteResult: ...
 
-    # Create a node, then COMPILE it and return its errors. `example` = an example id from
+    # Create a document, then COMPILE it and return its errors. `example` = an example id from
     # example_catalog ("" = the default starter); `source` overrides the example body when
-    # non-empty. Returns (new node-id, post-compile errors).
-    def create_node(
+    # non-empty. Returns (new document-id, post-compile errors).
+    def create_document(
         self, name: str, source: str, example: str, switch_to: bool, /
     ) -> tuple[str, list[CompileErrorInfo], str]: ...
 
-    # Delete a node (move its dir to the project trash, recoverable). Destructive => always
+    # Delete a document (move its dir to the project trash, recoverable). Destructive => always
     # gated; the method marshals the GL teardown via the bridge.
-    def delete_node(self, node: str, /) -> DeleteNodeResult: ...
+    def delete_document(self, document: str, /) -> DeleteDocumentResult: ...
 
-    # Make a node CURRENT so the per-current tools (publish/render/edit-without-target) act
+    # Make a document CURRENT so the per-current tools (publish/render/edit-without-target) act
     # on it. Stamps freshness so a follow-up edit lands.
-    def switch_node(self, node: str, /) -> SwitchNodeResult: ...
+    def switch_document(self, document: str, /) -> SwitchDocumentResult: ...
 
-    # ---- node file ops (feature 052 slice 3) — checkpoint-revertable node.json mutations ----
-    # rename_node sets the display name; set_canvas_size sets the node's render resolution (clamped,
-    # returns the applied size). node "" = current. duplicate_node forks a node (dir copy incl.
-    # media/script) into a fresh id, returning the create_node shape (short id, post-compile errors,
+    # ---- document file ops (feature 052 slice 3) — checkpoint-revertable document.json mutations ----
+    # rename_document sets the display name; set_canvas_size sets the document's render resolution (clamped,
+    # returns the applied size). document "" = current. duplicate_document forks a document (dir copy incl.
+    # media/script) into a fresh id, returning the create_document shape (short id, post-compile errors,
     # facts).
-    def rename_node(self, node: str, new_name: str, /) -> NodeOpResult: ...
+    def rename_document(self, document: str, new_name: str, /) -> DocumentOpResult: ...
     def set_canvas_size(
-        self, node: str, width: int, height: int, /
-    ) -> NodeOpResult: ...
-    def duplicate_node(
-        self, node: str, new_name: str, switch_to: bool, /
+        self, document: str, width: int, height: int, /
+    ) -> DocumentOpResult: ...
+    def duplicate_document(
+        self, document: str, new_name: str, switch_to: bool, /
     ) -> tuple[str, list[CompileErrorInfo], str]: ...
 
     # Delete a shader-library file (a "lib:<path>" address) to the shader-lib trash (recoverable);
@@ -401,28 +403,28 @@ class CopilotCapabilities(Protocol):
     # bind_media validates the sampler, then BLOCKS on a FILE gate while the UI opens the OS file
     # picker; the main thread does the load+bind and answers with a path-free MediaBindResult (the
     # abs path never crosses back to the worker). unbind_media resets a sampler to the default image
-    # (a normal main-thread op, no picker). node "" = current.
-    def bind_media(self, node: str, uniform: str, /) -> MediaBindResult: ...
-    def unbind_media(self, node: str, uniform: str, /) -> MediaBindResult: ...
+    # (a normal main-thread op, no picker). document "" = current.
+    def bind_media(self, document: str, uniform: str, /) -> MediaBindResult: ...
+    def unbind_media(self, document: str, uniform: str, /) -> MediaBindResult: ...
 
     # Import a .glsl off the user's disk (feature 052 slice 4): opens the file picker, reads the file
-    # on the main thread, and creates a node from it. Reuses the FILE gate; the source path never
+    # on the main thread, and creates a document from it. Reuses the FILE gate; the source path never
     # reaches the worker.
-    def import_node(self, switch_to: bool, /) -> NodeImportResult: ...
+    def import_document(self, switch_to: bool, /) -> DocumentImportResult: ...
 
     # ---- render / publish (all gated) ----
-    # Render a node's current frame to a PNG / `seconds` of animation to a WebM under the
+    # Render a document's current frame to a PNG / `seconds` of animation to a WebM under the
     # project renders dir. GL => the method marshals via the bridge with the longer
-    # render_op_timeout_s. `shape` is a named RenderShape tier (NATIVE = the node's canvas size).
-    def render_image(self, node: str, shape: RenderShape, /) -> RenderResult: ...
+    # render_op_timeout_s. `shape` is a named RenderShape tier (NATIVE = the document's canvas size).
+    def render_image(self, document: str, shape: RenderShape, /) -> RenderResult: ...
     def render_video(
-        self, node: str, seconds: float, fps: int, shape: RenderShape, /
+        self, document: str, seconds: float, fps: int, shape: RenderShape, /
     ) -> RenderResult: ...
 
     # The aimable read-side probe (feature 050): a one-line facts string off a tiny offscreen
     # render at a chosen `t` (default 0.0). UN-gated + non-mutating, unlike render_image. The
     # returned text is ready to read (the facts line, or an honest error/empty note).
-    def probe_render(self, node: str, t: float, /) -> str: ...
+    def probe_render(self, document: str, t: float, /) -> str: ...
 
     # Render with the exporter's own preset, then enqueue the upload + AWAIT its terminal
     # progress (the method does the bridge-marshalled poll).
@@ -431,9 +433,9 @@ class CopilotCapabilities(Protocol):
         self, title: str, description: str, shape: RenderShape, /
     ) -> PublishResult: ...
 
-    # GL-free precheck reads backing the pre-gate guided handoff: is there a current node, is
+    # GL-free precheck reads backing the pre-gate guided handoff: is there a current document, is
     # the integration connected, and (Telegram) is a pack selected.
-    def has_current_node(self) -> bool: ...
+    def has_current_document(self) -> bool: ...
     def telegram_connected(self) -> bool: ...
     def youtube_connected(self) -> bool: ...
     def telegram_has_default_pack(self) -> bool: ...

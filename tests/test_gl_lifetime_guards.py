@@ -13,13 +13,13 @@ import pytest
 
 from shaderbox.copilot.checkpoint import TurnCheckpoint
 from shaderbox.core import Canvas
-from shaderbox.document import Node
-from shaderbox.paths import NODE_SCRIPT_BASENAME, shader_lib_root
+from shaderbox.document import Document
+from shaderbox.paths import DOCUMENT_SCRIPT_BASENAME, shader_lib_root
 from shaderbox.shader_lib import ShaderLibIndex, set_active
 
 _EXAMPLE = (
     Path(__file__).resolve().parent.parent
-    / "shaderbox/resources/node_examples/53724dbd-8efb-4c09-8c7d-28d626a066e7"
+    / "shaderbox/resources/document_examples/53724dbd-8efb-4c09-8c7d-28d626a066e7"
 )
 
 
@@ -41,35 +41,35 @@ def _released(obj: object) -> bool:
     return type(getattr(obj, "mglo", None)).__name__ == "InvalidObject"
 
 
-def test_node_release_frees_the_canvas(gl: moderngl.Context) -> None:
-    # The one test naming Node.release checks only the uniform-values half, so dropping
+def test_document_release_frees_the_canvas(gl: moderngl.Context) -> None:
+    # The one test naming Document.release checks only the uniform-values half, so dropping
     # `self.canvas.release()` leaked a texture + FBO per reload with the suite still green.
-    node, _ = Node.load_from_dir(_EXAMPLE)
-    texture = node.render_pass.canvas.texture
-    fbo = node.render_pass.canvas.fbo
+    document, _ = Document.load_from_dir(_EXAMPLE)
+    texture = document.render_pass.canvas.texture
+    fbo = document.render_pass.canvas.fbo
 
-    node.release()
+    document.release()
 
-    assert _released(texture), "the canvas texture outlived Node.release()"
-    assert _released(fbo), "the canvas framebuffer outlived Node.release()"
+    assert _released(texture), "the canvas texture outlived Document.release()"
+    assert _released(fbo), "the canvas framebuffer outlived Document.release()"
 
 
 def test_invalidate_frees_the_program_and_its_buffers(gl: moderngl.Context) -> None:
     # invalidate() runs on every hot-reload and every lib change; leaking here leaks per edit.
-    node, _ = Node.load_from_dir(_EXAMPLE)
-    assert node.render_pass.program is not None
+    document, _ = Document.load_from_dir(_EXAMPLE)
+    assert document.render_pass.program is not None
     program, vbo, vao = (
-        node.render_pass.program,
-        node.render_pass.vbo,
-        node.render_pass.vao,
+        document.render_pass.program,
+        document.render_pass.vbo,
+        document.render_pass.vao,
     )
 
-    node.render_pass.invalidate()
+    document.render_pass.invalidate()
 
     assert (
-        node.render_pass.program is None
-        and node.render_pass.vbo is None
-        and node.render_pass.vao is None
+        document.render_pass.program is None
+        and document.render_pass.vbo is None
+        and document.render_pass.vao is None
     )
     assert _released(program), "the GL program outlived invalidate()"
     for name, obj in (("vbo", vbo), ("vao", vao)):
@@ -103,17 +103,17 @@ def test_snapshot_script_keeps_the_pre_turn_bytes(tmp_path: Path) -> None:
     # First-touch-wins: a second edit in the same turn must NOT overwrite the snapshot, or
     # Revert restores the copilot's own mid-turn draft over the user's pre-turn script —
     # reporting success while losing exactly what the user asked to get back.
-    scripts_dir = tmp_path / "node" / "scripts"
+    scripts_dir = tmp_path / "document" / "scripts"
     scripts_dir.mkdir(parents=True)
-    script = scripts_dir / NODE_SCRIPT_BASENAME
+    script = scripts_dir / DOCUMENT_SCRIPT_BASENAME
     script.write_text("PRE-TURN\n")
 
     checkpoint = TurnCheckpoint(turn_id="t1", root=tmp_path / "checkpoints")
-    checkpoint.snapshot_script("node", script)
+    checkpoint.snapshot_script("document", script)
     script.write_text("MID-TURN DRAFT\n")
-    checkpoint.snapshot_script("node", script)
+    checkpoint.snapshot_script("document", script)
 
-    snapshot = checkpoint.turn_dir / "node" / "scripts" / NODE_SCRIPT_BASENAME
+    snapshot = checkpoint.turn_dir / "document" / "scripts" / DOCUMENT_SCRIPT_BASENAME
     assert snapshot.read_text() == "PRE-TURN\n", (
         "the second snapshot overwrote the pre-turn bytes — revert would restore the draft"
     )
@@ -121,22 +121,24 @@ def test_snapshot_script_keeps_the_pre_turn_bytes(tmp_path: Path) -> None:
 
 def test_snapshot_script_ignores_a_missing_script(tmp_path: Path) -> None:
     checkpoint = TurnCheckpoint(turn_id="t1", root=tmp_path / "checkpoints")
-    checkpoint.snapshot_script("node", tmp_path / "absent" / NODE_SCRIPT_BASENAME)
-    assert not (checkpoint.turn_dir / "node").exists()
+    checkpoint.snapshot_script(
+        "document", tmp_path / "absent" / DOCUMENT_SCRIPT_BASENAME
+    )
+    assert not (checkpoint.turn_dir / "document").exists()
 
 
-def test_node_release_frees_uniform_held_media(gl: moderngl.Context) -> None:
+def test_document_release_frees_uniform_held_media(gl: moderngl.Context) -> None:
     # The 060 fix, pinned from the other side: the uniform values own textures/captures, and
-    # every reload releases the node.
-    node, _ = Node.load_from_dir(_EXAMPLE)
+    # every reload releases the document.
+    document, _ = Document.load_from_dir(_EXAMPLE)
     held = [
         v
-        for v in node.render_pass.uniform_values.values()
+        for v in document.render_pass.uniform_values.values()
         if isinstance(v, moderngl.Texture)
     ]
 
-    node.release()
+    document.release()
 
-    assert node.render_pass.uniform_values == {}
+    assert document.render_pass.uniform_values == {}
     for texture in held:
-        assert _released(texture), "a uniform-held texture outlived Node.release()"
+        assert _released(texture), "a uniform-held texture outlived Document.release()"

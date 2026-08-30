@@ -71,10 +71,10 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
 - **A persisted model salvages per KEY, generically — never by a hand-written allowlist.**
   `model_salvage.drop_invalid` validates each field alone and drops only what its own field
   rejects, so one bad value costs that setting and nothing else. The failure it replaces:
-  `UINodeState` grew a per-field reset list one entry at a time (`uniform_sort_key`, then
+  `UIDocumentState` grew a per-field reset list one entry at a time (`uniform_sort_key`, then
   `input_type`, then 064's `step_configs`), which is only ever as complete as the last person to
   think about it — measured, a wrong-typed `ui_name` or a zero smoothing window still dropped the
-  WHOLE node, taking the shader and every tuned uniform with it. A second, narrower validator is
+  WHOLE document, taking the shader and every tuned uniform with it. A second, narrower validator is
   still right where a bad entry sits INSIDE a collection: there, per-key salvage saves the
   siblings. **New persisted state gets constraints on the model** (`Field(gt=…)`, a `Literal`), not
   a check at the call site: a knob that moves out of code and into a file loses the compiler that
@@ -100,7 +100,7 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   a migration) MEANT, the CONTRACT is unsound — redesign so the unsafe outcome can't be EXPRESSED, then
   delete the guards. The repo keeps converging on this: `extra='forbid'` makes a bad migration LOUD
   instead of silently dropping keys; gate on actual-rendered-size, not stamped intent; pick the
-  dirty-signal the success path CLEARS (`node.program is None`), not a derived value a reset keeps
+  dirty-signal the success path CLEARS (`render_pass.program is None`), not a derived value a reset keeps
   coherent; content-addressed edits make silent mislocation impossible by construction. The canonical
   counter-example is the five 038 brace-structure guards, ALL deleted by 039 (the 020·14→036→038→039
   arc — two wasted guard waves). When a spec's decision section is mostly validation logic, ask this
@@ -112,13 +112,13 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   omission is a NameError — gets CUT; inert latent code with zero teach/maintain cost AND a named
   near-future consumer stays dormant. Don't abstract from N=1 (write the second real consumer's full
   field list — <30% lands inside ⇒ wrong axis); DO generalize when a simplicity constraint forces
-  copy-paste of the feature's own essence (044's Verlet step across 4 files → the node script). Re-litigated
+  copy-paste of the feature's own essence (044's Verlet step across 4 files → the document script). Re-litigated
   from scratch in 002/010/041 for want of this bullet. Revisit if a third reconciling axis appears.
 - **A cross-cutting guarantee is enforced at the single FUNNEL, not per-caller.** When an invariant
   must hold on EVERY path of a fan-out, put the bracket at the one shared funnel (or lift the fact ONTO
   the entity) + ONE invariant test asserting coverage across all paths — never a per-call-site bracket
   that a sibling silently misses. The per-caller bracket is a KNOWN dead-end (041 did it 3× before the
-  `Node.render_media` funnel; 028's pointer clobber fixed in smoke then re-clobbered by the fixture →
+  `Document.render_media` funnel; 028's pointer clobber fixed in smoke then re-clobbered by the fixture →
   real fix one gate in `App.__init__`; the `.trash/` filter on one glob but not the watcher's). A
   SECOND fix of the same bug at a sibling site is the trigger to move to the funnel. This is the
   in-repo instance of the global blast-radius rule (`~/.claude/CLAUDE.md` — fix at the shared root).
@@ -131,7 +131,7 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   code-grounded devil's-advocate that checks the premise against the runtime. Revisit: never (a law).
 - **A model flag whose ROW is created lazily-on-draw cannot be set programmatically — the writer must
   eager-create.** When per-entity state lives on an object created lazily inside a DRAW loop (the
-  `UIUniform` row born only in `tabs/node.py`'s uniform loop; feature 047's `is_script_active`), any
+  `UIUniform` row born only in `tabs/document.py`'s uniform loop; feature 047's `is_script_active`), any
   programmatic or HEADLESS mutation that runs before that draw silently no-ops — the lookup returns
   None and the write is skipped. The bug is latent because the interactive path always draws the row
   first (the click that mutates is itself in the drawn UI), so it only bites smoke/dogfood/copilot/any
@@ -155,7 +155,7 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   frame loop divides by `global_target_fps`.
   The mirror rule for derived state: a dict/list keyed by something the user can RENAME or RETYPE
   (`ui_uniforms` is keyed by a hash of name AND shape) accumulates forever unless something prunes it,
-  and the prune belongs in `UINode.save` — the funnel every path reaches, including headless ones that
+  and the prune belongs in `UIDocument.save` — the funnel every path reaches, including headless ones that
   never draw — never in the draw loop that lazily CREATES the rows (that is the lazy-row trap two
   bullets down). Same for on-disk assets: sweep by "what does the freshly built metadata reference",
   never by "what does each live uniform name", because a name-scoped sweep structurally cannot see the
@@ -204,7 +204,7 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   remains in `App` is genuinely UI/glfw/imgui-bound. Don't split further without a fresh pain signal
   (lost search-and-replace, unclear blast radius) — the remaining candidates are net-negative today.
 - **`ProjectSession` is the headless project + copilot core; `App` owns one and forwards to it.** The
-  project lifecycle (paths, nodes, app_state, lib index + cross-project stores, integrations) and the
+  project lifecycle (paths, documents, app_state, lib index + cross-project stores, integrations) and the
   whole copilot cluster (`CopilotSession`/`CopilotBackend`/`RevertExecutor` + the capability wiring)
   live in `project_session.py`, which creates no glfw window and no imgui context at import — so a
   headless harness (feature 026) constructs it on a standalone EGL context without `App`. (The
@@ -216,15 +216,15 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   `on_*` callbacks the core invokes** (`on_current_node_changed` / `on_node_source_synced` /
   `on_node_deleted` — the `ShaderLibFileManager` idiom); a return-value seam is WRONG here because the
   reactions fire mid-copilot-turn on the worker-drain thread with `App` off the call stack. The toast on
-  a node save lives in `App.save_ui_node` (the user-path forwarder), NOT the core — so the copilot's
+  a document save lives in `App.save_ui_node` (the user-path forwarder), NOT the core — so the copilot's
   mid-turn saves don't toast. Imgui-coupled services the core needs (`exporter_registry` because the
   exporters carry panels, `shader_lib_files`) stay App-side, reached via injected getters. A NEW core
   mutation whose UI reaction touches imgui state adds an `on_*` callback (default no-op), never a direct
   imgui import. Spec: `ai_docs/features/025_project_session_extraction.md`. Revisit if a core op needs a
   UI reaction that a fire-and-forget callback can't express (e.g. it needs a return value App reads).
-- **The CPU-script engine is headless `ProjectSession` code; scripts are project DATA; a node has ONE
+- **The CPU-script engine is headless `ProjectSession` code; scripts are project DATA; a document has ONE
   STATEFUL-class script; a new script LANGUAGE is a `Behavior` backend, not an engine-loop change (feature
-  041→048).** A node carries at most ONE script, `nodes/<id>/scripts/script.py` (the node script), a
+  041→048).** A document carries at most ONE script, `documents/<id>/scripts/script.py` (the document script), a
   user-finalized CLASS subclassing `ScriptBehavior` with `update(self, ctx) -> dict[str, value]` driving
   MANY uniforms from one instance (feature 048 collapsed the 044/047 second per-uniform path — `u_*.py`,
   the `(name,type)` tag binding, the copy-content selector, the two-pass script-vs-per-uniform override — to
@@ -233,7 +233,7 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   `sin(t)` belongs in the shader). Each dict value is validated against the live uniform via the shared
   `uniform_coerce` (a bare number for a scalar; `Vec2/3/4`/`Array`/`Text` for the shaped kinds). The engine
   (`shaderbox/scripting/`) is repo code owned by `ProjectSession`, imports no imgui/glfw and no concrete
-  `Node` type (it works against the `EngineNode` protocol — `uniform_values` + `get_active_uniforms()`), so
+  `Document` type (it works against the `EngineNode` protocol — `uniform_values` + `get_active_uniforms()`), so
   it stays in the 025 headless core. **Binding is by EXISTENCE**: `script.py` on disk IS the binding — no
   active flag, no activate step (`is_script_active`/`is_brain_active` retired in 048). **The body is `exec`'d
   VERBATIM** (no AST surgery; the file IS a class def). A script is plain Python — `import math`, the stdlib,
@@ -248,26 +248,26 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   drove last frame, records under the sentinel `(node_id, "script.py")`. A key naming an engine-owned
   (`u_time`…) uniform is dropped SILENTLY; an orphan/typo/sampler key records a soft `(node_id, name)` error
   + skip. NaN/Inf is frozen-as-data like a shape error.
-  **PLAY/STOP is node-scoped + name-keyed model state, NOT a per-`UIUniform` flag (feature 048).** A uniform
+  **PLAY/STOP is document-scoped + name-keyed model state, NOT a per-`UIUniform` flag (feature 048).** A uniform
   the dict returns PLAYS (the engine writes it each tick); the user STOPS it to edit by hand. STOP state is
-  `UINodeState.stopped_uniforms: list[str]` + a node-wide `all_stopped: bool` (stored as a LIST, not a set —
-  `UINode.save`→`model_dump()`→`json.dump` raises on a Python set; coerced to a set per-frame). Node-scoped
+  `UIDocumentState.stopped_uniforms: list[str]` + a document-wide `all_stopped: bool` (stored as a LIST, not a set —
+  `UIDocument.save`→`model_dump()`→`json.dump` raises on a Python set; coerced to a set per-frame). Document-scoped
   name-keyed state survives a retype (the name is stable) and is reachable before any row draws — this is
   the deliberate avoidance of the lazy-row law (a per-`UIUniform` flag would re-trip the 047 ROOT-2 trap).
   The engine learns STOP via a fresh per-frame `tick(stopped=…)` param (`ProjectSession._stopped_for` builds
-  it; the headless boundary holds — the engine never learns `UINodeState`, intent flows through a param like
+  it; the headless boundary holds — the engine never learns `UIDocumentState`, intent flows through a param like
   `engine_driven`): a stopped name STILL ticks the script (state advances) + STILL counts as driven (so its
   play button shows), but its WRITE is skipped — `driven.add(name)` precedes the coerce/write, and BOTH the
   success-write and the coercion-failure-freeze are guarded `if name not in stopped` so a stopped uniform's
-  manual value is never clobbered. Node-STOP freezes WRITES, NOT ticking (else a later node-PLAY would resume
+  manual value is never clobbered. Document-STOP freezes WRITES, NOT ticking (else a later document-PLAY would resume
   from stale `self.*`); the UI auto-STOPs a playing uniform when the user grabs its widget
   (`is_item_activated()`, gated on PLAYING). **Determinism is SCOPED**: a `ctx.t`-pure `update` is identical
   live vs export; a stateful integrator is frame-rate-dependent live by design BUT its EXPORT is reproducible
   — **export ticks a FRESH per-export instance** (`fresh_behavior_for` + `tick_export`, recompiled from
   cached source, NO stopped set — an export always plays), so live state never poisons an exported render.
-  The isolation is STRUCTURAL: `Node.render_media` enters an injected `Node.export_isolation` factory around
+  The isolation is STRUCTURAL: `Document.render_media` enters an injected `Document.export_isolation` factory around
   its whole body, so EVERY export (Render tab / Share scratch / copilot tools all funnel through
-  `render_media`) is isolated with no per-caller opt-in to forget; `Node` stays engine-free. The **live path
+  `render_media`) is isolated with no per-caller opt-in to forget; `Document` stays engine-free. The **live path
   ticks once** (`session.tick` in `ui.py`). A future C backend implements the same `Behavior.run` protocol
   over a `.so` with no engine-loop change. Spec: `ai_docs/features/048_single_script_play_stop.md` (041 the
   origin, 044/047's per-uniform half superseded). Revisit `ctx` when a script needs cross-NODE state (the
@@ -312,12 +312,12 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   FILE.** The editor is a TAB BAR (feature 045): an ordered `editor_tabs: list[EditorTab]` +
   `active_tab_index`, over a path-keyed `editor_sessions: dict[Path, EditorSession]` (the lazily-built
   `TextEditor` + its dirty baseline, one per on-disk file). A tab's `kind` (`shader` / `script` / `lib`,
-  feature 048) drives its node-derived display label (`tab_label`: `<node> (shader)` / `(script)` /
+  feature 048) drives its document-derived display label (`tab_label`: `<document> (shader)` / `(script)` /
   `library - <file>`) + the error tint; the imgui `##id` keys on the stable path/index, never the mutable
   label. The same file is never opened twice (`_focus_or_add_tab` focuses the existing tab). Editing
   acts on the ACTIVE tab: `flush_current_editor()` flushes its dirty editor before any save; the mtime
-  watcher re-syncs every open session from disk on external change (disk wins). A node's editors close
-  with the node (lib tabs survive); a renamed file re-keys its session in place. Editor per-instance
+  watcher re-syncs every open session from disk on external change (disk wins). A document's editors close
+  with the document (lib tabs survive); a renamed file re-keys its session in place. Editor per-instance
   footguns (palette, FPE-while-modal, cursor, font sizing) live in `## Known quirks`. Revisit if a tab
   needs durable per-tab state beyond its open files (e.g. persisting the open-tab set across restart) or
   a 4th editable `kind` lands.
@@ -367,20 +367,20 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   progress path keeps the queue permanently full — exactly when the event that clears
   `in_flight` would have been dropped. `tests/test_worker_daemon_contract.py` enumerates the
   spawn sites from the AST, so a new worker defaults INTO the daemon check.
-- **The "current node" is a first-class subject; how a copilot tool addresses a node scales with the
-  side effect's reversibility.** The app has exactly one selected node (`App.current_node_id`); the UI
+- **The "current document" is a first-class subject; how a copilot tool addresses a document scales with the
+  side effect's reversibility.** The app has exactly one selected document (`App.current_node_id`); the UI
   shows it, the editor binds to it; `switch_node` is the one tool whose job is to change it. A NEW
   copilot tool picks its addressing by RISK, not by reflex symmetry:
   - **Reversible / project-internal (read, edit, delete-to-trash, render-to-file)** → take an explicit
-    node id, act WITHOUT switching. `read_shader` / the edit tools / `delete_node` / `render_image` /
+    document id, act WITHOUT switching. `read_shader` / the edit tools / `delete_node` / `render_image` /
     `render_video` all do this: they work across the project (or produce a local file) without
     disturbing the user's view, and the worst case is undoable.
-  - **External + irreversible (publish_telegram / publish_youtube)** → operate on the CURRENT node
-    ONLY, no node arg. A live post of the wrong shader can't be undone, so it must be the node the user
+  - **External + irreversible (publish_telegram / publish_youtube)** → operate on the CURRENT document
+    ONLY, no document arg. A live post of the wrong shader can't be undone, so it must be the document the user
     is looking at: the copilot `switch_node`s first (the prompt enforces verify-current-before-publish).
-  Spraying a node-id arg onto the *publish* tools is the anti-pattern — it lets the agent silently post
-  a node the user isn't watching. Revisit the split if a real workflow needs background publish of a
-  non-current node often enough that switching first is friction — then add the arg consciously, with a
+  Spraying a document-id arg onto the *publish* tools is the anti-pattern — it lets the agent silently post
+  a document the user isn't watching. Revisit the split if a real workflow needs background publish of a
+  non-current document often enough that switching first is friction — then add the arg consciously, with a
   matching "you're publishing X, not the current Y" confirmation, not by default.
 - **Copilot source edits are content-addressed ONLY: `edit_shader` (old_str/new_str, token-matched)
   + `write_shader` (whole file).** No tool addresses source by line number or by location-anchor
@@ -416,7 +416,7 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   `reload`, but the driven set / coercion errors / values need `update` to RUN, and headless has no
   frame loop), so `ScriptEngine.dry_run` reads the live compile verdict then steps ONE fresh script instance
   CONTINUOUSLY through the export-clock frames (so `self.*` accumulates — an integrator animates) into a
-  `values_sink` that leaves the live node byte-identical. The MOTION verdict is the value-diff across t
+  `values_sink` that leaves the live document byte-identical. The MOTION verdict is the value-diff across t
   (GL-free, exact — catches a pulse/color-cycle a pixel-bbox misses) + ONE corroborating render for the
   "visible / FLAT" honesty case a value-diff can't see. A script write captures into the turn checkpoint
   (`_capture_script`) like any mutating tool.
@@ -429,7 +429,7 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   window" (not the final-frame snapshot of the self-healing `errors`); it STASHES its driven set into
   `last_driven` so the working-set marker + the `set_uniform` reject (which read `script_driven_uniforms`)
   agree with the write verdict in a tick-less path; the corroborating render takes its `u_time` from the
-  SAME sample the values came from (`_render_facts_for(node, t=mid[0])`), so the rendered frame is the one
+  SAME sample the values came from (`_render_facts_for(document, t=mid[0])`), so the rendered frame is the one
   the values describe. Every 043 bug (the swallowed transient raise, the phantom-numeric driven row, the
   wall-clock-at-t=0 render, even C1's un-captured `scripts/`) was one instance of this class — a live
   self-healing fact leaking into a headless probe context.** Revisit if a second script LANGUAGE lands
@@ -476,7 +476,7 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   persisted (a stale copy is worse than no copy). Invariants any change MUST keep: (1) WITHIN a turn the
   live loop's `messages[]` still carries full assistant+tool pairs (the provider 400s on an orphaned
   `tool_call_id`) — NL-only applies ONLY at the commit boundary, never mid-turn. (2) the summary must
-  preserve the four cross-turn facts (every node referenced; a mutation's new value; the agent's stated
+  preserve the four cross-turn facts (every document referenced; a mutation's new value; the agent's stated
   assumption — verbatim reply at clean-done, the branch note at a cutoff; the irreversible-action ledger
   with identity, verbatim + uncapped) or a real intent regresses. (3) the block-prompt constructor
   (`prompt.py` `PromptBlock`/`Volatility`/`build_prompt`) composes `[static < rare < dialogue < pending]`;
@@ -485,13 +485,13 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   (clean producer/render/compose split — `prompt.py` imports no agent/registry). The within-turn read
   de-dup + line-drift follow-up was CLOSED by 020·29 (the PER_TURN working-set block).
 - **A new addressable copilot SOURCE kind gets a `<kind>:` prefix + rides the EXISTING read/grep, never
-  a parallel tool.** Nodes are bare ids, library files are `lib:<path>`, shipped examples are
+  a parallel tool.** Documents are bare ids, library files are `lib:<path>`, shipped examples are
   `example:<id>` (feature 020·22; renamed from `template:` by 051). A new readable source (a future
   preset, etc.) mirrors this: a
   self-describing prefix the catalogue emits, a branch in `_copilot_resolve_source` + the read/grep
   builders (the SAME `ShaderView`/`GrepHit`, one implementation), and — if it's read-only — an EXPLICIT
   reject in the edit-target resolver (a `<kind>:` target returns an unresolved EditResult with an
-  actionable message, BEFORE the node resolver, so a lenient-resolver refactor can't make it a silent
+  actionable message, BEFORE the document resolver, so a lenient-resolver refactor can't make it a silent
   edit target). Don't fork a `read_<kind>` method; don't merge the id namespaces (separate dicts, the
   prefix carries the read-only-vs-editable semantics). Revisit if a source needs WRITE access (then it's
   not just an address — it's an edit target with its own freshness/guard).
@@ -527,7 +527,7 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   guard). The shape owns ONLY size+aspect; fps/container/duration_max stay per-OUTLET caller args (a
   Short is 60s .mp4, a sticker 3s .webm — not a shape fact). DELIBERATELY out of the vocabulary: the
   Render-tab `ResolutionDetails` (a free-form WxH artist control that is ALSO the actual-rendered-dims
-  record, persisted in node.json — a 7-value enum can't carry concrete dims, and it's a different
+  record, persisted in document.json — a 7-value enum can't carry concrete dims, and it's a different
   concept with its own home) and Telegram's hard 512px cap (a platform limit, not a user choice).
   Revisit if a third exporter needs a size tier the table lacks, or a real need for free copilot dims
   surfaces (then a `CUSTOM` member, NOT a return to raw w/h — that re-admits the foot-gun).
@@ -573,7 +573,7 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   explicitly — that means a test/smoke harness (`scripts/smoke.py`, the pytest `app` fixture) driving
   `App(project_dir=<tmp>)`. WITHOUT this, an explicit-dir process overwrites the user's pointer with a
   throwaway tmp path that's deleted on exit, so the next real launch reads a dead pointer and silently
-  falls back to a different/empty project — the user's just-created nodes appear "gone" (they were
+  falls back to a different/empty project — the user's just-created documents appear "gone" (they were
   saved into the tmp project they were unknowingly working in). `open_project` (a real user action)
   uses the default `persist_pointer=True`. Revisit only if a headless harness ever legitimately needs
   to set the user's active project.
@@ -585,7 +585,7 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   before a release (then consider `git describe`-derived versions).
 
 - **On-disk artifacts split by lifetime: durable-portable → the project dir; disposable-local →
-  `app_data_dir()`.** A project dir (`app_state.json` + `nodes/` + `media/` + `trash/`) is a
+  `app_data_dir()`.** A project dir (`app_state.json` + `documents/` + `media/` + `trash/`) is a
   self-contained relocatable unit — it can live anywhere and travels with the user. So state that is
   durable, read back by the app, and conceptually part of the project goes INSIDE the project dir
   (e.g. the copilot conversation — feature 022 — lands at `project_dir/copilot/`). Machine-local
@@ -599,7 +599,7 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   DEBUG+ file that is a strict SUPERSET of the console. Call sites only do `from loguru import logger;
   logger.X(...)` — no module calls `logger.add`/`.remove`/sets handlers (loguru is a process-global
   singleton, so centralizing the sinks is enough; a `get_logger()` gatekeeper would be ceremony that
-  fights its design). Level discipline: high-level user events (node saved, export done, project loaded,
+  fights its design). Level discipline: high-level user events (document saved, export done, project loaded,
   copilot turn start/done, tool called) = INFO (console); lifecycle/diagnostic detail (worker/watcher/
   queue/bootstrap/per-frame) = DEBUG (file-only); WARNING/ERROR file-only except an app-level crash.
   New code adds `logger.X(...)` calls at these levels — it never reaches for `print`, a per-module
@@ -612,7 +612,7 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   render.** A pass's `uniform_values` dict is filled by `Pass.seed_uniform_values()` (block → zero
   buffer, sampler → default `Image`, scalar/vector → `uniform.value`) — the single home for "default of
   a uniform of type X". `render()` calls it; so must any code that reads `uniform_values` for an active
-  uniform without a guaranteed prior render — `UINode.save` does. A new persist/serialize path that
+  uniform without a guaranteed prior render — `UIDocument.save` does. A new persist/serialize path that
   swaps source then reads `uniform_values` MUST call `seed_uniform_values()` first (else it KeyErrors on
   an unseeded uniform; a naive `.get(name, uniform.value)` is WRONG for samplers — their GL default is
   an int texture-unit). `ENGINE_DRIVEN_UNIFORMS` (in `core.py`) is the one home for the
@@ -661,7 +661,7 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   if a fact genuinely can't live on the entity (then it's a different concern, not a parallel dict).
 - **Snapshot/restore: serialize the LIVE object, restore by reload-and-replace across EVERY live
   surface; a serialize routine must not MUTATE what it serializes; capture is best-effort.** Disk is
-  NOT live state — a blind dir-copy captures a stale `node.json`, so a snapshot serializes the live
+  NOT live state — a blind dir-copy captures a stale `document.json`, so a snapshot serializes the live
   in-memory object. Restore replaces the live object on every surface that holds a reference (not just
   the one you're looking at), via reload-and-replace. A serialize path that mutates as a side effect
   (rebinding `source.path` while writing) is LATENT CORRUPTION — give it a no-rebind/pure mode.
@@ -775,7 +775,7 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   first-render focus grab, the `.pyi`-only stub pyright warning, the SetCursorPos assert.
   Non-UI library quirks (telegram, moderngl, GLSL `#line`) stay below.
 - **A live moderngl context must exist before constructing `Image` / `Video` / `Font` / `Canvas` /
-  `Node`** — they call `moderngl.get_context()` lazily. In the app,
+  `Document`** — they call `moderngl.get_context()` lazily. In the app,
   `glfw.make_context_current(window)` handles it.
 - **python-telegram-bot's `Bot` has TWO request pools; both need the IPv4 bind.** On an
   IPv6-incapable network (AAAA resolves but the route is dead — the dev box, see vpn-stack Gotcha #4),

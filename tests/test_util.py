@@ -2,7 +2,7 @@
 
 The unicode round-trip guards the text-uniform crash (a full char[N] with no
 trailing zero must decode without raising). The resolution test pins the display
-format tabs/node.py shows.
+format tabs/document.py shows.
 """
 
 from pathlib import Path

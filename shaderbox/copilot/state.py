@@ -40,8 +40,8 @@ class CopilotLayout(StrEnum):
 class RecoverInfo:
     # Backs a resolved-Yes delete card's Recover button. trash_name is the dir-NAME under the
     # project trash (NOT an absolute path), re-anchored via App.trash_dir at click time.
-    node_id: str
-    node_name: str
+    document_id: str
+    document_name: str
     trash_name: str
     done: bool = False
 

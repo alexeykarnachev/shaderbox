@@ -196,7 +196,7 @@ def chip_button(
 
 
 def play_stop_toggle(id_: str, playing: bool, *, tooltip: str = "") -> bool:
-    """The per-uniform / whole-node play/stop control (feature 048). A small word button — `stop`
+    """The per-uniform / whole-document play/stop control (feature 048). A small word button — `stop`
     (accent) when the script is driving the slot, `play` (dim) when stopped — clearer than an
     ambiguous icon (/imgui-ui §1: use words for icon-ambiguous controls). Returns True on click; the
     caller flips the stopped state. SAME slot for both states; the label + colour carry the state."""
@@ -340,7 +340,7 @@ def modal_window(
 def rendering_overlay(text: str) -> None:
     # A centered, non-interactive cue painted one frame before the encode freezes the
     # frame loop. NOT a begin_popup_modal — it stays off the popup ID stack + the
-    # popup-mutex (any_popup_open) so it never gates node rendering.
+    # popup-mutex (any_popup_open) so it never gates document rendering.
     center = imgui.get_main_viewport().get_center()
     imgui.set_next_window_pos(center, imgui.Cond_.always, imgui.ImVec2(0.5, 0.5))
     imgui.set_next_window_bg_alpha(OVERLAY_ALPHA)

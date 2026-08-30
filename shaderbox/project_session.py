@@ -9,7 +9,7 @@ core never touches notifications, editor sessions, or any imgui state itself.
 App constructs one `ProjectSession` and forwards project state/ops to it via explicit
 `@property` accessors; a headless harness (feature 026) constructs it directly on a standalone
 EGL context, passing no `on_*` callbacks (they default to no-ops). A moderngl context must be
-current on the constructing thread before any node load (Node/Canvas do
+current on the constructing thread before any document load (Document/Canvas do
 `self._gl = gl or moderngl.get_context()`).
 """
 
@@ -30,12 +30,12 @@ from shaderbox.copilot.persistence import archive_conversation
 from shaderbox.copilot.revert import RevertExecutor
 from shaderbox.copilot.session import CopilotSession
 from shaderbox.core import ENGINE_DRIVEN_UNIFORMS
-from shaderbox.document import Node
+from shaderbox.document import Document
 from shaderbox.exporters.registry import ExporterRegistry
 from shaderbox.integrations import IntegrationsStore
 from shaderbox.paths import (
-    NODE_JSON_BASENAME,
-    NODE_SCRIPT_BASENAME,
+    DOCUMENT_JSON_BASENAME,
+    DOCUMENT_SCRIPT_BASENAME,
     PASS_SHADER_SUFFIX,
     PASSES_DIR_NAME,
     ProjectPaths,
@@ -59,13 +59,13 @@ from shaderbox.shader_lib.file_ops import ShaderLibFileManager
 from shaderbox.shader_lib.tags import ShaderLibTagsStore
 from shaderbox.ui_models import (
     UIAppState,
-    UINode,
-    load_node_from_dir,
-    load_nodes_from_dir,
+    UIDocument,
+    load_document_from_dir,
+    load_documents_from_dir,
 )
 from shaderbox.util import select_next_value
 
-# Prepended to the engine stub when the COPILOT reads a script-less node (feature 043). The actor
+# Prepended to the engine stub when the COPILOT reads a script-less document (feature 043). The actor
 # copies verbatim, so a no-op commented stub teaches the binding but not MOTION — this gives one
 # concrete ctx.t-driven pattern to adapt (a reference, not a body to save back unchanged).
 _AGENT_STUB_EXAMPLE = (
@@ -77,15 +77,15 @@ _AGENT_STUB_EXAMPLE = (
 )
 
 
-def _noop_current_node_changed(old_id: str, new_id: str) -> None:
+def _noop_current_document_changed(old_id: str, new_id: str) -> None:
     pass
 
 
-def _noop_node_source_synced(node_id: str, source: str) -> None:
+def _noop_document_source_synced(document_id: str, source: str) -> None:
     pass
 
 
-def _noop_node_deleted(node_id: str, source_path: Path) -> None:
+def _noop_document_deleted(document_id: str, source_path: Path) -> None:
     pass
 
 
@@ -93,7 +93,7 @@ class ProjectSession:
     def __init__(
         self,
         *,
-        node_examples_dir: Path,
+        document_examples_dir: Path,
         starter_example_id: str,
         example_order: list[str],
         get_exporter_registry: Callable[[], ExporterRegistry],
@@ -101,13 +101,15 @@ class ProjectSession:
         # UI reactions to project mutations ride these callbacks (the core never touches imgui
         # state): the owner clears the sticky-focus bit / rehydrates the editor session / drops
         # the editor session + delete-arm. All default to no-ops so a headless caller omits them.
-        on_current_node_changed: Callable[
+        on_current_document_changed: Callable[
             [str, str], None
-        ] = _noop_current_node_changed,
-        on_node_source_synced: Callable[[str, str], None] = _noop_node_source_synced,
-        on_node_deleted: Callable[[str, Path], None] = _noop_node_deleted,
+        ] = _noop_current_document_changed,
+        on_document_source_synced: Callable[
+            [str, str], None
+        ] = _noop_document_source_synced,
+        on_document_deleted: Callable[[str, Path], None] = _noop_document_deleted,
     ) -> None:
-        self._node_examples_dir = node_examples_dir
+        self._document_examples_dir = document_examples_dir
         self._starter_example_id = starter_example_id
         # Authored example display order (filesystem ctime isn't preserved through git/zip);
         # examples not listed sort last.
@@ -116,18 +118,18 @@ class ProjectSession:
         self._get_exporter_registry = get_exporter_registry
         self._get_shader_lib_files = get_shader_lib_files
         # UI-reaction callbacks the core invokes after a mutation (the owner does the imgui work).
-        self._on_current_node_changed = on_current_node_changed
-        self._on_node_source_synced = on_node_source_synced
-        self._on_node_deleted = on_node_deleted
+        self._on_current_document_changed = on_current_document_changed
+        self._on_document_source_synced = on_document_source_synced
+        self._on_document_deleted = on_document_deleted
 
         # ---- per-project state, (re)populated by _load ----
         self.paths: ProjectPaths
         self.project_dir: Path
         self.integrations_store = IntegrationsStore()
-        self.ui_nodes: dict[str, UINode] = {}
-        # node.json mtime per loaded node — the diff baseline for sync_nodes_from_disk.
-        self._node_json_mtimes: dict[str, float] = {}
-        self.ui_node_examples: dict[str, UINode] = {}
+        self.ui_documents: dict[str, UIDocument] = {}
+        # document.json mtime per loaded document — the diff baseline for sync_documents_from_disk.
+        self._document_json_mtimes: dict[str, float] = {}
+        self.ui_document_examples: dict[str, UIDocument] = {}
         self.app_state = UIAppState()
         # The active library index; rebuilt per project by rebuild_shader_lib_index.
         self.shader_lib_index: ShaderLibIndex = ShaderLibIndex.empty()
@@ -136,13 +138,13 @@ class ProjectSession:
             ShaderLibFavoritesStore.load()
         )
         self.shader_lib_tags: ShaderLibTagsStore = ShaderLibTagsStore.load()
-        # Working set: every node/lib address the agent touched this turn, reset per turn (by the
+        # Working set: every document/lib address the agent touched this turn, reset per turn (by the
         # copilot session at enqueue). LRU-ordered — oldest first, so the size cap evicts the
         # least-recently-touched member into `_copilot_working_set_evicted` (reported to the agent).
         self._copilot_working_set: list[str] = []
         self._copilot_working_set_evicted: list[str] = []
 
-        # The CPU-script engine (feature 041): per-node uniform-compute behaviors, ticked once
+        # The CPU-script engine (feature 041): per-document uniform-compute behaviors, ticked once
         # per frame before render. Populated per project by _resolve_scripts in load().
         self.script_engine = ScriptEngine(ENGINE_DRIVEN_UNIFORMS)
 
@@ -169,25 +171,25 @@ class ProjectSession:
         self.copilot_backend = CopilotBackend(
             get_bridge=lambda: self.copilot.bridge,
             get_gate=lambda: self.copilot.gate,
-            node_examples_dir=self.node_examples_dir,
+            document_examples_dir=self.document_examples_dir,
             starter_example_id=self._starter_example_id,
             get_renders_dir=lambda: self.paths.renders_dir,
-            get_ui_nodes=lambda: self.ui_nodes,
-            get_ui_node_examples=lambda: self.ui_node_examples,
+            get_ui_documents=lambda: self.ui_documents,
+            get_ui_document_examples=lambda: self.ui_document_examples,
             get_exporter_registry=self._get_exporter_registry,
             get_shader_lib_index=lambda: self.shader_lib_index,
             get_shader_lib_files=self._get_shader_lib_files,
-            get_current_node_id=lambda: self.current_node_id,
+            get_current_document_id=lambda: self.current_document_id,
             get_is_cancelled=lambda: self.copilot.is_cancelled(),
             get_script_driven_uniforms=self.get_script_driven_uniforms,
             get_script_path=self.script_path_for,
             get_script_source_view=self.script_source_view,
             read_script_source=self.read_script_source,
             write_script_source=self.write_script_source,
-            set_current_node_id=self.set_current_node_id,
-            save_ui_node=self.save_ui_node,
+            set_current_document_id=self.set_current_document_id,
+            save_ui_document=self.save_ui_document,
             sync_editor_from_disk=self.sync_editor_from_disk,
-            delete_node_unguarded=self._delete_node_unguarded,
+            delete_document_unguarded=self._delete_document_unguarded,
             example_description=self.example_description,
             working_set_reader=lambda: self._copilot_working_set,
             working_set_add=self._copilot_ws_add,
@@ -196,100 +198,100 @@ class ProjectSession:
             get_active_checkpoint=lambda: self.copilot.checkpoints.active,
         )
         self.revert_executor = RevertExecutor(
-            get_nodes_dir=lambda: self.paths.nodes_dir,
+            get_documents_dir=lambda: self.paths.documents_dir,
             get_trash_dir=lambda: self.paths.trash_dir,
-            get_ui_nodes=lambda: self.ui_nodes,
+            get_ui_documents=lambda: self.ui_documents,
             get_checkpoints=lambda: self.copilot.checkpoints,
             get_shader_lib_files=self._get_shader_lib_files,
-            set_current_node_id=self.set_current_node_id,
+            set_current_document_id=self.set_current_document_id,
             sync_editor_from_disk=self.sync_editor_from_disk,
-            delete_node_unguarded=self._delete_node_unguarded,
+            delete_document_unguarded=self._delete_document_unguarded,
             invalidate_lib_consumers=self.copilot_backend.invalidate_lib_consumers,
         )
         return self.copilot_backend
 
-    def set_current_node_id(self, id: str = "") -> None:
-        old_id = self.app_state.current_node_id
-        self.app_state.current_node_id = id
+    def set_current_document_id(self, id: str = "") -> None:
+        old_id = self.app_state.current_document_id
+        self.app_state.current_document_id = id
         if id != old_id:
-            self._on_current_node_changed(old_id, id)
+            self._on_current_document_changed(old_id, id)
 
-    def save_ui_node(
+    def save_ui_document(
         self,
-        ui_node: UINode,
+        ui_document: UIDocument,
         root_dir: Path | None = None,
         dir_name: str | None = None,
     ) -> Path:
-        # No toast here: the copilot calls this mid-turn (create_node) where a "Node saved"
+        # No toast here: the copilot calls this mid-turn (create_document) where a "Document saved"
         # toast is spurious (the chat already reports it). The user-initiated toast lives in
-        # App.save_ui_node, the forwarder the UI paths call.
-        root_dir = root_dir or self.paths.nodes_dir
-        dir = ui_node.save(root_dir, dir_name)
-        # Our own write bumped node.json's mtime; rebaseline so sync_nodes_from_disk doesn't read it
-        # straight back as an external "change" and clobber the live node next frame.
-        if root_dir == self.paths.nodes_dir:
+        # App.save_ui_document, the forwarder the UI paths call.
+        root_dir = root_dir or self.paths.documents_dir
+        dir = ui_document.save(root_dir, dir_name)
+        # Our own write bumped document.json's mtime; rebaseline so sync_documents_from_disk doesn't read it
+        # straight back as an external "change" and clobber the live document next frame.
+        if root_dir == self.paths.documents_dir:
             with contextlib.suppress(OSError):
-                self._node_json_mtimes[dir.name] = (
-                    (dir / NODE_JSON_BASENAME).lstat().st_mtime
+                self._document_json_mtimes[dir.name] = (
+                    (dir / DOCUMENT_JSON_BASENAME).lstat().st_mtime
                 )
-        logger.info(f"Node '{ui_node.ui_state.ui_name}' saved: {dir}")
+        logger.info(f"Document '{ui_document.ui_state.ui_name}' saved: {dir}")
         return dir
 
-    def sync_editor_from_disk(self, node_id: str, source: str) -> None:
+    def sync_editor_from_disk(self, document_id: str, source: str) -> None:
         # The whole reaction is UI (push new disk text into the live editor session), so the
         # core just fires the callback; the owner's handler does the editor work.
-        self._on_node_source_synced(node_id, source)
+        self._on_document_source_synced(document_id, source)
 
-    def _delete_node_unguarded(self, node_id: str) -> str:
+    def _delete_document_unguarded(self, document_id: str) -> str:
         # Teardown shared by the public + copilot delete: release GL, drop the editor session,
         # reselect current, move the dir to trash. Returns the trash dir-NAME (id, or id_<ts>
-        # on collision) so a caller can offer a Recover. Caller guarantees node_id in ui_nodes.
-        new_node_id = select_next_value(
-            values=list(self.ui_nodes.keys()),
-            current_value=node_id,
+        # on collision) so a caller can offer a Recover. Caller guarantees document_id in ui_documents.
+        new_document_id = select_next_value(
+            values=list(self.ui_documents.keys()),
+            current_value=document_id,
             default_value="",
         )
-        if new_node_id == node_id:
-            new_node_id = ""
+        if new_document_id == document_id:
+            new_document_id = ""
 
         # Capture the source path BEFORE the pop (it's gone after; the owner's editor sessions
-        # are path-keyed). The on_node_deleted handler drops the editor session + delete-arm.
-        path = self.ui_nodes[node_id].node.render_pass.source.path
-        self.ui_nodes.pop(node_id).node.release()
-        self._node_json_mtimes.pop(node_id, None)
-        self.script_engine.drop_node(
-            node_id
+        # are path-keyed). The on_document_deleted handler drops the editor session + delete-arm.
+        path = self.ui_documents[document_id].document.render_pass.source.path
+        self.ui_documents.pop(document_id).document.release()
+        self._document_json_mtimes.pop(document_id, None)
+        self.script_engine.drop_document(
+            document_id
         )  # free its behaviors + stale errors (feature 041)
-        if node_id in self._copilot_working_set:
-            self._copilot_working_set.remove(node_id)
-        self._on_node_deleted(node_id, path)
-        if node_id == self.current_node_id or not self.current_node_id:
-            self.set_current_node_id(new_node_id)
-        trash_name = node_id
+        if document_id in self._copilot_working_set:
+            self._copilot_working_set.remove(document_id)
+        self._on_document_deleted(document_id, path)
+        if document_id == self.current_document_id or not self.current_document_id:
+            self.set_current_document_id(new_document_id)
+        trash_name = document_id
         dest = self.paths.trash_dir / trash_name
-        if dest.exists():  # a prior node with this id was already trashed
-            trash_name = f"{node_id}_{int(time.time() * 1000)}"
+        if dest.exists():  # a prior document with this id was already trashed
+            trash_name = f"{document_id}_{int(time.time() * 1000)}"
             dest = self.paths.trash_dir / trash_name
-        shutil.move(self.paths.nodes_dir / node_id, dest)
+        shutil.move(self.paths.documents_dir / document_id, dest)
 
-        logger.info(f"Node deleted: {node_id}")
+        logger.info(f"Document deleted: {document_id}")
         return trash_name
 
     @property
-    def node_examples_dir(self) -> Path:
-        return self._node_examples_dir
+    def document_examples_dir(self) -> Path:
+        return self._document_examples_dir
 
     @property
-    def current_node_id(self) -> str:
-        return self.app_state.current_node_id
+    def current_document_id(self) -> str:
+        return self.app_state.current_document_id
 
     def example_description(self, example_uuid: str) -> str:
-        ui_node = self.ui_node_examples.get(example_uuid)
-        return ui_node.ui_state.description if ui_node is not None else ""
+        ui_document = self.ui_document_examples.get(example_uuid)
+        return ui_document.ui_state.description if ui_document is not None else ""
 
     def _copilot_ws_add(self, address: str) -> None:
-        # Add a node full-id or "lib:" address to the working set, no dupes, MOVE-TO-END on a
-        # re-touch (so the node being hammered is never the one the cap evicts). Past the cap the
+        # Add a document full-id or "lib:" address to the working set, no dupes, MOVE-TO-END on a
+        # re-touch (so the document being hammered is never the one the cap evicts). Past the cap the
         # oldest member is dropped and recorded; a re-added address leaves the record, or the
         # rendered "dropped" line would claim something the block still shows.
         if address in self._copilot_working_set:
@@ -297,7 +299,7 @@ class ProjectSession:
         self._copilot_working_set.append(address)
         if address in self._copilot_working_set_evicted:
             self._copilot_working_set_evicted.remove(address)
-        cap = COPILOT_ENGINE.copilot_working_set_max_nodes
+        cap = COPILOT_ENGINE.copilot_working_set_max_documents
         while cap > 0 and len(self._copilot_working_set) > cap:  # 0 = uncapped
             dropped = self._copilot_working_set.pop(0)
             if dropped not in self._copilot_working_set_evicted:
@@ -314,28 +316,28 @@ class ProjectSession:
         set_active_lib_index(self.shader_lib_index)
         logger.debug(f"Lib index: {len(self.shader_lib_index.functions)} functions")
 
-    def _order_examples(self, examples: dict[str, UINode]) -> dict[str, UINode]:
+    def _order_examples(self, examples: dict[str, UIDocument]) -> dict[str, UIDocument]:
         rank = {eid: i for i, eid in enumerate(self._example_order)}
         ordered_ids = sorted(examples, key=lambda eid: rank.get(eid, len(rank)))
         return {eid: examples[eid] for eid in ordered_ids}
 
     def load(self, project_dir: Path) -> None:
-        # Load the project's GL-free state: paths, lib index, nodes + examples, app_state,
-        # integrations. A moderngl context must already be current (node warm-up compiles).
-        self.ui_nodes.clear()
+        # Load the project's GL-free state: paths, lib index, documents + examples, app_state,
+        # integrations. A moderngl context must already be current (document warm-up compiles).
+        self.ui_documents.clear()
 
         self.paths = ProjectPaths.for_root(project_dir)
         self.project_dir = self.paths.root
         logger.info(f"Project loaded: {self.project_dir}")
 
-        # Build the lib index before loading nodes — every node's first compile (warm-up in
-        # load_nodes_from_dir) reads the active index.
+        # Build the lib index before loading documents — every document's first compile (warm-up in
+        # load_documents_from_dir) reads the active index.
         self.rebuild_shader_lib_index()
 
-        self.ui_nodes = load_nodes_from_dir(self.paths.nodes_dir)
-        self._seed_node_json_mtimes()
-        self.ui_node_examples = self._order_examples(
-            load_nodes_from_dir(self._node_examples_dir)
+        self.ui_documents = load_documents_from_dir(self.paths.documents_dir)
+        self._seed_document_json_mtimes()
+        self.ui_document_examples = self._order_examples(
+            load_documents_from_dir(self._document_examples_dir)
         )
 
         if self.paths.app_state_file.exists():
@@ -347,125 +349,129 @@ class ProjectSession:
         self._resolve_scripts()
 
     def _resolve_scripts(self) -> None:
-        # Per project (feature 041): reset the engine, resolve each node's scripts/u_*.py against its
-        # active uniforms, and wire each Node's script hooks. The live path re-polls mtimes + re-wires
-        # any newly-inserted node via reload_scripts() in ui.py.
+        # Per project (feature 041): reset the engine, resolve each document's scripts/u_*.py against its
+        # active uniforms, and wire each Document's script hooks. The live path re-polls mtimes + re-wires
+        # any newly-inserted document via reload_scripts() in ui.py.
         self.script_engine = ScriptEngine(ENGINE_DRIVEN_UNIFORMS)
-        for node_id, ui_node in self.ui_nodes.items():
+        for document_id, ui_document in self.ui_documents.items():
             self.script_engine.reload(
-                node_id,
-                self.paths.scripts_dir_for(node_id),
-                ui_node.node.render_pass,
+                document_id,
+                self.paths.scripts_dir_for(document_id),
+                ui_document.document.render_pass,
             )
-            self._wire_node_hooks(node_id, ui_node.node)
+            self._wire_document_hooks(document_id, ui_document.document)
 
-    def _seed_node_json_mtimes(self) -> None:
-        # Baseline the sync cache from the just-loaded nodes, so sync_nodes_from_disk's first frame
-        # sees no spurious "changed". A node whose dir/json vanished between load and seed is skipped.
-        self._node_json_mtimes = {}
-        for node_id in self.ui_nodes:
-            meta = self.paths.node_json_for(node_id)
+    def _seed_document_json_mtimes(self) -> None:
+        # Baseline the sync cache from the just-loaded documents, so sync_documents_from_disk's first frame
+        # sees no spurious "changed". A document whose dir/json vanished between load and seed is skipped.
+        self._document_json_mtimes = {}
+        for document_id in self.ui_documents:
+            meta = self.paths.document_json_for(document_id)
             try:
-                self._node_json_mtimes[node_id] = meta.lstat().st_mtime
+                self._document_json_mtimes[document_id] = meta.lstat().st_mtime
             except OSError:
                 continue
 
-    def sync_nodes_from_disk(self) -> None:
-        # Per-frame node-dir watcher: disk is the source of truth, so reconcile ui_nodes to it.
-        # Globs nodes/*/ + diffs each dir's node.json mtime against the cache, then ADDS new dirs,
-        # REMOVES vanished ones, and RE-READS a dir whose node.json changed (a new uniform value /
-        # ui_state / canvas size edited externally). Shader TEXT of a loaded node is NOT handled here
-        # — reload_node_if_changed (ui.py) already hot-reloads it by source mtime; script.py likewise
+    def sync_documents_from_disk(self) -> None:
+        # Per-frame document-dir watcher: disk is the source of truth, so reconcile ui_documents to it.
+        # Globs documents/*/ + diffs each dir's document.json mtime against the cache, then ADDS new dirs,
+        # REMOVES vanished ones, and RE-READS a dir whose document.json changed (a new uniform value /
+        # ui_state / canvas size edited externally). Shader TEXT of a loaded document is NOT handled here
+        # — reload_document_if_changed (ui.py) already hot-reloads it by source mtime; script.py likewise
         # rides reload_scripts. So this owns exactly the three things those miss: dir add/remove +
-        # node.json. Cheap when nothing changed: one glob + a stat per dir.
+        # document.json. Cheap when nothing changed: one glob + a stat per dir.
         current: dict[str, float] = {}
-        for node_dir in self.paths.nodes_dir.iterdir():
-            meta = node_dir / NODE_JSON_BASENAME
-            passes = node_dir / PASSES_DIR_NAME
-            # A dir is loadable only once node.json AND at least one pass file exist — skip a
-            # half-written document (a node.json already on disk while its passes are still
+        for document_dir in self.paths.documents_dir.iterdir():
+            meta = document_dir / DOCUMENT_JSON_BASENAME
+            passes = document_dir / PASSES_DIR_NAME
+            # A dir is loadable only once document.json AND at least one pass file exist — skip a
+            # half-written document (a document.json already on disk while its passes are still
             # being written); it syncs in once complete.
             if (
-                not node_dir.is_dir()
+                not document_dir.is_dir()
                 or not meta.is_file()
                 or not any(passes.glob(f"*{PASS_SHADER_SUFFIX}"))
             ):
                 continue
             try:
-                current[node_dir.name] = meta.lstat().st_mtime
+                current[document_dir.name] = meta.lstat().st_mtime
             except OSError:
                 continue
 
-        removed = [nid for nid in self.ui_nodes if nid not in current]
-        added = [nid for nid in current if nid not in self.ui_nodes]
+        removed = [nid for nid in self.ui_documents if nid not in current]
+        added = [nid for nid in current if nid not in self.ui_documents]
         changed = [
             nid
             for nid, mtime in current.items()
-            if nid in self.ui_nodes and self._node_json_mtimes.get(nid) != mtime
+            if nid in self.ui_documents and self._document_json_mtimes.get(nid) != mtime
         ]
         if not (removed or added or changed):
             return
 
-        for node_id in removed:
-            path = self.ui_nodes[node_id].node.render_pass.source.path
-            self.ui_nodes.pop(node_id).node.release()
-            self.script_engine.drop_node(node_id)
-            self._node_json_mtimes.pop(node_id, None)
-            self._on_node_deleted(node_id, path)
+        for document_id in removed:
+            path = self.ui_documents[document_id].document.render_pass.source.path
+            self.ui_documents.pop(document_id).document.release()
+            self.script_engine.drop_document(document_id)
+            self._document_json_mtimes.pop(document_id, None)
+            self._on_document_deleted(document_id, path)
 
-        for node_id in added + changed:
-            self._load_one_node_from_disk(node_id)
-            self._node_json_mtimes[node_id] = current[node_id]
+        for document_id in added + changed:
+            self._load_one_document_from_disk(document_id)
+            self._document_json_mtimes[document_id] = current[document_id]
 
-        # A removed dir may have dropped the current node; reselect (mirrors _delete_node_unguarded).
-        if self.current_node_id not in self.ui_nodes:
-            self.set_current_node_id(next(iter(self.ui_nodes), ""))
+        # A removed dir may have dropped the current document; reselect (mirrors _delete_document_unguarded).
+        if self.current_document_id not in self.ui_documents:
+            self.set_current_document_id(next(iter(self.ui_documents), ""))
 
         logger.debug(
-            f"Node sync: +{len(added)} -{len(removed)} ~{len(changed)} (now {len(self.ui_nodes)})"
+            f"Document sync: +{len(added)} -{len(removed)} ~{len(changed)} (now {len(self.ui_documents)})"
         )
 
-    def _load_one_node_from_disk(self, node_id: str) -> None:
-        # (Re)read one node dir from disk and install it: release a prior live copy, load fresh,
+    def _load_one_document_from_disk(self, document_id: str) -> None:
+        # (Re)read one document dir from disk and install it: release a prior live copy, load fresh,
         # re-resolve its scripts + wire hooks, then push the disk shader text into any open editor.
-        old = self.ui_nodes.get(node_id)
+        old = self.ui_documents.get(document_id)
         if old is not None:
-            old.node.release()
-        ui_node = load_node_from_dir(self.paths.nodes_dir / node_id)
-        self.ui_nodes[node_id] = ui_node
+            old.document.release()
+        ui_document = load_document_from_dir(self.paths.documents_dir / document_id)
+        self.ui_documents[document_id] = ui_document
         self.script_engine.reload(
-            node_id, self.paths.scripts_dir_for(node_id), ui_node.node.render_pass
+            document_id,
+            self.paths.scripts_dir_for(document_id),
+            ui_document.document.render_pass,
         )
-        self._wire_node_hooks(node_id, ui_node.node)
-        self._on_node_source_synced(node_id, ui_node.node.render_pass.source.text)
+        self._wire_document_hooks(document_id, ui_document.document)
+        self._on_document_source_synced(
+            document_id, ui_document.document.render_pass.source.text
+        )
 
-    def _wire_node_hooks(self, node_id: str, node: Node) -> None:
-        # Inject the export-isolation factory (Node.render_media enters it around every export, so an
+    def _wire_document_hooks(self, document_id: str, document: Document) -> None:
+        # Inject the export-isolation factory (Document.render_media enters it around every export, so an
         # exported integrator starts from a clean per-export instance). Wired ONCE on first sight —
-        # called from reload_scripts each frame, so a node inserted AFTER load (copilot create /
+        # called from reload_scripts each frame, so a document inserted AFTER load (copilot create /
         # example / revert-replace) gets it too. The live preview path does NOT ride on_pre_render
         # (ui.py ticks via session.tick); on_pre_render is the swap target the isolation factory uses.
-        if node.export_isolation is not contextlib.nullcontext:
+        if document.export_isolation is not contextlib.nullcontext:
             return  # already wired (the factory never resets it, so this sentinel is unambiguous)
-        node.export_isolation = self._make_export_isolation(node_id)
+        document.export_isolation = self._make_export_isolation(document_id)
 
     def _make_export_isolation(
-        self, node_id: str
+        self, document_id: str
     ) -> Callable[[], contextlib.AbstractContextManager[None]]:
-        # The factory Node.render_media enters around EVERY export (feature 041). It swaps the node's
+        # The factory Document.render_media enters around EVERY export (feature 041). It swaps the document's
         # on_pre_render to tick a FRESH behavior set (recompiled from cached source, independent of the
         # live instances) so an exported integrator starts from a clean __init__ regardless of how long
         # the live preview ran, and restores the live hook in finally. Because render_media itself
         # enters it, no export caller can forget to isolate.
         @contextlib.contextmanager
         def _isolation() -> Iterator[None]:
-            ui_node = self.ui_nodes.get(node_id)
-            if ui_node is None:
+            ui_document = self.ui_documents.get(document_id)
+            if ui_document is None:
                 yield
                 return
-            node = ui_node.node
-            live_hook = node.on_pre_render
-            behavior = self.script_engine.fresh_behavior_for(node_id)
+            document = ui_document.document
+            live_hook = document.on_pre_render
+            behavior = self.script_engine.fresh_behavior_for(document_id)
             if behavior is None:
                 yield
                 return
@@ -474,194 +480,199 @@ class ProjectSession:
                 # EXPORT_MOUSE (the EngineContext default) freezes the cursor at center so an
                 # exported render is deterministic. No stopped set — an export always plays the script.
                 self.script_engine.tick_export(
-                    node_id,
-                    node.render_pass,
+                    document_id,
+                    document.render_pass,
                     EngineContext(t=t, dt=dt, frame=frame),
                     behavior,
                 )
 
-            node.on_pre_render = _export_pre_render
+            document.on_pre_render = _export_pre_render
             try:
                 yield
             finally:
-                node.on_pre_render = live_hook
+                document.on_pre_render = live_hook
 
         return _isolation
 
     def reload_scripts(self) -> None:
-        # The live hot-reload poll: re-stat each node's scripts dir, recompiling only changed files
-        # (a recompile makes a fresh instance — state resets on edit), and re-wire hooks so a node
+        # The live hot-reload poll: re-stat each document's scripts dir, recompiling only changed files
+        # (a recompile makes a fresh instance — state resets on edit), and re-wire hooks so a document
         # inserted after load (copilot create / example / revert) is covered. Invoked from
         # ui.py::update_and_draw before the live tick.
-        for node_id, ui_node in self.ui_nodes.items():
+        for document_id, ui_document in self.ui_documents.items():
             self.script_engine.reload(
-                node_id,
-                self.paths.scripts_dir_for(node_id),
-                ui_node.node.render_pass,
+                document_id,
+                self.paths.scripts_dir_for(document_id),
+                ui_document.document.render_pass,
             )
-            self._wire_node_hooks(node_id, ui_node.node)
+            self._wire_document_hooks(document_id, ui_document.document)
 
     def tick(
         self,
-        node_ids: list[str],
+        document_ids: list[str],
         t: float,
         dt: float,
         frame: int,
         *,
         mouse: MouseState = EXPORT_MOUSE,
     ) -> None:
-        # The live per-frame tick: tick exactly the nodes this frame will render (the ui.py render
+        # The live per-frame tick: tick exactly the documents this frame will render (the ui.py render
         # gate), so a scripted uniform animates identically live and in export. `mouse` is the live
         # cursor App passes in (headless callers omit it → EXPORT_MOUSE, deterministic).
-        for node_id in node_ids:
-            ui_node = self.ui_nodes.get(node_id)
-            if ui_node is None:
+        for document_id in document_ids:
+            ui_document = self.ui_documents.get(document_id)
+            if ui_document is None:
                 continue
             self.script_engine.tick(
-                node_id,
-                ui_node.node.render_pass,
+                document_id,
+                ui_document.document.render_pass,
                 EngineContext(t=t, dt=dt, frame=frame, mouse=mouse),
-                self._stopped_for(node_id),
+                self._stopped_for(document_id),
             )
 
-    def _stopped_for(self, node_id: str) -> frozenset[str]:
-        # The uniform names frozen for manual edit this frame (048): the node's explicit
-        # `stopped_uniforms` UNION every driven name when the node is `all_stopped`. Built fresh each
+    def _stopped_for(self, document_id: str) -> frozenset[str]:
+        # The uniform names frozen for manual edit this frame (048): the document's explicit
+        # `stopped_uniforms` UNION every driven name when the document is `all_stopped`. Built fresh each
         # tick (never cached across the tick/draw boundary) and passed to the engine as a param — the
-        # engine never learns UINodeState (the headless boundary holds, as `engine_driven` does).
-        ui_node = self.ui_nodes.get(node_id)
-        if ui_node is None:
+        # engine never learns UIDocumentState (the headless boundary holds, as `engine_driven` does).
+        ui_document = self.ui_documents.get(document_id)
+        if ui_document is None:
             return frozenset()
-        state = ui_node.ui_state
+        state = ui_document.ui_state
         stopped = set(state.stopped_uniforms)
         if state.all_stopped:
-            stopped |= self.script_engine.script_driven_uniforms(node_id)
+            stopped |= self.script_engine.script_driven_uniforms(document_id)
         return frozenset(stopped)
 
-    def get_script_status(self, node_id: str) -> ScriptStatus | None:
-        # The node script's UI status for 042's strip (sentinel error + driven count + homeless
-        # soft-key errors), or None when the node has no script.py.
-        return self.script_engine.script_status(node_id)
+    def get_script_status(self, document_id: str) -> ScriptStatus | None:
+        # The document script's UI status for 042's strip (sentinel error + driven count + homeless
+        # soft-key errors), or None when the document has no script.py.
+        return self.script_engine.script_status(document_id)
 
-    def has_script(self, node_id: str) -> bool:
-        # Whether the node's `script.py` exists on disk (the open-script glyph state + the play/stop
+    def has_script(self, document_id: str) -> bool:
+        # Whether the document's `script.py` exists on disk (the open-script glyph state + the play/stop
         # affordance gate). Disk presence so a create lands instantly, before the next reload.
-        return self.paths.node_script_for(node_id).is_file()
+        return self.paths.document_script_for(document_id).is_file()
 
-    def script_has_error(self, node_id: str) -> bool:
-        # Whether the node's script has a recorded compile/run error (the open-script glyph error tint).
-        return (node_id, NODE_SCRIPT_BASENAME) in self.script_engine.errors
+    def script_has_error(self, document_id: str) -> bool:
+        # Whether the document's script has a recorded compile/run error (the open-script glyph error tint).
+        return (document_id, DOCUMENT_SCRIPT_BASENAME) in self.script_engine.errors
 
-    def _scriptable_uniforms_for(self, node_id: str) -> list[moderngl.Uniform]:
+    def _scriptable_uniforms_for(self, document_id: str) -> list[moderngl.Uniform]:
         # The uniforms a script can drive: scriptable + not engine-owned. The engine silently drops a
         # script key naming an engine uniform, so listing one as a stub example invites a silent no-op
         # (the legibility gap 048 targets).
         return [
             u
-            for u in self.ui_nodes[node_id].node.render_pass.get_active_uniforms()
+            for u in self.ui_documents[
+                document_id
+            ].document.render_pass.get_active_uniforms()
             if is_scriptable(u) and u.name not in ENGINE_DRIVEN_UNIFORMS
         ]
 
-    def create_script(self, node_id: str) -> Path:
-        # Write the node script `script.py` + return its path; the next reload_scripts binds it (048 —
+    def create_script(self, document_id: str) -> Path:
+        # Write the document script `script.py` + return its path; the next reload_scripts binds it (048 —
         # the file's existence IS the binding, no activate step). The skeleton is the engine's stub
-        # (explicit imports + an empty-dict body + the node's uniforms as commented examples).
-        scripts_dir = self.paths.scripts_dir_for(node_id)
+        # (explicit imports + an empty-dict body + the document's uniforms as commented examples).
+        scripts_dir = self.paths.scripts_dir_for(document_id)
         scripts_dir.mkdir(parents=True, exist_ok=True)
-        path = self.script_path_for(node_id)
+        path = self.script_path_for(document_id)
         path.write_text(
-            script_stub_for(self._scriptable_uniforms_for(node_id)), encoding="utf-8"
+            script_stub_for(self._scriptable_uniforms_for(document_id)),
+            encoding="utf-8",
         )
         return path
 
-    def script_path_for(self, node_id: str) -> Path:
-        # The scripts/ path for the node script `script.py` (048 — one script per node).
-        return self.paths.node_script_for(node_id)
+    def script_path_for(self, document_id: str) -> Path:
+        # The scripts/ path for the document script `script.py` (048 — one script per document).
+        return self.paths.document_script_for(document_id)
 
-    def read_script_source(self, node_id: str) -> tuple[str, bool]:
+    def read_script_source(self, document_id: str) -> tuple[str, bool]:
         # The copilot read_script source (feature 043): the live scripts/script.py text, or — when the
-        # node has no script — the AGENT stub (the engine stub + one un-commented math.sin(ctx.t)
+        # document has no script — the AGENT stub (the engine stub + one un-commented math.sin(ctx.t)
         # example, so the actor has a concrete animating pattern to copy). The stub is NOT persisted;
         # returns (text, is_stub).
-        path = self.script_path_for(node_id)
+        path = self.script_path_for(document_id)
         if path.is_file():
             return path.read_text(encoding="utf-8"), False
-        stub = script_stub_for(self._scriptable_uniforms_for(node_id))
+        stub = script_stub_for(self._scriptable_uniforms_for(document_id))
         return _AGENT_STUB_EXAMPLE + stub, True
 
-    def write_script_source(self, node_id: str, new_text: str) -> ScriptProbe:
+    def write_script_source(self, document_id: str, new_text: str) -> ScriptProbe:
         # The copilot write_script (feature 043): overwrite (or create) scripts/script.py, reload so
         # the compile verdict is live, then dry-run for the tick-gated facts. Returns the probe; the
         # backend renders it into the tool result + the motion facts.
-        path = self.script_path_for(node_id)
+        path = self.script_path_for(document_id)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(normalize_script_tabs(new_text), encoding="utf-8")
-        ui_node = self.ui_nodes[node_id]
+        ui_document = self.ui_documents[document_id]
         self.script_engine.reload(
-            node_id, self.paths.scripts_dir_for(node_id), ui_node.node.render_pass
+            document_id,
+            self.paths.scripts_dir_for(document_id),
+            ui_document.document.render_pass,
         )
         return self.script_engine.dry_run(
-            node_id,
-            ui_node.node.render_pass,
+            document_id,
+            ui_document.document.render_pass,
             COPILOT_ENGINE.motion_sample_times,
             COPILOT_ENGINE.motion_fps,
         )
 
-    def script_source_view(self, node_id: str) -> tuple[str, ScriptStatus | None]:
+    def script_source_view(self, document_id: str) -> tuple[str, ScriptStatus | None]:
         # The working-set script sub-view (feature 043): the live script source ("" = no script) + its
         # script status (sentinel error for the working-set error line). GL-free reads.
-        path = self.script_path_for(node_id)
+        path = self.script_path_for(document_id)
         if not path.is_file():
             return "", None
-        return path.read_text(encoding="utf-8"), self.get_script_status(node_id)
+        return path.read_text(encoding="utf-8"), self.get_script_status(document_id)
 
-    def uniform_is_driven(self, node_id: str, name: str) -> bool:
+    def uniform_is_driven(self, document_id: str, name: str) -> bool:
         # Whether the script TARGETS this uniform (playing OR stopped) — the gate for showing the row's
         # play/stop button at all (a never-scripted MANUAL uniform shows nothing). Reads the engine's
         # last-tick driven set (decision 4/10).
-        return name in self.script_engine.script_driven_uniforms(node_id)
+        return name in self.script_engine.script_driven_uniforms(document_id)
 
-    def is_uniform_stopped(self, node_id: str, name: str) -> bool:
-        # Whether the user has STOPPED this uniform (explicitly, or via the node-level all_stopped).
-        ui_node = self.ui_nodes.get(node_id)
-        if ui_node is None:
+    def is_uniform_stopped(self, document_id: str, name: str) -> bool:
+        # Whether the user has STOPPED this uniform (explicitly, or via the document-level all_stopped).
+        ui_document = self.ui_documents.get(document_id)
+        if ui_document is None:
             return False
-        state = ui_node.ui_state
+        state = ui_document.ui_state
         return state.all_stopped or name in state.stopped_uniforms
 
-    def set_uniform_stopped(self, node_id: str, name: str, stopped: bool) -> None:
-        # Add/remove a uniform from the node's stopped set (the row's play/stop toggle + the auto-stop
-        # on manual edit). Node-scoped + name-keyed, so it survives a retype + works before any row
-        # draws (no lazy-row trap). Persists in node.json on the next save.
-        ui_node = self.ui_nodes.get(node_id)
-        if ui_node is None:
+    def set_uniform_stopped(self, document_id: str, name: str, stopped: bool) -> None:
+        # Add/remove a uniform from the document's stopped set (the row's play/stop toggle + the auto-stop
+        # on manual edit). Document-scoped + name-keyed, so it survives a retype + works before any row
+        # draws (no lazy-row trap). Persists in document.json on the next save.
+        ui_document = self.ui_documents.get(document_id)
+        if ui_document is None:
             return
-        names = ui_node.ui_state.stopped_uniforms
+        names = ui_document.ui_state.stopped_uniforms
         if stopped and name not in names:
             names.append(name)
         elif not stopped and name in names:
             names.remove(name)
 
-    def set_node_all_stopped(self, node_id: str, stopped: bool) -> None:
-        # The whole-node play/stop: freeze/resume every driven uniform's write at once. The script keeps
+    def set_document_all_stopped(self, document_id: str, stopped: bool) -> None:
+        # The whole-document play/stop: freeze/resume every driven uniform's write at once. The script keeps
         # ticking either way (stop freezes WRITES, not ticking — so a later play resumes from advanced
-        # state). Node-play also CLEARS every explicit per-uniform stop, so a full stop->play cycle
-        # returns the whole node to playing (a uniform stopped mid-play doesn't survive the round trip).
-        ui_node = self.ui_nodes.get(node_id)
-        if ui_node is not None:
-            ui_node.ui_state.all_stopped = stopped
+        # state). Document-play also CLEARS every explicit per-uniform stop, so a full stop->play cycle
+        # returns the whole document to playing (a uniform stopped mid-play doesn't survive the round trip).
+        ui_document = self.ui_documents.get(document_id)
+        if ui_document is not None:
+            ui_document.ui_state.all_stopped = stopped
             if not stopped:
-                ui_node.ui_state.stopped_uniforms.clear()
+                ui_document.ui_state.stopped_uniforms.clear()
 
-    def get_script_driven_uniforms(self, node_id: str) -> set[str]:
+    def get_script_driven_uniforms(self, document_id: str) -> set[str]:
         # The uniform names the script drove on its last tick — the copilot set_uniform reject queries
         # this so it won't no-op a script-driven uniform.
-        return self.script_engine.script_driven_uniforms(node_id)
+        return self.script_engine.script_driven_uniforms(document_id)
 
     def clear_conversation(self) -> None:
         # Archive the live conversation (recoverable), delete checkpoints, reset to a fresh empty
         # chat + persist the empty store. No-op mid-turn (the reset_conversation invariant needs an
-        # idle worker). The copilot resumes with ZERO memory of prior turns — only the nodes on disk
+        # idle worker). The copilot resumes with ZERO memory of prior turns — only the documents on disk
         # remain. App.copilot_clear_chat forwards here; the dogfood harness calls it for a
         # context-wipe (a fresh agent on an existing project).
         if self.copilot.state.in_flight:
@@ -673,19 +684,19 @@ class ProjectSession:
         self.copilot.reset_conversation()
         self.copilot.save_conversation(self.paths.copilot_conversation_path)
 
-    def seed_starter_node(self, seed_current: Callable[[str], None]) -> None:
-        # First-run only: seed a starter into an empty project. A node load + save + select;
+    def seed_starter_document(self, seed_current: Callable[[str], None]) -> None:
+        # First-run only: seed a starter into an empty project. A document load + save + select;
         # `seed_current` is the owner's set-current hook (the setter lives in App until C3).
-        starter_dir = self._node_examples_dir / self._starter_example_id
+        starter_dir = self._document_examples_dir / self._starter_example_id
         if not starter_dir.is_dir():
             logger.warning(f"Starter example missing ({starter_dir}); skipping seed")
             return
         try:
-            new_node = load_node_from_dir(starter_dir)
-            new_node.reset_id()
-            new_node.save(self.paths.nodes_dir, new_node.id)
-            self.ui_nodes[new_node.id] = new_node
-            seed_current(new_node.id)
-            logger.debug(f"Seeded starter node {new_node.id} (first run)")
+            new_document = load_document_from_dir(starter_dir)
+            new_document.reset_id()
+            new_document.save(self.paths.documents_dir, new_document.id)
+            self.ui_documents[new_document.id] = new_document
+            seed_current(new_document.id)
+            logger.debug(f"Seeded starter document {new_document.id} (first run)")
         except Exception as e:
-            logger.error(f"Failed to seed starter node: {e}")
+            logger.error(f"Failed to seed starter document: {e}")

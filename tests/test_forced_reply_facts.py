@@ -1,7 +1,7 @@
 """Feature 058: a force-ended turn's closing reply carries a FRESH measurement of the frame.
 
 All three observed dishonest limit-endings happened on the forced-reply path, which summarized from
-intentions alone. When the turn authored a render, the engine probes the last-authored node once
+intentions alone. When the turn authored a render, the engine probes the last-authored document once
 (free, numeric) and splices the facts into the nudge — so the model states the net result from the
 measurements. Falsifier for each path: cut the splice and these go red. Deterministic (scripted fake
 client, faked probe) — no GL, no live tokens."""
@@ -79,8 +79,8 @@ def _drive(
 ) -> tuple[_NudgeSpy, list[tuple[str, float]], list[Any]]:
     probes: list[tuple[str, float]] = []
 
-    def _probe(node: str, t: float) -> str:
-        probes.append((node, t))
+    def _probe(document: str, t: float) -> str:
+        probes.append((document, t))
         return probe
 
     caps = minimal_caps(
@@ -118,7 +118,7 @@ def test_token_budget_forced_reply_carries_the_facts() -> None:
     assert _MEASURED in client.nudges[0] and _FACTS in client.nudges[0]
     assert probes == [
         ("", 0.0)
-    ]  # the last-authored node (empty = current), export clock
+    ]  # the last-authored document (empty = current), export clock
 
 
 def test_max_iterations_forced_reply_carries_the_facts() -> None:
@@ -157,7 +157,7 @@ def test_probe_error_still_delivers_the_forced_reply_without_the_line() -> None:
         _EDIT,
         [LLMDone("length", LLMUsage(output_tokens=900))],
     ]
-    client, probes, events = _drive(scripts, probe="error: no such node 'x'")
+    client, probes, events = _drive(scripts, probe="error: no such document 'x'")
     assert isinstance(events[-1], AgentTurnDone)
     assert len(client.nudges) == 1 and _MEASURED not in client.nudges[0]
     assert "I stopped at my limit." in events[-1].summary.reply

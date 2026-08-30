@@ -31,7 +31,7 @@ class CopilotConfig:
     # Soft per-edit compile-fix retry budget, distinct from max_iterations (§I2).
     max_edit_retries: int = 3
     # Consecutive broken-compile edits on ONE file before the engine force-restores it to
-    # its last clean-compiling state (033; 0 = off). The engine streak is per-node and
+    # its last clean-compiling state (033; 0 = off). The engine streak is per-document and
     # session-persistent, the nudge counter is per-turn — nudge-before-restore ordering is
     # best-effort within a turn, not guaranteed across turns/interleavings.
     auto_revert_after_failed_edits: int = 6
@@ -66,8 +66,8 @@ class CopilotEngineConfig:
     scratchpad_reserve_tokens: int = 50_000
     # Working-set MEMBER cap (feature 056 D3): the add seam evicts the least-recently-touched
     # address past this, so an accreting turn can't render an unbounded scratchpad. The current
-    # node is unioned in regardless, so the rendered set is this + 1 at most. 0 = uncapped.
-    copilot_working_set_max_nodes: int = 6
+    # document is unioned in regardless, so the rendered set is this + 1 at most. 0 = uncapped.
+    copilot_working_set_max_documents: int = 6
     # Feature 033 enriched results: probe-render facts after clean mutations
     # (ink/bbox/luma off a tiny offscreen render). Size is the square probe edge.
     render_facts_enabled: bool = True

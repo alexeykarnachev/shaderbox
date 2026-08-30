@@ -11,7 +11,7 @@ from pathlib import Path
 import moderngl
 import pytest
 
-from shaderbox.document import Node
+from shaderbox.document import Document
 from shaderbox.help_content import help_sections
 from shaderbox.paths import shader_lib_root
 from shaderbox.shader_lib import ShaderLibIndex, set_active
@@ -41,9 +41,9 @@ def test_a_help_snippet_compiles_and_renders(
 ) -> None:
     path = tmp_path / f"{section.key}.frag.glsl"  # type: ignore[attr-defined]
     path.write_text(section.snippet, encoding="utf-8")  # type: ignore[attr-defined]
-    node = Node(gl=gl, source=ShaderSource.load(path), canvas_size=(32, 32))
-    node.render_pass.compile()
-    assert node.render_pass.compile_unit.errors == [], [
-        e.message for e in node.render_pass.compile_unit.errors
+    document = Document(gl=gl, source=ShaderSource.load(path), canvas_size=(32, 32))
+    document.render_pass.compile()
+    assert document.render_pass.compile_unit.errors == [], [
+        e.message for e in document.render_pass.compile_unit.errors
     ]
-    node.render(u_time=0.0)
+    document.render(u_time=0.0)

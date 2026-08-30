@@ -103,7 +103,7 @@ def test_the_roster_covers_every_module_that_loads_a_persisted_store() -> None:
     # stated reason, so the exclusion cannot quietly widen.
     exempt = {
         "model_salvage.py",  # the salvage helper itself
-        "document.py",  # node.json, loaded per node with its own skip-and-warn path
+        "document.py",  # document.json, loaded per document with its own skip-and-warn path
         "seed.py",  # reads shipped resources, not user state
         "persistence.py",  # the copilot conversation, rebuilt from scratch when unreadable
         "checkpoint.py",  # per-turn rollback records, pruned and disposable

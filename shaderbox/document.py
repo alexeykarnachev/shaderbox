@@ -49,8 +49,8 @@ from shaderbox.pass_graph import (
     plan_passes,
 )
 from shaderbox.paths import (
+    DOCUMENT_JSON_BASENAME,
     GRAPH_JSON_BASENAME,
-    NODE_JSON_BASENAME,
     PASS_SHADER_SUFFIX,
     PASSES_DIR_NAME,
     pass_name_of,
@@ -142,7 +142,7 @@ def _uniforms_by_pass(metadata: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return {name: rows for name, rows in uniforms.items() if isinstance(rows, dict)}
 
 
-def _load_uniform_value(gl: moderngl.Context, node_dir: Path, value: Any) -> Any:
+def _load_uniform_value(gl: moderngl.Context, document_dir: Path, value: Any) -> Any:
     if isinstance(value, list):
         return tuple(value)
     if not isinstance(value, dict):
@@ -151,7 +151,7 @@ def _load_uniform_value(gl: moderngl.Context, node_dir: Path, value: Any) -> Any
     local_file_path = value.get("file_path")
     value_base64 = value.get("base64")
     if local_file_path is not None:
-        file_path = node_dir / local_file_path
+        file_path = document_dir / local_file_path
         kind = Path(local_file_path).parts[0]
         if kind == MEDIA_DIR_NAME:
             return media_class_for(file_path.suffix)(file_path)
@@ -170,7 +170,7 @@ def _load_uniform_value(gl: moderngl.Context, node_dir: Path, value: Any) -> Any
     raise ValueError("unknown uniform dict format")
 
 
-class Node:
+class Document:
     """A document: several passes forming a DAG, one of them the output.
 
     `passes` maps a pass name to its `Pass`; `graph` says which pass fills which input of which
@@ -207,7 +207,7 @@ class Node:
         # Export-time script isolation (feature 041), injected by ProjectSession at load. render_media
         # enters it around EVERY export so a stateful script ticks from a FRESH per-export instance
         # (not the live-warmed one) — structural, so no export caller can forget to isolate. Default
-        # nullcontext when no session injects it (a bare Node / no scripts). Node stays engine-free:
+        # nullcontext when no session injects it (a bare Document / no scripts). Document stays engine-free:
         # it only enters an opaque injected context manager (same shape as on_pre_render).
         self.export_isolation: Callable[[], contextlib.AbstractContextManager[None]] = (
             contextlib.nullcontext
@@ -333,74 +333,76 @@ class Node:
     @classmethod
     def load_from_dir(
         cls,
-        node_dir: Path | str,
+        document_dir: Path | str,
         gl: moderngl.Context | None = None,
-    ) -> tuple["Node", dict[str, Any]]:
+    ) -> tuple["Document", dict[str, Any]]:
         """Read a document: its graph, every pass file, and each pass's uniforms.
 
         A pass file that cannot be read costs THAT pass, never the document (D14), and a
         malformed `graph.json` costs the wiring, never the passes — an unwired document still
         opens with its shaders intact, which is what makes it fixable.
         """
-        node_dir = Path(node_dir)
-        with (node_dir / NODE_JSON_BASENAME).open() as f:
+        document_dir = Path(document_dir)
+        with (document_dir / DOCUMENT_JSON_BASENAME).open() as f:
             metadata = json.load(f)
 
-        node = Node(gl=gl, canvas_size=metadata.get("canvas_size"))
-        graph = load_graph(node_dir / GRAPH_JSON_BASENAME)
+        document = Document(gl=gl, canvas_size=metadata.get("canvas_size"))
+        graph = load_graph(document_dir / GRAPH_JSON_BASENAME)
         uniforms_by_pass = _uniforms_by_pass(metadata)
 
-        for render_pass in node.passes.values():
+        for render_pass in document.passes.values():
             render_pass.release()
-        node.passes = {}
+        document.passes = {}
         for shader_path in sorted(
-            (node_dir / PASSES_DIR_NAME).glob(f"*{PASS_SHADER_SUFFIX}")
+            (document_dir / PASSES_DIR_NAME).glob(f"*{PASS_SHADER_SUFFIX}")
         ):
             name = pass_name_of(shader_path)
             entry = graph.passes.get(name)
             try:
-                node.passes[name] = Pass(
-                    gl=node._gl,
+                document.passes[name] = Pass(
+                    gl=document._gl,
                     source=ShaderSource.load(shader_path),
                     canvas_size=metadata.get("canvas_size"),
                     target=entry.target if entry is not None else None,
                 )
             except OSError as e:
                 logger.error(f"Skipping unreadable pass '{name}': {e}")
-        if not node.passes:
-            raise ValueError(f"{node_dir.name}: no readable pass file")
+        if not document.passes:
+            raise ValueError(f"{document_dir.name}: no readable pass file")
 
         # A graph entry naming a file that does not exist is reported and dropped, so the plan
         # never orders a pass nothing can draw.
-        missing = [name for name in graph.passes if name not in node.passes]
+        missing = [name for name in graph.passes if name not in document.passes]
         if missing:
             logger.warning(
-                f"{node_dir.name}: graph names {sorted(missing)}, which have no pass file"
+                f"{document_dir.name}: graph names {sorted(missing)}, which have no pass file"
             )
         # One entry per pass FILE: the files are the passes, so a graph entry with no file is
         # dropped (above) and a file with no entry gets defaults.
-        node.graph = PassGraph(
+        document.graph = PassGraph(
             version=graph.version,
             output=graph.output,
-            passes={name: graph.passes.get(name, PassEntry()) for name in node.passes},
+            passes={
+                name: graph.passes.get(name, PassEntry()) for name in document.passes
+            },
             layout=graph.layout,
         )
 
-        for pass_name, render_pass in node.passes.items():
+        for pass_name, render_pass in document.passes.items():
             for uniform_name, value in uniforms_by_pass.get(pass_name, {}).items():
                 try:
                     render_pass.uniform_values[uniform_name] = _load_uniform_value(
-                        node._gl, node_dir, value
+                        document._gl, document_dir, value
                     )
                 except Exception as e:
                     # Per uniform: one unreadable asset costs that binding, not the pass.
                     logger.warning(
-                        f"{node_dir.name}/{pass_name}: dropping uniform "
+                        f"{document_dir.name}/{pass_name}: dropping uniform "
                         f"'{uniform_name}' ({e})"
                     )
 
-        node.render()  # warm-up
-        return node, metadata
+        document.render()  # warm-up
+        return document, metadata
 
     def _render_image(
         self, details: MediaDetails, canvas: "Canvas", u_time: float | None = 0.0
@@ -559,11 +561,11 @@ class Node:
             return self._render_image(details, canvas)
 
 
-def document_dir_of(node: Node) -> Path:
+def document_dir_of(document: Document) -> Path:
     """The directory a document was loaded from / last saved to.
 
     Derived from a pass file's location, which sits one level down in `passes/` — so this is the
     single place that knows the depth, rather than every caller doing `.parent` and being wrong
     by one the day the layout changes.
     """
-    return next(iter(node.passes.values())).source.path.parent.parent
+    return next(iter(document.passes.values())).source.path.parent.parent

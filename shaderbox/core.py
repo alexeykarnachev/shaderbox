@@ -26,7 +26,7 @@ from shaderbox.shader_source import ShaderSource
 from shaderbox.util import try_to_release
 
 # Engine-driven: never pass-intrinsic defaults — seed_uniform_values skips them and
-# UINode.save excludes them. Two kinds: per-frame values Pass.render() recomputes
+# UIDocument.save excludes them. Two kinds: per-frame values Pass.render() recomputes
 # from time/canvas, and the program-resident glyph tables Pass.compile() writes once
 # (TABLE_UNIFORMS — render() skips those entirely).
 ENGINE_DRIVEN_UNIFORMS: frozenset[str] = frozenset(
@@ -275,7 +275,7 @@ class Pass:
                     logger.warning(f"Failed to write engine table '{table_name}': {e}")
 
     def seed_uniform_values(self) -> None:
-        # Fill uniform_values with node-intrinsic defaults for any active uniform not yet
+        # Fill uniform_values with document-intrinsic defaults for any active uniform not yet
         # present. GL-FREE: no texture.use / program binding / draw — that is render()'s job.
         # Engine-driven uniforms are per-frame canvas/time values, valued only in render().
         if not self.program:

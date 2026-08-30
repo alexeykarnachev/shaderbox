@@ -18,17 +18,17 @@ import pytest
 from PIL import Image as PILImage
 
 from shaderbox.constants import DEFAULT_FS_FILE_PATH
-from shaderbox.document import DEFAULT_PASS_NAME, Node, load_graph
+from shaderbox.document import DEFAULT_PASS_NAME, Document, load_graph
 from shaderbox.media import Image
 from shaderbox.pass_graph import PassEntry, PassGraph, TargetConfig
 from shaderbox.paths import (
+    DOCUMENT_JSON_BASENAME,
     GRAPH_JSON_BASENAME,
-    NODE_JSON_BASENAME,
     PASSES_DIR_NAME,
     pass_shader_name,
 )
 from shaderbox.shader_source import ShaderSource
-from shaderbox.ui_models import UINode, load_node_from_dir
+from shaderbox.ui_models import UIDocument, load_document_from_dir
 
 _SAMPLER = """#version 460 core
 in vec2 vs_uv;
@@ -62,23 +62,21 @@ def gl_ctx() -> Iterator[moderngl.Context]:
 
 
 def _write_document(
-    node_dir: Path, sources: dict[str, str], graph: PassGraph | None = None
+    document_dir: Path, sources: dict[str, str], graph: PassGraph | None = None
 ) -> None:
-    passes = node_dir / PASSES_DIR_NAME
+    passes = document_dir / PASSES_DIR_NAME
     passes.mkdir(parents=True, exist_ok=True)
     for name, src in sources.items():
         (passes / pass_shader_name(name)).write_text(src)
-    (node_dir / NODE_JSON_BASENAME).write_text(
+    (document_dir / DOCUMENT_JSON_BASENAME).write_text(
         json.dumps({"canvas_size": [16, 16], "uniforms": {}, "ui_state": {}})
     )
     if graph is not None:
-        (node_dir / GRAPH_JSON_BASENAME).write_text(json.dumps(graph.model_dump()))
+        (document_dir / GRAPH_JSON_BASENAME).write_text(json.dumps(graph.model_dump()))
 
 
 def _image(path: Path, color: tuple[int, int, int]) -> Path:
-    PILImage.fromarray(
-        np.full((4, 4, 3), color, dtype=np.uint8), "RGB"
-    ).save(path)
+    PILImage.fromarray(np.full((4, 4, 3), color, dtype=np.uint8), "RGB").save(path)
     return path
 
 
@@ -106,7 +104,7 @@ def test_a_graph_round_trips_every_field(tmp_path: Path) -> None:
 def test_a_document_round_trips_its_graph_and_passes(
     gl_ctx: moderngl.Context, tmp_path: Path
 ) -> None:
-    node_dir = tmp_path / "doc"
+    document_dir = tmp_path / "doc"
     graph = PassGraph(
         output="b",
         passes={
@@ -114,47 +112,47 @@ def test_a_document_round_trips_its_graph_and_passes(
             "b": PassEntry(inputs={"u_tex": "a"}),
         },
     )
-    _write_document(node_dir, {"a": _PLAIN, "b": _SAMPLER}, graph)
-    loaded = load_node_from_dir(node_dir)
-    loaded.node.render_pass.uniform_values["u_amount"] = 0.75
-    loaded.save(node_dir.parent, node_dir.name, rebind=False)
+    _write_document(document_dir, {"a": _PLAIN, "b": _SAMPLER}, graph)
+    loaded = load_document_from_dir(document_dir)
+    loaded.document.render_pass.uniform_values["u_amount"] = 0.75
+    loaded.save(document_dir.parent, document_dir.name, rebind=False)
 
-    again = load_node_from_dir(node_dir)
-    assert sorted(again.node.passes) == ["a", "b"]
-    assert again.node.graph.output == "b"
-    assert again.node.graph.passes["b"].inputs == {"u_tex": "a"}
-    assert again.node.graph.passes["a"].target.scale == 0.5
-    assert again.node.render_pass.uniform_values["u_amount"] == 0.75
-    again.node.release()
-    loaded.node.release()
+    again = load_document_from_dir(document_dir)
+    assert sorted(again.document.passes) == ["a", "b"]
+    assert again.document.graph.output == "b"
+    assert again.document.graph.passes["b"].inputs == {"u_tex": "a"}
+    assert again.document.graph.passes["a"].target.scale == 0.5
+    assert again.document.render_pass.uniform_values["u_amount"] == 0.75
+    again.document.release()
+    loaded.document.release()
 
 
 def test_a_pass_file_with_no_graph_entry_gets_defaults(
     gl_ctx: moderngl.Context, tmp_path: Path
 ) -> None:
     # The FILES are the passes: a pass authored on disk without touching graph.json still loads.
-    node_dir = tmp_path / "doc"
-    _write_document(node_dir, {"solo": _PLAIN})
-    loaded = load_node_from_dir(node_dir)
-    assert list(loaded.node.passes) == ["solo"]
-    assert loaded.node.graph.passes["solo"] == PassEntry()
-    assert loaded.node.render_pass is loaded.node.passes["solo"]
-    loaded.node.release()
+    document_dir = tmp_path / "doc"
+    _write_document(document_dir, {"solo": _PLAIN})
+    loaded = load_document_from_dir(document_dir)
+    assert list(loaded.document.passes) == ["solo"]
+    assert loaded.document.graph.passes["solo"] == PassEntry()
+    assert loaded.document.render_pass is loaded.document.passes["solo"]
+    loaded.document.release()
 
 
 def test_a_removed_pass_does_not_come_back(
     gl_ctx: moderngl.Context, tmp_path: Path
 ) -> None:
     # The loader enumerates FILES, so a save that leaves an orphan file resurrects the pass.
-    node_dir = tmp_path / "doc"
-    _write_document(node_dir, {"a": _PLAIN, "b": _PLAIN})
-    loaded = load_node_from_dir(node_dir)
-    loaded.node.passes.pop("b").release()
-    loaded.node.graph = PassGraph(output="a", passes={"a": PassEntry()})
-    loaded.save(node_dir.parent, node_dir.name, rebind=False)
-    assert not (node_dir / PASSES_DIR_NAME / pass_shader_name("b")).exists()
-    assert list(load_node_from_dir(node_dir).node.passes) == ["a"]
-    loaded.node.release()
+    document_dir = tmp_path / "doc"
+    _write_document(document_dir, {"a": _PLAIN, "b": _PLAIN})
+    loaded = load_document_from_dir(document_dir)
+    loaded.document.passes.pop("b").release()
+    loaded.document.graph = PassGraph(output="a", passes={"a": PassEntry()})
+    loaded.save(document_dir.parent, document_dir.name, rebind=False)
+    assert not (document_dir / PASSES_DIR_NAME / pass_shader_name("b")).exists()
+    assert list(load_document_from_dir(document_dir).document.passes) == ["a"]
+    loaded.document.release()
 
 
 # ---------------------------------------------------------------- check 11
@@ -201,9 +199,7 @@ def test_an_unknown_graph_key_is_dropped_and_the_rest_survives(
 ) -> None:
     path = tmp_path / GRAPH_JSON_BASENAME
     path.write_text(
-        json.dumps(
-            {"output": "a", "passes": {"a": {"inputs": {}}}, "retired_field": 7}
-        )
+        json.dumps({"output": "a", "passes": {"a": {"inputs": {}}}, "retired_field": 7})
     )
     graph = load_graph(path)
     assert graph.output == "a"
@@ -215,32 +211,32 @@ def test_a_malformed_pass_file_costs_that_pass_not_the_document(
 ) -> None:
     # D14. A pass whose SOURCE does not compile is still a pass — it loads and reports its error.
     # The document is only lost when it has no readable pass file at all.
-    node_dir = tmp_path / "doc"
-    _write_document(node_dir, {"ok": _PLAIN, "broken": "this is not glsl at all"})
-    loaded = load_node_from_dir(node_dir)
-    assert sorted(loaded.node.passes) == ["broken", "ok"]
-    loaded.node.passes["broken"].compile()
-    assert loaded.node.passes["broken"].compile_unit.errors
-    assert loaded.node.passes["ok"].compile_unit.errors == []
-    loaded.node.release()
+    document_dir = tmp_path / "doc"
+    _write_document(document_dir, {"ok": _PLAIN, "broken": "this is not glsl at all"})
+    loaded = load_document_from_dir(document_dir)
+    assert sorted(loaded.document.passes) == ["broken", "ok"]
+    loaded.document.passes["broken"].compile()
+    assert loaded.document.passes["broken"].compile_unit.errors
+    assert loaded.document.passes["ok"].compile_unit.errors == []
+    loaded.document.release()
 
 
 def test_a_graph_entry_naming_a_missing_file_is_dropped(
     gl_ctx: moderngl.Context, tmp_path: Path
 ) -> None:
-    node_dir = tmp_path / "doc"
+    document_dir = tmp_path / "doc"
     _write_document(
-        node_dir,
+        document_dir,
         {"real": _PLAIN},
         PassGraph(
             output="real",
             passes={"real": PassEntry(), "ghost": PassEntry()},
         ),
     )
-    loaded = load_node_from_dir(node_dir)
-    assert list(loaded.node.passes) == ["real"]
-    assert "ghost" not in loaded.node.graph.passes
-    loaded.node.release()
+    loaded = load_document_from_dir(document_dir)
+    assert list(loaded.document.passes) == ["real"]
+    assert "ghost" not in loaded.document.graph.passes
+    loaded.document.release()
 
 
 # ---------------------------------------------------------------- check 12
@@ -251,31 +247,31 @@ def test_two_passes_binding_the_same_sampler_name_keep_separate_media(
 ) -> None:
     # D16: with uniforms pass-scoped, a FLAT asset layout would have the two `u_tex` files
     # overwrite each other and the orphan sweep would delete the survivor's.
-    node_dir = tmp_path / "doc"
+    document_dir = tmp_path / "doc"
     _write_document(
-        node_dir,
+        document_dir,
         {"left": _SAMPLER, "right": _SAMPLER},
         PassGraph(output="left", passes={"left": PassEntry(), "right": PassEntry()}),
     )
-    loaded = load_node_from_dir(node_dir)
+    loaded = load_document_from_dir(document_dir)
     red = Image(_image(tmp_path / "red.png", (255, 0, 0)))
     blue = Image(_image(tmp_path / "blue.png", (0, 0, 255)))
-    loaded.node.passes["left"].uniform_values["u_tex"] = red
-    loaded.node.passes["right"].uniform_values["u_tex"] = blue
-    loaded.save(node_dir.parent, node_dir.name, rebind=False)
+    loaded.document.passes["left"].uniform_values["u_tex"] = red
+    loaded.document.passes["right"].uniform_values["u_tex"] = blue
+    loaded.save(document_dir.parent, document_dir.name, rebind=False)
 
-    assert (node_dir / "media" / "left" / "u_tex.png").is_file()
-    assert (node_dir / "media" / "right" / "u_tex.png").is_file()
-    meta = json.loads((node_dir / NODE_JSON_BASENAME).read_text())
+    assert (document_dir / "media" / "left" / "u_tex.png").is_file()
+    assert (document_dir / "media" / "right" / "u_tex.png").is_file()
+    meta = json.loads((document_dir / DOCUMENT_JSON_BASENAME).read_text())
     assert meta["uniforms"]["left"]["u_tex"]["file_path"] == "media/left/u_tex.png"
     assert meta["uniforms"]["right"]["u_tex"]["file_path"] == "media/right/u_tex.png"
 
-    again = load_node_from_dir(node_dir)
-    left_px = again.node.passes["left"].uniform_values["u_tex"].texture.read()[:3]
-    right_px = again.node.passes["right"].uniform_values["u_tex"].texture.read()[:3]
+    again = load_document_from_dir(document_dir)
+    left_px = again.document.passes["left"].uniform_values["u_tex"].texture.read()[:3]
+    right_px = again.document.passes["right"].uniform_values["u_tex"].texture.read()[:3]
     assert tuple(left_px) != tuple(right_px), "the two passes' media collided"
-    again.node.release()
-    loaded.node.release()
+    again.document.release()
+    loaded.document.release()
 
 
 def test_the_orphan_sweep_is_scoped_to_one_pass(
@@ -283,80 +279,82 @@ def test_the_orphan_sweep_is_scoped_to_one_pass(
 ) -> None:
     # A save must not reach into a sibling pass's asset dir. Falsifier: a sweep keyed by asset
     # NAME alone deletes `right/u_tex.png` because `left` no longer references that name.
-    node_dir = tmp_path / "doc"
+    document_dir = tmp_path / "doc"
     _write_document(
-        node_dir,
+        document_dir,
         {"left": _SAMPLER, "right": _SAMPLER},
         PassGraph(output="left", passes={"left": PassEntry(), "right": PassEntry()}),
     )
-    loaded = load_node_from_dir(node_dir)
-    loaded.node.passes["right"].uniform_values["u_tex"] = Image(
+    loaded = load_document_from_dir(document_dir)
+    loaded.document.passes["right"].uniform_values["u_tex"] = Image(
         _image(tmp_path / "keep.png", (0, 255, 0))
     )
-    loaded.save(node_dir.parent, node_dir.name, rebind=False)
-    loaded.save(node_dir.parent, node_dir.name, rebind=False)
-    assert (node_dir / "media" / "right" / "u_tex.png").is_file()
-    loaded.node.release()
+    loaded.save(document_dir.parent, document_dir.name, rebind=False)
+    loaded.save(document_dir.parent, document_dir.name, rebind=False)
+    assert (document_dir / "media" / "right" / "u_tex.png").is_file()
+    loaded.document.release()
 
 
 def test_a_deleted_passs_assets_are_swept(
     gl_ctx: moderngl.Context, tmp_path: Path
 ) -> None:
-    node_dir = tmp_path / "doc"
+    document_dir = tmp_path / "doc"
     _write_document(
-        node_dir,
+        document_dir,
         {"left": _SAMPLER, "right": _SAMPLER},
         PassGraph(output="left", passes={"left": PassEntry(), "right": PassEntry()}),
     )
-    loaded = load_node_from_dir(node_dir)
-    loaded.node.passes["right"].uniform_values["u_tex"] = Image(
+    loaded = load_document_from_dir(document_dir)
+    loaded.document.passes["right"].uniform_values["u_tex"] = Image(
         _image(tmp_path / "gone.png", (0, 255, 0))
     )
-    loaded.save(node_dir.parent, node_dir.name, rebind=False)
-    assert (node_dir / "media" / "right" / "u_tex.png").is_file()
+    loaded.save(document_dir.parent, document_dir.name, rebind=False)
+    assert (document_dir / "media" / "right" / "u_tex.png").is_file()
 
-    loaded.node.passes.pop("right").release()
-    loaded.node.graph = PassGraph(output="left", passes={"left": PassEntry()})
-    loaded.save(node_dir.parent, node_dir.name, rebind=False)
-    assert not (node_dir / "media" / "right" / "u_tex.png").exists()
-    loaded.node.release()
+    loaded.document.passes.pop("right").release()
+    loaded.document.graph = PassGraph(output="left", passes={"left": PassEntry()})
+    loaded.save(document_dir.parent, document_dir.name, rebind=False)
+    assert not (document_dir / "media" / "right" / "u_tex.png").exists()
+    loaded.document.release()
 
 
 def test_a_default_document_saves_and_reloads(
     gl_ctx: moderngl.Context, tmp_path: Path
 ) -> None:
     # An empty project must start: the seeded starter has to survive its own save/load.
-    doc = Node(
+    doc = Document(
         gl=gl_ctx, source=ShaderSource.load(DEFAULT_FS_FILE_PATH), canvas_size=(16, 16)
     )
     doc.render()
-    ui_node = UINode(node=doc, id="fresh")
-    ui_node.save(tmp_path, "fresh", rebind=False)
-    assert (tmp_path / "fresh" / PASSES_DIR_NAME / pass_shader_name(DEFAULT_PASS_NAME)).is_file()
-    reloaded = load_node_from_dir(tmp_path / "fresh")
-    assert list(reloaded.node.passes) == [DEFAULT_PASS_NAME]
-    reloaded.node.release()
+    ui_document = UIDocument(document=doc, id="fresh")
+    ui_document.save(tmp_path, "fresh", rebind=False)
+    assert (
+        tmp_path / "fresh" / PASSES_DIR_NAME / pass_shader_name(DEFAULT_PASS_NAME)
+    ).is_file()
+    reloaded = load_document_from_dir(tmp_path / "fresh")
+    assert list(reloaded.document.passes) == [DEFAULT_PASS_NAME]
+    reloaded.document.release()
     doc.release()
 
 
 def test_a_document_with_no_pass_file_is_skipped_not_crashed(
     gl_ctx: moderngl.Context, tmp_path: Path
 ) -> None:
-    node_dir = tmp_path / "empty"
-    node_dir.mkdir()
-    (node_dir / NODE_JSON_BASENAME).write_text(
+    document_dir = tmp_path / "empty"
+    document_dir.mkdir()
+    (document_dir / DOCUMENT_JSON_BASENAME).write_text(
         json.dumps({"canvas_size": [16, 16], "uniforms": {}, "ui_state": {}})
     )
     with pytest.raises(ValueError, match="no readable pass file"):
-        Node.load_from_dir(node_dir, gl=gl_ctx)
+        Document.load_from_dir(document_dir, gl=gl_ctx)
 
 
 def test_an_unreadable_asset_costs_that_uniform_not_the_pass(
     gl_ctx: moderngl.Context, tmp_path: Path
 ) -> None:
-    node_dir = tmp_path / "doc"
-    _write_document(node_dir, {"main": _SAMPLER})
-    meta = json.loads((node_dir / NODE_JSON_BASENAME).read_text())
+    document_dir = tmp_path / "doc"
+    _write_document(document_dir, {"main": _SAMPLER})
+    meta = json.loads((document_dir / DOCUMENT_JSON_BASENAME).read_text())
     meta["uniforms"] = {
         "main": {
             "u_amount": 0.5,
@@ -368,7 +366,7 @@ def test_an_unreadable_asset_costs_that_uniform_not_the_pass(
             },
         }
     }
-    (node_dir / NODE_JSON_BASENAME).write_text(json.dumps(meta))
-    loaded = load_node_from_dir(node_dir)
-    assert loaded.node.render_pass.uniform_values["u_amount"] == 0.5
-    loaded.node.release()
+    (document_dir / DOCUMENT_JSON_BASENAME).write_text(json.dumps(meta))
+    loaded = load_document_from_dir(document_dir)
+    assert loaded.document.render_pass.uniform_values["u_amount"] == 0.5
+    loaded.document.release()

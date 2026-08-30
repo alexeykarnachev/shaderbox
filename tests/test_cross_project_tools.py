@@ -3,7 +3,7 @@
 Covers the parts the agent-loop fakes don't: uniform-value coercion + the engine-driven
 reject set, and the live-source lib-create path (the index must see a function in a
 copilot-written file, unlike create_file_in's commented stub). The marshalled GL paths
-(read_shader / set_uniform validation / create_node) are exercised in-app + by smoke.
+(read_shader / set_uniform validation / create_document) are exercised in-app + by smoke.
 """
 
 import types
@@ -13,11 +13,11 @@ from pathlib import Path
 import moderngl
 import pytest
 
-from shaderbox.constants import NODE_EXAMPLES_DIR, STARTER_EXAMPLE_ID
+from shaderbox.constants import DOCUMENT_EXAMPLES_DIR, STARTER_EXAMPLE_ID
 from shaderbox.core import ENGINE_DRIVEN_UNIFORMS
 from shaderbox.shader_lib.file_ops import ShaderLibFileManager
 from shaderbox.shader_lib.index import ShaderLibIndex
-from shaderbox.ui_models import load_node_from_dir
+from shaderbox.ui_models import load_document_from_dir
 from shaderbox.uniform_coerce import coerce_uniform_value
 
 
@@ -54,7 +54,7 @@ def test_coerce_rejects_bool() -> None:
 
 def test_engine_driven_set_is_the_documented_set() -> None:
     # Engine-owned, so set_uniform rejects them (020·16 Decision 6): the per-frame
-    # values Node.render() recomputes + the glyph tables Node.compile() writes.
+    # values Document.render() recomputes + the glyph tables Document.compile() writes.
     # Pin the set so a new engine uniform added to core.py is consciously added here too.
     assert {
         "u_time",
@@ -131,60 +131,61 @@ def gl_ctx() -> Iterator[moderngl.Context]:
     ctx.release()
 
 
-def test_create_node_from_source_does_not_touch_starter_example(
+def test_create_document_from_source_does_not_touch_starter_example(
     gl_ctx: moderngl.Context, tmp_path: Path
 ) -> None:
-    # Regression (review CRITICAL): _copilot_create_node must NOT write the agent's source
-    # through new_node.node.source.path — after load_node_from_dir that path still points at
-    # the SHARED starter example. The fix relies on UINode.save rebinding the path + writing
-    # the source to the new node's own dir. This pins the contract: the starter file is
+    # Regression (review CRITICAL): _copilot_create_document must NOT write the agent's source
+    # through new_document.document.source.path — after load_document_from_dir that path still points at
+    # the SHARED starter example. The fix relies on UIDocument.save rebinding the path + writing
+    # the source to the new document's own dir. This pins the contract: the starter file is
     # byte-unchanged, and the new dir holds the agent's source.
-    starter = NODE_EXAMPLES_DIR / STARTER_EXAMPLE_ID
+    starter = DOCUMENT_EXAMPLES_DIR / STARTER_EXAMPLE_ID
     starter_shader = starter / "passes" / "main.frag.glsl"
     before = starter_shader.read_bytes()
 
     agent_source = "void main() { gl_FragColor = vec4(1.0); }\n"
-    new_node = load_node_from_dir(starter)
-    new_node.reset_id()
-    new_node.node.render_pass.release_program(
+    new_document = load_document_from_dir(starter)
+    new_document.reset_id()
+    new_document.document.render_pass.release_program(
         agent_source
     )  # sets source.text, NOT a disk write
-    saved_dir = new_node.save(tmp_path)
+    saved_dir = new_document.save(tmp_path)
 
     assert starter_shader.read_bytes() == before, "starter example was clobbered"
     assert (saved_dir / "passes" / "main.frag.glsl").read_text() == agent_source
     assert (
-        new_node.node.render_pass.source.path == saved_dir / "passes" / "main.frag.glsl"
+        new_document.document.render_pass.source.path
+        == saved_dir / "passes" / "main.frag.glsl"
     )
 
 
-def test_create_node_compiles_and_surfaces_errors(gl_ctx: moderngl.Context) -> None:
-    # The compile-feedback contract (the test-exposed gap): create_node compiles the new node
+def test_create_document_compiles_and_surfaces_errors(gl_ctx: moderngl.Context) -> None:
+    # The compile-feedback contract (the test-exposed gap): create_document compiles the new document
     # and returns its errors, so a create-from-broken-source can't report success. Mirrors what
-    # _copilot_create_node does (release_program -> compile -> read compile_unit.errors).
-    starter = NODE_EXAMPLES_DIR / STARTER_EXAMPLE_ID
+    # _copilot_create_document does (release_program -> compile -> read compile_unit.errors).
+    starter = DOCUMENT_EXAMPLES_DIR / STARTER_EXAMPLE_ID
 
     # Full broken source -> compile surfaces errors.
-    broken = load_node_from_dir(starter)
-    broken.node.render_pass.release_program("void main() { this is not glsl }\n")
-    broken.node.render_pass.compile()
-    assert broken.node.render_pass.compile_unit.errors, (
+    broken = load_document_from_dir(starter)
+    broken.document.render_pass.release_program("void main() { this is not glsl }\n")
+    broken.document.render_pass.compile()
+    assert broken.document.render_pass.compile_unit.errors, (
         "broken source should produce compile errors"
     )
 
     # Empty source -> the starter's own (clean) program compiles clean.
-    starter_node = load_node_from_dir(starter)
-    starter_node.node.render_pass.compile()
-    assert not starter_node.node.render_pass.compile_unit.errors, (
+    starter_document = load_document_from_dir(starter)
+    starter_document.document.render_pass.compile()
+    assert not starter_document.document.render_pass.compile_unit.errors, (
         "starter must compile clean"
     )
 
 
 def _id_stub(ids: list[str]) -> types.SimpleNamespace:
-    # Minimal stand-in for CopilotBackend's _copilot_short_ids / _copilot_resolve_node_id (pure
-    # dict logic over the injected ui_nodes getter — no GL). dict preserves insertion order.
-    nodes = dict.fromkeys(ids)
-    return types.SimpleNamespace(_get_ui_nodes=lambda: nodes)
+    # Minimal stand-in for CopilotBackend's _copilot_short_ids / _copilot_resolve_document_id (pure
+    # dict logic over the injected ui_documents getter — no GL). dict preserves insertion order.
+    documents = dict.fromkeys(ids)
+    return types.SimpleNamespace(_get_ui_documents=lambda: documents)
 
 
 def test_short_ids_are_4_chars_when_no_collision() -> None:
@@ -206,11 +207,11 @@ def test_short_ids_grow_on_collision() -> None:
     assert len(set(short.values())) == 3
 
 
-def test_resolve_node_id_accepts_short_full_and_rejects_unknown_ambiguous() -> None:
+def test_resolve_document_id_accepts_short_full_and_rejects_unknown_ambiguous() -> None:
     from shaderbox.copilot.backend import CopilotBackend
 
     stub = _id_stub(["abcd1111", "abcd2222", "ef993333"])
-    resolve = CopilotBackend._copilot_resolve_node_id.__get__(stub)
+    resolve = CopilotBackend._copilot_resolve_document_id.__get__(stub)
     assert resolve("ef993333") == "ef993333"  # exact full id
     assert resolve("ef99") == "ef993333"  # unique short prefix
     assert resolve("abcd") is None  # ambiguous prefix -> None

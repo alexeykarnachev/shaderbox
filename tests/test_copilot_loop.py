@@ -83,7 +83,7 @@ def _model_cards(events: list[AgentEvent]) -> list[AgentToolCard]:
 
 def _fake_context() -> CopilotContext:
     return CopilotContext(
-        node_tree="- shader (id: node-1)  [current]",
+        document_tree="- shader (id: document-1)  [current]",
         lib_catalog="(library is empty)",
         example_catalog="(no examples)",
         script_api="",
@@ -97,7 +97,7 @@ def _fake_caps(
     # Models the App: apply_shader_edit matches old_str against the LIVE source via the REAL
     # token matcher (not a re-rolled str.count), replaces, and (on a real match) advances the
     # source — so a second edit sees the first's result and the fake stays faithful to prod.
-    # The `target` arg is accepted and ignored (the fake models the current node only).
+    # The `target` arg is accepted and ignored (the fake models the current document only).
     state = {"text": text, "n": 0}
 
     def apply_edit(
@@ -127,10 +127,10 @@ def _fake_caps(
         state["n"] += 1
         return EditResult(matches=1, errors=errors)
 
-    def read_shaders(node_ids: list[str]) -> list[ShaderView]:
+    def read_shaders(document_ids: list[str]) -> list[ShaderView]:
         return [
             ShaderView(
-                node_id="node-1",
+                document_id="document-1",
                 name="shader",
                 listing=f"1  {state['text']}",
                 uniforms=["u_pos vec3 = (0.0, 0.0, 0.0)"],
@@ -166,7 +166,7 @@ def test_edit_compile_feedback_self_correction() -> None:
         edit_errors=[
             [
                 CompileErrorInfo(
-                    path="node.frag.glsl", line=14, message="'u_time' : undeclared"
+                    path="document.frag.glsl", line=14, message="'u_time' : undeclared"
                 )
             ],
             [],
@@ -197,7 +197,11 @@ def test_edit_compile_feedback_self_correction() -> None:
     assert cards[1].ok
     assert cards[1].payload == {
         "errors": [
-            {"path": "node.frag.glsl", "line": 14, "message": "'u_time' : undeclared"}
+            {
+                "path": "document.frag.glsl",
+                "line": 14,
+                "message": "'u_time' : undeclared",
+            }
         ]
     }
     assert cards[2].payload == {"errors": []}
@@ -321,7 +325,7 @@ def test_giveup_note_reports_applied_edits_and_broken_compile() -> None:
     )
     one_error = [
         CompileErrorInfo(
-            path="node.frag.glsl", line=1, message="'u_posss' : undeclared"
+            path="document.frag.glsl", line=1, message="'u_posss' : undeclared"
         )
     ]
     caps = _fake_caps(edit_errors=[one_error])
@@ -345,13 +349,13 @@ def test_giveup_note_reports_applied_edits_and_broken_compile() -> None:
     assert "couldn't apply" in msg
     assert "What DID apply this turn:" in msg
     assert "edit_shader: compiled with errors" in msg
-    assert "the current node is currently left with compile errors." in msg
+    assert "the current document is currently left with compile errors." in msg
 
 
 def test_giveup_note_reports_non_edit_mutations() -> None:
-    # A successful create_node before the failed edits must show in the giveup
+    # A successful create_document before the failed edits must show in the giveup
     # note — "what applied" covers ALL mutations, not just the edit tools.
-    create = _tool_call("cc", "create_node", '{"name": "Ring", "source": ""}')
+    create = _tool_call("cc", "create_document", '{"name": "Ring", "source": ""}')
     fail_edit = _tool_call(
         "cx", "edit_shader", '{"old_str": "never present", "new_str": "x"}'
     )
@@ -367,7 +371,7 @@ def test_giveup_note_reports_non_edit_mutations() -> None:
             COPILOT_CONFIG,
             _fake_context(),
             history=[],
-            user_text="make a ring node",
+            user_text="make a ring document",
             gate=GateChannel(),
             cancel=threading.Event(),
         )
@@ -376,7 +380,7 @@ def test_giveup_note_reports_non_edit_mutations() -> None:
     assert isinstance(events[-1], AgentError)
     msg = events[-1].message
     assert "What DID apply this turn:" in msg
-    assert "create_node:" in msg
+    assert "create_document:" in msg
 
 
 def test_applies_but_broken_thrash_nudges_not_giveup() -> None:
@@ -396,7 +400,7 @@ def test_applies_but_broken_thrash_nudges_not_giveup() -> None:
         [LLMTextDelta("Rewrote the block."), LLMDone("stop")]
     ]
     one_error = [
-        CompileErrorInfo(path="node.frag.glsl", line=1, message="'x' : undeclared")
+        CompileErrorInfo(path="document.frag.glsl", line=1, message="'x' : undeclared")
     ]
     caps = _fake_caps(edit_errors=[one_error] * n_broken)
     registry = build_registry(caps)
@@ -720,11 +724,11 @@ def test_snippet_square_language() -> None:
 
 def test_terminal_carries_nl_summary_not_tool_tail() -> None:
     # feature 020·28: the terminal event carries an engine-derived NL TurnSummary, NOT the tool tail.
-    # A read_shader turn (non-mutating) yields the agent's reply + the read node in `nodes`, no ledger.
+    # A read_shader turn (non-mutating) yields the agent's reply + the read document in `documents`, no ledger.
     caps = _fake_caps(edit_errors=[[]])
     registry = build_registry(caps)
     scripts: list[list[LLMStreamEvent]] = [
-        _tool_call("c1", "read_shader", '{"nodes": ["abcd"]}'),
+        _tool_call("c1", "read_shader", '{"documents": ["abcd"]}'),
         [LLMTextDelta("Read it."), LLMDone("stop", LLMUsage())],
     ]
     events = list(
@@ -744,8 +748,8 @@ def test_terminal_carries_nl_summary_not_tool_tail() -> None:
     done = next(e for e in events if isinstance(e, AgentTurnDone))
     assert done.summary.reply == "Read it."
     assert done.summary.ledger == [], "a non-mutating read must add no ledger line"
-    assert "abcd" in done.summary.nodes, (
-        "the read node must be referenced for cross-turn binding"
+    assert "abcd" in done.summary.documents, (
+        "the read document must be referenced for cross-turn binding"
     )
 
 
@@ -763,7 +767,7 @@ class _ApproveGate(GateChannel):
 
 
 class _DeleteThenStopClient:
-    # Emits a `delete_node` tool call for the first `n_deletes` stream() calls, then a final
+    # Emits a `delete_document` tool call for the first `n_deletes` stream() calls, then a final
     # plain-text reply. Captures the messages list it is handed each call so the test can
     # assert tool-result integrity after the turn.
     def __init__(self, n_deletes: int) -> None:
@@ -783,12 +787,12 @@ class _DeleteThenStopClient:
         self._calls += 1
         if self._calls <= self._n_deletes:
             call_id = f"call_{self._calls}"
-            yield LLMToolCallStarted(index=0, id=call_id, name="delete_node")
+            yield LLMToolCallStarted(index=0, id=call_id, name="delete_document")
             yield LLMToolCallCompleted(
                 index=0,
                 id=call_id,
-                name="delete_node",
-                arguments=json.dumps({"node": f"n{self._calls}"}),
+                name="delete_document",
+                arguments=json.dumps({"document": f"n{self._calls}"}),
             )
             yield LLMDone(finish_reason="tool_calls", usage=LLMUsage(output_tokens=1))
         else:
@@ -797,7 +801,7 @@ class _DeleteThenStopClient:
 
 
 def test_declined_gates_no_giveup_no_orphaned_tool_calls() -> None:
-    # A declined delete_node must NOT trip the edit-retry cap (it ends in AgentTurnDone, the
+    # A declined delete_document must NOT trip the edit-retry cap (it ends in AgentTurnDone, the
     # model's comment), AND every assistant tool_call must still get a matching tool result
     # message — an orphaned tool_call_id 400s the real provider on the next stream.
     n = COPILOT_CONFIG.max_edit_retries + 1  # one MORE than the cap
@@ -852,9 +856,9 @@ class _DeleteThenEmptyFinishClient:
         _ = (messages, tools, max_tokens)
         self._calls += 1
         if self._calls == 1:
-            yield LLMToolCallStarted(index=0, id="c1", name="delete_node")
+            yield LLMToolCallStarted(index=0, id="c1", name="delete_document")
             yield LLMToolCallCompleted(
-                index=0, id="c1", name="delete_node", arguments='{"node": "n1"}'
+                index=0, id="c1", name="delete_document", arguments='{"document": "n1"}'
             )
             yield LLMDone(finish_reason="tool_calls", usage=LLMUsage(output_tokens=1))
         else:

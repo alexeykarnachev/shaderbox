@@ -4,7 +4,7 @@
 else — including a +2. A seek costs ~50x a forward grab, and the cost is self-reinforcing:
 the seek lengthens the frame, the longer frame skips a video frame, and the wider gap forces
 the next seek. Below the video's own fps that tips from ~0% to ~100% of updates, and the
-editor lurches whenever a video-bearing node is on screen.
+editor lurches whenever a video-bearing document is on screen.
 
 The frame that ends up on the texture must be the SAME one a seek would have produced —
 that is the half a performance fix can quietly break.
@@ -18,7 +18,7 @@ import pytest
 from shaderbox import media
 from shaderbox.media import Video
 
-_VIDEO = "shaderbox/resources/node_examples/73ea2431-13f6-41e4-b923-04d846b678b0/media/main/u_video.mp4"
+_VIDEO = "shaderbox/resources/document_examples/73ea2431-13f6-41e4-b923-04d846b678b0/media/main/u_video.mp4"
 
 
 @pytest.fixture(scope="module")
@@ -117,7 +117,7 @@ def test_a_backwards_gap_seeks(gl) -> None:
 
 def test_first_texture_access_survives_an_end_of_stream_capture(gl) -> None:
     # `texture` ignored grab()'s return value, so a capture parked past the last frame
-    # retrieved None and crashed inside cvtColor — taking the whole node load with it
+    # retrieved None and crashed inside cvtColor — taking the whole document load with it
     # (load_from_dir warm-renders, which touches .texture). Forward-decoding makes an
     # end-of-stream position reachable, so this went from latent to a ~25% flake.
     video = Video(_VIDEO)

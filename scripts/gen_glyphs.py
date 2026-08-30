@@ -386,7 +386,7 @@ int sbt_glyph_id(uint cp) {{
 // bank on every driver tested, and keeps V3D codegen small (the original
 // inlined glyph switch exploded its compile). Pass.compile() writes the values
 // from shaderbox/glyph_tables.py — generated together with this file, never
-// node-settable (ENGINE_DRIVEN_UNIFORMS). Span per glyph: x = stroke offset,
+// document-settable (ENGINE_DRIVEN_UNIFORMS). Span per glyph: x = stroke offset,
 // y = segment count, z = arc count, w = (tall_arc_count << 8) | dot_count.
 // Strokes are pre-sorted by kind.
 uniform ivec4 SBT_SPANS[{len(ORDER)}];

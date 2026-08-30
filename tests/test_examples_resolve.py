@@ -18,7 +18,7 @@ needs a conscious reason; regenerating over an ADDITION is routine.
 import json
 from pathlib import Path
 
-from shaderbox.constants import NODE_EXAMPLES_DIR, SHADER_LIB_SEED_DIR
+from shaderbox.constants import DOCUMENT_EXAMPLES_DIR, SHADER_LIB_SEED_DIR
 from shaderbox.shader_lib import ShaderLibIndex
 from shaderbox.shader_lib.resolver import resolve_usage
 from shaderbox.shader_source import ShaderSource
@@ -29,7 +29,7 @@ _LOCK_FILE = Path(__file__).parent / "shader_lib_api_lock.json"
 def test_examples_resolve_clean() -> None:
     index = ShaderLibIndex.build(SHADER_LIB_SEED_DIR)
     assert index.functions, "seed lib index is empty — wrong root?"
-    shaders = sorted(NODE_EXAMPLES_DIR.glob("*/passes/*.frag.glsl"))
+    shaders = sorted(DOCUMENT_EXAMPLES_DIR.glob("*/passes/*.frag.glsl"))
     assert shaders, "no shipped example shaders found"
     for path in shaders:
         _, _, _, errors = resolve_usage(ShaderSource.load(path), index)

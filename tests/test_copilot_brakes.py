@@ -1,6 +1,6 @@
 """Feature 056 slice B: the edit brakes cover the SCRIPT tools too. The streak key is a
-(kind, target) tuple (a node's GLSL and its script.py are two files), a clean whole-file write
-resets its OWN kind, a broken script edit counts as broken, and one write_script per node per
+(kind, target) tuple (a document's GLSL and its script.py are two files), a clean whole-file write
+resets its OWN kind, a broken script edit counts as broken, and one write_script per document per
 batch. Deterministic — scripted fake client + a stubbed backend, no GL."""
 
 import threading
@@ -29,9 +29,11 @@ _EDIT_SHADER = _tool_call(
     "cs", "edit_shader", '{"old_str": "a", "new_str": "b", "target": "7f3a"}'
 )
 _EDIT_SCRIPT = _tool_call(
-    "cp", "edit_script", '{"old_str": "a", "new_str": "b", "node": "7f3a"}'
+    "cp", "edit_script", '{"old_str": "a", "new_str": "b", "document": "7f3a"}'
 )
-_WRITE_SCRIPT = _tool_call("cw", "write_script", '{"new_text": "x", "node": "7f3a"}')
+_WRITE_SCRIPT = _tool_call(
+    "cw", "write_script", '{"new_text": "x", "document": "7f3a"}'
+)
 _DONE = [LLMTextDelta("done"), LLMDone("stop")]
 
 
@@ -68,26 +70,26 @@ def _run(
 
 
 def test_edit_target_key_namespaces_kind_and_reads_the_right_arg() -> None:
-    # The script trio's arg is `node`, the shader pair's is `target` — a `target`-only read keyed
-    # every script edit to the current-node sentinel and merged all nodes into one streak.
+    # The script trio's arg is `document`, the shader pair's is `target` — a `target`-only read keyed
+    # every script edit to the current-document sentinel and merged all documents into one streak.
     assert _edit_target_key("edit_shader", {"target": "7f3a"}) == ("shader", "7f3a")
-    assert _edit_target_key("edit_script", {"node": "7f3a"}) == ("script", "7f3a")
+    assert _edit_target_key("edit_script", {"document": "7f3a"}) == ("script", "7f3a")
     assert _edit_target_key("edit_script", {}) == ("script", "<current>")
-    # Same node, two files -> two different streaks.
+    # Same document, two files -> two different streaks.
     assert _edit_target_key("edit_shader", {"target": "7f3a"}) != _edit_target_key(
-        "edit_script", {"node": "7f3a"}
+        "edit_script", {"document": "7f3a"}
     )
 
 
-def test_a_nodes_shader_and_script_streaks_do_not_merge() -> None:
-    # Two clean edits to each of a node's TWO files: neither streak reaches the threshold of 3,
+def test_a_documents_shader_and_script_streaks_do_not_merge() -> None:
+    # Two clean edits to each of a document's TWO files: neither streak reaches the threshold of 3,
     # so no nudge. Under one shared key the four edits would trip it.
     config = replace(COPILOT_CONFIG, clean_edit_soft_streak=3, clean_edit_hard_streak=0)
     _events, trace = _run(
         [_EDIT_SHADER, _EDIT_SCRIPT, _EDIT_SHADER, _EDIT_SCRIPT, _DONE],
         config,
         apply_shader_edit=lambda _o, _n, _r, _t: EditResult(matches=1, errors=[]),
-        apply_script_edit=lambda _o, _n, _r, _node: ScriptWriteResult(
+        apply_script_edit=lambda _o, _n, _r, _document: ScriptWriteResult(
             ok=True, driven=["u_x"]
         ),
     )
@@ -105,8 +107,8 @@ def test_clean_write_script_resets_the_script_streak() -> None:
     events, _trace = _run(
         [_EDIT_SCRIPT, _EDIT_SCRIPT, _WRITE_SCRIPT, _EDIT_SCRIPT, _EDIT_SCRIPT, _DONE],
         config,
-        apply_script_edit=lambda _o, _n, _r, _node: clean,
-        write_script=lambda _t, _node: clean,
+        apply_script_edit=lambda _o, _n, _r, _document: clean,
+        write_script=lambda _t, _document: clean,
     )
     assert isinstance(events[-1], AgentTurnDone)
 
@@ -118,7 +120,7 @@ def test_script_edits_still_hit_the_hard_stop_without_a_write() -> None:
     events, _trace = _run(
         [_EDIT_SCRIPT] * 5 + [_DONE],
         config,
-        apply_script_edit=lambda _o, _n, _r, _node: ScriptWriteResult(
+        apply_script_edit=lambda _o, _n, _r, _document: ScriptWriteResult(
             ok=True, driven=["u_x"]
         ),
     )
@@ -136,14 +138,14 @@ def test_broken_script_edits_reach_the_compile_thrash_nudge() -> None:
     _events, trace = _run(
         [_EDIT_SCRIPT, _EDIT_SCRIPT, _EDIT_SCRIPT, _DONE],
         config,
-        apply_script_edit=lambda _o, _n, _r, _node: ScriptWriteResult(
+        apply_script_edit=lambda _o, _n, _r, _document: ScriptWriteResult(
             ok=True, compile_error="script.py:3: SyntaxError: invalid syntax"
         ),
     )
     assert trace.kinds.count("compile_thrash_nudge") == 1
 
 
-# ---- B4: one write_script per node per batch ----
+# ---- B4: one write_script per document per batch ----
 
 
 def _backend_stub() -> tuple[types.SimpleNamespace, list[tuple[str, str]]]:
@@ -159,25 +161,25 @@ def _backend_stub() -> tuple[types.SimpleNamespace, list[tuple[str, str]]]:
         orphan_keys=[],
     )
 
-    def _write(node_id: str, text: str) -> Any:
-        written.append((node_id, text))
+    def _write(document_id: str, text: str) -> Any:
+        written.append((document_id, text))
         return probe
 
     stub = types.SimpleNamespace(
         _bridge=types.SimpleNamespace(
             run_on_main=lambda fn, timeout=None, defer=False: fn()
         ),
-        _resolve_node_or_current=lambda node: node or "n1",
+        _resolve_document_or_current=lambda document: document or "n1",
         _batch_mutated=set(),
         _working_set_add=lambda address: None,
-        _capture_script=lambda node_id: None,
+        _capture_script=lambda document_id: None,
         _write_script_source=_write,
         _script_broken_streak={},
         _script_last_clean={},
         _last_script_samples={},
-        _script_render_line=lambda node, samples: "",
-        _get_ui_nodes=lambda: {"n1": types.SimpleNamespace(node=object())},
-        _read_script_source=lambda node_id: ("old body\n", False),
+        _script_render_line=lambda document, samples: "",
+        _get_ui_documents=lambda: {"n1": types.SimpleNamespace(document=object())},
+        _read_script_source=lambda document_id: ("old body\n", False),
     )
     stub._apply_script_text = CopilotBackend._apply_script_text.__get__(stub)
     return stub, written

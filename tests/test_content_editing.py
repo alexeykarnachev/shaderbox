@@ -83,10 +83,10 @@ def _rewrite_method(
     source: str, persist_result: EditResult | None = None
 ) -> tuple[types.SimpleNamespace, "types.FunctionType"]:
     tgt = _CopilotEditTarget(
-        kind="node",
+        kind="document",
         source=source,
         ws_address="n1",
-        label="node 'X' (n1)",
+        label="document 'X' (n1)",
     )
     stub = types.SimpleNamespace(
         _copilot_resolve_target=lambda _target, *, allow_create: tgt,
@@ -157,7 +157,7 @@ def test_rewrite_batch_guard_rejects_before_persist() -> None:
     res = rewrite("void main() { }", "")
     assert res.unresolved
     assert "already edited earlier in this same step" in res.unresolved_reason
-    assert res.target_label == "node 'X' (n1)"
+    assert res.target_label == "document 'X' (n1)"
     assert calls == []  # the reject never reaches the persist seam
 
 
@@ -233,22 +233,22 @@ def test_rewrite_lib_create_path_invalidates_consumers() -> None:
 
 def test_persist_normalizes_crlf() -> None:
     captured: dict[str, str] = {}
-    node = types.SimpleNamespace(
+    document = types.SimpleNamespace(
         render_pass=types.SimpleNamespace(
             compile_unit=types.SimpleNamespace(errors=[]), program=object()
         )
     )
     tgt = _CopilotEditTarget(
-        kind="node",
-        node_id="n1",
-        node=node,  # type: ignore[arg-type]
+        kind="document",
+        document_id="n1",
+        document=document,  # type: ignore[arg-type]
         source="old",
         ws_address="n1",
-        label="node 'X' (n1)",
+        label="document 'X' (n1)",
     )
     stub = types.SimpleNamespace(
-        _capture_node=lambda _id: None,
-        _copilot_persist_shader=lambda _id, _node, text: (
+        _capture_document=lambda _id: None,
+        _copilot_persist_shader=lambda _id, _document, text: (
             captured.update(text=text) or []
         ),
         _working_set_add=lambda _a: None,
@@ -268,7 +268,7 @@ def test_persist_force_restores_after_streak_on_real_path() -> None:
     # The 033 unstick end-to-end on the REAL persist + _force_restore: N consecutive
     # broken edits put the file back at its last clean state and reset the streak.
     writes: list[str] = []
-    node = types.SimpleNamespace(
+    document = types.SimpleNamespace(
         render_pass=types.SimpleNamespace(
             compile_unit=types.SimpleNamespace(errors=[]),
             program=object(),
@@ -276,26 +276,28 @@ def test_persist_force_restores_after_streak_on_real_path() -> None:
         )
     )
     tgt = _CopilotEditTarget(
-        kind="node",
-        node_id="n1",
-        node=node,  # type: ignore[arg-type]
+        kind="document",
+        document_id="n1",
+        document=document,  # type: ignore[arg-type]
         source="void main() { }",
         ws_address="n1",
-        label="node 'X' (n1)",
+        label="document 'X' (n1)",
     )
     err = CompileErrorInfo(path="n.frag.glsl", line=1, message="boom")
     limit = COPILOT_CONFIG.auto_revert_after_failed_edits
 
-    def persist_shader(_id: str, _node: object, text: str) -> list[CompileErrorInfo]:
+    def persist_shader(
+        _id: str, _document: object, text: str
+    ) -> list[CompileErrorInfo]:
         writes.append(text)
         # Every model edit compiles broken; the restore write itself is clean. Mirrors
-        # production: the write updates the node's compile state (prev_clean reads it).
+        # production: the write updates the document's compile state (prev_clean reads it).
         errs = [] if text == "void main() { }" else [err]
-        node.render_pass.compile_unit.errors = errs
+        document.render_pass.compile_unit.errors = errs
         return errs
 
     stub = types.SimpleNamespace(
-        _capture_node=lambda _id: None,
+        _capture_document=lambda _id: None,
         _copilot_persist_shader=persist_shader,
         _working_set_add=lambda _a: None,
         _batch_mutated=set(),
@@ -328,7 +330,7 @@ def test_script_force_restores_after_streak() -> None:
     writes: list[str] = []
     clean = "from shaderbox.scripting import ScriptBehavior\nclass Behavior...\n"
 
-    def write_script_source(_node_id: str, text: str) -> ScriptProbe:
+    def write_script_source(_document_id: str, text: str) -> ScriptProbe:
         writes.append(text)
         if text == clean:
             return ScriptProbe(None, {"u_x"}, [], [], [(0.0, {"u_x": 0.0})])
@@ -343,7 +345,7 @@ def test_script_force_restores_after_streak() -> None:
         _capture_script=lambda _id: None,
         _write_script_source=write_script_source,
         _script_render_line=lambda _n, _s: "",
-        _get_ui_nodes=lambda: {},
+        _get_ui_documents=lambda: {},
         _script_broken_streak={},
         _script_last_clean={"n1": clean},  # a prior clean state exists to restore to
     )
@@ -369,7 +371,7 @@ def test_script_force_restores_after_streak() -> None:
 def _edit_method(source: str) -> tuple[dict[str, str], "types.FunctionType"]:
     captured: dict[str, str] = {}
     tgt = _CopilotEditTarget(
-        kind="node", source=source, ws_address="n1", label="node 'X' (n1)"
+        kind="document", source=source, ws_address="n1", label="document 'X' (n1)"
     )
     stub = types.SimpleNamespace(
         _copilot_resolve_target=lambda _target, *, allow_create: tgt,
@@ -421,7 +423,7 @@ def test_applied_result_appends_rewrite_note() -> None:
         EditResult(
             matches=1,
             errors=[],
-            target_label="node 'X' (n1)",
+            target_label="document 'X' (n1)",
             rewrite_note="note: this rewrite removed function(s): fbm",
         )
     )
@@ -515,22 +517,22 @@ def test_lib_write_warns_on_brace_imbalance() -> None:
 
 def test_persist_normalizes_lone_cr() -> None:
     captured: dict[str, str] = {}
-    node = types.SimpleNamespace(
+    document = types.SimpleNamespace(
         render_pass=types.SimpleNamespace(
             compile_unit=types.SimpleNamespace(errors=[]), program=object()
         )
     )
     tgt = _CopilotEditTarget(
-        kind="node",
-        node_id="n1",
-        node=node,  # type: ignore[arg-type]
+        kind="document",
+        document_id="n1",
+        document=document,  # type: ignore[arg-type]
         source="old",
         ws_address="n1",
-        label="node 'X' (n1)",
+        label="document 'X' (n1)",
     )
     stub = types.SimpleNamespace(
-        _capture_node=lambda _id: None,
-        _copilot_persist_shader=lambda _id, _node, text: (
+        _capture_document=lambda _id: None,
+        _copilot_persist_shader=lambda _id, _document, text: (
             captured.update(text=text) or []
         ),
         _working_set_add=lambda _a: None,
@@ -578,7 +580,7 @@ def _clean_script_stub(sample_sets: list[list]) -> types.SimpleNamespace:
 
     feed = list(sample_sets)
 
-    def write_script_source(_node_id: str, _text: str) -> ScriptProbe:
+    def write_script_source(_document_id: str, _text: str) -> ScriptProbe:
         return ScriptProbe(None, {"u_x"}, [], [], feed.pop(0))
 
     return types.SimpleNamespace(
@@ -587,7 +589,7 @@ def _clean_script_stub(sample_sets: list[list]) -> types.SimpleNamespace:
         _capture_script=lambda _id: None,
         _write_script_source=write_script_source,
         _script_render_line=lambda _n, _s: "",
-        _get_ui_nodes=lambda: {"n1": types.SimpleNamespace(node=None)},
+        _get_ui_documents=lambda: {"n1": types.SimpleNamespace(document=None)},
         _script_broken_streak={},
         _script_last_clean={},
         _last_script_samples={},

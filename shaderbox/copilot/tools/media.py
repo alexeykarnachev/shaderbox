@@ -9,17 +9,19 @@ from shaderbox.copilot.tools.base import GatePolicy, ToolArgs, ToolDefinition
 # gate — the model never types a path); unbind_media resets a sampler to the default image.
 
 _UNIFORM_DESC = "the sampler2D uniform's name (e.g. u_tex) — see the working-set row"
-_NODE_DESC = "node id (from the project map); empty = the node you're working on"
+_NODE_DESC = (
+    "document id (from the project map); empty = the document you're working on"
+)
 
 
 class _BindMediaArgs(ToolArgs):
     uniform: str = Field(description=_UNIFORM_DESC)
-    node: str = Field(default="", description=_NODE_DESC)
+    document: str = Field(default="", description=_NODE_DESC)
 
 
 def media_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
     def bind_media(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
-        res = caps.bind_media(args["node"], args["uniform"])
+        res = caps.bind_media(args["document"], args["uniform"])
         if res.cancelled:
             return True, "the user dismissed the file picker — nothing was bound.", None
         if not res.ok:
@@ -32,7 +34,7 @@ def media_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
         )
 
     def unbind_media(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
-        res = caps.unbind_media(args["node"], args["uniform"])
+        res = caps.unbind_media(args["document"], args["uniform"])
         if not res.ok:
             return False, f"error: {res.error}", None
         return True, f"reset {args['uniform']} to the default (no media bound).", None
@@ -44,7 +46,7 @@ def media_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             label_done="Bound media",
             description=(
                 "Bind an image or video to a sampler2D uniform. Opens the USER's native file picker "
-                "(you never see or type a path — the user chooses the file). The node must already "
+                "(you never see or type a path — the user chooses the file). The document must already "
                 "declare the sampler; add `uniform sampler2D u_tex;` via edit_shader first if not. "
                 "Check the working-set row afterwards to confirm the binding."
             ),

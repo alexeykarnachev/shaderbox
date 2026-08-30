@@ -74,16 +74,16 @@ def uniform_name_label(
 
 
 def _locate_uniform_declaration(app: App, name: str) -> tuple[Path, int] | None:
-    # The active editor first (it carries unsaved edits); then every file in the node's
+    # The active editor first (it carries unsaved edits); then every file in the document's
     # compile unit, so a uniform declared in a resolved lib file is jump-reachable.
     session = app.get_current_session()
     if session is not None:
         line = find_uniform_declaration_line(session.editor.get_text(), name)
         if line is not None:
             return session.source.path, line
-    if ui_node := app.ui_nodes.get(app.current_node_id):
+    if ui_document := app.ui_documents.get(app.current_document_id):
         active_path = session.source.path if session is not None else None
-        for source in ui_node.node.render_pass.compile_unit.sources:
+        for source in ui_document.document.render_pass.compile_unit.sources:
             if source.path == active_path:
                 continue
             line = find_uniform_declaration_line(source.text, name)
@@ -149,32 +149,32 @@ def _count_suffix(ui_uniform: UIUniform, current_value: UniformValue) -> str:
 def _draw_play_stop(app: App, name: str, *, driven: bool, playing: bool) -> None:
     # The trailing per-row play/stop affordance (048): drawn ONLY for a uniform the script TARGETS
     # (driven — playing OR stopped); a never-scripted MANUAL uniform shows nothing. `stop` (accent)
-    # when playing, `play` (dim) when stopped — the toggle flips the node-scoped stopped state.
-    # Disabled while the whole node is stopped: a per-uniform play is meaningless then (nothing
+    # when playing, `play` (dim) when stopped — the toggle flips the document-scoped stopped state.
+    # Disabled while the whole document is stopped: a per-uniform play is meaningless then (nothing
     # writes), and a full stop->play resets every uniform to playing anyway.
     if not driven:
         return
-    node_id = app.current_node_id
-    node_stopped = app.current_node_ui_state_or_default.all_stopped
+    document_id = app.current_document_id
+    document_stopped = app.current_document_ui_state_or_default.all_stopped
     imgui.same_line()
-    imgui.begin_disabled(app.copilot_turn_active or node_stopped)
+    imgui.begin_disabled(app.copilot_turn_active or document_stopped)
     tooltip = (
         "Can't play a single uniform while the whole script is stopped"
-        if node_stopped
+        if document_stopped
         else "Stop the script driving this uniform (edit it by hand)"
         if playing
         else "Resume the script driving this uniform"
     )
     if play_stop_toggle(f"u_{name}", playing, tooltip=tooltip):
-        app.set_uniform_stopped(node_id, name, playing)
+        app.set_uniform_stopped(document_id, name, playing)
     imgui.end_disabled()
 
 
 def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
-    if not (ui_node := app.ui_nodes.get(app.current_node_id)):
+    if not (ui_document := app.ui_documents.get(app.current_document_id)):
         return
 
-    current_value: UniformValue = ui_node.node.render_pass.uniform_values[
+    current_value: UniformValue = ui_document.document.render_pass.uniform_values[
         ui_uniform.name
     ]
     new_value = None
@@ -184,9 +184,9 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
     # Play/stop state (048): a uniform the script TARGETS is `driven` (playing OR stopped); PLAYING =
     # driven and not stopped (the engine writes it each tick). The value widget stays EDITABLE while
     # playing — grabbing it AUTO-STOPS (below), so the manual edit sticks instead of snapping back.
-    node_id = app.current_node_id
-    driven = app.session.uniform_is_driven(node_id, name)
-    playing = driven and not app.session.is_uniform_stopped(node_id, name)
+    document_id = app.current_document_id
+    driven = app.session.uniform_is_driven(document_id, name)
+    playing = driven and not app.session.is_uniform_stopped(document_id, name)
 
     draw_input_type_selector(ui_uniform)
     _begin_ctrl(app, name, _count_suffix(ui_uniform, current_value), playing=playing)
@@ -300,7 +300,7 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
     # defuses the per-branch trailing-item hazard (a texture is non-scriptable → never playing). The
     # manual edit then applies + sticks (the slot is no longer written by the tick).
     if playing and imgui.is_item_activated():
-        app.set_uniform_stopped(node_id, name, True)
+        app.set_uniform_stopped(document_id, name, True)
         playing = False
 
     _draw_play_stop(app, name, driven=driven, playing=playing)
@@ -310,4 +310,4 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
     # written back here (the tick wins); a stopped/manual slot's edit always applies.
     if new_value is not None and not playing:
         try_to_release(current_value)
-        ui_node.node.render_pass.uniform_values[ui_uniform.name] = new_value
+        ui_document.document.render_pass.uniform_values[ui_uniform.name] = new_value

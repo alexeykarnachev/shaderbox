@@ -59,7 +59,7 @@ def draw_resolution_details(
 ) -> ResolutionDetails:
     details = details.model_copy()
 
-    if not (ui_node := app.ui_nodes.get(app.current_node_id)):
+    if not (ui_document := app.ui_documents.get(app.current_document_id)):
         return details
 
     label_row(app.font_12, "Width", SIZE.RENDER_CTRL_W)
@@ -80,9 +80,9 @@ def draw_resolution_details(
     details.width = new_width
     details.height = new_height
 
-    full_w, full_h = ui_node.node.render_pass.canvas.texture.size
+    full_w, full_h = ui_document.document.render_pass.canvas.texture.size
     half_w, half_h = adjust_size(
-        ui_node.node.render_pass.canvas.texture.size, max_size=512
+        ui_document.document.render_pass.canvas.texture.size, max_size=512
     )
 
     row_label(app.font_12, "Presets")
@@ -102,8 +102,8 @@ def draw_media_details(
     details = details.model_copy()
     aspect = None
 
-    if ui_node := app.ui_nodes.get(app.current_node_id):
-        aspect = np.divide(*ui_node.node.render_pass.canvas.texture.size)
+    if ui_document := app.ui_documents.get(app.current_document_id):
+        aspect = np.divide(*ui_document.document.render_pass.canvas.texture.size)
 
     output_type_name = "video" if details.is_video else "image"
     options = ["video", "image"]

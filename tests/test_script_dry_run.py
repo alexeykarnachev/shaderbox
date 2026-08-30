@@ -22,7 +22,7 @@ def _u(name: str, dim: int = 1, n: int = 1) -> types.SimpleNamespace:
     )
 
 
-class _FakeNode:
+class _FakeDocument:
     def __init__(self, uniforms: list[types.SimpleNamespace]) -> None:
         self.uniform_values: dict[str, object] = {}
         self._uniforms = uniforms
@@ -43,30 +43,30 @@ def _script(*, update_body: str, init_body: str = "") -> str:
     return f"{head}{init}    def update(self, ctx: Ctx) -> dict:\n{update_body}"
 
 
-def _engine(tmp: Path, node: _FakeNode) -> ScriptEngine:
+def _engine(tmp: Path, document: _FakeDocument) -> ScriptEngine:
     eng = ScriptEngine()
-    eng.reload("n0", tmp / "scripts", node)
+    eng.reload("n0", tmp / "scripts", document)
     return eng
 
 
 def test_dry_run_does_not_corrupt_live_state(tmp_path: Path) -> None:
-    # The no-corruption canary: a dry_run ticks an isolated script; the live node + live engine state
+    # The no-corruption canary: a dry_run ticks an isolated script; the live document + live engine state
     # must be byte-identical afterward. Falsifier: any of them changes -> the sink leaked.
     _write_script(
         tmp_path,
         _script(update_body="        return {'u_x': 0.5 + 0.3 * ctx.t}\n"),
     )
-    node = _FakeNode([_u("u_x")])
-    eng = _engine(tmp_path, node)
-    eng.tick("n0", node, types.SimpleNamespace(t=0.0, dt=0.0, frame=0, mouse=None))  # type: ignore[arg-type]
+    document = _FakeDocument([_u("u_x")])
+    eng = _engine(tmp_path, document)
+    eng.tick("n0", document, types.SimpleNamespace(t=0.0, dt=0.0, frame=0, mouse=None))  # type: ignore[arg-type]
 
-    live_values = dict(node.uniform_values)
+    live_values = dict(document.uniform_values)
     live_driven = eng.script_driven_uniforms("n0")
     live_errors = dict(eng.errors)
 
-    eng.dry_run("n0", node, _SAMPLE_TIMES, _FPS)
+    eng.dry_run("n0", document, _SAMPLE_TIMES, _FPS)
 
-    assert node.uniform_values == live_values  # live node untouched
+    assert document.uniform_values == live_values  # live document untouched
     assert eng.script_driven_uniforms("n0") == live_driven
     assert dict(eng.errors) == live_errors
 
@@ -82,10 +82,10 @@ def test_dry_run_integrator_advances_across_samples(tmp_path: Path) -> None:
             update_body="        self.v += ctx.dt\n        return {'u_x': self.v}\n",
         ),
     )
-    node = _FakeNode([_u("u_x")])
-    eng = _engine(tmp_path, node)
+    document = _FakeDocument([_u("u_x")])
+    eng = _engine(tmp_path, document)
 
-    probe = eng.dry_run("n0", node, _SAMPLE_TIMES, _FPS)
+    probe = eng.dry_run("n0", document, _SAMPLE_TIMES, _FPS)
 
     assert probe.compile_error is None
     assert probe.driven == {"u_x"}
@@ -102,10 +102,10 @@ def test_dry_run_closed_form_motion_captured(tmp_path: Path) -> None:
         tmp_path,
         _script(update_body="        return {'u_x': ctx.t, 'u_c': 0.7}\n"),
     )
-    node = _FakeNode([_u("u_x"), _u("u_c")])
-    eng = _engine(tmp_path, node)
+    document = _FakeDocument([_u("u_x"), _u("u_c")])
+    eng = _engine(tmp_path, document)
 
-    probe = eng.dry_run("n0", node, _SAMPLE_TIMES, _FPS)
+    probe = eng.dry_run("n0", document, _SAMPLE_TIMES, _FPS)
 
     assert probe.driven == {"u_x", "u_c"}
     moved = [s[1]["u_x"] for s in probe.samples]
@@ -119,10 +119,10 @@ def test_dry_run_compile_error_no_tick(tmp_path: Path) -> None:
     _write_script(
         tmp_path, "class Behavior(ScriptBehavior)\n    pass\n"
     )  # missing colon
-    node = _FakeNode([_u("u_x")])
-    eng = _engine(tmp_path, node)
+    document = _FakeDocument([_u("u_x")])
+    eng = _engine(tmp_path, document)
 
-    probe = eng.dry_run("n0", node, _SAMPLE_TIMES, _FPS)
+    probe = eng.dry_run("n0", document, _SAMPLE_TIMES, _FPS)
 
     assert probe.compile_error is not None
     assert probe.compile_error.kind == "compile"
@@ -139,10 +139,10 @@ def test_dry_run_orphan_and_per_key_errors(tmp_path: Path) -> None:
             update_body=("        return {'u_x': 0.5, 'u_typo': 1.0, 'u_v': 0.3}\n")
         ),
     )
-    node = _FakeNode([_u("u_x"), _u("u_v", dim=2)])
-    eng = _engine(tmp_path, node)
+    document = _FakeDocument([_u("u_x"), _u("u_v", dim=2)])
+    eng = _engine(tmp_path, document)
 
-    probe = eng.dry_run("n0", node, _SAMPLE_TIMES, _FPS)
+    probe = eng.dry_run("n0", document, _SAMPLE_TIMES, _FPS)
 
     assert "u_x" in probe.driven and "u_v" in probe.driven
     assert any(name == "u_v" for name, _ in probe.per_key_errors)  # bad shape
@@ -150,7 +150,7 @@ def test_dry_run_orphan_and_per_key_errors(tmp_path: Path) -> None:
     # The probe surfaces orphans via the RETURN value, never the console: it ticks the script across
     # ~N frames, so a console warning would spam once per frame (the pong-script regression). warn=False
     # on the probe path means it never touches the live warn-dedup set.
-    assert eng._nodes["n0"].warned == set()
+    assert eng._documents["n0"].warned == set()
 
 
 def test_dry_run_runtime_raise_surfaces(tmp_path: Path) -> None:
@@ -169,10 +169,10 @@ def test_dry_run_runtime_raise_surfaces(tmp_path: Path) -> None:
             ),
         ),
     )
-    node = _FakeNode([_u("u_x")])
-    eng = _engine(tmp_path, node)
+    document = _FakeDocument([_u("u_x")])
+    eng = _engine(tmp_path, document)
 
-    probe = eng.dry_run("n0", node, _SAMPLE_TIMES, _FPS)
+    probe = eng.dry_run("n0", document, _SAMPLE_TIMES, _FPS)
 
     assert probe.compile_error is None  # it DID compile
     assert probe.runtime_error is not None  # but it crashes at runtime
@@ -195,10 +195,10 @@ def test_dry_run_transient_runtime_raise_surfaces(tmp_path: Path) -> None:
             ),
         ),
     )
-    node = _FakeNode([_u("u_x")])
-    eng = _engine(tmp_path, node)
+    document = _FakeDocument([_u("u_x")])
+    eng = _engine(tmp_path, document)
 
-    probe = eng.dry_run("n0", node, _SAMPLE_TIMES, _FPS)
+    probe = eng.dry_run("n0", document, _SAMPLE_TIMES, _FPS)
 
     assert probe.runtime_error is not None  # the transient raise was NOT swallowed
     assert "ValueError" in probe.runtime_error.message
@@ -218,10 +218,10 @@ def test_dry_run_transient_per_key_error_surfaces(tmp_path: Path) -> None:
             ),
         ),
     )
-    node = _FakeNode([_u("u_v", dim=2)])
-    eng = _engine(tmp_path, node)
+    document = _FakeDocument([_u("u_v", dim=2)])
+    eng = _engine(tmp_path, document)
 
-    probe = eng.dry_run("n0", node, _SAMPLE_TIMES, _FPS)
+    probe = eng.dry_run("n0", document, _SAMPLE_TIMES, _FPS)
 
     assert any(
         name == "u_v" for name, _ in probe.per_key_errors
@@ -232,20 +232,20 @@ def test_dry_run_colliding_sample_times_keeps_earliest(tmp_path: Path) -> None:
     # Two sample times rounding to the SAME frame must not drop a sample; setdefault keeps the
     # earliest. Falsifier: the first sample's t is 0.04 (a dict-comp would keep the last).
     _write_script(tmp_path, _script(update_body="        return {'u_x': ctx.t}\n"))
-    node = _FakeNode([_u("u_x")])
-    eng = _engine(tmp_path, node)
+    document = _FakeDocument([_u("u_x")])
+    eng = _engine(tmp_path, document)
 
-    probe = eng.dry_run("n0", node, (0.0, 0.04, 0.08), 12)  # frames [0, 0, 1]
+    probe = eng.dry_run("n0", document, (0.0, 0.04, 0.08), 12)  # frames [0, 0, 1]
 
     assert probe.samples[0][0] == 0.0  # earliest of the colliding pair, not 0.04
 
 
 def test_dry_run_empty_dict_drives_nothing(tmp_path: Path) -> None:
     _write_script(tmp_path, _script(update_body="        return {}\n"))
-    node = _FakeNode([_u("u_x")])
-    eng = _engine(tmp_path, node)
+    document = _FakeDocument([_u("u_x")])
+    eng = _engine(tmp_path, document)
 
-    probe = eng.dry_run("n0", node, _SAMPLE_TIMES, _FPS)
+    probe = eng.dry_run("n0", document, _SAMPLE_TIMES, _FPS)
 
     assert probe.compile_error is None
     assert probe.driven == set()  # the loud no-op fact source

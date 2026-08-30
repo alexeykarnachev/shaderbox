@@ -5,12 +5,12 @@ restore the pre-turn state. The capture is BEST-EFFORT (a capture failure never 
 feature 020·30 decision 10) and runs main-thread inside the backend's bridge `_on_main` blocks,
 keyed on the active turn id.
 
-This module owns only the DATA (the index + the per-node serialized snapshots on disk under
+This module owns only the DATA (the index + the per-document serialized snapshots on disk under
 `<checkpoints_root>/<turn_id>/`). The RESTORE orchestration lives in `copilot/revert.py`
-(`RevertExecutor`) because reload-and-replace touches live `Node` / GL / editor state, reached via
-injected callbacks (decisions 1-2). A captured node snapshot is a full `save_ui_node` serialize of the LIVE node — NOT
+(`RevertExecutor`) because reload-and-replace touches live `Document` / GL / editor state, reached via
+injected callbacks (decisions 1-2). A captured document snapshot is a full `save_ui_document` serialize of the LIVE document — NOT
 a copy of the possibly-stale on-disk dir — because `set_uniform` writes only in-memory
-`uniform_values`, never `node.json` (decision 2).
+`uniform_values`, never `document.json` (decision 2).
 """
 
 import hashlib
@@ -23,10 +23,10 @@ from pathlib import Path
 from loguru import logger
 
 from shaderbox.copilot.address import strip_lib_prefix
-from shaderbox.paths import NODE_SCRIPT_BASENAME
-from shaderbox.ui_models import UINode
+from shaderbox.paths import DOCUMENT_SCRIPT_BASENAME
+from shaderbox.ui_models import UIDocument
 
-# A node snapshot subdir name is the node id; a lib snapshot is stored by a sanitized address.
+# A document snapshot subdir name is the document id; a lib snapshot is stored by a sanitized address.
 _LIB_SNAPSHOT_SUBDIR = "_lib"
 _INDEX_BASENAME = (
     "checkpoint.json"  # the self-describing index beside a turn's snapshots
@@ -47,18 +47,20 @@ def _lib_snapshot_name(ws_address: str) -> str:
 class RevertResult:
     """Outcome of a restore, for the chat notice + the confirm modal's preview."""
 
-    restored_nodes: list[str] = field(default_factory=list)  # names
-    deleted_nodes: list[str] = field(default_factory=list)  # names of reverted-creates
-    recovered_nodes: list[str] = field(
+    restored_documents: list[str] = field(default_factory=list)  # names
+    deleted_documents: list[str] = field(
+        default_factory=list
+    )  # names of reverted-creates
+    recovered_documents: list[str] = field(
         default_factory=list
     )  # names of reverted-deletes
     reverted_libs: list[str] = field(default_factory=list)  # addresses
     removed_scripts: list[str] = field(
         default_factory=list
-    )  # node names whose created script.py was deleted on revert
+    )  # document names whose created script.py was deleted on revert
     unrestorable: list[str] = field(
         default_factory=list
-    )  # nodes with no/failed snapshot
+    )  # documents with no/failed snapshot
     failed_restores: list[str] = field(
         default_factory=list
     )  # unrestorable subset that failed at swap time — the checkpoint is kept so a retry can succeed
@@ -66,9 +68,9 @@ class RevertResult:
     @property
     def touched_anything(self) -> bool:
         return bool(
-            self.restored_nodes
-            or self.deleted_nodes
-            or self.recovered_nodes
+            self.restored_documents
+            or self.deleted_documents
+            or self.recovered_documents
             or self.reverted_libs
             or self.removed_scripts
         )
@@ -78,12 +80,12 @@ class RevertResult:
         if not self.touched_anything and not self.unrestorable:
             return "Reverted: nothing to restore for that turn."
         parts: list[str] = []
-        if self.restored_nodes:
-            parts.append(f"restored {', '.join(self.restored_nodes)}")
-        if self.recovered_nodes:
-            parts.append(f"recovered {', '.join(self.recovered_nodes)}")
-        if self.deleted_nodes:
-            parts.append(f"removed {', '.join(self.deleted_nodes)}")
+        if self.restored_documents:
+            parts.append(f"restored {', '.join(self.restored_documents)}")
+        if self.recovered_documents:
+            parts.append(f"recovered {', '.join(self.recovered_documents)}")
+        if self.deleted_documents:
+            parts.append(f"removed {', '.join(self.deleted_documents)}")
         if self.reverted_libs:
             parts.append(f"reverted library {', '.join(self.reverted_libs)}")
         if self.removed_scripts:
@@ -109,25 +111,25 @@ class TurnCheckpoint:
     user_excerpt: str = (
         ""  # first line of the user text, for the confirm modal + notice
     )
-    # node_id -> the node's CURRENT name at capture (for the modal); its snapshot is at
-    # root/turn_id/<node_id>/ (a full save_ui_node serialize of the pre-edit LIVE node).
-    snapshotted_nodes: dict[str, str] = field(default_factory=dict)
-    # node ids this turn CREATED (reverse = delete-to-trash; no snapshot exists).
-    created_nodes: list[str] = field(default_factory=list)
-    # node_id -> trash_name for nodes this turn DELETED (reverse = restore from trash).
-    deleted_nodes: dict[str, str] = field(default_factory=dict)
+    # document_id -> the document's CURRENT name at capture (for the modal); its snapshot is at
+    # root/turn_id/<document_id>/ (a full save_ui_document serialize of the pre-edit LIVE document).
+    snapshotted_documents: dict[str, str] = field(default_factory=dict)
+    # document ids this turn CREATED (reverse = delete-to-trash; no snapshot exists).
+    created_documents: list[str] = field(default_factory=list)
+    # document_id -> trash_name for documents this turn DELETED (reverse = restore from trash).
+    deleted_documents: dict[str, str] = field(default_factory=dict)
     # lib ws_address -> pre-edit bytes captured (snapshot at root/turn_id/_lib/<safe-name>).
     snapshotted_libs: dict[str, str] = field(default_factory=dict)
     # lib ws_addresses this turn CREATED (reverse = delete the file; no pre-edit bytes exist).
     created_libs: list[str] = field(default_factory=list)
-    # node ids whose scripts/script.py this turn CREATED (reverse = delete the file; the node had
-    # none before). A pre-existing script is captured INTO the node snapshot dir instead, so the
+    # document ids whose scripts/script.py this turn CREATED (reverse = delete the file; the document had
+    # none before). A pre-existing script is captured INTO the document snapshot dir instead, so the
     # full-dir swap restores it — only the create case needs an explicit reverse.
     created_scripts: list[str] = field(default_factory=list)
-    # The current-node id before this turn's first switch_node (reverse = switch back). "" = unset.
-    pre_switch_node_id: str | None = None
-    # NAMES of nodes whose capture FAILED (decision 10) — Revert reports them un-restorable.
-    failed_nodes: list[str] = field(default_factory=list)
+    # The current-document id before this turn's first switch_document (reverse = switch back). "" = unset.
+    pre_switch_document_id: str | None = None
+    # NAMES of documents whose capture FAILED (decision 10) — Revert reports them un-restorable.
+    failed_documents: list[str] = field(default_factory=list)
 
     @property
     def turn_dir(self) -> Path:
@@ -135,50 +137,56 @@ class TurnCheckpoint:
 
     def has_changes(self) -> bool:
         return bool(
-            self.snapshotted_nodes
-            or self.created_nodes
-            or self.deleted_nodes
+            self.snapshotted_documents
+            or self.created_documents
+            or self.deleted_documents
             or self.snapshotted_libs
             or self.created_libs
             or self.created_scripts
-            or self.failed_nodes
-            or self.pre_switch_node_id is not None
+            or self.failed_documents
+            or self.pre_switch_document_id is not None
         )
 
-    def snapshot_node(
-        self, node_id: str, node: UINode, save_into: Callable[[UINode, Path], object]
+    def snapshot_document(
+        self,
+        document_id: str,
+        document: UIDocument,
+        save_into: Callable[[UIDocument, Path], object],
     ) -> None:
-        # Capture the LIVE node once per turn (first touch wins — later edits don't re-snapshot).
+        # Capture the LIVE document once per turn (first touch wins — later edits don't re-snapshot).
         # Best-effort: a failure is logged + recorded, never raised, so the edit proceeds.
-        if node_id in self.snapshotted_nodes or node_id in self.created_nodes:
+        if (
+            document_id in self.snapshotted_documents
+            or document_id in self.created_documents
+        ):
             return
         try:
-            dest = self.turn_dir / node_id
+            dest = self.turn_dir / document_id
             dest.mkdir(parents=True, exist_ok=True)
-            save_into(node, dest)
-            self.snapshotted_nodes[node_id] = node.ui_state.ui_name
+            save_into(document, dest)
+            self.snapshotted_documents[document_id] = document.ui_state.ui_name
         except Exception as e:
             logger.warning(
-                f"copilot checkpoint: failed to snapshot node {node_id}: {e}"
+                f"copilot checkpoint: failed to snapshot document {document_id}: {e}"
             )
-            name = node.ui_state.ui_name
-            if name not in self.failed_nodes:
-                self.failed_nodes.append(name)
+            name = document.ui_state.ui_name
+            if name not in self.failed_documents:
+                self.failed_documents.append(name)
 
-    def mark_created(self, node_id: str) -> None:
-        if node_id not in self.created_nodes:
-            self.created_nodes.append(node_id)
+    def mark_created(self, document_id: str) -> None:
+        if document_id not in self.created_documents:
+            self.created_documents.append(document_id)
 
-    def snapshot_script(self, node_id: str, script_path: Path) -> None:
-        # Capture a node's pre-edit scripts/script.py INTO its node snapshot dir
-        # (turn_dir/<node_id>/scripts/script.py), so the node's full-dir restore swap carries it
-        # back. Skip when the node was created this turn (the whole node reverts to deletion) or
+    def snapshot_script(self, document_id: str, script_path: Path) -> None:
+        # Capture a document's pre-edit scripts/script.py INTO its document snapshot dir
+        # (turn_dir/<document_id>/scripts/script.py), so the document's full-dir restore swap carries it
+        # back. Skip when the document was created this turn (the whole document reverts to deletion) or
         # the script doesn't exist yet (a write creating it is handled by mark_created_script).
         # Best-effort, first-touch-wins (a script edit after a captured script edit re-snapshots
         # nothing — the dest already holds the pre-turn bytes).
-        if node_id in self.created_nodes or node_id in self.created_scripts:
+        if document_id in self.created_documents or document_id in self.created_scripts:
             return
-        dest = self.turn_dir / node_id / "scripts" / NODE_SCRIPT_BASENAME
+        dest = self.turn_dir / document_id / "scripts" / DOCUMENT_SCRIPT_BASENAME
         if dest.exists() or not script_path.is_file():
             return
         try:
@@ -186,22 +194,22 @@ class TurnCheckpoint:
             shutil.copy2(script_path, dest)
         except Exception as e:
             logger.warning(
-                f"copilot checkpoint: failed to snapshot script {node_id}: {e}"
+                f"copilot checkpoint: failed to snapshot script {document_id}: {e}"
             )
 
-    def mark_created_script(self, node_id: str) -> None:
-        # A script this turn created on a node that had none (reverse = delete the file). Skip when
-        # the node itself was created this turn (the node-delete revert removes scripts/ with it).
-        if node_id in self.created_nodes or node_id in self.created_scripts:
+    def mark_created_script(self, document_id: str) -> None:
+        # A script this turn created on a document that had none (reverse = delete the file). Skip when
+        # the document itself was created this turn (the document-delete revert removes scripts/ with it).
+        if document_id in self.created_documents or document_id in self.created_scripts:
             return
-        self.created_scripts.append(node_id)
+        self.created_scripts.append(document_id)
 
-    def record_deleted(self, node_id: str, trash_name: str) -> None:
-        # A node this turn created-then-deleted nets to "create" (reverse = stay deleted); else
+    def record_deleted(self, document_id: str, trash_name: str) -> None:
+        # A document this turn created-then-deleted nets to "create" (reverse = stay deleted); else
         # record the trash_name so revert restores it.
-        if node_id in self.created_nodes:
+        if document_id in self.created_documents:
             return
-        self.deleted_nodes.setdefault(node_id, trash_name)
+        self.deleted_documents.setdefault(document_id, trash_name)
 
     def mark_created_lib(self, ws_address: str) -> None:
         if ws_address not in self.created_libs:
@@ -221,10 +229,10 @@ class TurnCheckpoint:
                 f"copilot checkpoint: failed to snapshot lib {ws_address}: {e}"
             )
 
-    def record_pre_switch(self, current_node_id: str) -> None:
-        # Only the FIRST switch of the turn matters (reverse = the node current before the turn).
-        if self.pre_switch_node_id is None:
-            self.pre_switch_node_id = current_node_id
+    def record_pre_switch(self, current_document_id: str) -> None:
+        # Only the FIRST switch of the turn matters (reverse = the document current before the turn).
+        if self.pre_switch_document_id is None:
+            self.pre_switch_document_id = current_document_id
 
     def lib_snapshot_text(self, ws_address: str) -> str | None:
         name = self.snapshotted_libs.get(ws_address)
@@ -233,8 +241,8 @@ class TurnCheckpoint:
         snap = self.turn_dir / _LIB_SNAPSHOT_SUBDIR / name
         return snap.read_text(encoding="utf-8") if snap.exists() else None
 
-    def node_snapshot_dir(self, node_id: str) -> Path | None:
-        d = self.turn_dir / node_id
+    def document_snapshot_dir(self, document_id: str) -> Path | None:
+        d = self.turn_dir / document_id
         return d if d.is_dir() else None
 
     def save_index(self) -> None:
@@ -245,14 +253,14 @@ class TurnCheckpoint:
             data = {
                 "turn_id": self.turn_id,
                 "user_excerpt": self.user_excerpt,
-                "snapshotted_nodes": self.snapshotted_nodes,
-                "created_nodes": self.created_nodes,
-                "deleted_nodes": self.deleted_nodes,
+                "snapshotted_documents": self.snapshotted_documents,
+                "created_documents": self.created_documents,
+                "deleted_documents": self.deleted_documents,
                 "snapshotted_libs": self.snapshotted_libs,
                 "created_libs": self.created_libs,
                 "created_scripts": self.created_scripts,
-                "pre_switch_node_id": self.pre_switch_node_id,
-                "failed_nodes": self.failed_nodes,
+                "pre_switch_document_id": self.pre_switch_document_id,
+                "failed_documents": self.failed_documents,
             }
             (self.turn_dir / _INDEX_BASENAME).write_text(
                 json.dumps(data, indent=2), encoding="utf-8"
@@ -274,14 +282,14 @@ class TurnCheckpoint:
                 turn_id=str(data["turn_id"]),
                 root=root,
                 user_excerpt=str(data.get("user_excerpt", "")),
-                snapshotted_nodes=dict(data.get("snapshotted_nodes", {})),
-                created_nodes=list(data.get("created_nodes", [])),
-                deleted_nodes=dict(data.get("deleted_nodes", {})),
+                snapshotted_documents=dict(data.get("snapshotted_documents", {})),
+                created_documents=list(data.get("created_documents", [])),
+                deleted_documents=dict(data.get("deleted_documents", {})),
                 snapshotted_libs=dict(data.get("snapshotted_libs", {})),
                 created_libs=list(data.get("created_libs", [])),
                 created_scripts=list(data.get("created_scripts", [])),
-                pre_switch_node_id=data.get("pre_switch_node_id"),
-                failed_nodes=list(data.get("failed_nodes", [])),
+                pre_switch_document_id=data.get("pre_switch_document_id"),
+                failed_documents=list(data.get("failed_documents", [])),
             )
         except (OSError, json.JSONDecodeError, KeyError, TypeError) as e:
             logger.warning(f"copilot checkpoint: unreadable index at {turn_dir}: {e}")

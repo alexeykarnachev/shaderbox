@@ -94,7 +94,7 @@ class PassLayout(BaseModel):
 class PassGraph(BaseModel):
     """The whole `graph.json`: the passes, the wiring, the targets and the output choice.
 
-    App-written derived state, exactly as `node.json` is. The user edits it through the panel,
+    App-written derived state, exactly as `document.json` is. The user edits it through the panel,
     never by hand.
 
     `output` names the pass the preview and export show. It may name a pass that is absent (a

@@ -1,18 +1,18 @@
 from pathlib import Path
 
-# The copilot working-set address scheme: a node is a bare id, a library file is
+# The copilot working-set address scheme: a document is a bare id, a library file is
 # "lib:<rel-path>", a shipped example is "example:<short-handle>". This module is the
 # single round-trip parse/build point for the prefixed kinds.
 LIB_PREFIX = "lib:"
 EXAMPLE_PREFIX = "example:"
 
-# Examples are addressed by a fixed short handle (never the uuid) — unlike node short-ids
+# Examples are addressed by a fixed short handle (never the uuid) — unlike document short-ids
 # there is no collision-growth (the shipped set is tiny; the resolver prefix-matches).
 _EXAMPLE_HANDLE_LEN = 4
 
-# Node short-id floor: the id length the agent sees. The backend grows ALL ids past it together
+# Document short-id floor: the id length the agent sees. The backend grows ALL ids past it together
 # on collision (CopilotBackend._copilot_short_ids).
-NODE_SHORT_ID_LEN = 4
+DOCUMENT_SHORT_ID_LEN = 4
 
 
 def is_lib_address(address: str) -> bool:

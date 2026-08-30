@@ -717,7 +717,7 @@ def test_top_level_entries_after_allman_body_still_index(tmp_path: Path) -> None
 
 
 def test_glyph_tables_sidecar_matches_shipped_glsl() -> None:
-    # glyphs.glsl (uniform decls) and glyph_tables.py (the values Node.compile
+    # glyphs.glsl (uniform decls) and glyph_tables.py (the values Document.compile
     # writes) are generated together — a half-regenerated pair must fail loudly.
     glsl = (
         Path(__file__).parent.parent / "shaderbox/resources/shader_lib/text/glyphs.glsl"

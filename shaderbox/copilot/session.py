@@ -60,7 +60,7 @@ def _first_line(text: str, limit: int = 80) -> str:
 
 def _tool_card_outcome(ev: AgentToolCard) -> str:
     # The terse, human consequence after the verb. Failures are just "failed" (the agent holds
-    # the reason). A compile result (mutating shader tools, create_node, read_shader) collapses
+    # the reason). A compile result (mutating shader tools, create_document, read_shader) collapses
     # to clean / N-errors; grep shows its hit count. Otherwise no outcome (the verb stands alone).
     if not ev.ok:
         return "failed"
@@ -240,7 +240,7 @@ class CopilotSession:
                     )
                 # A successful delete attaches the Recover affordance to its (resolved-Yes)
                 # confirm card — the gated tool's card always trails the open pending_action.
-                if ev.name == "delete_node" and ev.ok and ev.payload is not None:
+                if ev.name == "delete_document" and ev.ok and ev.payload is not None:
                     self._attach_recover(ev.payload)
             case AgentError():
                 self.state.streaming_text = ""
@@ -310,15 +310,15 @@ class CopilotSession:
 
     def _attach_recover(self, payload: dict) -> None:
         # Attach RecoverInfo to the trailing resolved pending_action with no recover yet.
-        node_id = str(payload.get("node_id", ""))
+        document_id = str(payload.get("document_id", ""))
         trash_name = str(payload.get("trash_name", ""))
-        if not node_id or not trash_name:
+        if not document_id or not trash_name:
             return
         for msg in reversed(self.state.messages):
             if msg.role == "pending_action" and msg.resolved and msg.recover is None:
                 msg.recover = RecoverInfo(
-                    node_id=node_id,
-                    node_name=str(payload.get("deleted_name", "")),
+                    document_id=document_id,
+                    document_name=str(payload.get("deleted_name", "")),
                     trash_name=trash_name,
                 )
                 return
@@ -347,7 +347,7 @@ class CopilotSession:
         self.state.status = ""  # clear the transient in-flight status line
 
     def drain_bridge(self) -> None:
-        # MAIN THREAD, per frame, early (pre-render) so a recompiled node renders this frame.
+        # MAIN THREAD, per frame, early (pre-render) so a recompiled document renders this frame.
         self.bridge.drain()
 
     # ---- worker thread ----
@@ -451,7 +451,7 @@ class CopilotSession:
 
     def _render_summary(self, summary: TurnSummary, error_text: str) -> str:
         # The NL assistant message persisted for a turn: reply prose (sanitized ASCII) + a terse
-        # action ledger + the nodes touched, so the next turn can resolve "it" / not re-publish.
+        # action ledger + the documents touched, so the next turn can resolve "it" / not re-publish.
         # A turn that produced nothing still gets a placeholder — a null assistant content 400s on
         # some providers, and dropping the message alone would break the user/assistant pairing.
         parts: list[str] = []
@@ -460,8 +460,8 @@ class CopilotSession:
             parts.append(sanitize_display(reply))
         if summary.ledger:
             parts.append("(this turn: " + "; ".join(summary.ledger) + ")")
-        if summary.nodes:
-            parts.append("(nodes: " + ", ".join(summary.nodes) + ")")
+        if summary.documents:
+            parts.append("(documents: " + ", ".join(summary.documents) + ")")
         return "\n".join(parts) if parts else "(turn ended with no reply)"
 
     # ---- lifecycle ----
@@ -538,8 +538,8 @@ class CopilotSession:
             )
 
     def release(self) -> None:
-        # MAIN THREAD, at shutdown — called BEFORE the node release, so a queued GL op never
-        # runs against half-released nodes. Safe when no worker was spawned: sentinel +
+        # MAIN THREAD, at shutdown — called BEFORE the document release, so a queued GL op never
+        # runs against half-released documents. Safe when no worker was spawned: sentinel +
         # cancel_all + join on a None thread are all no-ops.
         self._released = True
         self._drop_turn.set()  # abandon any in-flight turn's commit at teardown

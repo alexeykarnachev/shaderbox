@@ -45,7 +45,7 @@ def test_dialogue_block_expands_to_many_messages() -> None:
 
 def _ctx() -> CopilotContext:
     return CopilotContext(
-        node_tree="- s (id: n1) [current]",
+        document_tree="- s (id: n1) [current]",
         lib_catalog="(empty)",
         example_catalog="(none)",
         script_api="",

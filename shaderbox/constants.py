@@ -5,12 +5,12 @@ from pathlib import Path
 
 # Resource directories
 RESOURCES_DIR = Path(str(files("shaderbox.resources")))
-NODE_EXAMPLES_DIR = RESOURCES_DIR / "node_examples"
+DOCUMENT_EXAMPLES_DIR = RESOURCES_DIR / "document_examples"
 SHADER_LIB_SEED_DIR = RESOURCES_DIR / "shader_lib"
 
 # Authored display order for the examples browser — filesystem ctime isn't preserved
 # through git/zip/bundle. Examples not listed sort last. The first is the procedural
-# starter cloned by "New node" and seeded into an empty project on first run.
+# starter cloned by "New document" and seeded into an empty project on first run.
 EXAMPLE_ORDER = [
     "53724dbd-8efb-4c09-8c7d-28d626a066e7",  # UV Mango
     "73ea2431-13f6-41e4-b923-04d846b678b0",  # Media Input
@@ -51,7 +51,7 @@ VIDEO_EXTENSIONS = [".mp4", ".webm", ".mov"]
 MEDIA_EXTENSIONS = IMAGE_EXTENSIONS + VIDEO_EXTENSIONS
 GLSL_EXTENSIONS = [".glsl", ".frag"]
 
-# Directory names for node loading
+# Directory names for document loading
 MEDIA_DIR_NAME = "media"
 TEXTURES_DIR_NAME = "textures"
 

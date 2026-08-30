@@ -1,7 +1,7 @@
-"""The CPU-script engine (feature 041, redesigned by 048 to ONE script per node) — repo code owned
+"""The CPU-script engine (feature 041, redesigned by 048 to ONE script per document) — repo code owned
 by the headless ProjectSession.
 
-Per node it resolves a single `nodes/<id>/scripts/script.py` (the node script) whose
+Per document it resolves a single `documents/<id>/scripts/script.py` (the document script) whose
 `update(self, ctx) -> dict[str, value]` drives MANY uniforms from ONE stateful instance. The engine
 compiles it once (cached by `(path, mtime)`, holding its own state instance), and on each `tick` calls
 `update`, fans the returned dict into `(name, value)` pairs, coerces each against the live uniform, and
@@ -16,7 +16,7 @@ set (an export always plays the script).
 The engine imports no imgui/glfw/App and no concrete type — it works against the `EngineNode`
 protocol (the `uniform_values` dict + `get_active_uniforms()`), so it stays in the 025 headless core.
 Under 065 that protocol is satisfied by a `Pass`, which is where uniforms live; callers hand it
-`ui_node.node.render_pass`.
+`ui_document.document.render_pass`.
 """
 
 from collections.abc import Iterable
@@ -28,7 +28,7 @@ import moderngl
 from loguru import logger
 from OpenGL.GL import GL_INT, GL_SAMPLER_2D, GL_UNSIGNED_INT
 
-from shaderbox.paths import NODE_SCRIPT_BASENAME
+from shaderbox.paths import DOCUMENT_SCRIPT_BASENAME
 from shaderbox.scripting.behavior import (
     PythonBehavior,
     _RuntimeScriptError,
@@ -39,10 +39,10 @@ from shaderbox.scripting.context import EXPORT_MOUSE, EngineContext
 from shaderbox.scripting.errors import ScriptError
 from shaderbox.uniform_coerce import is_text_array
 
-# The single node script: one stateful class whose update returns a dict driving many uniforms.
-# One script per node (048 — the per-uniform `u_<name>__<tag>.py` scheme of 044/047 is removed). The
-# error key is `(node_id, _SCRIPT_FILE)`.
-_SCRIPT_FILE = NODE_SCRIPT_BASENAME
+# The single document script: one stateful class whose update returns a dict driving many uniforms.
+# One script per document (048 — the per-uniform `u_<name>__<tag>.py` scheme of 044/047 is removed). The
+# error key is `(document_id, _SCRIPT_FILE)`.
+_SCRIPT_FILE = DOCUMENT_SCRIPT_BASENAME
 
 
 def normalize_script_tabs(text: str) -> str:
@@ -55,7 +55,7 @@ def normalize_script_tabs(text: str) -> str:
 
 @dataclass(frozen=True)
 class ScriptStatus:
-    # The node script's UI-facing state (feature 042's strip). sentinel_error is the script's
+    # The document script's UI-facing state (feature 042's strip). sentinel_error is the script's
     # compile/run failure (it drives nothing when set); soft_errors are (key, error) for homeless
     # keys (typo/orphan) that name no real uniform row.
     sentinel_error: "ScriptError | None"
@@ -66,7 +66,7 @@ class ScriptStatus:
 @dataclass(frozen=True)
 class ScriptProbe:
     # The synchronous feedback a copilot write_script reads back (feature 043). compile_error is the
-    # live reload verdict (None = clean). The rest come from an ISOLATED dry-tick (the live node + the
+    # live reload verdict (None = clean). The rest come from an ISOLATED dry-tick (the live document + the
     # live engine state are untouched): runtime_error = the script RAN but `update` raised / returned a
     # non-dict at some frame (the uniform freezes from there — distinct from a compile error and from a
     # per-key shape error); driven = the real uniforms the script drove; per_key_errors = shape/coercion
@@ -103,19 +103,19 @@ class EngineNode(Protocol):
 
 def _freeze(
     names: set[str],
-    node: EngineNode,
+    document: EngineNode,
     last_good: dict[str, Any],
     sink: dict[str, Any] | None = None,
 ) -> None:
     # Hold each name at its last-good value (a behavior-level failure freezes its whole slot set).
-    # A dry-run passes a `sink`: writes (and the fallback read) land there, never on the live node.
-    target = node.uniform_values if sink is None else sink
+    # A dry-run passes a `sink`: writes (and the fallback read) land there, never on the live document.
+    target = document.uniform_values if sink is None else sink
     for name in names:
-        target[name] = last_good.get(name, node.uniform_values.get(name))
+        target[name] = last_good.get(name, document.uniform_values.get(name))
 
 
-class NodeScripts:
-    # One node's compiled script + its (path, mtime) cache + the raw source (a fresh export behavior
+class DocumentScripts:
+    # One document's compiled script + its (path, mtime) cache + the raw source (a fresh export behavior
     # recompiles from this cached source, never a fresh disk read) + per-uniform-name last-good.
     def __init__(self, scripts_dir: Path) -> None:
         self.scripts_dir = scripts_dir
@@ -128,7 +128,7 @@ class NodeScripts:
         # script_driven_uniforms + the behavior-level freeze. Persists across reset() so a reset-time
         # __init__ failure can still freeze the prior frame's names.
         self.last_driven: set[str] = set()
-        # Bad script keys (typo/orphan) that recorded a soft (node,name) error on the last tick —
+        # Bad script keys (typo/orphan) that recorded a soft (document,name) error on the last tick —
         # tracked separately from last_driven (a bad key must NOT claim ownership in
         # script_driven_uniforms) so the stale-clear can pop its error once the key stops being returned.
         self.last_skipped: set[str] = set()
@@ -189,7 +189,7 @@ _INIT_DOC = (
 
 def _script_import_line(annotations: Iterable[str]) -> str:
     # The explicit import line atop the stub (048 decision 8): `ScriptBehavior` + `Ctx` always, plus
-    # only the output types the node's uniforms reference. Visible so the user sees what's available;
+    # only the output types the document's uniforms reference. Visible so the user sees what's available;
     # the engine also injects these names as a fallback (behavior.py::_build_globals).
     names = ["ScriptBehavior", "Ctx"]
     for ann in annotations:
@@ -199,9 +199,9 @@ def _script_import_line(annotations: Iterable[str]) -> str:
 
 
 def script_stub_for(uniforms: Iterable[moderngl.Uniform]) -> str:
-    # The ready-to-edit node script (044; 048): one stateful class whose update returns a dict driving
+    # The ready-to-edit document script (044; 048): one stateful class whose update returns a dict driving
     # MANY uniforms. update returns an EMPTY dict by default (a fresh script drives nothing — every
-    # uniform stays manual); the node's scriptable uniforms are listed as COMMENTED examples so the
+    # uniform stays manual); the document's scriptable uniforms are listed as COMMENTED examples so the
     # user sees what's available + the shape to return. The annotation is BARE `-> dict` (never
     # `dict[str, Any]`: `Any` isn't in the exec globals, so the eager annotation eval would freeze it).
     scriptable = [u for u in uniforms if is_scriptable(u)]
@@ -224,7 +224,7 @@ def script_stub_for(uniforms: Iterable[moderngl.Uniform]) -> str:
         f"import math\n\n"
         f"{import_line}\n"
         f"class Behavior(ScriptBehavior):\n"
-        f'    """Drive many uniforms from one object each frame (node script). Keep state on self."""\n'
+        f'    """Drive many uniforms from one object each frame (document script). Keep state on self."""\n'
         f"\n"
         f"    def __init__(self) -> None:\n"
         f"{_INIT_DOC}"
@@ -237,60 +237,60 @@ def script_stub_for(uniforms: Iterable[moderngl.Uniform]) -> str:
 
 class ScriptEngine:
     def __init__(self, engine_driven: frozenset[str] = frozenset()) -> None:
-        self._nodes: dict[str, NodeScripts] = {}
-        # (node_id, name) -> the most recent error, for the UI to surface. The script's
-        # compile/run error keys on (node_id, _SCRIPT_FILE); a per-key shape/orphan error on
-        # (node_id, uniform_name).
+        self._documents: dict[str, DocumentScripts] = {}
+        # (document_id, name) -> the most recent error, for the UI to surface. The script's
+        # compile/run error keys on (document_id, _SCRIPT_FILE); a per-key shape/orphan error on
+        # (document_id, uniform_name).
         self.errors: dict[tuple[str, str], ScriptError] = {}
         # Engine-owned uniform names (u_time/u_aspect/u_resolution + table uniforms) — render()
         # hardcodes these, so a script on one would silently no-op. Passed in by ProjectSession (NOT
         # imported from core, which pulls in glfw — the headless boundary). Empty in a bare test engine.
         self._engine_driven = engine_driven
 
-    def script_driven_uniforms(self, node_id: str) -> set[str]:
+    def script_driven_uniforms(self, document_id: str) -> set[str]:
         # The uniform names the script drove on its last tick (decision 10 — only known after a tick).
         # Used by the copilot set_uniform reject + the UI's play/stop button gate (a name here is
         # script-targeted: playing or stopped).
-        node = self._nodes.get(node_id)
-        return set(node.last_driven) if node is not None else set()
+        document = self._documents.get(document_id)
+        return set(document.last_driven) if document is not None else set()
 
-    def script_status(self, node_id: str) -> "ScriptStatus | None":
-        # The node script's UI status (feature 042), or None when the node has no script.py. Whether a
+    def script_status(self, document_id: str) -> "ScriptStatus | None":
+        # The document script's UI status (feature 042), or None when the document has no script.py. Whether a
         # script is bound, its sentinel compile/run error (drives zero rows when set), the count of real
         # uniforms it drove last tick, and its HOMELESS soft-key errors (typo/orphan keys naming no row).
-        node = self._nodes.get(node_id)
-        if node is None or node.behavior is None:
+        document = self._documents.get(document_id)
+        if document is None or document.behavior is None:
             return None
-        sentinel = self.errors.get((node_id, _SCRIPT_FILE))
+        sentinel = self.errors.get((document_id, _SCRIPT_FILE))
         soft = [
             (name, err)
-            for name in sorted(node.last_skipped)
-            if (err := self.errors.get((node_id, name))) is not None
+            for name in sorted(document.last_skipped)
+            if (err := self.errors.get((document_id, name))) is not None
         ]
         return ScriptStatus(
             sentinel_error=sentinel,
-            driven_count=len(node.last_driven),
+            driven_count=len(document.last_driven),
             soft_errors=soft,
         )
 
-    def has_script(self, node_id: str) -> bool:
-        # True when the node has a bound script (script.py exists + compiled, error or not).
-        node = self._nodes.get(node_id)
-        return node is not None and node.behavior is not None
+    def has_script(self, document_id: str) -> bool:
+        # True when the document has a bound script (script.py exists + compiled, error or not).
+        document = self._documents.get(document_id)
+        return document is not None and document.behavior is not None
 
-    def reload(self, node_id: str, scripts_dir: Path, node: EngineNode) -> None:
-        # Discover + (re)compile the node's `script.py` if its mtime changed (a recompile makes a
+    def reload(self, document_id: str, scripts_dir: Path, document: EngineNode) -> None:
+        # Discover + (re)compile the document's `script.py` if its mtime changed (a recompile makes a
         # FRESH instance — state resets on edit), drop it if the file vanished. The script binds by
         # EXISTENCE (048 — no active flag; the file IS the binding). Cheap when nothing changed: a stat.
-        scripts = self._nodes.get(node_id)
+        scripts = self._documents.get(document_id)
         if scripts is None or scripts.scripts_dir != scripts_dir:
-            scripts = NodeScripts(scripts_dir)
-            self._nodes[node_id] = scripts
+            scripts = DocumentScripts(scripts_dir)
+            self._documents[document_id] = scripts
 
         path = scripts_dir / _SCRIPT_FILE
         if not path.is_file():
             if scripts.behavior is not None:
-                self._drop_script(node_id, scripts)
+                self._drop_script(document_id, scripts)
             return
 
         try:
@@ -306,23 +306,23 @@ class ScriptEngine:
         scripts.behavior = behavior
         scripts.mtime = mtime
         scripts.source = body
-        key = (node_id, _SCRIPT_FILE)
+        key = (document_id, _SCRIPT_FILE)
         if behavior.error is not None:
             self.errors[key] = behavior.error
         else:
             self.errors.pop(key, None)
 
-    def _drop_script(self, node_id: str, scripts: "NodeScripts") -> None:
+    def _drop_script(self, document_id: str, scripts: "DocumentScripts") -> None:
         # Tear down a removed script: free its last-good + every per-key error (a coercion-failed key
-        # or a bad-key soft error records under (node_id, name), so popping the sentinel isn't enough)
+        # or a bad-key soft error records under (document_id, name), so popping the sentinel isn't enough)
         # and clear the cached sets so script_driven_uniforms reports nothing.
         scripts.behavior = None
         scripts.mtime = None
         scripts.source = None
-        self.errors.pop((node_id, _SCRIPT_FILE), None)
+        self.errors.pop((document_id, _SCRIPT_FILE), None)
         for stale in scripts.last_driven | scripts.last_skipped:
             scripts.last_good.pop(stale, None)
-            self.errors.pop((node_id, stale), None)
+            self.errors.pop((document_id, stale), None)
         scripts.last_driven = set()
         scripts.last_skipped = set()
         scripts.warned = set()
@@ -342,48 +342,48 @@ class ScriptEngine:
             return f"'{name}' is a sampler/block — not a scriptable value"
         return None
 
-    def reset(self, node_id: str) -> None:
+    def reset(self, document_id: str) -> None:
         # Re-instantiate the live script (re-run __init__) without recompiling — the manual "restart".
         # Sync the engine's recorded error to the behavior's post-reset state (a recovered __init__
         # clears it; a still-raising one re-records) so a consumer reading `errors` off-tick sees the
         # truth immediately.
-        scripts = self._nodes.get(node_id)
+        scripts = self._documents.get(document_id)
         if scripts is None or scripts.behavior is None:
             return
         scripts.behavior.reset()
-        key = (node_id, _SCRIPT_FILE)
+        key = (document_id, _SCRIPT_FILE)
         if scripts.behavior.error is not None:
             self.errors[key] = scripts.behavior.error
         else:
             self.errors.pop(key, None)
 
-    def fresh_behavior_for(self, node_id: str) -> PythonBehavior | None:
+    def fresh_behavior_for(self, document_id: str) -> PythonBehavior | None:
         # A NEW script instance, independent of the live registry's instance — recompiled from the
         # live registry's CACHED source (not a fresh disk read, so an export never sees a half-saved
         # mid-edit file). The export path ticks THIS so an exported integrator starts from a clean
         # __init__ regardless of live state.
-        scripts = self._nodes.get(node_id)
+        scripts = self._documents.get(document_id)
         if scripts is None or scripts.source is None:
             return None
         return PythonBehavior(_SCRIPT_FILE, scripts.source)
 
     def tick(
         self,
-        node_id: str,
-        node: EngineNode,
+        document_id: str,
+        document: EngineNode,
         ctx: EngineContext,
         stopped: frozenset[str] = frozenset(),
     ) -> None:
-        # Tick the LIVE script: it writes node.uniform_values[name] before Pass.render() reads it. A
+        # Tick the LIVE script: it writes document.uniform_values[name] before Pass.render() reads it. A
         # name in `stopped` (the user froze it for manual edit, 048) still ticks the script + counts as
         # driven, but its WRITE is skipped so the manual value sticks. A runtime/shape error freezes
         # the uniform at last-good and records a ScriptError; the frame always continues.
-        scripts = self._nodes.get(node_id)
+        scripts = self._documents.get(document_id)
         if scripts is None or scripts.behavior is None:
             return
         self._tick_script(
-            node_id,
-            node,
+            document_id,
+            document,
             ctx,
             scripts.behavior,
             scripts.last_good,
@@ -396,17 +396,17 @@ class ScriptEngine:
 
     def tick_export(
         self,
-        node_id: str,
-        node: EngineNode,
+        document_id: str,
+        document: EngineNode,
         ctx: EngineContext,
         behavior: PythonBehavior,
     ) -> None:
-        # Tick an EXTERNAL script (the export's fresh instance) against the node. EVERY sink is a
+        # Tick an EXTERNAL script (the export's fresh instance) against the document. EVERY sink is a
         # per-call throwaway, so an export never touches the live script's recorded error/caches/warn
         # dedup (structurally isolated). NO stopped set — an export always plays the script.
         self._tick_script(
-            node_id,
-            node,
+            document_id,
+            document,
             ctx,
             behavior,
             {},
@@ -420,8 +420,8 @@ class ScriptEngine:
 
     def dry_run(
         self,
-        node_id: str,
-        node: EngineNode,
+        document_id: str,
+        document: EngineNode,
         sample_times: tuple[float, ...],
         fps: int,
     ) -> ScriptProbe:
@@ -429,10 +429,10 @@ class ScriptEngine:
         # reloaded the file at write time — no reload here, which would mutate live state), then an
         # ISOLATED dry-tick. ONE fresh script is stepped CONTINUOUSLY through the export-clock frames so
         # self.* accumulates (an integrator animates correctly); every write lands in a per-call sink,
-        # so the live node + live engine state are byte-identical afterward. Returns the driven set,
+        # so the live document + live engine state are byte-identical afterward. Returns the driven set,
         # per-key + orphan errors, and the driven uniforms' VALUES at each sample time.
-        compile_error = self.errors.get((node_id, _SCRIPT_FILE))
-        behavior = self.fresh_behavior_for(node_id)
+        compile_error = self.errors.get((document_id, _SCRIPT_FILE))
+        behavior = self.fresh_behavior_for(document_id)
         if behavior is None or compile_error is not None:
             return ScriptProbe(compile_error, set(), [], [], [])
 
@@ -458,8 +458,8 @@ class ScriptEngine:
         for frame in range(max_frame + 1):
             ctx = EngineContext(t=frame * dt, dt=dt, frame=frame)
             self._tick_script(
-                node_id,
-                node,
+                document_id,
+                document,
                 ctx,
                 behavior,
                 {},
@@ -483,22 +483,22 @@ class ScriptEngine:
         per_key = [
             (name, err)
             for name in sorted(seen_driven)
-            if (err := worst.get((node_id, name))) is not None
+            if (err := worst.get((document_id, name))) is not None
         ]
         orphan = [
             (name, err)
             for name in sorted(seen_skipped)
-            if (err := worst.get((node_id, name))) is not None
+            if (err := worst.get((document_id, name))) is not None
         ]
         # A behavior-level error seen at ANY frame = `update` raised / returned a non-dict at some point
         # (the script compiled but CRASHES at runtime). Surface it so the verdict isn't a false ANIMATING
         # off the values a recovered-by-the-last-frame crash leaves in the sink.
-        runtime_error = worst.get((node_id, _SCRIPT_FILE))
+        runtime_error = worst.get((document_id, _SCRIPT_FILE))
         # The probe is the SINGLE source of truth for the driven set in the headless/copilot path, where
-        # no live tick warms NodeScripts.last_driven. Stash it there so script_driven_uniforms (the
+        # no live tick warms DocumentScripts.last_driven. Stash it there so script_driven_uniforms (the
         # working-set marker + the set_uniform reject) agrees with this write's verdict. Safe: last_driven
         # is metadata, the next live tick overwrites it; the byte-identical invariant covers uniform_values.
-        scripts = self._nodes.get(node_id)
+        scripts = self._documents.get(document_id)
         if scripts is not None:
             scripts.last_driven = set(seen_driven)
         return ScriptProbe(
@@ -512,8 +512,8 @@ class ScriptEngine:
 
     def _tick_script(
         self,
-        node_id: str,
-        node: EngineNode,
+        document_id: str,
+        document: EngineNode,
         ctx: EngineContext,
         behavior: PythonBehavior,
         last_good: dict[str, Any],
@@ -526,22 +526,22 @@ class ScriptEngine:
         warn: bool = True,
     ) -> None:
         # `values_sink` (the dry-run path): every uniform-value WRITE lands there + the freeze-fallback
-        # READ consults it, so the LIVE node is never written. None = the live tick (write the node).
-        write_target = node.uniform_values if values_sink is None else values_sink
-        active = {u.name: u for u in node.get_active_uniforms()}
-        behavior_key = (node_id, _SCRIPT_FILE)
+        # READ consults it, so the LIVE document is never written. None = the live tick (write the document).
+        write_target = document.uniform_values if values_sink is None else values_sink
+        active = {u.name: u for u in document.get_active_uniforms()}
+        behavior_key = (document_id, _SCRIPT_FILE)
         drove_last = set(last_driven)
 
         # cached compile error — freeze, recorded at reload
         if behavior.error is not None:
             errors[behavior_key] = behavior.error
-            _freeze(drove_last, node, last_good, values_sink)
+            _freeze(drove_last, document, last_good, values_sink)
             return
         try:
             raw = behavior.run(ctx)
         except _RuntimeScriptError as e:  # no instance — authored message
             errors[behavior_key] = e.error
-            _freeze(drove_last, node, last_good, values_sink)
+            _freeze(drove_last, document, last_good, values_sink)
             return
         except Exception as e:  # a raw throw is behavior-level
             errors[behavior_key] = ScriptError(
@@ -550,7 +550,7 @@ class ScriptEngine:
                 f"{type(e).__name__}: {e}",
                 _user_error_line(behavior.label, e),
             )
-            _freeze(drove_last, node, last_good, values_sink)
+            _freeze(drove_last, document, last_good, values_sink)
             return
         if not isinstance(raw, dict):
             errors[behavior_key] = ScriptError(
@@ -558,7 +558,7 @@ class ScriptEngine:
                 "runtime",
                 f"update must return a dict[str, value], got {type(raw).__name__}",
             )
-            _freeze(drove_last, node, last_good, values_sink)
+            _freeze(drove_last, document, last_good, values_sink)
             return
         errors.pop(
             behavior_key, None
@@ -567,9 +567,9 @@ class ScriptEngine:
         driven: set[str] = set()
         skipped: set[str] = set()
         for name, value in raw.items():
-            key = (node_id, name)
+            key = (document_id, name)
             frozen = write_target.get(
-                name, last_good.get(name, node.uniform_values.get(name))
+                name, last_good.get(name, document.uniform_values.get(name))
             )
             uniform = active.get(name)
             # An engine-owned key (u_time…) is SILENTLY dropped (decision 5): the renderer owns that
@@ -578,14 +578,14 @@ class ScriptEngine:
                 continue
             reason = self._binding_reject(name, active)
             if reason is not None:
-                # An orphan/typo/sampler key: record a soft error under (node,name) so the UI surfaces
+                # An orphan/typo/sampler key: record a soft error under (document,name) so the UI surfaces
                 # it, warn-once, SKIP with no write. It goes in `skipped` NOT `driven` (it names no
                 # scriptable uniform, so script_driven_uniforms must not claim ownership).
                 errors[key] = ScriptError(name, "runtime", reason)
                 skipped.add(name)
                 if warn and name not in warned:
                     logger.warning(
-                        f"Node script on node {node_id}: key {reason} — skipped"
+                        f"Document script on document {document_id}: key {reason} — skipped"
                     )
                     warned.add(name)
                 continue
@@ -618,13 +618,13 @@ class ScriptEngine:
         # keeps its last value).
         touched = driven | skipped
         for name in (last_driven | last_skipped) - touched:
-            errors.pop((node_id, name), None)
+            errors.pop((document_id, name), None)
         last_driven.clear()
         last_driven.update(driven)
         last_skipped.clear()
         last_skipped.update(skipped)
 
-    def drop_node(self, node_id: str) -> None:
-        self._nodes.pop(node_id, None)
-        for key in [k for k in self.errors if k[0] == node_id]:
+    def drop_document(self, document_id: str) -> None:
+        self._documents.pop(document_id, None)
+        for key in [k for k in self.errors if k[0] == document_id]:
             self.errors.pop(key, None)

@@ -1,7 +1,7 @@
 """The copilot capability backend — the worker-facing implementation of every
 `CopilotCapabilities` method (feature 023, extracted from `app.py`).
 
-`CopilotBackend` owns the node/edit/uniform/render/publish/telegram verbs the copilot
+`CopilotBackend` owns the document/edit/uniform/render/publish/telegram verbs the copilot
 worker calls. It does NOT import `App` (the no-`TYPE_CHECKING` rule): every dependency
 is an explicit ref / getter / callback injected by `ProjectSession._build_copilot_capabilities`,
 mirroring `shader_lib/file_ops.py::ShaderLibFileManager`. Project-dependent reads are
@@ -24,7 +24,7 @@ from loguru import logger
 from shaderbox import render_job
 from shaderbox.constants import DEFAULT_IMAGE_FILE_PATH
 from shaderbox.copilot.address import (
-    NODE_SHORT_ID_LEN,
+    DOCUMENT_SHORT_ID_LEN,
     example_address,
     is_example_address,
     is_lib_address,
@@ -35,7 +35,10 @@ from shaderbox.copilot.address import (
 from shaderbox.copilot.bridge import CopilotBridge
 from shaderbox.copilot.capabilities import (
     CompileErrorInfo,
-    DeleteNodeResult,
+    DeleteDocumentResult,
+    DocumentImportResult,
+    DocumentOpResult,
+    DocumentTreeEntry,
     EditResult,
     ExampleEntry,
     GrepHit,
@@ -43,16 +46,13 @@ from shaderbox.copilot.capabilities import (
     LibFileResult,
     LibFunctionBody,
     MediaBindResult,
-    NodeImportResult,
-    NodeOpResult,
-    NodeTreeEntry,
     PublishResult,
     RenderResult,
     ScriptView,
     ScriptWriteResult,
     SetUniformResult,
     ShaderView,
-    SwitchNodeResult,
+    SwitchDocumentResult,
     TelegramConnectResult,
     TelegramOpResult,
     TelegramPackInfo,
@@ -79,7 +79,7 @@ from shaderbox.copilot.gate import GateChannel, GateKind, GateRequest
 from shaderbox.copilot.glsl_lex import span_drops_comment, token_match
 from shaderbox.copilot.sanitize import sanitize_display
 from shaderbox.core import ENGINE_DRIVEN_UNIFORMS, Canvas
-from shaderbox.document import Node, document_dir_of
+from shaderbox.document import Document, document_dir_of
 from shaderbox.exporters.base import (
     AuthState,
     Exporter,
@@ -96,7 +96,7 @@ from shaderbox.media import (
     is_default_image,
     media_class_for,
 )
-from shaderbox.paths import NODE_SCRIPT_BASENAME, shader_lib_root
+from shaderbox.paths import DOCUMENT_SCRIPT_BASENAME, shader_lib_root
 from shaderbox.render_preset import RenderPreset
 from shaderbox.render_shape import RenderShape, shape_to_preset
 from shaderbox.scripting import (
@@ -108,7 +108,7 @@ from shaderbox.scripting import (
 from shaderbox.shader_errors import ShaderError
 from shaderbox.shader_lib import ShaderLibIndex, parser
 from shaderbox.shader_lib.file_ops import ShaderLibFileManager
-from shaderbox.ui_models import UINode, load_node_from_dir
+from shaderbox.ui_models import UIDocument, load_document_from_dir
 from shaderbox.uniform_coerce import (
     coerce_uniform_value,
     gl_type_label,
@@ -147,15 +147,15 @@ def _to_error_infos(errors: list[ShaderError]) -> list[CompileErrorInfo]:
 def _script_error_info(err: ScriptError) -> CompileErrorInfo:
     # ScriptError.line is 1-based already (the user source line; -1 = unmapped). Report 0 for unmapped.
     return CompileErrorInfo(
-        path=NODE_SCRIPT_BASENAME,
+        path=DOCUMENT_SCRIPT_BASENAME,
         line=err.line if err.line > 0 else 0,
         message=err.message,
     )
 
 
-def _no_node_error(handle: str) -> CompileErrorInfo:
-    where = f"'{handle}'" if handle else "the current node (none selected)"
-    return CompileErrorInfo(path="", line=0, message=f"no node found for {where}")
+def _no_document_error(handle: str) -> CompileErrorInfo:
+    where = f"'{handle}'" if handle else "the current document (none selected)"
+    return CompileErrorInfo(path="", line=0, message=f"no document found for {where}")
 
 
 def _cross_file_note(edited_path: Path, errors: list[CompileErrorInfo]) -> str:
@@ -222,28 +222,28 @@ def _number_lines(text: str) -> str:
 class _CopilotEditTarget:
     # A resolved edit target: a NODE (recompiles) or a LIB file (written, no standalone compile).
     # `source` is the current text to edit against ("" for a not-yet-created lib file).
-    # `ws_address` is the working-set + per-batch-guard key (node full-id, or the "lib:" address).
+    # `ws_address` is the working-set + per-batch-guard key (document full-id, or the "lib:" address).
     # `label` names the target in result messages (EditResult.target_label).
-    kind: str  # "node" | "lib"
+    kind: str  # "document" | "lib"
     source: str
     ws_address: str
     label: str = ""
-    node_id: str | None = None
-    node: "Node | None" = None
+    document_id: str | None = None
+    document: "Document | None" = None
     lib_path: Path | None = None
     lib_create: bool = False
 
 
-def _format_uniforms(node: Node, driven: set[str]) -> list[str]:
-    # "name type = value" rows. Blocks have no scalar value. The shown value comes from the node's
-    # uniform_values cache (the same source tabs/node.py reads) — NOT live u.value, which Pass.render()
+def _format_uniforms(document: Document, driven: set[str]) -> list[str]:
+    # "name type = value" rows. Blocks have no scalar value. The shown value comes from the document's
+    # uniform_values cache (the same source tabs/document.py reads) — NOT live u.value, which Pass.render()
     # overwrites every frame, so a just-set_uniform value would read back stale and the agent loops.
     # Engine glyph tables are skipped outright: their u.value is ~14KB of stroke data the agent
     # can neither set nor learn from. A `driven` uniform shows a marker, not a phantom value: the
     # copilot path never ticks the script, so its uniform_values entry is the stale manual default —
     # showing it as a number contradicts the write that said the script drives it (feature 043).
     rows: list[str] = []
-    for u in node.render_pass.get_active_uniforms():
+    for u in document.render_pass.get_active_uniforms():
         if u.name in TABLE_UNIFORMS:
             continue
         label = gl_type_label(u)
@@ -252,17 +252,17 @@ def _format_uniforms(node: Node, driven: set[str]) -> list[str]:
         elif u.name in driven:
             rows.append(f"{u.name} {label} = <driven by script.py>")
         elif label == "sampler2D":
-            rows.append(f"{u.name} {label} <- {_sampler_binding(node, u.name)}")
+            rows.append(f"{u.name} {label} <- {_sampler_binding(document, u.name)}")
         else:
-            value = node.render_pass.uniform_values.get(u.name, u.value)
+            value = document.render_pass.uniform_values.get(u.name, u.value)
             rows.append(f"{u.name} {label} = {value}")
     return rows
 
 
-def _sampler_binding(node: Node, name: str) -> str:
+def _sampler_binding(document: Document, name: str) -> str:
     # What a sampler is bound to, for the working-set row. NEVER the source path (corollary-1: the abs
     # path is a model-visible leak); only "(no media bound)" for the default, else dims + kind.
-    value = node.render_pass.uniform_values.get(name)
+    value = document.render_pass.uniform_values.get(name)
     if value is None or is_default_image(value):
         return "(no media bound)"
     if isinstance(value, MediaWithTexture):
@@ -332,25 +332,25 @@ class CopilotBackend:
         *,
         get_bridge: Callable[[], CopilotBridge],
         get_gate: Callable[[], GateChannel],
-        node_examples_dir: Path,
+        document_examples_dir: Path,
         starter_example_id: str,
         get_renders_dir: Callable[[], Path],
-        get_ui_nodes: Callable[[], dict[str, UINode]],
-        get_ui_node_examples: Callable[[], dict[str, UINode]],
+        get_ui_documents: Callable[[], dict[str, UIDocument]],
+        get_ui_document_examples: Callable[[], dict[str, UIDocument]],
         get_exporter_registry: Callable[[], ExporterRegistry],
         get_shader_lib_index: Callable[[], ShaderLibIndex],
         get_shader_lib_files: Callable[[], ShaderLibFileManager],
-        get_current_node_id: Callable[[], str],
+        get_current_document_id: Callable[[], str],
         get_is_cancelled: Callable[[], bool],
         get_script_driven_uniforms: Callable[[str], set[str]],
         get_script_path: Callable[[str], Path],
         get_script_source_view: Callable[[str], tuple[str, ScriptStatus | None]],
         read_script_source: Callable[[str], tuple[str, bool]],
         write_script_source: Callable[[str, str], ScriptProbe],
-        set_current_node_id: Callable[[str], None],
-        save_ui_node: Callable[[UINode], object],
+        set_current_document_id: Callable[[str], None],
+        save_ui_document: Callable[[UIDocument], object],
         sync_editor_from_disk: Callable[[str, str], None],
-        delete_node_unguarded: Callable[[str], str],
+        delete_document_unguarded: Callable[[str], str],
         example_description: Callable[[str], str],
         working_set_reader: Callable[[], list[str]],
         working_set_add: Callable[[str], None],
@@ -361,45 +361,45 @@ class CopilotBackend:
         self._get_bridge = get_bridge
         self._get_gate = get_gate
         self._probe_canvas: Canvas | None = None  # lazy 033 render-facts target
-        # Per-node last probe frames (raw0, raw1) — a mutation whose frames match the previous
+        # Per-document last probe frames (raw0, raw1) — a mutation whose frames match the previous
         # ones changed NOTHING on screen (dead code / wrong target / script-overridden value).
         self._last_probe: dict[str, tuple[bytes, bytes]] = {}
-        # The script twin of _last_probe: per-node last clean dry-run samples. A script edit whose
+        # The script twin of _last_probe: per-document last clean dry-run samples. A script edit whose
         # sampled driven values match the previous clean edit's changed NOTHING behaviorally (a
         # dead store an own later line overwrites, a text-only change) — the value-diff is the only
         # channel that can catch it (frame-pair facts are pace-blind).
         self._last_script_samples: dict[str, object] = {}
-        # 033 force-restore bookkeeping: per-node consecutive broken-compile edits +
+        # 033 force-restore bookkeeping: per-document consecutive broken-compile edits +
         # the last source text that compiled clean (the restore target).
         self._broken_streak: dict[str, int] = {}
         self._last_clean: dict[str, str] = {}
         # The script analog of the shader force-restore (033): N consecutive broken-compile/runtime
-        # script writes on ONE node -> revert to its last clean-probing source. A script has TWO failure
+        # script writes on ONE document -> revert to its last clean-probing source. A script has TWO failure
         # modes (compile + runtime), so it is at least as prone to a broken-edit loop as a shader.
         self._script_broken_streak: dict[str, int] = {}
         self._script_last_clean: dict[str, str] = {}
-        # Oscillation brake (review cycle 2): recent source-state hashes per node —
+        # Oscillation brake (review cycle 2): recent source-state hashes per document —
         # an edit that returns the file to an earlier state is flagged as a fact.
         self._state_history: dict[str, list[int]] = {}
-        self._node_examples_dir = node_examples_dir
+        self._document_examples_dir = document_examples_dir
         self._starter_example_id = starter_example_id
         self._get_renders_dir = get_renders_dir
-        self._get_ui_nodes = get_ui_nodes
-        self._get_ui_node_examples = get_ui_node_examples
+        self._get_ui_documents = get_ui_documents
+        self._get_ui_document_examples = get_ui_document_examples
         self._get_exporter_registry = get_exporter_registry
         self._get_shader_lib_index = get_shader_lib_index
         self._get_shader_lib_files = get_shader_lib_files
-        self._get_current_node_id = get_current_node_id
+        self._get_current_document_id = get_current_document_id
         self._get_is_cancelled = get_is_cancelled
         self._get_script_driven_uniforms = get_script_driven_uniforms
         self._get_script_path = get_script_path
         self._get_script_source_view = get_script_source_view
         self._read_script_source = read_script_source
         self._write_script_source = write_script_source
-        self._set_current_node_id = set_current_node_id
-        self._save_ui_node = save_ui_node
+        self._set_current_document_id = set_current_document_id
+        self._save_ui_document = save_ui_document
         self._sync_editor_from_disk = sync_editor_from_disk
-        self._delete_node_unguarded_cb = delete_node_unguarded
+        self._delete_document_unguarded_cb = delete_document_unguarded
         self._example_description = example_description
         self._working_set_reader = working_set_reader
         self._working_set_add = working_set_add
@@ -407,7 +407,7 @@ class CopilotBackend:
         self._working_set_reset = working_set_reset
         # Per-batch mutated-target guard: a whole-file rewrite of an address already here is rejected
         # (its lines shifted from an earlier same-batch edit). Cleared per batch via batch_begin. A
-        # node's script keys as ("script", node_id) so it can't collide with a node address.
+        # document's script keys as ("script", document_id) so it can't collide with a document address.
         self._batch_mutated: set[str | tuple[str, str]] = set()
         self._get_active_checkpoint = get_active_checkpoint
 
@@ -426,30 +426,32 @@ class CopilotBackend:
     # All run main-thread inside the bridge _on_main blocks, BEFORE the mutation. Best-effort:
     # TurnCheckpoint's own try/except swallows a capture failure so the edit never fails (decision 10).
 
-    def _capture_node(self, node_id: str) -> None:
-        # Serialize the LIVE node (not the stale on-disk dir — set_uniform never writes node.json).
-        # Also carry the node's scripts/script.py into the snapshot dir: UINode.save omits scripts/,
-        # so without this a node-restore swap would DELETE an existing script.
+    def _capture_document(self, document_id: str) -> None:
+        # Serialize the LIVE document (not the stale on-disk dir — set_uniform never writes document.json).
+        # Also carry the document's scripts/script.py into the snapshot dir: UIDocument.save omits scripts/,
+        # so without this a document-restore swap would DELETE an existing script.
         cp = self._get_active_checkpoint()
-        node = self._get_ui_nodes().get(node_id)
-        if cp is None or node is None:
+        document = self._get_ui_documents().get(document_id)
+        if cp is None or document is None:
             return
-        cp.snapshot_node(
-            node_id, node, lambda n, dest: n.save(dest.parent, dest.name, rebind=False)
+        cp.snapshot_document(
+            document_id,
+            document,
+            lambda n, dest: n.save(dest.parent, dest.name, rebind=False),
         )
-        cp.snapshot_script(node_id, self._get_script_path(node_id))
+        cp.snapshot_script(document_id, self._get_script_path(document_id))
 
-    def _capture_script(self, node_id: str) -> None:
+    def _capture_script(self, document_id: str) -> None:
         # Pre-write capture for a script-mutating tool (043): snapshot a pre-existing script.py into
-        # the node snapshot dir (restored by the node's full-dir swap), or mark a created-this-turn
+        # the document snapshot dir (restored by the document's full-dir swap), or mark a created-this-turn
         # script for delete-on-revert. Best-effort, runs main-thread before the write.
         cp = self._get_active_checkpoint()
         if cp is None:
             return
-        if self._get_script_path(node_id).is_file():
-            self._capture_node(node_id)
+        if self._get_script_path(document_id).is_file():
+            self._capture_document(document_id)
         else:
-            cp.mark_created_script(node_id)
+            cp.mark_created_script(document_id)
 
     def _capture_lib(
         self, ws_address: str, pre_edit_source: str, lib_create: bool
@@ -465,10 +467,10 @@ class CopilotBackend:
             cp.snapshot_lib(ws_address, pre_edit_source)
 
     def _copilot_short_ids(self) -> dict[str, str]:
-        # full node-id -> shortest unique prefix (>=NODE_SHORT_ID_LEN); on collision ALL ids grow
+        # full document-id -> shortest unique prefix (>=DOCUMENT_SHORT_ID_LEN); on collision ALL ids grow
         # together so display + resolve stay consistent.
-        ids = list(self._get_ui_nodes())
-        n = NODE_SHORT_ID_LEN
+        ids = list(self._get_ui_documents())
+        n = DOCUMENT_SHORT_ID_LEN
         while n < _COPILOT_FULL_ID_LEN:
             prefixes = [i[:n] for i in ids]
             if len(set(prefixes)) == len(prefixes):
@@ -476,30 +478,30 @@ class CopilotBackend:
             n += 1
         return {i: i[:n] for i in ids}
 
-    def _copilot_resolve_node_id(self, handle: str) -> str | None:
-        # Handle (full id, short id, or unique prefix) -> full node-id, or None if no/ambiguous match.
-        # Empty handle is unresolvable on purpose (else it'd resolve to the sole node — a required
+    def _copilot_resolve_document_id(self, handle: str) -> str | None:
+        # Handle (full id, short id, or unique prefix) -> full document-id, or None if no/ambiguous match.
+        # Empty handle is unresolvable on purpose (else it'd resolve to the sole document — a required
         # target must reject, not fall back to current).
         if not handle.strip():
             return None
-        if handle in self._get_ui_nodes():
+        if handle in self._get_ui_documents():
             return handle
-        matches = [i for i in self._get_ui_nodes() if i.startswith(handle)]
+        matches = [i for i in self._get_ui_documents() if i.startswith(handle)]
         return matches[0] if len(matches) == 1 else None
 
-    def node_tree(self) -> list[NodeTreeEntry]:
+    def document_tree(self) -> list[DocumentTreeEntry]:
         # GL-FREE (runs off-main building prompt context): name + has_errors (cached) + is_current.
-        # No uniforms (that's a GL read). node_id is the short id.
-        current = self._get_current_node_id()
+        # No uniforms (that's a GL read). document_id is the short id.
+        current = self._get_current_document_id()
         short = self._copilot_short_ids()
         return [
-            NodeTreeEntry(
-                node_id=short[nid],
-                name=ui_node.ui_state.ui_name,
-                has_errors=bool(ui_node.node.render_pass.compile_unit.errors),
+            DocumentTreeEntry(
+                document_id=short[nid],
+                name=ui_document.ui_state.ui_name,
+                has_errors=bool(ui_document.document.render_pass.compile_unit.errors),
                 is_current=(nid == current),
             )
-            for nid, ui_node in self._get_ui_nodes().items()
+            for nid, ui_document in self._get_ui_documents().items()
         ]
 
     def example_catalog(self) -> list[ExampleEntry]:
@@ -508,17 +510,17 @@ class CopilotBackend:
         return [
             ExampleEntry(
                 example_id=example_address(tid),
-                name=ui_node.ui_state.ui_name,
+                name=ui_document.ui_state.ui_name,
                 description=sanitize_display(self._example_description(tid)),
             )
-            for tid, ui_node in self._get_ui_node_examples().items()
+            for tid, ui_document in self._get_ui_document_examples().items()
         ]
 
     def _copilot_resolve_example_id(self, handle: str) -> str | None:
         # Example handle (`example:`-prefixed, short, or full uuid) -> full uuid, or None if no/ambiguous.
         # Forgiving: also matches an example by its DISPLAY NAME (case-insensitive) — the model copies the
         # human half of the `example:<id> | <name>` catalogue, so a bare name must resolve, not hard-fail.
-        examples = self._get_ui_node_examples()
+        examples = self._get_ui_document_examples()
         h = strip_example_prefix(handle).strip()
         if not h:
             return None
@@ -536,11 +538,11 @@ class CopilotBackend:
 
     def _copilot_resolve_source(self, handle: str) -> tuple[str, str | None]:
         # read/grep addressing: `example:` -> EXAMPLE, else NODE. Returns (kind, full_id|None).
-        # lib: falls through to the node resolver and returns None (read_shaders short-circuits
+        # lib: falls through to the document resolver and returns None (read_shaders short-circuits
         # lib addresses before calling this).
         if is_example_address(handle):
             return "example", self._copilot_resolve_example_id(handle)
-        return "node", self._copilot_resolve_node_id(handle)
+        return "document", self._copilot_resolve_document_id(handle)
 
     def lib_catalog(self) -> list[LibCatalogEntry]:
         # GL-FREE: name + signature + doc + lib: address per function. No bodies (that's read_lib).
@@ -567,15 +569,15 @@ class CopilotBackend:
 
     # ---- cross-project reads (feature 020·16) ----
 
-    def read_shaders(self, node_ids: list[str]) -> list[ShaderView]:
+    def read_shaders(self, document_ids: list[str]) -> list[ShaderView]:
         # Marshalled (compile + uniform read are GL). Per handle: compile, read source + uniforms +
         # errors, add to the working set. Unknown handles skipped. ShaderView carries the short id.
         # A `lib:` handle reads the library file whole (grep origins advertise lib: as a read
         # handle — the read side honors the same address space as edit_shader).
         def _on_main() -> list[ShaderView]:
             short = self._copilot_short_ids()
-            # [] -> the current node (resolved here so a concrete id is what gets stamped).
-            handles = node_ids or [self._get_current_node_id()]
+            # [] -> the current document (resolved here so a concrete id is what gets stamped).
+            handles = document_ids or [self._get_current_document_id()]
             views: list[ShaderView] = []
             seen: set[str] = (
                 set()
@@ -589,7 +591,7 @@ class CopilotBackend:
                     self._working_set_add(handle)
                     views.append(
                         ShaderView(
-                            node_id=lib_view.address,
+                            document_id=lib_view.address,
                             name=lib_view.name,
                             listing=lib_view.listing,
                             uniforms=[],
@@ -603,29 +605,31 @@ class CopilotBackend:
                 seen.add(full_id)
                 if kind == "example":
                     # Read-only: same view, not added to the working set, addressed by `example:` handle.
-                    ui_node = self._get_ui_node_examples()[full_id]
+                    ui_document = self._get_ui_document_examples()[full_id]
                     view_id = example_address(full_id)
                 else:
-                    ui_node = self._get_ui_nodes()[full_id]
+                    ui_document = self._get_ui_documents()[full_id]
                     view_id = short[full_id]
-                node = ui_node.node
-                if node.render_pass.program is None:
-                    node.render_pass.compile()
-                text = node.render_pass.source.text
-                if kind == "node":
+                document = ui_document.document
+                if document.render_pass.program is None:
+                    document.render_pass.compile()
+                text = document.render_pass.source.text
+                if kind == "document":
                     self._working_set_add(full_id)
                 driven = (
                     self._get_script_driven_uniforms(full_id)
-                    if kind == "node"
+                    if kind == "document"
                     else set()
                 )
                 views.append(
                     ShaderView(
-                        node_id=view_id,
-                        name=ui_node.ui_state.ui_name,
+                        document_id=view_id,
+                        name=ui_document.ui_state.ui_name,
                         listing=_number_lines(text),
-                        uniforms=_format_uniforms(node, driven),
-                        errors=_to_error_infos(node.render_pass.compile_unit.errors),
+                        uniforms=_format_uniforms(document, driven),
+                        errors=_to_error_infos(
+                            document.render_pass.compile_unit.errors
+                        ),
                     )
                 )
             return views
@@ -634,17 +638,17 @@ class CopilotBackend:
 
     def read_working_set(self) -> tuple[list[WorkingSetView], list[str]]:
         # Rebuild the working set into live views (marshalled: uniform read + recompile are GL).
-        # Current node unioned in first (so the rendered set is the size cap + 1 at most), then
-        # touched addresses in add-order; gone nodes skipped. A program-less node is recompiled here
+        # Current document unioned in first (so the rendered set is the size cap + 1 at most), then
+        # touched addresses in add-order; gone documents skipped. A program-less document is recompiled here
         # so its source and errors are coherent. The second element is this turn's evictions, as
-        # AGENT-FACING handles and minus anything the block still renders (an evicted node that the
-        # current-node union brought back shows its full source — calling it dropped would be a
+        # AGENT-FACING handles and minus anything the block still renders (an evicted document that the
+        # current-document union brought back shows its full source — calling it dropped would be a
         # falsehood on the model channel).
         def _on_main() -> tuple[list[WorkingSetView], list[str]]:
             short = self._copilot_short_ids()
-            current = self._get_current_node_id()
+            current = self._get_current_document_id()
             ordered: list[str] = []
-            if current and current in self._get_ui_nodes():
+            if current and current in self._get_ui_documents():
                 ordered.append(current)
             for address in self._working_set_reader():
                 if address not in ordered:
@@ -654,7 +658,7 @@ class CopilotBackend:
                 if is_lib_address(address):
                     view = self._copilot_lib_working_view(address)
                 else:
-                    view = self._copilot_node_working_view(address, short, current)
+                    view = self._copilot_document_working_view(address, short, current)
                 if view is not None:
                     views.append(view)
             rendered = {v.address for v in views}
@@ -663,7 +667,7 @@ class CopilotBackend:
                 for handle in (
                     address
                     if is_lib_address(address)
-                    else short.get(address, address[:NODE_SHORT_ID_LEN])
+                    else short.get(address, address[:DOCUMENT_SHORT_ID_LEN])
                     for address in self._working_set_evicted()
                 )
                 if handle not in rendered
@@ -672,30 +676,32 @@ class CopilotBackend:
 
         return self._bridge.run_on_main(_on_main)
 
-    def _copilot_node_working_view(
+    def _copilot_document_working_view(
         self, full_id: str, short: dict[str, str], current: str
     ) -> WorkingSetView | None:
-        ui_node = self._get_ui_nodes().get(full_id)
-        if ui_node is None:
+        ui_document = self._get_ui_documents().get(full_id)
+        if ui_document is None:
             return None
-        node = ui_node.node
-        if node.render_pass.program is None:
-            node.render_pass.compile()
+        document = ui_document.document
+        if document.render_pass.program is None:
+            document.render_pass.compile()
         script_text, status = self._get_script_source_view(full_id)
         script_errors: list[CompileErrorInfo] = []
         if status is not None and status.sentinel_error is not None:
             script_errors = [_script_error_info(status.sentinel_error)]
         return WorkingSetView(
             address=short.get(full_id, full_id),
-            name=ui_node.ui_state.ui_name,
-            listing=_number_lines(node.render_pass.source.text),
+            name=ui_document.ui_state.ui_name,
+            listing=_number_lines(document.render_pass.source.text),
             is_current=(full_id == current),
             is_lib=False,
-            uniforms=_format_uniforms(node, self._get_script_driven_uniforms(full_id)),
-            errors=_to_error_infos(node.render_pass.compile_unit.errors),
+            uniforms=_format_uniforms(
+                document, self._get_script_driven_uniforms(full_id)
+            ),
+            errors=_to_error_infos(document.render_pass.compile_unit.errors),
             script_listing=_number_lines(script_text) if script_text else "",
             script_errors=script_errors,
-            canvas=f"{node.render_pass.canvas.texture.size[0]}x{node.render_pass.canvas.texture.size[1]}",
+            canvas=f"{document.render_pass.canvas.texture.size[0]}x{document.render_pass.canvas.texture.size[1]}",
         )
 
     def _copilot_lib_working_view(self, address: str) -> WorkingSetView | None:
@@ -720,31 +726,31 @@ class CopilotBackend:
         )
 
     def grep(self, query: str) -> list[GrepHit]:
-        # GL-FREE case-sensitive substring search across node / example / lib sources. Each hit is
-        # origin-labelled (node id, `example:` handle, or lib: address) for a follow-up read.
+        # GL-FREE case-sensitive substring search across document / example / lib sources. Each hit is
+        # origin-labelled (document id, `example:` handle, or lib: address) for a follow-up read.
         if not query:
             return []
         short = self._copilot_short_ids()
         hits: list[GrepHit] = []
-        for node_id, ui_node in self._get_ui_nodes().items():
-            label = f"node '{ui_node.ui_state.ui_name}'"
+        for document_id, ui_document in self._get_ui_documents().items():
+            label = f"document '{ui_document.ui_state.ui_name}'"
             for i, line in enumerate(
-                ui_node.node.render_pass.source.text.split("\n"), start=1
+                ui_document.document.render_pass.source.text.split("\n"), start=1
             ):
                 if query in line:
                     hits.append(
                         GrepHit(
-                            origin=short[node_id],
+                            origin=short[document_id],
                             location=label,
                             line=i,
                             text=line.strip(),
                         )
                     )
-        for tid, ui_node in self._get_ui_node_examples().items():
+        for tid, ui_document in self._get_ui_document_examples().items():
             origin = example_address(tid)
-            label = f"example '{ui_node.ui_state.ui_name}'"
+            label = f"example '{ui_document.ui_state.ui_name}'"
             for i, line in enumerate(
-                ui_node.node.render_pass.source.text.split("\n"), start=1
+                ui_document.document.render_pass.source.text.split("\n"), start=1
             ):
                 if query in line:
                     hits.append(
@@ -792,21 +798,21 @@ class CopilotBackend:
 
     # ---- cross-project mutations (feature 020·16) ----
 
-    def set_uniform(self, name: str, value: object, node: str) -> SetUniformResult:
-        # Set a uniform value on a node (marshalled: validation + try_to_release touch GL). The write
+    def set_uniform(self, name: str, value: object, document: str) -> SetUniformResult:
+        # Set a uniform value on a document (marshalled: validation + try_to_release touch GL). The write
         # mirrors the UI widget (release old, dict-assign); next render picks it up. Up-front validation
         # is the only feedback channel (the render-time shape-pop is off-thread). Rejects samplers,
         # blocks, and engine-driven uniforms.
         def _on_main() -> SetUniformResult:
-            node_id = (
-                self._copilot_resolve_node_id(node)
-                if node
-                else self._get_current_node_id()
+            document_id = (
+                self._copilot_resolve_document_id(document)
+                if document
+                else self._get_current_document_id()
             )
-            if node_id is None or node_id not in self._get_ui_nodes():
+            if document_id is None or document_id not in self._get_ui_documents():
                 return SetUniformResult(
                     ok=False,
-                    error=f"no node with id '{node}' — check the project map",
+                    error=f"no document with id '{document}' — check the project map",
                 )
             if name in ENGINE_DRIVEN_UNIFORMS:
                 return SetUniformResult(
@@ -814,15 +820,15 @@ class CopilotBackend:
                     error=f"'{name}' is engine-owned (ShaderBox provides its value) — it "
                     "cannot be set; change the shader code if you need different behavior",
                 )
-            if name in self._get_script_driven_uniforms(node_id):
-                # One script per node (048): a driven uniform is always computed by the node script.
+            if name in self._get_script_driven_uniforms(document_id):
+                # One script per document (048): a driven uniform is always computed by the document script.
                 return SetUniformResult(
                     ok=False,
-                    error=f"'{name}' is script-driven (the node script computes its value each "
+                    error=f"'{name}' is script-driven (the document script computes its value each "
                     "frame) — a set here would be overwritten next tick; edit it with "
                     "edit_script/write_script instead",
                 )
-            target = self._get_ui_nodes()[node_id].node
+            target = self._get_ui_documents()[document_id].document
             uniform = next(
                 (u for u in target.render_pass.get_active_uniforms() if u.name == name),
                 None,
@@ -830,7 +836,7 @@ class CopilotBackend:
             if uniform is None:
                 return SetUniformResult(
                     ok=False,
-                    error=f"node has no active uniform '{name}' — read_shader it to see its "
+                    error=f"document has no active uniform '{name}' — read_shader it to see its "
                     "uniforms",
                 )
             label = gl_type_label(uniform)
@@ -845,25 +851,27 @@ class CopilotBackend:
                 return SetUniformResult(
                     ok=False, error=uniform_shape_hint(uniform, label, value)
                 )
-            self._capture_node(node_id)  # pre-change rollback snapshot (best-effort)
+            self._capture_document(
+                document_id
+            )  # pre-change rollback snapshot (best-effort)
             try_to_release(target.render_pass.uniform_values.get(name))
             target.render_pass.uniform_values[name] = coerced
             return SetUniformResult(
                 ok=True,
                 type_label=label,
                 render_facts=self._render_facts_for(
-                    target, motion=True, cache_key=node_id
+                    target, motion=True, cache_key=document_id
                 ),
             )
 
         return self._bridge.run_on_main(_on_main)
 
-    def _create_node_on_main(
+    def _create_document_on_main(
         self, name: str, source: str, example: str, switch_to: bool
     ) -> tuple[str, list[CompileErrorInfo], str]:
-        # MAIN THREAD. Create a node from `example` (empty = the default starter); `source` overrides
+        # MAIN THREAD. Create a document from `example` (empty = the default starter); `source` overrides
         # the body. Order: save -> insert -> set-current. Adds to the working set; compiles + returns
-        # errors. Called marshalled by create_node, and directly by import_picked_node (already on main).
+        # errors. Called marshalled by create_document, and directly by import_picked_document (already on main).
         example_id = (
             self._copilot_resolve_example_id(example)
             if example.strip()
@@ -871,187 +879,209 @@ class CopilotBackend:
         )
         if example_id is None:
             raise RuntimeError(f"no example matching '{example}'")
-        example_dir = self._node_examples_dir / example_id
+        example_dir = self._document_examples_dir / example_id
         if not example_dir.is_dir():
             # Missing only on a broken install; the registry turns the raise into a tool error.
             raise RuntimeError("starter example is missing")
-        new_node = load_node_from_dir(example_dir)
-        new_node.reset_id()
+        new_document = load_document_from_dir(example_dir)
+        new_document.reset_id()
         if name.strip():
-            new_node.ui_state.ui_name = name.strip()
+            new_document.ui_state.ui_name = name.strip()
         if source.strip():
-            # release_program sets source.text; save_ui_node writes + rebinds source.path. Do NOT
+            # release_program sets source.text; save_ui_document writes + rebinds source.path. Do NOT
             # write through source.path here — it still points at the shared starter example.
-            new_node.node.render_pass.release_program(
+            new_document.document.render_pass.release_program(
                 source.replace("\r\n", "\n").replace("\r", "\n")
             )
         # Compile (GL, main-thread) BEFORE save so the persisted program matches the reported errors.
-        new_node.node.render_pass.compile()
+        new_document.document.render_pass.compile()
         # source.path still points at the example dir here; save rebinds it.
-        pre_save_path = str(new_node.node.render_pass.source.path)
-        self._save_ui_node(new_node)
-        self._get_ui_nodes()[new_node.id] = new_node
+        pre_save_path = str(new_document.document.render_pass.source.path)
+        self._save_ui_document(new_document)
+        self._get_ui_documents()[new_document.id] = new_document
         cp = self._get_active_checkpoint()
         if cp is not None:
-            cp.mark_created(new_node.id)  # reverse = delete-to-trash, no snapshot
+            cp.mark_created(new_document.id)  # reverse = delete-to-trash, no snapshot
         if switch_to:
-            self._set_current_node_id(new_node.id)
-        self._working_set_add(new_node.id)
-        persisted_path = str(new_node.node.render_pass.source.path)
+            self._set_current_document_id(new_document.id)
+        self._working_set_add(new_document.id)
+        persisted_path = str(new_document.document.render_pass.source.path)
         errors = [
             replace(e, path=persisted_path) if e.path == pre_save_path else e
-            for e in _to_error_infos(new_node.node.render_pass.compile_unit.errors)
+            for e in _to_error_infos(
+                new_document.document.render_pass.compile_unit.errors
+            )
         ]
         logger.info(
-            f"copilot created node {new_node.id} (switch_to={switch_to}, "
+            f"copilot created document {new_document.id} (switch_to={switch_to}, "
             f"errors={len(errors)})"
         )
         if errors:
             extra = "\n".join(
                 compile_hints(
-                    new_node.node.render_pass.source.text, [e.message for e in errors]
+                    new_document.document.render_pass.source.text,
+                    [e.message for e in errors],
                 )
             )
         else:
-            extra = self._render_facts_for(new_node.node, motion=True)
-            self._last_clean[new_node.id] = new_node.node.render_pass.source.text
+            extra = self._render_facts_for(new_document.document, motion=True)
+            self._last_clean[new_document.id] = (
+                new_document.document.render_pass.source.text
+            )
         # Short id, computed after insert so it's in the current id set.
-        return self._copilot_short_ids()[new_node.id], errors, extra
+        return self._copilot_short_ids()[new_document.id], errors, extra
 
-    def create_node(
+    def create_document(
         self, name: str, source: str, example: str, switch_to: bool
     ) -> tuple[str, list[CompileErrorInfo], str]:
         return self._bridge.run_on_main(
-            lambda: self._create_node_on_main(name, source, example, switch_to)
+            lambda: self._create_document_on_main(name, source, example, switch_to)
         )
 
-    def delete_node(self, node: str) -> DeleteNodeResult:
-        # Delete a node (already user-confirmed). Marshals the GL teardown to main; returns node_id +
+    def delete_document(self, document: str) -> DeleteDocumentResult:
+        # Delete a document (already user-confirmed). Marshals the GL teardown to main; returns document_id +
         # trash dir-name so the chat can offer a Recover.
-        def _on_main() -> DeleteNodeResult:
-            node_id = self._copilot_resolve_node_id(node)
-            if node_id is None or node_id not in self._get_ui_nodes():
-                return DeleteNodeResult(
+        def _on_main() -> DeleteDocumentResult:
+            document_id = self._copilot_resolve_document_id(document)
+            if document_id is None or document_id not in self._get_ui_documents():
+                return DeleteDocumentResult(
                     ok=False,
-                    error=f"no such node '{node}' — check the project map for ids",
+                    error=f"no such document '{document}' — check the project map for ids",
                 )
-            name = self._get_ui_nodes()[node_id].ui_state.ui_name
-            trash_name = self._delete_node_unguarded_cb(node_id)
+            name = self._get_ui_documents()[document_id].ui_state.ui_name
+            trash_name = self._delete_document_unguarded_cb(document_id)
             cp = self._get_active_checkpoint()
             if cp is not None:
-                cp.record_deleted(node_id, trash_name)  # reverse = restore from trash
-            logger.info(f"copilot deleted node {node_id} (trash={trash_name})")
-            return DeleteNodeResult(
-                ok=True, deleted_name=name, node_id=node_id, trash_name=trash_name
+                cp.record_deleted(
+                    document_id, trash_name
+                )  # reverse = restore from trash
+            logger.info(f"copilot deleted document {document_id} (trash={trash_name})")
+            return DeleteDocumentResult(
+                ok=True,
+                deleted_name=name,
+                document_id=document_id,
+                trash_name=trash_name,
             )
 
         return self._bridge.run_on_main(_on_main)
 
-    def switch_node(self, node: str) -> SwitchNodeResult:
-        # Make `node` current (publish/render/untargeted-edit act on it). State write -> main thread;
-        # the node joins the working set.
-        def _on_main() -> SwitchNodeResult:
-            node_id = self._copilot_resolve_node_id(node)
-            if node_id is None or node_id not in self._get_ui_nodes():
-                return SwitchNodeResult(
+    def switch_document(self, document: str) -> SwitchDocumentResult:
+        # Make `document` current (publish/render/untargeted-edit act on it). State write -> main thread;
+        # the document joins the working set.
+        def _on_main() -> SwitchDocumentResult:
+            document_id = self._copilot_resolve_document_id(document)
+            if document_id is None or document_id not in self._get_ui_documents():
+                return SwitchDocumentResult(
                     ok=False,
-                    error=f"no such node '{node}' — check the project map for ids",
+                    error=f"no such document '{document}' — check the project map for ids",
                 )
-            ui_node = self._get_ui_nodes()[node_id]
+            ui_document = self._get_ui_documents()[document_id]
             cp = self._get_active_checkpoint()
             if cp is not None:
-                cp.record_pre_switch(self._get_current_node_id())
-            self._set_current_node_id(node_id)
-            self._working_set_add(node_id)
-            logger.info(f"copilot switched current node to {node_id}")
-            return SwitchNodeResult(ok=True, name=ui_node.ui_state.ui_name)
+                cp.record_pre_switch(self._get_current_document_id())
+            self._set_current_document_id(document_id)
+            self._working_set_add(document_id)
+            logger.info(f"copilot switched current document to {document_id}")
+            return SwitchDocumentResult(ok=True, name=ui_document.ui_state.ui_name)
 
         return self._bridge.run_on_main(_on_main)
 
-    def rename_node(self, node: str, new_name: str) -> NodeOpResult:
-        def _on_main() -> NodeOpResult:
-            node_id = self._copilot_resolve_node_id(node)
-            if node_id is None or node_id not in self._get_ui_nodes():
-                return NodeOpResult(
+    def rename_document(self, document: str, new_name: str) -> DocumentOpResult:
+        def _on_main() -> DocumentOpResult:
+            document_id = self._copilot_resolve_document_id(document)
+            if document_id is None or document_id not in self._get_ui_documents():
+                return DocumentOpResult(
                     ok=False,
-                    error=f"no such node '{node}' — check the project map for ids",
+                    error=f"no such document '{document}' — check the project map for ids",
                 )
             name = new_name.strip()
             if not name:
-                return NodeOpResult(ok=False, error="new_name is empty")
-            ui_node = self._get_ui_nodes()[node_id]
-            self._capture_node(node_id)  # pre-change rollback snapshot (best-effort)
-            ui_node.ui_state.ui_name = name
-            self._save_ui_node(ui_node)
-            logger.info(f"copilot renamed node {node_id} -> {name!r}")
-            return NodeOpResult(ok=True, name=name)
+                return DocumentOpResult(ok=False, error="new_name is empty")
+            ui_document = self._get_ui_documents()[document_id]
+            self._capture_document(
+                document_id
+            )  # pre-change rollback snapshot (best-effort)
+            ui_document.ui_state.ui_name = name
+            self._save_ui_document(ui_document)
+            logger.info(f"copilot renamed document {document_id} -> {name!r}")
+            return DocumentOpResult(ok=True, name=name)
 
         return self._bridge.run_on_main(_on_main)
 
-    def set_canvas_size(self, node: str, width: int, height: int) -> NodeOpResult:
-        def _on_main() -> NodeOpResult:
-            node_id = self._copilot_resolve_node_id(node)
-            if node_id is None or node_id not in self._get_ui_nodes():
-                return NodeOpResult(
+    def set_canvas_size(
+        self, document: str, width: int, height: int
+    ) -> DocumentOpResult:
+        def _on_main() -> DocumentOpResult:
+            document_id = self._copilot_resolve_document_id(document)
+            if document_id is None or document_id not in self._get_ui_documents():
+                return DocumentOpResult(
                     ok=False,
-                    error=f"no such node '{node}' — check the project map for ids",
+                    error=f"no such document '{document}' — check the project map for ids",
                 )
             w = max(_MIN_CANVAS_PX, min(_MAX_CANVAS_PX, width))
             h = max(_MIN_CANVAS_PX, min(_MAX_CANVAS_PX, height))
-            ui_node = self._get_ui_nodes()[node_id]
-            self._capture_node(node_id)  # pre-change rollback snapshot (best-effort)
-            ui_node.node.render_pass.canvas.set_size((w, h))
-            self._save_ui_node(ui_node)
-            logger.info(f"copilot set canvas of {node_id} -> {w}x{h}")
-            return NodeOpResult(ok=True, width=w, height=h)
+            ui_document = self._get_ui_documents()[document_id]
+            self._capture_document(
+                document_id
+            )  # pre-change rollback snapshot (best-effort)
+            ui_document.document.render_pass.canvas.set_size((w, h))
+            self._save_ui_document(ui_document)
+            logger.info(f"copilot set canvas of {document_id} -> {w}x{h}")
+            return DocumentOpResult(ok=True, width=w, height=h)
 
         return self._bridge.run_on_main(_on_main)
 
-    def duplicate_node(
-        self, node: str, new_name: str, switch_to: bool
+    def duplicate_document(
+        self, document: str, new_name: str, switch_to: bool
     ) -> tuple[str, list[CompileErrorInfo], str]:
-        # Fork a node: persist the live source, load its dir as an independent node (deep copy incl.
-        # media/ + script), give it a fresh id, compile, save + insert. Mirrors create_node's tail.
+        # Fork a document: persist the live source, load its dir as an independent document (deep copy incl.
+        # media/ + script), give it a fresh id, compile, save + insert. Mirrors create_document's tail.
         def _on_main() -> tuple[str, list[CompileErrorInfo], str]:
-            node_id = self._copilot_resolve_node_id(node)
-            if node_id is None or node_id not in self._get_ui_nodes():
-                raise RuntimeError(f"no such node '{node}'")
-            source_node = self._get_ui_nodes()[node_id]
-            self._save_ui_node(
-                source_node
+            document_id = self._copilot_resolve_document_id(document)
+            if document_id is None or document_id not in self._get_ui_documents():
+                raise RuntimeError(f"no such document '{document}'")
+            source_document = self._get_ui_documents()[document_id]
+            self._save_ui_document(
+                source_document
             )  # persist live state so the load is a full copy
-            src_dir = document_dir_of(source_node.node)
-            new_node = load_node_from_dir(src_dir)
-            new_node.reset_id()
-            name = new_name.strip() or f"{source_node.ui_state.ui_name} copy"
-            new_node.ui_state.ui_name = name
-            new_node.node.render_pass.compile()
-            pre_save_path = str(new_node.node.render_pass.source.path)
-            self._save_ui_node(new_node)
-            self._get_ui_nodes()[new_node.id] = new_node
+            src_dir = document_dir_of(source_document.document)
+            new_document = load_document_from_dir(src_dir)
+            new_document.reset_id()
+            name = new_name.strip() or f"{source_document.ui_state.ui_name} copy"
+            new_document.ui_state.ui_name = name
+            new_document.document.render_pass.compile()
+            pre_save_path = str(new_document.document.render_pass.source.path)
+            self._save_ui_document(new_document)
+            self._get_ui_documents()[new_document.id] = new_document
             cp = self._get_active_checkpoint()
             if cp is not None:
-                cp.mark_created(new_node.id)  # reverse = delete-to-trash
+                cp.mark_created(new_document.id)  # reverse = delete-to-trash
             if switch_to:
-                self._set_current_node_id(new_node.id)
-            self._working_set_add(new_node.id)
-            persisted_path = str(new_node.node.render_pass.source.path)
+                self._set_current_document_id(new_document.id)
+            self._working_set_add(new_document.id)
+            persisted_path = str(new_document.document.render_pass.source.path)
             errors = [
                 replace(e, path=persisted_path) if e.path == pre_save_path else e
-                for e in _to_error_infos(new_node.node.render_pass.compile_unit.errors)
+                for e in _to_error_infos(
+                    new_document.document.render_pass.compile_unit.errors
+                )
             ]
-            logger.info(f"copilot duplicated {node_id} -> {new_node.id} ({name!r})")
+            logger.info(
+                f"copilot duplicated {document_id} -> {new_document.id} ({name!r})"
+            )
             if errors:
                 extra = "\n".join(
                     compile_hints(
-                        new_node.node.render_pass.source.text,
+                        new_document.document.render_pass.source.text,
                         [e.message for e in errors],
                     )
                 )
             else:
-                extra = self._render_facts_for(new_node.node, motion=True)
-                self._last_clean[new_node.id] = new_node.node.render_pass.source.text
-            return self._copilot_short_ids()[new_node.id], errors, extra
+                extra = self._render_facts_for(new_document.document, motion=True)
+                self._last_clean[new_document.id] = (
+                    new_document.document.render_pass.source.text
+                )
+            return self._copilot_short_ids()[new_document.id], errors, extra
 
         return self._bridge.run_on_main(_on_main)
 
@@ -1077,15 +1107,18 @@ class CopilotBackend:
 
         return self._bridge.run_on_main(_on_main)
 
-    def bind_media(self, node: str, uniform: str) -> MediaBindResult:
+    def bind_media(self, document: str, uniform: str) -> MediaBindResult:
         # Validate the sampler on main FIRST (so a bad target rejects BEFORE a picker opens), then
         # block on the FILE gate. The UI poll opens the OS picker, does the load+bind on main
         # (bind_picked_media), and answers with a path-free result — the abs path never reaches here.
         def _validate() -> tuple[str, str]:
-            node_id = self._copilot_resolve_node_id(node)
-            if node_id is None or node_id not in self._get_ui_nodes():
-                return "", f"no such node '{node}' — check the project map for ids"
-            n = self._get_ui_nodes()[node_id].node
+            document_id = self._copilot_resolve_document_id(document)
+            if document_id is None or document_id not in self._get_ui_documents():
+                return (
+                    "",
+                    f"no such document '{document}' — check the project map for ids",
+                )
+            n = self._get_ui_documents()[document_id].document
             if n.render_pass.program is None:
                 n.render_pass.compile()
             samplers = [
@@ -1096,19 +1129,19 @@ class CopilotBackend:
             if uniform not in samplers:
                 listed = ", ".join(samplers) or "(none)"
                 return "", (
-                    f"'{uniform}' is not a sampler2D on this node; its samplers: {listed}. "
+                    f"'{uniform}' is not a sampler2D on this document; its samplers: {listed}. "
                     "Declare `uniform sampler2D <name>;` in the source first if you need one."
                 )
-            return node_id, ""
+            return document_id, ""
 
-        node_id, err = self._bridge.run_on_main(_validate)
+        document_id, err = self._bridge.run_on_main(_validate)
         if err:
             return MediaBindResult(ok=False, error=err)
         resp = self._get_gate().ask_file(
             GateRequest(
                 kind=GateKind.FILE,
                 prompt=f"Choose an image or video for {uniform}",
-                node_id=node_id,
+                document_id=document_id,
                 uniform=uniform,
                 file_kinds=("image", "video"),
             )
@@ -1118,15 +1151,17 @@ class CopilotBackend:
         return resp.media_result
 
     def bind_picked_media(
-        self, node_id: str, uniform: str, path: Path
+        self, document_id: str, uniform: str, path: Path
     ) -> MediaBindResult:
         # MAIN THREAD (called by the UI FILE-gate poll, already on the GL thread — NOT bridged). Loads
         # the user-picked file + binds it to the sampler. The path lives ONLY here + the poll; the
         # returned result is path-free.
-        ui_node = self._get_ui_nodes().get(node_id)
-        if ui_node is None:
-            return MediaBindResult(ok=False, error="the node is gone")
-        self._capture_node(node_id)  # pre-change rollback snapshot (best-effort)
+        ui_document = self._get_ui_documents().get(document_id)
+        if ui_document is None:
+            return MediaBindResult(ok=False, error="the document is gone")
+        self._capture_document(
+            document_id
+        )  # pre-change rollback snapshot (best-effort)
         try:
             media = media_class_for(path.suffix)(path)
         except Exception as exc:
@@ -1134,11 +1169,11 @@ class CopilotBackend:
             return MediaBindResult(
                 ok=False, error=f"could not load '{path.name}' ({type(exc).__name__})"
             )
-        try_to_release(ui_node.node.render_pass.uniform_values.get(uniform))
-        ui_node.node.render_pass.uniform_values[uniform] = media
-        self._save_ui_node(ui_node)
+        try_to_release(ui_document.document.render_pass.uniform_values.get(uniform))
+        ui_document.document.render_pass.uniform_values[uniform] = media
+        self._save_ui_document(ui_document)
         d = media.details
-        logger.info(f"copilot bound media -> {node_id}.{uniform} ({path.name})")
+        logger.info(f"copilot bound media -> {document_id}.{uniform} ({path.name})")
         return MediaBindResult(
             ok=True,
             basename=path.name,
@@ -1147,18 +1182,18 @@ class CopilotBackend:
             is_video=d.is_video,
         )
 
-    def unbind_media(self, node: str, uniform: str) -> MediaBindResult:
+    def unbind_media(self, document: str, uniform: str) -> MediaBindResult:
         # Reset a sampler to the default image (no picker). save() then skips the default, so it
         # round-trips to "(no media bound)".
         def _on_main() -> MediaBindResult:
-            node_id = self._copilot_resolve_node_id(node)
-            if node_id is None or node_id not in self._get_ui_nodes():
+            document_id = self._copilot_resolve_document_id(document)
+            if document_id is None or document_id not in self._get_ui_documents():
                 return MediaBindResult(
                     ok=False,
-                    error=f"no such node '{node}' — check the project map for ids",
+                    error=f"no such document '{document}' — check the project map for ids",
                 )
-            ui_node = self._get_ui_nodes()[node_id]
-            n = ui_node.node
+            ui_document = self._get_ui_documents()[document_id]
+            n = ui_document.document
             if n.render_pass.program is None:
                 n.render_pass.compile()
             is_sampler = any(
@@ -1167,63 +1202,69 @@ class CopilotBackend:
             )
             if not is_sampler:
                 return MediaBindResult(
-                    ok=False, error=f"'{uniform}' is not a sampler2D on this node"
+                    ok=False, error=f"'{uniform}' is not a sampler2D on this document"
                 )
-            self._capture_node(node_id)
+            self._capture_document(document_id)
             try_to_release(n.render_pass.uniform_values.get(uniform))
             n.render_pass.uniform_values[uniform] = Image(DEFAULT_IMAGE_FILE_PATH)
-            self._save_ui_node(ui_node)
-            logger.info(f"copilot unbound media on {node_id}.{uniform}")
+            self._save_ui_document(ui_document)
+            logger.info(f"copilot unbound media on {document_id}.{uniform}")
             return MediaBindResult(ok=True)
 
         return self._bridge.run_on_main(_on_main)
 
-    def import_node(self, switch_to: bool) -> NodeImportResult:
-        # Worker: block on a FILE gate for a .glsl; the UI poll reads it on main (import_picked_node)
+    def import_document(self, switch_to: bool) -> DocumentImportResult:
+        # Worker: block on a FILE gate for a .glsl; the UI poll reads it on main (import_picked_document)
         # and answers with a path-free result.
         resp = self._get_gate().ask_file(
             GateRequest(
                 kind=GateKind.FILE,
                 prompt="Choose a .glsl shader to import",
                 file_kinds=("glsl",),
-                file_action="import_node",
+                file_action="import_document",
                 switch_to=switch_to,
             )
         )
         if resp.import_result is None:
-            return NodeImportResult(cancelled=True)
+            return DocumentImportResult(cancelled=True)
         return resp.import_result
 
-    def import_picked_node(self, path: Path, switch_to: bool) -> NodeImportResult:
-        # MAIN THREAD (called by the UI FILE-gate poll). Read the picked file + create a node from it.
+    def import_picked_document(
+        self, path: Path, switch_to: bool
+    ) -> DocumentImportResult:
+        # MAIN THREAD (called by the UI FILE-gate poll). Read the picked file + create a document from it.
         # The path lives only here; the result is path-free (basename only).
         try:
             text = path.read_text(encoding="utf-8")
         except OSError as exc:
-            logger.warning(f"copilot import_node read failed for {path.name}: {exc}")
-            return NodeImportResult(
+            logger.warning(
+                f"copilot import_document read failed for {path.name}: {exc}"
+            )
+            return DocumentImportResult(
                 ok=False, error=f"could not read '{path.name}' ({type(exc).__name__})"
             )
         try:
-            node_id, errors, _extra = self._create_node_on_main(
+            document_id, errors, _extra = self._create_document_on_main(
                 path.stem, text, "", switch_to
             )
         except Exception as exc:
-            logger.warning(f"copilot import_node create failed: {exc}")
-            return NodeImportResult(
+            logger.warning(f"copilot import_document create failed: {exc}")
+            return DocumentImportResult(
                 ok=False, error=f"import failed ({type(exc).__name__})"
             )
-        logger.info(f"copilot imported node {node_id} from {path.name}")
-        return NodeImportResult(
-            ok=True, node_id=node_id, errors=errors, basename=path.name
+        logger.info(f"copilot imported document {document_id} from {path.name}")
+        return DocumentImportResult(
+            ok=True, document_id=document_id, errors=errors, basename=path.name
         )
 
-    def _copilot_render_path(self, node: UINode, ext: str) -> Path:
+    def _copilot_render_path(self, document: UIDocument, ext: str) -> Path:
         # Non-colliding filename <name>_<short-id>_<n>.<ext>, n = next free index in renders_dir.
         base = "".join(
-            c if c.isalnum() or c in "-_" else "_" for c in node.ui_state.ui_name
+            c if c.isalnum() or c in "-_" else "_" for c in document.ui_state.ui_name
         )
-        short = self._copilot_short_ids().get(node.id, node.id[:NODE_SHORT_ID_LEN])
+        short = self._copilot_short_ids().get(
+            document.id, document.id[:DOCUMENT_SHORT_ID_LEN]
+        )
         renders = self._get_renders_dir()
         n = 0
         while True:
@@ -1232,17 +1273,17 @@ class CopilotBackend:
                 return candidate
             n += 1
 
-    def render_image(self, node: str, shape: RenderShape) -> RenderResult:
+    def render_image(self, document: str, shape: RenderShape) -> RenderResult:
         # Render the current frame to a PNG (GL; marshalled with the longer render_op_timeout_s).
         def _on_main() -> RenderResult:
-            ui_node = self._copilot_render_target(node)
-            if ui_node is None:
-                return RenderResult(ok=False, error=f"no such node '{node}'")
+            ui_document = self._copilot_render_target(document)
+            if ui_document is None:
+                return RenderResult(ok=False, error=f"no such document '{document}'")
             preset = shape_to_preset(
                 shape, is_video=False, fps=None, container=None, duration_max=None
             )
-            out = self._copilot_render_path(ui_node, "png")
-            art = render_job.render_to(ui_node.node, preset, 0.0, out)
+            out = self._copilot_render_path(ui_document, "png")
+            art = render_job.render_to(ui_document.document, preset, 0.0, out)
             if art is None:
                 return RenderResult(ok=False, error="render failed (see logs)")
             return RenderResult(
@@ -1258,18 +1299,18 @@ class CopilotBackend:
         )
 
     def render_video(
-        self, node: str, seconds: float, fps: int, shape: RenderShape
+        self, document: str, seconds: float, fps: int, shape: RenderShape
     ) -> RenderResult:
         # Render `seconds` of animation (from t=0) to a WebM.
         def _on_main() -> RenderResult:
-            ui_node = self._copilot_render_target(node)
-            if ui_node is None:
-                return RenderResult(ok=False, error=f"no such node '{node}'")
+            ui_document = self._copilot_render_target(document)
+            if ui_document is None:
+                return RenderResult(ok=False, error=f"no such document '{document}'")
             preset = shape_to_preset(
                 shape, is_video=True, fps=fps, container=".webm", duration_max=None
             )
-            out = self._copilot_render_path(ui_node, "webm")
-            art = render_job.render_to(ui_node.node, preset, seconds, out)
+            out = self._copilot_render_path(ui_document, "webm")
+            art = render_job.render_to(ui_document.document, preset, seconds, out)
             if art is None:
                 return RenderResult(ok=False, error="render failed (see logs)")
             return RenderResult(
@@ -1285,29 +1326,31 @@ class CopilotBackend:
             _on_main, timeout=COPILOT_ENGINE.render_op_timeout_s, defer=True
         )
 
-    def probe_render(self, node: str, t: float) -> str:
+    def probe_render(self, document: str, t: float) -> str:
         # The aimable read-side probe (feature 050): the one-line facts string the edit path
         # produces, at a chosen `t` (default 0.0 = the export clock). UN-gated + non-mutating - the
         # render-blind agent glances here as often as it likes, vs render_image (gated, writes a
         # deliverable file).
         def _on_main() -> str:
-            ui_node = self._copilot_render_target(node)
-            if ui_node is None:
-                return f"error: no such node '{node}'"
-            facts = self._render_facts_for(ui_node.node, t=t)
+            ui_document = self._copilot_render_target(document)
+            if ui_document is None:
+                return f"error: no such document '{document}'"
+            facts = self._render_facts_for(ui_document.document, t=t)
             return facts or "probe rendered, but produced no readable facts (advisory)."
 
         return self._bridge.run_on_main(
             _on_main, timeout=COPILOT_ENGINE.render_op_timeout_s, defer=True
         )
 
-    def _copilot_render_target(self, node: str) -> UINode | None:
-        node_id = (
-            self._copilot_resolve_node_id(node) if node else self._get_current_node_id()
+    def _copilot_render_target(self, document: str) -> UIDocument | None:
+        document_id = (
+            self._copilot_resolve_document_id(document)
+            if document
+            else self._get_current_document_id()
         )
-        if node_id is None or node_id not in self._get_ui_nodes():
+        if document_id is None or document_id not in self._get_ui_documents():
             return None
-        return self._get_ui_nodes()[node_id]
+        return self._get_ui_documents()[document_id]
 
     def _copilot_publish(
         self,
@@ -1319,17 +1362,17 @@ class CopilotBackend:
         # Render with the exporter's preset, enqueue the upload, then await its terminal progress.
         # Every exporter touch (render/enqueue/poll) runs on main via the bridge; the worker only
         # sleeps + checks cancel between polls.
-        node_id = self._get_current_node_id()
-        if node_id is None or node_id not in self._get_ui_nodes():
+        document_id = self._get_current_document_id()
+        if document_id is None or document_id not in self._get_ui_documents():
             return PublishResult(
-                ok=False, error="no current node to publish", kind=kind
+                ok=False, error="no current document to publish", kind=kind
             )
-        ui_node = self._get_ui_nodes()[node_id]
+        ui_document = self._get_ui_documents()[document_id]
 
         def _render_and_enqueue() -> ExportProgress | None:
             duration = float(settings.get("seconds", preset.duration_max or 3.0))
-            out = self._copilot_render_path(ui_node, render_job.preset_ext(preset))
-            art = render_job.render_to(ui_node.node, preset, duration, out)
+            out = self._copilot_render_path(ui_document, render_job.preset_ext(preset))
+            art = render_job.render_to(ui_document.document, preset, duration, out)
             if art is None:
                 raise CopilotToolError("render failed")
             baseline = exporter.status().last_progress
@@ -1415,8 +1458,8 @@ class CopilotBackend:
         finally:
             self._bridge.run_on_main(lambda: exporter.set_shape(prior_shape))
 
-    def has_current_node(self) -> bool:
-        return self._get_current_node_id() in self._get_ui_nodes()
+    def has_current_document(self) -> bool:
+        return self._get_current_document_id() in self._get_ui_documents()
 
     def telegram_connected(self) -> bool:
         exporter = self._get_exporter_registry().get("telegram")
@@ -1586,12 +1629,12 @@ class CopilotBackend:
             ok=False, error="delete is taking too long — check the Share tab"
         )
 
-    # ---- edit / compile-feedback (target-addressable: node or lib: file, 020·16) ----
+    # ---- edit / compile-feedback (target-addressable: document or lib: file, 020·16) ----
 
     def apply_shader_edit(
         self, old_str: str, new_str: str, replace_all: bool, target: str
     ) -> EditResult:
-        # Match + replace against the target's live source, recompile (node) / write (lib), persist,
+        # Match + replace against the target's live source, recompile (document) / write (lib), persist,
         # refresh the editor — one bridge round-trip (matching on main = no staleness window). 0/ambiguous
         # match mutates nothing. A substring edit skips the D9 guard (matches by text) but records its
         # target as batch-mutated so a later same-batch whole-file rewrite is caught.
@@ -1646,17 +1689,17 @@ class CopilotBackend:
         return note
 
     def _force_restore(
-        self, node_id: str, node: Node, streak: int, matches: int
+        self, document_id: str, document: Document, streak: int, matches: int
     ) -> EditResult:
         # The 033 unstick: N consecutive broken edits -> put the file back at its last
         # clean-compiling state and tell the agent as a fact. Resets the streak so the
         # next broken run gets a fresh budget.
         restore_errors = self._copilot_persist_shader(
-            node_id, node, self._last_clean[node_id]
+            document_id, document, self._last_clean[document_id]
         )
-        self._broken_streak[node_id] = 0
+        self._broken_streak[document_id] = 0
         logger.info(
-            f"copilot force-restore | node={node_id} after {streak} broken edits"
+            f"copilot force-restore | document={document_id} after {streak} broken edits"
         )
         note = (
             f"EDIT UNDONE — {streak} consecutive edits left compile errors, so the file "
@@ -1671,7 +1714,7 @@ class CopilotBackend:
                 f"compiles (likely a library change):\n{err_lines}"
             )
         facts = (
-            self._render_facts_for(node, motion=True, cache_key=node_id)
+            self._render_facts_for(document, motion=True, cache_key=document_id)
             if not restore_errors
             else ""
         )
@@ -1683,14 +1726,18 @@ class CopilotBackend:
         )
 
     def _render_facts_for(
-        self, node: Node, t: float = 0.0, motion: bool = False, cache_key: str = ""
+        self,
+        document: Document,
+        t: float = 0.0,
+        motion: bool = False,
+        cache_key: str = "",
     ) -> str:
         # Best-effort probe render -> one facts line (feature 033). Runs on the main
         # thread (bridge-marshalled callers) with the GL context current. Never raises
         # into the edit path — facts are advisory. `t` is the render clock, DEFAULT 0.0 (the
         # export clock the user renders, NOT wall-clock — feature 050: a wall-clock probe drifts
         # with app uptime, so its facts can't be correlated with what the user sees). ONE source
-        # for both node.render(u_time=) AND the stamp, so a caller passing its sample time (a
+        # for both document.render(u_time=) AND the stamp, so a caller passing its sample time (a
         # script probe, the probe_render tool) can't disagree with the rendered frame.
         # `motion=True` (mutation auto-probes): also render a SECOND frame at render_facts_motion_t
         # and append a STATIC/ANIMATES verdict — t=0 alone is blank for a ramping effect and reads
@@ -1699,15 +1746,15 @@ class CopilotBackend:
             return ""
         try:
             size = COPILOT_ENGINE.render_facts_size
-            # Match the node's canvas aspect — a square probe would lay out
+            # Match the document's canvas aspect — a square probe would lay out
             # aspect-corrected shaders (u_aspect) differently from the preview.
-            cw, ch = node.render_pass.canvas.texture.size
+            cw, ch = document.render_pass.canvas.texture.size
             h = min(4 * size, max(8, round(size * ch / cw))) if cw else size
             if self._probe_canvas is None:
                 self._probe_canvas = Canvas(size=(size, h))
             else:
                 self._probe_canvas.set_size((size, h))
-            node.render(u_time=t, canvas=self._probe_canvas)
+            document.render(u_time=t, canvas=self._probe_canvas)
             raw0 = self._probe_canvas.texture.read()
             # Stamp the sample time: an animated shader's facts change with phase,
             # which otherwise reads as an edit effect.
@@ -1715,7 +1762,7 @@ class CopilotBackend:
             if not motion or not line0:
                 return line0
             t2 = COPILOT_ENGINE.render_facts_motion_t
-            node.render(u_time=t2, canvas=self._probe_canvas)
+            document.render(u_time=t2, canvas=self._probe_canvas)
             raw1 = self._probe_canvas.texture.read()
             a0 = np.frombuffer(raw0, dtype=np.uint8).astype(np.int16)
             a1 = np.frombuffer(raw1, dtype=np.uint8).astype(np.int16)
@@ -1733,7 +1780,7 @@ class CopilotBackend:
                 if prev is not None and prev[0] == raw0 and prev[1] == raw1:
                     result = (
                         "this mutation changed NOTHING on screen vs the frame before it — "
-                        "dead code, the wrong node/target, a value a script overrides, or a "
+                        "dead code, the wrong document/target, a value a script overrides, or a "
                         "change only visible between t=0 and t=1.5s\n" + result
                     )
             return result
@@ -1742,46 +1789,48 @@ class CopilotBackend:
             return ""
 
     def _script_render_line(
-        self, node: Node, samples: list[tuple[float, dict[str, object]]]
+        self, document: Document, samples: list[tuple[float, dict[str, object]]]
     ) -> str:
         # ONE corroborating render (feature 043): render the mid sample's driven values AT the mid
         # sample's TIME to answer "did the values produce visible ink, or is it FLAT / off-screen / a
         # uniform the shader ignores?" — the honesty case a value-diff alone misses. The render clock IS
         # mid[0] (not wall-clock), so a u_time-reading shader renders the frame the values came from.
-        # Rebinds node.uniform_values to a merged copy (the live dict OBJECT is never mutated; sampler/
+        # Rebinds document.uniform_values to a merged copy (the live dict OBJECT is never mutated; sampler/
         # Video values are shared and may advance a frame, same as the 033 facts probe), restores it in
         # finally. Advisory — never raises.
         if not samples or not COPILOT_ENGINE.render_facts_enabled:
             return ""
         mid = samples[len(samples) // 2]
-        saved = node.render_pass.uniform_values
+        saved = document.render_pass.uniform_values
         try:
-            node.render_pass.uniform_values = {**saved, **mid[1]}
-            return self._render_facts_for(node, t=mid[0])
+            document.render_pass.uniform_values = {**saved, **mid[1]}
+            return self._render_facts_for(document, t=mid[0])
         except Exception as exc:
             logger.debug(f"copilot script render facts skipped: {exc}")
             return ""
         finally:
-            node.render_pass.uniform_values = saved
+            document.render_pass.uniform_values = saved
 
-    def read_script(self, node: str, /) -> ScriptView:
+    def read_script(self, document: str, /) -> ScriptView:
         def _on_main() -> ScriptView:
-            node_id = self._resolve_node_or_current(node)
-            if node_id is None:
-                return ScriptView("", "", "", [_no_node_error(node)], is_stub=False)
+            document_id = self._resolve_document_or_current(document)
+            if document_id is None:
+                return ScriptView(
+                    "", "", "", [_no_document_error(document)], is_stub=False
+                )
             self._working_set_add(
-                node_id
+                document_id
             )  # so its SCRIPT sub-section rides the working set
-            text, is_stub = self._read_script_source(node_id)
-            _text, status = self._get_script_source_view(node_id)
+            text, is_stub = self._read_script_source(document_id)
+            _text, status = self._get_script_source_view(document_id)
             errors = (
                 [_script_error_info(status.sentinel_error)]
                 if status is not None and status.sentinel_error is not None
                 else []
             )
             return ScriptView(
-                node_id=self._copilot_short_ids().get(node_id, node_id),
-                name=self._get_ui_nodes()[node_id].ui_state.ui_name,
+                document_id=self._copilot_short_ids().get(document_id, document_id),
+                name=self._get_ui_documents()[document_id].ui_state.ui_name,
                 listing=_number_lines(text),
                 errors=errors,
                 is_stub=is_stub,
@@ -1789,14 +1838,16 @@ class CopilotBackend:
 
         return self._bridge.run_on_main(_on_main)
 
-    def _apply_script_text(self, node_id: str, new_text: str) -> ScriptWriteResult:
+    def _apply_script_text(self, document_id: str, new_text: str) -> ScriptWriteResult:
         # The shared write tail: capture, persist+reload+dry-run, render the probe into a
         # ScriptWriteResult. write_script (whole file) and edit_script (after a splice) both end here, so
         # an edit and a write give IDENTICAL feedback. Runs on the main thread (the caller marshals).
-        self._working_set_add(node_id)  # so the script rides the working set next step
-        self._batch_mutated.add(("script", node_id))
-        self._capture_script(node_id)
-        probe = self._write_script_source(node_id, new_text)
+        self._working_set_add(
+            document_id
+        )  # so the script rides the working set next step
+        self._batch_mutated.add(("script", document_id))
+        self._capture_script(document_id)
+        probe = self._write_script_source(document_id, new_text)
         broken = (
             format_compile_errors([_script_error_info(probe.compile_error)])
             if probe.compile_error
@@ -1808,15 +1859,15 @@ class CopilotBackend:
             )
         )
         if broken:
-            return self._script_broken_write(node_id, broken)
+            return self._script_broken_write(document_id, broken)
         # A clean probe: reset the streak, snapshot the source as the restore target.
-        self._script_broken_streak[node_id] = 0
-        self._script_last_clean[node_id] = new_text
+        self._script_broken_streak[document_id] = 0
+        self._script_last_clean[document_id] = new_text
         render_line = self._script_render_line(
-            self._get_ui_nodes()[node_id].node, probe.samples
+            self._get_ui_documents()[document_id].document, probe.samples
         )
-        prev_samples = self._last_script_samples.get(node_id)
-        self._last_script_samples[node_id] = probe.samples
+        prev_samples = self._last_script_samples.get(document_id)
+        self._last_script_samples[document_id] = probe.samples
         motion_facts = _motion_verdict(
             probe, render_line, COPILOT_ENGINE.motion_value_eps
         )
@@ -1837,17 +1888,19 @@ class CopilotBackend:
             motion_facts=motion_facts,
         )
 
-    def _script_broken_write(self, node_id: str, error: str) -> ScriptWriteResult:
+    def _script_broken_write(self, document_id: str, error: str) -> ScriptWriteResult:
         # A broken script write/edit (compile OR runtime). After N in a row, restore the last clean
         # source + tell the agent (the 033 force-restore, ported to scripts). Mirrors the shader path.
-        streak = self._script_broken_streak.get(node_id, 0) + 1
-        self._script_broken_streak[node_id] = streak
+        streak = self._script_broken_streak.get(document_id, 0) + 1
+        self._script_broken_streak[document_id] = streak
         limit = COPILOT_CONFIG.auto_revert_after_failed_edits
-        if limit > 0 and streak >= limit and node_id in self._script_last_clean:
-            clean = self._script_last_clean[node_id]
-            restore = self._write_script_source(node_id, clean)
-            self._script_broken_streak[node_id] = 0
-            logger.info(f"copilot script force-restore | node={node_id} after {streak}")
+        if limit > 0 and streak >= limit and document_id in self._script_last_clean:
+            clean = self._script_last_clean[document_id]
+            restore = self._write_script_source(document_id, clean)
+            self._script_broken_streak[document_id] = 0
+            logger.info(
+                f"copilot script force-restore | document={document_id} after {streak}"
+            )
             note = (
                 f"SCRIPT RESTORED — {streak} broken script edits in a row, so the script was "
                 "reverted to its last clean-running state (now in the working set). Re-read it and "
@@ -1861,23 +1914,25 @@ class CopilotBackend:
             return ScriptWriteResult(ok=True, restored_note=note)
         return ScriptWriteResult(ok=True, compile_error=error)
 
-    def write_script(self, new_text: str, node: str, /) -> ScriptWriteResult:
+    def write_script(self, new_text: str, document: str, /) -> ScriptWriteResult:
         def _on_main() -> ScriptWriteResult:
-            node_id = self._resolve_node_or_current(node)
-            if node_id is None:
-                return ScriptWriteResult(ok=False, error=_no_node_error(node).message)
-            if ("script", node_id) in self._batch_mutated:
+            document_id = self._resolve_document_or_current(document)
+            if document_id is None:
+                return ScriptWriteResult(
+                    ok=False, error=_no_document_error(document).message
+                )
+            if ("script", document_id) in self._batch_mutated:
                 return ScriptWriteResult(
                     ok=False, error=_batch_guard_reason("edit_script")
                 )
-            return self._apply_script_text(node_id, new_text)
+            return self._apply_script_text(document_id, new_text)
 
         return self._bridge.run_on_main(
             _on_main, timeout=COPILOT_ENGINE.render_op_timeout_s
         )
 
     def apply_script_edit(
-        self, old_str: str, new_str: str, replace_all: bool, node: str, /
+        self, old_str: str, new_str: str, replace_all: bool, document: str, /
     ) -> ScriptWriteResult:
         # The script analog of apply_shader_edit (mirror of edit_shader). Plain-TEXT match (a script is
         # Python, not GLSL — the glsl_lex token matcher does NOT apply. INDENT-AWARE match (exact
@@ -1886,12 +1941,14 @@ class CopilotBackend:
         # write tail so an edit and a write give identical feedback. old_str/new_str are tab-normalized
         # to match the spaces-only on-disk source.
         def _on_main() -> ScriptWriteResult:
-            node_id = self._resolve_node_or_current(node)
-            if node_id is None:
-                return ScriptWriteResult(ok=False, error=_no_node_error(node).message)
+            document_id = self._resolve_document_or_current(document)
+            if document_id is None:
+                return ScriptWriteResult(
+                    ok=False, error=_no_document_error(document).message
+                )
             old_norm = normalize_script_tabs(old_str)
             new_norm = normalize_script_tabs(new_str)
-            src, _is_stub = self._read_script_source(node_id)
+            src, _is_stub = self._read_script_source(document_id)
             spans = script_match_spans(src, old_norm)
             if not spans:
                 return ScriptWriteResult(
@@ -1906,38 +1963,38 @@ class CopilotBackend:
                     "surrounding context to make it unique, or set replace_all=true",
                 )
             new_text = splice_script(src, spans, new_norm)
-            return self._apply_script_text(node_id, new_text)
+            return self._apply_script_text(document_id, new_text)
 
         return self._bridge.run_on_main(
             _on_main, timeout=COPILOT_ENGINE.render_op_timeout_s
         )
 
-    def _resolve_node_or_current(self, node: str) -> str | None:
-        # A node-id handle (or "" = current) -> full id, or None when it resolves to no live node.
-        # Scripts address only nodes (one script per node), never lib/example handles.
-        if not node:
-            cur = self._get_current_node_id()
-            return cur if cur and cur in self._get_ui_nodes() else None
-        kind, full_id = self._copilot_resolve_source(node)
-        return full_id if kind == "node" and full_id is not None else None
+    def _resolve_document_or_current(self, document: str) -> str | None:
+        # A document-id handle (or "" = current) -> full id, or None when it resolves to no live document.
+        # Scripts address only documents (one script per document), never lib/example handles.
+        if not document:
+            cur = self._get_current_document_id()
+            return cur if cur and cur in self._get_ui_documents() else None
+        kind, full_id = self._copilot_resolve_source(document)
+        return full_id if kind == "document" and full_id is not None else None
 
     def _copilot_persist_shader(
-        self, node_id: str, node: Node, new_text: str
+        self, document_id: str, document: Document, new_text: str
     ) -> list[CompileErrorInfo]:
-        # Adopt new_text, recompile, persist, refresh the editor — the shared tail of every node edit.
-        # sync_editor must key on `node_id` (the edit TARGET), not the current node, else a non-current
+        # Adopt new_text, recompile, persist, refresh the editor — the shared tail of every document edit.
+        # sync_editor must key on `document_id` (the edit TARGET), not the current document, else a non-current
         # edit syncs the wrong session; it no-ops when the target has no open editor.
-        node.render_pass.release_program(new_text)
-        node.render_pass.compile()
-        node.render_pass.source.path.write_text(new_text, encoding="utf-8")
-        self._sync_editor_from_disk(node_id, new_text)
-        return _to_error_infos(node.render_pass.compile_unit.errors)
+        document.render_pass.release_program(new_text)
+        document.render_pass.compile()
+        document.render_pass.source.path.write_text(new_text, encoding="utf-8")
+        self._sync_editor_from_disk(document_id, new_text)
+        return _to_error_infos(document.render_pass.compile_unit.errors)
 
     def _copilot_resolve_target(
         self, target: str, *, allow_create: bool
     ) -> "_CopilotEditTarget | EditResult":
         # Resolve an edit target to source + identity, or an EditResult REJECT. "lib:"-prefixed -> lib
-        # file; empty -> current node; else a node-id (unknown is a hard error, never a lib fallback).
+        # file; empty -> current document; else a document-id (unknown is a hard error, never a lib fallback).
         if is_lib_address(target):
             return self._copilot_resolve_lib_target(target, allow_create=allow_create)
         if is_example_address(target):
@@ -1946,41 +2003,43 @@ class CopilotBackend:
                 matches=0,
                 errors=[],
                 unresolved=True,
-                unresolved_reason="examples are read-only — create_node(example=...) from it "
-                "first, then edit the resulting node",
+                unresolved_reason="examples are read-only — create_document(example=...) from it "
+                "first, then edit the resulting document",
             )
         if not target:
-            node_id = self._get_current_node_id()
+            document_id = self._get_current_document_id()
         else:
-            resolved = self._copilot_resolve_node_id(target)
+            resolved = self._copilot_resolve_document_id(target)
             if resolved is None:
                 return EditResult(
                     matches=0,
                     errors=[],
                     unresolved=True,
-                    unresolved_reason=f"no node with id '{target}' — use an id from the "
+                    unresolved_reason=f"no document with id '{target}' — use an id from the "
                     "project map",
                 )
-            node_id = resolved
-        if node_id not in self._get_ui_nodes():
+            document_id = resolved
+        if document_id not in self._get_ui_documents():
             return EditResult(
                 matches=0,
                 errors=[],
                 unresolved=True,
                 unresolved_reason="that shader no longer exists — check the project map for ids",
             )
-        ui_node = self._get_ui_nodes()[node_id]
-        short = self._copilot_short_ids().get(node_id, node_id[:NODE_SHORT_ID_LEN])
-        label = f"node '{ui_node.ui_state.ui_name}' ({short})"
+        ui_document = self._get_ui_documents()[document_id]
+        short = self._copilot_short_ids().get(
+            document_id, document_id[:DOCUMENT_SHORT_ID_LEN]
+        )
+        label = f"document '{ui_document.ui_state.ui_name}' ({short})"
         if not target:
-            label += " — target was empty, so this hit the CURRENT node"
-        node = ui_node.node
+            label += " — target was empty, so this hit the CURRENT document"
+        document = ui_document.document
         return _CopilotEditTarget(
-            kind="node",
-            node_id=node_id,
-            node=node,
-            source=node.render_pass.source.text,
-            ws_address=node_id,
+            kind="document",
+            document_id=document_id,
+            document=document,
+            source=document.render_pass.source.text,
+            ws_address=document_id,
             label=label,
         )
 
@@ -2031,35 +2090,39 @@ class CopilotBackend:
         # the "no standalone compile" note. On success the target joins the working set + is batch-mutated.
         # Model-supplied text is CRLF-normalized here, the seam every edit write flows through.
         new_text = new_text.replace("\r\n", "\n").replace("\r", "\n")
-        if tgt.kind == "node":
-            assert tgt.node is not None and tgt.node_id is not None
-            self._capture_node(tgt.node_id)  # pre-write rollback snapshot (best-effort)
+        if tgt.kind == "document":
+            assert tgt.document is not None and tgt.document_id is not None
+            self._capture_document(
+                tgt.document_id
+            )  # pre-write rollback snapshot (best-effort)
             # "Clean" requires a LIVE program: an invalidated compile_unit has
             # errors=[] without one (e.g. after a lib edit) and must not anchor.
             prev_clean = (
-                not tgt.node.render_pass.compile_unit.errors
-                and tgt.node.render_pass.program is not None
+                not tgt.document.render_pass.compile_unit.errors
+                and tgt.document.render_pass.program is not None
             )
-            errors = self._copilot_persist_shader(tgt.node_id, tgt.node, new_text)
+            errors = self._copilot_persist_shader(
+                tgt.document_id, tgt.document, new_text
+            )
             self._working_set_add(tgt.ws_address)
             self._batch_mutated.add(tgt.ws_address)
             if errors:
                 if prev_clean:
                     # A clean file just broke — this starts a NEW streak (anything
                     # earlier was already fixed, possibly outside the copilot).
-                    self._last_clean[tgt.node_id] = tgt.source
+                    self._last_clean[tgt.document_id] = tgt.source
                     streak = 1
                 else:
-                    streak = self._broken_streak.get(tgt.node_id, 0) + 1
-                self._broken_streak[tgt.node_id] = streak
+                    streak = self._broken_streak.get(tgt.document_id, 0) + 1
+                self._broken_streak[tgt.document_id] = streak
                 limit = COPILOT_CONFIG.auto_revert_after_failed_edits
                 hints = _edit_error_hints(
-                    tgt.node.render_pass.source.path, new_text, errors
+                    tgt.document.render_pass.source.path, new_text, errors
                 )
                 if limit > 0 and streak >= limit:
-                    if tgt.node_id in self._last_clean:
+                    if tgt.document_id in self._last_clean:
                         return self._force_restore(
-                            tgt.node_id, tgt.node, streak, matches
+                            tgt.document_id, tgt.document, streak, matches
                         )
                     hints = (
                         *hints,
@@ -2073,10 +2136,12 @@ class CopilotBackend:
                     error_hints=hints,
                     target_label=tgt.label,
                 )
-            self._broken_streak[tgt.node_id] = 0
-            self._last_clean[tgt.node_id] = new_text
-            facts = self._render_facts_for(tgt.node, motion=True, cache_key=tgt.node_id)
-            loop_note = self._oscillation_note(tgt.node_id, tgt.source, new_text)
+            self._broken_streak[tgt.document_id] = 0
+            self._last_clean[tgt.document_id] = new_text
+            facts = self._render_facts_for(
+                tgt.document, motion=True, cache_key=tgt.document_id
+            )
+            loop_note = self._oscillation_note(tgt.document_id, tgt.source, new_text)
             if loop_note:
                 facts = f"{facts}\n{loop_note}" if facts else loop_note
             return EditResult(
@@ -2103,14 +2168,14 @@ class CopilotBackend:
         verb = "created" if tgt.lib_create else "written"
         note = (
             f"library file {verb}; it has no standalone compile — errors will surface when a "
-            "node that calls the function recompiles. Edit (or read) a node that uses it to "
+            "document that calls the function recompiles. Edit (or read) a document that uses it to "
             "confirm it is valid."
         )
         opens, closes = parser.brace_counts(new_text)
         if opens != closes:
             note += (
                 f"\nwarning: the written file has {opens} '{{' vs {closes} '}}' — a brace "
-                "went missing; consumer nodes will fail to compile"
+                "went missing; consumer documents will fail to compile"
             )
         loop_note = self._oscillation_note(tgt.ws_address, tgt.source, new_text)
         if loop_note:
@@ -2118,20 +2183,20 @@ class CopilotBackend:
         return EditResult(matches=matches, errors=[], lib_note=note)
 
     def invalidate_lib_consumers(self, lib_path: Path) -> None:
-        # A lib edit leaves consumer nodes' source.text unchanged, so the next rebuild wouldn't recompile
-        # them — invalidate every working-set node that pulled in this lib so they recompile with the new
+        # A lib edit leaves consumer documents' source.text unchanged, so the next rebuild wouldn't recompile
+        # them — invalidate every working-set document that pulled in this lib so they recompile with the new
         # source. Match on the resolved path (the index's source paths aren't resolved; they diverge under
         # a symlinked SHADERBOX_DATA_DIR).
         target = lib_path.resolve()
         for address in self._working_set_reader():
-            node = self._get_ui_nodes().get(address)
-            if node is None:
+            document = self._get_ui_documents().get(address)
+            if document is None:
                 continue
             if any(
                 s.path.resolve() == target
-                for s in node.node.render_pass.compile_unit.sources
+                for s in document.document.render_pass.compile_unit.sources
             ):
-                node.node.render_pass.invalidate()
+                document.document.render_pass.invalidate()
 
     def apply_full_rewrite(self, new_text: str, target: str) -> EditResult:
         # Whole-file rewrite/create. The removed-names fact makes a truncated rewrite
@@ -2155,7 +2220,7 @@ class CopilotBackend:
             if opens != closes:
                 # Brace-broken text hides later definitions from the depth-0 scan — the
                 # note would claim still-present functions removed; the compile error +
-                # brace hint (node) / the lib brace warning (persist) cover it loudly.
+                # brace hint (document) / the lib brace warning (persist) cover it loudly.
                 return result
             old_fns, old_decls = parser.top_level_names(tgt.source)
             new_fns, new_decls = parser.top_level_names(new_text)

@@ -42,7 +42,7 @@ def test_enqueue_turn_resets_the_working_set(tmp_path: Path) -> None:
     try:
         sess.enqueue_turn("first")
         assert working_set == []
-        working_set.extend(["7f3a"])  # the turn touched a node
+        working_set.extend(["7f3a"])  # the turn touched a document
         sess.enqueue_turn("second")
         assert working_set == []
     finally:
@@ -64,7 +64,7 @@ def test_reset_clears_the_eviction_record_too() -> None:
 def test_add_seam_evicts_the_least_recently_touched() -> None:
     stub = _ws_stub()
     add = _add(stub)
-    cap = COPILOT_ENGINE.copilot_working_set_max_nodes
+    cap = COPILOT_ENGINE.copilot_working_set_max_documents
     names = [f"n{i}" for i in range(cap)]
     for name in names:
         add(name)
@@ -81,7 +81,7 @@ def test_a_re_added_member_leaves_the_eviction_record() -> None:
     # block, so claiming it was dropped would be a false statement on the model channel.
     stub = _ws_stub()
     add = _add(stub)
-    cap = COPILOT_ENGINE.copilot_working_set_max_nodes
+    cap = COPILOT_ENGINE.copilot_working_set_max_documents
     for i in range(cap + 1):
         add(f"n{i}")
     assert stub._copilot_working_set_evicted == ["n0"]
@@ -95,13 +95,13 @@ def test_zero_cap_means_uncapped() -> None:
     # just appended, so the working set would render nothing but "dropped" lines).
     stub = _ws_stub()
     add = _add(stub)
-    original = COPILOT_ENGINE.copilot_working_set_max_nodes
-    COPILOT_ENGINE.copilot_working_set_max_nodes = 0
+    original = COPILOT_ENGINE.copilot_working_set_max_documents
+    COPILOT_ENGINE.copilot_working_set_max_documents = 0
     try:
         for i in range(original + 4):
             add(f"n{i}")
     finally:
-        COPILOT_ENGINE.copilot_working_set_max_nodes = original
+        COPILOT_ENGINE.copilot_working_set_max_documents = original
     assert len(stub._copilot_working_set) == original + 4
     assert stub._copilot_working_set_evicted == []
 
@@ -111,7 +111,7 @@ def _read_working_set_stub(
 ) -> types.SimpleNamespace:
     # CopilotBackend.read_working_set bound onto a namespace: the view builders are stubbed, the
     # evicted-list bookkeeping under test is real.
-    def _node_view(full_id: str, short: dict[str, str], cur: str) -> Any:
+    def _document_view(full_id: str, short: dict[str, str], cur: str) -> Any:
         return types.SimpleNamespace(address=short.get(full_id, full_id[:4]))
 
     return types.SimpleNamespace(
@@ -119,11 +119,11 @@ def _read_working_set_stub(
             run_on_main=lambda fn, timeout=None, defer=False: fn()
         ),
         _copilot_short_ids=lambda: {m: m[:4] for m in [current, *members, *evicted]},
-        _get_current_node_id=lambda: current,
-        _get_ui_nodes=lambda: {m: object() for m in [current, *members]},
+        _get_current_document_id=lambda: current,
+        _get_ui_documents=lambda: {m: object() for m in [current, *members]},
         _working_set_reader=lambda: members,
         _working_set_evicted=lambda: evicted,
-        _copilot_node_working_view=_node_view,
+        _copilot_document_working_view=_document_view,
         _copilot_lib_working_view=lambda address: types.SimpleNamespace(
             address=address
         ),
@@ -142,7 +142,7 @@ def test_evicted_addresses_are_agent_facing_handles() -> None:
 
 
 def test_an_evicted_but_still_rendered_address_is_not_reported_dropped() -> None:
-    # The current node is unioned into the block unconditionally, so an evicted current node shows
+    # The current document is unioned into the block unconditionally, so an evicted current document shows
     # its FULL source — also calling it dropped would be a falsehood on the model channel.
     current = "7f3axxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
     stub = _read_working_set_stub(evicted=[current], current=current, members=[])
@@ -154,7 +154,7 @@ def test_an_evicted_but_still_rendered_address_is_not_reported_dropped() -> None
 def test_no_eviction_under_the_cap() -> None:
     stub = _ws_stub()
     add = _add(stub)
-    for i in range(COPILOT_ENGINE.copilot_working_set_max_nodes):
+    for i in range(COPILOT_ENGINE.copilot_working_set_max_documents):
         add(f"n{i}")
     add("n0")  # a re-touch is not a growth
     assert stub._copilot_working_set_evicted == []

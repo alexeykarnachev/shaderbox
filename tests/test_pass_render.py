@@ -2,8 +2,8 @@
 
 The point of the split is that the unit which owns a shader, a program, a target and a set of
 uniforms is constructible and drawable alone. Everything here builds a bare `Pass` — never a
-`Node` — so a document concern leaking back down into the pass fails these rather than passing
-because a `Node` happened to supply it.
+`Document` — so a document concern leaking back down into the pass fails these rather than passing
+because a `Document` happened to supply it.
 
 Needs a real GL context. On the display-less dev box use the EGL backend + the MESA version
 overrides (set at process top, read at context creation); skips cleanly if no context is available.

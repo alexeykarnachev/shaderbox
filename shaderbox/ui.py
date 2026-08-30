@@ -17,7 +17,7 @@ from shaderbox.constants import (
     MEDIA_EXTENSIONS,
     STARTER_EXAMPLE_ID,
 )
-from shaderbox.copilot.capabilities import MediaBindResult, NodeImportResult
+from shaderbox.copilot.capabilities import DocumentImportResult, MediaBindResult
 from shaderbox.copilot.gate import GateResponse
 from shaderbox.hotkeys import dispatch_commands, process_hotkeys
 from shaderbox.logging_setup import configure_logging
@@ -29,7 +29,7 @@ from shaderbox.popups.lib_picker import draw_lib_picker
 from shaderbox.popups.settings import draw_settings
 from shaderbox.scripting import MouseState
 from shaderbox.tabs import code as code_tab
-from shaderbox.tabs import node as node_tab
+from shaderbox.tabs import document as document_tab
 from shaderbox.tabs import render as render_tab
 from shaderbox.tabs import share as share_tab
 from shaderbox.theme import COLOR, SIZE, SPACE
@@ -40,11 +40,11 @@ from shaderbox.ui_primitives import (
     rendering_overlay,
     toggle_button,
 )
-from shaderbox.ui_regions import ActiveRegion, NodeTab
+from shaderbox.ui_regions import ActiveRegion, DocumentTab
 from shaderbox.util import adjust_size
-from shaderbox.watch import maybe_rebuild_lib_index, reload_node_if_changed
+from shaderbox.watch import maybe_rebuild_lib_index, reload_document_if_changed
 from shaderbox.widgets import cheatsheet, copilot_chat
-from shaderbox.widgets.node_grid import draw_node_preview_grid
+from shaderbox.widgets.document_grid import draw_document_preview_grid
 
 _FONT_14_SIZE = 14.0
 _FONT_18_SIZE = 18.0
@@ -110,16 +110,18 @@ def _pump_file_gate(app: App) -> None:
     if not gate.file_gate_active():
         return  # cancelled between .ready() and here — drop the pick, no bind
     picked_path = Path(picked[0]) if picked else None
-    if req.file_action == "import_node":
+    if req.file_action == "import_document":
         result = (
-            app.copilot_backend.import_picked_node(picked_path, req.switch_to)
+            app.copilot_backend.import_picked_document(picked_path, req.switch_to)
             if picked_path is not None
-            else NodeImportResult(cancelled=True)
+            else DocumentImportResult(cancelled=True)
         )
         gate.answer_file(GateResponse(import_result=result))
     else:
         outcome = (
-            app.copilot_backend.bind_picked_media(req.node_id, req.uniform, picked_path)
+            app.copilot_backend.bind_picked_media(
+                req.document_id, req.uniform, picked_path
+            )
             if picked_path is not None
             else MediaBindResult(cancelled=True)
         )
@@ -154,25 +156,25 @@ def update_and_draw(app: App) -> None:
 
     # ----------------------------------------------------------------
     # Run any GL ops the copilot worker is blocked on (worker->main bridge), EARLY so a
-    # freshly recompiled node renders this same frame.
+    # freshly recompiled document renders this same frame.
     try:
         app.copilot.drain_bridge()
     except Exception as e:
         logger.exception(f"Error draining copilot bridge: {e}")
 
     # ----------------------------------------------------------------
-    # Reconcile ui_nodes to disk: pick up node dirs added/removed/edited externally. Skipped while a
-    # copilot turn is in flight — the worker is mutating nodes/node.json on its own thread, so a sync
-    # here would race its writes (it rebaselines via save_ui_node; the post-turn frame syncs the rest).
+    # Reconcile ui_documents to disk: pick up document dirs added/removed/edited externally. Skipped while a
+    # copilot turn is in flight — the worker is mutating documents/document.json on its own thread, so a sync
+    # here would race its writes (it rebaselines via save_ui_document; the post-turn frame syncs the rest).
     if not app.copilot.state.in_flight:
-        app.session.sync_nodes_from_disk()
+        app.session.sync_documents_from_disk()
 
     # ----------------------------------------------------------------
-    # Check for per-node shader file changes (root + every prepended lib file).
-    for name in list(app.ui_nodes.keys()):
-        ui_node = app.ui_nodes[name]
-        if not ui_node.node.render_pass.source.path.exists():
-            # Degenerate frame (a node's shader file vanished): nothing draws/swaps, so the cue
+    # Check for per-document shader file changes (root + every prepended lib file).
+    for name in list(app.ui_documents.keys()):
+        ui_document = app.ui_documents[name]
+        if not ui_document.document.render_pass.source.path.exists():
+            # Degenerate frame (a document's shader file vanished): nothing draws/swaps, so the cue
             # can't paint — but a parked copilot render must still fire to unblock its waiting
             # worker, or the turn stalls until the op times out.
             app.copilot.bridge.run_deferred_render()
@@ -180,13 +182,13 @@ def update_and_draw(app: App) -> None:
             # the file is missing — process_hotkeys (the normal poll_events site) is past the return.
             glfw.poll_events()
             return
-        reload_node_if_changed(app, name, ui_node)
+        reload_document_if_changed(app, name, ui_document)
 
     # ----------------------------------------------------------------
     # Tick the CPU-script engine (feature 040) BEFORE render: hot-reload changed scripts, then
-    # compute scripted uniform values for exactly the nodes this frame renders — the current
-    # node's preview renders unconditionally (above), and the node-render block renders all nodes
-    # when is_render_all_nodes or frame_idx==0 (and no popup). Matching that set keeps a scripted
+    # compute scripted uniform values for exactly the documents this frame renders — the current
+    # document's preview renders unconditionally (above), and the document-render block renders all documents
+    # when is_render_all_documents or frame_idx==0 (and no popup). Matching that set keeps a scripted
     # uniform animating identically live and in export.
     app.session.reload_scripts()
     now = glfw.get_time()
@@ -196,27 +198,29 @@ def update_and_draw(app: App) -> None:
         else 1.0 / app.app_state.global_target_fps
     )
     app.last_tick_time = now
-    tick_nodes = [app.current_node_id] if app.current_node_id in app.ui_nodes else []
-    renders_all = app.app_state.is_render_all_nodes or app.frame_idx == 0
+    tick_documents = (
+        [app.current_document_id] if app.current_document_id in app.ui_documents else []
+    )
+    renders_all = app.app_state.is_render_all_documents or app.frame_idx == 0
     if not app.any_popup_open() and renders_all:
-        tick_nodes = list(app.ui_nodes.keys())
-    app.session.tick(tick_nodes, now, dt, app.frame_idx, mouse=app.script_mouse)
-    # Advance feedback history ONCE per frame, over the same node set the tick covers. A
+        tick_documents = list(app.ui_documents.keys())
+    app.session.tick(tick_documents, now, dt, app.frame_idx, mouse=app.script_mouse)
+    # Advance feedback history ONCE per frame, over the same document set the tick covers. A
     # document is drawn twice per frame below (preview + own canvas), so a swap inside render()
     # would advance a feedback pass at 2x.
-    for node_id in tick_nodes:
-        app.ui_nodes[node_id].node.begin_frame(app.frame_idx)
+    for document_id in tick_documents:
+        app.ui_documents[document_id].document.begin_frame(app.frame_idx)
 
     # ----------------------------------------------------------------
     # Render previews
-    if app.current_node_id in app.ui_nodes:
-        ui_node = app.ui_nodes[app.current_node_id]
+    if app.current_document_id in app.ui_documents:
+        ui_document = app.ui_documents[app.current_document_id]
         preview_size = adjust_size(
-            ui_node.node.render_pass.canvas.texture.size, width=SIZE.PREVIEW_W
+            ui_document.document.render_pass.canvas.texture.size, width=SIZE.PREVIEW_W
         )
 
         app.preview_canvas.set_size(preview_size)
-        ui_node.node.render(canvas=app.preview_canvas)
+        ui_document.document.render(canvas=app.preview_canvas)
 
         try:
             share_tab.update(app)
@@ -241,18 +245,18 @@ def update_and_draw(app: App) -> None:
     app.reconcile_popup_focus()
 
     # ----------------------------------------------------------------
-    # Render nodes
+    # Render documents
     if not app.any_popup_open():
-        for ui_node in app.ui_nodes.values():
+        for ui_document in app.ui_documents.values():
             if (
-                app.app_state.is_render_all_nodes
-                or ui_node == app.ui_nodes.get(app.current_node_id)
+                app.app_state.is_render_all_documents
+                or ui_document == app.ui_documents.get(app.current_document_id)
                 or app.frame_idx == 0
             ):
-                ui_node.node.render()
+                ui_document.document.render()
     elif app.popup_state == PopupState.EXAMPLES:
-        for ui_node in app.ui_node_examples.values():
-            ui_node.node.render()
+        for ui_document in app.ui_document_examples.values():
+            ui_document.document.render()
 
     # ----------------------------------------------------------------
     # Process hotkeys
@@ -439,10 +443,10 @@ def _draw_menu_bar(app: App) -> None:
             return
         with imgui_ctx.begin_menu("File") as file_menu:
             if file_menu:
-                if imgui.menu_item("New node", _hint(app, CommandId.NEW_NODE), False)[
-                    0
-                ]:
-                    app.create_node_from_example(STARTER_EXAMPLE_ID)
+                if imgui.menu_item(
+                    "New document", _hint(app, CommandId.NEW_DOCUMENT), False
+                )[0]:
+                    app.create_document_from_example(STARTER_EXAMPLE_ID)
                 if imgui.menu_item(
                     "Open project...", _hint(app, CommandId.OPEN_PROJECT), False
                 )[0]:
@@ -506,11 +510,11 @@ def _draw_app_panel(app: App) -> None:
     control_panel_min_height = SIZE.PANEL_CTRL_MINH
 
     # ----------------------------------------------------------------
-    # Current node image
+    # Current document image
     cursor_pos = imgui.get_cursor_screen_pos()
 
-    if app.current_node_id in app.ui_nodes:
-        ui_node = app.ui_nodes[app.current_node_id]
+    if app.current_document_id in app.ui_documents:
+        ui_document = app.ui_documents[app.current_document_id]
         min_image_height = 100
         avail = imgui.get_content_region_avail()
         max_image_height = max(
@@ -518,7 +522,7 @@ def _draw_app_panel(app: App) -> None:
             avail.y - control_panel_min_height - 10,
         )
         max_image_width = avail.x
-        image_aspect = np.divide(*ui_node.node.render_pass.canvas.texture.size)
+        image_aspect = np.divide(*ui_document.document.render_pass.canvas.texture.size)
         image_width = min(max_image_width, max_image_height * image_aspect)
         image_height = min(max_image_height, max_image_width / image_aspect)
 
@@ -526,7 +530,7 @@ def _draw_app_panel(app: App) -> None:
         # surfaces in the editor pane strip.
         img_min = imgui.get_cursor_screen_pos()
         imgui.image_with_bg(
-            imgui.ImTextureRef(ui_node.node.render_pass.canvas.texture.glo),
+            imgui.ImTextureRef(ui_document.document.render_pass.canvas.texture.glo),
             image_size=(image_width, image_height),
             uv0=(0, 1),
             uv1=(1, 0),
@@ -541,15 +545,15 @@ def _draw_app_panel(app: App) -> None:
         if hit is not None and hit[2]:
             app.script_mouse = MouseState(hit[0], hit[1])
     else:
-        # Same height budget as the with-node branch (incl. its gap slack) — an
+        # Same height budget as the with-document branch (incl. its gap slack) — an
         # oversized empty-state area overflows the panel into a phantom scrollbar.
         avail = imgui.get_content_region_avail()
         image_width = avail.x
         image_height = max(avail.y - control_panel_min_height - 10, 100)
 
         message = (
-            f"To create a new node, press "
-            f"{chord_to_str(app.effective_bindings[CommandId.NEW_NODE])}"
+            f"To create a new document, press "
+            f"{chord_to_str(app.effective_bindings[CommandId.NEW_DOCUMENT])}"
         )
         text_size = imgui.calc_text_size(message)
         text_x = cursor_pos.x + (image_width - text_size.x) / 2
@@ -562,7 +566,7 @@ def _draw_app_panel(app: App) -> None:
             message,
         )
 
-    if app.current_node_id in app.ui_nodes:
+    if app.current_document_id in app.ui_documents:
         app.fps_details_open = fps_overlay(
             anchor_x=cursor_pos.x + image_width,
             anchor_y=cursor_pos.y,
@@ -584,36 +588,38 @@ def _draw_app_panel(app: App) -> None:
         "control_panel",
         size=imgui.ImVec2(control_panel_width, control_panel_height),
     ):
-        node_preview_width = control_panel_width / 2.6
-        draw_node_preview_grid(app, node_preview_width, control_panel_height)
+        document_preview_width = control_panel_width / 2.6
+        draw_document_preview_grid(app, document_preview_width, control_panel_height)
         imgui.same_line()
         try:
-            _draw_node_settings(app)
+            _draw_document_settings(app)
         except Exception as e:
-            logger.error(f"Error in node settings: {e}")
+            logger.error(f"Error in document settings: {e}")
             app.notifications.push(
-                f"Error in node settings: {e!s}", COLOR.STATE_ERROR[:3]
+                f"Error in document settings: {e!s}", COLOR.STATE_ERROR[:3]
             )
 
 
-_NODE_TABS: list[tuple[str, NodeTab, Callable[[App], None]]] = [
-    ("Node", NodeTab.NODE, node_tab.draw),
-    ("Render", NodeTab.RENDER, render_tab.draw),
-    ("Share", NodeTab.SHARE, share_tab.draw),
+_NODE_TABS: list[tuple[str, DocumentTab, Callable[[App], None]]] = [
+    ("Document", DocumentTab.DOCUMENT, document_tab.draw),
+    ("Render", DocumentTab.RENDER, render_tab.draw),
+    ("Share", DocumentTab.SHARE, share_tab.draw),
 ]
 
 
-def _draw_node_settings(app: App) -> None:
+def _draw_document_settings(app: App) -> None:
     panel_active = app.active_region == ActiveRegion.PANEL
     # Consume region_focus_pending only when this region is active — clearing it
     # unconditionally would eat a request the grid set later this same frame.
     focus_panel = app.region_focus_pending and panel_active
     if focus_panel:
         app.region_focus_pending = False
-    # Capture the jump target NOW — the loop rewrites active_node_tab from the visible tab,
+    # Capture the jump target NOW — the loop rewrites active_document_tab from the visible tab,
     # which would clobber the target before set_selected reads it (takes effect next frame).
-    tab_select_target = app.active_node_tab if app.node_tab_select_pending else None
-    app.node_tab_select_pending = False
+    tab_select_target = (
+        app.active_document_tab if app.document_tab_select_pending else None
+    )
+    app.document_tab_select_pending = False
 
     if focus_panel:
         imgui.set_next_window_focus()
@@ -621,7 +627,7 @@ def _draw_node_settings(app: App) -> None:
         imgui.WindowFlags_.none if panel_active else imgui.WindowFlags_.no_nav_inputs
     )
     with imgui_ctx.begin_child(
-        "node_settings",
+        "document_settings",
         child_flags=imgui.ChildFlags_.borders,
         window_flags=panel_flags,
     ):
@@ -633,9 +639,9 @@ def _draw_node_settings(app: App) -> None:
             app.active_region = ActiveRegion.PANEL
         if app.region_outline_visible(ActiveRegion.PANEL):
             active_region_outline()
-        with imgui_ctx.begin_tab_bar("node_settings_tabs") as bar:
+        with imgui_ctx.begin_tab_bar("document_settings_tabs") as bar:
             if bar:
-                visible_tab = app.active_node_tab
+                visible_tab = app.active_document_tab
                 for label, tab_id, draw_tab in _NODE_TABS:
                     # set_selected drives the tab the frame after a Ctrl+digit jump.
                     flags = (
@@ -649,7 +655,7 @@ def _draw_node_settings(app: App) -> None:
                             draw_tab(app)
                 # Commit the visible tab after the loop so the mid-loop write can't
                 # clobber the jump target read above.
-                app.active_node_tab = visible_tab
+                app.active_document_tab = visible_tab
 
 
 def main() -> None:

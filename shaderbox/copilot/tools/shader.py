@@ -17,17 +17,17 @@ from shaderbox.copilot.tools.base import GatePolicy, ToolArgs, ToolDefinition
 
 
 class _ReadShaderArgs(ToolArgs):
-    nodes: list[str] = Field(
+    documents: list[str] = Field(
         default_factory=list,
-        description="node ids (from the project map) and/or lib: addresses (from the "
+        description="document ids (from the project map) and/or lib: addresses (from the "
         "catalogue or grep) to read; empty = the shader you are currently working on. "
         "NEVER means 'all'.",
     )
 
 
 _TARGET_DESC = (
-    "what to edit: empty = the shader you're currently working on; a node id (from the "
-    "project map) = that node; a 'lib:<path>' address (from the library catalogue) = that "
+    "what to edit: empty = the shader you're currently working on; a document id (from the "
+    "project map) = that document; a 'lib:<path>' address (from the library catalogue) = that "
     "library file"
 )
 
@@ -64,14 +64,14 @@ class _SetUniformArgs(ToolArgs):
         "the user has in the UI). To change displayed TEXT, set the text uniform with a string — "
         "do NOT edit the source (a uniform can't be default-initialized)."
     )
-    node: str = Field(
+    document: str = Field(
         default="",
-        description="node id (from the project map); empty = the node you're working on",
+        description="document id (from the project map); empty = the document you're working on",
     )
 
 
-class _CreateNodeArgs(ToolArgs):
-    name: str = Field(description="a display name for the new node")
+class _CreateDocumentArgs(ToolArgs):
+    name: str = Field(description="a display name for the new document")
     example: str = Field(
         default="",
         description="an example: handle from the EXAMPLE LIBRARY to start from (e.g. for a "
@@ -85,14 +85,14 @@ class _CreateNodeArgs(ToolArgs):
     )
     switch_to: bool = Field(
         default=True,
-        description="switch the user's view to the new node (true), or create it in the "
+        description="switch the user's view to the new document (true), or create it in the "
         "background and keep editing via its returned id (false)",
     )
 
 
 class _GrepArgs(ToolArgs):
     query: str = Field(
-        description="substring to find across every node's source and the library"
+        description="substring to find across every document's source and the library"
     )
 
 
@@ -102,16 +102,16 @@ class _ReadLibArgs(ToolArgs):
     )
 
 
-class _DeleteNodeArgs(ToolArgs):
-    node: str = Field(
-        description="node id (from the project map) to delete — REQUIRED, never empty "
-        "(deleting is destructive, so the target must be explicit, not the current node)"
+class _DeleteDocumentArgs(ToolArgs):
+    document: str = Field(
+        description="document id (from the project map) to delete — REQUIRED, never empty "
+        "(deleting is destructive, so the target must be explicit, not the current document)"
     )
 
 
-class _SwitchNodeArgs(ToolArgs):
-    node: str = Field(
-        description="node id (from the project map) to make the current shader — REQUIRED"
+class _SwitchDocumentArgs(ToolArgs):
+    document: str = Field(
+        description="document id (from the project map) to make the current shader — REQUIRED"
     )
 
 
@@ -123,12 +123,12 @@ class _DeleteLibFileArgs(ToolArgs):
 
 
 _READ_SHADER_DESC = (
-    "Bring shader nodes into your WORKING SET — their full live source (line-numbered), uniforms, "
+    "Bring shader documents into your WORKING SET — their full live source (line-numbered), uniforms, "
     "and compile errors then appear in the working-set block at the bottom of the conversation, "
-    "rebuilt every step with CURRENT line numbers. Pass a list of node ids to add several at once "
+    "rebuilt every step with CURRENT line numbers. Pass a list of document ids to add several at once "
     "(e.g. to compare two shaders); a `lib:` address reads that library file whole the same way; "
-    "leave nodes empty for the node you are currently working on (it is already in your working "
-    "set). Use this to add a DIFFERENT node before editing it. The node you are currently working "
+    "leave documents empty for the document you are currently working on (it is already in your working "
+    "set). Use this to add a DIFFERENT document before editing it. The document you are currently working "
     "on needs no read before you edit it — its source is already in the working set. You cannot "
     "see the rendered image — never claim a visual result."
 )
@@ -159,28 +159,28 @@ _WRITE_SHADER_DESC = (
 
 _SET_UNIFORM_DESC = (
     "Change a uniform's runtime VALUE — for tweaking a number/vector the user controls live "
-    "(brightness, speed, a color), WITHOUT editing code. Read the node first so you know the "
+    "(brightness, speed, a color), WITHOUT editing code. Read the document first so you know the "
     "uniform's type and current value. Only scalar and vector uniforms can be set; samplers, "
     "uniform blocks, and engine-driven uniforms (u_time, u_aspect, u_resolution) cannot. A "
-    "SCRIPT-DRIVEN uniform also cannot be set — the node script (script.py) overwrites it every "
+    "SCRIPT-DRIVEN uniform also cannot be set — the document script (script.py) overwrites it every "
     "tick; change it in write_script instead. To change the shader's LOGIC, or to add/remove a "
     "uniform, edit the SOURCE instead. The value is in memory until the user saves the project; "
     "you cannot see the result — report the value you set, not how it looks."
 )
 
 _CREATE_NODE_DESC = (
-    "Create a new shader node, then compile it and return the result — compile errors at their "
+    "Create a new shader document, then compile it and return the result — compile errors at their "
     "exact line, or that it compiled clean (same feedback as an edit). Leave source empty for a "
     "ready-made starter shader you then edit; or pass full GLSL (follow the project shader "
-    "conventions so it compiles). By default the new node becomes the user's active node (so a "
+    "conventions so it compiles). By default the new document becomes the user's active document (so a "
     "follow-up edit with no target lands on it); pass switch_to=false to create it in the "
-    "background and edit it via the node id this returns. Returns the new node's id and its "
+    "background and edit it via the document id this returns. Returns the new document's id and its "
     "compile result."
 )
 
 _GREP_DESC = (
-    "Find where a substring occurs across every shader node and the whole library. Returns "
-    "origin-labeled file:line hits (a node id, or a lib: address). Use it to LOCATE something "
+    "Find where a substring occurs across every shader document and the whole library. Returns "
+    "origin-labeled file:line hits (a document id, or a lib: address). Use it to LOCATE something "
     "(e.g. which shaders use u_time, or where a helper is called); then read_shader / read_lib "
     "to read the full thing. Substring match (a comment can match too)."
 )
@@ -192,17 +192,17 @@ _READ_LIB_DESC = (
 )
 
 _DELETE_NODE_DESC = (
-    "Delete a shader node. Pass the node id (from the project map) — required, never empty. "
+    "Delete a shader document. Pass the document id (from the project map) — required, never empty. "
     "This is destructive, so the user is shown a Yes/No confirmation before it happens; if they "
-    "decline you'll get 'user declined' and should stop and explain. The node moves to the project "
+    "decline you'll get 'user declined' and should stop and explain. The document moves to the project "
     "trash and the user can recover it, so reassure them it's not permanently lost. After a delete "
-    "the node is gone from the project map; do not read or edit it again."
+    "the document is gone from the project map; do not read or edit it again."
 )
 
 _SWITCH_NODE_DESC = (
-    "Make a node the CURRENT shader (the one the user is viewing). The publish and render tools, "
+    "Make a document the CURRENT shader (the one the user is viewing). The publish and render tools, "
     "and edits with no target, all act on the current shader — so to publish/render a DIFFERENT "
-    "node, switch to it first. Pass the node id from the project map. Non-destructive: the user's "
+    "document, switch to it first. Pass the document id from the project map. Non-destructive: the user's "
     "view switches to it."
 )
 
@@ -211,7 +211,7 @@ def _view_summary(view: ShaderView) -> str:
     # The terse chat line for a read: name + size + uniform count + compile state (the full
     # listing goes to the agent's context, not the chat).
     lines = view.listing.count("\n") + 1 if view.listing else 0
-    if is_lib_address(view.node_id):
+    if is_lib_address(view.document_id):
         return (
             f"read {view.name} — {lines} lines (library file — no standalone compile)"
         )
@@ -224,7 +224,7 @@ def _format_hits(hits: list[GrepHit]) -> str:
 
 
 def _unresolved_result(result: EditResult) -> tuple[bool, str, None] | None:
-    # An unresolvable reject (bad node id / lib path, read-only example, failed lib write,
+    # An unresolvable reject (bad document id / lib path, read-only example, failed lib write,
     # intra-batch rewrite guard). Counts toward the edit-retry cap.
     if result.unresolved:
         msg = f"error: {result.unresolved_reason}"
@@ -264,25 +264,25 @@ def _applied_result(result: EditResult) -> tuple[bool, str, dict]:
 
 def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
     def read_shader(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
-        # nodes are short ids from the project map; [] = current node (resolved App-side). The
-        # read ADDS each node to the working set, whose per-turn scratchpad carries the full
+        # documents are short ids from the project map; [] = current document (resolved App-side). The
+        # read ADDS each document to the working set, whose per-turn scratchpad carries the full
         # source — so the agent body is a short confirmation + compile errors, not the listing.
-        node_ids: list[str] = list(args["nodes"])
-        views = caps.read_shaders(node_ids)
+        document_ids: list[str] = list(args["documents"])
+        views = caps.read_shaders(document_ids)
         if not views:
             return (
                 False,
-                "error: no such node(s) — check the project map for ids "
+                "error: no such document(s) — check the project map for ids "
                 "(library files: a lib: address from the catalogue or grep)",
                 None,
             )
         # A handle is "found" if it matches a returned view's SHORT id under the resolver's
         # prefix rule (either is a prefix of the other) — a direct compare would mis-report a
         # full-id/long-prefix read as missing.
-        short_ids = [v.node_id for v in views]
+        short_ids = [v.document_id for v in views]
         missing = [
             nid
-            for nid in node_ids
+            for nid in document_ids
             if not any(s.startswith(nid) or nid.startswith(s) for s in short_ids)
         ]
         names = ", ".join(v.name for v in views)
@@ -290,14 +290,14 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             f"added to your working set: {names} (their live source is shown below). "
         )
         # Lib views carry no compile (errors=[] by construction) — kept OUT of the
-        # compiled-clean claim, which covers nodes only.
-        node_views = [v for v in views if not is_lib_address(v.node_id)]
-        lib_views = [v for v in views if is_lib_address(v.node_id)]
-        all_errors = [e for v in node_views for e in v.errors]
+        # compiled-clean claim, which covers documents only.
+        document_views = [v for v in views if not is_lib_address(v.document_id)]
+        lib_views = [v for v in views if is_lib_address(v.document_id)]
+        all_errors = [e for v in document_views for e in v.errors]
         states: list[str] = []
         if all_errors:
             states.append("compile errors:\n" + format_compile_errors(all_errors))
-        elif node_views:
+        elif document_views:
             states.append("all compiled clean.")
         if lib_views:
             lib_names = ", ".join(v.name for v in lib_views)
@@ -305,10 +305,10 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             states.append(f"({lib_names}: {kind} — no standalone compile)")
         body += " ".join(states)
         if missing:
-            body += f"\n(no node found for: {', '.join(missing)})"
+            body += f"\n(no document found for: {', '.join(missing)})"
         payload = {
             "errors": [e.__dict__ for e in all_errors],
-            "read": [v.node_id for v in views],
+            "read": [v.document_id for v in views],
             "display": "\n".join(_view_summary(v) for v in views),
         }
         return True, body, payload
@@ -356,7 +356,7 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
         return _applied_result(result)
 
     def set_uniform(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
-        result = caps.set_uniform(args["name"], args["value"], args["node"])
+        result = caps.set_uniform(args["name"], args["value"], args["document"])
         if not result.ok:
             return False, f"error: {result.error}", None
         msg = (
@@ -367,12 +367,12 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             msg += "\n" + result.render_facts
         return True, msg, None
 
-    def create_node(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
-        node_id, errors, extra = caps.create_node(
+    def create_document(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
+        document_id, errors, extra = caps.create_document(
             args["name"], args["source"], args["example"], args["switch_to"]
         )
         where = "now active" if args["switch_to"] else "in the background"
-        # success stays True even with compile errors — the node IS created; the agent reads
+        # success stays True even with compile errors — the document IS created; the agent reads
         # the errors and fixes them with an edit.
         status = (
             "compiled with errors:\n" + format_compile_errors(errors)
@@ -380,7 +380,7 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             else "compiled clean"
         )
         body = (
-            f"created node '{args['name']}' (id: {node_id}), {where} — {status}. "
+            f"created document '{args['name']}' (id: {document_id}), {where} — {status}. "
             "Its source is already in your working set below — edit it directly."
         )
         if extra:
@@ -388,7 +388,7 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
         return (
             True,
             body,
-            {"created": node_id, "errors": [e.__dict__ for e in errors]},
+            {"created": document_id, "errors": [e.__dict__ for e in errors]},
         )
 
     def grep(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
@@ -414,52 +414,52 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             body += f"\n\n(no function found for: {', '.join(missing)})"
         return True, body, {"read": list(found)}
 
-    def _resolve_node_name(node: str) -> str | None:
-        # NAME for a node handle via the project map. None = no match OR an ambiguous one.
+    def _resolve_document_name(document: str) -> str | None:
+        # NAME for a document handle via the project map. None = no match OR an ambiguous one.
         # The uniqueness rule mirrors the backend's resolver: this name goes in the delete
         # gate while the backend re-resolves the raw handle to decide what actually dies, so
-        # a handle the backend would refuse must not reach a confirm dialog naming a node.
-        # The match stays bidirectional — node_tree carries SHORT ids, so a full-uuid handle
-        # only meets its row via `node.startswith(e.node_id)`.
-        # GL-free + worker-safe (node_tree is the per-iteration context read).
+        # a handle the backend would refuse must not reach a confirm dialog naming a document.
+        # The match stays bidirectional — document_tree carries SHORT ids, so a full-uuid handle
+        # only meets its row via `document.startswith(e.document_id)`.
+        # GL-free + worker-safe (document_tree is the per-iteration context read).
         matches = [
             e
-            for e in caps.node_tree()
-            if e.node_id.startswith(node) or node.startswith(e.node_id)
+            for e in caps.document_tree()
+            if e.document_id.startswith(document) or document.startswith(e.document_id)
         ]
         return matches[0].name if len(matches) == 1 else None
 
-    def _node_display(node: str) -> str:
+    def _document_display(document: str) -> str:
         # Gate-prompt display name; falls back to the raw arg — a wrong id still shows the user
         # what was asked.
-        if not node:
+        if not document:
             return "?"
-        return _resolve_node_name(node) or node
+        return _resolve_document_name(document) or document
 
     def delete_precheck(args: dict[str, Any]) -> str | None:
-        # Fail fast BEFORE the always-gate when the target is empty or resolves to no node, so the
-        # user never confirms a "Delete node `?`" that then errors in the handler.
-        node = str(args.get("node", ""))
-        if not node:
+        # Fail fast BEFORE the always-gate when the target is empty or resolves to no document, so the
+        # user never confirms a "Delete document `?`" that then errors in the handler.
+        document = str(args.get("document", ""))
+        if not document:
             return (
-                "delete_node needs a node id from the project map — it was empty. Name the "
-                "node to delete."
+                "delete_document needs a document id from the project map — it was empty. Name the "
+                "document to delete."
             )
-        if _resolve_node_name(node) is None:
-            return f"no node `{node}` in the project map to delete — check the map for the id."
+        if _resolve_document_name(document) is None:
+            return f"no document `{document}` in the project map to delete — check the map for the id."
         return None
 
-    def delete_node(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
+    def delete_document(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
         # The gate (GatePolicy.ALWAYS) has already cleared a user Yes by the time this runs.
-        # payload carries node_id + trash_name for the chat's Recover affordance.
-        result = caps.delete_node(args["node"])
+        # payload carries document_id + trash_name for the chat's Recover affordance.
+        result = caps.delete_document(args["document"])
         if not result.ok:
             return False, f"error: {result.error}", None
         return (
             True,
-            f"deleted node '{result.deleted_name}' — moved to the project trash (recoverable)",
+            f"deleted document '{result.deleted_name}' — moved to the project trash (recoverable)",
             {
-                "node_id": result.node_id,
+                "document_id": result.document_id,
                 "trash_name": result.trash_name,
                 "deleted_name": result.deleted_name,
             },
@@ -473,19 +473,19 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
         return (
             True,
             f"deleted library file '{args['path']}' — moved to the shader-lib trash "
-            "(recoverable). Nodes calling its functions will show a compile error next step.",
+            "(recoverable). Documents calling its functions will show a compile error next step.",
             None,
         )
 
-    def switch_node(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
-        result = caps.switch_node(args["node"])
+    def switch_document(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
+        result = caps.switch_document(args["document"])
         if not result.ok:
             return False, f"error: {result.error}", None
         return (
             True,
             f"switched the current shader to '{result.name}'. Publish/render/edits with no "
             "target now act on it.",
-            {"switched": args["node"]},
+            {"switched": args["document"]},
         )
 
     return [
@@ -536,12 +536,12 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             gate_policy=GatePolicy.NONE,
         ),
         ToolDefinition(
-            name="create_node",
-            label_live="Creating node",
-            label_done="Created node",
+            name="create_document",
+            label_live="Creating document",
+            label_done="Created document",
             description=_CREATE_NODE_DESC,
-            args_model=_CreateNodeArgs,
-            handler=create_node,
+            args_model=_CreateDocumentArgs,
+            handler=create_document,
             mutating=True,
             eager=True,
             gate_policy=GatePolicy.NONE,
@@ -569,25 +569,27 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             gate_policy=GatePolicy.NONE,
         ),
         ToolDefinition(
-            name="delete_node",
-            label_live="Deleting node",
-            label_done="Deleted node",
+            name="delete_document",
+            label_live="Deleting document",
+            label_done="Deleted document",
             description=_DELETE_NODE_DESC,
-            args_model=_DeleteNodeArgs,
-            handler=delete_node,
+            args_model=_DeleteDocumentArgs,
+            handler=delete_document,
             mutating=True,
             eager=True,
             gate_policy=GatePolicy.ALWAYS,
-            gate_prompt=lambda a: f"Delete node `{_node_display(a.get('node', ''))}`?",
+            gate_prompt=lambda a: (
+                f"Delete document `{_document_display(a.get('document', ''))}`?"
+            ),
             precheck=delete_precheck,
         ),
         ToolDefinition(
-            name="switch_node",
-            label_live="Switching node",
-            label_done="Switched node",
+            name="switch_document",
+            label_live="Switching document",
+            label_done="Switched document",
             description=_SWITCH_NODE_DESC,
-            args_model=_SwitchNodeArgs,
-            handler=switch_node,
+            args_model=_SwitchDocumentArgs,
+            handler=switch_document,
             mutating=False,
             eager=True,
             gate_policy=GatePolicy.NONE,
@@ -598,7 +600,7 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             label_done="Deleted library file",
             description=(
                 "Delete a shader-LIBRARY FILE (a 'lib:<path>' address) to the shader-lib trash "
-                "(recoverable). Destructive + always confirmed. Nodes calling its SB_* functions "
+                "(recoverable). Destructive + always confirmed. Documents calling its SB_* functions "
                 "recompile with a missing-function error afterwards."
             ),
             args_model=_DeleteLibFileArgs,

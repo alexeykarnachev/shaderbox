@@ -12,7 +12,7 @@ import moderngl
 import pytest
 from PIL import Image as PILImage
 
-from shaderbox.constants import NODE_EXAMPLES_DIR, STARTER_EXAMPLE_ID
+from shaderbox.constants import DOCUMENT_EXAMPLES_DIR, STARTER_EXAMPLE_ID
 from shaderbox.copilot.backend import CopilotBackend
 from shaderbox.copilot.capabilities import MediaBindResult
 from shaderbox.copilot.gate import (
@@ -22,9 +22,9 @@ from shaderbox.copilot.gate import (
     GateResponse,
 )
 from shaderbox.copilot.tools.registry import build_registry
-from shaderbox.document import Node
+from shaderbox.document import Document
 from shaderbox.media import is_default_image
-from shaderbox.ui_models import UINode
+from shaderbox.ui_models import UIDocument
 from tests._caps import minimal_caps
 
 _SAMPLER_SRC = """#version 460 core
@@ -53,13 +53,15 @@ def test_file_gate_slot_roundtrip() -> None:
 
     def worker() -> None:
         out["r"] = gate.ask_file(
-            GateRequest(kind=GateKind.FILE, prompt="p", node_id="n7", uniform="u_image")
+            GateRequest(
+                kind=GateKind.FILE, prompt="p", document_id="n7", uniform="u_image"
+            )
         )
 
     t = threading.Thread(target=worker)
     t.start()
     req = _wait_for_file_pending(gate)
-    assert req is not None and req.node_id == "n7" and req.uniform == "u_image"
+    assert req is not None and req.document_id == "n7" and req.uniform == "u_image"
     gate.answer_file(
         GateResponse(media_result=MediaBindResult(ok=True, basename="fire.png"))
     )
@@ -132,21 +134,21 @@ def gl_ctx() -> Iterator[moderngl.Context]:
 def _sampler_stub(
     gl: moderngl.Context, project: Path
 ) -> tuple[types.SimpleNamespace, str]:
-    node = Node(gl=gl)
-    node.render_pass.release_program(_SAMPLER_SRC)
-    node.render_pass.compile()
-    node.render_pass.seed_uniform_values()
-    ui = UINode(node=node, id="samplernode")
+    document = Document(gl=gl)
+    document.render_pass.release_program(_SAMPLER_SRC)
+    document.render_pass.compile()
+    document.render_pass.seed_uniform_values()
+    ui = UIDocument(document=document, id="samplernode")
     ui.save(project)
-    nodes = {ui.id: ui}
+    documents = {ui.id: ui}
     stub = types.SimpleNamespace(
         _bridge=types.SimpleNamespace(
             run_on_main=lambda fn, timeout=None, defer=False: fn()
         ),
-        _get_ui_nodes=lambda: nodes,
-        _copilot_resolve_node_id=lambda h: ui.id if h in ("", ui.id) else None,
-        _capture_node=lambda nid: None,
-        _save_ui_node=lambda un: un.save(project),
+        _get_ui_documents=lambda: documents,
+        _copilot_resolve_document_id=lambda h: ui.id if h in ("", ui.id) else None,
+        _capture_document=lambda nid: None,
+        _save_ui_document=lambda un: un.save(project),
     )
     return stub, ui.id
 
@@ -154,7 +156,7 @@ def _sampler_stub(
 def test_bind_picked_media_binds_and_is_path_free(
     gl_ctx: moderngl.Context, tmp_path: Path
 ) -> None:
-    stub, node_id = _sampler_stub(gl_ctx, tmp_path / "proj")
+    stub, document_id = _sampler_stub(gl_ctx, tmp_path / "proj")
     # A real image under a SENTINEL directory whose name must never surface.
     secret = tmp_path / "SENTINEL_SECRET_DIR"
     secret.mkdir()
@@ -162,13 +164,15 @@ def test_bind_picked_media_binds_and_is_path_free(
     PILImage.new("RGB", (8, 8), (255, 0, 0)).save(img_path)
 
     outcome = CopilotBackend.bind_picked_media.__get__(stub)(
-        node_id, "u_image", img_path
+        document_id, "u_image", img_path
     )
     assert outcome.ok and outcome.basename == "fire.png"
     assert (outcome.width, outcome.height) == (8, 8)
     # The bind took: the sampler no longer holds the default.
     assert not is_default_image(
-        stub._get_ui_nodes()[node_id].node.render_pass.uniform_values["u_image"]
+        stub._get_ui_documents()[document_id].document.render_pass.uniform_values[
+            "u_image"
+        ]
     )
     # Corollary-1: the absolute path / sentinel dir is nowhere in the result.
     assert "SENTINEL_SECRET_DIR" not in str(outcome)
@@ -177,22 +181,22 @@ def test_bind_picked_media_binds_and_is_path_free(
     # And piping the outcome through the tool handler leaves the path out of the model-facing msg.
     ok, msg, payload = build_registry(
         minimal_caps(bind_media=lambda _n, _u: outcome)
-    ).execute("bind_media", {"uniform": "u_image", "node": ""})
+    ).execute("bind_media", {"uniform": "u_image", "document": ""})
     assert ok and "SENTINEL_SECRET_DIR" not in msg
     assert payload is None or "SENTINEL_SECRET_DIR" not in str(payload)
 
 
 def test_unbind_resets_to_default(gl_ctx: moderngl.Context, tmp_path: Path) -> None:
-    stub, node_id = _sampler_stub(gl_ctx, tmp_path / "proj")
+    stub, document_id = _sampler_stub(gl_ctx, tmp_path / "proj")
     img_path = tmp_path / "x.png"
     PILImage.new("RGB", (8, 8), (0, 255, 0)).save(img_path)
-    CopilotBackend.bind_picked_media.__get__(stub)(node_id, "u_image", img_path)
-    node = stub._get_ui_nodes()[node_id].node
-    assert not is_default_image(node.render_pass.uniform_values["u_image"])
+    CopilotBackend.bind_picked_media.__get__(stub)(document_id, "u_image", img_path)
+    document = stub._get_ui_documents()[document_id].document
+    assert not is_default_image(document.render_pass.uniform_values["u_image"])
 
     res = CopilotBackend.unbind_media.__get__(stub)("", "u_image")
     assert res.ok
-    assert is_default_image(node.render_pass.uniform_values["u_image"])
+    assert is_default_image(document.render_pass.uniform_values["u_image"])
 
     # A non-sampler / unknown uniform rejects honestly.
     assert not CopilotBackend.unbind_media.__get__(stub)("", "u_nope").ok
@@ -205,39 +209,41 @@ void main() { fs_color = vec4(vs_uv, 0.0, 1.0); }
 """
 
 
-def test_import_picked_node_creates_and_is_path_free(
+def test_import_picked_document_creates_and_is_path_free(
     gl_ctx: moderngl.Context, tmp_path: Path
 ) -> None:
-    nodes: dict[str, object] = {}
+    documents: dict[str, object] = {}
     current = {"id": ""}
     stub = types.SimpleNamespace(
         _starter_example_id=STARTER_EXAMPLE_ID,
-        _node_examples_dir=NODE_EXAMPLES_DIR,
+        _document_examples_dir=DOCUMENT_EXAMPLES_DIR,
         _copilot_resolve_example_id=lambda _t: STARTER_EXAMPLE_ID,
-        _get_ui_nodes=lambda: nodes,
-        _save_ui_node=lambda un: un.save(tmp_path / "proj"),
+        _get_ui_documents=lambda: documents,
+        _save_ui_document=lambda un: un.save(tmp_path / "proj"),
         _get_active_checkpoint=lambda: None,
-        _set_current_node_id=lambda nid: current.__setitem__("id", nid),
+        _set_current_document_id=lambda nid: current.__setitem__("id", nid),
         _working_set_add=lambda nid: None,
-        _copilot_short_ids=lambda: {i: i for i in nodes},
-        _render_facts_for=lambda _node, motion=False, cache_key="": "facts",
+        _copilot_short_ids=lambda: {i: i for i in documents},
+        _render_facts_for=lambda _document, motion=False, cache_key="": "facts",
         _last_clean={},
     )
-    stub._create_node_on_main = CopilotBackend._create_node_on_main.__get__(stub)
+    stub._create_document_on_main = CopilotBackend._create_document_on_main.__get__(
+        stub
+    )
     secret = tmp_path / "SENTINEL_SECRET_DIR"
     secret.mkdir()
     glsl = secret / "cool.glsl"
     glsl.write_text(_IMPORTABLE_SRC)
 
-    result = CopilotBackend.import_picked_node.__get__(stub)(glsl, False)
+    result = CopilotBackend.import_picked_document.__get__(stub)(glsl, False)
     assert result.ok and result.basename == "cool.glsl" and not result.errors
-    assert len(nodes) == 1
+    assert len(documents) == 1
     assert "SENTINEL_SECRET_DIR" not in str(result)
 
     # The tool handler msg is path-free too.
     ok, msg, _payload = build_registry(
-        minimal_caps(import_node=lambda _sw: result)
-    ).execute("import_node", {"switch_to": False})
+        minimal_caps(import_document=lambda _sw: result)
+    ).execute("import_document", {"switch_to": False})
     assert ok and "SENTINEL_SECRET_DIR" not in msg and "cool.glsl" in msg
 
 
@@ -245,14 +251,14 @@ def test_unbind_then_save_removes_the_orphan_media_file(
     gl_ctx: moderngl.Context, tmp_path: Path
 ) -> None:
     # save() skips a default sampler; the file a PREVIOUS bind wrote must not linger
-    # (disk-cleanliness leak that also rode along duplicate_node's copytree).
-    stub, node_id = _sampler_stub(gl_ctx, tmp_path / "proj")
+    # (disk-cleanliness leak that also rode along duplicate_document's copytree).
+    stub, document_id = _sampler_stub(gl_ctx, tmp_path / "proj")
     img_path = tmp_path / "x.png"
     PILImage.new("RGB", (8, 8), (0, 255, 0)).save(img_path)
-    CopilotBackend.bind_picked_media.__get__(stub)(node_id, "u_image", img_path)
-    ui = stub._get_ui_nodes()[node_id]
+    CopilotBackend.bind_picked_media.__get__(stub)(document_id, "u_image", img_path)
+    ui = stub._get_ui_documents()[document_id]
     ui.save(tmp_path / "proj")
-    media_dir = tmp_path / "proj" / node_id / "media" / "main"
+    media_dir = tmp_path / "proj" / document_id / "media" / "main"
     assert list(media_dir.glob("u_image.*"))
 
     CopilotBackend.unbind_media.__get__(stub)("", "u_image")

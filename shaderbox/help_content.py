@@ -61,7 +61,7 @@ def _engine_uniform_section() -> HelpSection:
             "Declare any of these and ShaderBox writes it every frame. They get no slider — the "
             "engine owns them. Declare only the ones you use; an unused uniform is compiled away.\n"
             "\n"
-            "Everything else you declare becomes a control in the Node tab instead."
+            "Everything else you declare becomes a control in the Document tab instead."
         ),
         snippet=rows,
     )
@@ -98,7 +98,7 @@ def help_sections() -> list[HelpSection]:
             key="shader_skeleton",
             title="A ShaderBox shader",
             body=(
-                "Every node is one **fragment shader**. ShaderBox draws a full-screen quad and runs "
+                "Every document is one **fragment shader**. ShaderBox draws a full-screen quad and runs "
                 "your `main()` once per pixel.\n"
                 "\n"
                 "Three things are fixed: the `#version` line (required — nothing is injected for "
@@ -124,17 +124,17 @@ def help_sections() -> list[HelpSection]:
             key="your_uniforms",
             title="Your uniforms become controls",
             body=(
-                "Declare a uniform the engine does not own and it shows up in the **Node** tab as a "
+                "Declare a uniform the engine does not own and it shows up in the **Document** tab as a "
                 "control, picked from the type: a drag for numbers, a text field for a glyph array, "
                 "an image slot for a `sampler2D`. Name a `vec3`/`vec4` so it ends in `color` and it "
                 "gets a colour picker — otherwise switch the control by hand on its row.\n"
                 "\n"
                 "Give it a value in the declaration and that becomes its default. Tuned values are "
-                "saved with the node, so a shader reopens exactly as you left it.\n"
+                "saved with the document, so a shader reopens exactly as you left it.\n"
                 "\n"
                 "For a value that needs memory between frames (a physics step, an integrator), a "
-                "node can carry a Python script that drives its uniforms — see the Script entry "
-                "point in the Node tab."
+                "document can carry a Python script that drives its uniforms — see the Script entry "
+                "point in the Document tab."
             ),
             snippet=(
                 "uniform float u_radius = 0.35;                     // drag\n"

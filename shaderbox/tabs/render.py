@@ -9,7 +9,7 @@ from shaderbox.widgets.details import draw_media_details
 
 
 def draw(app: App) -> None:
-    if not (ui_node := app.ui_nodes.get(app.current_node_id)):
+    if not (ui_document := app.ui_documents.get(app.current_document_id)):
         return
 
     imgui.spacing()
@@ -20,13 +20,13 @@ def draw(app: App) -> None:
     # Controls drawn first: their measured height sizes the preview box beside them.
     imgui.set_cursor_pos((row_start.x + preview_col_w + SPACE.XL, row_start.y))
     with imgui_ctx.begin_group():
-        ui_node.ui_state.render_media_details = draw_media_details(
+        ui_document.ui_state.render_media_details = draw_media_details(
             app,
-            ui_node.ui_state.render_media_details,
+            ui_document.ui_state.render_media_details,
         )
-        ui_node.ui_state.render_media_details = _draw_render_button(
+        ui_document.ui_state.render_media_details = _draw_render_button(
             app,
-            ui_node.ui_state.render_media_details,
+            ui_document.ui_state.render_media_details,
         )
     controls_h = imgui.get_item_rect_size().y
 
@@ -38,7 +38,7 @@ def draw(app: App) -> None:
 
 
 def _draw_render_button(app: App, details: MediaDetails) -> MediaDetails:
-    if app.current_node_id not in app.ui_nodes:
+    if app.current_document_id not in app.ui_documents:
         return details
 
     media_type = "video" if details.is_video else "image"
@@ -48,16 +48,18 @@ def _draw_render_button(app: App, details: MediaDetails) -> MediaDetails:
     if primary_button("Render"):
         # Defer the encode one frame so the "Rendering..." cue paints before it freezes the
         # loop (update_and_draw runs the request, then writes the result back). Capture the
-        # node id, not ui_node, so a node switch before the run frame can't render the wrong one.
-        node_id = app.current_node_id
+        # document id, not ui_document, so a document switch before the run frame can't render the wrong one.
+        document_id = app.current_document_id
         pending = details
 
         def _run_render() -> None:
-            target = app.ui_nodes.get(node_id)
+            target = app.ui_documents.get(document_id)
             if target is None:
                 return
             try:
-                target.ui_state.render_media_details = target.node.render_media(pending)
+                target.ui_state.render_media_details = target.document.render_media(
+                    pending
+                )
             except Exception as e:
                 # A toast, not just a log: the "Rendering..." cue clears either way, so a
                 # silent failure is indistinguishable from a finished render.

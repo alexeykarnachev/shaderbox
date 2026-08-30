@@ -11,13 +11,13 @@ EditorTabKind = Literal["shader", "script", "lib"]
 
 @dataclass(frozen=True)
 class EditorTab:
-    # One open file in the code-editor's tab bar (feature 045; 048 collapsed to one script per node).
-    # `path` is the on-disk file (the EditorSession key); the tab LABEL is derived from the node name
+    # One open file in the code-editor's tab bar (feature 045; 048 collapsed to one script per document).
+    # `path` is the on-disk file (the EditorSession key); the tab LABEL is derived from the document name
     # (tab_label), but the imgui `##id` keys on the stable path/index. `kind` selects the semantic
-    # label + the error tint. For a script/shader tab, `node_id` addresses the node; "" for lib tabs.
+    # label + the error tint. For a script/shader tab, `document_id` addresses the document; "" for lib tabs.
     path: Path
     kind: EditorTabKind
-    node_id: str = ""
+    document_id: str = ""
 
 
 @dataclass(frozen=True)

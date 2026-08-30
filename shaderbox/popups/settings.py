@@ -37,7 +37,7 @@ class SettingsField(StrEnum):
     straight to the missing key). To add one: a member here, then either branch on it in the
     owning section's draw (the Copilot key) or — for an exporter field — have that exporter
     return this value from `Exporter.config_field` and pass `focus` to its field's
-    `focus_field` (the Integrations loop matches `config_field` and force-opens the node).
+    `focus_field` (the Integrations loop matches `config_field` and force-opens the document).
     The string VALUES are the cross-layer contract (exporters echo them without importing this
     enum)."""
 

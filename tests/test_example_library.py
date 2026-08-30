@@ -36,12 +36,12 @@ def test_catalogue_has_all_prefixed_unique_examples(app: Any) -> None:
     }
 
 
-def test_resolve_source_distinguishes_example_from_node(app: Any) -> None:
+def test_resolve_source_distinguishes_example_from_document(app: Any) -> None:
     kind, full = app.copilot_backend._copilot_resolve_source(_text_handle(app))
     assert kind == "example" and full is not None
-    # a bare (non-example:) handle is a node
+    # a bare (non-example:) handle is a document
     kind2, _ = app.copilot_backend._copilot_resolve_source("zzzz")
-    assert kind2 == "node"
+    assert kind2 == "document"
 
 
 def test_shipped_examples_read_clean_without_joining_working_set(app: Any) -> None:
@@ -49,7 +49,7 @@ def test_shipped_examples_read_clean_without_joining_working_set(app: Any) -> No
         views = app.copilot_backend.read_shaders([t.example_id])
         assert len(views) == 1, t.example_id
         v = views[0]
-        assert v.node_id == t.example_id
+        assert v.document_id == t.example_id
         assert len(v.errors) == 0, f"{t.name} must compile clean: {v.errors}"
         # read-only: an example read never joins the (editable) working set
         full = app.copilot_backend._copilot_resolve_example_id(t.example_id)
@@ -65,14 +65,14 @@ def test_grep_surfaces_example_origins(app: Any) -> None:
 
 
 def test_create_from_example_instantiates_it(app: Any) -> None:
-    nid, errors, _ = app.copilot_backend.create_node(
+    nid, errors, _ = app.copilot_backend.create_document(
         "My Text", "", _text_handle(app), False
     )
     assert nid and not errors
 
 
 def test_create_empty_example_uses_default_starter(app: Any) -> None:
-    nid, errors, _ = app.copilot_backend.create_node("Blank", "", "", False)
+    nid, errors, _ = app.copilot_backend.create_document("Blank", "", "", False)
     assert nid and not errors
 
 

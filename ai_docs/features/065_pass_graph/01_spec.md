@@ -2,7 +2,7 @@
 
 **Status: PLAN-LOCKED.** Reviewed by three agents (completeness, adversarial design, cold-start);
 D10b, D11, D12, D15 and D16 were added or corrected in response, and the verification list was made
-falsifiable. Stages 1-4 are landed (the engine + persistence); start at stage 5. Anchor for facts: `00_facts.md` (six-agent round, verified by
+falsifiable. Stages 1-5 are landed; start at stage 6. Anchor for facts: `00_facts.md` (six-agent round, verified by
 hand where load-bearing). Predecessor: `064_multistep/` — built, reverted (`34f6d19`), kept for the
 record of what was tried and what it cost.
 
@@ -28,8 +28,10 @@ they became functions inside one file.
 **"Node" is retired from the domain entirely.** Not repurposed to mean "pass" — a word that has meant
 two things for the project's whole history will keep dragging the old meaning along, and the survey
 shows only the spatial-patch tools (TouchDesigner, VVVV, freska) call a per-draw unit a node, which
-is exactly the collision we are removing. `NodeTab`, `TreeNode`, `EngineNode` are unrelated
-namesakes and stay.
+is exactly the collision we are removing. `TreeNode` (the lib picker's filesystem tree) and
+`EngineNode` (the scripting protocol) are unrelated namesakes and stay. `NodeTab` was listed here
+as a namesake too and turned out not to be one: its `NODE` member IS the document tab, so it is
+domain — stage 5 renamed it `DocumentTab.DOCUMENT`.
 
 **"Step" is unavailable**: spent by 064, and `copilot/state.py::StepRecord` already means a tool
 call's progress marker.
@@ -271,8 +273,13 @@ Each stage leaves the tree green and is verifiable on its own.
    held out of the whole-model pass and salvaged per entry; and `UINode.save` skipped a pass with no
    program, which is every pass off the OUTPUT's path, so their tuned uniforms were written away as
    `{}` — save now compiles a pass that has not drawn, and keeps what is on disk if it cannot.
-5. **The rename** — `node` -> `document`/`pass` across the package, on-disk paths, and the tests. Its
-   own commit, mechanical, no behaviour change.
+5. **The rename** — DONE. `node` -> `document` across the package, on-disk paths, and the tests, in
+   its own commit. `Document` / `document_id` / `ui_documents` / `documents/<id>/document.json`;
+   `tabs/document.py`, `widgets/document_grid.py`, `copilot/tools/document_ops.py`; the copilot's
+   `rename_document` / `duplicate_document` / `import_document`. Namesakes that stayed: `EngineNode`
+   (a scripting protocol whose subject is now a `Pass`), the lib picker's filesystem tree nodes, and
+   imgui's own `tree_node_ex`. `NodeTab` did NOT stay — its `NODE` member is the document tab, so it
+   is domain, not a namesake, and became `DocumentTab.DOCUMENT`.
 6. **Editor and hot reload** — a `pass` tab kind, per-pass recompile (D8), `watch.py` generalised off
    its privileged index 0.
 7. **The panel** — the pass list with inputs and target config.

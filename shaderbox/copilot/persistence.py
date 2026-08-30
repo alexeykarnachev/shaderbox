@@ -72,8 +72,8 @@ def _stats_or_none(model: "_TurnStatsModel | None") -> TurnStats | None:
 class _RecoverModel(BaseModel):
     # Stores the trash dir-NAME, not an absolute path — the project dir is relocatable;
     # re-anchored via App.trash_dir at click time.
-    node_id: str
-    node_name: str = ""
+    document_id: str
+    document_name: str = ""
     trash_name: str
     done: bool = False
     model_config = {"extra": "forbid"}
@@ -154,8 +154,8 @@ class ConversationStore(BaseModel):
                     gate_kind=m.gate_kind.value,
                     recover=(
                         _RecoverModel(
-                            node_id=m.recover.node_id,
-                            node_name=m.recover.node_name,
+                            document_id=m.recover.document_id,
+                            document_name=m.recover.document_name,
                             trash_name=m.recover.trash_name,
                             done=m.recover.done,
                         )
@@ -194,8 +194,8 @@ class ConversationStore(BaseModel):
                 gate_kind=_gate_kind_or_confirm(m.gate_kind),
                 recover=(
                     RecoverInfo(
-                        node_id=m.recover.node_id,
-                        node_name=m.recover.node_name,
+                        document_id=m.recover.document_id,
+                        document_name=m.recover.document_name,
                         trash_name=m.recover.trash_name,
                         done=m.recover.done,
                     )

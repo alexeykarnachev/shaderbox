@@ -1,6 +1,6 @@
 """Shared test fixtures. The `app` fixture builds a real headless App against a THROWAWAY tmp
 project (never the tracked projects/dev sandbox — tests must not read or mutate it), seeded with
-the three shipped example nodes so there is always a loadable current node."""
+the three shipped example documents so there is always a loadable current document."""
 
 import contextlib
 import os
@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from shaderbox.constants import EXAMPLE_ORDER, NODE_EXAMPLES_DIR, STARTER_EXAMPLE_ID
+from shaderbox.constants import DOCUMENT_EXAMPLES_DIR, EXAMPLE_ORDER, STARTER_EXAMPLE_ID
 from shaderbox.copilot.config import COPILOT_CONFIG
 
 # LOAD-BEARING, read at GL-context creation (not at import): compiling this repo's #version 460
@@ -22,12 +22,12 @@ os.environ.setdefault("MESA_GLSL_VERSION_OVERRIDE", "460")
 
 
 def seed_tmp_project(tmp_path: Path) -> Path:
-    # A throwaway project dir seeded with the shipped example nodes copied out of resources.
+    # A throwaway project dir seeded with the shipped example documents copied out of resources.
     project = tmp_path / "project"
-    nodes = project / "nodes"
-    nodes.mkdir(parents=True)
+    documents = project / "documents"
+    documents.mkdir(parents=True)
     for tid in EXAMPLE_ORDER:
-        shutil.copytree(NODE_EXAMPLES_DIR / tid, nodes / tid)
+        shutil.copytree(DOCUMENT_EXAMPLES_DIR / tid, documents / tid)
     return project
 
 
@@ -43,10 +43,10 @@ def app(tmp_path: Path) -> Iterator[Any]:
     a = App(project_dir=project)
     # No main loop in a test: run every marshalled bridge op INLINE (already on the GL thread).
     a.copilot.bridge.run_on_main = lambda fn, timeout=None, defer=False: fn()  # type: ignore[method-assign]
-    a.set_current_node_id(STARTER_EXAMPLE_ID)
-    a.ui_nodes[
+    a.set_current_document_id(STARTER_EXAMPLE_ID)
+    a.ui_documents[
         STARTER_EXAMPLE_ID
-    ].node.render()  # warm the GL program (matches the live loop)
+    ].document.render()  # warm the GL program (matches the live loop)
     yield a
     with contextlib.suppress(Exception):
         a.release()

@@ -28,7 +28,7 @@ def _section_break() -> None:
 def _draw_auto_row(app: App, uniforms: list[UIUniform]) -> None:
     # Engine-driven uniforms (u_time / u_aspect / u_resolution): one inline row,
     # names participate in the code<->panel hover/jump bridge; value is read-only.
-    ui_node = app.ui_nodes[app.current_node_id]
+    ui_document = app.ui_documents[app.current_document_id]
     imgui.push_font(app.font_12, app.font_12.legacy_size)
     for i, u in enumerate(uniforms):
         if i > 0:
@@ -38,13 +38,13 @@ def _draw_auto_row(app: App, uniforms: list[UIUniform]) -> None:
             app, u.name, name_w, text_color=COLOR.STATE_INFO, accent=COLOR.STATE_INFO
         )
         imgui.same_line(spacing=float(SPACE.MD))
-        value = ui_node.node.render_pass.uniform_values.get(u.name)
+        value = ui_document.document.render_pass.uniform_values.get(u.name)
         imgui.text_colored(COLOR.FG_DIM, format_auto_value(value))
     imgui.pop_font()
 
 
 def draw(app: App) -> None:
-    if not (ui_node := app.ui_nodes.get(app.current_node_id)):
+    if not (ui_document := app.ui_documents.get(app.current_document_id)):
         return
 
     imgui.spacing()
@@ -58,15 +58,15 @@ def draw(app: App) -> None:
         (3440, 1440),
     ]
 
-    cw, ch = ui_node.node.render_pass.canvas.texture.size
+    cw, ch = ui_document.document.render_pass.canvas.texture.size
     current_size: tuple[int, int] = (cw, ch)
 
     uniform_resolutions = []
     matching_uniforms = []
     uniform_sizes = set()
-    for uniform in ui_node.node.render_pass.get_active_uniforms():
+    for uniform in ui_document.document.render_pass.get_active_uniforms():
         if getattr(uniform, "gl_type", None) == GL_SAMPLER_2D:
-            value = ui_node.node.render_pass.uniform_values[uniform.name]
+            value = ui_document.document.render_pass.uniform_values[uniform.name]
 
             w, h = value.texture.size
             if (w, h) == current_size:
@@ -86,20 +86,20 @@ def draw(app: App) -> None:
             resolution_items.append(get_resolution_str(None, w, h))
             resolution_sizes.append((w, h))
 
-    node_ui_state = app.current_node_ui_state_or_default
+    document_ui_state = app.current_document_ui_state_or_default
 
     combo_offset = SIZE.NAME_INPUT_W + SPACE.XL
     resolution_label = "Resolution"
     if current_name:
         resolution_label += f" ({current_name})"
 
-    small_caption(app.font_12, "Node name")
+    small_caption(app.font_12, "Document name")
     imgui.same_line(combo_offset)
     small_caption(app.font_12, resolution_label)
 
     imgui.set_next_item_width(SIZE.NAME_INPUT_W)
-    ui_node.ui_state.ui_name = imgui.input_text_with_hint(
-        "##node_name", "node name", ui_node.ui_state.ui_name
+    ui_document.ui_state.ui_name = imgui.input_text_with_hint(
+        "##document_name", "document name", ui_document.ui_state.ui_name
     )[1]
 
     imgui.same_line(combo_offset)
@@ -107,7 +107,7 @@ def draw(app: App) -> None:
     new_res_idx = imgui.combo("##resolution", 0, resolution_items)[1]
     if new_res_idx != 0:
         w, h = resolution_sizes[new_res_idx]
-        ui_node.node.render_pass.canvas.set_size((w, h))
+        ui_document.document.render_pass.canvas.set_size((w, h))
         app.notifications.push(
             f"Canvas resolution changed: {resolution_items[new_res_idx]}"
         )
@@ -117,11 +117,11 @@ def draw(app: App) -> None:
 
     _section_break()
 
-    ui_uniforms = node_ui_state.ui_uniforms
+    ui_uniforms = document_ui_state.ui_uniforms
 
     active_uniform_hashes = []
     auto_hashes = []
-    for uniform in ui_node.node.render_pass.get_active_uniforms():
+    for uniform in ui_document.document.render_pass.get_active_uniforms():
         if (
             uniform.name in TABLE_UNIFORMS
         ):  # engine glyph tables — pure machinery, no row
@@ -138,17 +138,17 @@ def draw(app: App) -> None:
     sort_keys: list[UniformSortKey] = ["code", "name", "type"]
     imgui.set_next_item_width(SIZE.SORT_COMBO_W)
     if imgui.begin_combo(
-        "##uniform_sort_key", f"Sort by: {node_ui_state.uniform_sort_key}"
+        "##uniform_sort_key", f"Sort by: {document_ui_state.uniform_sort_key}"
     ):
         for key in sort_keys:
-            if imgui.selectable(key, key == node_ui_state.uniform_sort_key)[0]:
-                node_ui_state.uniform_sort_key = key
+            if imgui.selectable(key, key == document_ui_state.uniform_sort_key)[0]:
+                document_ui_state.uniform_sort_key = key
         imgui.end_combo()
 
     imgui.same_line()
-    arrow = "v" if node_ui_state.uniform_sort_desc else "^"
+    arrow = "v" if document_ui_state.uniform_sort_desc else "^"
     if button(f"{arrow}##uniform_sort_dir", width=SIZE.BTN_SM_H):
-        node_ui_state.uniform_sort_desc = not node_ui_state.uniform_sort_desc
+        document_ui_state.uniform_sort_desc = not document_ui_state.uniform_sort_desc
 
     if auto_hashes:
         imgui.same_line(spacing=float(SPACE.XL))
@@ -159,8 +159,8 @@ def draw(app: App) -> None:
     sorted_hashes = sort_uniform_hashes(
         active_uniform_hashes,
         ui_uniforms,
-        node_ui_state.uniform_sort_key,
-        node_ui_state.uniform_sort_desc,
+        document_ui_state.uniform_sort_key,
+        document_ui_state.uniform_sort_desc,
     )
 
     # nav_flattened: Tab/arrows reach the sliders without an Enter/Esc window boundary.
@@ -197,21 +197,25 @@ def _entry_row_label(active: bool, label: str) -> None:
 
 
 def _draw_entry_points(app: App) -> None:
-    # The node's two entry-points (049): SHADER (GPU) and SCRIPT (CPU script), each with an `open`
-    # action that summons its tab into the editor (the node panel is "about this node"; the tab bar is
-    # the editor's own state — `open` is a summoner, not a duplicate). The whole-node PLAY/STOP toggle
+    # The document's two entry-points (049): SHADER (GPU) and SCRIPT (CPU script), each with an `open`
+    # action that summons its tab into the editor (the document panel is "about this document"; the tab bar is
+    # the editor's own state — `open` is a summoner, not a duplicate). The whole-document PLAY/STOP toggle
     # lives on the Script row (its true owner — it freezes/resumes the script's driven uniforms; the
     # script keeps ticking). An accent tick marks whichever entry-point is the editor's active tab.
     # Frozen mid-copilot-turn (a write races the reload).
-    node_id = app.current_node_id
-    present = app.session.has_script(node_id)
-    error = present and app.session.script_has_error(node_id)
+    document_id = app.current_document_id
+    present = app.session.has_script(document_id)
+    error = present and app.session.script_has_error(document_id)
     active = app.active_tab
     shader_active = (
-        active is not None and active.kind == "shader" and active.node_id == node_id
+        active is not None
+        and active.kind == "shader"
+        and active.document_id == document_id
     )
     script_active = (
-        active is not None and active.kind == "script" and active.node_id == node_id
+        active is not None
+        and active.kind == "script"
+        and active.document_id == document_id
     )
 
     imgui.begin_disabled(app.copilot_turn_active)
@@ -219,32 +223,32 @@ def _draw_entry_points(app: App) -> None:
 
     _entry_row_label(shader_active, "Shader")
     if ghost_button("open##entry_shader"):
-        app.ensure_shader_tab(node_id)
+        app.ensure_shader_tab(document_id)
     if imgui.is_item_hovered():
         imgui.set_tooltip("Open the fragment shader (GPU)")
 
     _entry_row_label(script_active, "Script")
     open_tooltip = (
-        "Node script error — click to open and fix"
+        "Document script error — click to open and fix"
         if error
-        else "Open the node script (drives many uniforms)"
+        else "Open the document script (drives many uniforms)"
         if present
-        else "Create + open a node script (drives many uniforms)"
+        else "Create + open a document script (drives many uniforms)"
     )
     open_color = COLOR.STATE_ERROR if error else COLOR.FG_SECONDARY
     if ghost_button("open##entry_script", text_color=open_color):
-        app.open_script_for(node_id)
+        app.open_script_for(document_id)
     if imgui.is_item_hovered():
         imgui.set_tooltip(open_tooltip)
     if present:
         imgui.same_line()
-        playing = not app.current_node_ui_state_or_default.all_stopped
+        playing = not app.current_document_ui_state_or_default.all_stopped
         if play_stop_toggle(
-            "node",
+            "document",
             playing,
             tooltip="Stop the whole script (freeze all uniforms)"
             if playing
             else "Resume the whole script",
         ):
-            app.set_node_all_stopped(node_id, playing)
+            app.set_document_all_stopped(document_id, playing)
     imgui.end_disabled()

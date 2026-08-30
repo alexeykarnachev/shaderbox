@@ -5,7 +5,7 @@ Three layers:
 - the loop splice (D11 trace==stream payload equality, the live per-iteration injection) — driven
   through a recording fake client;
 - the App-side machinery (D9 intra-batch line-edit guard, the rebuild coherence, current-union,
-  gone-node skip, lib-consumer invalidation) — against a real headless App with the bridge inlined.
+  gone-document skip, lib-consumer invalidation) — against a real headless App with the bridge inlined.
 """
 
 import threading
@@ -58,7 +58,7 @@ def test_trim_reserves_scratchpad_headroom() -> None:
     scratchpad = render_working_set(
         [
             WorkingSetView(
-                address="node-1",
+                address="document-1",
                 name="Big",
                 listing="\n".join(f"{i}  line" for i in range(8000)),
                 is_current=True,
@@ -82,7 +82,7 @@ def test_render_working_set_empty_drops_block() -> None:
     assert render_working_set([], []) == []
 
 
-def test_render_working_set_node_and_lib() -> None:
+def test_render_working_set_document_and_lib() -> None:
     views = [
         WorkingSetView(
             address="7f3a",
@@ -115,7 +115,7 @@ def test_render_working_set_node_and_lib() -> None:
 
 
 def test_render_working_set_carries_script_section() -> None:
-    # A scripted node renders a SCRIPT sub-section + its error line; a driven uniform row shows the
+    # A scripted document renders a SCRIPT sub-section + its error line; a driven uniform row shows the
     # marker, not a phantom value (feature 043 D6/D7a). The marker itself is built backend-side
     # (_format_uniforms); here we verify the working-set RENDER carries the script fields it's given.
     scripted = WorkingSetView(
@@ -155,8 +155,8 @@ def test_render_working_set_names_evicted_members() -> None:
 
 
 def test_render_working_set_no_script_adds_zero_bytes() -> None:
-    # A script-LESS node (script_listing="") must add NO SCRIPT sub-section — the gate that keeps the
-    # 4-of-5-nodes-unscripted case from bloating the context (feature 043 D6).
+    # A script-LESS document (script_listing="") must add NO SCRIPT sub-section — the gate that keeps the
+    # 4-of-5-documents-unscripted case from bloating the context (feature 043 D6).
     plain = WorkingSetView(
         address="7f3a",
         name="Plain",
@@ -167,7 +167,7 @@ def test_render_working_set_no_script_adds_zero_bytes() -> None:
         errors=[],
     )
     body = (render_working_set([plain], [])[0].content) or ""
-    assert "SCRIPT" not in body  # zero script bytes for an unscripted node
+    assert "SCRIPT" not in body  # zero script bytes for an unscripted document
 
 
 # ---- D11 + the live per-iteration splice (recording fake client) ----
@@ -301,15 +301,15 @@ def test_batch_begin_called_once_per_batch() -> None:
 
 def test_read_adds_to_working_set_and_rebuild_shows_live_source(app: Any) -> None:
     app.session._copilot_working_set = []
-    app.copilot_backend.read_shaders([])  # current node
-    assert app.session._copilot_working_set  # the current node joined
+    app.copilot_backend.read_shaders([])  # current document
+    assert app.session._copilot_working_set  # the current document joined
     views, _evicted = app.copilot_backend.read_working_set()
     assert views and views[0].is_current
     assert views[0].listing.strip().startswith("1  ")
 
 
-def test_current_node_unioned_into_rebuild(app: Any) -> None:
-    # The current node is an implicit working-set member even if no read/edit added it (D1).
+def test_current_document_unioned_into_rebuild(app: Any) -> None:
+    # The current document is an implicit working-set member even if no read/edit added it (D1).
     app.session._copilot_working_set = []
     views, _evicted = app.copilot_backend.read_working_set()
     assert any(v.is_current for v in views)
@@ -318,10 +318,10 @@ def test_current_node_unioned_into_rebuild(app: Any) -> None:
 def test_intra_batch_rewrite_guard_rejects(app: Any) -> None:
     # D9: a whole-file rewrite of a target the batch already mutated is rejected BEFORE any GL work
     # (the reject path is GL-free — it never reaches the persist), mutating nothing. Pre-seed the
-    # per-batch set with the current node's full id to model "a prior edit this batch changed the
+    # per-batch set with the current document's full id to model "a prior edit this batch changed the
     # content the rewrite was composed from".
     app.session._copilot_working_set = []
-    app.copilot_backend._batch_mutated = {app.current_node_id}
+    app.copilot_backend._batch_mutated = {app.current_document_id}
     res = app.copilot_backend.apply_full_rewrite("// shifted", "")
     assert res.unresolved and "already edited earlier in this same step" in (
         res.unresolved_reason
@@ -329,19 +329,19 @@ def test_intra_batch_rewrite_guard_rejects(app: Any) -> None:
     assert res.matches == 0  # mutated nothing
     # A fresh batch clears the guard (the backend owns the set; batch_begin clears it per batch).
     app.copilot_backend.batch_begin()
-    assert app.current_node_id not in app.copilot_backend._batch_mutated
+    assert app.current_document_id not in app.copilot_backend._batch_mutated
 
 
 def test_substring_edit_never_d9_rejected(app: Any) -> None:
     # A substring edit is NOT gated by D9 even when the target is batch-mutated (it matches by text).
-    app.copilot_backend._batch_mutated = {app.current_node_id}
+    app.copilot_backend._batch_mutated = {app.current_document_id}
     res = app.copilot_backend.apply_shader_edit("zzz-no-such-token", "x", False, "")
     # A genuine no-match (matches==0, hint), NOT a D9 unresolved reject.
     assert not res.unresolved
 
 
-def test_gone_node_skipped_in_rebuild(app: Any) -> None:
-    # A working-set address that is no longer a node never KeyErrors the rebuild.
+def test_gone_document_skipped_in_rebuild(app: Any) -> None:
+    # A working-set address that is no longer a document never KeyErrors the rebuild.
     app.session._copilot_working_set = ["does-not-exist-id"]
     views, _evicted = app.copilot_backend.read_working_set()  # must not raise
     assert all(v.address != "does-not-exist-id" for v in views)
@@ -349,8 +349,8 @@ def test_gone_node_skipped_in_rebuild(app: Any) -> None:
 
 def test_unknown_edit_target_rejects_as_unresolved(app: Any) -> None:
     # The resolver keeps its unresolved-target reject after the freshness guard retired (GL-free).
-    res = app.copilot_backend.apply_full_rewrite("x", "no-such-node-zzz")
-    assert res.unresolved and "no node" in res.unresolved_reason
+    res = app.copilot_backend.apply_full_rewrite("x", "no-such-document-zzz")
+    assert res.unresolved and "no document" in res.unresolved_reason
 
 
 # ---- lazy load_tools injection (feature 052 slice 0) ----

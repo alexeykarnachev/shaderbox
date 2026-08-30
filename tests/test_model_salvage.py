@@ -3,7 +3,7 @@
 Both persisted stores are fail-soft, and the app writes loaded state back on quit — so
 "fall back to defaults" on a single malformed key is silent data loss, not resilience. The
 credential store learned this first (a retired key wiped every token); `app_state.json` had
-the same shape, where a retired enum member or one wrong-typed value reset the node
+the same shape, where a retired enum member or one wrong-typed value reset the document
 selection, fps, editor prefs, keybindings and Telegram pack together.
 
 The parametrisation walks the model's OWN field list, so a field added later is covered
@@ -22,7 +22,7 @@ from shaderbox.model_salvage import drop_invalid, drop_unknown, load_model
 from shaderbox.ui_models import UIAppState
 
 _POPULATED: dict[str, Any] = {
-    "current_node_id": "abc-123",
+    "current_document_id": "abc-123",
     "global_target_fps": 144,
     "editor_split_fraction": 0.37,
     "telegram_default_pack": "my_pack",
@@ -38,7 +38,7 @@ def _write(tmp_path: Path, data: dict[str, Any]) -> Path:
 
 def test_a_populated_file_round_trips(tmp_path: Path) -> None:
     state = UIAppState.load(_write(tmp_path, _POPULATED))
-    assert state.current_node_id == "abc-123"
+    assert state.current_document_id == "abc-123"
     assert state.global_target_fps == 144
     assert state.editor_settings.font_size == 22
 
@@ -47,7 +47,7 @@ def test_a_populated_file_round_trips(tmp_path: Path) -> None:
     "bad_key,bad_value",
     [
         ("global_target_fps", "sixty"),  # wrong type
-        ("active_node_tab", "retired_tab"),  # retired enum member
+        ("active_document_tab", "retired_tab"),  # retired enum member
         ("copilot_layout", "retired_layout"),
         ("editor_split_fraction", "half"),
         ("key_bindings", "not-a-mapping"),
@@ -73,7 +73,7 @@ def test_one_bad_key_costs_only_itself(
 def test_an_unknown_key_is_dropped_without_touching_the_rest(tmp_path: Path) -> None:
     path = _write(tmp_path, {**_POPULATED, "retired_feature_flag": True})
     state = UIAppState.load(path)
-    assert state.current_node_id == "abc-123"
+    assert state.current_document_id == "abc-123"
     assert state.global_target_fps == 144
     assert not hasattr(state, "retired_feature_flag")
 
@@ -139,7 +139,7 @@ def test_target_fps_stays_safe_to_divide_by(tmp_path: Path, bad_value: int) -> N
     )
     assert state.global_target_fps >= 30
     assert 1.0 / state.global_target_fps > 0
-    assert state.current_node_id == "abc-123", (
+    assert state.current_document_id == "abc-123", (
         "an out-of-range fps cost an unrelated setting"
     )
 
@@ -152,7 +152,7 @@ def test_out_of_range_editor_settings_reset_only_themselves(tmp_path: Path) -> N
         )
     )
     assert state.editor_settings.font_size == 16
-    assert state.current_node_id == "abc-123"
+    assert state.current_document_id == "abc-123"
     assert state.global_target_fps == 144
 
 

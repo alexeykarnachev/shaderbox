@@ -68,8 +68,8 @@ def _draw_body(app: App) -> bool:
     # Build the visible-leaves list once per frame: this drives the preview
     # pane, the arrow-key nav, and the auto-select-first-on-open.
     candidates = filtering.filter_functions(app)
-    node_tree = tree.build_tree(candidates, root)
-    visible_leaves = tree.flatten_visible_leaves(node_tree, ())
+    document_tree = tree.build_tree(candidates, root)
+    visible_leaves = tree.flatten_visible_leaves(document_tree, ())
 
     rename_active = app.shader_lib_files.file_rename.target is not None
     new_file_active = app.shader_lib_files.file_new.target is not None
@@ -114,7 +114,7 @@ def _draw_body(app: App) -> bool:
     tree_w = max(_TREE_W_MIN, avail.x * _TREE_FRAC)
     with imgui_ctx.begin_child("##tree_col", size=imgui.ImVec2(tree_w, body_h)):
         imgui.text_colored(COLOR.FG_DIM, "Right-click for actions")
-        if tree.draw_tree(app, node_tree, root):
+        if tree.draw_tree(app, document_tree, root):
             keep_open = False
     imgui.same_line(spacing=float(SPACE.MD))
     with imgui_ctx.begin_child("##preview", size=imgui.ImVec2(0.0, body_h)):
@@ -125,9 +125,9 @@ def _draw_body(app: App) -> bool:
     # ---------- Action row ----------
     selected = filtering.selected_function(app, candidates)
     # Insert is meaningful only when the editor was actually being used (not
-    # merely "a node is selected"). `editor_was_ever_focused` stays True
+    # merely "a document is selected"). `editor_was_ever_focused` stays True
     # across popups/menus and is cleared only by explicit defocus or by a
-    # target switch — so a freshly-selected node with an un-touched caret
+    # target switch — so a freshly-selected document with an un-touched caret
     # correctly disables insert.
     has_editor = app.editor_was_ever_focused and app.current_editor_path is not None
     can_insert = selected is not None and has_editor

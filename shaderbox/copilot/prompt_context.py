@@ -2,9 +2,9 @@ from dataclasses import dataclass
 
 from shaderbox.copilot.capabilities import (
     CopilotCapabilities,
+    DocumentTreeEntry,
     ExampleEntry,
     LibCatalogEntry,
-    NodeTreeEntry,
 )
 from shaderbox.scripting.api_doc import script_api_summary
 
@@ -37,16 +37,16 @@ _CONVENTIONS = """\
 
 @dataclass(frozen=True)
 class CopilotContext:
-    node_tree: str  # rendered project-map block (name/id/has_errors/is_current)
+    document_tree: str  # rendered project-map block (name/id/has_errors/is_current)
     lib_catalog: str  # rendered lib-catalogue block (name/signature/doc)
     example_catalog: (
         str  # rendered example-library block (name/example: handle/description)
     )
-    script_api: str  # generated SCRIPT API block (the Python side of a node script)
+    script_api: str  # generated SCRIPT API block (the Python side of a document script)
     conventions: str
 
 
-def _render_node_tree(entries: list[NodeTreeEntry]) -> str:
+def _render_document_tree(entries: list[DocumentTreeEntry]) -> str:
     if not entries:
         return "(no shaders yet)"
     rows: list[str] = []
@@ -57,7 +57,7 @@ def _render_node_tree(entries: list[NodeTreeEntry]) -> str:
         if e.has_errors:
             marks.append("HAS ERRORS")
         suffix = f"  [{', '.join(marks)}]" if marks else ""
-        rows.append(f"- {e.name} (id: {e.node_id}){suffix}")
+        rows.append(f"- {e.name} (id: {e.document_id}){suffix}")
     return "\n".join(rows)
 
 
@@ -84,7 +84,7 @@ def _render_example_catalog(entries: list[ExampleEntry]) -> str:
 
 def build_context(caps: CopilotCapabilities) -> CopilotContext:
     return CopilotContext(
-        node_tree=_render_node_tree(caps.node_tree()),
+        document_tree=_render_document_tree(caps.document_tree()),
         lib_catalog=_render_lib_catalog(caps.lib_catalog()),
         example_catalog=_render_example_catalog(caps.example_catalog()),
         script_api=script_api_summary(),

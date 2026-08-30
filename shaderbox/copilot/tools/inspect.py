@@ -10,9 +10,9 @@ from shaderbox.copilot.tools.base import GatePolicy, ToolArgs, ToolDefinition
 
 
 class _ProbeRenderArgs(ToolArgs):
-    node: str = Field(
+    document: str = Field(
         default="",
-        description="node id (from the project map); empty = the node you're working on",
+        description="document id (from the project map); empty = the document you're working on",
     )
     t: float = Field(
         default=0.0,
@@ -34,7 +34,7 @@ _PROBE_RENDER_DESC = (
 
 def inspect_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
     def probe_render(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
-        msg = caps.probe_render(args["node"], args["t"])
+        msg = caps.probe_render(args["document"], args["t"])
         return not msg.startswith("error:"), msg, None
 
     return [

@@ -1,16 +1,16 @@
 from pathlib import Path
 
-from shaderbox.copilot.address import NODE_SHORT_ID_LEN, lib_address
+from shaderbox.copilot.address import DOCUMENT_SHORT_ID_LEN, lib_address
 from shaderbox.copilot.capabilities import CompileErrorInfo
 from shaderbox.paths import shader_lib_root
 
 # The ONE model-facing renderer for compile errors. `CompileErrorInfo.path` carries the real
 # absolute path (the backend's own-file vs cross-file guards resolve it); the agent only ever
-# sees a label in ITS address space — `lib:<rel>` for a library file, the node's short id for a
-# node source, and any non-absolute label (`script.py`, "") verbatim. Every renderer routes
+# sees a label in ITS address space — `lib:<rel>` for a library file, the document's short id for a
+# document source, and any non-absolute label (`script.py`, "") verbatim. Every renderer routes
 # through here so a new one cannot re-leak the filesystem by omission.
-# Under a short-id collision the map grows every id past NODE_SHORT_ID_LEN while this label stays
-# 4 chars — acceptable: the agent addresses nodes from the map, the label only names the breakage.
+# Under a short-id collision the map grows every id past DOCUMENT_SHORT_ID_LEN while this label stays
+# 4 chars — acceptable: the agent addresses documents from the map, the label only names the breakage.
 
 
 def _error_label(path: str, root: Path) -> str:
@@ -24,7 +24,7 @@ def _error_label(path: str, root: Path) -> str:
     try:
         return lib_address(p.resolve().relative_to(root.resolve()))
     except ValueError:
-        return p.parent.name[:NODE_SHORT_ID_LEN]
+        return p.parent.name[:DOCUMENT_SHORT_ID_LEN]
 
 
 def format_compile_errors(errors: list[CompileErrorInfo]) -> str:

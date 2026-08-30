@@ -1,7 +1,7 @@
 """Feature-041 script-engine verification (the required dogfood check).
 
 Drives the headless ProjectSession (the harness EGL path) on a project with a hand-placed class-form
-scripted uniform, renders the node at two distinct `t` values, and asserts the rendered pixels DIFFER
+scripted uniform, renders the document at two distinct `t` values, and asserts the rendered pixels DIFFER
 (the scripted behavior animated through the tick->render seam). Then it (a) confirms ctx.t-pure
 determinism, (b) proves EXPORT-STATE ISOLATION — a live-warmed integrator's export frame matches a
 cold-start render via the `exporting` seam, NOT the warmed live value — and (c) breaks the script and
@@ -28,11 +28,11 @@ void main() { fs_color = vec4(vec3(u_wave), 1.0); }
 """
 
 
-def _seed_scripted_node(project_dir: Path, body: str) -> None:
-    node = project_dir / "nodes" / "scripted"
-    node.mkdir(parents=True, exist_ok=True)
-    (node / "shader.frag.glsl").write_text(_SHADER, encoding="utf-8")
-    (node / "node.json").write_text(
+def _seed_scripted_document(project_dir: Path, body: str) -> None:
+    document = project_dir / "documents" / "scripted"
+    document.mkdir(parents=True, exist_ok=True)
+    (document / "shader.frag.glsl").write_text(_SHADER, encoding="utf-8")
+    (document / "document.json").write_text(
         json.dumps(
             {
                 "canvas_size": [256, 256],
@@ -42,9 +42,9 @@ def _seed_scripted_node(project_dir: Path, body: str) -> None:
         ),
         encoding="utf-8",
     )
-    scripts = node / "scripts"
+    scripts = document / "scripts"
     scripts.mkdir(exist_ok=True)
-    # One script per node (048): the node script `script.py` drives u_wave via a dict return. Binds by
+    # One script per document (048): the document script `script.py` drives u_wave via a dict return. Binds by
     # existence (no activate step).
     (scripts / "script.py").write_text(body, encoding="utf-8")
 
@@ -84,10 +84,10 @@ _BROKEN = (
 
 def main() -> int:
     h = DogfoodHarness.create(seed_examples=False)
-    _seed_scripted_node(h.project_dir, _PURE)
+    _seed_scripted_document(h.project_dir, _PURE)
     h.session.load(h.project_dir)
-    h.session.set_current_node_id("scripted")
-    # One script per node (048): the script binds by existence — no activate step. The driven set is
+    h.session.set_current_document_id("scripted")
+    # One script per document (048): the script binds by existence — no activate step. The driven set is
     # the script's LAST-TICK keys (dynamic), so tick once before reading it (the live frame order:
     # tick -> read; the engine knows nothing it drove until the first tick).
     h.session.reload_scripts()
@@ -114,13 +114,15 @@ def main() -> int:
     # Export-state isolation: warm a stateful integrator on the LIVE instance, then export — the
     # export frame must match a cold-start export, NOT the warmed live value (the fresh-per-export
     # instance seam, feature 041 decision 11).
-    _seed_scripted_node(h.project_dir, _INTEGRATOR)
+    _seed_scripted_document(h.project_dir, _INTEGRATOR)
     h.session.reload_scripts()
     p_cold = h.export_at(0.0, "scripted")
     luma_cold = _mean_luma(p_cold)
     for i in range(120):  # warm the LIVE instance well past the ramp's wrap
         h.session.tick(["scripted"], i / 60.0, 1.0 / 60.0, i)
-    live_wave = h.session.ui_nodes["scripted"].node.render_pass.uniform_values["u_wave"]
+    live_wave = h.session.ui_documents["scripted"].document.render_pass.uniform_values[
+        "u_wave"
+    ]
     p_export = h.export_at(0.0, "scripted")
     luma_export = _mean_luma(p_export)
     print(
@@ -131,24 +133,24 @@ def main() -> int:
         "export inherited live state (no fresh-per-export instance)"
     )
 
-    # Post-load hook wiring: a node's export_isolation must be wired (not the bare nullcontext) after
-    # reload_scripts — this is what covers a node inserted AFTER load (copilot create / revert).
-    node = h.session.ui_nodes["scripted"].node
-    assert node.export_isolation is not contextlib.nullcontext, (
-        "node export_isolation not wired (post-load insertions would export frozen)"
+    # Post-load hook wiring: a document's export_isolation must be wired (not the bare nullcontext) after
+    # reload_scripts — this is what covers a document inserted AFTER load (copilot create / revert).
+    document = h.session.ui_documents["scripted"].document
+    assert document.export_isolation is not contextlib.nullcontext, (
+        "document export_isolation not wired (post-load insertions would export frozen)"
     )
 
-    # drop_node frees engine state: delete + assert the binding + its registry entry are gone.
-    h.session.script_engine.drop_node("scripted")
+    # drop_document frees engine state: delete + assert the binding + its registry entry are gone.
+    h.session.script_engine.drop_document("scripted")
     assert h.session.script_engine.script_driven_uniforms("scripted") == set()
     # re-resolve so the rest of the check (broken-script) has a live binding again.
     h.session.reload_scripts()
 
     # Break the script -> the frame must still render (frozen, non-crashing) + record an error. The
     # raw throw fires inside update() before the dict is built, so it is a behavior-level error under
-    # the sentinel key (node, "script.py") — not a per-key (node, "u_wave") shape error (048: one
+    # the sentinel key (document, "script.py") — not a per-key (document, "u_wave") shape error (048: one
     # object, one coherent failure).
-    _seed_scripted_node(h.project_dir, _BROKEN)
+    _seed_scripted_document(h.project_dir, _BROKEN)
     h.session.reload_scripts()
     p_broken = h.render_at(3.0, "scripted")
     assert p_broken, "a broken script crashed the render instead of freezing"

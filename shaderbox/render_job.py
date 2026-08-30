@@ -1,4 +1,4 @@
-"""Node render-to-file: the GL render job behind BOTH the Share tab and the copilot's render
+"""Document render-to-file: the GL render job behind BOTH the Share tab and the copilot's render
 tools. UI-free on purpose — it lives here, not in `tabs/`, because the headless copilot core
 (`copilot/backend.py`) and the dogfood harness drive it with no imgui in the process.
 
@@ -12,7 +12,7 @@ from uuid import uuid4
 from loguru import logger
 
 from shaderbox.constants import DEFAULT_FPS
-from shaderbox.document import Node
+from shaderbox.document import Document
 from shaderbox.exporters.base import RenderedArtifact
 from shaderbox.media import MediaDetails
 from shaderbox.render_preset import RenderPreset
@@ -24,9 +24,9 @@ def preset_ext(preset: RenderPreset) -> str:
 
 
 def render_to(
-    node: Node, preset: RenderPreset, duration: float, out_path: Path
+    document: Document, preset: RenderPreset, duration: float, out_path: Path
 ) -> RenderedArtifact | None:
-    """Render the node into `out_path` bounded by the outlet preset.
+    """Render the document into `out_path` bounded by the outlet preset.
 
     Owns the render try/except + partial-file cleanup + artifact value construction.
     The caller mints the path (`render_for` a scratch uuid; the copilot a renders-dir
@@ -46,7 +46,7 @@ def render_to(
     details.file_details.path = str(out_path)
 
     try:
-        rendered: MediaDetails = node.render_media(details, preset)
+        rendered: MediaDetails = document.render_media(details, preset)
     except Exception as e:
         logger.error(f"Failed to render artifact: {e}")
         if out_path.exists():
@@ -65,12 +65,12 @@ def render_to(
 
 
 def render_for(
-    node: Node, preset: RenderPreset, duration: float, scratch_dir: Path
+    document: Document, preset: RenderPreset, duration: float, scratch_dir: Path
 ) -> RenderedArtifact | None:
-    """Render the node into a scratch artifact bounded by the outlet preset.
+    """Render the document into a scratch artifact bounded by the outlet preset.
 
     Mints the scratch path, then delegates the render to `render_to`.
     """
     scratch_dir.mkdir(parents=True, exist_ok=True)
     artifact_path: Path = scratch_dir / f"{uuid4()}.{preset_ext(preset)}"
-    return render_to(node, preset, duration, artifact_path)
+    return render_to(document, preset, duration, artifact_path)

@@ -19,7 +19,7 @@ from PIL import Image as PILImage
 
 from shaderbox.constants import DEFAULT_FS_FILE_PATH
 from shaderbox.core import Canvas, Pass
-from shaderbox.document import DEFAULT_PASS_NAME, Node
+from shaderbox.document import DEFAULT_PASS_NAME, Document
 from shaderbox.media import MediaDetails, texture_to_rgba8
 from shaderbox.pass_graph import PassEntry, PassGraph, TargetConfig
 from shaderbox.shader_source import ShaderSource
@@ -79,8 +79,8 @@ def _document(
     sources: dict[str, str],
     graph: PassGraph,
     size: tuple[int, int] = (8, 8),
-) -> Node:
-    doc = Node(gl=gl, canvas_size=size)
+) -> Document:
+    doc = Document(gl=gl, canvas_size=size)
     doc.passes[DEFAULT_PASS_NAME].release()
     doc.passes = {}
     for name, src in sources.items():
@@ -102,7 +102,7 @@ def _red_of(canvas: Canvas) -> int:
     return int(texture_to_rgba8(canvas.texture)[0][0][0])
 
 
-def _image_details(doc: Node, path: Path) -> MediaDetails:
+def _image_details(doc: Document, path: Path) -> MediaDetails:
     details = MediaDetails(is_video=False, duration=1.0)
     details.file_details.path = str(path)
     w, h = doc.render_pass.canvas.texture.size
@@ -111,7 +111,7 @@ def _image_details(doc: Node, path: Path) -> MediaDetails:
     return details
 
 
-def _red(doc: Node) -> int:
+def _red(doc: Document) -> int:
     return _red_of(doc.render_pass.canvas)
 
 
@@ -304,7 +304,7 @@ def test_a_single_pass_document_still_renders_without_a_graph_edit(
 ) -> None:
     # The ordinary case: a freshly constructed document has one pass, names it the output, and
     # draws without anyone having opened a panel.
-    doc = Node(gl=gl_ctx, canvas_size=(8, 8))
+    doc = Document(gl=gl_ctx, canvas_size=(8, 8))
     doc.passes[DEFAULT_PASS_NAME].release_program(_CONST % "1.0")
     doc.passes[DEFAULT_PASS_NAME].compile()
     doc.render(u_time=0.0)
@@ -315,7 +315,7 @@ def test_a_single_pass_document_still_renders_without_a_graph_edit(
 
 def test_a_documents_source_lands_on_its_only_pass(gl_ctx: moderngl.Context) -> None:
     # `render_pass` resolves to the output, which for a one-pass document is that pass.
-    doc = Node(gl=gl_ctx, source=ShaderSource.load(DEFAULT_FS_FILE_PATH))
+    doc = Document(gl=gl_ctx, source=ShaderSource.load(DEFAULT_FS_FILE_PATH))
     assert list(doc.passes) == [DEFAULT_PASS_NAME]
     assert doc.render_pass is doc.passes[DEFAULT_PASS_NAME]
     assert doc.render_pass.source.path == DEFAULT_FS_FILE_PATH

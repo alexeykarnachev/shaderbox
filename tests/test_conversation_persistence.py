@@ -411,14 +411,14 @@ def test_recover_card_survives_round_trip(tmp_path: Path) -> None:
     # to_messages (the Recover button is rebuilt from it after a restart).
     state = ChatState()
     state.messages = [
-        Message(role="user", text="delete the gradient node"),
+        Message(role="user", text="delete the gradient document"),
         Message(
             role="pending_action",
-            text="Delete node 'a1b2'?\nYou chose: Yes",
+            text="Delete document 'a1b2'?\nYou chose: Yes",
             resolved=True,
             recover=RecoverInfo(
-                node_id="full-uuid-1234",
-                node_name="Gradient",
+                document_id="full-uuid-1234",
+                document_name="Gradient",
                 trash_name="full-uuid-1234",
             ),
         ),
@@ -432,9 +432,9 @@ def test_recover_card_survives_round_trip(tmp_path: Path) -> None:
     card = msgs[1]
     assert card.role == "pending_action" and card.resolved
     assert card.recover is not None
-    assert card.recover.node_id == "full-uuid-1234"
+    assert card.recover.document_id == "full-uuid-1234"
     assert card.recover.trash_name == "full-uuid-1234"
-    assert card.recover.node_name == "Gradient"
+    assert card.recover.document_name == "Gradient"
     assert not card.recover.done
     assert msgs[2].recover is None
 
@@ -450,7 +450,7 @@ def test_pre_recover_v1_file_loads_soft(tmp_path: Path) -> None:
                     {"role": "user", "text": "hi", "resolved": False},
                     {
                         "role": "pending_action",
-                        "text": "Delete node 'x'?",
+                        "text": "Delete document 'x'?",
                         "resolved": True,
                     },
                 ],
@@ -470,7 +470,7 @@ def test_gate_outcome_round_trip_and_pre_v10_default(tmp_path: Path) -> None:
     state.messages = [
         Message(
             role="pending_action",
-            text="Delete node `Blank`?",
+            text="Delete document `Blank`?",
             resolved=True,
             gate_outcome="Yes",
         ),
@@ -488,7 +488,7 @@ def test_gate_outcome_round_trip_and_pre_v10_default(tmp_path: Path) -> None:
                 "messages": [
                     {
                         "role": "pending_action",
-                        "text": "Delete node 'x'?\nYou chose: Yes",
+                        "text": "Delete document 'x'?\nYou chose: Yes",
                         "resolved": True,
                     }
                 ],

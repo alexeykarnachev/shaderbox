@@ -82,7 +82,7 @@ def _draw_body(app: App) -> bool:
             imgui.HoveredFlags_.allow_when_disabled
         ):
             imgui.set_tooltip(
-                "Open a node's shader and click into the editor first (so the caret is positioned)"
+                "Open a document's shader and click into the editor first (so the caret is positioned)"
             )
         if inserted and app.insert_text_at_caret(section.snippet):
             keep_open = False
@@ -93,7 +93,7 @@ def _draw_body(app: App) -> bool:
 
 
 def _insert_target_ok(app: App) -> bool:
-    # A GLSL block belongs in a node's shader — not a lib file and not a script.py, both of which
+    # A GLSL block belongs in a document's shader — not a lib file and not a script.py, both of which
     # the editor can also have open (the picker's bare-name insert is harmless anywhere; this isn't).
     # The tab's own `kind` is the semantic answer; a filename test would re-derive it.
     tab = app.active_tab

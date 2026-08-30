@@ -5,16 +5,16 @@ from typing import Self
 
 from platformdirs import user_data_dir
 
-# What constitutes a document on disk. A document dir is loadable once node.json and at least one
+# What constitutes a document on disk. A document dir is loadable once document.json and at least one
 # pass file exist (feature 065).
-NODE_JSON_BASENAME = "node.json"
+DOCUMENT_JSON_BASENAME = "document.json"
 # One ordinary fragment shader per pass, each with its own main().
 PASSES_DIR_NAME = "passes"
 PASS_SHADER_SUFFIX = ".frag.glsl"
-# The document's CPU behaviour script, under nodes/<id>/scripts/ (feature 048: one per node).
-NODE_SCRIPT_BASENAME = "script.py"
+# The document's CPU behaviour script, under documents/<id>/scripts/ (feature 048: one per document).
+DOCUMENT_SCRIPT_BASENAME = "script.py"
 # The pass graph: which passes exist, what fills each input, each target's configuration, and
-# which pass is the output. App-written derived state, exactly as node.json is.
+# which pass is the output. App-written derived state, exactly as document.json is.
 GRAPH_JSON_BASENAME = "graph.json"
 
 
@@ -37,7 +37,7 @@ def app_data_dir() -> Path:
 
 
 def shader_lib_root() -> Path:
-    # Cross-project GLSL library — every node's `#include "name"` resolves
+    # Cross-project GLSL library — every document's `#include "name"` resolves
     # against this dir. Same posture as integrations.json (cross-project, lives
     # at app_data_dir()).
     path = app_data_dir() / "shader_lib"
@@ -75,7 +75,7 @@ class ProjectPaths:
     # for_root; the three file/dir paths whose consumers create their own parent stay un-mkdir'd.
     root: Path
     app_state_file: Path
-    nodes_dir: Path
+    documents_dir: Path
     media_dir: Path
     trash_dir: Path
     renders_dir: Path
@@ -86,17 +86,17 @@ class ProjectPaths:
     @classmethod
     def for_root(cls, project_dir: Path) -> Self:
         root = project_dir.resolve()
-        nodes_dir = root / "nodes"
+        documents_dir = root / "documents"
         media_dir = root / "media"
         trash_dir = root / "trash"
         renders_dir = root / "renders"
         copilot_dir = root / "copilot"
-        for d in (root, nodes_dir, media_dir, trash_dir, renders_dir, copilot_dir):
+        for d in (root, documents_dir, media_dir, trash_dir, renders_dir, copilot_dir):
             d.mkdir(parents=True, exist_ok=True)
         return cls(
             root=root,
             app_state_file=root / "app_state.json",
-            nodes_dir=nodes_dir,
+            documents_dir=documents_dir,
             media_dir=media_dir,
             trash_dir=trash_dir,
             renders_dir=renders_dir,
@@ -105,22 +105,22 @@ class ProjectPaths:
             copilot_checkpoints_dir=copilot_dir / "checkpoints",
         )
 
-    def node_json_for(self, node_id: str) -> Path:
-        return self.nodes_dir / node_id / NODE_JSON_BASENAME
+    def document_json_for(self, document_id: str) -> Path:
+        return self.documents_dir / document_id / DOCUMENT_JSON_BASENAME
 
-    def passes_dir_for(self, node_id: str) -> Path:
-        return self.nodes_dir / node_id / PASSES_DIR_NAME
+    def passes_dir_for(self, document_id: str) -> Path:
+        return self.documents_dir / document_id / PASSES_DIR_NAME
 
-    def pass_shader_for(self, node_id: str, pass_name: str) -> Path:
-        return self.passes_dir_for(node_id) / pass_shader_name(pass_name)
+    def pass_shader_for(self, document_id: str, pass_name: str) -> Path:
+        return self.passes_dir_for(document_id) / pass_shader_name(pass_name)
 
-    def graph_json_for(self, node_id: str) -> Path:
-        return self.nodes_dir / node_id / GRAPH_JSON_BASENAME
+    def graph_json_for(self, document_id: str) -> Path:
+        return self.documents_dir / document_id / GRAPH_JSON_BASENAME
 
-    def node_script_for(self, node_id: str) -> Path:
-        return self.scripts_dir_for(node_id) / NODE_SCRIPT_BASENAME
+    def document_script_for(self, document_id: str) -> Path:
+        return self.scripts_dir_for(document_id) / DOCUMENT_SCRIPT_BASENAME
 
-    def scripts_dir_for(self, node_id: str) -> Path:
-        # The CPU-script engine's per-node behavior scripts (feature 040): nodes/<id>/scripts/.
+    def scripts_dir_for(self, document_id: str) -> Path:
+        # The CPU-script engine's per-document behavior scripts (feature 040): documents/<id>/scripts/.
         # LAZY — globbed-if-exists at load, created on first write (041/043). Not eagerly mkdir'd.
-        return self.nodes_dir / node_id / "scripts"
+        return self.documents_dir / document_id / "scripts"

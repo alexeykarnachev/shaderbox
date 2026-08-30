@@ -12,17 +12,17 @@ from shaderbox.render_job import render_for
 from shaderbox.render_preset import RenderPreset
 from shaderbox.tabs.share_state import OutletRenderState, TabState
 from shaderbox.theme import COLOR, SPACE
-from shaderbox.ui_models import UINode
+from shaderbox.ui_models import UIDocument
 
 
 def update(app: App) -> None:
     if app.share_tab_state is None:
         return
-    current_node = app.ui_nodes.get(app.current_node_id)
+    current_document = app.ui_documents.get(app.current_document_id)
     for exporter in app.exporter_registry.all():
         if not exporter.is_available:
             continue
-        exporter.update(current_node)
+        exporter.update(current_document)
         _surface_terminal_progress(app, exporter)
 
 
@@ -57,7 +57,7 @@ def _draw_inner(app: App) -> None:
     assert app.share_tab_state is not None
     state = app.share_tab_state
     registry = app.exporter_registry
-    current_node = app.ui_nodes.get(app.current_node_id)
+    current_document = app.ui_documents.get(app.current_document_id)
 
     available: list[Exporter] = [e for e in registry.all() if e.is_available]
     if not available:
@@ -72,7 +72,11 @@ def _draw_inner(app: App) -> None:
         registry.set_active(exporter.exporter_id)
         with imgui_ctx.push_id(exporter.exporter_id):
             _draw_outlet(
-                app, state, state.outlet(exporter.exporter_id), exporter, current_node
+                app,
+                state,
+                state.outlet(exporter.exporter_id),
+                exporter,
+                current_document,
             )
         return
 
@@ -95,7 +99,7 @@ def _draw_inner(app: App) -> None:
             continue
 
         with imgui_ctx.push_id(exporter.exporter_id):
-            _draw_outlet(app, state, outlet, exporter, current_node)
+            _draw_outlet(app, state, outlet, exporter, current_document)
 
 
 def _draw_outlet(
@@ -103,7 +107,7 @@ def _draw_outlet(
     state: TabState,
     outlet: OutletRenderState,
     exporter: Exporter,
-    current_node: UINode | None,
+    current_document: UIDocument | None,
 ) -> None:
     preset: RenderPreset = exporter.render_preset()
 
@@ -123,13 +127,13 @@ def _draw_outlet(
     def _do_render() -> None:
         # Defer the encode one frame so the "Rendering..." cue (and any modal) paints before the
         # synchronous encode freezes the loop — same path as the Render tab (tabs/render.py).
-        # Capture the node ID, not the UINode: the run frame is a frame LATER, and a delete or
-        # project switch in between releases that node's GL program, so a captured object would
-        # encode a released node (a black artifact, published with no error).
-        node_id = app.current_node_id
+        # Capture the document ID, not the UIDocument: the run frame is a frame LATER, and a delete or
+        # project switch in between releases that document's GL program, so a captured object would
+        # encode a released document (a black artifact, published with no error).
+        document_id = app.current_document_id
 
         def _run() -> None:
-            target = app.ui_nodes.get(node_id)
+            target = app.ui_documents.get(document_id)
             if target is not None:
                 _render(app, outlet, preset, target, state)
 
@@ -154,20 +158,20 @@ def _draw_outlet(
         preview_size=size,
         extras=exporter.build_render_extras(deps),
     )
-    exporter.draw_target_panel(current_node, control)
+    exporter.draw_target_panel(current_document, control)
 
 
 def _render(
     app: App,
     outlet: OutletRenderState,
     preset: RenderPreset,
-    current_node: UINode | None,
+    current_document: UIDocument | None,
     state: TabState,
 ) -> None:
-    if current_node is None:
+    if current_document is None:
         return
     new_artifact: RenderedArtifact | None = render_for(
-        current_node.node, preset, outlet.duration, state.scratch_dir
+        current_document.document, preset, outlet.duration, state.scratch_dir
     )
     if new_artifact is None:
         # STALE-ARTIFACT GUARD, not just feedback: artifact_is_fresh is only ever set by

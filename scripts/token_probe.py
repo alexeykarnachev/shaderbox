@@ -301,11 +301,11 @@ def q4_compact_menu(probe: Probe, registry: Any) -> None:
             "edit_shader",
             "write_shader",
             "set_uniform",
-            "create_node",
+            "create_document",
             "grep",
             "read_lib",
-            "delete_node",
-            "switch_node",
+            "delete_document",
+            "switch_document",
         }
     ]
     shader_wire = [_tool_to_wire(s) for s in shader_specs]

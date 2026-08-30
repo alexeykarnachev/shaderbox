@@ -1,6 +1,6 @@
 """Pins the media suffix->class resolver: every advertised MEDIA_EXTENSIONS suffix
 must resolve (the picker offers all of them and Video.save preserves the source
-suffix, so an unresolvable advertised suffix kills the node on reload)."""
+suffix, so an unresolvable advertised suffix kills the document on reload)."""
 
 import pytest
 

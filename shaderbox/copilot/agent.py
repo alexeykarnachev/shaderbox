@@ -70,13 +70,13 @@ def _measured_clause(facts: str) -> str:
 
 
 def _forced_reply_facts(registry: ToolRegistry, ran: "_RunLog") -> str:
-    # One fresh numeric probe of the node the turn last authored, for the forced reply's
+    # One fresh numeric probe of the document the turn last authored, for the forced reply's
     # measured clause. "" when the turn authored no render, or the probe errored — a failed
     # measurement must never block the reply.
     if not ran.mutated():
         return ""
     ok, msg, _ = registry.execute(
-        "probe_render", {"node": ran.last_render_target(), "t": 0.0}, ""
+        "probe_render", {"document": ran.last_render_target(), "t": 0.0}, ""
     )
     return msg if ok else ""
 
@@ -88,7 +88,7 @@ _COMPILE_THRASH_NUDGE = (
     "a single block in a large file)."
 )
 
-# Tools that change what the CURRENT node renders — a turn that ran one of these ok produced a
+# Tools that change what the CURRENT document renders — a turn that ran one of these ok produced a
 # visual result (053 slice B). Structural ops (rename/delete/switch/canvas-size) are excluded.
 _RENDER_AUTHORING_TOOLS = frozenset(
     {"edit_shader", "write_shader", "set_uniform", "edit_script", "write_script"}
@@ -107,15 +107,15 @@ def _clean_streak_fact(n: int) -> str:
     )
 
 
-# Edit tools whose artifact is the node's script.py rather than its GLSL — the streak keys
-# namespace on this so a node's two files never share one brake.
+# Edit tools whose artifact is the document's script.py rather than its GLSL — the streak keys
+# namespace on this so a document's two files never share one brake.
 _SCRIPT_EDIT_TOOLS = frozenset({"write_script", "edit_script"})
 _WRITE_TOOLS = frozenset({"write_shader", "write_script"})
 
 
-def _node_arg(args: dict[str, object]) -> str:
-    # The raw node-address string an edit/authoring call targeted ("" = the current node): the
-    # tools disagree on the arg NAME (`target` for shaders, `node` for scripts), so read through
+def _document_arg(args: dict[str, object]) -> str:
+    # The raw document-address string an edit/authoring call targeted ("" = the current document): the
+    # tools disagree on the arg NAME (`target` for shaders, `document` for scripts), so read through
     # the shared vocabulary instead of one hardcoded key.
     for key in _NODE_ARG_KEYS:
         val = args.get(key)
@@ -125,15 +125,15 @@ def _node_arg(args: dict[str, object]) -> str:
 
 
 def _edit_target_key(name: str, args: dict[str, object]) -> tuple[str, str]:
-    # The per-FILE key for the clean-edit streak: (artifact kind, raw target) — a node's GLSL and
-    # its script.py are two files and must not share a streak. Empty target = the current node,
+    # The per-FILE key for the clean-edit streak: (artifact kind, raw target) — a document's GLSL and
+    # its script.py are two files and must not share a streak. Empty target = the current document,
     # keyed to a stable sentinel so consecutive no-target edits count as ONE file. The key holds
-    # the RAW target string, not a resolved node id (run_turn has no resolver in scope), so editing
-    # one node both by-empty and by-its-id splits the streak across two keys and the brake counts
+    # the RAW target string, not a resolved document id (run_turn has no resolver in scope), so editing
+    # one document both by-empty and by-its-id splits the streak across two keys and the brake counts
     # slower for that file. Harmless: it only DELAYS the brake (never disables it), and a real
     # spree uses one addressing style throughout.
     kind = "script" if name in _SCRIPT_EDIT_TOOLS else "shader"
-    return kind, _node_arg(args) or "<current>"
+    return kind, _document_arg(args) or "<current>"
 
 
 def _trunc(text: str, limit: int) -> str:
@@ -174,11 +174,11 @@ class AgentToolCard:
 class TurnSummary:
     # The engine-derived NL summary of a committed turn; replaces the verbatim tool tail in history.
     # `reply` is the agent's prose (final reply at clean-done; the note/error at a cutoff); `ledger`
-    # is the mutating-action lines (new values + irreversible identities); `nodes` is every node
+    # is the mutating-action lines (new values + irreversible identities); `documents` is every document
     # referenced this turn. _commit_turn renders these into one assistant history message.
     reply: str = ""
     ledger: list[str] = field(default_factory=list)
-    nodes: list[str] = field(default_factory=list)
+    documents: list[str] = field(default_factory=list)
 
 
 # The terminal events carry the engine-derived NL TurnSummary for _commit_turn to persist as one
@@ -241,7 +241,7 @@ class _RunEntry:
     name: str
     ok: bool
     msg: str  # the tool's terse model-facing result (carries set_uniform's new value)
-    args: dict  # the call args — for node names referenced/targeted this turn
+    args: dict  # the call args — for document names referenced/targeted this turn
     payload: (
         dict | None
     )  # the structured side-channel — carries id / pack / url (NOT in msg)
@@ -249,8 +249,8 @@ class _RunEntry:
 
 # Max non-irreversible mutating lines kept in a turn-summary ledger; irreversible (publish/delete)
 # lines are always kept verbatim (the don't-re-do safety invariant).
-# Tool-arg keys that name a node (every node touched or referenced this turn).
-_NODE_ARG_KEYS: tuple[str, ...] = ("node", "target", "nodes")
+# Tool-arg keys that name a document (every document touched or referenced this turn).
+_NODE_ARG_KEYS: tuple[str, ...] = ("document", "target", "documents")
 
 
 class _RunLog:
@@ -273,21 +273,21 @@ class _RunLog:
         return any(e.ok and e.name in _RENDER_AUTHORING_TOOLS for e in self._entries)
 
     def last_render_target(self) -> str:
-        # The raw node-address the LAST successful render-authoring call targeted, for aiming a
-        # probe at the node the turn actually changed. "" = the current node — including when
+        # The raw document-address the LAST successful render-authoring call targeted, for aiming a
+        # probe at the document the turn actually changed. "" = the current document — including when
         # that call targeted a lib/example address, which the probe resolver can't resolve (a
         # measurement of the current frame beats erroring the probe away).
         for e in reversed(self._entries):
             if not (e.ok and e.name in _RENDER_AUTHORING_TOOLS):
                 continue
-            raw = _node_arg(e.args)
+            raw = _document_arg(e.args)
             if is_lib_address(raw) or is_example_address(raw):
                 return ""
             return raw
         return ""
 
-    def referenced_nodes(self) -> list[str]:
-        # Every node name/handle the turn touched or referenced: args of every call, deduped,
+    def referenced_documents(self) -> list[str]:
+        # Every document name/handle the turn touched or referenced: args of every call, deduped,
         # order-preserved. A later turn's "do the same to C" needs the prior referent named.
         seen: dict[str, None] = {}
         for e in self._entries:
@@ -329,12 +329,12 @@ class _RunLog:
 
 
 def _identity_from_payload(payload: dict | None) -> str:
-    # Pull the action's durable identity out of a tool payload: a published URL or a deleted node
+    # Pull the action's durable identity out of a tool payload: a published URL or a deleted document
     # id/trash-name — whichever the tool surfaced. "" if none. (Pack ops carry their set_name only
     # in the verbatim `msg`, which the irreversible bucket keeps uncapped, so no payload key here.)
     if not payload:
         return ""
-    for key in ("url", "node_id", "trash_name"):
+    for key in ("url", "document_id", "trash_name"):
         val = payload.get(key)
         if isinstance(val, str) and val:
             return f"{key}={val}"
@@ -347,7 +347,7 @@ def _build_turn_summary(
     return TurnSummary(
         reply=reply,
         ledger=run_log.summary_lines(registry),
-        nodes=run_log.referenced_nodes(),
+        documents=run_log.referenced_documents(),
     )
 
 
@@ -1103,9 +1103,9 @@ def run_turn(
                 )
                 last = applied[-1]
                 if (last.payload or {}).get("errors"):
-                    target = _node_arg(last.args)
-                    node = target or "the current node"
-                    note += f"\nnote: {node} is currently left with compile errors."
+                    target = _document_arg(last.args)
+                    document = target or "the current document"
+                    note += f"\nnote: {document} is currently left with compile errors."
             yield AgentError(
                 note,
                 summary=_build_turn_summary(note, ran, registry),

@@ -1,6 +1,6 @@
 """Edit-result message surfaces (dogfood forensic fixes). Failures NAME the resolved
-target (an empty target silently meaning "current node" was a giveup cause); lib reads
-stop claiming a clean compile; a node edit whose compile errors live in a spliced lib
+target (an empty target silently meaning "current document" was a giveup cause); lib reads
+stop claiming a clean compile; a document edit whose compile errors live in a spliced lib
 is labelled cross-file instead of getting a misleading brace hint. GL-free — the tool
 layer is driven through the registry over the _caps fakes.
 """
@@ -25,8 +25,8 @@ from shaderbox.copilot.tools.shader import _applied_result
 from shaderbox.shader_errors import ShaderError
 from tests._caps import minimal_caps
 
-_LABEL = "node 'Text Rendering' (f90f)"
-_EMPTY_LABEL = _LABEL + " — target was empty, so this hit the CURRENT node"
+_LABEL = "document 'Text Rendering' (f90f)"
+_EMPTY_LABEL = _LABEL + " — target was empty, so this hit the CURRENT document"
 
 
 def _registry(**overrides: Any) -> ToolRegistry:
@@ -44,8 +44,8 @@ def test_edit_not_found_names_resolved_target() -> None:
     )
     ok, msg, _ = reg.execute("edit_shader", {"old_str": "x", "new_str": "y"})
     assert ok is False
-    assert "old_str not found in node 'Text Rendering' (f90f)" in msg
-    assert "target was empty, so this hit the CURRENT node" in msg
+    assert "old_str not found in document 'Text Rendering' (f90f)" in msg
+    assert "target was empty, so this hit the CURRENT document" in msg
 
 
 def test_rewrite_failure_names_checked_target() -> None:
@@ -73,20 +73,20 @@ def test_applied_result_success_names_target() -> None:
 
 
 def _resolve_stub() -> types.SimpleNamespace:
-    node = types.SimpleNamespace(
+    document = types.SimpleNamespace(
         render_pass=types.SimpleNamespace(
             source=types.SimpleNamespace(text="void main() {}")
         )
     )
-    ui_node = types.SimpleNamespace(
-        ui_state=types.SimpleNamespace(ui_name="Text Rendering"), node=node
+    ui_document = types.SimpleNamespace(
+        ui_state=types.SimpleNamespace(ui_name="Text Rendering"), document=document
     )
-    nodes = {"f90f1111": ui_node}
+    documents = {"f90f1111": ui_document}
     stub = types.SimpleNamespace(
-        _get_ui_nodes=lambda: nodes, _get_current_node_id=lambda: "f90f1111"
+        _get_ui_documents=lambda: documents, _get_current_document_id=lambda: "f90f1111"
     )
-    stub._copilot_resolve_node_id = CopilotBackend._copilot_resolve_node_id.__get__(
-        stub
+    stub._copilot_resolve_document_id = (
+        CopilotBackend._copilot_resolve_document_id.__get__(stub)
     )
     stub._copilot_short_ids = CopilotBackend._copilot_short_ids.__get__(stub)
     return stub
@@ -172,16 +172,18 @@ def test_compile_errors_render_a_lib_address_not_a_filesystem_path(
     assert format_compile_errors([err]) == "lib:draw/neon_ring.glsl:3: boom"
 
 
-def test_compile_errors_render_a_node_source_as_its_short_id(
+def test_compile_errors_render_a_document_source_as_its_short_id(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # 059 D2 falsifier (i), node half: a node source renders as the short id the project map uses.
+    # 059 D2 falsifier (i), document half: a document source renders as the short id the project map uses.
     monkeypatch.setattr(
         "shaderbox.copilot.error_render.shader_lib_root", lambda: tmp_path / "lib"
     )
-    node_dir = tmp_path / "proj" / "nodes" / "f90f1111-2222-3333-4444-555566667777"
+    document_dir = (
+        tmp_path / "proj" / "documents" / "f90f1111-2222-3333-4444-555566667777"
+    )
     err = CompileErrorInfo(
-        path=str(node_dir / "shader.frag.glsl"), line=12, message="boom"
+        path=str(document_dir / "shader.frag.glsl"), line=12, message="boom"
     )
     rendered = format_compile_errors([err])
     assert rendered == "f90f:12: boom"
@@ -191,7 +193,7 @@ def test_compile_errors_render_a_node_source_as_its_short_id(
 def test_compile_errors_pass_non_path_labels_through(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A script error already carries the bare `script.py` label and the synthetic no-node error an
+    # A script error already carries the bare `script.py` label and the synthetic no-document error an
     # empty one — both unchanged by the mapping. line 0 = unmapped: no location is printed at all
     # (an empty label leaves the bare message).
     monkeypatch.setattr(
@@ -200,10 +202,10 @@ def test_compile_errors_pass_non_path_labels_through(
     errors = [
         CompileErrorInfo(path="script.py", line=2, message="bad"),
         CompileErrorInfo(path="script.py", line=0, message="unmapped"),
-        CompileErrorInfo(path="", line=0, message="no node found for 'zzzz'"),
+        CompileErrorInfo(path="", line=0, message="no document found for 'zzzz'"),
     ]
     assert format_compile_errors(errors) == (
-        "script.py:2: bad\nscript.py: unmapped\nno node found for 'zzzz'"
+        "script.py:2: bad\nscript.py: unmapped\nno document found for 'zzzz'"
     )
 
 
@@ -212,30 +214,34 @@ def test_compile_errors_pass_non_path_labels_through(
 
 def _lib_view(address: str) -> ShaderView:
     return ShaderView(
-        node_id=address, name=address, listing="1  // x", uniforms=[], errors=[]
+        document_id=address, name=address, listing="1  // x", uniforms=[], errors=[]
     )
 
 
-def _node_view() -> ShaderView:
+def _document_view() -> ShaderView:
     return ShaderView(
-        node_id="ab12", name="Wave", listing="1  void main() {}", uniforms=[], errors=[]
+        document_id="ab12",
+        name="Wave",
+        listing="1  void main() {}",
+        uniforms=[],
+        errors=[],
     )
 
 
 def test_read_shader_lib_only_is_not_compiled_clean() -> None:
     reg = _registry(read_shaders=lambda _ids: [_lib_view("lib:noise.glsl")])
-    ok, msg, payload = reg.execute("read_shader", {"nodes": ["lib:noise.glsl"]})
+    ok, msg, payload = reg.execute("read_shader", {"documents": ["lib:noise.glsl"]})
     assert ok is True
     assert "compiled clean" not in msg
     assert "no standalone compile" in msg
     assert payload is not None and "no standalone compile" in payload["display"]
 
 
-def test_read_shader_mixed_separates_node_state_from_lib_note() -> None:
+def test_read_shader_mixed_separates_document_state_from_lib_note() -> None:
     reg = _registry(
-        read_shaders=lambda _ids: [_node_view(), _lib_view("lib:noise.glsl")]
+        read_shaders=lambda _ids: [_document_view(), _lib_view("lib:noise.glsl")]
     )
-    ok, msg, _ = reg.execute("read_shader", {"nodes": ["ab12", "lib:noise.glsl"]})
+    ok, msg, _ = reg.execute("read_shader", {"documents": ["ab12", "lib:noise.glsl"]})
     assert ok is True
     assert "all compiled clean." in msg
     assert "(lib:noise.glsl: library file — no standalone compile)" in msg

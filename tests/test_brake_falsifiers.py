@@ -31,7 +31,7 @@ def test_gating_is_a_two_state_decision() -> None:
     assert policies == {GatePolicy.NONE, GatePolicy.ALWAYS}
 
     gated = [d.name for d in registry.definitions() if registry.requires_gate(d.name)]
-    assert "delete_node" in gated
+    assert "delete_document" in gated
     assert "read_shader" not in gated
 
 

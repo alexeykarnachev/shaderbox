@@ -1,5 +1,5 @@
 """Headless smoke test — runs ~200 frames of update_and_draw against a THROWAWAY tmp project
-(seeded with the shipped example nodes; never the tracked projects/dev sandbox) in an invisible
+(seeded with the shipped example documents; never the tracked projects/dev sandbox) in an invisible
 glfw window and asserts no exception + a few invariants.
 
 Catches import errors, callback dispatch failures, popup state-machine crashes,
@@ -19,14 +19,14 @@ from imgui_bundle import imgui
 from loguru import logger
 
 from shaderbox.app import App, PopupState
-from shaderbox.constants import EXAMPLE_ORDER, NODE_EXAMPLES_DIR
-from shaderbox.document import Node
+from shaderbox.constants import DOCUMENT_EXAMPLES_DIR, EXAMPLE_ORDER
+from shaderbox.document import Document
 from shaderbox.help_content import help_sections
 from shaderbox.logging_setup import configure_logging
 from shaderbox.pass_graph import PassEntry, PassGraph
 from shaderbox.paths import PASSES_DIR_NAME, pass_shader_name
 from shaderbox.ui import update_and_draw
-from shaderbox.ui_regions import ActiveRegion, NodeTab
+from shaderbox.ui_regions import ActiveRegion, DocumentTab
 
 N_FRAMES: int = 200
 
@@ -58,8 +58,8 @@ _SCRIPT_NODE_JSON = {
     "canvas_size": [256, 256],
     "uniforms": {},
     "ui_state": {
-        "ui_name": "Scripted Node",
-        "description": "smoke: a node script driving many uniforms",
+        "ui_name": "Scripted Document",
+        "description": "smoke: a document script driving many uniforms",
     },
 }
 
@@ -81,27 +81,27 @@ _SCRIPT_SOURCE = (
 
 
 def _seed_tmp_project(root: Path) -> Path:
-    # A throwaway project seeded with the shipped example nodes — smoke must never read or
+    # A throwaway project seeded with the shipped example documents — smoke must never read or
     # mutate the tracked projects/dev sandbox.
     project = root / "project"
-    nodes = project / "nodes"
-    nodes.mkdir(parents=True)
+    documents = project / "documents"
+    documents.mkdir(parents=True)
     for tid in EXAMPLE_ORDER:
-        shutil.copytree(NODE_EXAMPLES_DIR / tid, nodes / tid)
+        shutil.copytree(DOCUMENT_EXAMPLES_DIR / tid, documents / tid)
 
-    # A node script node (048 — one script per node): the engine ticks it every frame, so 200 clean
-    # frames prove the App-with-a-scripted-node loop doesn't crash. (Engine-correctness — values/
+    # A document script document (048 — one script per document): the engine ticks it every frame, so 200 clean
+    # frames prove the App-with-a-scripted-document loop doesn't crash. (Engine-correctness — values/
     # freeze/determinism/play-stop — is the pure-CPU unit test's job; smoke proves the App loop +
     # the binding + the stopped-skip wire.)
-    script_node = nodes / "script_node"
-    (script_node / PASSES_DIR_NAME).mkdir(parents=True)
-    (script_node / PASSES_DIR_NAME / pass_shader_name("main")).write_text(
+    script_document = documents / "script_document"
+    (script_document / PASSES_DIR_NAME).mkdir(parents=True)
+    (script_document / PASSES_DIR_NAME / pass_shader_name("main")).write_text(
         _SCRIPT_SHADER, encoding="utf-8"
     )
-    (script_node / "node.json").write_text(
+    (script_document / "document.json").write_text(
         json.dumps(_SCRIPT_NODE_JSON), encoding="utf-8"
     )
-    script_dir = script_node / "scripts"
+    script_dir = script_document / "scripts"
     script_dir.mkdir()
     (script_dir / "script.py").write_text(_SCRIPT_SOURCE, encoding="utf-8")
     return project
@@ -113,9 +113,11 @@ def _check_invariants(app: App, frame_idx: int) -> None:
     assert isinstance(app.popup_state, PopupState), (
         f"frame {frame_idx}: popup_state is not a PopupState ({app.popup_state!r})"
     )
-    assert app.current_node_id == "" or app.current_node_id in app.ui_nodes, (
-        f"frame {frame_idx}: current_node_id={app.current_node_id!r} not in "
-        f"ui_nodes={list(app.ui_nodes.keys())}"
+    assert (
+        app.current_document_id == "" or app.current_document_id in app.ui_documents
+    ), (
+        f"frame {frame_idx}: current_document_id={app.current_document_id!r} not in "
+        f"ui_documents={list(app.ui_documents.keys())}"
     )
     # Feature 018: the registry must be populated + dispatched every frame (the
     # cheatsheet overlay draws here too, exercising its no-assert path headlessly).
@@ -124,8 +126,8 @@ def _check_invariants(app: App, frame_idx: int) -> None:
     assert app.active_region in ActiveRegion, (
         f"frame {frame_idx}: bad active_region={app.active_region!r}"
     )
-    assert app.active_node_tab in NodeTab, (
-        f"frame {frame_idx}: bad active_node_tab={app.active_node_tab!r}"
+    assert app.active_document_tab in DocumentTab, (
+        f"frame {frame_idx}: bad active_document_tab={app.active_document_tab!r}"
     )
 
 
@@ -137,28 +139,28 @@ void main() { fs_color = vec4(texture(u_prev, vs_uv).r + 0.02, 0.0, 0.0, 1.0); }
 """
 
 
-def _arm_feedback_canary(app: App) -> Node:
-    """Turn one node into a feedback document so the frame loop's swap has an observable.
+def _arm_feedback_canary(app: App) -> Document:
+    """Turn one document into a feedback document so the frame loop's swap has an observable.
 
     A feedback pass advances once per FRAME, but the loop renders the current document twice
     (preview canvas, then its own), so a swap tied to the render call would run at the wrong
     rate — and a still image looks identical either way. This gives the rate a number.
     """
-    node_id = next(iter(app.ui_nodes))
-    node = app.ui_nodes[node_id].node
-    name = next(iter(node.passes))
-    node.passes[name].release_program(_ACCUMULATE_SRC)
-    node.passes[name].compile()
-    assert node.passes[name].compile_unit.errors == [], (
+    document_id = next(iter(app.ui_documents))
+    document = app.ui_documents[document_id].document
+    name = next(iter(document.passes))
+    document.passes[name].release_program(_ACCUMULATE_SRC)
+    document.passes[name].compile()
+    assert document.passes[name].compile_unit.errors == [], (
         f"smoke: the feedback canary shader did not compile: "
-        f"{node.passes[name].compile_unit.errors}"
+        f"{document.passes[name].compile_unit.errors}"
     )
-    node.graph = PassGraph(
+    document.graph = PassGraph(
         output=name, passes={name: PassEntry(inputs={"u_prev": name})}
     )
-    node.reset_feedback()
-    app.set_current_node_id(node_id)
-    return node
+    document.reset_feedback()
+    app.set_current_document_id(document_id)
+    return document
 
 
 def main() -> int:
@@ -180,20 +182,20 @@ def main() -> int:
             assert app.popup_state == PopupState.CLOSED, (
                 f"popup auto-opened for an explicit-dir App ({app.popup_state!r})"
             )
-            # Decision-15 regression canary (048): _init opens the restored current node's shader tab
-            # (it used to stay blank until a node switch). A non-empty project must have a tab now.
+            # Decision-15 regression canary (048): _init opens the restored current document's shader tab
+            # (it used to stay blank until a document switch). A non-empty project must have a tab now.
             assert app.editor_tabs, (
-                "smoke: editor_tabs empty after _init — the restored current node's shader tab "
+                "smoke: editor_tabs empty after _init — the restored current document's shader tab "
                 "was not opened (the load->ensure_shader_tab wire is missing)"
             )
-            if app.ui_nodes:
-                app.set_current_node_id(next(iter(app.ui_nodes)))
+            if app.ui_documents:
+                app.set_current_document_id(next(iter(app.ui_documents)))
             # Feature 019: nav_enable_keyboard is set in __init__, before any frame —
             # check it here (get_io() reads are frame-context-sensitive mid-loop).
             assert (
                 imgui.get_io().config_flags & imgui.ConfigFlags_.nav_enable_keyboard
             ), "nav_enable_keyboard not set"
-            feedback_node = _arm_feedback_canary(app)
+            feedback_document = _arm_feedback_canary(app)
             for frame_idx in range(N_FRAMES):
                 update_and_draw(app)
                 _check_invariants(app, frame_idx)
@@ -202,7 +204,7 @@ def main() -> int:
                 if frame_idx == 50:
                     app.cycle_region()
                 if frame_idx == 60:
-                    app.focus_node_tab(NodeTab.RENDER)
+                    app.focus_document_tab(DocumentTab.RENDER)
                 # Open the Examples browser for a stretch so its draw path (grid + desc slot +
                 # action row sizing) is exercised — it never opens on its own in the loop.
                 if frame_idx == 70:
@@ -234,39 +236,41 @@ def main() -> int:
                     app.is_copilot_open = False
             # Canary (048): the script must have BOUND + ticked (binding is by `script.py` existence).
             engine = app.session.script_engine
-            driven = engine.script_driven_uniforms("script_node")
+            driven = engine.script_driven_uniforms("script_document")
             assert "u_a" in driven and "u_b" in driven, (
-                f"smoke: the node script did not bind/tick (driven={driven}) — script.py wasn't "
+                f"smoke: the document script did not bind/tick (driven={driven}) — script.py wasn't "
                 "discovered/bound"
             )
             # Stopped-skip wire (048): stop u_a, tick once; its WRITE must be skipped (the manual
             # value sticks) while u_a stays driven AND the un-stopped u_b still advances. A dead
             # `stopped` wire would keep writing u_a and green-wash the play/stop model.
-            script_node_obj = app.ui_nodes["script_node"].node
-            script_node_obj.render_pass.uniform_values["u_a"] = -999.0
-            b_before = script_node_obj.render_pass.uniform_values["u_b"]
-            app.session.set_uniform_stopped("script_node", "u_a", True)
-            app.session.tick(["script_node"], t=1.0, dt=0.5, frame=999)
-            assert script_node_obj.render_pass.uniform_values["u_a"] == -999.0, (
+            script_document_obj = app.ui_documents["script_document"].document
+            script_document_obj.render_pass.uniform_values["u_a"] = -999.0
+            b_before = script_document_obj.render_pass.uniform_values["u_b"]
+            app.session.set_uniform_stopped("script_document", "u_a", True)
+            app.session.tick(["script_document"], t=1.0, dt=0.5, frame=999)
+            assert script_document_obj.render_pass.uniform_values["u_a"] == -999.0, (
                 "smoke: a stopped uniform was overwritten — the tick(stopped=) skip is unwired"
             )
-            assert "u_a" in engine.script_driven_uniforms("script_node"), (
+            assert "u_a" in engine.script_driven_uniforms("script_document"), (
                 "smoke: a stopped uniform fell out of the driven set (its play button would vanish)"
             )
-            assert script_node_obj.render_pass.uniform_values["u_b"] != b_before, (
+            assert script_document_obj.render_pass.uniform_values["u_b"] != b_before, (
                 "smoke: the un-stopped u_b did not advance while u_a was stopped — the stop is "
                 "freezing the whole script, not just the one uniform"
             )
             # The feedback canary: N frames of +0.02 on an 8-bit target reach ~255 well before
             # the loop ends, so the check is that it advanced AT ALL and did not stall at one
             # step — a missing begin_frame freezes it at 5.
-            canary_red = feedback_node.render_pass.canvas.texture.read()[0]
+            canary_red = feedback_document.render_pass.canvas.texture.read()[0]
             assert canary_red > 32, (
                 f"smoke: the feedback pass advanced to {canary_red} over {N_FRAMES} frames — "
                 "the frame loop is not calling Document.begin_frame"
             )
             app.release()
-            logger.info(f"smoke: OK ({N_FRAMES} frames, {len(app.ui_nodes)} nodes)")
+            logger.info(
+                f"smoke: OK ({N_FRAMES} frames, {len(app.ui_documents)} documents)"
+            )
             return 0
         except Exception as e:
             logger.exception(f"smoke: FAIL — {e}")

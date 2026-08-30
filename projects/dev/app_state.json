@@ -1,7 +1,7 @@
 {
-    "current_node_id": "de24e577-3596-4f08-bb72-4621239632aa",
+    "current_document_id": "de24e577-3596-4f08-bb72-4621239632aa",
     "selected_example_id": "53724dbd-8efb-4c09-8c7d-28d626a066e7",
-    "is_render_all_nodes": true,
+    "is_render_all_documents": true,
     "exporter_settings": {
         "telegram": {},
         "youtube": {}
@@ -19,7 +19,7 @@
         "line_spacing": 1.0
     },
     "copilot_input_h": 66.0,
-    "active_node_tab": "node",
+    "active_document_tab": "document",
     "is_copilot_open": false,
     "copilot_layout": "corner",
     "key_bindings": {},

@@ -47,7 +47,7 @@ The costly mistakes from past sessions:
   was wrong.) When the user describes a shape ("a single X that does Y over time", "steps that stack"),
   say it back and get a nod before writing files.
 - Overwriting a shader in place destroyed earlier versions — we couldn't go back, compare, or watch
-  the evolution. **Each step is a NEW node** (project-native: a new `nodes/<id>/` grid cell). You
+  the evolution. **Each step is a NEW document** (project-native: a new `documents/<id>/` grid cell). You
   author a fresh node per version and never touch an existing one. (Versioning section below.)
 - "Looks like a good flame" from *your own* read of an image is unreliable — your visual judgment is
   poor. The notes log records the USER's feedback, your WEB findings, and concrete formulas — **never
@@ -107,13 +107,13 @@ doc change) and let them decide. Don't silently build on another session's in-fl
 ## The project lives in `projects/_lab/<name>/` (gitignored)
 
 - Create one fresh ShaderBox project **per experiment** under `projects/_lab/<slug>/` — it's a
-  collection of documents (each = a `node.json` + `passes/<name>.frag.glsl` + optional `graph.json`
+  collection of documents (each = a `document.json` + `passes/<name>.frag.glsl` + optional `graph.json`
   and `scripts/script.py`).
 - `projects/_lab/` is **gitignored** (`.gitignore`), so nothing here pollutes the repo. A worthwhile
   result is promoted **by hand at the very end** — only if the user decides to keep it. Two targets:
-  a real project (move the node dir + `git add`), or — for a polished showcase — a **shipped
-  example**: copy the node dir into `shaderbox/resources/node_examples/<uuid>/`, append the uuid to
-  `constants.py::EXAMPLE_ORDER`, give it a stranger-facing `ui_name`/`description` in `node.json`,
+  a real project (move the document dir + `git add`), or — for a polished showcase — a **shipped
+  example**: copy the document dir into `shaderbox/resources/document_examples/<uuid>/`, append the uuid to
+  `constants.py::EXAMPLE_ORDER`, give it a stranger-facing `ui_name`/`description` in `document.json`,
   promote any live-root-only `SB_*` helpers it uses into `resources/shader_lib/` (the fresh-env
   resolve is pinned by `tests/test_examples_resolve.py` — regenerate its api-lock snapshot). The
   canonical reference: the fire showcase (feature 051).
@@ -122,10 +122,10 @@ doc change) and let them decide. Don't silently build on another session's in-fl
 
 ### Project / node layout to write
 
-A document dir is `node.json` + `passes/<name>.frag.glsl` (+ optional `graph.json` when it has more
+A document dir is `document.json` + `passes/<name>.frag.glsl` (+ optional `graph.json` when it has more
 than one pass, and `scripts/script.py` for CPU-driven
 uniforms). `SB_*` helpers resolve from the live shader lib automatically. The smallest valid
-`node.json`:
+`document.json`:
 
 > **VERIFY the `SB_*` inventory before using a helper — the shipped set is SMALLER than old labs
 > assume.** The canonical library ships in `shaderbox/resources/shader_lib/`; the current set is only:
@@ -161,14 +161,14 @@ uniforms). `SB_*` helpers resolve from the live shader lib automatically. The sm
 
 ShaderBox's per-frame mtime watcher (`watch.py::reload_node_if_changed`, called for EVERY loaded node
 in `ui.py::update_and_draw`) **recompiles a pass the instant its `.frag.glsl` mtime changes on
-disk**, and `reload_scripts()` does the same for `script.py`. AND ShaderBox reconciles `nodes/` to
-disk every frame (disk is the source of truth), so a node dir you CREATE / DELETE on disk syncs into
+disk**, and `reload_scripts()` does the same for `script.py`. AND ShaderBox reconciles `documents/` to
+disk every frame (disk is the source of truth), so a document dir you CREATE / DELETE on disk syncs into
 the grid AUTOMATICALLY — no reload, no bookkeeping. Together that means:
 
-- **A new version = a new node dir** → it just appears in the grid as a fresh cell, live.
+- **A new version = a new document dir** → it just appears in the grid as a fresh cell, live.
 - **Editing a node's shader** → that cell recompiles in place.
 
-So the flow is: user opens the project once; thereafter you write a new `nodes/<id>/` per step and it
+So the flow is: user opens the project once; thereafter you write a new `documents/<id>/` per step and it
 shows up on its own. The only requirement is that the project was opened (so the app is watching that
 dir); everything after is automatic.
 
@@ -180,22 +180,22 @@ have the editor focused). So there is no edit-collision to fear — you own the 
 ## Versioning — one NODE per step, never overwrite
 
 Use the project's NATIVE layout — no parallel snapshot dir, no scaffolding. **Each step is its own
-node** under `nodes/`; the grid IS the version history. To preserve a version you simply leave its
-node alone; to make a new one you author a fresh node dir. You never overwrite an existing node, so
+node** under `documents/`; the grid IS the version history. To preserve a version you simply leave its
+node alone; to make a new one you author a fresh document dir. You never overwrite an existing node, so
 nothing is ever lost.
 
 ```
 projects/_lab/<slug>/
-  nodes/<id-1>/passes/main.frag.glsl   # v01 — its own grid cell, named "<effect> v01 (<short-name>)"
-  nodes/<id-2>/passes/main.frag.glsl   # v02
-  nodes/<id-3>/passes/main.frag.glsl   # v03
-  nodes/<id-3>/scripts/script.py  # if that version had a script
+  documents/<id-1>/passes/main.frag.glsl   # v01 — its own grid cell, named "<effect> v01 (<short-name>)"
+  documents/<id-2>/passes/main.frag.glsl   # v02
+  documents/<id-3>/passes/main.frag.glsl   # v03
+  documents/<id-3>/scripts/script.py  # if that version had a script
   ...
   NOTES.md                        # the experiment log (see below)
 ```
 
-**Each step:** (1) create a NEW `nodes/<id>/` (the dir name is the node id — any readable string like
-`v03-warp`, not a uuid; the grid sorts by creation time, not name; copy the node.json shape from an
+**Each step:** (1) create a NEW `documents/<id>/` (the dir name is the document id — any readable string like
+`v03-warp`, not a uuid; the grid sorts by creation time, not name; copy the document.json shape from an
 existing node and set `ui_state.ui_name` to `"<effect> vNN (<short-name>)"` so the grid reads as a
 progression); (2) write its `passes/main.frag.glsl` (+ `scripts/script.py` if any) — it appears in the grid
 on its own (the per-frame disk-sync from `## The live-preview contract`); (3) append a NOTES.md entry.
@@ -226,7 +226,7 @@ Entry shape (effect-agnostic skeleton; `vNN` so a draft doesn't pollute the outl
 ## vNN — <short name> (node <id or ui_name>)
 - Change: <the mechanical diff in plain words — the term/function/formula that changed>.
 - Source: <technique name> <URL>        # only when researched
-- Shader: nodes/<id>/passes/main.frag.glsl   # link the code so the entry IS a reference
+- Shader: documents/<id>/passes/main.frag.glsl   # link the code so the entry IS a reference
 - User verdict: <verbatim, or "pending review">
 ```
 
@@ -236,19 +236,19 @@ Start NOTES.md with a header: effect name, date, environment (live/offscreen), s
 
 ## Rendering (for YOUR eyeballing, and for offscreen delivery)
 
-`.claude/skills/shader-lab/render_node.py` — headless EGL render, no app needed:
+`.claude/skills/shader-lab/render_document.py` — headless EGL render, no app needed:
 
 ```bash
 # still PNG at time t — for YOU to eyeball a result before/while iterating:
-uv run python .claude/skills/shader-lab/render_node.py image <node_dir> <out.png> --t 0.5 --size 512
+uv run python .claude/skills/shader-lab/render_document.py image <document_dir> <out.png> --t 0.5 --size 512
 
 # MP4 clip — the OFFSCREEN deliverable (use .mp4/H.264 — most universally playable; avoid WebM):
-uv run python .claude/skills/shader-lab/render_node.py video <node_dir> <out.mp4> --seconds 10 --fps 30 --size 512
+uv run python .claude/skills/shader-lab/render_document.py video <document_dir> <out.mp4> --seconds 10 --fps 30 --size 512
 ```
 
 - Renders against the live `SB_*` lib; video goes through `Node.render_media` (so a `script.py` ticks
   a fresh per-export instance — export-isolation, same as a real export).
-- **`render_node.py` forces a SQUARE canvas** (`--size` → size×size). For a non-square aspect (e.g.
+- **`render_document.py` forces a SQUARE canvas** (`--size` → size×size). For a non-square aspect (e.g.
   9:16 portrait) it distorts — write a small inline render with the real `canvas.set_size((w, h))`
   instead (the snippet in `dev_flow.md ## Recipes > Authoring / debugging nodes directly`). Cropping a
   region of the render (PIL `.crop`) to eyeball one area (a corner seam, a rooftop, a street) is the
@@ -284,7 +284,7 @@ relevant `projects/_lab/<slug>/NOTES.md` FIRST.
   NOTES were complete; the skill digest was not, and I lazily read the digest.) The skill points you AT
   the source; the NOTES entry + shader ARE the source. Open them.
 - **So the duty cuts both ways: NOTES must be COMPLETE (record the mechanic — formula, split, the
-  numbers — not just the maintainer's verdict), and they must LINK their shader** (`nodes/<v>/passes/main.frag.glsl`)
+  numbers — not just the maintainer's verdict), and they must LINK their shader** (`documents/<v>/passes/main.frag.glsl`)
   for the exact code. A reusable lesson that only lives as a verdict ("added a night key") forces a
   re-derivation next time.
 
@@ -381,7 +381,7 @@ from real maintainer corrections; the parenthetical is the evidence, not a presc
   `= default` both seeds the value AND tells the engine the control type:
   `uniform float u_glow = 1.2;` (a drag), `uniform vec3 u_tint = vec3(1.0,0.4,0.1);`,
   `uniform uint u_octaves = 4u;` (an integer slider). After the user dials a value live and SAVES, read
-  it back off the node's `uniforms{}` in node.json and bake it as the new inline default. (Several
+  it back off the node's `uniforms{}` in document.json and bake it as the new inline default. (Several
   blind tune-render cycles evaporated the moment the knobs were exposed and the user dialed it in one
   pass.) For the engine mechanics of node files / headless render / compile-check / aspect, see
   `dev_flow.md ## Recipes > Authoring / debugging nodes directly`.
@@ -392,7 +392,7 @@ from real maintainer corrections; the parenthetical is the evidence, not a presc
   no amount of polish fixes it — a real mass-spring Verlet sim (script-driven, pushed to the shader as a
   mesh) was what read as fabric. Reach for the fake only when the cloth is incidental; for anything that
   must read real, do the real sim (see the meta-lever above + the `us_flag` lab). Reference:
-  `us_flag/nodes/v05-scene/shader.frag.glsl` (fake) vs the `v13`/`v14` scripts (real Verlet aeroelastic).
+  `us_flag/documents/v05-scene/shader.frag.glsl` (fake) vs the `v13`/`v14` scripts (real Verlet aeroelastic).
 - **Placing a fixed-RATIO rect on a non-square canvas: correct for `u_aspect`, or it stretches.** Equal
   `vs_uv.x` and `vs_uv.y` spans are UNEQUAL pixels when the canvas isn't square, so a shape sized in raw
   uv comes out the wrong ratio. For a rect that must read as physical ratio `R:1` in PIXELS:
@@ -522,7 +522,7 @@ labs). Build it as ONE shader, NOT N nodes:
   offset; stream props in. Geometry-affecting weights (a grow factor, a rooftop rise) must be set
   BEFORE the march (as a global the SDF reads); shading weights branch in `main()`.
 - **Compute & set the total duration for the render.** Sum the step durations + hold = the loop period;
-  set the node's `ui_state.render_media_details.duration` (in node.json) to exactly one period so the artifact loops seamlessly
+  set the node's `ui_state.render_media_details.duration` (in document.json) to exactly one period so the artifact loops seamlessly
   (verify t=0 ≈ t=period). The final step can be longer than the rest — make step start/duration helper
   functions rather than a single `STEP_DUR` if so.
 
@@ -560,13 +560,13 @@ the shader as an array uniform (`Array([flat floats])` → `uniform vecN arr[M]`
 positions a Python sim integrates each frame. NOT for per-pixel work (that stays in GLSL). Reach for it
 only when an effect genuinely wants stateful CPU-driven parameters; many effects don't.
 
-- **The `render_node.py` still path and video path BOTH must coerce + tick like the live engine.** A
+- **The `render_document.py` still path and video path BOTH must coerce + tick like the live engine.** A
   script that returns `Array`/`Vec3`/`Text` (not a bare scalar) only works in the headless helper if
   the still path runs `normalize_output` + `coerce_uniform_value` against the live `moderngl.Uniform`,
   and the VIDEO path wires `node.on_pre_render` to tick a fresh `Behavior` per frame (a bare Node has
   no `ProjectSession` to wire it, so without this the sim is frozen at `__init__` state). Both were
   fixed in the boids lab — if a future lab's first array/sim script renders blank or static, check
-  these two in `render_node.py` first.
+  these two in `render_document.py` first.
 - **A CONSTANT-REGISTER budget caps array uniforms.** The glyph tables already eat ~600/1024 slots, so
   a large `uniform vecN arr[M]` can overflow with `C6020`. Keep M modest (boids ran fine at N=40);
   if you need text captions AND a big array in the same shader, that's the collision to watch.
@@ -646,7 +646,7 @@ The experiment's *output* is knowledge, not just a pretty node. At the end:
     it" / "compare clips" step, no external delivery channel. Promote only the GRAPHICS CRAFT
     (shader/SDF/lighting/colour/motion levers) and generic engineering discipline; drop the lab's
     orchestration (offscreen rendering, file delivery, session-versioning, NOTES bookkeeping).
-- Ask the user whether to **preserve** the lab project (promote a node dir out of `projects/_lab/`
+- Ask the user whether to **preserve** the lab project (promote a document dir out of `projects/_lab/`
   into a real project + `git add`) or let it stay gitignored/disposable.
 - **Add/update this lab's bullet in `## Past labs`** so the next run can find it (the reference map
   must stay current — a missing or stale entry is why a technique gets re-derived). A worthwhile lab
@@ -658,7 +658,7 @@ The experiment's *output* is knowledge, not just a pretty node. At the end:
 ## Past labs — the technique REFERENCE MAP (the code lives here, not in this skill)
 
 A lab is a kept, working REFERENCE: when you need a technique, open the lab that already solved it —
-read its `NOTES.md` for the evolution + verdicts, then open the cited `nodes/<id>/passes/*.frag.glsl`
+read its `NOTES.md` for the evolution + verdicts, then open the cited `documents/<id>/passes/*.frag.glsl`
 for the real code. This is WHY labs are saved; do not re-derive or paste snippets when a reference
 exists. When the user references "the X lab", it's `projects/_lab/X/`. (COMMITTED labs travel via git
 and are reliable references on any machine; LOCAL-ONLY labs exist only where they were made.)
@@ -667,18 +667,18 @@ and are reliable references on any machine; LOCAL-ONLY labs exist only where the
 - **Turbulent flame / fire / organic rising heat / smoke** → **`fire`** (committed). Domain-warp
   turbulence, fuel-envelope + eroded silhouette, blackbody/temperature colour ramp, flicker-on-the-
   cast-glow (not on the body), volumetric-ish smoke, and the **timed-reveal node** pattern (its seed).
-  NOTES: `projects/_lab/fire/NOTES.md`. Matured flame: `nodes/<fire v09…>/shader.frag.glsl`; domain-warp
-  + CPU-script wind: `nodes/<fire v03…>/`; reveal reel: `nodes/<fire timed reveal>/` (NOTES lists ids).
+  NOTES: `projects/_lab/fire/NOTES.md`. Matured flame: `documents/<fire v09…>/shader.frag.glsl`; domain-warp
+  + CPU-script wind: `documents/<fire v03…>/`; reveal reel: `documents/<fire timed reveal>/` (NOTES lists ids).
 - **SDF box city / bounded tower repetition / painted facade detail / NIGHT CITY LIGHTING** →
   **`night_city`** (committed). Bounded domain-repetition w/ neighbor-min, the directional night-key
   (sky-dome+moon, surface keyed, emissive split — the FORM-giver), facade unwrap (floors×bays, AO,
   sills, pilasters, plinth, cornice), night aerial fog, ground-glow cars, the learning reel. NOTES:
   `projects/_lab/night_city/NOTES.md` (v06 entry = the full lighting recipe); canonical shader:
-  `nodes/v06-depth/shader.frag.glsl`.
+  `documents/v06-depth/shader.frag.glsl`.
 - **3D agent sim / flocking / CPU-driven particle positions** → **`boids`** (LOCAL-ONLY, NOT promoted —
   the maintainer rejected the motion). Use it for the PROCESS lessons (now in the generic sections
   above): selective-variant tuning, research/port a named algorithm, the CPU↔GPU numeric-mirror check,
-  per-agent avoidance is anti-cohesive, the array-uniform / `render_node.py` ticking gotchas. NOTES:
+  per-agent avoidance is anti-cohesive, the array-uniform / `render_document.py` ticking gotchas. NOTES:
   `projects/_lab/boids/NOTES.md`.
 - **2D lightning / electric bolts / branching energy** → **`lightning`** (LOCAL-ONLY). `1/dist`
   ridge-glow, HDR-core+posterize for an electric read, segment-polyline + branch geometry, the strobe-
@@ -705,11 +705,11 @@ and are reliable references on any machine; LOCAL-ONLY labs exist only where the
     strip. `v17`.
   - Generic fixes also here: non-square proportion (`h_uv = w_uv*aspect/R`), ACES tonemap, hash dither,
     lens flare, aerial perspective. NOTES: `projects/_lab/us_flag/NOTES.md` (full v01→v18 evolution +
-    every source URL); canonical shader/script: `nodes/v18-suncloud/` + `nodes/v14-shadow/scripts/`.
+    every source URL); canonical shader/script: `documents/v18-suncloud/` + `documents/v14-shadow/scripts/`.
 
 ## Follow-ups (NOT ready — don't build these mid-session; capture the idea)
 
-- **Generalise the render helper into the app.** `render_node.py` is the lab's tool; a built-in
+- **Generalise the render helper into the app.** `render_document.py` is the lab's tool; a built-in
   "render this node to MP4 at size/duration" command in ShaderBox proper would remove the script.
 - **A built-in N-up variant grid render.** The selective-variant loop above was hand-rolled as a
   throwaway numpy splat script each round. A reusable "render these K param-sets into one labelled grid

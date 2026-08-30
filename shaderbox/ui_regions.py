@@ -1,6 +1,6 @@
 """The two keyboard/navigation enums shared by the command registry, the persisted UI state and
-the draw layer. A leaf on purpose: `ActiveRegion` and `NodeTab` are plain names with no imgui in
-them, and `ui_models.py` persists `active_node_tab` — so keeping them beside the imgui-evaluating
+the draw layer. A leaf on purpose: `ActiveRegion` and `DocumentTab` are plain names with no imgui in
+them, and `ui_models.py` persists `active_document_tab` — so keeping them beside the imgui-evaluating
 command table would drag imgui into the headless model layer (`commands.py` builds `K = imgui.Key`
 at module scope, so importing it really does load the library)."""
 
@@ -15,8 +15,8 @@ class ActiveRegion(StrEnum):
     PANEL = auto()
 
 
-class NodeTab(StrEnum):
+class DocumentTab(StrEnum):
     # The settings-panel inner tabs; FOCUS_TAB_* jump to one directly.
-    NODE = auto()
+    DOCUMENT = auto()
     RENDER = auto()
     SHARE = auto()

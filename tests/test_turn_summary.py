@@ -46,25 +46,27 @@ def _run(caps, scripts, *, gate=None, cancel=None):
 def test_fact2_set_uniform_new_value_lands_in_ledger() -> None:
     # The "not so much" dial-back needs the value the agent set last turn.
     caps = minimal_caps(
-        set_uniform=lambda _n, _v, _node: SetUniformResult(ok=True, type_label="float")
+        set_uniform=lambda _n, _v, _document: SetUniformResult(
+            ok=True, type_label="float"
+        )
     )
     scripts: list[list[LLMStreamEvent]] = [
         _tool_call(
-            "c1", "set_uniform", '{"name": "u_speed", "value": 2.5, "node": "ab"}'
+            "c1", "set_uniform", '{"name": "u_speed", "value": 2.5, "document": "ab"}'
         ),
         [LLMTextDelta("Raised the speed."), LLMDone("stop", LLMUsage())],
     ]
     done = next(e for e in _run(caps, scripts) if isinstance(e, AgentTurnDone))
     joined = " ".join(done.summary.ledger)
     assert "u_speed" in joined and "2.5" in joined, joined
-    assert "ab" in done.summary.nodes
+    assert "ab" in done.summary.documents
 
 
 def test_fact3_assumption_carried_in_reply() -> None:
     # The "no, center is bot-left" correction needs the agent's STATED assumption from the prior reply.
     caps = minimal_caps()
     scripts: list[list[LLMStreamEvent]] = [
-        _tool_call("c1", "read_shader", '{"nodes": ["ab"]}'),
+        _tool_call("c1", "read_shader", '{"documents": ["ab"]}'),
         [
             LLMTextDelta(
                 "I assumed the text origin is screen-center and offset from there."
@@ -85,7 +87,7 @@ def test_fact4_irreversible_ledger_carries_identity() -> None:
         ),
         telegram_connected=lambda: True,
         telegram_has_default_pack=lambda: True,
-        has_current_node=lambda: True,
+        has_current_document=lambda: True,
     )
     gate = GateChannel()
     approver = threading.Thread(target=_approve_when_asked, args=(gate,), daemon=True)
@@ -117,7 +119,11 @@ def test_failure_note_lands_on_giveup() -> None:
     caps = minimal_caps(
         read_shaders=lambda ids: [
             ShaderView(
-                node_id="node-1", name="s", listing="1  x", uniforms=[], errors=[]
+                document_id="document-1",
+                name="s",
+                listing="1  x",
+                uniforms=[],
+                errors=[],
             )
         ],
         apply_shader_edit=lambda o, n, r, t: EditResult(matches=0, errors=[]),
@@ -144,10 +150,10 @@ def test_cancel_partial_ledger_is_sane() -> None:
     # A mid-turn cancel produces a summary from the calls that DID execute, with no crash.
     caps = build_registry(minimal_caps())
     rl = _RunLog()
-    rl.record("set_uniform", True, "set u_x (float) = 1.0", {"node": "ab"}, None)
+    rl.record("set_uniform", True, "set u_x (float) = 1.0", {"document": "ab"}, None)
     summary = _build_turn_summary("", rl, caps)
     assert "u_x" in " ".join(summary.ledger)
-    assert "ab" in summary.nodes
+    assert "ab" in summary.documents
 
 
 def test_ledger_soft_caps_non_irreversible_lines() -> None:

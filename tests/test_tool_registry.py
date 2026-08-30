@@ -18,7 +18,7 @@ from scripts.dogfood.analyze import (
     REACHABLE_TOOLS,
 )
 from shaderbox.copilot.backend import CopilotBackend
-from shaderbox.copilot.capabilities import NodeTreeEntry
+from shaderbox.copilot.capabilities import DocumentTreeEntry
 from shaderbox.copilot.gate import GateKind
 from shaderbox.copilot.tools.base import GatePolicy, ToolDefinition
 from shaderbox.copilot.tools.registry import ToolRegistry, build_registry
@@ -74,7 +74,7 @@ def test_gate_and_credential_structural_invariants() -> None:
         "render_video",
         "publish_telegram",
         "publish_youtube",
-        "delete_node",
+        "delete_document",
     } <= always
 
     # set_telegram_token is THE credential-gated tool (derived, not a count literal).
@@ -111,45 +111,45 @@ def test_publish_prechecks_hand_off_until_ready() -> None:
     assert msg is not None and "connect" in msg.lower()
 
 
-def test_delete_gate_prompt_shows_node_name() -> None:
-    # The confirm card asks with the node's NAME (resolved via the project map with
+def test_delete_gate_prompt_shows_document_name() -> None:
+    # The confirm card asks with the document's NAME (resolved via the project map with
     # read_shader's prefix rule), short — no trash/recover tail (034 F01).
     registry = build_registry(
         minimal_caps(
-            node_tree=lambda: [
-                NodeTreeEntry(
-                    node_id="a1b2", name="Blank", has_errors=False, is_current=True
+            document_tree=lambda: [
+                DocumentTreeEntry(
+                    document_id="a1b2", name="Blank", has_errors=False, is_current=True
                 )
             ]
         )
     )
-    d = registry.definition_for("delete_node")
+    d = registry.definition_for("delete_document")
     assert d is not None and d.gate_prompt is not None
-    assert d.gate_prompt({"node": "a1b2"}) == "Delete node `Blank`?"
+    assert d.gate_prompt({"document": "a1b2"}) == "Delete document `Blank`?"
     # Full uuid matching the short id resolves too; an unknown id falls back raw.
-    assert d.gate_prompt({"node": "a1b2c3d4-ffff"}) == "Delete node `Blank`?"
-    assert d.gate_prompt({"node": "zzzz"}) == "Delete node `zzzz`?"
-    assert d.gate_prompt({}) == "Delete node `?`?"
+    assert d.gate_prompt({"document": "a1b2c3d4-ffff"}) == "Delete document `Blank`?"
+    assert d.gate_prompt({"document": "zzzz"}) == "Delete document `zzzz`?"
+    assert d.gate_prompt({}) == "Delete document `?`?"
 
 
 def test_delete_precheck_fails_fast_on_empty_or_unknown_target() -> None:
     # The precheck short-circuits BEFORE the always-gate so the user never confirms a
-    # "Delete node `?`" that then errors in the handler.
+    # "Delete document `?`" that then errors in the handler.
     registry = build_registry(
         minimal_caps(
-            node_tree=lambda: [
-                NodeTreeEntry(
-                    node_id="a1b2", name="Blank", has_errors=False, is_current=True
+            document_tree=lambda: [
+                DocumentTreeEntry(
+                    document_id="a1b2", name="Blank", has_errors=False, is_current=True
                 )
             ]
         )
     )
-    empty = registry.precheck("delete_node", {"node": ""})
+    empty = registry.precheck("delete_document", {"document": ""})
     assert empty is not None and "empty" in empty
-    unknown = registry.precheck("delete_node", {"node": "zzzz"})
+    unknown = registry.precheck("delete_document", {"document": "zzzz"})
     assert unknown is not None and "zzzz" in unknown
     # A resolvable target passes the precheck (None) so the gate proceeds.
-    assert registry.precheck("delete_node", {"node": "a1b2"}) is None
+    assert registry.precheck("delete_document", {"document": "a1b2"}) is None
 
 
 # ---- lazy tool catalogue (feature 052 slice 0) ----
@@ -159,7 +159,12 @@ def test_lazy_tools_demoted_but_reachable() -> None:
     reg = build_registry(minimal_caps())
     eager = {s.name for s in reg.eager_specs()}
     assert "load_tools" in eager  # the meta-tool is always present
-    for lazy in ("bind_media", "rename_node", "delete_lib_file", "set_telegram_token"):
+    for lazy in (
+        "bind_media",
+        "rename_document",
+        "delete_lib_file",
+        "set_telegram_token",
+    ):
         assert lazy not in eager  # demoted off the eager core
         assert reg.is_lazy(lazy)
     assert not reg.is_lazy("edit_shader")  # an eager tool is not lazy
@@ -169,8 +174,8 @@ def test_lazy_tools_demoted_but_reachable() -> None:
 
 def test_assemble_specs_is_sorted_and_load_order_independent() -> None:
     reg = build_registry(minimal_caps())
-    a = [s.name for s in reg.assemble_specs({"bind_media", "rename_node"})]
-    b = [s.name for s in reg.assemble_specs({"rename_node", "bind_media"})]
+    a = [s.name for s in reg.assemble_specs({"bind_media", "rename_document"})]
+    b = [s.name for s in reg.assemble_specs({"rename_document", "bind_media"})]
     assert a == b == sorted(a)  # byte-stable tools= regardless of load order
 
 
@@ -178,7 +183,7 @@ def test_load_tools_catalog_lists_lazy_only() -> None:
     reg = build_registry(minimal_caps())
     d = reg.definition_for("load_tools")
     assert d is not None
-    assert "bind_media:" in d.description and "rename_node:" in d.description
+    assert "bind_media:" in d.description and "rename_document:" in d.description
     assert "read_shader:" not in d.description  # eager tools are not in the catalogue
 
 
@@ -204,24 +209,24 @@ def test_dogfood_coverage_denominator_holds_every_tool_but_the_named_exclusions(
 
 
 def test_delete_gate_and_backend_resolvers_accept_the_same_handles() -> None:
-    # The gate NAMES the node; the backend re-resolves the raw handle and DELETES it. The two
+    # The gate NAMES the document; the backend re-resolves the raw handle and DELETES it. The two
     # ran different ambiguity rules (first-prefix-hit vs unique-prefix), so an ambiguous handle
-    # opened a confirm dialog naming one node and then errored. Pin the two predicates to each
+    # opened a confirm dialog naming one document and then errored. Pin the two predicates to each
     # other rather than to examples — the defect class is "two checks that must agree, don't".
     ids = [
         "ab12cd00-1111-4111-8111-111111111111",
         "ab34ef00-2222-4222-8222-222222222222",
     ]
     names = {ids[0]: "Keeper", ids[1]: "Doomed"}
-    holder = SimpleNamespace(_get_ui_nodes=lambda: dict.fromkeys(ids))
+    holder = SimpleNamespace(_get_ui_documents=lambda: dict.fromkeys(ids))
     short_ids = CopilotBackend._copilot_short_ids(holder)
-    resolve_strict = partial(CopilotBackend._copilot_resolve_node_id, holder)
+    resolve_strict = partial(CopilotBackend._copilot_resolve_document_id, holder)
 
     registry = build_registry(
         minimal_caps(
-            node_tree=lambda: [
-                NodeTreeEntry(
-                    node_id=short_ids[nid],
+            document_tree=lambda: [
+                DocumentTreeEntry(
+                    document_id=short_ids[nid],
                     name=names[nid],
                     has_errors=False,
                     is_current=False,
@@ -230,16 +235,16 @@ def test_delete_gate_and_backend_resolvers_accept_the_same_handles() -> None:
             ]
         )
     )
-    definition = registry.definition_for("delete_node")
+    definition = registry.definition_for("delete_document")
     assert definition is not None and definition.gate_prompt is not None
 
     handles = ["", "a", "ab", "ab1", "ab12", "ab12cd", ids[0], ids[1], "zz"]
     for handle in handles:
         strict = resolve_strict(handle)
-        prompt = definition.gate_prompt({"node": handle})
-        precheck = registry.precheck("delete_node", {"node": handle})
+        prompt = definition.gate_prompt({"document": handle})
+        precheck = registry.precheck("delete_document", {"document": handle})
         if strict is None:
-            # The backend would refuse this handle, so no confirm dialog may name a node:
+            # The backend would refuse this handle, so no confirm dialog may name a document:
             # the precheck has to fail fast first.
             assert precheck is not None, handle
             assert names[ids[0]] not in prompt, handle

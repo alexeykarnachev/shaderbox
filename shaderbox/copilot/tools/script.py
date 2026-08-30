@@ -10,16 +10,14 @@ from shaderbox.copilot.capabilities import (
 from shaderbox.copilot.error_render import format_compile_errors
 from shaderbox.copilot.tools.base import GatePolicy, ToolArgs, ToolDefinition
 
-# The node script authoring surface (feature 043): read_script / write_script. Mirrors shader_tools —
+# The document script authoring surface (feature 043): read_script / write_script. Mirrors shader_tools —
 # thin handlers calling a capability closure that owns the bridge round-trip + the dry-run probe.
 
-_NODE_DESC = (
-    "node id (from the project map); empty = the node you are currently working on"
-)
+_NODE_DESC = "document id (from the project map); empty = the document you are currently working on"
 
 
 class _ReadScriptArgs(ToolArgs):
-    node: str = Field(default="", description=_NODE_DESC)
+    document: str = Field(default="", description=_NODE_DESC)
 
 
 class _WriteScriptArgs(ToolArgs):
@@ -28,7 +26,7 @@ class _WriteScriptArgs(ToolArgs):
         "(a `class Behavior(ScriptBehavior)` with `update(self, ctx) -> dict`). Anything "
         "omitted is gone."
     )
-    node: str = Field(default="", description=_NODE_DESC)
+    document: str = Field(default="", description=_NODE_DESC)
 
 
 class _EditScriptArgs(ToolArgs):
@@ -41,18 +39,18 @@ class _EditScriptArgs(ToolArgs):
         default=False,
         description="replace every occurrence (resolves a non-unique old_str)",
     )
-    node: str = Field(default="", description=_NODE_DESC)
+    document: str = Field(default="", description=_NODE_DESC)
 
 
 _READ_SCRIPT_DESC = (
-    "Read a node's Python script — the `update(self, ctx)` that drives uniforms from CPU state. "
-    "Returns the source line-numbered. A node with NO script yet returns a STUB (its drivable "
+    "Read a document's Python script — the `update(self, ctx)` that drives uniforms from CPU state. "
+    "Returns the source line-numbered. A document with NO script yet returns a STUB (its drivable "
     "uniforms + their value shapes + an empty `update` to fill in) — read it, then write_script a "
     "real body. Read this before editing a script you did not just write."
 )
 
 _WRITE_SCRIPT_DESC = (
-    "Create or replace a node's Python script: a `class Behavior(ScriptBehavior)` whose "
+    "Create or replace a document's Python script: a `class Behavior(ScriptBehavior)` whose "
     "`update(self, ctx) -> dict` returns {uniform_name: value} to drive those uniforms every "
     "frame. For STATE the shader cannot hold — a value that depends on the PREVIOUS frame "
     "(`self.*` persists): an integrator, an accumulator, a phase machine, a score. A pure function "
@@ -106,13 +104,13 @@ def _format_write_result(result: ScriptWriteResult) -> tuple[bool, str, dict | N
 
 def script_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
     def read_script(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
-        view: ScriptView = caps.read_script(args["node"])
-        if not view.node_id:
+        view: ScriptView = caps.read_script(args["document"])
+        if not view.document_id:
             return False, f"error: {format_compile_errors(view.errors)}", None
         lines = view.listing.count("\n") + 1 if view.listing else 0
         if view.is_stub:
             # The stub is NOT persisted, so the working set can't render it — inline is its
-            # only channel (a node WITH a script rides the working set, mirroring read_shader).
+            # only channel (a document WITH a script rides the working set, mirroring read_shader).
             body = (
                 f"{view.name} has no script yet — here is the STUB to adapt + write_script "
                 f"(its drivable uniforms + their value shapes + an empty `update` to fill "
@@ -128,15 +126,17 @@ def script_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
                 f"added {view.name}'s script.py to your working set — {lines} lines, {state} "
                 "(its live source is shown below; don't expect it in this return)"
             )
-        return True, body, {"node": view.node_id, "is_stub": view.is_stub}
+        return True, body, {"document": view.document_id, "is_stub": view.is_stub}
 
     def write_script(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
-        return _format_write_result(caps.write_script(args["new_text"], args["node"]))
+        return _format_write_result(
+            caps.write_script(args["new_text"], args["document"])
+        )
 
     def edit_script(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
         return _format_write_result(
             caps.apply_script_edit(
-                args["old_str"], args["new_str"], args["replace_all"], args["node"]
+                args["old_str"], args["new_str"], args["replace_all"], args["document"]
             )
         )
 

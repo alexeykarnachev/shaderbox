@@ -302,7 +302,7 @@ the sweep removes IS the edit-sediment measurement — record its diff.**
   `render_at` loop LIVE-ticks one persistent script instance once per sample, so a stateful integrator
   (anything using `ctx.dt`) samples a trajectory that never happened — the 05 bounce script only
   survived it by self-deriving dt from `ctx.t`. Canvas size is saved/restored around the calls
-  (`render_at`'s `set_size` persists into node.json and would overwrite an agent's `set_canvas_size`).
+  (`render_at`'s `set_size` persists into document.json and would overwrite an agent's `set_canvas_size`).
 - **For NUMBERS, not pixels: `h.script_values(times, node_id)`** — the `ScriptEngine.dry_run`
   passthrough returning `(t, {uniform: value})` per sample, with the live node left byte-identical.
   That's the logic axis's ground-truth check (a trajectory, a period, a state machine's phase) without

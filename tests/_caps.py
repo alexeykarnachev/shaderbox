@@ -14,7 +14,10 @@ from typing import Any
 from shaderbox.copilot.capabilities import (
     CompileErrorInfo,
     CopilotCapabilities,
-    DeleteNodeResult,
+    DeleteDocumentResult,
+    DocumentImportResult,
+    DocumentOpResult,
+    DocumentTreeEntry,
     EditResult,
     ExampleEntry,
     GrepHit,
@@ -22,16 +25,13 @@ from shaderbox.copilot.capabilities import (
     LibFileResult,
     LibFunctionBody,
     MediaBindResult,
-    NodeImportResult,
-    NodeOpResult,
-    NodeTreeEntry,
     PublishResult,
     RenderResult,
     ScriptView,
     ScriptWriteResult,
     SetUniformResult,
     ShaderView,
-    SwitchNodeResult,
+    SwitchDocumentResult,
     TelegramConnectResult,
     TelegramOpResult,
     TelegramPackInfo,
@@ -43,7 +43,7 @@ from shaderbox.render_shape import RenderShape
 
 @dataclass(frozen=True)
 class _FakeCaps:
-    node_tree: Callable[[], list[NodeTreeEntry]]
+    document_tree: Callable[[], list[DocumentTreeEntry]]
     lib_catalog: Callable[[], list[LibCatalogEntry]]
     example_catalog: Callable[[], list[ExampleEntry]]
     read_shaders: Callable[[list[str]], list[ShaderView]]
@@ -58,24 +58,26 @@ class _FakeCaps:
     read_script: Callable[[str], ScriptView]
     write_script: Callable[[str, str], ScriptWriteResult]
     apply_script_edit: Callable[[str, str, bool, str], ScriptWriteResult]
-    create_node: Callable[
+    create_document: Callable[
         [str, str, str, bool], tuple[str, list[CompileErrorInfo], str]
     ]
-    delete_node: Callable[[str], DeleteNodeResult]
-    switch_node: Callable[[str], SwitchNodeResult]
-    rename_node: Callable[[str, str], NodeOpResult]
-    set_canvas_size: Callable[[str, int, int], NodeOpResult]
-    duplicate_node: Callable[[str, str, bool], tuple[str, list[CompileErrorInfo], str]]
+    delete_document: Callable[[str], DeleteDocumentResult]
+    switch_document: Callable[[str], SwitchDocumentResult]
+    rename_document: Callable[[str, str], DocumentOpResult]
+    set_canvas_size: Callable[[str, int, int], DocumentOpResult]
+    duplicate_document: Callable[
+        [str, str, bool], tuple[str, list[CompileErrorInfo], str]
+    ]
     delete_lib_file: Callable[[str], LibFileResult]
     bind_media: Callable[[str, str], MediaBindResult]
     unbind_media: Callable[[str, str], MediaBindResult]
-    import_node: Callable[[bool], NodeImportResult]
+    import_document: Callable[[bool], DocumentImportResult]
     render_image: Callable[[str, RenderShape], RenderResult]
     render_video: Callable[[str, float, int, RenderShape], RenderResult]
     probe_render: Callable[[str, float], str]
     publish_telegram: Callable[[str], PublishResult]
     publish_youtube: Callable[[str, str, RenderShape], PublishResult]
-    has_current_node: Callable[[], bool]
+    has_current_document: Callable[[], bool]
     telegram_connected: Callable[[], bool]
     youtube_connected: Callable[[], bool]
     telegram_has_default_pack: Callable[[], bool]
@@ -90,7 +92,7 @@ class _FakeCaps:
 
 def minimal_caps(**overrides: Any) -> CopilotCapabilities:
     defaults: dict[str, Any] = {
-        "node_tree": lambda: [],
+        "document_tree": lambda: [],
         "lib_catalog": lambda: [],
         "example_catalog": lambda: [],
         "read_shaders": lambda _ids: [],
@@ -101,32 +103,34 @@ def minimal_caps(**overrides: Any) -> CopilotCapabilities:
         "batch_begin": lambda: None,
         "apply_shader_edit": lambda _o, _n, _r, _t: EditResult(matches=0, errors=[]),
         "apply_full_rewrite": lambda _t, _tg: EditResult(matches=1, errors=[]),
-        "set_uniform": lambda _n, _v, _node: SetUniformResult(ok=True),
-        "read_script": lambda _node: ScriptView("n0", "node", "", [], is_stub=True),
-        "write_script": lambda _t, _node: ScriptWriteResult(ok=True),
-        "apply_script_edit": lambda _o, _n, _r, _node: ScriptWriteResult(ok=True),
-        "create_node": lambda _n, _s, _t, _sw: ("node-new", [], ""),
-        "delete_node": lambda _n: DeleteNodeResult(ok=True),
-        "switch_node": lambda _n: SwitchNodeResult(ok=True),
-        "rename_node": lambda _n, _name: NodeOpResult(ok=True, name="renamed"),
-        "set_canvas_size": lambda _n, _w, _h: NodeOpResult(
+        "set_uniform": lambda _n, _v, _document: SetUniformResult(ok=True),
+        "read_script": lambda _document: ScriptView(
+            "n0", "document", "", [], is_stub=True
+        ),
+        "write_script": lambda _t, _document: ScriptWriteResult(ok=True),
+        "apply_script_edit": lambda _o, _n, _r, _document: ScriptWriteResult(ok=True),
+        "create_document": lambda _n, _s, _t, _sw: ("document-new", [], ""),
+        "delete_document": lambda _n: DeleteDocumentResult(ok=True),
+        "switch_document": lambda _n: SwitchDocumentResult(ok=True),
+        "rename_document": lambda _n, _name: DocumentOpResult(ok=True, name="renamed"),
+        "set_canvas_size": lambda _n, _w, _h: DocumentOpResult(
             ok=True, width=256, height=256
         ),
-        "duplicate_node": lambda _n, _name, _sw: ("node-copy", [], ""),
+        "duplicate_document": lambda _n, _name, _sw: ("document-copy", [], ""),
         "delete_lib_file": lambda _p: LibFileResult(ok=True),
         "bind_media": lambda _n, _u: MediaBindResult(
             ok=True, basename="x.png", width=8, height=8
         ),
         "unbind_media": lambda _n, _u: MediaBindResult(ok=True),
-        "import_node": lambda _sw: NodeImportResult(
-            ok=True, node_id="node-imp", basename="x.glsl"
+        "import_document": lambda _sw: DocumentImportResult(
+            ok=True, document_id="document-imp", basename="x.glsl"
         ),
         "render_image": lambda _n, _shape: RenderResult(ok=True),
         "render_video": lambda _n, _s, _f, _shape: RenderResult(ok=True),
         "probe_render": lambda _n, _t: f"{STAMPED_FACTS_PREFIX}0.0s: ink 0% (probe)",
         "publish_telegram": lambda _e: PublishResult(ok=True),
         "publish_youtube": lambda _t, _d, _shape: PublishResult(ok=True),
-        "has_current_node": lambda: True,
+        "has_current_document": lambda: True,
         "telegram_connected": lambda: False,
         "youtube_connected": lambda: False,
         "telegram_has_default_pack": lambda: False,

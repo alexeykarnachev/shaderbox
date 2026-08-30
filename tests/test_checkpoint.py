@@ -1,6 +1,6 @@
 """Copilot turn-rollback checkpoints (feature 020·30) — the TurnCheckpoint capture + the
 CheckpointStore lifecycle (seal/prune/clear) + the persisted-index rehydrate round-trip.
-Pure: no GL, no App. Node snapshots use a fake `save_into` (the real one is UINode.save)."""
+Pure: no GL, no App. Document snapshots use a fake `save_into` (the real one is UIDocument.save)."""
 
 from pathlib import Path
 from types import SimpleNamespace
@@ -8,14 +8,14 @@ from types import SimpleNamespace
 from shaderbox.copilot.checkpoint import CheckpointStore, TurnCheckpoint
 
 
-def _fake_node(name: str = "Node") -> object:
-    # Minimal stand-in: snapshot_node reads node.ui_state.ui_name for the modal label.
+def _fake_document(name: str = "Document") -> object:
+    # Minimal stand-in: snapshot_document reads document.ui_state.ui_name for the modal label.
     return SimpleNamespace(ui_state=SimpleNamespace(ui_name=name))
 
 
 def _fake_save(name: str):
-    # Stand-in for UINode.save(dir.parent, dir.name): write one marker file into the dest dir.
-    def _save(_node: object, dest: Path) -> None:
+    # Stand-in for UIDocument.save(dir.parent, dir.name): write one marker file into the dest dir.
+    def _save(_document: object, dest: Path) -> None:
         shader = dest / "passes/main.frag.glsl"
         shader.parent.mkdir(parents=True, exist_ok=True)
         shader.write_text(name, encoding="utf-8")
@@ -23,14 +23,14 @@ def _fake_save(name: str):
     return _save
 
 
-def test_snapshot_node_is_first_touch_only(tmp_path: Path) -> None:
+def test_snapshot_document_is_first_touch_only(tmp_path: Path) -> None:
     cp = TurnCheckpoint(turn_id="turn_0001", root=tmp_path)
-    cp.snapshot_node("n1", _fake_node("N1"), _fake_save("v1"))
-    cp.snapshot_node(
-        "n1", _fake_node("N1"), _fake_save("v2")
+    cp.snapshot_document("n1", _fake_document("N1"), _fake_save("v1"))
+    cp.snapshot_document(
+        "n1", _fake_document("N1"), _fake_save("v2")
     )  # second touch is ignored
-    assert cp.snapshotted_nodes == {"n1": "N1"}
-    snap = cp.node_snapshot_dir("n1")
+    assert cp.snapshotted_documents == {"n1": "N1"}
+    snap = cp.document_snapshot_dir("n1")
     assert snap is not None
     assert (
         snap / "passes/main.frag.glsl"
@@ -38,11 +38,11 @@ def test_snapshot_node_is_first_touch_only(tmp_path: Path) -> None:
 
 
 def test_snapshot_does_not_rebind_live_source(tmp_path: Path) -> None:
-    # Regression for the post-impl blocker: UINode.save rebinds the live node's source.path to the
+    # Regression for the post-impl blocker: UIDocument.save rebinds the live document's source.path to the
     # dir it writes. The capture MUST pass rebind=False (here: a save_into that leaves the live path
-    # alone) so the snapshot holds pre-edit bytes AND the live node keeps pointing at its real dir
+    # alone) so the snapshot holds pre-edit bytes AND the live document keeps pointing at its real dir
     # — else a later edit writes the snapshot and Revert restores the edit.
-    real_path = tmp_path / "nodes" / "n1" / "passes/main.frag.glsl"
+    real_path = tmp_path / "documents" / "n1" / "passes/main.frag.glsl"
     live = SimpleNamespace(
         ui_state=SimpleNamespace(ui_name="N"), source_path=real_path, text="ORIGINAL"
     )
@@ -53,15 +53,15 @@ def test_snapshot_does_not_rebind_live_source(tmp_path: Path) -> None:
         shader.write_text(n.text, encoding="utf-8")  # type: ignore[attr-defined]
 
     cp = TurnCheckpoint(turn_id="t", root=tmp_path)
-    cp.snapshot_node("n1", live, _save_no_rebind)
-    snap = cp.node_snapshot_dir("n1")
+    cp.snapshot_document("n1", live, _save_no_rebind)
+    snap = cp.document_snapshot_dir("n1")
     assert snap is not None
     assert (
         snap / "passes/main.frag.glsl"
     ).read_text() == "ORIGINAL"  # pre-edit captured
     assert (
         live.source_path == real_path
-    )  # live node NOT repointed into the snapshot dir
+    )  # live document NOT repointed into the snapshot dir
 
 
 def test_created_then_deleted_nets_to_create(tmp_path: Path) -> None:
@@ -69,9 +69,9 @@ def test_created_then_deleted_nets_to_create(tmp_path: Path) -> None:
     cp.mark_created("n1")
     cp.record_deleted(
         "n1", "n1_trash"
-    )  # a node created+deleted this turn stays a create
-    assert cp.created_nodes == ["n1"]
-    assert "n1" not in cp.deleted_nodes
+    )  # a document created+deleted this turn stays a create
+    assert cp.created_documents == ["n1"]
+    assert "n1" not in cp.deleted_documents
 
 
 def test_created_lib_round_trip(tmp_path: Path) -> None:
@@ -101,7 +101,7 @@ def test_pre_switch_records_first_only(tmp_path: Path) -> None:
     cp = TurnCheckpoint(turn_id="t", root=tmp_path)
     cp.record_pre_switch("a")
     cp.record_pre_switch("b")
-    assert cp.pre_switch_node_id == "a"
+    assert cp.pre_switch_document_id == "a"
 
 
 def test_has_changes(tmp_path: Path) -> None:
@@ -120,7 +120,7 @@ def test_store_seals_only_changed_and_prunes(tmp_path: Path) -> None:
     # A changed turn is kept.
     store.open("turn_b", "edit it")
     assert store.active is not None
-    store.active.snapshot_node("n1", _fake_node("N1"), _fake_save("v1"))
+    store.active.snapshot_document("n1", _fake_document("N1"), _fake_save("v1"))
     store.seal()
     assert store.sealed_ids() == ["turn_b"]
     # Prune drops a checkpoint whose user message is gone.
@@ -133,7 +133,7 @@ def test_store_rehydrates_persisted_index(tmp_path: Path) -> None:
     store = CheckpointStore(tmp_path)
     store.open("turn_x", "do a thing")
     assert store.active is not None
-    store.active.snapshot_node("n1", _fake_node("N1"), _fake_save("orig"))
+    store.active.snapshot_document("n1", _fake_document("N1"), _fake_save("orig"))
     store.active.mark_created("n2")
     store.active.snapshot_lib("lib:a.glsl", "old lib")
     store.seal()  # writes the index to disk
@@ -142,8 +142,8 @@ def test_store_rehydrates_persisted_index(tmp_path: Path) -> None:
     reloaded = CheckpointStore(tmp_path)
     cp = reloaded.get("turn_x")
     assert cp is not None
-    assert cp.snapshotted_nodes == {"n1": "N1"}
-    assert cp.created_nodes == ["n2"]
+    assert cp.snapshotted_documents == {"n1": "N1"}
+    assert cp.created_documents == ["n2"]
     assert cp.lib_snapshot_text("lib:a.glsl") == "old lib"
 
 
@@ -151,7 +151,7 @@ def test_clear_deletes_everything(tmp_path: Path) -> None:
     store = CheckpointStore(tmp_path)
     store.open("turn_x", "x")
     assert store.active is not None
-    store.active.snapshot_node("n1", _fake_node("N1"), _fake_save("v"))
+    store.active.snapshot_document("n1", _fake_document("N1"), _fake_save("v"))
     store.seal()
     store.clear()
     assert store.sealed_ids() == []

@@ -20,23 +20,23 @@ class _SyncBridge:
 
 
 def _stub(script_driven: set[str]) -> Any:
-    ui_nodes = {
+    ui_documents = {
         "n0": object()
-    }  # the node only needs to EXIST; the reject returns before .node
+    }  # the document only needs to EXIST; the reject returns before .document
     stub = types.SimpleNamespace(
         _bridge=_SyncBridge(),
-        _get_ui_nodes=lambda: ui_nodes,
-        _get_current_node_id=lambda: "n0",
-        _get_script_driven_uniforms=lambda node_id: script_driven,
+        _get_ui_documents=lambda: ui_documents,
+        _get_current_document_id=lambda: "n0",
+        _get_script_driven_uniforms=lambda document_id: script_driven,
     )
-    stub._copilot_resolve_node_id = CopilotBackend._copilot_resolve_node_id.__get__(
-        stub
+    stub._copilot_resolve_document_id = (
+        CopilotBackend._copilot_resolve_document_id.__get__(stub)
     )
     return stub
 
 
 def test_set_uniform_rejects_script_driven() -> None:
-    # One script per node (048): a driven uniform's reject points at the script edit TOOLS, never
+    # One script per document (048): a driven uniform's reject points at the script edit TOOLS, never
     # at the file's path (059 D2 — the agent gets handles, not implementation detail).
     stub = _stub({"u_wave"})
     set_uniform = CopilotBackend.set_uniform.__get__(stub)
@@ -44,20 +44,20 @@ def test_set_uniform_rejects_script_driven() -> None:
     assert not result.ok
     assert "script-driven" in result.error
     assert "edit_script/write_script" in result.error
-    assert "nodes/" not in result.error
+    assert "documents/" not in result.error
 
 
 def test_set_uniform_does_not_reject_a_non_script_uniform() -> None:
     # A name absent from the script-driven set passes the reject branch and reaches the normal
     # path; with no matching active uniform it returns the ordinary "no active uniform" error,
     # NOT the script-driven one — proving the reject is scoped to the script set.
-    node = types.SimpleNamespace(
-        node=types.SimpleNamespace(
+    document = types.SimpleNamespace(
+        document=types.SimpleNamespace(
             render_pass=types.SimpleNamespace(get_active_uniforms=lambda: [])
         )
     )
     stub = _stub({"u_wave"})  # u_wave is script-driven; u_x is not
-    stub._get_ui_nodes = lambda: {"n0": node}
+    stub._get_ui_documents = lambda: {"n0": document}
     set_uniform = CopilotBackend.set_uniform.__get__(stub)
     result = set_uniform("u_x", 0.5, "n0")
     assert "script-driven" not in (result.error or "")

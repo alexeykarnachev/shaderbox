@@ -48,7 +48,7 @@ from shaderbox.render_shape import (
     shape_to_preset,
 )
 from shaderbox.theme import COLOR, SIZE, SPACE
-from shaderbox.ui_models import UINode
+from shaderbox.ui_models import UIDocument
 from shaderbox.ui_primitives import (
     button,
     caption_text,
@@ -379,8 +379,8 @@ class YouTubeExporter(Exporter):
         )
 
     # ------------------------------------------------------------- render thread
-    def update(self, current_node: UINode | None) -> None:
-        _ = current_node
+    def update(self, current_document: UIDocument | None) -> None:
+        _ = current_document
         while True:
             ev = self._worker.poll_event()
             if ev is None:
@@ -403,7 +403,7 @@ class YouTubeExporter(Exporter):
 
     def draw_target_panel(
         self,
-        current_node: UINode | None,
+        current_document: UIDocument | None,
         render_control: RenderControl,
     ) -> None:
         if not self._is_connected():
@@ -427,9 +427,11 @@ class YouTubeExporter(Exporter):
         )
         imgui.same_line()
         with imgui_ctx.begin_group():
-            self._draw_controls(current_node, render_control)
+            self._draw_controls(current_document, render_control)
 
-    def _draw_controls(self, current_node: UINode | None, rc: RenderControl) -> None:
+    def _draw_controls(
+        self, current_document: UIDocument | None, rc: RenderControl
+    ) -> None:
         rs = self._render_state
         field_w: float = float(SIZE.NAME_INPUT_W)
 
@@ -469,15 +471,15 @@ class YouTubeExporter(Exporter):
         if artifact is not None and not artifact.path.exists():
             artifact = None
 
-        if current_node is None:
-            imgui.text_colored(COLOR.STATE_WARN, "Select a node to render.")
+        if current_document is None:
+            imgui.text_colored(COLOR.STATE_WARN, "Select a document to render.")
             return
 
         if button("Render"):
             rc.render()
         imgui.same_line()
 
-        size_ok: bool = self._artifact_matches_shape(artifact, current_node)
+        size_ok: bool = self._artifact_matches_shape(artifact, current_document)
         upload_enabled: bool = (
             artifact is not None
             and rc.artifact_is_fresh
@@ -528,12 +530,13 @@ class YouTubeExporter(Exporter):
                 caption_text("Uploads land privately on your channel.")
 
     def _artifact_matches_shape(
-        self, artifact: RenderedArtifact | None, current_node: UINode
+        self, artifact: RenderedArtifact | None, current_document: UIDocument
     ) -> bool:
         if artifact is None:
             return False
         expected: tuple[int, int] = resolve_dims(
-            self.render_preset(), current_node.node.render_pass.canvas.texture.size
+            self.render_preset(),
+            current_document.document.render_pass.canvas.texture.size,
         )
         return artifact.size == expected
 

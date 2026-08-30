@@ -149,13 +149,13 @@ user_text: build a gallery
 iteration: 1
 finish_reason: tool_calls
 usage: in=100 out=10 cost=$0.001000
-    -> tool_call create_node(id=call_aaa1)
+    -> tool_call create_document(id=call_aaa1)
 
 ### tool_call  ·  2026-01-01T00:00:01.100
 n: 1
-name: create_node
+name: create_document
 ok: True
-result: created node 'Gallery' — compiled with errors:
+result: created document 'Gallery' — compiled with errors:
 
 ### llm_response  ·  2026-01-01T00:00:02.000
 iteration: 2
@@ -178,14 +178,14 @@ usage: in=210 out=20 cost=$0.002100
 
 
 def test_cross_tool_recovery_is_counted(tmp_path: Path) -> None:
-    # A broken create_node recovered by a DIFFERENT edit tool (replace_lines) is still a recovery —
+    # A broken create_document recovered by a DIFFERENT edit tool (replace_lines) is still a recovery —
     # the same-tool-only matcher missed this, the most common real self-correction (MUST-FIX 2).
     data_dir = tmp_path / "data-x2"
     _write_trace(data_dir, _CROSS_TOOL_RECOVERY_TRACE)
     an = analyze(data_dir, "")
     assert len(an.recoveries) == 1
     rec = an.recoveries[0]
-    assert rec.tool == "create_node" and rec.fixer == "replace_lines"
+    assert rec.tool == "create_document" and rec.fixer == "replace_lines"
     assert an.turns[0].recovered is True
 
 
@@ -300,7 +300,7 @@ usage: in=100 out=10 cost=$0.001000
 
 ### gate_open  ·  2026-01-01T00:00:01.050
 name: render_image
-prompt: Render the current node?
+prompt: Render the current document?
 
 ### gate_declined  ·  2026-01-01T00:00:01.100
 name: render_image
@@ -348,7 +348,7 @@ usage: in=100 out=10 cost=$0.001000
 
 ### gate_open  ·  2026-01-01T00:00:01.050
 name: render_image
-prompt: Render the current node?
+prompt: Render the current document?
 
 ### gate_approved  ·  2026-01-01T00:00:01.080
 name: render_image
@@ -382,11 +382,11 @@ def test_approved_gate_executes_and_is_counted(tmp_path: Path) -> None:
     assert an.turns[0].gate_declines == 0
 
 
-# A probe turn: an attempt deliberately fails (bad node id) and the agent answers WITHOUT re-editing,
+# A probe turn: an attempt deliberately fails (bad document id) and the agent answers WITHOUT re-editing,
 # ending on a clean turn_done. That is a PASS (✅), not a failed turn — the old glyph marked it 🔴.
 _PROBE_TRACE = """\
 ### turn_start  ·  2026-01-01T00:00:00.000
-user_text: edit node zzzz
+user_text: edit document zzzz
 
 ### llm_response  ·  2026-01-01T00:00:01.000
 iteration: 1
@@ -398,7 +398,7 @@ usage: in=100 out=10 cost=$0.001000
 n: 1
 name: edit_shader
 ok: False
-result: error: no node with id 'zzzz'
+result: error: no document with id 'zzzz'
 
 ### llm_response  ·  2026-01-01T00:00:02.000
 iteration: 2
@@ -408,7 +408,7 @@ usage: in=110 out=10 cost=$0.001100
 ### turn_done  ·  2026-01-01T00:00:02.100
 iterations: 2
 tool_calls: 1
-reply: there is no node zzzz — which node did you mean?
+reply: there is no document zzzz — which document did you mean?
 usage: in=210 out=20 cost=$0.002100
 """
 
@@ -687,7 +687,7 @@ def test_dialogue_maps_every_visible_role(tmp_path: Path) -> None:
             {"role": "tool_status", "text": "the engine checked the render"},
             {"role": "error", "text": "[engine] I hit my own limit of 12 edits"},
             {"role": "assistant", "text": "done"},
-            {"role": "pending_action", "text": "delete the node?"},
+            {"role": "pending_action", "text": "delete the document?"},
         ],
     )
     out = _dialogue(data_dir, "")
@@ -697,7 +697,7 @@ def test_dialogue_maps_every_visible_role(tmp_path: Path) -> None:
     # The limit-cutoff note IS the reply the user saw — dropping it erases the under-claim evidence.
     assert "**Copilot [engine]:** [engine] I hit my own limit of 12 edits" in out
     assert "_[engine] the engine checked the render_" in out
-    assert "edit_shader ok" not in out and "delete the node?" not in out
+    assert "edit_shader ok" not in out and "delete the document?" not in out
 
 
 def test_dialogue_falls_back_to_dumps_when_the_store_was_wiped(tmp_path: Path) -> None:

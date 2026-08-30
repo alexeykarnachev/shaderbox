@@ -42,13 +42,13 @@ CANONICAL_TOOLS: frozenset[str] = frozenset(
         "read_script",
         "write_script",
         "edit_script",
-        "create_node",
-        "delete_node",
-        "switch_node",
-        "rename_node",
+        "create_document",
+        "delete_document",
+        "switch_document",
+        "rename_document",
         "set_canvas_size",
-        "duplicate_node",
-        "import_node",
+        "duplicate_document",
+        "import_document",
         "grep",
         "read_lib",
         "delete_lib_file",
@@ -91,10 +91,10 @@ _UNREACHABLE_IN_HARNESS: frozenset[str] = frozenset(
 REACHABLE_TOOLS: tuple[str, ...] = tuple(
     sorted(CANONICAL_TOOLS - _UNREACHABLE_IN_HARNESS)
 )
-# Node-mutating edit tools — a broken edit recovered by ANY later clean one of these (same turn)
+# Document-mutating edit tools — a broken edit recovered by ANY later clean one of these (same turn)
 # counts as a compile-error recovery, even across tool names.
 _EDIT_TOOLS: frozenset[str] = frozenset(
-    {"edit_shader", "write_shader", "write_script", "edit_script", "create_node"}
+    {"edit_shader", "write_shader", "write_script", "edit_script", "create_document"}
     | HISTORICAL_TOOLS
 )
 DEFAULT_MODEL_NOTE = "unknown (in-tree default)"
@@ -436,8 +436,8 @@ def _find_recoveries(turns: list[Turn]) -> tuple[list[Recovery], list[ToolAttemp
     # "broke" = a hard failure (ok=False) OR an edit that applied but compiled WITH errors (the
     # _applied_result quirk: ok=True yet broken — the todo.md broken-compile-thrash class). "clean" =
     # ok and not applied-with-errors. A broke edit followed (same turn) by ANY later clean
-    # node-mutating edit is a recovery — the agent commonly self-corrects with a DIFFERENT edit tool
-    # (create_node-broke -> replace_lines-clean), so pairing on the same tool name undercounts.
+    # document-mutating edit is a recovery — the agent commonly self-corrects with a DIFFERENT edit tool
+    # (create_document-broke -> replace_lines-clean), so pairing on the same tool name undercounts.
     def _broke(a: ToolAttempt) -> bool:
         return (not a.ok) or a.applied_with_errors
 

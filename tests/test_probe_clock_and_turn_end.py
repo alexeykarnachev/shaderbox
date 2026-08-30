@@ -29,7 +29,7 @@ def _facts_for(t: float | None) -> str:
     # Run the REAL _render_facts_for bound to a stub backend: record the u_time the probe renders
     # at, and feed render_facts a stand-in so the stamp logic runs without GL. Returns the stamp.
     rendered_at: list[float] = []
-    node = types.SimpleNamespace(
+    document = types.SimpleNamespace(
         render_pass=types.SimpleNamespace(
             canvas=types.SimpleNamespace(texture=types.SimpleNamespace(size=(64, 64)))
         ),
@@ -37,7 +37,7 @@ def _facts_for(t: float | None) -> str:
     )
     stub = types.SimpleNamespace(_probe_canvas=_FakeCanvas())
     fn = CopilotBackend._render_facts_for.__get__(stub)
-    out = fn(node) if t is None else fn(node, t=t)
+    out = fn(document) if t is None else fn(document, t=t)
     return f"rendered_at={rendered_at[0]}|{out}"
 
 
@@ -75,7 +75,7 @@ def test_probe_render_tool_is_ungated_and_non_mutating() -> None:
 
 
 def test_probe_render_in_registry_and_reaches_capability() -> None:
-    # The (node, t) wire: both args must reach the capability verbatim, and the facts string comes
+    # The (document, t) wire: both args must reach the capability verbatim, and the facts string comes
     # back as the whole model-facing result. Falsifier: a dropped/renamed arg.
     calls: list[tuple[str, float]] = []
     caps = minimal_caps(
@@ -84,7 +84,7 @@ def test_probe_render_in_registry_and_reaches_capability() -> None:
         )
     )
     reg = build_registry(caps)
-    ok, msg, payload = reg.execute("probe_render", {"node": "n1", "t": 2.5}, "")
+    ok, msg, payload = reg.execute("probe_render", {"document": "n1", "t": 2.5}, "")
     assert ok and f"{STAMPED_FACTS_PREFIX}2.5s" in msg
     assert calls == [("n1", 2.5)]
     assert payload is None

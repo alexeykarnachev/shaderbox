@@ -7,7 +7,7 @@ from typing import Any
 
 from shaderbox.integrations import IntegrationsStore
 from shaderbox.render_preset import RenderPreset
-from shaderbox.ui_models import UINode
+from shaderbox.ui_models import UIDocument
 
 
 @dataclass
@@ -114,7 +114,7 @@ class Exporter(ABC):
     `publish` only ENQUEUES the upload job onto the exporter's own worker (a
     render-thread queue write); the actual upload runs later on that worker.
     Worker-thread methods MUST NOT construct or access `moderngl.*` (no
-    `Image / Video / Canvas / Node / Texture`). The render-thread methods
+    `Image / Video / Canvas / Document / Texture`). The render-thread methods
     may; `RenderedArtifact` is GL-free precisely so it can cross the
     thread boundary as a value.
     """
@@ -187,12 +187,12 @@ class Exporter(ABC):
     @abstractmethod
     def draw_target_panel(
         self,
-        current_node: UINode | None,
+        current_document: UIDocument | None,
         render_control: RenderControl,
     ) -> None: ...
 
     @abstractmethod
-    def update(self, current_node: UINode | None) -> None: ...
+    def update(self, current_document: UIDocument | None) -> None: ...
 
     @abstractmethod
     def prepare(

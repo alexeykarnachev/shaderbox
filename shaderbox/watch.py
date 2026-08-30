@@ -5,13 +5,13 @@ from loguru import logger
 from shaderbox.app import App
 from shaderbox.paths import shader_lib_root
 from shaderbox.shader_lib import is_shader_lib_path
-from shaderbox.ui_models import UINode
+from shaderbox.ui_models import UIDocument
 
 
-def reload_node_if_changed(app: App, name: str, ui_node: UINode) -> None:
+def reload_document_if_changed(app: App, name: str, ui_document: UIDocument) -> None:
     # sources[0] is the root (resolve_includes seeds it first); sources[1:] are lib
     # files in first-seen order. Root and lib reloads differ — see inline.
-    for i, src in enumerate(ui_node.node.render_pass.compile_unit.sources):
+    for i, src in enumerate(ui_document.document.render_pass.compile_unit.sources):
         path = src.path
         if not path.exists():
             continue
@@ -21,18 +21,18 @@ def reload_node_if_changed(app: App, name: str, ui_node: UINode) -> None:
 
         if i == 0:
             # Root reload: re-sync the open editor session from disk.
-            logger.debug(f"Reloading node {name} (root shader changed)")
+            logger.debug(f"Reloading document {name} (root shader changed)")
             try:
                 new_text = path.read_text()
-                ui_node.node.render_pass.release_program(new_text)
-                ui_node.node.render_pass.source = replace(
-                    ui_node.node.render_pass.source, mtime=disk_mtime
+                ui_document.document.render_pass.release_program(new_text)
+                ui_document.document.render_pass.source = replace(
+                    ui_document.document.render_pass.source, mtime=disk_mtime
                 )
                 app.sync_editor_from_disk(name, new_text)
             except Exception as e:
-                logger.error(f"Failed to reload node {name}: {e}")
-                ui_node.node.render_pass.source = replace(
-                    ui_node.node.render_pass.source, mtime=disk_mtime
+                logger.error(f"Failed to reload document {name}: {e}")
+                ui_document.document.render_pass.source = replace(
+                    ui_document.document.render_pass.source, mtime=disk_mtime
                 )
             # release_program() rebuilt `sources` — stop iterating the stale list.
             return
@@ -40,11 +40,11 @@ def reload_node_if_changed(app: App, name: str, ui_node: UINode) -> None:
         # Lib reload: bump cached mtime + invalidate so the next compile re-resolves the
         # include. If an open session's text diverges from disk, re-sync (external edit);
         # if it matches, the user saved in-app — don't clobber their undo history.
-        logger.debug(f"Reloading node {name} (lib changed: {path.name})")
-        ui_node.node.render_pass.compile_unit.sources[i] = replace(
+        logger.debug(f"Reloading document {name} (lib changed: {path.name})")
+        ui_document.document.render_pass.compile_unit.sources[i] = replace(
             src, mtime=disk_mtime
         )
-        ui_node.node.render_pass.invalidate()
+        ui_document.document.render_pass.invalidate()
         session = app.editor_sessions.get(path)
         if session is not None:
             try:
@@ -76,9 +76,9 @@ def maybe_rebuild_lib_index(app: App) -> bool:
     if current == cached:
         return False
     app.rebuild_shader_lib_index()
-    # Invalidate every node that pulled in a lib file so its next render recompiles
+    # Invalidate every document that pulled in a lib file so its next render recompiles
     # against the new index (a referenced function may have changed or disappeared).
-    for ui_node in app.ui_nodes.values():
-        if len(ui_node.node.render_pass.compile_unit.sources) > 1:
-            ui_node.node.render_pass.invalidate()
+    for ui_document in app.ui_documents.values():
+        if len(ui_document.document.render_pass.compile_unit.sources) > 1:
+            ui_document.document.render_pass.invalidate()
     return True

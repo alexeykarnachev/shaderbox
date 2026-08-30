@@ -20,8 +20,8 @@ from shaderbox.commands import (
     chord_to_str,
 )
 from shaderbox.constants import (
+    DOCUMENT_EXAMPLES_DIR,
     EXAMPLE_ORDER,
-    NODE_EXAMPLES_DIR,
     RESOURCES_DIR,
     SHADER_LIB_SEED_DIR,
     STARTER_EXAMPLE_ID,
@@ -61,11 +61,11 @@ from shaderbox.theme import COLOR, apply_theme
 from shaderbox.ui_models import (
     EditorSettings,
     UIAppState,
-    UINode,
-    UINodeState,
-    load_node_from_dir,
+    UIDocument,
+    UIDocumentState,
+    load_document_from_dir,
 )
-from shaderbox.ui_regions import ActiveRegion, NodeTab
+from shaderbox.ui_regions import ActiveRegion, DocumentTab
 from shaderbox.util import (
     open_in_file_manager,
     pfd_block,
@@ -220,21 +220,21 @@ class App:
         # fresh box, follows shipped updates on pristine files, never touches edits.
         sync_shipped_lib(SHADER_LIB_SEED_DIR, shader_lib_root())
 
-        # The headless project core (feature 025): owns the pure-core project state (nodes,
+        # The headless project core (feature 025): owns the pure-core project state (documents,
         # app_state, lib index + cross-project stores, working set) AND the copilot cluster
         # (CopilotSession/CopilotBackend/RevertExecutor, built in its own __init__). App forwards
         # to it via @property accessors below. notifier + exporter_registry + shader_lib_files +
         # editor_sessions are injected (the core stays imgui-import-free); the two callbacks route
         # the UI-tail side effects the core can't own (sticky-focus reset, delete-arm clear).
         self.session = ProjectSession(
-            node_examples_dir=NODE_EXAMPLES_DIR,
+            document_examples_dir=DOCUMENT_EXAMPLES_DIR,
             starter_example_id=STARTER_EXAMPLE_ID,
             example_order=EXAMPLE_ORDER,
             get_exporter_registry=lambda: self.exporter_registry,
             get_shader_lib_files=lambda: self.shader_lib_files,
-            on_current_node_changed=self._on_current_node_changed,
-            on_node_source_synced=self._on_node_source_synced,
-            on_node_deleted=self._on_node_deleted,
+            on_current_document_changed=self._on_current_document_changed,
+            on_document_source_synced=self._on_document_source_synced,
+            on_document_deleted=self._on_document_deleted,
         )
 
         # copilot_focus_pending: one-shot driving window + input focus, consumed at the input draw.
@@ -293,26 +293,26 @@ class App:
         # Which of the three regions owns nav. Transient (reset each launch). Start on the
         # grid (the editor auto-grabs focus on first render but is defocused below).
         self.active_region: ActiveRegion = ActiveRegion.GRID
-        self.active_node_tab: NodeTab = NodeTab.NODE
+        self.active_document_tab: DocumentTab = DocumentTab.DOCUMENT
         # One-shots: a region-switch / tab-jump requested this frame. The owning draw fn
         # latches focus (set_next_window_focus) / drives the tab (set_selected), then clears
         # the flag. Start pending so the grid grabs focus on the first frame.
         self.region_focus_pending: bool = True
-        self.node_tab_select_pending: bool = False
+        self.document_tab_select_pending: bool = False
         self.emoji_picker_query: str = ""
         # Where a picked emoji is delivered (set by whoever opens the picker).
         self.emoji_pick_target: Callable[[str], None] | None = None
-        self.node_delete_armed: str = ""  # node id pending delete-confirm
+        self.document_delete_armed: str = ""  # document id pending delete-confirm
         self.render_defer = RenderDefer()
         self.editor_focused: bool = False
         # Sticky variant: stays True while the editor is a real interaction target (even
         # after focus is lost to a transient popup / menu / picker). Cleared ONLY by explicit
         # defocus (Esc, arrow nav). The lib picker gates Insert-at-caret on it — `editor_focused`
         # is False while the picker holds focus, and `current_editor_path is not None` is too
-        # lax (a freshly-selected node has a session the user never typed into -> insert at (0,0)).
+        # lax (a freshly-selected document has a session the user never typed into -> insert at (0,0)).
         self.editor_was_ever_focused: bool = False
         # Start in navigation mode: defocus the editor on its first render (it auto-grabs
-        # focus) so arrows navigate nodes.
+        # focus) so arrows navigate documents.
         self.editor_defocus_requested: bool = True
         # One-shot focus request (mirror of defocus): after a lib-function insert the picker
         # closes and the editor must re-grab focus, caret where the insert ended. tabs/code.py
@@ -339,16 +339,16 @@ class App:
         self._splitter_press_on_splitter: bool = False
 
         # The code editor's open tabs (feature 045): an ordered list + the active index. The active
-        # tab's path is what the editor shows (`current_editor_path`). Node shader, the node script
+        # tab's path is what the editor shows (`current_editor_path`). Document shader, the document script
         # (`script.py`), and lib files are all closable tabs — no pinned first tab. Selecting a
-        # node ensures its shader tab. Empty list = no file open.
+        # document ensures its shader tab. Empty list = no file open.
         self.editor_tabs: list[EditorTab] = []
         self.active_tab_index: int = 0
         # A one-shot consumed by the native tab bar (047): when active_tab_index is set
-        # PROGRAMMATICALLY (glyph open / node-select / lib-jump / close), the tab bar must DRIVE
+        # PROGRAMMATICALLY (glyph open / document-select / lib-jump / close), the tab bar must DRIVE
         # imgui's selection via TabItemFlags_.set_selected — imgui ignores a model-side index change
         # and otherwise reports the old tab, reverting the switch. A genuine user click reads back
-        # without setting this. Mirrors the node-settings bar's node_tab_select_pending (ui.py).
+        # without setting this. Mirrors the document-settings bar's document_tab_select_pending (ui.py).
         self.tab_select_pending: bool = False
         # The error strip's "+N more" expand state (047 F6), reset whenever the active tab changes
         # (an expanded strip on one script shouldn't carry to the next).
@@ -408,13 +408,13 @@ class App:
         self.command_callbacks = {
             CommandId.OPEN_PROJECT: self.open_project,
             CommandId.SAVE: self.save,
-            CommandId.NEW_NODE: lambda: self.create_node_from_example(
+            CommandId.NEW_DOCUMENT: lambda: self.create_document_from_example(
                 STARTER_EXAMPLE_ID
             ),
             CommandId.EXAMPLES: self.open_examples,
             CommandId.HELP: self.open_help,
-            CommandId.DELETE_NODE: self.delete_current_node,
-            CommandId.TOGGLE_NODE_PLAY: self.toggle_current_node_play,
+            CommandId.DELETE_DOCUMENT: self.delete_current_document,
+            CommandId.TOGGLE_DOCUMENT_PLAY: self.toggle_current_document_play,
             CommandId.OPEN_SETTINGS: self.open_settings,
             CommandId.OPEN_LIB_PICKER: self.open_shader_lib_picker,
             CommandId.OPEN_PALETTE: self.open_palette,
@@ -422,20 +422,30 @@ class App:
             CommandId.JUMP_NEXT_ERROR: self.jump_to_next_error,
             CommandId.TOGGLE_CHEATSHEET: self.toggle_cheatsheet,
             CommandId.CYCLE_REGION: self.cycle_region,
-            CommandId.FOCUS_TAB_NODE: lambda: self.focus_node_tab(NodeTab.NODE),
-            CommandId.FOCUS_TAB_RENDER: lambda: self.focus_node_tab(NodeTab.RENDER),
-            CommandId.FOCUS_TAB_SHARE: lambda: self.focus_node_tab(NodeTab.SHARE),
+            CommandId.FOCUS_TAB_DOCUMENT: lambda: self.focus_document_tab(
+                DocumentTab.DOCUMENT
+            ),
+            CommandId.FOCUS_TAB_RENDER: lambda: self.focus_document_tab(
+                DocumentTab.RENDER
+            ),
+            CommandId.FOCUS_TAB_SHARE: lambda: self.focus_document_tab(
+                DocumentTab.SHARE
+            ),
             CommandId.TOGGLE_COPILOT: self.toggle_copilot,
             CommandId.CYCLE_COPILOT_LAYOUT: self.cycle_copilot_layout,
-            CommandId.OPEN_SHADER: lambda: self.ensure_shader_tab(self.current_node_id),
-            CommandId.OPEN_SCRIPT: lambda: self.open_script_for(self.current_node_id),
+            CommandId.OPEN_SHADER: lambda: self.ensure_shader_tab(
+                self.current_document_id
+            ),
+            CommandId.OPEN_SCRIPT: lambda: self.open_script_for(
+                self.current_document_id
+            ),
             CommandId.CYCLE_CODE_TAB: self.cycle_code_tab,
             CommandId.CLOSE_CODE_TAB: self.close_active_tab,
         }
 
     # ---- copilot-cluster forwarders (feature 025) ----
     # The CopilotSession/CopilotBackend/RevertExecutor cluster lives on self.session; App keeps
-    # only the copilot UI state + the thin revert_turn/recover_deleted_node wrappers below.
+    # only the copilot UI state + the thin revert_turn/recover_deleted_document wrappers below.
 
     @property
     def copilot(self) -> CopilotSession:
@@ -449,57 +459,59 @@ class App:
     def revert_executor(self) -> RevertExecutor:
         return self.session.revert_executor
 
-    def _on_current_node_changed(self, old_id: str, new_id: str) -> None:
-        # Switching nodes invalidates the "user has been typing" sticky bit — the new node's
+    def _on_current_document_changed(self, old_id: str, new_id: str) -> None:
+        # Switching documents invalidates the "user has been typing" sticky bit — the new document's
         # session starts fresh; insertions would land at (0,0) until the user clicks into it.
         self.editor_was_ever_focused = False
         if new_id:
             self.ensure_shader_tab(new_id)
 
-    def _on_node_source_synced(self, node_id: str, source: str) -> None:
-        # The mtime watcher rebuilt a node's source on disk; push the new text into its live
-        # editor session (path-keyed; the node's source.path is unchanged, only text/mtime).
-        if node_id not in self.ui_nodes:
+    def _on_document_source_synced(self, document_id: str, source: str) -> None:
+        # The mtime watcher rebuilt a document's source on disk; push the new text into its live
+        # editor session (path-keyed; the document's source.path is unchanged, only text/mtime).
+        if document_id not in self.ui_documents:
             return
-        path = self.ui_nodes[node_id].node.render_pass.source.path
+        path = self.ui_documents[document_id].document.render_pass.source.path
         session = self.editor_sessions.get(path)
         if session is None:
             return
         session.editor.set_text(source)
         session.saved_undo = session.editor.get_undo_index()
 
-    def _on_node_deleted(self, node_id: str, source_path: Path) -> None:
-        # A node's dir was trashed by the core; drop its editor session + close any of its open
+    def _on_document_deleted(self, document_id: str, source_path: Path) -> None:
+        # A document's dir was trashed by the core; drop its editor session + close any of its open
         # tabs (the shader + its scripts) + clear a pending delete-arm if it matched.
         self.editor_sessions.pop(source_path, None)
         active = self._active_tab()
         self.editor_tabs = [
-            t for t in self.editor_tabs if t.node_id != node_id or t.kind == "lib"
+            t
+            for t in self.editor_tabs
+            if t.document_id != document_id or t.kind == "lib"
         ]
         self._reanchor_active_tab(active)
-        if node_id == self.node_delete_armed:
-            self.node_delete_armed = ""
+        if document_id == self.document_delete_armed:
+            self.document_delete_armed = ""
 
-    def recover_deleted_node(self, msg: Message) -> None:
-        # MAIN THREAD (the chat's Recover button). Restore the node, flip the card's
+    def recover_deleted_document(self, msg: Message) -> None:
+        # MAIN THREAD (the chat's Recover button). Restore the document, flip the card's
         # one-shot, persist so the flip survives a reopen. A pure user-side undo — the
         # worker isn't involved.
         if msg.recover is None or msg.recover.done:
             return
-        ok = self.revert_executor.restore_node_from_trash(
-            msg.recover.trash_name, msg.recover.node_id
+        ok = self.revert_executor.restore_document_from_trash(
+            msg.recover.trash_name, msg.recover.document_id
         )
         if ok:
             msg.recover = replace(msg.recover, done=True)
-            self.notifications.push(f"Recovered node '{msg.recover.node_name}'")
+            self.notifications.push(f"Recovered document '{msg.recover.document_name}'")
         else:
             msg.recover = replace(msg.recover, done=True)
-            self.notifications.push("Node is no longer in trash — can't recover")
+            self.notifications.push("Document is no longer in trash — can't recover")
         self.copilot.save_conversation(self.paths.copilot_conversation_path)
 
     def revert_turn(self, msg: Message) -> None:
         # MAIN THREAD (the chat's Revert button on a user message, gated on not-in-flight). Restore
-        # every node the turn touched to its pre-turn state, drop the message's turn_id so the
+        # every document the turn touched to its pre-turn state, drop the message's turn_id so the
         # button retires, note the revert to the agent, persist (feature 020·30).
         if not msg.turn_id or self.copilot.state.in_flight:
             return
@@ -544,11 +556,11 @@ class App:
 
     def jump_to_next_error(self) -> None:
         session = self.get_current_session_if_exists()
-        if session is None or self.current_node_id not in self.ui_nodes:
+        if session is None or self.current_document_id not in self.ui_documents:
             return
-        errors = self.ui_nodes[
-            self.current_node_id
-        ].node.render_pass.compile_unit.errors
+        errors = self.ui_documents[
+            self.current_document_id
+        ].document.render_pass.compile_unit.errors
         if not errors:
             return
         caret = session.editor.get_current_cursor_position().line
@@ -618,8 +630,8 @@ class App:
         self.session.clear_conversation()
 
     def _copilot_busy_blocked(self, action: str) -> bool:
-        # True (+ a notification) when an editor/node-mutating action must be refused because
-        # a copilot turn is in flight (it owns the current node).
+        # True (+ a notification) when an editor/document-mutating action must be refused because
+        # a copilot turn is in flight (it owns the current document).
         if self.copilot_turn_active:
             self.notifications.push(
                 f"{action} is locked while the assistant is working"
@@ -645,9 +657,9 @@ class App:
         if self.editor_tabs:
             self.close_tab(self.active_tab_index)
 
-    def focus_node_tab(self, tab: NodeTab) -> None:
-        self.active_node_tab = tab
-        self.node_tab_select_pending = True
+    def focus_document_tab(self, tab: DocumentTab) -> None:
+        self.active_document_tab = tab
+        self.document_tab_select_pending = True
         self._set_region(ActiveRegion.PANEL)
 
     def focus_move_in_flight(self) -> bool:
@@ -662,7 +674,7 @@ class App:
         # a chord move (focus reads the old region for a frame — would revert the chord), and no
         # while the floating chat owns focus (a separate window, not a region). The region still
         # ANDs its own is_window_focused; this is the shared "is the derive legal now" guard, so
-        # ui.py / node_grid.py don't each name copilot_focused.
+        # ui.py / document_grid.py don't each name copilot_focused.
         return not self.focus_move_in_flight() and not self.copilot_focused
 
     def region_outline_visible(self, region: ActiveRegion) -> bool:
@@ -679,7 +691,7 @@ class App:
     def _yield_editor_to_region(self) -> None:
         # Defocus the editor (its TextEditor auto-grabs on first render) + re-latch the
         # currently-active non-editor region. The pair used both when leaving the editor via a
-        # chord and when a node switch re-renders the editor under a grid that owns focus.
+        # chord and when a document switch re-renders the editor under a grid that owns focus.
         self.editor_defocus_requested = True
         self.region_focus_pending = True
 
@@ -697,12 +709,12 @@ class App:
         else:
             self.region_focus_pending = True
 
-    def select_node(self, node_id: str) -> None:
-        # If the grid owns keyboard focus, keep it there: the new node's editor auto-grabs
+    def select_document(self, document_id: str) -> None:
+        # If the grid owns keyboard focus, keep it there: the new document's editor auto-grabs
         # focus on its first render (TextEditor quirk), so defocus it and re-latch the grid.
-        if self._copilot_busy_blocked("Switching nodes"):
+        if self._copilot_busy_blocked("Switching documents"):
             return
-        self.set_current_node_id(node_id)
+        self.set_current_document_id(document_id)
         if self.active_region == ActiveRegion.GRID:
             self._yield_editor_to_region()
 
@@ -838,12 +850,12 @@ class App:
         return self.session.integrations_store
 
     @property
-    def ui_nodes(self) -> dict[str, UINode]:
-        return self.session.ui_nodes
+    def ui_documents(self) -> dict[str, UIDocument]:
+        return self.session.ui_documents
 
     @property
-    def ui_node_examples(self) -> dict[str, UINode]:
-        return self.session.ui_node_examples
+    def ui_document_examples(self) -> dict[str, UIDocument]:
+        return self.session.ui_document_examples
 
     @property
     def app_state(self) -> UIAppState:
@@ -862,12 +874,12 @@ class App:
         return self.session.shader_lib_tags
 
     @property
-    def node_examples_dir(self) -> Path:
-        return self.session.node_examples_dir
+    def document_examples_dir(self) -> Path:
+        return self.session.document_examples_dir
 
     @property
-    def current_node_id(self) -> str:
-        return self.session.current_node_id
+    def current_document_id(self) -> str:
+        return self.session.current_document_id
 
     def rebuild_shader_lib_index(self) -> None:
         self.session.rebuild_shader_lib_index()
@@ -879,19 +891,19 @@ class App:
         self.session._copilot_ws_add(address)
 
     @property
-    def current_node_ui_state_or_default(self) -> UINodeState:
-        node_id = self.current_node_id
+    def current_document_ui_state_or_default(self) -> UIDocumentState:
+        document_id = self.current_document_id
 
-        if not node_id:
-            return UINodeState()
+        if not document_id:
+            return UIDocumentState()
 
-        return self.ui_nodes[node_id].ui_state
+        return self.ui_documents[document_id].ui_state
 
-    def set_current_node_id(self, id: str = "") -> None:
-        self.session.set_current_node_id(id)
+    def set_current_document_id(self, id: str = "") -> None:
+        self.session.set_current_document_id(id)
 
-    def set_node_delete_armed(self, id: str = "") -> None:
-        self.node_delete_armed = id
+    def set_document_delete_armed(self, id: str = "") -> None:
+        self.document_delete_armed = id
 
     def _init(
         self,
@@ -906,13 +918,13 @@ class App:
         self.frame_idx = 0
         # Wall-clock of the previous script-engine tick (feature 040), for the per-frame dt.
         self.last_tick_time = 0.0
-        # The live cursor over the current node's preview, fed into the script tick as ctx.mouse
+        # The live cursor over the current document's preview, fed into the script tick as ctx.mouse
         # (feature 042). Updated from the preview hit-test in ui.py; defaults to center (the
         # export value) until the preview is hovered. One frame stale by construction (tick runs
         # before the preview draws) — harmless, like dt.
         self.script_mouse: MouseState = EXPORT_MOUSE
 
-        # Project load (GL-free): paths, lib index, nodes + examples, app_state, integrations.
+        # Project load (GL-free): paths, lib index, documents + examples, app_state, integrations.
         self.session.load(project_dir)
         # Persist the active-project pointer for the next launch — EXCEPT for an explicit-dir
         # test/smoke process (persist_pointer=False), which must not overwrite the user's pointer.
@@ -921,19 +933,19 @@ class App:
 
         # First launch only: seed a starter into the empty default project. NOT on
         # open_project (which would pollute a folder the user picked expecting it empty).
-        if first_run and not self.ui_nodes:
-            self.session.seed_starter_node(self.set_current_node_id)
+        if first_run and not self.ui_documents:
+            self.session.seed_starter_document(self.set_current_document_id)
 
-        # load() restores current_node_id by direct field assignment (not set_current_node_id), so
-        # _on_current_node_changed never fires for the restored node and its shader tab is never
-        # opened — the editor stays blank until a node switch. Open it here. A stale pointer at a
-        # deleted node reselects a live one (else a permanent blank with no recovery).
-        if self.current_node_id and self.current_node_id in self.ui_nodes:
-            self.ensure_shader_tab(self.current_node_id)
-        elif self.ui_nodes:
-            # No (or a stale) current node, but the project has nodes: select one so the editor
-            # opens its shader tab instead of staying blank (set_current_node_id fires the tab open).
-            self.set_current_node_id(next(iter(self.ui_nodes)))
+        # load() restores current_document_id by direct field assignment (not set_current_document_id), so
+        # _on_current_document_changed never fires for the restored document and its shader tab is never
+        # opened — the editor stays blank until a document switch. Open it here. A stale pointer at a
+        # deleted document reselects a live one (else a permanent blank with no recovery).
+        if self.current_document_id and self.current_document_id in self.ui_documents:
+            self.ensure_shader_tab(self.current_document_id)
+        elif self.ui_documents:
+            # No (or a stale) current document, but the project has documents: select one so the editor
+            # opens its shader tab instead of staying blank (set_current_document_id fires the tab open).
+            self.set_current_document_id(next(iter(self.ui_documents)))
 
         # app_state was just replaced, so the effective binding map is recomputed per project.
         self._merge_effective_bindings()
@@ -944,7 +956,7 @@ class App:
             self.open_examples()
         # Restore persisted layout prefs into the live attrs (save() mirrors them back).
         # active_region stays transient.
-        self.active_node_tab = self.app_state.active_node_tab
+        self.active_document_tab = self.app_state.active_document_tab
         self.is_copilot_open = self.app_state.is_copilot_open
         if self.is_copilot_open:
             self.focus_copilot()
@@ -953,7 +965,7 @@ class App:
         self.copilot_revert_target = None
         # Drive imgui's tab bar to the restored tab on the first frame — set_selected only
         # fires while this one-shot is set (else imgui defaults to the first tab).
-        self.node_tab_select_pending = True
+        self.document_tab_select_pending = True
 
         # ----------------------------------------------------------------
         # Wire exporter registry to project state: set_integrations (the store was loaded by
@@ -1031,13 +1043,15 @@ class App:
         self.tab_select_pending = True
         self.editor_was_ever_focused = False
 
-    def ensure_shader_tab(self, node_id: str) -> None:
-        # On node-select: focus (or open) the node's shader tab so selecting a node shows its
-        # shader, the pre-045 default. Other open tabs (scripts / libs / other nodes' shaders) stay.
-        if node_id not in self.ui_nodes:
+    def ensure_shader_tab(self, document_id: str) -> None:
+        # On document-select: focus (or open) the document's shader tab so selecting a document shows its
+        # shader, the pre-045 default. Other open tabs (scripts / libs / other documents' shaders) stay.
+        if document_id not in self.ui_documents:
             return
-        path = self.ui_nodes[node_id].node.render_pass.source.path
-        self._focus_or_add_tab(EditorTab(path=path, kind="shader", node_id=node_id))
+        path = self.ui_documents[document_id].document.render_pass.source.path
+        self._focus_or_add_tab(
+            EditorTab(path=path, kind="shader", document_id=document_id)
+        )
 
     def set_active_tab(self, index: int) -> None:
         if 0 <= index < len(self.editor_tabs):
@@ -1049,7 +1063,7 @@ class App:
     def _reanchor_active_tab(self, active: EditorTab | None) -> None:
         # Keep the SAME tab active across a removal. A bare clamp only keeps the index VALID:
         # removing a tab to the LEFT shifts every later tab down one, so the index silently
-        # addresses a different file while current_node_id stays put — and the next
+        # addresses a different file while current_document_id stays put — and the next
         # flush_current_editor() (Ctrl+S, or quit) then flushes the wrong tab, dropping the
         # edits the user was actually looking at.
         if active is not None:
@@ -1082,23 +1096,25 @@ class App:
         self._focus_or_add_tab(EditorTab(path=source.path, kind="lib"))
         return session
 
-    def open_script_for(self, node_id: str) -> None:
-        # Open the node's `script.py` in a tab, lazily creating it if absent (048 — one script per
-        # node). The next reload_scripts binds it. Frozen mid-copilot-turn (a write races the reload).
+    def open_script_for(self, document_id: str) -> None:
+        # Open the document's `script.py` in a tab, lazily creating it if absent (048 — one script per
+        # document). The next reload_scripts binds it. Frozen mid-copilot-turn (a write races the reload).
         if self.copilot_turn_active:
             return
         try:
-            if not self.session.has_script(node_id):
-                self.session.create_script(node_id)
-            path = self.session.script_path_for(node_id)
+            if not self.session.has_script(document_id):
+                self.session.create_script(document_id)
+            path = self.session.script_path_for(document_id)
         except Exception as e:
             self.notifications.push(
                 "Failed to open script", color=COLOR.STATE_ERROR[:3]
             )
-            logger.error(f"open_script_for failed for {node_id}: {e}")
+            logger.error(f"open_script_for failed for {document_id}: {e}")
             return
         self.get_session(ShaderSource.load(path))
-        self._focus_or_add_tab(EditorTab(path=path, kind="script", node_id=node_id))
+        self._focus_or_add_tab(
+            EditorTab(path=path, kind="script", document_id=document_id)
+        )
 
     def get_session(self, source: ShaderSource) -> EditorSession:
         # Lazy-create a session bound to this source's path (the stable identity);
@@ -1128,10 +1144,12 @@ class App:
         return self.get_session(ShaderSource.load(path))
 
     def get_current_session(self) -> EditorSession | None:
-        node_id = self.current_node_id
-        if not node_id or node_id not in self.ui_nodes:
+        document_id = self.current_document_id
+        if not document_id or document_id not in self.ui_documents:
             return None
-        return self.get_session(self.ui_nodes[node_id].node.render_pass.source)
+        return self.get_session(
+            self.ui_documents[document_id].document.render_pass.source
+        )
 
     def _apply_editor_settings_to(self, editor: text_edit.TextEditor) -> None:
         settings: EditorSettings = self.app_state.editor_settings
@@ -1173,25 +1191,25 @@ class App:
         session = self.get_current_session_if_exists()
         if session is None or not self.is_current_editor_dirty():
             return
-        node_id = self.current_node_id
+        document_id = self.current_document_id
         text = session.editor.get_text()
-        # The shader-save branch only applies when the active tab IS the current node's shader. A
-        # lib / script tab (or no current node — all nodes deleted, id "") falls to the disk-write
-        # else (no `ui_nodes[node_id]` lookup, which would KeyError on the empty id).
-        ui_node = self.ui_nodes.get(node_id)
+        # The shader-save branch only applies when the active tab IS the current document's shader. A
+        # lib / script tab (or no current document — all documents deleted, id "") falls to the disk-write
+        # else (no `ui_documents[document_id]` lookup, which would KeyError on the empty id).
+        ui_document = self.ui_documents.get(document_id)
         if (
-            ui_node is not None
-            and session.source.path == ui_node.node.render_pass.source.path
+            ui_document is not None
+            and session.source.path == ui_document.document.render_pass.source.path
         ):
-            node = ui_node.node
-            # Saving the node's own shader: replace its source, drop the program; the next
+            document = ui_document.document
+            # Saving the document's own shader: replace its source, drop the program; the next
             # render's compile() picks up the new text + re-resolves.
-            node.render_pass.release_program(text)
+            document.render_pass.release_program(text)
             # Re-render to bind a valid program — a freed program left GL-current crashes
             # the imgui renderer's restore (GLError 1281).
-            node.render()
+            document.render()
         else:
-            # Saving a lib file OR a node script: write to disk. The mtime watcher
+            # Saving a lib file OR a document script: write to disk. The mtime watcher
             # picks it up next frame — a lib rebuilds the index + invalidates dependents; a script
             # is re-bound by reload_scripts.
             try:
@@ -1201,49 +1219,49 @@ class App:
                 return
         session.saved_undo = session.editor.get_undo_index()
 
-    def sync_editor_from_disk(self, node_id: str, source: str) -> None:
-        self.session.sync_editor_from_disk(node_id, source)
+    def sync_editor_from_disk(self, document_id: str, source: str) -> None:
+        self.session.sync_editor_from_disk(document_id, source)
 
-    def open_current_node_dir(self) -> None:
-        if not self.current_node_id:
-            logger.warning("No node selected")
+    def open_current_document_dir(self) -> None:
+        if not self.current_document_id:
+            logger.warning("No document selected")
             return
-        node_dir = self.paths.nodes_dir / self.current_node_id
-        if not node_dir.exists():
-            logger.warning(f"Node directory does not exist: {node_dir}")
+        document_dir = self.paths.documents_dir / self.current_document_id
+        if not document_dir.exists():
+            logger.warning(f"Document directory does not exist: {document_dir}")
             return
         try:
-            open_in_file_manager(node_dir)
-            logger.info(f"Opened directory: {node_dir}")
+            open_in_file_manager(document_dir)
+            logger.info(f"Opened directory: {document_dir}")
         except Exception as e:
             self.notifications.push(
                 "Failed to open directory", color=COLOR.STATE_ERROR[:3]
             )
-            logger.error(f"Failed to open directory {node_dir}: {e}")
+            logger.error(f"Failed to open directory {document_dir}: {e}")
 
     # --- Script UI (feature 048): thin App-side wrappers over the headless ProjectSession ---
-    def set_uniform_stopped(self, node_id: str, name: str, stopped: bool) -> None:
+    def set_uniform_stopped(self, document_id: str, name: str, stopped: bool) -> None:
         # The per-uniform play/stop toggle + the auto-stop-on-manual-edit (048): freeze/resume the
         # script's write to this uniform. Frozen mid-copilot-turn (a flag flip races the reload poll).
         if self.copilot_turn_active:
             return
-        self.session.set_uniform_stopped(node_id, name, stopped)
+        self.session.set_uniform_stopped(document_id, name, stopped)
 
-    def set_node_all_stopped(self, node_id: str, stopped: bool) -> None:
-        # The whole-node play/stop toggle (048): freeze/resume every driven uniform at once. Frozen
+    def set_document_all_stopped(self, document_id: str, stopped: bool) -> None:
+        # The whole-document play/stop toggle (048): freeze/resume every driven uniform at once. Frozen
         # mid-copilot-turn.
         if self.copilot_turn_active:
             return
-        self.session.set_node_all_stopped(node_id, stopped)
+        self.session.set_document_all_stopped(document_id, stopped)
 
-    def toggle_current_node_play(self) -> None:
-        # The hotkey mirror of the node-tab play/stop toggle — a no-op when the current node has no
+    def toggle_current_document_play(self) -> None:
+        # The hotkey mirror of the document-tab play/stop toggle — a no-op when the current document has no
         # script (matching the button, which only renders for a present script).
-        node_id = self.current_node_id
-        if not self.session.has_script(node_id):
+        document_id = self.current_document_id
+        if not self.session.has_script(document_id):
             return
-        playing = not self.current_node_ui_state_or_default.all_stopped
-        self.set_node_all_stopped(node_id, playing)
+        playing = not self.current_document_ui_state_or_default.all_stopped
+        self.set_document_all_stopped(document_id, playing)
 
     # App-side editor-session cleanup, reached back into from ShaderLibFileManager when it
     # trashes/renames a lib file (the picker UI drives the CRUD on the manager directly).
@@ -1294,29 +1312,29 @@ class App:
             )
             logger.error(f"Failed to reveal lib file {path}: {e}")
 
-    def save_ui_node(
+    def save_ui_document(
         self,
-        ui_node: UINode,
+        ui_document: UIDocument,
         root_dir: Path | None = None,
         dir_name: str | None = None,
     ) -> Path:
         # The user-initiated save path: toast. The copilot's mid-turn saves go straight to the
-        # core (session.save_ui_node) and deliberately don't toast (feature 025 decision 7).
-        dir = self.session.save_ui_node(ui_node, root_dir, dir_name)
-        self.notifications.push(f"Node '{ui_node.ui_state.ui_name}' saved")
+        # core (session.save_ui_document) and deliberately don't toast (feature 025 decision 7).
+        dir = self.session.save_ui_document(ui_document, root_dir, dir_name)
+        self.notifications.push(f"Document '{ui_document.ui_state.ui_name}' saved")
         return dir
 
     def save(self) -> None:
-        # The busy gate covers only the node portion (the worker owns the current node
+        # The busy gate covers only the document portion (the worker owns the current document
         # mid-turn); app_state + integrations are user-owned and always persist — the
         # quit path calls save() regardless of an in-flight turn.
         if not self._copilot_busy_blocked("Saving"):
             self.flush_current_editor()
-            if self.current_node_id:
+            if self.current_document_id:
                 try:
-                    self.save_ui_node(self.ui_nodes[self.current_node_id])
+                    self.save_ui_document(self.ui_documents[self.current_document_id])
                 except Exception as e:
-                    logger.error(f"Failed to save current node: {e}")
+                    logger.error(f"Failed to save current document: {e}")
                     self.notifications.push(
                         f"Save failed: {e!s}", COLOR.STATE_ERROR[:3]
                     )
@@ -1336,7 +1354,7 @@ class App:
             self.app_state.telegram_default_pack = telegram.current_default_pack()
 
         # Mirror the live layout prefs back into app_state before writing.
-        self.app_state.active_node_tab = self.active_node_tab
+        self.app_state.active_document_tab = self.active_document_tab
         self.app_state.is_copilot_open = self.is_copilot_open
         self.app_state.copilot_layout = self.copilot_layout
 
@@ -1355,8 +1373,8 @@ class App:
         if hasattr(self, "copilot") and hasattr(self, "project_dir"):
             self.copilot.save_conversation(self.paths.copilot_conversation_path)
 
-        # Copilot first: cancel_all() + join() BEFORE the node release below, so a queued GL
-        # op can't run against half-released nodes.
+        # Copilot first: cancel_all() + join() BEFORE the document release below, so a queued GL
+        # op can't run against half-released documents.
         if hasattr(self, "copilot"):
             self.copilot.release()
 
@@ -1365,11 +1383,11 @@ class App:
         if self.share_tab_state is not None:
             self.share_tab_state.release()
 
-        for node in self.ui_nodes.values():
-            node.node.release()
+        for document in self.ui_documents.values():
+            document.document.release()
 
-        for node in self.ui_node_examples.values():
-            node.node.release()
+        for document in self.ui_document_examples.values():
+            document.document.release()
 
         if hasattr(self, "preview_canvas"):
             self.preview_canvas.release()
@@ -1388,33 +1406,33 @@ class App:
         if project_dir:
             self._init(Path(project_dir))
 
-    def delete_current_node(self) -> None:
-        self.delete_node(self.current_node_id)
+    def delete_current_document(self) -> None:
+        self.delete_document(self.current_document_id)
 
-    def delete_node(self, node_id: str) -> None:
-        # The guarded public path (node grid / hotkeys). The copilot calls the unguarded body
+    def delete_document(self, document_id: str) -> None:
+        # The guarded public path (document grid / hotkeys). The copilot calls the unguarded body
         # directly — its mid-turn delete must bypass the busy gate.
-        if self._copilot_busy_blocked("Deleting a node"):
+        if self._copilot_busy_blocked("Deleting a document"):
             return
-        if not node_id or node_id not in self.ui_nodes:
+        if not document_id or document_id not in self.ui_documents:
             return
-        self._delete_node_unguarded(node_id)
+        self._delete_document_unguarded(document_id)
 
-    def _delete_node_unguarded(self, node_id: str) -> str:
-        return self.session._delete_node_unguarded(node_id)
+    def _delete_document_unguarded(self, document_id: str) -> str:
+        return self.session._delete_document_unguarded(document_id)
 
-    def create_node_from_example(self, example_id: str) -> None:
-        if self._copilot_busy_blocked("Creating a node"):
+    def create_document_from_example(self, example_id: str) -> None:
+        if self._copilot_busy_blocked("Creating a document"):
             return
-        if example_id not in self.ui_node_examples:
+        if example_id not in self.ui_document_examples:
             logger.warning(f"Example missing ({example_id}); nothing created")
-            self.notifications.push("Example missing — node not created")
+            self.notifications.push("Example missing — document not created")
             return
 
-        new_node = load_node_from_dir(self.node_examples_dir / example_id)
-        new_node.reset_id()
+        new_document = load_document_from_dir(self.document_examples_dir / example_id)
+        new_document.reset_id()
 
-        self.ui_nodes[new_node.id] = new_node
-        self.set_current_node_id(new_node.id)
-        self.save_ui_node(new_node)
-        logger.info(f"New node {new_node.id} created from example {example_id}")
+        self.ui_documents[new_document.id] = new_document
+        self.set_current_document_id(new_document.id)
+        self.save_ui_document(new_document)
+        logger.info(f"New document {new_document.id} created from example {example_id}")

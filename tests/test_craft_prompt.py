@@ -65,7 +65,7 @@ def test_script_surface_hides_the_on_disk_path() -> None:
     # 059 D2: the agent gets handles, not implementation detail — no script path in the prompt or
     # in the description that rides every iteration.
     assert "scripts/script.py" not in _SYSTEM_PROMPT
-    assert "nodes/" not in _READ_SCRIPT_DESC
+    assert "documents/" not in _READ_SCRIPT_DESC
 
 
 def test_system_prompt_states_the_agent_cannot_see_its_render() -> None:
@@ -106,20 +106,20 @@ def test_the_prompt_does_not_restate_what_the_tool_schemas_carry() -> None:
     p = _SYSTEM_PROMPT
     for cut in (
         "`set_uniform(name, value)`",  # _SET_UNIFORM_DESC + _SetUniformArgs.value
-        "`create_node(name)`",  # _CREATE_NODE_DESC + its arg descriptions
+        "`create_document(name)`",  # _CREATE_NODE_DESC + its arg descriptions
         "user declined",  # _DELETE_NODE_DESC
-        "`switch_node(node)` makes",  # _SWITCH_NODE_DESC
+        "`switch_document(document)` makes",  # _SWITCH_NODE_DESC
         "`read_lib(names)`",  # _READ_LIB_DESC
         "`grep(query)`",  # _GREP_DESC
         "short_720",  # _SHAPE_DESC on all three render/publish arg models
         "briefly pauses",  # _RENDER_IMAGE_DESC / _RENDER_VIDEO_DESC
         "land edits first",  # ditto (as the corrected "land your edits before rendering")
         "#include",  # triplicated: the RARE catalogue header + _CONVENTIONS bullet 2
-        "NEVER means",  # _ReadShaderArgs.nodes / _TARGET_DESC
+        "NEVER means",  # _ReadShaderArgs.documents / _TARGET_DESC
         "lib:` prefix",  # ditto
-        "duplicate_node",  # lazy: load_tools' catalogue row
+        "duplicate_document",  # lazy: load_tools' catalogue row
         "set_canvas_size",  # lazy: ditto
-        "rename_node",  # lazy: ditto
+        "rename_document",  # lazy: ditto
         "unbind_media",  # lazy: ditto
         "list_telegram_packs",  # lazy: ditto + telegram_precheck's handoff
         "set_youtube_credentials",  # lazy: ditto + youtube_precheck's handoff

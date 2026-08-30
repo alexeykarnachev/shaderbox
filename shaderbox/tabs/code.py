@@ -18,16 +18,18 @@ def _is_script_tab(tab: EditorTab | None) -> bool:
 
 
 def tab_label(app: App, tab: EditorTab) -> str:
-    # The display label for a tab (048): node-derived so two nodes' tabs are distinguishable
-    # ("<node> (shader)" / "<node> (script)"), a lib by "library - <file>". The on-disk filename is
-    # the same constant for every node, so the bare name can't tell tabs apart. Falls back to a short
-    # id slice when the node has no name. The imgui ##id keys on the stable path/index, NOT this label.
+    # The display label for a tab (048): document-derived so two documents' tabs are distinguishable
+    # ("<document> (shader)" / "<document> (script)"), a lib by "library - <file>". The on-disk filename is
+    # the same constant for every document, so the bare name can't tell tabs apart. Falls back to a short
+    # id slice when the document has no name. The imgui ##id keys on the stable path/index, NOT this label.
     if tab.kind == "lib":
         return f"library - {tab.path.stem}"
-    ui_node = app.ui_nodes.get(tab.node_id)
-    node_name = (ui_node.ui_state.ui_name if ui_node else "") or tab.node_id[:8]
+    ui_document = app.ui_documents.get(tab.document_id)
+    document_name = (
+        ui_document.ui_state.ui_name if ui_document else ""
+    ) or tab.document_id[:8]
     suffix = "script" if tab.kind == "script" else "shader"
-    return f"{node_name} ({suffix})"
+    return f"{document_name} ({suffix})"
 
 
 def _draw_tab_row(app: App) -> None:
@@ -35,9 +37,9 @@ def _draw_tab_row(app: App) -> None:
     # error-tinted tab, and overflow scroll + a ▾ list popup. Tab labels are the bare on-disk
     # filename. FPE-safe (plain imgui, no TextEditor.render), so it draws even behind a modal.
     # A genuine click is read back into active_tab_index; a PROGRAMMATIC switch (glyph open /
-    # node-select / lib-jump / close) DRIVES imgui's selection via set_selected — imgui ignores a
+    # document-select / lib-jump / close) DRIVES imgui's selection via set_selected — imgui ignores a
     # model-side index change otherwise and reverts to the old tab. The target is read BEFORE the
-    # loop so the mid-loop read-back can't clobber it (the ui.py node-settings-bar pattern).
+    # loop so the mid-loop read-back can't clobber it (the ui.py document-settings-bar pattern).
     select_target = app.active_tab_index if app.tab_select_pending else None
     app.tab_select_pending = False
     flags = (
@@ -78,16 +80,16 @@ def _draw_tab_row(app: App) -> None:
 
 
 def _tab_has_error(app: App, tab: EditorTab) -> bool:
-    return app.session.script_has_error(tab.node_id)
+    return app.session.script_has_error(tab.document_id)
 
 
 def _script_errors_for(app: App, tab: EditorTab) -> list[ShaderError]:
     # Adapt the active script tab's engine errors into the shader-error shape so they render through
     # the SAME bottom strip as compile errors (045 decision 7), click-to-jump into the script file.
-    # The node script shows its sentinel + every homeless soft-key error (typo/orphan keys that name
+    # The document script shows its sentinel + every homeless soft-key error (typo/orphan keys that name
     # no uniform row).
     out: list[ShaderError] = []
-    status = app.session.get_script_status(tab.node_id)
+    status = app.session.get_script_status(tab.document_id)
     if status is not None:
         if status.sentinel_error is not None:
             e = status.sentinel_error
@@ -175,23 +177,23 @@ def draw_chrome(app: App) -> None:
     if tab is None:
         imgui.text_colored(COLOR.FG_DIM, "No file open")
         return
-    if not (ui_node := app.ui_nodes.get(app.current_node_id)):
-        imgui.text_colored(COLOR.FG_DIM, "No node selected")
+    if not (ui_document := app.ui_documents.get(app.current_document_id)):
+        imgui.text_colored(COLOR.FG_DIM, "No document selected")
         return
     if tab.kind == "shader":
-        full_file_path = ui_node.node.render_pass.source.path
+        full_file_path = ui_document.document.render_pass.source.path
         local_file_path = full_file_path.relative_to(app.project_dir)
         if draw_copyable_text(str(local_file_path), copy_value=str(full_file_path)):
             app.notifications.push("Copied to clipboard!")
         if app.is_current_editor_dirty():
             imgui.same_line()
             imgui.text_colored(COLOR.STATE_WARN, "(unsaved)")
-        elif not ui_node.node.render_pass.compile_unit.error_raw:
+        elif not ui_document.document.render_pass.compile_unit.error_raw:
             imgui.same_line()
             imgui.text_colored(COLOR.STATE_OK, "compiled")
         imgui.same_line(spacing=float(SPACE.LG))
         if imgui.button("Open dir", size=(SIZE.BTN_SM_W, 0)):
-            app.open_current_node_dir()
+            app.open_current_document_dir()
     else:
         imgui.text_colored(COLOR.FG_DIM, tab_label(app, tab))
         if app.is_current_editor_dirty():
@@ -201,7 +203,7 @@ def draw_chrome(app: App) -> None:
 
 def draw(app: App) -> None:
     app.code_hovered_uniform = ""
-    ui_node = app.ui_nodes.get(app.current_node_id)
+    ui_document = app.ui_documents.get(app.current_document_id)
 
     # The tab row is plain imgui (no TextEditor.render), so it draws even behind a modal — only the
     # editor render + error strip are FPE-gated below.
@@ -209,7 +211,7 @@ def draw(app: App) -> None:
 
     tab = app.active_tab
     current_path = app.current_editor_path
-    if tab is None or current_path is None or ui_node is None:
+    if tab is None or current_path is None or ui_document is None:
         app.editor_focused = False
         return
 
@@ -221,7 +223,7 @@ def draw(app: App) -> None:
     session = app.editor_sessions.get(current_path)
     if session is None:
         session = (
-            app.get_session(ui_node.node.render_pass.source)
+            app.get_session(ui_document.document.render_pass.source)
             if tab.kind == "shader"
             else app.open_shader_lib_file(current_path)
             if tab.kind == "lib"
@@ -235,7 +237,7 @@ def draw(app: App) -> None:
     errors = (
         _script_errors_for(app, tab)
         if tab.kind == "script"
-        else ui_node.node.render_pass.compile_unit.errors
+        else ui_document.document.render_pass.compile_unit.errors
     )
     _apply_markers(editor, errors, app.editor_hover_line, current_path)
     app.editor_hover_line = None
@@ -332,8 +334,8 @@ def draw(app: App) -> None:
     # Cursor-following tooltip for words that are live uniforms; also lights up the panel row.
     if cursor_over_editor and editor.is_mouse_pos_over_glyph(imgui.get_mouse_pos()):
         word = editor.get_word_at_mouse_pos(imgui.get_mouse_pos())
-        if word in ui_node.node.render_pass.uniform_values:
-            value = ui_node.node.render_pass.uniform_values[word]
+        if word in ui_document.document.render_pass.uniform_values:
+            value = ui_document.document.render_pass.uniform_values[word]
             imgui.set_tooltip(f"{word}: {format_auto_value(value)}")
             app.code_hovered_uniform = word
 

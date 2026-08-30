@@ -77,8 +77,8 @@ def test_scalar_and_vec_unchanged() -> None:
     assert coerce_uniform_value([1, 0], _u(3, 1)) is None
 
 
-def test_uint_array_stays_int_for_node_json_round_trip() -> None:
-    # A uint text array must coerce to INT elements (not float) so it survives node.json save/load:
+def test_uint_array_stays_int_for_document_json_round_trip() -> None:
+    # A uint text array must coerce to INT elements (not float) so it survives document.json save/load:
     # the loader tuple-izes the JSON list, and moderngl's uint write needs ints (struct.pack('I')).
     out = coerce_uniform_value("Hi", _u(1, 4, _GL_UINT))
     assert isinstance(out, list) and all(isinstance(x, int) for x in out)

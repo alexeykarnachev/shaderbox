@@ -53,12 +53,14 @@ def _drain(session: CopilotSession) -> None:
 
 def test_second_turn_receives_first_turn_summary(tmp_path: Path) -> None:
     caps = minimal_caps(
-        set_uniform=lambda _n, _v, _node: SetUniformResult(ok=True, type_label="float")
+        set_uniform=lambda _n, _v, _document: SetUniformResult(
+            ok=True, type_label="float"
+        )
     )
-    # Turn 1: set u_speed = 2.5 on node "ab", then reply. Turn 2: a plain reply (we only inspect input).
+    # Turn 1: set u_speed = 2.5 on document "ab", then reply. Turn 2: a plain reply (we only inspect input).
     scripts: list[list[LLMStreamEvent]] = [
         _tool_call(
-            "c1", "set_uniform", '{"name": "u_speed", "value": 2.5, "node": "ab"}'
+            "c1", "set_uniform", '{"name": "u_speed", "value": 2.5, "document": "ab"}'
         ),
         [LLMTextDelta("Raised the speed."), LLMDone("stop", LLMUsage())],
         [LLMTextDelta("Okay."), LLMDone("stop", LLMUsage())],
@@ -89,4 +91,4 @@ def test_second_turn_receives_first_turn_summary(tmp_path: Path) -> None:
     )
     blob = "\n".join(m.content or "" for m in turn2)
     assert "u_speed" in blob and "2.5" in blob, "turn-1 summary not visible to turn 2"
-    assert "ab" in blob, "turn-1 referenced node not visible to turn 2"
+    assert "ab" in blob, "turn-1 referenced document not visible to turn 2"

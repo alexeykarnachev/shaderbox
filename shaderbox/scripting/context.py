@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 
 @dataclass(frozen=True)
 class MouseState:
-    # Cursor over the node's canvas, normalized 0..1, y-UP (origin bottom-left — the GLSL
+    # Cursor over the document's canvas, normalized 0..1, y-UP (origin bottom-left — the GLSL
     # convention; the preview draws uv-flipped, so the hit-test flips y back). Outside the
     # canvas the live value clamps to the last in-bounds position; export uses EXPORT_MOUSE.
     x: float = 0.5

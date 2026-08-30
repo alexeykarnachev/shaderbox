@@ -16,48 +16,48 @@ def _registry(**overrides: Any) -> ToolRegistry:
 
 def test_read_script_stub_is_flagged() -> None:
     reg = _registry(
-        read_script=lambda _node: ScriptView(
+        read_script=lambda _document: ScriptView(
             "f90f", "Wave", "1  # stub\n2  return {}", [], is_stub=True
         )
     )
-    ok, msg, payload = reg.execute("read_script", {"node": ""})
+    ok, msg, payload = reg.execute("read_script", {"document": ""})
     assert ok is True
     assert "no script yet" in msg and "STUB" in msg
-    assert payload == {"node": "f90f", "is_stub": True}
+    assert payload == {"document": "f90f", "is_stub": True}
 
 
-def test_read_script_of_a_scripted_node_does_not_repeat_the_listing() -> None:
+def test_read_script_of_a_scripted_document_does_not_repeat_the_listing() -> None:
     # The source rides the working set (mirroring read_shader) — returning it here too billed the
     # same bytes twice on every script read.
     reg = _registry(
-        read_script=lambda _node: ScriptView(
+        read_script=lambda _document: ScriptView(
             "f90f", "Wave", "1  class Behavior(ScriptBehavior):", [], is_stub=False
         )
     )
-    ok, msg, _payload = reg.execute("read_script", {"node": ""})
+    ok, msg, _payload = reg.execute("read_script", {"document": ""})
     assert ok is True
     assert "class Behavior" not in msg  # the listing stays in the working set
     assert "working set" in msg and "compiles clean" in msg
 
 
-def test_read_script_no_node_is_error() -> None:
+def test_read_script_no_document_is_error() -> None:
     reg = _registry(
-        read_script=lambda _node: ScriptView(
+        read_script=lambda _document: ScriptView(
             "",
             "",
             "",
-            [type("E", (), {"path": "", "line": 0, "message": "no node found"})()],
+            [type("E", (), {"path": "", "line": 0, "message": "no document found"})()],
             is_stub=False,
         )
     )
-    ok, msg, _ = reg.execute("read_script", {"node": "bad"})
+    ok, msg, _ = reg.execute("read_script", {"document": "bad"})
     assert ok is False
-    assert "no node found" in msg
+    assert "no document found" in msg
 
 
 def test_write_script_compile_error() -> None:
     reg = _registry(
-        write_script=lambda _t, _node: ScriptWriteResult(
+        write_script=lambda _t, _document: ScriptWriteResult(
             ok=True, compile_error="script.py:3: SyntaxError: invalid syntax"
         )
     )
@@ -74,7 +74,7 @@ def test_force_restore_is_not_an_applied_with_errors_result() -> None:
     # The restore is a SUCCESSFUL write of the last clean source — an errors payload here would
     # count the recovery itself as thrash and re-arm the very loop it just broke.
     reg = _registry(
-        write_script=lambda _t, _node: ScriptWriteResult(
+        write_script=lambda _t, _document: ScriptWriteResult(
             ok=True,
             restored_note="SCRIPT RESTORED -- 6 broken script edits in a row, so the script "
             "was reverted to its last clean-running state.",
@@ -88,7 +88,7 @@ def test_force_restore_is_not_an_applied_with_errors_result() -> None:
 
 def test_write_script_drives_nothing_is_loud() -> None:
     reg = _registry(
-        write_script=lambda _t, _node: ScriptWriteResult(
+        write_script=lambda _t, _document: ScriptWriteResult(
             ok=True,
             driven=[],
             motion_facts="drives 0 uniforms (update returned an empty dict / only "
@@ -102,7 +102,7 @@ def test_write_script_drives_nothing_is_loud() -> None:
 
 def test_write_script_animating_verdict() -> None:
     reg = _registry(
-        write_script=lambda _t, _node: ScriptWriteResult(
+        write_script=lambda _t, _document: ScriptWriteResult(
             ok=True,
             driven=["u_center", "u_radius"],
             motion_facts="values@t=0.0: u_center=(0.3,0.5) u_radius=0.2\n"
@@ -118,7 +118,7 @@ def test_write_script_animating_verdict() -> None:
 
 def test_write_script_surfaces_orphan_and_per_key() -> None:
     reg = _registry(
-        write_script=lambda _t, _node: ScriptWriteResult(
+        write_script=lambda _t, _document: ScriptWriteResult(
             ok=True,
             driven=["u_x"],
             per_key_errors=["u_v: expected a vec2, got a float"],
@@ -135,7 +135,7 @@ def test_write_script_surfaces_orphan_and_per_key() -> None:
 
 def test_write_script_runtime_error_is_surfaced() -> None:
     reg = _registry(
-        write_script=lambda _t, _node: ScriptWriteResult(
+        write_script=lambda _t, _document: ScriptWriteResult(
             ok=True, compile_error="ran, then script.py:5: ValueError: boom"
         )
     )
@@ -147,7 +147,7 @@ def test_write_script_runtime_error_is_surfaced() -> None:
 def test_edit_script_routes_through_apply_and_formats_like_write() -> None:
     # edit_script produces the SAME ScriptWriteResult shape as write_script -> identical agent message.
     reg = _registry(
-        apply_script_edit=lambda _o, _n, _r, _node: ScriptWriteResult(
+        apply_script_edit=lambda _o, _n, _r, _document: ScriptWriteResult(
             ok=True,
             driven=["u_radius"],
             motion_facts="-> u_radius CHANGE across t (ANIMATING)",
@@ -161,7 +161,7 @@ def test_edit_script_routes_through_apply_and_formats_like_write() -> None:
 
 def test_edit_script_not_found_is_error() -> None:
     reg = _registry(
-        apply_script_edit=lambda _o, _n, _r, _node: ScriptWriteResult(
+        apply_script_edit=lambda _o, _n, _r, _document: ScriptWriteResult(
             ok=False, error="old_str not found in the script -- re-read it"
         )
     )
@@ -173,7 +173,7 @@ def test_edit_script_not_found_is_error() -> None:
 def test_edit_script_compile_error_surfaces() -> None:
     # An edit that breaks the script returns the compile error the same as write_script.
     reg = _registry(
-        apply_script_edit=lambda _o, _n, _r, _node: ScriptWriteResult(
+        apply_script_edit=lambda _o, _n, _r, _document: ScriptWriteResult(
             ok=True, compile_error="script.py:4: SyntaxError: invalid syntax"
         )
     )
@@ -182,12 +182,12 @@ def test_edit_script_compile_error_surfaces() -> None:
     assert "compiled with errors" in msg and "SyntaxError" in msg
 
 
-def test_write_script_unresolved_node_is_error() -> None:
+def test_write_script_unresolved_document_is_error() -> None:
     reg = _registry(
-        write_script=lambda _t, _node: ScriptWriteResult(
-            ok=False, error="no node found for 'bad'"
+        write_script=lambda _t, _document: ScriptWriteResult(
+            ok=False, error="no document found for 'bad'"
         )
     )
-    ok, msg, _ = reg.execute("write_script", {"new_text": "...", "node": "bad"})
+    ok, msg, _ = reg.execute("write_script", {"new_text": "...", "document": "bad"})
     assert ok is False
-    assert "no node found" in msg
+    assert "no document found" in msg

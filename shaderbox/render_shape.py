@@ -11,7 +11,7 @@ from shaderbox.render_preset import FitPolicy, RenderPreset, ResolutionPolicy
 
 
 class RenderShape(StrEnum):
-    NATIVE = "native"  # FREE -> the node's canvas size, any aspect
+    NATIVE = "native"  # FREE -> the document's canvas size, any aspect
     SHORT_720 = "short_720"  # 9:16, longest edge 1280
     SHORT_1080 = "short_1080"  # 9:16, longest edge 1920
     SHORT_1440 = "short_1440"  # 9:16, longest edge 2560

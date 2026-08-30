@@ -16,11 +16,11 @@ from imgui_bundle import imgui
 class CommandId(StrEnum):
     OPEN_PROJECT = auto()
     SAVE = auto()
-    NEW_NODE = auto()
+    NEW_DOCUMENT = auto()
     EXAMPLES = auto()
     HELP = auto()
-    DELETE_NODE = auto()
-    TOGGLE_NODE_PLAY = auto()
+    DELETE_DOCUMENT = auto()
+    TOGGLE_DOCUMENT_PLAY = auto()
     OPEN_SETTINGS = auto()
     OPEN_LIB_PICKER = auto()
     OPEN_PALETTE = auto()
@@ -28,7 +28,7 @@ class CommandId(StrEnum):
     JUMP_NEXT_ERROR = auto()
     TOGGLE_CHEATSHEET = auto()
     CYCLE_REGION = auto()
-    FOCUS_TAB_NODE = auto()
+    FOCUS_TAB_DOCUMENT = auto()
     FOCUS_TAB_RENDER = auto()
     FOCUS_TAB_SHARE = auto()
     TOGGLE_COPILOT = auto()
@@ -42,7 +42,7 @@ class CommandId(StrEnum):
 class CommandCategory(StrEnum):
     # Cheatsheet + rebinder grouping; rendered in CATEGORY_ORDER, not enum order.
     FILE = "File"
-    NODE = "Node"
+    DOCUMENT = "Document"
     EDITOR = "Editor"
     VIEW = "View"
     TOOLS = "Tools"
@@ -51,7 +51,7 @@ class CommandCategory(StrEnum):
 # The order categories appear in the cheatsheet + rebinder.
 CATEGORY_ORDER: list["CommandCategory"] = [
     CommandCategory.FILE,
-    CommandCategory.NODE,
+    CommandCategory.DOCUMENT,
     CommandCategory.EDITOR,
     CommandCategory.VIEW,
     CommandCategory.TOOLS,
@@ -102,13 +102,20 @@ COMMAND_SPECS: list[CommandSpec] = [
     ),
     CommandSpec(CommandId.SAVE, "Save", _chord(K.s, K.mod_ctrl), C.FILE),
     CommandSpec(CommandId.QUIT, "Quit", _chord(K.q, K.mod_ctrl), C.FILE),
-    CommandSpec(CommandId.NEW_NODE, "New node", _chord(K.n, K.mod_ctrl), C.NODE),
-    CommandSpec(CommandId.DELETE_NODE, "Delete node", _chord(K.d, K.mod_ctrl), C.NODE),
     CommandSpec(
-        CommandId.TOGGLE_NODE_PLAY,
-        "Play/stop node script",
+        CommandId.NEW_DOCUMENT, "New document", _chord(K.n, K.mod_ctrl), C.DOCUMENT
+    ),
+    CommandSpec(
+        CommandId.DELETE_DOCUMENT,
+        "Delete document",
+        _chord(K.d, K.mod_ctrl),
+        C.DOCUMENT,
+    ),
+    CommandSpec(
+        CommandId.TOGGLE_DOCUMENT_PLAY,
+        "Play/stop document script",
         _chord(K.space, K.mod_ctrl),
-        C.NODE,
+        C.DOCUMENT,
     ),
     CommandSpec(
         CommandId.OPEN_SHADER, "Open shader", _chord(K.e, K.mod_ctrl), C.EDITOR
@@ -131,7 +138,9 @@ COMMAND_SPECS: list[CommandSpec] = [
     CommandSpec(
         CommandId.JUMP_NEXT_ERROR, "Jump to next error", _chord(K.f8), C.EDITOR
     ),
-    CommandSpec(CommandId.FOCUS_TAB_NODE, "Node tab", _chord(K._1, K.mod_ctrl), C.VIEW),
+    CommandSpec(
+        CommandId.FOCUS_TAB_DOCUMENT, "Document tab", _chord(K._1, K.mod_ctrl), C.VIEW
+    ),
     CommandSpec(
         CommandId.FOCUS_TAB_RENDER, "Render tab", _chord(K._2, K.mod_ctrl), C.VIEW
     ),

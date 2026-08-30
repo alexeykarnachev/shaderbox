@@ -33,7 +33,7 @@ from shaderbox.integrations import (
 from shaderbox.media import Image, Video
 from shaderbox.render_preset import FitPolicy, RenderPreset, ResolutionPolicy
 from shaderbox.theme import COLOR, SIZE, SPACE, fade
-from shaderbox.ui_models import UINode
+from shaderbox.ui_models import UIDocument
 from shaderbox.ui_primitives import (
     button,
     caption_text,
@@ -393,8 +393,8 @@ class TelegramExporter(Exporter):
         )
 
     # ------------------------------------------------------------- render thread
-    def update(self, current_node: UINode | None) -> None:
-        _ = current_node
+    def update(self, current_document: UIDocument | None) -> None:
+        _ = current_document
         while True:
             ev = self._worker.poll_event()
             if ev is None:
@@ -403,10 +403,10 @@ class TelegramExporter(Exporter):
 
     def draw_target_panel(
         self,
-        current_node: UINode | None,
+        current_document: UIDocument | None,
         render_control: RenderControl,
     ) -> None:
-        _ = current_node
+        _ = current_document
         if not self._is_connected():
             extras = render_control.extras or {}
             unconnected_gate(
@@ -417,7 +417,7 @@ class TelegramExporter(Exporter):
             )
             return
 
-        self._draw_sticker_section(render_control, current_node is not None)
+        self._draw_sticker_section(render_control, current_document is not None)
 
     def _is_connected(self) -> bool:
         # bot_username is set only by a successful link (get_me) — the unambiguous
@@ -540,7 +540,7 @@ class TelegramExporter(Exporter):
         self._store.save()
         self._select_pack(set_name)
 
-    def _draw_sticker_section(self, rc: RenderControl, has_node: bool) -> None:
+    def _draw_sticker_section(self, rc: RenderControl, has_document: bool) -> None:
         artifact: RenderedArtifact | None = rc.artifact
         if artifact is not None and not artifact.path.exists():
             artifact = None
@@ -562,7 +562,7 @@ class TelegramExporter(Exporter):
         )
         imgui.same_line()
         with imgui_ctx.begin_group():
-            self._draw_sticker_controls(rc, artifact, has_node)
+            self._draw_sticker_controls(rc, artifact, has_document)
             if self._render_state.active_pack_set_name:
                 imgui.dummy(imgui.ImVec2(0, SPACE.SM))
                 self._draw_sticker_grid_full(rc)
@@ -578,7 +578,7 @@ class TelegramExporter(Exporter):
         self,
         rc: RenderControl,
         artifact: RenderedArtifact | None,
-        has_node: bool,
+        has_document: bool,
     ) -> None:
         self._draw_pack_row()
         imgui.dummy(imgui.ImVec2(0, SPACE.SM))
@@ -595,8 +595,8 @@ class TelegramExporter(Exporter):
 
         imgui.dummy(imgui.ImVec2(0, SPACE.XS))
         row_w: float = float(SIZE.LABEL_W) + SPACE.MD + float(SIZE.NAME_INPUT_W)
-        if not has_node:
-            imgui.text_colored(COLOR.STATE_WARN, "Select a node to render.")
+        if not has_document:
+            imgui.text_colored(COLOR.STATE_WARN, "Select a document to render.")
             return
 
         # Render + Add on one row; Add's right edge aligns with the Duration drag.

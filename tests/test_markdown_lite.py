@@ -8,12 +8,12 @@ def test_plain_text_single_span() -> None:
 
 
 def test_bold_and_code_spans() -> None:
-    lines = parse_markdown_lines("nodes **Blank** and `My Text` removed")
+    lines = parse_markdown_lines("documents **Blank** and `My Text` removed")
     assert lines == [
         (
             False,
             [
-                ("plain", "nodes "),
+                ("plain", "documents "),
                 ("bold", "Blank"),
                 ("plain", " and "),
                 ("code", "My Text"),

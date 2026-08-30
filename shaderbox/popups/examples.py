@@ -8,7 +8,7 @@ from shaderbox.ui_primitives import (
     modal_window,
     primary_button,
 )
-from shaderbox.widgets.node_grid import draw_node_preview_button
+from shaderbox.widgets.document_grid import draw_document_preview_button
 
 _LABEL = "Examples##popup"
 _GRID_COLS = 3
@@ -27,7 +27,7 @@ def _grid_dims(app: App) -> tuple[float, float]:
     # the live style so it stays correct across the DPI-scaled spacing tokens.
     style = imgui.get_style()
     grid_w = _GRID_COLS * float(SIZE.THUMB_LG) + (_GRID_COLS - 1) * style.item_spacing.x
-    n = len(app.ui_node_examples)
+    n = len(app.ui_document_examples)
     rows = max(1, -(-n // _GRID_COLS))  # ceil
     shown = min(rows, _GRID_MAX_ROWS)
     grid_h = (
@@ -70,7 +70,7 @@ def _draw_body(app: App, grid_h: float) -> bool:
     if imgui.begin_child("##example_grid", size=(0.0, grid_h)):
         selected = _draw_grid(app)
     imgui.end_child()
-    is_selected = selected in app.ui_node_examples
+    is_selected = selected in app.ui_document_examples
 
     _draw_description_slot(app, selected)
 
@@ -81,7 +81,7 @@ def _draw_body(app: App, grid_h: float) -> bool:
     open_clicked = primary_button("Open a copy")
     imgui.end_disabled()
     if (open_clicked or enter_open) and is_selected:
-        app.create_node_from_example(selected)
+        app.create_document_from_example(selected)
         keep_open = False
     imgui.same_line()
     if ghost_button("Close"):
@@ -92,14 +92,14 @@ def _draw_body(app: App, grid_h: float) -> bool:
 def _draw_grid(app: App) -> str:
     selected_id = app.app_state.selected_example_id
     preview_size = SIZE.THUMB_LG
-    for i, ui_node_example in enumerate(app.ui_node_examples.values()):
-        border = COLOR.SELECT if ui_node_example.id == selected_id else None
-        if draw_node_preview_button(
-            ui_node_example, border, preview_size, nav_flatten=True
+    for i, ui_document_example in enumerate(app.ui_document_examples.values()):
+        border = COLOR.SELECT if ui_document_example.id == selected_id else None
+        if draw_document_preview_button(
+            ui_document_example, border, preview_size, nav_flatten=True
         ).clicked:
-            app.app_state.selected_example_id = ui_node_example.id
-            selected_id = ui_node_example.id
-        if (i + 1) % _GRID_COLS != 0 and i != len(app.ui_node_examples) - 1:
+            app.app_state.selected_example_id = ui_document_example.id
+            selected_id = ui_document_example.id
+        if (i + 1) % _GRID_COLS != 0 and i != len(app.ui_document_examples) - 1:
             imgui.same_line()
         else:
             imgui.spacing()
@@ -108,7 +108,7 @@ def _draw_grid(app: App) -> str:
 
 def _draw_description_slot(app: App, selected: str) -> None:
     if imgui.begin_child("##example_desc", size=(0.0, _DESC_SLOT_H)):
-        if selected not in app.ui_node_examples:
+        if selected not in app.ui_document_examples:
             caption_text("Pick an example to read about it; open a copy to dig in.")
         else:
             imgui.push_text_wrap_pos(

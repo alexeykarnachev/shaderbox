@@ -14,26 +14,26 @@ from shaderbox.render_shape import RenderShape
 # publish is external + irreversible). Publish tools precheck (handoff) before the gate.
 
 # The output size is a named RenderShape tier — the SAME vocabulary the Share tab exposes, so a
-# render matches what publish would emit. The agent picks a member (NATIVE = the node's authored
+# render matches what publish would emit. The agent picks a member (NATIVE = the document's authored
 # canvas size, any aspect; short_* = 9:16; wide_* = 16:9), never raw pixels (no off-aspect Short).
 _SHAPE_DESC = (
-    "output size: native (the node's canvas size, any aspect), short_720/short_1080/short_1440 "
+    "output size: native (the document's canvas size, any aspect), short_720/short_1080/short_1440 "
     "(9:16 vertical), or wide_720/wide_1080/wide_1440 (16:9). Dims snap to the codec alignment."
 )
 
 
 class _RenderImageArgs(ToolArgs):
-    node: str = Field(
+    document: str = Field(
         default="",
-        description="node id (from the project map); empty = the shader you're working on",
+        description="document id (from the project map); empty = the shader you're working on",
     )
     shape: RenderShape = Field(default=RenderShape.NATIVE, description=_SHAPE_DESC)
 
 
 class _RenderVideoArgs(ToolArgs):
-    node: str = Field(
+    document: str = Field(
         default="",
-        description="node id (from the project map); empty = the shader you're working on",
+        description="document id (from the project map); empty = the shader you're working on",
     )
     seconds: float = Field(
         gt=0.0,
@@ -64,14 +64,14 @@ class _PublishYoutubeArgs(ToolArgs):
 
 
 _RENDER_IMAGE_DESC = (
-    "Render the node's CURRENT frame to an image file (PNG) under the project's renders "
+    "Render the document's CURRENT frame to an image file (PNG) under the project's renders "
     "folder. The app pauses briefly while it encodes, and the user confirms first. Returns the "
     "actual (codec-snapped) size; the file itself becomes a 'Reveal render' button shown to the "
     "USER — you get NEITHER the path nor a look at the image. You render the live source — land "
     "your edits before rendering."
 )
 _RENDER_VIDEO_DESC = (
-    "Render `seconds` of the node's animation (always from t=0) to a video file (WebM) under "
+    "Render `seconds` of the document's animation (always from t=0) to a video file (WebM) under "
     "the project's renders folder. The app pauses while it encodes; the user confirms first. "
     "Returns the actual size + duration; the file itself becomes a 'Reveal render' button shown "
     "to the USER — you get NEITHER the path nor a look at the video. You render the live source — "
@@ -133,11 +133,13 @@ def _publish_result(r: PublishResult, target: str) -> tuple[bool, str, dict | No
 
 def publish_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
     def render_image(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
-        r = caps.render_image(args["node"], args["shape"])
+        r = caps.render_image(args["document"], args["shape"])
         return _render_result(r, "image")
 
     def render_video(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
-        r = caps.render_video(args["node"], args["seconds"], args["fps"], args["shape"])
+        r = caps.render_video(
+            args["document"], args["seconds"], args["fps"], args["shape"]
+        )
         return _render_result(r, "video")
 
     def publish_telegram(args: dict[str, Any]) -> tuple[bool, str, dict | None]:
@@ -150,8 +152,8 @@ def publish_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
 
     def telegram_precheck(args: dict[str, Any]) -> str | None:
         _ = args
-        if not caps.has_current_node():
-            return "There's no shader open to publish. Switch to the node first (switch_node)."
+        if not caps.has_current_document():
+            return "There's no shader open to publish. Switch to the document first (switch_document)."
         if not caps.telegram_connected():
             return (
                 "Telegram isn't connected. YOU connect it: call set_telegram_token (it opens "
@@ -167,8 +169,8 @@ def publish_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
 
     def youtube_precheck(args: dict[str, Any]) -> str | None:
         _ = args
-        if not caps.has_current_node():
-            return "There's no shader open to publish. Tell the user to select a node first."
+        if not caps.has_current_document():
+            return "There's no shader open to publish. Tell the user to select a document first."
         if not caps.youtube_connected():
             return (
                 "YouTube isn't connected. YOU connect it: call set_youtube_credentials (it opens "

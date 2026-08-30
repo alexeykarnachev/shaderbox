@@ -177,7 +177,7 @@ class Image(MediaWithTexture):
 
 
 def is_default_image(value: object) -> bool:
-    # A sampler still holding the shipped default image = "unbound". Node.seed_uniform_values fills an
+    # A sampler still holding the shipped default image = "unbound". Document.seed_uniform_values fills an
     # unbound sampler with Image(DEFAULT_IMAGE_FILE_PATH); its source path is the sole marker. Callers
     # rely on this holding at SAVE time (in-memory the path is the resource path) so save can skip
     # persisting a default sampler, letting seed re-establish it on load.
@@ -253,7 +253,7 @@ class Video(MediaWithTexture):
     def texture(self) -> moderngl.Texture:
         if self._texture is None:
             # A capture parked at end-of-stream grabs nothing and retrieves None, which used to
-            # crash inside cvtColor and take the whole node load down with it. Rewind and retry:
+            # crash inside cvtColor and take the whole document load down with it. Rewind and retry:
             # the first frame is always a valid one to show.
             if not self._cap.grab():
                 self.restart()
