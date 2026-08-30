@@ -407,8 +407,10 @@ def plan_steps(
     def visit(name: str, trail: list[str]) -> None:
         mark = state.get(name)
         if mark == 1:
-            order.append(name)
-            return  # memoized: a shared ancestor is emitted once, not per consumer
+            # Memoized: already emitted, so a shared ancestor appears ONCE in the order
+            # rather than once per consumer. Appending here instead would re-render a
+            # diamond's base for every path that reaches it.
+            return
         if mark == 0:
             cycle = " -> ".join([*trail[trail.index(name) :], name])
             errors.append(

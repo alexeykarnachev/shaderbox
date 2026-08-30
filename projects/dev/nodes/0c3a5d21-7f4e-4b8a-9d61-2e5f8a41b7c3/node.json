@@ -1,0 +1,13 @@
+{
+    "canvas_size": [
+        640,
+        480
+    ],
+    "uniforms": {
+        "u_emit": 6.0,
+        "u_fade": 0.94
+    },
+    "ui_state": {
+        "ui_name": "steps demo"
+    }
+}
