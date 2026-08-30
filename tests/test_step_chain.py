@@ -11,9 +11,9 @@ import numpy as np
 import pytest
 
 from shaderbox.core import Canvas, Node
+from shaderbox.paths import shader_lib_root
 from shaderbox.shader_lib import ShaderLibIndex, set_active
 from shaderbox.shader_source import ShaderSource
-from shaderbox.paths import shader_lib_root
 
 
 @pytest.fixture(scope="module")
@@ -38,7 +38,9 @@ def _pixels(canvas: Canvas) -> np.ndarray:
     )
 
 
-def test_a_node_with_no_steps_is_unchanged(gl: moderngl.Context, tmp_path: Path) -> None:
+def test_a_node_with_no_steps_is_unchanged(
+    gl: moderngl.Context, tmp_path: Path
+) -> None:
     node = _node(
         gl,
         tmp_path,
@@ -280,7 +282,9 @@ def test_release_frees_every_step_target(gl: moderngl.Context, tmp_path: Path) -
     assert node._step_vaos == {}
 
 
-def test_a_cycle_between_steps_is_reported(gl: moderngl.Context, tmp_path: Path) -> None:
+def test_a_cycle_between_steps_is_reported(
+    gl: moderngl.Context, tmp_path: Path
+) -> None:
     node = _node(
         gl,
         tmp_path,

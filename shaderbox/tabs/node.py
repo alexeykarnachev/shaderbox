@@ -66,6 +66,10 @@ def draw(app: App) -> None:
     uniform_sizes = set()
     for uniform in ui_node.node.get_active_uniforms():
         if getattr(uniform, "gl_type", None) == GL_SAMPLER_2D:
+            # Engine-driven: no media behind it, and its value is a bare texture with no
+            # `.texture` attribute to read.
+            if ui_node.node.is_step_sampler(uniform.name):
+                continue
             value = ui_node.node.uniform_values[uniform.name]
 
             w, h = value.texture.size
@@ -125,6 +129,11 @@ def draw(app: App) -> None:
         if (
             uniform.name in TABLE_UNIFORMS
         ):  # engine glyph tables — pure machinery, no row
+            continue
+        # A step sampler is wired by the engine. A media row for it would offer a "Load"
+        # button that overwrites the chain, and its texture-branch draw asserts on a
+        # value that is a bare texture, not a MediaWithTexture.
+        if ui_node.node.is_step_sampler(uniform.name):
             continue
         hash = get_uniform_hash(uniform)
         if hash not in ui_uniforms:

@@ -321,6 +321,11 @@ class UINode(BaseModel):
         for uniform in self.node.get_active_uniforms():
             if uniform.name in ENGINE_DRIVEN_UNIFORMS:
                 continue
+            # A step sampler's texture is engine-owned and transient. It would otherwise
+            # fall into the raw-Texture branch below and write megabytes of float target
+            # into textures/*.bin on every save, reloaded next session as a stale frame.
+            if self.node.is_step_sampler(uniform.name):
+                continue
 
             value = self.node.uniform_values[uniform.name]
 

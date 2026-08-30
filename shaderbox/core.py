@@ -369,11 +369,31 @@ class Node:
             self._step_front[name] = 0
 
     def get_active_uniforms(self) -> list[moderngl.Uniform | moderngl.UniformBlock]:
+        """Every uniform active in ANY variant, first-seen order (D4).
+
+        Each variant exposes only the uniforms its own branch uses -- measured: a final
+        variant reporting ['u_blur','u_gain'] beside a step variant reporting
+        ['u_radius']. So with N programs "the live program" is undefined, and since
+        `UINode.save` prunes UI rows against this set, anything missing here has its
+        tuned value silently deleted on the next save.
+
+        Consequence, and it is the intended behaviour: a name declared in two steps is
+        ONE row driving both. A shared `u_ray_count` across eight cascade levels is the
+        ergonomic win the feature exists for; a step cannot have a private uniform that
+        merely shares a name.
+        """
         uniforms: list[moderngl.Uniform | moderngl.UniformBlock] = []
-        if self.program:
-            for uniform_name in self.program:
-                uniform = self.program[uniform_name]
+        seen: set[str] = set()
+        programs = [self.program, *self._step_programs.values()]
+        for program in programs:
+            if program is None:
+                continue
+            for uniform_name in program:
+                if uniform_name in seen:
+                    continue
+                uniform = program[uniform_name]
                 if isinstance(uniform, moderngl.Uniform | moderngl.UniformBlock):
+                    seen.add(uniform_name)
                     uniforms.append(uniform)
 
         return uniforms
@@ -763,6 +783,11 @@ class Node:
             self.uniform_values[uniform.name] = value
 
             if value_for_program is not None:
+                if uniform.name not in self.program:
+                    # Lives in a step variant, not the final program (D4's union). Its
+                    # value is real and the step render writes it; popping here would
+                    # delete the user's tuned value every frame.
+                    continue
                 try:
                     self.program[uniform.name] = value_for_program
                 except Exception as e:

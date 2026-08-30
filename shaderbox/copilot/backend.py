@@ -251,7 +251,12 @@ def _format_uniforms(node: Node, driven: set[str]) -> list[str]:
         elif u.name in driven:
             rows.append(f"{u.name} {label} = <driven by script.py>")
         elif label == "sampler2D":
-            rows.append(f"{u.name} {label} <- {_sampler_binding(node, u.name)}")
+            if node.is_step_sampler(u.name):
+                # Engine-wired: telling the model "(no media bound)" would invite it to
+                # bind a file over the chain.
+                rows.append(f"{u.name} {label} <- (step output)")
+            else:
+                rows.append(f"{u.name} {label} <- {_sampler_binding(node, u.name)}")
         else:
             value = node.uniform_values.get(u.name, u.value)
             rows.append(f"{u.name} {label} = {value}")
@@ -1082,7 +1087,7 @@ class CopilotBackend:
             samplers = [
                 u.name
                 for u in n.get_active_uniforms()
-                if gl_type_label(u) == "sampler2D"
+                if gl_type_label(u) == "sampler2D" and not n.is_step_sampler(u.name)
             ]
             if uniform not in samplers:
                 listed = ", ".join(samplers) or "(none)"
