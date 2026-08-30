@@ -26,44 +26,33 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-08-30 (064 engine + surface landed and reviewed; next is a maintainer visual check). -->
-**ACTIVE: 064 multi-step nodes — engine AND authoring surface landed, reviewed to convergence,
-green, pushed. The next action is a `make run` visual check on a real display.** Start at
-`ai_docs/features/064_multistep/02_decision.md` — its FIRST section records a mid-feature rework and
-supersedes the seam the rest of that file argues for. Then `03_engine_spec.md` (the engine, D1-D16)
-and `04_surface_spec.md` (the panel, S1-S6).
+<!-- As of 2026-08-30 (064 reverted; 065 pass-graph rework in the facts/spec stage). -->
+**ACTIVE: 065 pass graph — the multi-pass rework, at the facts stage. Nothing implemented.**
+Start at `ai_docs/features/065_pass_graph/00_facts.md`.
 
-**The design.** A sampler named `u_step_<name>` IS a render step; its body is
-`void step_<name>(out vec4 o)` in the same shader. **Comments carry no meaning anywhere** — that was
-a maintainer decision, and the rework that enforced it deleted a whole class of typo-detection the
-earlier comment-based design had needed. Each step's target (scale, format, filter, edge, and what
-happens to it on recompile) is node state with working defaults, edited by combos in the Steps rows
-and saved to `node.json`.
+**What happened to 064.** It shipped a multi-pass engine where every pass was a function inside ONE
+shader file. The maintainer used it and rejected the shape: *"we need the genuine separate shader;
+everything clamped inside a single shader is a fucking mess."* Reverted in `34f6d19`; nine bug fixes
+it surfaced were kept (float targets, the silent export corruption, the GL leak, both salvage
+layers, the stale-thumbnail mark, the resolver anchor).
 
-**What works.** The engine compiles one program per step from the one source, orders them by what the
-DRIVER reports each variant reads, evaluates each once per frame into its own target, and hands a
-self-reading step its previous frame (ping-pong, no pair to manage). The Node panel shows a **Steps**
-section — a row per step with a live thumbnail, what it reads, and its target's combos; clicking a
-thumbnail retargets the big preview to that step, tonemapping float targets on the way. **To see it:
-the shipped "Render Steps" example**, or the `steps demo` node in `projects/dev`.
+**What 065 is.** A document holds SEVERAL render passes forming a DAG. Each pass is its own shader
+file with its own `main()` and its own render target. The word "node" currently means both the
+document you open AND the thing that renders, and that collision is what pushed back on every
+attempt to add a second render unit — so a rename is in scope.
 
-**The one thing owed: a visual check.** Verified by driving the real app loop headless; layout and
-aesthetics cannot be judged without a display, and this box has no WM. `ai_docs/todo.md` carries the
-entry with what to look at.
+**Constraints already settled by the maintainer:** no migration, build from scratch; no comments
+carrying semantics (engine-level machinery only); each pass owns its uniforms, with no
+shared-uniform mechanism; rename if beneficial.
 
-**Deliberately absent (`04_surface_spec.md` S2):** the panel edits a step's TARGET, never the chain's
-STRUCTURE. No add/delete-step buttons, no drag-to-reorder, no renaming — which steps exist and what
-each reads is introspected from the shader, and a widget editing those would have to write back into
-GLSL text, making a second author of the same fact.
-
-**Release state:** `dev` is ahead of `master` (still v0.25.1); dev->master happens at ship time via
-`/ship`. **Last known-public itch build is v0.21.0.** **No open BLOCKERs.**
+**Release state:** `dev` is ahead of `master` (still v0.25.1). **Last known-public itch build is
+v0.21.0.** **No open BLOCKERs.**
 
 ## Features
 
 | # | Name | Status | Brief |
 |---|---|---|---|
-| 064 | multistep | partial | Engine-native render-step chains per node: a sampler named `u_step_<name>` declares a draw, its target is editable node state, order comes from the driver's own dataflow, self-reads are implicit ping-pong, float targets by default. Engine + panel landed and green (6-level cascade renders; a Steps section with per-step thumbnails and a view pin that tonemaps float targets). A maintainer visual check is owed. Spec: `ai_docs/features/064_multistep/03_engine_spec.md` + `04_surface_spec.md`. |
+| 064 | multistep | superseded | Multi-pass steps as functions inside ONE shader file. Built, reviewed to convergence, then REVERTED (`34f6d19`) when the maintainer used it: separate shader files per pass are what every surveyed tool does. Nine bug fixes it surfaced were kept. Superseder: `ai_docs/features/065_pass_graph/`. Spec: `ai_docs/features/064_multistep/02_decision.md`. |
 | 063 | radiance_cascades_gaps | done | Research-only wave (no code): can ShaderBox host radiance cascades, and what is actually missing — GPU capability all present and measured, the script-GL route proven unusable, the seam decision handed to 064. Spec: `ai_docs/features/063_radiance_cascades_gaps/README.md`. |
 | — | copilot_engine_tuning | done | reasoning effort=none engine knob (+30k turn budget: effort flag is ignored on compound asks — measured), user/engine config split with slots enforcement, final-reply token cap. Spec: commits 289c12f + 6ed3c4d + 779d4b2 + this wave. |
 | — | agent_hub | done | the maintainer sync page: full prompt/tools/config/knowledge surfaces + all dogfood runs with dialogues and media, regenerated from live code. Spec: scripts/agent_hub/generate.py docstring. |

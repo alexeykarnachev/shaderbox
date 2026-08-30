@@ -228,3 +228,70 @@ exporters**, which is why that subsystem survives untouched.
 layer above it is now per-key salvaged, but an unreadable `node.json` or a genuinely broken shader
 file still drops the whole thing. With N pass files per document, one bad pass file must not cost
 the document -- this is a known shape with a known fix.
+
+## The fact that reframes the rework
+
+**A project is already a flat gallery of independent shaders.** `ProjectSession.ui_nodes` is a
+`dict[str, UINode]`; verified on disk, no `node.json` references another node, and `app_state.json`
+holds only `current_node_id`. Nodes coexist, all render every frame under "Render all", and have
+**zero relationships** — no ordering beyond `ctime`, no node reading another's output.
+
+So the rework is NOT introducing several shaders per project. It is introducing **composition**
+between units that already sit side by side. The genuinely new things are: (a) a dependency graph
+plus per-pass targets so one pass can feed another, and (b) a decision about what becomes of the
+flat gallery — one document per graph with several documents per project, or something else.
+
+**Nothing about node LAYOUT exists to migrate.** `node_grid` reflows from list index against window
+width every frame; there is no stored position anywhere. Graph coordinates are pure new state.
+
+## Where `Node` splits, by responsibility
+
+From a member-by-member classification, the fusion is narrow and the split is clean:
+
+**Only three methods fuse shader identity with canvas identity** — `render()`, `compile()`, and
+`get_active_uniforms()`. Everything else classifies cleanly.
+
+**`canvas` belongs WITH the pass, not with the document.** Each pass needs its own render target, so
+the texture/framebuffer pair travels down, not up. What is genuinely document-level is thin:
+`on_pre_render` and `export_isolation` (already document-scoped, injected by `ProjectSession`), and
+the export/media plumbing.
+
+**`UINode.save` is the clearest single artifact of the conflation** — one function body mixing
+document concerns (the directory, `node.json`) with shader concerns (recompiling to learn the live
+uniform set, writing shader text, pruning UI rows).
+
+**Ambiguous, and worth deciding explicitly:** `render_media_details` (export settings) rides on the
+node today because a node IS the exportable unit. In a DAG, exporting means the final composite, so
+these are document-level.
+
+## Shallow vs deep, so effort lands where it matters
+
+**Shallow — reusable nearly as-is:**
+- `scripting/engine.py` — reaches `Node` only through an `EngineNode` Protocol
+  (`uniform_values` + `get_active_uniforms()`), zero coupling to source/program/canvas. The
+  shallowest subsystem in the codebase.
+- `EditorTab` / `EditorSession` — identity is already the PATH, and one node already produces TWO
+  tabs (shader + script). The tab layer does not know "node" exists; only `ensure_shader_tab` and
+  `open_script_for` translate an id into a path.
+- `watch.py` — already loops over `compile_unit.sources` (root + N libs). Only the "index 0 is the
+  root" branch needs generalising.
+- `paths.py` — pure path builders, trivially extended with a pass segment.
+
+**Deep — structural:**
+- `Node.render/compile/get_active_uniforms` — the fused three.
+- `UINode.save` / `load_node_from_dir` — one dir <-> one Node, with a FLAT per-node namespace for
+  media and textures. **Two pass files sharing a directory would collide on any reused uniform
+  name.**
+- The whole copilot stack — no address form, tool signature, or working-set shape has room for
+  "which pass", and the system prompt's own prose hardcodes node-as-one-shader.
+- The "project = flat gallery" model itself, which the rework must decide how to relate to.
+
+## Vocabulary collision to avoid
+
+`copilot/state.py::StepRecord` already means "one tool call's pass/fail marker" in the copilot's
+turn-progress UI. It is NOT a render pass. Whatever the new unit is called, it must not collide with
+this, and "step" is now doubly spent — 064 used it, and the copilot uses it for something else.
+
+Counts for the rename decision: **871** case-insensitive `node` mentions across 56 of 114 package
+files; 50 of 80 test files; 142 in `ai_docs`. 17 classes are named `*Node*`, most unrelated
+(`NodeTab` is a UI region, `TreeNode` a file-tree widget, `EngineNode` a scripting protocol).

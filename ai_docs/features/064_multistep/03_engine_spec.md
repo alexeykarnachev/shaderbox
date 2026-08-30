@@ -1,7 +1,9 @@
 # 064 — The engine seam: implementation spec
 
-**Status: LANDED** (all of D1-D16 implemented, reviewed to convergence, gates green). D1/D2 were
-rewritten mid-feature when the seam changed — see `02_decision.md`'s first section.
+**Status: REVERTED** (`34f6d19`). This engine was built and then removed when the maintainer
+rejected the one-file shape. Kept as the record of what was tried and what it cost — the
+reusable algorithms and the corrected facts are carried into
+`ai_docs/features/065_pass_graph/00_facts.md`.
 
 **Originally plan-locked as:** (maintainer delegated the review: "I will not review the spec manually, but
 you should implement it for the sake of a robust process").** Anchor: `00_scenario.md` R1-R10.

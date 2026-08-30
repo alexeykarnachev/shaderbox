@@ -1,7 +1,9 @@
 # 064 — The authoring surface: implementation spec
 
-**Status: LANDED** (S1-S6 implemented, reviewed to convergence, gates green; a maintainer visual
-check on a real display is the one thing owed — `todo.md`).
+**Status: REVERTED** (`34f6d19`). This panel was built and then removed when the maintainer
+rejected the one-file shape. Kept as the record of what was tried and what it cost — the
+reusable algorithms and the corrected facts are carried into
+`ai_docs/features/065_pass_graph/00_facts.md`.
 
 **Originally plan-locked as:** (maintainer: "let's build already something, we will iterate and re-design
 later if we need... write generalizable, robust, flexible code with clear separation of concerns").
