@@ -68,6 +68,21 @@ belong in the feature spec (`ai_docs/features/NNN_*.md`). This file is not a cha
 dozen names across features; read them at spec-review time. The rest are concrete architecture
 decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refactor.md`.)*
 
+- **A gate is checked by its EXIT CODE, never by reading its output.** `make check` was reported
+  green for a stretch of feature 064 while it was red: the output was grepped for pyright's
+  "0 errors" summary, which sits below ruff and says nothing about it. A tool that prints a
+  reassuring line and exits non-zero is the normal case, not an exotic one. `cmd >/dev/null 2>&1;
+  echo $?` — and when a gate auto-fixes files (ruff does), run it twice, since the first pass can
+  legitimately exit non-zero after rewriting.
+
+- **A mutation test verifies its own restore before anything else runs.** The technique — break the
+  code, confirm the suite catches it, restore — leaves a window where the wrong file is on disk. In
+  064 a restore raced the test run that was supposed to confirm it, and a mutated file rode into a
+  commit under a suite that had reported green against the good one. So: restore, `git diff
+  --quiet <file>` (or re-read it), and only then run anything. **A green suite that predates a file
+  write proves nothing about what is on disk.** Corollary: never mutate the live working tree while
+  another agent may be committing — copy the file elsewhere.
+
 - **Structural impossibility over guard-piles — the first question of any validation-heavy review.**
   If you find yourself adding a SECOND wave of guards to second-guess what an actor (a model, a caller,
   a migration) MEANT, the CONTRACT is unsound — redesign so the unsafe outcome can't be EXPRESSED, then
