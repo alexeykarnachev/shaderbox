@@ -68,6 +68,18 @@ belong in the feature spec (`ai_docs/features/NNN_*.md`). This file is not a cha
 dozen names across features; read them at spec-review time. The rest are concrete architecture
 decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refactor.md`.)*
 
+- **A persisted model salvages per KEY, generically — never by a hand-written allowlist.**
+  `model_salvage.drop_invalid` validates each field alone and drops only what its own field
+  rejects, so one bad value costs that setting and nothing else. The failure it replaces:
+  `UINodeState` grew a per-field reset list one entry at a time (`uniform_sort_key`, then
+  `input_type`, then 064's `step_configs`), which is only ever as complete as the last person to
+  think about it — measured, a wrong-typed `ui_name` or a zero smoothing window still dropped the
+  WHOLE node, taking the shader and every tuned uniform with it. A second, narrower validator is
+  still right where a bad entry sits INSIDE a collection: there, per-key salvage saves the
+  siblings. **New persisted state gets constraints on the model** (`Field(gt=…)`, a `Literal`), not
+  a check at the call site: a knob that moves out of code and into a file loses the compiler that
+  was checking it.
+
 - **A gate is checked by its EXIT CODE, never by reading its output.** `make check` was reported
   green for a stretch of feature 064 while it was red: the output was grepped for pyright's
   "0 errors" summary, which sits below ruff and says nothing about it. A tool that prints a
