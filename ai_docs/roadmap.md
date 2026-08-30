@@ -26,12 +26,12 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-08-30 (064 reverted; 065 stages 1-7 of nine landed). -->
-**ACTIVE: 065 pass graph — stages 1-7 of nine are landed, and the feature is USABLE by hand: you
-can add, wire and preview a multi-pass document in the app. Next is stage 8, the COPILOT — the
-fourth address kind, and the working set learning to show a document's passes with per-pass errors.
-BEFORE that, the panel wants a maintainer's eye (checks 13-15, below) — it was built and verified
-headlessly on a display-less box.** Read
+<!-- As of 2026-08-30 (064 reverted; 065 stages 1-8 of nine landed). -->
+**ACTIVE: 065 pass graph — stages 1-8 of nine are landed. Only stage 9 remains: CONTENT — a
+shipped example that is actually multi-pass, so the shape ships as something to open rather than
+something to build from scratch. Two things are owed first and neither can be done here: a
+maintainer's eye on the panel (checks 13-15) and a `/dogfood` run for check 16 (real API cost).**
+Read
 `ai_docs/features/065_pass_graph/01_spec.md` (D1-D16, the `graph.json` schema, the nine-stage order,
 sixteen falsifiable checks); `00_facts.md` beside it is the verified evidence it was written
 against, including three corrections to claims made earlier in the work.
@@ -57,6 +57,13 @@ counted, not eyeballed). The Document tab now carries a **pass list**: a row per
 the editor's active tab, accent name = the output), an `open` button, a right-click menu with
 rename / set-as-output / delete, an `add pass` inline input, and — for the expanded row — a
 closed-set combo per sampler input plus its target's format / scale / smooth / tile.
+
+**The copilot addresses a pass** as `<id>#<pass>` — no new tools, since every edit tool inherits
+the kind through the single resolver, and a bare `<id>` still means the output pass. Its working
+set renders a multi-pass document as one member with a sub-section per pass (a pass address
+collapses to its document, so an 8-pass document cannot evict its own passes out of the six-slot
+cap), each carrying its own listing, uniforms, wiring and errors; the project map lists a
+document's passes and marks the output. A single-pass document's prompt is unchanged.
 
 **Owed to the maintainer, needs a display** (`make run`): checks 13-15 — an error in pass 2 lands
 in the strip with pass 2's file and line and click-to-jump works; a rename rewrites every edge and
@@ -91,7 +98,7 @@ v0.21.0.** **No open BLOCKERs.**
 
 | # | Name | Status | Brief |
 |---|---|---|---|
-| 065 | pass_graph | in progress | A document holds several passes forming a DAG, each pass its own `.glsl` file with its own `main()` and render target; "node" is retired for `document` + `pass`. Stages 1-5 of nine landed — the GL-free graph model + planner, the `Pass`/`Document` split, chain evaluation with feedback and cold exports, the `passes/` + `graph.json` + per-pass-asset layout, the `node` -> `document` rename across the package and on-disk paths, per-pass hot reload, and the pass-list panel with D15's six verbs; stage 8 is the copilot. Spec: `ai_docs/features/065_pass_graph/01_spec.md`. |
+| 065 | pass_graph | in progress | A document holds several passes forming a DAG, each pass its own `.glsl` file with its own `main()` and render target; "node" is retired for `document` + `pass`. Stages 1-5 of nine landed — the GL-free graph model + planner, the `Pass`/`Document` split, chain evaluation with feedback and cold exports, the `passes/` + `graph.json` + per-pass-asset layout, the `node` -> `document` rename across the package and on-disk paths, per-pass hot reload, the pass-list panel with D15's six verbs, and the copilot's `<id>#<pass>` address with a pass-aware working set; stage 9 is content. Spec: `ai_docs/features/065_pass_graph/01_spec.md`. |
 | 064 | multistep | superseded | Multi-pass steps as functions inside ONE shader file. Built, reviewed to convergence, then REVERTED (`34f6d19`) when the maintainer used it: separate shader files per pass are what every surveyed tool does. Nine bug fixes it surfaced were kept. Superseder: `ai_docs/features/065_pass_graph/`. Spec: `ai_docs/features/064_multistep/02_decision.md`. |
 | 063 | radiance_cascades_gaps | done | Research-only wave (no code): can ShaderBox host radiance cascades, and what is actually missing — GPU capability all present and measured, the script-GL route proven unusable, the seam decision handed to 064. Spec: `ai_docs/features/063_radiance_cascades_gaps/README.md`. |
 | — | copilot_engine_tuning | done | reasoning effort=none engine knob (+30k turn budget: effort flag is ignored on compound asks — measured), user/engine config split with slots enforcement, final-reply token cap. Spec: commits 289c12f + 6ed3c4d + 779d4b2 + this wave. |

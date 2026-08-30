@@ -16,7 +16,7 @@ from OpenGL.GL import GL_SAMPLER_2D
 
 from shaderbox.app import App
 from shaderbox.core import Pass
-from shaderbox.pass_graph import DTYPES, PassEntry, TargetConfig
+from shaderbox.pass_graph import DTYPES, PassEntry
 from shaderbox.theme import COLOR, SPACE
 from shaderbox.ui_primitives import (
     context_menu_style,
@@ -92,9 +92,7 @@ def _draw_target(app: App, document_id: str, name: str) -> None:
     imgui.same_line(_LABEL_W)
     imgui.set_next_item_width(imgui.get_content_region_avail().x)
     dtypes = list(DTYPES)
-    changed, picked = imgui.combo(
-        f"##dtype_{name}", dtypes.index(target.dtype), dtypes
-    )
+    changed, picked = imgui.combo(f"##dtype_{name}", dtypes.index(target.dtype), dtypes)
     new_target = target
     if changed:
         new_target = target.model_copy(update={"dtype": dtypes[picked]})
@@ -109,9 +107,7 @@ def _draw_target(app: App, document_id: str, name: str) -> None:
     if scale_changed:
         new_target = new_target.model_copy(update={"scale": scale})
 
-    smooth_changed, smooth = imgui.checkbox(
-        f"smooth##{name}", target.filter_linear
-    )
+    smooth_changed, smooth = imgui.checkbox(f"smooth##{name}", target.filter_linear)
     imgui.same_line(spacing=float(SPACE.LG))
     tile_changed, tile = imgui.checkbox(f"tile##{name}", target.wrap)
     if smooth_changed:
@@ -195,9 +191,7 @@ def draw(app: App, document_id: str, open_pass: Callable[[str], None]) -> None:
         render_pass = document.passes[name]
         imgui.push_id(f"pass_{name}")
         if not _draw_rename_input(app, document_id, name):
-            is_active = (
-                active is not None and active.path == render_pass.source.path
-            )
+            is_active = active is not None and active.path == render_pass.source.path
             _row_label(is_active, name == document.graph.output, name)
             if ghost_button("open"):
                 open_pass(name)

@@ -58,6 +58,15 @@ def _render_document_tree(entries: list[DocumentTreeEntry]) -> str:
             marks.append("HAS ERRORS")
         suffix = f"  [{', '.join(marks)}]" if marks else ""
         rows.append(f"- {e.name} (id: {e.document_id}){suffix}")
+        # Only when there is more than one: a single-pass document reads exactly as it did before
+        # the graph existed, and a model that never sees a pass list cannot invent a pass address.
+        if len(e.passes) > 1:
+            listed = ", ".join(
+                f"{name}*" if name == e.output_pass else name for name in e.passes
+            )
+            rows.append(
+                f"    passes: {listed}  (* = output; edit one as {e.document_id}#<pass>)"
+            )
     return "\n".join(rows)
 
 

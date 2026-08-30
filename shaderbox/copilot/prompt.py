@@ -58,6 +58,11 @@ WORKING SET (your live view)
   in the return, don't re-read).
 - Each document header shows `canvas WxH` — the render resolution. A `sampler2D` uniform row shows the
   bound texture: `<- (WxH, image|video)`, or `<- (no media bound)` when it still holds the default.
+- A document may hold SEVERAL PASSES, each its own shader with its own `main()` and render target,
+  one of them the output. When it does, the block shows a `=== PASS <name> (edit as: <id>#<name>) ===`
+  sub-section per pass instead of one listing; edit a pass by its own `<id>#<name>` address, and a
+  bare `<id>` still means the output pass. A pass's `inputs:` rows say which pass fills each of its
+  samplers — an unfilled one reads BLACK, it is not an error.
 
 EDITING
 - `edit_shader` vs `write_shader`: edit_shader for ANY localized change; write_shader only for a
@@ -305,10 +310,31 @@ def _render_working_set_member(view: WorkingSetView) -> str:
     canvas = f" canvas {view.canvas}" if view.canvas else ""
     uniforms = "\n".join(view.uniforms) if view.uniforms else "(none)"
     errors = format_compile_errors(view.errors) if view.errors else "none"
-    member = (
-        f"=== {view.name} (id: {view.address}){mark}{canvas} ===\n{view.listing}\n"
-        f"uniforms:\n{uniforms}\nerrors:\n{errors}"
-    )
+    if view.passes:
+        # A MULTI-PASS document: its passes ARE its source, so the member header carries the graph
+        # and each pass is a sub-section addressed by its own handle. The document-level listing
+        # would be one pass of several, which is worse than none.
+        member = f"=== {view.name} (id: {view.address}){mark}{canvas} ==="
+        for pass_view in view.passes:
+            output_mark = " [output]" if pass_view.is_output else ""
+            pass_errors = (
+                format_compile_errors(pass_view.errors) if pass_view.errors else "none"
+            )
+            pass_uniforms = (
+                "\n".join(pass_view.uniforms) if pass_view.uniforms else "(none)"
+            )
+            member += (
+                f"\n=== PASS {pass_view.name} (edit as: {pass_view.address})"
+                f"{output_mark} ===\n{pass_view.listing}\n"
+            )
+            if pass_view.inputs:
+                member += "inputs:\n" + "\n".join(pass_view.inputs) + "\n"
+            member += f"uniforms:\n{pass_uniforms}\nerrors:\n{pass_errors}"
+    else:
+        member = (
+            f"=== {view.name} (id: {view.address}){mark}{canvas} ===\n{view.listing}\n"
+            f"uniforms:\n{uniforms}\nerrors:\n{errors}"
+        )
     if view.script_listing:
         script_errors = (
             format_compile_errors(view.script_errors) if view.script_errors else "none"

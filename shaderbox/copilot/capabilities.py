@@ -20,6 +20,12 @@ class DocumentTreeEntry:
     name: str
     has_errors: bool
     is_current: bool
+    # The document's passes, and which one is its output. A model that is never SHOWN that a
+    # document has passes cannot construct a "<id>#<pass>" address it has never seen, so the map
+    # is where the address kind becomes reachable. A single-pass document renders no pass list —
+    # the ordinary case reads exactly as it did before.
+    passes: tuple[str, ...] = ()
+    output_pass: str = ""
 
 
 @dataclass(frozen=True)
@@ -181,9 +187,27 @@ class WorkingSetView:
     # at default. Rendered as a "=== <document> SCRIPT ===" sub-section only when script_listing is set.
     script_listing: str = ""
     script_errors: list[CompileErrorInfo] = field(default_factory=list)
+    # One entry per pass when the document has MORE THAN ONE (D11): its own listing, uniforms and
+    # errors, rendered as sub-sections the way SCRIPT already is. A single-pass document leaves
+    # this empty and its one pass IS `listing`/`uniforms`/`errors` above, so the common case is
+    # byte-identical to what the model saw before the graph existed.
+    passes: list["PassView"] = field(default_factory=list)
     # The document's canvas resolution ("WxH"; "" for a lib view) — the render size the user gets
     # (feature 052). Rendered in the working-set document header so the model can see it.
     canvas: str = ""
+
+
+@dataclass(frozen=True)
+class PassView:
+    """One pass of a multi-pass document, as the working set shows it."""
+
+    name: str
+    address: str  # the "<document>#<pass>" handle an edit tool takes
+    listing: str
+    uniforms: list[str]
+    errors: list[CompileErrorInfo]
+    is_output: bool
+    inputs: list[str]  # "u_src <- scene" rows; an unwired sampler reads BLACK
 
 
 @dataclass(frozen=True)

@@ -1,8 +1,9 @@
 from pathlib import Path
 
-# The copilot working-set address scheme: a document is a bare id, a library file is
-# "lib:<rel-path>", a shipped example is "example:<short-handle>". This module is the
-# single round-trip parse/build point for the prefixed kinds.
+# The copilot working-set address scheme: a document is a bare id, ONE PASS of a document is
+# "<id>#<pass>", a library file is "lib:<rel-path>", a shipped example is
+# "example:<short-handle>". This module is the single round-trip parse/build point, so a new kind
+# is one change every tool inherits rather than a new tool per kind.
 LIB_PREFIX = "lib:"
 EXAMPLE_PREFIX = "example:"
 
@@ -41,3 +42,28 @@ def strip_example_prefix(address: str) -> str:
 
 def example_address(full_id: str) -> str:
     return f"{EXAMPLE_PREFIX}{full_id[:_EXAMPLE_HANDLE_LEN]}"
+
+
+# A pass of a document: "<document-id>#<pass-name>". A SUFFIX rather than a prefix, so a bare
+# document id stays a valid address (it means the document's OUTPUT pass) and every tool that
+# takes a document keeps working unchanged.
+PASS_SEPARATOR = "#"
+
+
+def is_pass_address(address: str) -> bool:
+    return PASS_SEPARATOR in address and not is_lib_address(address)
+
+
+def split_pass_address(address: str) -> tuple[str, str]:
+    """`(document_address, pass_name)`; the pass name is "" when none is given.
+
+    A lib address is returned untouched — a `#` inside a path is part of the filename.
+    """
+    if not is_pass_address(address):
+        return address, ""
+    document, _, pass_name = address.partition(PASS_SEPARATOR)
+    return document, pass_name
+
+
+def pass_address(document_address: str, pass_name: str) -> str:
+    return f"{document_address}{PASS_SEPARATOR}{pass_name}"

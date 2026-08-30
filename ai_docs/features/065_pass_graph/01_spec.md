@@ -2,7 +2,7 @@
 
 **Status: PLAN-LOCKED.** Reviewed by three agents (completeness, adversarial design, cold-start);
 D10b, D11, D12, D15 and D16 were added or corrected in response, and the verification list was made
-falsifiable. Stages 1-7 are landed; start at stage 8. Anchor for facts: `00_facts.md` (six-agent round, verified by
+falsifiable. Stages 1-8 are landed; start at stage 9. Anchor for facts: `00_facts.md` (six-agent round, verified by
 hand where load-bearing). Predecessor: `064_multistep/` — built, reverted (`34f6d19`), kept for the
 record of what was tried and what it cost.
 
@@ -298,8 +298,16 @@ Each stage leaves the tree green and is verifiable on its own.
    the tab-repointing half rides a new `on_pass_renamed` hook. Smoke drives the panel's non-default
    paths (expanded row, both inline inputs) because none of them draw in the collapsed default and
    none can be screenshotted here.
-8. **The copilot** — the fourth address kind, and the working set learning to show a document's
-   passes with per-pass errors.
+8. **The copilot** — DONE, no new tools. The address kind is a SUFFIX (`<id>#<pass>`) rather than
+   a prefix, so a bare id stays valid and means the output pass — every tool that predates the
+   graph keeps its meaning. `WorkingSetView.passes` renders a multi-pass document as sub-sections
+   the way SCRIPT already did, and a pass address in the working set collapses to its DOCUMENT so
+   an 8-pass document cannot evict its own passes. Three things D11 did not name, each found by a
+   test rather than by reading: `has_errors` on the project map read only the OUTPUT pass, so a
+   broken pass nothing draws reported the document clean; the unstick's `_last_clean` /
+   `_broken_streak` were keyed by document id, which now aliases across a document's passes, and
+   are keyed by working-set address; and `_format_uniforms` / `_sampler_binding` took a Document
+   when uniforms are pass-scoped (D4), so they take a Pass. Check 16 still needs `/dogfood`.
 9. **Content** — the shipped examples and the dev sandbox, re-authored by hand in the new shape.
 
 Stages 1-4 are the engine and can be built and tested with no UI at all. That is deliberate: 064's

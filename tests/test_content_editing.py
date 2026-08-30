@@ -242,6 +242,7 @@ def test_persist_normalizes_crlf() -> None:
         kind="document",
         document_id="n1",
         document=document,  # type: ignore[arg-type]
+        render_pass=document.render_pass,  # type: ignore[arg-type]
         source="old",
         ws_address="n1",
         label="document 'X' (n1)",
@@ -279,6 +280,7 @@ def test_persist_force_restores_after_streak_on_real_path() -> None:
         kind="document",
         document_id="n1",
         document=document,  # type: ignore[arg-type]
+        render_pass=document.render_pass,  # type: ignore[arg-type]
         source="void main() { }",
         ws_address="n1",
         label="document 'X' (n1)",
@@ -524,6 +526,7 @@ def test_persist_normalizes_lone_cr() -> None:
         kind="document",
         document_id="n1",
         document=document,  # type: ignore[arg-type]
+        render_pass=document.render_pass,  # type: ignore[arg-type]
         source="old",
         ws_address="n1",
         label="document 'X' (n1)",

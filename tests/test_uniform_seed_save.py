@@ -121,12 +121,12 @@ def test_sampler_awareness_row_default_vs_bound(gl_ctx: moderngl.Context) -> Non
     # Feature 052 slice 1: the working-set uniform row shows a sampler's binding, NOT a source path.
     document = _document_from_source(gl_ctx, _SAMPLER_SRC)
     document.render_pass.seed_uniform_values()
-    default_rows = _format_uniforms(document, set())
+    default_rows = _format_uniforms(document.render_pass, set())
     assert any("u_image sampler2D <- (no media bound)" in r for r in default_rows)
     document.render_pass.uniform_values["u_image"] = Image(
         np.zeros((8, 8, 3), dtype=np.uint8)
     )
-    bound_rows = _format_uniforms(document, set())
+    bound_rows = _format_uniforms(document.render_pass, set())
     assert any("u_image sampler2D <- (8x8, image)" in r for r in bound_rows)
     # Corollary-1: no absolute path leaks into the row.
     assert all("/" not in r.split("<-")[1] for r in bound_rows if "u_image" in r)

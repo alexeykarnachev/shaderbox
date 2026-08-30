@@ -29,6 +29,8 @@ from shaderbox.copilot.address import (
     is_example_address,
     is_lib_address,
     lib_address,
+    pass_address,
+    split_pass_address,
     strip_example_prefix,
     strip_lib_prefix,
 )
@@ -46,6 +48,7 @@ from shaderbox.copilot.capabilities import (
     LibFileResult,
     LibFunctionBody,
     MediaBindResult,
+    PassView,
     PublishResult,
     RenderResult,
     ScriptView,
@@ -78,7 +81,7 @@ from shaderbox.copilot.errors import CopilotToolError
 from shaderbox.copilot.gate import GateChannel, GateKind, GateRequest
 from shaderbox.copilot.glsl_lex import span_drops_comment, token_match
 from shaderbox.copilot.sanitize import sanitize_display
-from shaderbox.core import ENGINE_DRIVEN_UNIFORMS, Canvas
+from shaderbox.core import ENGINE_DRIVEN_UNIFORMS, Canvas, Pass
 from shaderbox.document import Document, document_dir_of
 from shaderbox.exporters.base import (
     AuthState,
@@ -230,11 +233,14 @@ class _CopilotEditTarget:
     label: str = ""
     document_id: str | None = None
     document: "Document | None" = None
+    # Which PASS of that document the edit lands on. A bare document address resolves to its
+    # OUTPUT pass, so every tool that predates the graph keeps its meaning.
+    render_pass: "Pass | None" = None
     lib_path: Path | None = None
     lib_create: bool = False
 
 
-def _format_uniforms(document: Document, driven: set[str]) -> list[str]:
+def _format_uniforms(render_pass: Pass, driven: set[str]) -> list[str]:
     # "name type = value" rows. Blocks have no scalar value. The shown value comes from the document's
     # uniform_values cache (the same source tabs/document.py reads) — NOT live u.value, which Pass.render()
     # overwrites every frame, so a just-set_uniform value would read back stale and the agent loops.
@@ -243,7 +249,7 @@ def _format_uniforms(document: Document, driven: set[str]) -> list[str]:
     # copilot path never ticks the script, so its uniform_values entry is the stale manual default —
     # showing it as a number contradicts the write that said the script drives it (feature 043).
     rows: list[str] = []
-    for u in document.render_pass.get_active_uniforms():
+    for u in render_pass.get_active_uniforms():
         if u.name in TABLE_UNIFORMS:
             continue
         label = gl_type_label(u)
@@ -252,17 +258,25 @@ def _format_uniforms(document: Document, driven: set[str]) -> list[str]:
         elif u.name in driven:
             rows.append(f"{u.name} {label} = <driven by script.py>")
         elif label == "sampler2D":
-            rows.append(f"{u.name} {label} <- {_sampler_binding(document, u.name)}")
+            rows.append(f"{u.name} {label} <- {_sampler_binding(render_pass, u.name)}")
         else:
-            value = document.render_pass.uniform_values.get(u.name, u.value)
+            value = render_pass.uniform_values.get(u.name, u.value)
             rows.append(f"{u.name} {label} = {value}")
     return rows
 
 
-def _sampler_binding(document: Document, name: str) -> str:
+def _sampler_uniform_names(render_pass: Pass) -> list[str]:
+    return [
+        u.name
+        for u in render_pass.get_active_uniforms()
+        if gl_type_label(u) == "sampler2D"
+    ]
+
+
+def _sampler_binding(render_pass: Pass, name: str) -> str:
     # What a sampler is bound to, for the working-set row. NEVER the source path (corollary-1: the abs
     # path is a model-visible leak); only "(no media bound)" for the default, else dims + kind.
-    value = document.render_pass.uniform_values.get(name)
+    value = render_pass.uniform_values.get(name)
     if value is None or is_default_image(value):
         return "(no media bound)"
     if isinstance(value, MediaWithTexture):
@@ -498,8 +512,14 @@ class CopilotBackend:
             DocumentTreeEntry(
                 document_id=short[nid],
                 name=ui_document.ui_state.ui_name,
-                has_errors=bool(ui_document.document.render_pass.compile_unit.errors),
+                # EVERY pass, not just the output's: a broken pass that nothing draws would
+                # otherwise report the document clean.
+                has_errors=any(
+                    p.compile_unit.errors for p in ui_document.document.passes.values()
+                ),
                 is_current=(nid == current),
+                passes=tuple(sorted(ui_document.document.passes)),
+                output_pass=ui_document.document.graph.output,
             )
             for nid, ui_document in self._get_ui_documents().items()
         ]
@@ -626,7 +646,7 @@ class CopilotBackend:
                         document_id=view_id,
                         name=ui_document.ui_state.ui_name,
                         listing=_number_lines(text),
-                        uniforms=_format_uniforms(document, driven),
+                        uniforms=_format_uniforms(document.render_pass, driven),
                         errors=_to_error_infos(
                             document.render_pass.compile_unit.errors
                         ),
@@ -651,8 +671,11 @@ class CopilotBackend:
             if current and current in self._get_ui_documents():
                 ordered.append(current)
             for address in self._working_set_reader():
-                if address not in ordered:
-                    ordered.append(address)
+                # A pass address collapses to its document: one member is one DOCUMENT (D11), so
+                # an 8-pass document can never evict its own passes out of the size cap.
+                document_address = split_pass_address(address)[0]
+                if document_address not in ordered:
+                    ordered.append(document_address)
             views: list[WorkingSetView] = []
             for address in ordered:
                 if is_lib_address(address):
@@ -683,8 +706,9 @@ class CopilotBackend:
         if ui_document is None:
             return None
         document = ui_document.document
-        if document.render_pass.program is None:
-            document.render_pass.compile()
+        for render_pass in document.passes.values():
+            if render_pass.program is None:
+                render_pass.compile()
         script_text, status = self._get_script_source_view(full_id)
         script_errors: list[CompileErrorInfo] = []
         if status is not None and status.sentinel_error is not None:
@@ -696,13 +720,47 @@ class CopilotBackend:
             is_current=(full_id == current),
             is_lib=False,
             uniforms=_format_uniforms(
-                document, self._get_script_driven_uniforms(full_id)
+                document.render_pass, self._get_script_driven_uniforms(full_id)
             ),
             errors=_to_error_infos(document.render_pass.compile_unit.errors),
             script_listing=_number_lines(script_text) if script_text else "",
             script_errors=script_errors,
             canvas=f"{document.render_pass.canvas.texture.size[0]}x{document.render_pass.canvas.texture.size[1]}",
+            passes=self._pass_views(full_id, short, document),
         )
+
+    def _pass_views(
+        self, full_id: str, short: dict[str, str], document: Document
+    ) -> list[PassView]:
+        # Empty for a single-pass document: its one pass IS the member's own listing/uniforms/
+        # errors, so the ordinary case stays byte-identical to the pre-graph prompt.
+        if len(document.passes) < 2:
+            return []
+        handle = short.get(full_id, full_id)
+        driven = self._get_script_driven_uniforms(full_id)
+        views: list[PassView] = []
+        for name in sorted(document.passes):
+            render_pass = document.passes[name]
+            entry = document.graph.passes.get(name)
+            wired = entry.inputs if entry is not None else {}
+            inputs = [
+                f"{uniform} <- {wired[uniform]}"
+                if uniform in wired
+                else f"{uniform} <- (nothing; reads BLACK)"
+                for uniform in _sampler_uniform_names(render_pass)
+            ]
+            views.append(
+                PassView(
+                    name=name,
+                    address=pass_address(handle, name),
+                    listing=_number_lines(render_pass.source.text),
+                    uniforms=_format_uniforms(render_pass, driven),
+                    errors=_to_error_infos(render_pass.compile_unit.errors),
+                    is_output=(name == document.graph.output),
+                    inputs=inputs,
+                )
+            )
+        return views
 
     def _copilot_lib_working_view(self, address: str) -> WorkingSetView | None:
         # A lib file's whole-file listing (read_lib is function-keyed, so a lib has no other view).
@@ -1689,17 +1747,24 @@ class CopilotBackend:
         return note
 
     def _force_restore(
-        self, document_id: str, document: Document, streak: int, matches: int
+        self,
+        ws_address: str,
+        document: Document,
+        render_pass: Pass,
+        streak: int,
+        matches: int,
     ) -> EditResult:
         # The 033 unstick: N consecutive broken edits -> put the file back at its last
         # clean-compiling state and tell the agent as a fact. Resets the streak so the
-        # next broken run gets a fresh budget.
+        # next broken run gets a fresh budget. Keyed by the working-set ADDRESS, which names one
+        # FILE: a document's passes are separate files, so a document-id key would restore one
+        # pass from another's clean state.
         restore_errors = self._copilot_persist_shader(
-            document, self._last_clean[document_id]
+            render_pass, self._last_clean[ws_address]
         )
-        self._broken_streak[document_id] = 0
+        self._broken_streak[ws_address] = 0
         logger.info(
-            f"copilot force-restore | document={document_id} after {streak} broken edits"
+            f"copilot force-restore | target={ws_address} after {streak} broken edits"
         )
         note = (
             f"EDIT UNDONE — {streak} consecutive edits left compile errors, so the file "
@@ -1714,7 +1779,7 @@ class CopilotBackend:
                 f"compiles (likely a library change):\n{err_lines}"
             )
         facts = (
-            self._render_facts_for(document, motion=True, cache_key=document_id)
+            self._render_facts_for(document, motion=True, cache_key=ws_address)
             if not restore_errors
             else ""
         )
@@ -1979,16 +2044,18 @@ class CopilotBackend:
         return full_id if kind == "document" and full_id is not None else None
 
     def _copilot_persist_shader(
-        self, document: Document, new_text: str
+        self, render_pass: Pass, new_text: str
     ) -> list[CompileErrorInfo]:
-        # Adopt new_text, recompile, persist, refresh the editor — the shared tail of every document edit.
-        # sync_editor keys on the edited FILE's path, not the current document, else a non-current
-        # edit syncs the wrong session; it no-ops when that file has no open editor.
-        document.render_pass.release_program(new_text)
-        document.render_pass.compile()
-        document.render_pass.source.path.write_text(new_text, encoding="utf-8")
-        self._sync_editor_from_disk(document.render_pass.source.path, new_text)
-        return _to_error_infos(document.render_pass.compile_unit.errors)
+        # Adopt new_text, recompile, persist, refresh the editor — the shared tail of every source
+        # edit. Takes the PASS, not the document: an edit addressed as "<id>#<pass>" must land on
+        # that pass's file, and a bare id resolves to the output pass one layer up.
+        # sync_editor keys on the edited FILE's path, else a non-current edit syncs the wrong
+        # session; it no-ops when that file has no open editor.
+        render_pass.release_program(new_text)
+        render_pass.compile()
+        render_pass.source.path.write_text(new_text, encoding="utf-8")
+        self._sync_editor_from_disk(render_pass.source.path, new_text)
+        return _to_error_infos(render_pass.compile_unit.errors)
 
     def _copilot_resolve_target(
         self, target: str, *, allow_create: bool
@@ -2006,17 +2073,18 @@ class CopilotBackend:
                 unresolved_reason="examples are read-only — create_document(example=...) from it "
                 "first, then edit the resulting document",
             )
-        if not target:
+        document_target, pass_name = split_pass_address(target)
+        if not document_target:
             document_id = self._get_current_document_id()
         else:
-            resolved = self._copilot_resolve_document_id(target)
+            resolved = self._copilot_resolve_document_id(document_target)
             if resolved is None:
                 return EditResult(
                     matches=0,
                     errors=[],
                     unresolved=True,
-                    unresolved_reason=f"no document with id '{target}' — use an id from the "
-                    "project map",
+                    unresolved_reason=f"no document with id '{document_target}' — use an id "
+                    "from the project map",
                 )
             document_id = resolved
         if document_id not in self._get_ui_documents():
@@ -2030,16 +2098,30 @@ class CopilotBackend:
         short = self._copilot_short_ids().get(
             document_id, document_id[:DOCUMENT_SHORT_ID_LEN]
         )
+        document = ui_document.document
+        if pass_name and pass_name not in document.passes:
+            return EditResult(
+                matches=0,
+                errors=[],
+                unresolved=True,
+                unresolved_reason=f"document '{short}' has no pass '{pass_name}' — its passes "
+                f"are {sorted(document.passes)}",
+            )
+        render_pass = document.passes[pass_name] if pass_name else document.render_pass
         label = f"document '{ui_document.ui_state.ui_name}' ({short})"
+        if pass_name:
+            label += f" pass '{pass_name}'"
         if not target:
             label += " — target was empty, so this hit the CURRENT document"
-        document = ui_document.document
         return _CopilotEditTarget(
             kind="document",
             document_id=document_id,
             document=document,
-            source=document.render_pass.source.text,
-            ws_address=document_id,
+            render_pass=render_pass,
+            source=render_pass.source.text,
+            ws_address=pass_address(document_id, pass_name)
+            if pass_name
+            else document_id,
             label=label,
         )
 
@@ -2092,35 +2174,38 @@ class CopilotBackend:
         new_text = new_text.replace("\r\n", "\n").replace("\r", "\n")
         if tgt.kind == "document":
             assert tgt.document is not None and tgt.document_id is not None
+            assert tgt.render_pass is not None
             self._capture_document(
                 tgt.document_id
             )  # pre-write rollback snapshot (best-effort)
             # "Clean" requires a LIVE program: an invalidated compile_unit has
             # errors=[] without one (e.g. after a lib edit) and must not anchor.
             prev_clean = (
-                not tgt.document.render_pass.compile_unit.errors
-                and tgt.document.render_pass.program is not None
+                not tgt.render_pass.compile_unit.errors
+                and tgt.render_pass.program is not None
             )
-            errors = self._copilot_persist_shader(tgt.document, new_text)
+            errors = self._copilot_persist_shader(tgt.render_pass, new_text)
             self._working_set_add(tgt.ws_address)
             self._batch_mutated.add(tgt.ws_address)
             if errors:
                 if prev_clean:
                     # A clean file just broke — this starts a NEW streak (anything
                     # earlier was already fixed, possibly outside the copilot).
-                    self._last_clean[tgt.document_id] = tgt.source
+                    self._last_clean[tgt.ws_address] = tgt.source
                     streak = 1
                 else:
-                    streak = self._broken_streak.get(tgt.document_id, 0) + 1
-                self._broken_streak[tgt.document_id] = streak
+                    streak = self._broken_streak.get(tgt.ws_address, 0) + 1
+                self._broken_streak[tgt.ws_address] = streak
                 limit = COPILOT_CONFIG.auto_revert_after_failed_edits
-                hints = _edit_error_hints(
-                    tgt.document.render_pass.source.path, new_text, errors
-                )
+                hints = _edit_error_hints(tgt.render_pass.source.path, new_text, errors)
                 if limit > 0 and streak >= limit:
-                    if tgt.document_id in self._last_clean:
+                    if tgt.ws_address in self._last_clean:
                         return self._force_restore(
-                            tgt.document_id, tgt.document, streak, matches
+                            tgt.ws_address,
+                            tgt.document,
+                            tgt.render_pass,
+                            streak,
+                            matches,
                         )
                     hints = (
                         *hints,
