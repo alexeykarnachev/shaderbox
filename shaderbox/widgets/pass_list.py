@@ -16,12 +16,13 @@ from OpenGL.GL import GL_SAMPLER_2D
 
 from shaderbox.app import App
 from shaderbox.core import Pass
-from shaderbox.pass_graph import DTYPES, PassEntry
+from shaderbox.pass_graph import PassEntry
 from shaderbox.paths import pass_name_of
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_primitives import (
     context_menu_style,
     ghost_button,
+    label_row,
     preview_cell,
     small_caption,
 )
@@ -57,6 +58,42 @@ def _row_label(active: bool, is_output: bool, name: str) -> None:
     imgui.same_line(_TICK_W + _LABEL_W)
 
 
+# What a pass's target format MEANS, in place of moderngl's `f1`/`f2`/`f4` dtype strings. The
+# tuple is (menu label, what it is for) — the label is what a person picks from, the second half
+# is the tooltip, because "16-bit" alone does not tell you when to want it.
+_FORMATS: list[tuple[str, str, str]] = [
+    (
+        "f1",
+        "8-bit",
+        "Smallest. Values clamp to 0-1 — the right choice for a final image.",
+    ),
+    (
+        "f2",
+        "16-bit float",
+        "Holds values above 1 (bright highlights, accumulated light). The default, and what "
+        "bloom and feedback need.",
+    ),
+    (
+        "f4",
+        "32-bit float",
+        "Full precision. Rarely needed; costs twice the memory of 16-bit.",
+    ),
+]
+_FORMAT_LABELS = [label for _, label, _ in _FORMATS]
+_FORMAT_CODES = [code for code, _, _ in _FORMATS]
+
+_ROW_LABEL_W = 78.0
+_CTRL_W = 168.0
+
+
+def _help(text: str) -> None:
+    """A dim `?` after a control, explaining it on hover — the room a caption does not have."""
+    imgui.same_line(spacing=float(SPACE.SM))
+    imgui.text_colored(COLOR.FG_DIM, "?")
+    if imgui.is_item_hovered():
+        imgui.set_tooltip(text)
+
+
 def _draw_inputs(app: App, document_id: str, name: str, render_pass: Pass) -> None:
     # One closed-set combo per sampler uniform the pass actually declares. A pass with no samplers
     # draws nothing — the absence of a row is the honest signal that it reads no other pass.
@@ -66,62 +103,85 @@ def _draw_inputs(app: App, document_id: str, name: str, render_pass: Pass) -> No
     document = app.ui_documents[document_id].document
     entry = document.graph.passes.get(name, PassEntry())
     choices = [_UNWIRED, *sorted(document.passes)]
-    imgui.indent(_TICK_W + _LABEL_W)
+    small_caption(app.font_12, "Reads")
     for uniform in samplers:
         current = entry.inputs.get(uniform, "")
         index = choices.index(current) if current in choices else 0
-        imgui.align_text_to_frame_padding()
-        small_caption(app.font_12, uniform)
-        imgui.same_line(_LABEL_W)
-        imgui.set_next_item_width(imgui.get_content_region_avail().x)
+        label_row(app.font_12, uniform, _CTRL_W, _ROW_LABEL_W)
         changed, picked = imgui.combo(f"##wire_{name}_{uniform}", index, choices)
         if changed:
             producer = "" if picked == 0 else choices[picked]
             error = app.session.wire_pass_input(document_id, name, uniform, producer)
             if error:
                 app.notifications.push(error)
-    imgui.unindent(_TICK_W + _LABEL_W)
+        _help(
+            f"Which pass fills this pass's `{uniform}` sampler. "
+            f"{_UNWIRED} leaves it black."
+        )
 
 
 def _draw_target(app: App, document_id: str, name: str) -> None:
+    # What this pass DRAWS INTO. Every control names the thing it changes about the picture, not
+    # the field it writes: a target's dtype is "format / 16-bit float", not "f2".
     document = app.ui_documents[document_id].document
     entry = document.graph.passes.get(name, PassEntry())
     target = entry.target
-    imgui.indent(_TICK_W + _LABEL_W)
-
-    imgui.align_text_to_frame_padding()
-    small_caption(app.font_12, "format")
-    imgui.same_line(_LABEL_W)
-    imgui.set_next_item_width(imgui.get_content_region_avail().x)
-    dtypes = list(DTYPES)
-    changed, picked = imgui.combo(f"##dtype_{name}", dtypes.index(target.dtype), dtypes)
     new_target = target
-    if changed:
-        new_target = target.model_copy(update={"dtype": dtypes[picked]})
+    is_output = name == document.graph.output
 
-    imgui.align_text_to_frame_padding()
-    small_caption(app.font_12, "scale")
-    imgui.same_line(_LABEL_W)
-    imgui.set_next_item_width(imgui.get_content_region_avail().x)
+    small_caption(app.font_12, "Draws into")
+
+    label_row(app.font_12, "format", _CTRL_W, _ROW_LABEL_W)
+    changed, picked = imgui.combo(
+        f"##dtype_{name}", _FORMAT_CODES.index(target.dtype), _FORMAT_LABELS
+    )
+    if changed:
+        new_target = target.model_copy(update={"dtype": _FORMAT_CODES[picked]})
+    _help(_FORMATS[_FORMAT_CODES.index(target.dtype)][2])
+
+    label_row(app.font_12, "size", _CTRL_W, _ROW_LABEL_W)
+    canvas_w, canvas_h = document.canvas_size
     scale_changed, scale = imgui.slider_float(
-        f"##scale_{name}", target.scale, 0.05, 1.0, "%.2f"
+        f"##scale_{name}",
+        target.scale,
+        0.05,
+        1.0,
+        f"%.0f%% of canvas  ({max(1, round(canvas_w * target.scale))}"
+        f"x{max(1, round(canvas_h * target.scale))})",
     )
     if scale_changed:
         new_target = new_target.model_copy(update={"scale": scale})
+    _help(
+        "How big this pass's own image is, relative to the canvas. Half size is a quarter of "
+        "the pixels — the usual choice for a blur, which looks the same and costs less. The "
+        "output pass always draws at full size."
+        if is_output
+        else "How big this pass's own image is, relative to the canvas. Half size is a quarter "
+        "of the pixels — the usual choice for a blur, which looks the same and costs less."
+    )
 
+    label_row(app.font_12, "sampling", _CTRL_W, _ROW_LABEL_W)
     smooth_changed, smooth = imgui.checkbox(f"smooth##{name}", target.filter_linear)
-    imgui.same_line(spacing=float(SPACE.LG))
-    tile_changed, tile = imgui.checkbox(f"tile##{name}", target.wrap)
     if smooth_changed:
         new_target = new_target.model_copy(update={"filter_linear": smooth})
+    _help(
+        "How another pass reads this one BETWEEN pixels: smooth blends neighbours (right for "
+        "a blur or an upscale), off gives hard pixel edges."
+    )
+
+    label_row(app.font_12, "edges", _CTRL_W, _ROW_LABEL_W)
+    tile_changed, tile = imgui.checkbox(f"repeat##{name}", target.wrap)
     if tile_changed:
         new_target = new_target.model_copy(update={"wrap": tile})
+    _help(
+        "What a read PAST this pass's edge returns: repeat wraps to the far side (tiling), "
+        "off clamps to the edge pixel — which is what a feedback trail wants."
+    )
 
     if new_target != target:
         error = app.session.set_pass_target(document_id, name, new_target)
         if error:
             app.notifications.push(error)
-    imgui.unindent(_TICK_W + _LABEL_W)
 
 
 def _draw_context_menu(app: App, document_id: str, name: str) -> None:

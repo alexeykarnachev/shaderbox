@@ -15,9 +15,10 @@ from typing import Any
 
 import pytest
 
-from shaderbox.pass_graph import PassEntry, TargetConfig
+from shaderbox.pass_graph import DTYPES, PassEntry, TargetConfig
 from shaderbox.paths import PASSES_DIR_NAME, pass_shader_name
 from shaderbox.ui_models import load_document_from_dir
+from shaderbox.widgets.pass_list import _FORMAT_CODES, _FORMATS
 
 _SAMPLER = """#version 460 core
 in vec2 vs_uv;
@@ -268,4 +269,19 @@ def test_renaming_a_pass_moves_the_expanded_selection_with_it(app: Any) -> None:
     assert "after" in document.passes
     assert app.pass_expanded == "after", (
         "the expanded selection did not follow the rename, so the block shows nothing"
+    )
+
+
+def test_every_target_format_has_a_human_label() -> None:
+    # The panel names formats ("16-bit float"), not moderngl's dtype strings ("f2"). A dtype added
+    # to pass_graph without a label would fall out of the menu silently — and its combo lookup
+    # would raise on a document already using it.
+    assert list(DTYPES) == _FORMAT_CODES, (
+        "the format menu and TargetConfig's dtypes have drifted"
+    )
+    assert all(label and help_text for _, label, help_text in _FORMATS), (
+        "every format needs a label AND an explanation of when to want it"
+    )
+    assert not any(label in DTYPES for _, label, _ in _FORMATS), (
+        "a menu label is still a raw dtype string"
     )
