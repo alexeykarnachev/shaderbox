@@ -6,6 +6,7 @@ from imgui_bundle import imgui_color_text_edit as text_edit
 from shaderbox.app import App
 from shaderbox.core import Pass
 from shaderbox.editor_types import EditorTab, HoverMark, JumpRequest
+from shaderbox.paths import pass_name_of
 from shaderbox.shader_errors import ShaderError
 from shaderbox.theme import COLOR, EDITOR_UNFOCUSED_ALPHA, SIZE, SPACE, fade
 from shaderbox.ui_primitives import draw_copyable_text
@@ -23,20 +24,29 @@ def tab_label(app: App, tab: EditorTab) -> str:
     # ("<document> (shader)" / "<document> (script)"), a lib by "library - <file>". The on-disk filename is
     # the same constant for every document, so the bare name can't tell tabs apart. Falls back to a short
     # id slice when the document has no name. The imgui ##id keys on the stable path/index, NOT this label.
+    #
+    # A MULTI-pass document names the pass instead of "shader" (065) — otherwise its tabs are all
+    # "<document> (shader)" and tell each other apart by nothing. Taken from the tab's own PATH,
+    # which is its identity, so the label cannot disagree with the file the tab opens and a rename
+    # carries it along for free. A single-pass document keeps "(shader)": there is nothing to
+    # disambiguate, and "(main)" would say less.
     if tab.kind == "lib":
         return f"library - {tab.path.stem}"
     ui_document = app.ui_documents.get(tab.document_id)
     document_name = (
         ui_document.ui_state.ui_name if ui_document else ""
     ) or tab.document_id[:8]
-    suffix = "script" if tab.kind == "script" else "shader"
+    if tab.kind == "script":
+        return f"{document_name} (script)"
+    multi_pass = ui_document is not None and len(ui_document.document.passes) > 1
+    suffix = pass_name_of(tab.path) if multi_pass else "shader"
     return f"{document_name} ({suffix})"
 
 
 def _draw_tab_row(app: App) -> None:
     # The editor's tab row (047): a native imgui tab bar — drag-reorder, x-close, unsaved dot, an
-    # error-tinted tab, and overflow scroll + a ▾ list popup. Tab labels are the bare on-disk
-    # filename. FPE-safe (plain imgui, no TextEditor.render), so it draws even behind a modal.
+    # error-tinted tab, and overflow scroll + a ▾ list popup. Labels come from tab_label, the one
+    # funnel this row and the chrome both use. FPE-safe (plain imgui, no TextEditor.render), so it draws even behind a modal.
     # A genuine click is read back into active_tab_index; a PROGRAMMATIC switch (glyph open /
     # document-select / lib-jump / close) DRIVES imgui's selection via set_selected — imgui ignores a
     # model-side index change otherwise and reverts to the old tab. The target is read BEFORE the

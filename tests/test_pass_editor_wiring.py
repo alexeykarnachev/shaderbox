@@ -12,6 +12,7 @@ Each test here names one consumer of the active tab and pins it to the tab's PAT
 from typing import Any
 
 from shaderbox.paths import pass_shader_name
+from shaderbox.tabs.code import tab_label
 
 _GREEN = """#version 460 core
 in vec2 vs_uv;
@@ -125,3 +126,41 @@ def test_a_single_pass_document_is_unaffected(app: Any) -> None:
     document = app.ui_documents[document_id].document
     assert app.current_editor_path == document.render_pass.source.path
     assert app.get_current_session().source.path == document.render_pass.source.path
+
+
+def test_a_multi_pass_document_names_the_pass_in_its_tab_label(app: Any) -> None:
+    # Otherwise every tab of one document reads "<document> (shader)" and they are told apart by
+    # nothing — which is how the open-the-wrong-pass bug stayed invisible for as long as it did.
+    document_id = _two_pass(app)
+    labels: dict[str, str] = {}
+    for name in ("main", "second"):
+        app.ensure_shader_tab(document_id, name)
+        labels[name] = tab_label(app, app.active_tab)
+    assert labels["main"].endswith("(main)")
+    assert labels["second"].endswith("(second)")
+    assert labels["main"] != labels["second"]
+    # Still document-derived, so two documents' passes stay distinguishable too.
+    document_name = app.ui_documents[document_id].ui_state.ui_name
+    assert all(label.startswith(document_name) for label in labels.values())
+
+
+def test_a_single_pass_document_keeps_the_plain_shader_label(app: Any) -> None:
+    # Nothing to disambiguate, and "(main)" would say less than "(shader)".
+    document_id = app.current_document_id
+    app.ensure_shader_tab(document_id)
+    assert tab_label(app, app.active_tab).endswith("(shader)")
+
+
+def test_the_label_follows_a_renamed_pass(app: Any) -> None:
+    # The label reads the tab's PATH, and a rename moves the path — so it cannot drift from the
+    # file the tab actually opens.
+    document_id = _two_pass(app)
+    app.ensure_shader_tab(document_id, "second")
+    assert app.session.rename_pass(document_id, "second", "renamed") == ""
+    assert tab_label(app, app.active_tab).endswith("(renamed)")
+
+
+def test_a_script_tab_is_unaffected_by_the_pass_count(app: Any) -> None:
+    document_id = _two_pass(app)
+    app.open_script_for(document_id)
+    assert tab_label(app, app.active_tab).endswith("(script)")
