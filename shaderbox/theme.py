@@ -237,6 +237,9 @@ class SIZE:
 
     THUMB_SM: int = 90
     THUMB_LG: int = 150
+    # One pass's tile in the horizontal pass strip: small enough that a five-pass document fits
+    # a panel width without wrapping, big enough to read what the pass draws.
+    PASS_THUMB: int = 64
 
     STALE_MARK: int = 7  # corner tick on a preview tile that is not being rendered
 

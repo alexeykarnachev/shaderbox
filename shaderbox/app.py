@@ -46,7 +46,7 @@ from shaderbox.exporters.youtube import YouTubeExporter
 from shaderbox.help_content import help_sections
 from shaderbox.integrations import IntegrationsStore
 from shaderbox.notifications import Notifications
-from shaderbox.paths import ProjectPaths, app_data_dir, shader_lib_root
+from shaderbox.paths import ProjectPaths, app_data_dir, pass_name_of, shader_lib_root
 from shaderbox.project_session import ProjectSession
 from shaderbox.render_defer import RenderDefer
 from shaderbox.scripting import EXPORT_MOUSE, MouseState
@@ -244,6 +244,8 @@ class App:
         self.pass_rename: InlineInput = InlineInput()
         self.pass_add: InlineInput = InlineInput()
         self.pass_expanded: str = ""
+        # The pass whose tile has its delete-✕ armed (the in-cell "Delete?" wash), or "".
+        self.pass_delete_armed: str = ""
 
         # copilot_focus_pending: one-shot driving window + input focus, consumed at the input draw.
         self.is_copilot_open: bool = False
@@ -484,8 +486,11 @@ class App:
         session.saved_undo = session.editor.get_undo_index()
 
     def _on_pass_renamed(self, old_path: Path, new_path: Path) -> None:
-        # A pass file moved; both the editor SESSION and any open TAB are keyed by path, so
-        # without this the tab points at a file that no longer exists and its edits go nowhere.
+        # A pass file moved. Everything that refers to it BY NAME OR PATH moves with it here, in
+        # one place: the editor session and any open tab (both path-keyed — a tab left pointing at
+        # a file that no longer exists eats its own edits), and the pass strip's selection and
+        # delete-arm (name-keyed — a stale selection shows an empty block, a stale arm puts the
+        # "Delete?" wash on whichever pass takes that name next).
         session = self.editor_sessions.pop(old_path, None)
         if session is not None:
             session.source = replace(session.source, path=new_path)
@@ -493,6 +498,11 @@ class App:
         for i, tab in enumerate(self.editor_tabs):
             if tab.path == old_path:
                 self.editor_tabs[i] = replace(tab, path=new_path)
+        old_name, new_name = pass_name_of(old_path), pass_name_of(new_path)
+        if self.pass_expanded == old_name:
+            self.pass_expanded = new_name
+        if self.pass_delete_armed == old_name:
+            self.pass_delete_armed = new_name
 
     def _on_document_deleted(self, document_id: str, source_path: Path) -> None:
         # A document's dir was trashed by the core; drop its editor session + close any of its open

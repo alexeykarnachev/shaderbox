@@ -244,3 +244,28 @@ def test_add_then_delete_leaves_no_orphan_file(app: Any) -> None:
 @pytest.mark.parametrize("name", ["a", "pass_2", "_leading", "UPPER"])
 def test_accepted_pass_names(app: Any, name: str) -> None:
     assert app.session.add_pass(_document_id(app), name) == ""
+
+
+def test_an_armed_delete_follows_a_rename(app: Any) -> None:
+    # The tile's delete-✕ arms an in-cell "Delete?" wash keyed by pass NAME, so a rename that left
+    # the arm behind would put the wash on whichever pass takes that name next.
+    document_id = _document_id(app)
+    app.session.add_pass(document_id, "doomed")
+    app.pass_delete_armed = "doomed"
+    assert app.session.rename_pass(document_id, "doomed", "spared") == ""
+    # The arm follows the rename rather than being left on a name a future pass could take.
+    assert app.pass_delete_armed == "spared"
+
+
+def test_renaming_a_pass_moves_the_expanded_selection_with_it(app: Any) -> None:
+    # The strip's expanded block is keyed by pass NAME, so a rename that left it behind would show
+    # the wiring of a pass that no longer exists (it silently renders nothing).
+    document_id = _document_id(app)
+    app.session.add_pass(document_id, "before")
+    app.pass_expanded = "before"
+    assert app.session.rename_pass(document_id, "before", "after") == ""
+    document = app.ui_documents[document_id].document
+    assert "after" in document.passes
+    assert app.pass_expanded == "after", (
+        "the expanded selection did not follow the rename, so the block shows nothing"
+    )

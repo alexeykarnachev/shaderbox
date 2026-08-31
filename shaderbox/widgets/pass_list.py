@@ -17,10 +17,12 @@ from OpenGL.GL import GL_SAMPLER_2D
 from shaderbox.app import App
 from shaderbox.core import Pass
 from shaderbox.pass_graph import DTYPES, PassEntry
-from shaderbox.theme import COLOR, SPACE
+from shaderbox.paths import pass_name_of
+from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_primitives import (
     context_menu_style,
     ghost_button,
+    preview_cell,
     small_caption,
 )
 
@@ -144,12 +146,14 @@ def _draw_context_menu(app: App, document_id: str, name: str) -> None:
             imgui.end_popup()
 
 
-def _draw_rename_input(app: App, document_id: str, name: str) -> bool:
-    """The inline rename for one row. Returns True when it drew (the row's label is replaced)."""
-    path = app.session.paths.pass_shader_for(document_id, name)
-    if app.pass_rename.target != path:
-        return False
-    imgui.dummy((_TICK_W, 0))
+def _draw_rename_input(app: App, document_id: str) -> None:
+    """The inline rename, drawn once below the strip for whichever pass the menu opened it on."""
+    target = app.pass_rename.target
+    if target is None:
+        return
+    name = pass_name_of(target)
+    imgui.align_text_to_frame_padding()
+    small_caption(app.font_12, f"rename {name}")
     imgui.same_line()
     cancel_w = imgui.calc_text_size("x").x + float(SPACE.MD) * 2.0
     imgui.set_next_item_width(imgui.get_content_region_avail().x - cancel_w)
@@ -157,7 +161,7 @@ def _draw_rename_input(app: App, document_id: str, name: str) -> bool:
         imgui.set_keyboard_focus_here(0)
         app.pass_rename.needs_focus = False
     committed, app.pass_rename.buf = imgui.input_text(
-        f"##rename_pass_{name}",
+        "##rename_pass",
         app.pass_rename.buf,
         flags=imgui.InputTextFlags_.enter_returns_true,
     )
@@ -172,45 +176,105 @@ def _draw_rename_input(app: App, document_id: str, name: str) -> bool:
     if imgui.is_key_pressed(imgui.Key.escape, repeat=False):
         app.pass_rename.close()
     imgui.same_line()
-    if ghost_button(f"x##cancel_rename_{name}"):
+    if ghost_button("x##cancel_rename"):
         app.pass_rename.close()
-    return True
+
+
+def _draw_pass_tile(
+    app: App,
+    document_id: str,
+    name: str,
+    render_pass: Pass,
+    open_pass: Callable[[str], None],
+) -> None:
+    # The pass's OWN live target, scaled down by imgui — not a second render at thumbnail size.
+    # Every pass already draws once per frame into that texture, so the tile costs nothing but the
+    # blit; rendering a separate small frame would double the document's per-frame draw count.
+    document = app.ui_documents[document_id].document
+    is_output = name == document.graph.output
+    active = app.active_tab
+    is_open = active is not None and active.path == render_pass.source.path
+    errors = bool(render_pass.compile_unit.errors)
+
+    border = (
+        COLOR.STATE_ERROR
+        if errors
+        else COLOR.ACCENT_PRIMARY
+        if is_output
+        else COLOR.ACCENT_ACTIVE
+        if is_open
+        else None
+    )
+    result = preview_cell(
+        id_=f"pass_{name}",
+        cell_w=float(SIZE.PASS_THUMB),
+        texture_glo=render_pass.canvas.texture.glo,
+        texture_size=render_pass.canvas.texture.size,
+        selected=is_open,
+        armed=app.pass_delete_armed == name,
+        border_color=border,
+        footer=f"{name} *" if is_output else name,
+    )
+    if imgui.is_item_hovered():
+        wired = document.graph.passes.get(name, PassEntry()).inputs
+        lines = [f"{name}{' — the output' if is_output else ''}"]
+        lines += [f"{uniform} <- {src}" for uniform, src in sorted(wired.items())]
+        if errors:
+            lines.append("has compile errors")
+        lines.append("click to open; right-click for actions")
+        imgui.set_tooltip("\n".join(lines))
+    _draw_context_menu(app, document_id, name)
+
+    if result.clicked:
+        open_pass(name)
+        app.pass_expanded = "" if app.pass_expanded == name else name
+    if result.delete_armed:
+        app.pass_delete_armed = name
+    elif result.delete_confirmed:
+        error = app.session.delete_pass(document_id, name)
+        if error:
+            app.notifications.push(error)
+        app.pass_delete_armed = ""
+    elif result.delete_cancelled:
+        app.pass_delete_armed = ""
 
 
 def draw(app: App, document_id: str, open_pass: Callable[[str], None]) -> None:
-    """The pass list for one document. `open_pass` summons a pass's tab into the editor."""
+    """The pass strip for one document. `open_pass` summons a pass's tab into the editor."""
     ui_document = app.ui_documents.get(document_id)
     if ui_document is None:
         return
     document = ui_document.document
-    active = app.active_tab
 
     imgui.begin_disabled(app.copilot_turn_active)
     small_caption(app.font_12, "Passes")
-    for name in sorted(document.passes):
-        render_pass = document.passes[name]
-        imgui.push_id(f"pass_{name}")
-        if not _draw_rename_input(app, document_id, name):
-            is_active = active is not None and active.path == render_pass.source.path
-            _row_label(is_active, name == document.graph.output, name)
-            if ghost_button("open"):
-                open_pass(name)
-            if imgui.is_item_hovered():
-                imgui.set_tooltip(f"Open {name} in the editor")
-            _draw_context_menu(app, document_id, name)
-            if render_pass.compile_unit.errors:
-                imgui.same_line()
-                imgui.text_colored(COLOR.STATE_ERROR, "errors")
-            if name == app.pass_expanded:
-                _draw_inputs(app, document_id, name, render_pass)
-                _draw_target(app, document_id, name)
-        imgui.pop_id()
+
+    # Horizontal, wrapping at the panel edge: a document's passes are a handful, and a column of
+    # full-width rows spent the panel's vertical budget on a list that reads better as a strip.
+    avail = imgui.get_content_region_avail().x
+    step = float(SIZE.PASS_THUMB) + float(SPACE.MD)
+    per_row = max(1, int(avail // step))
+    for i, name in enumerate(sorted(document.passes)):
+        if i % per_row:
+            imgui.same_line(spacing=float(SPACE.MD))
+        _draw_pass_tile(app, document_id, name, document.passes[name], open_pass)
 
     imgui.dummy((0, float(SPACE.SM)))
+    if app.pass_rename.is_open:
+        _draw_rename_input(app, document_id)
     if ghost_button("add pass"):
         app.pass_add.open(app.session.paths.passes_dir_for(document_id))
     if app.pass_add.is_open:
         _draw_add_input(app, document_id)
+
+    # The selected tile's wiring + target, below the strip: one expanded block, not one per row.
+    if app.pass_expanded in document.passes:
+        imgui.dummy((0, float(SPACE.SM)))
+        small_caption(app.font_12, app.pass_expanded)
+        _draw_inputs(
+            app, document_id, app.pass_expanded, document.passes[app.pass_expanded]
+        )
+        _draw_target(app, document_id, app.pass_expanded)
     imgui.end_disabled()
 
 

@@ -196,6 +196,7 @@ def main() -> int:
                 imgui.get_io().config_flags & imgui.ConfigFlags_.nav_enable_keyboard
             ), "nav_enable_keyboard not set"
             feedback_document = _arm_feedback_canary(app)
+            canary_id = app.current_document_id
             for frame_idx in range(N_FRAMES):
                 update_and_draw(app)
                 _check_invariants(app, frame_idx)
@@ -216,7 +217,11 @@ def main() -> int:
                         ),
                         "smoke_pass",
                     )
+                if frame_idx == 32:
+                    # The tile's delete-✕ wash, which only draws while armed.
+                    app.pass_delete_armed = "smoke_pass"
                 if frame_idx == 35:
+                    app.pass_delete_armed = ""
                     app.pass_rename.close()
                     app.pass_add.open(
                         app.session.paths.passes_dir_for(app.current_document_id)
@@ -228,6 +233,26 @@ def main() -> int:
                         app.session.delete_pass(app.current_document_id, "smoke_pass")
                         == ""
                     ), "smoke: the pass list's own pass could not be deleted"
+                # The five-tile strip of a genuinely multi-pass document — the shape the panel is
+                # for, and the one a single-pass fixture never draws.
+                if frame_idx == 42:
+                    multi = next(
+                        (
+                            i
+                            for i, u in app.ui_documents.items()
+                            if len(u.document.passes) > 1
+                        ),
+                        "",
+                    )
+                    assert multi, "smoke: no multi-pass document to draw the strip with"
+                    app.set_current_document_id(multi)
+                    app.pass_expanded = sorted(app.ui_documents[multi].document.passes)[
+                        0
+                    ]
+                if frame_idx == 48:
+                    # Back to the feedback canary's document, whose accumulation the tail asserts.
+                    app.pass_expanded = ""
+                    app.set_current_document_id(canary_id)
                 if frame_idx == 50:
                     app.cycle_region()
                 if frame_idx == 60:
