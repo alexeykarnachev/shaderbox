@@ -1,0 +1,92 @@
+{
+    "canvas_size": [
+        960,
+        960
+    ],
+    "uniforms": {
+        "blur": {
+            "u_radius": 2.5999999046325684
+        },
+        "bright": {
+            "u_threshold": 0.75
+        },
+        "composite": {
+            "u_bloom": 1.149999976158142,
+            "u_trail_mix": 0.550000011920929
+        },
+        "scene": {
+            "u_blob_size": 0.12999999523162842,
+            "u_orbit_speed": 0.44999998807907104
+        },
+        "trail": {
+            "u_decay": 0.8999999761581421,
+            "u_gain": 0.3499999940395355
+        }
+    },
+    "ui_state": {
+        "ui_name": "Bloom Chain",
+        "description": "A five-pass document: a scene of orbiting blobs, a bright-pass and a blur that turn its highlights into bloom, a feedback pass that leaves motion trails, and a composite that adds them and tonemaps. Open the Passes list to see what fills each input, and try rewiring one.",
+        "render_media_details": {
+            "is_video": true,
+            "file_details": {
+                "path": "",
+                "size": 0
+            },
+            "resolution_details": {
+                "width": 0,
+                "height": 0
+            },
+            "quality": 0,
+            "fps": 30,
+            "duration": 6.0
+        },
+        "ui_uniforms": {
+            "186739805002824748247691636963146881870": {
+                "name": "u_bloom",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "63626187625819056674108660439084375667": {
+                "name": "u_glow",
+                "is_ubo": false,
+                "gl_type": 35678,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "texture"
+            },
+            "83400449315144860120754342278542602166": {
+                "name": "u_lit",
+                "is_ubo": false,
+                "gl_type": 35678,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "texture"
+            },
+            "104355082697127653013080493525903289470": {
+                "name": "u_trail",
+                "is_ubo": false,
+                "gl_type": 35678,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "texture"
+            },
+            "81499196138579870697011097508634929303": {
+                "name": "u_trail_mix",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            }
+        },
+        "uniform_sort_key": "code",
+        "uniform_sort_desc": false,
+        "video_to_video_smoothing_window": 5,
+        "video_to_video_smoothing_sigma": 1.0,
+        "stopped_uniforms": [],
+        "all_stopped": false
+    }
+}

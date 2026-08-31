@@ -4,6 +4,7 @@ from imgui_bundle import imgui
 from imgui_bundle import imgui_color_text_edit as text_edit
 
 from shaderbox.app import App
+from shaderbox.core import Pass
 from shaderbox.editor_types import EditorTab, HoverMark, JumpRequest
 from shaderbox.shader_errors import ShaderError
 from shaderbox.theme import COLOR, EDITOR_UNFOCUSED_ALPHA, SIZE, SPACE, fade
@@ -81,6 +82,25 @@ def _draw_tab_row(app: App) -> None:
 
 def _tab_has_error(app: App, tab: EditorTab) -> bool:
     return app.session.script_has_error(tab.document_id)
+
+
+def _pass_for_tab(app: App, tab: EditorTab) -> Pass | None:
+    """The pass a shader tab is editing, matched by PATH — not the document's output.
+
+    A document has one file per pass, so "the current document's shader" stopped naming one file
+    the moment a second pass existed.
+    """
+    ui_document = app.ui_documents.get(tab.document_id)
+    if ui_document is None:
+        return None
+    return next(
+        (
+            render_pass
+            for render_pass in ui_document.document.passes.values()
+            if render_pass.source.path == tab.path
+        ),
+        None,
+    )
 
 
 def _script_errors_for(app: App, tab: EditorTab) -> list[ShaderError]:
@@ -177,18 +197,21 @@ def draw_chrome(app: App) -> None:
     if tab is None:
         imgui.text_colored(COLOR.FG_DIM, "No file open")
         return
-    if not (ui_document := app.ui_documents.get(app.current_document_id)):
+    if app.current_document_id not in app.ui_documents:
         imgui.text_colored(COLOR.FG_DIM, "No document selected")
         return
     if tab.kind == "shader":
-        full_file_path = ui_document.document.render_pass.source.path
+        edited_pass = _pass_for_tab(app, tab)
+        full_file_path = (
+            edited_pass.source.path if edited_pass is not None else tab.path
+        )
         local_file_path = full_file_path.relative_to(app.project_dir)
         if draw_copyable_text(str(local_file_path), copy_value=str(full_file_path)):
             app.notifications.push("Copied to clipboard!")
         if app.is_current_editor_dirty():
             imgui.same_line()
             imgui.text_colored(COLOR.STATE_WARN, "(unsaved)")
-        elif not ui_document.document.render_pass.compile_unit.error_raw:
+        elif edited_pass is not None and not edited_pass.compile_unit.error_raw:
             imgui.same_line()
             imgui.text_colored(COLOR.STATE_OK, "compiled")
         imgui.same_line(spacing=float(SPACE.LG))
@@ -222,10 +245,11 @@ def draw(app: App) -> None:
 
     session = app.editor_sessions.get(current_path)
     if session is None:
+        # Always keyed by the TAB's own path. A shader tab used to load the document's output
+        # pass instead, which was the same file back when a document had one — with several it
+        # meant every pass tab showed the output's source.
         session = (
-            app.get_session(ui_document.document.render_pass.source)
-            if tab.kind == "shader"
-            else app.open_shader_lib_file(current_path)
+            app.open_shader_lib_file(current_path)
             if tab.kind == "lib"
             else app.get_session_for_path(current_path)
         )
@@ -237,6 +261,8 @@ def draw(app: App) -> None:
     errors = (
         _script_errors_for(app, tab)
         if tab.kind == "script"
+        else edited.compile_unit.errors
+        if (edited := _pass_for_tab(app, tab)) is not None
         else ui_document.document.render_pass.compile_unit.errors
     )
     _apply_markers(editor, errors, app.editor_hover_line, current_path)

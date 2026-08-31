@@ -14,7 +14,15 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parent.parent
 _ALLOWED = {0x09, 0x0A, 0x0D}
 _SUFFIXES = {".py", ".md", ".json", ".toml", ".yaml", ".yml", ".glsl", ".sh", ".txt"}
-_SKIP_DIRS = {".git", ".venv", "__pycache__", ".ruff_cache", ".pytest_cache", "build", "dist"}
+_SKIP_DIRS = {
+    ".git",
+    ".venv",
+    "__pycache__",
+    ".ruff_cache",
+    ".pytest_cache",
+    "build",
+    "dist",
+}
 
 
 def _text_files() -> list[Path]:

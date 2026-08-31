@@ -1164,12 +1164,13 @@ class App:
         return self.get_session(ShaderSource.load(path))
 
     def get_current_session(self) -> EditorSession | None:
-        document_id = self.current_document_id
-        if not document_id or document_id not in self.ui_documents:
+        # The ACTIVE TAB's session, creating it if needed — the tab's path is the identity, so
+        # this follows whichever pass (or script, or lib file) the user is looking at. Reading
+        # the document's output pass instead was invisible while a document had one file.
+        path = self.current_editor_path
+        if path is None:
             return None
-        return self.get_session(
-            self.ui_documents[document_id].document.render_pass.source
-        )
+        return self.get_session_for_path(path)
 
     def _apply_editor_settings_to(self, editor: text_edit.TextEditor) -> None:
         settings: EditorSettings = self.app_state.editor_settings
@@ -1213,18 +1214,29 @@ class App:
             return
         document_id = self.current_document_id
         text = session.editor.get_text()
-        # The shader-save branch only applies when the active tab IS the current document's shader. A
-        # lib / script tab (or no current document — all documents deleted, id "") falls to the disk-write
-        # else (no `ui_documents[document_id]` lookup, which would KeyError on the empty id).
+        # The shader-save branch applies when the active tab is ANY pass of the current document,
+        # matched by path. Matching only the OUTPUT pass sent every other pass down the disk-write
+        # branch, where the change lands a frame later via the watcher instead of immediately. A
+        # lib / script tab (or no current document — all documents deleted, id "") falls to the
+        # disk-write else (no `ui_documents[document_id]` lookup, which would KeyError on "").
         ui_document = self.ui_documents.get(document_id)
-        if (
-            ui_document is not None
-            and session.source.path == ui_document.document.render_pass.source.path
-        ):
+        edited_pass = (
+            next(
+                (
+                    p
+                    for p in ui_document.document.passes.values()
+                    if p.source.path == session.source.path
+                ),
+                None,
+            )
+            if ui_document is not None
+            else None
+        )
+        if ui_document is not None and edited_pass is not None:
             document = ui_document.document
-            # Saving the document's own shader: replace its source, drop the program; the next
+            # Saving a pass of this document: replace its source, drop its program; the next
             # render's compile() picks up the new text + re-resolves.
-            document.render_pass.release_program(text)
+            edited_pass.release_program(text)
             # Re-render to bind a valid program — a freed program left GL-current crashes
             # the imgui renderer's restore (GLError 1281).
             document.render()
