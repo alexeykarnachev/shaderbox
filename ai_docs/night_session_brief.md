@@ -77,6 +77,19 @@ A gate that passes whether or not the bug exists is theater; the falsifier is th
 here. Re-apply reverted edits by hand — never `git checkout --` a file to undo your own
 uncommitted change (it eats the fix; `dev_flow.md` documents this).
 
+**Confirm each mutation actually mutated.** A mutation that does not run is indistinguishable
+from a gate that does not gate: both show green, and you cannot tell which you have. The sibling
+editor repo hit this while building the same target — a `raise` appended after a file's final
+`raise SystemExit(main())` was unreachable, reported exit 0, and nearly got read as a broken
+Makefile. So put the break somewhere that certainly executes (inside the function under test,
+not after its last statement), and confirm the *unmutated* command passed immediately before, so
+a green result is known to mean something.
+
+**Do not pipe anything inside the target.** Piping a gate to `tee` inside `gates` reintroduces
+exactly the bug it exists to prevent — the same repo did this and a crashing sub-gate reported
+green. `set -o pipefail` will not save you: make's shell is `dash` here too. Redirect to a file
+and check the status before anything reads it.
+
 ---
 
 ## Environment: what the Pi can and cannot do
