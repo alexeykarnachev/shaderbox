@@ -19,7 +19,7 @@
             "u_orbit_speed": 0.44999998807907104
         },
         "trail": {
-            "u_decay": 0.8999999761581421,
+            "u_decay": 0.9100000262260437,
             "u_gain": 0.3499999940395355
         }
     },
@@ -83,6 +83,70 @@
             },
             "99439937269710942332933964605809354368": {
                 "name": "u_radius",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "164059647401518007231791680240136046117": {
+                "name": "u_decay",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "223343709862356025909614278256380256175": {
+                "name": "u_gain",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "281754846088676335594954004605598837092": {
+                "name": "u_prev",
+                "is_ubo": false,
+                "gl_type": 35678,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "texture"
+            },
+            "186739805002824748247691636963146881870": {
+                "name": "u_bloom",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "63626187625819056674108660439084375667": {
+                "name": "u_glow",
+                "is_ubo": false,
+                "gl_type": 35678,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "texture"
+            },
+            "83400449315144860120754342278542602166": {
+                "name": "u_lit",
+                "is_ubo": false,
+                "gl_type": 35678,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "texture"
+            },
+            "104355082697127653013080493525903289470": {
+                "name": "u_trail",
+                "is_ubo": false,
+                "gl_type": 35678,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "texture"
+            },
+            "81499196138579870697011097508634929303": {
+                "name": "u_trail_mix",
                 "is_ubo": false,
                 "gl_type": 5126,
                 "dimension": 1,
