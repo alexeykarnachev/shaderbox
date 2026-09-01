@@ -98,17 +98,14 @@ requirement that follows: modal bindings must not collide with the global hotkey
    false from `ed_key` and falls through to the registry unchanged. Resulting UX: Ctrl+R
    = redo while focused, opens the script tab while unfocused; Ctrl+N = completion only
    mid-insert. No rebinding of defaults.
-6. **Esc: `ed_pending`-gated, one press cancels-and-defocuses.** While the editor is
-   focused: `ed_pending() or ed_mode() != NORMAL` → forward Esc to the editor (cancels a
-   count / half-typed operator / open command line, or leaves insert/visual; keeps focus);
-   else → defocus via the existing path. `ed_pending` is the ABI's dedicated query for
-   exactly this ("Ask this BEFORE sending Escape", ffi.odin) — `ed_mode` alone misses a
-   pending `3d` or an open `:` line. **Single-consumer rule:** the Esc press is consumed
-   EITHER by the drain's forward OR by `_handle_escape`'s editor branch, never both — the
-   drain marks Esc consumed when it forwards, and `_handle_escape`'s editor branch runs
-   only when unmarked (so leaving insert mode never also drops focus). The glfw-level
-   `_install_escape_filter` interplay: a focused editor means `escape_has_job()` is True,
-   so the press reaches the frame; no change needed there, stated so nobody re-derives it.
+6. **Esc belongs to the editor UNCONDITIONALLY while focused** (maintainer decision at
+   the manual pass, superseding the first-landed `ed_pending` gate — vim users hit Esc
+   reflexively in every mode, and an idle-NORMAL Esc that defocuses fights that reflex).
+   Every focused Esc forwards to the editor; keyboard defocus lives on CYCLE_REGION
+   (Ctrl+`) and the mouse. `_handle_escape`'s editor branch stays gated on the drain's
+   forward mark (`editor_esc_forwarded`), which is now always set while focused. The
+   glfw-level `_install_escape_filter`: a focused editor means `escape_has_job()` is
+   True, so the press reaches the frame; stated so nobody re-derives it.
 7. **Focus model unchanged.** The editor child window + an `invisible_button` over the
    image carry click-to-focus; `app.editor_focused` still reads
    `is_window_focused(child_windows)` after the draw; `editor_focus_requested` /
@@ -178,7 +175,22 @@ requirement that follows: modal bindings must not collide with the global hotkey
     tabs, capped at 50), re-filters while the popup is open and the prefix moves, and
     `ed_complete_cancel`s when nothing matches (stays in INSERT). `complete_open` /
     `selected` / `count` are redraw-tuple members, so navigation repaints.
-15. **TextEditor is deleted outright — no fallback path.** `imgui_color_text_edit`
+15. **Vim-reserved Ctrl chords while focused: the vim thing or nothing, never an app
+    action** (maintainer requirement at the manual pass: "hotkeys must not mess with
+    vim's bindings"). Host-side in the drain, each marked consumed so the registry
+    skips: Ctrl+D/U half-page and Ctrl+F/B full-page and Ctrl+E/Y one-line VIEW scrolls
+    outside insert mode (in `editor_visible_rows` units; DELETE_DOCUMENT and
+    OPEN_SHADER thereby never fire focused); insert-mode Ctrl+W deletes the word back
+    (vim's binding — it must NOT close the tab; CLOSE_CODE_TAB keeps normal-mode
+    Ctrl+W, where vim's own use is only a window-prefix we don't have), insert-mode
+    Ctrl+U deletes to line start, insert-mode Ctrl+P navigates/triggers completion (the
+    lib picker keeps Ctrl+P outside insert); Ctrl+O consume-noops (the jump-back reflex
+    must not open the project dialog; no jumplist exists yet). Known deviations, judged
+    acceptable: the scrolls move the VIEW not the cursor (real vim moves both — filed
+    editor-side as a keymap ask), Ctrl+V stays host paste (no visual-block mode
+    exists), Ctrl+A/X increment/decrement don't exist. The app halves of every
+    suppressed chord stay reachable while unfocused.
+16. **TextEditor is deleted outright — no fallback path.** `imgui_color_text_edit`
     imports go from `editor_types.py`, `app.py`, `tabs/code.py`; the palette call dies.
     Doc fallout is enumerated in Files touched (conventions bullet, skill §8 lines,
     dev_flow module map). Per the NO-backward-compat rule there is no dual-editor mode.
@@ -214,7 +226,8 @@ requirement that follows: modal bindings must not collide with the global hotkey
 | Unfocused drain gate (D4) | `hotkeys.dispatch_commands` → drain's `editor_focused` check | MV 2 + unit test: drain with `editor_focused=False` forwards nothing |
 | Same-frame post-Esc queue drop (D4) | the drain's own loop break | unit test: queue `[Esc, 'd']` in idle-NORMAL → `ed_key` never sees `d` |
 | Consumed-chord skip (D5) | `_dispatch_registry`'s membership test on `app.editor_consumed_chords` | MV 3 + unit test: seed set with Ctrl+R chord int → `OPEN_SCRIPT` callback not invoked; empty set → invoked |
-| Esc single-consumer (D6) | drain's forward-mark read by `_handle_escape`'s editor branch | MV 4a: leaving insert must NOT set `editor_defocus_requested` |
+| Esc single-consumer (D6) | drain's forward-mark read by `_handle_escape`'s editor branch | unit test: Esc forwards in EVERY mode, defocus branch quiet |
+| Vim-reserved chords (D15) | the drain's `_handle_vim_chord` + the consumed-set skip | unit tests: Ctrl+D scrolls AND suppresses DELETE_DOCUMENT; insert Ctrl+W deletes a word; Ctrl+O noops consumed |
 | Copilot read-only lock (D12) | `tabs/code.py`'s per-frame `ed_set_read_only` | MV 6: typing refused mid-turn, host edit lands |
 | Redraw gate (D3) | the render path's `should_redraw` branch | MV 10 (counted) + per-field domain unit test |
 
@@ -234,11 +247,15 @@ Each step fails for one reason and names its falsifier; the consumer is verified
    `dd`, press Ctrl+R once — the line comes back AND `len(app.editor_tabs)` is
    unchanged. Falsifier: without the skip, the same press also appends a script tab.
    Unfocused: Ctrl+R opens the script tab (baseline `GLOBAL` behavior, unchanged).
-4. **Esc ladder, split:** (a) insert + Esc → normal mode, still focused, and
-   `editor_defocus_requested` stayed False (falsifier: an ungated defocus branch fires
-   on the same press); (b) normal + pending `3d` + Esc → pending cancelled, still
-   focused (falsifier: a mode-only gate defocuses here and drops the phrase); (c) normal
-   idle + Esc → defocused.
+4. **Esc never leaves the editor:** (a) insert + Esc → normal mode, still focused;
+   (b) normal + pending `3d` + Esc → pending cancelled, still focused; (c) normal idle
+   + Esc → STILL focused (falsifier: any defocus on Esc is the regression); Ctrl+`
+   cycles the region out, a click elsewhere defocuses.
+4b. **Vim chords while focused:** Ctrl+D/U half-page scroll (no document deleted — the
+   falsifier), Ctrl+F/B page, Ctrl+E/Y line; in insert: Ctrl+W deletes the word back
+   (tab stays open — the falsifier), Ctrl+U clears to line start, Ctrl+P completes;
+   Ctrl+O does nothing (no project dialog). Unfocused: Ctrl+D/E/O/W regain their app
+   meanings.
 5. **Error jump verifies the scroll consumer:** break a shader with the error line BELOW
    the fold. Strip click / F8 → caret on the line, line V-LINE-selected, view scrolled
    to center it. Falsifier: an unwired `ed_scroll_to_line` leaves the error off-screen

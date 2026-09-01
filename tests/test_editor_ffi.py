@@ -145,6 +145,7 @@ def _drain_app(editor: Editor, focused: bool = True, popup: bool = False) -> Any
         copilot_turn_active=False,
         editor_completion_requested=False,
         editor_clipboard_seen="",
+        editor_visible_rows=20,
     )
 
 
@@ -204,22 +205,6 @@ def test_esc_with_pending_phrase_is_forwarded() -> None:
     _drain_editor_input(app)
     assert app.editor_esc_forwarded is True
     assert not e.is_pending()
-    e.close()
-
-
-def test_idle_esc_drops_the_queue_tail() -> None:
-    # [Esc, 'd'] in one frame: the Esc defocuses, so the 'd' belongs to a
-    # defocused editor and must never arrive.
-    e = _editor()
-    app = _drain_app(e)
-    app.editor_key_events = [
-        KeyEvent(KeyCode.ESCAPE, 0),
-        translate_char(ord("d")),
-        translate_char(ord("d")),
-    ]
-    _drain_editor_input(app)
-    assert app.editor_esc_forwarded is False, "idle-NORMAL Esc is the host's"
-    assert e.get_text() == "one\ntwo\nthree\n", "the tail 'dd' must not edit"
     e.close()
 
 

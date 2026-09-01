@@ -13,6 +13,7 @@ uniform sampler2D u_prev;  // filled by `trail` — itself, i.e. the previous fr
 uniform float u_decay = 0.9;
 uniform float u_gain = 0.35;
 
+
 out vec4 fs_color;
 
 void main() {

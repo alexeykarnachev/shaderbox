@@ -251,6 +251,7 @@ _SIG: dict[str, tuple[object, Sequence[object]]] = {
     "ed_undo": (ctypes.c_bool, [ctypes.c_void_p]),
     "ed_redo": (ctypes.c_bool, [ctypes.c_void_p]),
     "ed_insert_at_cursor": (None, [ctypes.c_void_p, ctypes.c_char_p]),
+    "ed_delete_range": (None, [ctypes.c_void_p] + [ctypes.c_int32] * 4),
     "ed_replace_selection": (ctypes.c_bool, [ctypes.c_void_p, ctypes.c_char_p]),
     "ed_set_selection": (None, [ctypes.c_void_p] + [ctypes.c_int32] * 4),
     "ed_pending": (ctypes.c_bool, [ctypes.c_void_p]),
@@ -408,6 +409,10 @@ class Editor:
 
     def replace_selection(self, text: str) -> bool:
         return self._lib.ed_replace_selection(self._h, text.encode())
+
+    def delete_range(self, start: tuple[int, int], end: tuple[int, int]) -> None:
+        """Host delete, one undo step; end is exclusive, columns are codepoints."""
+        self._lib.ed_delete_range(self._h, start[0], start[1], end[0], end[1])
 
     # --- language / theme -------------------------------------------------
 

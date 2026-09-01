@@ -548,10 +548,11 @@ def draw(app: App) -> None:
     # The text origin is the host-chosen gutter width: the layout reserves
     # nothing itself (the reference UI offsets the same way). Width converges a
     # frame behind the line count — cell metrics answer against the last layout.
-    cell_w, _cell_h = editor.get_cell_size()
+    cell_w, cell_h = editor.get_cell_size()
     gutter_px = (
         editor.get_gutter_cells() * cell_w if settings.show_line_numbers else 0.0
     )
+    app.editor_visible_rows = int(size_px[1] / cell_h) if cell_h > 0 else 0
     _drive_completion(app, editor, tab)
     editor.layout(
         (float(size_px[0]), float(size_px[1])), px_per_em, origin=(gutter_px, 0.0)

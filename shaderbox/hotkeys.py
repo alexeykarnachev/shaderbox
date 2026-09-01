@@ -55,15 +55,14 @@ def _drain_editor_input(app: App) -> None:
         app.editor_clipboard_seen = clip
     for event in events:
         if event.code == KeyCode.ESCAPE:
-            if editor.is_pending() or editor.get_mode() != Mode.NORMAL:
-                editor.key(KeyCode.ESCAPE)
-                app.editor_esc_forwarded = True
-                continue
-            # Idle NORMAL: Esc is the host's — clear any selection remnant and let
-            # _handle_escape defocus. Drop the queue tail: keys typed after this
-            # press belong to a defocused editor.
-            editor.clear_selection()
-            break
+            # Esc is vim's modal key — the editor owns it UNCONDITIONALLY while
+            # focused (maintainer decision, 067 manual pass). Defocus lives on
+            # CYCLE_REGION and the mouse, never on Esc.
+            editor.key(KeyCode.ESCAPE)
+            app.editor_esc_forwarded = True
+            continue
+        if _handle_vim_chord(app, editor, event):
+            continue
         if _handle_clipboard(app, editor, event):
             continue
         consumed = editor.key(event.code, event.mods, event.text)
@@ -81,6 +80,88 @@ def _drain_editor_input(app: App) -> None:
     if register and register != app.editor_clipboard_seen:
         glfw.set_clipboard_string(app.window, register)
         app.editor_clipboard_seen = register
+
+
+# Vim-reserved Ctrl chords while the editor is focused: each either does the vim
+# thing (host-side, view-scroll semantics) or nothing — NEVER an app command.
+# Scroll steps are in visible rows; the app half of each chord (DELETE_DOCUMENT on
+# Ctrl+D, OPEN_SHADER on Ctrl+E, OPEN_PROJECT on Ctrl+O) stays reachable unfocused.
+_VIM_SCROLL_CHORDS: frozenset[str] = frozenset("dufbey")
+
+_WORD_CHARS: str = "_"
+
+
+def _is_word_char(c: str) -> bool:
+    return c.isalnum() or c in _WORD_CHARS
+
+
+def _delete_word_back(editor: Editor) -> None:
+    # vim's insert-mode Ctrl+W: whitespace run, then one word (or punct run).
+    pos = editor.get_current_cursor_position()
+    if pos.column == 0:
+        return
+    line = editor.get_text().split("\n")[pos.line]
+    i = pos.column
+    while i > 0 and line[i - 1].isspace():
+        i -= 1
+    if i > 0:
+        if _is_word_char(line[i - 1]):
+            while i > 0 and _is_word_char(line[i - 1]):
+                i -= 1
+        else:
+            while (
+                i > 0 and not line[i - 1].isspace() and not _is_word_char(line[i - 1])
+            ):
+                i -= 1
+    editor.delete_range((pos.line, i), (pos.line, pos.column))
+
+
+def _handle_vim_chord(app: App, editor: Editor, event: KeyEvent) -> bool:
+    if event.code != KeyCode.CHAR or event.mods != KeyMod.CTRL:
+        return False
+    ch = event.text
+    insert = editor.get_mode() == Mode.INSERT
+    handled = False
+    if ch in _VIM_SCROLL_CHORDS:
+        handled = True
+        if insert:
+            # vim's insert-mode meanings differ (dedent, char-below, ...); the one
+            # worth having is Ctrl+U = delete to line start. The rest consume-noop
+            # so no app command fires mid-typing.
+            if ch == "u":
+                pos = editor.get_current_cursor_position()
+                if pos.column > 0:
+                    editor.delete_range((pos.line, 0), (pos.line, pos.column))
+        else:
+            rows = max(1, app.editor_visible_rows)
+            step = {
+                "d": max(1, rows // 2),
+                "u": -max(1, rows // 2),
+                "f": rows,
+                "b": -rows,
+                "e": 1,
+                "y": -1,
+            }[ch]
+            editor.set_scroll(editor.get_scroll() + step)
+    elif ch == "o":
+        # vim's jump-back reflex: consume-noop (no jumplist yet); OPEN_PROJECT
+        # must not fire mid-editing.
+        handled = True
+    elif ch == "w" and insert:
+        # vim's insert-mode Ctrl+W deletes the word back — it must NOT close the tab.
+        _delete_word_back(editor)
+        handled = True
+    elif ch == "p" and insert:
+        # vim's insert-mode Ctrl+P: previous candidate when the popup shows, else
+        # trigger completion (the lib picker keeps Ctrl+P outside insert mode).
+        if editor.complete_open():
+            editor.key(KeyCode.UP)
+        else:
+            app.editor_completion_requested = True
+        handled = True
+    if handled and event.imgui_chord:
+        app.editor_consumed_chords.add(event.imgui_chord)
+    return handled
 
 
 def _read_clipboard(app: App) -> str:
