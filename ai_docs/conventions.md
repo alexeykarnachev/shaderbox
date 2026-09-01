@@ -842,9 +842,13 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   (feature 067). Rebuild: in the editor repo at that sha, `odin build ffi -build-mode:shared
   -no-entry-point -out:libeditor.so`, copy the three files, update `VERSION`. The binary is
   linux-x86_64 only — `build.sh` strips it from the Windows stage and `verify_clean` aborts a
-  Windows bundle carrying it; a Windows `.dll` is a ship-time prerequisite. The editor repo's
-  measured expectation (its feature 004): a Windows build is an `odin build` TARGET change, not a
-  port — nothing in `src/`/`ffi/` is platform-specific, no C library links, the atlas is committed. Two measured facts the
+  Windows bundle carrying it; a Windows `.dll` is a ship-time prerequisite. MEASURED (editor repo
+  feature 004, its commit b787987): the code is fully portable (`odin check` passes for
+  windows_amd64; `-build-mode:obj` emits complete COFF objects with all exports; no
+  platform-conditional code, no C links) but **Odin cannot cross-LINK from linux** ("Linking for
+  cross compilation ... not yet supported", compiler-level) — so the `.dll` is built ON a Windows
+  host with the same command, `-out:libeditor.dll`, at ship time, alongside the runtime verify
+  BUILDING.md already requires there. Two measured facts the
   next rebuild must not "fix": the layout's glyph UVs address the atlas PNG top-row-first (an upload
   flip renders every glyph upside down), and `ed_revision` rises across `ed_set_text` (the dirty
   flag depends on it).
