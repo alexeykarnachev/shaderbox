@@ -6,9 +6,15 @@ Catches import errors, callback dispatch failures, popup state-machine crashes,
 released-texture binding errors. Doesn't catch visual bugs.
 
 Usage: `uv run python scripts/smoke.py` (exit 0 on success, non-zero on failure).
+
+A display-less box cannot run the smoke at all, and that is not a failure — the skip path exits 0,
+so `build.sh` and a direct `make smoke` keep their two-outcome contract. A caller that must tell a
+skip apart from a pass (`make gates` does) sets `SHADERBOX_SMOKE_SKIP_EXIT` to the code it wants the
+skip to return instead.
 """
 
 import json
+import os
 import shutil
 import sys
 import tempfile
@@ -30,6 +36,20 @@ from shaderbox.ui import update_and_draw
 from shaderbox.ui_regions import ActiveRegion, DocumentTab
 
 N_FRAMES: int = 200
+
+
+def _skip_exit_code() -> int:
+    # Default 0: a display-less box has not failed anything, and every direct caller
+    # (`make smoke`, `build.sh`) reads exit 0 as "nothing wrong here". A caller that
+    # must score a skip apart from a pass sets SHADERBOX_SMOKE_SKIP_EXIT.
+    raw: str = os.environ.get("SHADERBOX_SMOKE_SKIP_EXIT", "0")
+    try:
+        return int(raw)
+    except ValueError:
+        logger.warning(
+            f"smoke: SHADERBOX_SMOKE_SKIP_EXIT={raw!r} is not an integer; skipping with 0"
+        )
+        return 0
 
 
 def _has_gpu_window() -> bool:
@@ -172,7 +192,7 @@ def main() -> int:
             "smoke: SKIPPED — no GPU window available (display-less box / no hardware GL). "
             "The GUI smoke needs a real glfw window; run it on a machine with a display."
         )
-        return 0
+        return _skip_exit_code()
 
     with tempfile.TemporaryDirectory(prefix="shaderbox-smoke-") as tmp:
         project = _seed_tmp_project(Path(tmp))

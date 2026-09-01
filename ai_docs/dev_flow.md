@@ -486,6 +486,35 @@ mechanics that avoid the foot-guns hit in practice:
 - **Tuned uniform values persist only on SAVE** (document-switch / app shutdown), into `document.json`'s
   `uniforms`. To read a user's live-tuned values off disk, have them save (switch documents / close) first.
 
+### `make gates`
+**The one command to run before declaring anything done.** Runs `check` -> `test` -> `smoke` in that
+order (cheapest first, so a broken tree fails fast), stops at the first failure, and exits with one
+code for the lot. The individual targets below stay useful on their own -- reach for them when you
+want a single gate during an inner loop -- but `gates` is what a "is this green?" question is
+answered with.
+
+It exists because the prose rule under `### make check` did not hold. Twice now this repo has
+announced a passing gate that was failing: once by grepping a tool's output instead of reading its
+status, once by capturing a pipe's exit code. A rule with no gate is a wish, so the rule is now a
+target.
+
+Three things it does that a hand-rolled `make check && make test && make smoke` does not:
+
+- **Nothing inside it is piped.** Each gate redirects to a log file and its status is read before
+  anything touches that log. `set -o pipefail` would not help -- make's shell here is `dash`.
+- **Skipped is an outcome, distinct from passed.** `scripts/smoke.py` exits 0 when it skips for want
+  of a display, which is right for its direct callers (`make smoke`, `build.sh`) and wrong for a
+  composing one -- a display-less box takes that branch every run, so a naive composition scores a
+  skip as a pass. `gates` sets `SHADERBOX_SMOKE_SKIP_EXIT=87`, which lifts the skip onto its own
+  code, and the summary line says `GREEN, smoke SKIPPED` rather than plain `GREEN`. That gate is
+  invoked as `uv run python scripts/smoke.py` rather than via `$(MAKE) smoke` on purpose: a sub-make
+  reports its own 2 for any failed child, which would erase the 87.
+- **It warns when stdout is not a terminal**, naming `PIPESTATUS` and the redirect-then-read shape.
+  A warning, not a refusal -- redirecting to a file is legitimate. It fires at the moment the
+  information is lost, which is the only time anyone would read it.
+
+Judge it by the exit code, captured unpiped: `make gates > /tmp/gates.log 2>&1; echo $?`.
+
 ### `make check`
 The single canonical lint/typecheck command — delegates to `uv run pre-commit run --all-files`:
 ruff fix, ruff format, then **pyright** (chosen over mypy on purpose — fewer false positives, less
@@ -495,7 +524,9 @@ failure** — the repo is currently at 0 pyright errors; keep it that way.
 
 **Judge it by the EXIT CODE, unpiped, and run it TWICE.** `$?` after `make check | tail`
 is the PIPE's exit code — 067 reported a green gate that was red exactly this way; capture
-the code before any pipe (or use `PIPESTATUS`). ruff and the formatter REWRITE files, and
+the code before any pipe (or use `PIPESTATUS`). `make gates` above composes this correctly
+and says so when stdout is not a terminal; the rule still applies when you run `check` alone.
+ruff and the formatter REWRITE files, and
 pre-commit exits non-zero whenever a hook modified something — so a first run can exit 2 with
 nothing wrong and a second run exits 0. A non-zero code on the SECOND run is a genuine failure.
 Reading the output instead of the code is how 064 reported green for a stretch while it was red:

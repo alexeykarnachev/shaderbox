@@ -1,4 +1,4 @@
-.PHONY: run run-bundle check test smoke release
+.PHONY: run run-bundle check test smoke gates release
 .ONESHELL:
 
 # Run the app from source (the dev / personal-use path).
@@ -42,6 +42,86 @@ test:
 # tabs/ / hotkeys.py before declaring done.
 smoke:
 	uv run python scripts/smoke.py
+
+# The composed gate: check -> test -> smoke, cheapest first, stopping at the first
+# failure, one exit code for the lot. This target exists because a prose rule did not
+# hold: the repo twice announced a green gate that was red, once by reading a tool's
+# output instead of its status and once by capturing a pipe's exit code. So nothing
+# here is piped -- each gate redirects to a log and its status is read before anything
+# touches that log (make's shell is dash; `set -o pipefail` is not available anyway).
+#
+# `check` runs twice before it is believed. pre-commit exits non-zero whenever a hook
+# MODIFIED a file, which ruff's formatter and pyright's env bootstrap both legitimately
+# do on a first run -- so a first-run non-zero says "something changed", not "something
+# is wrong". A second run over the now-settled tree is the one that carries a verdict.
+# This is the rule `dev_flow.md ### make check` states in prose; here it is executable.
+#
+# Three outcomes, not two. `scripts/smoke.py` exits 0 when it skips for want of a
+# display, which is the right contract for its direct callers but makes a skip
+# indistinguishable from a pass to a composing caller -- and a display-less box hits
+# that branch every run. SHADERBOX_SMOKE_SKIP_EXIT lifts the skip onto its own code so
+# the summary can say "skipped" instead of quietly scoring it as "passed". That code has
+# to survive the call, and a sub-make does not preserve it -- make reports its own 2 for
+# any failed child -- so this one gate runs `scripts/smoke.py` directly instead of via
+# `$(MAKE) smoke`. The `smoke` target stays the entry point for everyone else.
+gates:
+	@set -e
+	log=$${TMPDIR:-/tmp}/shaderbox-gates.log
+	rm -f "$$log"
+	status=0
+	smoke_outcome=passed
+	echo "== gates: check =="
+	rc=0
+	$(MAKE) --no-print-directory check >"$$log" 2>&1 || rc=$$?
+	if [ $$rc -ne 0 ]; then
+		echo "== gates: check exited $$rc on the first run; re-running (hooks rewrite files) =="
+		rc=0
+		$(MAKE) --no-print-directory check >"$$log" 2>&1 || rc=$$?
+	fi
+	if [ $$rc -ne 0 ]; then
+		cat "$$log"
+		echo "== gates: FAILED at check (exit $$rc); test and smoke not run =="
+		status=$$rc
+	else
+		echo "== gates: check passed =="
+		echo "== gates: test =="
+		rc=0
+		$(MAKE) --no-print-directory test >"$$log" 2>&1 || rc=$$?
+		if [ $$rc -ne 0 ]; then
+			cat "$$log"
+			echo "== gates: FAILED at test (exit $$rc); smoke not run =="
+			status=$$rc
+		else
+			echo "== gates: test passed =="
+			echo "== gates: smoke =="
+			rc=0
+			SHADERBOX_SMOKE_SKIP_EXIT=87 uv run python scripts/smoke.py >"$$log" 2>&1 || rc=$$?
+			if [ $$rc -eq 87 ]; then
+				cat "$$log"
+				echo "== gates: smoke SKIPPED (no GPU window on this box) =="
+				smoke_outcome=skipped
+			elif [ $$rc -ne 0 ]; then
+				cat "$$log"
+				echo "== gates: FAILED at smoke (exit $$rc) =="
+				status=$$rc
+			else
+				echo "== gates: smoke passed =="
+			fi
+		fi
+	fi
+	if [ ! -t 1 ]; then
+		echo "== gates: stdout is not a terminal. If you piped this, \$$? is the PIPE's"
+		echo "==        exit code, not the gate's -- use PIPESTATUS, or redirect to a"
+		echo "==        file and read \$$? before anything else runs. =="
+	fi
+	if [ $$status -ne 0 ]; then
+		echo "== gates: RED (exit $$status) =="
+	elif [ "$$smoke_outcome" = skipped ]; then
+		echo "== gates: GREEN, smoke SKIPPED -- check passed, test passed, smoke did not run =="
+	else
+		echo "== gates: GREEN -- check passed, test passed, smoke passed =="
+	fi
+	exit $$status
 
 # Cut a release: bump pyproject version, commit, tag. Does NOT build or push
 # (./build.sh then ./upload-itch.sh stay separate). Semver bump policy lives in
