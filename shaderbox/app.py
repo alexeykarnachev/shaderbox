@@ -443,12 +443,17 @@ class App:
             # between press and release, and swallowing the release of a forwarded press
             # leaves imgui's Escape logically held — every InputText then self-cancels on
             # the key-repeat ticks (conventions.md ## Known quirks).
-            if (
-                key == glfw.KEY_ESCAPE
-                and action != glfw.RELEASE
-                and not self.escape_has_job()
-            ):
-                return  # swallow: nothing to dismiss, leave nav untouched
+            if key == glfw.KEY_ESCAPE and action != glfw.RELEASE:
+                # A focused editor owns Esc WHOLLY (067): the drain already queued it
+                # above; imgui must not also see the press, or its nav-cancel climbs
+                # out of the editor child and defocuses it (#8059 — the exact
+                # defocus-on-Esc the vim keymap forbids). Popups aren't affected:
+                # an open popup means the editor is not focused, so Esc still
+                # reaches imgui and _handle_escape there.
+                if self.editor_focused and not self.any_popup_open():
+                    return
+                if not self.escape_has_job():
+                    return  # swallow: nothing to dismiss, leave nav untouched
             renderer_cb(window, key, scancode, action, mods)
 
         def char_callback(window: Any, codepoint: int) -> None:

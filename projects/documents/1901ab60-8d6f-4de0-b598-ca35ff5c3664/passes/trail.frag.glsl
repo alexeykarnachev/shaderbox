@@ -8,7 +8,7 @@
 in vec2 vs_uv;
 
 uniform sampler2D u_src;   // filled by `scene`
-uniform sampler2D u_prev;  // filled by `trail` — itself, i.e. the previous frame
+uniform sampler2D u_prev;  // filled by `trail` itself, i.e. the previous frame
 
 uniform float u_decay = 0.9;
 uniform float u_gain = 0.35;
