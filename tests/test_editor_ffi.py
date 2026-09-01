@@ -7,6 +7,7 @@ from typing import Any
 
 import glfw
 import numpy as np
+import pytest
 from imgui_bundle import imgui
 
 from shaderbox.commands import COMMAND_SPECS, CommandId
@@ -21,6 +22,18 @@ from shaderbox.editor.render import (
 from shaderbox.editor_types import EditorSession
 from shaderbox.hotkeys import _drain_editor_input
 from shaderbox.shader_source import ShaderSource
+
+
+@pytest.fixture(autouse=True)
+def _fake_clipboard(monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
+    # The drain syncs the OS clipboard with the editor register; tests run
+    # windowless, so glfw's clipboard is faked with a dict.
+    store: dict[str, str] = {"text": ""}
+    monkeypatch.setattr(glfw, "get_clipboard_string", lambda _w: store["text"].encode())
+    monkeypatch.setattr(
+        glfw, "set_clipboard_string", lambda _w, t: store.__setitem__("text", t)
+    )
+    return store
 
 
 def _editor(text: str = "one\ntwo\nthree\n") -> Editor:
@@ -129,6 +142,9 @@ def _drain_app(editor: Editor, focused: bool = True, popup: bool = False) -> Any
         any_popup_open=lambda: popup,
         get_current_session_if_exists=lambda: session,
         window=None,
+        copilot_turn_active=False,
+        editor_completion_requested=False,
+        editor_clipboard_seen="",
     )
 
 
@@ -354,6 +370,41 @@ def test_completion_state_moves_the_redraw_tuple() -> None:
     assert should_redraw(base, opened), "an opening popup must repaint"
     e.key(KeyCode.DOWN)
     assert should_redraw(opened, _state(e)), "moving the selection must repaint"
+    e.close()
+
+
+# --- register-clipboard unification (editor commit 4befeaf) -------------------
+
+
+def test_yank_reaches_the_system_clipboard(_fake_clipboard: dict[str, str]) -> None:
+    e = _editor()
+    app = _drain_app(e)
+    app.editor_clipboard_seen = ""
+    app.editor_key_events = [translate_char(ord("y")), translate_char(ord("y"))]
+    _drain_editor_input(app)
+    assert _fake_clipboard["text"] == "one\n", (
+        "a yy must land in the OS clipboard — one slot, not two clipboards"
+    )
+    e.close()
+
+
+def test_p_pastes_the_system_clipboard(_fake_clipboard: dict[str, str]) -> None:
+    _fake_clipboard["text"] = "FROM_OUTSIDE"
+    e = _editor()
+    app = _drain_app(e)
+    app.editor_clipboard_seen = ""
+    app.editor_key_events = [translate_char(ord("p"))]
+    _drain_editor_input(app)
+    assert "FROM_OUTSIDE" in e.get_text(), (
+        "p must paste what the user copied elsewhere (sync-in precedes the keys)"
+    )
+    e.close()
+
+
+def test_dd_then_p_round_trips() -> None:
+    e = _editor()
+    e.feed("ddp")
+    assert e.get_text() == "two\none\nthree\n", "dd+p moves the line down (vim)"
     e.close()
 
 

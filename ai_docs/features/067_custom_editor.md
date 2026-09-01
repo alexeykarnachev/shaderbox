@@ -24,8 +24,9 @@ requirement that follows: modal bindings must not collide with the global hotkey
   Trigger: next `/ship`. NOT deferred: `build.sh` must already exclude the `.so` from the
   Windows stage (see Files touched) — a linux ELF silently riding the Windows zip is a
   build defect from the day the binary is committed.
-- **Vim registers / yank-paste** — editor-side product question, filed with the editor
-  session (its feature 004). Host-side clipboard is Ctrl+C/X/V (D8).
+- *(resolved during the wave)* Vim registers were an editor-side product question; the
+  maintainer decided ONE unnamed register (editor 4befeaf) and D8 now unifies it with the
+  OS clipboard. Named registers / the numbered ring stay editor-side out of scope.
 - **Caret blink** — steady caret; revisit only if it reads badly in dogfood.
 - **imgui-side font of the gutter matching the atlas font** — gutter numbers render in the
   app UI font. Revisit if misalignment reads badly.
@@ -114,11 +115,14 @@ requirement that follows: modal bindings must not collide with the global hotkey
    `editor_defocus_requested` / `editor_was_ever_focused` keep their meanings. The child
    gets `no_nav_inputs | no_scrollbar | no_scroll_with_mouse`. The TextEditor
    first-render-focus-grab quirk disappears.
-8. **Clipboard is host-wired: Ctrl+C copy, Ctrl+X cut, Ctrl+V paste** (glfw clipboard;
-   copy/cut act on the visual selection, paste replaces the selection or inserts at the
-   caret). Handled in the drain before `ed_key` (they are unbound editor-side anyway).
-   Registers don't exist in the keymap; `yy`/`p` not carrying text is a known editor-side
-   product question, not ours to fix here.
+8. **Clipboard: Ctrl+C/X/V host-wired, UNIFIED with the editor's unnamed register**
+   (editor commit 4befeaf gave the keymap one register — dd/yy/x/cw write it, p/P paste
+   it). One slot, never two clipboards that disagree: the drain syncs OS→register before
+   the frame's keys (so `p` pastes what was copied anywhere) and register→OS after them
+   (so a `yy` is Ctrl+V-able in any app); Ctrl+C/X also write the register immediately.
+   Linewise is inferred from a trailing newline. At most one OS round-trip per keyed
+   frame; per-handle registers reconcile on a tab switch's first keypress. Ctrl+V stays
+   the host insert path (works in insert mode; vim-paste semantics belong to p/P).
 9. **Chrome is host-drawn imgui, on the ABI's furniture queries.** Gutter: the HOST
    reserves the space — `ed_layout` reserves nothing, so the layout origin's x is the
    gutter width (`ed_gutter_cells` × the cell width, converging one frame behind a

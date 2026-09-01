@@ -45,6 +45,14 @@ def _drain_editor_input(app: App) -> None:
     if session is None:
         return
     editor = session.editor
+    # Clipboard <-> register unification (editor commit 4befeaf): ONE slot, so
+    # `p` pastes what the OS clipboard holds and a `yy` is Ctrl+V-able anywhere.
+    # Synced at the drain boundaries — at most one OS round-trip per keyed frame,
+    # and a tab switch reconciles on its first keypress (registers are per-handle).
+    clip = _read_clipboard(app)
+    if clip and clip != app.editor_clipboard_seen:
+        editor.set_register(clip, linewise=clip.endswith("\n"))
+        app.editor_clipboard_seen = clip
     for event in events:
         if event.code == KeyCode.ESCAPE:
             if editor.is_pending() or editor.get_mode() != Mode.NORMAL:
@@ -69,6 +77,21 @@ def _drain_editor_input(app: App) -> None:
                 and editor.get_mode() == Mode.INSERT
             ):
                 app.editor_completion_requested = True
+    register = editor.get_register()
+    if register and register != app.editor_clipboard_seen:
+        glfw.set_clipboard_string(app.window, register)
+        app.editor_clipboard_seen = register
+
+
+def _read_clipboard(app: App) -> str:
+    # glfw raises on a clipboard holding no convertible text (X11) — read as "empty".
+    try:
+        raw = glfw.get_clipboard_string(app.window)
+    except glfw.GLFWError:
+        return ""
+    if not raw:
+        return ""
+    return raw.decode() if isinstance(raw, bytes) else raw
 
 
 def _handle_clipboard(app: App, editor: Editor, event: KeyEvent) -> bool:
@@ -82,6 +105,8 @@ def _handle_clipboard(app: App, editor: Editor, event: KeyEvent) -> bool:
         selected = editor.get_selection_text()
         if selected:
             glfw.set_clipboard_string(app.window, selected)
+            editor.set_register(selected, linewise=selected.endswith("\n"))
+            app.editor_clipboard_seen = selected
             if event.text == "x" and not app.copilot_turn_active:
                 editor.replace_selection("")
     elif not app.copilot_turn_active:

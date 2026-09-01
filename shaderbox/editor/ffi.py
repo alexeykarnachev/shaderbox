@@ -177,6 +177,12 @@ _SIG: dict[str, tuple[object, Sequence[object]]] = {
     ),
     "ed_complete_cancel": (None, [ctypes.c_void_p]),
     "ed_set_host_completion": (None, [ctypes.c_void_p, ctypes.c_bool]),
+    "ed_register": (
+        ctypes.c_int32,
+        [ctypes.c_void_p, _P(ctypes.c_ubyte), ctypes.c_int32],
+    ),
+    "ed_register_linewise": (ctypes.c_bool, [ctypes.c_void_p]),
+    "ed_set_register": (None, [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_bool]),
     "ed_set_color": (
         ctypes.c_bool,
         [ctypes.c_void_p, ctypes.c_int32] + [ctypes.c_float] * 4,
@@ -499,6 +505,19 @@ class Editor:
     def complete_cancel(self) -> None:
         """Close the popup without touching the buffer or leaving INSERT."""
         self._lib.ed_complete_cancel(self._h)
+
+    def get_register(self) -> str:
+        """The unnamed register's text — what dd/yy/x wrote and p pastes."""
+        n = self._lib.ed_register(self._h, _TEXT_BUF, len(_TEXT_BUF))
+        while n >= len(_TEXT_BUF) - 4:
+            _grow_text_buf()
+            n = self._lib.ed_register(self._h, _TEXT_BUF, len(_TEXT_BUF))
+        return "" if n <= 0 else bytes(_TEXT_BUF[:n]).decode()
+
+    def set_register(self, text: str, linewise: bool = False) -> None:
+        """Write the register — the host's way to make `p` paste the system
+        clipboard (one slot, never two clipboards that disagree)."""
+        self._lib.ed_set_register(self._h, text.encode(), linewise)
 
     def set_host_completion(self, on: bool) -> None:
         """Suppress the built-in buffer-word source: Ctrl+N stays consumed but

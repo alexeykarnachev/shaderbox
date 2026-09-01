@@ -251,6 +251,9 @@ class App:
         self.editor_completion_requested: bool = False
         # The prefix the last offer was filtered by; a moving prefix re-filters.
         self.editor_completion_prefix: str | None = None
+        # Last text synced between the OS clipboard and the editor's unnamed
+        # register (one slot — `p` pastes the clipboard, a yank is Ctrl+V-able).
+        self.editor_clipboard_seen: str = ""
 
         # Shipped-library sync BEFORE the session builds the first lib index: seeds a
         # fresh box, follows shipped updates on pristine files, never touches edits.
