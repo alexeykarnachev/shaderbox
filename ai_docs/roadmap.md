@@ -26,13 +26,22 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-08-30 (065 complete in code; two checks owed that this box cannot run). -->
-**ACTIVE: 065 pass graph — all nine stages are landed. What remains is two checks this box
-cannot run: a maintainer's `make run` for checks 13-15 and the panel's look, and a `/dogfood` run
-for check 16 (real API cost). Do those before starting anything new.** Read
-`ai_docs/features/065_pass_graph/01_spec.md` (D1-D16, the `graph.json` schema, the nine-stage order,
-sixteen falsifiable checks); `00_facts.md` beside it is the verified evidence it was written
-against, including three corrections to claims made earlier in the work.
+<!-- As of 2026-08-31 (065 code-complete; the maintainer is reviewing the UI hands-on). -->
+**ACTIVE: 065 pass graph — all nine stages landed and the engine is solid. The maintainer is now
+reviewing it IN THE APP, and the next session polishes what that review finds. Start by asking
+what they saw; do not start new work.** The UI half was built on a display-less box and every
+aesthetic call is theirs. Read `ai_docs/features/065_pass_graph/01_spec.md` (D1-D16, the
+`graph.json` schema, the nine-stage order, sixteen falsifiable checks) and its
+`## Review notes — the maintainer's hands-on pass`, which carries what has already come back.
+
+**Three findings from their first look, all fixed** (`fa3d9b0`, `4640726`, `efb5d26`): the pass
+list's `open` button showed the same shader whichever row you clicked (three consumers resolved
+"the document's shader" as the OUTPUT pass); tabs all read `<document> (shader)` and told each
+other apart by nothing; and the pass list was a tall column of rows whose target controls exposed
+raw model fields — moderngl's `f1`/`f2`/`f4` dtype strings and `TargetConfig` field names as four
+bare widgets. It is a horizontal strip of live thumbnails now, with named formats ("16-bit float")
+and a `?` on every control. **Expect more of this kind** — the UI has had one pass of review, not
+several.
 
 **What runs today.** A document holds `passes` plus a `PassGraph` and draws them in dependency
 order, each exactly once; a pass reading itself gets its previous frame; an input naming a pass that
@@ -41,10 +50,11 @@ the output pass and starts cold. It all round-trips: `passes/<name>.frag.glsl` +
 `media/<pass>/`, salvaged per key, with the shipped examples and the dev sandbox re-authored in the
 new shape by hand (no migration code, per the standing rule).
 
-**Engine and persistence checks 1-6 and 8-12 pass** (`test_document_graph.py`,
-`test_pass_render.py`, `test_graph_persistence.py`), including byte-identical pixels against the
-pre-split engine. Check 7 (per-pass recompile counting) is stage 6; 13-15 need a display; 16 needs
-the dogfood harness.
+**Engine and persistence checks 1-12 pass** (`test_document_graph.py`, `test_pass_render.py`,
+`test_graph_persistence.py`, `test_pass_hot_reload.py`), including byte-identical pixels against
+the pre-split engine. **Still owed: 13-15** (a display — the error strip's file+line and
+click-to-jump, a rename re-pointing an open tab, the six examples loading) and **16** (`/dogfood`,
+real API cost — the copilot authoring a two-pass document).
 
 **"Node" is retired from the domain**: `Document` / `document_id` / `ui_documents` /
 `documents/<id>/`, with `document.json` beside `graph.json`. `EngineNode` (a scripting protocol)

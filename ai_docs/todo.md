@@ -47,5 +47,6 @@ no "Resolved YYYY-MM-DD" headers).
   the liveness counter — during a quiet stream stretch the live status line grows a ticking
   "waiting Ns" suffix after ~3s of silence and it disappears when deltas resume.
 - Feature 065's checks 13-15 fire at the same moment, and the spec states them:
-  `ai_docs/features/065_pass_graph/01_spec.md ## Verification`. Plus the pass panel's own look —
-  it was written to a spec and driven headlessly, never seen.
+  `ai_docs/features/065_pass_graph/01_spec.md ## Verification`. The maintainer's hands-on review of
+  the pass panel is IN FLIGHT — what has come back so far, and what is still unseen, is in that
+  spec's `## Review notes` rather than here.

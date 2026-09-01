@@ -73,6 +73,18 @@ genuinely narrow container — never a stack of full-width bars.
 
 ## 2. Layout principles (what makes a panel calm)
 
+- **Name the thing the user changes, never the field you write.** The failure mode is rendering a
+  data model: a `dtype: Literal["f1","f2","f4"]` becomes a combo of `f1`/`f2`/`f4`, a
+  `filter_linear: bool` becomes a checkbox called "filter_linear", and four model fields become
+  four bare widgets under a heading nobody asked for. It looks complete and reads as contempt —
+  the maintainer's words for a panel like this were "what the fuck is this ui/ux". The rule: every
+  control is labelled with the EFFECT ("16-bit float — holds values above 1", "size · 50% of
+  canvas (480x480)"), the model's spelling stays inside the model, and a control that needs a
+  sentence gets a `?` with the sentence rather than a longer label. The test before shipping a
+  settings block: read each label aloud as a question a user would ask. "f2?" is not one.
+- **A control the user cannot yet judge needs its unit shown, not its raw number.** `0.50` on a
+  slider says nothing; `50% of canvas (480x480)` names what is being chosen. Where a value derives
+  from other state, show the derived result beside it.
 - **Hierarchy through difference, not uniformity.** One prominent thing per zone; everything else
   recedes. If two elements have equal visual weight, the eye has nowhere to land.
 - **Content-width, not full-width.** A 700px-wide button in a side panel is the canonical bulk smell.

@@ -371,6 +371,70 @@ itself is mechanical; the expensive part is the ~10 sites where "node" is load-b
 current-node, checkpoint unit, script key, working-set member, export unit — each of which must
 decide document-or-pass.
 
+## Review notes — the maintainer's hands-on pass
+
+The engine was built and verified headlessly; the UI was too, which is the wrong way round and
+this section is the consequence. Every entry below came from the maintainer OPENING THE APP, and
+none of them could have been caught here (no window manager on the dev box — `/imgui-ui` §0).
+Treat it as an in-progress list, not a closed one: the UI has had one review pass.
+
+### Where the UI lives
+
+- **`shaderbox/widgets/pass_list.py`** — the whole pass surface. A horizontal strip of
+  `preview_cell` tiles (one per pass, showing that pass's own live target scaled down by imgui —
+  no second render), then below it the selected pass's `Reads` and `Draws into` blocks, the
+  rename input and `add pass`. Right-click a tile for rename / set-as-output / delete.
+- **`shaderbox/tabs/document.py`** calls it, above the `Entry points` section that still holds the
+  Script row.
+- **`shaderbox/tabs/code.py::tab_label`** names a pass in its editor tab, and
+  `_pass_for_tab` resolves the tab's own pass for the header and error strip.
+- The six verbs it calls are `ProjectSession.add_pass` / `delete_pass` / `rename_pass` /
+  `set_output_pass` / `wire_pass_input` / `set_pass_target` — all headless, all tested in
+  `tests/test_pass_verbs.py`.
+
+### What came back, and what it cost
+
+1. **"`open` opens the same shader no matter which pass I click."** THREE consumers resolved "the
+   current document's shader" as `document.render_pass` — the OUTPUT — rather than the active
+   tab's own path: `tabs/code.py`'s session lookup for a tab with no session yet,
+   `App.get_current_session`, and `App.flush_current_editor`'s save branch. Each was correct for
+   the project's whole history, because a document had exactly one shader file until stage 2.
+   Fixed in `fa3d9b0`; `tests/test_pass_editor_wiring.py` pins each consumer to the tab's PATH.
+2. **Tabs were indistinguishable.** Every pass of a document read `<document> (shader)`. Now
+   `<document> (scene)`, taken from the tab's path so a rename carries it (`2e5f713`).
+3. **"What the fuck are all these selectors and sliders, what the fuck is `f1`/`f2`."** Correct,
+   and the sharpest lesson of the feature: I had put the DATA MODEL on screen. `f1`/`f2`/`f4` are
+   moderngl dtype strings and scale/smooth/tile are `TargetConfig` field names, dumped as four
+   unlabelled widgets under every pass. Also too tall — a column of full-width rows. Now a
+   thumbnail strip (`4640726`) whose controls name what they change about the PICTURE, with a `?`
+   explaining each (`efb5d26`). A test pins the format labels against `pass_graph.DTYPES` so a
+   raw dtype string cannot come back.
+
+### Still unseen, and the first thing to ask about
+
+Nothing below has been looked at by a human. Ask before assuming any of it is fine:
+
+- **The strip's proportions.** `SIZE.PASS_THUMB` is 64px, the label column 78px and the controls
+  168px, all chosen blind. Whether the strip wraps sensibly at real panel widths, and whether a
+  long pass name truncates badly in a tile footer, is unknown.
+- **Whether the expanded block belongs under the strip at all**, versus in the tile, a popup, or
+  a separate tab.
+- **Spec checks 13-15**, which need a display: an error in pass 2 landing in the strip with pass
+  2's file and line and click-to-jump working; a rename re-pointing an open tab (the engine half
+  is tested, the TAB half only smoke-verified); the six shipped examples loading with the browser
+  populated.
+- **Check 16**, which needs `/dogfood` and real API cost: the copilot authoring a two-pass
+  document and seeing per-pass errors.
+
+### What headless verification CAN and CANNOT catch here
+
+`make smoke` drives the panel's real draw paths through 200 frames — including the five-tile strip
+(it switches to Bloom Chain mid-run, since the single-pass fixture never draws more than one tile),
+the armed delete wash, the expanded block and both inline inputs. That catches an unbalanced imgui
+ID stack, a SetCursorPos assert, a None-deref. Measured, it does NOT catch: a leading `same_line`
+on the first tile, an unbalanced `indent`, or anything about size, spacing, wrapping or wording.
+Those are exactly the class that has to go to the maintainer.
+
 ## Verification
 
 Each check fails for exactly one reason, and each names its falsifier.
