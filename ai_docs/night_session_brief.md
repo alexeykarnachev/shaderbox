@@ -128,6 +128,31 @@ The affected files, for reference: `test_document_save_preserves_values`, `test_
 showing **721 passed** with exactly those 42 failures and 46 errors and no others. A new failure
 outside that set is yours and must be fixed before pushing.
 
+### Which gates already encode their own verdict (enumerated, not assumed)
+
+Mutation-tested on the dev box before this brief was written, so `gates` can be built on facts
+rather than on the hope that each member reports honestly. Every mutation was applied by hand
+and reverted by hand, with the unmutated run confirmed green in between:
+
+| Gate | Mutation | Exit |
+|---|---|---|
+| `check` | a return-type error in `shaderbox/util.py` | **2** |
+| `test` | a failing assertion appended to `tests/test_glsl_lex.py` | **2** |
+| `smoke` | `raise` inserted as the first statement **inside** `main()` | **2** |
+| `smoke` | *unmutated, display-less* — the skip path | **0** |
+
+So all three encode a real failure, and `smoke`'s exit 0 is specific to the skip. That is what
+makes item 2 a genuine gap rather than a theoretical one: the only case where exit 0 does not
+mean "this gate passed" is the skip, and it is the case the Pi hits every single run.
+
+**A worked example of the unreachable-mutation trap, from building this table.** The first
+attempt at the `smoke` mutation renamed `main` and appended a new one at end of file. It exited
+2 — but from `NameError: name 'main' is not defined`, because `sys.exit(main())` at module
+bottom bound the old name. The gate looked correctly mutated and was not: right exit code,
+wrong reason. Inserting the `raise` inside `main()` produced `RuntimeError: mutation probe:
+reached inside main`, which is proof the line ran. **Read the failure message, not just the exit
+code** — that is the difference between the two.
+
 Because `smoke` cannot run here, item 2 above is the one part you cannot fully verify on the
 Pi — you can verify the skip path (that is what the Pi produces), but not the pass path. Say so
 plainly in the commit body rather than implying you saw it pass.
