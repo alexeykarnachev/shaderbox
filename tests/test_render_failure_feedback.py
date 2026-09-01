@@ -1,31 +1,27 @@
-"""A failed render must not leave a stale artifact looking publishable.
+"""A failed re-render must not leave the previous artifact looking publishable.
 
-`artifact_is_fresh` is set only by `set_artifact`, so an early return on a failed re-render
-left the PREVIOUS render's `True` in place — and the publish buttons gate on that flag
-(`exporters/youtube.py`). The user re-renders, sees nothing happen, and publishes the old
-artifact believing it is the new one.
+`artifact_is_fresh` is set only by `set_artifact`, so `_render`'s failure path clears it
+explicitly (the stale-artifact guard in `tabs/share.py`) — without that line the publish
+buttons stay armed on the OLD artifact after a failed re-render, and the user publishes the
+previous render believing it is the new one. This drives the real path: `render_for` fails
+and the guard must fire. Falsifier: delete the guard line and this goes red.
 """
 
+import types
 from pathlib import Path
+from typing import Any, cast
 
+from shaderbox.app import App
 from shaderbox.exporters.base import RenderedArtifact
-from shaderbox.tabs.share_state import OutletRenderState
+from shaderbox.render_preset import RenderPreset
+from shaderbox.tabs import share
+from shaderbox.tabs.share_state import OutletRenderState, TabState
+from shaderbox.ui_models import UIDocument
 
 
-def test_a_successful_render_marks_the_artifact_fresh(tmp_path: Path) -> None:
-    outlet = OutletRenderState()
-    artifact = RenderedArtifact(
-        path=tmp_path / "a.mp4", is_video=True, duration=1.0, size=(64, 64)
-    )
-
-    outlet.set_artifact(artifact)
-
-    assert outlet.artifact_is_fresh
-
-
-def test_clearing_the_artifact_clears_freshness(tmp_path: Path) -> None:
-    # The invariant the fix depends on: freshness tracks the artifact, so a failed render
-    # clearing the flag can never read as "ready to publish".
+def test_a_failed_render_clears_freshness_and_reports(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
     outlet = OutletRenderState()
     outlet.set_artifact(
         RenderedArtifact(
@@ -34,6 +30,21 @@ def test_clearing_the_artifact_clears_freshness(tmp_path: Path) -> None:
     )
     assert outlet.artifact_is_fresh
 
-    outlet.set_artifact(None)
+    monkeypatch.setattr(share, "render_for", lambda *args, **kwargs: None)
+    pushed: list[str] = []
+    app_stub = types.SimpleNamespace(
+        notifications=types.SimpleNamespace(
+            push=lambda message, color: pushed.append(message)
+        )
+    )
+
+    share._render(
+        cast(App, app_stub),
+        outlet,
+        cast(RenderPreset, object()),
+        cast(UIDocument, types.SimpleNamespace(document=None)),
+        TabState(scratch_dir=tmp_path),
+    )
 
     assert not outlet.artifact_is_fresh
+    assert pushed and "Render failed" in pushed[0]

@@ -16,7 +16,9 @@ from shaderbox.paths import shader_lib_root
 from shaderbox.shader_lib import ShaderLibIndex, set_active
 from shaderbox.ui_models import load_document_from_dir
 
-_EXAMPLES = Path(__file__).resolve().parent.parent / "shaderbox/resources/document_examples"
+_EXAMPLES = (
+    Path(__file__).resolve().parent.parent / "shaderbox/resources/document_examples"
+)
 # The tuned single-pass example and the five-pass bloom chain.
 _TUNED = _EXAMPLES / "f90f5ff9-29c6-4bcf-aee7-090f20542353"
 _BLOOM = _EXAMPLES / "1c4f8a20-7b6e-4d31-9a55-2f0e6b8c31d4"
@@ -46,7 +48,9 @@ def test_uniform_values_load_without_a_program(
     shutil.copytree(_TUNED, document_dir)
     render_pass = load_document_from_dir(document_dir).document.render_pass
     assert render_pass.program is None
-    assert render_pass.uniform_values, "the example ships tuned values; they must survive load"
+    assert render_pass.uniform_values, (
+        "the example ships tuned values; they must survive load"
+    )
 
 
 def test_get_active_uniforms_compiles_on_demand(
@@ -61,7 +65,9 @@ def test_get_active_uniforms_compiles_on_demand(
     assert "u_zoomout" in {u.name for u in uniforms}
 
 
-def test_a_broken_source_is_attempted_once(gl: moderngl.Context, tmp_path: Path) -> None:
+def test_a_broken_source_is_attempted_once(
+    gl: moderngl.Context, tmp_path: Path
+) -> None:
     document_dir = tmp_path / "document"
     shutil.copytree(_TUNED, document_dir)
     render_pass = load_document_from_dir(document_dir).document.render_pass

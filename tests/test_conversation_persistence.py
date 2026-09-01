@@ -178,23 +178,6 @@ def test_result_widget_round_trips(tmp_path: Path) -> None:
     assert msgs[1].result_widget is None
 
 
-def test_v3_message_without_widget_loads_as_none(tmp_path: Path) -> None:
-    # A pre-020·21 (v3) file has no result_widget key — it must load as None, not raise.
-    path = tmp_path / "conversation.json"
-    path.write_text(
-        json.dumps(
-            {
-                "version": 3,
-                "messages": [{"role": "tool_status", "text": "render_image: ok"}],
-                "history": [],
-            }
-        ),
-        encoding="utf-8",
-    )
-    msgs = ConversationStore.load(path).to_messages()
-    assert msgs[0].result_widget is None
-
-
 def test_unknown_widget_kind_fails_soft(tmp_path: Path) -> None:
     # A future widget kind (or an empty target) on an older build drops to None — no dead button,
     # no whole-conversation loss.

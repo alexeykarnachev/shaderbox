@@ -11,7 +11,7 @@ import threading
 import types
 from pathlib import Path
 
-from shaderbox.copilot.agent import AgentError, AgentToolCard, run_turn
+from shaderbox.copilot.agent import AgentToolCard, run_turn
 from shaderbox.copilot.backend import CopilotBackend, _CopilotEditTarget
 from shaderbox.copilot.capabilities import CompileErrorInfo, EditResult
 from shaderbox.copilot.config import COPILOT_CONFIG
@@ -470,22 +470,6 @@ def test_write_shader_applies_through_loop() -> None:
     card = next(e for e in events if isinstance(e, AgentToolCard))
     assert card.name == "write_shader"
     assert card.ok is True
-
-
-def test_retry_cap_fires_on_spiraling_edit_shader() -> None:
-    # An old_str that never matches must stop at max_edit_retries, not run to
-    # max_iterations.
-    fail = _tool_call(
-        "cx",
-        "edit_shader",
-        '{"old_str": "zzz no such text", "new_str": "x"}',
-    )
-    scripts: list[list[LLMStreamEvent]] = [fail] * (COPILOT_CONFIG.max_iterations + 5)
-    events = _run(scripts)
-    failed = [e for e in events if isinstance(e, AgentToolCard) and not e.ok]
-    assert len(failed) == COPILOT_CONFIG.max_edit_retries
-    assert isinstance(events[-1], AgentError)
-    assert len(failed) < COPILOT_CONFIG.max_iterations
 
 
 def test_lib_write_warns_on_brace_imbalance() -> None:

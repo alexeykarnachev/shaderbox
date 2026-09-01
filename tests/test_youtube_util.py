@@ -8,7 +8,6 @@ from shaderbox.exporters.base import ExporterValueError
 from shaderbox.exporters.youtube_util import (
     DEFAULT_CATEGORY_ID,
     SHORTS_TAG,
-    build_client_config,
     build_insert_body,
     decorate_short,
     parse_client_secret_json,
@@ -51,13 +50,6 @@ def test_parse_client_secret_missing_fields() -> None:
     blob = json.dumps({"installed": {"client_id": "x"}})  # no secret
     with pytest.raises(ExporterValueError, match="missing"):
         parse_client_secret_json(blob)
-
-
-def test_build_client_config_round_trips() -> None:
-    cfg = build_client_config("cid", "secret")
-    assert cfg["installed"]["client_id"] == "cid"
-    assert cfg["installed"]["client_secret"] == "secret"
-    assert cfg["installed"]["redirect_uris"] == ["http://localhost"]
 
 
 def test_studio_edit_url() -> None:

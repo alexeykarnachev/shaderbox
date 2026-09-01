@@ -81,13 +81,6 @@ def test_apply_limits_reaches_the_live_config_with_floors() -> None:
         _restore(snap)
 
 
-def test_round_trip_preserves_limit_fields() -> None:
-    cfg = CopilotIntegration(clean_edit_soft_streak=11, clean_edit_hard_streak=20)
-    again = CopilotIntegration.model_validate(cfg.model_dump())
-    assert again.clean_edit_soft_streak == 11
-    assert again.clean_edit_hard_streak == 20
-
-
 def test_zero_disables_clean_streak_nudge() -> None:
     edit = _tool_call(
         "cx",

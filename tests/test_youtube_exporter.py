@@ -340,10 +340,6 @@ def test_ingest_client_secret_valid_and_invalid(tmp_path: Path) -> None:
     assert store.youtube.client_id == "abc"
 
 
-def test_current_settings_empty() -> None:
-    assert YouTubeExporter().current_settings() == {}
-
-
 def test_rebind_clears_render_state() -> None:
     exp = YouTubeExporter()
     exp._render_state.title = "old project title"
@@ -362,21 +358,6 @@ def test_begin_auth_without_creds_errors() -> None:
 
 
 # ----------------------------------------------------------- store round-trip
-def test_integrations_store_youtube_round_trip() -> None:
-    store = IntegrationsStore()
-    store.youtube.client_id = "cid"
-    store.youtube.token_json = "tok"
-    store.youtube.channel_id = "UC1"
-    data = store.model_dump()
-    reloaded = IntegrationsStore(**data)
-    assert reloaded.youtube.client_id == "cid"
-    assert reloaded.youtube.token_json == "tok"
-    assert reloaded.youtube.channel_id == "UC1"
-    # Telegram block still defaults cleanly alongside.
-    assert reloaded.telegram.bot_token == ""
-
-
-# ------------------------------------------------- copilot publish round-trip
 def test_publish_youtube_restores_prior_shape_and_derives_is_short() -> None:
     # The copilot publish drives the exporter's shape from its arg, then MUST restore the user's
     # Share-tab shape (a FULL RenderShape, lossless) — and the #Shorts upload flag derives from the

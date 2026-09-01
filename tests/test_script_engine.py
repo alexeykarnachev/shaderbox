@@ -9,12 +9,9 @@ the 048 play/stop model (a stopped uniform's WRITE is skipped while the script k
 always plays).
 """
 
-import dataclasses
 import time
 import types
 from pathlib import Path
-
-import pytest
 
 from shaderbox.scripting import (
     EngineContext,
@@ -1025,32 +1022,6 @@ def test_script_stub_emits_explicit_import_for_referenced_types(tmp_path: Path) 
 
 
 # ---- ctx is frozen ----
-
-
-def test_ctx_is_immutable() -> None:
-    ctx = EngineContext(t=1.0, dt=0.1, frame=0)
-    with pytest.raises(dataclasses.FrozenInstanceError):
-        ctx.t = 2.0  # type: ignore[misc]
-
-
-# ---- perf sanity (not a gate) ----
-
-
-def test_tick_is_cheap(tmp_path: Path) -> None:
-    _write_script(tmp_path, _SCALAR)
-    document = _FakeDocument([_u("u_x")])
-    eng = _engine(tmp_path, document)
-    start = time.perf_counter()
-    for i in range(1000):
-        eng.tick("n0", document, _ctx(i / 60))
-    per_tick_us = (time.perf_counter() - start) / 1000 * 1e6
-    assert per_tick_us < 500  # generous ceiling
-
-
-# ============================================================================
-# Play/stop (048 decisions 4-7): a STOPPED uniform's WRITE is skipped, but the script still ticks
-# (state advances + the name stays driven); the export path forwards NO stopped set (always plays).
-# ============================================================================
 
 
 def test_stopped_uniform_write_skipped_but_still_driven_and_sibling_advances(

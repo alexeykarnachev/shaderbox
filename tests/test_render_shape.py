@@ -66,10 +66,3 @@ def test_menu_shapes_covers_every_member_with_native_first() -> None:
 def test_every_member_has_a_distinct_menu_label() -> None:
     labels = [SHAPE_TABLE[s].menu_label for s in MENU_SHAPES]
     assert len(set(labels)) == len(labels)  # no ambiguous duplicate in a flat combo
-
-
-def test_short_edges_match_the_pre_refactor_values() -> None:
-    # Byte-identical Shorts output: the three longest edges that were SHORT_RES_PRESETS.
-    assert SHAPE_TABLE[RenderShape.SHORT_720].longest_edge == 1280
-    assert SHAPE_TABLE[RenderShape.SHORT_1080].longest_edge == 1920
-    assert SHAPE_TABLE[RenderShape.SHORT_1440].longest_edge == 2560

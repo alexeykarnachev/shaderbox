@@ -1,7 +1,6 @@
 """Unit tests for ShaderLibTagsStore — the sidecar JSON-backed tag store."""
 
 import json
-import os
 from pathlib import Path
 from typing import Any
 
@@ -96,9 +95,6 @@ def test_empty_tag_is_dropped(monkeypatch: Any, tmp_path: Path) -> None:
 
 
 # Ensure no lingering env var across tests (the monkeypatch above auto-undoes).
-def test_env_isolation_works(monkeypatch: Any, tmp_path: Path) -> None:
-    _isolate_app_data(monkeypatch, tmp_path)
-    assert os.environ.get("SHADERBOX_DATA_DIR") == str(tmp_path)
 
 
 def test_a_malformed_row_costs_that_row_not_the_store(

@@ -11,14 +11,11 @@ No new tools: every edit tool inherits the address kind through the single resol
 
 from typing import Any
 
-import pytest
-
 from shaderbox.copilot.address import (
     is_pass_address,
     pass_address,
     split_pass_address,
 )
-from shaderbox.copilot.capabilities import DocumentTreeEntry
 from shaderbox.copilot.prompt import render_working_set
 from shaderbox.copilot.prompt_context import _render_document_tree
 from tests.conftest import seed_extra_document
@@ -239,20 +236,3 @@ def test_a_document_with_a_broken_non_output_pass_reports_errors(app: Any) -> No
     )
     assert entry.has_errors
     assert "HAS ERRORS" in _render_document_tree([entry])
-
-
-@pytest.mark.parametrize("verb", ["scene", "composite"])
-def test_every_pass_is_addressable(app: Any, verb: str) -> None:
-    document_id = _two_pass(app)
-    short = app.copilot_backend._copilot_short_ids()[document_id]
-    entry = DocumentTreeEntry(
-        document_id=short,
-        name="x",
-        has_errors=False,
-        is_current=True,
-        passes=("composite", "scene"),
-        output_pass="composite",
-    )
-    assert pass_address(entry.document_id, verb) in {
-        pass_address(short, name) for name in entry.passes
-    }

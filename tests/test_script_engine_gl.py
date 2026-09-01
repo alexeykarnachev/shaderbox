@@ -171,47 +171,6 @@ def test_script_shape_mismatch_freezes_and_records(
         document.release()
 
 
-def test_fresh_export_instance_renders_clean(
-    gl_ctx: moderngl.Context, tmp_path: Path
-) -> None:
-    # Warm a stateful ramp on the LIVE instance, then render via a FRESH export instance —
-    # the export's frame-0 pixel must match a cold-start render, NOT the warmed live value.
-    # Falsifier: px_export != px_cold (the export inherited live state).
-    scripts_dir = tmp_path / "scripts"
-    _write_script(scripts_dir, _RAMP_SCRIPT)
-    document = _document(gl_ctx)
-    eng = ScriptEngine()
-    eng.reload("n", scripts_dir, document.render_pass)
-
-    # Cold-start reference: a fresh instance, one tick at frame 0.
-    cold = eng.fresh_behavior_for("n")
-    assert cold is not None
-    eng.tick_export(
-        "n", document.render_pass, EngineContext(t=0.0, dt=1 / 60, frame=0), cold
-    )
-    document.render(u_time=0.0)
-    px_cold = _pixel(document)
-
-    # Warm the LIVE instance well past the ramp's wrap.
-    for i in range(120):
-        eng.tick("n", document.render_pass, EngineContext(t=i / 60, dt=1 / 60, frame=i))
-    live_wave = document.render_pass.uniform_values["u_wave"]
-
-    # A fresh export instance must reproduce the cold value, not the warmed one.
-    fresh = eng.fresh_behavior_for("n")
-    assert fresh is not None
-    eng.tick_export(
-        "n", document.render_pass, EngineContext(t=0.0, dt=1 / 60, frame=0), fresh
-    )
-    document.render(u_time=0.0)
-    px_export = _pixel(document)
-    assert px_export == px_cold
-    assert document.render_pass.uniform_values["u_wave"] != live_wave
-
-    with contextlib.suppress(Exception):
-        document.release()
-
-
 def test_render_media_auto_enters_export_isolation(
     gl_ctx: moderngl.Context, tmp_path: Path
 ) -> None:

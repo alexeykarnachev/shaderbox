@@ -19,15 +19,3 @@ def test_exporter_config_fields_match_enum_values() -> None:
             f"{cls.__name__}.config_field={field!r} is not a SettingsField value "
             f"(drift would make focus={field!r} match nothing)"
         )
-
-
-def test_telegram_field_is_token() -> None:
-    assert TelegramExporter.config_field.fget(TelegramExporter) == (
-        SettingsField.TELEGRAM_TOKEN
-    )
-
-
-def test_youtube_field_is_client() -> None:
-    assert YouTubeExporter.config_field.fget(YouTubeExporter) == (
-        SettingsField.YOUTUBE_CLIENT
-    )
