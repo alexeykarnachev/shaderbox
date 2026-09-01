@@ -1,6 +1,6 @@
 {
     "version": 1,
-    "output": "composite",
+    "output": "blur",
     "passes": {
         "blur": {
             "inputs": {
