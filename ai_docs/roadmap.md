@@ -36,15 +36,21 @@ output, the uniforms panel follows the active pass tab via `App.panel_pass`), of
 wash toward grey, and all pass wiring/target/rename lives in the pass-settings modal
 (`popups/pass_settings.py`).
 
-**Still owed: spec checks 13-15** (a display — the error strip's file+line and click-to-jump, a
+**NEXT: 066 perf and test diet** (`ai_docs/features/066_perf_and_test_diet/01_spec.md`) —
+startup 3.66s measured, 2.49s of it the load-time warm-up compile of every pass in every
+document; the same eager compile makes 78 `app`-fixture setups eat ~28s of the 39s suite; plus
+a criterion-driven cull of theater tests. Spec outlined with measured evidence and budgets;
+implementation starts fresh next session.
+
+**Still owed from 065: spec checks 13-15** (a display — the error strip's file+line and click-to-jump, a
 rename re-pointing an open tab, the six examples loading) **and 16** (`/dogfood`, real API cost —
-the copilot authoring a two-pass document). Engine and persistence checks 1-12 pass. Next session:
-ask the maintainer what to pick up — the owed checks, or the next feature.
+the copilot authoring a two-pass document). Engine and persistence checks 1-12 pass.
 
 ## Features
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 066 | perf_and_test_diet | spec | Lazy pass compilation (kill the load-time warm-up render), import + fixture diet, and a falsifier-criterion cull of theater tests; budgets: startup <1.5s, suite <~15s. Spec: `ai_docs/features/066_perf_and_test_diet/01_spec.md`. |
 | 065 | pass_graph | partial | A document holds several passes forming a DAG, each pass its own `.glsl` file with its own `main()` and render target; "node" is retired for `document` + `pass`. All nine stages landed: the GL-free graph model + planner, the `Pass`/`Document` split, chain evaluation with feedback and cold exports, the `passes/` + `graph.json` + per-pass-asset layout, the `node` -> `document` rename across the package and on-disk paths, per-pass hot reload, the pass-list panel with D15's six verbs, the copilot's `<id>#<pass>` address with a pass-aware working set, and a five-pass "Bloom Chain" example. Checks 13-16 need a display and a dogfood run. Spec: `ai_docs/features/065_pass_graph/01_spec.md`. |
 | 064 | multistep | superseded | Multi-pass steps as functions inside ONE shader file. Built, reviewed to convergence, then REVERTED (`34f6d19`) when the maintainer used it: separate shader files per pass are what every surveyed tool does. Nine bug fixes it surfaced were kept. Superseder: `ai_docs/features/065_pass_graph/`. Spec: `ai_docs/features/064_multistep/02_decision.md`. |
 | 063 | radiance_cascades_gaps | done | Research-only wave (no code): can ShaderBox host radiance cascades, and what is actually missing — GPU capability all present and measured, the script-GL route proven unusable, the seam decision handed to 064. Spec: `ai_docs/features/063_radiance_cascades_gaps/README.md`. |
