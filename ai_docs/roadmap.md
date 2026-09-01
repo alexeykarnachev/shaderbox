@@ -32,7 +32,10 @@ reviewing it IN THE APP, and the next session polishes what that review finds. S
 what they saw; do not start new work.** The UI half was built on a display-less box and every
 aesthetic call is theirs. Read `ai_docs/features/065_pass_graph/01_spec.md` (D1-D16, the
 `graph.json` schema, the nine-stage order, sixteen falsifiable checks) and its
-`## Review notes — the maintainer's hands-on pass`, which carries what has already come back.
+`## Review notes — the maintainer's hands-on pass`, which carries what has already come back;
+`00_facts.md` beside it is the verified evidence the spec was written against. **Everything the
+review produced is filed as of `b1fab25` — anything said after that is not in the repo, so ask
+rather than assume the list is complete.**
 
 **Three findings from their first look, all fixed** (`fa3d9b0`, `4640726`, `efb5d26`): the pass
 list's `open` button showed the same shader whichever row you clicked (three consumers resolved

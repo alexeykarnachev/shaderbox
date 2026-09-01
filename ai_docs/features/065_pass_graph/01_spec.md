@@ -414,9 +414,14 @@ Treat it as an in-progress list, not a closed one: the UI has had one review pas
 
 Nothing below has been looked at by a human. Ask before assuming any of it is fine:
 
-- **The strip's proportions.** `SIZE.PASS_THUMB` is 64px, the label column 78px and the controls
-  168px, all chosen blind. Whether the strip wraps sensibly at real panel widths, and whether a
-  long pass name truncates badly in a tile footer, is unknown.
+- **The proportions, all chosen blind — and they are TWO separate geometries.** `SIZE.PASS_THUMB`
+  (64px, `theme.py`) sizes the TILES and nothing else; it has exactly two consumers, both in
+  `pass_list.py` (`cell_w=` and the wrap arithmetic), so one token edit moves both. `_ROW_LABEL_W`
+  (78px) and `_CTRL_W` (168px) size the label column and combos of the block BELOW the strip.
+  Unknown: whether the strip wraps sensibly at real panel widths, and whether a long pass name
+  truncates badly in a tile footer.
+  **Ask for a number rather than iterating** (`/imgui-ui` §0 defense 2): the panel width they
+  actually run at and a target tile size make this one token edit instead of a round of guesses.
 - **Whether the expanded block belongs under the strip at all**, versus in the tile, a popup, or
   a separate tab.
 - **Spec checks 13-15**, which need a display: an error in pass 2 landing in the strip with pass
