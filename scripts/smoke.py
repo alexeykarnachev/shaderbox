@@ -202,33 +202,26 @@ def main() -> int:
                 _check_invariants(app, frame_idx)
                 # Exercise the region-cycle + tab-jump wiring (a callback throw surfaces
                 # via the except below); nav *behavior* is un-headless-able.
-                # The pass list's non-default draw paths: a second pass, an expanded row (its
-                # input combos + target controls), and both inline inputs. None of them draw in
-                # the collapsed default, and none can be screenshotted on this box, so the frame
+                # The pass list's non-default draw paths: a second pass, the settings modal
+                # (its input combos + target controls), and both inline inputs. None of them
+                # draw by default, and none can be screenshotted on this box, so the frame
                 # loop executing them IS the check.
                 if frame_idx == 20:
                     app.session.add_pass(app.current_document_id, "smoke_pass")
                 if frame_idx == 25:
-                    app.pass_expanded = "smoke_pass"
-                if frame_idx == 30:
-                    app.pass_rename.open(
-                        app.session.paths.pass_shader_for(
-                            app.current_document_id, "smoke_pass"
-                        ),
-                        "smoke_pass",
-                    )
+                    app.open_pass_settings("smoke_pass")
                 if frame_idx == 32:
                     # The tile's delete-✕ wash, which only draws while armed.
                     app.pass_delete_armed = "smoke_pass"
                 if frame_idx == 35:
                     app.pass_delete_armed = ""
-                    app.pass_rename.close()
                     app.pass_add.open(
                         app.session.paths.passes_dir_for(app.current_document_id)
                     )
                 if frame_idx == 40:
                     app.pass_add.close()
-                    app.pass_expanded = ""
+                    # Deleting the pass while its settings modal is open exercises the modal's
+                    # missing-pass close branch on the next frame.
                     assert (
                         app.session.delete_pass(app.current_document_id, "smoke_pass")
                         == ""
@@ -246,12 +239,13 @@ def main() -> int:
                     )
                     assert multi, "smoke: no multi-pass document to draw the strip with"
                     app.set_current_document_id(multi)
-                    app.pass_expanded = sorted(app.ui_documents[multi].document.passes)[
-                        0
-                    ]
+                    app.open_pass_settings(
+                        sorted(app.ui_documents[multi].document.passes)[0]
+                    )
                 if frame_idx == 48:
                     # Back to the feedback canary's document, whose accumulation the tail asserts.
-                    app.pass_expanded = ""
+                    app.popup_state = PopupState.CLOSED
+                    app.pass_settings_name = ""
                     app.set_current_document_id(canary_id)
                 if frame_idx == 50:
                     app.cycle_region()

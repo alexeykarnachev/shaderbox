@@ -26,93 +26,20 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-08-31 (065 code-complete; the maintainer is reviewing the UI hands-on). -->
-**ACTIVE: 065 pass graph — all nine stages landed and the engine is solid. The maintainer is now
-reviewing it IN THE APP, and the next session polishes what that review finds. Start by asking
-what they saw; do not start new work.** The UI half was built on a display-less box and every
-aesthetic call is theirs. Read `ai_docs/features/065_pass_graph/01_spec.md` (D1-D16, the
-`graph.json` schema, the nine-stage order, sixteen falsifiable checks) and its
-`## Review notes — the maintainer's hands-on pass`, which carries what has already come back;
-`00_facts.md` beside it is the verified evidence the spec was written against. **Everything the
-review produced is filed as of `b1fab25` — anything said after that is not in the repo, so ask
-rather than assume the list is complete.**
+<!-- As of 2026-09-01 (065 shipped as v0.26.0 after eight hands-on review rounds). -->
+**ACTIVE: 065 pass graph — shipped.** All nine stages landed and eight rounds of the maintainer's
+hands-on UI review are fixed and filed in `ai_docs/features/065_pass_graph/01_spec.md
+## Review notes` (the spec also carries D1-D16, the `graph.json` schema, and the sixteen
+falsifiable checks). The strip's settled shape: topological tile order blind to the output
+choice, a tile click SETS THE OUTPUT (one accent border, one meaning; the viewer follows the
+output, the uniforms panel follows the active pass tab via `App.panel_pass`), off-plan tiles
+wash toward grey, and all pass wiring/target/rename lives in the pass-settings modal
+(`popups/pass_settings.py`).
 
-**Three findings from their first look, all fixed** (`fa3d9b0`, `4640726`, `efb5d26`): the pass
-list's `open` button showed the same shader whichever row you clicked (three consumers resolved
-"the document's shader" as the OUTPUT pass); tabs all read `<document> (shader)` and told each
-other apart by nothing; and the pass list was a tall column of rows whose target controls exposed
-raw model fields — moderngl's `f1`/`f2`/`f4` dtype strings and `TargetConfig` field names as four
-bare widgets. It is a horizontal strip of live thumbnails now, with named formats ("16-bit float")
-and a `?` on every control. **Expect more of this kind** — the UI has had one pass of review, not
-several.
-
-**What runs today.** A document holds `passes` plus a `PassGraph` and draws them in dependency
-order, each exactly once; a pass reading itself gets its previous frame; an input naming a pass that
-does not exist reads black; a cycle is an error per pass and still draws the output. Export renders
-the output pass and starts cold. It all round-trips: `passes/<name>.frag.glsl` + `graph.json` +
-`media/<pass>/`, salvaged per key, with the shipped examples and the dev sandbox re-authored in the
-new shape by hand (no migration code, per the standing rule).
-
-**Engine and persistence checks 1-12 pass** (`test_document_graph.py`, `test_pass_render.py`,
-`test_graph_persistence.py`, `test_pass_hot_reload.py`), including byte-identical pixels against
-the pre-split engine. **Still owed: 13-15** (a display — the error strip's file+line and
-click-to-jump, a rename re-pointing an open tab, the six examples loading) and **16** (`/dogfood`,
-real API cost — the copilot authoring a two-pass document).
-
-**"Node" is retired from the domain**: `Document` / `document_id` / `ui_documents` /
-`documents/<id>/`, with `document.json` beside `graph.json`. `EngineNode` (a scripting protocol)
-and the lib picker's filesystem tree nodes are unrelated namesakes and stay.
-
-**Editing any pass file hot-reloads that pass**, and only that pass recompiles (D8, check 7 —
-counted, not eyeballed). The Document tab now carries a **pass list**: a row per pass (accent tick =
-the editor's active tab, accent name = the output), an `open` button, a right-click menu with
-rename / set-as-output / delete, an `add pass` inline input, and — for the expanded row — a
-closed-set combo per sampler input plus its target's format / scale / smooth / tile.
-
-**The copilot addresses a pass** as `<id>#<pass>` — no new tools, since every edit tool inherits
-the kind through the single resolver, and a bare `<id>` still means the output pass. Its working
-set renders a multi-pass document as one member with a sub-section per pass (a pass address
-collapses to its document, so an 8-pass document cannot evict its own passes out of the six-slot
-cap), each carrying its own listing, uniforms, wiring and errors; the project map lists a
-document's passes and marks the output. A single-pass document's prompt is unchanged.
-
-**The shipped content includes a real multi-pass document**: "Bloom Chain" — a scene of orbiting
-blobs, a bright-pass and a blur at half size that turn its highlights into bloom, a feedback pass
-that leaves trails, and a composite that adds them and tonemaps. Five passes, every part of the
-graph's vocabulary (a chain, a fan-in, a scaled target, feedback, an output that is not the last
-pass authored).
-
-**Owed to the maintainer, needs a display** (`make run`): checks 13-15 — an error in pass 2 lands
-in the strip with pass 2's file and line and click-to-jump works; a rename rewrites every edge and
-re-points an open tab (the engine half is tested, the TAB half is only smoke-verified); the six
-shipped examples still load and the browser is populated. Plus the panel's own look: row rhythm,
-the combos' width, whether the expanded block reads as belonging to its row.
-
-**Owed too, needs real API cost**: check 16 — the copilot authors a two-pass document with no new
-tools, via `/dogfood`.
-
-**What happened to 064.** It shipped a multi-pass engine where every pass was a function inside ONE
-shader file. The maintainer used it and rejected the shape: *"we need the genuine separate shader;
-everything clamped inside a single shader is a fucking mess."* Reverted in `34f6d19`; five commits' worth of bug
-fixes it surfaced were kept — float targets and dtype-aware export, the raw-texture round-trip and
-the GL leak, the resolver `#line` anchor, per-key and per-row model salvage, and the
-stale-thumbnail mark.
-
-**What 065 is.** A **document** holds several **passes** forming a DAG. Each pass is its own `.glsl`
-file with its own `main()` and its own render target; one pass is the document's output. A project
-holds several documents, as it holds several nodes today.
-
-**"Node" is retired from the domain.** It has meant both the document you open and the thing that
-renders, and that collision is what pushed back on every attempt to add a second render unit. The
-rename is part of the feature, not a follow-up: 871 mentions across 56 of 114 package files and 47
-of 82 test files.
-
-**Constraints already settled by the maintainer:** no migration, build from scratch; no comments
-carrying semantics (engine-level machinery only); each pass owns its uniforms, with no
-shared-uniform mechanism; rename if beneficial.
-
-**Release state:** `dev` is ahead of `master` (still v0.25.1). **Last known-public itch build is
-v0.21.0.** **No open BLOCKERs.**
+**Still owed: spec checks 13-15** (a display — the error strip's file+line and click-to-jump, a
+rename re-pointing an open tab, the six examples loading) **and 16** (`/dogfood`, real API cost —
+the copilot authoring a two-pass document). Engine and persistence checks 1-12 pass. Next session:
+ask the maintainer what to pick up — the owed checks, or the next feature.
 
 ## Features
 

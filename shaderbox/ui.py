@@ -26,6 +26,7 @@ from shaderbox.popups.emoji_picker import draw_emoji_picker
 from shaderbox.popups.examples import draw_examples
 from shaderbox.popups.help import draw_help
 from shaderbox.popups.lib_picker import draw_lib_picker
+from shaderbox.popups.pass_settings import draw_pass_settings
 from shaderbox.popups.settings import draw_settings
 from shaderbox.scripting import MouseState
 from shaderbox.tabs import code as code_tab
@@ -246,6 +247,7 @@ def update_and_draw(app: App) -> None:
 
     # ----------------------------------------------------------------
     # Render documents
+    current_ui_document = app.ui_documents.get(app.current_document_id)
     if not app.any_popup_open():
         for ui_document in app.ui_documents.values():
             if (
@@ -257,6 +259,12 @@ def update_and_draw(app: App) -> None:
     elif app.popup_state == PopupState.EXAMPLES:
         for ui_document in app.ui_document_examples.values():
             ui_document.document.render()
+    elif (
+        app.popup_state == PopupState.PASS_SETTINGS and current_ui_document is not None
+    ):
+        # The pass-settings modal's whole point is watching a wiring/target change land — keep
+        # the current document rendering behind it (other modals leave renders paused).
+        current_ui_document.document.render()
 
     # ----------------------------------------------------------------
     # Process hotkeys
@@ -361,6 +369,7 @@ def update_and_draw(app: App) -> None:
         draw_examples(app)
         draw_help(app)
         draw_settings(app)
+        draw_pass_settings(app)
         draw_emoji_picker(app)
         draw_lib_picker(app)
 

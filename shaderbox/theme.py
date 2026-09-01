@@ -114,8 +114,9 @@ class _ColorBag:
 
     # a preview whose texture is no longer being rendered: the tile dims and takes a
     # corner tick, so a frozen picture cannot be misread as a live one.
-    STALE_TINT: tuple[float, float, float, float] = (0.55, 0.55, 0.62, 1.0)
-    STALE_MARK: tuple[float, float, float, float] = (0.62, 0.70, 0.85, 0.85)
+    # Drawn OVER a stale preview image: blends every pixel toward mid-grey (alpha = how far),
+    # which reads as desaturation — a multiplicative tint would darken instead.
+    STALE_WASH: tuple[float, float, float, float] = (0.50, 0.50, 0.50, 0.60)
 
     # neutrals
     BG_APP: tuple[float, float, float, float] = _P["bg_0"]
@@ -237,11 +238,9 @@ class SIZE:
 
     THUMB_SM: int = 90
     THUMB_LG: int = 150
-    # One pass's tile in the horizontal pass strip: small enough that a five-pass document fits
-    # a panel width without wrapping, big enough to read what the pass draws.
-    PASS_THUMB: int = 64
-
-    STALE_MARK: int = 7  # corner tick on a preview tile that is not being rendered
+    # One pass's tile in the horizontal pass strip: big enough to read what the pass draws;
+    # the strip wraps when a document's passes outgrow the panel width.
+    PASS_THUMB: int = 112
 
     PREVIEW_W: int = 200
     PANEL_CTRL_MINH: int = 600
@@ -256,6 +255,8 @@ class SIZE:
     SETTINGS_H: int = 968
     SETTINGS_LABEL_W: int = 92
     SETTINGS_CTRL_W: int = 120
+    PASS_SETTINGS_W: int = 440
+    PASS_SETTINGS_H: int = 400
 
     SCROLLBAR_W: int = 12
     GRAB_MIN: int = 10

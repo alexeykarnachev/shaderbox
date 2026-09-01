@@ -29,7 +29,7 @@ def _section_break() -> None:
 def _draw_auto_row(app: App, uniforms: list[UIUniform]) -> None:
     # Engine-driven uniforms (u_time / u_aspect / u_resolution): one inline row,
     # names participate in the code<->panel hover/jump bridge; value is read-only.
-    ui_document = app.ui_documents[app.current_document_id]
+    panel_pass = app.panel_pass(app.current_document_id)
     imgui.push_font(app.font_12, app.font_12.legacy_size)
     for i, u in enumerate(uniforms):
         if i > 0:
@@ -39,7 +39,7 @@ def _draw_auto_row(app: App, uniforms: list[UIUniform]) -> None:
             app, u.name, name_w, text_color=COLOR.STATE_INFO, accent=COLOR.STATE_INFO
         )
         imgui.same_line(spacing=float(SPACE.MD))
-        value = ui_document.document.render_pass.uniform_values.get(u.name)
+        value = panel_pass.uniform_values.get(u.name)
         imgui.text_colored(COLOR.FG_DIM, format_auto_value(value))
     imgui.pop_font()
 
@@ -122,7 +122,8 @@ def draw(app: App) -> None:
 
     active_uniform_hashes = []
     auto_hashes = []
-    for uniform in ui_document.document.render_pass.get_active_uniforms():
+    # The PANEL pass, not the output: the sliders belong to the pass being edited (065).
+    for uniform in app.panel_pass(app.current_document_id).get_active_uniforms():
         if (
             uniform.name in TABLE_UNIFORMS
         ):  # engine glyph tables — pure machinery, no row
@@ -165,8 +166,11 @@ def draw(app: App) -> None:
     )
 
     # nav_flattened: Tab/arrows reach the sliders without an Enter/Esc window boundary.
+    # auto_resize_y: the child grows to its content so the WHOLE tab scrolls as one surface —
+    # a fixed-size child here put a scrollbar on just the uniforms pane.
     with imgui_ctx.begin_child(
-        "ui_uniforms", child_flags=imgui.ChildFlags_.nav_flattened
+        "ui_uniforms",
+        child_flags=imgui.ChildFlags_.nav_flattened | imgui.ChildFlags_.auto_resize_y,
     ):
         for hash in sorted_hashes:
             draw_ui_uniform(app, ui_uniforms[hash])

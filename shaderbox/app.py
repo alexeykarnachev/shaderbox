@@ -32,7 +32,7 @@ from shaderbox.copilot.persistence import ConversationStore
 from shaderbox.copilot.revert import RevertExecutor
 from shaderbox.copilot.session import CopilotSession
 from shaderbox.copilot.state import CopilotLayout, Message
-from shaderbox.core import Canvas
+from shaderbox.core import Canvas, Pass
 from shaderbox.editor_types import (
     EditorSession,
     EditorTab,
@@ -87,6 +87,7 @@ class PopupState(Enum):
     EXAMPLES = "examples"
     HELP = "help"
     SETTINGS = "settings"
+    PASS_SETTINGS = "pass_settings"
     EMOJI_PICKER = "emoji_picker"
     SHADER_LIB_PICKER = "shader_lib_picker"
 
@@ -239,11 +240,12 @@ class App:
             on_pass_renamed=self._on_pass_renamed,
         )
 
-        # The pass list's two inline inputs (rename an existing pass / name a new one) and which
-        # row has its inputs + target expanded. Mutually exclusive: an opener closes the other.
-        self.pass_rename: InlineInput = InlineInput()
+        # The pass list's inline add input (name a new pass).
         self.pass_add: InlineInput = InlineInput()
-        self.pass_expanded: str = ""
+        # The pass whose settings modal is open (a PopupState.PASS_SETTINGS payload), or "",
+        # and the modal's rename buffer (seeded on open, committed on Enter).
+        self.pass_settings_name: str = ""
+        self.pass_settings_name_buf: str = ""
         # The pass whose tile has its delete-✕ armed (the in-cell "Delete?" wash), or "".
         self.pass_delete_armed: str = ""
 
@@ -488,8 +490,8 @@ class App:
     def _on_pass_renamed(self, old_path: Path, new_path: Path) -> None:
         # A pass file moved. Everything that refers to it BY NAME OR PATH moves with it here, in
         # one place: the editor session and any open tab (both path-keyed — a tab left pointing at
-        # a file that no longer exists eats its own edits), and the pass strip's selection and
-        # delete-arm (name-keyed — a stale selection shows an empty block, a stale arm puts the
+        # a file that no longer exists eats its own edits), and the pass strip's settings target and
+        # delete-arm (name-keyed — a stale target shows an empty modal, a stale arm puts the
         # "Delete?" wash on whichever pass takes that name next).
         session = self.editor_sessions.pop(old_path, None)
         if session is not None:
@@ -499,10 +501,24 @@ class App:
             if tab.path == old_path:
                 self.editor_tabs[i] = replace(tab, path=new_path)
         old_name, new_name = pass_name_of(old_path), pass_name_of(new_path)
-        if self.pass_expanded == old_name:
-            self.pass_expanded = new_name
+        if self.pass_settings_name == old_name:
+            self.pass_settings_name = new_name
+            self.pass_settings_name_buf = new_name
         if self.pass_delete_armed == old_name:
             self.pass_delete_armed = new_name
+
+    def panel_pass(self, document_id: str) -> Pass:
+        """The pass whose uniforms the Document tab edits: the active shader tab's own pass when
+        it belongs to this document, else the output. Distinct from the viewer on purpose — the
+        viewer follows the output, while the panel stays on the pass being worked on (open
+        another pass's tab to tweak it while the output is on screen)."""
+        document = self.ui_documents[document_id].document
+        tab = self.active_tab
+        if tab is not None and tab.kind == "shader" and tab.document_id == document_id:
+            for render_pass in document.passes.values():
+                if render_pass.source.path == tab.path:
+                    return render_pass
+        return document.render_pass
 
     def _on_document_deleted(self, document_id: str, source_path: Path) -> None:
         # A document's dir was trashed by the core; drop its editor session + close any of its open
@@ -736,13 +752,11 @@ class App:
             self.region_focus_pending = True
 
     def select_document(self, document_id: str) -> None:
-        # If the grid owns keyboard focus, keep it there: the new document's editor auto-grabs
-        # focus on its first render (TextEditor quirk), so defocus it and re-latch the grid.
+        # The summoned tab cannot steal the grid's focus: _focus_or_add_tab yields the editor
+        # back to any non-editor region that owns focus.
         if self._copilot_busy_blocked("Switching documents"):
             return
         self.set_current_document_id(document_id)
-        if self.active_region == ActiveRegion.GRID:
-            self._yield_editor_to_region()
 
     def update_splitter_drag(self, on_splitter: bool) -> None:
         # Latch on the press frame, hold until release — so the drag is covered even as the
@@ -811,6 +825,11 @@ class App:
         self.lib_reset_armed = False
         self.settings_focus = focus
         self._open_popup(PopupState.SETTINGS)
+
+    def open_pass_settings(self, name: str) -> None:
+        self.pass_settings_name = name
+        self.pass_settings_name_buf = name
+        self._open_popup(PopupState.PASS_SETTINGS)
 
     def open_emoji_picker(self, target: Callable[[str], None] | None = None) -> None:
         self._open_popup(PopupState.EMOJI_PICKER)
@@ -1061,13 +1080,20 @@ class App:
         for i, existing in enumerate(self.editor_tabs):
             if existing.path == tab.path:
                 self.active_tab_index = i
-                self.tab_select_pending = True
-                self.editor_was_ever_focused = False
-                return
-        self.editor_tabs.append(tab)
-        self.active_tab_index = len(self.editor_tabs) - 1
+                break
+        else:
+            self.editor_tabs.append(tab)
+            self.active_tab_index = len(self.editor_tabs) - 1
         self.tab_select_pending = True
         self.editor_was_ever_focused = False
+        # Summoning a tab must not move keyboard focus: a never-yet-rendered tab's TextEditor
+        # auto-grabs it on first render, so the summoning surface kept focus only when the tab
+        # happened to have rendered before. When a non-editor region owns focus, yield the
+        # editor back to it. Skipped while a popup is open — the region latch's
+        # set_next_window_focus would force-close the modal (/imgui-ui section 8) — and the
+        # popup's own close hands focus back via reconcile_popup_focus.
+        if self.active_region != ActiveRegion.EDITOR and not self.any_popup_open():
+            self._yield_editor_to_region()
 
     def ensure_shader_tab(self, document_id: str, pass_name: str = "") -> None:
         # On document-select: focus (or open) a pass's shader tab so selecting a document shows a

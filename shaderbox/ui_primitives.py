@@ -739,6 +739,24 @@ def close_cross_button(id_: str, side: float) -> bool:
     return clicked
 
 
+def tune_icon_button(id_: str, side: float) -> bool:
+    """A framed square with a drawn sliders glyph (three rails, offset knobs) — the
+    settings affordance for a preview tile. The frame-coloured fill keeps the glyph
+    readable over any image. No font dependency. Returns True on click."""
+    clicked, origin = _glyph_button(
+        id_, side, COLOR.BG_FRAME, COLOR.BORDER, COLOR.BORDER
+    )
+    col = imgui.color_convert_float4_to_u32(COLOR.FG_TITLE)
+    dl = imgui.get_window_draw_list()
+    pad: float = side * 0.28
+    x0, x1 = origin.x + pad, origin.x + side - pad
+    for i, knob in enumerate((0.7, 0.3, 0.55)):
+        y: float = origin.y + pad + (side - 2 * pad) * i / 2.0
+        dl.add_line((x0, y), (x1, y), col, 1.2)
+        dl.add_circle_filled((x0 + (x1 - x0) * knob, y), side * 0.09, col)
+    return clicked
+
+
 def copy_icon_button(id_: str, side: float) -> bool:
     """A ghost square with a drawn copy glyph (two offset rounded-rect outlines), for a
     corner copy affordance. No font dependency. Returns True on click."""
@@ -947,8 +965,9 @@ def preview_cell(
     as one ring; the click target is a `selectable` (a nav stop, unlike an
     `invisible_button`) with a transparent fill so the image/border carries the visual.
 
-    `stale` marks a texture that is no longer being rendered — the tile dims and takes a
-    corner tick, so a frozen picture cannot be read as a live one.
+    `stale` marks a texture that is no longer being rendered — the image washes toward grey
+    (desaturated, not darkened) and the footer dims, so a frozen picture cannot be read as a
+    live one.
     """
     footer_h: float = imgui.get_text_line_height_with_spacing() if footer else 0.0
     cell_h: float = cell_w + footer_h
@@ -988,17 +1007,13 @@ def preview_cell(
                 (ix + dw, iy + dh),
                 (0, 1),
                 (1, 0),
-                imgui.color_convert_float4_to_u32(
-                    COLOR.STALE_TINT if stale else COLOR.WHITE
-                ),
+                imgui.color_convert_float4_to_u32(COLOR.WHITE),
             )
             if stale:
-                mark = SIZE.STALE_MARK
                 dl.add_rect_filled(
-                    (origin.x + avail.x - mark - SPACE.XS, origin.y + SPACE.XS),
-                    (origin.x + avail.x - SPACE.XS, origin.y + SPACE.XS + mark),
-                    imgui.color_convert_float4_to_u32(COLOR.STALE_MARK),
-                    mark * 0.5,
+                    (ix, iy),
+                    (ix + dw, iy + dh),
+                    imgui.color_convert_float4_to_u32(COLOR.STALE_WASH),
                 )
 
         # selectable (not invisible_button) so keyboard-nav can land on the cell;
@@ -1020,7 +1035,10 @@ def preview_cell(
             fw = imgui.calc_text_size(label)
             fy: float = origin.y + img_h
             imgui.set_cursor_screen_pos((origin.x + (avail.x - fw.x) / 2, fy))
-            imgui.text(label)
+            if stale:
+                imgui.text_colored(COLOR.FG_DIM, label)
+            else:
+                imgui.text(label)
 
         if selected and armed:
             choice: bool | None = cell_delete_confirm(

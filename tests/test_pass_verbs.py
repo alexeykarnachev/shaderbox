@@ -15,10 +15,11 @@ from typing import Any
 
 import pytest
 
-from shaderbox.pass_graph import DTYPES, PassEntry, TargetConfig
+from shaderbox.pass_graph import DTYPES, PassEntry, PassGraph, TargetConfig
 from shaderbox.paths import PASSES_DIR_NAME, pass_shader_name
+from shaderbox.popups.pass_settings import _FORMAT_CODES, _FORMATS
 from shaderbox.ui_models import load_document_from_dir
-from shaderbox.widgets.pass_list import _FORMAT_CODES, _FORMATS
+from shaderbox.widgets.pass_list import _strip_order
 
 _SAMPLER = """#version 460 core
 in vec2 vs_uv;
@@ -258,17 +259,37 @@ def test_an_armed_delete_follows_a_rename(app: Any) -> None:
     assert app.pass_delete_armed == "spared"
 
 
-def test_renaming_a_pass_moves_the_expanded_selection_with_it(app: Any) -> None:
-    # The strip's expanded block is keyed by pass NAME, so a rename that left it behind would show
-    # the wiring of a pass that no longer exists (it silently renders nothing).
+def test_renaming_a_pass_moves_the_settings_target_with_it(app: Any) -> None:
+    # The settings modal's target is keyed by pass NAME, so a rename that left it behind would
+    # show the wiring of a pass that no longer exists (the modal closes on a missing pass).
     document_id = _document_id(app)
     app.session.add_pass(document_id, "before")
-    app.pass_expanded = "before"
+    app.pass_settings_name = "before"
     assert app.session.rename_pass(document_id, "before", "after") == ""
     document = app.ui_documents[document_id].document
     assert "after" in document.passes
-    assert app.pass_expanded == "after", (
-        "the expanded selection did not follow the rename, so the block shows nothing"
+    assert app.pass_settings_name == "after", (
+        "the settings target did not follow the rename, so the modal closes on nothing"
+    )
+
+
+def test_the_strip_order_is_topological_and_independent_of_the_output() -> None:
+    # Alphabetical would read composite before scene, and moving the output around must not
+    # shuffle the tiles: picking a different output leaves the strip exactly where it was. A pass
+    # the planner cannot order (no graph entry) still gets a tile, appended by name.
+    passes = {
+        "scene": PassEntry(),
+        "blur": PassEntry(inputs={"u_src": "scene"}),
+        "composite": PassEntry(inputs={"u_a": "scene", "u_b": "blur"}),
+    }
+    names = ["blur", "composite", "scene", "unplanned"]
+    orders = [
+        _strip_order(names, PassGraph(output=output, passes=passes))
+        for output in ("composite", "scene", "blur")
+    ]
+    assert orders[0] == ["scene", "blur", "composite", "unplanned"]
+    assert orders[1] == orders[0] and orders[2] == orders[0], (
+        "changing the output re-shuffled the strip"
     )
 
 

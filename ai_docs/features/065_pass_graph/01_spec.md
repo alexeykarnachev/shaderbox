@@ -297,7 +297,7 @@ Each stage leaves the tree green and is verifiable on its own.
    `passes/` and `graph.json` cannot disagree with the screen; `tests/test_pass_verbs.py` drives
    them headlessly and reloads from disk to prove it. Rename is transactional as D15 demands, and
    the tab-repointing half rides a new `on_pass_renamed` hook. Smoke drives the panel's non-default
-   paths (expanded row, both inline inputs) because none of them draw in the collapsed default and
+   paths (the settings modal, both inline inputs) because none of them draw by default and
    none can be screenshotted here.
 8. **The copilot** — DONE, no new tools. The address kind is a SUFFIX (`<id>#<pass>`) rather than
    a prefix, so a bare id stays valid and means the output pass — every tool that predates the
@@ -380,10 +380,13 @@ Treat it as an in-progress list, not a closed one: the UI has had one review pas
 
 ### Where the UI lives
 
-- **`shaderbox/widgets/pass_list.py`** — the whole pass surface. A horizontal strip of
+- **`shaderbox/widgets/pass_list.py`** — the strip itself. A horizontal strip of
   `preview_cell` tiles (one per pass, showing that pass's own live target scaled down by imgui —
-  no second render), then below it the selected pass's `Reads` and `Draws into` blocks, the
-  rename input and `add pass`. Right-click a tile for rename / set-as-output / delete.
+  no second render), the rename input and `add pass`. Right-click a tile for settings / rename /
+  set-as-output / delete.
+- **`shaderbox/popups/pass_settings.py`** — the `Reads` and `Draws into` controls, as a modal in
+  the `PopupState` mutex. Opens from the selected tile's sliders-glyph overlay, the context menu,
+  and automatically on `add pass` — the one moment the choices are actually made.
 - **`shaderbox/tabs/document.py`** calls it, above the `Entry points` section that still holds the
   Script row.
 - **`shaderbox/tabs/code.py::tab_label`** names a pass in its editor tab, and
@@ -410,20 +413,98 @@ Treat it as an in-progress list, not a closed one: the UI has had one review pas
    explaining each (`efb5d26`). A test pins the format labels against `pass_graph.DTYPES` so a
    raw dtype string cannot come back.
 
+**Round two (after the strip rework):**
+
+4. **"The `Reads`/`Draws into` UI looks like shit — shit ton of vertical space for settings used
+   once at pass setup."** Correct again, and the direction was theirs: the block became a MODAL
+   (`popups/pass_settings.py`), opened from a sliders-glyph overlay on the selected tile, the
+   tile's context menu, and automatically when a pass is created. The strip now spends its
+   vertical budget on thumbnails only. This also dissolved their first-launch finding — the
+   selected pass showed no `Reads`/`Draws into` until an explicit tile click, because
+   `pass_expanded` started empty while the selection border tracked the active tab; there is no
+   expanded state to be empty any more.
+5. **Tiles too small.** Their number, not a guess: 1.5-2x. `SIZE.PASS_THUMB` 64 -> 112.
+6. **The scrollbar landed on the uniforms sub-pane, not the Document tab.** The `ui_uniforms`
+   child had a fixed size (the remaining space) and scrolled internally, so the tab itself never
+   scrolled. `ChildFlags_.auto_resize_y` makes the child grow to its content and the whole
+   `document_settings` panel scroll as one surface.
+7. **The size slider read 0%-1%.** `%.0f` was formatting the RAW 0.05-1.0 scale. The slider now
+   runs over 5-100 (the number a person reads) and the model keeps the 0-1 scale.
+
+**Round three (on the modal):**
+
+8. **"Put name editing in the settings."** The inline rename input under the strip and the
+   context menu's Rename are gone; the modal's first row is the name (Enter commits, and
+   `_on_pass_renamed` re-points the modal's own target so it keeps drawing through its own
+   rename).
+9. **Tooltip and help noise.** The tile tooltip's "click to open; right-click for actions" line
+   is deleted, and the Reads section carries ONE `?` on its caption (how rows appear, how to add
+   one) instead of the same sentence under every combo.
+10. **The size slider's text overflowed it.** Only `%.0f%%` lives inside the slider now; the
+    derived resolution moved into the row label — `size (960, 540)` — and `_ROW_LABEL_W` grew to
+    fit it.
+11. **"Clicking another pass preview should fully switch to it."** The main viewer now shows a
+    per-document **viewed pass** (`UIDocumentState.viewed_pass`, persisted; "" = follow the
+    output). A tile click opens the pass AND views it; "Set as output" resets viewed to "" so
+    the viewer tracks the output — which is exactly the rare "look at A while tweaking B" tool,
+    because the uniforms panel does NOT follow the viewer: it follows `App.panel_pass` (the
+    active shader tab's pass, then viewed, then output). `Document.view_pass` (runtime, synced
+    per frame in `ui.py`) extends the render plan so a viewed pass the output does not need
+    still draws (pinned in `test_document_graph.py`); rename-follow is pinned in
+    `test_pass_verbs.py`. The current document also keeps rendering behind the pass-settings
+    modal — watching a wiring change land is the modal's whole point.
+12. **The strip orders topologically, output last** (`_strip_order`, pinned in
+    `test_pass_verbs.py`): producers left of consumers via `plan_passes`, unplannable passes
+    appended by name, and the output moved to the end so the strip reads left-to-right as "how
+    the final picture is built". It was alphabetical.
+13. **The modal speaks the Settings dialect**: `separator_text` sections (Pass / Reads / Draws
+    into) and the shared `help_marker` "(?)" instead of a bespoke bare `?`; the Reads section's
+    help hovers on its own separator title.
+14. **"Sometimes a tile click selected the code field, sometimes not."** The tab's TextEditor
+    auto-grabs keyboard focus on its FIRST render (/imgui-ui section 8), so the panel kept focus
+    only when the summoned tab had rendered before. Fixed at the shared root:
+    `App._focus_or_add_tab` yields the editor back (`_yield_editor_to_region`) whenever a
+    non-editor region owns focus — every summoner (tile click, document switch, OPEN_SHADER /
+    OPEN_SCRIPT, startup restore) now keeps the summoning surface focused; entering the editor
+    is its own gesture. Skipped while a popup is open (the region latch would force-close the
+    modal); `select_document`'s local GRID guard became redundant and was removed. Pinned in
+    `test_pass_editor_wiring.py`.
+
+**Round five (the strip's meaning settles):**
+
+15. **Click = set as output; ONE highlight; the viewed-pass mechanism is gone.** Round three's
+    `viewed_pass` split the viewer from the output and the maintainer rejected it in use: a tile
+    click now sets the graph OUTPUT (and opens the editor tab), the viewer simply follows the
+    output, and the accent border has one meaning — the picked/output pass (error red still
+    overrides; an open tab is shown by the tab bar, not a second border colour). The
+    look-at-A-while-tweaking-B case rides the TAB BAR: tabs never touch the output and the
+    uniforms panel follows the active tab (`App.panel_pass`). Removed with it: the
+    `UIDocumentState.viewed_pass` field, `Document.view_pass` + its render-plan extension and
+    test, and the context menu's now-redundant "Set as output".
+16. **The strip order is output-independent.** Setting a pass as output was re-shuffling the
+    tiles (the round-four "output last" move). `_strip_order` is now pure `plan_passes` topo
+    order — deterministic and blind to the output — so picking a different output never moves a
+    tile. Pinned in `test_pass_verbs.py`.
+17. **Off-plan passes freeze visibly.** Passes the current output does not need never render
+    (that was always the engine's rule); their tiles now say so: the image washes toward
+    mid-grey (`COLOR.STALE_WASH` over the image — 0.4*pixel + 0.6*grey, desaturation, after a
+    multiplicative dark tint "worked strange") and the footer dims (`preview_cell(stale=...)`).
+    The corner tick and the tooltip line the first cut used were both rejected as noise; the
+    treatment is shared with the document grid's stale thumbnails.
+
 ### Still unseen, and the first thing to ask about
 
 Nothing below has been looked at by a human. Ask before assuming any of it is fine:
 
-- **The proportions, all chosen blind — and they are TWO separate geometries.** `SIZE.PASS_THUMB`
-  (64px, `theme.py`) sizes the TILES and nothing else; it has exactly two consumers, both in
-  `pass_list.py` (`cell_w=` and the wrap arithmetic), so one token edit moves both. `_ROW_LABEL_W`
-  (78px) and `_CTRL_W` (168px) size the label column and combos of the block BELOW the strip.
-  Unknown: whether the strip wraps sensibly at real panel widths, and whether a long pass name
-  truncates badly in a tile footer.
-  **Ask for a number rather than iterating** (`/imgui-ui` §0 defense 2): the panel width they
-  actually run at and a target tile size make this one token edit instead of a round of guesses.
-- **Whether the expanded block belongs under the strip at all**, versus in the tile, a popup, or
-  a separate tab.
+- **The modal, whole.** `popups/pass_settings.py` was built after the maintainer's last look:
+  its size (`SIZE.PASS_SETTINGS_W/H`, 440x400), the sliders-glyph overlay button, the "reads
+  nothing" caption for a sampler-less pass, the name row, and open-on-create have had zero human
+  frames.
+- **The click-sets-output switch, live** — including whether rewriting `graph.json` on every
+  tile click feels right in use, and the stale dim on off-plan tiles.
+- **The 112px tiles at real panel widths** — whether the strip wraps sensibly and whether a long
+  pass name truncates badly in a tile footer. `SIZE.PASS_THUMB` has exactly two consumers, both
+  in `pass_list.py`, so a correction is one token edit.
 - **Spec checks 13-15**, which need a display: an error in pass 2 landing in the strip with pass
   2's file and line and click-to-jump working; a rename re-pointing an open tab (the engine half
   is tested, the TAB half only smoke-verified); the six shipped examples loading with the browser
@@ -435,7 +516,7 @@ Nothing below has been looked at by a human. Ask before assuming any of it is fi
 
 `make smoke` drives the panel's real draw paths through 200 frames — including the five-tile strip
 (it switches to Bloom Chain mid-run, since the single-pass fixture never draws more than one tile),
-the armed delete wash, the expanded block and both inline inputs. That catches an unbalanced imgui
+the armed delete wash, the settings modal and both inline inputs. That catches an unbalanced imgui
 ID stack, a SetCursorPos assert, a None-deref. Measured, it does NOT catch: a leading `same_line`
 on the first tile, an unbalanced `indent`, or anything about size, spacing, wrapping or wording.
 Those are exactly the class that has to go to the maintainer.

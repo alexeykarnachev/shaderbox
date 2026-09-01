@@ -81,9 +81,9 @@ def _locate_uniform_declaration(app: App, name: str) -> tuple[Path, int] | None:
         line = find_uniform_declaration_line(session.editor.get_text(), name)
         if line is not None:
             return session.source.path, line
-    if ui_document := app.ui_documents.get(app.current_document_id):
+    if app.current_document_id in app.ui_documents:
         active_path = session.source.path if session is not None else None
-        for source in ui_document.document.render_pass.compile_unit.sources:
+        for source in app.panel_pass(app.current_document_id).compile_unit.sources:
             if source.path == active_path:
                 continue
             line = find_uniform_declaration_line(source.text, name)
@@ -171,12 +171,11 @@ def _draw_play_stop(app: App, name: str, *, driven: bool, playing: bool) -> None
 
 
 def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
-    if not (ui_document := app.ui_documents.get(app.current_document_id)):
+    if app.current_document_id not in app.ui_documents:
         return
 
-    current_value: UniformValue = ui_document.document.render_pass.uniform_values[
-        ui_uniform.name
-    ]
+    panel_pass = app.panel_pass(app.current_document_id)
+    current_value: UniformValue = panel_pass.uniform_values[ui_uniform.name]
     new_value = None
     name = ui_uniform.name
     hidden = f"##{name}"
@@ -310,4 +309,4 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
     # written back here (the tick wins); a stopped/manual slot's edit always applies.
     if new_value is not None and not playing:
         try_to_release(current_value)
-        ui_document.document.render_pass.uniform_values[ui_uniform.name] = new_value
+        panel_pass.uniform_values[ui_uniform.name] = new_value
