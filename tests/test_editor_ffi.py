@@ -146,6 +146,11 @@ def _drain_app(editor: Editor, focused: bool = True, popup: bool = False) -> Any
         editor_completion_requested=False,
         editor_clipboard_seen="",
         editor_visible_rows=20,
+        flush_current_editor=None,
+        notifications=SimpleNamespace(push=lambda *_a, **_k: None),
+        editor_tabs=[],
+        active_tab_index=0,
+        close_tab=lambda _i: None,
     )
 
 
@@ -214,6 +219,120 @@ def test_popup_open_blocks_the_drain() -> None:
     app.editor_key_events = [translate_char(ord("x"))]
     _drain_editor_input(app)
     assert e.get_text() == "one\ntwo\nthree\n"
+    e.close()
+
+
+def test_esc_never_defocuses_the_editor() -> None:
+    # Esc is vim's modal key: the editor owns it UNCONDITIONALLY while focused
+    # (maintainer decision, 067 manual pass) — idle-NORMAL Esc included, and the
+    # queue keeps flowing: [Esc, d, d] still deletes a line.
+    e = _editor()
+    app = _drain_app(e)
+    app.editor_key_events = [
+        KeyEvent(KeyCode.ESCAPE, 0),
+        translate_char(ord("d")),
+        translate_char(ord("d")),
+    ]
+    _drain_editor_input(app)
+    assert app.editor_esc_forwarded is True, (
+        "every focused Esc forwards — _handle_escape's defocus branch stays quiet"
+    )
+    assert e.get_text() == "two\nthree\n", "the dd after Esc still edits"
+    e.close()
+
+
+def _ctrl(ch: str) -> KeyEvent:
+    event = translate_key(
+        glfw.KEY_A + (ord(ch) - ord("a")), glfw.PRESS, glfw.MOD_CONTROL
+    )
+    assert event is not None
+    return event
+
+
+def test_ctrl_d_scrolls_instead_of_deleting_a_document() -> None:
+    e = _editor("\n".join(f"line {i}" for i in range(200)))
+    e.layout((640.0, 420.0), 16.0)
+    app = _drain_app(e)
+    app.editor_key_events = [_ctrl("d")]
+    _drain_editor_input(app)
+    assert e.get_scroll() == 10, "Ctrl+D = half a 20-row page down"
+    from shaderbox.commands import SPEC_BY_ID
+    from shaderbox.hotkeys import spec_eligible
+
+    spec = SPEC_BY_ID[CommandId.DELETE_DOCUMENT]
+    chord = int(imgui.Key.d) | int(imgui.Key.mod_ctrl)
+    assert spec_eligible(app, spec, chord, popup_open=False) is False, (
+        "the scroll consumed the chord — DELETE_DOCUMENT must not also fire"
+    )
+    app.editor_key_events = [_ctrl("u")]
+    _drain_editor_input(app)
+    assert e.get_scroll() == 0, "Ctrl+U scrolls back up"
+    e.close()
+
+
+def test_ctrl_f_b_e_y_scroll() -> None:
+    e = _editor("\n".join(f"line {i}" for i in range(200)))
+    e.layout((640.0, 420.0), 16.0)
+    app = _drain_app(e)
+    for ch, expected in (("f", 20), ("b", 0), ("e", 1), ("y", 0)):
+        app.editor_key_events = [_ctrl(ch)]
+        _drain_editor_input(app)
+        assert e.get_scroll() == expected, f"Ctrl+{ch.upper()} scroll"
+    e.close()
+
+
+def test_ctrl_o_is_consumed_noop_while_focused() -> None:
+    e = _editor()
+    app = _drain_app(e)
+    app.editor_key_events = [_ctrl("o")]
+    _drain_editor_input(app)
+    assert e.get_text() == "one\ntwo\nthree\n"
+    assert (int(imgui.Key.o) | int(imgui.Key.mod_ctrl)) in app.editor_consumed_chords, (
+        "the jump-back reflex must not open the project dialog"
+    )
+    e.close()
+
+
+def test_insert_ctrl_w_deletes_word_back_not_the_tab() -> None:
+    e = Editor("hello world")
+    e.set_language(Language.GLSL)
+    e.feed("A")  # append: insert mode, caret at end of line
+    app = _drain_app(e)
+    app.editor_key_events = [_ctrl("w")]
+    _drain_editor_input(app)
+    assert e.get_text() == "hello ", "Ctrl+W deleted one word back"
+    assert e.get_mode() == Mode.INSERT, "still typing — the tab did not close"
+    e.close()
+
+
+def test_insert_ctrl_u_deletes_to_line_start() -> None:
+    e = Editor("hello world")
+    e.set_language(Language.GLSL)
+    e.feed("A")
+    app = _drain_app(e)
+    app.editor_key_events = [_ctrl("u")]
+    _drain_editor_input(app)
+    assert e.get_text() == "", "Ctrl+U in insert deletes to line start"
+    assert e.get_mode() == Mode.INSERT
+    e.close()
+
+
+def test_colon_w_saves_through_the_host() -> None:
+    # `:w`'s object is the FILE, which the host owns — the editor's command line
+    # closes and the host flush runs (interim until an ABI host-command surface).
+    e = _editor()
+    app = _drain_app(e)
+    flushed: list[bool] = []
+    app.flush_current_editor = lambda: flushed.append(True)
+    app.editor_key_events = [
+        translate_char(ord(":")),
+        translate_char(ord("w")),
+        KeyEvent(KeyCode.ENTER, 0),
+    ]
+    _drain_editor_input(app)
+    assert flushed, ":w must save"
+    assert e.get_command_line() is None, "the command line closed"
+    assert e.get_text() == "one\ntwo\nthree\n", "no Enter leaked into the buffer"
     e.close()
 
 

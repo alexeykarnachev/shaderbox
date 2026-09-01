@@ -61,6 +61,8 @@ def _drain_editor_input(app: App) -> None:
             editor.key(KeyCode.ESCAPE)
             app.editor_esc_forwarded = True
             continue
+        if _handle_ex_command(app, editor, event):
+            continue
         if _handle_clipboard(app, editor, event):
             continue
         consumed = editor.key(event.code, event.mods, event.text)
@@ -175,6 +177,27 @@ def _read_clipboard(app: App) -> str:
     if not raw:
         return ""
     return raw.decode() if isinstance(raw, bytes) else raw
+
+
+def _handle_ex_command(app: App, editor: Editor, event: KeyEvent) -> bool:
+    # INTERIM host intercept for the ex commands whose OBJECT the host owns (the
+    # file): `:w` saves, `:wq`/`:x` save and close the tab. The editor executes
+    # what it owns (`:s`, search); a file write can only happen here. Pending an
+    # ABI host-command surface (filed editor-side) — this branch deletes itself
+    # when that lands.
+    if event.code != KeyCode.ENTER or event.mods != 0:
+        return False
+    if editor.get_command_line_prompt() != ":":
+        return False
+    command = (editor.get_command_line() or "").strip()
+    if command not in ("w", "wq", "x"):
+        return False
+    editor.key(KeyCode.ESCAPE)  # close the command line without executing
+    app.flush_current_editor()
+    app.notifications.push("Saved")
+    if command in ("wq", "x") and app.editor_tabs:
+        app.close_tab(app.active_tab_index)
+    return True
 
 
 def _handle_clipboard(app: App, editor: Editor, event: KeyEvent) -> bool:
