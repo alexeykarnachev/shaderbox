@@ -25,12 +25,19 @@ EDITOR_RESOURCES_DIR: Path = RESOURCES_DIR / "editor"
 
 _LIB: ctypes.CDLL | None = None
 
-# Shared scratch for text getters; 1 MiB bounds any single shader/script file.
+# Shared scratch for text getters (the frame loop is single-threaded). Grows on
+# demand: the ABI truncates on a codepoint boundary, so a result filling the
+# buffer to within one codepoint is retried bigger rather than saved truncated.
 _TEXT_BUF = (ctypes.c_ubyte * (1 << 20))()
 
 
+def _grow_text_buf() -> None:
+    global _TEXT_BUF
+    _TEXT_BUF = (ctypes.c_ubyte * (len(_TEXT_BUF) * 2))()
+
+
 class Prim(ctypes.Structure):
-    _fields_ = [("kind", ctypes.c_int32)] + [  # noqa: RUF012 — ctypes contract
+    _fields_ = [("kind", ctypes.c_int32)] + [
         (n, ctypes.c_float)
         for n in ("x0", "y0", "x1", "y1", "u0", "v0", "u1", "v1", "r", "g", "b", "a")
     ]
@@ -174,7 +181,13 @@ _SIG: dict[str, tuple[object, Sequence[object]]] = {
     ),
     "ed_marker_tooltip": (
         ctypes.c_int32,
-        [ctypes.c_void_p, ctypes.c_int32, ctypes.c_int32, _P(ctypes.c_ubyte), ctypes.c_int32],
+        [
+            ctypes.c_void_p,
+            ctypes.c_int32,
+            ctypes.c_int32,
+            _P(ctypes.c_ubyte),
+            ctypes.c_int32,
+        ],
     ),
     "ed_set_scroll": (None, [ctypes.c_void_p, ctypes.c_int32]),
     "ed_scroll": (ctypes.c_int32, [ctypes.c_void_p]),
@@ -197,7 +210,13 @@ _SIG: dict[str, tuple[object, Sequence[object]]] = {
     ),
     "ed_pixel_to_cursor": (
         None,
-        [ctypes.c_void_p, ctypes.c_float, ctypes.c_float, _P(ctypes.c_int32), _P(ctypes.c_int32)],
+        [
+            ctypes.c_void_p,
+            ctypes.c_float,
+            ctypes.c_float,
+            _P(ctypes.c_int32),
+            _P(ctypes.c_int32),
+        ],
     ),
     "ed_set_language": (ctypes.c_bool, [ctypes.c_void_p, ctypes.c_int32]),
     "ed_language_for_path": (ctypes.c_int32, [ctypes.c_char_p]),
@@ -271,7 +290,9 @@ class Editor:
         # Grown on demand by layout_bulk so the common case reuses one buffer.
         self._prims = (Prim * 4096)()
         self._prim_count: int = 0
-        if not lib.ed_load_atlas(self._h, str(EDITOR_RESOURCES_DIR / "atlas.json").encode()):
+        if not lib.ed_load_atlas(
+            self._h, str(EDITOR_RESOURCES_DIR / "atlas.json").encode()
+        ):
             raise RuntimeError("editor atlas failed to load")
 
     def close(self) -> None:
@@ -283,6 +304,9 @@ class Editor:
 
     def get_text(self) -> str:
         n = self._lib.ed_text(self._h, _TEXT_BUF, len(_TEXT_BUF))
+        while n >= len(_TEXT_BUF) - 4:
+            _grow_text_buf()
+            n = self._lib.ed_text(self._h, _TEXT_BUF, len(_TEXT_BUF))
         return bytes(_TEXT_BUF[:n]).decode()
 
     def set_text(self, text: str) -> None:
@@ -321,7 +345,10 @@ class Editor:
         self._lib.ed_feed(self._h, keys.encode())
 
     def key(self, code: KeyCode, mods: int = 0, text: str = "") -> bool:
-        """One key press. True if the editor consumed it."""
+        """One key press. True if the editor consumed it. A multi-codepoint
+        `text` is refused (one platform event carries one codepoint)."""
+        if len(text) > 1:
+            return False
         return self._lib.ed_key(self._h, int(code), mods, ord(text) if text else 0)
 
     def replace_text_in_current_cursor(self, text: str) -> None:
@@ -348,6 +375,9 @@ class Editor:
 
     def get_selection_text(self) -> str | None:
         n = self._lib.ed_selection_text(self._h, _TEXT_BUF, len(_TEXT_BUF))
+        while n >= len(_TEXT_BUF) - 4:
+            _grow_text_buf()
+            n = self._lib.ed_selection_text(self._h, _TEXT_BUF, len(_TEXT_BUF))
         return None if n < 0 else bytes(_TEXT_BUF[:n]).decode()
 
     def set_selection(self, start: tuple[int, int], end: tuple[int, int]) -> None:
@@ -370,7 +400,9 @@ class Editor:
         if not self._lib.ed_set_language(self._h, int(lang)):
             raise ValueError(f"unknown language: {lang}")
 
-    def set_palette(self, palette: dict[Slot, tuple[float, float, float, float]]) -> None:
+    def set_palette(
+        self, palette: dict[Slot, tuple[float, float, float, float]]
+    ) -> None:
         for slot, rgba in palette.items():
             if not self._lib.ed_set_color(self._h, int(slot), *rgba):
                 raise ValueError(f"unknown theme slot: {slot}")
@@ -410,8 +442,12 @@ class Editor:
     def is_mouse_pos_over_glyph(self, pos: tuple[float, float]) -> bool:
         return self._lib.ed_pixel_over_glyph(self._h, pos[0], pos[1])
 
-    def get_word_at_mouse_pos(self, pos: tuple[float, float], big: bool = False) -> str | None:
-        n = self._lib.ed_word_at_pixel(self._h, pos[0], pos[1], big, _TEXT_BUF, len(_TEXT_BUF))
+    def get_word_at_mouse_pos(
+        self, pos: tuple[float, float], big: bool = False
+    ) -> str | None:
+        n = self._lib.ed_word_at_pixel(
+            self._h, pos[0], pos[1], big, _TEXT_BUF, len(_TEXT_BUF)
+        )
         return None if n < 0 else bytes(_TEXT_BUF[:n]).decode()
 
     def pixel_to_cursor(self, pos: tuple[float, float]) -> CursorPos:
@@ -486,10 +522,20 @@ class Editor:
     def get_atlas_distance_range(self) -> float:
         return self._lib.ed_atlas_distance_range(self._h)
 
-    def layout(self, size: tuple[float, float], px_per_em: float, wrap: bool = False) -> int:
-        """Lay the buffer out at origin (0,0) and pull the primitive array in one
-        crossing. Returns the primitive count; the raw bytes are `prims_buffer`."""
-        n = self._lib.ed_layout(self._h, 0.0, 0.0, size[0], size[1], px_per_em, wrap)
+    def layout(
+        self,
+        size: tuple[float, float],
+        px_per_em: float,
+        origin: tuple[float, float] = (0.0, 0.0),
+        wrap: bool = False,
+    ) -> int:
+        """Lay the buffer out and pull the primitive array in one crossing.
+        `origin` is where the TEXT starts in widget space — the host passes its
+        gutter width as origin.x (ed_layout reserves nothing itself; the
+        reference UI does the same). Returns the primitive count."""
+        n = self._lib.ed_layout(
+            self._h, origin[0], origin[1], size[0], size[1], px_per_em, wrap
+        )
         if n <= 0:
             self._prim_count = 0
             return 0

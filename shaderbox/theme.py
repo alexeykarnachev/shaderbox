@@ -165,10 +165,8 @@ class _ColorBag:
     FAVS: tuple[float, float, float, float] = _P["yellow_b"]
     RESET_PILL: tuple[float, float, float, float] = _P["purple_n"]
 
-    # Syntax tokens for the inline editor. NOT applied: imgui_bundle's TextEditor.Palette is
-    # read-only from Python (`.get` only, no per-slot setter), so the editor runs the library's
-    # stock dark palette. Kept for when a palette-write path exists — the intended
-    # Color->SYN_* mapping is in ai_docs/features/006_inline_editor.md section 5.
+    # Syntax tokens for the inline editor, applied via editor_palette() below
+    # (the Color->SYNTAX_* slot mapping).
     SYN_KEYWORD: tuple[float, float, float, float] = _P["red_b"]
     SYN_TYPE: tuple[float, float, float, float] = _P["yellow_b"]
     SYN_BUILTIN: tuple[float, float, float, float] = _P["green_b"]

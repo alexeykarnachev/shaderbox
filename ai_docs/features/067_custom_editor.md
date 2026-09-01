@@ -61,9 +61,11 @@ requirement that follows: modal bindings must not collide with the global hotkey
    VBO (solid quads carry a zero-area UV flag) drawn in array order — the array arrives
    draw-ordered. Present via
    `imgui.image(ImTextureRef(tex.glo))` inside the existing editor child window.
-   **Redraw gate, structured for the domain test:** `render_state(...) -> tuple` (revision,
-   scroll, cursor, mode, selection, size, px_per_em, marker generation, settings
-   generation, focus, command-line text) and `should_redraw(prev, cur) -> bool` are free
+   **Redraw gate, structured for the domain test:** `render_state(...) -> tuple` (the
+   session's PATH — tabs share one panel, so identity must move the tuple — plus
+   revision, scroll, cursor, mode, selection, command-line text, size, px_per_em,
+   gutter_px, marker fingerprint, settings fingerprint, focus) and
+   `should_redraw(prev, cur) -> bool` are free
    functions; the render path re-reads primitives + re-renders ONLY when the tuple
    changed, and increments `App.editor_redraw_count` PAST the gate (counts decisions, not
    calls). `ed_layout` itself runs every visible frame so hit-testing and scroll clamping
@@ -117,9 +119,12 @@ requirement that follows: modal bindings must not collide with the global hotkey
    caret). Handled in the drain before `ed_key` (they are unbound editor-side anyway).
    Registers don't exist in the keymap; `yy`/`p` not carrying text is a known editor-side
    product question, not ours to fix here.
-9. **Chrome is host-drawn imgui, on the ABI's furniture queries.** Gutter: line numbers in
-   a fixed column left of the text, placed with `ed_gutter_cells` + `ed_cell_size` +
-   `ed_text_origin` (all answer against the last `ed_layout`). Status row: extend
+9. **Chrome is host-drawn imgui, on the ABI's furniture queries.** Gutter: the HOST
+   reserves the space — `ed_layout` reserves nothing, so the layout origin's x is the
+   gutter width (`ed_gutter_cells` × the cell width, converging one frame behind a
+   line-count change), and line numbers draw left of `ed_text_origin` at rows placed
+   by `ed_cell_size` (all answer against the last `ed_layout`; the reference UI
+   offsets its origin the same way). Status row: extend
    `draw_chrome` with a mode badge (NORMAL/INSERT/VISUAL/V-LINE, `ed_mode`) + `line:col`;
    while the command line is open (`ed_command_line` ≥ 0) the row shows
    `ed_command_line_prompt` + the typed text + `ed_command_message` — search/substitute
@@ -156,11 +161,14 @@ requirement that follows: modal bindings must not collide with the global hotkey
     Rebuild procedure documented in `conventions.md ## Known quirks` (build in the editor
     repo: `odin build ffi -build-mode:shared -no-entry-point -out:libeditor.so`, copy the
     three files, update `VERSION`).
-14. **Completion (stage 2, in-scope): host-driven vocabulary.** Per frame while the
-    completion popup is open (`ed_complete_prefix ≥ 0`): filter and push candidates —
-    `SB_*` lib function names (from the live `ShaderLibIndex`), the document's uniform
-    names, GLSL keywords/builtins for shader tabs; Python keywords for script tabs.
-    Popup primitives arrive in the same layout array — no extra drawing work.
+14. **Completion: BLOCKED editor-side, host code removed.** The post-impl round
+    demonstrated two ABI gaps: `ed_complete_prefix` returns 0 (never -1) while the
+    popup is closed — so a host feeding on the documented condition opens the popup
+    every insert-mode frame and Enter silently accepts a completion — and `ed_layout`
+    never emits `Popup_Panel`/`Popup_Glyph` primitives, so the popup is structurally
+    invisible to an ABI host. Both filed with the editor session (its feature 004).
+    The host-side vocabulary feeding was REMOVED (not gated off — no speculative
+    machinery); re-add when both land, wiring the feed to a drain-tracked Ctrl+N.
 15. **TextEditor is deleted outright — no fallback path.** `imgui_color_text_edit`
     imports go from `editor_types.py`, `app.py`, `tabs/code.py`; the palette call dies.
     Doc fallout is enumerated in Files touched (conventions bullet, skill §8 lines,
@@ -265,6 +273,29 @@ Each step fails for one reason and names its falsifier; the consumer is verified
   sleep made "no visible lag" theater); guard/reader/exerciser table added; `build.sh`
   Windows-stage leak added to scope; hot-reload step now starts dirty; smoke assertion
   made decidable (Glyph-kind count). No findings rejected.
+
+- **Post-impl round (3 × opus, 2026-09-01): correctness FAIL, architecture PARTIAL,
+  spec-fidelity PARTIAL → all findings fixed in the same wave.** Correctness (all
+  probe-demonstrated): render_state carried no editor identity, so two fresh tabs
+  sharing the one panel compared equal and a tab switch showed stale text → identity
+  (the session path) + gutter_px joined the tuple, with a two-editor falsifier test;
+  the completion feature was cut entirely (D14 above — both root causes are editor-side
+  ABI gaps); `ed_free` was never called (~1.5 MB native per opened file) → sessions
+  close at every eviction site and in `App.release`; `EditorPanel` leaked FBO+texture
+  per resize → released before reassign + a `release()`; Ctrl+X/V bypassed the copilot
+  read-only lock through the host write path → gated on `copilot_turn_active`; the key
+  queue flooded after degenerate frames → cleared on that path; `get_text` silently
+  truncated at 1 MiB → grow-and-retry; the focus-request latch could stick with no tab
+  open → cleared on the early return; marker-state entries leaked on renames → popped.
+  Architecture: the commit's "make check clean" claim was FALSE — the gate was judged
+  through a pipe (`| tail` eats the exit code; the exact 064 failure mode) and the tree
+  carried an unused `noqa` + four unformatted files; seven stale TextEditor comments
+  (two describing behavior the code no longer has) rewritten; two dead params dropped;
+  a dangling test-file reference fixed. Spec-fidelity: the D9 gutter was dead code
+  (origin never offset — `ed_text_origin` stayed 0 and the draw early-returned; fixed
+  per D9's rewritten mechanism); the D5 registry-skip falsifier existed only as the
+  recording half → `spec_eligible` extracted + tested; D7's missing child flags added.
+  No findings rejected.
 
 ## Open questions for the user
 

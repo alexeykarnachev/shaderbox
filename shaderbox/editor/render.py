@@ -69,7 +69,10 @@ void main() {
 
 PRIM_DTYPE = np.dtype(
     [("kind", "<i4")]
-    + [(f, "<f4") for f in ("x0", "y0", "x1", "y1", "u0", "v0", "u1", "v1", "r", "g", "b", "a")]
+    + [
+        (f, "<f4")
+        for f in ("x0", "y0", "x1", "y1", "u0", "v0", "u1", "v1", "r", "g", "b", "a")
+    ]
 )
 
 # pos(2) + uv(2) + color(4) + textured(1)
@@ -78,24 +81,31 @@ _VERT_FLOATS = 9
 
 def render_state(
     editor: Editor,
+    identity: object,
     size: tuple[int, int],
     px_per_em: float,
+    gutter_px: float,
     marker_fingerprint: object,
     settings_fingerprint: object,
     focused: bool,
 ) -> tuple:
-    """Everything a rendered frame depends on. A member added to the layout's
-    inputs MUST be added here — `tests/test_editor_render.py` walks the domain."""
+    """Everything a rendered frame depends on. `identity` is the session's path:
+    tabs share ONE panel, and without it two fresh files (same revision, cursor,
+    mode) compare equal and a tab switch shows stale text. A member added to the
+    layout's inputs MUST be added here —
+    `tests/test_editor_ffi.py::test_render_state_reacts_to_every_editor_dimension`
+    walks the domain."""
     return (
+        identity,
         editor.get_undo_index(),
         editor.get_scroll(),
         editor.get_current_cursor_position(),
         editor.get_mode(),
         editor.get_selection(),
         editor.get_command_line(),
-        editor.complete_prefix(),
         size,
         px_per_em,
+        gutter_px,
         marker_fingerprint,
         settings_fingerprint,
         focused,
@@ -128,7 +138,9 @@ def build_vertices(prims: np.ndarray) -> np.ndarray:
         out[:, i, 3] = corner_v[i]
     for c, field in enumerate(("r", "g", "b", "a")):
         out[:, :, 4 + c] = prims[field][:, None]
-    textured = (prims["kind"] == int(Kind.GLYPH)) | (prims["kind"] == int(Kind.POPUP_GLYPH))
+    textured = (prims["kind"] == int(Kind.GLYPH)) | (
+        prims["kind"] == int(Kind.POPUP_GLYPH)
+    )
     out[:, :, 8] = textured.astype(np.float32)[:, None]
     return out.reshape(-1, _VERT_FLOATS)
 
@@ -168,6 +180,10 @@ class EditorPanel:
         if self.texture is not None and tuple(self.texture.size) == size:
             return
         gl = self.renderer.gl
+        if self.fbo is not None:
+            self.fbo.release()
+        if self.texture is not None:
+            self.texture.release()
         self.texture = gl.texture(size, 4)
         self.texture.filter = (moderngl.NEAREST, moderngl.NEAREST)
         self.fbo = gl.framebuffer(color_attachments=[self.texture])
@@ -195,7 +211,16 @@ class EditorPanel:
                 self.vbo = gl.buffer(reserve=max(len(data), 1))
                 self.vao = gl.vertex_array(
                     self.renderer.program,
-                    [(self.vbo, "2f 2f 4f 1f", "in_pos", "in_uv", "in_color", "in_textured")],
+                    [
+                        (
+                            self.vbo,
+                            "2f 2f 4f 1f",
+                            "in_pos",
+                            "in_uv",
+                            "in_color",
+                            "in_textured",
+                        )
+                    ],
                 )
             self.vbo.write(data)
             gl.enable(moderngl.BLEND)
@@ -209,3 +234,10 @@ class EditorPanel:
             assert self.vao is not None
             self.vao.render(moderngl.TRIANGLES, vertices=len(verts))
         return self.texture
+
+    def release(self) -> None:
+        for obj in (self.vao, self.vbo, self.fbo, self.texture):
+            if obj is not None:
+                obj.release()
+        self.vao = self.vbo = self.fbo = self.texture = None
+        self.last_state = None

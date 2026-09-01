@@ -287,9 +287,9 @@ class App:
         self.copilot_focused: bool = False
         # The user message whose Revert glyph was clicked; drives the confirm modal. None = closed.
         self.copilot_revert_target: Message | None = None
-        # True while the mouse is over the open chat window. code.py neutralizes the
-        # editor's direct io.mouse_down read so a drag inside the chat doesn't select
-        # editor text beneath it (the TextEditor bypasses imgui hit-testing).
+        # True while the mouse is over the open chat window. code.py's mouse handler
+        # stands down while it's set, so a drag inside the chat can't select editor
+        # text beneath it.
         self.copilot_hovered: bool = False
         # True while a copilot turn runs — locks the editor read-only. Set in copilot_send,
         # reconciled to session.state.in_flight each frame in ui.py.
@@ -537,6 +537,7 @@ class App:
         if session is not None:
             session.source = replace(session.source, path=new_path)
             self.editor_sessions[new_path] = session
+        self.editor_marker_state.pop(old_path, None)
         for i, tab in enumerate(self.editor_tabs):
             if tab.path == old_path:
                 self.editor_tabs[i] = replace(tab, path=new_path)
@@ -563,7 +564,10 @@ class App:
     def _on_document_deleted(self, document_id: str, source_path: Path) -> None:
         # A document's dir was trashed by the core; drop its editor session + close any of its open
         # tabs (the shader + its scripts) + clear a pending delete-arm if it matched.
-        self.editor_sessions.pop(source_path, None)
+        closed = self.editor_sessions.pop(source_path, None)
+        if closed is not None:
+            closed.editor.close()
+        self.editor_marker_state.pop(source_path, None)
         active = self._active_tab()
         self.editor_tabs = [
             t
@@ -771,15 +775,16 @@ class App:
         )
 
     def _yield_editor_to_region(self) -> None:
-        # Defocus the editor (its TextEditor auto-grabs on first render) + re-latch the
+        # Defocus the editor + re-latch the
         # currently-active non-editor region. The pair used both when leaving the editor via a
         # chord and when a document switch re-renders the editor under a grid that owns focus.
         self.editor_defocus_requested = True
         self.region_focus_pending = True
 
     def _set_region(self, region: ActiveRegion) -> None:
-        # Editor uses its own focus machinery (the TextEditor owns an inner window);
-        # the other regions latch via set_next_window_focus in their draw fn.
+        # Editor uses its own focus machinery (the editor_focus_requested latch,
+        # consumed in ui.py); the other regions latch via set_next_window_focus in
+        # their draw fn.
         leaving_editor = (
             self.active_region == ActiveRegion.EDITOR and region != ActiveRegion.EDITOR
         )
@@ -800,9 +805,9 @@ class App:
 
     def update_splitter_drag(self, on_splitter: bool) -> None:
         # Latch on the press frame, hold until release — so the drag is covered even as the
-        # cursor sweeps onto the editor. tabs/code.py reads splitter_dragging to neutralize the
-        # TextEditor's direct io.mouse_down read (it bypasses imgui's disabled/active-id, so the
-        # sweep would otherwise select editor text). on_splitter is the caller's geometry test.
+        # cursor sweeps onto the editor. tabs/code.py's mouse handler reads
+        # splitter_dragging and stands down, so the sweep can't select editor text.
+        # on_splitter is the caller's geometry test.
         if imgui.is_mouse_clicked(imgui.MouseButton_.left):
             self._splitter_press_on_splitter = on_splitter
         if not imgui.is_mouse_down(imgui.MouseButton_.left):
@@ -1126,7 +1131,7 @@ class App:
             self.active_tab_index = len(self.editor_tabs) - 1
         self.tab_select_pending = True
         self.editor_was_ever_focused = False
-        # Summoning a tab must not move keyboard focus: a never-yet-rendered tab's TextEditor
+        # Summoning a tab must not move keyboard focus: a summoned tab
         # auto-grabs it on first render, so the summoning surface kept focus only when the tab
         # happened to have rendered before. When a non-editor region owns focus, yield the
         # editor back to it. Skipped while a popup is open — the region latch's
@@ -1384,7 +1389,10 @@ class App:
     def _on_shader_lib_paths_removed(self, paths: list[Path]) -> None:
         # Drop editor sessions + close any open tab pointing at trashed lib paths.
         for path in paths:
-            self.editor_sessions.pop(path, None)
+            closed = self.editor_sessions.pop(path, None)
+            if closed is not None:
+                closed.editor.close()
+            self.editor_marker_state.pop(path, None)
             self._close_tab_for_path(path)
             if (
                 self.editor_jump_request is not None
@@ -1399,6 +1407,7 @@ class App:
         if session is not None:
             session.source = replace(session.source, path=new)
             self.editor_sessions[new] = session
+        self.editor_marker_state.pop(old, None)
         self.editor_tabs = [
             replace(tab, path=new) if tab.path == old else tab
             for tab in self.editor_tabs
@@ -1489,6 +1498,15 @@ class App:
             self.copilot.release()
 
         self.exporter_registry.release()
+
+        for session in self.editor_sessions.values():
+            session.editor.close()
+        self.editor_sessions.clear()
+        self.editor_marker_state.clear()
+        if self.editor_panel is not None:
+            self.editor_panel.release()
+            self.editor_panel = None
+        self.editor_renderer = None
 
         if self.share_tab_state is not None:
             self.share_tab_state.release()

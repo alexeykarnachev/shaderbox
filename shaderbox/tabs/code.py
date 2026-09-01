@@ -1,4 +1,3 @@
-import keyword
 from pathlib import Path
 
 from imgui_bundle import imgui
@@ -27,67 +26,6 @@ _MODE_BADGES: dict[Mode, tuple[str, tuple[float, float, float, float]]] = {
     Mode.VISUAL: ("VISUAL", COLOR.SELECT),
     Mode.VISUAL_LINE: ("V-LINE", COLOR.SELECT),
 }
-
-# GLSL completion seeds beyond the live lib index + uniforms: the keywords and
-# builtins the lexer knows are a fine floor for a fragment shader.
-_GLSL_WORDS: tuple[str, ...] = (
-    "attribute",
-    "bool",
-    "break",
-    "const",
-    "continue",
-    "discard",
-    "else",
-    "float",
-    "for",
-    "highp",
-    "if",
-    "in",
-    "int",
-    "ivec2",
-    "ivec3",
-    "ivec4",
-    "lowp",
-    "mat2",
-    "mat3",
-    "mat4",
-    "mediump",
-    "out",
-    "return",
-    "sampler2D",
-    "uniform",
-    "uint",
-    "varying",
-    "vec2",
-    "vec3",
-    "vec4",
-    "void",
-    "while",
-    "abs",
-    "ceil",
-    "clamp",
-    "cos",
-    "cross",
-    "distance",
-    "dot",
-    "exp",
-    "floor",
-    "fract",
-    "length",
-    "max",
-    "min",
-    "mix",
-    "mod",
-    "normalize",
-    "pow",
-    "reflect",
-    "sin",
-    "smoothstep",
-    "sqrt",
-    "step",
-    "tan",
-    "texture",
-)
 
 
 def _is_script_tab(tab: EditorTab | None) -> bool:
@@ -260,9 +198,7 @@ def _visible_error_rows(app: App, n: int) -> int:
     return n if app.errors_expanded else min(n, _MAX_ERROR_ROWS)
 
 
-def _draw_error_strip(
-    app: App, errors: list[ShaderError], height: float, current_path: Path
-) -> None:
+def _draw_error_strip(app: App, errors: list[ShaderError], height: float) -> None:
     imgui.push_style_color(imgui.Col_.child_bg, COLOR.BG_SURFACE)
     if imgui.begin_child("##shader_errors", size=(0.0, height)):
         n = len(errors)
@@ -293,41 +229,7 @@ def _draw_error_strip(
     imgui.pop_style_color(1)
 
 
-def _completion_vocabulary(app: App, tab: EditorTab) -> list[str]:
-    if tab.kind == "script":
-        return list(keyword.kwlist)
-    words: list[str] = list(app.shader_lib_index.functions)
-    ui_document = app.ui_documents.get(tab.document_id)
-    if ui_document is not None:
-        edited = _pass_for_tab(app, tab)
-        if edited is not None:
-            words.extend(edited.uniform_values)
-    words.extend(_GLSL_WORDS)
-    return words
-
-
-def _feed_completion(app: App, editor: Editor, tab: EditorTab) -> None:
-    # Host-driven autocomplete (Ctrl+N in insert mode): the editor exposes the
-    # prefix while its popup is open; the host pushes the filtered vocabulary in.
-    prefix = editor.complete_prefix()
-    if prefix is None:
-        return
-    editor.complete_begin()
-    pushed = 0
-    for word in _completion_vocabulary(app, tab):
-        if word.startswith(prefix) and word != prefix:
-            editor.complete_push(word)
-            pushed += 1
-            if pushed >= 50:
-                break
-
-
-def _draw_gutter(
-    app: App,
-    editor: Editor,
-    origin: imgui.ImVec2,
-    height: float,
-) -> None:
+def _draw_gutter(editor: Editor, origin: imgui.ImVec2, height: float) -> None:
     # ed_layout draws no furniture: line numbers are the host's, placed with the
     # layout's own cell metrics so row N's number sits at row N's y.
     text_x, _text_y = editor.get_text_origin()
@@ -468,6 +370,7 @@ def draw(app: App) -> None:
     current_path = app.current_editor_path
     if tab is None or current_path is None or ui_document is None:
         app.editor_focused = False
+        app.editor_focus_requested = False
         return
 
     session = app.editor_sessions.get(current_path)
@@ -531,8 +434,16 @@ def draw(app: App) -> None:
 
     # Layout runs every visible frame (hit tests + scroll clamping answer against
     # it); the GL redraw below is gated.
-    editor.layout((float(size_px[0]), float(size_px[1])), px_per_em)
-    _feed_completion(app, editor, tab)
+    # The text origin is the host-chosen gutter width: the layout reserves
+    # nothing itself (the reference UI offsets the same way). Width converges a
+    # frame behind the line count — cell metrics answer against the last layout.
+    cell_w, _cell_h = editor.get_cell_size()
+    gutter_px = (
+        editor.get_gutter_cells() * cell_w if settings.show_line_numbers else 0.0
+    )
+    editor.layout(
+        (float(size_px[0]), float(size_px[1])), px_per_em, origin=(gutter_px, 0.0)
+    )
 
     # The interaction surface: one invisible button spanning the editor image.
     imgui.set_cursor_screen_pos(editor_pos)
@@ -555,7 +466,14 @@ def draw(app: App) -> None:
         settings.line_spacing,
     )
     state = render_state(
-        editor, size_px, px_per_em, marker_fingerprint, settings_fingerprint, focused
+        editor,
+        current_path,
+        size_px,
+        px_per_em,
+        gutter_px,
+        marker_fingerprint,
+        settings_fingerprint,
+        focused,
     )
     if app.editor_renderer is None:
         app.editor_renderer = EditorRenderer(
@@ -581,7 +499,7 @@ def draw(app: App) -> None:
         )
     if settings.show_line_numbers:
         imgui.push_font(app.font_12, app.font_12.legacy_size)
-        _draw_gutter(app, editor, editor_pos, float(size_px[1]))
+        _draw_gutter(editor, editor_pos, float(size_px[1]))
         imgui.pop_font()
 
     app.editor_focused = focused
@@ -615,5 +533,5 @@ def draw(app: App) -> None:
 
     if errors:
         imgui.push_font(app.font_12, app.font_12.legacy_size)
-        _draw_error_strip(app, errors, strip_height, current_path)
+        _draw_error_strip(app, errors, strip_height)
         imgui.pop_font()

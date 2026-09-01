@@ -182,6 +182,9 @@ def update_and_draw(app: App) -> None:
             # Pump the OS event queue so the window stays responsive (close button, resize) while
             # the file is missing — process_hotkeys (the normal poll_events site) is past the return.
             glfw.poll_events()
+            # The poll queued key events but no drain runs this frame; drop them, or
+            # they replay in one burst on the recovery frame.
+            app.editor_key_events.clear()
             return
         reload_document_if_changed(app, name, ui_document)
 
@@ -355,7 +358,9 @@ def update_and_draw(app: App) -> None:
                 "code_editor",
                 size=imgui.ImVec2(editor_width, editor_height),
                 child_flags=imgui.ChildFlags_.borders,
-                window_flags=imgui.WindowFlags_.no_nav_inputs,
+                window_flags=imgui.WindowFlags_.no_nav_inputs
+                | imgui.WindowFlags_.no_scrollbar
+                | imgui.WindowFlags_.no_scroll_with_mouse,
             ):
                 # Capture the editor child's screen rect so the chat anchors to the coding
                 # area (above the bar), not the whole glfw window.

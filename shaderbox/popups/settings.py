@@ -58,8 +58,8 @@ def draw_settings(app: App) -> None:
         if not visible:
             return
         if not _draw_body(app):
-            # Apply on close only — set_*() while the modal is open FPE-crashes
-            # the editor (conventions.md ## Known quirks).
+            # Editor settings apply at the one close funnel, not per-edit
+            # while the modal is open.
             app.apply_editor_settings()
             app.popup_state = PopupState.CLOSED
             imgui.close_current_popup()

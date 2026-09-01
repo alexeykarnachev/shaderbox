@@ -12,7 +12,12 @@ from imgui_bundle import imgui
 from shaderbox.commands import COMMAND_SPECS, CommandId
 from shaderbox.editor.ffi import Editor, KeyCode, KeyMod, Kind, Language, Mode
 from shaderbox.editor.input import KeyEvent, translate_char, translate_key
-from shaderbox.editor.render import PRIM_DTYPE, build_vertices, render_state, should_redraw
+from shaderbox.editor.render import (
+    PRIM_DTYPE,
+    build_vertices,
+    render_state,
+    should_redraw,
+)
 from shaderbox.editor_types import EditorSession
 from shaderbox.hotkeys import _drain_editor_input
 from shaderbox.shader_source import ShaderSource
@@ -191,7 +196,11 @@ def test_idle_esc_drops_the_queue_tail() -> None:
     # defocused editor and must never arrive.
     e = _editor()
     app = _drain_app(e)
-    app.editor_key_events = [KeyEvent(KeyCode.ESCAPE, 0), translate_char(ord("d")), translate_char(ord("d"))]
+    app.editor_key_events = [
+        KeyEvent(KeyCode.ESCAPE, 0),
+        translate_char(ord("d")),
+        translate_char(ord("d")),
+    ]
     _drain_editor_input(app)
     assert app.editor_esc_forwarded is False, "idle-NORMAL Esc is the host's"
     assert e.get_text() == "one\ntwo\nthree\n", "the tail 'dd' must not edit"
@@ -212,8 +221,10 @@ def test_popup_open_blocks_the_drain() -> None:
 
 def _state(e: Editor, **overrides: Any) -> tuple:
     kwargs: dict[str, Any] = {
+        "identity": Path("/tmp/x.glsl"),
         "size": (640, 480),
         "px_per_em": 16.0,
+        "gutter_px": 0.0,
         "marker_fingerprint": (),
         "settings_fingerprint": (),
         "focused": True,
@@ -255,10 +266,25 @@ def test_render_state_reacts_to_every_editor_dimension() -> None:
 
     assert should_redraw(base, _state(e, size=(320, 480)))
     assert should_redraw(base, _state(e, px_per_em=18.0))
+    assert should_redraw(base, _state(e, gutter_px=40.0))
     assert should_redraw(base, _state(e, marker_fingerprint=((3, "boom"),)))
     assert should_redraw(base, _state(e, settings_fingerprint=(True,)))
     assert should_redraw(base, _state(e, focused=False))
     e.close()
+
+
+def test_render_state_distinguishes_two_fresh_editors() -> None:
+    # Tabs share ONE panel. Two freshly opened files agree on revision, cursor,
+    # mode and everything else the editor reports — identity is what keeps a tab
+    # switch from showing the previous file's texture (post-impl BLOCKER 1).
+    a, b = _editor("file a"), _editor("file b")
+    sa = _state(a, identity=Path("/a.glsl"))
+    sb = _state(b, identity=Path("/b.glsl"))
+    assert should_redraw(sa, sb)
+    # The falsifier: without identity the two states really would collide.
+    assert sa[1:] == sb[1:]
+    a.close()
+    b.close()
 
 
 def test_scroll_moves_the_state() -> None:
@@ -267,6 +293,44 @@ def test_scroll_moves_the_state() -> None:
     base = _state(e)
     e.set_scroll(5)
     assert should_redraw(base, _state(e))
+    e.close()
+
+
+# --- registry eligibility (the consumed-chord skip) --------------------------
+
+
+def test_consumed_chord_suppresses_the_registry_spec() -> None:
+    from shaderbox.commands import SPEC_BY_ID
+    from shaderbox.hotkeys import spec_eligible
+
+    spec = SPEC_BY_ID[CommandId.OPEN_SCRIPT]
+    chord = int(imgui.Key.r) | int(imgui.Key.mod_ctrl)
+    app = SimpleNamespace(
+        editor_consumed_chords={chord},
+        editor_focused=True,
+        copilot_focused=False,
+    )
+    assert spec_eligible(app, spec, chord, popup_open=False) is False, (
+        "a chord the editor consumed must not also dispatch OPEN_SCRIPT"
+    )
+    app.editor_consumed_chords = set()
+    assert spec_eligible(app, spec, chord, popup_open=False) is True
+
+
+# --- text getters -----------------------------------------------------------
+
+
+def test_get_text_grows_past_the_scratch_buffer() -> None:
+    # A >1 MiB buffer must round-trip, not save truncated (post-impl MINOR 8).
+    big = "x" * (1 << 21)
+    e = Editor(big)
+    assert len(e.get_text()) == len(big)
+    e.close()
+
+
+def test_key_refuses_multichar_text() -> None:
+    e = _editor()
+    assert e.key(KeyCode.CHAR, 0, "ab") is False
     e.close()
 
 

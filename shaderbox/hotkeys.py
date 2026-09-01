@@ -5,6 +5,7 @@ from shaderbox.app import App, PopupState
 from shaderbox.commands import (
     COMMAND_SPECS,
     CommandScope,
+    CommandSpec,
     popup_suppresses,
     route_flag,
 )
@@ -73,9 +74,9 @@ def _handle_clipboard(app: App, editor: Editor, event: KeyEvent) -> bool:
         selected = editor.get_selection_text()
         if selected:
             glfw.set_clipboard_string(app.window, selected)
-            if event.text == "x":
+            if event.text == "x" and not app.copilot_turn_active:
                 editor.replace_selection("")
-    else:
+    elif not app.copilot_turn_active:
         raw = glfw.get_clipboard_string(app.window)
         if raw:
             text = raw.decode() if isinstance(raw, bytes) else raw
@@ -85,19 +86,24 @@ def _handle_clipboard(app: App, editor: Editor, event: KeyEvent) -> bool:
     return True
 
 
+def spec_eligible(app: App, spec: CommandSpec, chord: int, popup_open: bool) -> bool:
+    # Whether this spec may dispatch this frame. The consumed-chord test is the
+    # one guard against a focused-editor Ctrl+R both redoing and opening the
+    # script tab (feature 067); the rest are the scope/popup gates.
+    if chord == 0 or chord in app.editor_consumed_chords:
+        return False
+    if spec.scope == CommandScope.EDITOR and not app.editor_focused:
+        return False
+    if spec.scope == CommandScope.COPILOT and not app.copilot_focused:
+        return False
+    return not (popup_suppresses(spec.scope) and popup_open)
+
+
 def _dispatch_registry(app: App) -> None:
     popup_open = app.any_popup_open()
     for spec in COMMAND_SPECS:
         chord = app.effective_bindings.get(spec.id, 0)
-        if chord == 0:
-            continue
-        if chord in app.editor_consumed_chords:
-            continue
-        if spec.scope == CommandScope.EDITOR and not app.editor_focused:
-            continue
-        if spec.scope == CommandScope.COPILOT and not app.copilot_focused:
-            continue
-        if popup_suppresses(spec.scope) and popup_open:
+        if not spec_eligible(app, spec, chord, popup_open):
             continue
         flags = route_flag(spec.scope, chord)
         if spec.repeat:
@@ -116,8 +122,8 @@ def _handle_escape(app: App) -> None:
     # gate defensively on the same condition.
     if not app.escape_has_job():
         return
-    # Apply editor settings on close, not while open — avoids the modal-open FPE
-    # (conventions.md ## Known quirks).
+    # Editor settings apply at the one close funnel, not per-edit while the
+    # modal is open.
     was_settings_open = app.popup_state == PopupState.SETTINGS
     # Esc dismisses ONE thing, most-modal first: the revert confirm, else an open popup, else
     # the palette, else the chat focus, else the editor caret. Dismissing a popup/palette must

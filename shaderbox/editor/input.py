@@ -111,5 +111,7 @@ def translate_key(key: int, action: int, mods: int) -> KeyEvent | None:
     if mods & _CHORD_MODS:
         text = _key_char(key, bool(mods & glfw.MOD_SHIFT))
         if text:
-            return KeyEvent(KeyCode.CHAR, _abi_mods(mods), text, _imgui_chord(key, mods))
+            return KeyEvent(
+                KeyCode.CHAR, _abi_mods(mods), text, _imgui_chord(key, mods)
+            )
     return None

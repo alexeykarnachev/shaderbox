@@ -32,17 +32,14 @@ now runs the maintainer's own vim-modal editor: `shaderbox/editor/` (ctypes bind
 vendored `libeditor.so` @ editor-repo `e55b997`, moderngl MTSDF renderer + counted redraw gate,
 glfw→`ed_key` pump), drained in `hotkeys.py` ahead of registry dispatch with a consumed-chord
 skip (the one guard against Ctrl+R double-dispatch), `ed_pending`-gated Esc, host-wired
-Ctrl+C/X/V clipboard, host-drawn gutter/status/command-line chrome, host-fed completion.
+Ctrl+C/X/V clipboard, host-drawn gutter/status/command-line chrome.
 TextEditor is deleted (no fallback); the vendored `.so` is linux-only and `build.sh` strips it
-from the Windows stage (a `.dll` is a ship gate). Gates green: check, 942 tests, smoke (which
-now asserts real Glyph primitives + a fired redraw gate); an offscreen pixel probe confirmed
-crisp MTSDF text. Two-repo feature — findings file to the editor repo's feature 004 session.
-**NEXT:** post-impl review round, then the maintainer's `make run` manual pass (spec
-`ai_docs/features/067_custom_editor.md ## Manual verification`).
-
-**Still owed from 065: spec checks 13-15** (a display — the error strip's file+line and click-to-jump, a
-rename re-pointing an open tab, the six examples loading) **and 16** (`/dogfood`, real API cost —
-the copilot authoring a two-pass document). Engine and persistence checks 1-12 pass.
+from the Windows stage (a `.dll` is a ship gate). Post-impl round
+(3 agents): a stale-panel-on-tab-switch blocker, native/GL leaks, a read-only paste bypass and
+a dead gutter — all fixed same-wave; completion was CUT (two editor-side ABI gaps, filed to the
+editor repo's feature 004; re-add when they land). An offscreen pixel probe confirmed crisp
+MTSDF text. **NEXT:** the maintainer's `make run` manual pass (spec
+`ai_docs/features/067_custom_editor.md ## Manual verification`), then close out.
 
 **Still owed from 065: spec checks 13-15** (a display — the error strip's file+line and click-to-jump, a
 rename re-pointing an open tab, the six examples loading) **and 16** (`/dogfood`, real API cost —
