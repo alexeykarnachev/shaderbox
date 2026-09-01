@@ -376,7 +376,9 @@ decide document-or-pass.
 The engine was built and verified headlessly; the UI was too, which is the wrong way round and
 this section is the consequence. Every entry below came from the maintainer OPENING THE APP, and
 none of them could have been caught here (no window manager on the dev box — `/imgui-ui` §0).
-Treat it as an in-progress list, not a closed one: the UI has had one review pass.
+Treat it as an in-progress list, not a closed one: the review rounds recorded below settled the
+strip's shape (commit `c464d01` counts eight hands-on rounds), and `### Still unseen` names what
+has had no human frames yet.
 
 ### Where the UI lives
 

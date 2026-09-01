@@ -201,10 +201,15 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   `load_from_dir`, and the export plumbing (`render_media` → `_render_image` / `_render_video`).
   Imports `core`, never the reverse. Feature 065 stage 2 split it out of `core.py`; stage 3 gave it
   the graph.
-- **`widgets/pass_list.py`** — the Document tab's pass list (feature 065): a row per pass with an
-  `open` button and a right-click menu, an inline add/rename, a closed-set input combo per sampler
-  uniform, and the expanded row's target controls. Calls `ProjectSession`'s six verbs; holds no
-  state of its own beyond `App.pass_rename` / `pass_add` / `pass_expanded`.
+- **`widgets/pass_list.py`** — the Document tab's pass strip (feature 065): one live `preview_cell`
+  thumbnail per pass in `plan_passes` topological order, blind to the output choice. A tile click
+  sets the graph OUTPUT and opens that pass in the editor; off-plan tiles wash toward grey. The
+  six verbs of D15 are reachable from the strip (gear overlay / context menu); holds no state of
+  its own beyond `App.pass_add`.
+- **`popups/pass_settings.py`** — the pass-settings modal (feature 065), in the `PopupState`
+  mutex: one pass's input wiring (closed-set combos over the document's own pass names), its
+  target controls, and the rename row. Opens from a tile's gear, its context menu, or
+  automatically on `add pass` — set-up-once choices live here, off the strip.
 - **`pass_graph.py`** — leaf, GL-free (feature 065): the `graph.json` model (`PassGraph` /
   `PassEntry` / `TargetConfig` / `PassLayout`, edited through `with_passes` / `with_input` /
   `with_target` / `with_output` rather than `model_copy`) plus the planner — `plan_passes` (topological order,
