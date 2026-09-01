@@ -192,3 +192,22 @@ def test_a_summon_from_the_editor_region_keeps_editor_focus(app: Any) -> None:
     assert not app.editor_defocus_requested, (
         "a summon while editing must not kick the user out of the editor"
     )
+
+
+def test_pass_for_tab_matches_by_path_not_output(app: Any) -> None:
+    # The 065 bug's falsifier (sweep finding): resolving "the document's output
+    # pass" instead of matching the TAB's path gave every pass tab the output's
+    # errors/chrome. Each tab must resolve its OWN pass.
+    from shaderbox.editor_types import EditorTab
+    from shaderbox.tabs.code import _pass_for_tab
+
+    document_id = _two_pass(app)
+    document = app.ui_documents[document_id].document
+    assert len(document.passes) == 2
+    for name, render_pass in document.passes.items():
+        tab = EditorTab(
+            path=render_pass.source.path, kind="shader", document_id=document_id
+        )
+        assert _pass_for_tab(app, tab) is render_pass, (
+            f"tab for pass {name!r} resolved a different pass"
+        )

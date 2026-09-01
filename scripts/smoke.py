@@ -327,9 +327,10 @@ def main() -> int:
                 "smoke: the editor layout produced no Glyph primitives — shader text "
                 "is not reaching the atlas (atlas load or language wiring broken)"
             )
-            assert app.editor_redraw_count >= 1, (
-                "smoke: the editor redraw gate never fired — the panel texture was "
-                "never drawn into"
+            assert 1 <= app.editor_redraw_count < N_FRAMES, (
+                f"smoke: editor_redraw_count={app.editor_redraw_count} over "
+                f"{N_FRAMES} frames — 0 means the panel never drew; >= N_FRAMES "
+                "means the gate is stuck open and re-renders every frame"
             )
             app.release()
             logger.info(

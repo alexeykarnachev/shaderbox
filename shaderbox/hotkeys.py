@@ -38,7 +38,6 @@ def _drain_editor_input(app: App) -> None:
     # newly-focused-deaf-one-frame direction is safe, and the defocus direction is
     # closed by dropping the queue remainder once Esc decides to defocus.
     app.editor_consumed_chords.clear()
-    app.editor_esc_forwarded = False
     events = app.editor_key_events
     app.editor_key_events = []
     if not events or not app.editor_focused or app.any_popup_open():
@@ -49,21 +48,35 @@ def _drain_editor_input(app: App) -> None:
     editor = session.editor
     # Clipboard <-> register unification (editor commit 4befeaf): ONE slot, so
     # `p` pastes what the OS clipboard holds and a `yy` is Ctrl+V-able anywhere.
-    # Synced at the drain boundaries — at most one OS round-trip per keyed frame,
-    # and a tab switch reconciles on its first keypress (registers are per-handle).
+    # Synced at the drain boundaries against the ACTIVE session's own register
+    # (registers are per-handle — an app-global "last seen" left a switched-to
+    # tab's register unseeded, so a cross-tab yy/p silently pasted nothing).
     clip = _read_clipboard(app)
-    if clip and clip != app.editor_clipboard_seen:
+    if clip and clip != editor.get_register():
         editor.set_register(clip, linewise=clip.endswith("\n"))
-        app.editor_clipboard_seen = clip
     for event in events:
         if event.code == KeyCode.ESCAPE:
             # Esc is vim's modal key — the editor owns it UNCONDITIONALLY while
-            # focused (maintainer decision, 067 manual pass). Defocus lives on
+            # focused (maintainer decision, 067 manual pass); the glfw filter
+            # already keeps the press away from imgui. Defocus lives on
             # CYCLE_REGION and the mouse, never on Esc.
             editor.key(KeyCode.ESCAPE)
-            app.editor_esc_forwarded = True
             continue
         if _handle_clipboard(app, editor, event):
+            continue
+        if (
+            event.code == KeyCode.CHAR
+            and event.mods == KeyMod.CTRL
+            and event.text == "n"
+            and editor.get_mode() == Mode.INSERT
+            and editor.complete_open()
+        ):
+            # Ctrl+N with the popup showing: next candidate. Forwarding instead
+            # would CLOSE the popup (measured), and the re-offer then reset the
+            # selection to zero on every press.
+            editor.key(KeyCode.DOWN)
+            if event.imgui_chord:
+                app.editor_consumed_chords.add(event.imgui_chord)
             continue
         consumed = editor.key(event.code, event.mods, event.text)
         if not consumed and _handle_vim_chord(app, editor, event):
@@ -79,9 +92,8 @@ def _drain_editor_input(app: App) -> None:
             ):
                 app.editor_completion_requested = True
     register = editor.get_register()
-    if register and register != app.editor_clipboard_seen:
+    if register and register != clip:
         glfw.set_clipboard_string(app.window, register)
-        app.editor_clipboard_seen = register
     _serve_host_command(app, session)
 
 
@@ -99,7 +111,10 @@ def _serve_host_command(app: App, session: EditorSession) -> None:
         return
     dirty = session.editor.get_undo_index() != session.saved_undo
     if command.kind in (HostCommandKind.WRITE, HostCommandKind.WRITE_QUIT):
-        app.flush_current_editor()
+        # App.save is the one funnel: flush + document write to DISK + the
+        # copilot busy gate. A memory-only flush made :w then :q! revert past
+        # the save the user was just told about.
+        app.save()
         app.notifications.push("Saved")
     if command.kind in (HostCommandKind.QUIT, HostCommandKind.WRITE_QUIT):
         if command.kind == HostCommandKind.QUIT and dirty and not command.force:
@@ -126,7 +141,11 @@ def _serve_host_command(app: App, session: EditorSession) -> None:
 # cursor semantics — asked for), the host approximation yields automatically.
 # Scroll steps are in visible rows; the app half of each chord (DELETE_DOCUMENT on
 # Ctrl+D, OPEN_SHADER on Ctrl+E, OPEN_PROJECT on Ctrl+O) stays reachable unfocused.
-_VIM_SCROLL_CHORDS: frozenset[str] = frozenset("dufbey")
+# The full reserved set: the six scrolls + redo + jumplist + word/line kills +
+# completion nav + left/down. NORMAL-mode Ctrl+W is the one deliberate carve-out
+# (see _handle_vim_chord). The app half of every reserved chord stays reachable
+# while the editor is unfocused.
+_VIM_RESERVED_CHORDS: frozenset[str] = frozenset("dufbeyrownphj")
 
 _WORD_CHARS: str = "_"
 
@@ -160,37 +179,48 @@ def _handle_vim_chord(app: App, editor: Editor, event: KeyEvent) -> bool:
     if event.code != KeyCode.CHAR or event.mods != KeyMod.CTRL:
         return False
     ch = event.text
-    insert = editor.get_mode() == Mode.INSERT
-    handled = False
-    if ch in _VIM_SCROLL_CHORDS and insert:
-        # vim's insert-mode meanings differ (dedent, char-below, ...); the one
-        # worth having is Ctrl+U = delete to line start. The rest consume-noop
-        # so no app command fires mid-typing. (Outside insert the keymap consumes
-        # these before this fallback runs.)
-        handled = True
+    if ch not in _VIM_RESERVED_CHORDS:
+        return False
+    mode = editor.get_mode()
+    insert = mode == Mode.INSERT
+    # One exception keeps an app command reachable: NORMAL-mode Ctrl+W falls
+    # through to CLOSE_CODE_TAB — vim's own normal Ctrl+W is only a window
+    # prefix and we have no windows. Insert/visual Ctrl+W stays vim's.
+    if ch == "w" and mode == Mode.NORMAL:
+        return False
+    if insert:
         if ch == "u":
             pos = editor.get_current_cursor_position()
             if pos.column > 0:
                 editor.delete_range((pos.line, 0), (pos.line, pos.column))
-    elif ch == "o":
-        # vim's jump-back reflex: consume-noop (no jumplist yet); OPEN_PROJECT
-        # must not fire mid-editing.
-        handled = True
-    elif ch == "w" and insert:
-        # vim's insert-mode Ctrl+W deletes the word back — it must NOT close the tab.
-        _delete_word_back(editor)
-        handled = True
-    elif ch == "p" and insert:
-        # vim's insert-mode Ctrl+P: previous candidate when the popup shows, else
-        # trigger completion (the lib picker keeps Ctrl+P outside insert mode).
-        if editor.complete_open():
+        elif ch == "w":
+            _delete_word_back(editor)
+        elif ch == "p":
+            # previous candidate when the popup shows, else trigger completion
+            # (the lib picker keeps Ctrl+P outside the editor's focus).
+            if editor.complete_open():
+                editor.key(KeyCode.UP)
+            else:
+                app.editor_completion_requested = True
+        elif ch == "h":
+            editor.key(KeyCode.BACKSPACE)
+        elif ch == "j":
+            editor.key(KeyCode.ENTER)
+        # d/f/b/e/y/r/o/n: vim meanings we don't implement — consume-noop so no
+        # app command fires mid-typing (Ctrl+R = OPEN_SCRIPT was reachable here).
+    else:
+        # NORMAL/VISUAL, unconsumed by the keymap (the six scrolls are keymap
+        # motions in normal mode; visual-mode gaps and the rest land here).
+        if ch in ("n", "j"):
+            editor.key(KeyCode.DOWN)
+        elif ch == "p":
             editor.key(KeyCode.UP)
-        else:
-            app.editor_completion_requested = True
-        handled = True
-    if handled and event.imgui_chord:
+        elif ch == "h":
+            editor.key(KeyCode.LEFT)
+        # d/u/f/b/e/y (visual), r (visual), o: consume-noop.
+    if event.imgui_chord:
         app.editor_consumed_chords.add(event.imgui_chord)
-    return handled
+    return True
 
 
 def _read_clipboard(app: App) -> str:
@@ -216,7 +246,6 @@ def _handle_clipboard(app: App, editor: Editor, event: KeyEvent) -> bool:
         if selected:
             glfw.set_clipboard_string(app.window, selected)
             editor.set_register(selected, linewise=selected.endswith("\n"))
-            app.editor_clipboard_seen = selected
             if event.text == "x" and not app.copilot_turn_active:
                 editor.replace_selection("")
     elif not app.copilot_turn_active:
@@ -286,9 +315,7 @@ def _handle_escape(app: App) -> None:
     elif app.copilot_focused:
         # Esc defocuses the chat but leaves it open.
         app.copilot_defocus_requested = True
-    elif not app.editor_esc_forwarded:
-        # Single-consumer rule (feature 067): when the drain forwarded this press into
-        # the editor (insert/visual exit, pending cancel), the defocus stays quiet.
-        app.editor_defocus_requested = True
+    # No editor branch: a focused editor's Esc never reaches imgui (the glfw
+    # filter swallows it), so is_key_pressed above is False on those frames.
     if was_settings_open:
         app.apply_editor_settings()

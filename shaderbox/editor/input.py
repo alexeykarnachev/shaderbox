@@ -108,6 +108,9 @@ def translate_key(key: int, action: int, mods: int) -> KeyEvent | None:
         if mods & _CHORD_MODS:
             return None
         return KeyEvent(special, _abi_mods(mods))
+    if key == glfw.KEY_LEFT_BRACKET and mods & glfw.MOD_CONTROL:
+        # vim's second Escape — same reflex, same event.
+        return KeyEvent(KeyCode.ESCAPE, 0)
     if mods & _CHORD_MODS:
         text = _key_char(key, bool(mods & glfw.MOD_SHIFT))
         if text:

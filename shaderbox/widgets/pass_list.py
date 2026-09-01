@@ -52,9 +52,22 @@ def _draw_context_menu(app: App, document_id: str, name: str) -> None:
 
 
 def _delete_pass(app: App, document_id: str, name: str) -> None:
+    # Capture the pass file's path BEFORE the core deletes it: the editor
+    # session + tab for that file must go with the pass (the one eviction
+    # path that had no teardown — the native handle leaked and the orphan
+    # tab kept editing a file no pass owned).
+    ui_document = app.ui_documents.get(document_id)
+    doomed = (
+        ui_document.document.passes[name].source.path
+        if ui_document is not None and name in ui_document.document.passes
+        else None
+    )
     error = app.session.delete_pass(document_id, name)
     if error:
         app.notifications.push(error)
+        return
+    if doomed is not None:
+        app.close_editor_for_path(doomed)
 
 
 def _draw_pass_tile(

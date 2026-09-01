@@ -189,7 +189,6 @@ def _consume_jump(app: App, editor: Editor, current_path: Path) -> bool:
         return False
     app.editor_jump_request = None
     editor.set_cursor(req.line, req.column)
-    editor.select_line(req.line)
     editor.scroll_to_line(req.line, align_middle=True)
     return True
 
@@ -350,6 +349,9 @@ def _draw_gutter(editor: Editor, origin: imgui.ImVec2, height: float) -> None:
     if cell_h <= 0.0:
         return
     draw_list = imgui.get_window_draw_list()
+    draw_list.push_clip_rect(
+        origin, imgui.ImVec2(origin.x + text_x, origin.y + height), True
+    )
     first = editor.get_scroll()
     rows = int(height / cell_h) + 1
     line_count = editor.get_line_count()
@@ -368,6 +370,7 @@ def _draw_gutter(editor: Editor, origin: imgui.ImVec2, height: float) -> None:
             origin.y + row * cell_h + (cell_h - imgui.get_text_line_height()) * 0.5,
         )
         draw_list.add_text(pos, lit if line == current else dim, label)
+    draw_list.pop_clip_rect()
 
 
 def draw_chrome(app: App) -> None:
@@ -553,25 +556,10 @@ def draw(app: App) -> None:
         editor.get_gutter_cells() * cell_w if settings.show_line_numbers else 0.0
     )
     app.editor_visible_rows = int(size_px[1] / cell_h) if cell_h > 0 else 0
-    # View reconciliation before layout (editor 4b110f0): apply a keymap-issued
-    # view scroll (Ctrl+E/Y, zz/zt/zb — consumed by reading), then follow the
-    # cursor when a MOTION moved it outside the view (Ctrl+D, a jump, plain j
-    # below the fold; ed_layout clamps but never follows). Only a cursor CHANGE
-    # follows — wheel-scrolling away from an idle caret must not snap back.
-    editor.take_scroll_request()  # absolute target; applied by the read itself
-    cursor = editor.get_current_cursor_position()
-    if cursor != app.editor_last_cursor.get(current_path):
-        app.editor_last_cursor[current_path] = cursor
-        rows = app.editor_visible_rows
-        first = editor.get_scroll()
-        if rows > 0 and not (first <= cursor.line < first + rows):
-            editor.scroll_to_line(cursor.line, align_middle=False)
-    _drive_completion(app, editor, tab)
-    editor.layout(
-        (float(size_px[0]), float(size_px[1])), px_per_em, origin=(gutter_px, 0.0)
-    )
-
-    # The interaction surface: one invisible button spanning the editor image.
+    # The interaction surface FIRST: every editor mutation (mouse, wheel) must
+    # precede this frame's layout, or the redraw gate records a state the
+    # painted texture doesn't show and the next frame skips the repaint. Hit
+    # tests answer against LAST frame's layout — same widget geometry.
     imgui.set_cursor_screen_pos(editor_pos)
     imgui.invisible_button("##editor_surface", editor_size)
     hovering = imgui.is_item_hovered()
@@ -583,6 +571,28 @@ def draw(app: App) -> None:
     # Focus state: the child window owns it, exactly as before — the invisible
     # button focuses the child on click.
     focused = imgui.is_window_focused(imgui.FocusedFlags_.child_windows)
+
+    # View reconciliation, then layout (editor 4b110f0): apply a keymap-issued
+    # view scroll (Ctrl+E/Y, zz/zt/zb — consumed by reading), then follow the
+    # cursor when a MOTION moved it outside the view (Ctrl+D, a jump, plain j
+    # below the fold; ed_layout clamps but never follows). Only a cursor CHANGE
+    # follows — wheel-scrolling away from an idle caret must not snap back —
+    # and only once the panel has real metrics (rows > 0): a fresh session's
+    # first frame must not record the cursor with rows=0, or a jump into it
+    # would never be followed.
+    editor.take_scroll_request()  # absolute target; applied by the read itself
+    rows = app.editor_visible_rows
+    if rows > 0:
+        cursor = editor.get_current_cursor_position()
+        if cursor != app.editor_last_cursor.get(current_path):
+            app.editor_last_cursor[current_path] = cursor
+            first = editor.get_scroll()
+            if not (first <= cursor.line < first + rows):
+                editor.scroll_to_line(cursor.line, align_middle=False)
+    _drive_completion(app, editor, tab)
+    editor.layout(
+        (float(size_px[0]), float(size_px[1])), px_per_em, origin=(gutter_px, 0.0)
+    )
 
     settings_fingerprint = (
         settings.show_whitespace,
@@ -597,6 +607,7 @@ def draw(app: App) -> None:
         size_px,
         px_per_em,
         gutter_px,
+        app.editor_completion_prefix,
         marker_fingerprint,
         settings_fingerprint,
         focused,

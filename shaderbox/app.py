@@ -230,9 +230,6 @@ class App:
         # Chords (imgui KeyChord ints — the registry's comparison space) the editor consumed
         # this frame; _dispatch_registry skips a spec whose chord is in here. Cleared per drain.
         self.editor_consumed_chords: set[int] = set()
-        # True when this frame's drain forwarded Esc into the editor (mode/pending cancel) —
-        # _handle_escape's editor-defocus branch must then stay quiet (single-consumer rule).
-        self.editor_esc_forwarded: bool = False
         # Redraw-gate observable: counts actual re-renders (decisions past the gate), so a
         # dead or inverted gate is measurable rather than felt.
         self.editor_redraw_count: int = 0
@@ -251,9 +248,6 @@ class App:
         self.editor_completion_requested: bool = False
         # The prefix the last offer was filtered by; a moving prefix re-filters.
         self.editor_completion_prefix: str | None = None
-        # Last text synced between the OS clipboard and the editor's unnamed
-        # register (one slot — `p` pastes the clipboard, a yank is Ctrl+V-able).
-        self.editor_clipboard_seen: str = ""
         # Rows the editor panel showed last frame — follow-the-cursor scrolling
         # steps in view units.
         self.editor_visible_rows: int = 0
@@ -346,7 +340,7 @@ class App:
         # Settings modal next opens; "" = none. Consumed one-shot by the field's focus_field call.
         self.settings_focus: str = ""
         # Which of the three regions owns nav. Transient (reset each launch). Start on the
-        # grid (the editor auto-grabs focus on first render but is defocused below).
+        # grid (the initial editor_defocus_requested below keeps the editor unfocused).
         self.active_region: ActiveRegion = ActiveRegion.GRID
         self.active_document_tab: DocumentTab = DocumentTab.DOCUMENT
         # One-shots: a region-switch / tab-jump requested this frame. The owning draw fn
@@ -366,7 +360,7 @@ class App:
         # is False while the picker holds focus, and `current_editor_path is not None` is too
         # lax (a freshly-selected document has a session the user never typed into -> insert at (0,0)).
         self.editor_was_ever_focused: bool = False
-        # Start in navigation mode: defocus the editor on its first render (it auto-grabs
+        # Start in navigation mode: an initial defocus request (consumed by the first
         # focus) so arrows navigate documents.
         self.editor_defocus_requested: bool = True
         # One-shot focus request (mirror of defocus): after a lib-function insert the picker
@@ -1151,10 +1145,8 @@ class App:
             self.active_tab_index = len(self.editor_tabs) - 1
         self.tab_select_pending = True
         self.editor_was_ever_focused = False
-        # Summoning a tab must not move keyboard focus: a summoned tab
-        # auto-grabs it on first render, so the summoning surface kept focus only when the tab
-        # happened to have rendered before. When a non-editor region owns focus, yield the
-        # editor back to it. Skipped while a popup is open — the region latch's
+        # Summoning a tab must not move keyboard focus: when a non-editor region
+        # owns focus, yield the editor back to it. Skipped while a popup is open — the region latch's
         # set_next_window_focus would force-close the modal (/imgui-ui section 8) — and the
         # popup's own close hands focus back via reconcile_popup_focus.
         if self.active_region != ActiveRegion.EDITOR and not self.any_popup_open():
@@ -1209,6 +1201,16 @@ class App:
         closing_active = index == self.active_tab_index
         self.editor_tabs.pop(index)
         self._reanchor_active_tab(None if closing_active else active)
+
+    def close_editor_for_path(self, path: Path) -> None:
+        # Full editor teardown for one file: the native handle, the fingerprint
+        # caches, and any open tab. The pass-delete verb routes here.
+        closed = self.editor_sessions.pop(path, None)
+        if closed is not None:
+            closed.editor.close()
+        self.editor_marker_state.pop(path, None)
+        self.editor_last_cursor.pop(path, None)
+        self._close_tab_for_path(path)
 
     def open_shader_lib_file(self, path: Path) -> EditorSession:
         # Open (or focus) a lib file as a tab; return its session.
@@ -1356,6 +1358,12 @@ class App:
         session.saved_undo = session.editor.get_undo_index()
 
     def sync_editor_from_disk(self, path: Path, source: str) -> None:
+        # Equality guard (the lib branch in watch.py has its own): a re-read of
+        # text the buffer already holds must not set_text — that rebuilds the
+        # buffer and moves the caret for nothing.
+        session = self.editor_sessions.get(path)
+        if session is not None and session.editor.get_text() == source:
+            return
         self.session.sync_editor_from_disk(path, source)
 
     def open_current_document_dir(self) -> None:
@@ -1524,6 +1532,14 @@ class App:
             session.editor.close()
         self.editor_sessions.clear()
         self.editor_marker_state.clear()
+        self.editor_last_cursor.clear()
+        self.editor_tabs = []
+        self.active_tab_index = 0
+        self.editor_key_events.clear()
+        self.editor_consumed_chords.clear()
+        self.editor_drag_anchor = None
+        self.editor_completion_requested = False
+        self.editor_completion_prefix = None
         if self.editor_panel is not None:
             self.editor_panel.release()
             self.editor_panel = None

@@ -6,11 +6,9 @@ conventions. The library handle lives in a module global populated by the
 idempotent `ensure_loaded()`; text getters share ONE module-level scratch
 buffer (the frame loop is single-threaded).
 
-Method names mirror the old `TextEditor` surface where call sites survive:
 `get_undo_index` is `ed_revision` (monotonic, RISES across `set_text` — a
-re-baseline must read it AFTER the set), `get_current_cursor_position`
-returns a `.line`-carrying tuple, `replace_text_in_current_cursor` is the
-host paste-at-caret.
+re-baseline must read it AFTER the set); `replace_text_in_current_cursor`
+is the host insert (over the selection when one exists, else at the caret).
 """
 
 import ctypes
@@ -24,6 +22,13 @@ from shaderbox.constants import RESOURCES_DIR
 EDITOR_RESOURCES_DIR: Path = RESOURCES_DIR / "editor"
 
 _LIB: ctypes.CDLL | None = None
+
+
+def _encode(text: str) -> bytes:
+    # c_char_p is NUL-terminated: an embedded NUL would silently truncate the
+    # crossing (a paste is the realistic carrier). Strip rather than corrupt.
+    return text.replace("\x00", "").encode()
+
 
 # Shared scratch for text getters (the frame loop is single-threaded). Grows on
 # demand: the ABI truncates on a codepoint boundary, so a result filling the
@@ -320,7 +325,8 @@ def language_for_path(path: Path) -> Language:
 
 
 class Editor:
-    """One editor instance bound to one file's text: the TextEditor replacement."""
+    """One editor instance bound to one file's text: buffer, vim mode, undo,
+    register, layout — everything the code panel edits through."""
 
     def __init__(self, text: str = "") -> None:
         lib = ensure_loaded()
@@ -349,7 +355,7 @@ class Editor:
         return bytes(_TEXT_BUF[:n]).decode()
 
     def set_text(self, text: str) -> None:
-        self._lib.ed_set_text(self._h, text.encode())
+        self._lib.ed_set_text(self._h, _encode(text))
 
     def get_line_count(self) -> int:
         return self._lib.ed_line_count(self._h)
@@ -371,7 +377,8 @@ class Editor:
         return Mode(self._lib.ed_mode(self._h))
 
     def is_pending(self) -> bool:
-        """True while the keymap is mid-phrase; ask BEFORE forwarding Escape."""
+        """True while the keymap is mid-phrase (a count, a half-typed operator,
+        an open command line)."""
         return self._lib.ed_pending(self._h)
 
     def set_read_only_enabled(self, on: bool) -> None:
@@ -381,7 +388,7 @@ class Editor:
 
     def feed(self, keys: str) -> None:
         """Vim notation — tests and scripts only; the app pumps key()."""
-        self._lib.ed_feed(self._h, keys.encode())
+        self._lib.ed_feed(self._h, _encode(keys))
 
     def key(self, code: KeyCode, mods: int = 0, text: str = "") -> bool:
         """One key press. True if the editor consumed it. A multi-codepoint
@@ -392,8 +399,8 @@ class Editor:
 
     def replace_text_in_current_cursor(self, text: str) -> None:
         # Host insert: over the selection when one exists, else at the caret.
-        if not self._lib.ed_replace_selection(self._h, text.encode()):
-            self._lib.ed_insert_at_cursor(self._h, text.encode())
+        if not self._lib.ed_replace_selection(self._h, _encode(text)):
+            self._lib.ed_insert_at_cursor(self._h, _encode(text))
 
     def undo(self) -> bool:
         return self._lib.ed_undo(self._h)
@@ -431,7 +438,7 @@ class Editor:
         self._lib.ed_clear_selection(self._h)
 
     def replace_selection(self, text: str) -> bool:
-        return self._lib.ed_replace_selection(self._h, text.encode())
+        return self._lib.ed_replace_selection(self._h, _encode(text))
 
     def delete_range(self, start: tuple[int, int], end: tuple[int, int]) -> None:
         """Host delete, one undo step; end is exclusive, columns are codepoints."""
@@ -514,7 +521,7 @@ class Editor:
 
     def complete_push(self, text: str) -> None:
         """Pushing IS opening: feed candidates only on a deliberate offer."""
-        self._lib.ed_complete_push(self._h, text.encode())
+        self._lib.ed_complete_push(self._h, _encode(text))
 
     def complete_open(self) -> bool:
         """Whether the popup is showing — i.e. what Enter will do."""
@@ -545,7 +552,7 @@ class Editor:
     def set_register(self, text: str, linewise: bool = False) -> None:
         """Write the register — the host's way to make `p` paste the system
         clipboard (one slot, never two clipboards that disagree)."""
-        self._lib.ed_set_register(self._h, text.encode(), linewise)
+        self._lib.ed_set_register(self._h, _encode(text), linewise)
 
     def take_host_command(self) -> HostCommand | None:
         """A host-owned ex command (:w / :q / :wq family) the parser validated,
@@ -580,10 +587,12 @@ class Editor:
     # --- chrome / view settings -------------------------------------------
 
     def set_chrome_flag(self, flag: ChromeFlag, on: bool) -> None:
-        self._lib.ed_set_chrome_flag(self._h, int(flag), on)
+        if not self._lib.ed_set_chrome_flag(self._h, int(flag), on):
+            raise ValueError(f"unknown chrome flag: {flag}")
 
     def set_view_flag(self, flag: ViewFlag, on: bool) -> None:
-        self._lib.ed_set_view_flag(self._h, int(flag), on)
+        if not self._lib.ed_set_view_flag(self._h, int(flag), on):
+            raise ValueError(f"unknown view flag: {flag}")
 
     def set_show_whitespace(self, on: bool) -> None:
         self._lib.ed_set_show_whitespace(self._h, on)

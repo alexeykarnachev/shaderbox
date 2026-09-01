@@ -85,6 +85,7 @@ def render_state(
     size: tuple[int, int],
     px_per_em: float,
     gutter_px: float,
+    completion_prefix: object,
     marker_fingerprint: object,
     settings_fingerprint: object,
     focused: bool,
@@ -106,6 +107,7 @@ def render_state(
         editor.complete_open(),
         editor.complete_selected(),
         editor.complete_count(),
+        completion_prefix,
         size,
         px_per_em,
         gutter_px,
@@ -236,6 +238,7 @@ class EditorPanel:
             self.renderer.program["u_atlas"] = 0
             assert self.vao is not None
             self.vao.render(moderngl.TRIANGLES, vertices=len(verts))
+            gl.disable(moderngl.BLEND)
         return self.texture
 
     def release(self) -> None:

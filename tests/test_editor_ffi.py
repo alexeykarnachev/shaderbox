@@ -143,7 +143,6 @@ def _drain_app(editor: Editor, focused: bool = True, popup: bool = False) -> Any
     )
     return SimpleNamespace(
         editor_consumed_chords=set(),
-        editor_esc_forwarded=False,
         editor_key_events=[],
         editor_focused=focused,
         any_popup_open=lambda: popup,
@@ -151,8 +150,8 @@ def _drain_app(editor: Editor, focused: bool = True, popup: bool = False) -> Any
         window=None,
         copilot_turn_active=False,
         editor_completion_requested=False,
-        editor_clipboard_seen="",
         editor_visible_rows=20,
+        save=lambda: None,
         flush_current_editor=None,
         notifications=SimpleNamespace(push=lambda *_a, **_k: None),
         editor_tabs=[],
@@ -194,17 +193,13 @@ def test_focused_editor_consumes_and_records_chords() -> None:
     e.close()
 
 
-def test_esc_in_insert_is_forwarded_not_defocused() -> None:
+def test_esc_in_insert_leaves_insert_mode() -> None:
     e = _editor()
     e.feed("i")
     app = _drain_app(e)
     app.editor_key_events = [KeyEvent(KeyCode.ESCAPE, 0)]
     _drain_editor_input(app)
     assert e.get_mode() == Mode.NORMAL, "Esc must leave insert mode"
-    assert app.editor_esc_forwarded is True, (
-        "the forward mark is what keeps _handle_escape's defocus branch quiet "
-        "(single-consumer rule, decision 6)"
-    )
     e.close()
 
 
@@ -215,7 +210,6 @@ def test_esc_with_pending_phrase_is_forwarded() -> None:
     app = _drain_app(e)
     app.editor_key_events = [KeyEvent(KeyCode.ESCAPE, 0)]
     _drain_editor_input(app)
-    assert app.editor_esc_forwarded is True
     assert not e.is_pending()
     e.close()
 
@@ -241,10 +235,7 @@ def test_esc_never_defocuses_the_editor() -> None:
         translate_char(ord("d")),
     ]
     _drain_editor_input(app)
-    assert app.editor_esc_forwarded is True, (
-        "every focused Esc forwards — _handle_escape's defocus branch stays quiet"
-    )
-    assert e.get_text() == "two\nthree\n", "the dd after Esc still edits"
+    assert e.get_text() == "two\nthree\n", "the dd after Esc still edits — no defocus"
     e.close()
 
 
@@ -372,10 +363,10 @@ def test_colon_w_saves_through_the_host_command_surface() -> None:
     # c5fabc8) — :w saves, and force/argument spellings arrive typed.
     e = _editor()
     app = _drain_app(e)
-    flushed: list[bool] = []
-    app.flush_current_editor = lambda: flushed.append(True)
+    saved: list[bool] = []
+    app.save = lambda: saved.append(True)
     _type_ex(app, ":w")
-    assert flushed, ":w must save"
+    assert saved, ":w must save through App.save (disk + busy gate)"
     assert e.get_command_line() is None, "the command line closed"
     assert e.get_text() == "one\ntwo\nthree\n", "no Enter leaked into the buffer"
     e.close()
@@ -413,6 +404,7 @@ def _state(e: Editor, **overrides: Any) -> tuple:
         "size": (640, 480),
         "px_per_em": 16.0,
         "gutter_px": 0.0,
+        "completion_prefix": None,
         "marker_fingerprint": (),
         "settings_fingerprint": (),
         "focused": True,
@@ -455,6 +447,7 @@ def test_render_state_reacts_to_every_editor_dimension() -> None:
     assert should_redraw(base, _state(e, size=(320, 480)))
     assert should_redraw(base, _state(e, px_per_em=18.0))
     assert should_redraw(base, _state(e, gutter_px=40.0))
+    assert should_redraw(base, _state(e, completion_prefix="SB_"))
     assert should_redraw(base, _state(e, marker_fingerprint=((3, "boom"),)))
     assert should_redraw(base, _state(e, settings_fingerprint=(True,)))
     assert should_redraw(base, _state(e, focused=False))
@@ -551,7 +544,6 @@ def test_completion_state_moves_the_redraw_tuple() -> None:
 def test_yank_reaches_the_system_clipboard(_fake_clipboard: dict[str, str]) -> None:
     e = _editor()
     app = _drain_app(e)
-    app.editor_clipboard_seen = ""
     app.editor_key_events = [translate_char(ord("y")), translate_char(ord("y"))]
     _drain_editor_input(app)
     assert _fake_clipboard["text"] == "one\n", (
@@ -564,7 +556,6 @@ def test_p_pastes_the_system_clipboard(_fake_clipboard: dict[str, str]) -> None:
     _fake_clipboard["text"] = "FROM_OUTSIDE"
     e = _editor()
     app = _drain_app(e)
-    app.editor_clipboard_seen = ""
     app.editor_key_events = [translate_char(ord("p"))]
     _drain_editor_input(app)
     assert "FROM_OUTSIDE" in e.get_text(), (
@@ -635,4 +626,190 @@ def test_build_vertices_expands_quads_and_flags_glyphs() -> None:
     for i in range(count):
         expected = 1.0 if glyph_rows[i] else 0.0
         assert (textured[i] == expected).all()
+    e.close()
+
+
+# --- the sweep round's added coverage (067 review workflow) -------------------
+
+
+def test_cross_tab_yank_pastes_via_the_clipboard_bridge(
+    _fake_clipboard: dict[str, str],
+) -> None:
+    # Registers are per-handle; the drain seeds the ACTIVE tab's register from
+    # the clipboard by comparing against that register (an app-global "seen"
+    # left tab B unseeded and a cross-tab yy/p pasted nothing).
+    a, b = _editor("alpha\n"), _editor("one\ntwo\n")
+    app_a = _drain_app(a)
+    app_a.editor_key_events = [translate_char(ord("y")), translate_char(ord("y"))]
+    _drain_editor_input(app_a)
+    assert _fake_clipboard["text"] == "alpha\n"
+    app_b = _drain_app(b)
+    app_b.editor_key_events = [translate_char(ord("p"))]
+    _drain_editor_input(app_b)
+    assert "alpha" in b.get_text(), "the yank from tab A pastes in tab B"
+    a.close()
+    b.close()
+
+
+def test_insert_ctrl_r_is_reserved_not_open_script() -> None:
+    e = _editor()
+    e.feed("i")
+    app = _drain_app(e)
+    app.editor_key_events = [_ctrl("r")]
+    _drain_editor_input(app)
+    assert e.get_text() == "one\ntwo\nthree\n"
+    assert (int(imgui.Key.r) | int(imgui.Key.mod_ctrl)) in app.editor_consumed_chords, (
+        "insert-mode Ctrl+R must not fire OPEN_SCRIPT mid-typing"
+    )
+    e.close()
+
+
+def test_visual_mode_scroll_chords_are_reserved() -> None:
+    # The keymap consumes the six scrolls in NORMAL mode only; in VISUAL they
+    # fell through to the registry (Ctrl+D = delete document, from visual mode).
+    e = _editor("\n".join(f"line {i}" for i in range(50)))
+    e.layout((640.0, 420.0), 16.0)
+    e.feed("v")
+    app = _drain_app(e)
+    app.editor_key_events = [_ctrl("d")]
+    _drain_editor_input(app)
+    assert (int(imgui.Key.d) | int(imgui.Key.mod_ctrl)) in app.editor_consumed_chords
+    assert e.get_mode() == Mode.VISUAL, "still in visual — nothing app-side fired"
+    e.close()
+
+
+def test_normal_ctrl_n_p_j_h_are_vim_motions() -> None:
+    e = _editor("\n".join(f"line {i}" for i in range(10)))
+    e.layout((640.0, 420.0), 16.0)
+    app = _drain_app(e)
+    for ch, expect in (("n", 1), ("j", 2), ("p", 1), ("h", 1)):
+        app.editor_key_events = [_ctrl(ch)]
+        _drain_editor_input(app)
+        assert e.get_current_cursor_position().line == expect, f"Ctrl+{ch}"
+    e.close()
+
+
+def test_insert_ctrl_h_backspaces_and_ctrl_j_breaks_the_line() -> None:
+    e = Editor("ab")
+    e.set_language(Language.GLSL)
+    e.feed("A")
+    app = _drain_app(e)
+    app.editor_key_events = [_ctrl("h")]
+    _drain_editor_input(app)
+    assert e.get_text() == "a", "insert Ctrl+H = backspace"
+    app.editor_key_events = [_ctrl("j")]
+    _drain_editor_input(app)
+    assert e.get_text() == "a\n", "insert Ctrl+J = newline"
+    e.close()
+
+
+def test_ctrl_left_bracket_is_escape() -> None:
+    event = translate_key(glfw.KEY_LEFT_BRACKET, glfw.PRESS, glfw.MOD_CONTROL)
+    assert event == KeyEvent(KeyCode.ESCAPE, 0), "vim's second Esc"
+    e = _editor()
+    e.feed("i")
+    app = _drain_app(e)
+    app.editor_key_events = [event]
+    _drain_editor_input(app)
+    assert e.get_mode() == Mode.NORMAL
+    e.close()
+
+
+def test_repeated_ctrl_n_advances_the_completion_selection() -> None:
+    e = _editor("")
+    e.set_host_completion(True)
+    e.feed("iSB_")
+    e.complete_begin()
+    for cand in ("SB_a", "SB_b", "SB_c"):
+        e.complete_push(cand)
+    assert e.complete_open()
+    first = e.complete_selected()
+    app = _drain_app(e)
+    app.editor_key_events = [_ctrl("n")]
+    _drain_editor_input(app)
+    assert e.complete_selected() != first, (
+        "Ctrl+N with the popup open advances instead of re-offering from zero"
+    )
+    assert app.editor_completion_requested is False, "no re-offer was queued"
+    e.close()
+
+
+def test_spec_eligible_scope_and_popup_gates() -> None:
+    from shaderbox.commands import SPEC_BY_ID
+    from shaderbox.hotkeys import spec_eligible
+
+    editor_spec = SPEC_BY_ID[CommandId.CLOSE_CODE_TAB]  # scope EDITOR
+    copilot_spec = SPEC_BY_ID[CommandId.CYCLE_COPILOT_LAYOUT]  # scope COPILOT
+    global_spec = SPEC_BY_ID[CommandId.SAVE]
+    app = SimpleNamespace(
+        editor_consumed_chords=set(), editor_focused=False, copilot_focused=False
+    )
+    assert spec_eligible(app, editor_spec, 1, popup_open=False) is False
+    assert spec_eligible(app, copilot_spec, 1, popup_open=False) is False
+    assert spec_eligible(app, global_spec, 1, popup_open=True) is False, (
+        "a modal suppresses every scope"
+    )
+    app.editor_focused = True
+    app.copilot_focused = True
+    assert spec_eligible(app, editor_spec, 1, popup_open=False) is True
+    assert spec_eligible(app, copilot_spec, 1, popup_open=False) is True
+
+
+def test_delete_word_back_whitespace_and_punct_runs() -> None:
+    from shaderbox.hotkeys import _delete_word_back
+
+    e = Editor("word   ")
+    e.set_language(Language.GLSL)
+    e.feed("A")
+    _delete_word_back(e)
+    assert e.get_text() == "", "trailing whitespace run + the word both go"
+    e.close()
+    e = Editor("a ==")
+    e.set_language(Language.GLSL)
+    e.feed("A")
+    _delete_word_back(e)
+    assert e.get_text() == "a ", "a punctuation run deletes as one unit"
+    e.close()
+
+
+def test_translate_key_carries_shift_and_alt_mods() -> None:
+    event = translate_key(glfw.KEY_R, glfw.PRESS, glfw.MOD_CONTROL | glfw.MOD_SHIFT)
+    assert event is not None
+    assert event.mods == KeyMod.CTRL | KeyMod.SHIFT
+    assert event.text == "R", "shift resolves the synthesized char's case"
+    alt = translate_key(glfw.KEY_X, glfw.PRESS, glfw.MOD_ALT)
+    assert alt is not None
+    assert alt.mods == KeyMod.ALT
+
+
+def test_render_state_members_with_isolated_pairs() -> None:
+    # Checker-domain guard: for each member a co-varying sibling could mask,
+    # a state pair differing in (nearly) only that member.
+    e = _editor("abc")
+    e.layout((640.0, 480.0), 16.0)
+    base = _state(e)
+    e.set_text("abc")  # same text, same cursor (0,0) — ONLY revision moves
+    only_revision = _state(e)
+    assert should_redraw(base, only_revision)
+    e2 = _editor("abc")
+    b2 = _state(e2)
+    e2.feed("i")  # cursor stays (0,0), revision untouched — ONLY mode moves
+    assert should_redraw(b2, _state(e2))
+    e2.key(KeyCode.ESCAPE)
+    b3 = _state(e2)
+    e2.set_selection((0, 0), (0, 2))  # host selection: revision untouched
+    assert should_redraw(b3, _state(e2))
+    e.close()
+    e2.close()
+
+
+def test_drain_clears_the_consumed_set_each_frame() -> None:
+    e = _editor()
+    app = _drain_app(e)
+    app.editor_consumed_chords = {12345}
+    app.editor_key_events = [translate_char(ord("j"))]
+    _drain_editor_input(app)
+    assert 12345 not in app.editor_consumed_chords, (
+        "a stale chord from last frame would suppress a live command forever"
+    )
     e.close()

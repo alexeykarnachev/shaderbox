@@ -81,10 +81,9 @@ requirement that follows: modal bindings must not collide with the global hotkey
    The drain runs at the top of `dispatch_commands`, ONLY while `app.editor_focused` — an
    unfocused editor receives no events (the bare-`d`-is-an-edit hazard). **Gate staleness,
    stated:** `editor_focused` at drain time is last frame's value (written after the
-   editor draw). Newly-focused-for-one-frame-deaf is the safe direction and accepted.
-   The defocus direction is closed inside the drain itself: once the drain's Esc handling
-   decides to defocus (D6), the REMAINDER of this frame's queue is dropped — a
-   same-frame `[Esc, 'd']` cannot leak `d` into a conceptually-defocused editor.
+   editor draw). Newly-focused-for-one-frame-deaf is the safe direction; the focus-
+   transition frames toward the chat are a known ~1-2 frame keystroke misroute
+   (sweep-verified, accepted — the character visibly fails to appear in the chat).
 5. **Hotkey arbitration: editor first, registry skips consumed chords.** The drain records
    each consumed keypress that carries Ctrl/Alt/Super AS AN IMGUI KEYCHORD INT
    (translated at the record site: glfw key+mods → `int(imgui.Key.x) | mod bits` — the
@@ -100,13 +99,13 @@ requirement that follows: modal bindings must not collide with the global hotkey
    = redo while focused, opens the script tab while unfocused; Ctrl+N = completion only
    mid-insert. No rebinding of defaults.
 6. **Esc belongs to the editor UNCONDITIONALLY while focused** (maintainer decision at
-   the manual pass, superseding the first-landed `ed_pending` gate — vim users hit Esc
-   reflexively in every mode, and an idle-NORMAL Esc that defocuses fights that reflex).
-   Every focused Esc forwards to the editor; keyboard defocus lives on CYCLE_REGION
-   (Ctrl+`) and the mouse. `_handle_escape`'s editor branch stays gated on the drain's
-   forward mark (`editor_esc_forwarded`), which is now always set while focused. The
-   glfw-level `_install_escape_filter`: a focused editor means `escape_has_job()` is
-   True, so the press reaches the frame; stated so nobody re-derives it.
+   the manual pass — vim users hit Esc reflexively in every mode). The guard has ONE
+   reader: the glfw `_install_escape_filter` swallows a focused-editor Esc before imgui
+   ever sees it (imgui's nav-cancel would otherwise walk focus out of the child), while
+   the drain still queues it for the editor. `_handle_escape` therefore has NO editor
+   branch — on focused-editor frames its `is_key_pressed(escape)` is simply False.
+   Ctrl+[ translates to the same Esc event (vim's second Escape). Keyboard defocus
+   lives on CYCLE_REGION (Ctrl+`) and the mouse.
 7. **Focus model unchanged.** The editor child window + an `invisible_button` over the
    image carry click-to-focus; `app.editor_focused` still reads
    `is_window_focused(child_windows)` after the draw; `editor_focus_requested` /
@@ -116,11 +115,12 @@ requirement that follows: modal bindings must not collide with the global hotkey
 8. **Clipboard: Ctrl+C/X/V host-wired, UNIFIED with the editor's unnamed register**
    (editor commit 4befeaf gave the keymap one register — dd/yy/x/cw write it, p/P paste
    it). One slot, never two clipboards that disagree: the drain syncs OS→register before
-   the frame's keys (so `p` pastes what was copied anywhere) and register→OS after them
-   (so a `yy` is Ctrl+V-able in any app); Ctrl+C/X also write the register immediately.
-   Linewise is inferred from a trailing newline. At most one OS round-trip per keyed
-   frame; per-handle registers reconcile on a tab switch's first keypress. Ctrl+V stays
-   the host insert path (works in insert mode; vim-paste semantics belong to p/P).
+   the frame's keys and register→OS after them, comparing against the ACTIVE session's
+   own register (registers are per-handle — the sweep killed an app-global "last seen"
+   that left a switched-to tab unseeded, silently breaking cross-tab yy/p); Ctrl+C/X
+   also write the register immediately. Linewise is inferred from a trailing newline.
+   At most one OS round-trip per keyed frame. Ctrl+V stays the host insert path (works
+   in insert mode; vim-paste semantics belong to p/P).
 9. **Chrome is host-drawn imgui, on the ABI's furniture queries.** Gutter: the HOST
    reserves the space — `ed_layout` reserves nothing, so the layout origin's x is the
    gutter width (`ed_gutter_cells` × the cell width, converging one frame behind a
@@ -189,12 +189,21 @@ requirement that follows: modal bindings must not collide with the global hotkey
     AFTER `ed_key`, so future keymap growth shadows them automatically): insert-mode
     protections — Ctrl+W deletes the word back (must NOT close the tab; CLOSE_CODE_TAB
     keeps normal-mode Ctrl+W), Ctrl+U deletes to line start, Ctrl+P
-    navigates/triggers completion, Ctrl+D/F/B/E/Y consume-noop mid-insert — and
-    Ctrl+O consume-noop in all modes (no jumplist yet). Ex commands whose object is
-    the FILE arrive via `ed_take_host_command` (editor c5fabc8; parser-validated,
-    force+arg included): `:w` saves, `:q` refuses a dirty buffer unless forced
-    (`:q!` reloads from disk and closes), `:wq`/`:x` save+close; a path argument is
-    refused with a notice. Known deviations, judged acceptable: Ctrl+V stays host
+    navigates/triggers completion (with the popup open, Ctrl+N/P navigate — the
+    host intercepts Ctrl+N before `ed_key`, which would otherwise CLOSE the popup,
+    measured), Ctrl+H backspaces and Ctrl+J breaks the line (their vim meanings),
+    the remaining reserved chords consume-noop mid-insert. Outside insert, the
+    unconsumed reserved chords (visual-mode scrolls — an editor-side gap — plus
+    Ctrl+N/P/J/H as line/left motions, Ctrl+R/O) do the vim motion or nothing.
+    The FULL reserved set is `_VIM_RESERVED_CHORDS` = d u f b e y r o w n p h j,
+    with ONE carve-out: NORMAL-mode Ctrl+W falls through to CLOSE_CODE_TAB (vim's
+    own normal Ctrl+W is only a window prefix and no windows exist). Ex commands
+    whose object is the FILE arrive via `ed_take_host_command` (editor c5fabc8;
+    parser-validated, force+arg included): `:w` saves through `App.save` — the one
+    funnel with the copilot busy gate and a real DISK write (a memory-only flush
+    made `:w` then `:q!` revert past the save) — `:q` refuses a dirty buffer unless
+    forced (`:q!` reloads from disk and closes), `:wq`/`:x` save+close; a path
+    argument is refused with a notice. Known deviations, judged acceptable: Ctrl+V stays host
     paste (no visual-block mode exists), Ctrl+A/X increment/decrement don't exist.
     The app halves of every suppressed chord stay reachable while unfocused.
 16. **TextEditor is deleted outright — no fallback path.** `imgui_color_text_edit`
@@ -231,10 +240,9 @@ requirement that follows: modal bindings must not collide with the global hotkey
 | Guard | Reader (consumer call site) | Exerciser |
 |---|---|---|
 | Unfocused drain gate (D4) | `hotkeys.dispatch_commands` → drain's `editor_focused` check | MV 2 + unit test: drain with `editor_focused=False` forwards nothing |
-| Same-frame post-Esc queue drop (D4) | the drain's own loop break | unit test: queue `[Esc, 'd']` in idle-NORMAL → `ed_key` never sees `d` |
 | Consumed-chord skip (D5) | `_dispatch_registry`'s membership test on `app.editor_consumed_chords` | MV 3 + unit test: seed set with Ctrl+R chord int → `OPEN_SCRIPT` callback not invoked; empty set → invoked |
-| Esc single-consumer (D6) | drain's forward-mark read by `_handle_escape`'s editor branch | unit test: Esc forwards in EVERY mode, defocus branch quiet |
-| Vim-reserved chords (D15) | the drain's `_handle_vim_chord` + the consumed-set skip | unit tests: Ctrl+D scrolls AND suppresses DELETE_DOCUMENT; insert Ctrl+W deletes a word; Ctrl+O noops consumed |
+| Esc editor-ownership (D6) | the glfw `_install_escape_filter`'s focused-editor swallow | unit test: Esc forwards in every mode; maintainer: Esc never defocuses |
+| Vim-reserved chords (D15) | the drain's `_handle_vim_chord` + the consumed-set skip | unit tests: motions consumed + DELETE_DOCUMENT suppressed; insert Ctrl+R/W reserved; visual-mode fall-through reserved |
 | Copilot read-only lock (D12) | `tabs/code.py`'s per-frame `ed_set_read_only` | MV 6: typing refused mid-turn, host edit lands |
 | Redraw gate (D3) | the render path's `should_redraw` branch | MV 10 (counted) + per-field domain unit test |
 
@@ -329,6 +337,36 @@ Each step fails for one reason and names its falsifier; the consumer is verified
   per D9's rewritten mechanism); the D5 registry-skip falsifier existed only as the
   recording half → `spec_eligible` extracted + tested; D7's missing child flags added.
   No findings rejected.
+
+- **Review-sweep round (workflow: 9 dimensions + adversarial verify, 20 agents,
+  2026-09-01): 66 confirmed findings — every BLOCKER/MAJOR fixed same-wave.** The
+  heavy ones: mouse/wheel mutated editor state AFTER layout, so the redraw gate
+  recorded a state the texture didn't show (draw reordered: interactions →
+  reconciliation → layout → gate); visual-mode scroll chords fell through to the
+  registry (Ctrl+D deleted a document from visual mode) and insert-mode Ctrl+R
+  opened the script tab — the reserved-chord set generalized to d u f b e y r o w
+  n p h j across all modes with vim motions where cheap (Ctrl+N/P/J/H) and one
+  carve-out (normal Ctrl+W = close tab); the clipboard sync's app-global "seen"
+  broke cross-tab yy/p (now compares the active session's own register); `:w` only
+  flushed memory (now `App.save`: disk + busy gate); jump-to-error left V-LINE
+  mode so the next key operated on a selection (select_line dropped); repeated
+  Ctrl+N reset completion to candidate 0 (editor-side Ctrl+N CLOSES an open popup
+  — measured — so the host navigates instead of forwarding); a jump into a
+  never-laid-out session was never followed (rows==0 frames no longer record the
+  cursor); pass deletion never tore down its editor session/tab (new
+  `App.close_editor_for_path` funnel); GL blend state leaked out of the panel
+  draw; project switch leaked tabs/cursor state (release() clears); embedded NUL
+  truncated every text crossing (one _encode funnel strips); Ctrl+[ now = Esc.
+  Accepted with rationale: the 1-2-frame focus-transition keystroke misroute
+  (inherent to the draw order, visibly lost not silently misapplied), gutter
+  metrics one frame behind (self-correcting), theme.py's ffi import (tokens stay
+  in the one bag). Editor-side items filed to feature 004: dot-repeat missing,
+  c-family double undo step, di{/ci{ linewise collapse, visual-mode scroll
+  motions unbound, sticky ed_command_message, insert-Ctrl+R register paste.
+  Test debt paid: 48 tests in the editor file (isolated redraw-tuple pairs, the
+  spec_eligible gates, cross-tab clipboard, reserved-chord matrix, _pass_for_tab
+  falsifier in the wiring file); smoke's redraw assert is now two-sided (a
+  stuck-open gate fails it, not just a dead one).
 
 ## Open questions for the user
 
