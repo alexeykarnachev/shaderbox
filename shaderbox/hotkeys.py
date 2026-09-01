@@ -61,11 +61,11 @@ def _drain_editor_input(app: App) -> None:
             editor.key(KeyCode.ESCAPE)
             app.editor_esc_forwarded = True
             continue
-        if _handle_vim_chord(app, editor, event):
-            continue
         if _handle_clipboard(app, editor, event):
             continue
         consumed = editor.key(event.code, event.mods, event.text)
+        if not consumed and _handle_vim_chord(app, editor, event):
+            continue
         if consumed and event.imgui_chord:
             app.editor_consumed_chords.add(event.imgui_chord)
             # An insert-mode Ctrl+N is the deliberate completion ask — the keymap
@@ -83,7 +83,9 @@ def _drain_editor_input(app: App) -> None:
 
 
 # Vim-reserved Ctrl chords while the editor is focused: each either does the vim
-# thing (host-side, view-scroll semantics) or nothing — NEVER an app command.
+# thing or nothing — NEVER an app command. FALLBACK ONLY: runs after ed_key
+# returned unconsumed, so the day the keymap grows a real Ctrl+D motion (with
+# cursor semantics — asked for), the host approximation yields automatically.
 # Scroll steps are in visible rows; the app half of each chord (DELETE_DOCUMENT on
 # Ctrl+D, OPEN_SHADER on Ctrl+E, OPEN_PROJECT on Ctrl+O) stays reachable unfocused.
 _VIM_SCROLL_CHORDS: frozenset[str] = frozenset("dufbey")
