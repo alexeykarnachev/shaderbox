@@ -26,22 +26,22 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-01 (067 impl landed; awaiting post-impl review + the maintainer's manual pass). -->
-**ACTIVE: 067 custom editor — implementation landed, verification in flight.** The code panel
-now runs the maintainer's own vim-modal editor: `shaderbox/editor/` (ctypes binding over the
-vendored `libeditor.so` @ editor-repo `e55b997`, moderngl MTSDF renderer + counted redraw gate,
+<!-- As of 2026-09-01 (067 impl + 2 review rounds + completion re-wire landed same-day; manual pass pending). -->
+**ACTIVE: 067 custom editor — code complete, awaiting the maintainer's manual pass.** The code
+panel runs the maintainer's own vim-modal editor: `shaderbox/editor/` (ctypes binding over the
+vendored `libeditor.so` @ editor-repo `f57e8d0`, moderngl MTSDF renderer + counted redraw gate,
 glfw→`ed_key` pump), drained in `hotkeys.py` ahead of registry dispatch with a consumed-chord
 skip (the one guard against Ctrl+R double-dispatch), `ed_pending`-gated Esc, host-wired
-Ctrl+C/X/V clipboard, host-drawn gutter/status/command-line chrome.
-TextEditor is deleted (no fallback); the vendored `.so` is linux-only and `build.sh` strips it
-from the Windows stage (a `.dll` is a ship gate). Post-impl round
-(3 agents): a stale-panel-on-tab-switch blocker, native/GL leaks, a read-only paste bypass and
-a dead gutter — all fixed same-wave. The two completion ABI gaps the round demonstrated were
-fixed editor-side same-day (plus a host-source suppression flag preempting a flash race our
-plan carried) and host-fed completion is RE-WIRED against editor `f57e8d0`, the vendored
-build. An offscreen pixel probe confirmed crisp
-MTSDF text. **NEXT:** the maintainer's `make run` manual pass (spec
-`ai_docs/features/067_custom_editor.md ## Manual verification`), then close out.
+Ctrl+C/X/V clipboard, host-drawn gutter/status/command-line chrome, and host-fed completion on
+the deliberate-offer rule (insert-mode Ctrl+N; the built-in buffer-word source suppressed).
+TextEditor is deleted, no fallback; the vendored `.so` is linux-only and `build.sh` strips it
+from the Windows stage (a `.dll` is a ship gate). Two-repo feature: findings flowed to the
+editor repo's feature 004 session, which turned every fix around same-day. Post-impl round (3
+agents, 1 FAIL) surfaced a stale-panel blocker, leaks, a read-only paste bypass, a dead gutter,
+two completion ABI gaps — all closed; a verification agent then PASSed all 14 items.
+**NEXT:** the maintainer's `make run` manual pass (spec
+`ai_docs/features/067_custom_editor.md ## Manual verification` — steps 3/4c/5/8/9/11 are the
+maintainer-only ones), then flip 067 done.
 
 **Still owed from 065: spec checks 13-15** (a display — the error strip's file+line and click-to-jump, a
 rename re-pointing an open tab, the six examples loading) **and 16** (`/dogfood`, real API cost —

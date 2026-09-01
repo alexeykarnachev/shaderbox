@@ -493,7 +493,9 @@ friction; `[tool.pyright]` in `pyproject.toml`, basic mode). `.pre-commit-config
 of truth for the config. Run before declaring anything done. Both ruff and pyright **block on
 failure** — the repo is currently at 0 pyright errors; keep it that way.
 
-**Judge it by the EXIT CODE, and run it TWICE.** ruff and the formatter REWRITE files, and
+**Judge it by the EXIT CODE, unpiped, and run it TWICE.** `$?` after `make check | tail`
+is the PIPE's exit code — 067 reported a green gate that was red exactly this way; capture
+the code before any pipe (or use `PIPESTATUS`). ruff and the formatter REWRITE files, and
 pre-commit exits non-zero whenever a hook modified something — so a first run can exit 2 with
 nothing wrong and a second run exits 0. A non-zero code on the SECOND run is a genuine failure.
 Reading the output instead of the code is how 064 reported green for a stretch while it was red:
