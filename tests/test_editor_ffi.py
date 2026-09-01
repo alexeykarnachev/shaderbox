@@ -296,6 +296,67 @@ def test_scroll_moves_the_state() -> None:
     e.close()
 
 
+# --- host-driven completion (feature 067, editor commit f57e8d0) --------------
+
+
+def test_completion_flow_open_navigate_accept() -> None:
+    e = _editor("")
+    e.set_host_completion(True)
+    e.feed("iSB_n")
+    assert e.complete_prefix() == "SB_n"
+    assert not e.complete_open(), "host_completion: nothing opens until the host pushes"
+    e.complete_begin()
+    e.complete_push("SB_noise")
+    e.complete_push("SB_normal")
+    assert e.complete_open(), "pushing IS opening"
+    assert e.complete_count() == 2
+    first = e.complete_selected()
+    e.key(KeyCode.DOWN)
+    assert e.complete_selected() != first, "Down must move the selection"
+    e.key(KeyCode.ENTER)
+    assert "SB_normal" in e.get_text() or "SB_noise" in e.get_text()
+    assert e.get_mode() == Mode.INSERT
+    e.close()
+
+
+def test_ctrl_n_with_host_completion_consumes_but_opens_nothing() -> None:
+    # The drain's detection contract: Ctrl+N stays consumed (so the chord skip
+    # still suppresses NEW_DOCUMENT) while the popup stays closed until we push.
+    e = _editor("")
+    e.set_host_completion(True)
+    e.feed("i")
+    assert e.key(KeyCode.CHAR, KeyMod.CTRL, "n") is True
+    assert not e.complete_open()
+    e.close()
+
+
+def test_complete_cancel_stays_in_insert() -> None:
+    e = _editor("")
+    e.set_host_completion(True)
+    e.feed("iSB_n")
+    e.complete_begin()
+    e.complete_push("SB_noise")
+    assert e.complete_open()
+    e.complete_cancel()
+    assert not e.complete_open()
+    assert e.get_mode() == Mode.INSERT, "cancel must not act as Escape"
+    e.close()
+
+
+def test_completion_state_moves_the_redraw_tuple() -> None:
+    e = _editor("")
+    e.feed("iSB_n")
+    base = _state(e)
+    e.complete_begin()
+    e.complete_push("SB_noise")
+    e.complete_push("SB_normal")
+    opened = _state(e)
+    assert should_redraw(base, opened), "an opening popup must repaint"
+    e.key(KeyCode.DOWN)
+    assert should_redraw(opened, _state(e)), "moving the selection must repaint"
+    e.close()
+
+
 # --- registry eligibility (the consumed-chord skip) --------------------------
 
 

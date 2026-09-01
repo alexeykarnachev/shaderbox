@@ -1,3 +1,4 @@
+import keyword
 from pathlib import Path
 
 from imgui_bundle import imgui
@@ -229,6 +230,116 @@ def _draw_error_strip(app: App, errors: list[ShaderError], height: float) -> Non
     imgui.pop_style_color(1)
 
 
+# GLSL completion seeds beyond the live lib index + uniforms: the keywords and
+# builtins the lexer knows are a fine floor for a fragment shader.
+_GLSL_WORDS: tuple[str, ...] = (
+    "attribute",
+    "bool",
+    "break",
+    "const",
+    "continue",
+    "discard",
+    "else",
+    "float",
+    "for",
+    "highp",
+    "if",
+    "in",
+    "int",
+    "ivec2",
+    "ivec3",
+    "ivec4",
+    "lowp",
+    "mat2",
+    "mat3",
+    "mat4",
+    "mediump",
+    "out",
+    "return",
+    "sampler2D",
+    "uniform",
+    "uint",
+    "varying",
+    "vec2",
+    "vec3",
+    "vec4",
+    "void",
+    "while",
+    "abs",
+    "ceil",
+    "clamp",
+    "cos",
+    "cross",
+    "distance",
+    "dot",
+    "exp",
+    "floor",
+    "fract",
+    "length",
+    "max",
+    "min",
+    "mix",
+    "mod",
+    "normalize",
+    "pow",
+    "reflect",
+    "sin",
+    "smoothstep",
+    "sqrt",
+    "step",
+    "tan",
+    "texture",
+)
+
+
+def _completion_vocabulary(app: App, tab: EditorTab) -> list[str]:
+    if tab.kind == "script":
+        return list(keyword.kwlist)
+    words: list[str] = list(app.shader_lib_index.functions)
+    ui_document = app.ui_documents.get(tab.document_id)
+    if ui_document is not None:
+        edited = _pass_for_tab(app, tab)
+        if edited is not None:
+            words.extend(edited.uniform_values)
+    words.extend(_GLSL_WORDS)
+    return words
+
+
+def _drive_completion(app: App, editor: Editor, tab: EditorTab) -> None:
+    # Host-driven autocomplete on the deliberate-offer rule (pushing IS opening):
+    # the drain marks a consumed insert-mode Ctrl+N; this offers the filtered
+    # vocabulary in response, re-filters while the popup stays open and the
+    # prefix moves, and cancels when nothing matches. The built-in buffer-word
+    # source is suppressed at session creation, so the popup shows only this.
+    # Runs BEFORE layout so the popup primitives appear the same frame.
+    if app.editor_completion_requested:
+        app.editor_completion_requested = False
+        _offer_completion(app, editor, tab)
+    elif editor.complete_open():
+        prefix = editor.complete_prefix()
+        if prefix != app.editor_completion_prefix:
+            _offer_completion(app, editor, tab)
+    else:
+        app.editor_completion_prefix = None
+
+
+def _offer_completion(app: App, editor: Editor, tab: EditorTab) -> None:
+    prefix = editor.complete_prefix()
+    matches = [
+        word
+        for word in _completion_vocabulary(app, tab)
+        if word.startswith(prefix) and word != prefix
+    ]
+    if not matches or not prefix:
+        editor.complete_cancel()
+        app.editor_completion_prefix = None
+        return
+    editor.complete_begin()
+    for word in matches[:50]:
+        editor.complete_push(word)
+    app.editor_completion_prefix = prefix
+
+
 def _draw_gutter(editor: Editor, origin: imgui.ImVec2, height: float) -> None:
     # ed_layout draws no furniture: line numbers are the host's, placed with the
     # layout's own cell metrics so row N's number sits at row N's y.
@@ -441,6 +552,7 @@ def draw(app: App) -> None:
     gutter_px = (
         editor.get_gutter_cells() * cell_w if settings.show_line_numbers else 0.0
     )
+    _drive_completion(app, editor, tab)
     editor.layout(
         (float(size_px[0]), float(size_px[1])), px_per_em, origin=(gutter_px, 0.0)
     )

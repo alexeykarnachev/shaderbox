@@ -36,8 +36,10 @@ Ctrl+C/X/V clipboard, host-drawn gutter/status/command-line chrome.
 TextEditor is deleted (no fallback); the vendored `.so` is linux-only and `build.sh` strips it
 from the Windows stage (a `.dll` is a ship gate). Post-impl round
 (3 agents): a stale-panel-on-tab-switch blocker, native/GL leaks, a read-only paste bypass and
-a dead gutter — all fixed same-wave; completion was CUT (two editor-side ABI gaps, filed to the
-editor repo's feature 004; re-add when they land). An offscreen pixel probe confirmed crisp
+a dead gutter — all fixed same-wave. The two completion ABI gaps the round demonstrated were
+fixed editor-side same-day (plus a host-source suppression flag preempting a flash race our
+plan carried) and host-fed completion is RE-WIRED against editor `f57e8d0`, the vendored
+build. An offscreen pixel probe confirmed crisp
 MTSDF text. **NEXT:** the maintainer's `make run` manual pass (spec
 `ai_docs/features/067_custom_editor.md ## Manual verification`), then close out.
 

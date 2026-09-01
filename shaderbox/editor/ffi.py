@@ -168,6 +168,15 @@ _SIG: dict[str, tuple[object, Sequence[object]]] = {
     ),
     "ed_complete_begin": (None, [ctypes.c_void_p]),
     "ed_complete_push": (None, [ctypes.c_void_p, ctypes.c_char_p]),
+    "ed_complete_open": (ctypes.c_bool, [ctypes.c_void_p]),
+    "ed_complete_count": (ctypes.c_int32, [ctypes.c_void_p]),
+    "ed_complete_selected": (ctypes.c_int32, [ctypes.c_void_p]),
+    "ed_complete_item": (
+        ctypes.c_int32,
+        [ctypes.c_void_p, ctypes.c_int32, _P(ctypes.c_ubyte), ctypes.c_int32],
+    ),
+    "ed_complete_cancel": (None, [ctypes.c_void_p]),
+    "ed_set_host_completion": (None, [ctypes.c_void_p, ctypes.c_bool]),
     "ed_set_color": (
         ctypes.c_bool,
         [ctypes.c_void_p, ctypes.c_int32] + [ctypes.c_float] * 4,
@@ -459,16 +468,43 @@ class Editor:
 
     # --- completion -------------------------------------------------------
 
-    def complete_prefix(self) -> str | None:
-        """The prefix under completion, or None while the popup is closed."""
+    def complete_prefix(self) -> str:
+        """The word prefix at the cursor. A BUFFER property, not a popup-state
+        query (ask complete_open for that) — it reports whether or not a popup
+        is open, which is exactly what a host deciding to offer needs."""
         n = self._lib.ed_complete_prefix(self._h, _TEXT_BUF, len(_TEXT_BUF))
-        return None if n < 0 else bytes(_TEXT_BUF[:n]).decode()
+        return "" if n <= 0 else bytes(_TEXT_BUF[:n]).decode()
 
     def complete_begin(self) -> None:
         self._lib.ed_complete_begin(self._h)
 
     def complete_push(self, text: str) -> None:
+        """Pushing IS opening: feed candidates only on a deliberate offer."""
         self._lib.ed_complete_push(self._h, text.encode())
+
+    def complete_open(self) -> bool:
+        """Whether the popup is showing — i.e. what Enter will do."""
+        return self._lib.ed_complete_open(self._h)
+
+    def complete_count(self) -> int:
+        return self._lib.ed_complete_count(self._h)
+
+    def complete_selected(self) -> int:
+        return self._lib.ed_complete_selected(self._h)
+
+    def complete_item(self, index: int) -> str | None:
+        n = self._lib.ed_complete_item(self._h, index, _TEXT_BUF, len(_TEXT_BUF))
+        return None if n < 0 else bytes(_TEXT_BUF[:n]).decode()
+
+    def complete_cancel(self) -> None:
+        """Close the popup without touching the buffer or leaving INSERT."""
+        self._lib.ed_complete_cancel(self._h)
+
+    def set_host_completion(self, on: bool) -> None:
+        """Suppress the built-in buffer-word source: Ctrl+N stays consumed but
+        opens nothing, so the host can detect the key and push its own list
+        without a one-frame flash of buffer words."""
+        self._lib.ed_set_host_completion(self._h, on)
 
     # --- chrome / view settings -------------------------------------------
 

@@ -245,6 +245,12 @@ class App:
         self.editor_marker_state: dict[Path, tuple] = {}
         # Mouse-drag selection anchor (line, col), live while the editor surface is active.
         self.editor_drag_anchor: tuple[int, int] | None = None
+        # One-shot: the drain saw an insert-mode Ctrl+N consumed — code.draw answers by
+        # offering the filtered vocabulary (pushing IS opening; the built-in buffer-word
+        # source is suppressed per session, so the popup shows only what we push).
+        self.editor_completion_requested: bool = False
+        # The prefix the last offer was filtered by; a moving prefix re-filters.
+        self.editor_completion_prefix: str | None = None
 
         # Shipped-library sync BEFORE the session builds the first lib index: seeds a
         # fresh box, follows shipped updates on pristine files, never touches edits.
@@ -1227,6 +1233,7 @@ class App:
             editor = Editor(source.text)
             editor.set_language(language_for_path(source.path))
             editor.set_palette(editor_palette())
+            editor.set_host_completion(True)
             # saved_undo reads AFTER construction seeded the text (revision rises
             # across every set).
             session = EditorSession(

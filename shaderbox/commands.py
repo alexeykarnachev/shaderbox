@@ -178,7 +178,8 @@ COMMAND_SPECS: list[CommandSpec] = [
     CommandSpec(
         CommandId.TOGGLE_CHEATSHEET,
         "Toggle keyboard cheatsheet",
-        # Alt+/, not Ctrl+/: the TextEditor hardwires Ctrl+/ to toggle_comments with no remap API.
+        # Alt+/ predates the custom editor (the old widget owned Ctrl+/); kept —
+        # rebinding a shipped default costs muscle memory for nothing.
         _chord(K.slash, K.mod_alt),
         C.TOOLS,
     ),

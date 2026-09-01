@@ -61,6 +61,14 @@ def _drain_editor_input(app: App) -> None:
         consumed = editor.key(event.code, event.mods, event.text)
         if consumed and event.imgui_chord:
             app.editor_consumed_chords.add(event.imgui_chord)
+            # An insert-mode Ctrl+N is the deliberate completion ask — the keymap
+            # consumes it but opens nothing (host_completion); code.draw offers.
+            if (
+                event.text == "n"
+                and event.mods == KeyMod.CTRL
+                and editor.get_mode() == Mode.INSERT
+            ):
+                app.editor_completion_requested = True
 
 
 def _handle_clipboard(app: App, editor: Editor, event: KeyEvent) -> bool:

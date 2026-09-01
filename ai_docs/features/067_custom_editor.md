@@ -161,14 +161,19 @@ requirement that follows: modal bindings must not collide with the global hotkey
     Rebuild procedure documented in `conventions.md ## Known quirks` (build in the editor
     repo: `odin build ffi -build-mode:shared -no-entry-point -out:libeditor.so`, copy the
     three files, update `VERSION`).
-14. **Completion: BLOCKED editor-side, host code removed.** The post-impl round
-    demonstrated two ABI gaps: `ed_complete_prefix` returns 0 (never -1) while the
-    popup is closed — so a host feeding on the documented condition opens the popup
-    every insert-mode frame and Enter silently accepts a completion — and `ed_layout`
-    never emits `Popup_Panel`/`Popup_Glyph` primitives, so the popup is structurally
-    invisible to an ABI host. Both filed with the editor session (its feature 004).
-    The host-side vocabulary feeding was REMOVED (not gated off — no speculative
-    machinery); re-add when both land, wiring the feed to a drain-tracked Ctrl+N.
+14. **Completion: host-driven on the deliberate-offer rule (editor commit f57e8d0).**
+    First landed against a misread of `ed_complete_prefix` (it reports the buffer
+    prefix whether or not the popup is open — feeding on it armed an invisible popup
+    whose Enter silently accepted; and `ed_layout` didn't emit the popup at all). Both
+    were fixed editor-side same-day, plus `ed_set_host_completion` (suppresses the
+    built-in buffer-word source so Ctrl+N reports consumed but opens NOTHING — no
+    one-frame flash of the wrong list). The host wiring: sessions set
+    `host_completion`; the drain marks a consumed insert-mode Ctrl+N; `code.draw`
+    answers by pushing the filtered vocabulary (pushing IS opening — `SB_*` lib names
+    + the pass's uniforms + GLSL words for shader/lib tabs, Python keywords for script
+    tabs, capped at 50), re-filters while the popup is open and the prefix moves, and
+    `ed_complete_cancel`s when nothing matches (stays in INSERT). `complete_open` /
+    `selected` / `count` are redraw-tuple members, so navigation repaints.
 15. **TextEditor is deleted outright — no fallback path.** `imgui_color_text_edit`
     imports go from `editor_types.py`, `app.py`, `tabs/code.py`; the palette call dies.
     Doc fallout is enumerated in Files touched (conventions bullet, skill §8 lines,
