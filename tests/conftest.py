@@ -1,6 +1,8 @@
 """Shared test fixtures. The `app` fixture builds a real headless App against a THROWAWAY tmp
 project (never the tracked projects/dev sandbox — tests must not read or mutate it), seeded with
-the three shipped example documents so there is always a loadable current document."""
+ONLY the starter document (066 D4 — the fixture diet): most tests need one loadable current
+document, and the example library still loads from resources regardless of the project seed. A
+test that needs a second project document calls `seed_extra_document`."""
 
 import contextlib
 import os
@@ -11,7 +13,7 @@ from typing import Any
 
 import pytest
 
-from shaderbox.constants import DOCUMENT_EXAMPLES_DIR, EXAMPLE_ORDER, STARTER_EXAMPLE_ID
+from shaderbox.constants import DOCUMENT_EXAMPLES_DIR, STARTER_EXAMPLE_ID
 from shaderbox.copilot.config import COPILOT_CONFIG
 
 # LOAD-BEARING, read at GL-context creation (not at import): compiling this repo's #version 460
@@ -22,13 +24,24 @@ os.environ.setdefault("MESA_GLSL_VERSION_OVERRIDE", "460")
 
 
 def seed_tmp_project(tmp_path: Path) -> Path:
-    # A throwaway project dir seeded with the shipped example documents copied out of resources.
+    # A throwaway project dir seeded with the starter document copied out of resources.
     project = tmp_path / "project"
     documents = project / "documents"
     documents.mkdir(parents=True)
-    for tid in EXAMPLE_ORDER:
-        shutil.copytree(DOCUMENT_EXAMPLES_DIR / tid, documents / tid)
+    shutil.copytree(
+        DOCUMENT_EXAMPLES_DIR / STARTER_EXAMPLE_ID, documents / STARTER_EXAMPLE_ID
+    )
     return project
+
+
+def seed_extra_document(app: Any, new_id: str) -> str:
+    # Copy the starter document dir under a new id and sync it in — for tests that need a
+    # second project document beside the starter-only default seed.
+    documents = app.paths.documents_dir
+    shutil.copytree(documents / STARTER_EXAMPLE_ID, documents / new_id)
+    app.session.sync_documents_from_disk()
+    assert new_id in app.ui_documents
+    return new_id
 
 
 @pytest.fixture

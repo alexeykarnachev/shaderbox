@@ -62,10 +62,10 @@ def test_connect_happy(tmp_path: Path) -> None:
             return_value=tmp_path / "i.json",
         ),
         patch(
-            "shaderbox.exporters.youtube.InstalledAppFlow.from_client_config",
+            "shaderbox.exporters.youtube_api.InstalledAppFlow.from_client_config",
             return_value=fake_flow,
         ),
-        patch("shaderbox.exporters.youtube.build", return_value=fake_service),
+        patch("shaderbox.exporters.youtube_api.build", return_value=fake_service),
     ):
         exp._handle_connect()
 
@@ -95,10 +95,10 @@ def test_connect_empty_channel_list(tmp_path: Path) -> None:
             return_value=tmp_path / "i.json",
         ),
         patch(
-            "shaderbox.exporters.youtube.InstalledAppFlow.from_client_config",
+            "shaderbox.exporters.youtube_api.InstalledAppFlow.from_client_config",
             return_value=fake_flow,
         ),
-        patch("shaderbox.exporters.youtube.build", return_value=fake_service),
+        patch("shaderbox.exporters.youtube_api.build", return_value=fake_service),
     ):
         exp._handle_connect()
 
@@ -137,11 +137,11 @@ def test_upload_happy_emits_studio_url(tmp_path: Path) -> None:
             return_value=tmp_path / "i.json",
         ),
         patch(
-            "shaderbox.exporters.youtube.google.oauth2.credentials.Credentials.from_authorized_user_info",
+            "shaderbox.exporters.youtube_api.google.oauth2.credentials.Credentials.from_authorized_user_info",
             return_value=fake_creds,
         ),
-        patch("shaderbox.exporters.youtube.build", return_value=fake_service),
-        patch("shaderbox.exporters.youtube.MediaFileUpload", MagicMock()),
+        patch("shaderbox.exporters.youtube_api.build", return_value=fake_service),
+        patch("shaderbox.exporters.youtube_api.MediaFileUpload", MagicMock()),
     ):
         exp._handle_upload(
             _Job(kind="upload", artifact=_video(tmp_path), title="t", is_short=True)
@@ -177,10 +177,10 @@ def test_upload_refresh_error_emits_auth_error(tmp_path: Path) -> None:
             return_value=tmp_path / "i.json",
         ),
         patch(
-            "shaderbox.exporters.youtube.google.oauth2.credentials.Credentials.from_authorized_user_info",
+            "shaderbox.exporters.youtube_api.google.oauth2.credentials.Credentials.from_authorized_user_info",
             return_value=fake_creds,
         ),
-        patch("shaderbox.exporters.youtube.google.auth.transport.requests.Request"),
+        patch("shaderbox.exporters.youtube_api.google.auth.transport.requests.Request"),
     ):
         # _handle_upload catches RefreshError, pushes _AuthEvent(ERROR), re-raises
         # ExporterError which _handle_job would convert to a terminal progress.
@@ -259,12 +259,12 @@ def test_upload_refreshes_expired_token(tmp_path: Path) -> None:
             return_value=tmp_path / "i.json",
         ),
         patch(
-            "shaderbox.exporters.youtube.google.oauth2.credentials.Credentials.from_authorized_user_info",
+            "shaderbox.exporters.youtube_api.google.oauth2.credentials.Credentials.from_authorized_user_info",
             return_value=fake_creds,
         ),
-        patch("shaderbox.exporters.youtube.google.auth.transport.requests.Request"),
-        patch("shaderbox.exporters.youtube.build", return_value=fake_service),
-        patch("shaderbox.exporters.youtube.MediaFileUpload", MagicMock()),
+        patch("shaderbox.exporters.youtube_api.google.auth.transport.requests.Request"),
+        patch("shaderbox.exporters.youtube_api.build", return_value=fake_service),
+        patch("shaderbox.exporters.youtube_api.MediaFileUpload", MagicMock()),
     ):
         exp._handle_upload(_Job(kind="upload", artifact=_video(tmp_path)))
 

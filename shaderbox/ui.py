@@ -187,9 +187,8 @@ def update_and_draw(app: App) -> None:
 
     # ----------------------------------------------------------------
     # Tick the CPU-script engine (feature 040) BEFORE render: hot-reload changed scripts, then
-    # compute scripted uniform values for exactly the documents this frame renders — the current
-    # document's preview renders unconditionally (above), and the document-render block renders all documents
-    # when is_render_all_documents or frame_idx==0 (and no popup). Matching that set keeps a scripted
+    # compute scripted uniform values for exactly the documents this frame renders (the
+    # document-render block below draws this same set). Matching that set keeps a scripted
     # uniform animating identically live and in export.
     app.session.reload_scripts()
     now = glfw.get_time()
@@ -199,12 +198,33 @@ def update_and_draw(app: App) -> None:
         else 1.0 / app.app_state.global_target_fps
     )
     app.last_tick_time = now
+    # The frame's render set (066 D2): the current document; with "Render all" on, every
+    # document that already had its first render; plus AT MOST ONE not-yet-rendered document.
+    # A first render pays the document's pass compiles (loading compiles nothing, 066 D1), so
+    # admitting first renders one per frame bounds the frame cost instead of stalling frame 0
+    # on every compile — a tile waits in the grid's stale wash until its turn.
     tick_documents = (
         [app.current_document_id] if app.current_document_id in app.ui_documents else []
     )
-    renders_all = app.app_state.is_render_all_documents or app.frame_idx == 0
-    if not app.any_popup_open() and renders_all:
-        tick_documents = list(app.ui_documents.keys())
+    if not app.any_popup_open():
+        if app.app_state.is_render_all_documents:
+            tick_documents += [
+                document_id
+                for document_id, ui_document in app.ui_documents.items()
+                if document_id not in tick_documents
+                and ui_document.document.first_render_done
+            ]
+        pending_first = next(
+            (
+                document_id
+                for document_id, ui_document in app.ui_documents.items()
+                if document_id not in tick_documents
+                and not ui_document.document.first_render_done
+            ),
+            None,
+        )
+        if pending_first is not None:
+            tick_documents.append(pending_first)
     app.session.tick(tick_documents, now, dt, app.frame_idx, mouse=app.script_mouse)
     # Advance feedback history ONCE per frame, over the same document set the tick covers. A
     # document is drawn twice per frame below (preview + own canvas), so a swap inside render()
@@ -249,16 +269,24 @@ def update_and_draw(app: App) -> None:
     # Render documents
     current_ui_document = app.ui_documents.get(app.current_document_id)
     if not app.any_popup_open():
-        for ui_document in app.ui_documents.values():
-            if (
-                app.app_state.is_render_all_documents
-                or ui_document == app.ui_documents.get(app.current_document_id)
-                or app.frame_idx == 0
-            ):
+        for document_id in tick_documents:
+            ui_document = app.ui_documents.get(document_id)
+            if ui_document is not None:
                 ui_document.document.render()
     elif app.popup_state == PopupState.EXAMPLES:
+        # Same first-render budget as the document set above: one example compiles per frame,
+        # so opening the popup never stalls on compiling the whole library at once.
+        pending_example = next(
+            (
+                ui_document
+                for ui_document in app.ui_document_examples.values()
+                if not ui_document.document.first_render_done
+            ),
+            None,
+        )
         for ui_document in app.ui_document_examples.values():
-            ui_document.document.render()
+            if ui_document.document.first_render_done or ui_document is pending_example:
+                ui_document.document.render()
     elif (
         app.popup_state == PopupState.PASS_SETTINGS and current_ui_document is not None
     ):

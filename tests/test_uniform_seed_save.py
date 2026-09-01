@@ -91,9 +91,10 @@ def test_save_skips_default_sampler_and_reload_reseeds(
     assert not (tmp_path / "sampler" / "media" / "main" / "u_image.png").exists()
     reloaded, meta = Document.load_from_dir(tmp_path / "sampler", gl=gl_ctx)
     assert "u_image" not in meta["uniforms"]["main"]  # default sampler skipped
+    reloaded.render()  # compiles + seeds on first need (066 D1)
     assert is_default_image(
         reloaded.render_pass.uniform_values["u_image"]
-    )  # re-seeded to default on load
+    )  # re-seeded to default
     _teardown(document)
     _teardown(reloaded)
 

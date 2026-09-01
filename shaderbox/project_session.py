@@ -391,16 +391,17 @@ class ProjectSession:
         return {eid: examples[eid] for eid in ordered_ids}
 
     def load(self, project_dir: Path) -> None:
-        # Load the project's GL-free state: paths, lib index, documents + examples, app_state,
-        # integrations. A moderngl context must already be current (document warm-up compiles).
+        # Load the project's state: paths, lib index, documents + examples, app_state,
+        # integrations. A moderngl context must already be current (canvas + texture-asset
+        # allocation) — but nothing COMPILES here: passes compile on first need (066 D1).
         self.ui_documents.clear()
 
         self.paths = ProjectPaths.for_root(project_dir)
         self.project_dir = self.paths.root
         logger.info(f"Project loaded: {self.project_dir}")
 
-        # Build the lib index before loading documents — every document's first compile (warm-up in
-        # load_documents_from_dir) reads the active index.
+        # Build the lib index before loading documents — every pass's first (lazy) compile
+        # reads the active index.
         self.rebuild_shader_lib_index()
 
         self.ui_documents = load_documents_from_dir(self.paths.documents_dir)

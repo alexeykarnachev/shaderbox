@@ -110,6 +110,7 @@ def test_the_roster_covers_every_module_that_loads_a_persisted_store() -> None:
         "agent.py",  # parses LLM tool-call payloads, not a file
         "youtube_util.py",  # builds request bodies
         "youtube.py",  # OAuth client secrets, supplied by the user per-load
+        "youtube_api.py",  # OAuth token JSON from google, not a persisted store
     }
 
     loaders = {

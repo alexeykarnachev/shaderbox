@@ -197,6 +197,27 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   choice and the open editor tab together. Revisit if a "no input" state ever needs to be visibly
   distinct from "black input" (then it is an error state, not a default).
 
+- **A pass compiles when something first NEEDS its program — never at load (feature 066).**
+  `Document.load_from_dir` builds passes, graph and uniform VALUES with zero compiles (the values
+  sit in `uniform_values` until seed/bind, which never needed a program). The pullers:
+  `Pass.render()` compiles per call while the program is missing, `Pass.get_active_uniforms()`
+  compiles a never-attempted pass (a FAILED attempt sticks until `invalidate()` — a source or lib
+  change — so a broken shader is not re-driven per consumer), and `UIDocument.save` compiles every
+  program-less pass before rebuilding the uniform block (a still-broken pass carries its on-disk
+  rows forward). The live loop bounds the relocated cost: first renders are admitted one document
+  per frame (`Document.first_render_done`, set on attempt), so neither frame 0 nor the Examples
+  popup pays every compile at once. Revisit if a consumer appears that needs the uniform SET
+  without being allowed to touch GL — that consumer must read the source, not the program.
+
+- **Heavy SDKs import lazily behind exactly two seams (feature 066).** `openai` lives at the top of
+  no module reachable from `shaderbox.ui` — it imports inside `OpenRouterLLMClient.stream` (first
+  copilot turn, worker thread); the google-auth stack lives only in `exporters/youtube_api.py`,
+  which `youtube.py` imports inside its worker handlers (first Connect/upload). SDK exceptions
+  never cross the youtube seam — `youtube_api` maps them to its own typed errors. These are the
+  ONLY sanctioned function-body imports (the code rule stands everywhere else);
+  `tests/test_import_diet.py` is the gate. Revisit when adding any dependency that costs >0.1s to
+  import and is not needed before the first frame: give it a seam, don't hoist it.
+
 - **The shader library is layered around SIGNED distance (feature 032).** Sources `SB_sd_*` return
   an SDF (negative inside; documented exceptions like the zero-width `SB_sd_segment`); operators
   `SB_op_*` map SDF->SDF; renderers (`SB_fill`/`SB_fill_aa`/`SB_glow`) map SDF->mask. A new public

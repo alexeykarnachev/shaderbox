@@ -1,15 +1,7 @@
-import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import google.auth.transport.requests
-import google.oauth2.credentials
-from google.auth.exceptions import GoogleAuthError, RefreshError
-from google_auth_oauthlib.flow import InstalledAppFlow, WSGITimeoutError
-from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
-from googleapiclient.http import MediaFileUpload
 from imgui_bundle import imgui, imgui_ctx
 from imgui_bundle import portable_file_dialogs as pfd
 from loguru import logger
@@ -31,8 +23,6 @@ from shaderbox.exporters.youtube_util import (
     DEFAULT_CATEGORY_ID,
     DEFAULT_FPS,
     SHORT_MAX_DURATION_SEC,
-    YOUTUBE_SCOPES,
-    build_client_config,
     build_insert_body,
     parse_client_secret_json,
     parse_tags,
@@ -124,18 +114,6 @@ def _read_client_secret_file(path: Path) -> str:
         return path.read_text()
     except OSError as e:
         raise ExporterValueError(f"Could not read {path.name}: {e}") from e
-
-
-def _map_google_error(e: Exception) -> str:
-    text: str = str(e)
-    low: str = text.lower()
-    if "access_denied" in low:
-        return "Authorization was denied — grant access on the consent screen."
-    if "invalid_client" in low or "invalid_grant" in low or "unauthorized" in low:
-        return "Client credentials rejected — re-check the pasted client_secret (Desktop client)."
-    if "quotaexceeded" in low or "quota" in low:
-        return "Daily YouTube upload quota reached (~100/day) — try again tomorrow."
-    return f"YouTube API error: {text}"
 
 
 class YouTubeExporter(Exporter):
@@ -580,77 +558,77 @@ class YouTubeExporter(Exporter):
             )
 
     def _handle_connect(self) -> None:
+        # The google SDK imports lazily behind this seam (066 D3) — first Connect pays it,
+        # here on the worker thread, never the app start.
+        from shaderbox.exporters import youtube_api
+
         try:
-            config = build_client_config(self._yt.client_id, self._yt.client_secret)
-            flow = InstalledAppFlow.from_client_config(config, YOUTUBE_SCOPES)
-            creds = flow.run_local_server(port=0, timeout_seconds=_CONNECT_TIMEOUT_SEC)
-            youtube = build("youtube", "v3", credentials=creds)
-            resp = youtube.channels().list(part="snippet", mine=True).execute()
-            items = resp.get("items", [])
-            if not items:
-                self._push_event(
-                    _AuthEvent(
-                        state=AuthState.ERROR,
-                        message="This account has no YouTube channel. Create one, then Connect again.",
-                    )
-                )
-                return
-            channel = items[0]
-            self._yt.token_json = creds.to_json()
-            self._yt.channel_title = channel["snippet"]["title"]
-            self._yt.channel_id = channel["id"]
-            self._store.save()
-            self._push_event(
-                _ConnectEvent(
-                    channel_title=self._yt.channel_title,
-                    channel_id=self._yt.channel_id,
-                )
+            result = youtube_api.run_connect_flow(
+                self._yt.client_id,
+                self._yt.client_secret,
+                timeout_seconds=_CONNECT_TIMEOUT_SEC,
             )
-        except WSGITimeoutError:
+        except youtube_api.YouTubeAuthTimeout:
             self._push_event(
                 _AuthEvent(
                     state=AuthState.ERROR,
                     message="Browser authorization timed out - click Connect to retry.",
                 )
             )
-        except (GoogleAuthError, HttpError) as e:
+            return
+        except youtube_api.YouTubeApiError as e:
+            self._push_event(_AuthEvent(state=AuthState.ERROR, message=str(e)))
+            return
+        if result is None:
             self._push_event(
-                _AuthEvent(state=AuthState.ERROR, message=_map_google_error(e))
+                _AuthEvent(
+                    state=AuthState.ERROR,
+                    message="This account has no YouTube channel. Create one, then Connect again.",
+                )
             )
+            return
+        self._yt.token_json = result.token_json
+        self._yt.channel_title = result.channel_title
+        self._yt.channel_id = result.channel_id
+        self._store.save()
+        self._push_event(
+            _ConnectEvent(
+                channel_title=self._yt.channel_title,
+                channel_id=self._yt.channel_id,
+            )
+        )
 
     def _handle_upload(self, job: _Job) -> None:
+        from shaderbox.exporters import youtube_api
+
         assert job.artifact is not None
         self._push_progress(ExportProgress(message="Validating...", fraction=0.1))
         prepared: RenderedArtifact = self.prepare(job.artifact, {})
 
-        creds = self._load_creds()
-        youtube = build("youtube", "v3", credentials=creds)
+        if not self._yt.token_json:
+            raise ExporterError("Not connected.")
         body = build_insert_body(
             job.title, job.description, job.tags, job.category_id, job.is_short
         )
-        media = MediaFileUpload(str(prepared.path), chunksize=-1, resumable=True)
-        request = youtube.videos().insert(
-            part="snippet,status", body=body, media_body=media
-        )
 
         self._push_progress(ExportProgress(message="Uploading...", fraction=0.4))
-        response: dict[str, Any] | None = None
         try:
-            while response is None:
-                status, response = request.next_chunk()
-                if status is not None:
-                    self._push_progress(
-                        ExportProgress(
-                            message="Uploading...",
-                            fraction=0.4 + 0.5 * status.progress(),
-                        )
+            video_id: str = youtube_api.upload_video(
+                token_json=self._yt.token_json,
+                path=prepared.path,
+                body=body,
+                on_token_refreshed=self._persist_token,
+                on_progress=lambda fraction: self._push_progress(
+                    ExportProgress(
+                        message="Uploading...", fraction=0.4 + 0.5 * fraction
                     )
-        except RefreshError as e:
+                ),
+            )
+        except youtube_api.YouTubeTokenRevoked as e:
             raise self._revoked_error(e) from e
-        except HttpError as e:
-            raise ExporterError(_map_google_error(e)) from e
+        except youtube_api.YouTubeApiError as e:
+            raise ExporterError(str(e)) from e
 
-        video_id: str = response["id"]
         url: str = studio_edit_url(video_id)
         self._render_state.last_studio_url = url
         self._push_progress(
@@ -671,23 +649,12 @@ class YouTubeExporter(Exporter):
                 message="Connection expired - Reconnect in Settings.",
             )
         )
-        return ExporterError(_map_google_error(e))
+        return ExporterError(str(e))
 
-    def _load_creds(self) -> google.oauth2.credentials.Credentials:
-        if not self._yt.token_json:
-            raise ExporterError("Not connected.")
-        creds = google.oauth2.credentials.Credentials.from_authorized_user_info(
-            json.loads(self._yt.token_json), YOUTUBE_SCOPES
-        )
-        if creds.expired and creds.refresh_token:
-            try:
-                creds.refresh(google.auth.transport.requests.Request())
-            except RefreshError as e:
-                raise self._revoked_error(e) from e
-            # Persist the refreshed token so a crash can't lose it.
-            self._yt.token_json = creds.to_json()
-            self._store.save()
-        return creds
+    def _persist_token(self, token_json: str) -> None:
+        # Persist the refreshed token so a crash can't lose it.
+        self._yt.token_json = token_json
+        self._store.save()
 
     def prepare(
         self, artifact: RenderedArtifact, settings: dict[str, Any]

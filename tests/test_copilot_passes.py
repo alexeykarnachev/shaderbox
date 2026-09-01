@@ -21,6 +21,7 @@ from shaderbox.copilot.address import (
 from shaderbox.copilot.capabilities import DocumentTreeEntry
 from shaderbox.copilot.prompt import render_working_set
 from shaderbox.copilot.prompt_context import _render_document_tree
+from tests.conftest import seed_extra_document
 
 _A = """#version 460 core
 in vec2 vs_uv;
@@ -173,7 +174,7 @@ def test_a_pass_address_in_the_working_set_collapses_to_its_document(app: Any) -
     # unioned in regardless and would hide a per-pass member.
     document_id = _two_pass(app)
     short = app.copilot_backend._copilot_short_ids()[document_id]
-    other = next(i for i in app.ui_documents if i != document_id)
+    other = seed_extra_document(app, "other-document")
     app.set_current_document_id(other)
 
     app.copilot_backend._working_set_add(pass_address(document_id, "scene"))

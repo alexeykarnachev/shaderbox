@@ -3,8 +3,6 @@ from typing import Any
 
 import httpx
 from loguru import logger
-from openai import APIStatusError, OpenAI
-from openai.types.chat import ChatCompletionChunk
 
 from shaderbox.copilot.config import COPILOT_ENGINE
 from shaderbox.copilot.errors import CopilotConfigError
@@ -90,20 +88,6 @@ class OpenRouterLLMClient(LLMClient):
     def model(self) -> str:
         return self._get_model()
 
-    def _client(self) -> OpenAI:
-        # Bound the TOTAL wait, not one attempt (043 hang). The SDK default is 600s AND it silently
-        # RETRIES (max_retries=2 -> x3) — a bare-float timeout also clobbers the 5s connect default to
-        # the full value. So: an explicit httpx.Timeout (small connect, llm_request_timeout_s for
-        # read/write/pool) + max_retries=0 (a copilot turn wants a fast-fail stream_error, not three
-        # silent slow retries the per-delta cancel can't interrupt mid-create()).
-        timeout = httpx.Timeout(COPILOT_ENGINE.llm_request_timeout_s, connect=5.0)
-        return OpenAI(
-            base_url=_OPENROUTER_BASE_URL,
-            api_key=self._get_api_key(),
-            timeout=timeout,
-            max_retries=0,
-        )
-
     def stream(
         self,
         messages: list[LLMMessage],
@@ -117,6 +101,11 @@ class OpenRouterLLMClient(LLMClient):
             raise CopilotConfigError(
                 "no OpenRouter model set (Settings -> Integrations)"
             )
+        # The `openai` SDK imports lazily (066 D3): ~0.23s of import rides the first stream
+        # call on the copilot worker thread instead of every app start. The sanctioned
+        # lazy-SDK seams are listed in conventions.md ## Design decisions.
+        from openai import APIStatusError
+
         try:
             yield from self._stream_impl(messages, tools, max_tokens)
         except APIStatusError as exc:
@@ -134,6 +123,9 @@ class OpenRouterLLMClient(LLMClient):
         tools: list[LLMToolSpec] | None,
         max_tokens: int,
     ) -> Iterator[LLMStreamEvent]:
+        from openai import OpenAI
+        from openai.types.chat import ChatCompletionChunk
+
         model = self._get_model()
         kwargs: dict[str, Any] = {
             "model": model,
@@ -152,11 +144,24 @@ class OpenRouterLLMClient(LLMClient):
             f"tools={len(tools) if tools else 0} max_tokens={max_tokens}"
         )
 
+        # Bound the TOTAL wait, not one attempt (043 hang). The SDK default is 600s AND it silently
+        # RETRIES (max_retries=2 -> x3) — a bare-float timeout also clobbers the 5s connect default to
+        # the full value. So: an explicit httpx.Timeout (small connect, llm_request_timeout_s for
+        # read/write/pool) + max_retries=0 (a copilot turn wants a fast-fail stream_error, not three
+        # silent slow retries the per-delta cancel can't interrupt mid-create()).
+        timeout = httpx.Timeout(COPILOT_ENGINE.llm_request_timeout_s, connect=5.0)
+        client = OpenAI(
+            base_url=_OPENROUTER_BASE_URL,
+            api_key=self._get_api_key(),
+            timeout=timeout,
+            max_retries=0,
+        )
+
         builders: dict[int, dict[str, str]] = {}
         started: set[int] = set()
         usage = LLMUsage()
         finish_reason = "stop"
-        for chunk in self._client().chat.completions.create(**kwargs):
+        for chunk in client.chat.completions.create(**kwargs):
             chunk: ChatCompletionChunk
             if chunk.usage is not None:
                 details = getattr(chunk.usage, "completion_tokens_details", None)

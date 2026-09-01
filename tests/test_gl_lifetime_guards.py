@@ -57,6 +57,7 @@ def test_document_release_frees_the_canvas(gl: moderngl.Context) -> None:
 def test_invalidate_frees_the_program_and_its_buffers(gl: moderngl.Context) -> None:
     # invalidate() runs on every hot-reload and every lib change; leaking here leaks per edit.
     document, _ = Document.load_from_dir(_EXAMPLE)
+    document.render()
     assert document.render_pass.program is not None
     program, vbo, vao = (
         document.render_pass.program,

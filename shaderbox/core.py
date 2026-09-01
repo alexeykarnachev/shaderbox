@@ -208,6 +208,12 @@ class Pass:
         self.canvas.release()
 
     def get_active_uniforms(self) -> list[moderngl.Uniform | moderngl.UniformBlock]:
+        # Lazy compile (066 D1): nothing compiles at load, so the first consumer that needs
+        # the program pulls it here. A FAILED attempt is not retried — its errors stick in
+        # compile_unit until invalidate() resets it (a source or lib change); render() keeps
+        # its own per-call retry.
+        if self.program is None and not self.compile_unit.error_raw:
+            self.compile()
         uniforms: list[moderngl.Uniform | moderngl.UniformBlock] = []
         if self.program:
             for uniform_name in self.program:

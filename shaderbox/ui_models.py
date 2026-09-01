@@ -362,11 +362,14 @@ class UIDocument(BaseModel):
             "ui_state": self.ui_state.model_dump(),
         }
 
-        # The uniform block below is rebuilt from the LIVE programs, so with nothing compiled
-        # there is nothing to enumerate and every tuned value would be written away as {}. That
-        # window is ordinary, not exotic: release_program() nulls the program and returns without
-        # recompiling (the recompile rides the next render), so an external shader edit followed
-        # by a quit lands here. Keep what is already on disk instead.
+        # The uniform block below is rebuilt from the LIVE programs, and compiles are lazy
+        # (066 D1) — so compile on demand here, or a never-rendered document would save with
+        # nothing to enumerate and every tuned value written away as {}. A pass whose SOURCE
+        # is broken still has no program afterwards: its rows are carried forward from disk
+        # (per pass below; the whole block here when every pass is broken).
+        for render_pass in self.document.passes.values():
+            if render_pass.program is None:
+                render_pass.compile()
         live = any(p.program is not None for p in self.document.passes.values())
         if not live:
             existing = dir / DOCUMENT_JSON_BASENAME
@@ -434,12 +437,6 @@ class UIDocument(BaseModel):
         # since a flat layout would have them overwrite each other and the sweep below would
         # delete the survivor's file.
         for pass_name, render_pass in self.document.passes.items():
-            if render_pass.program is None:
-                # A pass off the output's path never drew, so it has no program and its uniform
-                # set is unknown — saving it as {} would silently drop every value the user
-                # tuned on it. Compile it here; a pass whose SOURCE is broken still has no
-                # program afterwards and keeps whatever is already on disk.
-                render_pass.compile()
             if render_pass.program is None:
                 existing = _existing_rows(dir, pass_name)
                 if existing:

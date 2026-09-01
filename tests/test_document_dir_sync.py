@@ -13,7 +13,8 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from shaderbox.constants import EXAMPLE_ORDER, STARTER_EXAMPLE_ID
+from shaderbox.constants import STARTER_EXAMPLE_ID
+from tests.conftest import seed_extra_document
 
 
 def _bump_document_json(document_dir: Path) -> None:
@@ -36,9 +37,10 @@ def test_added_dir_appears(app: Any) -> None:
     app.session.sync_documents_from_disk()
 
     assert new_id in app.ui_documents
-    assert (
-        app.ui_documents[new_id].document.render_pass.program is not None
-    )  # warm-compiled
+    # Loaded lazily (066 D1): no program yet, and the first need compiles it.
+    render_pass = app.ui_documents[new_id].document.render_pass
+    assert render_pass.program is None
+    assert render_pass.get_active_uniforms() != []
 
 
 def test_half_written_dir_does_not_crash(app: Any) -> None:
@@ -63,7 +65,7 @@ def test_half_written_dir_does_not_crash(app: Any) -> None:
 
 def test_removed_dir_drops_document_and_editor(app: Any) -> None:
     # Open a tab for a non-current document, then delete its dir on disk: document + its editor tab go.
-    victim = EXAMPLE_ORDER[1]
+    victim = seed_extra_document(app, "victim-document")
     app.ensure_shader_tab(victim)
     assert any(t.document_id == victim for t in app.editor_tabs)
 
@@ -75,6 +77,7 @@ def test_removed_dir_drops_document_and_editor(app: Any) -> None:
 
 
 def test_removed_current_dir_reselects(app: Any) -> None:
+    seed_extra_document(app, "survivor-document")
     assert app.current_document_id == STARTER_EXAMPLE_ID
     shutil.rmtree(app.paths.documents_dir / STARTER_EXAMPLE_ID)
 
@@ -87,7 +90,7 @@ def test_removed_current_dir_reselects(app: Any) -> None:
 
 
 def test_changed_document_json_reloads(app: Any) -> None:
-    target = EXAMPLE_ORDER[1]
+    target = seed_extra_document(app, "target-document")
     assert tuple(app.ui_documents[target].document.render_pass.canvas.texture.size) != (
         123,
         123,

@@ -1,11 +1,11 @@
 """A save with no live program must not write away the document's tuned uniform values.
 
-`UIDocument.save` rebuilds `document.json["uniforms"]` from `get_active_uniforms()`, which is empty
-whenever `document.program is None`. That state is ordinary, not exotic: `release_program()`
-nulls the program and returns WITHOUT recompiling (the recompile rides the next render), so
-an external shader edit picked up by the file watcher followed by a quit — `ui.py` calls
-`app.save()` on close — lands exactly there. Before the fix that path wrote `"uniforms": {}`
-over every value the user had dialled in, while keeping the cosmetic `ui_uniforms` rows.
+`UIDocument.save` rebuilds `document.json["uniforms"]` from `get_active_uniforms()`. A
+program-less pass is the ORDINARY state, not an exotic one: compiles are lazy (066 D1), and
+`release_program()` — the file watcher's path on an external shader edit — nulls the program
+without recompiling. Two guards keep that state from writing `"uniforms": {}` over every value
+the user dialled in: the save path compiles on demand, and a pass whose SOURCE is broken (no
+program even after the attempt) carries the on-disk rows forward untouched.
 """
 
 import json
@@ -56,10 +56,27 @@ def test_save_without_a_live_program_keeps_the_values_on_disk(
         (document_dir / PASSES_DIR_NAME / pass_shader_name("main")).read_text()
     )
     assert ui_document.document.render_pass.program is None
-    assert ui_document.document.render_pass.get_active_uniforms() == []
 
     ui_document.save(document_dir.parent, document_dir.name)
 
+    assert _values(document_dir) == before
+
+
+def test_save_with_a_broken_source_carries_the_rows_forward(
+    gl: moderngl.Context, tmp_path: Path
+) -> None:
+    # With the source broken the save-path compile fails, so no program exists to rebuild
+    # from — the on-disk rows must survive untouched.
+    document_dir = tmp_path / "document"
+    shutil.copytree(_EXAMPLE, document_dir)
+    ui_document = load_document_from_dir(document_dir)
+    before = _values(document_dir)
+    assert before
+
+    ui_document.document.render_pass.release_program("this is not glsl")
+    ui_document.save(document_dir.parent, document_dir.name)
+
+    assert ui_document.document.render_pass.program is None
     assert _values(document_dir) == before
 
 
@@ -71,6 +88,7 @@ def test_save_with_a_live_program_still_rebuilds_from_the_program(
     document_dir = tmp_path / "document"
     shutil.copytree(_EXAMPLE, document_dir)
     ui_document = load_document_from_dir(document_dir)
+    ui_document.document.render()
     assert ui_document.document.render_pass.program is not None
 
     ui_document.document.render_pass.uniform_values["u_zoomout"] = 42.0
