@@ -210,8 +210,8 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   without being allowed to touch GL — that consumer must read the source, not the program.
 
 - **Heavy SDKs import lazily behind exactly two seams (feature 066).** `openai` lives at the top of
-  no module reachable from `shaderbox.ui` — it imports inside `OpenRouterLLMClient.stream` (first
-  copilot turn, worker thread); the google-auth stack lives only in `exporters/youtube_api.py`,
+  no module reachable from `shaderbox.ui` — it imports inside `OpenRouterLLMClient.stream` and its
+  `_stream_impl` (first copilot turn, worker thread); the google-auth stack lives only in `exporters/youtube_api.py`,
   which `youtube.py` imports inside its worker handlers (first Connect/upload). SDK exceptions
   never cross the youtube seam — `youtube_api` maps them to its own typed errors. These are the
   ONLY sanctioned function-body imports (the code rule stands everywhere else);

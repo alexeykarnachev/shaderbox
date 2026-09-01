@@ -211,9 +211,12 @@ class Pass:
         # Lazy compile (066 D1): nothing compiles at load, so the first consumer that needs
         # the program pulls it here. A FAILED attempt is not retried — its errors stick in
         # compile_unit until invalidate() resets it (a source or lib change); render() keeps
-        # its own per-call retry.
+        # its own per-call retry. Seeding rides the compile so every consumer keeps the
+        # invariant that a returned uniform has a value in uniform_values.
         if self.program is None and not self.compile_unit.error_raw:
             self.compile()
+            if self.program is not None:
+                self.seed_uniform_values()
         uniforms: list[moderngl.Uniform | moderngl.UniformBlock] = []
         if self.program:
             for uniform_name in self.program:

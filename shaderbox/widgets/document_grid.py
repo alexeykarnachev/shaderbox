@@ -101,9 +101,13 @@ def draw_document_preview_grid(app: App, width: float, height: float) -> None:
                 armed=app.document_delete_armed == id,
                 nav_flatten=True,
                 # Mirrors the render gate in ui.py: with "Render all" off, a non-current
-                # document stops ticking and its texture is a photograph of the past.
-                stale=not app.app_state.is_render_all_documents
-                and id != app.current_document_id,
+                # document stops ticking and its texture is a photograph of the past — and a
+                # document still waiting for its first render (066 D2) has none at all.
+                stale=(
+                    not app.app_state.is_render_all_documents
+                    and id != app.current_document_id
+                )
+                or not ui_document.document.first_render_done,
             )
             if result.clicked:
                 app.select_document(id)

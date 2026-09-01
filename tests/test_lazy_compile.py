@@ -12,6 +12,7 @@ from pathlib import Path
 import moderngl
 import pytest
 
+from shaderbox.core import ENGINE_DRIVEN_UNIFORMS, Canvas
 from shaderbox.paths import shader_lib_root
 from shaderbox.shader_lib import ShaderLibIndex, set_active
 from shaderbox.ui_models import load_document_from_dir
@@ -63,6 +64,29 @@ def test_get_active_uniforms_compiles_on_demand(
     uniforms = render_pass.get_active_uniforms()
     assert render_pass.program is not None
     assert "u_zoomout" in {u.name for u in uniforms}
+    # Seeding rides the lazy compile: every returned uniform must have a value, or a
+    # consumer that indexes uniform_values (the panel's row loop) crashes on a pass that
+    # compiled here but never rendered.
+    for uniform in uniforms:
+        if uniform.name not in ENGINE_DRIVEN_UNIFORMS:
+            assert uniform.name in render_pass.uniform_values, uniform.name
+
+
+def test_a_foreign_canvas_render_leaves_first_render_pending(
+    gl: moderngl.Context, tmp_path: Path
+) -> None:
+    # A probe/export renders into its own canvas and must not consume the live loop's
+    # first-render budget — the document's own canvases (what the grid tile shows) are
+    # still unwritten, and a consumed budget would leave the tile black for the session.
+    document_dir = tmp_path / "document"
+    shutil.copytree(_TUNED, document_dir)
+    document = load_document_from_dir(document_dir).document
+    foreign = Canvas(gl=gl, size=(8, 8))
+    document.render(canvas=foreign)
+    assert not document.first_render_done
+    document.render()
+    assert document.first_render_done
+    foreign.release()
 
 
 def test_a_broken_source_is_attempted_once(

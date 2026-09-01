@@ -202,7 +202,9 @@ class Document:
         self._graph_errors: list[GraphError] = []
         # Loading compiles nothing (066 D1), so the first render pays the pass compiles. The
         # live loop reads this to admit first renders one document per frame (066 D2); set on
-        # ATTEMPT, not success, so a broken document cannot hog the budget forever.
+        # ATTEMPT, not success, so a broken document cannot hog the budget forever — but only
+        # for an OWN-canvas render: a probe/export into a foreign canvas leaves the pass
+        # canvases (what the grid tile shows) unwritten, so it must not consume the budget.
         self.first_render_done: bool = False
         # The CPU-script engine tick (feature 041), injected by ProjectSession at load. Fired
         # ONLY from the export loops below (per frame), NEVER from render() — the live path ticks
@@ -322,7 +324,8 @@ class Document:
         `canvas` overrides the OUTPUT pass's target only — intermediate passes always draw into
         their own, since that is what the next pass samples.
         """
-        self.first_render_done = True
+        if canvas is None:
+            self.first_render_done = True
         output = self.graph.output_pass
         if output is None or output not in self.passes:
             self._graph_errors = plan_passes(self.graph)[1]
