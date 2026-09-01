@@ -19,7 +19,7 @@
                 "u_src": "scene"
             },
             "target": {
-                "scale": 0.5,
+                "scale": 1.0,
                 "dtype": "f2",
                 "filter_linear": true,
                 "wrap": false,
