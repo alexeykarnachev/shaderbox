@@ -531,7 +531,8 @@ holds only the two *facts* that constrain code (not procedure): the bundle shape
 invariant. The bundle is a **source distribution** (ships `shaderbox/` + `uv.lock`; the user's machine
 runs `uv sync` + `uv run` via `run.sh`/`run.bat` on first launch) — not a frozen binary.
 
-**No GitHub Releases** — the git tag is the release record; itch is the only channel.
+**GitHub Releases carry the tag's notes + bundle zips** (first: v0.27.0); itch remains the
+only USER channel — a GitHub release is a record and a dev-facing download, not a launch.
 
 **Clean-bundle invariant.** The bundle is an explicit allowlist (`shaderbox/` package +
 `pyproject.toml` / `uv.lock` / `.python-version` / `LICENSE` + the launcher + `scripts/README.md`).
