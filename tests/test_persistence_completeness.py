@@ -105,6 +105,7 @@ def test_the_roster_covers_every_module_that_loads_a_persisted_store() -> None:
         "model_salvage.py",  # the salvage helper itself
         "document.py",  # document.json, loaded per document with its own skip-and-warn path
         "seed.py",  # reads shipped resources, not user state
+        "render.py",  # editor/render.py: the vendored atlas.json, a shipped resource
         "persistence.py",  # the copilot conversation, rebuilt from scratch when unreadable
         "checkpoint.py",  # per-turn rollback records, pruned and disposable
         "agent.py",  # parses LLM tool-call payloads, not a file

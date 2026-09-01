@@ -2,8 +2,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from imgui_bundle import imgui_color_text_edit as text_edit
-
+from shaderbox.editor.ffi import Editor
 from shaderbox.shader_source import ShaderSource
 
 EditorTabKind = Literal["shader", "script", "lib"]
@@ -35,11 +34,12 @@ class HoverMark:
 
 @dataclass
 class EditorSession:
-    # A live TextEditor instance bound to a specific on-disk file. `source` is
+    # A live libeditor instance bound to a specific on-disk file. `source` is
     # the snapshot used to seed the editor; the editor's current text may diverge
     # from `source.text` until the next flush. `saved_undo` is the editor's
-    # undo-index at last save — anything beyond that is unsaved.
-    editor: text_edit.TextEditor
+    # revision at last save — anything beyond it is unsaved. The revision RISES
+    # across set_text, so a re-baseline reads it AFTER the set, never before.
+    editor: Editor
     source: ShaderSource
     saved_undo: int
 

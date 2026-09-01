@@ -42,15 +42,18 @@ def _two_pass(app: Any) -> str:
 
 
 def _edit(app: Any, new_text: str) -> None:
-    """Put `new_text` in the active editor and mark it dirty, as a keystroke would.
+    """Put `new_text` in the active editor and leave it dirty, as a keystroke would.
 
-    `TextEditor.set_text` does NOT advance the undo index, so a programmatic edit reads clean and
-    `flush_current_editor` returns early — the dirty flag is what a real edit moves.
+    libeditor's revision RISES across `set_text` (unlike the old TextEditor's undo
+    index), so the set alone moves the session past its `saved_undo` baseline —
+    dirty by the same mechanism a real edit uses, no fudge needed.
     """
     session = app.get_current_session()
     assert session is not None
+    baseline = session.editor.get_undo_index()
     session.editor.set_text(new_text)
-    session.saved_undo = session.editor.get_undo_index() - 1
+    assert session.editor.get_undo_index() > baseline
+    assert session.saved_undo <= baseline
 
 
 def test_opening_a_pass_loads_that_pass_s_source(app: Any) -> None:

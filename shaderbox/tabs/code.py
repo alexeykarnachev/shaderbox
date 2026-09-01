@@ -1,10 +1,17 @@
+import keyword
 from pathlib import Path
 
 from imgui_bundle import imgui
-from imgui_bundle import imgui_color_text_edit as text_edit
 
 from shaderbox.app import App
 from shaderbox.core import Pass
+from shaderbox.editor.ffi import EDITOR_RESOURCES_DIR, Editor, Mode
+from shaderbox.editor.render import (
+    EditorPanel,
+    EditorRenderer,
+    render_state,
+    should_redraw,
+)
 from shaderbox.editor_types import EditorTab, HoverMark, JumpRequest
 from shaderbox.paths import pass_name_of
 from shaderbox.shader_errors import ShaderError
@@ -13,6 +20,74 @@ from shaderbox.ui_primitives import draw_copyable_text
 from shaderbox.util import format_auto_value
 
 _MAX_ERROR_ROWS = 3
+
+_MODE_BADGES: dict[Mode, tuple[str, tuple[float, float, float, float]]] = {
+    Mode.NORMAL: ("NORMAL", COLOR.FG_DIM),
+    Mode.INSERT: ("INSERT", COLOR.STATE_OK),
+    Mode.VISUAL: ("VISUAL", COLOR.SELECT),
+    Mode.VISUAL_LINE: ("V-LINE", COLOR.SELECT),
+}
+
+# GLSL completion seeds beyond the live lib index + uniforms: the keywords and
+# builtins the lexer knows are a fine floor for a fragment shader.
+_GLSL_WORDS: tuple[str, ...] = (
+    "attribute",
+    "bool",
+    "break",
+    "const",
+    "continue",
+    "discard",
+    "else",
+    "float",
+    "for",
+    "highp",
+    "if",
+    "in",
+    "int",
+    "ivec2",
+    "ivec3",
+    "ivec4",
+    "lowp",
+    "mat2",
+    "mat3",
+    "mat4",
+    "mediump",
+    "out",
+    "return",
+    "sampler2D",
+    "uniform",
+    "uint",
+    "varying",
+    "vec2",
+    "vec3",
+    "vec4",
+    "void",
+    "while",
+    "abs",
+    "ceil",
+    "clamp",
+    "cos",
+    "cross",
+    "distance",
+    "dot",
+    "exp",
+    "floor",
+    "fract",
+    "length",
+    "max",
+    "min",
+    "mix",
+    "mod",
+    "normalize",
+    "pow",
+    "reflect",
+    "sin",
+    "smoothstep",
+    "sqrt",
+    "step",
+    "tan",
+    "texture",
+)
 
 
 def _is_script_tab(tab: EditorTab | None) -> bool:
@@ -46,7 +121,7 @@ def tab_label(app: App, tab: EditorTab) -> str:
 def _draw_tab_row(app: App) -> None:
     # The editor's tab row (047): a native imgui tab bar — drag-reorder, x-close, unsaved dot, an
     # error-tinted tab, and overflow scroll + a ▾ list popup. Labels come from tab_label, the one
-    # funnel this row and the chrome both use. FPE-safe (plain imgui, no TextEditor.render), so it draws even behind a modal.
+    # funnel this row and the chrome both use.
     # A genuine click is read back into active_tab_index; a PROGRAMMATIC switch (glyph open /
     # document-select / lib-jump / close) DRIVES imgui's selection via set_selected — imgui ignores a
     # model-side index change otherwise and reverts to the old tab. The target is read BEFORE the
@@ -130,24 +205,42 @@ def _script_errors_for(app: App, tab: EditorTab) -> list[ShaderError]:
 
 
 def _apply_markers(
-    editor: text_edit.TextEditor,
+    app: App,
+    editor: Editor,
     errors: list[ShaderError],
     hover: HoverMark | None,
     current_path: Path,
-) -> None:
+) -> tuple:
+    """Push error line-fills + the hover mark into the editor, only on change.
+
+    Returns the marker fingerprint — a render_state member, so a marker change
+    triggers exactly one redraw."""
+    hover_line = (
+        hover.line if hover is not None and hover.path == current_path else None
+    )
+    fingerprint = (
+        tuple(
+            (err.line, err.message)
+            for err in errors
+            if err.line >= 0 and err.path == current_path
+        ),
+        hover_line,
+    )
+    if app.editor_marker_state.get(current_path) == fingerprint:
+        return fingerprint
+    app.editor_marker_state[current_path] = fingerprint
     editor.clear_markers()
-    # Markers are line fills — translucent or they hide the glyphs. Only errors whose
-    # `path` matches the open file mark its gutter.
-    err_color = imgui.color_convert_float4_to_u32(fade(COLOR.STATE_ERROR, 0.35))
-    for err in errors:
-        if err.line >= 0 and err.path == current_path:
-            editor.add_marker(err.line, err_color, err_color, err.message, err.message)
-    if hover is not None and hover.path == current_path:
-        accent = imgui.color_convert_float4_to_u32(fade(COLOR.ACCENT_PRIMARY, 0.15))
-        editor.add_marker(hover.line, accent, accent, "", "")
+    # Marker fills are translucent by necessity — they draw behind the glyphs.
+    err_fill = fade(COLOR.STATE_ERROR, 0.35)
+    for line, message in fingerprint[0]:
+        editor.add_marker(line, err_fill, err_fill, message)
+    if hover_line is not None:
+        accent = fade(COLOR.ACCENT_PRIMARY, 0.15)
+        editor.add_marker(hover_line, accent, accent)
+    return fingerprint
 
 
-def _consume_jump(app: App, editor: text_edit.TextEditor, current_path: Path) -> bool:
+def _consume_jump(app: App, editor: Editor, current_path: Path) -> bool:
     req = app.editor_jump_request
     if req is None:
         return False
@@ -156,10 +249,9 @@ def _consume_jump(app: App, editor: text_edit.TextEditor, current_path: Path) ->
         app.editor_jump_request = None
         return False
     app.editor_jump_request = None
-    editor.set_cursor(text_edit.TextEditor.DocPos(req.line, req.column))
+    editor.set_cursor(req.line, req.column)
     editor.select_line(req.line)
-    editor.scroll_to_line(req.line, text_edit.TextEditor.Scroll.align_middle)
-    editor.set_focus()
+    editor.scroll_to_line(req.line, align_middle=True)
     return True
 
 
@@ -201,8 +293,73 @@ def _draw_error_strip(
     imgui.pop_style_color(1)
 
 
+def _completion_vocabulary(app: App, tab: EditorTab) -> list[str]:
+    if tab.kind == "script":
+        return list(keyword.kwlist)
+    words: list[str] = list(app.shader_lib_index.functions)
+    ui_document = app.ui_documents.get(tab.document_id)
+    if ui_document is not None:
+        edited = _pass_for_tab(app, tab)
+        if edited is not None:
+            words.extend(edited.uniform_values)
+    words.extend(_GLSL_WORDS)
+    return words
+
+
+def _feed_completion(app: App, editor: Editor, tab: EditorTab) -> None:
+    # Host-driven autocomplete (Ctrl+N in insert mode): the editor exposes the
+    # prefix while its popup is open; the host pushes the filtered vocabulary in.
+    prefix = editor.complete_prefix()
+    if prefix is None:
+        return
+    editor.complete_begin()
+    pushed = 0
+    for word in _completion_vocabulary(app, tab):
+        if word.startswith(prefix) and word != prefix:
+            editor.complete_push(word)
+            pushed += 1
+            if pushed >= 50:
+                break
+
+
+def _draw_gutter(
+    app: App,
+    editor: Editor,
+    origin: imgui.ImVec2,
+    height: float,
+) -> None:
+    # ed_layout draws no furniture: line numbers are the host's, placed with the
+    # layout's own cell metrics so row N's number sits at row N's y.
+    text_x, _text_y = editor.get_text_origin()
+    if text_x <= 0.0:
+        return
+    cell_w, cell_h = editor.get_cell_size()
+    if cell_h <= 0.0:
+        return
+    draw_list = imgui.get_window_draw_list()
+    first = editor.get_scroll()
+    rows = int(height / cell_h) + 1
+    line_count = editor.get_line_count()
+    current = editor.get_current_cursor_position().line
+    dim = imgui.get_color_u32(COLOR.FG_DIM)
+    lit = imgui.get_color_u32(COLOR.FG_SECONDARY)
+    right_pad = cell_w * 0.5
+    for row in range(rows):
+        line = first + row
+        if line >= line_count:
+            break
+        label = str(line + 1)
+        label_w = imgui.calc_text_size(label).x
+        pos = imgui.ImVec2(
+            origin.x + text_x - right_pad - label_w,
+            origin.y + row * cell_h + (cell_h - imgui.get_text_line_height()) * 0.5,
+        )
+        draw_list.add_text(pos, lit if line == current else dim, label)
+
+
 def draw_chrome(app: App) -> None:
-    # The editor's status chrome — the active tab's file + dirty/compiled state + Open dir.
+    # The editor's status chrome — mode badge + caret + the vim command line, then the
+    # active tab's file + dirty/compiled state + Open dir.
     tab = app.active_tab
     if tab is None:
         imgui.text_colored(COLOR.FG_DIM, "No file open")
@@ -210,6 +367,27 @@ def draw_chrome(app: App) -> None:
     if app.current_document_id not in app.ui_documents:
         imgui.text_colored(COLOR.FG_DIM, "No document selected")
         return
+    session = app.editor_sessions.get(tab.path)
+    if session is not None:
+        editor = session.editor
+        badge, badge_color = _MODE_BADGES[editor.get_mode()]
+        imgui.text_colored(badge_color, badge)
+        imgui.same_line()
+        cursor = editor.get_current_cursor_position()
+        imgui.text_colored(COLOR.FG_DIM, f"{cursor.line + 1}:{cursor.column + 1}")
+        imgui.same_line(spacing=float(SPACE.MD))
+        # The `:`/`/`/`?` line renders here — the editor owns the state, the host
+        # the pixels (feature 067).
+        command = editor.get_command_line()
+        if command is not None:
+            prompt = editor.get_command_line_prompt() or ""
+            imgui.text_colored(COLOR.ACCENT_PRIMARY, f"{prompt}{command}")
+            imgui.same_line(spacing=float(SPACE.MD))
+        else:
+            message = editor.get_command_message()
+            if message:
+                imgui.text_colored(COLOR.FG_DIM, message)
+                imgui.same_line(spacing=float(SPACE.MD))
     if tab.kind == "shader":
         edited_pass = _pass_for_tab(app, tab)
         full_file_path = (
@@ -234,22 +412,61 @@ def draw_chrome(app: App) -> None:
             imgui.text_colored(COLOR.STATE_WARN, "(unsaved)")
 
 
+def _handle_mouse(
+    app: App,
+    editor: Editor,
+    origin: imgui.ImVec2,
+    hovered: bool,
+) -> None:
+    # Host-owned mouse: press places the caret (and anchors), drag extends the
+    # selection, double-click selects the word. Coordinates are widget-space —
+    # the same space the layout's primitives and hit tests answer in.
+    if app.splitter_dragging or app.copilot_hovered:
+        return
+    mouse = imgui.get_mouse_pos()
+    rel = (mouse.x - origin.x, mouse.y - origin.y)
+    if imgui.is_item_activated():
+        pos = editor.pixel_to_cursor(rel)
+        if hovered and imgui.is_mouse_double_clicked(0):
+            if editor.get_mode() == Mode.NORMAL:
+                editor.set_cursor(pos.line, pos.column)
+                editor.feed("viw")
+        else:
+            editor.clear_selection()
+            editor.set_cursor(pos.line, pos.column)
+            app.editor_drag_anchor = (pos.line, pos.column)
+    elif imgui.is_item_active() and imgui.is_mouse_dragging(0):
+        anchor = app.editor_drag_anchor
+        if anchor is not None:
+            head = editor.pixel_to_cursor(rel)
+            if (head.line, head.column) != anchor:
+                editor.set_selection(anchor, (head.line, head.column))
+    if not imgui.is_item_active():
+        app.editor_drag_anchor = None
+
+
+def _handle_wheel(app: App, editor: Editor, hovered: bool) -> None:
+    io = imgui.get_io()
+    if not hovered or io.mouse_wheel == 0.0:
+        return
+    settings = app.app_state.editor_settings
+    if io.key_ctrl:
+        new_size = settings.font_size + int(io.mouse_wheel)
+        settings.font_size = max(8, min(48, new_size))
+    else:
+        editor.set_scroll(editor.get_scroll() - int(io.mouse_wheel) * 3)
+    io.mouse_wheel = 0.0
+
+
 def draw(app: App) -> None:
     app.code_hovered_uniform = ""
     ui_document = app.ui_documents.get(app.current_document_id)
 
-    # The tab row is plain imgui (no TextEditor.render), so it draws even behind a modal — only the
-    # editor render + error strip are FPE-gated below.
     _draw_tab_row(app)
 
     tab = app.active_tab
     current_path = app.current_editor_path
     if tab is None or current_path is None or ui_document is None:
-        app.editor_focused = False
-        return
-
-    # render() FPEs while a popup is open (conventions.md ## Known quirks) — skip drawing it.
-    if app.any_popup_open():
         app.editor_focused = False
         return
 
@@ -266,6 +483,10 @@ def draw(app: App) -> None:
     editor = session.editor
     settings = app.app_state.editor_settings
 
+    # Lock read-only during a copilot turn. Set every frame — the active session can change.
+    # Host writes (set_text / insert) are unaffected by read-only.
+    editor.set_read_only_enabled(app.copilot_turn_active)
+
     # The error strip shows the active tab's errors in ONE place + style: a shader/lib tab's
     # compile errors, or a script tab's engine errors adapted to the same shape (045 decision 7).
     errors = (
@@ -275,7 +496,9 @@ def draw(app: App) -> None:
         if (edited := _pass_for_tab(app, tab)) is not None
         else ui_document.document.render_pass.compile_unit.errors
     )
-    _apply_markers(editor, errors, app.editor_hover_line, current_path)
+    marker_fingerprint = _apply_markers(
+        app, editor, errors, app.editor_hover_line, current_path
+    )
     app.editor_hover_line = None
     strip_height = 0.0
     if errors:
@@ -292,62 +515,80 @@ def draw(app: App) -> None:
         )
         imgui.pop_font()
 
-    imgui.push_font(app.font_14, float(settings.font_size))
-
-    editor_pos = imgui.get_cursor_screen_pos()
-    editor_size = imgui.get_content_region_avail()
-    editor_size.y = max(0.0, editor_size.y - strip_height)
-    editor_max = imgui.ImVec2(
-        editor_pos.x + editor_size.x, editor_pos.y + editor_size.y
-    )
-    hovering = imgui.is_mouse_hovering_rect(editor_pos, editor_max)
-
-    # Consume the Ctrl+scroll wheel BEFORE render() so the editor doesn't also scroll on it
-    io = imgui.get_io()
-    if hovering and io.key_ctrl and io.mouse_wheel != 0.0:
-        new_size = settings.font_size + int(io.mouse_wheel)
-        settings.font_size = max(8, min(48, new_size))
-        io.mouse_wheel = 0.0
-
-    # Jump/focus requests latch for the upcoming render(); must run before it.
+    # Jump/focus requests latch for the upcoming layout; must run before it.
     jumped = _consume_jump(app, editor, current_path)
-
-    focus_requested = app.editor_focus_requested
-    if focus_requested:
-        editor.set_focus()
+    if app.editor_focus_requested and not app.any_popup_open():
+        # ui.py consumed the imgui half (set_next_window_focus before the child);
+        # clear the latch here so the outline saw it this frame.
         app.editor_focus_requested = False
         app.editor_was_ever_focused = True
 
-    # Dim the pane while unfocused. editor_focused is last frame's value (set after render).
-    dim = not app.editor_focused and not jumped and not focus_requested
-    if dim:
-        imgui.push_style_var(imgui.StyleVar_.alpha, EDITOR_UNFOCUSED_ALPHA)
+    editor_pos = imgui.get_cursor_screen_pos()
+    avail = imgui.get_content_region_avail()
+    editor_size = imgui.ImVec2(avail.x, max(1.0, avail.y - strip_height))
+    size_px = (max(1, int(editor_size.x)), max(1, int(editor_size.y)))
+    px_per_em = float(settings.font_size)
 
-    # Lock read-only during a copilot turn. Set every frame — the active session can change.
-    # Programmatic set_text is unaffected by read-only.
-    editor.set_read_only_enabled(app.copilot_turn_active)
+    # Layout runs every visible frame (hit tests + scroll clamping answer against
+    # it); the GL redraw below is gated.
+    editor.layout((float(size_px[0]), float(size_px[1])), px_per_em)
+    _feed_completion(app, editor, tab)
 
-    # TextEditor reads io.mouse_down[0] directly, bypassing imgui's hit-test (begin_disabled
-    # / z-order do nothing) — force it False for this render so it can't select under a
-    # splitter drag or the copilot chat, then restore before the splitter reads it.
-    if app.splitter_dragging or app.copilot_hovered:
-        prev_down = bool(io.mouse_down[0])
-        io.mouse_down[0] = False
-        editor.render("##glsl_editor", size=editor_size)
-        io.mouse_down[0] = prev_down
-    else:
-        editor.render("##glsl_editor", size=editor_size)
+    # The interaction surface: one invisible button spanning the editor image.
+    imgui.set_cursor_screen_pos(editor_pos)
+    imgui.invisible_button("##editor_surface", editor_size)
+    hovering = imgui.is_item_hovered()
+    if imgui.is_item_activated():
+        app.editor_was_ever_focused = True
+    _handle_wheel(app, editor, hovering)
+    _handle_mouse(app, editor, editor_pos, hovering)
 
-    if dim:
-        imgui.pop_style_var()
+    # Focus state: the child window owns it, exactly as before — the invisible
+    # button focuses the child on click.
+    focused = imgui.is_window_focused(imgui.FocusedFlags_.child_windows)
 
-    # No is-focused getter on the editor — read imgui's child-window focus instead.
-    app.editor_focused = imgui.is_window_focused(imgui.FocusedFlags_.child_windows)
+    settings_fingerprint = (
+        settings.show_whitespace,
+        settings.show_line_numbers,
+        settings.show_matching_brackets,
+        settings.tab_size,
+        settings.line_spacing,
+    )
+    state = render_state(
+        editor, size_px, px_per_em, marker_fingerprint, settings_fingerprint, focused
+    )
+    if app.editor_renderer is None:
+        app.editor_renderer = EditorRenderer(
+            EDITOR_RESOURCES_DIR / "atlas.png", EDITOR_RESOURCES_DIR / "atlas.json"
+        )
+        app.editor_panel = EditorPanel(app.editor_renderer)
+    panel = app.editor_panel
+    assert panel is not None
+    if should_redraw(panel.last_state, state):
+        panel.render(editor, size_px, px_per_em, COLOR.BG_SURFACE)
+        panel.last_state = state
+        app.editor_redraw_count += 1
+    if panel.texture is not None:
+        # Unfocused pane dims via the image tint (style alpha can't reach a texture).
+        alpha = 1.0 if focused or jumped else EDITOR_UNFOCUSED_ALPHA
+        imgui.get_window_draw_list().add_image(
+            imgui.ImTextureRef(panel.texture.glo),
+            editor_pos,
+            imgui.ImVec2(editor_pos.x + size_px[0], editor_pos.y + size_px[1]),
+            imgui.ImVec2(0, 0),
+            imgui.ImVec2(1, 1),
+            imgui.get_color_u32((1.0, 1.0, 1.0, alpha)),
+        )
+    if settings.show_line_numbers:
+        imgui.push_font(app.font_12, app.font_12.legacy_size)
+        _draw_gutter(app, editor, editor_pos, float(size_px[1]))
+        imgui.pop_font()
+
+    app.editor_focused = focused
     if app.editor_focused:
         # Sticky: stays True across popups/menus until an explicit defocus.
         app.editor_was_ever_focused = True
 
-    # A freshly-rendered editor auto-grabs focus, so clear it AFTER render, not before.
     if app.editor_defocus_requested:
         imgui.set_window_focus(None)
         app.editor_defocus_requested = False
@@ -355,27 +596,22 @@ def draw(app: App) -> None:
         app.editor_was_ever_focused = False
 
     # Drive the glfw cursor directly — imgui cursors are no-op here (conventions.md ## Known
-    # quirks). is_window_hovered respects popup-blocking (is_mouse_hovering_rect doesn't). Also
-    # NOT over the editor when the floating chat is hovered: it owns its own cursor (the splitter's
-    # resize cursor), and the editor's rect-test reads "hovered" THROUGH the chat — so without this
-    # the two fight every frame and the cursor blinks (this also suppresses the glyph tooltip there).
-    cursor_over_editor = (
-        hovering
-        and imgui.is_window_hovered(imgui.HoveredFlags_.child_windows)
-        and not app.copilot_hovered
-    )
+    # quirks). is_item_hovered respects popup-blocking. NOT over the editor when the floating
+    # chat is hovered: it owns its own cursor.
+    cursor_over_editor = hovering and not app.copilot_hovered
     if cursor_over_editor:
         app.want_cursor = app.ibeam_cursor
 
     # Cursor-following tooltip for words that are live uniforms; also lights up the panel row.
-    if cursor_over_editor and editor.is_mouse_pos_over_glyph(imgui.get_mouse_pos()):
-        word = editor.get_word_at_mouse_pos(imgui.get_mouse_pos())
-        if word in ui_document.document.render_pass.uniform_values:
-            value = ui_document.document.render_pass.uniform_values[word]
-            imgui.set_tooltip(f"{word}: {format_auto_value(value)}")
-            app.code_hovered_uniform = word
-
-    imgui.pop_font()
+    if cursor_over_editor:
+        mouse = imgui.get_mouse_pos()
+        rel = (mouse.x - editor_pos.x, mouse.y - editor_pos.y)
+        if editor.is_mouse_pos_over_glyph(rel):
+            word = editor.get_word_at_mouse_pos(rel)
+            if word and word in ui_document.document.render_pass.uniform_values:
+                value = ui_document.document.render_pass.uniform_values[word]
+                imgui.set_tooltip(f"{word}: {format_auto_value(value)}")
+                app.code_hovered_uniform = word
 
     if errors:
         imgui.push_font(app.font_12, app.font_12.legacy_size)

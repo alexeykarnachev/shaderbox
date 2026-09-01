@@ -41,9 +41,15 @@ FORBIDDEN_NAMES=(CLAUDE.md Makefile .pre-commit-config.yaml itch-config BUILDING
 FORBIDDEN_PATHS=(ai_docs .claude .github __pycache__ .git .venv .ruff_cache .mypy_cache)
 
 stage_common() {
-    # $1 = staging dir. Copies the allowlisted payload, stripping bytecode.
-    local stage="$1"
+    # $1 = staging dir, $2 = platform label. Copies the allowlisted payload,
+    # stripping bytecode.
+    local stage="$1" platform="$2"
     cp -r shaderbox "$stage/"
+    # The editor binary is linux-x86_64 only (feature 067): a Windows stage must
+    # not carry an ELF .so it can never load.
+    if [ "$platform" = "windows" ]; then
+        rm -f "$stage/shaderbox/resources/editor/libeditor.so"
+    fi
     # Strip Python bytecode (stale .pyc for deleted modules must not ship).
     find "$stage/shaderbox" -type d -name __pycache__ -prune -exec rm -rf {} +
     find "$stage/shaderbox" -type f \( -name '*.pyc' -o -name '*.pyo' \) -delete
@@ -59,9 +65,13 @@ stage_common() {
 }
 
 verify_clean() {
-    # $1 = staging dir. Aborts the build on any forbidden file.
-    local stage="$1"
+    # $1 = staging dir, $2 = platform label. Aborts the build on any forbidden file.
+    local stage="$1" platform="$2"
     local hit name path
+    if [ "$platform" = "windows" ]; then
+        hit="$(find "$stage" -name 'libeditor.so' -print -quit)"
+        [ -n "$hit" ] && { echo "FORBIDDEN linux binary in windows bundle: $hit"; exit 1; }
+    fi
     for name in "${FORBIDDEN_NAMES[@]}"; do
         hit="$(find "$stage" -name "$name" -print -quit)"
         [ -n "$hit" ] && { echo "✗ FORBIDDEN file in bundle: $hit"; exit 1; }
@@ -82,11 +92,11 @@ build_platform() {
     rm -rf "$stage"
     mkdir -p "$stage"
 
-    stage_common "$stage"
+    stage_common "$stage" "$platform"
     cp "scripts/$launcher" "$stage/"
     [ "$launcher" = "run.sh" ] && chmod +x "$stage/run.sh"
 
-    verify_clean "$stage"
+    verify_clean "$stage" "$platform"
 }
 
 build_platform windows run.bat

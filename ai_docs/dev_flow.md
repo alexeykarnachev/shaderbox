@@ -264,8 +264,15 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   block: registry-driven `imgui.shortcut()` dispatch reading `app.effective_bindings`, the bespoke ESC
   handler, and the document-creator arrow/Enter nav). The split exists because `imgui.shortcut()` asserts
   outside an active frame.
+- **`editor/`** — the embedded vim-modal code editor (feature 067): `ffi.py` (ctypes binding over
+  the vendored `libeditor.so` in `shaderbox/resources/editor/`; leaf, no imgui/moderngl),
+  `render.py` (the moderngl MTSDF primitive pass + the redraw gate's `render_state`/`should_redraw`
+  free functions), `input.py` (pure glfw→`ed_key` translation; the drain that consumes the events
+  lives in `hotkeys.py`). One editor handle per `EditorSession`; the handle owns buffer, vim
+  mode and undo. The design + vendoring rules live in `conventions.md` (the inline-editor bullet +
+  the vendored-binary quirk).
 - **`editor_types.py`** — leaf dataclasses shared between `app.py` and its collaborators:
-  `EditorSession` (one `TextEditor` bound to a path), `InlineInput` (mutually-exclusive inline
+  `EditorSession` (one `editor.ffi.Editor` bound to a path), `InlineInput` (mutually-exclusive inline
   text input), `JumpRequest`, `HoverMark`. (Extracted so `ShaderLibFileManager` + the UI modules
   import them without cycling through `app.py`.)
 - **`ui_models.py`** — pydantic `UIDocument` / `UIDocumentState` / `UIUniform` / `UIAppState` + document

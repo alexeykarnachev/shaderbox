@@ -5,6 +5,7 @@ Drop-in style + color block for imgui-bundle 1.92.x.
 After creating the imgui context and BEFORE the first frame::
 
     from imgui_bundle import imgui
+
     from shaderbox.theme import apply_theme, COLOR, SIZE, SPACE
 
     apply_theme(imgui.get_style(), accent="yellow", density="tight",
@@ -28,6 +29,8 @@ Color framework (portable to a future non-gruvbox theme):
 from typing import Literal
 
 from imgui_bundle import imgui
+
+from shaderbox.editor import ffi as editor_ffi
 
 # ----------------------------------------------------------------------------
 # Public types
@@ -503,3 +506,37 @@ def _set_colors(
 
     # modal veil
     style.set_color_(col.modal_window_dim_bg, (0.0, 0.0, 0.0, 0.55))
+
+
+def editor_palette() -> dict["editor_ffi.Slot", tuple[float, float, float, float]]:
+    """The gruvbox palette in libeditor theme slots (feature 067). Applied at
+    editor-session creation; the syntax slots follow the lexer's token classes
+    (1 keyword, 2 string, 3 comment, 4 number, 5 operator, 6 builtin)."""
+    slot = editor_ffi.Slot
+    return {
+        slot.BACKGROUND: COLOR.BG_SURFACE,
+        slot.TEXT: COLOR.SYN_IDENT,
+        # Translucent block caret: the glyph under it stays readable (the caret
+        # quad draws over the glyph in the primitive order).
+        slot.CARET: fade(COLOR.ACCENT_PRIMARY, 0.55),
+        slot.CARET_INSERT: COLOR.ACCENT_ACTIVE,
+        slot.SELECTION: fade(COLOR.SELECT, 0.35),
+        slot.GUTTER_TEXT: COLOR.FG_DIM,
+        slot.GUTTER_CURRENT: COLOR.FG_SECONDARY,
+        slot.FILLER: COLOR.FG_DIM,
+        slot.STATUS_BG: COLOR.BG_SURFACE,
+        slot.STATUS_TEXT: COLOR.FG_SECONDARY,
+        slot.STATUS_ACCENT: COLOR.ACCENT_PRIMARY,
+        slot.POPUP_PANEL: COLOR.BG_POPUP,
+        slot.POPUP_TEXT: COLOR.FG_PRIMARY,
+        slot.POPUP_SELECTED: fade(COLOR.ACCENT_PRIMARY, 0.30),
+        slot.SYNTAX_1: COLOR.SYN_KEYWORD,
+        slot.SYNTAX_2: COLOR.SYN_STRING,
+        slot.SYNTAX_3: COLOR.SYN_COMMENT,
+        slot.SYNTAX_4: COLOR.SYN_NUMBER,
+        slot.SYNTAX_5: COLOR.SYN_OP,
+        slot.SYNTAX_6: COLOR.SYN_BUILTIN,
+        slot.SYNTAX_7: COLOR.SYN_TYPE,
+        slot.WHITESPACE: fade(COLOR.FG_DIM, 0.5),
+        slot.BRACKET_MATCH: fade(COLOR.ACCENT_PRIMARY, 0.25),
+    }

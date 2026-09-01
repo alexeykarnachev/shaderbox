@@ -26,19 +26,23 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-01 (066 landed same-day: 4 commits, 2 review agents + 2 cull agents). -->
-**ACTIVE: 066 perf and test diet — done.** Startup 3.66s -> 0.67s (compiles are lazy: nothing
-compiles at load; `get_active_uniforms` compiles+seeds on demand; the live loop admits first
-renders one document per frame, and a waiting tile shows the stale wash), `import shaderbox.ui`
-0.78 -> 0.50s (openai + google behind the two sanctioned lazy seams — `conventions.md`), suite
-39.2s -> ~16s / 925 tests (starter-only `app` fixture; 18 theater tests culled by the D5
-falsifier criterion, one replaced by a real mutation-verified guard test). The ~16s sits on the
-per-test glfw-window floor; shared-window/xdist stay non-goals. Post-impl review closed two
-real regressions (panel KeyError on an unseeded lazy compile; a probe/export eating the
-first-render budget) — both pinned in `tests/test_lazy_compile.py`. Numbers + landed-reality
-notes: `ai_docs/features/066_perf_and_test_diet/01_spec.md ## Verification`.
+<!-- As of 2026-09-01 (067 impl landed; awaiting post-impl review + the maintainer's manual pass). -->
+**ACTIVE: 067 custom editor — implementation landed, verification in flight.** The code panel
+now runs the maintainer's own vim-modal editor: `shaderbox/editor/` (ctypes binding over the
+vendored `libeditor.so` @ editor-repo `e55b997`, moderngl MTSDF renderer + counted redraw gate,
+glfw→`ed_key` pump), drained in `hotkeys.py` ahead of registry dispatch with a consumed-chord
+skip (the one guard against Ctrl+R double-dispatch), `ed_pending`-gated Esc, host-wired
+Ctrl+C/X/V clipboard, host-drawn gutter/status/command-line chrome, host-fed completion.
+TextEditor is deleted (no fallback); the vendored `.so` is linux-only and `build.sh` strips it
+from the Windows stage (a `.dll` is a ship gate). Gates green: check, 942 tests, smoke (which
+now asserts real Glyph primitives + a fired redraw gate); an offscreen pixel probe confirmed
+crisp MTSDF text. Two-repo feature — findings file to the editor repo's feature 004 session.
+**NEXT:** post-impl review round, then the maintainer's `make run` manual pass (spec
+`ai_docs/features/067_custom_editor.md ## Manual verification`).
 
-**NEXT: the maintainer picks.** Nothing is specced beyond 066.
+**Still owed from 065: spec checks 13-15** (a display — the error strip's file+line and click-to-jump, a
+rename re-pointing an open tab, the six examples loading) **and 16** (`/dogfood`, real API cost —
+the copilot authoring a two-pass document). Engine and persistence checks 1-12 pass.
 
 **Still owed from 065: spec checks 13-15** (a display — the error strip's file+line and click-to-jump, a
 rename re-pointing an open tab, the six examples loading) **and 16** (`/dogfood`, real API cost —
@@ -49,6 +53,7 @@ the copilot authoring a two-pass document). Engine and persistence checks 1-12 p
 | # | Name | Status | Brief |
 |---|---|---|---|
 | 066 | perf_and_test_diet | done | Lazy pass compilation (no load-time warm-up; compile+seed on first need; one first-render per frame in the live loop), lazy openai/google seams, starter-only test fixture, and an 18-test falsifier-criterion cull — startup 3.66s -> 0.67s, suite 39.2s -> ~16s / 925 tests. Spec: `ai_docs/features/066_perf_and_test_diet/01_spec.md`. |
+| 067 | custom_editor | in progress | The code panel runs the maintainer's own vim-modal editor (vendored `libeditor.so`, C ABI, host-rendered MTSDF primitives) instead of imgui's TextEditor — modal keymap, host-drawn chrome, host-wired clipboard/completion, hotkey arbitration via a consumed-chord skip. Spec: `ai_docs/features/067_custom_editor.md`. |
 | 065 | pass_graph | partial | A document holds several passes forming a DAG, each pass its own `.glsl` file with its own `main()` and render target; "node" is retired for `document` + `pass`. All nine stages landed: the GL-free graph model + planner, the `Pass`/`Document` split, chain evaluation with feedback and cold exports, the `passes/` + `graph.json` + per-pass-asset layout, the `node` -> `document` rename across the package and on-disk paths, per-pass hot reload, the pass-list panel with D15's six verbs, the copilot's `<id>#<pass>` address with a pass-aware working set, and a five-pass "Bloom Chain" example. Checks 13-16 need a display and a dogfood run. Spec: `ai_docs/features/065_pass_graph/01_spec.md`. |
 | 064 | multistep | superseded | Multi-pass steps as functions inside ONE shader file. Built, reviewed to convergence, then REVERTED (`34f6d19`) when the maintainer used it: separate shader files per pass are what every surveyed tool does. Nine bug fixes it surfaced were kept. Superseder: `ai_docs/features/065_pass_graph/`. Spec: `ai_docs/features/064_multistep/02_decision.md`. |
 | 063 | radiance_cascades_gaps | done | Research-only wave (no code): can ShaderBox host radiance cascades, and what is actually missing — GPU capability all present and measured, the script-GL route proven unusable, the seam decision handed to 064. Spec: `ai_docs/features/063_radiance_cascades_gaps/README.md`. |

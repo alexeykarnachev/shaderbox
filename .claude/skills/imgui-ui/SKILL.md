@@ -416,12 +416,11 @@ on that. (ShaderBox: `editor_was_ever_focused`, §9.)
 Library footguns specific to the imgui-bundle Python build (currently
 1.92.801). Re-check on every bump.
 
-- **`imgui_color_text_edit.TextEditor.Palette` is read-only from Python** —
-  only `.get(color) -> ImU32`; no per-slot setter, no list-based constructor,
-  and `set_palette()` accepts only a `Palette` object (unbuildable with
-  custom colors). Use a built-in (`get_dark_palette()` /
-  `get_light_palette()`); custom palettes are impossible until the binding
-  exposes a write path.
+- **`imgui_color_text_edit` (TextEditor) is GONE from this codebase** — feature
+  067 replaced it with the maintainer's own libeditor (`shaderbox/editor/`,
+  vim-modal, host-rendered). Its quirks (read-only Palette, first-render focus
+  grab, FPE behind modals, direct `io.mouse_down` reads) died with it; don't
+  re-derive workarounds for them, and don't reintroduce the import.
 - **Dear ImGui 1.92 dropped pre-baked glyph ranges + `refresh_font_texture()`** in
   favor of dynamic on-demand glyph loading
   (`BackendFlags_.renderer_has_textures`, set automatically by imgui-bundle's
@@ -468,16 +467,15 @@ Library footguns specific to the imgui-bundle Python build (currently
     set_cursor(want); cur = want`. (Diagnosing: the panes weren't "fighting" in logic — focus/hover
     flags were all correct; the flicker was purely the redundant per-frame `set_cursor` calls.
     ShaderBox `App.want_cursor`/`cur_cursor` applied in `ui.update_and_draw`.)
-- **`imgui_color_text_edit.TextEditor.render()` auto-grabs imgui keyboard
-  focus on a child window's first frame** — so a never-yet-rendered editor
-  (app open, or just-switched node) steals focus and the caret goes live
-  without a click. The editor exposes no `is_focused()` getter. Track focus
-  by reading `imgui.is_window_focused(FocusedFlags_.child_windows)` *after*
-  `render()`. To programmatically defocus, set `editor_defocus_requested`
-  and consume it with `set_window_focus(None)` AFTER `render()` — clearing
-  before render is undone by the editor's own first-render grab.
+- **The code editor's focus is host-owned state (feature 067)** — the editor
+  image is an `invisible_button` in the `code_editor` child; focus reads
+  `imgui.is_window_focused(FocusedFlags_.child_windows)` after the draw, a
+  latched `editor_focus_requested` becomes `set_next_window_focus()` before
+  the child begins (in `ui.py`, gated on no-popup — see the focus-grab-
+  dismisses-modal quirk below), and `editor_defocus_requested` consumes with
+  `set_window_focus(None)` after the draw.
 - **imgui-bundle's C++-backed submodules ship only `.pyi` stubs**
-  (`portable_file_dialogs`, `imgui_color_text_edit`) — pyright emits a
+  (`portable_file_dialogs`) — pyright emits a
   `reportMissingModuleSource` warning at the import line. Harmless. Don't
   suppress with `# pyright: ignore` — that hides genuine resolve failures
   elsewhere.

@@ -21,6 +21,7 @@ from loguru import logger
 from shaderbox.app import App, PopupState
 from shaderbox.constants import DOCUMENT_EXAMPLES_DIR, EXAMPLE_ORDER
 from shaderbox.document import Document
+from shaderbox.editor.ffi import Kind as EditorKind
 from shaderbox.help_content import help_sections
 from shaderbox.logging_setup import configure_logging
 from shaderbox.pass_graph import PassEntry, PassGraph
@@ -312,6 +313,23 @@ def main() -> int:
             assert canary_red > 32, (
                 f"smoke: the feedback pass advanced to {canary_red} over {N_FRAMES} frames — "
                 "the frame loop is not calling Document.begin_frame"
+            )
+            # The editor drew (feature 067): the active session's last layout produced
+            # primitives INCLUDING at least one atlas Glyph (a missing atlas load
+            # yields only Missing_Glyph kinds — a background-only frame is not text),
+            # and the redraw gate fired at least once.
+            editor_session = app.get_current_session_if_exists()
+            assert editor_session is not None, "smoke: no editor session after the loop"
+            prims = editor_session.editor.prims_list()
+            assert prims, "smoke: the editor layout produced no primitives"
+            glyphs = sum(1 for p in prims if p.kind == int(EditorKind.GLYPH))
+            assert glyphs > 0, (
+                "smoke: the editor layout produced no Glyph primitives — shader text "
+                "is not reaching the atlas (atlas load or language wiring broken)"
+            )
+            assert app.editor_redraw_count >= 1, (
+                "smoke: the editor redraw gate never fired — the panel texture was "
+                "never drawn into"
             )
             app.release()
             logger.info(

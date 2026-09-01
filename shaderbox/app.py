@@ -7,7 +7,6 @@ from typing import Any
 import glfw
 import moderngl
 from imgui_bundle import imgui
-from imgui_bundle import imgui_color_text_edit as text_edit
 from imgui_bundle import imgui_command_palette as imcmd
 from imgui_bundle import portable_file_dialogs as pfd
 from imgui_bundle.python_backends.glfw_backend import GlfwRenderer
@@ -33,6 +32,14 @@ from shaderbox.copilot.revert import RevertExecutor
 from shaderbox.copilot.session import CopilotSession
 from shaderbox.copilot.state import CopilotLayout, Message
 from shaderbox.core import Canvas, Pass
+from shaderbox.editor.ffi import (
+    ChromeFlag,
+    Editor,
+    ViewFlag,
+    language_for_path,
+)
+from shaderbox.editor.input import KeyEvent, translate_char, translate_key
+from shaderbox.editor.render import EditorPanel, EditorRenderer
 from shaderbox.editor_types import (
     EditorSession,
     EditorTab,
@@ -58,7 +65,7 @@ from shaderbox.shader_lib.seed import sync_shipped_lib
 from shaderbox.shader_lib.tags import ShaderLibTagsStore
 from shaderbox.shader_source import ShaderSource
 from shaderbox.tabs import share_state
-from shaderbox.theme import COLOR, apply_theme
+from shaderbox.theme import COLOR, apply_theme, editor_palette
 from shaderbox.ui_models import (
     EditorSettings,
     UIAppState,
@@ -214,9 +221,30 @@ class App:
         self.exporter_registry.register(YouTubeExporter())
         self.share_tab_state: share_state.TabState | None = None
 
-        # Path-keyed editor sessions: one TextEditor per opened file. Declared before the
-        # session so its get_editor_sessions getter has a target to close over.
+        # Path-keyed editor sessions: one libeditor instance per opened file. Declared before
+        # the session so its get_editor_sessions getter has a target to close over.
         self.editor_sessions: dict[Path, EditorSession] = {}
+        # The editor input pump (feature 067): glfw key/char events queued by the chained
+        # callbacks, drained at the top of dispatch_commands while the editor is focused.
+        self.editor_key_events: list[KeyEvent] = []
+        # Chords (imgui KeyChord ints — the registry's comparison space) the editor consumed
+        # this frame; _dispatch_registry skips a spec whose chord is in here. Cleared per drain.
+        self.editor_consumed_chords: set[int] = set()
+        # True when this frame's drain forwarded Esc into the editor (mode/pending cancel) —
+        # _handle_escape's editor-defocus branch must then stay quiet (single-consumer rule).
+        self.editor_esc_forwarded: bool = False
+        # Redraw-gate observable: counts actual re-renders (decisions past the gate), so a
+        # dead or inverted gate is measurable rather than felt.
+        self.editor_redraw_count: int = 0
+        # The GL half of the editor draw, lazy — first draw constructs them (GL context
+        # guaranteed current inside the frame loop).
+        self.editor_renderer: EditorRenderer | None = None
+        self.editor_panel: EditorPanel | None = None
+        # Per-path fingerprint of the markers last pushed into a session's editor, so the
+        # error strip only rebuilds markers (and triggers a redraw) on change.
+        self.editor_marker_state: dict[Path, tuple] = {}
+        # Mouse-drag selection anchor (line, col), live while the editor surface is active.
+        self.editor_drag_anchor: tuple[int, int] | None = None
 
         # Shipped-library sync BEFORE the session builds the first lib index: seeds a
         # fresh box, follows shipped updates on pristine files, never touches edits.
@@ -388,10 +416,17 @@ class App:
 
     def _install_escape_filter(self) -> None:
         renderer_cb = self.imgui_renderer.keyboard_callback
+        renderer_char_cb = self.imgui_renderer.char_callback
 
         def key_callback(
             window: Any, key: int, scancode: int, action: int, mods: int
         ) -> None:
+            # The editor input pump rides the same callback (feature 067): every key
+            # event is offered to the queue; the drain decides per-frame whether the
+            # focused editor takes it.
+            event = translate_key(key, action, mods)
+            if event is not None:
+                self.editor_key_events.append(event)
             # Gate only PRESS/REPEAT. A RELEASE always passes: the job can disappear
             # between press and release, and swallowing the release of a forwarded press
             # leaves imgui's Escape logically held — every InputText then self-cancels on
@@ -404,7 +439,12 @@ class App:
                 return  # swallow: nothing to dismiss, leave nav untouched
             renderer_cb(window, key, scancode, action, mods)
 
+        def char_callback(window: Any, codepoint: int) -> None:
+            self.editor_key_events.append(translate_char(codepoint))
+            renderer_char_cb(window, codepoint)
+
         glfw.set_key_callback(self.window, key_callback)
+        glfw.set_char_callback(self.window, char_callback)
 
     def escape_has_job(self) -> bool:
         # Esc is meaningful only to dismiss a popup/palette, drop the editor caret, or
@@ -1175,23 +1215,23 @@ class App:
     def get_session(self, source: ShaderSource) -> EditorSession:
         # Lazy-create a session bound to this source's path (the stable identity);
         # `source.text` is the initial buffer text. The language is suffix-aware (045): a `.py`
-        # script gets Python highlighting, everything else GLSL.
+        # script gets Python highlighting, everything else GLSL (unknown suffixes fall back
+        # to GLSL — host policy).
         session = self.editor_sessions.get(source.path)
         if session is None:
-            editor = text_edit.TextEditor()
-            language = (
-                text_edit.TextEditor.Language.python()
-                if source.path.suffix == ".py"
-                else text_edit.TextEditor.Language.glsl()
-            )
-            editor.set_language(language)
-            editor.set_palette(text_edit.TextEditor.get_dark_palette())
-            editor.set_text(source.text)
+            editor = Editor(source.text)
+            editor.set_language(language_for_path(source.path))
+            editor.set_palette(editor_palette())
+            # saved_undo reads AFTER construction seeded the text (revision rises
+            # across every set).
             session = EditorSession(
                 editor=editor, source=source, saved_undo=editor.get_undo_index()
             )
             self.editor_sessions[source.path] = session
             self._apply_editor_settings_to(editor)
+            # A fresh editor holds no markers — drop any stale fingerprint so the
+            # next draw re-applies them instead of skipping on a false match.
+            self.editor_marker_state.pop(source.path, None)
         return session
 
     def get_session_for_path(self, path: Path) -> EditorSession:
@@ -1208,13 +1248,15 @@ class App:
             return None
         return self.get_session_for_path(path)
 
-    def _apply_editor_settings_to(self, editor: text_edit.TextEditor) -> None:
+    def _apply_editor_settings_to(self, editor: Editor) -> None:
+        # Five settings flow through here; font_size does NOT — it reaches the
+        # editor only as ed_layout's px_per_em via the render path (feature 067).
         settings: EditorSettings = self.app_state.editor_settings
-        editor.set_show_whitespaces_enabled(settings.show_whitespace)
-        editor.set_show_spaces_enabled(settings.show_whitespace)
-        editor.set_show_tabs_enabled(settings.show_whitespace)
-        editor.set_show_line_numbers_enabled(settings.show_line_numbers)
-        editor.set_show_matching_brackets(settings.show_matching_brackets)
+        editor.set_show_whitespace(settings.show_whitespace)
+        editor.set_chrome_flag(ChromeFlag.LINE_NUMBERS, settings.show_line_numbers)
+        editor.set_view_flag(
+            ViewFlag.SHOW_MATCHING_BRACKETS, settings.show_matching_brackets
+        )
         editor.set_tab_size(settings.tab_size)
         editor.set_line_spacing(settings.line_spacing)
 

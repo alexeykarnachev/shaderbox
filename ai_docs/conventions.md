@@ -356,19 +356,25 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   (`popup_state != CLOSED`) is the render-gate question. The command palette (`is_palette_open`) stays
   a separate bool — non-modal, coexists with any modal. No popup classes. Revisit if a popup grows
   internal state that doesn't belong on `App`.
-- **Inline editor state lives on `App`; disk is the source of truth; one `TextEditor` per opened
-  FILE.** The editor is a TAB BAR (feature 045): an ordered `editor_tabs: list[EditorTab]` +
+- **Inline editor state lives on `App`; disk is the source of truth; one libeditor instance per
+  opened FILE.** The code editor is the maintainer's own vim-modal library (feature 067):
+  `shaderbox/editor/` binds the vendored `libeditor.so` over ctypes (`ffi.py`), renders its
+  primitive array through a moderngl MTSDF pass (`render.py`, presented via `imgui.image`), and
+  pumps glfw key events into it (`input.py` translation + the `hotkeys.py` drain, focused-only).
+  The editor is a TAB BAR (feature 045): an ordered `editor_tabs: list[EditorTab]` +
   `active_tab_index`, over a path-keyed `editor_sessions: dict[Path, EditorSession]` (the lazily-built
-  `TextEditor` + its dirty baseline, one per on-disk file). A tab's `kind` (`shader` / `script` / `lib`,
+  editor handle + its dirty baseline, one per on-disk file — the handle keeps mode + undo across tab
+  switches). Dirty tracking is `ed_revision` vs `saved_undo`, and the revision RISES across
+  `set_text`, so every re-baseline reads it AFTER the set. A tab's `kind` (`shader` / `script` / `lib`,
   feature 048) drives its document-derived display label (`tab_label`: `<document> (shader)` / `(script)` /
   `library - <file>`) + the error tint; the imgui `##id` keys on the stable path/index, never the mutable
   label. The same file is never opened twice (`_focus_or_add_tab` focuses the existing tab). Editing
   acts on the ACTIVE tab: `flush_current_editor()` flushes its dirty editor before any save; the mtime
   watcher re-syncs every open session from disk on external change (disk wins). A document's editors close
-  with the document (lib tabs survive); a renamed file re-keys its session in place. Editor per-instance
-  footguns (palette, FPE-while-modal, cursor, font sizing) live in `## Known quirks`. Revisit if a tab
-  needs durable per-tab state beyond its open files (e.g. persisting the open-tab set across restart) or
-  a 4th editable `kind` lands.
+  with the document (lib tabs survive); a renamed file re-keys its session in place. The vendored
+  binary + rebuild procedure live in `## Known quirks`. Revisit if a tab needs durable per-tab state
+  beyond its open files (e.g. persisting the open-tab set across restart), a 4th editable `kind`
+  lands, or a non-modal keymap ships editor-side.
 - **`InlineInput` dataclass for mutually-exclusive inline editors.** A picker / panel hosting
   multiple inline text-input affordances (rename / new-file / new-dir) uses one `InlineInput`
   instance per kind — `target: Path | None`, `buf: str`, `needs_focus: bool` with
@@ -827,11 +833,19 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   draw): a sibling encode silently missed the guarantee. The lesson is the funnel rule applied to a timing
   guarantee — a "present before you freeze" invariant belongs at the single post-swap funnel, not re-derived
   per render entry point. A NEW render entry point MUST route its encode here, never call it inline.
-- **imgui / imgui-bundle quirks live in the `/imgui-ui` skill §8.** That includes: TextEditor
-  palette read-only, monochrome emoji, dynamic glyph loading, `push_font` rasterized-size,
-  `image()` lost `tint_col`, glfw cursor sync gap, pfd non-blocking handles, TextEditor
-  first-render focus grab, the `.pyi`-only stub pyright warning, the SetCursorPos assert.
-  Non-UI library quirks (telegram, moderngl, GLSL `#line`) stay below.
+- **imgui / imgui-bundle quirks live in the `/imgui-ui` skill §8.** That includes: monochrome
+  emoji, dynamic glyph loading, `push_font` rasterized-size, `image()` lost `tint_col`, glfw
+  cursor sync gap, pfd non-blocking handles, the `.pyi`-only stub pyright warning, the
+  SetCursorPos assert. Non-UI library quirks (telegram, moderngl, GLSL `#line`) stay below.
+- **The vendored editor binary (`shaderbox/resources/editor/`) rebuilds from a COMMITTED editor-repo
+  sha, never a dirty tree.** `libeditor.so` + `atlas.{png,json}` + `VERSION` (the sha) ship together
+  (feature 067). Rebuild: in the editor repo at that sha, `odin build ffi -build-mode:shared
+  -no-entry-point -out:libeditor.so`, copy the three files, update `VERSION`. The binary is
+  linux-x86_64 only — `build.sh` strips it from the Windows stage and `verify_clean` aborts a
+  Windows bundle carrying it; a Windows `.dll` is a ship-time prerequisite. Two measured facts the
+  next rebuild must not "fix": the layout's glyph UVs address the atlas PNG top-row-first (an upload
+  flip renders every glyph upside down), and `ed_revision` rises across `ed_set_text` (the dirty
+  flag depends on it).
 - **A live moderngl context must exist before constructing `Image` / `Video` / `Font` / `Canvas` /
   `Document`** — they call `moderngl.get_context()` lazily. In the app,
   `glfw.make_context_current(window)` handles it.
