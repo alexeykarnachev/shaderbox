@@ -16,6 +16,9 @@ uniform float u_gain = 0.35;
 
 
 
+
+
+
 out vec4 fs_color;
 
 void main() {

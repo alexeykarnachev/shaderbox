@@ -254,9 +254,12 @@ class App:
         # Last text synced between the OS clipboard and the editor's unnamed
         # register (one slot — `p` pastes the clipboard, a yank is Ctrl+V-able).
         self.editor_clipboard_seen: str = ""
-        # Rows the editor panel showed last frame — the drain's vim scroll chords
-        # (Ctrl+D/U/F/B) step in view units.
+        # Rows the editor panel showed last frame — follow-the-cursor scrolling
+        # steps in view units.
         self.editor_visible_rows: int = 0
+        # Per-path cursor as of last frame: follow-the-cursor fires only on a
+        # cursor CHANGE (a wheel-scrolled-away view must not snap back).
+        self.editor_last_cursor: dict[Path, object] = {}
 
         # Shipped-library sync BEFORE the session builds the first lib index: seeds a
         # fresh box, follows shipped updates on pristine files, never touches edits.

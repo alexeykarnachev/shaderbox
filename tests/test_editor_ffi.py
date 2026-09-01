@@ -67,16 +67,23 @@ def test_vim_edit_undo_redo() -> None:
     e.close()
 
 
-def test_only_two_ctrl_chords_are_consumed() -> None:
-    # The collision domain decision 5 builds on: Ctrl+R (normal redo) and Ctrl+N
-    # (insert completion) — every other Ctrl chord falls through as False.
-    e = _editor()
-    assert e.key(KeyCode.CHAR, KeyMod.CTRL, "r") is True
-    for ch in "abcdefghijklmopqstuvwxyz":  # every letter except r/n
+def test_the_consumed_ctrl_chord_domain_is_eight() -> None:
+    # The collision domain decision 5 builds on. Editor 4b110f0 grew it from two
+    # to eight: Ctrl+R (redo) + the six scroll motions in normal mode, Ctrl+N in
+    # insert. Every OTHER Ctrl chord falls through as False — the registry's food.
+    e = _editor("\n".join(f"line {i}" for i in range(50)))
+    e.layout((640.0, 420.0), 16.0)
+    consumed_normal = "rdufbey"
+    for ch in consumed_normal:
+        assert e.key(KeyCode.CHAR, KeyMod.CTRL, ch) is True, f"Ctrl+{ch} unbound?"
+    for ch in "acghijklmnopqstvwxz":
         assert e.key(KeyCode.CHAR, KeyMod.CTRL, ch) is False, f"Ctrl+{ch} claimed"
     e.feed("i")
     assert e.get_mode() == Mode.INSERT
     assert e.key(KeyCode.CHAR, KeyMod.CTRL, "n") is True
+    # The six scrolls are normal/visual motions; in insert they stay unbound
+    # (the drain's insert-protection fallback depends on it).
+    assert e.key(KeyCode.CHAR, KeyMod.CTRL, "d") is False
     e.close()
 
 
@@ -249,35 +256,71 @@ def _ctrl(ch: str) -> KeyEvent:
     return event
 
 
-def test_ctrl_d_scrolls_instead_of_deleting_a_document() -> None:
+def test_ctrl_d_moves_the_cursor_and_suppresses_delete_document() -> None:
+    # Editor 4b110f0: Ctrl+D is a real keymap MOTION (cursor moves half a page,
+    # nvim-measured); the consumed chord still guards DELETE_DOCUMENT.
     e = _editor("\n".join(f"line {i}" for i in range(200)))
     e.layout((640.0, 420.0), 16.0)
     app = _drain_app(e)
     app.editor_key_events = [_ctrl("d")]
     _drain_editor_input(app)
-    assert e.get_scroll() == 10, "Ctrl+D = half a 20-row page down"
+    assert e.get_current_cursor_position().line == 10, "half a 20-row page down"
     from shaderbox.commands import SPEC_BY_ID
     from shaderbox.hotkeys import spec_eligible
 
     spec = SPEC_BY_ID[CommandId.DELETE_DOCUMENT]
     chord = int(imgui.Key.d) | int(imgui.Key.mod_ctrl)
     assert spec_eligible(app, spec, chord, popup_open=False) is False, (
-        "the scroll consumed the chord — DELETE_DOCUMENT must not also fire"
+        "the motion consumed the chord — DELETE_DOCUMENT must not also fire"
     )
     app.editor_key_events = [_ctrl("u")]
     _drain_editor_input(app)
-    assert e.get_scroll() == 0, "Ctrl+U scrolls back up"
+    assert e.get_current_cursor_position().line == 0, "Ctrl+U back up"
     e.close()
 
 
-def test_ctrl_f_b_e_y_scroll() -> None:
+def test_follow_the_cursor_brings_the_view_along() -> None:
+    # ed_layout clamps but never follows: without host follow logic a Ctrl+D
+    # (or a bare j below the fold) walks the caret off-screen invisibly.
+    e = _editor("\n".join(f"line {i}" for i in range(200)))
+    e.layout((640.0, 420.0), 16.0)
+    for _ in range(3):
+        e.key(KeyCode.CHAR, KeyMod.CTRL, "d")
+    cursor = e.get_current_cursor_position()
+    assert cursor.line == 30
+    assert e.get_scroll() == 0, "the layout alone must NOT have followed (premise)"
+    e.scroll_to_line(cursor.line, align_middle=False)
+    e.layout((640.0, 420.0), 16.0)
+    first = e.get_scroll()
+    assert first <= cursor.line < first + 20, "the host follow puts the caret in view"
+    e.close()
+
+
+def test_ctrl_f_b_move_cursor_and_e_y_request_view_scroll() -> None:
     e = _editor("\n".join(f"line {i}" for i in range(200)))
     e.layout((640.0, 420.0), 16.0)
     app = _drain_app(e)
-    for ch, expected in (("f", 20), ("b", 0), ("e", 1), ("y", 0)):
-        app.editor_key_events = [_ctrl(ch)]
-        _drain_editor_input(app)
-        assert e.get_scroll() == expected, f"Ctrl+{ch.upper()} scroll"
+    app.editor_key_events = [_ctrl("f")]
+    _drain_editor_input(app)
+    # nvim reports "line 19" 1-based at a 20-row window; our columns/lines are 0-based.
+    assert e.get_current_cursor_position().line == 18, "Ctrl+F pages the cursor (nvim)"
+    app.editor_key_events = [_ctrl("b")]
+    _drain_editor_input(app)
+    assert e.get_current_cursor_position().line == 0
+    # Ctrl+E/Y are VIEW-only: reading the request consumes it, returns the
+    # ABSOLUTE target row, and applies the scroll (measured contract —
+    # code.draw's whole job is one take per frame).
+    e.set_scroll(5)
+    e.layout((640.0, 420.0), 16.0)
+    app.editor_key_events = [_ctrl("e")]
+    _drain_editor_input(app)
+    assert e.take_scroll_request() == 6, "Ctrl+E: one row down, absolute"
+    assert e.get_scroll() == 6, "the read applied it"
+    assert e.take_scroll_request() is None, "consumed by reading"
+    e.layout((640.0, 420.0), 16.0)
+    app.editor_key_events = [_ctrl("y")]
+    _drain_editor_input(app)
+    assert e.take_scroll_request() == 5, "Ctrl+Y: one row up, absolute"
     e.close()
 
 
@@ -317,22 +360,47 @@ def test_insert_ctrl_u_deletes_to_line_start() -> None:
     e.close()
 
 
-def test_colon_w_saves_through_the_host() -> None:
-    # `:w`'s object is the FILE, which the host owns — the editor's command line
-    # closes and the host flush runs (interim until an ABI host-command surface).
+def _type_ex(app: Any, text: str) -> None:
+    app.editor_key_events = [translate_char(ord(c)) for c in text] + [
+        KeyEvent(KeyCode.ENTER, 0)
+    ]
+    _drain_editor_input(app)
+
+
+def test_colon_w_saves_through_the_host_command_surface() -> None:
+    # The parser validates the spelling and hands the host the result (editor
+    # c5fabc8) — :w saves, and force/argument spellings arrive typed.
     e = _editor()
     app = _drain_app(e)
     flushed: list[bool] = []
     app.flush_current_editor = lambda: flushed.append(True)
-    app.editor_key_events = [
-        translate_char(ord(":")),
-        translate_char(ord("w")),
-        KeyEvent(KeyCode.ENTER, 0),
-    ]
-    _drain_editor_input(app)
+    _type_ex(app, ":w")
     assert flushed, ":w must save"
     assert e.get_command_line() is None, "the command line closed"
     assert e.get_text() == "one\ntwo\nthree\n", "no Enter leaked into the buffer"
+    e.close()
+
+
+def test_colon_q_refuses_dirty_and_bang_discards(tmp_path: Path) -> None:
+    disk = tmp_path / "x.glsl"
+    disk.write_text("one\ntwo\nthree\n")
+    e = _editor()
+    app = _drain_app(e)
+    app.get_current_session_if_exists().source = ShaderSource(
+        path=disk, text="one\ntwo\nthree\n", mtime=0.0
+    )
+    closed: list[int] = []
+    app.editor_tabs = [object()]
+    app.close_tab = lambda i: closed.append(i)
+    notes: list[str] = []
+    app.notifications = SimpleNamespace(push=lambda t, **_k: notes.append(t))
+    e.feed("dd")  # dirty
+    _type_ex(app, ":q")
+    assert not closed, ":q with unsaved changes refuses, as vim does"
+    assert any("Unsaved" in n for n in notes)
+    _type_ex(app, ":q!")
+    assert closed, ":q! closes"
+    assert e.get_text() == "one\ntwo\nthree\n", ":q! discarded the edit from disk"
     e.close()
 
 

@@ -553,6 +553,19 @@ def draw(app: App) -> None:
         editor.get_gutter_cells() * cell_w if settings.show_line_numbers else 0.0
     )
     app.editor_visible_rows = int(size_px[1] / cell_h) if cell_h > 0 else 0
+    # View reconciliation before layout (editor 4b110f0): apply a keymap-issued
+    # view scroll (Ctrl+E/Y, zz/zt/zb — consumed by reading), then follow the
+    # cursor when a MOTION moved it outside the view (Ctrl+D, a jump, plain j
+    # below the fold; ed_layout clamps but never follows). Only a cursor CHANGE
+    # follows — wheel-scrolling away from an idle caret must not snap back.
+    editor.take_scroll_request()  # absolute target; applied by the read itself
+    cursor = editor.get_current_cursor_position()
+    if cursor != app.editor_last_cursor.get(current_path):
+        app.editor_last_cursor[current_path] = cursor
+        rows = app.editor_visible_rows
+        first = editor.get_scroll()
+        if rows > 0 and not (first <= cursor.line < first + rows):
+            editor.scroll_to_line(cursor.line, align_middle=False)
     _drive_completion(app, editor, tab)
     editor.layout(
         (float(size_px[0]), float(size_px[1])), px_per_em, origin=(gutter_px, 0.0)

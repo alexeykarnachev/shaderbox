@@ -93,8 +93,9 @@ requirement that follows: modal bindings must not collide with the global hotkey
    the set. **This skip is the ONLY collision guard: `OPEN_SCRIPT` (Ctrl+R) and
    `NEW_DOCUMENT` (Ctrl+N) are `CommandScope.GLOBAL` — without the skip, a focused-editor
    Ctrl+R would BOTH redo and open the script tab on one press.** Editor-side the chord
-   domain is exactly two (Ctrl+N insert-completion, Ctrl+R normal-redo — 432-combination
-   sweep by the editor session, pinned by `src/chord_test.odin`); everything else returns
+   domain is EIGHT as of editor 4b110f0 (Ctrl+R redo + the six scroll motions
+   Ctrl+D/U/F/B/E/Y in normal/visual; Ctrl+N in insert — pinned by `src/chord_test.odin`
+   and by our `test_the_consumed_ctrl_chord_domain_is_eight`); everything else returns
    false from `ed_key` and falls through to the registry unchanged. Resulting UX: Ctrl+R
    = redo while focused, opens the script tab while unfocused; Ctrl+N = completion only
    mid-insert. No rebinding of defaults.
@@ -177,19 +178,25 @@ requirement that follows: modal bindings must not collide with the global hotkey
     `selected` / `count` are redraw-tuple members, so navigation repaints.
 15. **Vim-reserved Ctrl chords while focused: the vim thing or nothing, never an app
     action** (maintainer requirement at the manual pass: "hotkeys must not mess with
-    vim's bindings"). Host-side in the drain, each marked consumed so the registry
-    skips: Ctrl+D/U half-page and Ctrl+F/B full-page and Ctrl+E/Y one-line VIEW scrolls
-    outside insert mode (in `editor_visible_rows` units; DELETE_DOCUMENT and
-    OPEN_SHADER thereby never fire focused); insert-mode Ctrl+W deletes the word back
-    (vim's binding — it must NOT close the tab; CLOSE_CODE_TAB keeps normal-mode
-    Ctrl+W, where vim's own use is only a window-prefix we don't have), insert-mode
-    Ctrl+U deletes to line start, insert-mode Ctrl+P navigates/triggers completion (the
-    lib picker keeps Ctrl+P outside insert); Ctrl+O consume-noops (the jump-back reflex
-    must not open the project dialog; no jumplist exists yet). Known deviations, judged
-    acceptable: the scrolls move the VIEW not the cursor (real vim moves both — filed
-    editor-side as a keymap ask), Ctrl+V stays host paste (no visual-block mode
-    exists), Ctrl+A/X increment/decrement don't exist. The app halves of every
-    suppressed chord stay reachable while unfocused.
+    vim's bindings"). As of editor 4b110f0 the six scroll chords are REAL keymap
+    motions (nvim-measured: Ctrl+D/U/F/B move the CURSOR; Ctrl+E/Y and zz/zt/zb are
+    view-only and surface via `ed_take_scroll_request` — measured contract: reading
+    consumes, returns the absolute target row, and applies it; `code.draw` takes once
+    per frame). The consumed chords suppress DELETE_DOCUMENT / OPEN_SHADER etc. via
+    the D5 skip. The host adds what `ed_layout` deliberately doesn't: FOLLOW-THE-CURSOR
+    scrolling (on a cursor CHANGE landing outside the view → `scroll_to_line`; an idle
+    caret never snaps a wheel-scrolled view back). Host fallbacks that remain (run
+    AFTER `ed_key`, so future keymap growth shadows them automatically): insert-mode
+    protections — Ctrl+W deletes the word back (must NOT close the tab; CLOSE_CODE_TAB
+    keeps normal-mode Ctrl+W), Ctrl+U deletes to line start, Ctrl+P
+    navigates/triggers completion, Ctrl+D/F/B/E/Y consume-noop mid-insert — and
+    Ctrl+O consume-noop in all modes (no jumplist yet). Ex commands whose object is
+    the FILE arrive via `ed_take_host_command` (editor c5fabc8; parser-validated,
+    force+arg included): `:w` saves, `:q` refuses a dirty buffer unless forced
+    (`:q!` reloads from disk and closes), `:wq`/`:x` save+close; a path argument is
+    refused with a notice. Known deviations, judged acceptable: Ctrl+V stays host
+    paste (no visual-block mode exists), Ctrl+A/X increment/decrement don't exist.
+    The app halves of every suppressed chord stay reachable while unfocused.
 16. **TextEditor is deleted outright — no fallback path.** `imgui_color_text_edit`
     imports go from `editor_types.py`, `app.py`, `tabs/code.py`; the palette call dies.
     Doc fallout is enumerated in Files touched (conventions bullet, skill §8 lines,

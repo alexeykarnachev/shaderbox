@@ -142,6 +142,18 @@ class CursorPos(NamedTuple):
     column: int
 
 
+class HostCommandKind(IntEnum):
+    WRITE = 1
+    QUIT = 2
+    WRITE_QUIT = 3
+
+
+class HostCommand(NamedTuple):
+    kind: HostCommandKind
+    force: bool
+    arg: str
+
+
 _P = ctypes.POINTER
 _SIG: dict[str, tuple[object, Sequence[object]]] = {
     "ed_new": (ctypes.c_void_p, [ctypes.c_char_p]),
@@ -177,6 +189,17 @@ _SIG: dict[str, tuple[object, Sequence[object]]] = {
     ),
     "ed_complete_cancel": (None, [ctypes.c_void_p]),
     "ed_set_host_completion": (None, [ctypes.c_void_p, ctypes.c_bool]),
+    "ed_take_host_command": (
+        ctypes.c_int32,
+        [
+            ctypes.c_void_p,
+            _P(ctypes.c_bool),
+            _P(ctypes.c_ubyte),
+            ctypes.c_int32,
+            _P(ctypes.c_int32),
+        ],
+    ),
+    "ed_take_scroll_request": (ctypes.c_bool, [ctypes.c_void_p, _P(ctypes.c_int32)]),
     "ed_register": (
         ctypes.c_int32,
         [ctypes.c_void_p, _P(ctypes.c_ubyte), ctypes.c_int32],
@@ -523,6 +546,30 @@ class Editor:
         """Write the register — the host's way to make `p` paste the system
         clipboard (one slot, never two clipboards that disagree)."""
         self._lib.ed_set_register(self._h, text.encode(), linewise)
+
+    def take_host_command(self) -> HostCommand | None:
+        """A host-owned ex command (:w / :q / :wq family) the parser validated,
+        or None. Reading CONSUMES it — poll once per frame after feeding keys."""
+        force = ctypes.c_bool()
+        n = ctypes.c_int32()
+        kind = self._lib.ed_take_host_command(
+            self._h, ctypes.byref(force), _TEXT_BUF, len(_TEXT_BUF), ctypes.byref(n)
+        )
+        if kind == 0:
+            return None
+        return HostCommand(
+            HostCommandKind(kind), force.value, bytes(_TEXT_BUF[: n.value]).decode()
+        )
+
+    def take_scroll_request(self) -> int | None:
+        """A view-only scroll the keymap asked for (Ctrl+E/Y, zz/zt/zb).
+        MEASURED contract: reading consumes it, the returned value is the
+        ABSOLUTE target row, and the scroll is applied by the read itself —
+        the host just calls this once per frame after feeding keys."""
+        rows = ctypes.c_int32()
+        if not self._lib.ed_take_scroll_request(self._h, ctypes.byref(rows)):
+            return None
+        return rows.value
 
     def set_host_completion(self, on: bool) -> None:
         """Suppress the built-in buffer-word source: Ctrl+N stays consumed but

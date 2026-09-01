@@ -9,9 +9,11 @@ from shaderbox.commands import (
     popup_suppresses,
     route_flag,
 )
-from shaderbox.editor.ffi import Editor, KeyCode, KeyMod, Mode
+from shaderbox.editor.ffi import Editor, HostCommandKind, KeyCode, KeyMod, Mode
 from shaderbox.editor.input import KeyEvent
+from shaderbox.editor_types import EditorSession
 from shaderbox.popups.lib_picker import inline_input_owns_esc
+from shaderbox.theme import COLOR
 
 
 def process_hotkeys(app: App) -> None:
@@ -61,8 +63,6 @@ def _drain_editor_input(app: App) -> None:
             editor.key(KeyCode.ESCAPE)
             app.editor_esc_forwarded = True
             continue
-        if _handle_ex_command(app, editor, event):
-            continue
         if _handle_clipboard(app, editor, event):
             continue
         consumed = editor.key(event.code, event.mods, event.text)
@@ -82,6 +82,42 @@ def _drain_editor_input(app: App) -> None:
     if register and register != app.editor_clipboard_seen:
         glfw.set_clipboard_string(app.window, register)
         app.editor_clipboard_seen = register
+    _serve_host_command(app, session)
+
+
+def _serve_host_command(app: App, session: EditorSession) -> None:
+    # The ex commands whose OBJECT the host owns (editor c5fabc8): :w saves,
+    # :q closes the tab (refusing on unsaved changes unless forced, as vim
+    # does), :wq/:x both. A path argument names a host feature we don't have.
+    command = session.editor.take_host_command()
+    if command is None:
+        return
+    if command.arg:
+        app.notifications.push(
+            "Path argument not supported", color=COLOR.STATE_WARN[:3]
+        )
+        return
+    dirty = session.editor.get_undo_index() != session.saved_undo
+    if command.kind in (HostCommandKind.WRITE, HostCommandKind.WRITE_QUIT):
+        app.flush_current_editor()
+        app.notifications.push("Saved")
+    if command.kind in (HostCommandKind.QUIT, HostCommandKind.WRITE_QUIT):
+        if command.kind == HostCommandKind.QUIT and dirty and not command.force:
+            app.notifications.push(
+                "Unsaved changes (:q! discards)", color=COLOR.STATE_WARN[:3]
+            )
+            return
+        if command.kind == HostCommandKind.QUIT and dirty and command.force:
+            # :q! — discard: reload the file's on-disk text into the session.
+            try:
+                disk_text = session.source.path.read_text()
+            except OSError:
+                disk_text = None
+            if disk_text is not None:
+                session.editor.set_text(disk_text)
+                session.saved_undo = session.editor.get_undo_index()
+        if app.editor_tabs:
+            app.close_tab(app.active_tab_index)
 
 
 # Vim-reserved Ctrl chords while the editor is focused: each either does the vim
@@ -126,27 +162,16 @@ def _handle_vim_chord(app: App, editor: Editor, event: KeyEvent) -> bool:
     ch = event.text
     insert = editor.get_mode() == Mode.INSERT
     handled = False
-    if ch in _VIM_SCROLL_CHORDS:
+    if ch in _VIM_SCROLL_CHORDS and insert:
+        # vim's insert-mode meanings differ (dedent, char-below, ...); the one
+        # worth having is Ctrl+U = delete to line start. The rest consume-noop
+        # so no app command fires mid-typing. (Outside insert the keymap consumes
+        # these before this fallback runs.)
         handled = True
-        if insert:
-            # vim's insert-mode meanings differ (dedent, char-below, ...); the one
-            # worth having is Ctrl+U = delete to line start. The rest consume-noop
-            # so no app command fires mid-typing.
-            if ch == "u":
-                pos = editor.get_current_cursor_position()
-                if pos.column > 0:
-                    editor.delete_range((pos.line, 0), (pos.line, pos.column))
-        else:
-            rows = max(1, app.editor_visible_rows)
-            step = {
-                "d": max(1, rows // 2),
-                "u": -max(1, rows // 2),
-                "f": rows,
-                "b": -rows,
-                "e": 1,
-                "y": -1,
-            }[ch]
-            editor.set_scroll(editor.get_scroll() + step)
+        if ch == "u":
+            pos = editor.get_current_cursor_position()
+            if pos.column > 0:
+                editor.delete_range((pos.line, 0), (pos.line, pos.column))
     elif ch == "o":
         # vim's jump-back reflex: consume-noop (no jumplist yet); OPEN_PROJECT
         # must not fire mid-editing.
@@ -177,27 +202,6 @@ def _read_clipboard(app: App) -> str:
     if not raw:
         return ""
     return raw.decode() if isinstance(raw, bytes) else raw
-
-
-def _handle_ex_command(app: App, editor: Editor, event: KeyEvent) -> bool:
-    # INTERIM host intercept for the ex commands whose OBJECT the host owns (the
-    # file): `:w` saves, `:wq`/`:x` save and close the tab. The editor executes
-    # what it owns (`:s`, search); a file write can only happen here. Pending an
-    # ABI host-command surface (filed editor-side) — this branch deletes itself
-    # when that lands.
-    if event.code != KeyCode.ENTER or event.mods != 0:
-        return False
-    if editor.get_command_line_prompt() != ":":
-        return False
-    command = (editor.get_command_line() or "").strip()
-    if command not in ("w", "wq", "x"):
-        return False
-    editor.key(KeyCode.ESCAPE)  # close the command line without executing
-    app.flush_current_editor()
-    app.notifications.push("Saved")
-    if command in ("wq", "x") and app.editor_tabs:
-        app.close_tab(app.active_tab_index)
-    return True
 
 
 def _handle_clipboard(app: App, editor: Editor, event: KeyEvent) -> bool:
