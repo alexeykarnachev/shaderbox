@@ -90,3 +90,28 @@ def test_example_description_reads_shipped(app: Any) -> None:
     cat = app.copilot_backend.example_catalog()
     full = app.copilot_backend._copilot_resolve_example_id(cat[0].example_id)
     assert app.example_description(full) == cat[0].description
+
+
+def test_opening_an_example_leaves_no_tab_outside_the_project(app: Any) -> None:
+    # The crash this pins. A document loaded from the read-only examples dir keeps its passes'
+    # source paths pointing THERE until it is saved, and `set_current_document_id` opens an
+    # editor tab on whatever path the pass currently holds. `code.py::draw_chrome` then does
+    # `relative_to(project_dir)` on the active shader tab, which RAISES for a non-descendant --
+    # out of a draw call, so it takes the whole frame down rather than showing a bad label.
+    # Saving first rebinds every pass into the project, so the tab opens on a project path.
+    #
+    # Falsifier: swap the two lines in create_document_from_example and the tab below points at
+    # shaderbox/resources/document_examples/... instead.
+    before = set(app.ui_documents)
+    app.create_document_from_example(EXAMPLE_ORDER[-1])
+    created = (set(app.ui_documents) - before).pop()
+    document = app.ui_documents[created].document
+
+    outside = [
+        t.path for t in app.editor_tabs if not t.path.is_relative_to(app.project_dir)
+    ]
+    assert outside == [], f"editor tabs opened outside the project: {outside}"
+    for name, render_pass in document.passes.items():
+        assert render_pass.source.path.is_relative_to(app.project_dir), (
+            f"pass '{name}' still points outside the project: {render_pass.source.path}"
+        )

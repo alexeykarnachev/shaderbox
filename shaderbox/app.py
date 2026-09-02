@@ -1611,6 +1611,11 @@ class App:
         new_document.reset_id()
 
         self.ui_documents[new_document.id] = new_document
-        self.set_current_document_id(new_document.id)
+        # SAVE BEFORE SELECTING. The document was loaded out of the read-only shipped examples
+        # dir, so until it is written every pass's `source.path` still points THERE; `save`
+        # rebinds each one to the project copy. Selecting first opens an editor tab on the
+        # resource path, and `code.py::draw_chrome` does `path.relative_to(project_dir)` on the
+        # active shader tab -- which raises, out of a draw function, taking the frame down.
         self.save_ui_document(new_document)
+        self.set_current_document_id(new_document.id)
         logger.info(f"New document {new_document.id} created from example {example_id}")

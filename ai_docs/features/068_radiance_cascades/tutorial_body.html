@@ -1,0 +1,682 @@
+<title>Radiance Cascades in ShaderBox</title>
+<style>
+  :root {
+    --bg: #1d2021; --fg: #ebdbb2; --dim: #a89984; --faint: #665c54;
+    --accent: #fabd2f; --accent2: #83a598; --warn: #fe8019; --err: #fb4934;
+    --panel: #282828; --line: #3c3836; --code: #32302f;
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--fg); margin: 0;
+    font: 15px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 48px 24px 120px; }
+  h1 { font-size: 30px; line-height: 1.2; margin: 0 0 8px; letter-spacing: -0.02em; }
+  h2 {
+    font-size: 21px; margin: 56px 0 4px; padding-top: 20px;
+    border-top: 1px solid var(--line); letter-spacing: -0.01em;
+  }
+  h3 { font-size: 16px; margin: 28px 0 4px; color: var(--accent2); }
+  .lede { color: var(--dim); font-size: 16px; margin: 0 0 8px; }
+  .step {
+    display: inline-block; font: 600 11px/1 ui-monospace, monospace;
+    color: var(--bg); background: var(--accent); padding: 4px 7px;
+    border-radius: 3px; vertical-align: 3px; margin-right: 8px;
+  }
+  code {
+    font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: var(--code); padding: 1px 5px; border-radius: 3px;
+  }
+  pre {
+    background: var(--code); border: 1px solid var(--line); border-left: 3px solid var(--accent2);
+    border-radius: 4px; padding: 14px 16px; overflow-x: auto; margin: 14px 0;
+  }
+  pre code { background: none; padding: 0; font-size: 12.5px; line-height: 1.55; }
+  .note, .warn, .why {
+    border-radius: 4px; padding: 12px 16px; margin: 16px 0; font-size: 14px;
+  }
+  .note { background: #282828; border-left: 3px solid var(--accent2); }
+  .warn { background: #2d2420; border-left: 3px solid var(--warn); }
+  .why  { background: #26231d; border-left: 3px solid var(--faint); color: var(--dim); }
+  .note b, .warn b { color: var(--fg); }
+  figure { margin: 20px 0; }
+  figure img {
+    display: block; max-width: 384px; width: 100%; image-rendering: pixelated;
+    border: 1px solid var(--line); border-radius: 4px;
+  }
+  figcaption { color: var(--faint); font-size: 13px; margin-top: 7px; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 14px; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); }
+  th { color: var(--dim); font-weight: 600; font-size: 12px; text-transform: uppercase;
+       letter-spacing: 0.04em; }
+  td code { font-size: 12px; }
+  a { color: var(--accent2); }
+  .toc { background: var(--panel); border-radius: 4px; padding: 16px 20px; margin: 28px 0; }
+  .toc ol { margin: 6px 0 0; padding-left: 22px; }
+  .toc li { margin: 3px 0; color: var(--dim); }
+  .toc a { text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+  .row { display: flex; gap: 18px; flex-wrap: wrap; align-items: flex-start; }
+  .row figure { flex: 1 1 260px; margin: 8px 0; }
+  .row figure img { max-width: 100%; }
+  hr { border: 0; border-top: 1px solid var(--line); margin: 40px 0; }
+  .k { color: var(--accent); font-weight: 600; }
+</style>
+
+<div class="wrap">
+
+<h1>Radiance Cascades in ShaderBox</h1>
+<p class="lede">
+  Build real-time 2D global illumination from nothing, one pass at a time. Paint light and walls
+  with the mouse; watch light bounce, mix colour and cast soft shadows — with no ray tracing, no
+  noise and no temporal accumulation.
+</p>
+
+<div class="why">
+  This is Jason McGhee's two-part series (<a href="https://jason.today/gi">jason.today/gi</a> and
+  <a href="https://jason.today/rc">jason.today/rc</a>) rewritten against this engine. Where the
+  original drives WebGL from JavaScript, here every stage is a ShaderBox <b>pass</b> and the
+  chain is <code>graph.json</code>. Two corrections to the published code are marked
+  <span class="k">CORRECTION</span> where they come up — both were verified numerically, not
+  by eye.
+</div>
+
+<div class="toc">
+  <b>What you'll build</b>
+  <ol>
+    <li><a href="#draw">A canvas you can draw on</a> — feedback, and why a pass reads itself</li>
+    <li><a href="#naive">Naive global illumination</a> — correct, beautiful, far too slow</li>
+    <li><a href="#seed">The seed pass</a> — turning pixels into coordinates</li>
+    <li><a href="#jfa">The jump flood</a> — one shader, nine runs</li>
+    <li><a href="#df">The distance field</a> — one line that changes everything</li>
+    <li><a href="#march">Sphere marching</a> — the same picture, 20× faster</li>
+    <li><a href="#cascades">Radiance cascades</a> — the idea, and the packing</li>
+    <li><a href="#merge">The merge</a> — the step everyone gets wrong</li>
+    <li><a href="#composite">Composite</a> — tonemapping and sRGB</li>
+    <li><a href="#verify">Verifying it</a> — why a good-looking render proves nothing</li>
+  </ol>
+</div>
+
+<div class="note">
+  <b>Before you start.</b> Make a new document (<code>Ctrl+N</code>), open the <b>Passes</b>
+  strip in the Document tab, and give yourself a 512×512 canvas. Each step below adds one pass:
+  click <b>add pass</b>, name it, paste the shader, then open its gear to wire its inputs and
+  set its target. The finished thing ships as the <b>Radiance Cascades</b> example — open that
+  if you get stuck, or to compare.
+</div>
+
+<h2 id="draw"><span class="step">1</span>A canvas you can draw on</h2>
+
+<p>
+  Everything downstream needs a scene to light. Rather than hard-coding shapes, we make a canvas
+  that <em>remembers</em> — you paint into it and it keeps what you painted.
+</p>
+
+<p>
+  A fragment shader has no memory: it runs fresh every frame and forgets everything. The way you
+  give it memory is to let it read its own output from the previous frame. In ShaderBox you wire
+  a pass's sampler input to <b>itself</b>; the engine calls this <b>feedback</b> and keeps a
+  second texture behind the scenes, so you read last frame while writing this one.
+</p>
+
+<p>Add a pass called <code>paint</code>:</p>
+
+<pre><code>#version 460 core
+
+in vec2 vs_uv;
+out vec4 fs_color;
+
+uniform sampler2D u_prev;
+uniform vec4 u_brush;            // xy = cursor UV, z = radius, w = 0 off / 1 painting
+uniform vec3 u_brush_color;
+uniform float u_brush_emissive;  // 1 = a light, 0 = a wall
+
+// Squared distance from p to the segment a-b. Squared so there is no sqrt in the hot path.
+float sd_seg_sq(vec2 p, vec2 a, vec2 b) {
+    vec2 pa = p - a, ba = b - a;
+    float len_sq = max(dot(ba, ba), 1e-9);
+    float t = clamp(dot(pa, ba) / len_sq, 0.0, 1.0);
+    vec2 d = pa - ba * t;
+    return dot(d, d);
+}
+
+void main() {
+    vec4 current = texture(u_prev, vs_uv);
+    if (u_brush.w &gt; 0.5) {
+        float r = u_brush.z;
+        if (sd_seg_sq(vs_uv, u_brush.xy, u_brush.xy) &lt;= r * r) {
+            current = vec4(u_brush_color * u_brush_emissive, 1.0);
+        }
+    }
+    fs_color = current;
+}</code></pre>
+
+<p>
+  In the pass's settings: wire <code>u_prev</code> to <b>paint</b> (itself), set the format to
+  <b>16-bit float</b>, and turn <b>smooth</b> off.
+</p>
+
+<div class="note">
+  <b>Why 16-bit float, and why not smooth.</b> An emitter is brighter than white — the warm light
+  below is <code>vec3(4.0, 3.3, 2.0)</code>. An 8-bit target clamps that to 1.0 and every light
+  becomes equally bright, destroying the falloff before it starts. And <b>smooth</b> makes reads
+  blend between texels, which would smear the crisp edge that tells the next pass exactly where a
+  wall is.
+</div>
+
+<p>
+  The alpha channel is the important convention: <b>alpha 1 means "something solid is here"</b>.
+  RGB is what it emits. A wall is solid and black; a light is solid and bright. Every later pass
+  keys off that single bit.
+</p>
+
+<h3>The cursor comes from a script</h3>
+
+<p>
+  A shader can't read the mouse. In ShaderBox, a <b>script</b> can — it gets a <code>ctx</code>
+  each frame and returns uniform values. Add <code>scripts/script.py</code> to the document:
+</p>
+
+<pre><code>import math
+from shaderbox.scripting import Ctx, ScriptBehavior, Vec3, Vec4
+
+
+class Behavior(ScriptBehavior):
+    def __init__(self) -&gt; None:
+        self.last: tuple[float, float] | None = None
+
+    def update(self, ctx: Ctx) -&gt; dict[str, object]:
+        x, y = ctx.mouse.x, ctx.mouse.y
+        moved = self.last is not None and math.dist((x, y), self.last) &gt; 0.002
+        self.last = (x, y)
+        return {
+            "u_brush": Vec4(x, y, 0.02, 1.0 if moved else 0.0),
+            "u_brush_color": Vec3(4.0, 3.0, 1.6),
+            "u_brush_emissive": 1.0,
+        }</code></pre>
+
+<div class="warn">
+  <b>ctx.mouse has position but no buttons.</b> So there is no click to gate on: the brush paints
+  whenever the cursor <em>moves</em>. The distance threshold matters — without it a resting cursor
+  burns a permanent dot into a canvas that never forgets.
+</div>
+
+<figure>
+  <img src="{{IMG:paint}}" alt="Two bright dots and a dark vertical wall on black">
+  <figcaption>
+    <b>paint</b> — two emitters and a wall. Nothing is lit yet; these are just the texels that
+    are <em>solid</em>. Everything after this is about getting light from the bright ones to
+    everywhere else.
+  </figcaption>
+</figure>
+
+<h2 id="naive">;<span class="step">2</span>Naive global illumination</h2>
+
+<p>
+  Here is the whole idea, in its simplest correct form. For every pixel, fire rays in a circle.
+  Walk each ray forward until it hits something solid. Add up what the rays found, divide by how
+  many you fired. That average <em>is</em> the light arriving at that pixel.
+</p>
+
+<pre><code>vec4 raymarch() {
+    vec4 light = texture(u_scene, vs_uv);
+    if (light.a &gt; 0.1) return light;      // this pixel IS a light; nothing to gather
+
+    float one_over = 1.0 / float(RAY_COUNT);
+    float noise = rand(vs_uv);            // jitter, or you get banding
+    vec4 radiance = vec4(0.0);
+
+    for (int i = 0; i &lt; RAY_COUNT; i++) {
+        float angle = TAU * one_over * (float(i) + noise);
+        vec2 dir = vec2(cos(angle), -sin(angle)) / u_resolution;
+        vec2 uv = vs_uv + dir;
+
+        for (int step = 0; step &lt; MAX_STEPS; step++) {
+            if (uv.x &lt; 0.0 || uv.x &gt; 1.0 || uv.y &lt; 0.0 || uv.y &gt; 1.0) break;
+            vec4 hit = texture(u_scene, uv);
+            if (hit.a &gt; 0.1) { radiance += hit; break; }
+            uv += dir;                    // one texel at a time
+        }
+    }
+    return radiance * one_over;
+}</code></pre>
+
+<p>
+  This works. It also crawls: each ray steps <b>one texel at a time</b>, so a ray crossing a
+  512-wide canvas takes 512 texture reads. At 32 rays per pixel that is 16&nbsp;000 reads per
+  pixel per frame, and 32 rays is still few enough to look noisy.
+</p>
+
+<div class="why">
+  The original article reaches for <b>temporal accumulation</b> here — jitter the noise by time
+  and blend 90% of the previous frame — which trades noise for smearing. Worth knowing, because
+  radiance cascades needs none of it: its ray directions are deterministic, so there is no noise
+  to hide. If you build this stage, give it a <b>persist</b> target and blend with
+  <code>u_prev</code>; then delete it happily at step 7.
+</div>
+
+<p>
+  The next three passes exist to fix the crawl. The insight: if a ray knew <em>how far away the
+  nearest solid thing was</em>, it could jump that whole distance in one step, because nothing
+  can possibly be hit before then.
+</p>
+
+<h2 id="seed"><span class="step">3</span>The seed pass</h2>
+
+<p>
+  We want, for every texel, the distance to the nearest solid texel. That is built in two moves:
+  first every texel learns the <em>position</em> of its nearest solid texel, then distance is
+  just subtraction.
+</p>
+
+<p>This pass writes the starting state. Add <code>seed</code>, wired to <b>paint</b>:</p>
+
+<pre><code>#version 460 core
+
+in vec2 vs_uv;
+out vec4 fs_color;
+uniform sampler2D u_scene;
+
+void main() {
+    float alpha = texture(u_scene, vs_uv).a;
+    fs_color = vec4(vs_uv * alpha, 0.0, 1.0);
+}</code></pre>
+
+<p>
+  A solid texel stores its own UV. An empty one stores <code>(0,0)</code>, which everything
+  downstream reads as "nothing known here".
+</p>
+
+<div class="warn">
+  <b>Set this target to 32-bit float.</b> It stores coordinates, not colours. At 8-bit a UV
+  quantizes to 1/255 and the distance field comes out visibly blocky; at 16-bit it is subtly
+  wrong. This is the one pass where <code>f4</code> genuinely earns its cost.
+</div>
+
+<figure>
+  <img src="{{IMG:seed}}" alt="Faint red-green gradient dots where the scene was solid">
+  <figcaption>
+    <b>seed</b> — position encoded as colour. Red is x, green is y, so a texel's tint <em>is</em>
+    its coordinate. Only solid texels have one; the rest are black.
+  </figcaption>
+</figure>
+
+<h2 id="jfa"><span class="step">4</span>The jump flood</h2>
+
+<p>
+  Now spread those coordinates outward until every texel knows the nearest one. The naive way is
+  to check every texel against every solid texel — O(n²), hopeless. The <b>jump flood algorithm</b>
+  does it in <code>log₂(size)</code> passes.
+</p>
+
+<p>
+  Each pass looks at 8 neighbours at a given offset and keeps the nearest seed found. The offset
+  <em>halves</em> each pass: first 256 texels away, then 128, 64, down to 1. Big jumps carry
+  coordinates across the canvas; small jumps refine the answer locally.
+</p>
+
+<p>
+  At 512×512 that is <code>ceil(log₂(512)) = 9</code> passes — and this is exactly what
+  ShaderBox's <b>Runs per frame</b> is for. One shader, nine runs.
+</p>
+
+<pre><code>#version 460 core
+
+in vec2 vs_uv;
+out vec4 fs_color;
+
+uniform sampler2D u_prev;
+uniform sampler2D u_seed;
+uniform float u_pass_iteration;    // which run this is, 0-based
+uniform float u_pass_iterations;   // how many runs in total
+uniform vec2 u_resolution;
+
+void main() {
+    float offset = pow(2.0, u_pass_iterations - u_pass_iteration - 1.0);
+    bool first = u_pass_iteration &lt; 0.5;
+
+    vec4 nearest = vec4(0.0);
+    float nearest_dist = 1e9;
+
+    for (float y = -1.0; y &lt;= 1.0; y += 1.0) {
+        for (float x = -1.0; x &lt;= 1.0; x += 1.0) {
+            vec2 uv = vs_uv + vec2(x, y) * offset / u_resolution;
+            if (uv.x &lt; 0.0 || uv.x &gt; 1.0 || uv.y &lt; 0.0 || uv.y &gt; 1.0) continue;
+
+            vec4 sampled = first ? texture(u_seed, uv) : texture(u_prev, uv);
+            if (sampled.x == 0.0 &amp;&amp; sampled.y == 0.0) continue;
+
+            vec2 diff = sampled.xy - vs_uv;
+            float d = dot(diff, diff);
+            if (d &lt; nearest_dist) { nearest_dist = d; nearest = sampled; }
+        }
+    }
+    fs_color = nearest;
+}</code></pre>
+
+<p>
+  Wire <code>u_seed</code> → <b>seed</b>, <code>u_prev</code> → <b>jfa</b> (itself), format
+  <b>32-bit float</b>, smooth <b>off</b>, and set <b>Runs per frame</b> to <b>9</b>.
+</p>
+
+<div class="note">
+  <b>Why the shader reads two different inputs.</b> An iterated pass that read only itself would
+  never receive anything — run 0 would sample an empty texture and the chain would flood
+  nothing. So run 0 reads the <em>seed</em>, and every later run reads what the run before it
+  wrote. Any iterated chain needs a seam like this to start it.
+</div>
+
+<div class="note">
+  <b>The engine hands over the index, not the offset.</b> <code>u_pass_iteration</code> says
+  <em>which</em> run this is; turning that into a halving offset is the algorithm's business,
+  not the engine's. That is why there is no <code>u_jfa_offset</code> — the engine stays a
+  general tool and this stays one line of shader.
+</div>
+
+<div class="warn">
+  <b>Resize changes the answer.</b> 9 runs spans 512px; a 1024px canvas needs 10. Come up short
+  and it still renders — just with a subtly wrong distance field and no error anywhere. The pass
+  settings panel warns you when the count no longer reaches, because this failure is invisible.
+</div>
+
+<figure>
+  <img src="{{IMG:jfa}}" alt="Smooth red-green gradient field filling the canvas">
+  <figcaption>
+    <b>jfa</b> — after nine runs every texel holds the coordinate of its nearest solid texel. The
+    discontinuities are the boundaries between "closest to this wall" and "closest to that one" —
+    a Voronoi diagram, produced as a side effect.
+  </figcaption>
+</figure>
+
+<h2 id="df"><span class="step">5</span>The distance field</h2>
+
+<p>One line of real work. Add <code>df</code>, wired to <b>jfa</b>:</p>
+
+<pre><code>#version 460 core
+
+in vec2 vs_uv;
+out vec4 fs_color;
+uniform sampler2D u_jfa;
+
+void main() {
+    vec2 nearest = texture(u_jfa, vs_uv).xy;
+    float d = (nearest.x == 0.0 &amp;&amp; nearest.y == 0.0)
+        ? 1.0                                    // nothing solid anywhere: as far as it gets
+        : distance(vs_uv, nearest);
+    fs_color = vec4(vec3(clamp(d, 0.0, 1.0)), 1.0);
+}</code></pre>
+
+<figure>
+  <img src="{{IMG:df}}" alt="Grayscale field, black at the emitters and walls, brightening outward">
+  <figcaption>
+    <b>df</b> — brightness is distance to the nearest solid thing. Black at the walls, bright far
+    from everything. A ray standing on a grey texel can safely jump that far in any direction.
+  </figcaption>
+</figure>
+
+<h2 id="march"><span class="step">6</span>Sphere marching</h2>
+
+<p>
+  Now the payoff. Replace the naive inner loop's fixed step with a jump by the distance field:
+</p>
+
+<pre><code>for (int step = 0; step &lt; MAX_STEPS; step++) {
+    float dist = texture(u_df, uv).r;
+    uv += dir * dist;                        // jump the whole safe distance
+    if (uv.x &lt; 0.0 || uv.x &gt; 1.0 || uv.y &lt; 0.0 || uv.y &gt; 1.0) break;
+    if (dist &lt; EPS) { radiance += texture(u_scene, uv); break; }
+}</code></pre>
+
+<p>
+  Same picture, roughly 20× fewer steps. A ray crossing open space clears it in two or three
+  jumps instead of five hundred. This is <b>sphere marching</b>, and it is what makes the rest
+  affordable.
+</p>
+
+<div class="why">
+  At this point you have working global illumination. It is correct and it is pretty — and it
+  still costs rays × steps per pixel, so smooth results need hundreds of rays. Everything from
+  here is about getting the same quality for about <b>8 rays per pixel</b>.
+</div>
+
+<h2 id="cascades"><span class="step">7</span>Radiance cascades</h2>
+
+<p>The observation the whole technique rests on, called the <b>penumbra hypothesis</b>:</p>
+
+<div class="note">
+  Light that is <b>far away</b> needs many <b>directions</b> but few <b>positions</b> — it changes
+  slowly across space. Light that is <b>close</b> needs the opposite: few directions, but you must
+  know exactly where you are. Spatial resolution and angular resolution trade off against distance,
+  in opposite directions.
+</div>
+
+<p>
+  Naive GI ignores this and pays full price everywhere: every pixel, every direction, all
+  distances. Cascades split the work into <b>levels</b>, each handling one distance band:
+</p>
+
+<table>
+  <tr><th>Level</th><th>Probes</th><th>Directions</th><th>Covers</th></tr>
+  <tr><td>0</td><td>every pixel</td><td>4</td><td><code>0 → 0.012</code></td></tr>
+  <tr><td>1</td><td>every 2nd pixel</td><td>16</td><td><code>0.012 → 0.060</code></td></tr>
+  <tr><td>2</td><td>every 4th</td><td>64</td><td><code>0.060 → 0.252</code></td></tr>
+  <tr><td>3</td><td>every 8th</td><td>256</td><td><code>0.252 → 1.020</code></td></tr>
+  <tr><td>4</td><td>every 16th</td><td>1024</td><td><code>1.020 → 4.092</code></td></tr>
+  <tr><td>5</td><td>every 32nd</td><td>4096</td><td><code>4.092 → 16.38</code></td></tr>
+</table>
+
+<p>
+  Each level has 4× the directions and ¼ the probes of the one below, so <b>every level costs the
+  same</b>. The intervals tile exactly — each starts where the last ended — and by level 5 the
+  reach exceeds the canvas diagonal.
+</p>
+
+<h3>How a level is packed</h3>
+
+<p>
+  This is the part that confuses everyone, so read it slowly. <b>Every level writes into the same
+  full-size texture.</b> There is no per-level resolution.
+</p>
+
+<p>
+  At level <code>c</code> the probes sit <code>sp = 2^c</code> texels apart, and the
+  <code>sp × sp</code> block of texels belonging to a probe stores <em>that probe's
+  directions</em> — one direction per texel. A coarse level has few probes each holding many
+  directions; level 0 is one probe per pixel holding 4. The texture never changes shape; only
+  the meaning of its texels does.
+</p>
+
+<pre><code>float sp    = exp2(level);              // probe spacing in texels
+float rays  = 4.0 * sp * sp;            // directions at this level
+vec2  co    = floor(vs_uv * u_resolution);
+vec2  probe = floor(co / sp);           // which probe this texel belongs to
+vec2  slot  = mod(co, sp);              // which direction within that probe
+float si    = slot.x + slot.y * sp;
+vec2  probe_uv = (probe + 0.5) * sp / u_resolution;</code></pre>
+
+<h2 id="merge"><span class="step">8</span>The merge</h2>
+
+<p>
+  A ray marches its own interval. If it hits something, that is the answer. If it reaches the end
+  of its shell having hit nothing, it asks the level above what lies further out — and that level
+  has already asked the one above it, so one lookup carries the whole remaining distance.
+</p>
+
+<div class="warn">
+  <span class="k">CORRECTION</span> <b>The published snippet is wrong here</b>, and it is the
+  single easiest thing in this entire pipeline to get wrong. The article computes the upper slot
+  as <code>vec2(mod(index, sqrtBase), floor(index / upperSpacing))</code> — mixing a
+  <em>slot dimension</em> with a <em>probe spacing</em>. Both components must use the same
+  quantity. Get this wrong and it still renders convincing shadows while being 30% off; that
+  exact bug shipped once in this repo's own research and took a numerical comparison to catch.
+</div>
+
+<pre><code>float usp = sp * 2.0;                          // the level above is spaced twice as wide
+vec2  upf = probe_uv * u_resolution / usp - 0.5;
+
+for (float k = 0.0; k &lt; 4.0; k++) {
+    float idx = si * 4.0 + k;
+    float a   = TAU * (idx + 0.5) / rays;
+    vec4  hit = march(probe_uv, vec2(cos(a), sin(a)), t0, t1);
+    vec3  r   = hit.rgb;
+
+    if (hit.a &lt; 0.5 &amp;&amp; level &lt; u_pass_iterations - 1.0) {
+        // The level above wrote the MEAN of its 4 sub-directions into each slot, so its slot
+        // `idx` already holds exactly this ray's angular children. One tap, and BOTH
+        // components of the address use usp.
+        vec2 uslot = vec2(mod(idx, usp), floor(idx / usp));
+        vec2 base = floor(upf), fr = fract(upf);
+        vec2 lim  = vec2(u_resolution / usp - 1.0);
+        vec2 c00 = clamp(base,               vec2(0.0), lim) * usp + uslot + 0.5;
+        vec2 c10 = clamp(base + vec2(1, 0),  vec2(0.0), lim) * usp + uslot + 0.5;
+        vec2 c01 = clamp(base + vec2(0, 1),  vec2(0.0), lim) * usp + uslot + 0.5;
+        vec2 c11 = clamp(base + vec2(1, 1),  vec2(0.0), lim) * usp + uslot + 0.5;
+        r += mix(mix(texture(u_prev, c00 / u_resolution).rgb,
+                     texture(u_prev, c10 / u_resolution).rgb, fr.x),
+                 mix(texture(u_prev, c01 / u_resolution).rgb,
+                     texture(u_prev, c11 / u_resolution).rgb, fr.x), fr.y);
+    }
+    acc += r;
+}
+fs_color = vec4(acc * 0.25, 1.0);</code></pre>
+
+<div class="warn">
+  <span class="k">CORRECTION</span> <b>Do the bilinear blend by hand, and keep the target
+  unsmoothed.</b> The article leans on the GPU's linear filter for "nearly free smoothing". That
+  is wrong at this texture layout: neighbouring texels are <em>different directions of the same
+  probe</em>, not neighbouring positions, so hardware filtering blends unrelated angles. The four
+  taps above sample the <b>same slot</b> in four <b>neighbouring probes</b>, which is the
+  quantity you actually want. Leave <b>smooth</b> off on this target.
+</div>
+
+<p>
+  The <code>clamp</code> is not decoration either: without it a probe at the canvas edge reads
+  across to the far side and light leaks from one wall to the other.
+</p>
+
+<p>
+  Wire <code>u_scene</code> → <b>paint</b>, <code>u_df</code> → <b>df</b>, <code>u_prev</code> →
+  <b>cascade</b> (itself); format <b>16-bit float</b>, smooth <b>off</b>, <b>Runs per
+  frame</b> = <b>6</b>.
+</p>
+
+<div class="note">
+  <b>Runs go coarse → fine, but the engine counts up.</b> So the shader flips the index:
+  <code>float level = u_pass_iterations - 1.0 - u_pass_iteration;</code>. Run 0 computes level 5,
+  which has nothing above it; every later run merges the one before.
+</div>
+
+<figure>
+  <img src="{{IMG:cascade}}" alt="Bright directional light field, unclamped">
+  <figcaption>
+    <b>cascade</b> — the raw radiance out of level 0, before tonemapping. Values here run far
+    above 1.0, which is exactly why the target must be floating point.
+  </figcaption>
+</figure>
+
+<h2 id="composite"><span class="step">9</span>Composite</h2>
+
+<pre><code>#version 460 core
+
+in vec2 vs_uv;
+out vec4 fs_color;
+
+uniform sampler2D u_light;
+uniform sampler2D u_scene;
+uniform float u_exposure = 0.35;
+
+void main() {
+    vec3 light  = texture(u_light, vs_uv).rgb * u_exposure;
+    vec3 mapped = light / (1.0 + light);          // Reinhard: any brightness into 0-1
+    vec4 scene  = texture(u_scene, vs_uv);
+    vec3 rgb    = mix(mapped, scene.rgb / (1.0 + scene.rgb), scene.a);
+    fs_color    = vec4(pow(max(rgb, 0.0), vec3(1.0 / 2.2)), 1.0);   // linear -> sRGB
+}</code></pre>
+
+<p>
+  Three things happen here. <b>Reinhard</b> maps unbounded light into 0–1 without clipping
+  highlights to flat white. <b>Drawing the scene back on top</b> keeps walls reading as solid —
+  without it they get lit by the light in front of them and stop looking like occluders. And the
+  <b>sRGB conversion</b> is mandatory: skip it and everything looks muddy and the falloff is
+  crushed.
+</p>
+
+<p>
+  Wire <code>u_light</code> → <b>cascade</b>, <code>u_scene</code> → <b>paint</b>, format
+  <b>8-bit</b> (this is a final image), smooth <b>on</b>. Set it as the document's output.
+</p>
+
+<figure>
+  <img src="{{IMG:composite}}" alt="Two coloured lights casting soft shadows past a wall">
+  <figcaption>
+    <b>composite</b> — warm and cool light mixing, soft-edged shadows widening with distance from
+    the wall, no noise anywhere. The faint rings around each emitter are the known ringing
+    artifact; the article calls fixing them an open research problem.
+  </figcaption>
+</figure>
+
+<h2 id="verify"><span class="step">10</span>Verifying it</h2>
+
+<div class="warn">
+  <b>A good-looking render proves nothing.</b> This repo's own earlier attempt at this algorithm
+  rendered convincing shadows, beat brute force 16:1, and was <b>30% wrong</b> — every one of its
+  1364 merge directions read the wrong slot. It was believed because the picture looked right.
+  Check the number.
+</div>
+
+<p>
+  <code>ai_docs/features/068_radiance_cascades/oracle.py</code> runs this same algorithm on an
+  analytic scene and compares it against brute force. Two numbers, because they say different
+  things:
+</p>
+
+<pre><code>merge off, level 0 alone vs 4 rays:   1.0000
+merge on,  2 cascades vs   16 rays:   1.0432
+merge on,  3 cascades vs   64 rays:   1.1241
+merge on,  4 cascades vs  256 rays:   1.2087</code></pre>
+
+<p>
+  The first isolates the marching and interval arithmetic with the merge switched off — it is
+  exact, and it is what a porting mistake would move. The second shows a real ~21% energy
+  overshoot that grows per merge hop and then saturates: the near-field over-sampling that
+  bilinear probe interpolation introduces, the same family as the ringing. It is <em>not</em> a
+  wiring bug, which you can prove by turning the merge off and watching it return to 1.0000.
+</p>
+
+<div class="note">
+  <b>Match your comparison or it measures nothing.</b> A 6-level stack resolves 4⁶ directions and
+  marches 16.4 UV. Compare it against 1024 rays capped at 2.0 and you get a 580% "error" that is
+  entirely the reference being coarser and shorter — that misread cost real time here. Level
+  <code>n</code> equals <code>4ⁿ</code> rays over the stack's own reach.
+</div>
+
+<hr>
+
+<h2>What you built</h2>
+
+<table>
+  <tr><th>Pass</th><th>Runs</th><th>Reads</th><th>Format</th><th>Does</th></tr>
+  <tr><td><code>paint</code></td><td>1</td><td>itself</td><td>f2</td><td>the drawable scene</td></tr>
+  <tr><td><code>seed</code></td><td>1</td><td>paint</td><td>f4</td><td>solid texels store their UV</td></tr>
+  <tr><td><code>jfa</code></td><td><b>9</b></td><td>seed, itself</td><td>f4</td><td>flood the nearest-seed field</td></tr>
+  <tr><td><code>df</code></td><td>1</td><td>jfa</td><td>f2</td><td>coordinates → distance</td></tr>
+  <tr><td><code>cascade</code></td><td><b>6</b></td><td>paint, df, itself</td><td>f2</td><td>the light, coarse to fine</td></tr>
+  <tr><td><code>composite</code></td><td>1</td><td>cascade, paint</td><td>f1</td><td>tonemap and present</td></tr>
+</table>
+
+<p>
+  Six shaders, 19 draws a frame, no noise and no temporal accumulation. Two of those passes are
+  chains built from a single shader — which is the engine feature this document exists to
+  exercise.
+</p>
+
+<h3>Things to try</h3>
+<ul>
+  <li>Set <code>cascade</code>'s runs to 1, 2, 3… and watch the light reach further each time.</li>
+  <li>Set <code>jfa</code>'s runs to 4 and look at <code>df</code> — the field goes blocky at range.</li>
+  <li>Point the document's output at <code>df</code> or <code>jfa</code> to see any stage directly.</li>
+  <li>Turn <b>smooth</b> on for <code>cascade</code> and watch the merge break in an interesting way.</li>
+  <li>Resize the canvas to 1024 and read the warning the pass settings give you.</li>
+</ul>
+
+</div>

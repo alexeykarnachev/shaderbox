@@ -409,7 +409,15 @@ def draw_chrome(app: App) -> None:
         full_file_path = (
             edited_pass.source.path if edited_pass is not None else tab.path
         )
-        local_file_path = full_file_path.relative_to(app.project_dir)
+        # A path outside the project shows in full rather than raising. `relative_to` throws on
+        # any non-descendant, and this runs inside the frame draw -- so one unexpected path
+        # (a shipped example not yet copied, a lib file, a hand-opened file) took the whole app
+        # down instead of showing a longer label.
+        local_file_path = (
+            full_file_path.relative_to(app.project_dir)
+            if full_file_path.is_relative_to(app.project_dir)
+            else full_file_path
+        )
         if draw_copyable_text(str(local_file_path), copy_value=str(full_file_path)):
             app.notifications.push("Copied to clipboard!")
         if app.is_current_editor_dirty():
