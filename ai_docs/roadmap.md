@@ -26,26 +26,22 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-02 (068 landed + reviewed; a repo-wide sweep landed after it). -->
-**NEXT SESSION: the maintainer walks the 068 tutorial**, folding in their own build findings and
-UI/UX polish as they go. Open `ai_docs/features/068_radiance_cascades/tutorial.html` (generated —
-edit `tutorial_body.html` and re-run `build_tutorial.py`). A step that does not produce its stated
-picture is a tutorial DEFECT, fixed in `tutorial_body.html`; a step that works but is awkward is a
-UI/UX finding, and those accumulate into a spec for the next feature rather than being fixed
-mid-walk.
+<!-- As of 2026-09-02 (the maintainer walked the 068 tutorial; 069 spec written and reviewed). -->
+**NEXT SESSION: implement 069, wave by wave.** The maintainer walked the 068 tutorial and filed
+37 findings; they are grouped into eight workstreams with twelve locked decisions in
+`ai_docs/features/069_tutorial_walk_findings/01_spec.md` (ledger: `00_findings.md`; scripting
+design: `01_design_scripting.md`; three review rounds under `reviews/`). Start at wave 1 (W-C:
+the rename crash, commit-on-deactivate, add-pass activation, Alt+P / Alt+A, first render of every
+pass) and follow § Order. Each wave gets its own pre/post review per `dev_flow.md`. The graph view
+of the pass strip is feature 070, direction fixed in 069 § Out of scope.
 
-**068 radiance cascades: DONE.** A pass declares `iterations` and the engine draws it N times per
-frame (`u_pass_iteration` / `u_pass_iterations`, ping-pong BETWEEN iterations) — one shader
-becomes a chain. On it: a six-pass **Radiance Cascades** example. The merge is validated by a
-NUMBER: `oracle.py` measures 3.65% relMAE, and `--mutate` reproduces the sensitivity table. Spec:
-`ai_docs/features/068_radiance_cascades/01_spec.md` — D3 and D7 are RETRACTED in place.
+**068 radiance cascades: DONE**, and its tutorial is being rewritten under 069 W-H (template,
+generated pass cards, spliced code). `oracle.py` measures 3.65% relMAE. Spec:
+`ai_docs/features/068_radiance_cascades/01_spec.md` — D3 and D7 are RETRACTED in place; 069 lifts
+D7 (mouse `down` + previous position in the script context).
 
-**A repo-wide sweep followed**, ten agents over the classes this repo keeps producing: four
-blockers fixed, including a crash loading a corrupt `document.json` from the per-frame sync.
-Ledger, and what was REJECTED, in `70144d2..7e977bf` and `conventions.md`.
-
-**067: DONE, v0.27.0 on GitHub (not itch).** Vendored editor `e7db554`, verified. The Windows
-`libeditor.dll` needs a Windows host at the next `/ship`.
+**067: DONE, v0.27.0 on GitHub (not itch).** The Windows `libeditor.dll` needs a Windows host at
+the next `/ship`. 069 W-F re-vendors the Linux `.so` (standard keymap, visual-paste fix).
 
 **Still owed from 065:** checks 13-15 (a display) and 16 (`/dogfood`, real API cost).
 
@@ -53,6 +49,7 @@ Ledger, and what was REJECTED, in `70144d2..7e977bf` and `conventions.md`.
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 069 | tutorial_walk_findings | spec | The maintainer's walk of the 068 tutorial, 37 findings grouped into eight workstreams (canvas size, UI prose diet, pass verbs, naming + default wiring, keyboard ownership incl. the removal of 019's regions, editor chrome + lib re-vendor, scripting across passes via a nested dict, the tutorial rewrite), twelve decisions locked during the walk. Spec: `ai_docs/features/069_tutorial_walk_findings/01_spec.md`. |
 | — | repo_sweep | done | A ten-agent sweep over the defect classes this repo's history keeps producing (incomplete fix-sweeps, unwired mechanisms, tests that cannot fail, docs that drift from code): four blockers fixed — a crash loading a corrupt `document.json` from the per-frame sync, and three feedback-lifecycle bugs in the 068 machinery, one silently corrupting output — plus two skills that would crash a reader following them literally. What was REJECTED, and why, is in `conventions.md`. Spec: commits `70144d2..7e977bf`. |
 | 068 | radiance_cascades | done | A pass may declare `iterations` and the engine draws it N times per frame (`u_pass_iteration` / `u_pass_iterations`, per-iteration ping-pong), plus a six-pass Radiance Cascades example built on it and a tutorial rewriting both source articles for this engine. Spec: `ai_docs/features/068_radiance_cascades/01_spec.md`. |
 | 066 | perf_and_test_diet | done | Lazy pass compilation (no load-time warm-up; compile+seed on first need; one first-render per frame in the live loop), lazy openai/google seams, starter-only test fixture, and an 18-test falsifier-criterion cull — startup 3.66s -> 0.67s, suite 39.2s -> ~16s / 925 tests. Spec: `ai_docs/features/066_perf_and_test_diet/01_spec.md`. |
