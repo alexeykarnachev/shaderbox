@@ -64,20 +64,6 @@ def _drain_editor_input(app: App) -> None:
             continue
         if _handle_clipboard(app, editor, event):
             continue
-        if (
-            event.code == KeyCode.CHAR
-            and event.mods == KeyMod.CTRL
-            and event.text == "n"
-            and editor.get_mode() == Mode.INSERT
-            and editor.complete_open()
-        ):
-            # Ctrl+N with the popup showing: next candidate. Forwarding instead
-            # would CLOSE the popup (measured), and the re-offer then reset the
-            # selection to zero on every press.
-            editor.key(KeyCode.DOWN)
-            if event.imgui_chord:
-                app.editor_consumed_chords.add(event.imgui_chord)
-            continue
         consumed = editor.key(event.code, event.mods, event.text)
         if not consumed and _handle_vim_chord(app, editor, event):
             continue
@@ -85,10 +71,14 @@ def _drain_editor_input(app: App) -> None:
             app.editor_consumed_chords.add(event.imgui_chord)
             # An insert-mode Ctrl+N is the deliberate completion ask — the keymap
             # consumes it but opens nothing (host_completion); code.draw offers.
+            # Only when the popup is CLOSED: with it open the keymap advances the
+            # selection itself (editor 3f3a11b), and queuing an offer here would
+            # re-push the list and reset that selection to zero on every press.
             if (
                 event.text == "n"
                 and event.mods == KeyMod.CTRL
                 and editor.get_mode() == Mode.INSERT
+                and not editor.complete_open()
             ):
                 app.editor_completion_requested = True
     register = editor.get_register()
@@ -209,15 +199,16 @@ def _handle_vim_chord(app: App, editor: Editor, event: KeyEvent) -> bool:
         # d/f/b/e/y/r/o/n: vim meanings we don't implement — consume-noop so no
         # app command fires mid-typing (Ctrl+R = OPEN_SCRIPT was reachable here).
     else:
-        # NORMAL/VISUAL, unconsumed by the keymap (the six scrolls are keymap
-        # motions in normal mode; visual-mode gaps and the rest land here).
+        # NORMAL/VISUAL, unconsumed by the keymap. The six scrolls are keymap
+        # motions in BOTH modes as of editor 3f3a11b (visual extends the
+        # selection), so they never reach here; what lands is the rest.
         if ch in ("n", "j"):
             editor.key(KeyCode.DOWN)
         elif ch == "p":
             editor.key(KeyCode.UP)
         elif ch == "h":
             editor.key(KeyCode.LEFT)
-        # d/u/f/b/e/y (visual), r (visual), o: consume-noop.
+        # r (visual), o: consume-noop, so no app command fires.
     if event.imgui_chord:
         app.editor_consumed_chords.add(event.imgui_chord)
     return True

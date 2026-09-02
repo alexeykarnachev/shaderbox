@@ -852,20 +852,29 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   next rebuild must not "fix": the layout's glyph UVs address the atlas PNG top-row-first (an upload
   flip renders every glyph upside down), and `ed_revision` rises across `ed_set_text` (the dirty
   flag depends on it).
-- **The vendored sha is a resting point, and re-vendoring is HAND-CHECKED at a real keyboard.**
-  We hold `c5fabc8`; the editor repo has since fixed four vim gaps (`3f3a11b`) and the c-family
-  double-undo (`0143217`). Taking them means rebuilding `libeditor.so` AND deleting three host
-  mitigations we carry for those gaps — the Ctrl+N completion intercept, the visual-scroll
-  consume-noop, and the c-family undo mitigation. All three are live keyboard behaviour that
-  `make smoke` cannot reach (it needs a display, and asserts no key semantics), so the re-vendor
-  is maintainer-supervised: rebuild, delete the three, then type these five at a real keyboard —
-  `cwX` Esc `u` restores the whole word; `o` then Esc stays on its line; `di{` in a multi-line
-  body leaves `{`/`}`; Ctrl+N with the popup open advances the selection; a scroll chord in
-  visual mode extends the selection. Nothing is blocked on it: `c5fabc8` is coherent as-is.
-  MEASURED, and the reason our integration specifically was exposed to the undo bug: the trigger
-  is a HOST CURSOR JUMP mid-insert, not a keystroke — the editor session reproduced it through
-  the C ABI alone (`Vc`, type, `ed_set_cursor(0,0)`, type, undo). Our completion path and
-  jump-to-error both move the cursor mid-insert, so it was reachable in ordinary use.
+- **The atlas charset is FIXED at bake time, and a codepoint outside it renders as a box.**
+  `tools/charset.txt` in the editor repo lists the baked ranges; the atlas is committed there, so
+  changing it is an editor-side re-bake (needs `msdf-atlas-gen`, not packaged for Debian — build
+  from source), not something the host can patch. As of `bf0f8d5` the charset is printable ASCII
+  + Cyrillic + 25 typographic/Latin-1 punctuation codepoints (em/en dash, ellipsis, curly quotes,
+  bullet, guillemets, degree, times/divide, …) — 212 glyphs. So a user pasting prose punctuation
+  into a shader comment now renders correctly; ASCII in shipped source stays the house style, but
+  it is a convention, not a rendering constraint. `U+00A0` and `U+200B` are DELIBERATELY unbaked:
+  both are invisible, so a box is more useful than a blank you cannot distinguish from a space.
+  `atlas_glyph` renders the fallback box and still advances exactly one cell, so column
+  arithmetic never desyncs from buffer content — that is by design, do not ask for it to change.
+- **Re-vendoring the editor is HAND-CHECKED at a real keyboard.** Rebuild from a committed sha,
+  copy the three files, update `VERSION`, then delete whatever host mitigations the new sha makes
+  dead — and type the checks, because `make smoke` reaches none of this (it needs a display and
+  asserts no key semantics). The `bf0f8d5` re-vendor removed two: the Ctrl+N completion intercept
+  (the keymap now advances the selection itself) and the visual-scroll consume-noop (the six
+  scrolls are keymap motions in visual mode too). Removing the first exposed a live bug our test
+  suite caught — the input drain still queued a completion re-offer on a Ctrl+N the keymap had
+  consumed, which would have reset the selection to zero on every press; the drain now queues
+  only when the popup is CLOSED. MEASURED, and why our integration specifically was exposed to
+  the c-family undo bug that `0143217` fixed: the trigger is a HOST CURSOR JUMP mid-insert, not a
+  keystroke — reproduced through the C ABI alone (`Vc`, type, `ed_set_cursor(0,0)`, type, undo).
+  Our completion path and jump-to-error both move the cursor mid-insert.
 - **A live moderngl context must exist before constructing `Image` / `Video` / `Font` / `Canvas` /
   `Document`** — they call `moderngl.get_context()` lazily. In the app,
   `glfw.make_context_current(window)` handles it.
