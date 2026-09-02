@@ -418,3 +418,204 @@ reviews written by other reviewers during this pass:
 ```
 
 No tracked file differs from `2b43f83`.
+
+---
+
+# Round 2 (closure)
+
+Against `7bd7a1d` (the gate) and `ce337bc` (the rest). W-G is being implemented
+concurrently in the working tree, so every file was read with `git show ce337bc:<path>`
+and every probe run in a disposable `git archive ce337bc` copy under the scratchpad. No
+tracked file in the repo was touched.
+
+## Per-finding verdicts
+
+| # | Finding | Verdict |
+|---|---|---|
+| 1 | Red `make gates` (ruff SIM102 + unformatted) | **CLOSED** |
+| 2 | Three `no_nav_inputs` flags unguarded; test vacuous on `ui.py` | **CLOSED** |
+| 3 | Ctrl+N standard self-gate comment states a mechanism that does not run | **CLOSED** |
+| 4 | Nothing defocuses the editor; three comments still say Esc does | **CLOSED** |
+| 5 | Help prose still says Ctrl+P for the library | **CLOSED** |
+| 6 | `test_focused_editor_consumes_and_records_chords` tests nothing it names | **CLOSED** |
+| 7 | Stale `no_nav_focus` rationale for Ctrl+Tab; stale test docstring | **CLOSED** |
+
+**Overall: PASS.**
+
+### 1 CLOSED
+
+`uv run ruff check tests/ shaderbox/ scripts/` -> `All checks passed!` (exit 0);
+`ruff format --check` -> `235 files already formatted`. Full gate at `ce337bc`, captured
+unpiped in the disposable copy:
+
+```
+$ MESA_GL_VERSION_OVERRIDE=4.6 MESA_GLSL_VERSION_OVERRIDE=460 xvfb-run -a make gates > /tmp/g3.log 2>&1; echo $?
+0
+== gates: GREEN -- check passed, test passed, smoke passed ==
+```
+
+Smoke **passed**, not skipped. My first run of this reported exit 2 on a B007 in
+`probe_reach.py` — my own probe file, which I had left in the copy and then `git add`-ed;
+removing it gave the green above. That is a false trail of my own making, recorded so the
+number is not misread. The root cause named in `7bd7a1d` (pre-commit sees tracked files
+only, so two untracked test modules were invisible to the gate) matches what I measured in
+round 1, and `dev_flow.md` now carries the staging step.
+
+### 2 CLOSED — and the narrowed `_FOCUSABLE` is correct
+
+I re-ran the Tab-stop measurement independently rather than accepting the report. Anchor an
+`input_text`, focus it, press Tab, ask whether the candidate took focus:
+
+```
+widget                        nav OFF   nav OFF+flag     nav ON
+input_text                  CANDIDATE         anchor  CANDIDATE
+input_text_multiline        CANDIDATE         anchor  CANDIDATE
+input_int                   CANDIDATE         anchor  CANDIDATE
+input_float                 CANDIDATE         anchor  CANDIDATE
+drag_int                    CANDIDATE         anchor  CANDIDATE
+drag_float                  CANDIDATE         anchor  CANDIDATE
+slider_int                  CANDIDATE         anchor  CANDIDATE
+slider_float                CANDIDATE         anchor  CANDIDATE
+checkbox                       anchor         anchor  CANDIDATE
+combo                          anchor         anchor  CANDIDATE
+selectable                     anchor         anchor  CANDIDATE
+button                         anchor         anchor  CANDIDATE
+```
+
+The narrowing is right: with nav off Tab lands only on the eight text-entry widgets, and
+`button` / `checkbox` / `combo` / `selectable` are nav-ON stops that this app does not run.
+`no_nav_inputs` blocks Tab for every one of them. Keeping the nav-only four in
+`_NAV_ONLY_FOCUSABLE` with the instruction to re-run the measurement before restoring them
+is the right shape — the previous round's `_FOCUSABLE` was wider than the truth, which is
+what made the grid falsifier look like proof.
+
+This also corrects a claim in my own round-1 report: I wrote that the grid flag was
+"genuinely pinned". It is not, and it never was — it was pinned by a widget that is not a
+Tab stop. The implementer found this by measuring; I had not.
+
+**Does the walk actually reach the three green subtrees?** Yes, which is the load-bearing
+question, because "green" is only trustworthy if the walk gets there and finds nothing. I
+ran the shipped walk twice, once with the shipped `_FOCUSABLE` and once widened with the
+nav-only four:
+
+```
+===== SHIPPED (text-entry only) =====
+  ui.py       copilot_bar           flagged=True  reaches: (none)
+  ui.py       document_settings     flagged=True  reaches: tabs/document.py::draw -> imgui.input_int
+  ui.py       code_editor           flagged=True  reaches: (none)
+  copilot_chat Copilot              flagged=True  reaches: _draw_transcript -> imgui.input_text_multiline
+  document_grid document_preview_grid flagged=True reaches: (none)
+
+===== WIDENED (incl. the nav-only four) =====
+  ui.py       copilot_bar           reaches: ui_primitives.toggle_button
+  ui.py       document_settings     reaches: tabs/document.py::draw -> ui_primitives.button
+  ui.py       code_editor           reaches: tabs/code.py::draw -> _draw_error_strip -> imgui.selectable
+  copilot_chat Copilot              reaches: ui_primitives.unconnected_gate
+  document_grid document_preview_grid reaches: ui_primitives.button
+```
+
+The walk penetrates all five subtrees — under the widened set it finds a widget in every
+one, including the three that read "(none)" under the shipped set. So the three green sites
+are green because they contain no *text-entry* widget, not because the walk stops short.
+Verified a third way, by grepping the subtrees directly rather than trusting either walk:
+`tabs/code.py` contains no text-entry widget at all; `toggle_button` and `preview_cell`
+contain none. The docstring's "that is not a hole in the walk, it is the truth about those
+containers" is demonstrated, not asserted.
+
+**Five per-site falsifiers, run by me:**
+
+```
+baseline:                       .        [100%]
+drop document_settings flag:    FAILED
+drop chat _WINDOW_FLAGS flag:   FAILED
+drop code_editor flag:          .        [100%]
+drop copilot_bar flag:          .        [100%]
+drop grid flag:                 .        [100%]
+restored:                       .        [100%]
+```
+
+Exactly as reported. The round-1 defect is gone: the three `ui.py` flags can no longer all
+be deleted silently — `document_settings` now turns the suite red, via the `_NODE_TABS`
+table hop the walk had to learn to follow. `code_editor`, `copilot_bar` and the grid stay
+green and the docstring says so plainly instead of implying coverage it lacks. Calling
+those three "defensive, and the test starts guarding them the day an input lands there" is
+the honest statement of what the guard covers.
+
+### 3 CLOSED
+
+```
+# An insert-mode Ctrl+N is the deliberate completion ask. BOTH keymaps consume
+# it and open nothing, because get_session sets host_completion(True) on every
+# handle, so this branch needs no keymap check: code.draw makes the offer.
+```
+
+That is the mechanism I measured in round 1, stated correctly. The false claim about
+standard opening its own popup is gone.
+
+### 4 CLOSED
+
+All three sites rewritten to the surviving truth. `app.py:380` now reads "Start unfocused:
+an initial defocus request, consumed by the first draw" with no Esc/arrow-nav list; the
+drain says the defocus direction is closed "by the gate below dropping the whole queue on a
+frame the editor does not hold focus", which is what the code does; the skill's §9 line
+reads "cleared only by explicit defocus, or by a tab or document switch". The behaviour is
+unchanged, which is correct — #24 asked to keep `editor_focused` and never asked for a
+keyboard defocus.
+
+### 5 CLOSED, with a guard
+
+`help_content.py:155` now reads ``Press `Alt+L` to browse the library``, and the
+`lib_picker` docstring says `(Alt+L)`. Better than the point fix, the class is now gated:
+`test_no_help_prose_quotes_a_chord_the_table_does_not_bind` parses every backticked chord
+out of every section body and requires `COMMAND_SPECS` to bind it. Falsified by me —
+restoring `Ctrl+P` turns it red, restoring `Alt+L` turns it green.
+
+### 6 CLOSED
+
+The genexp is gone. The Ctrl+R half keeps only what it proves and says so ("after 069 W-E
+no command owns Ctrl+R ... so this half no longer exercises the double-dispatch guard"),
+and a new test pins the live instance, insert-mode Ctrl+W, reading its chord from
+`SPEC_BY_ID[CommandId.CLOSE_CODE_TAB]`. Falsified both ways by me:
+
+```
+baseline:                        .        [100%]
+retarget spec lookup -> SAVE:    FAILED
+drop w from the reserved set:    FAILED
+restored:                        .        [100%]
+```
+
+The spec lookup is load-bearing now, so a future chord move breaks the test instead of
+passing against a hand-built int.
+
+### 7 CLOSED
+
+```
+# Ctrl+Tab is ours: imgui's built-in window-cycle needs nav_enable_keyboard, which is
+# off app-wide (069 W-E D4). WindowFlags_.no_nav_focus on the main window and the chat
+# keeps it that way if nav is ever turned back on.
+```
+
+That matches my measurement (the chord reaches the shortcut in all four nav/flag
+combinations) and keeps the flag for the right reason. The test docstring no longer claims
+three containers resolve their flag through a variable; the chat is now named as the one
+that does.
+
+## False trails, round 2
+
+- My first `make gates` run at `ce337bc` exited 2 on a B007 in `probe_reach.py` — my own
+  probe, left in the disposable copy and swept in by `git add -A`. Removing it: exit 0.
+- The repo's `git status` showing four modified `shaderbox/scripting/*.py` files: that is
+  W-G landing concurrently, none of it mine. Confirmed by `git diff --stat HEAD` naming
+  only those four.
+
+## Coverage, round 2
+
+Read at `ce337bc` via `git show`: the rebuilt `tests/test_region_system_is_gone.py` end to
+end, the changed hunks of `hotkeys.py`, `commands.py`, `app.py`, `help_content.py`,
+`lib_picker/__init__.py`, `tests/test_editor_ffi.py`, `tests/test_help_content.py`, and the
+skill §9 line. Probes: the twelve-widget Tab-stop matrix under three configurations, the
+reachability walk under two `_FOCUSABLE` sets, direct greps of the three green subtrees,
+five per-site flag falsifiers, two falsifiers of the new double-dispatch test, one of the
+help-chord guard, and a full `make gates`. Everything ran in
+`scratchpad/wt` (a `git archive ce337bc` extract); the repo's tracked files were never
+modified, and `git status --short` shows no change of mine.

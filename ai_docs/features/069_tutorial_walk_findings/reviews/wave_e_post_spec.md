@@ -383,3 +383,163 @@ banned names, the five `no_nav_inputs` sites, `no_nav_focus`, `nav_enable_keyboa
 Not executed: `make smoke` (no display; reports as unrunnable), `tests/test_pass_editor_wiring.py`
 and the full `pytest tests/` (same), and all ten manual-verification steps. The working tree was
 left as I found it, and the untracked W-H spec file was ignored per the brief.
+
+---
+
+# Round 2 (closure)
+
+Narrow closure round against `7bd7a1d` (F1) and `ce337bc` (F2-F5). Read via `git show <sha>:<path>`
+and measured in a throwaway worktree at `ce337bc`, since W-G is being implemented concurrently in
+the working tree. The worktree was removed afterwards and nothing in the live tree was touched.
+
+## Per-finding verdicts
+
+| # | Verdict | Line |
+|---|---|---|
+| F1 | **CLOSED** | `tests/test_region_system_is_gone.py:233-237` (`7bd7a1d`) |
+| F2 | **CLOSED** | `50_wave_e_keyboard.md:628` + `:1403-1411` |
+| F3 | **CLOSED** | `50_wave_e_keyboard.md:928` |
+| F4 | **CLOSED (no artifact to fix)** | see below |
+| F5 | **CLOSED** | `01_spec.md:231-234` |
+
+### F1 — CLOSED
+
+The `SIM102` site is now a single flat condition:
+
+```
+$ git show ce337bc:tests/test_region_system_is_gone.py | sed -n '233,237p'
+        elif (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and node.value is not None
+        ):
+```
+
+Both format defects are fixed in the same commit (`_resolve_flags`'s signature reflow and the
+assert-message reflow in `test_keymap_disjoint.py`). Measured at `ce337bc`: `ruff check` returns
+`All checks passed!` (exit 0) and `ruff format --check` returns `226 files already formatted`
+(exit 0) over `shaderbox/` and `tests/`. `make gates` in the worktree now clears `check` on the
+first run with no hook rewrite, and fails at `test` with error 139 — the same
+`glfw.get_video_mode` segfault this environment produces for every display-dependent test, not a
+code defect. So `check` is genuinely green and `test`/`smoke` remain unrunnable here, unchanged
+from Round 1.
+
+The root cause is better than my finding stated it. `7bd7a1d` records that the two modules were
+**untracked** when `make gates` ran, and pre-commit sees tracked files only — so the gate was not
+skipped, it was structurally blind. The durable fix went into `ai_docs/dev_flow.md` (stage a new
+file before the gate), which is the right altitude: a mechanism, not a reminder.
+
+### F2 — CLOSED
+
+Item 5's literal now matches the code:
+
+```
+$ git show ce337bc:ai_docs/features/069_tutorial_walk_findings/50_wave_e_keyboard.md | grep -n 'frozenset("'
+628:    "vim": frozenset("dufbeyrwnphjm"),
+```
+
+`§ Review history` round 3 finding 1 records the deviation as a landed fact, with the reason
+(dropping `w` would have made `_delete_word_back` dead code and retired a 067 D15 behaviour), the
+`_HOST_OWNED` exemption named as one letter, its falsifier, and the D7 reading I reached
+independently in Round 1 (Ctrl+W is in neither keymap; the app owns the chord, the host owns a
+behaviour on it in insert only). Nothing is left for a reader to reconcile.
+
+### F3 — CLOSED, and it goes further than the finding asked
+
+The `tests/test_editor_ffi.py` row in `§ Files touched` (`:928`) now names both edits I found —
+the `app_state.editor_settings.keymap` stub field and the inverted
+`test_ctrl_o_reaches_the_app_while_focused` — and keeps the "the style round-trip is W-F's"
+sentence. It also names a **third** edit I did not flag: `test_focused_editor_consumes_and_records_chords`
+retargeted, because its `CommandId` filter went inert once `OPEN_SCRIPT` left Ctrl+R, with the live
+double-dispatch guard moved to Ctrl+W under vim NORMAL. That is a real gap in my Round 1 coverage:
+I checked the two edits the coordinator's brief named rather than diffing the file's every hunk.
+
+### F4 — CLOSED, and the finding was itself partly mistaken
+
+The phrase I quoted, "two stale docstring counts fixed", is **not in `2b43f83`'s commit message**
+(`git log -1 --format=%B 2b43f83 | grep -i docstring` returns nothing, exit 1). It came from the
+coordinator's Round 1 brief. So there was no committed artifact carrying the wrong number, and
+nothing needed correcting; my finding attributed a claim to the commit that the commit never made.
+
+The underlying observation stands and was accurate: one count fix landed (`_apply_editor_settings_to`'s
+"Five settings" → "Every editor setting but font_size", forced by the sixth call) and the second
+candidate was a whole docstring block replaced per item 5, not a count fix. Recording this as a
+Round 1 error rather than a closed defect.
+
+### F5 — CLOSED
+
+`01_spec.md § W-E`'s bullet now carries the supersession in place:
+
+```
+$ git show ce337bc:ai_docs/features/069_tutorial_walk_findings/01_spec.md | sed -n '231,234p'
+  **SUPERSEDED: the flags STAY, all five of them** (the census was four, and the fifth is
+  `document_grid.py`). imgui runs basic Tab traversal regardless of `nav_enable_keyboard`, so
+  the flag is not region machinery — only the region CONDITION goes. Measurement, ruling and
+  the count are in `50_wave_e_keyboard.md § Design decisions item 1`.
+```
+
+A cold reader who opens the parent alone now gets the correction and the pointer in the same
+bullet, which is what the finding asked for.
+
+## Round 3's record of the post-implementation deviations
+
+Confirmed: `§ Review history` round 3 (`:1398-1462`) records all three as landed facts, not as
+proposals, and names the three reviewers plus the RED gate and its cause. Beyond the three:
+
+- **The `_HOST_OWNED` exemption** — finding 1, with the falsifier stated.
+- **The `test_editor_ffi.py` edits** — the `§ Files touched` row above; round 3's preamble carries
+  the gate story that made them visible.
+- **The narrowed Tab-stop set with its probe** — finding 3, and this is the substantive one.
+
+**Round 3 finding 3 corrects the spec's own premise and, with it, my Round 1 PASS on the positive
+test.** Item 1 argued the grid's flag was earned because "`preview_cell`'s `selectable` is a real
+Tab stop". Measured on a headless rig with `nav_enable_keyboard` OFF, Tab lands only on text-entry
+widgets; `button`, `checkbox`, `combo` and `selectable` are nav-on stops and not Tab stops. The
+test now splits `_FOCUSABLE` from `_NAV_ONLY_FOCUSABLE`
+(`tests/test_region_system_is_gone.py:63,76`) and follows calls transitively into any module under
+`shaderbox/`, stopping at a callee that opens its own top-level window.
+
+I verified both halves rather than relaying them, mutating one flag at a time at `ce337bc`:
+
+```
+document_settings      -> 1 failed
+copilot_chat           -> 1 failed
+code_editor            -> 1 passed
+copilot_bar            -> 1 passed
+document_preview_grid  -> 1 passed
+```
+
+Exactly the distribution finding 3 claims, and the docstring says so rather than implying coverage
+it lacks. And the vacuity it fixes was real at the commit I reviewed: neutralising **all three**
+`ui.py` flags at `2b43f83` left the old suite fully green (`3 passed`), while the same mutation at
+`ce337bc` goes red. My Round 1 report ran the grid falsifier, saw it fire, and marked the positive
+test PASS without testing the `ui.py` containers — the one module whose widgets are all drawn in
+called functions. That is a false PASS on my part, found by another reviewer and now fixed.
+
+Two further round-3 findings I re-ran, both reproducing: the `Ctrl+N` self-gate comment now states
+the mechanism that actually runs (`get_session` sets `host_completion(True)` on every handle, so
+both keymaps consume and open nothing, and the real gate is `not complete_open()` —
+`shaderbox/hotkeys.py:72-77`), and `tests/test_help_content.py`'s new chord-in-prose test goes red
+when `Alt+L` is reverted to `Ctrl+P` in a section body. The suite at `ce337bc` is green:
+`test_region_system_is_gone.py`, `test_keymap_disjoint.py` and `test_help_content.py` give
+14 passed.
+
+Two findings were declined by the implementer and both declines are correct under the late-round
+rule. Renaming `ui_regions.py` to `ui_tabs.py` is a preference the originating reviewer marked
+optional, and the module docstring already carries the right meaning. The `_RESERVED_CHORDS` string
+keys stay because the `Literal` plus model salvage make an out-of-domain key structurally
+unreachable; the vocabulary's other two homes were merged instead (`ui_models.EditorKeymap` as the
+alias, `settings.py` deriving its combo options with `get_args`), which is the fix at the right
+altitude.
+
+## Overall
+
+**PASS.** All five findings are closed — four by real fixes, one (F4) because the claim it targeted
+was never committed. The wave spec now records every post-implementation deviation as a landed fact
+with its measurement, and the parent spec's superseded bullet is corrected in place. The one
+substantive defect found after my Round 1 report was a false PASS in that report: the positive Tab
+test was vacuous on `ui.py`, which I did not detect and another reviewer did. It is fixed, and the
+fix is demonstrated red-and-green in both directions.
+
+Not executed in this round, unchanged from Round 1: `make smoke`, the display-dependent test
+modules, and the ten manual steps.

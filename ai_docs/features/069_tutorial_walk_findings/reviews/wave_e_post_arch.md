@@ -381,3 +381,169 @@ Not covered (out of this role, or not possible here): runtime behaviour of the m
 under a focused editor, which needs the app on a display; the W-E spec's own decision-by-
 decision conformance (that is the post-spec review); and the correctness of the vendored
 keymap docs themselves against the `.so`, which `abi_probe.py` owns.
+
+---
+
+# Round 2 (closure)
+
+Against `7bd7a1d` (finding 1) and `ce337bc` (findings 2-7). Read via `git show <sha>:<path>`
+and a `git archive ce337bc` extract, because W-G is being implemented concurrently in the
+working tree. Overall: **PASS**.
+
+| # | Finding | Verdict |
+|---|---|---|
+| 1 | `make gates` red | **CLOSED** |
+| 2 | `dev_flow.md` module map stale | **CLOSED** |
+| 3 | keymap vocabulary in three homes | **CLOSED** |
+| 4 | comments narrating a gone outline | **CLOSED** |
+| 5 | imgui skill § 8 cites `active_region_outline` | **CLOSED** |
+| 6 | Tab check blind to wrapper calls | **CLOSED**, and wider than reported |
+| 7 | stale user-facing chords | **CLOSED**, with a gate |
+| 8 | `ui_regions.py` rename | declined; withdrawn (see below) |
+
+### 1 — CLOSED
+
+`ruff check` and `ruff format --check` over a pristine `git archive ce337bc` extract of
+`tests/` and `shaderbox/` both exit 0 ("All checks passed!", "226 files already formatted").
+
+Better than asked: `7bd7a1d` found the root cause I had not — the two modules were UNTRACKED
+when the gate ran, and `make check` is `pre-commit run --all-files`, which only sees tracked
+files. So ruff never looked at them and the green gate was truthful about the tree it could
+see. The fix files the mechanism in `dev_flow.md ### make gates`: "**Stage new files before
+running it.** … an UNTRACKED module is skipped by ruff, formatter and pyright alike … Two 069
+commits landed exactly that way." That is a rule with a named recurrence (W-B was the first),
+which is the bar for writing one down.
+
+### 2 — CLOSED
+
+All three map entries now match the code:
+
+```
+dev_flow.md:249  editor sessions, popup-state, exporter panels).        # "nav," dropped
+dev_flow.md:269  **`editor/`** — the embedded keymap-selectable code editor, vim or standard per
+                 `EditorSettings.keymap` (features 067, 069)
+dev_flow.md:344  **`ui_regions.py`** (`DocumentTab` — the settings-panel tab enum, kept out of
+                 `commands.py` so the persisted model layer doesn't pull in imgui)
+```
+
+`git show ce337bc:ai_docs/dev_flow.md | grep ActiveRegion` returns nothing. The
+`editor/` entry now agrees with `conventions.md`'s inline-editor bullet, which was the
+disagreement reported.
+
+### 3 — CLOSED
+
+The alias landed and the combo derives from it, matching the `ResultWidgetKind` precedent I
+cited:
+
+```
+ui_models.py:41   EditorKeymap = Literal["vim", "standard"]
+ui_models.py:205  keymap: EditorKeymap = "vim"
+settings.py:52    _KEYMAPS: tuple[EditorKeymap, ...] = get_args(EditorKeymap)
+```
+
+Executed against the extract: `_KEYMAPS == get_args(EditorKeymap) == ('vim', 'standard')`, so
+the combo's option list cannot drift from the persisted domain. `_RESERVED_CHORDS`'s string
+keys stay, which is the disposition my own finding argued for.
+
+### 4 — CLOSED
+
+Both sites rewritten to describe the mechanism that still runs, with no outline:
+
+```
+ui.py     "the one-shot grab must precede its begin_child, and code.draw clears the flag
+           once this has consumed it."
+code.py   "ui.py consumed the imgui half (set_next_window_focus before the child), so the
+           latch has done its job and is cleared here."
+```
+
+The test docstring's wrong count and its two deleted example names are gone:
+`grep "panel_flags\|grid_flags\|three of the eight"` over
+`ce337bc:tests/test_region_system_is_gone.py` returns nothing.
+
+*Correction to my own round-1 report:* I listed `ui.py:62` ("a 1-item switcher + 2nd outline")
+in the same grep. Re-read in context, it describes imgui's own built-in Ctrl+Tab window
+switcher and its overlay, not the deleted `active_region_outline` — my grep matched the word,
+not the concept. It was correctly left alone. The sibling `commands.py` rationale WAS rewritten
+and is now more accurate than what I asked for: "imgui's built-in window-cycle needs
+`nav_enable_keyboard`, which is off app-wide (069 W-E D4). `WindowFlags_.no_nav_focus` … keeps
+it that way if nav is ever turned back on" — nav-off is the reason Ctrl+Tab is free; the flag
+is belt-and-braces.
+
+### 5 — CLOSED
+
+`grep active_region_outline` over `ce337bc:.claude/skills/imgui-ui/SKILL.md` returns nothing.
+The § 8 bullet keeps its lesson and loses the dangling symbol ("The same window's own
+foreground draw already carried this `any_popup_open()` guard; the focus grab had not.").
+§ 9's editor-focus bullet also dropped its stale "Esc / target switch" defocus list for "by an
+explicit defocus, or by a tab or document switch", which I had not flagged.
+
+### 6 — CLOSED, and the hole was wider than I reported
+
+I reported one uncovered container (`app_panel`, via `fps_overlay` → `chip_button`). The fix
+measured the real extent: **none** of `ui.py`'s six containers writes a widget call inline, so
+the syntactic check scored all three of that file's flags clean and deleting all three left
+the suite green. My finding named the mechanism correctly and undercounted the blast radius.
+
+Verified by running the falsifiers against the extract, restoring from a copy each time and
+diffing the restore against `git show ce337bc:<path>` before the next run:
+
+```
+delete ALL THREE ui.py flags   -> 1 failed, 2 passed     (was GREEN before the fix)
+delete document_settings only  -> 1 failed, 2 passed
+delete chat _WINDOW_FLAGS      -> 1 failed, 2 passed
+restored tree                  -> 3 passed
+```
+
+The three restores were confirmed byte-identical to the committed blobs before the suite ran.
+
+The walk now follows calls transitively (bare names via imports, `mod.func` via the alias,
+`ui_primitives` wrappers derived by AST rather than listed, and callees parked in a
+module-level table), stopping at a callee that opens its own top-level window or popup. I
+confirmed the deepest claimed route resolves: `widgets/uniform.py` contains `input_text`,
+`input_text_multiline`, `drag_int`, `drag_float`, reachable from `document_settings` only via
+`_NODE_TABS`.
+
+`_FOCUSABLE` is narrowed from twelve names to the eight text-entry widgets, on a headless
+measurement with nav OFF, and `_NAV_ONLY_FOCUSABLE = ("checkbox", "combo", "selectable",
+"button")` names the excluded four so a later reader cannot restore them without re-running the
+probe. That measurement also corrected the wave spec's own item 1: the grid's flag is earned by
+the panel's sliders, not by `preview_cell`'s selectable tiles. I verified the two remaining
+green sites are green for the stated reason — neither `tabs/code.py` nor
+`widgets/document_grid.py` contains any `_FOCUSABLE` widget — and the docstring now states
+measured coverage ("WHAT IT COVERS, measured rather than claimed") instead of implying the
+coverage it lacks, which is the honest disposition for a defensive flag.
+
+### 7 — CLOSED, with a gate that fires
+
+All three sites fixed: `help_content.py:155` "Press `Alt+L`", the lib-picker docstring
+`"""Shader-library picker (Alt+L).`, and smoke's "Exercise the tab-jump wiring".
+
+The durable half is `test_no_help_prose_quotes_a_chord_the_table_does_not_bind`, which parses
+every backticked chord out of every Help section body and requires `COMMAND_SPECS` to bind it
+— the generated table followed the specs for free, and a chord typed into a body did not.
+Falsified against the extract: restoring `Ctrl+P` in the prose turns it red
+(`test_help_content.py:73: AssertionError`), and reverting the string returns 6 passed. The
+restore was verified identical to the committed blob.
+
+### 8 — withdrawn
+
+I marked the rename optional and the maintainer declined it as a preference. Per the
+late-round rule a preference is a false trail; the docstring already carries the right meaning
+and the map entry now agrees with it. Nothing outstanding.
+
+### Coverage
+
+Read via `git show ce337bc:<path>`: `dev_flow.md`, `ui_models.py`, `popups/settings.py`,
+`hotkeys.py`, `ui.py`, `tabs/code.py`, `commands.py`, `help_content.py`,
+`popups/lib_picker/__init__.py`, `scripts/smoke.py`, `.claude/skills/imgui-ui/SKILL.md`,
+`tests/test_region_system_is_gone.py`, `tests/test_help_content.py`, plus both commit messages
+and the full `ce337bc` diff of the skill.
+
+Executed: `ruff check` + `ruff format --check` over a pristine `git archive ce337bc` extract;
+610 passed / 4 skipped across the seven relevant test modules; the derived-tuple identity for
+`_KEYMAPS`; four falsifiers (three flag deletions, one Help-string revert), each restored and
+the restore diffed against the committed blob before the next run; and an AST resolution of
+the `document_settings` -> `_NODE_TABS` -> uniform-row route.
+
+Not covered, unchanged from round 1: runtime chord behaviour under a focused editor (needs a
+display), and the concurrent W-G work in the working tree, which was deliberately not read.
