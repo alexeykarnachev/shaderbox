@@ -36,6 +36,7 @@ _EXAMPLES = (
 )
 _RC = _EXAMPLES / "77a84d27-2e5b-406d-8011-ee1cb1a9587c"
 _BLOOM = _EXAMPLES / "1c4f8a20-7b6e-4d31-9a55-2f0e6b8c31d4"
+_MEDIA_INPUT = _EXAMPLES / "73ea2431-13f6-41e4-b923-04d846b678b0"
 
 _TRAIL = """#version 460 core
 in vec2 vs_uv;
@@ -210,14 +211,40 @@ def test_an_unresolved_sampler_renders_black(
     document = load_document_from_dir(document_dir).document
     document.graph = document.graph.with_output("edge")
 
-    _render_until_online(document, len(document.passes) + 4)
+    # Frame-indexed, and frame 0 is the one that matters: the seed reads the pass's program to
+    # learn what it declares, so a seed built before the compile is empty and lets the very
+    # first frame through to the photo. Asserting only the settled state cannot see that.
+    for frame in range(len(document.passes) + 4):
+        document.begin_frame(frame)
+        document.render(u_time=frame / 30.0)
+        drawn = np.asarray(texture_to_rgba8(document.passes["edge"].canvas.texture))[
+            :, :, :3
+        ]
+        assert int(drawn.max()) == 0, (
+            f"frame {frame}: an unresolved sampler rendered the seeded default image"
+        )
 
     assert document.effective_graph().passes["edge"].inputs == {}
-    drawn = np.asarray(texture_to_rgba8(document.passes["edge"].canvas.texture))[
-        :, :, :3
-    ]
-    assert int(drawn.max()) == 0, (
-        "an unresolved sampler rendered the seeded default image"
+
+
+def test_a_user_bound_texture_survives_the_black_seed(
+    gl: moderngl.Context, tmp_path: Path
+) -> None:
+    # `Pass.render` resolves `inputs.get(name, uniform_values.get(name))`, so the seed SHADOWS
+    # what the user bound -- and the effective graph makes no edge for a user-bound sampler by
+    # design, so nothing would overwrite it. The shipped Media Input example is the document
+    # whose whole subject is that case, and it must render its PNG and video, not black.
+    document_dir = tmp_path / "document"
+    shutil.copytree(_MEDIA_INPUT, document_dir)
+    document = load_document_from_dir(document_dir).document
+    _render_until_online(document, len(document.passes) + 4)
+
+    drawn = np.asarray(texture_to_rgba8(document.render_pass.canvas.texture))[:, :, :3]
+    assert int(drawn.max()) > 0, "the user's bound media was replaced by the black seed"
+    # A real picture, not one bright texel: the seed's failure mode is uniform black, and a
+    # colour count separates the bound image from any flat fill.
+    assert len(np.unique(drawn.reshape(-1, 3), axis=0)) > 1000, (
+        "the output is a flat fill rather than the bound image"
     )
 
 

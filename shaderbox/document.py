@@ -521,6 +521,12 @@ class Document:
                 continue
             render_pass.drawn_frame = self._frame
             render_pass.first_render_done = True
+            # Compile BEFORE the input seed below, which reads the program to learn what this
+            # pass declares: an empty seed lets frame 0 fall through to the default photo. Not a
+            # 066 D1 puller -- this pass is being drawn this frame regardless, and `Pass.render`
+            # would compile it moments later anyway.
+            if render_pass.program is None:
+                render_pass.compile()
             entry = resolved_graph.passes.get(name, PassEntry())
             # The document owns the canvas size, so it applies each pass's scale — a pass cannot
             # size itself from a number it does not hold, and doing it in both places would fight.
@@ -545,9 +551,15 @@ class Document:
                 # D3). Left unbound a sampler falls through to its own seeded default photo, so
                 # an input the graph does not fill would show a picture -- and the gear's
                 # `auto: none` and the copilot's `reads BLACK` would both be lying about it.
+                #
+                # A USER-BOUND texture is exempt, by the same predicate the graph excludes it
+                # with: `inputs` SHADOWS `uniform_values`, so seeding one would discard the
+                # image the user chose -- the media exclusion applied at resolution and then
+                # undone at the seam after it.
                 inputs: dict[str, moderngl.Texture] = {
                     uniform: self._black_texture()
                     for uniform in sampler_names(render_pass)
+                    if not is_user_bound(render_pass.uniform_values.get(uniform))
                 }
                 for uniform, source_name in entry.inputs.items():
                     if source_name == name:

@@ -223,7 +223,9 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   would compile the whole document on frame one and invert 066 D1), and a user-bound texture is
   never auto-wired. Every sampler a pass DECLARES starts bound to the 1x1 black texture and a
   resolved edge overwrites it, so an unfilled input reads black exactly as D3 says rather than
-  falling through to its own seeded default photo. Revisit if a second naming shape is wanted —
+  falling through to its own seeded default photo — and that seed skips a user-bound sampler by
+  the same predicate, since `inputs` SHADOWS `uniform_values` and seeding one there would undo
+  the media exclusion at the seam after the one that applies it. Revisit if a second naming shape is wanted —
   then the rule is a table, not one function.
 
 - **A pass compiles when something first NEEDS its program — never at load (feature 066).**

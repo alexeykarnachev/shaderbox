@@ -901,16 +901,51 @@ Falsifier: leave `_pass_views` reading `entry.inputs` raw and the new case shows
 `(nothing; reads BLACK)` while the renderer fills it - a false fact in the working set, which is
 the defect the change exists for.
 
-### `tests/test_pass_verbs.py::test_the_strip_draws_no_sublines`
+### `tests/test_pass_verbs.py::test_the_strip_draws_a_picture_and_a_name_only`
 
 Through the imgui frame rig, drive `pass_list.draw` on a two-pass document with a wired input and
-assert `preview_cell` was called with `sublines == ()` for every tile - monkeypatch
-`pass_list.preview_cell` and capture its kwargs, the same shape
+assert `preview_cell` was called with NO `sublines` kwarg at all and a `footer` carrying the
+pass's name - monkeypatch `pass_list.preview_cell` and capture its kwargs, the same shape
 `tests/test_pass_settings_layout.py` uses to capture `_draw_body`.
 
-Falsifier: restore the `sublines = [f"{uniform} <- {src}" ...]` line and it goes red naming the
-tile. Asserting on the ARGUMENT rather than on a rendered rect is what makes it fail for exactly
-one reason: a geometry assertion would also move if `SIZE.PASS_THUMB` or the font changed.
+Falsifier: give `preview_cell` its `sublines` parameter back and pass one from the tile; it goes
+red naming the kwargs. Asserting on the ARGUMENT rather than on a rendered rect is what makes it
+fail for exactly one reason: a geometry assertion would also move if `SIZE.PASS_THUMB` or the
+font changed.
+
+### `tests/test_default_wiring.py::test_an_unresolved_sampler_renders_black`
+
+Added by round 2 (see § Landed deviations 3). GL. A pass declaring `uniform sampler2D
+u_nosuchpass` beside a document that has no such pass, rendered FRAME BY FRAME with the sweep,
+asserting the canvas is black on every one of them - frame 0 included.
+
+Falsifier: drop `render`'s pre-seed compile and frame 0 goes red while every later frame passes,
+which is the whole point of indexing by frame. The seed reads the program to learn what the pass
+declares, so on the frame the pass first compiles an unindexed assertion sees only the settled
+state and the residue survives.
+
+### `tests/test_default_wiring.py::test_a_user_bound_texture_survives_the_black_seed`
+
+Added by round 3 (see § Review history's R1 addendum). GL. Load the shipped **Media Input**
+example unmodified, render it until every pass is online, and assert the output is not uniformly
+black AND carries more than a thousand distinct colours - the seed's failure mode is a flat fill,
+so a colour count separates the bound image from one.
+
+Falsifier: drop the `is_user_bound` guard from the seed and it goes red while every black case
+stays black. It renders a SHIPPED example rather than a constructed document because that is the
+gap the suite had: the round-1 media probe asserted on `effective_graph`, and this defect lives
+downstream of it.
+
+### `tests/test_copilot_passes.py::test_pass_views_resolves_after_the_compile_that_finds_the_samplers`
+
+Added by round 2 (see § Landed deviations 4). Release a pass's program so `program is None`, then
+call `_pass_views` DIRECTLY and assert the name-wired sampler shows `u_scene <- scene` rather than
+`(nothing; reads BLACK)`.
+
+Falsifier: hoist `effective_graph()` back above the sampler-gathering loop and it goes red. It is
+asserted on `_pass_views` rather than through `read_working_set` because
+`_copilot_document_working_view` compiles every program-less pass before it calls here, so the
+live path masks the ordering - the unit is where the defect lives.
 
 ### `tests/test_pass_verbs.py::test_an_auto_wired_ancestor_is_not_washed_stale`
 
@@ -1126,7 +1161,10 @@ record of what MOVED, so a reader of the spec and a reader of the code see the s
    `auto: none`, the copilot's `reads BLACK`), and 065 D3 says an unfilled input reads black. So
    `Document.render` seeds `inputs` from `sampler_names(render_pass)` with the 1x1 black texture
    and lets resolved edges overwrite. This covers the stored-`""` case, the name-matched-nothing
-   case and the no-`u_`-prefix case with one rule. The fall-through was pre-existing, not a W-D
+   case and the no-`u_`-prefix case with one rule. The seed SKIPS a user-bound sampler, by the
+   same `is_user_bound` predicate `effective_graph` excludes it with: `Pass.render` resolves
+   `inputs.get(name, uniform_values.get(name))`, so `inputs` shadows `uniform_values` and a seed
+   there would discard the very image the media exclusion exists to protect. The fall-through was pre-existing, not a W-D
    regression; W-D is what made a large population of samplers legitimately resolve to nothing.
 
 4. **`_pass_views` resolves AFTER the compile that discovers the samplers.**
@@ -1262,3 +1300,46 @@ media-exclusion collision case constructed by adding a pass named `image` to the
 example (the user's PNG survives); `""` surviving both `_graph_renamed` and `_graph_without`;
 `effective_graph` measured at 0.021 ms for six passes, ~0.5% of a 60 fps budget across a frame's
 four calls; and all eighteen rename tokens with the three prefix traps intact.
+
+**Round 3, spec closure** (on `3d635ef`). Seven of round 2's eight findings closed. F8 had a
+one-frame residue and the maintainer ruled: fix the code, not the prose.
+
+- **The residue.** The black seed reads `sampler_names(render_pass)`, which reads the pass's
+  PROGRAM - and on the frame a pass first compiles, `Pass.render` does that compile AFTER the
+  seed was built. So the seed was empty for exactly one frame and the photo fell through once
+  (measured on a `u_nosuchpass` pass: frame 0 max px 255, frame 1 onward 0). `Document.render`
+  now compiles a program-less pass immediately before building its seed. This is not a 066 D1
+  puller: the pass is in `order`, so it is being drawn this frame regardless and `Pass.render`
+  would have compiled it moments later. `test_lazy_compile.py` is unchanged and green, which is
+  what says the decision still holds. The worked example's "black, one frame" prose is now true
+  as written, which is why it was not edited.
+- **`test_an_unresolved_sampler_renders_black` is frame-indexed.** It asserts black after EVERY
+  frame rather than only the settled state; frame 0 is the assertion that fails without the
+  pre-seed compile, and an unindexed one could not see the residue at all.
+- **Two test-name drifts fixed.** § Tests' heading for the strip test still said
+  `test_the_strip_draws_no_sublines` (renamed to `test_the_strip_draws_a_picture_and_a_name_only`
+  when the parameter was deleted), and `test_pass_views_resolves_after_the_compile_that_finds_the_samplers`
+  was described in § Landed deviations 4 but named in no § Tests entry. Both now have entries
+  with their falsifiers, as does `test_an_unresolved_sampler_renders_black`.
+
+**Round 3 addendum, the code closure's R1 - a regression the F1 fix introduced.** The black seed
+covered EVERY declared sampler, and `Pass.render` resolves
+`inputs.get(name, uniform_values.get(name))` - so the seed shadowed `uniform_values`, including a
+texture the user bound. The effective graph deliberately produces no edge for a user-bound
+sampler (decision 4's media exclusion), so nothing overwrote the seed and the user's image was
+replaced by black. The shipped **Media Input** example - the one document whose whole subject is
+this case - rendered fully black at `3d635ef` (max px 0, one unique colour) where `f18a7d3`
+rendered its PNG and video (max px 255, 131266 colours).
+
+The shape is worth naming, because it is the one this wave keeps re-deriving: **an exclusion
+applied at resolution and then undone at the seam after it.** Decision 4 chose to compute the
+exclusion where the edge is COMPUTED rather than weakening `core.py`'s `inputs`-wins rule - and
+then the F1 fix added a second writer to `inputs` that had never heard of it. The fix is the same
+predicate at the new seam, one line.
+
+Why the suite was green: nothing rendered the Media Input example and looked at its pixels. The
+round-1 media-exclusion probe asserted on `effective_graph`, which was still correct - the defect
+was downstream of it. `test_a_user_bound_texture_survives_the_black_seed` closes that gap by
+rendering the shipped example and asserting both that it is not black and that it carries a real
+picture rather than a flat fill; dropping the guard turns it red and leaves every black case
+black.
